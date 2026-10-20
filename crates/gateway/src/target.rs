@@ -18,6 +18,7 @@ pub trait Model: Send + Sync {
     ) -> BoxFuture<'a, Result<Completion, ProviderError>>;
 }
 
+#[deny(clippy::missing_trait_methods)]
 impl<P: ModelProvider> Model for P {
     fn send<'a>(
         &'a self,

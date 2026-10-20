@@ -1,108 +1,39 @@
-//! The harness: its parts, its settings, and how it records events.
+//! The harness: its parts, the threads it holds, and how it records events.
+
+mod error;
+mod settings;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, PoisonError, RwLock};
 
 use glave_event::{
-    ApprovalMode, At, EncodeError, EventId, Header, InvalidValue, Origin, OriginKind, ParentCall,
-    Part, Payload, Principal, PrincipalId, Producer, RawEvent, Seq, ThreadId, ThreadStarted,
-    encode,
+    ApprovalMode, At, EventId, Header, Origin, OriginKind, ParentCall, Part, Payload, Principal,
+    PrincipalId, Producer, RawEvent, Seq, ThreadId, ThreadStarted, encode,
 };
-use glave_ports::computer::ComputerError;
 use glave_ports::memories::Memory;
-use glave_ports::settings::{Hooks, Judge};
-use glave_ports::{
-    BlobError, BlobStore, Caller, EventLog, LogError, Message, ModelProvider, ProviderError, Scope,
-    ToolSource,
-};
-use glave_ports::{Clock, Entropy, EntropyError, Standing};
-use thiserror::Error;
+use glave_ports::settings::Hooks;
+use glave_ports::{BlobStore, Caller, EventLog, Message, ModelProvider, Scope, ToolSource};
+use glave_ports::{Clock, Entropy, Standing};
 
 use crate::approval::Approver;
 use crate::background::Commands;
 use crate::bind::Place;
 use crate::builtins::Builtins;
 use crate::chosen::DefaultModel;
-use crate::commands::Command;
-use crate::compaction::{Compaction, Measured};
+use crate::compaction::Measured;
 use crate::defaults::Defaults;
 use crate::goal::{GoalProgress, Pursuit};
 use crate::inbox::Inbox;
 use crate::memory::MemoryState;
 use crate::project_folders::{Brought, ProjectFolders};
-use crate::prompt::system_prompt;
-use crate::retry::Retries;
 use crate::room::LearnedWindows;
 use crate::tools::workspace::Workspace;
 use crate::toolset::ToolSet;
 use crate::worker::Workers;
 
-/// How the harness runs.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Settings {
-    /// The model name sent to the provider.
-    pub model: String,
-    /// A short name for the provider, recorded with each turn, such as `openrouter`.
-    pub provider: String,
-    pub system_prompt: String,
-    /// The project's instructions (see [`crate::agents_md`]), sent at the start of every new
-    /// thread and again after a compaction.
-    pub instructions: Option<String>,
-    /// How much to ask the person before acting.
-    pub approval: ApprovalMode,
-    /// When to summarize a thread to keep it within the model's context window.
-    pub compaction: Compaction,
-    /// How a model call that fails in a way that may pass is tried again.
-    pub retries: Retries,
-    /// Model calls allowed in one turn before it stops; no cap when `None`, as in Codex and
-    /// OpenCode. A subagent's turn gets the same cap of its own.
-    pub max_steps: Option<u32>,
-    pub max_output_tokens: Option<u32>,
-    /// Whether the model may hand work to subagents with `agent`.
-    pub subagents: bool,
-    /// Whether, in auto mode, a judge decides if an action a rule flagged may run because the
-    /// person asked for it, and which model: its calls name it, for the `judge` purpose. Off
-    /// by default: every flagged action asks.
-    pub judge: Judge,
-    /// The person whose work every thread is: recorded as the thread's `for`. When `None`,
-    /// the harness makes one id when it is created, used for all its threads.
-    pub person: Option<PrincipalId>,
-    /// The commands the person can type as `/name arguments`: a prompt that names one is
-    /// sent as its body, with the arguments put in. None by default.
-    pub commands: Vec<Command>,
-    /// The agent profile that runs every thread: recorded as the thread's `agent`. When
-    /// `None`, made once like `person`.
-    pub agent: Option<PrincipalId>,
-    /// Whether a model titles each thread after its first exchange (`title.rs`); off, a
-    /// thread's title is the first line of its first message. Off by default.
-    pub titles: bool,
-}
-
-impl Settings {
-    /// Settings for `model` at `provider`, with the default prompt naming that model.
-    pub fn new(model: impl Into<String>, provider: impl Into<String>) -> Self {
-        let model = model.into();
-        let provider = provider.into();
-        Self {
-            system_prompt: system_prompt(&model, &provider),
-            instructions: None,
-            model,
-            provider,
-            approval: ApprovalMode::default(),
-            compaction: Compaction::default(),
-            retries: Retries::default(),
-            max_steps: None,
-            max_output_tokens: None,
-            subagents: false,
-            judge: Judge::Off,
-            person: None,
-            agent: None,
-            commands: Vec::new(),
-            titles: false,
-        }
-    }
-}
+pub use error::HarnessError;
+pub use settings::Settings;
 
 /// Everything the harness is wired to: the ports, the injected clock and randomness, and the
 /// workspace the tools act on.
@@ -273,60 +204,6 @@ impl Thread {
         threads.push(self.id);
         threads.extend_from_slice(&self.above);
         threads
-    }
-}
-
-/// Why a turn could not run. Tool failures are not errors: the model sees them and adapts.
-#[derive(Debug, Error)]
-pub enum HarnessError {
-    #[error(transparent)]
-    Log(#[from] LogError),
-    #[error(transparent)]
-    Blob(#[from] BlobError),
-    #[error(transparent)]
-    Provider(#[from] ProviderError),
-    #[error("could not build an event: {0}")]
-    Event(String),
-    #[error(transparent)]
-    Entropy(#[from] EntropyError),
-    #[error("thread {0} has no events in this project")]
-    NotFound(ThreadId),
-    /// The thread was archived, from outside this harness, while it held the thread.
-    #[error("thread {0} is archived; unarchive it first")]
-    Archived(ThreadId),
-    #[error("cancelled")]
-    Cancelled,
-    #[error("thread {0} has no active goal")]
-    NoGoal(ThreadId),
-    /// The thread's workspace could not be opened, such as a worktree outside a repository.
-    #[error("{}", .0.message())]
-    Workspace(#[from] ComputerError),
-    /// A `UserPromptSubmit` hook stopped the prompt; the model never saw it.
-    #[error("a hook stopped this prompt: {0}")]
-    PromptBlocked(String),
-    /// What was asked for is not valid, such as an empty title.
-    #[error("{0}")]
-    Invalid(String),
-}
-
-impl From<EncodeError> for HarnessError {
-    fn from(error: EncodeError) -> Self {
-        Self::Event(error.to_string())
-    }
-}
-
-impl From<InvalidValue> for HarnessError {
-    fn from(error: InvalidValue) -> Self {
-        Self::Event(error.to_string())
-    }
-}
-
-impl From<glave_ports::stream::StreamError> for HarnessError {
-    fn from(error: glave_ports::stream::StreamError) -> Self {
-        match error {
-            glave_ports::stream::StreamError::Log(error) => Self::Log(error),
-            busy @ glave_ports::stream::StreamError::Busy { .. } => Self::Event(busy.to_string()),
-        }
     }
 }
 

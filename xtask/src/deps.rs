@@ -294,7 +294,7 @@ mod tests {
     ];
 
     /// Every layer depending on what it may, and tests and builds on what they like.
-    const KEPT: &[Crate] = &[
+    const KEPT: &[Crate<'static>] = &[
         ("event", &[("serde", None)]),
         ("ports", &[("event", None)]),
         ("harness", &[("ports", None), ("store", Some("dev"))]),
@@ -305,7 +305,7 @@ mod tests {
     ];
 
     /// `cargo metadata`'s JSON for `crates`.
-    fn metadata(crates: &[Crate]) -> Value {
+    fn metadata(crates: &[Crate<'_>]) -> Value {
         let packages: Vec<Value> = crates
             .iter()
             .map(|(name, dependencies)| {
@@ -319,7 +319,7 @@ mod tests {
         json!({ "packages": packages })
     }
 
-    fn problems_in(crates: &[Crate], allowed: &[(&str, &str, &str)]) -> Vec<String> {
+    fn problems_in(crates: &[Crate<'_>], allowed: &[(&str, &str, &str)]) -> Vec<String> {
         problems(&graph(&metadata(crates)).unwrap(), MADE_UP, allowed)
     }
 
@@ -335,7 +335,7 @@ mod tests {
 
     #[test]
     fn a_break_names_both_crates_and_the_rule() {
-        let crates: &[Crate] = &[
+        let crates: &[Crate<'_>] = &[
             ("event", &[("ports", None)]),
             ("ports", &[("event", None), ("harness", None)]),
             ("harness", &[("keys", None), ("store", None)]),
@@ -364,7 +364,7 @@ mod tests {
 
     #[test]
     fn every_crate_has_a_layer_and_every_layer_a_crate() {
-        let crates: &[Crate] = &[
+        let crates: &[Crate<'_>] = &[
             ("event", &[]),
             ("ports", &[]),
             ("harness", &[("new", None)]),
@@ -384,7 +384,7 @@ mod tests {
 
     #[test]
     fn an_allowed_edge_passes_until_it_goes_or_no_longer_crosses() {
-        let crates: &[Crate] = &[
+        let crates: &[Crate<'_>] = &[
             ("event", &[]),
             ("ports", &[]),
             ("harness", &[("keys", None)]),

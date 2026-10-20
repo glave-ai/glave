@@ -37,7 +37,7 @@ const MAX_IN_FLIGHT: usize = 64;
 /// Connections one TCP listener serves at once.
 const MAX_CONNECTIONS: usize = 32;
 /// How long a TLS client has to finish its handshake before it is dropped.
-const HANDSHAKE: std::time::Duration = std::time::Duration::from_secs(10);
+const HANDSHAKE: Duration = Duration::from_secs(10);
 /// Request ids one connection remembers, so a request delivered twice runs once.
 const SEEN: usize = 4096;
 
@@ -128,6 +128,10 @@ where
     };
     // The client is gone: stop its commands, then let every request finish.
     if let Ok(runs) = connection.runs.lock() {
+        #[expect(
+            clippy::iter_over_hash_type,
+            reason = "every run is cancelled, so the order is never seen"
+        )]
         for switch in runs.values() {
             switch.cancel();
         }

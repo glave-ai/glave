@@ -143,7 +143,7 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
         LocalComputers::new(home.join("workspaces"), std::env::vars_os())
             .with_worktrees(home.join(crate::worktrees::FOLDER))
             .with_scratch(home.join(crate::worktrees::SCRATCH))
-            .with_projects(crate::home::projects()?)
+            .with_projects(home::projects()?)
             .with_processes(processes),
     ));
     match transport {

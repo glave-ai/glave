@@ -3,6 +3,8 @@
 //! returned to after its memories changed; the same start and notes when the thread is resumed;
 //! the start rebuilt by compaction; and nothing at all where memory is off.
 
+use std::sync::Arc;
+
 use glave_event::{MemoryScope, Principal};
 use glave_harness::{AllowAll, Cancel};
 use glave_memory::{Remembering, Writer};
@@ -107,7 +109,13 @@ fn returning_after_changes_gets_a_note_and_resuming_rebuilds_the_same_requests()
             said("noted"),
         ];
         let (harness, seen) = kit
-            .harness(&dir, answers, AllowAll, Some(memory.clone()), settings())
+            .harness(
+                &dir,
+                answers,
+                AllowAll,
+                Some(Arc::clone(&memory)),
+                settings(),
+            )
             .await;
         let mut thread = harness.start_thread(shared()).await.unwrap();
         let mut shown = Vec::new();

@@ -114,6 +114,7 @@ impl<L> Observed<L> {
     }
 }
 
+#[deny(clippy::missing_trait_methods)]
 impl<L: EventLog> EventLog for Observed<L> {
     async fn append(&self, scope: &Scope, events: &[RawEvent]) -> Result<(), LogError> {
         self.inner.append(scope, events).await?;

@@ -107,7 +107,7 @@ async fn timed(
         models: offering(models),
         memory: None,
         clock: Box::new(clock),
-        processes: glave_process::Processes::unrecorded(),
+        processes: Processes::unrecorded(),
         trust: Trust::in_memory().await.unwrap().1,
     };
     ProjectFolders::new(home.to_owned(), own, true)
