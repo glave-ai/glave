@@ -78,17 +78,21 @@ pub(crate) struct Registry {
     held: Mutex<Held>,
 }
 
-/// A new UUID v7: this moment and the operating system's randomness.
-pub(crate) fn new_id() -> Uuid {
+/// A new UUID v7: this moment and the operating system's randomness, or why there is no
+/// randomness: an id is never left with a zero-filled random part.
+pub(crate) fn new_id() -> Result<Uuid, ComputerError> {
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |since| {
             u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
         });
     let mut random = [0u8; 10];
-    // The OS random source does not fail in practice; the time part still orders the id.
-    let _ = getrandom::fill(&mut random);
-    Builder::from_unix_timestamp_millis(millis, &random).into_uuid()
+    getrandom::fill(&mut random).map_err(|error| {
+        ComputerError::Failed(format!(
+            "this machine's random source failed ({error}), so no id was made; try again"
+        ))
+    })?;
+    Ok(Builder::from_unix_timestamp_millis(millis, &random).into_uuid())
 }
 
 impl Registry {

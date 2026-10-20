@@ -288,7 +288,7 @@ impl Backend for Kubernetes {
 
     fn start<'a>(&'a self, spec: &'a Spec) -> BoxFuture<'a, Result<Started, ComputerError>> {
         Box::pin(async move {
-            let name = format!("glave-worker-{}", crate::local::new_id().simple());
+            let name = format!("glave-worker-{}", crate::local::new_id()?.simple());
             let started = match self.glave().await {
                 Ok(glave) => self.start_with(&name, spec, &glave).await,
                 Err(error) => Err(error),

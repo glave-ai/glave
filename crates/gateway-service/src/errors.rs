@@ -80,7 +80,11 @@ impl Refusal {
                 Failure::RateLimited => Self::new(Kind::RateLimited, message),
                 Failure::UnknownModel => Self::new(Kind::NotFound, message),
                 Failure::TooLong | Failure::Rejected => Self::invalid(message),
-                _ => Self::new(Kind::Upstream, message),
+                Failure::OverBudget => Self::new(Kind::Budget, message),
+                Failure::Unavailable
+                | Failure::Unreachable
+                | Failure::Silent
+                | Failure::Malformed => Self::new(Kind::Upstream, message),
             },
             ProviderError::Credentials(_) => Self::new(
                 Kind::Upstream,
@@ -89,7 +93,16 @@ impl Refusal {
             ProviderError::Timeout { .. } => Self::new(Kind::Timeout, message),
             ProviderError::Unserved { failure, .. } => match failure {
                 Failure::UnknownModel => Self::new(Kind::NotFound, message),
-                _ => Self::invalid(message),
+                Failure::OverBudget => Self::new(Kind::Budget, message),
+                Failure::Refused
+                | Failure::NoCredit
+                | Failure::TooLong
+                | Failure::RateLimited
+                | Failure::Unavailable
+                | Failure::Unreachable
+                | Failure::Silent
+                | Failure::Malformed
+                | Failure::Rejected => Self::invalid(message),
             },
             ProviderError::OverBudget { .. } => Self::new(Kind::Budget, message),
             ProviderError::Transport(_)

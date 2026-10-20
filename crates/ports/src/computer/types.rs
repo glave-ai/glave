@@ -187,9 +187,9 @@ pub enum OnTimeout {
     /// Stops it and everything it started: [`Ending::TimedOut`].
     #[default]
     Stop,
-    /// Keeps it running in the background, as [`crate::Computers::start`] would have started
+    /// Keeps it running in the background, as [`Computers::start`](super::Computers::start) would have started
     /// it, from the timeout on: [`Ending::Backgrounded`]. The output so far went to the run;
-    /// what follows waits for [`crate::Computers::output`]. When the workspace already keeps
+    /// what follows waits for [`Computers::output`](super::Computers::output). When the workspace already keeps
     /// as many running as it may, it is stopped instead.
     Background,
 }
@@ -225,7 +225,7 @@ pub enum Ending {
         after_secs: u64,
     },
     /// Stopped in the background after `after_secs` in which nothing read its output
-    /// ([`crate::IDLE`]).
+    /// ([`IDLE`](super::IDLE)).
     Idle {
         after_secs: u64,
     },

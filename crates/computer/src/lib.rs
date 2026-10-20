@@ -2,7 +2,7 @@
 //! computers are made from, workers (disposable computers on Docker or Kubernetes), and the JSON-RPC
 //! protocol that serves a computer to a harness elsewhere and reaches one from here.
 //!
-//! [`LocalComputers`] runs work on the machine it is on. [`serve`] offers any computers over
+//! [`LocalComputers`] runs work on the machine it is on. [`serve`](fn@serve) offers any computers over
 //! one connection, and [`RemoteComputers`] is the other end of it: both pass the same
 //! conformance suite, so a harness cannot tell a computer here from one across the wire.
 //! [`WorkerComputers`] starts a worker per computer and reaches it over TLS ([`serve_tls`],
