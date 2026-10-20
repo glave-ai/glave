@@ -219,7 +219,7 @@ fn erasing_a_project_makes_its_events_and_blobs_unreadable() {
     block_on!(store.log().append(&other, &written)).unwrap();
     let blob = block_on!(store.blobs().put(
         &here,
-        written[0].thread,
+        Some(written[0].thread),
         "t/p",
         1,
         Box::new(Pieces::from(b"x".to_vec()))

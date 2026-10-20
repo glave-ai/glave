@@ -78,8 +78,18 @@ fn the_search_index_holds_no_word_in_the_clear() {
 
 #[test]
 fn the_blobs_pass_the_blob_store_conformance_suite() {
-    let store = Store::open_in_memory(keys()).unwrap();
-    assert_eq!(block_on!(conformance::blob_store(&store.blobs())), Ok(()));
+    let (_dir, path) = temp_db("blobs");
+    let clock = glave_ports::testing::ManualClock::at_millis(1_791_000_000_000);
+    let mut settings = keys();
+    settings.clock = Arc::new(clock.clone());
+    let objects = InMemoryObjects::with_clock(Arc::new(clock.clone()));
+    block_on!(async {
+        let store = Store::open(&path, settings, Arc::new(objects.clone()))
+            .await
+            .unwrap();
+        let verdict = conformance::blob_store(&store.blobs(), &clock, Some(&objects)).await;
+        assert_eq!(verdict, Ok(()));
+    });
 }
 
 /// A project for `path`'s folder, with ids from `n`.

@@ -2,4 +2,5 @@
 
 #![cfg(test)]
 
-mod folder;
+pub(crate) mod folder;
+mod s3;

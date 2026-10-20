@@ -14,7 +14,7 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 4. **Consumer defaults, enterprise plugs.** No enterprise feature may add a single click for a consumer. If it would, it belongs in a plug.
 5. **One of each.** One storage backend per deployment, one identity source, one event log. No component brings its own database.
 6. **One job each.** Every piece owns its data; anything else that needs that data asks through its port.
-7. **Standards first.** OpenAI-compatible API (models: the one default seam; a native format is an exception that must justify itself, `specs/gateway.md`), MCP (tools), A2A (agents), OIDC/SAML/SCIM (identity), S3/Postgres (storage), AGENTS.md (instructions). Define our own only where none exists and the protocol is part of the product: the event log format, receipts, the session API, computer lifecycle, eval reports. Storage has none of its own: SQLite and Postgres (S3 and a KMS later), and clients reach data through the server (`specs/storage.md`, "Which stores").
+7. **Standards first.** OpenAI-compatible API (models: the one default seam; a native format is an exception that must justify itself, `specs/gateway.md`), MCP (tools), A2A (agents), OIDC/SAML/SCIM (identity), S3/Postgres (storage), AGENTS.md (instructions). Define our own only where none exists and the protocol is part of the product: the event log format, receipts, the session API, computer lifecycle, eval reports. Storage has none of its own: SQLite and Postgres, S3-compatible buckets for blobs (a KMS later), and clients reach data through the server (`specs/storage.md`, "Which stores").
 8. **Subtract before adding.** Nothing optional is on by default unless it is invisible and harmless.
 9. **Measure, don't guess.** Design and performance decisions are settled by evals and benchmarks.
 
@@ -51,7 +51,7 @@ crates/google/      glave-google: Google Vertex AI's endpoints, and Application 
 crates/gateway/     glave-gateway: the in-process gateway (specs/gateway.md): routes by purpose, safe fallback, budgets, metering
 crates/gateway-service/  glave-gateway-service: the gateway as a service (`glave gateway serve`): OpenAI and Anthropic surfaces, OIDC sign-in (glave-identity), per-caller policy, budgets and metering, the MCP tool catalog at /mcp
 crates/keys/        glave-keys: the key hierarchy (root, organization, project, data keys), sealing at rest, erasure; roots in the OS keychain (`keychain`) or a key file
-crates/bucket/      glave-bucket: blobs' sealed bytes, apart from their records, in a folder in glave's folder, through object_store
+crates/bucket/      glave-bucket: blobs' sealed bytes, apart from their records, in a folder in glave's folder or an S3-compatible bucket (`[store] bucket`), through object_store
 crates/store-sqlite/  glave-store-sqlite: the event log, blobs' records and wrapped keys on one local SQLite file, content sealed
 crates/store-postgres/  glave-store-postgres: the event log, blobs' records and wrapped keys on Postgres, an organization's one data store (`[store] url`), TLS off this computer, content sealed
 crates/process/     glave-process: every operating-system process glave starts, through one place (`cargo xtask spawns` checks): its own process group, a ledger under GLAVE_HOME/run while it runs, and what a glave that ended left stopped at the next start

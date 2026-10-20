@@ -463,7 +463,7 @@ where
             .blobs
             .put(
                 &thread.scope,
-                thread.id,
+                Some(thread.id),
                 "application/json",
                 CONFIG_LIMIT,
                 Box::new(Pieces::from(bytes)),

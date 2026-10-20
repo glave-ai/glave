@@ -191,7 +191,7 @@ async fn run(options: Options) -> anyhow::Result<()> {
             .fixed_key()
             .map(|key| key.expose().to_owned()),
     );
-    let store = crate::data::Data::open(None).await?;
+    let store = crate::data::Data::open(None, None).await?;
     let scope = crate::projects::named(&store, SCOPE).await?;
     let trust = Trust {
         issuers: options.issuers,

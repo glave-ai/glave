@@ -156,6 +156,9 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
         let shown = crate::policy::redacted(&store.value);
         rows.push(row("store", shown, &store.from));
     }
+    if let Some(bucket) = &choices.bucket {
+        rows.push(row("bucket", bucket.value.clone(), &bucket.from));
+    }
     if let Some(telemetry) = &choices.telemetry {
         rows.push(row("telemetry", telemetry.value.clone(), &telemetry.from));
     }

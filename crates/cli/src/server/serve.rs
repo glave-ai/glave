@@ -1,7 +1,8 @@
 //! Serving as the person's server, once it holds the lock: the session API on the person's
 //! socket and over HTTP, with what runs in it on its own (`specs/one-server.md`): the tasks a
 //! server before it left running recorded as interrupted, the scheduler, and the daily work
-//! (this machine's worktrees checked, memory tidied and its keys rotated). Until `SIGTERM` or
+//! (this machine's worktrees checked, the blobs no thread refers to swept, memory tidied and its
+//! keys rotated). Until `SIGTERM` or
 //! `SIGINT` (`glave server stop`, Ctrl-C in the foreground, logging out); then it takes no new
 //! requests and starts nothing new, gives running turns and tasks 10 seconds to end, interrupts
 //! the rest, removes its socket, and its caller lets go of the lock last. Started in the
@@ -21,8 +22,9 @@ use tokio::time::Instant;
 use super::{Lock, log, log_path, socket_path};
 use crate::args::Args;
 use crate::client::Glave;
-use crate::data::DataLog;
+use crate::data::{DataBlobs, DataLog};
 use crate::memory::Running;
+use glave_ports::{BlobStore as _, OrgId};
 
 /// How often the server looks at its log's size, and whether the daily work is due.
 const TICK: Duration = Duration::from_secs(30);
@@ -37,13 +39,17 @@ const DAILY: Duration = Duration::from_hours(24);
 pub(crate) struct Daily<'a> {
     /// The store's log, which the worktrees' check records in.
     pub log: DataLog,
+    /// The store's blobs, swept in `org`.
+    pub blobs: DataBlobs,
+    pub org: OrgId,
     /// Memory, when it is on.
     pub memory: Option<&'a Running>,
 }
 
 impl Daily<'_> {
     /// Runs until it is dropped: this machine's worktrees checked whenever a day has passed
-    /// since any glave last checked them, and memory tidied and its keys rotated once a day.
+    /// since any glave last checked them, the blobs swept soon after the server starts and
+    /// once a day after, and memory tidied and its keys rotated once a day.
     #[expect(
         clippy::infinite_loop,
         reason = "it runs until dropped; an async fn cannot return `!` on stable Rust"
@@ -52,9 +58,14 @@ impl Daily<'_> {
         let mut tick = tokio::time::interval_at(Instant::now() + TICK, TICK);
         // Both were done as the server started.
         let mut tidied = Instant::now();
+        let mut swept: Option<Instant> = None;
         loop {
             tick.tick().await;
             crate::worktrees::check_daily(&self.log).await;
+            if swept.is_none_or(|at| at.elapsed() >= DAILY) {
+                swept = Some(Instant::now());
+                self.sweep().await;
+            }
             if tidied.elapsed() < DAILY {
                 continue;
             }
@@ -63,6 +74,19 @@ impl Daily<'_> {
                 memory.housekeep().await;
                 memory.memory.tidy_soon(&memory.scopes);
             }
+        }
+    }
+}
+
+impl Daily<'_> {
+    /// Deletes the blobs no thread refers to, and bytes no record names (`specs/storage.md`,
+    /// "Blobs"). A sweep that fails is tried again the next day; nothing waits on it.
+    async fn sweep(&self) {
+        match self.blobs.sweep(self.org).await {
+            Ok(swept) => {
+                tracing::info!(blobs = swept.blobs, orphans = swept.orphans, "blobs swept");
+            }
+            Err(error) => tracing::warn!(%error, "the blobs could not be swept"),
         }
     }
 }

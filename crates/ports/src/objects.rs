@@ -4,7 +4,7 @@
 //! as a stream, then deleted.
 
 use crate::blob::{BlobError, Chunks};
-use crate::scope::Scope;
+use crate::scope::{OrgId, Scope};
 use crate::tools::BoxFuture;
 
 /// Keeps objects: blobs' sealed bytes, each written once under a name of its own.
@@ -26,6 +26,19 @@ pub trait Objects: Send + Sync {
 
     /// Deletes `object` in `scope`. One that is not there is already deleted.
     fn delete(&self, scope: Scope, object: &str) -> BoxFuture<'_, Result<(), BlobError>>;
+
+    /// Every object in `org`, finished, with when it was written: for the sweep to find bytes
+    /// no record names.
+    fn list(&self, org: OrgId) -> BoxFuture<'_, Result<Vec<Listed>, BlobError>>;
+}
+
+/// An object as a listing shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Listed {
+    pub scope: Scope,
+    pub object: String,
+    /// When it was written, in milliseconds since 1970.
+    pub written_ms: i64,
 }
 
 /// An object being written: its bytes in order, then finished whole or abandoned.

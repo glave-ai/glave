@@ -8,7 +8,7 @@ use crate::store::StoreError;
 
 /// The schema this build makes and reads. Bumped whenever [`SCHEMA`] changes. It starts past
 /// every version the migrations it replaced wrote, so a file one of them made is refused.
-pub(crate) const VERSION: u32 = 11;
+pub(crate) const VERSION: u32 = 12;
 
 /// Every table, made in one transaction in a new file.
 const SCHEMA: &str = "
@@ -33,7 +33,8 @@ const SCHEMA: &str = "
 
     -- Blobs' records: each under a keyed name derived from its hash, with its media type, size,
     -- the data key that sealed it and the object its bytes are kept as, in the objects beside
-    -- the database (never in it); and the threads that refer to each.
+    -- the database (never in it); whether a thread ever referred to it, and when it was last
+    -- uploaded with none (milliseconds), for the sweep; and the threads that refer to each.
     CREATE TABLE blobs (
         org         TEXT    NOT NULL,
         project     TEXT    NOT NULL,
@@ -42,6 +43,8 @@ const SCHEMA: &str = "
         size        INTEGER NOT NULL,
         key_id      TEXT    NOT NULL,
         object      TEXT    NOT NULL,
+        referred    INTEGER NOT NULL,
+        uploaded    INTEGER NOT NULL,
         PRIMARY KEY (org, project, name)
     ) STRICT;
 

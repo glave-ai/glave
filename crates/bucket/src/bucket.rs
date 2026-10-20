@@ -7,11 +7,16 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use futures_core::Stream;
-use glave_ports::{BlobError, BoxFuture, Chunks, ObjectWriter, Objects, Scope, object_name_ok};
+use glave_ports::{
+    BlobError, BoxFuture, Chunks, Listed, ObjectWriter, Objects, OrgId, ProjectId, Scope,
+    object_name_ok,
+};
+use object_store::aws::{AmazonS3Builder, AmazonS3ConfigKey};
 use object_store::local::LocalFileSystem;
 use object_store::path::Path;
 use object_store::{Error, GetResult, ObjectStore, ObjectStoreExt as _, WriteMultipart};
 use thiserror::Error as ThisError;
+use uuid::Uuid;
 
 /// Parts uploaded at once while an object is written.
 const PARTS_AT_ONCE: usize = 4;
@@ -27,6 +32,8 @@ pub struct Bucket {
 pub enum BucketError {
     #[error("could not make the folder {path} for files: {error}")]
     Folder { path: String, error: String },
+    #[error("could not use the bucket {url} for files: {error}")]
+    Bucket { url: String, error: String },
 }
 
 impl fmt::Debug for Bucket {
@@ -58,12 +65,64 @@ impl Bucket {
         })
     }
 
+    /// The S3-compatible bucket `url` names (`s3://name`), reached with the standard AWS
+    /// settings in `environment` (`AWS_ENDPOINT_URL` for R2, GCS or Ceph, `AWS_REGION`, keys),
+    /// or workload identity (IRSA, EKS Pod Identity, the instance's role).
+    pub fn s3(
+        url: &str,
+        environment: impl IntoIterator<Item = (String, String)>,
+    ) -> Result<Self, BucketError> {
+        let mut builder = AmazonS3Builder::new();
+        for (name, value) in environment {
+            if name.starts_with("AWS_")
+                && let Ok(key) = name.to_ascii_lowercase().parse::<AmazonS3ConfigKey>()
+            {
+                builder = builder.with_config(key, value);
+            }
+        }
+        let store = builder
+            .with_url(url.trim())
+            .build()
+            .map_err(|error| BucketError::Bucket {
+                url: url.to_owned(),
+                error: error.to_string(),
+            })?;
+        Ok(Self {
+            store: Arc::new(store),
+        })
+    }
+
     async fn read_now(&self, path: Path) -> Result<Option<Box<dyn Chunks>>, BlobError> {
         match self.store.get(&path).await {
             Ok(found) => Ok(Some(Box::new(Read::from(found)))),
             Err(Error::NotFound { .. }) => Ok(None),
             Err(error) => Err(failed("read", &error)),
         }
+    }
+
+    async fn list_now(&self, org: OrgId) -> Result<Vec<Listed>, BlobError> {
+        let mut found = self.store.list(Some(&Path::from(org.to_string())));
+        let mut listed = Vec::new();
+        while let Some(meta) = poll_fn(|cx| found.as_mut().poll_next(cx)).await {
+            let meta = meta.map_err(|e| failed("list", &e))?;
+            let parts: Vec<_> = meta.location.parts().collect();
+            // Anything not laid out as glave lays objects out is not glave's to sweep.
+            let [_, project, object] = parts.as_slice() else {
+                continue;
+            };
+            let (Ok(project), true) = (
+                project.as_ref().parse::<Uuid>(),
+                object_name_ok(object.as_ref()),
+            ) else {
+                continue;
+            };
+            listed.push(Listed {
+                scope: Scope::glaves_own(org, ProjectId::from_uuid(project)),
+                object: object.as_ref().to_owned(),
+                written_ms: meta.last_modified.timestamp_millis(),
+            });
+        }
+        Ok(listed)
     }
 
     async fn delete_now(&self, path: Path) -> Result<(), BlobError> {
@@ -118,6 +177,10 @@ impl Objects for Bucket {
     fn delete(&self, scope: Scope, object: &str) -> BoxFuture<'_, Result<(), BlobError>> {
         let path = located(scope, object);
         Box::pin(async move { self.delete_now(path?).await })
+    }
+
+    fn list(&self, org: OrgId) -> BoxFuture<'_, Result<Vec<Listed>, BlobError>> {
+        Box::pin(self.list_now(org))
     }
 }
 
