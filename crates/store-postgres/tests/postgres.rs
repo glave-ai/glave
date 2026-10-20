@@ -4,7 +4,7 @@
 
 use glave_event::ThreadId;
 use glave_identity::signin::Browsers;
-use glave_ports::{BlobStore, OrgId, ProjectId, Scope, conformance, digest};
+use glave_ports::{BlobStore, OrgId, Pieces, ProjectId, Scope, conformance, digest, read_all};
 use glave_store_postgres::{Store, StoreError};
 use uuid::{Builder, Uuid};
 
@@ -133,12 +133,24 @@ fn data_survives_reconnecting_and_the_schema_is_recorded_once() {
         let first = scratch.store().await.unwrap();
         first
             .blobs()
-            .put(&scope, thread(), b"kept".to_vec(), "text/plain")
+            .put(
+                &scope,
+                thread(),
+                "text/plain",
+                4,
+                Box::new(Pieces::from(b"kept".to_vec())),
+            )
             .await
             .unwrap();
         drop(first);
         let again = scratch.store().await.unwrap();
-        let kept = again.blobs().get(&scope, &digest(b"kept")).await;
+        let mut kept = again
+            .blobs()
+            .get(&scope, &digest(b"kept"))
+            .await
+            .unwrap()
+            .unwrap();
+        let kept = read_all(kept.bytes.as_mut(), 4).await;
         drop(again);
         let versions = scratch
             .admin
@@ -150,7 +162,7 @@ fn data_survives_reconnecting_and_the_schema_is_recorded_once() {
             .unwrap()
             .get::<_, i64>(0);
         scratch.drop_schema().await;
-        assert_eq!(kept, Ok(Some(b"kept".to_vec())));
+        assert_eq!(kept, Ok(b"kept".to_vec()));
         assert_eq!(versions, 1, "the schema is recorded once");
     });
 }

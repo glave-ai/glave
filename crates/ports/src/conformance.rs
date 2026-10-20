@@ -3,6 +3,7 @@
 //! Each suite returns the first violation it finds as an error message.
 
 mod at_rest;
+mod blobs;
 mod computers;
 mod memory;
 mod model;
@@ -12,6 +13,7 @@ mod search;
 mod threads;
 
 pub use at_rest::{AtRest, KeptBlob, KeptPayload, at_rest};
+pub use blobs::blob_store;
 pub use computers::{
     Confinement, computers, confinement_case, confinement_escapes, confinement_fixture,
     confinement_paths, confinement_targets, confinement_untouched,
@@ -27,7 +29,6 @@ use glave_event::{
 };
 use uuid::{Builder, Uuid};
 
-use crate::blob::{BlobStore, digest};
 use crate::log::{EventLog, LogError};
 use crate::scope::{Located, OrgId, ProjectId, Scope};
 use crate::tools::NeverCancelled;
@@ -248,62 +249,6 @@ async fn locating<L: EventLog>(log: &L, here: Scope, t: ThreadId) -> Verdict {
         nowhere.is_none(),
         "locate must find nothing for a thread never written",
     )
-}
-
-/// Every [`BlobStore`] must name content by its SHA-256, keep one copy of identical content,
-/// and keep scopes apart.
-pub async fn blob_store<B: BlobStore>(blobs: &B) -> Verdict {
-    let here = scope(1);
-    let elsewhere = scope(2);
-    let bytes = b"turn config".to_vec();
-    let t = thread(1)?;
-
-    let reference = blobs
-        .put(&here, t, bytes.clone(), "application/json")
-        .await
-        .map_err(|e| e.to_string())?;
-    ensure(
-        reference.sha256 == digest(&bytes),
-        "a blob must be named by its SHA-256",
-    )?;
-    ensure(
-        reference.bytes == 11,
-        "a blob reference must record its size",
-    )?;
-    ensure(
-        reference.media_type == "application/json",
-        "a blob reference must keep its media type",
-    )?;
-
-    let again = blobs
-        .put(&here, t, bytes.clone(), "application/json")
-        .await
-        .map_err(|e| e.to_string())?;
-    ensure(
-        again == reference,
-        "identical content must get the identical reference",
-    )?;
-
-    let read = blobs
-        .get(&here, &reference.sha256)
-        .await
-        .map_err(|e| e.to_string())?;
-    ensure(
-        read.as_deref() == Some(bytes.as_slice()),
-        "a blob must read back exactly",
-    )?;
-
-    let isolated = blobs
-        .get(&elsewhere, &reference.sha256)
-        .await
-        .map_err(|e| e.to_string())?;
-    ensure(isolated.is_none(), "another scope must not see this blob")?;
-
-    let missing = blobs
-        .get(&here, &digest(b"never stored"))
-        .await
-        .map_err(|e| e.to_string())?;
-    ensure(missing.is_none(), "unknown content must read as missing")
 }
 
 /// What every tool source must do: list tools with names a model can call (1 to 128 of

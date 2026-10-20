@@ -7,7 +7,7 @@ use glave_keys::KeyId;
 use glave_keys::conformance::event;
 use glave_ports::conformance::{AtRest, KeptBlob, KeptPayload};
 use glave_ports::testing::TempDir;
-use glave_ports::{BlobStore, BoxFuture, LogError, OrgId, ProjectId, Scope};
+use glave_ports::{BlobStore, BoxFuture, LogError, OrgId, Pieces, ProjectId, Scope};
 use rusqlite::{Connection, params};
 
 use super::*;
@@ -89,13 +89,27 @@ impl Rows {
     fn blobs_now(&self, scope: Scope) -> Vec<KeptBlob> {
         let raw = self.0.lock().unwrap();
         let (org, project) = (scope.org().to_string(), scope.project().to_string());
-        let kept: Vec<(String, Vec<u8>)> = raw
-            .prepare("SELECT name, bytes FROM blobs WHERE org = ?1 AND project = ?2")
+        let records: Vec<(String, String)> = raw
+            .prepare("SELECT name, object FROM blobs WHERE org = ?1 AND project = ?2")
             .unwrap()
             .query_map(params![org, project], |row| Ok((row.get(0)?, row.get(1)?)))
             .unwrap()
             .collect::<rusqlite::Result<_>>()
             .unwrap();
+        let mut kept = Vec::new();
+        for (name, object) in records {
+            let chunks: Vec<Vec<u8>> = raw
+                .prepare(
+                    "SELECT bytes FROM blob_chunks WHERE org = ?1 AND project = ?2 AND object = ?3
+                     ORDER BY n",
+                )
+                .unwrap()
+                .query_map(params![org, project, object], |row| row.get(0))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap();
+            kept.push((name, chunks.concat()));
+        }
         let mut blobs = Vec::new();
         for (name, bytes) in kept {
             let threads: Vec<String> = raw
@@ -195,11 +209,13 @@ fn erasing_a_project_makes_its_events_and_blobs_unreadable() {
     let written = events(1, &[(1, "2026-10")]);
     block_on!(store.log().append(&here, &written)).unwrap();
     block_on!(store.log().append(&other, &written)).unwrap();
-    let blob = block_on!(
-        store
-            .blobs()
-            .put(&here, written[0].thread, b"x".to_vec(), "t/p"),
-    )
+    let blob = block_on!(store.blobs().put(
+        &here,
+        written[0].thread,
+        "t/p",
+        1,
+        Box::new(Pieces::from(b"x".to_vec()))
+    ),)
     .unwrap();
     block_on!(store.keys().erase_project(&here)).unwrap();
     let read = read_all(&store, &here, &written[0]);

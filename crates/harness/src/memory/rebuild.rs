@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use glave_event::{Body, CallId, Event, MemoryId, Sha256};
 use glave_ports::memories::{EDIT_MEMORY, FORGET, REMEMBER, Remembered, Shown};
-use glave_ports::{BlobStore, EventLog, Message, ModelProvider};
+use glave_ports::{BlobStore, EventLog, Message, ModelProvider, read_all};
 use serde::Deserialize;
 
 use super::render::{self, Line};
@@ -16,6 +16,7 @@ use super::state::{ConfigMemory, MemoryState, among};
 use crate::approval::Approver;
 use crate::conversation::follow;
 use crate::harness::{Harness, Thread};
+use crate::turn::CONFIG_LIMIT;
 
 /// What a turn's configuration says about memory.
 #[derive(Deserialize)]
@@ -164,7 +165,8 @@ where
     /// What the configuration stored under `sha` says about memory; `None` when it says
     /// nothing or cannot be read.
     async fn config_memory(&self, thread: &Thread, sha: &Sha256) -> Option<ConfigMemory> {
-        let bytes = self.blobs.get(&thread.scope, sha).await.ok()??;
+        let mut blob = self.blobs.get(&thread.scope, sha).await.ok()??;
+        let bytes = read_all(blob.bytes.as_mut(), CONFIG_LIMIT).await.ok()?;
         serde_json::from_slice::<Config>(&bytes).ok()?.memory
     }
 }

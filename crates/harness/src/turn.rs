@@ -10,7 +10,7 @@ use glave_event::{
 };
 use glave_ports::{
     BlobStore, BoxFuture, Caller, Completion, Delta, EventLog, Failure, Message, ModelProvider,
-    ModelRequest, ProviderError, Purpose, ToolCall, ToolChoice, ToolSpec,
+    ModelRequest, Pieces, ProviderError, Purpose, ToolCall, ToolChoice, ToolSpec,
 };
 use std::time::Duration;
 
@@ -152,6 +152,9 @@ pub(crate) struct Step {
 
 /// The version of the turn configuration blob.
 const CONFIG_VERSION: u32 = 2;
+
+/// The most a turn's configuration may be: its system prompt and tools, many times over.
+pub(crate) const CONFIG_LIMIT: u64 = 16 * 1024 * 1024;
 
 /// The full configuration of a turn, stored once by hash and referenced from `turn.started`.
 #[derive(Serialize)]
@@ -458,7 +461,13 @@ where
         let bytes = serde_json::to_vec(&config).map_err(|e| HarnessError::Event(e.to_string()))?;
         let config = self
             .blobs
-            .put(&thread.scope, thread.id, bytes, "application/json")
+            .put(
+                &thread.scope,
+                thread.id,
+                "application/json",
+                CONFIG_LIMIT,
+                Box::new(Pieces::from(bytes)),
+            )
             .await?;
         let model = ModelRef {
             provider,
