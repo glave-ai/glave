@@ -151,6 +151,7 @@ where
             // A task's own turn never queues: one running in the thread refuses it.
             Work::Turn(prompt, choice) => {
                 let message = Message {
+                    files: &[],
                     prompt: &prompt,
                     choice,
                     queue: false,

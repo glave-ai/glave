@@ -179,6 +179,7 @@ async fn first_run(client: &mut impl Client) {
             approval: None,
             meta: glave_session::protocol::Meta::default(),
             unattended: false,
+            files: Vec::new(),
         })
         .await
         .unwrap_err();

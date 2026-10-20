@@ -80,6 +80,7 @@ async fn turn_on(
             model: model.map(str::to_owned),
             approval: None,
             unattended: false,
+            files: Vec::new(),
         })
         .await
 }
@@ -276,6 +277,7 @@ fn a_background_turn_runs_on_the_model_it_chose_and_the_task_says_so() {
                 model: Some("other".into()),
                 approval: None,
                 unattended: false,
+                files: Vec::new(),
             })
             .await
             .unwrap();

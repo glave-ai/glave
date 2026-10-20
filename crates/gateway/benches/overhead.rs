@@ -174,6 +174,7 @@ fn request() -> Result<ModelRequest> {
         max_output_tokens: Some(8_192),
         purpose: Purpose::Main,
         threads: vec![thread],
+        files: Vec::new(),
     })
 }
 

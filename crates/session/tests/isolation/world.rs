@@ -192,6 +192,12 @@ async fn make<L: EventLog + 'static>(org: &Org<L>, person: &mut Person, local: b
     person.keep(Kind::Schedule, schedule);
     let task = json!({"thread": thread, "prompt": "tidy", "background": true, "budget": 1000});
     call("turn/start", task).await;
+    let notes = format!("{}'s notes", person.name);
+    let data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, notes);
+    let upload =
+        json!({"project": project, "name": "notes.txt", "media_type": "text/plain", "data": data});
+    let file = call("file/upload", upload).await["file"]["sha256"].clone();
+    person.keep(Kind::Files, super::table::files(file.as_str().unwrap()));
     let saved = json!({"text": format!("{} likes tea", person.name), "scope": "project", "project": project});
     let saved = call("memory/save", saved).await;
     person.keep(Kind::Memory, saved["memories"][0]["memory"].clone());

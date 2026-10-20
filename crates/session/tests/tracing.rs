@@ -15,6 +15,7 @@ fn turn_with(thread: glave_event::ThreadId, traceparent: &str) -> Request {
         unattended: false,
         model: None,
         approval: None,
+        files: Vec::new(),
         thread,
         prompt: "go".into(),
         meta: Meta {

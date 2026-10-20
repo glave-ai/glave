@@ -50,6 +50,7 @@ fn a_browser_here_signs_in_with_the_local_token_as_the_local_person() {
             model: None,
             approval: None,
             unattended: false,
+            files: Vec::new(),
         });
         let answered = web.post(&message).await;
         assert_eq!(answered.status, 200);

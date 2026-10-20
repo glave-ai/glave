@@ -7,8 +7,8 @@ use std::pin::pin;
 use std::sync::Arc;
 use std::task::Poll;
 
-use glave_event::ThreadId;
-use glave_harness::{Cancel, Live, Thread};
+use glave_event::{Part, ThreadId};
+use glave_harness::{Cancel, Live, Said, Thread};
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{broadcast, watch};
@@ -145,13 +145,15 @@ where
     ) -> Result<Sent, ApiError> {
         let Message {
             prompt,
+            files,
             choice,
             queue,
             unattended,
         } = message;
-        self.authorize(caller, thread).await?;
+        let scope = self.authorize(caller, thread).await?;
         let model = self.model_of(thread, choice.model.as_deref()).await?;
         self.check_approval(thread, choice.approval).await?;
+        let files = self.attach(&scope, thread, files, &model).await?;
         let (finish, done) = watch::channel(None);
         if let Some(key) = key
             && let Some(started) = self.inner.keyed.claim(caller.person, thread, key, &done)
@@ -161,7 +163,7 @@ where
         }
         let sent = loop {
             if queue {
-                match self.queue(caller, thread, prompt, &choice) {
+                match self.queue(caller, thread, prompt, &files, &choice) {
                     Ok(Queue::Queued(id)) => break Ok(Sent::Queued(id)),
                     // Started again once it has ended; never, if its work went without ending.
                     Ok(Queue::Ending(mut ending)) => match ending.wait_for(|ended| *ended).await {
@@ -173,7 +175,7 @@ where
                 }
             }
             let notes = self.watch(thread);
-            let work = turn(thread, prompt, caller, &choice, unattended);
+            let work = turn(thread, prompt, &files, caller, &choice, unattended);
             let started = self
                 .occupy_for(thread, finish.clone(), Use::Steered, work)
                 .await;
@@ -207,6 +209,7 @@ type TurnWork<P, L, B> = Box<
 fn turn<P, L, B>(
     thread: ThreadId,
     prompt: &str,
+    files: &[Part],
     caller: &Caller,
     choice: &Choice,
     unattended: bool,
@@ -216,7 +219,8 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    let (prompt, caller, choice) = (prompt.to_owned(), caller.clone(), choice.clone());
+    let (prompt, files) = (prompt.to_owned(), files.to_vec());
+    let (caller, choice) = (caller.clone(), choice.clone());
     Box::new(move |inner, mut held, cancel| {
         Box::pin(async move {
             let _no_one = unattended.then(|| inner.approvals.unattended_while(thread));
@@ -228,7 +232,16 @@ where
             }
             let harness = &inner.harness;
             let ran = harness
-                .run_turn_as(&mut held, &prompt, &caller, &cancel, &mut publish)
+                .run_turn_with_files(
+                    &mut held,
+                    Said {
+                        text: &prompt,
+                        files: &files,
+                    },
+                    &caller,
+                    &cancel,
+                    &mut publish,
+                )
                 .await;
             // After the first exchange, a model titles the thread without holding it.
             if ran.is_ok()

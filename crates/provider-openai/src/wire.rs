@@ -61,7 +61,7 @@ enum WireMessage<'a> {
         content: &'a str,
     },
     User {
-        content: String,
+        content: Content,
     },
     Assistant {
         content: Option<String>,
@@ -72,6 +72,83 @@ enum WireMessage<'a> {
         tool_call_id: &'a str,
         content: String,
     },
+}
+
+/// A person's message: its text alone, or its parts in order when it holds an image.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum Content {
+    Text(String),
+    Parts(Vec<ContentPart>),
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum ContentPart {
+    Text { text: String },
+    ImageUrl { image_url: ImageUrl },
+}
+
+#[derive(Debug, Serialize)]
+struct ImageUrl {
+    /// A `data:` URL holding the image.
+    url: String,
+}
+
+impl Content {
+    /// `parts` as a person's message: images sent inline where `request` holds their content,
+    /// the rest as text.
+    fn of(request: &ModelRequest, parts: &[Part]) -> Self {
+        if !parts.iter().any(|part| request.inline(part).is_some()) {
+            return Self::Text(text_of(parts));
+        }
+        let mut out: Vec<ContentPart> = Vec::new();
+        for part in parts {
+            if let Some(file) = request.inline(part) {
+                out.push(ContentPart::ImageUrl {
+                    image_url: ImageUrl {
+                        url: format!("data:{};base64,{}", file.media_type, file.data),
+                    },
+                });
+                continue;
+            }
+            let text = text_of(std::slice::from_ref(part));
+            if text.is_empty() {
+                continue;
+            }
+            match out.last_mut() {
+                Some(ContentPart::Text { text: before }) => {
+                    before.push('\n');
+                    before.push_str(&text);
+                }
+                _ => out.push(ContentPart::Text { text }),
+            }
+        }
+        Self::Parts(out)
+    }
+
+    /// `next` after this, as one message: text joined by a blank line, else parts in order.
+    fn append(&mut self, next: Self) {
+        match (&mut *self, next) {
+            (Self::Text(text), Self::Text(next)) => {
+                text.push_str("\n\n");
+                text.push_str(&next);
+            }
+            (_, next) => {
+                let mut parts = std::mem::replace(self, Self::Parts(Vec::new())).into_parts();
+                parts.extend(next.into_parts());
+                *self = Self::Parts(parts);
+            }
+        }
+    }
+
+    fn into_parts(self) -> Vec<ContentPart> {
+        match self {
+            Self::Text(text) if text.is_empty() => Vec::new(),
+            Self::Text(text) => vec![ContentPart::Text { text }],
+            Self::Parts(parts) => parts,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -104,14 +181,14 @@ pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> Cha
             content: &request.system,
         });
     }
-    for message in request.messages.iter().map(wire_message) {
+    for message in &request.messages {
+        let message = wire_message(request, message);
         // Consecutive user messages become one. Strict chat templates (Gemma's among them)
         // refuse two in a row, and a conversation has them after a cancelled turn or a
         // compaction.
         match (messages.last_mut(), message) {
             (Some(WireMessage::User { content }), WireMessage::User { content: next }) => {
-                content.push_str("\n\n");
-                content.push_str(&next);
+                content.append(next);
             }
             (_, message) => messages.push(message),
         }
@@ -146,10 +223,10 @@ pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> Cha
     }
 }
 
-fn wire_message(message: &Message) -> WireMessage<'_> {
+fn wire_message<'a>(request: &ModelRequest, message: &'a Message) -> WireMessage<'a> {
     match message {
         Message::User { parts } => WireMessage::User {
-            content: text_of(parts),
+            content: Content::of(request, parts),
         },
         Message::Assistant { parts, tool_calls } => {
             let text = text_of(parts);
@@ -177,8 +254,8 @@ fn wire_message(message: &Message) -> WireMessage<'_> {
     }
 }
 
-/// The text parts of a message, joined. Reasoning is not sent back through this API, and
-/// files are named rather than inlined until attachments are supported.
+/// The text parts of a message, joined. Reasoning is not sent back through this API, and a
+/// file not sent inline is named.
 fn text_of(parts: &[Part]) -> String {
     let mut text = String::new();
     for part in parts {

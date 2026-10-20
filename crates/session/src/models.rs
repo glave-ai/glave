@@ -69,6 +69,20 @@ where
             .unwrap_or_else(PoisonError::into_inner) = models;
     }
 
+    /// Whether `model` reads images: unless what this server knows of it says it does not.
+    pub(crate) fn reads_images(&self, model: &str) -> bool {
+        let models = self
+            .inner
+            .models
+            .read()
+            .unwrap_or_else(PoisonError::into_inner);
+        models
+            .iter()
+            .find(|known| known.id == model)
+            .and_then(|known| known.images)
+            .unwrap_or(true)
+    }
+
     /// Refuses `model` with `-32021` unless this server runs it.
     pub(crate) fn known_model(&self, model: &str) -> Result<(), ApiError> {
         let models = self

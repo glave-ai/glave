@@ -124,6 +124,7 @@ where
             };
             let prompt = Prompt {
                 text: &text,
+                files: &[],
                 caller,
                 by_glave: opened.is_none(),
                 id: None,

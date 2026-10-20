@@ -33,10 +33,13 @@ pub(super) enum Kind {
     Session,
     /// A running computer to start a thread on.
     Computer,
+    /// Files kept for a message, as `turn/start` names them: a list of one, by its content's
+    /// hash.
+    Files,
 }
 
 impl Kind {
-    pub(super) const ALL: [Self; 14] = [
+    pub(super) const ALL: [Self; 15] = [
         Self::Thread,
         Self::Project,
         Self::Approval,
@@ -51,6 +54,7 @@ impl Kind {
         Self::Code,
         Self::Session,
         Self::Computer,
+        Self::Files,
     ];
 
     /// How a template writes it.
@@ -70,6 +74,7 @@ impl Kind {
             Self::Code => "@code",
             Self::Session => "@session",
             Self::Computer => "@computer",
+            Self::Files => "@files",
         }
     }
 
@@ -92,7 +97,7 @@ impl Kind {
             Self::Provider => Some("ProviderId"),
             Self::Credential => Some("CredentialId"),
             Self::Computer => Some("ComputerId"),
-            Self::Ask | Self::Flow | Self::Code | Self::Session => None,
+            Self::Ask | Self::Flow | Self::Code | Self::Session | Self::Files => None,
         }
     }
 
@@ -100,6 +105,9 @@ impl Kind {
     pub(super) fn nobodys(self) -> Value {
         // UUID v7s no clock or counter in a test reaches.
         let uuid = |last: u64| format!("0192f5c0-0000-7000-8000-{last:012x}");
+        if self == Self::Files {
+            return files(&"e".repeat(64));
+        }
         Value::String(match self {
             Self::Thread => uuid(0xdead_0001),
             Self::Project => uuid(0xdead_0002),
@@ -114,8 +122,14 @@ impl Kind {
             Self::Code => "0".repeat(64),
             Self::Session => uuid(0xdead_0008),
             Self::Computer => uuid(0xdead_0009),
+            Self::Files => String::new(),
         })
     }
+}
+
+/// `turn/start`'s files: one, its content hashing to `sha256`, named as every person's is.
+pub(super) fn files(sha256: &str) -> Value {
+    json!([{"sha256": sha256, "name": "notes.txt"}])
 }
 
 /// Kinds no one in the suite's world holds, and why: their templates are still called with
@@ -191,10 +205,18 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
             "turn/start",
             vec![
                 json!({"thread": "@thread", "prompt": "hello"}),
+                json!({"thread": "@thread", "prompt": "hello", "files": "@files"}),
                 json!({"thread": "@thread", "prompt": "hello", "background": true, "budget": 1000}),
             ],
         ),
         ("turn/cancel", on_thread()),
+        (
+            "file/upload",
+            vec![
+                json!({"name": "notes.txt", "media_type": "text/plain", "data": "aGk="}),
+                json!({"project": "@project", "name": "notes.txt", "media_type": "text/plain", "data": "aGk="}),
+            ],
+        ),
         ("thread/compact", on_thread()),
         (
             "approval/decide",

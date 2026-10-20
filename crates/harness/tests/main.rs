@@ -14,6 +14,7 @@ mod checks;
 mod compaction;
 mod computers;
 mod faults;
+mod files;
 mod goals;
 mod hooks;
 mod instructions;

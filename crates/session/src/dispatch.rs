@@ -160,6 +160,7 @@ where
             Request::TurnStart {
                 thread,
                 prompt,
+                files,
                 background: false,
                 budget,
                 model,
@@ -173,6 +174,7 @@ where
                 let key = meta.idempotency_key.as_ref();
                 let message = Message {
                     prompt: &prompt,
+                    files: &files,
                     choice: Choice { model, approval },
                     queue: true,
                     unattended,
@@ -189,6 +191,7 @@ where
             Request::TurnStart {
                 thread,
                 prompt,
+                files,
                 background: true,
                 budget,
                 model,
@@ -197,12 +200,28 @@ where
                 unattended: _,
                 meta: _,
             } => {
+                if !files.is_empty() {
+                    return Answered::Reply(Err(ApiError::new(
+                        code::INVALID_PARAMS,
+                        "files are added to a message someone follows, not to a task: send it \
+                         without background",
+                    )));
+                }
                 let work = Work::Turn(prompt, Choice { model, approval });
                 self.start_task(caller, thread, work, budget, None)
                     .await
                     .map(|task| Reply::Task { task })
             }
             Request::TurnCancel { thread } => self.cancel(thread).await,
+            Request::FileUpload {
+                project,
+                name,
+                media_type,
+                data,
+            } => {
+                self.upload(caller, project, &name, &media_type, &data)
+                    .await
+            }
             Request::ApprovalDecide {
                 thread,
                 approval,

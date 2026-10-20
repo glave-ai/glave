@@ -46,6 +46,7 @@ fn a_request_has_the_chat_completions_shape() {
         max_output_tokens: Some(1024),
         purpose: glave_ports::Purpose::Main,
         threads: Vec::new(),
+        files: Vec::new(),
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert_eq!(
@@ -94,6 +95,7 @@ fn consecutive_user_messages_are_sent_as_one() {
         max_output_tokens: None,
         purpose: glave_ports::Purpose::Main,
         threads: Vec::new(),
+        files: Vec::new(),
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert_eq!(
@@ -121,6 +123,7 @@ fn text_only_requests_keep_their_tools_and_say_none() {
         max_output_tokens: None,
         purpose: glave_ports::Purpose::Main,
         threads: Vec::new(),
+        files: Vec::new(),
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert_eq!(body["tool_choice"], "none");
@@ -155,6 +158,7 @@ fn automatic_caching_is_asked_for_only_where_it_works() {
         max_output_tokens: None,
         purpose: glave_ports::Purpose::Main,
         threads: Vec::new(),
+        files: Vec::new(),
     };
     let cached = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(cached["cache_control"], json!({"type": "ephemeral"}));
@@ -176,6 +180,7 @@ fn openrouter_is_told_not_to_cut_a_long_prompt() {
         max_output_tokens: None,
         purpose: glave_ports::Purpose::Main,
         threads: Vec::new(),
+        files: Vec::new(),
     };
     let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(
@@ -184,4 +189,64 @@ fn openrouter_is_told_not_to_cut_a_long_prompt() {
     );
     let plain = serde_json::to_value(chat_request(&request, "openai")).unwrap();
     assert!(plain.get("plugins").is_none());
+}
+
+#[test]
+fn an_image_is_sent_inline_beside_the_text_and_a_file_not_inline_by_name() {
+    let image = glave_event::BlobRef {
+        sha256: glave_ports::digest(b"png"),
+        bytes: 3,
+        media_type: "image/png".into(),
+    };
+    let pdf = glave_event::BlobRef {
+        sha256: glave_ports::digest(b"pdf"),
+        bytes: 3,
+        media_type: "application/pdf".into(),
+    };
+    let request = ModelRequest {
+        model: "gpt".into(),
+        system: String::new(),
+        messages: vec![
+            Message::User {
+                parts: vec![Part::Text {
+                    text: "earlier".into(),
+                }],
+            },
+            Message::User {
+                parts: vec![
+                    Part::Text {
+                        text: "what is this?".into(),
+                    },
+                    Part::File {
+                        blob: image.clone(),
+                        name: Some("shot.png".into()),
+                    },
+                    Part::File {
+                        blob: pdf,
+                        name: Some("terms.pdf".into()),
+                    },
+                ],
+            },
+        ],
+        tools: Vec::new(),
+        tool_choice: ToolChoice::Auto,
+        max_output_tokens: None,
+        purpose: glave_ports::Purpose::Main,
+        threads: Vec::new(),
+        files: vec![glave_ports::InlineFile {
+            sha256: image.sha256,
+            media_type: "image/png".into(),
+            data: "cG5n".into(),
+        }],
+    };
+    let body = serde_json::to_value(chat_request(&request, "openai")).unwrap();
+    assert_eq!(
+        body["messages"],
+        json!([{"role": "user", "content": [
+            {"type": "text", "text": "earlier"},
+            {"type": "text", "text": "what is this?"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,cG5n"}},
+            {"type": "text", "text": "terms.pdf"}
+        ]}])
+    );
 }

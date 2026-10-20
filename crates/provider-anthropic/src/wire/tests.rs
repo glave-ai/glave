@@ -45,6 +45,7 @@ fn request(messages: Vec<Message>) -> ModelRequest {
         max_output_tokens: None,
         purpose: glave_ports::Purpose::Main,
         threads: Vec::new(),
+        files: Vec::new(),
     }
 }
 
@@ -260,4 +261,46 @@ fn vertex_takes_its_version_in_the_body_and_the_model_in_the_url() {
     }
     assert_eq!(messages, body(&request), "otherwise the same request");
     assert!(body(&request).get("anthropic_version").is_none());
+}
+
+#[test]
+fn an_image_is_sent_inline_beside_the_text_and_a_file_not_inline_by_name() {
+    let image = glave_event::BlobRef {
+        sha256: glave_ports::digest(b"png"),
+        bytes: 3,
+        media_type: "image/png".into(),
+    };
+    let pdf = glave_event::BlobRef {
+        sha256: glave_ports::digest(b"pdf"),
+        bytes: 3,
+        media_type: "application/pdf".into(),
+    };
+    let mut asked = request(vec![Message::User {
+        parts: vec![
+            Part::Text {
+                text: "what is this?".into(),
+            },
+            Part::File {
+                blob: image.clone(),
+                name: Some("shot.png".into()),
+            },
+            Part::File {
+                blob: pdf,
+                name: Some("terms.pdf".into()),
+            },
+        ],
+    }]);
+    asked.files = vec![glave_ports::InlineFile {
+        sha256: image.sha256,
+        media_type: "image/png".into(),
+        data: "cG5n".into(),
+    }];
+    assert_eq!(
+        body(&asked)["messages"],
+        json!([{"role": "user", "content": [
+            {"type": "text", "text": "what is this?"},
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "cG5n"}},
+            {"type": "text", "text": "terms.pdf"}
+        ]}])
+    );
 }

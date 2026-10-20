@@ -26,6 +26,7 @@ fn ask(model: &str, text: &str) -> ModelRequest {
         max_output_tokens: Some(20),
         purpose: glave_ports::Purpose::Main,
         threads: Vec::new(),
+        files: Vec::new(),
     }
 }
 

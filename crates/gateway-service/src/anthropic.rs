@@ -65,6 +65,7 @@ pub(crate) fn parse(body: &[u8]) -> Result<Parsed, Refusal> {
             max_output_tokens,
             purpose: Purpose::Main,
             threads: Vec::new(),
+            files: Vec::new(),
         },
         model,
         stream,

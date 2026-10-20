@@ -47,8 +47,8 @@ pub use failure::Failure;
 pub use in_memory::{InMemoryBlobs, InMemoryLog, InMemoryObjects, InMemoryProjects, InMemoryTools};
 pub use log::{EventLog, LogError, check_append};
 pub use model::{
-    Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError, Purpose, RequestedCall,
-    Served, ToolCall, ToolChoice, ToolSpec,
+    Completion, Delta, InlineFile, Message, ModelProvider, ModelRequest, ProviderError, Purpose,
+    RequestedCall, Served, ToolCall, ToolChoice, ToolSpec,
 };
 pub use objects::{Listed, ObjectWriter, Objects, object_name_ok};
 pub use projects::{

@@ -193,6 +193,7 @@ impl Client for OverJsonRpc {
             model: None,
             approval: None,
             unattended: false,
+            files: Vec::new(),
         };
         let id = self.send(&request).await;
         loop {
@@ -256,6 +257,7 @@ impl Client for OverHttp {
             model: None,
             approval: None,
             unattended: false,
+            files: Vec::new(),
         };
         let (message, id) = self.web.message(&request);
         let response = self.web.open(&message, Some("turn/start")).await;
@@ -471,6 +473,7 @@ fn a_message_sent_while_a_turn_runs_reaches_the_model_in_the_same_stream() {
                                 model: None,
                                 approval: None,
                                 unattended: false,
+                                files: Vec::new(),
                             },
                             Request::ApprovalDecide {
                                 thread,
@@ -622,6 +625,7 @@ fn a_background_turn_in_another_project_answers_at_once_and_its_task_is_listed_w
                     model: None,
                     approval: None,
                     unattended: false,
+                    files: Vec::new(),
                 })
                 .await
                 .unwrap();

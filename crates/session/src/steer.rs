@@ -4,20 +4,22 @@
 //! thread idle, so a message lands either in the running work or in a turn of its own after
 //! it, never in between.
 
-use glave_event::{EventId, ThreadId};
+use glave_event::{EventId, Part, ThreadId};
 use glave_harness::{NotQueued, Queued};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 use tokio::sync::watch;
 
 use crate::held::{Slot, busy};
 use crate::modes::Choice;
-use crate::protocol::{ApiError, code};
+use crate::protocol::{ApiError, AttachedFile, code};
 use crate::server::Server;
 use crate::turn::TurnStream;
 
 /// A message the person sends a thread with `turn/start`.
 pub(crate) struct Message<'a> {
     pub(crate) prompt: &'a str,
+    /// The files the person added to it (`turn/start`'s `files`).
+    pub(crate) files: &'a [AttachedFile],
     /// The model and approval mode it chooses for the turn it starts.
     pub(crate) choice: Choice,
     /// Whether it may be queued to a turn already running: a task's own turn may not.
@@ -59,6 +61,7 @@ where
         caller: &Caller,
         thread: ThreadId,
         prompt: &str,
+        files: &[Part],
         choice: &Choice,
     ) -> Result<Queue, ApiError> {
         let threads = self.lock();
@@ -90,6 +93,7 @@ where
         let queued = Queued {
             id,
             text: prompt.to_owned(),
+            files: files.to_vec(),
             caller: caller.clone(),
         };
         match inbox.push(queued) {

@@ -244,6 +244,7 @@ where
             tool_choice: ToolChoice::None,
             purpose: Purpose::Summary,
             threads: thread.lineage(),
+            files: Vec::new(),
         };
         let completion = self.summarize(request, cancel).await?;
         let summary: Vec<&str> = completion
