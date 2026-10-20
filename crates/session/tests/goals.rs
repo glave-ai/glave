@@ -107,7 +107,7 @@ fn goal_stop_stops_a_running_goal() {
         let thread = start(&server, false).await;
         let goal_of = glave_harness::Goal::new("forever");
         let mut stream = server
-            .start_goal_as(&Caller::default(), thread, Some(goal_of))
+            .start_goal_as(&Caller::default(), thread, Some(goal_of), false)
             .await
             .unwrap();
         // Its first event is `goal.set`.
@@ -146,6 +146,7 @@ fn without_a_goal_stop_and_continue_are_refused() {
             thread,
             objective: None,
             budget: None,
+            unattended: false,
         };
         assert_eq!(
             server.request(resume).await.unwrap_err().code,

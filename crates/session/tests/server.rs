@@ -144,6 +144,52 @@ fn with_no_one_to_answer_the_call_is_not_run() {
 }
 
 #[test]
+fn a_turn_answered_by_no_one_declines_what_asks_where_clients_answer_and_the_next_asks_again() {
+    let dir = folder("unattended");
+    block_on!(async {
+        let answers = vec![
+            answer(None, Some(("bash", json!({"command": "touch ran.txt"})))),
+            answer(Some("I could not."), None),
+            answer(Some("Hi."), None),
+        ];
+        let (server, seen) = Setup::asking(answers, Answering::Clients).build(&dir).await;
+        let thread = start(&server, false).await;
+        let unattended = Request::TurnStart {
+            thread,
+            prompt: "touch it".into(),
+            background: false,
+            budget: None,
+            model: None,
+            approval: None,
+            unattended: true,
+            meta: Meta::default(),
+        };
+        let reply = server.request(unattended).await.unwrap();
+        assert!(matches!(reply, Reply::Turn { turn } if turn.outcome == Outcome::Completed));
+        assert!(!dir.join("ran.txt").exists());
+        let decided: Vec<Verdict> = events(&server, thread)
+            .await
+            .into_iter()
+            .filter_map(|raw| match decode(raw).unwrap().body {
+                Body::ApprovalDecided(decided) => Some(decided.decision),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(decided, [Verdict::NoOneThere]);
+        turn(&server, thread, "hello").await.unwrap();
+        let offered: Vec<bool> = json(&seen)
+            .iter()
+            .map(|request| request.contains("\"name\":\"question\""))
+            .collect();
+        assert_eq!(
+            offered,
+            [false, false, true],
+            "no question while no one answers, then offered again"
+        );
+    });
+}
+
+#[test]
 fn a_fresh_server_continues_a_thread_from_the_log_alone() {
     let dir = folder("stateless");
     block_on!(async {
@@ -191,6 +237,7 @@ fn messages_have_the_shape_the_spec_gives() {
         meta: Meta::default(),
         model: None,
         approval: None,
+        unattended: false,
     };
     let wire = serde_json::to_value(&request).unwrap();
     assert_eq!(wire["method"], "turn/start");

@@ -164,6 +164,7 @@ where
                 budget,
                 model,
                 approval,
+                unattended,
                 meta,
             } => {
                 if budget.is_some() {
@@ -174,6 +175,7 @@ where
                     prompt: &prompt,
                     choice: Choice { model, approval },
                     queue: true,
+                    unattended,
                 };
                 let sent = self.start_turn_with(traced, thread, message, key).await;
                 return match sent {
@@ -191,6 +193,8 @@ where
                 budget,
                 model,
                 approval,
+                // A task is answered by no one anyway.
+                unattended: _,
                 meta: _,
             } => {
                 let work = Work::Turn(prompt, Choice { model, approval });
@@ -227,15 +231,18 @@ where
                 objective,
                 budget,
                 background: false,
+                unattended,
             } => {
                 let goal = goal(objective, budget);
-                return streamed(self.start_goal_as(traced, thread, goal).await);
+                let started = self.start_goal_as(traced, thread, goal, unattended);
+                return streamed(started.await);
             }
             Request::GoalStart {
                 thread,
                 objective,
                 budget,
                 background: true,
+                unattended: _,
             } => {
                 let goal = goal(objective, budget);
                 let budget = goal.as_ref().map(|goal| goal.token_budget);

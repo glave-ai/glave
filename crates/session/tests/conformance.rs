@@ -192,6 +192,7 @@ impl Client for OverJsonRpc {
             meta: Meta::default(),
             model: None,
             approval: None,
+            unattended: false,
         };
         let id = self.send(&request).await;
         loop {
@@ -254,6 +255,7 @@ impl Client for OverHttp {
             meta: Meta::default(),
             model: None,
             approval: None,
+            unattended: false,
         };
         let (message, id) = self.web.message(&request);
         let response = self.web.open(&message, Some("turn/start")).await;
@@ -468,6 +470,7 @@ fn a_message_sent_while_a_turn_runs_reaches_the_model_in_the_same_stream() {
                                 meta: Meta::default(),
                                 model: None,
                                 approval: None,
+                                unattended: false,
                             },
                             Request::ApprovalDecide {
                                 thread,
@@ -618,6 +621,7 @@ fn a_background_turn_in_another_project_answers_at_once_and_its_task_is_listed_w
                     meta: Meta::default(),
                     model: None,
                     approval: None,
+                    unattended: false,
                 })
                 .await
                 .unwrap();

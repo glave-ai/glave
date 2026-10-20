@@ -112,6 +112,7 @@ impl Client<'_> {
                 model: self.model.clone(),
                 approval: self.approval,
                 meta: Meta::default(),
+                unattended: false,
             })
             .await;
         self.follow(started, printer).await
@@ -128,6 +129,7 @@ impl Client<'_> {
                 objective: Some(goal.objective),
                 budget: Some(goal.token_budget),
                 background: false,
+                unattended: false,
             })
             .await;
         let code = self.follow(started, printer).await;

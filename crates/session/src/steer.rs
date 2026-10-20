@@ -22,6 +22,8 @@ pub(crate) struct Message<'a> {
     pub(crate) choice: Choice,
     /// Whether it may be queued to a turn already running: a task's own turn may not.
     pub(crate) queue: bool,
+    /// Whether no one answers the turn it starts.
+    pub(crate) unattended: bool,
 }
 
 /// What sending a message did.

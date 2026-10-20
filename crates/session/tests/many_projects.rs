@@ -76,6 +76,7 @@ fn on_a_thread(thread: ThreadId) -> Vec<Request> {
             meta: Meta::default(),
             model: None,
             approval: None,
+            unattended: false,
         },
         Request::ApprovalDecide {
             thread,
@@ -105,6 +106,7 @@ async fn turn_over(web: &mut Web, thread: ThreadId, prompt: &str) -> Value {
         meta: Meta::default(),
         model: None,
         approval: None,
+        unattended: false,
     });
     web.post(&message)
         .await

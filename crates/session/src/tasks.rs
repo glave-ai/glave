@@ -154,6 +154,8 @@ where
                     prompt: &prompt,
                     choice,
                     queue: false,
+                    // Its thread is unattended for the whole task already.
+                    unattended: false,
                 };
                 self.start_turn_with(caller, thread, message, None).await
             }
@@ -161,7 +163,7 @@ where
                 Sent::Started(stream) => Ok(stream),
                 Sent::Queued(_) => Err(busy(thread)),
             }),
-            Work::Goal(goal) => self.start_goal_as(caller, thread, goal).await,
+            Work::Goal(goal) => self.start_goal_as(caller, thread, goal, false).await,
         };
         let stream = match stream {
             Ok(stream) => stream,

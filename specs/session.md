@@ -119,7 +119,7 @@ A tool call that needs the person records `approval.requested` (`approval`, `cal
 - A decision for an approval that is not pending is refused with `-32004`.
 - `allow_for_thread` is recorded, so it survives resuming the thread.
 - Cancelling a paused turn denies its pending approval and ends the turn as cancelled.
-- With no client that can answer, as in a script, the server decides on its behalf as `approvals.md` describes ("no one at the keyboard").
+- With no client that can answer, as in a script, the server decides on its behalf as `approvals.md` describes ("no one at the keyboard"). A client with no one at it says so per turn: `turn/start` and `goal/start` with `unattended` run that turn (a goal's turns, and their subagents) answered by no one, as a task is, while the client still follows it; the thread's next turn is asked as usual.
 
 These are the approval events `events.md` deferred; they arrive with this API at version 1.
 

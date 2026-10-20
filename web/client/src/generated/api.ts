@@ -729,6 +729,8 @@ export type GoalStartParams = {
   /** What to achieve, with how to verify it in the person's words. */
   readonly objective?: string | null;
   readonly thread: ThreadId;
+  /** No one answers its turns, as `turn/start`'s `unattended` says. */
+  readonly unattended?: boolean;
 };
 
 export type GoalStartResult = {
@@ -1133,6 +1135,12 @@ export type TurnStartParams = {
   readonly model?: string | null;
   readonly prompt: string;
   readonly thread: ThreadId;
+  /**
+   * No one answers the turn it starts: what would ask is declined at once and
+   * `question` is not offered, as in a task, for its subagents too, while it still
+   * streams to whoever follows it. For a client with no one at it, such as a script.
+   */
+  readonly unattended?: boolean;
 };
 
 export type TurnStartResult = {

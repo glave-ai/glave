@@ -67,6 +67,7 @@ async fn turn_on(
             meta: Meta::default(),
             model: model.map(str::to_owned),
             approval: None,
+            unattended: false,
         })
         .await
 }
@@ -257,6 +258,7 @@ fn a_background_turn_runs_on_the_model_it_chose_and_the_task_says_so() {
                 meta: Meta::default(),
                 model: Some("other".into()),
                 approval: None,
+                unattended: false,
             })
             .await
             .unwrap();

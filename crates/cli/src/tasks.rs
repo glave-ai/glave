@@ -171,6 +171,7 @@ pub(crate) async fn background(args: &Args) -> anyhow::Result<ExitCode> {
             objective: Some(objective.clone()),
             budget: args.goal_budget,
             background: true,
+            unattended: false,
         },
         None => Request::TurnStart {
             thread,
@@ -180,6 +181,7 @@ pub(crate) async fn background(args: &Args) -> anyhow::Result<ExitCode> {
             meta: glave_session::protocol::Meta::default(),
             model: None,
             approval: None,
+            unattended: false,
         },
     };
     let Reply::Task { task } = server.request(request).await? else {

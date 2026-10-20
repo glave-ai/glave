@@ -212,6 +212,7 @@ fn a_task_never_works_in_a_folder_itself() {
                 meta: glave_session::protocol::Meta::default(),
                 model: None,
                 approval: None,
+                unattended: false,
             })
             .await
             .unwrap_err();
@@ -263,6 +264,7 @@ fn approvals_in_a_task_are_answered_no_one_there_and_the_model_is_sent_the_same(
                 meta: glave_session::protocol::Meta::default(),
                 model: None,
                 approval: None,
+                unattended: false,
             })
             .await
             .unwrap();
@@ -373,6 +375,7 @@ fn a_turn_stops_at_its_budget() {
                 meta: glave_session::protocol::Meta::default(),
                 model: None,
                 approval: None,
+                unattended: false,
             })
             .await;
         assert_eq!(followed.unwrap_err().code, code::INVALID_PARAMS);
@@ -398,6 +401,7 @@ fn policy_limits_how_many_tasks_run_at_once() {
                 meta: glave_session::protocol::Meta::default(),
                 model: None,
                 approval: None,
+                unattended: false,
             })
             .await
             .unwrap_err();
@@ -426,6 +430,7 @@ fn a_background_goal_runs_to_its_end() {
                 objective: Some("say done".into()),
                 budget: Some(50_000),
                 background: true,
+                unattended: false,
             })
             .await
             .unwrap();

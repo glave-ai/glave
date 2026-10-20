@@ -143,6 +143,7 @@ async fn first_run(client: &mut impl Client) {
             model: None,
             approval: None,
             meta: glave_session::protocol::Meta::default(),
+            unattended: false,
         })
         .await
         .unwrap_err();
