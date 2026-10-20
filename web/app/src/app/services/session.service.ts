@@ -6,6 +6,7 @@ import {
   type Method,
   type Methods,
   type Notification,
+  type SignInWay,
   type StreamingMethod,
 } from '@glave/client';
 
@@ -67,8 +68,16 @@ export class SessionService {
   private readonly document = inject(DOCUMENT);
   private readonly storage = storageOf(this.document, 'sessionStorage');
   private readonly session = signal<BrowserSession | null>(inject(INITIAL_SESSION));
+  /** How the server signs browsers in, and its id, as it said when the app started. */
+  private readonly ways = signal<readonly SignInWay[]>([]);
+  private server: string | undefined;
+  private readonly setupLink = signal<string | null>(null);
 
   readonly signedIn = computed(() => this.session() !== null);
+  /** Whether a browser signs in to the server with a passkey: it is reached from elsewhere. */
+  readonly passkeys = computed(() => this.ways().includes('passkey'));
+  /** The code of the setup link the tab was opened with, until the tab signs in. */
+  readonly setupCode = this.setupLink.asReadonly();
   /** Whether the session is with a glave on this computer: a browser session. */
   readonly local = computed(() => {
     const session = this.session();
@@ -87,17 +96,20 @@ export class SessionService {
     if (view === null) {
       return;
     }
-    const code = takeCode({ location: view.location, history: view.history });
-    let server: string | undefined;
+    const place = { location: view.location, history: view.history };
+    const code = takeCode(place, 'code');
+    this.setupLink.set(takeCode(place, 'setup'));
     try {
-      server = (await this.client.call('server/discover', {})).id ?? undefined;
+      const discovered = await this.client.call('server/discover', {});
+      this.server = discovered.id ?? undefined;
+      this.ways.set(discovered.signin ?? []);
     } catch {
       return;
     }
-    if (code !== null && server !== undefined && (await this.redeem(code, server))) {
+    if (code !== null && (await this.redeem(code))) {
       return;
     }
-    this.session.set(sessionFor(readSession(this.storage), server));
+    this.session.set(sessionFor(readSession(this.storage), this.server));
   }
 
   /** Calls `method`; a refused sign-in signs the app out before the error is thrown on. */
@@ -145,17 +157,25 @@ export class SessionService {
     await this.call('signin/end_others', {});
   }
 
-  /** Trades `code` for a session with `server`; whether it did. */
-  private async redeem(code: string, server: string): Promise<boolean> {
+  /**
+   * Keeps for this tab the session a server began, as a link's code or a passkey began it:
+   * whether the server that served the app began it, the only one it is presented to.
+   */
+  begin(began: { readonly session: string; readonly server: string }): boolean {
+    if (this.server === undefined || began.server !== this.server) {
+      return false;
+    }
+    const session = { token: began.session, server: began.server };
+    keepSession(this.storage, session);
+    this.session.set(session);
+    this.setupLink.set(null);
+    return true;
+  }
+
+  /** Trades `code` for a session with the server that served the app; whether it did. */
+  private async redeem(code: string): Promise<boolean> {
     try {
-      const made = await this.client.call('signin/redeem', { code });
-      if (made.server !== server) {
-        return false;
-      }
-      const session = { token: made.session, server };
-      keepSession(this.storage, session);
-      this.session.set(session);
-      return true;
+      return this.begin(await this.client.call('signin/redeem', { code }));
     } catch {
       // Used or expired: the session the tab kept, if any, is tried instead.
       return false;

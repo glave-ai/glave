@@ -1,0 +1,34 @@
+<glz-card data-testid="passkeys">
+  <h2 glzCardHeader>{{ copy.heading }}</h2>
+  <p class="details">{{ copy.lead }}</p>
+  @for (passkey of shown(); track passkey.id) {
+    <div class="passkey" data-testid="passkeys-passkey">
+      <div class="glz-stack glz-gap-1">
+        <p class="title">{{ passkey.name }}</p>
+        <p class="details">{{ passkey.detail }}</p>
+      </div>
+      <button glzButton data-testid="passkeys-remove" (click)="ask(passkey.id)">
+        {{ copy.remove }}
+      </button>
+    </div>
+  } @empty {
+    <p class="details" data-testid="passkeys-none">{{ copy.none }}</p>
+  }
+  @if (problem(); as problem) {
+    <p class="error" role="alert" data-testid="passkeys-problem">{{ problem }}</p>
+  }
+  <div glzCardFooter class="glz-row glz-gap-2">
+    <button glzButton data-testid="passkeys-add" [disabled]="busy()" (click)="add()">
+      {{ addLabel() }}
+    </button>
+  </div>
+  <glz-confirm-dialog
+    testId="passkeys-confirm"
+    danger
+    [heading]="copy.removeHeading"
+    [message]="copy.removeText"
+    [confirmLabel]="copy.remove"
+    [(open)]="confirming"
+    (decided)="decided($event)"
+  />
+</glz-card>

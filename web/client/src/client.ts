@@ -125,12 +125,13 @@ export class GlaveClient {
 }
 
 /**
- * The one-time code in a sign-in link glave opened or printed (`…/#code=<code>`), if the
- * fragment has one: `signin/redeem` trades it for a browser session.
+ * The one-time code in a link glave opened or printed, if the fragment has one: a sign-in
+ * link's (`…/#code=<code>`), which `signin/redeem` trades for a browser session, or a setup
+ * link's (`…/#setup=<code>`), with which `passkey/create_options` makes the first passkey.
  */
-export function codeFromFragment(fragment: string): string | undefined {
+export function codeFromFragment(fragment: string, link: 'code' | 'setup'): string | undefined {
   const fields = new URLSearchParams(fragment.startsWith('#') ? fragment.slice(1) : fragment);
-  const code = fields.get('code');
+  const code = fields.get(link);
   return code === null || code === '' ? undefined : code;
 }
 

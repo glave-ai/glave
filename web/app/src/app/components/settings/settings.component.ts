@@ -36,6 +36,7 @@ import { ServerService } from '../../services/server.service';
 import { SessionService } from '../../services/session.service';
 import { ThemeService, isChoice } from '../../services/theme.service';
 import { AccountsComponent } from '../accounts/accounts.component';
+import { PasskeysComponent } from '../passkeys/passkeys.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 
 const COPY = {
@@ -68,13 +69,15 @@ const COPY = {
 
 /**
  * Settings: the theme, the model accounts (add, change, remove), the connected accounts git
- * signs in with, memory (its own page), the server, signing this tab or every other browser
- * out. A link to `#accounts` scrolls to the connected accounts.
+ * signs in with, memory (its own page), the passkeys that sign the person in where glave is
+ * reached from elsewhere, the server, signing this tab or every other browser out. A link to
+ * `#accounts` scrolls to the connected accounts.
  */
 @Component({
   selector: 'app-settings',
   imports: [
     AccountsComponent,
+    PasskeysComponent,
     PageHeaderComponent,
     GlzButtonComponent,
     GlzCardComponent,
@@ -127,6 +130,8 @@ export class SettingsComponent {
     this.refreshing() ? COPY.refreshing : COPY.refresh,
   );
   protected readonly hasAccounts = computed(() => this.accounts().length > 0);
+  /** Whether passkeys sign the person in: glave is reached from elsewhere. */
+  protected readonly passkeys = this.session.passkeys;
   /** What signing other browsers out came to, once asked. */
   protected readonly others = signal<string | null>(null);
   private removing: string | null = null;

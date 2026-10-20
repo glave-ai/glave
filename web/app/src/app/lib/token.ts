@@ -30,11 +30,12 @@ interface LinkPlace {
 }
 
 /**
- * The one-time code in the link glave opened (`#code=…`), taken out of the address bar at
- * once, so it is in no history entry; `null` when the link has none.
+ * The one-time code in the link glave opened or printed: a sign-in link's (`#code=…`) or a
+ * setup link's (`#setup=…`), taken out of the address bar at once, so it is in no history
+ * entry; `null` when the link has none.
  */
-export function takeCode(place: LinkPlace): string | null {
-  const code = codeFromFragment(place.location.hash);
+export function takeCode(place: LinkPlace, link: 'code' | 'setup'): string | null {
+  const code = codeFromFragment(place.location.hash, link);
   if (code === undefined) {
     return null;
   }
