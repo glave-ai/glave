@@ -33,6 +33,19 @@ export class ProvidersService {
     return provider;
   }
 
+  /**
+   * Has every account's service list its models again now, as they change there; throws when
+   * a service could not say, after keeping what the others did.
+   */
+  async refresh(): Promise<void> {
+    try {
+      const { providers } = await this.session.call('provider/refresh', {});
+      this.list.set(providers);
+    } finally {
+      await this.models.reload();
+    }
+  }
+
   /** Removes the account `id`, and its key with it. */
   async remove(id: string): Promise<void> {
     await this.session.call('provider/remove', { provider: id });

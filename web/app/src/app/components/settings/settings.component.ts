@@ -22,7 +22,13 @@ import {
 } from '@glave/glaze';
 
 import { ACCOUNTS_SECTION } from '../../lib/credentials';
-import { REMOVE_FAILED, accountName, changeQuery, keyHint } from '../../lib/providers';
+import {
+  REMOVE_FAILED,
+  accountName,
+  changeQuery,
+  keyHint,
+  refreshProblem,
+} from '../../lib/providers';
 import { ModelsService } from '../../services/models.service';
 import { ProvidersService } from '../../services/providers.service';
 
@@ -42,6 +48,9 @@ const COPY = {
   models: 'Models',
   noAccounts: 'No model accounts yet.',
   add: 'Add a model account',
+  refresh: 'Refresh models',
+  refreshing: 'Refreshing…',
+  refreshed: 'The models are up to date.',
   change: 'Change key',
   remove: 'Remove',
   removeHeading: 'Remove this model account?',
@@ -110,6 +119,14 @@ export class SettingsComponent {
   );
   protected readonly confirming = signal(false);
   protected readonly problem = signal<string | null>(null);
+  /** Whether the models are being listed again. */
+  protected readonly refreshing = signal(false);
+  /** What refreshing the models came to, once asked. */
+  protected readonly refreshed = signal<string | null>(null);
+  protected readonly refreshLabel = computed(() =>
+    this.refreshing() ? COPY.refreshing : COPY.refresh,
+  );
+  protected readonly hasAccounts = computed(() => this.accounts().length > 0);
   /** What signing other browsers out came to, once asked. */
   protected readonly others = signal<string | null>(null);
   private removing: string | null = null;
@@ -160,6 +177,20 @@ export class SettingsComponent {
     // With no model left, the person adds one before anything else.
     if (await this.models.none()) {
       await this.router.navigateByUrl(this.connectLink);
+    }
+  }
+
+  protected async refresh(): Promise<void> {
+    this.refreshing.set(true);
+    this.refreshed.set(null);
+    this.problem.set(null);
+    try {
+      await this.providers.refresh();
+      this.refreshed.set(COPY.refreshed);
+    } catch (error: unknown) {
+      this.problem.set(refreshProblem(error));
+    } finally {
+      this.refreshing.set(false);
     }
   }
 
