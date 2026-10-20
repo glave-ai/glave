@@ -13,6 +13,7 @@ import type { GlzDecision } from '@glave/glaze';
 import { lastCommandChange } from '../lib/commands';
 import { NO_DRAFT, applyUpdate, mergeEvents, type Draft } from '../lib/conversation';
 import { changedFiles } from '../lib/files';
+import { chosenEffort } from '../lib/effort';
 import { chosenModel } from '../lib/models';
 import { placeOf } from '../lib/place';
 import { folderGone } from '../lib/projects';
@@ -74,6 +75,8 @@ export class ThreadService {
   readonly hasReply = computed(() => this.draft().text !== '' || this.draft().reasoning !== '');
   /** The model the thread chose for its turns, or `null` for the server's default. */
   readonly chosen = computed(() => chosenModel(this.events()));
+  /** How much the thread chose its model reasons, or `null` for the model's own way. */
+  readonly chosenEffort = computed(() => chosenEffort(this.events()));
   /** Where the thread's tools act, in plain words, once it has a workspace. */
   readonly place = computed(() =>
     placeOf(this.events(), { local: this.session.local(), mac: this.mac }),
@@ -131,14 +134,16 @@ export class ThreadService {
 
   /**
    * Sends `prompt` and follows the turn as it runs. With `model`, the turn and the thread's
-   * turns after it go to that model; with `approval`, they run in that approval mode. While a
-   * turn runs, the message goes to it instead, for the model to read at its next step, and
-   * waits in the thread until it has; the model and mode go with the next turn.
+   * turns after it go to that model; with `approval`, they run in that approval mode; with
+   * `effort`, their model reasons that much. While a turn runs, the message goes to it
+   * instead, for the model to read at its next step, and waits in the thread until it has;
+   * the model, mode and level go with the next turn.
    */
   async send(
     prompt: string,
     model: string | null = null,
     approval: ApprovalMode | null = null,
+    effort: string | null = null,
   ): Promise<void> {
     const thread = this.id();
     if (thread === null) {
@@ -156,6 +161,7 @@ export class ThreadService {
       prompt,
       ...(model === null ? {} : { model }),
       ...(approval === null ? {} : { approval }),
+      ...(effort === null ? {} : { effort }),
     };
     await this.follow(thread, params, null);
   }

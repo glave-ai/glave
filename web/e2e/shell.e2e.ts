@@ -101,9 +101,19 @@ test('the model picked is sent with the next turn, and no reply names a model', 
   // Its quiet line names the model alone; the list names its company too.
   await expect(picker).toContainText('Claude Haiku 5.5');
   await expect(picker).not.toContainText('Anthropic');
+  // The default reasons its own way: there is no level to choose.
+  await expect(byTestId(page, 'effort-picker-trigger')).toHaveCount(0);
   await picker.click();
   await byTestId(page, 'model-picker-option').filter({ hasText: 'Hope' }).click();
   await expect(picker).toContainText('Hope');
+  // Hope offers its levels, its default shown; the level picked goes with the turn.
+  const effort = byTestId(page, 'effort-picker-trigger');
+  await expect(effort).toContainText('Low');
+  await effort.click();
+  await expect(byTestId(page, 'effort-picker-option')).toHaveCount(3);
+  await expectAccessible(page);
+  await byTestId(page, 'effort-picker-option').filter({ hasText: 'High' }).click();
+  await expect(effort).toContainText('High');
   await expect(byTestId(page, 'approval-mode')).toContainText('Auto');
   const reply = byTestId(page, 'thread-composer-input');
   await reply.fill('Thanks');
@@ -114,7 +124,12 @@ test('the model picked is sent with the next turn, and no reply names a model', 
   expect(turns).toEqual([
     {
       method: 'turn/start',
-      params: expect.objectContaining({ thread: THREAD, prompt: 'Thanks', model: 'hope-12b' }),
+      params: expect.objectContaining({
+        thread: THREAD,
+        prompt: 'Thanks',
+        model: 'hope-12b',
+        effort: 'high',
+      }),
     },
   ]);
 });

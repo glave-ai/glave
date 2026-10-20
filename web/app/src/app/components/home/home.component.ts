@@ -19,10 +19,13 @@ import {
 } from '@glave/glaze';
 import { Folder, Lock, MessageCircle } from 'lucide';
 
+import { effortToSend } from '../../lib/effort';
+import { ModelsService } from '../../services/models.service';
 import { NavService } from '../../services/nav.service';
 import { SessionService } from '../../services/session.service';
 import { ProjectsService } from '../../services/projects.service';
 import { ApprovalModeComponent } from '../approval-mode/approval-mode.component';
+import { EffortPickerComponent } from '../effort-picker/effort-picker.component';
 import { ModelPickerComponent } from '../model-picker/model-picker.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 
@@ -52,6 +55,7 @@ export interface FirstPrompt {
   selector: 'app-home',
   imports: [
     ApprovalModeComponent,
+    EffortPickerComponent,
     GlzComposerComponent,
     GlzIconComponent,
     GlzMenuSelectComponent,
@@ -78,6 +82,9 @@ export class HomeComponent {
   protected readonly picked = signal<string | null>(null);
   /** The approval mode the person picked, or `null` for the server's. */
   protected readonly pickedMode = signal<ApprovalMode | null>(null);
+  /** How much the person picked the model reasons, or `null` for the model's own way. */
+  protected readonly pickedEffort = signal<string | null>(null);
+  private readonly models = inject(ModelsService);
   private readonly session = inject(SessionService);
   private readonly projects = inject(ProjectsService);
   private readonly router = inject(Router);
@@ -123,10 +130,14 @@ export class HomeComponent {
       const project = this.where();
       const model = this.picked();
       const approval = this.pickedMode();
+      const next = model ?? this.models.default();
+      const info = this.models.models().find((each) => each.id === next);
+      const effort = effortToSend(this.pickedEffort(), null, info);
       const params: ThreadStartParams = {
         ...(project === null ? {} : { project }),
         ...(model === null ? {} : { model }),
         ...(approval === null ? {} : { approval }),
+        ...(effort === null ? {} : { effort }),
       };
       const { thread } = await this.session.call('thread/start', params);
       const state: FirstPrompt = { prompt };

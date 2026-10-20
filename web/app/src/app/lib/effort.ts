@@ -1,0 +1,61 @@
+import type { ModelInfo, RawEvent } from '@glave/client';
+import type { GlzMenuOption } from '@glave/glaze';
+
+/** What marks the level a model uses when none is chosen. */
+const DEFAULT_HINT = 'Default';
+
+/** The levels providers name, as people read them; any other is its own word, capitalized. */
+const LEVELS: Readonly<Record<string, string>> = {
+  max: 'Max',
+  xhigh: 'Extra high',
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low',
+  minimal: 'Minimal',
+  none: 'Off',
+};
+
+/** A level as people read it: `xhigh` is `Extra high`, `none` is `Off`. */
+export function levelName(level: string): string {
+  return LEVELS[level] ?? `${level.charAt(0).toUpperCase()}${level.slice(1)}`;
+}
+
+/**
+ * The levels of reasoning `model` offers, as its provider lists them, the one it uses unasked
+ * marked: none when it offers no choice.
+ */
+export function effortOptions(model: ModelInfo | undefined): readonly GlzMenuOption[] {
+  const reasoning = model?.reasoning ?? null;
+  const efforts = reasoning?.efforts ?? [];
+  const fallback = reasoning?.default ?? null;
+  return efforts.map((level) => ({
+    value: level,
+    label: levelName(level),
+    ...(level === fallback ? { hint: DEFAULT_HINT } : {}),
+  }));
+}
+
+/** The level `model` uses when none is chosen, or `null` when its provider does not say. */
+export function defaultEffort(model: ModelInfo | undefined): string | null {
+  return model?.reasoning?.default ?? null;
+}
+
+/** The thread's own choice of level: the latest `effort.chosen`'s, or `null` for none. */
+export function chosenEffort(events: readonly RawEvent[]): string | null {
+  const chosen = events.filter((event) => event.type === 'effort.chosen').at(-1);
+  const effort = chosen?.data['effort'];
+  return typeof effort === 'string' && effort !== '' ? effort : null;
+}
+
+/**
+ * The level to send with the next turn: the person's pick, when `model` offers it and it is
+ * not the thread's choice already; else `null`, which leaves the thread's choice as it is.
+ */
+export function effortToSend(
+  picked: string | null,
+  chosen: string | null,
+  model: ModelInfo | undefined,
+): string | null {
+  const offered = model?.reasoning?.efforts ?? [];
+  return picked !== null && picked !== chosen && offered.includes(picked) ? picked : null;
+}

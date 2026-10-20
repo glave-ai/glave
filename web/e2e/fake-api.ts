@@ -120,7 +120,12 @@ const DEFAULT_MODEL = 'anthropic/claude-haiku-5.5';
  */
 export const MODELS: readonly ModelInfo[] = [
   { id: DEFAULT_MODEL, default: true },
-  { id: 'hope-12b', name: 'Hope', default: false },
+  {
+    id: 'hope-12b',
+    name: 'Hope',
+    default: false,
+    reasoning: { efforts: ['high', 'low', 'none'], default: 'low' },
+  },
   { id: 'openai/gpt-6-luna', default: false },
   { id: 'deepseek/deepseek-v4.1-flash', default: false },
   ...Array.from({ length: 200 }, (_, index) => ({
