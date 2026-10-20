@@ -1,0 +1,45 @@
+@use '../../styles/working';
+
+// One quiet line where a reply will be: the mark, then what glave is doing.
+:host {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-2);
+  font-size: var(--glz-text-sm);
+}
+
+.mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+}
+
+// Until glave's own mark slots in: a dot in the accent that breathes.
+.dot {
+  width: 0.5em;
+  height: 0.5em;
+  border-radius: 50%;
+  background: var(--glz-accent);
+  animation: glz-breathe var(--glz-duration-ambient) var(--glz-easing) infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+
+  @media (forced-colors: active) {
+    background: CanvasText;
+  }
+}
+
+.label {
+  @include working.shimmer;
+}
+
+@keyframes glz-breathe {
+  50% {
+    transform: scale(0.6);
+  }
+}
