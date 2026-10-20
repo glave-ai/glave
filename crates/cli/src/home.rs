@@ -89,3 +89,8 @@ pub(crate) async fn private() -> anyhow::Result<PathBuf> {
 pub(crate) async fn database() -> anyhow::Result<PathBuf> {
     Ok(private().await?.join("glave.db"))
 }
+
+/// The folder blobs' sealed bytes are kept in, in glave's folder (made private first).
+pub(crate) async fn blobs() -> anyhow::Result<PathBuf> {
+    Ok(private().await?.join("blobs"))
+}

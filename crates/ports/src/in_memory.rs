@@ -3,10 +3,12 @@
 
 mod blobs;
 mod log;
+mod objects;
 mod projects;
 mod tools;
 
 pub use blobs::InMemoryBlobs;
 pub use log::InMemoryLog;
+pub use objects::InMemoryObjects;
 pub use projects::InMemoryProjects;
 pub use tools::InMemoryTools;

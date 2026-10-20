@@ -46,6 +46,8 @@ glave-event.workspace = true
 glave-gateway.workspace = true
 glave-gateway-service.workspace = true
 glave-harness.workspace = true
+# Blobs' bytes in glave's folder.
+glave-bucket.workspace = true
 glave-keys = { workspace = true, features = ["keychain"] }
 glave-mcp.workspace = true
 glave-memory.workspace = true

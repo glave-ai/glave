@@ -7,6 +7,7 @@ mod blobs;
 mod computers;
 mod memory;
 mod model;
+mod objects;
 mod projects;
 mod racing;
 mod search;
@@ -20,6 +21,7 @@ pub use computers::{
 };
 pub use memory::{MemoryPlaces, memory_scopes};
 pub use model::{Script, model_provider};
+pub use objects::objects;
 pub use projects::projects;
 pub use search::search;
 pub use threads::thread_views;

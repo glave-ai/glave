@@ -7,7 +7,10 @@ use glave_keys::KeyId;
 use glave_keys::conformance::event;
 use glave_ports::conformance::{AtRest, KeptBlob, KeptPayload};
 use glave_ports::testing::TempDir;
-use glave_ports::{BlobStore, BoxFuture, LogError, OrgId, Pieces, ProjectId, Scope};
+use glave_ports::{
+    BlobStore, BoxFuture, InMemoryObjects, LogError, OrgId, Pieces, ProjectId, Scope,
+    read_all as read_whole,
+};
 use rusqlite::{Connection, params};
 
 use super::*;
@@ -23,9 +26,15 @@ fn scope(n: u128) -> Scope {
 /// removed when that drops.
 fn on_disk(name: &str) -> (PathBuf, Store, Rows, TempDir) {
     let (dir, path) = temp_db(name);
-    let store = block_on!(Store::open(&path, file_keys(&path))).unwrap();
+    let objects = InMemoryObjects::new();
+    let store = block_on!(Store::open(
+        &path,
+        file_keys(&path),
+        Arc::new(objects.clone())
+    ))
+    .unwrap();
     let raw = Connection::open(&path).unwrap();
-    (path, store, Rows(Mutex::new(raw)), dir)
+    (path, store, Rows(Mutex::new(raw), objects), dir)
 }
 
 fn events(thread: u64, seqs: &[(u64, &str)]) -> Vec<RawEvent> {
@@ -46,8 +55,9 @@ fn read_all(store: &Store, scope: &Scope, thread: &RawEvent) -> Result<Vec<RawEv
     block_on!(store.log().read(scope, thread.thread, None, 100))
 }
 
-/// The file's rows, read and written around the store, as the at-rest suite asks.
-struct Rows(Mutex<Connection>);
+/// The file's rows and the objects beside it, read and written around the store, as the
+/// at-rest suite asks.
+struct Rows(Mutex<Connection>, InMemoryObjects);
 
 impl Rows {
     fn payload_now(&self, scope: Scope, thread: ThreadId, seq: Seq) -> KeptPayload {
@@ -86,7 +96,8 @@ impl Rows {
         assert_eq!(written.unwrap(), 1, "one row");
     }
 
-    fn blobs_now(&self, scope: Scope) -> Vec<KeptBlob> {
+    /// Every blob's record in `scope`: its name, its object and the threads that refer to it.
+    fn records_now(&self, scope: Scope) -> Vec<(String, String, Vec<ThreadId>)> {
         let raw = self.0.lock().unwrap();
         let (org, project) = (scope.org().to_string(), scope.project().to_string());
         let records: Vec<(String, String)> = raw
@@ -98,20 +109,6 @@ impl Rows {
             .unwrap();
         let mut kept = Vec::new();
         for (name, object) in records {
-            let chunks: Vec<Vec<u8>> = raw
-                .prepare(
-                    "SELECT bytes FROM blob_chunks WHERE org = ?1 AND project = ?2 AND object = ?3
-                     ORDER BY n",
-                )
-                .unwrap()
-                .query_map(params![org, project, object], |row| row.get(0))
-                .unwrap()
-                .collect::<rusqlite::Result<_>>()
-                .unwrap();
-            kept.push((name, chunks.concat()));
-        }
-        let mut blobs = Vec::new();
-        for (name, bytes) in kept {
             let threads: Vec<String> = raw
                 .prepare(
                     "SELECT thread FROM blob_threads WHERE org = ?1 AND project = ?2 AND name = ?3",
@@ -125,6 +122,17 @@ impl Rows {
                 .iter()
                 .map(|thread| ThreadId::try_from(Uuid::parse_str(thread).unwrap()).unwrap())
                 .collect();
+            kept.push((name, object, threads));
+        }
+        kept
+    }
+
+    /// Every blob kept in `scope`, its bytes read straight from the objects.
+    async fn blobs_now(&self, scope: Scope) -> Vec<KeptBlob> {
+        let mut blobs = Vec::new();
+        for (name, object, threads) in self.records_now(scope) {
+            let mut bytes = self.1.read(scope, &object).await.unwrap().unwrap();
+            let bytes = read_whole(bytes.as_mut(), u64::MAX).await.unwrap();
             blobs.push(KeptBlob {
                 name,
                 bytes,
@@ -163,7 +171,7 @@ impl AtRest for Rows {
     }
 
     fn blobs(&self, scope: Scope) -> BoxFuture<'_, Result<Vec<KeptBlob>, String>> {
-        Box::pin(std::future::ready(Ok(self.blobs_now(scope))))
+        Box::pin(async move { Ok(self.blobs_now(scope).await) })
     }
 }
 
@@ -195,7 +203,7 @@ fn payloads_are_sealed_by_month_and_read_back_after_reopening() {
         (here.project(), "2026-10".into())
     );
     drop(store);
-    let reopened = block_on!(Store::open(&path, file_keys(&path))).unwrap();
+    let reopened = block_on!(Store::open(&path, file_keys(&path), objects())).unwrap();
     assert_eq!(
         lines(&read_all(&reopened, &here, &written[0]).unwrap()),
         lines(&written)
@@ -255,6 +263,6 @@ fn another_root_cannot_read_the_file() {
     let written = events(1, &[(1, "2026-10")]);
     block_on!(store.log().append(&here, &written)).unwrap();
     drop(store);
-    let stranger = block_on!(Store::open(&path, keys())).unwrap();
+    let stranger = block_on!(Store::open(&path, keys(), objects())).unwrap();
     assert!(read_all(&stranger, &here, &written[0]).is_err());
 }

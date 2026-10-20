@@ -1,0 +1,33 @@
+[package]
+name = "glave-bucket"
+description = "glave's bucket: blobs' sealed bytes in a folder of glave's or an S3-compatible bucket, through object_store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+autotests = false
+
+[dependencies]
+bytes.workspace = true
+# Reading an object's stream as object_store hands it back.
+futures-core.workspace = true
+glave-ports.workspace = true
+object_store.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["fs"] }
+
+[dev-dependencies]
+glave-event.workspace = true
+glave-keys = { workspace = true, features = ["conformance"] }
+glave-ports = { workspace = true, features = ["conformance"] }
+glave-store-sqlite.workspace = true
+uuid.workspace = true
+
+[[test]]
+name = "bucket"
+path = "tests/main.rs"
+
+[lints]
+workspace = true

@@ -6,7 +6,10 @@ use glave_event::{RawEvent, Seq, ThreadId};
 use glave_keys::KeyId;
 use glave_keys::conformance::event;
 use glave_ports::conformance::{AtRest, KeptBlob, KeptPayload};
-use glave_ports::{BlobStore, BoxFuture, EventLog, LogError, OrgId, Pieces, ProjectId, Scope};
+use glave_ports::{
+    BlobStore, BoxFuture, EventLog, LogError, Objects as _, OrgId, Pieces, ProjectId, Scope,
+    read_all as read_whole,
+};
 use glave_store_postgres::Store;
 use uuid::Uuid;
 
@@ -94,12 +97,7 @@ impl Rows<'_> {
             .0
             .admin
             .query(
-                &format!(
-                    "SELECT b.name, (SELECT string_agg(c.bytes, '' ORDER BY c.n)
-                         FROM {schema}.blob_chunks AS c
-                         WHERE c.org = b.org AND c.project = b.project AND c.object = b.object)
-                     FROM {schema}.blobs AS b WHERE b.org = $1 AND b.project = $2"
-                ),
+                &format!("SELECT name, object FROM {schema}.blobs WHERE org = $1 AND project = $2"),
                 &[&org, &project],
             )
             .await
@@ -122,9 +120,11 @@ impl Rows<'_> {
                 .iter()
                 .map(|thread| ThreadId::try_from(thread.get::<_, Uuid>(0)).unwrap())
                 .collect();
+            let object: String = row.get(1);
+            let mut bytes = self.0.objects.read(scope, &object).await.unwrap().unwrap();
             blobs.push(KeptBlob {
                 name,
-                bytes: row.get(1),
+                bytes: read_whole(bytes.as_mut(), u64::MAX).await.unwrap(),
                 threads,
             });
         }
