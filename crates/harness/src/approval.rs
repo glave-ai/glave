@@ -31,7 +31,7 @@ pub struct ApprovalRequest {
     /// ask, these requests are declined.
     pub secret: bool,
     /// Why the call needs the person whatever the mode, when it does, as the model and the
-    /// judge are told it: "it deletes ~/x". The person reads it as a sentence ([`sentence`]).
+    /// judge are told it: "it deletes ~/x". The person reads it as a sentence (`sentence`).
     pub caution: Option<String>,
     /// The command would run outside the sandbox, as the model asked, with its reason. Such a
     /// request asks every time: allowing it for the thread allows it once.

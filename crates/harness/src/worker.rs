@@ -34,7 +34,7 @@ pub struct Workers {
     pub computers: Arc<dyn Computers>,
     /// What every worker's workspace is opened from: the project's repository, at a commit.
     pub sources: Sources,
-    /// Files copied into every worker's workspace when it starts, under [`ATTACHMENTS`].
+    /// Files copied into every worker's workspace when it starts, under `ATTACHMENTS`.
     pub attachments: Vec<FileWrite>,
 }
 
@@ -52,7 +52,7 @@ impl std::fmt::Debug for Workers {
 pub struct ReleasedWorker {
     /// The branch unsaved work was pushed to, when there was any.
     pub branch: Option<String>,
-    /// The files the model handed back, by their path under [`HAND_BACK`].
+    /// The files the model handed back, by their path under `HAND_BACK`.
     pub files: Vec<(String, Bytes)>,
     /// What could not be kept, and why, when the worker could not be checked or saved (its
     /// connection died for good, say). Recorded on the thread too; never dropped silently.
@@ -139,7 +139,7 @@ where
     }
 
     /// Releases the worker `thread` works on, if it works on one of its own: hands back the
-    /// files under [`HAND_BACK`], pushes unpushed work to [`wip_branch`], destroys the worker,
+    /// files under `HAND_BACK`, pushes unpushed work to [`wip_branch`], destroys the worker,
     /// and records it. When the work cannot be read or saved, the worker is still destroyed,
     /// and what was lost and why is recorded and returned. `None` for a thread on anything
     /// else, or a subagent sharing its parent's worker.

@@ -130,7 +130,7 @@ impl Browsers {
         self.server.clone()
     }
 
-    /// A new code for a link, good once, for [`CODE_LIFETIME`].
+    /// A new code for a link, good once, for `CODE_LIFETIME`.
     pub fn link(&self) -> Result<Secret, BrowserError> {
         let code = random_hex()?;
         let now = self.clock.now();
@@ -180,7 +180,7 @@ impl Browsers {
         })
     }
 
-    /// The id of the session `token` is, renewed for [`SESSION_LIFETIME`] from now.
+    /// The id of the session `token` is, renewed for `SESSION_LIFETIME` from now.
     pub async fn verify(&self, token: &str) -> Result<String, BrowserError> {
         let presented = hex(&digest(token));
         let mut found = self.find(&presented);
