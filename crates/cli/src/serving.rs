@@ -115,11 +115,11 @@ impl Http {
             let code = link(&server).await?;
             eprintln!(
                 "glave: open {url}/#code={} in a browser on this computer (the link works once, \
-                 for five minutes; glave app opens another)",
+                 for five minutes; glave opens another)",
                 code.expose()
             );
         } else {
-            eprintln!("glave: run glave app on this computer to open glave in a browser");
+            eprintln!("glave: run glave on this computer to open glave in a browser");
         }
         let ended =
             glave_session::http::serve(server, self.signin, self.site, self.listener, stop).await;

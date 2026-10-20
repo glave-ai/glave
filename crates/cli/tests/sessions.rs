@@ -1,36 +1,11 @@
-//! The real `glave` binary in sessions: lines typed one after another, `--continue`,
-//! `/compact`, AGENTS.md, and Ctrl-C.
+//! The real `glave` binary's turns in its own process, with no one at the terminal and no
+//! server running: `--continue`, AGENTS.md, and Ctrl-C.
 
 use std::process::Command;
 
 use glave_provider_openai::fake::{FakeServer, Reply};
 
 use crate::support::*;
-
-#[test]
-fn an_interactive_session_reads_lines_until_exit() {
-    let place = place("interactive");
-    let server =
-        FakeServer::start(vec![Reply::text("Hi there."), Reply::text("Greeting")]).unwrap();
-    let output = glave(
-        &place,
-        &server,
-        &["--model", "fake-model"],
-        "hello\n/exit\n",
-    );
-    let shown = text(&output);
-    assert!(output.status.success(), "{shown}");
-    assert!(
-        shown.contains("glave · fake-model via local ·"),
-        "the banner names the model and where it is served: {shown}"
-    );
-    assert!(shown.contains("Hi there."), "{shown}");
-    // After the first exchange, the model titles the thread before glave exits.
-    let received = server.received();
-    assert_eq!(received.len(), 2);
-    let titling = said(&received[1].body, "system").join("\n");
-    assert!(titling.contains("You name conversations"), "{titling}");
-}
 
 #[test]
 fn continue_picks_up_the_last_thread_and_a_new_run_starts_fresh() {
@@ -57,51 +32,15 @@ fn continue_picks_up_the_last_thread_and_a_new_run_starts_fresh() {
 }
 
 #[test]
-fn slash_compact_summarizes_the_session() {
-    let place = place("compact");
-    // No title: its call would race `/compact` for the fake model's replies.
-    std::fs::create_dir_all(&place.home).unwrap();
-    std::fs::write(place.home.join("config.toml"), "titles = false\n").unwrap();
-    let server = FakeServer::start(vec![
-        Reply::text("Hi there."),
-        Reply::text("We greeted each other."),
-        Reply::text("You said hello."),
-    ])
-    .unwrap();
-    let output = glave(
-        &place,
-        &server,
-        &["--model", "m"],
-        "hello\n/compact\nwhat did I say?\n/exit\n",
-    );
-    let shown = text(&output);
-    assert!(output.status.success(), "{shown}");
-    assert!(
-        shown.contains("compacted the conversation to fit"),
-        "{shown}"
-    );
-    let after = &server.received()[2].body;
-    let user = said(after, "user");
-    // One message, as strict chat templates need: the summary, then the new question.
-    assert_eq!(user.len(), 1, "{after}");
-    let (_, later) = user[0].split_once("We greeted each other.").unwrap();
-    assert!(later.contains("what did I say?"), "{after}");
-}
-
-#[test]
 fn agents_md_from_the_project_and_the_person_reaches_the_model() {
     let place = place("agents-md");
     std::fs::write(place.project.join("AGENTS.md"), "Run make check.\n").unwrap();
     std::fs::create_dir_all(&place.home).unwrap();
     std::fs::write(place.home.join("AGENTS.md"), "Answer briefly.\n").unwrap();
     let server = FakeServer::start(vec![Reply::text("Hi.")]).unwrap();
-    let output = glave(&place, &server, &["--model", "m"], "hello\n/exit\n");
+    let output = glave(&place, &server, &["--model", "m", "hello"], "");
     let shown = text(&output);
     assert!(output.status.success(), "{shown}");
-    assert!(
-        shown.contains("following ") && shown.contains("AGENTS.md"),
-        "the banner names the files: {shown}"
-    );
     let first = said(&server.received()[0].body, "user").join("\n");
     let order = [
         "# AGENTS.md instructions",

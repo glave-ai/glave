@@ -216,7 +216,7 @@ fn a_foreign_host_or_origin_is_refused() {
             .unwrap();
         assert_eq!(page.status().as_u16(), 403, "not even a page");
 
-        // `glave app` asks for its link as a program here does, and is let through.
+        // `glave` alone asks for its link as a program here does, and is let through.
         let glave = Remote::new(&served.url, token.reveal().to_owned()).unwrap();
         let linked = glave.request(&Request::SigninLink {}).await.unwrap();
         assert!(matches!(linked, Reply::Link { .. }), "{linked:?}");

@@ -2,9 +2,10 @@
 //! (`specs/one-server.md`, "The CLI as a client"): from a terminal, the server starts and
 //! outlives it, a new folder is asked about once, an approval and a project's trust are
 //! answered in place, `-c` continues the folder's thread, Ctrl-C stops the turn, and a client
-//! killed mid-turn leaves the turn to finish; the home folder's turns are chats. With no one at
-//! the terminal and no server running, the turn runs in the command's own process, answered by
-//! no one, and leaves no server behind.
+//! killed mid-turn leaves the turn to finish; the home folder's turns are chats; and `glave`
+//! alone opens the folder's project, its newest thread with `-c`, or the home folder's Chats.
+//! With no one at the terminal and no server running, the turn runs in the command's own
+//! process, answered by no one, and leaves no server behind.
 
 use std::time::Duration;
 
@@ -276,6 +277,47 @@ fn with_no_one_at_the_terminal_a_turn_runs_here_declines_what_asks_and_leaves_no
         !place.home.join("run/server.log").exists(),
         "no server started"
     );
+}
+
+#[test]
+fn glave_alone_opens_the_folder_s_project_asking_once_and_the_home_folder_s_chats() {
+    let place = asking("ta");
+    let _stopped = Stopped(&place);
+    let model = FakeServer::start(vec![Reply::text("Hi.")]).unwrap();
+    // No screen here, so the link is printed rather than opened.
+    let mut declined = terminal(&place, &model, &[]);
+    typed(&mut declined, "n\n");
+    let shown = text(&declined.wait_with_output().unwrap());
+    assert!(shown.contains("a glave project? [y/N]"), "{shown}");
+    assert!(!shown.contains("#code="), "nothing opens: {shown}");
+    let mut made = terminal(&place, &model, &[]);
+    typed(&mut made, "y\n");
+    let shown = text(&made.wait_with_output().unwrap());
+    let project = glave_ports::block_on!(async {
+        let path = std::fs::canonicalize(&place.project).unwrap();
+        let found = Request::ProjectFind {
+            path: path.to_string_lossy().into_owned(),
+        };
+        let Answered::Projects { projects, .. } = api(&place).request(&found).await.unwrap() else {
+            panic!("projects")
+        };
+        projects[0].id
+    });
+    assert!(shown.contains(&format!("/p/{project}#code=")), "{shown}");
+    // With --continue, at the newest thread there.
+    let turn = terminal(&place, &model, &["hello"]);
+    assert!(turn.wait_with_output().unwrap().status.success());
+    let continued = terminal(&place, &model, &["-c"]);
+    let shown = text(&continued.wait_with_output().unwrap());
+    let thread = glave_ports::block_on!(newest_thread(&api(&place), &place));
+    assert!(shown.contains(&format!("/t/{thread}#code=")), "{shown}");
+    // The home folder is never a project: its page is the person's Chats.
+    let home = place.project.to_string_lossy().into_owned();
+    let chats = terminal_with(&place, &model, &[], &[("HOME", &home)]);
+    let shown = text(&chats.wait_with_output().unwrap());
+    assert!(!shown.contains("a glave project?"), "{shown}");
+    assert!(shown.contains("/#code="), "{shown}");
+    assert!(!shown.contains("/p/"), "{shown}");
 }
 
 #[test]

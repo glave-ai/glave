@@ -174,8 +174,8 @@ fn skills_is_a_command_only_as_the_first_word() {
     assert_eq!(parse_words(&["skills"]).unwrap().action, Action::Skills);
     assert!(parse_words(&["skills", "now"]).is_err());
     assert_eq!(parse_words(&["commands"]).unwrap().action, Action::Commands);
-    assert_eq!(parse_words(&["app"]).unwrap().action, Action::App);
-    assert!(parse_words(&["app", "now"]).is_err());
+    // `glave` alone opens the browser; `app` is no command, so it is a prompt.
+    assert_eq!(parse_words(&["app"]).unwrap().prompt, "app");
     assert_eq!(
         parse_words(&["open", "the", "app"]).unwrap().action,
         Action::Run

@@ -11,12 +11,13 @@ pub(crate) const USAGE: &str = "\
 glave: run hope, or any model, on the project in this folder
 
 Usage:
-  glave [options] [prompt...]   run one turn with this prompt
-  glave [options]               start a session; each line you type is a turn. With no
-                                model set up yet, glave opens in your browser instead
-  glave app                     open glave in your browser, signed in on this computer;
-                                from a terminal, it starts glave in the background first
-                                when it is not running (glave server --help)
+  glave                         open glave in your browser at this folder's project,
+                                signed in on this computer (asking once to make a new
+                                folder a project; in your home folder, your chats); with
+                                --continue, at your last thread there. From a terminal, it
+                                starts glave in the background first when it is not
+                                running (glave server --help)
+  glave [options] <prompt...>   run one turn with this prompt, answered in the terminal
   glave --goal <objective> [--goal-budget <tokens>] [options]
                                 keep working across turns until the model has checked the
                                 goal is met, or pauses it because it needs you. Say how to
@@ -167,9 +168,7 @@ there: \"env\": {\"TOKEN\": \"${TOKEN}\"}.
 
 A repository may bring its own: .mcp.json at its root (the same format) and .glave/config.toml.
 glave asks once, only when they would run commands, and remembers the answer. With no one
-to ask, those servers stay off.
-
-In a session, /compact summarizes the thread now, and /exit leaves.";
+to ask, those servers stay off.";
 
 /// What to do.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -184,8 +183,6 @@ pub(crate) enum Action {
     Skills,
     /// List the custom commands.
     Commands,
-    /// Open glave in the browser, signed in.
-    App,
     Help,
     Version,
 }
@@ -352,14 +349,13 @@ fn settings_only(args: &Args) -> Result<(), String> {
     }
 }
 
-/// The command the first words name, taking them: `policy explain`, `skills`, `commands` or
-/// `app`; otherwise a run, taking nothing.
+/// The command the first words name, taking them: `policy explain`, `skills` or `commands`;
+/// otherwise a run, taking nothing.
 fn command(rest: &mut std::iter::Peekable<impl Iterator<Item = String>>) -> Result<Action, String> {
     let action = match rest.peek().map(String::as_str) {
         Some("policy") => Action::Explain,
         Some("skills") => Action::Skills,
         Some("commands") => Action::Commands,
-        Some("app") => Action::App,
         _ => return Ok(Action::Run),
     };
     rest.next();
@@ -375,7 +371,6 @@ fn alone(args: &Args) -> Result<(), String> {
         Action::Explain => "policy explain",
         Action::Skills => "skills",
         Action::Commands => "commands",
-        Action::App => "app",
         _ => return Ok(()),
     };
     if !args.prompt.is_empty() || args.resume {

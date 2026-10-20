@@ -1,14 +1,13 @@
-//! glave's entry: its commands, one turn or an interactive session in the terminal as the
-//! session server's client (wired in `wiring.rs`), and serving the session API.
+//! glave's entry: its commands; `glave` alone opening the browser (`app.rs`); a turn or a goal
+//! through the person's server (`turns.rs`), or in this command's own process where none runs
+//! and no one is at the terminal (wired in `wiring.rs`); and serving the session API.
 
-use std::io::IsTerminal as _;
-use std::path::PathBuf;
 use std::process::ExitCode;
 
 use glave_config::policy::Choices;
 use glave_config::trust::Asking;
 use glave_event::ThreadId;
-use glave_harness::{ApprovalMode, Cancel, DEFAULT_BUDGET, Goal, ProjectFolders as _};
+use glave_harness::{ApprovalMode, DEFAULT_BUDGET, Goal, ProjectFolders as _};
 use glave_ports::ProjectId;
 use glave_ports::computer::Sandbox;
 use glave_ports::settings::Protections;
@@ -18,7 +17,7 @@ use glave_session::protocol::{Reply, Request};
 use crate::args::{self, Action, Args, USAGE};
 use crate::client::{Client, Session};
 use crate::config;
-use crate::input::{CtrlC, Input};
+use crate::input::Input;
 use crate::setup;
 use crate::terminal::Printer;
 use crate::wiring::Wired;
@@ -81,7 +80,6 @@ pub(crate) fn main() -> ExitCode {
         Action::Explain => runtime.block_on(setup::explain(&args)),
         Action::Skills => runtime.block_on(crate::skills::list()),
         Action::Commands => runtime.block_on(crate::commands::list()),
-        Action::App => runtime.block_on(crate::app::main()),
         _ => runtime.block_on(run(args)),
     };
     match ran {
@@ -94,46 +92,32 @@ pub(crate) fn main() -> ExitCode {
 }
 
 async fn run(args: Args) -> anyhow::Result<ExitCode> {
+    let turn = !args.prompt.is_empty() || args.goal.is_some();
     if let Some(url) = crate::remote::chosen(&args).await? {
+        if !turn {
+            anyhow::bail!(
+                "glave alone opens glave on this computer in a browser; for the server at {url}, \
+                 give it a prompt, or open its address in a browser"
+            );
+        }
         return crate::remote::run(&args, &url).await;
     }
     if args.background {
         return crate::tasks::background(&args).await;
     }
+    if !turn {
+        return crate::app::open(&args).await;
+    }
     // A turn or a goal goes to the person's server, started from the person's own terminal;
     // where none runs and no one is at the terminal, a server here answers it, asking no one.
-    let turn = !args.prompt.is_empty() || args.goal.is_some();
-    if turn && let Some(server) = crate::server::connect_or_start().await? {
+    if let Some(server) = crate::server::connect_or_start().await? {
         let terminal = crate::server::at_terminal();
         return Box::pin(crate::turns::run(&args, &server, terminal)).await;
     }
-    // The session in the terminal asks there; a turn here has no one to answer it.
-    let asks = !turn && std::io::stdin().is_terminal();
-    let answering = if asks {
-        Answering::Clients
-    } else {
-        Answering::NoOne
-    };
-    let wired = crate::wiring::wire(
-        &args,
-        answering,
-        if asks { Asking::Person } else { Asking::NoOne },
-    )
-    .await?;
-    // A first run has no model yet: the browser is where one is added.
-    let screen = crate::app::screen_here();
-    let opens_app = crate::app::first_run(&args, asks, screen, wired.endpoint.is_some());
-    let ran = if opens_app {
-        Ok(ExitCode::SUCCESS)
-    } else {
-        Box::pin(session(&args, &wired, asks)).await
-    };
+    let wired = crate::wiring::wire(&args, Answering::NoOne, Asking::NoOne).await?;
+    let ran = Box::pin(here(&args, &wired)).await;
     wired.server.shutdown().await;
     wired.close().await;
-    if opens_app {
-        eprintln!("glave: no model is set up yet, so glave opens in your browser to add one");
-        return crate::app::main().await;
-    }
     ran
 }
 
@@ -164,30 +148,27 @@ pub(crate) async fn serve(mut args: Args) -> anyhow::Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Picks the thread, runs the turn or the session, and exports the events when asked.
-async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitCode> {
+/// Runs the turn or goal in this command's own process, answered by no one, and exports the
+/// events when asked.
+async fn here(args: &Args, wired: &Wired) -> anyhow::Result<ExitCode> {
     let Wired {
         server,
         servers,
         endpoint,
         project,
         root,
-        files,
         choices,
-        workers: _,
-        memory: _,
-        log: _,
         projects,
-        _telemetry: _,
+        ..
     } = wired;
     let Some(endpoint) = endpoint else {
         anyhow::bail!(config::NO_MODEL);
     };
-    // The terminal's threads are the folder's project's, so it shows what that chooses.
+    // The turn is the folder's project's, so it shows what that chooses.
     let settled = projects.settled(root).await;
     let model = settled.model.unwrap_or_else(|| endpoint.model.clone());
     let here = Session::Here(server);
-    let (thread, note) = pick_thread(here, Some(*project), args.resume, None, None, None).await?;
+    let (thread, _) = pick_thread(here, Some(*project), args.resume, None, None, None).await?;
     if let Some(working) = crate::worktrees::note(here, thread).await {
         eprintln!("glave: {working}");
     }
@@ -197,7 +178,7 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         thread,
         input: &input,
         endpoint: Some(endpoint),
-        asks,
+        asks: false,
         servers: Some(servers),
         model: None,
         approval: None,
@@ -209,18 +190,6 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
             token_budget: args.goal_budget.unwrap_or(DEFAULT_BUDGET),
         };
         client.goal(goal, &mut printer).await
-    } else if args.prompt.is_empty() {
-        let mut note = match named(files) {
-            Some(files) => format!("{note} · following {files}"),
-            None => note.to_owned(),
-        };
-        let names = servers.names();
-        if !names.is_empty() {
-            note = format!("{note} · MCP: {}", names.join(", "));
-        }
-        let folder = root.display().to_string();
-        printer.banner(&model, &endpoint.provider.provider, &folder, &note);
-        converse(&client, &mut printer).await
     } else {
         client.turn(&args.prompt, &mut printer).await
     };
@@ -279,78 +248,6 @@ pub(crate) async fn pick_thread(
         Reply::Thread { thread } => Ok((thread.id, note)),
         other => anyhow::bail!("the server answered thread/start with {other:?}"),
     }
-}
-
-/// The interactive session: each line typed is a turn, until `/exit`, the end of input, or
-/// Ctrl-C at the prompt. Ctrl-C during a turn or `/compact` cancels just that.
-pub(crate) async fn converse(client: &Client<'_>, printer: &mut Printer) -> ExitCode {
-    let mut code = ExitCode::SUCCESS;
-    loop {
-        printer.ask();
-        let interrupt = Cancel::new();
-        let typed = {
-            let _ctrl_c = CtrlC::cancels(&interrupt);
-            interrupt.run(client.input.line()).await
-        };
-        let Some(Some(line)) = typed else {
-            println!();
-            break;
-        };
-        let line = line.trim();
-        if line == "/exit" {
-            break;
-        }
-        if line == "/compact" {
-            client.compact(printer).await;
-            continue;
-        }
-        if line == "/memory" {
-            show_memory(client.server).await;
-            continue;
-        }
-        if !line.is_empty() {
-            code = client.turn(line, printer).await;
-        }
-    }
-    code
-}
-
-/// `/memory`: the memories this session's threads read, through the session API.
-async fn show_memory(server: Session<'_>) {
-    match server
-        .request(Request::MemoryList {
-            scope: None,
-            project: None,
-        })
-        .await
-    {
-        Ok(Reply::Memories { memories }) if memories.is_empty() => println!("no memories here"),
-        Ok(Reply::Memories { memories }) => {
-            for memory in &memories {
-                println!("{}", crate::memory::line(memory));
-            }
-            println!("change them with: glave memory edit|move|forget <id>");
-        }
-        Ok(_) => {}
-        Err(error) => println!("{error}"),
-    }
-}
-
-/// The instruction files for the banner, with the home folder as `~`:
-/// `~/.glave/AGENTS.md, ~/code/app/AGENTS.md`.
-fn named(files: &[PathBuf]) -> Option<String> {
-    let names: Vec<String> = files
-        .iter()
-        .map(|file| {
-            std::env::var_os("HOME")
-                .and_then(|home| file.strip_prefix(home).ok())
-                .map_or_else(
-                    || file.display().to_string(),
-                    |rest| format!("~/{}", rest.display()),
-                )
-        })
-        .collect();
-    (!names.is_empty()).then(|| names.join(", "))
 }
 
 /// The protections commands run under, as the folder's project changes them, for the banner

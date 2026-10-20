@@ -65,7 +65,7 @@ crates/eval/        glave-eval: the eval factory, the harness run in-process on 
 crates/cli/         glave: the command-line binary; with the `web` feature, as releases build it, the web app inside (build.rs)
 web/client/         the session API's TypeScript client: types generated from the schema (`cargo xtask schema`), a small typed client, no framework
 web/glaze/          Glaze (`@glave/glaze`): glave's Angular component library, web platform first, then the Angular CDK, themed only through CSS custom properties (its AGENTS.md says how to use it); its showcase, a dev-only app (`glaze/showcase`)
-web/app/            the web app `glave serve --http` (and `glave app`) serves at `/`: sign-in; adding a model on a first run; three panes (chats and projects with what needs you, a thread streaming live with approvals, questions and a model picker, its tools: tasks, changed files and commands running in the background); tasks, settings and memory
+web/app/            the web app `glave serve --http` (and `glave` alone, at the folder's project) serves at `/`: sign-in; adding a model on a first run; three panes (chats and projects with what needs you, a thread streaming live with approvals, questions and a model picker, its tools: tasks, changed files and commands running in the background); tasks, settings and memory
 web/e2e/            end-to-end smoke tests (Playwright, axe) of the built app and Glaze's showcase, served with glave's Content Security Policy
 evals/tasks/        eval tasks in Harbor's layout: instruction, starting files, hidden grader, reference solution
 evals/judge/        judge cases: a request, an action, and whether it should run in auto mode (README.md)
@@ -196,13 +196,13 @@ The bar is code a careful reader admires: every line earns its place, and each i
 
 | Budget | Target |
 | --- | --- |
-| `glave` cold start to prompt | < 50 ms |
+| A command answered by a running server | < 50 ms |
 | Release CLI binary (stripped) | < 40 MB |
 | Gateway overhead per request, in-process | < 1 ms p99 |
 | Session resume, 10k events | < 100 ms |
 | Knowledge search, 16 queries batched | < 100 ms |
 
-One exception: the owner raised the release binary from 30 to 40 MB on 2026-10-19, since splitting builds costs more than a few MB, and cold start stays about 26 ms. The budget is set in one place, `crates/cli/benches/budgets.rs`.
+Two owner decisions: the release binary was raised from 30 to 40 MB on 2026-10-19, since splitting builds costs more than a few MB; and "a command answered by a running server" (`glave tasks` against the person's server, about 5 ms on an M3) replaced "cold start to prompt" when `glave` alone came to open the browser and left no prompt to time (`specs/one-server.md`, decision 9). The budgets are set in one place, `crates/cli/benches/budgets.rs`.
 
 - Hot paths get microbenchmarks (event append and replay, stream parsing, gateway overhead, cache lookups).
 - Benchmarks run only through `cargo xtask bench`. It takes a machine-wide exclusive lock that test runs share, so benchmarks never run beside tests or each other.

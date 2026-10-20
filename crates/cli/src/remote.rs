@@ -18,7 +18,7 @@ use crate::client::export;
 use crate::client::{Client, Session};
 use crate::home;
 use crate::input::Input;
-use crate::session::{converse, pick_thread};
+use crate::session::pick_thread;
 use crate::terminal::Printer;
 
 /// Where the token that signs this client in comes from.
@@ -39,7 +39,7 @@ pub(crate) async fn chosen(args: &Args) -> anyhow::Result<Option<String>> {
     }
 }
 
-/// Runs the turn, goal or session `args` ask for on the server at `url`.
+/// Runs the turn or goal `args` ask for on the server at `url`.
 pub(crate) async fn run(args: &Args, url: &str) -> anyhow::Result<ExitCode> {
     if args.background {
         bail!("--background runs a task in glave on this computer: not with --server");
@@ -64,7 +64,7 @@ pub(crate) async fn run(args: &Args, url: &str) -> anyhow::Result<ExitCode> {
     }
     let worktree = args.worktree.then_some(true);
     // A server elsewhere has no folder of this computer: the thread is in the person's Chats.
-    let (thread, note) = pick_thread(
+    let (thread, _) = pick_thread(
         elsewhere,
         None,
         args.resume,
@@ -91,9 +91,6 @@ pub(crate) async fn run(args: &Args, url: &str) -> anyhow::Result<ExitCode> {
             token_budget: args.goal_budget.unwrap_or(DEFAULT_BUDGET),
         };
         Box::pin(client.goal(goal, &mut printer)).await
-    } else if args.prompt.is_empty() {
-        printer.banner_elsewhere(remote.url(), note);
-        Box::pin(converse(&client, &mut printer)).await
     } else {
         Box::pin(client.turn(&args.prompt, &mut printer)).await
     };

@@ -1,10 +1,12 @@
 //! The performance budgets in AGENTS.md, measured on the release build: the binary's size,
-//! cold start to the prompt, recording turns, and resuming a 10,000-event thread from SQLite.
+//! a command answered by the person's server while it runs, recording turns, and resuming a
+//! 10,000-event thread from SQLite.
 //! Fails when any measurement is over its budget. Run it through `cargo xtask bench`, alone
 //! on an idle machine, since these are wall-clock numbers.
 
 #![expect(clippy::print_stdout, reason = "a benchmark: its table is its output")]
 
+use std::io::{BufRead as _, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -23,7 +25,8 @@ const EVENTS: usize = 10_000;
 /// Each scripted turn records 8 events: turn.started, the person's message, the call, its
 /// response, the result, the answer, its response, turn.ended.
 const EVENTS_PER_TURN: usize = 8;
-const STARTS: usize = 30;
+/// Commands timed against the running server.
+const ANSWERS: usize = 30;
 const RESUMES: usize = 10;
 /// The release binary's budget in MB (AGENTS.md), the one place it is set: pull requests,
 /// the merge queue and `main` all run this benchmark (`budgets.yml`).
@@ -40,7 +43,7 @@ fn main() -> anyhow::Result<()> {
 fn measure(dir: &Path) -> anyhow::Result<()> {
     let binary = PathBuf::from(env!("CARGO_BIN_EXE_glave"));
     let size = std::fs::metadata(&binary)?.len();
-    let start = median(cold_starts(&binary, dir)?);
+    let answer = median(answered(&binary, dir)?);
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
@@ -54,10 +57,10 @@ fn measure(dir: &Path) -> anyhow::Result<()> {
             mb(size) < BINARY_MB,
         ),
         (
-            "cold start to prompt",
+            "answered by the server",
             "< 50 ms",
-            format!("{:.1} ms (median of {STARTS})", ms(start)),
-            ms(start) < 50.0,
+            format!("{:.1} ms (median of {ANSWERS})", ms(answer)),
+            ms(answer) < 50.0,
         ),
         (
             "resume 10,000 events",
@@ -87,19 +90,56 @@ fn measure(dir: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Times `glave` from launch until it has shown the prompt and seen the end of input.
-fn cold_starts(binary: &Path, dir: &Path) -> anyhow::Result<Vec<Duration>> {
-    let project = dir.join("project");
-    std::fs::create_dir_all(&project)?;
-    let mut times = Vec::with_capacity(STARTS);
-    for _ in 0..STARTS {
+/// Times a command the person's server answers while it runs (`glave tasks`, a client of its
+/// socket), from launch to exit; the server is started first, and stopped after.
+fn answered(binary: &Path, dir: &Path) -> anyhow::Result<Vec<Duration>> {
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home)?;
+    let mut server = Command::new(binary)
+        .args(["serve", "--http", "127.0.0.1:0"])
+        .current_dir(dir)
+        .env("GLAVE_HOME", &home)
+        .env("GLAVE_BASE_URL", "http://127.0.0.1:9/v1")
+        .env("GLAVE_MODEL", "m")
+        .env_remove("GLAVE_API_KEY")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("could not start glave serve")?;
+    let said = server.stderr.take().context("glave serve's output")?;
+    let (ready, serving) = std::sync::mpsc::channel();
+    // What it says is read to its end, so it never blocks writing.
+    let reading = std::thread::spawn(move || {
+        for line in BufReader::new(said).lines().map_while(Result::ok) {
+            if line.starts_with("glave: serving you on ") {
+                let _ = ready.send(());
+            }
+        }
+    });
+    let timed = serving
+        .recv_timeout(Duration::from_secs(20))
+        .context("glave serve did not start")
+        .and_then(|()| tasks(binary, dir, &home));
+    let _ = Command::new(binary)
+        .args(["server", "stop"])
+        .env("GLAVE_HOME", &home)
+        .stdout(Stdio::null())
+        .status();
+    let _ = server.wait();
+    let _ = reading.join();
+    timed
+}
+
+/// Times `glave tasks` against the server running for `home`, `ANSWERS` times.
+fn tasks(binary: &Path, dir: &Path, home: &Path) -> anyhow::Result<Vec<Duration>> {
+    let mut times = Vec::with_capacity(ANSWERS);
+    for _ in 0..ANSWERS {
         let started = Instant::now();
         let status = Command::new(binary)
-            .current_dir(&project)
-            .env("GLAVE_HOME", dir.join("home"))
-            .env("GLAVE_BASE_URL", "http://127.0.0.1:9/v1")
-            .env("GLAVE_MODEL", "m")
-            .env_remove("GLAVE_API_KEY")
+            .arg("tasks")
+            .current_dir(dir)
+            .env("GLAVE_HOME", home)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -107,7 +147,7 @@ fn cold_starts(binary: &Path, dir: &Path) -> anyhow::Result<Vec<Duration>> {
             .context("could not start glave")?;
         times.push(started.elapsed());
         if !status.success() {
-            bail!("glave exited with {status}");
+            bail!("glave tasks exited with {status}");
         }
     }
     Ok(times)

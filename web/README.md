@@ -35,7 +35,7 @@ npm run build
 glave serve --http 8080 --web web/dist/app/browser
 ```
 
-A release carries the build inside the `glave` binary, which `glave serve --http` and `glave app` serve when no `--web` is given: `npm run build`, then `cargo build --release -p glave --features web`. Without the feature, glave needs no Node to build and serves a `web` folder beside the binary, if there is one.
+A release carries the build inside the `glave` binary, which `glave serve --http` (and so `glave` alone) serves when no `--web` is given: `npm run build`, then `cargo build --release -p glave --features web`. Without the feature, glave needs no Node to build and serves a `web` folder beside the binary, if there is one.
 
 ## Checks
 
