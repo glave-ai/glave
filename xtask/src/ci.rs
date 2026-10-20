@@ -16,6 +16,7 @@ pub(crate) const BUILT_IN_APP: (&str, &str) = ("glave", "web");
 /// Runs every check in order and stops at the first failure.
 pub(crate) fn run() -> Result<(), String> {
     let _guard = lock::acquire(Mode::Shared)?;
+    let threads = threads()?;
     step("format", || cmd::run("cargo", &["fmt", "--all", "--check"]))?;
     step("secrets", crate::secrets::check)?;
     step("dependency rule", crate::deps::check)?;
@@ -57,7 +58,7 @@ pub(crate) fn run() -> Result<(), String> {
                 &features,
                 "--no-tests=pass",
             ],
-            &run.env(),
+            &[run.env(), threads.clone()].concat(),
         )
     });
     // Checked whether or not the tests passed, so a failed run stops what it left running.
@@ -70,9 +71,23 @@ pub(crate) fn run() -> Result<(), String> {
     step("file sizes", crate::file_sizes::check)?;
     step("api schema", || crate::schema::run(&["--check".to_owned()]))?;
     step("release workflow", crate::release_workflow::check)?;
-    step("web", crate::web::check)?;
+    step("web", || crate::web::check(&threads))?;
     println!("\nxtask: all checks passed");
     Ok(())
+}
+
+/// How many tests run at once, said once, as the variables every test runner reads: nextest's
+/// own, and the one the web tests read.
+fn threads() -> Result<Vec<(&'static str, String)>, String> {
+    let Some((threads, why)) = crate::parallel::tests()? else {
+        return Ok(Vec::new());
+    };
+    println!("xtask: {threads} tests at once ({why})");
+    let threads = threads.to_string();
+    Ok(vec![
+        ("NEXTEST_TEST_THREADS", threads.clone()),
+        (crate::parallel::VARIABLE, threads),
+    ])
 }
 
 fn step(name: &str, check: impl FnOnce() -> Result<(), String>) -> Result<(), String> {

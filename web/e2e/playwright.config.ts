@@ -60,6 +60,9 @@ export default defineConfig({
   testDir: '.',
   testMatch: '*.e2e.ts',
   fullyParallel: true,
+  // As many at once as GLAVE_TEST_THREADS says (`cargo xtask ci` sets it on a laptop), else
+  // Playwright's own choice.
+  workers: Number(process.env['GLAVE_TEST_THREADS']) || undefined,
   forbidOnly: process.env['CI'] !== undefined,
   retries: 0,
   reporter: [['list']],
