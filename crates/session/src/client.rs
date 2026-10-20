@@ -1,7 +1,11 @@
-//! A client of a session server over HTTP (`specs/session.md`, "Transports"): each request a
-//! JSON-RPC `POST` signed in with a bearer token, and a turn followed as server-sent events,
-//! its notifications then its response, as the same [`TurnItem`]s a turn in-process gives. The
-//! token goes only in the `Authorization` header, never in a URL, a log or an error.
+//! A client of a session server elsewhere (`specs/session.md`, "Transports"): over HTTP, each
+//! request a JSON-RPC `POST` signed in with a bearer token, and a turn followed as server-sent
+//! events; or over a stream of lines, such as the person's Unix socket (`lines.rs`). Either way
+//! a turn is followed as its notifications then its response, the same [`TurnItem`]s a turn
+//! in-process gives, so a client follows any server with one piece of code. The token goes
+//! only in the `Authorization` header, never in a URL, a log or an error.
+
+mod lines;
 
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -11,6 +15,7 @@ use std::time::Duration;
 use glave_ports::SseDecoder;
 use glave_ports::auth::safe_to_send;
 use serde_json::Value;
+use tokio::io::{AsyncBufRead, AsyncWrite};
 
 use crate::protocol::{ApiError, Notification, Reply, Request, code};
 use crate::rpc::{message, outcome};
@@ -19,17 +24,67 @@ use crate::turn::TurnItem;
 /// How long connecting may take.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// A session server elsewhere, and the token that signs this client in.
-pub struct Remote {
-    url: String,
-    token: String,
-    http: reqwest::Client,
-    next_id: AtomicU64,
+/// A session server elsewhere: over HTTP with the token that signs this client in, or over a
+/// connection of lines.
+pub struct Remote(Transport);
+
+enum Transport {
+    Http(Http),
+    Lines(lines::Lines),
 }
 
 impl Remote {
     /// The server at `url` (https, or http only to this computer), signed in with `token`.
     pub fn new(url: &str, token: String) -> Result<Self, ApiError> {
+        Http::new(url, token).map(|http| Self(Transport::Http(http)))
+    }
+
+    /// The server at the other end of a connection of lines, reading what it says from `read`
+    /// and writing to `write`, such as a Unix socket's halves; `name` names it in errors. It
+    /// reads and writes on tasks of its own until it drops.
+    pub fn over_lines<R, W>(read: R, write: W, name: String) -> Self
+    where
+        R: AsyncBufRead + Unpin + Send + 'static,
+        W: AsyncWrite + Unpin + Send + 'static,
+    {
+        Self(Transport::Lines(lines::Lines::new(read, write, name)))
+    }
+
+    /// Where the server is: its URL, or the name a connection of lines was given.
+    pub fn url(&self) -> &str {
+        match &self.0 {
+            Transport::Http(http) => &http.url,
+            Transport::Lines(lines) => lines.name(),
+        }
+    }
+
+    /// Answers `request`, which must not be one that streams (`turn/start`, `goal/start`).
+    pub async fn request(&self, request: &Request) -> Result<Reply, ApiError> {
+        match &self.0 {
+            Transport::Http(http) => http.request(request).await,
+            Transport::Lines(lines) => lines.request(request).await,
+        }
+    }
+
+    /// Starts `request` (`turn/start` or `goal/start`) and follows it.
+    pub async fn start(&self, request: &Request) -> Result<RemoteTurn, ApiError> {
+        Ok(RemoteTurn(match &self.0 {
+            Transport::Http(http) => Following::Http(http.start(request).await?),
+            Transport::Lines(lines) => Following::Lines(lines.start(request).await?),
+        }))
+    }
+}
+
+/// A session server over HTTP, and the token that signs this client in.
+struct Http {
+    url: String,
+    token: String,
+    client: reqwest::Client,
+    next_id: AtomicU64,
+}
+
+impl Http {
+    fn new(url: &str, token: String) -> Result<Self, ApiError> {
         let url = url.trim().trim_end_matches('/').to_owned();
         if !safe_to_send(&url, &[]) {
             return Err(ApiError::new(
@@ -40,32 +95,25 @@ impl Remote {
                 ),
             ));
         }
-        let http = reqwest::Client::builder()
+        let client = reqwest::Client::builder()
             .connect_timeout(CONNECT_TIMEOUT)
             .build()
             .map_err(|e| ApiError::new(code::INTERNAL, format!("could not start HTTP: {e}")))?;
         Ok(Self {
             url,
             token,
-            http,
+            client,
             next_id: AtomicU64::new(1),
         })
     }
 
-    /// Where the server is.
-    pub fn url(&self) -> &str {
-        &self.url
-    }
-
-    /// Answers `request`, which must not be one that streams (`turn/start`, `goal/start`).
-    pub async fn request(&self, request: &Request) -> Result<Reply, ApiError> {
+    async fn request(&self, request: &Request) -> Result<Reply, ApiError> {
         let response = self.send(request).await?;
         let text = response.text().await.map_err(|e| self.unreachable(&e))?;
         reply(&text)
     }
 
-    /// Starts `request` (`turn/start` or `goal/start`) and follows it.
-    pub async fn start(&self, request: &Request) -> Result<RemoteTurn, ApiError> {
+    async fn start(&self, request: &Request) -> Result<HttpTurn, ApiError> {
         let response = self.send(request).await?;
         let streams = response
             .headers()
@@ -81,7 +129,7 @@ impl Remote {
                 Err(refused) => refused,
             });
         }
-        Ok(RemoteTurn {
+        Ok(HttpTurn {
             response,
             decoder: SseDecoder::default(),
             events: VecDeque::new(),
@@ -94,7 +142,7 @@ impl Remote {
     async fn send(&self, request: &Request) -> Result<reqwest::Response, ApiError> {
         let message = message(self.next_id.fetch_add(1, Ordering::Relaxed), request);
         let response = self
-            .http
+            .client
             .post(format!("{}/", self.url))
             .bearer_auth(&self.token)
             .header("glave-method", request.method())
@@ -127,7 +175,25 @@ impl Remote {
 }
 
 /// A turn on the server, followed as it runs.
-pub struct RemoteTurn {
+pub struct RemoteTurn(Following);
+
+enum Following {
+    Http(HttpTurn),
+    Lines(lines::LinesTurn),
+}
+
+impl RemoteTurn {
+    /// The next item, or `None` after the ending.
+    pub async fn next(&mut self) -> Option<TurnItem> {
+        match &mut self.0 {
+            Following::Http(turn) => turn.next().await,
+            Following::Lines(turn) => turn.next().await,
+        }
+    }
+}
+
+/// A turn followed as server-sent events.
+struct HttpTurn {
     response: reqwest::Response,
     decoder: SseDecoder,
     /// Events decoded and not yet read.
@@ -136,9 +202,8 @@ pub struct RemoteTurn {
     url: String,
 }
 
-impl RemoteTurn {
-    /// The next item, or `None` after the ending.
-    pub async fn next(&mut self) -> Option<TurnItem> {
+impl HttpTurn {
+    async fn next(&mut self) -> Option<TurnItem> {
         if self.ended {
             return None;
         }

@@ -7,11 +7,9 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, bail};
+use glave_session::client::Remote;
 use glave_session::protocol::{Reply, Request};
-use glave_session::rpc;
-use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader, Lines};
-use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::io::BufReader;
 use tokio::net::{UnixListener, UnixStream};
 
 use crate::home;
@@ -102,11 +100,10 @@ fn fnv1a(bytes: &[u8]) -> u64 {
     })
 }
 
-/// A connection to a glave serving on one of the person's sockets.
+/// A connection to a glave serving on one of the person's sockets: the session API's client,
+/// the same that follows a server elsewhere.
 pub(crate) struct Connection {
-    lines: Lines<BufReader<OwnedReadHalf>>,
-    writer: OwnedWriteHalf,
-    next_id: u64,
+    remote: Remote,
     /// The process listening, as the system says.
     pid: Option<i32>,
 }
@@ -132,11 +129,9 @@ impl Connection {
                 path.display()
             );
         }
-        let (read, writer) = stream.into_split();
+        let (read, write) = stream.into_split();
         Ok(Some(Self {
-            lines: BufReader::new(read).lines(),
-            writer,
-            next_id: 1,
+            remote: Remote::over_lines(BufReader::new(read), write, what.to_owned()),
             pid: peer.pid(),
         }))
     }
@@ -147,22 +142,11 @@ impl Connection {
     }
 
     /// Sends `request` and answers with the reply, or the error the server gave.
-    pub(crate) async fn request(&mut self, request: Request) -> anyhow::Result<Reply> {
-        let id = self.next_id;
-        self.next_id = self.next_id.saturating_add(1);
-        let mut line = rpc::message(id, &request).to_string();
-        line.push('\n');
-        self.writer.write_all(line.as_bytes()).await?;
-        self.writer.flush().await?;
-        while let Some(line) = self.lines.next_line().await? {
-            let message: Value = serde_json::from_str(&line)?;
-            if message.get("id") != Some(&json!(id)) {
-                // A notification, for clients that follow turns.
-                continue;
-            }
-            return rpc::outcome(&message).map_err(anyhow::Error::new);
-        }
-        bail!("glave closed the connection")
+    pub(crate) async fn request(&self, request: Request) -> anyhow::Result<Reply> {
+        self.remote
+            .request(&request)
+            .await
+            .map_err(anyhow::Error::new)
     }
 }
 

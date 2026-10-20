@@ -140,7 +140,7 @@ async fn stop() -> anyhow::Result<()> {
 /// `glave server restart`: stops the server, if it runs, and starts it from this shell.
 async fn restart() -> anyhow::Result<ExitCode> {
     stop().await?;
-    let mut server = start().await?;
+    let server = start().await?;
     let Reply::Server(info) = server.request(Request::Discover {}).await? else {
         anyhow::bail!("glave answered server/discover with something else");
     };

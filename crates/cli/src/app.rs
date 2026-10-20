@@ -82,7 +82,7 @@ pub(crate) fn redirect(link: &str) -> String {
 /// `glave app`: opens the person's server in the browser, starting it first when it is not
 /// running and someone is at the terminal.
 pub(crate) async fn main() -> anyhow::Result<ExitCode> {
-    let Some(mut server) = crate::server::connect_or_start().await? else {
+    let Some(server) = crate::server::connect_or_start().await? else {
         anyhow::bail!(
             "glave is not running, and only glave app run in a terminal starts it: run it in \
              one, or run glave serve"
