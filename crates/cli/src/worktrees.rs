@@ -206,7 +206,14 @@ pub async fn check_if_due<L: EventLog>(home: &Path, cleanup: &Cleanup<'_, L>) ->
     if !any {
         return Vec::new();
     }
-    if let Err(error) = tokio::fs::write(&stamp, cleanup.now.to_string()).await {
+    let text = cleanup.now.to_string();
+    let at = stamp.clone();
+    let written =
+        tokio::task::spawn_blocking(move || glave_ports::file::replace(&at, text.as_bytes()))
+            .await
+            .map_err(std::io::Error::other)
+            .and_then(|written| written);
+    if let Err(error) = written {
         return vec![format!("could not write {}: {error}", stamp.display())];
     }
     match kept(home, cleanup.environment).await {

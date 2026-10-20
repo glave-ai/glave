@@ -16,10 +16,10 @@ async fn org(store: &Data) -> anyhow::Result<OrgId> {
 }
 
 /// A new project record, owned by `owner`, made now.
-fn new_project(kind: ProjectKind, name: String, owner: Principal) -> Project {
+fn new_project(kind: ProjectKind, name: String, owner: Principal) -> anyhow::Result<Project> {
     let now = At::from(jiff::Timestamp::now());
-    Project {
-        id: ProjectId::from_uuid(new_uuid_v7()),
+    Ok(Project {
+        id: ProjectId::from_uuid(new_uuid_v7()?),
         kind,
         name,
         owner,
@@ -27,7 +27,7 @@ fn new_project(kind: ProjectKind, name: String, owner: Principal) -> Project {
         created_at: now,
         updated_at: now,
         revision: 0,
-    }
+    })
 }
 
 /// The scope of the project `folder` leads to, for `person`: found by its path, else by
@@ -46,7 +46,7 @@ pub async fn here(store: &Data, folder: &Path, person: PrincipalId) -> anyhow::R
         || canonical.to_string_lossy().into_owned(),
         |name| name.to_string_lossy().into_owned(),
     );
-    let new = new_project(ProjectKind::Project, name, owner);
+    let new = new_project(ProjectKind::Project, name, owner)?;
     let project = store.projects().folder(org, &keys, &new).await?;
     // Glave's own: the host opens the project of the folder it runs in, for its person.
     Ok(Scope::glaves_own(org, project.id))
@@ -59,7 +59,7 @@ pub async fn personal(store: &Data, person: PrincipalId) -> anyhow::Result<Scope
         ProjectKind::Personal,
         glave_session::PERSONAL_NAME.to_owned(),
         Principal::person(person),
-    );
+    )?;
     let project = store.projects().personal(org, &new).await?;
     // Glave's own: the host keeps its person's own project.
     Ok(Scope::glaves_own(org, project.id))
@@ -69,7 +69,7 @@ pub async fn personal(store: &Data, person: PrincipalId) -> anyhow::Result<Scope
 /// person works in.
 pub async fn named(store: &Data, name: &str) -> anyhow::Result<Scope> {
     let org = org(store).await?;
-    let new = new_project(ProjectKind::Project, name.to_owned(), Principal::glave());
+    let new = new_project(ProjectKind::Project, name.to_owned(), Principal::glave())?;
     let keys = [FolderKey::Path(name.to_owned())];
     let project = store.projects().folder(org, &keys, &new).await?;
     // Glave's own: a record no person works in.

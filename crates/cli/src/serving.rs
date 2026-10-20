@@ -150,7 +150,7 @@ pub async fn browsers(
 
 /// The browsers of `person` in `store`, signed in by the server whose id the store keeps.
 async fn open_browsers(store: &Data, person: PrincipalId) -> anyhow::Result<Browsers> {
-    let server = store.server(random_uuid()).await?.to_string();
+    let server = store.server(random_uuid()?).await?.to_string();
     let scope = crate::projects::personal(store, person).await?;
     Ok(Browsers::open(store.log(), scope, server, Box::new(SystemClock)).await?)
 }

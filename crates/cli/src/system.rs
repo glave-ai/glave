@@ -1,20 +1,26 @@
 //! The operating system's randomness for this run's local ids.
 
 /// A random UUID v4, for this run's local organization and project.
-pub fn random_uuid() -> uuid::Uuid {
-    let mut bytes = [0u8; 16];
-    let _ = getrandom::fill(&mut bytes);
-    uuid::Builder::from_random_bytes(bytes).into_uuid()
+pub fn random_uuid() -> anyhow::Result<uuid::Uuid> {
+    Ok(uuid::Builder::from_random_bytes(random()?).into_uuid())
 }
 
 /// A new UUID v7, time-ordered, for an id glave makes here, such as a new project's.
-pub fn new_uuid_v7() -> uuid::Uuid {
-    let mut random = [0u8; 10];
-    let _ = getrandom::fill(&mut random);
+pub fn new_uuid_v7() -> anyhow::Result<uuid::Uuid> {
+    let random: [u8; 10] = random()?;
     let millis = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| {
             u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
         });
-    uuid::Builder::from_unix_timestamp_millis(millis, &random).into_uuid()
+    Ok(uuid::Builder::from_unix_timestamp_millis(millis, &random).into_uuid())
+}
+
+/// Random bytes from the operating system, or why there are none: an id is never left with a
+/// zero-filled random part.
+fn random<const N: usize>() -> anyhow::Result<[u8; N]> {
+    let mut bytes = [0u8; N];
+    getrandom::fill(&mut bytes)
+        .map_err(|e| anyhow::anyhow!("could not get random bytes for a new id: {e}"))?;
+    Ok(bytes)
 }

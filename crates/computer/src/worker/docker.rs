@@ -415,7 +415,7 @@ fn stream(attached: hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>) -> Link {
 impl Backend for Docker {
     fn start<'a>(&'a self, spec: &'a Spec) -> BoxFuture<'a, Result<Started, ComputerError>> {
         Box::pin(async move {
-            let name = format!("glave-worker-{}", crate::local::new_id().simple());
+            let name = format!("glave-worker-{}", crate::local::new_id()?.simple());
             match self.start_named(&name, spec).await {
                 Ok(link) => Ok(Started { name, link }),
                 Err(error) => {

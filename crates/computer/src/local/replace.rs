@@ -50,7 +50,7 @@ fn replace_with(
     put: Fill,
 ) -> std::io::Result<()> {
     let mode = existing_mode(folder, name)?;
-    let temp = temp_name();
+    let temp = temp_name()?;
     let flags = OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
     let fd = openat(folder, &temp, flags, Mode::from_raw_mode(0o666))?;
     let written =
@@ -88,13 +88,12 @@ fn fill(fd: OwnedFd, mode: Option<Mode>, content: &[u8], put: Fill) -> std::io::
     file.sync_all()
 }
 
-/// A name for the new file that no one else picks.
-fn temp_name() -> String {
+/// A name for the new file that no one else picks, or why the random source gave none.
+fn temp_name() -> std::io::Result<String> {
     let mut random = [0u8; 8];
-    // The OS random source does not fail in practice; `O_EXCL` refuses a clash anyway.
-    let _ = getrandom::fill(&mut random);
+    getrandom::fill(&mut random).map_err(std::io::Error::other)?;
     let hex: String = format!("{:016x}", u64::from_le_bytes(random));
-    format!(".glave-write-{hex}.tmp")
+    Ok(format!(".glave-write-{hex}.tmp"))
 }
 
 #[cfg(test)]

@@ -226,8 +226,10 @@ fn read_report(path: &Path) -> Result<Report, String> {
     serde_json::from_str(&text).map_err(|err| format!("{} is not a report: {err}", path.display()))
 }
 
+/// Writes a report whole, as a later run reads it back as its baseline.
 fn write(path: &Path, text: &str) -> Result<(), String> {
-    std::fs::write(path, text).map_err(|err| format!("could not write {}: {err}", path.display()))
+    glave_ports::file::replace(path, text.as_bytes())
+        .map_err(|err| format!("could not write {}: {err}", path.display()))
 }
 
 fn options(args: &[String]) -> Result<Options, String> {

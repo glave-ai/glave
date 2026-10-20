@@ -76,9 +76,18 @@ impl Trash {
                     "[Trash Info]\nPath={}\nDeletionDate={deleted_at}\n",
                     path.display()
                 );
-                tokio::fs::write(info.join(format!("{free}.trashinfo")), note)
-                    .await
-                    .map_err(failed)?;
+                // Made only where none is, as the Trash's other users make theirs: a name
+                // taken meanwhile moves on to the next.
+                let at = info.join(format!("{free}.trashinfo"));
+                let made = tokio::task::spawn_blocking(move || {
+                    glave_ports::file::create(&at, note.as_bytes())
+                })
+                .await
+                .map_err(|error| failed(std::io::Error::other(error)))?;
+                match made {
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                    made => made.map_err(failed)?,
+                }
             }
             tokio::fs::rename(path, &dest).await.map_err(failed)?;
             return Ok(dest);

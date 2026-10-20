@@ -22,7 +22,6 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
 use super::command::{DRAIN, Spawned, exited};
-use super::registry::new_id;
 use unread::Unread;
 
 /// The most commands this machine keeps running in the background, across its workspaces.
@@ -139,13 +138,12 @@ impl Backgrounds {
         full(&self.held(), workspace).map_or(Ok(()), Err)
     }
 
-    /// Keeps `spawned` running in the background in `workspace` on `computer`, until `limit`
-    /// when there is one; hands it back when there is no room for it.
+    /// Keeps `spawned` running `script` in the background as `id`, in `workspace` on
+    /// `computer`, until `limit` when there is one; hands it back when there is no room for it.
     pub(crate) fn adopt(
         &self,
-        computer: ComputerId,
-        workspace: WorkspaceId,
-        script: String,
+        (id, script): (CommandId, String),
+        (computer, workspace): (ComputerId, WorkspaceId),
         spawned: Spawned,
         limit: Option<Duration>,
     ) -> Result<CommandId, Box<Spawned>> {
@@ -154,7 +152,6 @@ impl Backgrounds {
         if full(&held, workspace).is_some() {
             return Err(Box::new(spawned));
         }
-        let id = CommandId::from_uuid(new_id());
         let started = spawned.started;
         let (ended, _) = watch::channel(None);
         let shared = Arc::new(Shared {
