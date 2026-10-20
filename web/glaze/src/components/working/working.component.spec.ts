@@ -10,7 +10,7 @@ import { GlzWorkingComponent } from './working.component';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <glz-working testId="plain" />
-    <glz-working testId="marked" label="Working…">
+    <glz-working testId="marked" label="Thinking…">
       <span glzWorkingMark data-testid="mark">g</span>
     </glz-working>
   `,
@@ -18,7 +18,7 @@ import { GlzWorkingComponent } from './working.component';
 class HostComponent {}
 
 describe('GlzWorkingComponent', () => {
-  it('says glave is thinking, announces it politely, and takes a mark of its own', async () => {
+  it('says work is going on, announces it politely, and takes a mark of its own', async () => {
     const announce = vi.fn(() => Promise.resolve());
     TestBed.configureTestingModule({
       providers: [{ provide: LiveAnnouncer, useValue: { announce } }],
@@ -27,7 +27,7 @@ describe('GlzWorkingComponent', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     const plain = root.querySelector('[data-testid="plain"]');
-    expect(root.querySelector('[data-testid="plain-label"]')?.textContent).toBe('Thinking…');
+    expect(root.querySelector('[data-testid="plain-label"]')?.textContent).toBe('Working…');
     expect(plain?.querySelector('.dot')).not.toBeNull();
     expect(plain?.querySelector('.mark')?.getAttribute('aria-hidden')).toBe('true');
     const marked = root.querySelector('[data-testid="marked"]');

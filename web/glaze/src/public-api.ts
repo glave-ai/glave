@@ -1,7 +1,7 @@
 // Glaze: an Angular component library on the web platform first, then the Angular CDK, themed
 // only through CSS custom properties (styles/tokens.css). Every export is standalone.
 //
-// Only the modules glave's app imports from. Star exports, not named ones: through named
+// Only the modules an app imports from. Star exports, not named ones: through named
 // re-exports the app's build keeps every module, so its first load carries all of Glaze.
 
 export * from './components/approval-card/approval-card.component';

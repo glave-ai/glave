@@ -11,7 +11,7 @@ import {
 const ITEMS: readonly GlzTrustItem[] = [
   { text: 'Runs a tool server', detail: 'npx @acme/mcp' },
   { text: 'Runs a hook before each command', detail: './scripts/check.sh' },
-  { text: 'Lets glave approve actions without asking' },
+  { text: 'Lets the assistant approve actions without asking' },
   { text: 'Turns off the sandbox', detail: null },
 ];
 
@@ -60,7 +60,7 @@ describe('GlzTrustCardComponent', () => {
     expect(items.map(text)).toEqual([
       'Runs a tool server npx @acme/mcp',
       'Runs a hook before each command ./scripts/check.sh',
-      'Lets glave approve actions without asking',
+      'Lets the assistant approve actions without asking',
       'Turns off the sandbox',
     ]);
     expect(items[0]?.querySelector('code')?.textContent).toBe('npx @acme/mcp');

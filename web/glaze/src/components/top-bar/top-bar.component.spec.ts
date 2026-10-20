@@ -11,7 +11,7 @@ import { GlzTopBarComponent } from './top-bar.component';
     <header>
       <glz-top-bar>
         <button glzTopBarStart type="button">Menu</button>
-        <span>glave</span>
+        <span>Atlas</span>
         <button glzTopBarEnd type="button">Theme</button>
       </glz-top-bar>
     </header>
@@ -25,7 +25,7 @@ describe('GlzTopBarComponent', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelector('.start')?.textContent).toBe('Menu');
-    expect(root.querySelector('.title')?.textContent).toBe('glave');
+    expect(root.querySelector('.title')?.textContent).toBe('Atlas');
     expect(root.querySelector('.end')?.textContent).toBe('Theme');
     await expectAccessible(root);
   });

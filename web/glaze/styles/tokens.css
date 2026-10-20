@@ -116,7 +116,7 @@
   --glz-weight-regular: 400;
   --glz-weight-bold: 700;
 
-  /* glave's name, set in type at the top of the side nav. */
+  /* The app's name, set in type at the top of the side nav. */
   --glz-text-wordmark: 1.25rem; /* 20 */
 
   /* Letters drawn a little closer: headings and the name, then the largest type. */
@@ -234,7 +234,7 @@
   --glz-duration-normal: 200ms;
   --glz-easing: cubic-bezier(0.2, 0, 0, 1);
 
-  /* A quiet loop while glave works (the working state's mark and shimmer); still when the person asks for less. */
+  /* A quiet loop while work goes on (the working state's mark and shimmer); still when the person asks for less. */
   --glz-duration-ambient: 2s;
 }
 

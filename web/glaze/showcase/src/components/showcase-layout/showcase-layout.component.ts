@@ -36,7 +36,7 @@ const COPY = {
   running: 'running',
   notes: 'Release notes',
   content: 'The page goes here. On a narrow screen the side nav slides over it instead.',
-  layoutTitle: 'glave',
+  layoutTitle: 'Atlas',
   newIn: 'New thread in Earlier',
   more: 'Options for Earlier',
   sortBy: 'Sort by',

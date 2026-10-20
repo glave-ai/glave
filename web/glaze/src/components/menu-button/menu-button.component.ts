@@ -42,7 +42,7 @@ const POSITIONS: readonly ConnectedPosition[] = [
  *
  * ```html
  * <glz-menu-button
- *   label="Options for glave"
+ *   label="Options for Atlas"
  *   [actions]="[{ value: 'rename', label: 'Rename' }]"
  *   choiceLabel="Sort by"
  *   [choices]="sorts"
@@ -72,7 +72,7 @@ export class GlzMenuButtonComponent {
   readonly testId = input<string | null>(null);
   protected readonly ids = computed(() => testIds(this.testId(), PARTS));
 
-  /** What the menu is for, such as "Options for glave": names the button and the menu. */
+  /** What the menu is for, such as "Options for Atlas": names the button and the menu. */
   readonly label = input.required<string>();
   /** What can be done, in the menu's order; picking one emits its value. */
   readonly actions = input<readonly GlzOption[]>([]);
