@@ -101,8 +101,8 @@ impl Data {
     /// The one organization this store holds, made the first time.
     pub async fn org(&self) -> anyhow::Result<OrgId> {
         Ok(match self {
-            Self::Sqlite(store) => store.org(random_uuid()).await?,
-            Self::Postgres(store) => store.org(random_uuid()).await?,
+            Self::Sqlite(store) => store.org(random_uuid()?).await?,
+            Self::Postgres(store) => store.org(random_uuid()?).await?,
         })
     }
 

@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use glave_ports::Cancellation;
 use glave_ports::computer::{
-    Command, ComputerError, Ending, Finished, GitCredentials, OnTimeout, Output, Sandbox,
-    WorkspaceId,
+    Command, CommandId, ComputerError, Ending, Finished, GitCredentials, OnTimeout, Output,
+    Sandbox, WorkspaceId,
 };
 use glave_process::{Child, Program};
 use tokio::io::AsyncWriteExt as _;
@@ -20,7 +20,7 @@ use tokio::time::Instant;
 use super::background::Backgrounds;
 use super::credentials::{Offered, offer};
 use super::process::Stream;
-use super::registry::Opened;
+use super::registry::{Opened, new_id};
 use super::sandbox::{Launch, Prepared};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 120;
@@ -163,9 +163,12 @@ pub(crate) async fn run(
         Some(credentials) => offer(credentials, &opened.environment).await?,
         None => None,
     };
+    // Its id in the background, made before it starts: without an id it never runs.
+    let keeps = (command.on_timeout == OnTimeout::Background)
+        .then(|| new_id().map(CommandId::from_uuid))
+        .transpose()?;
     let sandbox = command.sandbox.as_ref();
     let mut spawned = spawn(opened, &command.script, sandbox, helper, offered.as_ref()).await?;
-    let keeps = command.on_timeout == OnTimeout::Background;
     let waited = {
         let pump = spawned.stream.pump(output);
         let waiting = answering(
@@ -177,7 +180,7 @@ pub(crate) async fn run(
             waited = &mut waiting => (waited, false),
             () = &mut pump => (waiting.await, true),
         };
-        if !pumped && !matches!(waited, Ok(Waited::Reached)) {
+        if !pumped && !matches!(waited, Ok(Waited::Reached(_))) {
             let _ = tokio::time::timeout(DRAIN, pump).await;
         }
         waited
@@ -185,11 +188,10 @@ pub(crate) async fn run(
     let millis = u64::try_from(spawned.started.elapsed().as_millis()).unwrap_or(u64::MAX);
     let ending = match waited? {
         Waited::Ended(ending) => ending,
-        Waited::Reached => {
-            let script = command.script.clone();
-            let adopted =
-                keep.background
-                    .adopt(opened.computer, keep.workspace, script, spawned, None);
+        Waited::Reached(id) => {
+            let named = (id, command.script.clone());
+            let at = (opened.computer, keep.workspace);
+            let adopted = keep.background.adopt(named, at, spawned, None);
             match adopted {
                 Ok(command) => Ending::Backgrounded {
                     command,
@@ -284,17 +286,17 @@ fn bash(
 /// How waiting for a command ended.
 enum Waited {
     Ended(Ending),
-    /// It reached its timeout still running, and is to be kept running.
-    Reached,
+    /// It reached its timeout still running, and is to be kept running as this command.
+    Reached(CommandId),
 }
 
 /// Waits for the command to end, stopping it on a cancel, and on a timeout unless it `keeps`
-/// running then.
+/// running then, as the command it names.
 async fn wait(
     child: &mut Child,
     limit: u64,
     cancel: &dyn Cancellation,
-    keeps: bool,
+    keeps: Option<CommandId>,
 ) -> Result<Waited, ComputerError> {
     let waited = glave_ports::unless_cancelled(
         cancel,
@@ -306,8 +308,10 @@ async fn wait(
         Some(Ok(Err(error))) => Err(ComputerError::Failed(format!(
             "could not wait for the command: {error}"
         ))),
-        Some(Err(_)) if keeps => Ok(Waited::Reached),
         Some(Err(_)) => {
+            if let Some(id) = keeps {
+                return Ok(Waited::Reached(id));
+            }
             child.stop().await;
             Ok(Waited::Ended(Ending::TimedOut { after_secs: limit }))
         }

@@ -52,7 +52,7 @@ fn docker() -> Option<(Docker, String)> {
         glave: std::env::var_os("GLAVE_TEST_WORKER_GLAVE")
             .map_or_else(Default::default, Into::into),
     };
-    let case = crate::local::new_id().simple().to_string();
+    let case = crate::local::new_id().unwrap().simple().to_string();
     let labels = BTreeMap::from([
         ("glave.test".to_owned(), run_id()),
         ("glave.test.case".to_owned(), case.clone()),
@@ -159,7 +159,10 @@ fn the_docker_backend_starts_limits_reaches_and_removes_workers() {
 }
 
 async fn limited(docker: &Docker, case: &str) {
-    let name = format!("glave-worker-test-{}", crate::local::new_id().simple());
+    let name = format!(
+        "glave-worker-test-{}",
+        crate::local::new_id().unwrap().simple()
+    );
     let link = docker.start_with(&name, &spec(false), STUB).await;
     let inspected = get(docker, &format!("/containers/{name}/json")).await;
     let removed = docker.remove(&name).await;
@@ -181,7 +184,10 @@ async fn limited(docker: &Docker, case: &str) {
 }
 
 async fn streamed(docker: &Docker, case: &str) {
-    let name = format!("glave-worker-test-{}", crate::local::new_id().simple());
+    let name = format!(
+        "glave-worker-test-{}",
+        crate::local::new_id().unwrap().simple()
+    );
     let link = docker.start_with(&name, &spec(false), STUB).await.unwrap();
     let Link::Stream {
         read,
@@ -205,7 +211,10 @@ async fn streamed(docker: &Docker, case: &str) {
 }
 
 async fn published(docker: &Docker, case: &str) {
-    let name = format!("glave-worker-test-{}", crate::local::new_id().simple());
+    let name = format!(
+        "glave-worker-test-{}",
+        crate::local::new_id().unwrap().simple()
+    );
     let wanted = spec(true);
     let link = docker.start_with(&name, &wanted, WAITS).await;
     let inspected = get(docker, &format!("/containers/{name}/json")).await;

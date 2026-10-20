@@ -87,7 +87,10 @@ fn spec(network: bool) -> Spec {
 }
 
 fn name() -> String {
-    format!("glave-worker-test-{}", crate::local::new_id().simple())
+    format!(
+        "glave-worker-test-{}",
+        crate::local::new_id().unwrap().simple()
+    )
 }
 
 /// Everything this test made, by its labels.
