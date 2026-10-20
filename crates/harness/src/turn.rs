@@ -19,7 +19,7 @@ use serde::Serialize;
 use crate::approval::Approver;
 use crate::cancel::Cancel;
 use crate::commands::invoked;
-use crate::compaction::{Measured, chars, responded};
+use crate::compaction::{Measured, chars};
 use crate::goal::{BUDGET_SPENT, counted};
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::memory::{ConfigMemory, MemoryVerb};
@@ -613,7 +613,7 @@ where
             self.stage(thread, &mut events, &payload)?;
             calls.push(call);
         }
-        self.stage(thread, &mut events, &responded(completion))?;
+        self.stage(thread, &mut events, &completion.responded())?;
         self.commit(thread, events).await?;
         thread.messages.push(Message::Assistant {
             parts: completion.parts.clone(),

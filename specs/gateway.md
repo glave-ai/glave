@@ -88,7 +88,7 @@ The same model can be reached at several services (Claude Haiku from Anthropic o
 
 ## Metering
 
-- Every call produces the content-free `model.responded` event, with usage, cost, the price list it was computed from, route and target. There is no separate spend database: cost reports are views over the log.
+- Every call produces the content-free `model.responded` event, with usage, cost, the price list it was computed from, route and target, the target's service in a person's words, and the provider a router passed it on to (OpenRouter names it in each chunk). A turn's receipt says where it ran from these ("via OpenRouter (Anthropic)") and what it cost, from the service's own numbers where it reports them (OpenRouter's `usage.cost`). There is no separate spend database: cost reports are views over the log.
 - Through the service, each caller's calls are recorded in a stream of their own in the gateway's scope of the log (`events.md`, "Gateway streams"): `model.responded` for each model call, `gateway.tool.called` for each catalog tool call. Who called is the stream itself. A caller's daily budget is read back from their stream when they first call in a day, so a restart never resets it.
 - Calls glave makes on its own (the judge, compaction summaries) are metered and attributed to the thread that caused them.
 - Provider prompt caching is passed through and its savings recorded. A response cache is off by default.

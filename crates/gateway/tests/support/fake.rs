@@ -104,6 +104,7 @@ pub(crate) fn answer(provider: &str, model: &str, input: u64, output: u64) -> Co
         usage: Usage::new(counts, false, None).unwrap(),
         cost: None,
         served: None,
+        upstream: None,
     }
 }
 

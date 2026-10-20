@@ -3,7 +3,9 @@
 
 use std::future::Future;
 
-use glave_event::{Arguments, CallId, Cost, ModelRef, Part, StopReason, ThreadId, Usage};
+use glave_event::{
+    Arguments, CallId, Cost, ModelRef, ModelResponded, Part, StopReason, ThreadId, Usage,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
@@ -151,6 +153,31 @@ pub struct Completion {
     pub cost: Option<Cost>,
     /// How a gateway served the call; `None` when no gateway was in between.
     pub served: Option<Served>,
+    /// The provider a service that routes calls (OpenRouter) passed this one on to, as it
+    /// names it, such as `Anthropic`; `None` when it says none.
+    pub upstream: Option<String>,
+}
+
+impl Completion {
+    /// The content-free record of the call, `model.responded`: with the gateway route,
+    /// target and service that served it when a gateway did, and where a service that routes
+    /// calls passed it on to.
+    pub fn responded(&self) -> ModelResponded {
+        let served = self.served.as_ref();
+        ModelResponded {
+            model: self.model.clone(),
+            response_id: self.response_id.clone(),
+            stop: self.stop,
+            provider_stop: self.provider_stop.clone(),
+            usage: self.usage.clone(),
+            cost: self.cost.clone(),
+            route: served.map(|served| served.route.clone()),
+            target: served.map(|served| served.target.clone()),
+            service: served.and_then(|served| served.service.clone()),
+            upstream: self.upstream.clone(),
+            reasoning_stripped: served.is_some_and(|served| served.reasoning_stripped),
+        }
+    }
 }
 
 /// How a gateway served a call: the route it was sent by and the target that answered.
@@ -160,6 +187,9 @@ pub struct Served {
     pub route: String,
     /// The name of the target that answered.
     pub target: String,
+    /// The service the target is at, in a person's words, such as `OpenRouter`, when the
+    /// gateway knows it.
+    pub service: Option<String>,
     /// True when opaque reasoning was left out of the request because the target that
     /// answered could not accept it.
     pub reasoning_stripped: bool,

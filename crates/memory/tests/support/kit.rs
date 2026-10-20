@@ -188,6 +188,7 @@ pub(crate) fn answer(text: Option<&str>, calls: Vec<(&str, serde_json::Value)>) 
         usage: Usage::new(counts, false, None).unwrap(),
         cost: None,
         served: None,
+        upstream: None,
     }
 }
 

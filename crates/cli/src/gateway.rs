@@ -21,7 +21,7 @@ use glave_ports::{
 
 use crate::config::Endpoint;
 use crate::model::Model;
-use crate::providers::identity;
+use crate::providers::{identity, service_name};
 use glave_config::policy::{Constraints, ModelEntry, Source, check_model};
 use glave_session::protocol::ModelInfo;
 
@@ -50,7 +50,10 @@ pub(crate) fn gateway(
 ) -> anyhow::Result<Gateway> {
     let handle: Arc<dyn glave_gateway::Model> = Arc::new(provider);
     let name = &endpoint.provider.provider;
-    let mut main = Target::new(Arc::clone(&handle), name.clone(), endpoint.model.clone());
+    let service = service_name(name);
+    let at =
+        |model: &str| Target::new(Arc::clone(&handle), name.clone(), model).at_service(&service);
+    let mut main = at(&endpoint.model);
     let chosen = allowed.main.unwrap_or(&Source::Default);
     // A gateway elsewhere keeps the policy's models itself, for each caller.
     let checks = endpoint.gateway.is_none();
@@ -62,7 +65,7 @@ pub(crate) fn gateway(
     let mut choices: Vec<Target> = Vec::new();
     // The judge's calls name its model, so a project's judge is found among the choices too.
     if let Some(model) = judge.filter(|model| *model != endpoint.model) {
-        let target = Target::new(Arc::clone(&handle), name.clone(), model);
+        let target = at(model);
         if checks {
             check_model(&target.name, allowed.judge, allowed.constraints)?;
         }
@@ -73,7 +76,7 @@ pub(crate) fn gateway(
         if id.is_empty() || id == endpoint.model || choices.iter().any(|c| c.model == id) {
             continue;
         }
-        let target = Target::new(Arc::clone(&handle), name.clone(), id);
+        let target = at(id);
         if checks {
             check_model(&target.name, allowed.models, allowed.constraints)?;
         }

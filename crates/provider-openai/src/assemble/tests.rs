@@ -227,3 +227,23 @@ fn an_error_chunk_is_retryable_only_before_output() {
     );
     assert!(matches!(result, Err(ProviderError::Protocol(_))));
 }
+
+#[test]
+fn the_provider_a_router_passed_the_call_to_is_kept() {
+    let (completion, _) = run(
+        "openrouter",
+        &[
+            r#"{"id":"gen-1","provider":"Anthropic","model":"anthropic/claude-haiku-5.5","choices":[{"delta":{"content":"Hi."}}]}"#,
+            r#"{"provider":"Anthropic","choices":[{"delta":{},"finish_reason":"stop"}]}"#,
+            r#"{"provider":"","choices":[],"usage":{"prompt_tokens":5,"completion_tokens":2,"cost":0.0001}}"#,
+        ],
+    );
+    let completion = completion.unwrap();
+    assert_eq!(completion.upstream.as_deref(), Some("Anthropic"));
+    assert_eq!(completion.model.provider, "openrouter");
+    let (plain, _) = run(
+        "ollama",
+        &[r#"{"choices":[{"delta":{"content":"Hi."},"finish_reason":"stop"}]}"#],
+    );
+    assert_eq!(plain.unwrap().upstream, None);
+}
