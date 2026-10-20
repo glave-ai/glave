@@ -111,6 +111,10 @@ url = "https://glave.example.com"             # glave runs threads there (glave 
 [serve]                                       # the person's or server's file only: how people reach this glave
 origin = "https://glave.example.com"          # its public origin, served over HTTPS by a tunnel or proxy in front;
                                               # without it glave answers on this computer alone
+# domain = "glave.example.com"                # or a name glave serves HTTPS for itself (not with origin), on
+                                              # port 443 unless glave serve --https says where
+# acme = "https://acme-staging-v02.api.letsencrypt.org/directory"  # where its certificate comes
+                                              # from, with domain; Let's Encrypt when absent
 
 [store]                                       # the person's or server's file only; also GLAVE_STORE_URL, GLAVE_STORE_BUCKET
 url = "postgres://glave:...@db.example.com/glave"  # the one data store; the local SQLite file when absent.

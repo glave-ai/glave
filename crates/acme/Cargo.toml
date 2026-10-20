@@ -1,0 +1,45 @@
+[package]
+name = "glave-acme"
+description = "glave's HTTPS of its own: a certificate for its name from an ACME authority over TLS-ALPN-01, renewed, and kept sealed in the store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+# The tests are one binary, tests/main.rs, not one per file.
+autotests = false
+
+[[test]]
+name = "acme"
+path = "tests/main.rs"
+
+[dependencies]
+glave-event.workspace = true
+# The store's log the certificates ledger is kept in, the clock and the random source.
+glave-ports.workspace = true
+# Accounts, orders and the TLS-ALPN-01 challenge (RFC 8555, RFC 8737).
+instant-acme.workspace = true
+jiff.workspace = true
+# The challenge's certificate, which carries the authority's digest (RFC 8737).
+rcgen.workspace = true
+# What HTTPS is served with: the certificate in hand, or the challenge's while it is asked.
+rustls.workspace = true
+# The account's credentials, as the ACME client writes them.
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["time"] }
+# When a certificate's life begins and ends.
+x509-parser.workspace = true
+
+[dev-dependencies]
+# A real store for the certificates ledger, in memory.
+glave-keys.workspace = true
+glave-ports = { workspace = true, features = ["conformance"] }
+glave-store-sqlite.workspace = true
+tokio = { workspace = true, features = ["net", "rt", "io-util"] }
+tokio-rustls.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

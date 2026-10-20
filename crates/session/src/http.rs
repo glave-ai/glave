@@ -7,12 +7,14 @@
 //! `signin/redeem`: without one the answer is HTTP 401 with error `-32013`. Served with a
 //! [`Site`], any `GET` is the web app instead (`site`), with no sign-in: the app signs in to
 //! the API itself. A foreign `Host` on a loopback listener, or a page of another origin, is
-//! refused (`hosts`).
+//! refused (`hosts`). Beside plain HTTP, the server may serve HTTPS of its own (`listen`).
 
 mod body;
 mod hosts;
+mod listen;
 mod site;
 
+pub use self::listen::Listeners;
 pub use self::site::{Files, NoSite, Site};
 
 use std::convert::Infallible;
@@ -29,11 +31,10 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Method, Request as HttpRequest, Response, StatusCode};
 use hyper_util::rt::{TokioIo, TokioTimer};
-use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
 use self::body::Answer;
-use self::hosts::ListenerNames;
+use self::listen::connected;
 use crate::dispatch::Answered;
 use crate::protocol::{ApiError, Request, code};
 use crate::rpc::{Id, parse, respond};
@@ -56,7 +57,7 @@ const HEADER_TIMEOUT: Duration = Duration::from_secs(30);
 /// The header that names the method.
 const METHOD_HEADER: &str = "glave-method";
 
-/// Serves `server` over HTTP on `listener`, each request signed in through `signin`, until
+/// Serves `server` over HTTP on `listeners`, each request signed in through `signin`, until
 /// `stop` completes. Then it cancels running turns and closes every connection. With `site`,
 /// the web app too: every `GET` is one of its files. Browsers the server signs in sign in
 /// through `signin` too.
@@ -64,7 +65,7 @@ pub async fn serve<P, L, B, S>(
     server: Server<P, L, B>,
     signin: SignIn,
     site: Option<Site>,
-    listener: TcpListener,
+    listeners: Listeners,
     stop: S,
 ) -> std::io::Result<()>
 where
@@ -78,10 +79,7 @@ where
         None => signin,
     });
     let site = Arc::new(site);
-    let hosts = Arc::new(ListenerNames::of(
-        listener.local_addr()?,
-        server.inner.origin.as_ref(),
-    ));
+    let (clear, secured) = listeners.listening(server.inner.origin.as_ref())?;
     let mut connections = JoinSet::new();
     let mut stop = pin!(stop);
     loop {
@@ -95,16 +93,16 @@ where
         } else {
             tokio::select! {
                 () = &mut stop => break,
-                accepted = listener.accept() => accepted,
+                accepted = clear.accept(secured.as_ref()) => accepted,
             }
         };
         // A connection that failed to open is that client's problem, not the server's.
-        let Ok((stream, peer)) = accepted else {
+        let (Ok((stream, peer)), listening) = accepted else {
             continue;
         };
         let peer = peer.ip();
         let (server, signin, site) = (server.clone(), Arc::clone(&signin), Arc::clone(&site));
-        let hosts = Arc::clone(&hosts);
+        let (hosts, tls) = (Arc::clone(&listening.names), listening.handshakes());
         connections.spawn(async move {
             let service = service_fn(move |request: HttpRequest<Incoming>| {
                 let (server, signin, site) =
@@ -126,6 +124,9 @@ where
                     Ok::<_, Infallible>(answered)
                 }
             });
+            let Some(stream) = connected(tls, stream).await else {
+                return;
+            };
             // A client that goes away mid-request ends only its own connection.
             let _ = http1::Builder::new()
                 .timer(TokioTimer::new())

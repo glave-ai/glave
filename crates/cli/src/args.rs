@@ -50,6 +50,11 @@ Usage:
                                 HTTPS goes in front, and origin under [serve] in config.toml
                                 says where people reach it (https://glave.example.com); a
                                 tunnel on this computer reaches 127.0.0.1 at that name too.
+                                With domain under [serve] instead, glave serves HTTPS for
+                                that name itself, on port 443 unless --https <host:port>
+                                says where, its certificate from Let's Encrypt (or the ACME
+                                directory acme names), renewed on its own; until it has
+                                one, it answers there only the authority's check.
                                 --issuer may be given more than once. The web app is
                                 served at / too: from --web <folder> (the app's build),
                                 else the one built into glave, else the web folder beside
@@ -145,7 +150,8 @@ a Linux build of glave for workers), mcp (the servers in mcp.json to turn on) an
 [telemetry] (otlp = an OpenTelemetry collector's OTLP/HTTP URL, for builds with the otlp
 feature: spans and metrics, never content), [store] (url = a postgres:// database, over TLS
 off this computer) and [serve] (origin = the https address people reach glave at from
-elsewhere, through a tunnel or a proxy in front of it); flags and the environment win over it. An
+elsewhere, through a tunnel or a proxy in front of it; or domain = the name glave serves HTTPS
+for itself); flags and the environment win over it. An
 organization's policy at /etc/glave/policy.toml limits what may be chosen.
 
 A new thread starts with your AGENTS.md (in GLAVE_HOME), then every AGENTS.md from the
@@ -225,6 +231,8 @@ pub(crate) struct Args {
     pub prompt: String,
     /// Serve over HTTP on this address, rather than stdio.
     pub http: Option<SocketAddr>,
+    /// Serve HTTPS of glave's own on this address, rather than port 443 of every address.
+    pub https: Option<SocketAddr>,
     /// Work toward this objective across turns, instead of running one turn.
     pub goal: Option<String>,
     /// Tokens the goal may use.
@@ -297,6 +305,14 @@ pub(crate) fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args,
             "--stdio" if serving => args.stdio = true,
             "--own-session" if serving => args.own_session = true,
             "--http" if serving => args.http = Some(address(rest.next())?),
+            "--https" if serving => {
+                let value = rest.next().ok_or("--https needs an address: host:port")?;
+                args.https = Some(
+                    value
+                        .parse()
+                        .map_err(|_| format!("--https {value:?} is not host:port"))?,
+                );
+            }
             "--issuer" if serving => args
                 .issuers
                 .push(rest.next().ok_or("--issuer needs a URL")?),
@@ -446,7 +462,7 @@ fn budget(value: Option<String>) -> Result<u64, String> {
 /// socket and loopback HTTP), and sign-in for HTTP.
 fn transport(args: &Args) -> Result<(), String> {
     let stdio = args.stdio;
-    if stdio && args.http.is_some() {
+    if stdio && (args.http.is_some() || args.https.is_some()) {
         return Err("glave serve takes one of --stdio or --http <address>".into());
     }
     if args.own_session && stdio {

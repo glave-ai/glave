@@ -76,6 +76,27 @@ jobs:
           done
           docker logs seaweedfs
           exit 1
+      # Pebble (MPL-2.0), Let's Encrypt's ACME test server, pinned by digest, so glave gets a
+      # real certificate here: it checks glave.test, this runner, over TLS-ALPN-01 on port 5001.
+      # Its directory is served under a root of its own, which the test hands to glave alone.
+      - name: Start an ACME test server
+        run: |
+          docker run -d --name pebble -p 14000:14000 -p 15000:15000 \
+            --add-host glave.test:host-gateway -e PEBBLE_VA_NOSLEEP=1 -e PEBBLE_WFE_NONCEREJECT=0 \
+            ghcr.io/letsencrypt/pebble:2.10.1@sha256:ddf230642b1a584f519f32e347de1b05a6e4c1f6c35c1863b33effeab5f78199
+          docker cp pebble:/test/certs/pebble.minica.pem "$RUNNER_TEMP/pebble.minica.pem"
+          {
+            echo "GLAVE_TEST_ACME_DIRECTORY=https://localhost:14000/dir"
+            echo "GLAVE_TEST_ACME_ROOT=$RUNNER_TEMP/pebble.minica.pem"
+            echo "GLAVE_TEST_ACME_ROOTS=https://localhost:15000/roots/0"
+            echo "GLAVE_TEST_ACME_PORT=5001"
+          } >> "$GITHUB_ENV"
+          for _ in $(seq 1 60); do
+            if curl -sf --cacert "$RUNNER_TEMP/pebble.minica.pem" -o /dev/null https://localhost:14000/dir; then exit 0; fi
+            sleep 1
+          done
+          docker logs pebble
+          exit 1
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2

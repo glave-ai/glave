@@ -74,6 +74,7 @@ deadpool-postgres = { version = "0.14", default-features = false, features = ["r
 # The `Stream` trait, to read the streams object_store answers (already in the tree, under it,
 # hyper and reqwest).
 futures-core = { version = "0.3", default-features = false }
+glave-acme = { path = "crates/acme" }
 glave-aws = { path = "crates/aws" }
 glave-azure = { path = "crates/azure" }
 glave-bucket = { path = "crates/bucket" }
@@ -107,6 +108,9 @@ http-body-util = "0.1"
 hyper = { version = "1", default-features = false }
 hyper-util = { version = "0.1", default-features = false }
 ignore = "0.4"
+# ACME (RFC 8555) for glave's own certificate (glave-acme): accounts, orders and challenges, on
+# the hyper, rustls and aws-lc-rs glave already uses; its key and request made with rcgen.
+instant-acme = { version = "0.8.5", default-features = false, features = ["aws-lc-rs", "hyper-rustls", "rcgen"] }
 # Snapshot tests for stable text formats (AGENTS.md). Dev only; no default features.
 insta = { version = "1", default-features = false }
 # Verifying OIDC tokens, on aws-lc-rs, the crypto rustls already uses.
@@ -167,6 +171,8 @@ tree-sitter = "0.27"
 tree-sitter-bash = "0.25"
 url = "2"
 uuid = { version = "1", default-features = false, features = ["std", "serde"] }
+# When a certificate's life begins and ends (glave-acme), so it is renewed with a third left.
+x509-parser = { version = "0.18", default-features = false }
 zeroize = "1"
 
 # Day-to-day builds: file and line numbers in backtraces, no full debug info

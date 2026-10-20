@@ -42,6 +42,8 @@ const LAYERS: &[(&str, Layer)] = &[
     ("glave-computer", Adapter),
     // The verified caller: OIDC (jsonwebtoken) and local sign-in.
     ("glave-identity", Adapter),
+    // HTTPS of glave's own: certificates from an ACME authority, through instant-acme.
+    ("glave-acme", Adapter),
     // MCP servers as a tool source, through rmcp.
     ("glave-mcp", Adapter),
     // The memory port: glave's own MCP server over the event log.

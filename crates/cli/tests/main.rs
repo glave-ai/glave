@@ -22,6 +22,7 @@ mod connections;
 mod credentials;
 mod e2e;
 mod gateway;
+mod https;
 mod mcp;
 mod memory;
 mod orphans;

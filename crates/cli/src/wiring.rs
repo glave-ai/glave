@@ -54,6 +54,8 @@ pub(crate) struct Wired {
     pub(crate) org: glave_ports::OrgId,
     /// Each project's own servers, hooks and settings, and what it asks to be trusted.
     pub(crate) projects: Arc<ProjectFolders>,
+    /// How people reach the server from elsewhere, and its HTTPS of its own.
+    pub(crate) reach: crate::serving::Reach,
     /// Logs and telemetry, stopped last.
     pub(crate) _telemetry: crate::telemetry::Telemetry,
 }
@@ -82,6 +84,13 @@ async fn mcp_servers(
     Ok(Arc::new(Servers::start(wanted, &root, remote, processes)))
 }
 
+/// What a thread opens with where `root` is: the person's own AGENTS.md, then the folder's.
+async fn opening(root: &Path) -> anyhow::Result<Option<String>> {
+    let personal = home::folder()?.join(AGENTS_MD);
+    let instructions = agents_md(root, Some(&personal)).await?;
+    Ok(instructions.map(|loaded| loaded.text))
+}
+
 /// Builds the session server on this computer's store and the current folder.
 pub(crate) async fn wire(
     args: &Args,
@@ -103,9 +112,7 @@ pub(crate) async fn wire(
     let lineup = Lineup::new(&setup, configured);
     let lined = line_up(args, lineup, &store, identity.person, remote.is_some()).await?;
     let (workspace, hosts) = with_hosts(args, &store, identity.person, choices, workspace).await?;
-    let personal = home::folder()?.join(AGENTS_MD);
-    let instructions = agents_md(workspace.root(), Some(&personal)).await?;
-    let opening = instructions.as_ref().map(|loaded| loaded.text.clone());
+    let opening = opening(workspace.root()).await?;
     let mut settings = settings_for(args, choices, &lined, identity, opening)?;
     let model = settings.model.clone();
     let root = workspace.root().to_owned();
@@ -149,6 +156,7 @@ pub(crate) async fn wire(
         )
     };
     let server = Server::new(wiring, settings, scope.org(), answering);
+    let reach = crate::serving::reach(args, choices, &store, identity.person).await?;
     if start_folder(args, &setup.choices) {
         keep_here(&server, scope.project(), &root).await?;
     }
@@ -165,6 +173,7 @@ pub(crate) async fn wire(
         blobs: store.blobs(),
         org: scope.org(),
         projects,
+        reach,
         _telemetry: telemetry,
     })
 }

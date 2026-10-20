@@ -152,6 +152,9 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
     if let Some(origin) = &choices.origin {
         rows.push(row("origin", origin.value.to_string(), &origin.from));
     }
+    if let Some(acme) = &choices.acme {
+        rows.push(row("acme", acme.value.clone(), &acme.from));
+    }
     if let Some(provider) = &choices.provider {
         rows.push(row("provider", provider.value.describe(), &provider.from));
     }
