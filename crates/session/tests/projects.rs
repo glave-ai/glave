@@ -42,7 +42,7 @@ fn create(name: &str, folder: Option<NewFolder>) -> Request {
 }
 
 /// The project and folder a `project/*` request answered with.
-fn made(reply: Reply) -> (glave_ports::Project, Option<ProjectFolder>) {
+fn made(reply: Reply) -> (Project, Option<ProjectFolder>) {
     match reply {
         Reply::Project { project, folder } => (project, folder),
         other => panic!("a project, not {other:?}"),
@@ -258,7 +258,7 @@ fn a_project_from_a_repository_is_cloned_signing_in_with_its_git_host() {
         let fixed = Arc::new(FixedGitCredentials::new(hosts, credential));
         let mut setup = Setup::new(Vec::new());
         setup.project_base = Some(projects.clone());
-        setup.credentials = Some(fixed.clone());
+        setup.credentials = Some(Arc::<FixedGitCredentials>::clone(&fixed));
         let again = folder("projects-clone-again");
         let server = setup.build(&again).await.0;
         let asked = NewFolder::Repository { url: url.clone() };

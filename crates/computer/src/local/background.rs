@@ -290,6 +290,10 @@ impl Backgrounds {
 impl Drop for Backgrounds {
     fn drop(&mut self) {
         let held = self.held.get_mut().unwrap_or_else(PoisonError::into_inner);
+        #[expect(
+            clippy::iter_over_hash_type,
+            reason = "every watcher is aborted, so the order is never seen"
+        )]
         for entry in held.values() {
             entry.watcher.abort();
         }

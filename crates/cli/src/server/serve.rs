@@ -44,6 +44,10 @@ pub struct Daily<'a> {
 impl Daily<'_> {
     /// Runs until it is dropped: this machine's worktrees checked whenever a day has passed
     /// since any glave last checked them, and memory tidied and its keys rotated once a day.
+    #[expect(
+        clippy::infinite_loop,
+        reason = "it runs until dropped; an async fn cannot return `!` on stable Rust"
+    )]
     async fn run(&self) {
         let mut tick = tokio::time::interval_at(Instant::now() + TICK, TICK);
         // Both were done as the server started.

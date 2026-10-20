@@ -249,7 +249,7 @@ methods! {
     "project/create" => ProjectCreate {
         name: String,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        members: Vec<glave_event::Principal>,
+        members: Vec<Principal>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         folder: Option<NewFolder>,
     } -> [Project],

@@ -118,12 +118,12 @@ fn models_offered_come_from_the_nearest_file_that_lists_them() {
     assert_eq!(
         models.value,
         [
-            files::ModelEntry {
+            ModelEntry {
                 id: "hope-12b".into(),
                 name: Some("Hope".into()),
                 hope: true,
             },
-            files::ModelEntry {
+            ModelEntry {
                 id: "small".into(),
                 name: None,
                 hope: false,

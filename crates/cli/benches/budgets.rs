@@ -3,6 +3,8 @@
 //! Fails when any measurement is over its budget. Run it through `cargo xtask bench`, alone
 //! on an idle machine, since these are wall-clock numbers.
 
+#![expect(clippy::print_stdout, reason = "a benchmark: its table is its output")]
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};

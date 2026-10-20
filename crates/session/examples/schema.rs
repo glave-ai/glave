@@ -1,6 +1,11 @@
 //! Prints the session API's JSON Schema (`specs/session.schema.json`); `cargo xtask schema`
 //! runs it.
 
+#![expect(
+    clippy::print_stderr,
+    reason = "a command: it says why it failed in the terminal"
+)]
+
 use std::io::Write as _;
 use std::process::ExitCode;
 
