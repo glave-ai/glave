@@ -1,6 +1,6 @@
 //! glave's bucket: where blobs' sealed bytes are kept, apart from their records
 //! (`specs/storage.md`, "Which stores"). On a person's computer or own server it is a folder in
-//! glave's folder. One library, `object_store` (Apache Arrow's), serves every place, so the
+//! glave's folder; deployed, an S3-compatible bucket (S3, R2, GCS, Ceph). One library, `object_store` (Apache Arrow's), serves every place, so the
 //! same code writes, reads and deletes in each.
 //!
 //! Objects are kept as `<organization>/<project>/<object>`, one prefix per organization, for

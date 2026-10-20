@@ -129,6 +129,8 @@ Environment:
   GLAVE_SERVER_TOKEN an access token for the server --server names
   GLAVE_STORE_URL    a Postgres database to keep history in, as [store] url in config.toml
                      (default: the SQLite file in GLAVE_HOME)
+  GLAVE_STORE_BUCKET an S3-compatible bucket (s3://name) to keep files in, as [store] bucket,
+                     reached with the AWS_* settings (default: the blobs folder in GLAVE_HOME)
   GLAVE_LOG          how much --log records: error, warn, info (the default), debug or trace
   GLAVE_JUDGE_MODEL     in auto mode, the model that decides whether an action a rule
                      flagged may run because you asked for it (default: the main model;

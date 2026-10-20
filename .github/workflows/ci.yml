@@ -46,6 +46,9 @@ jobs:
     # which each test checks so it never sees the containers of a test running beside it.
     env:
       GLAVE_TEST_POSTGRES_URL: postgres://postgres:glave@localhost:5432/postgres
+      # The S3-compatible bucket a step below starts, so the bucket's suites run here too.
+      GLAVE_TEST_S3_URL: s3://glave-test
+      GLAVE_TEST_S3_ENDPOINT: http://localhost:8333
       GLAVE_TEST_DOCKER: "1"
       # A real worker too: the glave this job builds (Linux, the runner's processor), in an
       # image with bash and git whose glibc is the runner's (Ubuntu 24.04), pinned.
@@ -61,6 +64,18 @@ jobs:
           sudo docker image prune --all --force >/dev/null
           df -h /
       - uses: actions/checkout@v7
+      # SeaweedFS (Apache-2.0) as an S3-compatible bucket, pinned by digest. A service container
+      # cannot be given its command (`server -s3`), so a step starts it, and makes the tests'
+      # bucket once it answers. It keeps no keys, so the tests send their requests unsigned.
+      - name: Start an S3-compatible bucket
+        run: |
+          docker run -d --name seaweedfs -p 8333:8333 chrislusf/seaweedfs@sha256:08d516132314207d10c8e37cbffc1f32b147d870169688734cc61c6231625b62 server -s3
+          for _ in $(seq 1 60); do
+            if curl -sf -o /dev/null -X PUT http://localhost:8333/glave-test; then exit 0; fi
+            sleep 1
+          done
+          docker logs seaweedfs
+          exit 1
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2

@@ -88,6 +88,9 @@ pub struct Choices {
     /// The Postgres database that is the data store, if any; the local SQLite file if not.
     /// The URL may hold a password: show it only [`redacted`](crate::policy::redacted).
     pub store: Option<Chosen<String>>,
+    /// The S3-compatible bucket blobs' bytes are kept in, if any; a folder in glave's folder
+    /// if not.
+    pub bucket: Option<Chosen<String>>,
     /// The session server elsewhere this CLI is a client of, if any: its URL.
     pub server: Option<Chosen<String>>,
     /// A cloud contract's models, if any, in place of `GLAVE_BASE_URL`'s server.
@@ -170,7 +173,12 @@ pub(super) fn resolve(layers: &[Layer]) -> Choices {
         provider: nearest(layers, "provider", |file| file.provider.clone()),
         github: nearest(layers, "github", |file| file.github.clone()),
         store: nearest(layers, "store", |file| {
-            file.store.as_ref().map(|store| store.url.trim().to_owned())
+            let url = file.store.as_ref()?.url.as_ref()?;
+            Some(url.trim().to_owned())
+        }),
+        bucket: nearest(layers, "bucket", |file| {
+            let bucket = file.store.as_ref()?.bucket.as_ref()?;
+            Some(bucket.trim().to_owned())
         }),
         telemetry: nearest(layers, "telemetry", |file| {
             file.telemetry

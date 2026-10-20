@@ -122,13 +122,17 @@ pub struct ServerFile {
 }
 
 /// `[store]`: the one data store (AGENTS.md, "One of each"). The local SQLite file in glave's
-/// folder unless `url` names a Postgres database.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+/// folder unless `url` names a Postgres database; blobs' bytes in a folder in glave's folder
+/// unless `bucket` names an S3-compatible bucket.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StoreFile {
     /// `postgres://user:password@host/database`; TLS off this computer unless
     /// `sslmode=disable`.
-    pub url: String,
+    pub url: Option<String>,
+    /// `s3://name`: the bucket, reached with the standard AWS settings from the environment or
+    /// workload identity (`AWS_ENDPOINT_URL` for R2, GCS or Ceph), never keys written here.
+    pub bucket: Option<String>,
 }
 
 impl StoreFile {
@@ -136,6 +140,13 @@ impl StoreFile {
     pub fn postgres(url: &str) -> bool {
         let url = url.trim();
         url.starts_with("postgres://") || url.starts_with("postgresql://")
+    }
+
+    /// Whether `url` names an S3-compatible bucket: `s3://` and a name.
+    pub fn bucket(url: &str) -> bool {
+        url.trim()
+            .strip_prefix("s3://")
+            .is_some_and(|name| !name.is_empty())
     }
 }
 
@@ -444,13 +455,22 @@ pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
             server.url
         );
     }
-    if let Some(store) = &file.store
-        && !StoreFile::postgres(&store.url)
+    if let Some(url) = file.store.as_ref().and_then(|store| store.url.as_ref())
+        && !StoreFile::postgres(url)
     {
         invalid!(
             "{}: [store] url = {:?} is not a postgres:// URL",
             path.display(),
-            crate::policy::redacted(&store.url)
+            crate::policy::redacted(url)
+        );
+    }
+    if let Some(bucket) = file.store.as_ref().and_then(|store| store.bucket.as_ref())
+        && !StoreFile::bucket(bucket)
+    {
+        invalid!(
+            "{}: [store] bucket = {:?} is not an s3:// bucket",
+            path.display(),
+            bucket
         );
     }
     if let Some(web) = &file.web {
