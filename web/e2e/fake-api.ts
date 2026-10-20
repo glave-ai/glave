@@ -111,7 +111,7 @@ const THREADS: Readonly<Record<string, readonly ThreadSummary[]>> = {
   ],
 };
 
-const HISTORY = [
+export const HISTORY = [
   event(1, 'thread.started', {}),
   bound(2),
   event(3, 'turn.started', { model: { provider: 'e2e', name: DEFAULT_MODEL } }),

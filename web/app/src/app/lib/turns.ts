@@ -170,3 +170,30 @@ export function threadTurns(events: readonly RawEvent[]): readonly Turn[] {
     })
     .filter((turn) => turn.items.length > 0);
 }
+
+/**
+ * The turn the person just asked for, before the server records it: their message alone, so
+ * it shows at once, with glave working under it.
+ */
+export function startingTurn(prompt: string): Turn {
+  return {
+    key: 'turn-starting',
+    items: [
+      {
+        kind: 'message',
+        key: 'starting',
+        seq: 0,
+        from: 'person',
+        text: prompt,
+        reasoning: '',
+        steered: false,
+        files: [],
+      },
+    ],
+    files: [],
+    took: null,
+    outcome: null,
+    cost: null,
+    routes: [],
+  };
+}
