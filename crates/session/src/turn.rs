@@ -147,6 +147,7 @@ where
             prompt,
             choice,
             queue,
+            unattended,
         } = message;
         self.authorize(caller, thread).await?;
         let model = self.model_of(thread, choice.model.as_deref()).await?;
@@ -172,7 +173,7 @@ where
                 }
             }
             let notes = self.watch(thread);
-            let work = turn(thread, prompt, caller, &choice);
+            let work = turn(thread, prompt, caller, &choice, unattended);
             let started = self
                 .occupy_for(thread, finish.clone(), Use::Steered, work)
                 .await;
@@ -201,12 +202,14 @@ type TurnWork<P, L, B> = Box<
 >;
 
 /// A turn's work on a held thread: the model and approval mode `choice` names chosen first,
-/// then the turn, then a turn for each message sent too late for the one before it.
+/// then the turn, then a turn for each message sent too late for the one before it; answered
+/// by no one throughout when `unattended`.
 fn turn<P, L, B>(
     thread: ThreadId,
     prompt: &str,
     caller: &Caller,
     choice: &Choice,
+    unattended: bool,
 ) -> TurnWork<P, L, B>
 where
     P: ModelProvider + 'static,
@@ -216,6 +219,7 @@ where
     let (prompt, caller, choice) = (prompt.to_owned(), caller.clone(), choice.clone());
     Box::new(move |inner, mut held, cancel| {
         Box::pin(async move {
+            let _no_one = unattended.then(|| inner.approvals.unattended_while(thread));
             let hub = Arc::clone(&inner.hub);
             let mut publish = |live| publish(&hub, thread, live);
             let chose = crate::modes::record(&inner.harness, &mut held, &caller, &choice);

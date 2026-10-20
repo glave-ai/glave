@@ -2377,6 +2377,10 @@
           },
           "thread": {
             "$ref": "#/$defs/ThreadId"
+          },
+          "unattended": {
+            "description": "No one answers its turns, as `turn/start`'s `unattended` says.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -3687,6 +3691,10 @@
           },
           "thread": {
             "$ref": "#/$defs/ThreadId"
+          },
+          "unattended": {
+            "description": "No one answers the turn it starts: what would ask is declined at once and\n`question` is not offered, as in a task, for its subagents too, while it still\nstreams to whoever follows it. For a client with no one at it, such as a script.",
+            "type": "boolean"
           }
         },
         "required": [

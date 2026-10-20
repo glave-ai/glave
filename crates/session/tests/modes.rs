@@ -76,6 +76,7 @@ async fn turn_in(
             meta: Meta::default(),
             model: None,
             approval,
+            unattended: false,
         })
         .await
 }

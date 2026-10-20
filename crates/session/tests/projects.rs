@@ -368,6 +368,7 @@ fn a_thread_opens_with_its_own_folder_s_instructions_and_a_chat_with_the_person_
                     model: None,
                     approval: None,
                     meta: Meta::default(),
+                    unattended: false,
                 },
             )
             .await

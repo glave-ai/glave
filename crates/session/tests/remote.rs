@@ -54,6 +54,7 @@ fn a_turn_elsewhere_streams_and_its_approvals_are_answered_as_here() {
                 model: None,
                 approval: None,
                 meta: Meta::default(),
+                unattended: false,
             })
             .await
             .unwrap();

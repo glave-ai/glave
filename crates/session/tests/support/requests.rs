@@ -97,6 +97,7 @@ pub(crate) async fn turn<L: EventLog + 'static>(
             meta: Meta::default(),
             model: None,
             approval: None,
+            unattended: false,
         })
         .await
 }
@@ -106,6 +107,7 @@ pub(crate) fn turn_start(thread: ThreadId, prompt: &str, key: Option<Idempotency
     Request::TurnStart {
         background: false,
         budget: None,
+        unattended: false,
         thread,
         prompt: prompt.into(),
         meta: Meta {
@@ -174,6 +176,7 @@ pub(crate) async fn background<L: EventLog + 'static>(
         meta: Meta::default(),
         model: None,
         approval: None,
+        unattended: false,
     };
     match server.request(request).await.unwrap() {
         Reply::Task { task } => task,

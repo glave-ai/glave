@@ -12,6 +12,7 @@ fn turn_with(thread: glave_event::ThreadId, traceparent: &str) -> Request {
     Request::TurnStart {
         background: false,
         budget: None,
+        unattended: false,
         model: None,
         approval: None,
         thread,

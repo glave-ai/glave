@@ -166,6 +166,11 @@ methods! {
         /// Not while a turn runs.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         approval: Option<ApprovalMode>,
+        /// No one answers the turn it starts: what would ask is declined at once and
+        /// `question` is not offered, as in a task, for its subagents too, while it still
+        /// streams to whoever follows it. For a client with no one at it, such as a script.
+        #[serde(default, skip_serializing_if = "is_false")]
+        unattended: bool,
         #[serde(rename = "_meta", default, skip_serializing_if = "Meta::is_empty")]
         meta: Meta,
     } -> [Turn, Task, Queued],
@@ -204,6 +209,9 @@ methods! {
         /// Works toward the goal as a task, with no one attached: answered at once.
         #[serde(default, skip_serializing_if = "is_false")]
         background: bool,
+        /// No one answers its turns, as `turn/start`'s `unattended` says.
+        #[serde(default, skip_serializing_if = "is_false")]
+        unattended: bool,
     } -> [Turn, Task],
     /// Stops the thread's active goal, cancelling its running turn.
     "goal/stop" => GoalStop { thread: ThreadId } -> [Done],

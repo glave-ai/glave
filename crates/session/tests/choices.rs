@@ -124,6 +124,7 @@ fn a_project_s_choices_reach_the_person_s_threads_in_it_never_another_s() {
             model: None,
             approval: None,
             meta: glave_session::protocol::Meta::default(),
+            unattended: false,
         };
         server.request_as(&elsewhere, turned).await.unwrap();
         assert_eq!(sent_to(&seen, 1), "test-model");

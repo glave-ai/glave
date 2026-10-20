@@ -25,6 +25,18 @@ pub enum Answering {
     NoOne,
 }
 
+/// No one answers for a thread until this drops ([`Approvals::unattended_while`]).
+pub(crate) struct Unattended {
+    approvals: Approvals,
+    thread: ThreadId,
+}
+
+impl Drop for Unattended {
+    fn drop(&mut self) {
+        self.approvals.attend(self.thread);
+    }
+}
+
 /// A decision, and the person who made it when the caller was not the local person.
 type Decided = (Decision, Option<PrincipalId>);
 type Pending = HashMap<(ThreadId, CallId), oneshot::Sender<Decided>>;
@@ -72,6 +84,16 @@ impl Approvals {
     /// `thread`'s task ended: clients answer for it again.
     pub(crate) fn attend(&self, thread: ThreadId) {
         self.unattended().remove(&thread);
+    }
+
+    /// No one answers for `thread` while what this returns lives: a turn, or a goal's turns,
+    /// started with no one at its client.
+    pub(crate) fn unattended_while(&self, thread: ThreadId) -> Unattended {
+        self.unattend(thread);
+        Unattended {
+            approvals: self.clone(),
+            thread,
+        }
     }
 
     /// Whether a client may answer for `thread`: someone can, and neither it nor a thread

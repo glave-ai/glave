@@ -22,12 +22,14 @@ where
 {
     /// Sets `goal` on `thread` for `caller` and streams its turns: their notifications, then
     /// how the last one ended, with every turn's calls, tokens and cost added up. Without a
-    /// goal, continues the thread's active one or resumes the one the model paused.
+    /// goal, continues the thread's active one or resumes the one the model paused. No one
+    /// answers its turns when `unattended`.
     pub async fn start_goal_as(
         &self,
         caller: &Caller,
         thread: ThreadId,
         goal: Option<Goal>,
+        unattended: bool,
     ) -> Result<TurnStream, ApiError> {
         self.authorize(caller, thread).await?;
         // A model the thread chose before must still be one this server runs.
@@ -41,6 +43,7 @@ where
         let notes = self.watch(thread);
         let caller = caller.clone();
         let work = move |inner: Arc<crate::server::Inner<P, L, B>>, mut held, cancel| async move {
+            let _no_one = unattended.then(|| inner.approvals.unattended_while(thread));
             let hub = Arc::clone(&inner.hub);
             let mut live = |live| publish(&hub, thread, live);
             let harness = &inner.harness;
