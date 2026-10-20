@@ -20,6 +20,7 @@ use self::plan::{Proposal, ask, keeps_facts};
 use super::Memories;
 use super::write::{BUDGET_TOKENS, checked, tokens};
 use crate::book::Entry;
+use crate::similar::words;
 
 /// How long glave's own forgets wait before their keys are destroyed, so they can be undone.
 const UNDO_DAYS: i64 = 30;
@@ -199,11 +200,19 @@ impl<L: EventLog + 'static> Memories<L> {
                 Ok(Settled::Merged(rest.len()))
             }
             Proposal::Conflict { clear, .. } => {
-                let [(one, _), (other, _)] = picked.as_slice() else {
+                let [(one, one_text), (other, other_text)] = picked.as_slice() else {
                     return Ok(Settled::Refused(
                         "a contradiction is between two memories".into(),
                     ));
                 };
+                // Two memories about one fact share a word about it; two that share none are a
+                // misread list, and forgetting either would lose a fact.
+                if words(one_text).is_disjoint(&words(other_text)) {
+                    return Ok(Settled::Refused(format!(
+                        "memories {:?} share no word, so neither replaces the other",
+                        proposal.memories()
+                    )));
+                }
                 let (one_at, other_at) = (one.touched(), other.touched());
                 used.extend([one.memory, other.memory]);
                 if !clear || one_at == other_at {
