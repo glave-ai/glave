@@ -161,6 +161,7 @@ fn a_turn_answered_by_no_one_declines_what_asks_where_clients_answer_and_the_nex
             budget: None,
             model: None,
             approval: None,
+            effort: None,
             unattended: true,
             meta: Meta::default(),
         };
@@ -237,6 +238,7 @@ fn messages_have_the_shape_the_spec_gives() {
         meta: Meta::default(),
         model: None,
         approval: None,
+        effort: None,
         unattended: false,
     };
     let wire = serde_json::to_value(&request).unwrap();

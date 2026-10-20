@@ -160,6 +160,7 @@ pub(crate) async fn background(args: &Args) -> anyhow::Result<ExitCode> {
         computer: None,
         model: args.model.clone(),
         approval: args.approval,
+        effort: None,
     };
     let Reply::Thread { thread } = server.request(started).await? else {
         bail!("glave answered thread/start with something else");
@@ -181,6 +182,7 @@ pub(crate) async fn background(args: &Args) -> anyhow::Result<ExitCode> {
             meta: glave_session::protocol::Meta::default(),
             model: None,
             approval: None,
+            effort: None,
             unattended: false,
         },
     };

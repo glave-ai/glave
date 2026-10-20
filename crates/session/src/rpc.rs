@@ -316,6 +316,7 @@ mod tests {
                 computer: None,
                 model: None,
                 approval: None,
+                effort: None,
             }
         );
         let (_, request) =
@@ -330,6 +331,7 @@ mod tests {
                 computer: None,
                 model: None,
                 approval: None,
+                effort: None,
             }
         );
     }

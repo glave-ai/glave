@@ -76,6 +76,7 @@ fn on_a_thread(thread: ThreadId) -> Vec<Request> {
             meta: Meta::default(),
             model: None,
             approval: None,
+            effort: None,
             unattended: false,
         },
         Request::ApprovalDecide {
@@ -106,6 +107,7 @@ async fn turn_over(web: &mut Web, thread: ThreadId, prompt: &str) -> Value {
         meta: Meta::default(),
         model: None,
         approval: None,
+        effort: None,
         unattended: false,
     });
     web.post(&message)
@@ -134,6 +136,7 @@ fn one_person_can_neither_read_nor_answer_anothers_threads() {
             computer: None,
             model: None,
             approval: None,
+            effort: None,
         };
         let theirs = ada.call(&start).await["result"]["thread"]["id"].clone();
         let thread = serde_json::from_value(theirs.clone()).unwrap();
@@ -220,6 +223,7 @@ fn a_one_off_chat_lands_in_the_callers_personal_project_with_a_scratch_folder() 
                 computer: None,
                 model: None,
                 approval: None,
+                effort: None,
             })
             .await;
         let id = started["result"]["thread"]["id"].clone();
@@ -314,6 +318,7 @@ fn projects_are_made_shared_and_renamed_only_by_their_owner() {
                     computer: None,
                     model: None,
                     approval: None,
+                    effort: None,
                 },
             )
             .await
@@ -370,6 +375,7 @@ fn a_request_that_names_no_project_acts_in_the_person_s_chats_whatever_folder_th
                 computer: None,
                 model: None,
                 approval: None,
+                effort: None,
             })
             .await
             .unwrap();

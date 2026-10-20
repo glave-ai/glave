@@ -51,6 +51,7 @@ async fn start_in(
             computer: None,
             model: None,
             approval,
+            effort: None,
         })
         .await
 }
@@ -77,6 +78,7 @@ async fn turn_in(
             model: None,
             approval,
             unattended: false,
+            effort: None,
         })
         .await
 }

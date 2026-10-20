@@ -201,6 +201,7 @@ fn request() -> ModelRequest {
         max_output_tokens: None,
         purpose: crate::model::Purpose::Main,
         threads: Vec::new(),
+        effort: None,
     }
 }
 

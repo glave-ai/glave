@@ -210,3 +210,19 @@ fn a_target_that_takes_no_reasoning_back_is_not_sticky() {
     let answer = block_on!(gateway.complete(&asked, &mut |_| {})).unwrap();
     assert!(answer.served.unwrap().reasoning_stripped);
 }
+
+#[test]
+fn a_reasoning_level_goes_only_to_a_target_that_offers_it() {
+    let fake = Fake::new("p");
+    let mut asked = request(Purpose::Main);
+    asked.effort = Some("high".into());
+    let offers = fake
+        .target("reasons")
+        .with_efforts(vec!["high".into(), "low".into()]);
+    serve(vec![offers], &asked).unwrap();
+    serve(vec![fake.target("unknown")], &asked).unwrap();
+    let only_low = fake.target("low-only").with_efforts(vec!["low".into()]);
+    serve(vec![only_low], &asked).unwrap();
+    let sent: Vec<Option<String>> = fake.seen().into_iter().map(|r| r.effort).collect();
+    assert_eq!(sent, [Some("high".to_owned()), None, None]);
+}

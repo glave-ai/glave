@@ -58,6 +58,7 @@ async fn start_in(server: &Tested, project: ProjectId, worktree: Option<bool>) -
         computer: None,
         model: None,
         approval: None,
+        effort: None,
     };
     match server.request(started).await.unwrap() {
         Reply::Thread { thread } => thread.id,
@@ -337,6 +338,7 @@ fn a_thread_opens_with_its_own_folder_s_instructions_and_a_chat_with_the_person_
                     computer: None,
                     model: None,
                     approval: None,
+                    effort: None,
                 },
             )
             .await
@@ -367,6 +369,7 @@ fn a_thread_opens_with_its_own_folder_s_instructions_and_a_chat_with_the_person_
                     budget: None,
                     model: None,
                     approval: None,
+                    effort: None,
                     meta: Meta::default(),
                     unattended: false,
                 },
@@ -509,6 +512,7 @@ fn a_caller_signed_in_elsewhere_gives_no_folder_and_sees_none() {
                     computer: None,
                     model: None,
                     approval: None,
+                    effort: None,
                 },
             )
             .await
@@ -586,6 +590,7 @@ fn a_project_whose_folder_is_on_another_computer_starts_no_thread_here() {
                 computer: None,
                 model: None,
                 approval: None,
+                effort: None,
             })
             .await
             .unwrap_err();

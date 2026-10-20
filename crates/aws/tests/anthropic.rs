@@ -35,6 +35,7 @@ mod over_http {
             max_output_tokens: None,
             purpose: glave_ports::Purpose::Main,
             threads: Vec::new(),
+            effort: None,
         };
         let completion = block_on!(provider.complete(&request, &mut |_| {})).unwrap();
         match completion.parts.as_slice() {

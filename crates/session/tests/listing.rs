@@ -105,6 +105,7 @@ async fn our_pages(name: &str, busy: bool) -> (Vec<String>, Vec<ThreadId>, Vec<T
                 computer: None,
                 model: None,
                 approval: None,
+                effort: None,
             };
             theirs.request(theirs_too).await.unwrap();
         }

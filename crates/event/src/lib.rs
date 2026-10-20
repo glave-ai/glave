@@ -25,13 +25,13 @@ pub use id::{
 pub use money::{Currency, Decimal, Money};
 pub use payload::{
     ApprovalDecided, ApprovalMode, ApprovalModeChosen, ApprovalRequested, Arguments, Auth,
-    AuthMethod, Cost, ForkPoint, GatewayToolCalled, GoalEnded, GoalReason, GoalResumed, GoalSet,
-    HookPoint, HookRan, HookResult, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved,
-    MemoryScope, MemorySource, MemoryTidied, MessageAdded, ModelChosen, ModelRef, ModelResponded,
-    Opaque, Origin, OriginKind, Outcome, OutsideSandbox, ParentCall, Part, Principal,
-    PrincipalKind, Producer, Role, StopReason, ThreadArchived, ThreadCompacted, ThreadDeleted,
-    ThreadRenamed, ThreadStarted, ThreadUnarchived, TokenCounts, ToolCallCompleted,
-    ToolCallRequested, TraceId, TurnEnded, TurnStarted, Usage, Verdict,
+    AuthMethod, Cost, EffortChosen, ForkPoint, GatewayToolCalled, GoalEnded, GoalReason,
+    GoalResumed, GoalSet, HookPoint, HookRan, HookResult, MemoryEdited, MemoryForgotten,
+    MemoryRestored, MemorySaved, MemoryScope, MemorySource, MemoryTidied, MessageAdded,
+    ModelChosen, ModelRef, ModelResponded, Opaque, Origin, OriginKind, Outcome, OutsideSandbox,
+    ParentCall, Part, Principal, PrincipalKind, Producer, Role, StopReason, ThreadArchived,
+    ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived, TokenCounts,
+    ToolCallCompleted, ToolCallRequested, TraceId, TurnEnded, TurnStarted, Usage, Verdict,
 };
 pub use payload::{BrowserSignedIn, BrowserSignedOut, BrowserUsed, Decision, TrustDecided};
 pub use payload::{Catalog, CatalogModel, CatalogRefreshed, Reasoning, TokenPrice};

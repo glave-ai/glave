@@ -130,8 +130,13 @@ where
                 computer: None,
                 model,
                 approval,
+                effort,
             } => {
-                let choice = Choice { model, approval };
+                let choice = Choice {
+                    model,
+                    approval,
+                    effort,
+                };
                 self.start_thread(caller, project, worktree, background, &choice)
                     .await
             }
@@ -164,6 +169,7 @@ where
                 budget,
                 model,
                 approval,
+                effort,
                 unattended,
                 meta,
             } => {
@@ -173,7 +179,11 @@ where
                 let key = meta.idempotency_key.as_ref();
                 let message = Message {
                     prompt: &prompt,
-                    choice: Choice { model, approval },
+                    choice: Choice {
+                        model,
+                        approval,
+                        effort,
+                    },
                     queue: true,
                     unattended,
                 };
@@ -193,11 +203,17 @@ where
                 budget,
                 model,
                 approval,
+                effort,
                 // A task is answered by no one anyway.
                 unattended: _,
                 meta: _,
             } => {
-                let work = Work::Turn(prompt, Choice { model, approval });
+                let choice = Choice {
+                    model,
+                    approval,
+                    effort,
+                };
+                let work = Work::Turn(prompt, choice);
                 self.start_task(caller, thread, work, budget, None)
                     .await
                     .map(|task| Reply::Task { task })

@@ -85,7 +85,13 @@ pub(super) fn described(target: Target, card: Option<(&CatalogModel, &Catalog)>)
     let Some((card, catalog)) = card else {
         return target;
     };
-    let target = target.with_capabilities(capabilities(card));
+    let efforts = card
+        .reasoning
+        .as_ref()
+        .map_or_else(Vec::new, |reasoning| reasoning.efforts.clone());
+    let target = target
+        .with_capabilities(capabilities(card))
+        .with_efforts(efforts);
     match price(card, catalog) {
         Some(price) => target.with_price(price),
         None => target,

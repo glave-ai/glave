@@ -234,6 +234,7 @@ mod tests {
                 max_output_tokens: None,
                 purpose: glave_ports::Purpose::Main,
                 threads: Vec::new(),
+                effort: None,
             };
             let completion = tokio::runtime::Builder::new_current_thread()
                 .enable_all()

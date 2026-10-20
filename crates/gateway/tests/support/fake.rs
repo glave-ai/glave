@@ -122,6 +122,7 @@ pub(crate) fn request(purpose: Purpose) -> ModelRequest {
         max_output_tokens: Some(100),
         purpose,
         threads: Vec::new(),
+        effort: None,
     }
 }
 

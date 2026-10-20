@@ -41,6 +41,11 @@ pub struct ModelRequest {
     /// whose budgets it counts against. Providers ignore it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub threads: Vec<ThreadId>,
+    /// How much the model is asked to reason: a level its provider names, such as `high` or
+    /// `none`, one the model offers. None leaves it to the model. A gateway leaves out a level
+    /// a target does not offer; a provider that has no way to send it leaves it out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
 }
 
 /// What a model call is for. A stable public vocabulary: gateway routes are named by it.

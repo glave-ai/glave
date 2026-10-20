@@ -28,6 +28,27 @@ pub(crate) struct ChatRequest<'a> {
     /// instead, glave compacts in the open, recorded in the log.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     plugins: Vec<Plugin>,
+    /// How much the model reasons, as OpenRouter takes it: `{"effort": "high"}`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning: Option<Effort<'a>>,
+    /// How much the model reasons, as OpenAI and the servers that copy it take it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<&'a str>,
+    /// For OpenRouter, on every request: no provider that keeps or trains on prompts, and
+    /// none that would drop a parameter the request uses, such as its tools.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    provider: Option<Preferences>,
+}
+
+#[derive(Debug, Serialize)]
+struct Effort<'a> {
+    effort: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+struct Preferences {
+    data_collection: &'static str,
+    require_parameters: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -98,6 +119,8 @@ struct WireTool<'a> {
 /// Builds the request body for a streaming chat completion to `provider`.
 pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> ChatRequest<'a> {
     let cache = caches_automatically(provider, &request.model);
+    let openrouter = provider == "openrouter";
+    let effort = request.effort.as_deref();
     let mut messages = Vec::with_capacity(request.messages.len().saturating_add(1));
     if !request.system.is_empty() {
         messages.push(WireMessage::System {
@@ -135,7 +158,7 @@ pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> Cha
             .then_some("none"),
         max_tokens: request.max_output_tokens,
         cache_control: cache.then_some(CacheControl { kind: "ephemeral" }),
-        plugins: if provider == "openrouter" {
+        plugins: if openrouter {
             vec![Plugin {
                 id: "context-compression",
                 enabled: false,
@@ -143,6 +166,14 @@ pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> Cha
         } else {
             Vec::new()
         },
+        reasoning: effort
+            .filter(|_| openrouter)
+            .map(|effort| Effort { effort }),
+        reasoning_effort: effort.filter(|_| !openrouter),
+        provider: openrouter.then_some(Preferences {
+            data_collection: "deny",
+            require_parameters: true,
+        }),
     }
 }
 
