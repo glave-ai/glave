@@ -1,11 +1,12 @@
 //! One turn: the person's prompt, then model calls and tool calls until the model is done.
 
+mod summary;
+
 use std::borrow::Cow;
 
 use glave_event::{
-    ApprovalMode, CallId, Currency, EventId, MemoryId, MessageAdded, ModelRef, Money, Outcome,
-    Part, Principal, Role, StopReason, ThreadId, TokenCounts, ToolCallRequested, TurnEnded,
-    TurnStarted,
+    ApprovalMode, CallId, EventId, MemoryId, MessageAdded, ModelRef, Outcome, Part, Principal,
+    Role, StopReason, ThreadId, ToolCallRequested, TurnEnded, TurnStarted,
 };
 use glave_ports::{
     BlobStore, BoxFuture, Caller, Completion, Delta, EventLog, Failure, Message, ModelProvider,
@@ -28,6 +29,9 @@ use crate::sandbox::{Recorded, recorded};
 use crate::telemetry;
 use crate::toolset::ToolSet;
 use tracing::Instrument as _;
+
+pub use summary::TurnSummary;
+pub(crate) use summary::{absorb, tally};
 
 /// What the model is told after a cancelled turn, as Codex tells it.
 const CANCELLED: &str = "[The person cancelled this turn on purpose. A command that was stopped \
@@ -144,38 +148,6 @@ pub(crate) struct Step {
     pub(crate) toolset: ToolSet,
     pub(crate) repeats: Repeats,
     pub(crate) summary: TurnSummary,
-}
-
-/// What a turn did and what it cost.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TurnSummary {
-    pub outcome: Outcome,
-    pub model_calls: u32,
-    pub tool_calls: u32,
-    /// The commands that ran outside the sandbox, each one allowed.
-    pub outside_sandbox: u32,
-    pub tokens: TokenCounts,
-    /// The total the provider reported, when it reported a cost for every call.
-    pub cost: Option<Money>,
-    /// True when any usage was estimated because a stream ended early.
-    pub estimated: bool,
-}
-
-impl TurnSummary {
-    pub(crate) fn started() -> Self {
-        Self {
-            outcome: Outcome::Completed,
-            model_calls: 0,
-            tool_calls: 0,
-            outside_sandbox: 0,
-            tokens: TokenCounts::default(),
-            cost: Some(Money {
-                micros: 0,
-                currency: Currency::USD,
-            }),
-            estimated: false,
-        }
-    }
 }
 
 /// The version of the turn configuration blob.
@@ -654,30 +626,6 @@ fn outcome_of(stop: StopReason) -> Outcome {
         StopReason::Interrupted | StopReason::Cancelled => Outcome::Interrupted,
         StopReason::Error | StopReason::MalformedToolCall | StopReason::Pause => Outcome::Failed,
     }
-}
-
-/// Adds a child's work to its parent's turn: its calls, tokens and cost.
-pub(crate) fn absorb(summary: &mut TurnSummary, child: &TurnSummary) {
-    summary.model_calls = summary.model_calls.saturating_add(child.model_calls);
-    summary.tool_calls = summary.tool_calls.saturating_add(child.tool_calls);
-    summary.outside_sandbox = summary
-        .outside_sandbox
-        .saturating_add(child.outside_sandbox);
-    summary.tokens += child.tokens;
-    summary.estimated |= child.estimated;
-    summary.cost = summary
-        .cost
-        .zip(child.cost)
-        .and_then(|(sum, cost)| sum.checked_add(cost));
-}
-
-pub(crate) fn tally(summary: &mut TurnSummary, completion: &Completion) {
-    summary.tokens += completion.usage.counts();
-    summary.estimated |= completion.usage.estimated();
-    summary.cost = summary
-        .cost
-        .zip(completion.cost.as_ref())
-        .and_then(|(sum, cost)| sum.checked_add(cost.amount));
 }
 
 /// Remembers the size the provider reported, for estimating the next request.
