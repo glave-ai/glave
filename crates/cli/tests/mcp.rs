@@ -37,18 +37,11 @@ fn a_servers_tools_reach_the_model_and_its_calls_run() {
     ])
     .unwrap();
     // Unconfined and without asking, so the call runs wherever the sandbox cannot.
+    choose(&place, "sandbox", "\"off\"");
     let output = glave(
         &place,
         &model,
-        &[
-            "--model",
-            "m",
-            "--sandbox",
-            "off",
-            "--approval",
-            "auto",
-            "echo it",
-        ],
+        &["--model", "m", "--approval", "auto", "echo it"],
         "",
     );
     let shown = text(&output);

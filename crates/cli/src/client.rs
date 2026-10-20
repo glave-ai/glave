@@ -112,7 +112,8 @@ impl Client<'_> {
                 model: self.model.clone(),
                 approval: self.approval,
                 meta: Meta::default(),
-                unattended: false,
+                // With no one here, no one answers: what would ask is declined at once.
+                unattended: !self.asks,
             })
             .await;
         self.follow(started, printer).await
@@ -129,7 +130,8 @@ impl Client<'_> {
                 objective: Some(goal.objective),
                 budget: Some(goal.token_budget),
                 background: false,
-                unattended: false,
+                // With no one here, no one answers: what would ask is declined at once.
+                unattended: !self.asks,
             })
             .await;
         let code = self.follow(started, printer).await;
@@ -273,8 +275,7 @@ impl Client<'_> {
         }
     }
 
-    /// Answers `asked`, pending in `thread`: as the person says when this terminal asks, no
-    /// when the server is elsewhere and no one is here. True when the person pressed Ctrl-C
+    /// Answers `asked`, pending in `thread`, as the person says when this terminal asks. True when the person pressed Ctrl-C
     /// instead of answering.
     async fn decide(
         &self,
@@ -299,10 +300,8 @@ impl Client<'_> {
                 Some("a" | "always") => Answer::AllowForThread,
                 _ => Answer::Deny,
             }
-        } else if matches!(self.server, Session::Elsewhere(_)) {
-            // A server elsewhere waits for its clients; no one is at this terminal.
-            Answer::Deny
         } else {
+            // Started answered by no one, so never pending; nothing to answer.
             return false;
         };
         let decide = Request::ApprovalDecide {

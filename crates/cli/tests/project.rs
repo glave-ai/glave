@@ -22,7 +22,7 @@ fn test_server() -> PathBuf {
 }
 
 /// The project brings the test server in its `.mcp.json`.
-fn bring_server(place: &Place) -> serde_json::Value {
+pub(crate) fn bring_server(place: &Place) -> serde_json::Value {
     let server = json!({ "command": test_server() });
     let file = json!({ "mcpServers": { "tests": server } });
     std::fs::write(place.project.join(".mcp.json"), file.to_string()).unwrap();
@@ -76,18 +76,11 @@ fn a_trusted_projects_servers_start_and_nothing_is_said() {
     ])
     .unwrap();
     // Unconfined and without asking, so the call runs wherever the sandbox cannot.
+    choose(&place, "sandbox", "\"off\"");
     let output = glave(
         &place,
         &model,
-        &[
-            "--sandbox",
-            "off",
-            "--approval",
-            "auto",
-            "--model",
-            "m",
-            "echo it",
-        ],
+        &["--approval", "auto", "--model", "m", "echo it"],
         "",
     );
     let shown = text(&output);

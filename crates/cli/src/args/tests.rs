@@ -14,28 +14,50 @@ fn prompt_words_join_and_flags_parse() {
 
 #[test]
 fn the_sandbox_takes_a_level_and_optional_network() {
-    let args = parse_words(&["--sandbox", "project", "--network", "go"]).unwrap();
+    let serve = |words: &[&str]| parse_words(&[&["serve"], words].concat());
+    let args = serve(&["--sandbox", "project", "--network"]).unwrap();
     assert_eq!(args.sandbox, Some(SandboxChoice::Project));
     assert_eq!(args.network, Some(true));
-    let offline = parse_words(&["--no-network", "go"]).unwrap();
+    let offline = serve(&["--no-network"]).unwrap();
     assert_eq!(offline.network, Some(false));
-    assert_eq!(parse_words(&["go"]).unwrap().network, None);
-    let off = parse_words(&["--sandbox", "off", "go"]).unwrap();
+    assert_eq!(serve(&[]).unwrap().network, None);
+    let off = serve(&["--sandbox", "off"]).unwrap();
     assert_eq!(off.sandbox, Some(SandboxChoice::Off));
-    assert!(parse_words(&["--sandbox", "everything"]).is_err());
-    assert!(parse_words(&["--sandbox"]).is_err());
+    assert!(serve(&["--sandbox", "everything"]).is_err());
+    assert!(serve(&["--sandbox"]).is_err());
     assert!(
-        parse_words(&["--sandbox", "off", "--network"]).is_err(),
+        serve(&["--sandbox", "off", "--network"]).is_err(),
         "network needs a sandbox"
     );
     assert!(
-        parse_words(&["--sandbox", "off", "--no-network"]).is_err(),
+        serve(&["--sandbox", "off", "--no-network"]).is_err(),
         "no network needs a sandbox"
     );
     assert!(
-        parse_words(&["--network"]).is_ok(),
+        serve(&["--network"]).is_ok(),
         "a config file may choose the sandbox"
     );
+}
+
+#[test]
+fn how_glave_runs_is_the_server_s_to_choose_never_one_turn_s() {
+    for flags in [
+        &["--sandbox", "off"][..],
+        &["--network"],
+        &["--no-network"],
+        &["--on", "cloud"],
+        &["--max-steps", "3"],
+    ] {
+        let refused = parse_words(&[flags, &["go"]].concat()).unwrap_err();
+        assert!(
+            refused.contains("set it in config.toml"),
+            "{flags:?}: {refused}"
+        );
+        let task = parse_words(&[flags, &["-b", "go"]].concat()).unwrap_err();
+        assert!(task.contains("not one turn"), "{flags:?}: {task}");
+    }
+    let explained = parse_words(&["policy", "explain", "--sandbox", "read-only"]).unwrap();
+    assert_eq!(explained.sandbox, Some(SandboxChoice::ReadOnly));
 }
 
 #[test]
@@ -134,16 +156,14 @@ fn approval_modes_parse() {
 #[test]
 fn max_steps_takes_a_count_of_at_least_one() {
     assert_eq!(parse_words(&["hi"]).unwrap().max_steps, None);
-    let capped = parse_words(&["--max-steps", "80", "hi"]).unwrap();
-    assert_eq!((capped.max_steps, capped.prompt.as_str()), (Some(80), "hi"));
     let serve = parse_words(&["serve", "--stdio", "--max-steps", "1"]).unwrap();
     assert_eq!((serve.action, serve.max_steps), (Action::Serve, Some(1)));
     for wrong in ["0", "-3", "ten", "2.5", ""] {
-        let error = parse_words(&["--max-steps", wrong]).unwrap_err();
+        let error = parse_words(&["serve", "--max-steps", wrong]).unwrap_err();
         assert!(error.contains("use 1 or more"), "{wrong}: {error}");
     }
     assert!(
-        parse_words(&["--max-steps"])
+        parse_words(&["serve", "--max-steps"])
             .unwrap_err()
             .contains("needs a number")
     );

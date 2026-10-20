@@ -39,3 +39,4 @@ mod subagents;
 mod tasks;
 mod telemetry;
 mod threads;
+mod turns;

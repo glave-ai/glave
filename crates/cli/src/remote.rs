@@ -41,10 +41,8 @@ pub(crate) async fn chosen(args: &Args) -> anyhow::Result<Option<String>> {
 
 /// Runs the turn, goal or session `args` ask for on the server at `url`.
 pub(crate) async fn run(args: &Args, url: &str) -> anyhow::Result<ExitCode> {
-    if let Some(flag) = local_only(args) {
-        bail!(
-            "{flag} chooses how glave runs on this computer: not with --server, whose server chooses"
-        );
+    if args.background {
+        bail!("--background runs a task in glave on this computer: not with --server");
     }
     let Some(token) = std::env::var(TOKEN).ok().filter(|token| !token.is_empty()) else {
         bail!(
@@ -103,41 +101,4 @@ pub(crate) async fn run(args: &Args, url: &str) -> anyhow::Result<ExitCode> {
         export(elsewhere, thread, path).await?;
     }
     Ok(code)
-}
-
-/// The first flag `args` has that only means something for glave running here.
-fn local_only(args: &Args) -> Option<&'static str> {
-    [
-        (args.sandbox.is_some(), "--sandbox"),
-        (args.network.is_some(), "--network"),
-        (args.on.is_some(), "--on"),
-        (args.max_steps.is_some(), "--max-steps"),
-        (args.background, "--background"),
-    ]
-    .into_iter()
-    .find_map(|(given, flag)| given.then_some(flag))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn what_only_this_computer_chooses_is_refused_with_a_server() {
-        let args = Args {
-            background: true,
-            ..Args::default()
-        };
-        assert_eq!(local_only(&args), Some("--background"));
-        // The server's API takes a model and an approval mode, so these go to it.
-        let args = Args {
-            prompt: "hi".into(),
-            resume: true,
-            worktree: true,
-            model: Some("m".into()),
-            approval: Some(glave_harness::ApprovalMode::Ask),
-            ..Args::default()
-        };
-        assert_eq!(local_only(&args), None);
-    }
 }

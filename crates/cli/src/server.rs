@@ -27,7 +27,7 @@ pub(crate) use serve::{Daily, run};
 
 /// The port the person's server listens on over HTTP when it is free, so the browser's origin
 /// stays the same across restarts.
-const PORT: u16 = 4180;
+pub(crate) const PORT: u16 = 4180;
 
 /// How long a new server has to start listening.
 const START_WAIT: Duration = Duration::from_secs(20);

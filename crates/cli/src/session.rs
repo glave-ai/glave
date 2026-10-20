@@ -100,8 +100,15 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
     if args.background {
         return crate::tasks::background(&args).await;
     }
-    // Ask in the terminal when there is one; otherwise no one is there to answer.
-    let asks = std::io::stdin().is_terminal();
+    // A turn or a goal goes to the person's server, started from the person's own terminal;
+    // where none runs and no one is at the terminal, a server here answers it, asking no one.
+    let turn = !args.prompt.is_empty() || args.goal.is_some();
+    if turn && let Some(server) = crate::server::connect_or_start().await? {
+        let terminal = crate::server::at_terminal();
+        return Box::pin(crate::turns::run(&args, &server, terminal)).await;
+    }
+    // The session in the terminal asks there; a turn here has no one to answer it.
+    let asks = !turn && std::io::stdin().is_terminal();
     let answering = if asks {
         Answering::Clients
     } else {
@@ -181,7 +188,7 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
     let model = settled.model.unwrap_or_else(|| endpoint.model.clone());
     let here = Session::Here(server);
     let (thread, note) = pick_thread(here, Some(*project), args.resume, None, None, None).await?;
-    if let Some(working) = crate::worktrees::note(server, thread).await {
+    if let Some(working) = crate::worktrees::note(here, thread).await {
         eprintln!("glave: {working}");
     }
     let input = Input::start();
