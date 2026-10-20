@@ -5,15 +5,18 @@ export interface GlzOption {
 }
 
 /**
- * The options whose label contains `query`, ignoring case and accents, in their order. An
- * empty query keeps them all.
+ * The options whose label, or the hint under it, contains `query`, ignoring case and accents,
+ * in their order: a model is found by its name or by the service in its hint. An empty query
+ * keeps them all.
  */
-export function filterOptions<T extends GlzOption>(
+export function filterOptions<T extends GlzOption & { readonly hint?: string }>(
   options: readonly T[],
   query: string,
 ): readonly T[] {
   const wanted = fold(query.trim());
-  return wanted === '' ? options : options.filter((option) => fold(option.label).includes(wanted));
+  return wanted === ''
+    ? options
+    : options.filter((option) => fold(`${option.label}\n${option.hint ?? ''}`).includes(wanted));
 }
 
 function fold(text: string): string {

@@ -14,7 +14,6 @@ use glave_ports::{
 };
 
 use crate::approval::Approver;
-use crate::compaction::responded;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::removed::last_event;
 use crate::standing::standing_of;
@@ -174,7 +173,7 @@ where
             .await?
             .is_some();
         let mut seq = after(thread, last.seq)?;
-        let mut events = vec![self.encoded(thread, seq, &responded(&titled.answer))?];
+        let mut events = vec![self.encoded(thread, seq, &titled.answer.responded())?];
         if let Some(title) = titled.title.as_ref().filter(|_| !named) {
             let renamed = ThreadRenamed {
                 title: title.clone(),

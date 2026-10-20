@@ -71,8 +71,12 @@ base64 = "0.23"
 bytes = "1"
 chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
 deadpool-postgres = { version = "0.14", default-features = false, features = ["rt_tokio_1"] }
+# The `Stream` trait, to read the streams object_store answers (already in the tree, under it,
+# hyper and reqwest).
+futures-core = { version = "0.3", default-features = false }
 glave-aws = { path = "crates/aws" }
 glave-azure = { path = "crates/azure" }
+glave-bucket = { path = "crates/bucket" }
 glave-computer = { path = "crates/computer" }
 glave-config = { path = "crates/config" }
 glave-event = { path = "crates/event" }
@@ -119,6 +123,9 @@ keyring = { version = "4.2", default-features = false, features = ["v1"] }
 # The Kubernetes client for the worker backend on Kubernetes: kubeconfig and in-cluster auth,
 # rustls on aws-lc-rs as the rest of glave, and WebSockets for exec, attach and port-forward.
 kube = { version = "4.2", default-features = false, features = ["client", "rustls-tls", "aws-lc-rs", "ws"] }
+# Blobs' bytes in a folder or a bucket (specs/storage.md, "Which stores"): Apache Arrow's one
+# interface for a local folder and every object store, so one code path serves them all.
+object_store = { version = "0.14", default-features = false, features = ["fs"] }
 # OpenTelemetry, only behind the `otlp` features: spans and metrics to an OTLP collector.
 opentelemetry = { version = "0.33", default-features = false, features = ["trace", "metrics"] }
 # OTLP over HTTP with protobuf, on the reqwest and rustls glave already uses (no gRPC stack).

@@ -4,6 +4,14 @@ The single door out for model calls and remote tools: which model serves each pu
 
 The seam: the harness owns the tools that act on the computer and the rules for using any tool; the gateway owns everything that leaves for the outside world.
 
+## One default seam
+
+Decided by the owner, 2026-10-19 (#392): **OpenAI's API is the one default seam for models.** glave speaks Chat Completions to OpenRouter, OpenAI, Azure, Bedrock's and Vertex's compatible endpoints, and any server that copies them (Ollama, LM Studio, vLLM, an organization's own).
+
+- **"Add a model" offers OpenRouter and any OpenAI-compatible server up front** (and OpenAI's own). A model's capabilities and price come from the service's model list ("Catalogs"), so a new provider needs no code when it speaks the seam.
+- **A native format is an exception that must justify itself:** only where the compatible path loses something material, such as prompt caching, reasoning sent back, or an enterprise route served no other way. Anthropic's Messages API is one today, for Claude on Bedrock and Vertex (served only that way) and a direct key; it stays an internal route, not offered to add, and is expected to go once the routes glave uses no longer need it.
+- **No new native format** without that justification written here first.
+
 ## Status
 
 Each piece built has one line, which the pull requests that change it edit.
@@ -82,7 +90,7 @@ The same model can be reached at several services (Claude Haiku from Anthropic o
 
 ## Metering
 
-- Every call produces the content-free `model.responded` event, with usage, cost, the price list it was computed from, route and target. There is no separate spend database: cost reports are views over the log.
+- Every call produces the content-free `model.responded` event, with usage, cost, the price list it was computed from, route and target, the target's service in a person's words, and the provider a router passed it on to (OpenRouter names it in each chunk). A turn's receipt says where it ran from these ("via OpenRouter (Anthropic)") and what it cost, from the service's own numbers where it reports them (OpenRouter's `usage.cost`). There is no separate spend database: cost reports are views over the log.
 - Through the service, each caller's calls are recorded in a stream of their own in the gateway's scope of the log (`events.md`, "Gateway streams"): `model.responded` for each model call, `gateway.tool.called` for each catalog tool call. Who called is the stream itself. A caller's daily budget is read back from their stream when they first call in a day, so a restart never resets it.
 - Calls glave makes on its own (the judge, compaction summaries) are metered and attributed to the thread that caused them.
 - Provider prompt caching is passed through and its savings recorded. A response cache is off by default.

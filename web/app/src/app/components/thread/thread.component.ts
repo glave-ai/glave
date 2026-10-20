@@ -62,6 +62,7 @@ const STARTING: Turn = {
   took: null,
   outcome: null,
   cost: null,
+  routes: [],
 };
 
 function isFirstPrompt(state: unknown): state is FirstPrompt {

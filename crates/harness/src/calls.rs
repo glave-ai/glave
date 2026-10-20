@@ -12,7 +12,6 @@ use glave_ports::{
 use crate::approval::{ApprovalRequest, Approver, Decision, asks_for, no_one_there, sentence};
 use crate::builtins::BUILTINS;
 use crate::cancel::Cancel;
-use crate::compaction::responded;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::hooks::ToolHook;
 use crate::judge::{JudgeCase, Ruling, judge};
@@ -317,7 +316,7 @@ where
         if let Some(answer) = &answer {
             turn.model_calls = turn.model_calls.saturating_add(1);
             tally(turn, answer);
-            self.record(thread, &responded(answer)).await?;
+            self.record(thread, &answer.responded()).await?;
         }
         let Ruling::Run { reason: why } = ruling else {
             return Ok(Judged::Ask);

@@ -1,22 +1,23 @@
 //! The blob store on SQLite: each blob's record (under an HMAC of its SHA-256, so the file does
-//! not reveal which known content it holds) apart from its bytes, sealed a chunk at a time as an
-//! object of random name.
+//! not reveal which known content it holds) in the file, its bytes sealed as an object of random
+//! name in the deployment's objects (`specs/storage.md`, "Which stores").
 
 use std::future::Future;
 use std::sync::Arc;
 
 use glave_event::{BlobRef, Sha256, ThreadId};
-use glave_keys::{BlobOpener, BlobSealer, Finished, KeyError, chunks_in};
-use glave_ports::{Blob, BlobError, BlobStore, BoxFuture, Chunks, Scope};
+use glave_keys::{KeyError, Opened, seal_into};
+use glave_ports::{Blob, BlobError, BlobStore, Chunks, Objects, Scope};
 use rusqlite::{OptionalExtension as _, Transaction, params};
 
 use crate::store::{Shared, SqliteKeyring, StoreError, run};
 
-/// The blob store in the local database.
+/// The blob store in the local database and the objects beside it.
 #[derive(Clone)]
 pub struct SqliteBlobs {
     connection: Shared,
     keys: Arc<SqliteKeyring>,
+    objects: Arc<dyn Objects>,
 }
 
 /// A blob's record, as the `blobs` table keeps it.
@@ -28,65 +29,20 @@ struct Record {
 }
 
 impl SqliteBlobs {
-    pub(crate) fn new(connection: Shared, keys: Arc<SqliteKeyring>) -> Self {
-        Self { connection, keys }
-    }
-
-    /// Seals what `bytes` yields into `sealer`'s object, a chunk at a time, refusing more than
-    /// `limit` bytes.
-    async fn write(
-        &self,
-        scope: Scope,
-        mut sealer: BlobSealer,
-        limit: u64,
-        bytes: &mut dyn Chunks,
-    ) -> Result<Finished, BlobError> {
-        let object = sealer.object().to_owned();
-        let mut n = 0_i64;
-        while let Some(piece) = bytes.next_chunk().await? {
-            for chunk in sealer.write(&piece).map_err(|e| sealing(&e))? {
-                self.write_chunk(scope, &object, n, chunk).await?;
-                n += 1;
-            }
-            if sealer.size() > limit {
-                return Err(BlobError::TooLarge(limit));
-            }
+    pub(crate) fn new(
+        connection: Shared,
+        keys: Arc<SqliteKeyring>,
+        objects: Arc<dyn Objects>,
+    ) -> Self {
+        Self {
+            connection,
+            keys,
+            objects,
         }
-        let finished = sealer.finish().map_err(|e| sealing(&e))?;
-        self.write_chunk(scope, &object, n, finished.last.clone())
-            .await?;
-        Ok(finished)
-    }
-
-    async fn write_chunk(
-        &self,
-        scope: Scope,
-        object: &str,
-        n: i64,
-        chunk: Vec<u8>,
-    ) -> Result<(), BlobError> {
-        let object = object.to_owned();
-        run(&self.connection, move |connection| {
-            connection.execute(
-                "INSERT INTO blob_chunks (org, project, object, n, bytes)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![
-                    scope.org().to_string(),
-                    scope.project().to_string(),
-                    object,
-                    n,
-                    chunk
-                ],
-            )
-        })
-        .await
-        .map(drop)
-        .map_err(|e| storage(&e))
     }
 
     /// Records `record` under `name` with `thread` referring to it, unless content of the same
-    /// name is kept already: then that is kept, `thread` refers to it, and this object goes.
-    /// The record kept.
+    /// name is kept already: then that is kept and `thread` refers to it. The record kept.
     async fn record(
         &self,
         scope: Scope,
@@ -98,35 +54,33 @@ impl SqliteBlobs {
             let (org, project) = (scope.org().to_string(), scope.project().to_string());
             let transaction = connection.transaction()?;
             let size = i64::try_from(record.size).unwrap_or(i64::MAX);
-            let (object, media_type, size): (String, String, i64) = transaction.query_row(
-                "INSERT INTO blobs (org, project, name, media_type, size, key_id, object)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-                 ON CONFLICT (org, project, name) DO UPDATE SET name = excluded.name
-                 RETURNING object, media_type, size",
-                params![
-                    org,
-                    project,
-                    name,
-                    record.media_type,
-                    size,
-                    record.key_id,
-                    record.object
-                ],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-            )?;
+            let (object, media_type, size, key_id): (String, String, i64, String) = transaction
+                .query_row(
+                    "INSERT INTO blobs (org, project, name, media_type, size, key_id, object)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                     ON CONFLICT (org, project, name) DO UPDATE SET name = excluded.name
+                     RETURNING object, media_type, size, key_id",
+                    params![
+                        org,
+                        project,
+                        name,
+                        record.media_type,
+                        size,
+                        record.key_id,
+                        record.object
+                    ],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )?;
             transaction.execute(
                 "INSERT OR IGNORE INTO blob_threads (org, project, name, thread)
                  VALUES (?1, ?2, ?3, ?4)",
                 params![org, project, name, thread.to_string()],
             )?;
-            if object != record.object {
-                drop_object(&transaction, &scope, &record.object)?;
-            }
             transaction.commit()?;
             Ok(Record {
                 media_type,
                 size: u64::try_from(size).unwrap_or_default(),
-                key_id: record.key_id,
+                key_id,
                 object,
             })
         })
@@ -134,14 +88,11 @@ impl SqliteBlobs {
         .map_err(|e| storage(&e))
     }
 
-    /// Deletes an object no record names: one a refused or failed write left.
-    async fn forget(&self, scope: Scope, object: String) {
-        let dropped = run(&self.connection, move |connection| {
-            drop_object(connection, &scope, &object)
-        })
-        .await;
-        if let Err(error) = dropped {
-            tracing::warn!(%error, "an unfinished blob could not be removed");
+    /// Deletes an object no record names: one a refused or failed write left, a second copy, or
+    /// one whose record went.
+    async fn forget(&self, scope: Scope, object: &str) {
+        if let Err(error) = self.objects.delete(scope, object).await {
+            tracing::warn!(%error, "a blob's bytes could not be removed");
         }
     }
 
@@ -159,20 +110,25 @@ impl SqliteBlobs {
             .await
             .map_err(|e| sealing(&e))?;
         let (object, key_id) = (sealer.object().to_owned(), sealer.key_id().to_owned());
-        let written = self.write(scope, sealer, limit, bytes.as_mut()).await;
-        let finished = match written {
+        let mut writer = self.objects.create(scope, &object).await?;
+        let finished = match seal_into(sealer, limit, bytes.as_mut(), writer.as_mut()).await {
             Ok(finished) => finished,
             Err(error) => {
-                self.forget(scope, object).await;
+                if let Err(abandoned) = writer.abort().await {
+                    tracing::warn!(error = %abandoned, "an unfinished blob could not be abandoned");
+                }
                 return Err(error);
             }
         };
-        let name = self.keys.blob_name(&scope, &finished.sha256).await;
-        let Ok(Some(name)) = name else {
-            self.forget(scope, object).await;
-            return Err(BlobError::Storage(format!(
-                "the project's key is gone, so a blob cannot be named: {name:?}"
-            )));
+        writer.finish().await?;
+        let name = match self.keys.blob_name(&scope, &finished.sha256).await {
+            Ok(Some(name)) => name,
+            named => {
+                self.forget(scope, &object).await;
+                return Err(BlobError::Storage(format!(
+                    "the project's key is gone, so a blob cannot be named: {named:?}"
+                )));
+            }
         };
         let record = Record {
             media_type,
@@ -181,13 +137,10 @@ impl SqliteBlobs {
             object: object.clone(),
         };
         let kept = self.record(scope, name, thread, record).await;
-        let kept = match kept {
-            Ok(kept) => kept,
-            Err(error) => {
-                self.forget(scope, object).await;
-                return Err(error);
-            }
-        };
+        if kept.as_ref().map_or(true, |kept| kept.object != object) {
+            self.forget(scope, &object).await;
+        }
+        let kept = kept?;
         Ok(BlobRef {
             sha256: finished.sha256,
             bytes: kept.size,
@@ -197,12 +150,12 @@ impl SqliteBlobs {
 
     async fn get_now(&self, scope: Scope, sha256: Sha256) -> Result<Option<Blob>, BlobError> {
         // A project with no key yet (or an erased one) has nothing that can be found.
-        let Some(name) = self
+        let name = self
             .keys
             .blob_name(&scope, &sha256)
             .await
-            .map_err(|e| sealing(&e))?
-        else {
+            .map_err(|e| sealing(&e))?;
+        let Some(name) = name else {
             return Ok(None);
         };
         let record = run(&self.connection, move |connection| {
@@ -233,21 +186,34 @@ impl SqliteBlobs {
             .blob_opener(&scope, &record.key_id, &record.object, &sha256)
             .await
             .map_err(|e| sealing(&e))?;
+        let sealed = self
+            .objects
+            .read(scope, &record.object)
+            .await?
+            .ok_or_else(|| BlobError::Storage("a blob's bytes are missing".into()))?;
         Ok(Some(Blob {
             reference: BlobRef {
                 sha256,
                 bytes: record.size,
                 media_type: record.media_type,
             },
-            bytes: Box::new(Stored {
-                connection: Arc::clone(&self.connection),
-                scope,
-                object: record.object,
-                n: 0,
-                count: chunks_in(record.size),
-                opener,
-            }),
+            bytes: Box::new(Opened::new(sealed, opener)),
         }))
+    }
+
+    async fn release_now(&self, scope: Scope, thread: ThreadId) -> Result<(), BlobError> {
+        let objects = run(&self.connection, move |connection| {
+            let transaction = connection.transaction()?;
+            let objects = release(&transaction, &scope, thread)?;
+            transaction.commit()?;
+            Ok(objects)
+        })
+        .await
+        .map_err(|e| storage(&e))?;
+        for object in objects {
+            self.forget(scope, &object).await;
+        }
+        Ok(())
     }
 }
 
@@ -276,24 +242,19 @@ impl BlobStore for SqliteBlobs {
         scope: &Scope,
         thread: ThreadId,
     ) -> impl Future<Output = Result<(), BlobError>> + Send {
-        let scope = *scope;
-        let connection = Arc::clone(&self.connection);
-        async move {
-            run(&connection, move |connection| {
-                let transaction = connection.transaction()?;
-                release(&transaction, &scope, thread)?;
-                transaction.commit()
-            })
-            .await
-            .map_err(|e| storage(&e))
-        }
+        self.release_now(*scope, thread)
     }
 }
 
 /// Drops `thread`'s references in `scope`, then the records of what it referred to that no
-/// thread refers to any more, with their objects. One transaction, so a thread storing the same
-/// content at once either keeps the record or makes a new one.
-fn release(transaction: &Transaction<'_>, scope: &Scope, thread: ThreadId) -> rusqlite::Result<()> {
+/// thread refers to any more, and answers their objects, which go once this commits. One
+/// transaction, so a thread storing the same content at once either keeps the record or makes
+/// a new one.
+fn release(
+    transaction: &Transaction<'_>,
+    scope: &Scope,
+    thread: ThreadId,
+) -> rusqlite::Result<Vec<String>> {
     let (org, project) = (scope.org().to_string(), scope.project().to_string());
     let names: Vec<String> = transaction
         .prepare(
@@ -302,6 +263,7 @@ fn release(transaction: &Transaction<'_>, scope: &Scope, thread: ThreadId) -> ru
         )?
         .query_map(params![org, project, thread.to_string()], |row| row.get(0))?
         .collect::<rusqlite::Result<_>>()?;
+    let mut objects = Vec::new();
     for name in names {
         let object: Option<String> = transaction
             .query_row(
@@ -313,75 +275,9 @@ fn release(transaction: &Transaction<'_>, scope: &Scope, thread: ThreadId) -> ru
                 |row| row.get(0),
             )
             .optional()?;
-        if let Some(object) = object {
-            drop_object(transaction, scope, &object)?;
-        }
+        objects.extend(object);
     }
-    Ok(())
-}
-
-/// Deletes the chunks of `object`.
-fn drop_object(
-    connection: &rusqlite::Connection,
-    scope: &Scope,
-    object: &str,
-) -> rusqlite::Result<()> {
-    connection.execute(
-        "DELETE FROM blob_chunks WHERE org = ?1 AND project = ?2 AND object = ?3",
-        params![scope.org().to_string(), scope.project().to_string(), object],
-    )?;
-    Ok(())
-}
-
-/// A blob's bytes, read and opened a chunk at a time.
-struct Stored {
-    connection: Shared,
-    scope: Scope,
-    object: String,
-    n: u64,
-    count: u64,
-    opener: BlobOpener,
-}
-
-impl Stored {
-    async fn next_now(&mut self) -> Result<Option<Vec<u8>>, BlobError> {
-        if self.n >= self.count {
-            return Ok(None);
-        }
-        let (scope, object) = (self.scope, self.object.clone());
-        let n = i64::try_from(self.n).map_err(|e| BlobError::Storage(e.to_string()))?;
-        let sealed: Option<Vec<u8>> = run(&self.connection, move |connection| {
-            connection
-                .query_row(
-                    "SELECT bytes FROM blob_chunks
-                     WHERE org = ?1 AND project = ?2 AND object = ?3 AND n = ?4",
-                    params![
-                        scope.org().to_string(),
-                        scope.project().to_string(),
-                        object,
-                        n
-                    ],
-                    |row| row.get(0),
-                )
-                .optional()
-        })
-        .await
-        .map_err(|e| storage(&e))?;
-        let sealed =
-            sealed.ok_or_else(|| BlobError::Storage(format!("chunk {n} of a blob is missing")))?;
-        self.n += 1;
-        let last = self.n == self.count;
-        self.opener
-            .open(&sealed, last)
-            .map(Some)
-            .map_err(|e| sealing(&e))
-    }
-}
-
-impl Chunks for Stored {
-    fn next_chunk(&mut self) -> BoxFuture<'_, Result<Option<Vec<u8>>, BlobError>> {
-        Box::pin(self.next_now())
-    }
+    Ok(objects)
 }
 
 fn storage(error: &StoreError) -> BlobError {

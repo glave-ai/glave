@@ -144,6 +144,7 @@ mod tests {
             usage: Usage::new(TokenCounts::default(), false, None).unwrap(),
             cost: None,
             served: None,
+            upstream: None,
         }
     }
 

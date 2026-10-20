@@ -149,7 +149,11 @@ fn each_model_is_listed_once_as_its_services_describe_it_and_falls_back_between_
     let first = FakeServer::start(vec![described("0.000001"), overloaded]).unwrap();
     let second = FakeServer::start(vec![
         Reply::Status(200, json!({"data": [{"id": "rocket-1-5"}]}).to_string()),
-        Reply::text("From the second."),
+        Reply::Stream(vec![
+            json!({"id": "gen-2", "provider": "Fireworks", "choices": [{"index": 0, "delta": {"content": "From the second."}}]}),
+            json!({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                   "usage": {"prompt_tokens": 100, "completion_tokens": 10, "cost": 0.00042}}),
+        ]),
     ])
     .unwrap();
     let mut served = Served::start(&place, &first, &[]);
@@ -183,6 +187,17 @@ fn each_model_is_listed_once_as_its_services_describe_it_and_falls_back_between_
         tried[1].body["model"], "rocket-1-5",
         "the second, once the first failed"
     );
+    // The record says where the turn ran, and what it cost by the service's own numbers.
+    let events = served.call("thread/events", &json!({"thread": thread}));
+    let responded = events["result"]["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|event| event["type"] == "model.responded")
+        .unwrap();
+    assert_eq!(responded["data"]["service"], "Local server", "{responded}");
+    assert_eq!(responded["data"]["upstream"], "Fireworks");
+    assert_eq!(responded["data"]["cost"]["amount"]["micros"], 420);
     served.end();
 }
 

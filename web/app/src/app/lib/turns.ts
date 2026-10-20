@@ -30,6 +30,11 @@ export interface Turn {
   readonly outcome: TurnOutcome | null;
   /** What its model calls cost, when every one of them said, in one currency. */
   readonly cost: GlzMoney | null;
+  /**
+   * Where its model calls ran, as the server named them, in order and once each: the service,
+   * and the provider it passed them on to (`OpenRouter (Anthropic)`). Empty when none said.
+   */
+  readonly routes: readonly string[];
 }
 
 type Data = Readonly<Record<string, unknown>>;
@@ -94,6 +99,29 @@ function costOf(events: readonly RawEvent[]): GlzMoney | null {
   return { micros, currency: first.currency };
 }
 
+/** Where the model calls in `events` ran, once each, in order, as their records name them. */
+function routesOf(events: readonly RawEvent[]): readonly string[] {
+  const routes: string[] = [];
+  for (const event of events) {
+    if (event.type !== 'model.responded') {
+      continue;
+    }
+    const service = event.data['service'];
+    const upstream = event.data['upstream'];
+    if (typeof service !== 'string' || service === '') {
+      continue;
+    }
+    const route =
+      typeof upstream === 'string' && upstream !== '' && upstream !== service
+        ? `${service} (${upstream})`
+        : service;
+    if (!routes.includes(route)) {
+      routes.push(route);
+    }
+  }
+  return routes;
+}
+
 function turnOf(events: readonly RawEvent[], items: readonly ThreadItem[]): Turn {
   const started = events.find((event) => event.type === 'turn.started');
   const ended = events.filter((event) => event.type === 'turn.ended').at(-1);
@@ -110,6 +138,7 @@ function turnOf(events: readonly RawEvent[], items: readonly ThreadItem[]): Turn
     took: Number.isNaN(took) ? null : took,
     outcome: isOutcome(outcome) ? outcome : null,
     cost: costOf(events),
+    routes: routesOf(events),
   };
 }
 

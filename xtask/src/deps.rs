@@ -58,6 +58,8 @@ const LAYERS: &[(&str, Layer)] = &[
     ("glave-aws", Adapter),
     // Vertex AI's endpoints, and Google's credentials.
     ("glave-google", Adapter),
+    // Blobs' sealed bytes in a folder or a bucket, through object_store.
+    ("glave-bucket", Adapter),
     // The event log, blob store and key storage on SQLite.
     ("glave-store-sqlite", Adapter),
     // The event log, blob store and key storage on Postgres.

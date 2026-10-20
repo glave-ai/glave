@@ -164,6 +164,14 @@ test('the picker searches a long catalogue by name and scrolls; picks come after
   await expect(options.nth(0)).toContainText('Anthropic · Claude Haiku 5.5');
   await expect(options.nth(1)).toHaveText('OpenAI · GPT-6 Luna');
   await expect(options.nth(2)).toContainText('Hope');
+  // Each model says the service that runs it, its context and its price, and is found by its
+  // service too.
+  await expect(options.nth(0)).toContainText(
+    'Default · OpenRouter · 1M context · $0.10 in, $0.50 out per 1M tokens',
+  );
+  await search.pressSequentially('openrouter');
+  await expect(options).toHaveCount(1);
+  await expect(options.first()).toContainText('Claude Haiku 5.5');
 });
 
 test('the person’s messages are bubbles at the end of the line; long ones fold', async ({

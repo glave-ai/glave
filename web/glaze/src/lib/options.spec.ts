@@ -12,4 +12,13 @@ describe('options', () => {
     expect(filterOptions(MODELS, 'cafe').map((option) => option.value)).toEqual(['cafe']);
     expect(filterOptions(MODELS, '  ')).toBe(MODELS);
   });
+
+  it('finds an option by the hint under it too', () => {
+    const hinted = [
+      { value: 'a', label: 'Claude Haiku 5.5', hint: 'OpenRouter · 1M context' },
+      { value: 'b', label: 'Gemma 4', hint: 'Ollama' },
+    ];
+    expect(filterOptions(hinted, 'openrouter').map((option) => option.value)).toEqual(['a']);
+    expect(filterOptions(hinted, 'gemma').map((option) => option.value)).toEqual(['b']);
+  });
 });

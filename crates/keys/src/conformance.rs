@@ -389,13 +389,13 @@ async fn blobs<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
         name != sha.as_str() && name.len() == 64,
         "a blob is stored under an HMAC of its hash, not the hash",
     )?;
-    let opened = keys
+    let mut reading = keys
         .blob_opener(&here, &key_id, &object, &sha)
         .await
-        .map_err(text)?
-        .open(&finished.last, true)
         .map_err(text)?;
-    ensure(opened == b"blob", "a sealed blob must open")?;
+    let mut content = reading.feed(&finished.last).map_err(text)?;
+    content.extend(reading.end().map_err(text)?);
+    ensure(content == b"blob", "a sealed blob must open")?;
     let other = Scope::glaves_own(here.org(), scope(6).project());
     keys.blob_sealer(&other).await.map_err(text)?;
     ensure(

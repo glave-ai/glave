@@ -1,13 +1,13 @@
 //! Blobs sealed a chunk at a time (`specs/storage.md`, "Blobs"), so one of any size is written
-//! and read without being held whole: each chunk of [`CHUNK`] bytes is sealed on its own, bound
-//! to its object, its place and whether it is the last, so chunks cannot be dropped, reordered,
+//! and read, in pieces of any size, without being held whole: each chunk of [`CHUNK`] bytes is
+//! sealed on its own, bound to its object, its place and whether it is the last, so chunks cannot be dropped, reordered,
 //! cut short or moved to another object; and the content read must have the hash it was asked
 //! for.
 
 use std::mem;
 
 use glave_event::Sha256;
-use glave_ports::Scope;
+use glave_ports::{BlobError, BoxFuture, Chunks, ObjectWriter, Scope};
 use sha2::Digest as _;
 
 use crate::error::KeyError;
@@ -19,16 +19,10 @@ use crate::storage::KeyStorage;
 use super::Keys;
 
 /// The plaintext bytes in each sealed chunk but the last, which holds 0 to `CHUNK`.
-pub const CHUNK: usize = 64 * 1024;
+pub(crate) const CHUNK: usize = 64 * 1024;
 
 /// The bytes of each sealed chunk but the last: [`CHUNK`] and what sealing adds.
-pub const SEALED_CHUNK: usize = CHUNK + OVERHEAD;
-
-/// How many chunks a blob of `size` bytes is sealed in: at least one, the last never empty
-/// unless the blob is.
-pub fn chunks_in(size: u64) -> u64 {
-    size.div_ceil(CHUNK as u64).max(1)
-}
+pub(crate) const SEALED_CHUNK: usize = CHUNK + OVERHEAD;
 
 /// Seals one blob as its bytes arrive, under this month's data key, for the object `object`
 /// names.
@@ -109,26 +103,52 @@ impl BlobSealer {
     }
 }
 
-/// Opens one blob's sealed chunks in order, and checks at the last that the content has the
-/// hash it was asked for.
+/// Opens one blob's sealed bytes as they arrive, in pieces of any size, and checks at the end
+/// that the content has the hash it was asked for.
 pub struct BlobOpener {
     key: KeyMaterial,
     key_id: String,
     scope: Scope,
     object: String,
     index: u32,
+    pending: Vec<u8>,
     hasher: sha2::Sha256,
     expected: Sha256,
-    ended: bool,
 }
 
 impl BlobOpener {
-    /// Opens the next chunk; `last` says whether the blob ends with it. Fails when it does not
-    /// open in this place, and at the last when the content is not what was asked for.
-    pub fn open(&mut self, sealed: &[u8], last: bool) -> Result<Vec<u8>, KeyError> {
-        if self.ended {
-            return Err(KeyError::Tampered(self.key_id.clone()));
+    /// Takes in sealed `bytes`, and returns what it can open now: every whole chunk that more
+    /// bytes follow.
+    pub fn feed(&mut self, bytes: &[u8]) -> Result<Vec<u8>, KeyError> {
+        let mut pending = mem::take(&mut self.pending);
+        pending.extend_from_slice(bytes);
+        let mut opened = Vec::new();
+        let mut start = 0;
+        while pending.len().saturating_sub(start) > SEALED_CHUNK {
+            let end = start + SEALED_CHUNK;
+            let chunk = pending.get(start..end).unwrap_or_default();
+            opened.extend(self.open(chunk, false)?);
+            start = end;
         }
+        pending.drain(..start);
+        self.pending = pending;
+        Ok(opened)
+    }
+
+    /// Opens what is left as the last chunk. Fails when it does not open there, as when the
+    /// bytes were cut short, and when the content is not what was asked for.
+    pub fn end(mut self) -> Result<Vec<u8>, KeyError> {
+        let pending = mem::take(&mut self.pending);
+        let opened = self.open(&pending, true)?;
+        let found = Sha256::from_digest(mem::take(&mut self.hasher).finalize().into());
+        if found == self.expected {
+            Ok(opened)
+        } else {
+            Err(KeyError::Tampered(self.key_id.clone()))
+        }
+    }
+
+    fn open(&mut self, sealed: &[u8], last: bool) -> Result<Vec<u8>, KeyError> {
         let aad = chunk_aad(&self.scope, &self.object, &self.key_id, self.index, last);
         let opened = open(&self.key, &aad, sealed, &self.key_id)?;
         self.hasher.update(&opened);
@@ -136,15 +156,71 @@ impl BlobOpener {
             .index
             .checked_add(1)
             .ok_or_else(|| KeyError::Tampered(self.key_id.clone()))?;
-        if last {
-            self.ended = true;
-            let found = Sha256::from_digest(mem::take(&mut self.hasher).finalize().into());
-            if found != self.expected {
-                return Err(KeyError::Tampered(self.key_id.clone()));
-            }
-        }
         Ok(opened)
     }
+}
+
+/// Seals what `bytes` yields into `writer`, refusing more than `limit` bytes. The writer is
+/// left to finish or abandon.
+pub async fn seal_into(
+    mut sealer: BlobSealer,
+    limit: u64,
+    bytes: &mut dyn Chunks,
+    writer: &mut dyn ObjectWriter,
+) -> Result<Finished, BlobError> {
+    while let Some(piece) = bytes.next_chunk().await? {
+        if sealer.size().saturating_add(piece.len() as u64) > limit {
+            return Err(BlobError::TooLarge(limit));
+        }
+        for chunk in sealer.write(&piece).map_err(|e| sealing(&e))? {
+            writer.write(chunk).await?;
+        }
+    }
+    let finished = sealer.finish().map_err(|e| sealing(&e))?;
+    writer.write(finished.last.clone()).await?;
+    Ok(finished)
+}
+
+/// A blob's content: its object's sealed bytes, opened as they are read.
+pub struct Opened {
+    sealed: Box<dyn Chunks>,
+    opener: Option<BlobOpener>,
+}
+
+impl Opened {
+    pub fn new(sealed: Box<dyn Chunks>, opener: BlobOpener) -> Self {
+        Self {
+            sealed,
+            opener: Some(opener),
+        }
+    }
+
+    async fn next_now(&mut self) -> Result<Option<Vec<u8>>, BlobError> {
+        loop {
+            let Some(reading) = self.opener.as_mut() else {
+                return Ok(None);
+            };
+            let Some(piece) = self.sealed.next_chunk().await? else {
+                let last = self.opener.take().map(BlobOpener::end).transpose();
+                return last.map_err(|e| sealing(&e));
+            };
+            let content = reading.feed(&piece).map_err(|e| sealing(&e))?;
+            if !content.is_empty() {
+                return Ok(Some(content));
+            }
+        }
+    }
+}
+
+impl Chunks for Opened {
+    fn next_chunk(&mut self) -> BoxFuture<'_, Result<Option<Vec<u8>>, BlobError>> {
+        Box::pin(self.next_now())
+    }
+}
+
+/// Why a blob could not be sealed or opened, as the blob store says it.
+fn sealing(error: &KeyError) -> BlobError {
+    BlobError::Storage(format!("a blob could not be sealed or opened: {error}"))
 }
 
 impl<S: KeyStorage> Keys<S> {
@@ -182,9 +258,9 @@ impl<S: KeyStorage> Keys<S> {
             scope: *scope,
             object: object.to_owned(),
             index: 0,
+            pending: Vec::new(),
             hasher: sha2::Sha256::new(),
             expected: sha256.clone(),
-            ended: false,
         })
     }
 }

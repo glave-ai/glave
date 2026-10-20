@@ -94,7 +94,8 @@ impl Lineup {
             let provider = &endpoint.provider.provider;
             let catalog = super::catalog_of(account, catalogs);
             for model in allowed {
-                let target = Target::new(Arc::clone(&handle), provider.clone(), model);
+                let target = Target::new(Arc::clone(&handle), provider.clone(), model)
+                    .at_service(service_name(provider));
                 let card = catalog.and_then(|catalog| {
                     let card = catalog.models.iter().find(|card| card.id == model)?;
                     Some((card, catalog))

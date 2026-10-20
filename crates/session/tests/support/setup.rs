@@ -36,10 +36,11 @@ pub(crate) fn folder(name: &str) -> TempDir {
 }
 
 /// The SQLite store at `database`, sealed under a key file beside it, so opening it again
-/// reads what was written before.
+/// reads what was written before; its blobs' bytes in memory.
 pub(crate) async fn sqlite(database: &Path) -> Store {
     let root = KeyFileRoot::open_or_create(database.with_extension("key")).unwrap();
-    Store::open(database, KeySettings::new(Arc::new(root)))
+    let objects = Arc::new(glave_ports::InMemoryObjects::new());
+    Store::open(database, KeySettings::new(Arc::new(root)), objects)
         .await
         .unwrap()
 }
