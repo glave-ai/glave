@@ -88,8 +88,8 @@ fn rust_checks(rust: &Rust, threads: &[(&str, String)]) -> Result<(), String> {
     })?;
     let run = crate::leftovers::Run::start()?;
     let tests = step("tests", || {
-        let args = rust.args(&["nextest", "run"], &["--no-tests=pass"]);
-        cmd::run_with("cargo", &args, &[run.env(), threads.to_vec()].concat())
+        let env = [run.env(), threads.to_vec()].concat();
+        crate::nextest::run(&rust.args(&[], &[]), &["--no-tests=pass"], &env)
     });
     // Checked whether or not the tests passed, so a failed run stops what it left running.
     let leftovers = step("leftovers", || run.check());

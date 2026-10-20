@@ -41,20 +41,9 @@ pub(crate) fn check(threads: &[(&str, String)]) -> Result<(), String> {
     // against this glave too.
     npm(&web, &["run", "build"], &[])?;
     let (package, feature) = crate::ci::BUILT_IN_APP;
-    crate::cmd::run_with(
-        "cargo",
-        &[
-            "nextest",
-            "run",
-            "-p",
-            package,
-            "--features",
-            feature,
-            "--test",
-            "cli",
-            "-E",
-            "test(/^serve::/)",
-        ],
+    crate::nextest::run(
+        &["-p", package, "--features", feature, "--test", "cli"],
+        &["-E", "test(/^serve::/)"],
         threads,
     )?;
     let glave = target_directory()?.join("debug/glave");
