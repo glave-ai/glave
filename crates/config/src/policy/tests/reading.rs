@@ -332,6 +332,38 @@ fn the_store_is_the_person_s_choice_and_its_password_never_shown() {
 }
 
 #[test]
+fn the_bucket_is_the_person_s_choice_and_only_an_s3_one() {
+    let dir = scratch("bucket");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let mut locations = Locations::here(&home, &dir);
+    locations.policies = vec![];
+    let text = "[store]\nbucket = \"s3://glave-blobs\"\n";
+    let project = files::config(text, &locations.project).unwrap();
+    let loaded = load_all(&locations, Some(project)).unwrap();
+    assert_eq!(loaded.choices.bucket, None, "a project's is ignored");
+    std::fs::write(home.join("config.toml"), text).unwrap();
+    let loaded = load_all(&locations, None).unwrap();
+    assert_eq!(
+        loaded.choices.bucket.as_ref().unwrap().value,
+        "s3://glave-blobs"
+    );
+    assert_eq!(
+        loaded.choices.store, None,
+        "a bucket alone keeps the local file"
+    );
+    let (shown, _) = explain(&loaded, None);
+    assert!(shown.contains("s3://glave-blobs"), "{shown}");
+    for wrong in ["/var/glave/blobs", "s3://", "gs://glave-blobs"] {
+        let text = format!("[store]\nbucket = \"{wrong}\"\n");
+        let refused = files::config(&text, &locations.person)
+            .unwrap_err()
+            .to_string();
+        assert!(refused.contains("[store] bucket"), "{refused}");
+    }
+}
+
+#[test]
 fn the_github_app_is_the_person_s_or_server_s_choice() {
     let dir = scratch("github");
     let home = dir.join("home");

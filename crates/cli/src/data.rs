@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use anyhow::Context as _;
 use glave_bucket::Bucket;
+use glave_config::policy::StoreFile;
 use glave_event::{BlobRef, PrincipalId, RawEvent, Seq, Sha256, ThreadId};
 use glave_ports::search::Found;
 use glave_ports::{
@@ -28,13 +29,16 @@ pub(crate) enum Data {
 
 impl Data {
     /// The store `url` names, or the local SQLite file when it names none; blobs' bytes in the
-    /// folder in glave's folder.
-    pub(crate) async fn open(url: Option<&str>) -> anyhow::Result<Self> {
+    /// bucket `bucket` names, or the folder in glave's folder.
+    pub(crate) async fn open(url: Option<&str>, bucket: Option<&str>) -> anyhow::Result<Self> {
         // Made first when it is not there yet: the key file may be kept in it.
         let database = home::database().await?;
         let folder = home::folder()?;
         let keys = keys::settings(&folder, home::relocated()).await?;
-        let bucket: Arc<dyn Objects> = Arc::new(Bucket::folder(&home::blobs().await?).await?);
+        let bucket: Arc<dyn Objects> = match bucket {
+            Some(bucket) => Arc::new(Bucket::s3(bucket, std::env::vars())?),
+            None => Arc::new(Bucket::folder(&home::blobs().await?).await?),
+        };
         match url {
             None => Ok(Self::Sqlite(
                 sqlite::Store::open(database, keys, bucket).await?,
@@ -49,29 +53,32 @@ impl Data {
         }
     }
 
-    /// The store the choices name: `[store] url` or GLAVE_STORE_URL, else the local file.
+    /// The store the choices name: `[store] url` or GLAVE_STORE_URL, else the local file; and
+    /// `[store] bucket` or GLAVE_STORE_BUCKET, else the folder.
     pub(crate) async fn chosen(choices: &glave_config::policy::Choices) -> anyhow::Result<Self> {
-        Self::open(choices.store.as_ref().map(|url| url.value.as_str())).await
+        let url = choices.store.as_ref().map(|url| url.value.as_str());
+        let bucket = choices.bucket.as_ref().map(|bucket| bucket.value.as_str());
+        Self::open(url, bucket).await
     }
 
-    /// The store for a command that reads no project settings: GLAVE_STORE_URL, else the
-    /// person's own `[store] url`, else the local file. The same rule as [`Data::chosen`],
-    /// since a project never chooses the store.
+    /// The store for a command that reads no project settings: GLAVE_STORE_URL and
+    /// GLAVE_STORE_BUCKET, else the person's own `[store]`, else the local file and folder. The
+    /// same rule as [`Data::chosen`], since a project never chooses the store.
     pub(crate) async fn here() -> anyhow::Result<Self> {
-        if let Some(url) = environment() {
-            return Self::open(Some(&url)).await;
-        }
         let path = home::folder()?.join(glave_config::policy::CONFIG);
-        let url = match tokio::fs::read_to_string(&path).await {
+        let file = match tokio::fs::read_to_string(&path).await {
             Ok(text) => glave_config::policy::config(&text, &path)?
                 .store
-                .map(|store| store.url),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                .unwrap_or_default(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => StoreFile::default(),
             Err(error) => {
                 return Err(error).with_context(|| format!("could not read {}", path.display()));
             }
         };
-        Self::open(url.as_deref()).await
+        let set = environment().unwrap_or_default();
+        let url = set.url.or(file.url);
+        let bucket = set.bucket.or(file.bucket);
+        Self::open(url.as_deref(), bucket.as_deref()).await
     }
 
     pub(crate) fn log(&self) -> DataLog {
@@ -131,11 +138,18 @@ impl Data {
     }
 }
 
-/// The store GLAVE_STORE_URL names, when it is set and not empty.
-pub(crate) fn environment() -> Option<String> {
-    std::env::var("GLAVE_STORE_URL")
-        .ok()
-        .filter(|url| !url.trim().is_empty())
+/// The store GLAVE_STORE_URL and GLAVE_STORE_BUCKET name, when either is set and not empty.
+pub(crate) fn environment() -> Option<StoreFile> {
+    let set = |name| {
+        std::env::var(name)
+            .ok()
+            .filter(|value: &String| !value.trim().is_empty())
+    };
+    let store = StoreFile {
+        url: set("GLAVE_STORE_URL"),
+        bucket: set("GLAVE_STORE_BUCKET"),
+    };
+    (store != StoreFile::default()).then_some(store)
 }
 
 /// The event log of the one store.

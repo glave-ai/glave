@@ -11,7 +11,7 @@ use glave_ports::settings::Hook;
 use crate::args::Args;
 use crate::{config, home, mcp};
 use glave_config::policy::{
-    self, Choices, ConfigFile, Loaded, Locations, ProjectTrust, ServerFile, StoreFile,
+    self, Choices, ConfigFile, Loaded, Locations, ProjectTrust, ServerFile,
 };
 use glave_config::trust::{self, Asking, Outcome, Project, Record};
 
@@ -231,7 +231,7 @@ fn environment() -> ConfigFile {
     ConfigFile {
         model: set("GLAVE_MODEL"),
         judge_model: set("GLAVE_JUDGE_MODEL"),
-        store: crate::data::environment().map(|url| StoreFile { url }),
+        store: crate::data::environment(),
         ..ConfigFile::default()
     }
 }

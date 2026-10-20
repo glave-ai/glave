@@ -124,8 +124,10 @@ keyring = { version = "4.2", default-features = false, features = ["v1"] }
 # rustls on aws-lc-rs as the rest of glave, and WebSockets for exec, attach and port-forward.
 kube = { version = "4.2", default-features = false, features = ["client", "rustls-tls", "aws-lc-rs", "ws"] }
 # Blobs' bytes in a folder or a bucket (specs/storage.md, "Which stores"): Apache Arrow's one
-# interface for a local folder and every object store, so one code path serves them all.
-object_store = { version = "0.14", default-features = false, features = ["fs"] }
+# interface for a local folder and every object store, so one code path serves them all. `aws`
+# is any S3-compatible bucket (S3, R2, GCS, Ceph, SeaweedFS), on the reqwest, rustls and
+# aws-lc-rs glave already uses.
+object_store = { version = "0.14", default-features = false, features = ["fs", "aws"] }
 # OpenTelemetry, only behind the `otlp` features: spans and metrics to an OTLP collector.
 opentelemetry = { version = "0.33", default-features = false, features = ["trace", "metrics"] }
 # OTLP over HTTP with protobuf, on the reqwest and rustls glave already uses (no gRPC stack).

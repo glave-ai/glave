@@ -3,3 +3,4 @@
 #![cfg(test)]
 
 mod folder;
+mod s3;

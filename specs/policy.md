@@ -108,9 +108,11 @@ url = "https://gateway.example.com"           # model calls and the tool catalog
 [server]                                      # the person's file only: a session server elsewhere
 url = "https://glave.example.com"             # glave runs threads there (glave --server); sign in with GLAVE_SERVER_TOKEN
 
-[store]                                       # the person's or server's file only; also GLAVE_STORE_URL
+[store]                                       # the person's or server's file only; also GLAVE_STORE_URL, GLAVE_STORE_BUCKET
 url = "postgres://glave:...@db.example.com/glave"  # the one data store; the local SQLite file when absent.
                                               # TLS off this computer unless sslmode=disable; shown without its password
+bucket = "s3://glave-blobs"                   # where files' bytes go; the blobs folder in glave's folder when absent.
+                                              # Reached with the AWS_* settings or workload identity, never keys here
 
 [provider]                                    # the person's or server's file only (gateway.md, "Cloud contracts")
 name = "azure"                                # a cloud contract's models instead of GLAVE_BASE_URL; model = a deployment
