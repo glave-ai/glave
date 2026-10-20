@@ -178,14 +178,20 @@ fn a_socket_in_a_folder_others_may_open_is_refused() {
 /// server, which `model` answers: `None` when the sandbox cannot run here and no one requires
 /// it.
 fn ran(place: &Place, model: &FakeServer, sandbox: &str) -> Option<String> {
+    // Where the sandbox cannot run, a server set to it leaves every command asking, and this
+    // turn has no one to answer: nothing would run to prove anything.
+    let required = std::env::var_os("GLAVE_REQUIRE_SANDBOX").is_some();
+    if sandbox != "off" && !glave_computer::sandbox_available() && !required {
+        return None;
+    }
     crate::support::choose(place, "sandbox", &format!("\"{sandbox}\""));
     let said = crate::support::glave(place, model, &["go"], "");
     let shown = text(&said);
-    let required = std::env::var_os("GLAVE_REQUIRE_SANDBOX").is_some();
-    if !said.status.success() && shown.contains("sandbox") && !required {
-        return None;
-    }
     assert!(said.status.success(), "{shown}");
+    assert!(
+        !shown.contains("no one here to approve it"),
+        "the command must run, not ask: {shown}"
+    );
     let asked = model.received();
     Some(crate::support::said(&asked.last()?.body, "tool").concat())
 }
