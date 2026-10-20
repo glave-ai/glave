@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use glave_event::PrincipalId;
 use glave_keys::{KeySettings, Keys};
-use glave_ports::OrgId;
+use glave_ports::{InMemoryObjects, Objects, OrgId};
 use rusqlite::{Connection, params};
 use thiserror::Error;
 use uuid::Uuid;
@@ -39,25 +39,31 @@ pub(crate) type Shared = Arc<Mutex<Connection>>;
 /// The keys of the local database.
 pub type SqliteKeyring = Keys<SqliteKeys>;
 
-/// One local database: the event log, the blobs, their keys, and which project each folder is.
+/// One local database: the event log, the blobs' records, their keys, and which project each
+/// folder is; with the objects that hold the blobs' bytes.
 #[derive(Clone)]
 pub struct Store {
     connection: Shared,
     keys: Arc<SqliteKeyring>,
+    objects: Arc<dyn Objects>,
 }
 
 impl Store {
     /// Opens the database at `path`, making it the first time; one another version of glave
     /// wrote is refused.
-    /// Content is sealed under keys that `keys.root` wraps.
+    /// Content is sealed under keys that `keys.root` wraps; blobs' bytes are kept in `objects`.
     /// The threads view is filled from the log the first time, and again whenever this build
     /// folds threads differently from the one that filled it.
-    pub async fn open(path: impl AsRef<Path>, keys: KeySettings) -> Result<Self, StoreError> {
+    pub async fn open(
+        path: impl AsRef<Path>,
+        keys: KeySettings,
+        objects: Arc<dyn Objects>,
+    ) -> Result<Self, StoreError> {
         let path = path.as_ref().to_owned();
         let store = tokio::task::spawn_blocking(move || {
             let connection = Connection::open(&path)
                 .map_err(|e| StoreError::Open(format!("{}: {e}", path.display())))?;
-            Self::prepare(connection, keys)
+            Self::prepare(connection, keys, objects)
         })
         .await
         .map_err(|e| StoreError::Open(e.to_string()))??;
@@ -65,14 +71,18 @@ impl Store {
         Ok(store)
     }
 
-    /// A database that lives only in memory, for tests.
+    /// A database that lives only in memory, its blobs' bytes too, for tests.
     pub fn open_in_memory(keys: KeySettings) -> Result<Self, StoreError> {
         let connection =
             Connection::open_in_memory().map_err(|e| StoreError::Open(e.to_string()))?;
-        Self::prepare(connection, keys)
+        Self::prepare(connection, keys, Arc::new(InMemoryObjects::new()))
     }
 
-    fn prepare(mut connection: Connection, keys: KeySettings) -> Result<Self, StoreError> {
+    fn prepare(
+        mut connection: Connection,
+        keys: KeySettings,
+        objects: Arc<dyn Objects>,
+    ) -> Result<Self, StoreError> {
         // `secure_delete` overwrites deleted and replaced content, so a destroyed key does not
         // linger in the file's free pages.
         connection
@@ -87,7 +97,11 @@ impl Store {
         schema::prepare(&mut connection)?;
         let connection = Arc::new(Mutex::new(connection));
         let keys = Arc::new(Keys::new(keys, SqliteKeys::new(Arc::clone(&connection))));
-        Ok(Self { connection, keys })
+        Ok(Self {
+            connection,
+            keys,
+            objects,
+        })
     }
 
     pub fn log(&self) -> SqliteLog {
@@ -95,7 +109,11 @@ impl Store {
     }
 
     pub fn blobs(&self) -> SqliteBlobs {
-        SqliteBlobs::new(Arc::clone(&self.connection), Arc::clone(&self.keys))
+        SqliteBlobs::new(
+            Arc::clone(&self.connection),
+            Arc::clone(&self.keys),
+            Arc::clone(&self.objects),
+        )
     }
 
     /// The keys content is sealed under, and erased by destroying.

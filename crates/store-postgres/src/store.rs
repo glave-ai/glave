@@ -6,7 +6,7 @@ use std::sync::Arc;
 use deadpool_postgres::{Manager, ManagerConfig, Object, Pool, RecyclingMethod};
 use glave_event::PrincipalId;
 use glave_keys::{KeySettings, Keys};
-use glave_ports::OrgId;
+use glave_ports::{Objects, OrgId};
 use thiserror::Error;
 use tokio_postgres::Config;
 
@@ -31,32 +31,42 @@ pub enum StoreError {
 /// The keys of the database.
 pub type PostgresKeyring = Keys<PostgresKeys>;
 
-/// One Postgres database: the event log, the blobs and their keys, through a bounded
-/// connection pool.
+/// One Postgres database: the event log, the blobs' records and their keys, through a bounded
+/// connection pool; with the objects that hold the blobs' bytes.
 #[derive(Clone)]
 pub struct Store {
     pool: Pool,
     keys: Arc<PostgresKeyring>,
+    objects: Arc<dyn Objects>,
 }
 
 impl Store {
     /// Connects to the database at `url` (`postgres://user:password@host/database`) and
-    /// brings its schema up to date. Content is sealed under keys that `keys.root` wraps. A
-    /// database on another computer is reached over TLS unless the URL says `sslmode=disable`.
-    pub async fn connect(url: &str, keys: KeySettings) -> Result<Self, StoreError> {
+    /// brings its schema up to date. Content is sealed under keys that `keys.root` wraps, and
+    /// blobs' bytes kept in `objects`. A database on another computer is reached over TLS
+    /// unless the URL says `sslmode=disable`.
+    pub async fn connect(
+        url: &str,
+        keys: KeySettings,
+        objects: Arc<dyn Objects>,
+    ) -> Result<Self, StoreError> {
         // The URL may hold a password, so the error never repeats it.
         let mut config = url
             .parse::<Config>()
             .map_err(|e| StoreError::Connect(format!("the database URL is not valid: {e}")))?;
         crate::tls::require_off_this_computer(&mut config);
-        Self::connect_with(config, keys).await
+        Self::connect_with(config, keys, objects).await
     }
 
     /// Connects with a prepared configuration, for settings a URL cannot carry, and brings the
     /// schema up to date. The tables live in the connection's `search_path`. The threads view
     /// is filled from the log the first time, and again whenever this build folds threads
     /// differently from the one that filled it.
-    pub async fn connect_with(config: Config, keys: KeySettings) -> Result<Self, StoreError> {
+    pub async fn connect_with(
+        config: Config,
+        keys: KeySettings,
+        objects: Arc<dyn Objects>,
+    ) -> Result<Self, StoreError> {
         let manager = Manager::from_config(
             config,
             crate::tls::connector()?,
@@ -74,7 +84,11 @@ impl Store {
         schema::prepare(&mut client).await?;
         drop(client);
         let keys = Arc::new(Keys::new(keys, PostgresKeys::new(pool.clone())));
-        let store = Self { pool, keys };
+        let store = Self {
+            pool,
+            keys,
+            objects,
+        };
         crate::views::refresh(&store.log(), &store.pool).await?;
         Ok(store)
     }
@@ -84,7 +98,11 @@ impl Store {
     }
 
     pub fn blobs(&self) -> PostgresBlobs {
-        PostgresBlobs::new(self.pool.clone(), Arc::clone(&self.keys))
+        PostgresBlobs::new(
+            self.pool.clone(),
+            Arc::clone(&self.keys),
+            Arc::clone(&self.objects),
+        )
     }
 
     /// The projects: their records, members, and the folders that lead to them.

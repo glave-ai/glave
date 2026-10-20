@@ -6,11 +6,12 @@
 use std::sync::Arc;
 
 use anyhow::Context as _;
+use glave_bucket::Bucket;
 use glave_event::{BlobRef, PrincipalId, RawEvent, Seq, Sha256, ThreadId};
 use glave_ports::search::Found;
 use glave_ports::{
-    Blob, BlobError, BlobStore, Chunks, Eraser, EventLog, Located, LogError, OrgId, Projects,
-    Scope, ThreadQuery, ThreadView,
+    Blob, BlobError, BlobStore, Chunks, Eraser, EventLog, Located, LogError, Objects, OrgId,
+    Projects, Scope, ThreadQuery, ThreadView,
 };
 use glave_store_postgres as postgres;
 use glave_store_sqlite as sqlite;
@@ -26,17 +27,21 @@ pub(crate) enum Data {
 }
 
 impl Data {
-    /// The store `url` names, or the local SQLite file when it names none.
+    /// The store `url` names, or the local SQLite file when it names none; blobs' bytes in the
+    /// folder in glave's folder.
     pub(crate) async fn open(url: Option<&str>) -> anyhow::Result<Self> {
         // Made first when it is not there yet: the key file may be kept in it.
         let database = home::database().await?;
         let folder = home::folder()?;
         let keys = keys::settings(&folder, home::relocated()).await?;
+        let bucket: Arc<dyn Objects> = Arc::new(Bucket::folder(&home::blobs().await?).await?);
         match url {
-            None => Ok(Self::Sqlite(sqlite::Store::open(database, keys).await?)),
+            None => Ok(Self::Sqlite(
+                sqlite::Store::open(database, keys, bucket).await?,
+            )),
             Some(url) => {
                 let shown = glave_config::policy::redacted(url);
-                let store = postgres::Store::connect(url, keys)
+                let store = postgres::Store::connect(url, keys, bucket)
                     .await
                     .with_context(|| format!("could not open the data store at {shown}"))?;
                 Ok(Self::Postgres(store))

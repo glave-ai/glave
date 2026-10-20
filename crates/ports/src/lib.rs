@@ -23,6 +23,7 @@ mod in_memory;
 mod log;
 pub mod memories;
 mod model;
+mod objects;
 mod projects;
 mod remove;
 mod scope;
@@ -41,12 +42,13 @@ pub use caller::Caller;
 pub use env::{Clock, Entropy, EntropyError, OsEntropy, SystemClock};
 pub use erase::{Erasable, EraseError, Eraser};
 pub use failure::Failure;
-pub use in_memory::{InMemoryBlobs, InMemoryLog, InMemoryProjects, InMemoryTools};
+pub use in_memory::{InMemoryBlobs, InMemoryLog, InMemoryObjects, InMemoryProjects, InMemoryTools};
 pub use log::{EventLog, LogError, check_append};
 pub use model::{
     Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError, Purpose, RequestedCall,
     Served, ToolCall, ToolChoice, ToolSpec,
 };
+pub use objects::{ObjectWriter, Objects, object_name_ok};
 pub use projects::{
     FolderKey, MAX_NAME, Project, ProjectError, ProjectKind, Projects, origin_remote,
 };

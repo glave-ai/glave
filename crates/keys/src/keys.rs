@@ -18,7 +18,7 @@ use crate::root::Root;
 use crate::seal::{associated, open, seal};
 use crate::storage::KeyStorage;
 
-pub use self::blob::{BlobOpener, BlobSealer, CHUNK, Finished, SEALED_CHUNK, chunks_in};
+pub use self::blob::{BlobOpener, BlobSealer, Finished, Opened, seal_into};
 use self::cache::Cache;
 
 /// How a store's keys are set up: the root that wraps organization keys, the clock that

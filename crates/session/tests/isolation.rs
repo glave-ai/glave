@@ -150,7 +150,8 @@ fn on_postgres_no_one_reaches_anothers_data() {
         config.options(format!("-c search_path={schema}"));
         let root = InMemoryRoot::new().unwrap();
         let keys = KeySettings::new(Arc::new(root));
-        let store = glave_store_postgres::Store::connect_with(config, keys)
+        let objects = Arc::new(glave_ports::InMemoryObjects::new());
+        let store = glave_store_postgres::Store::connect_with(config, keys, objects)
             .await
             .unwrap();
         let parts = Parts {
