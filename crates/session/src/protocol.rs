@@ -91,8 +91,7 @@ methods! {
     /// The models this server can run: the default first.
     "model/list" => ModelList {} -> [Models],
     "thread/start" => ThreadStart {
-        /// The project the thread is in: by default the server's own, for a caller who works in
-        /// it, else the caller's personal project.
+        /// The project the thread is in: by default the caller's personal project, their Chats.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         project: Option<ProjectId>,
         /// Whether the thread works in a worktree of its own rather than in the folder itself;
@@ -280,21 +279,21 @@ methods! {
     "memory/list" => MemoryList {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scope: Option<MemoryScope>,
-        /// The project whose memory, beside the person's own: the server's own when absent.
+        /// The project whose memory, beside the person's own: the caller's Chats when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         project: Option<ProjectId>,
     } -> [Memories],
     "memory/save" => MemorySave {
         text: String,
         scope: MemoryScope,
-        /// The project whose memory, beside the person's own: the server's own when absent.
+        /// The project whose memory, beside the person's own: the caller's Chats when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         project: Option<ProjectId>,
     } -> [Memories],
     "memory/edit" => MemoryEdit {
         memory: MemoryId,
         text: String,
-        /// The project whose memory, beside the person's own: the server's own when absent.
+        /// The project whose memory, beside the person's own: the caller's Chats when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         project: Option<ProjectId>,
     } -> [Memories],
@@ -302,7 +301,7 @@ methods! {
     "memory/move" => MemoryMove {
         memory: MemoryId,
         scope: MemoryScope,
-        /// The project whose memory, beside the person's own: the server's own when absent.
+        /// The project whose memory, beside the person's own: the caller's Chats when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         project: Option<ProjectId>,
     } -> [Memories],
@@ -314,14 +313,14 @@ methods! {
         all: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scope: Option<MemoryScope>,
-        /// The project whose memory, beside the person's own: the server's own when absent.
+        /// The project whose memory, beside the person's own: the caller's Chats when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         project: Option<ProjectId>,
     } -> [Memories],
     /// Undoes glave's latest change to a memory, within 30 days.
     "memory/restore" => MemoryRestore {
         memory: MemoryId,
-        /// The project whose memory, beside the person's own: the server's own when absent.
+        /// The project whose memory, beside the person's own: the caller's Chats when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         project: Option<ProjectId>,
     } -> [Memories],
@@ -401,16 +400,16 @@ impl Request {
         }
     }
 
-    /// For a request on a project's memory, the project it acts in: the one it names, else
-    /// `home`, the server's own.
-    pub(crate) fn memory_project(&self, home: ProjectId) -> Option<ProjectId> {
+    /// For a request on a project's memory, the project it names; with none, it acts in the
+    /// caller's Chats.
+    pub(crate) fn memory_project(&self) -> Option<ProjectId> {
         match self {
             Self::MemoryList { project, .. }
             | Self::MemorySave { project, .. }
             | Self::MemoryEdit { project, .. }
             | Self::MemoryMove { project, .. }
             | Self::MemoryForget { project, .. }
-            | Self::MemoryRestore { project, .. } => Some(project.unwrap_or(home)),
+            | Self::MemoryRestore { project, .. } => *project,
             _ => None,
         }
     }

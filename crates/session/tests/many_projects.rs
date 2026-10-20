@@ -332,7 +332,7 @@ fn projects_are_made_shared_and_renamed_only_by_their_owner() {
             panic!("a project");
         };
         assert_eq!(renamed.name, "Allotment");
-        // The local person works in neither grace's project nor her memory's.
+        // The local person does not work in grace's project.
         let local = server
             .request(Request::ProjectGet {
                 project: project.id,
@@ -348,7 +348,9 @@ fn projects_are_made_shared_and_renamed_only_by_their_owner() {
                 },
             )
             .await;
-        assert_eq!(memory.unwrap_err().code, code::NO_PROJECT);
+        // With no project named, her memory is her own Chats', never the folder's project's;
+        // this server keeps memory off.
+        assert_eq!(memory.unwrap_err().code, code::MEMORY_OFF);
     });
 }
 

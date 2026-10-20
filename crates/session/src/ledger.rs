@@ -125,7 +125,7 @@ where
     /// Reads whatever was added to `project`'s ledger since this server last looked.
     pub(crate) async fn catch_up(&self, project: ProjectId) -> Result<(), ApiError> {
         // Glave's own: the project's task ledger.
-        let scope = Scope::glaves_own(self.inner.home.org(), project);
+        let scope = Scope::glaves_own(self.inner.org, project);
         let next = self.ledgers().get(&project).map_or(1, Ledger::next_seq);
         let after = Seq::new(next.saturating_sub(1)).ok();
         let log = self.inner.harness.log();
@@ -148,7 +148,7 @@ where
     ) -> Result<(), ApiError> {
         let ledger = Reserved::Tasks.id();
         // Glave's own: the project's task ledger.
-        let scope = Scope::glaves_own(self.inner.home.org(), project);
+        let scope = Scope::glaves_own(self.inner.org, project);
         let this = self;
         let log = self.inner.harness.log();
         let appended = append_retrying(log, &scope, ledger, move || async move {
@@ -173,15 +173,15 @@ where
         Ok(())
     }
 
-    /// The projects whose tasks and schedules this server runs: its own, every project its person
-    /// works in, and any other whose ledger it has read for a caller.
+    /// The projects whose tasks and schedules this server runs: every project its person works
+    /// in, and any other whose ledger it has read for a caller.
     pub(crate) async fn task_projects(&self) -> Result<Vec<ProjectId>, ApiError> {
         let mut projects = match self.inner.harness.person() {
             Some(_) => self.projects_of(&Caller::default()).await?,
             None => Vec::new(),
         };
         let known: Vec<ProjectId> = self.ledgers().keys().copied().collect();
-        for project in std::iter::once(self.inner.home.project()).chain(known) {
+        for project in known {
             if !projects.contains(&project) {
                 projects.push(project);
             }

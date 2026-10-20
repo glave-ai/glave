@@ -122,7 +122,7 @@ where
     }
 
     /// Whether `thread` works in a folder itself, as its latest binding says; one with no
-    /// binding works in the server's own.
+    /// binding works in its project's folder.
     async fn in_its_folder(&self, scope: &Scope, thread: ThreadId) -> Result<bool, ApiError> {
         let latest = self.latest(scope, thread, WorkspaceBound::TYPE).await?;
         Ok(match latest {

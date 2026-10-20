@@ -198,7 +198,7 @@ impl Setup {
             browsers: self.browsers,
             ..Wiring::new(provider, log, InMemoryBlobs::new(), workspace, projects)
         };
-        let server = Server::new(wiring, self.settings, home, self.answering);
+        let server = Server::new(wiring, self.settings, home.org(), self.answering);
         // The server's own project, kept as its person's project at a fixed time without reading
         // the clock, so nothing a test checks depends on when it was first asked for.
         let at = At::try_from("2026-10-01T00:00:00.000Z".to_owned()).unwrap();

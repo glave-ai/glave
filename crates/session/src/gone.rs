@@ -101,7 +101,7 @@ where
         match self
             .inner
             .projects
-            .folder(self.inner.home.org(), &keys, &found)
+            .folder(self.inner.org, &keys, &found)
             .await
         {
             Ok(led) if led.id != project => {
@@ -144,7 +144,7 @@ where
         }
         self.let_go_in(project);
         // Glave's own: archiving the threads of a project its owner removes.
-        let scope = Scope::glaves_own(self.inner.home.org(), project);
+        let scope = Scope::glaves_own(self.inner.org, project);
         for thread in threads {
             let now = self.inner.harness.clock().now();
             let random = self.inner.harness.entropy().bytes()?;
@@ -221,7 +221,7 @@ where
     /// Every thread of `project` that is neither archived nor deleted.
     async fn active_threads(&self, project: ProjectId) -> Result<Vec<ThreadId>, ApiError> {
         // Glave's own: listing a project's threads, for the server to act on.
-        let scope = Scope::glaves_own(self.inner.home.org(), project);
+        let scope = Scope::glaves_own(self.inner.org, project);
         let (mut threads, mut after) = (Vec::new(), None);
         loop {
             let query = ThreadQuery {

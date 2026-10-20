@@ -109,9 +109,9 @@ pub(crate) async fn wire(
     let root = workspace.root().to_owned();
     settings.commands = crate::commands::find(&root).await?;
     let servers = mcp_servers(&setup, remote.as_ref(), &processes).await?;
-    let (on_workers, workers) =
-        crate::cloud::workers(choices, &setup.loaded.constraints, &folder).await?;
     let scope = crate::projects::here(&store, &root, identity.person).await?;
+    let (on_workers, workers) =
+        crate::cloud::workers(choices, &setup.loaded.constraints, &folder, scope.project()).await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
     let projects = projects_for(&setup, &servers, &lined.switch, memory.as_ref(), asked)?;
     for line in [told, projects.set_aside(&folder).await].concat() {
@@ -145,7 +145,7 @@ pub(crate) async fn wire(
             store.projects(),
         )
     };
-    let server = Server::new(wiring, settings, scope, answering);
+    let server = Server::new(wiring, settings, scope.org(), answering);
     keep_here(&server, scope.project(), &root).await?;
     Ok(Wired {
         server,

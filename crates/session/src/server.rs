@@ -17,8 +17,8 @@ use glave_ports::computer::{ComputerError, Environment};
 use glave_ports::memories::Memory;
 use glave_ports::settings::Hooks;
 use glave_ports::{
-    BlobStore, Caller, Clock, Entropy, EventLog, ModelProvider, OsEntropy, Projects, Scope,
-    SystemClock, ToolSource,
+    BlobStore, Caller, Clock, Entropy, EventLog, ModelProvider, OrgId, OsEntropy, ProjectId,
+    Projects, Scope, SystemClock, ToolSource,
 };
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
@@ -62,8 +62,9 @@ pub struct Wiring<P, L, B> {
     pub worktree: bool,
     /// Commands run at points of every turn of the person the server works for.
     pub hooks: Hooks,
-    /// When set, every new thread in the server's own project works on a worker of its own
-    /// (`--on cloud`) unless `thread/start` asks for a worktree; none by default.
+    /// When set, every new thread in the project whose settings chose workers works on a
+    /// worker of its own (`on = "cloud"`) unless `thread/start` asks for a worktree; none by
+    /// default.
     pub workers: Option<OnWorkers>,
     /// What one person may run at once and keep scheduled.
     pub tasks: TaskLimits,
@@ -142,11 +143,13 @@ impl<P, L, B> Wiring<P, L, B> {
     }
 }
 
-/// Threads on workers: where workers come from, and the environment each is made from.
+/// Threads on workers: where workers come from, the environment each is made from, and the
+/// project whose settings chose them, whose repository they clone.
 #[derive(Debug, Clone)]
 pub struct OnWorkers {
     pub workers: Workers,
     pub environment: Environment,
+    pub project: ProjectId,
 }
 
 /// A session server for the projects of one organization, its own first, whose threads work in
@@ -167,17 +170,17 @@ pub(crate) type Glave<P, L, B> = Harness<P, Observed<L>, B, Approvals>;
 
 pub(crate) struct Inner<P, L, B> {
     pub(crate) harness: Glave<P, L, B>,
-    /// The server's own project: where a request that names none acts, and whose memory this
-    /// is.
-    pub(crate) home: Scope,
+    /// The organization whose projects this server serves.
+    pub(crate) org: OrgId,
     pub(crate) projects: Arc<dyn Projects>,
     /// The projects of threads looked up.
     pub(crate) places: Mutex<Places>,
     /// Whether new threads in a project's folder get a worktree when `thread/start` does not
     /// say: the person's choice, which follows their settings.
     pub(crate) worktree: AtomicBool,
-    /// The environment new threads' workers are made from, when they work on workers.
-    pub(crate) worker: Option<Environment>,
+    /// The environment new threads' workers are made from, and the project whose threads go
+    /// to them, when threads work on workers.
+    pub(crate) worker: Option<(ProjectId, Environment)>,
     /// The models threads may be sent to, the default first; none until one is set up.
     pub(crate) models: RwLock<Vec<ModelInfo>>,
     /// Where model accounts are kept, when the person here may connect them.
@@ -219,12 +222,13 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// A server whose own project is `home`, its threads working on the computer
-    /// `wiring.workspace` is on: in their projects' folders, or scratch folders.
+    /// A server for the projects of `org`, its threads working on the computer
+    /// `wiring.workspace` is on: in their projects' folders, or scratch folders. It has no
+    /// project of its own: a request that names none acts in the caller's Chats.
     pub fn new(
         wiring: Wiring<P, L, B>,
         settings: Settings,
-        home: Scope,
+        org: OrgId,
         answering: Answering,
     ) -> Self {
         let hub = Arc::new(Hub::default());
@@ -253,7 +257,7 @@ where
                 .with_hooks(wiring.hooks)
                 .with_memory_if(wiring.memory)
                 .with_project_folders(wiring.project_folders),
-                worker: wiring.workers.map(|on| on.environment),
+                worker: wiring.workers.map(|on| (on.project, on.environment)),
                 models: RwLock::new(catalog),
                 providers: wiring.providers,
                 rereads: wiring.rereads,
@@ -264,7 +268,7 @@ where
                 limits: wiring.tasks,
                 ledgers: Mutex::new(Ledgers::new()),
                 running: Mutex::new(Tasks::new()),
-                home,
+                org,
                 projects: wiring.projects,
                 places: Mutex::new(Places::default()),
                 worktree: AtomicBool::new(wiring.worktree),
@@ -337,9 +341,8 @@ where
     /// Starts a thread for `caller` in `project`. In a project with a folder, the thread works
     /// in a worktree of it where `worktree` says (the server's choice when it does not), else
     /// in the folder itself; a task's thread (`background`) always works on a copy, never in
-    /// the folder. In the server's own project, every thread works on a worker instead when the
-    /// server puts them there, which clones the repository the server's workers are set up
-    /// with. With no folder (a person's Chats, or a project without one), the thread gets a
+    /// the folder. In the project whose settings chose workers, every thread works on a worker
+    /// instead, which clones that project's repository. With no folder (a person's Chats, or a project without one), the thread gets a
     /// scratch folder of its own. With a model or an approval mode in `choice`, its turns go
     /// to that model, or ask that much.
     pub(crate) async fn new_thread(
@@ -359,7 +362,6 @@ where
             self.allowed_mode(mode)?;
         }
         let project = scope.project();
-        let home = project == self.inner.home.project();
         let own = self.inner.worktree.load(Ordering::Relaxed);
         let folder = self.folder_found(project).await?;
         // The project's own choice, for the person here, is nearer than the server's.
@@ -384,7 +386,9 @@ where
             (None, _, _) => Place::Scratch,
             (Some(_), Some(false), _) if background => return Err(crate::tasks::in_place()),
             (Some(folder), Some(true), _) => Place::Worktree(folder),
-            (Some(_), None, Some(environment)) if home => Place::Worker(environment.clone()),
+            (Some(_), None, Some((chosen, environment))) if *chosen == project => {
+                Place::Worker(environment.clone())
+            }
             (Some(folder), None, _) if background || copies => Place::Worktree(folder),
             (Some(folder), _, _) => Place::Folder(folder),
         };
