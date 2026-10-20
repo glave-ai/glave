@@ -101,6 +101,7 @@ pub(crate) async fn turn<L: EventLog + 'static>(
             approval: None,
             effort: None,
             unattended: false,
+            files: Vec::new(),
         })
         .await
 }
@@ -119,6 +120,7 @@ pub(crate) fn turn_start(thread: ThreadId, prompt: &str, key: Option<Idempotency
         },
         model: None,
         approval: None,
+        files: Vec::new(),
         effort: None,
     }
 }
@@ -182,6 +184,7 @@ pub(crate) async fn background<L: EventLog + 'static>(
         approval: None,
         effort: None,
         unattended: false,
+        files: Vec::new(),
     };
     match server.request(request).await.unwrap() {
         Reply::Task { task } => task,

@@ -23,7 +23,7 @@ import {
 
 import { type TurnResults, turnResults } from '../../lib/results';
 import { threadTitle } from '../../lib/threads';
-import type { Turn } from '../../lib/turns';
+import { startingTurn } from '../../lib/turns';
 import { effortToSend } from '../../lib/effort';
 import { CommandsService } from '../../services/commands.service';
 import { ModelsService } from '../../services/models.service';
@@ -53,17 +53,6 @@ const COPY = {
   you: 'You',
   queued: 'Waiting to be read',
 } as const;
-
-/** A turn with nothing in it yet, for a reply that streams in before anything is recorded. */
-const STARTING: Turn = {
-  key: 'turn-starting',
-  items: [],
-  files: [],
-  took: null,
-  outcome: null,
-  cost: null,
-  routes: [],
-};
 
 function isFirstPrompt(state: unknown): state is FirstPrompt {
   return (
@@ -137,11 +126,15 @@ export class ThreadComponent {
   protected readonly panelWidth = this.panel.width;
   protected readonly panelShortcut = this.panel.ariaShortcut;
   protected readonly panelHint = `${COPY.hint} ${this.panel.shortcut}`;
-  /** The turns, results first; the reply being written goes to the last, which runs. */
+  /**
+   * The turns, results first; the reply being written goes to the last, which runs. A turn the
+   * person just asked for shows at once, before the server records it.
+   */
   protected readonly turns = computed<readonly TurnResults[]>(() => {
     const live = this.service.hasReply() ? this.service.reply() : null;
     const recorded = this.service.turns();
-    const turns = recorded.length === 0 && live !== null ? [STARTING] : recorded;
+    const starting = this.service.starting();
+    const turns = starting === null ? recorded : [...recorded, startingTurn(starting)];
     const last = turns.length - 1;
     return turns.map((turn, index) =>
       turnResults(turn, index === last ? live : null, index === last && this.service.busy()),

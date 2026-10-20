@@ -12,6 +12,7 @@ mod choices;
 mod commands;
 mod conformance;
 mod credentials;
+mod files;
 mod goals;
 mod gone;
 mod http;

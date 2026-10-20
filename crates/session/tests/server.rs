@@ -164,6 +164,7 @@ fn a_turn_answered_by_no_one_declines_what_asks_where_clients_answer_and_the_nex
             effort: None,
             unattended: true,
             meta: Meta::default(),
+            files: Vec::new(),
         };
         let reply = server.request(unattended).await.unwrap();
         assert!(matches!(reply, Reply::Turn { turn } if turn.outcome == Outcome::Completed));
@@ -240,6 +241,7 @@ fn messages_have_the_shape_the_spec_gives() {
         approval: None,
         effort: None,
         unattended: false,
+        files: Vec::new(),
     };
     let wire = serde_json::to_value(&request).unwrap();
     assert_eq!(wire["method"], "turn/start");

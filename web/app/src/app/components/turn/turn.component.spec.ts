@@ -29,6 +29,7 @@ const RESULTS: TurnResults = {
     steered: false,
   },
   live: null,
+  working: false,
   files: [{ path: 'src/lock.rs', changes: [], added: 16, removed: 0 }],
   steps: [
     {
@@ -106,6 +107,52 @@ describe('TurnComponent', () => {
     const live = root.querySelector('[data-testid="thread-reply"]');
     expect(live?.getAttribute('aria-busy')).toBe('true');
     expect(live?.textContent).toContain('Writing');
+  });
+
+  it('says it is thinking in the reply’s place while the model has nothing to show', async () => {
+    const root = await render({
+      ...RESULTS,
+      reply: null,
+      working: true,
+      files: [],
+      steps: [],
+      receipt: null,
+      waiting: [],
+    });
+    expect(blocks(root)).toEqual(['thread-message', 'thread-working']);
+    expect(root.querySelector('[data-testid="thread-working-label"]')?.textContent).toBe(
+      'Thinking…',
+    );
+    await expectAccessible(root);
+  });
+
+  it('shows reasoning open as it streams, and folds it once the answer begins', async () => {
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), ...provideFakeSession(new FakeSession()), ThreadService],
+    });
+    const fixture = TestBed.createComponent(TurnComponent);
+    const thinking = { ...RESULTS, reply: null, waiting: [] };
+    fixture.componentRef.setInput('turn', {
+      ...thinking,
+      live: { text: '', reasoning: 'The lock is taken twice.' },
+    });
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    const details = (): HTMLDetailsElement | null =>
+      root.querySelector('[data-testid="thread-reasoning"] details');
+    const summary = (): string | null | undefined =>
+      root.querySelector('[data-testid="thread-reasoning-summary"]')?.textContent;
+    expect(root.querySelector('[data-testid="thread-working"]')).toBeNull();
+    expect(details()?.open).toBe(true);
+    expect(summary()).toBe('Thinking…');
+    await expectAccessible(root);
+    fixture.componentRef.setInput('turn', {
+      ...thinking,
+      live: { text: 'Found it.', reasoning: 'The lock is taken twice.' },
+    });
+    await fixture.whenStable();
+    expect(details()?.open).toBe(false);
+    expect(summary()).toBe('Reasoning');
   });
 
   it('shows a turn that did no work as its messages alone', async () => {

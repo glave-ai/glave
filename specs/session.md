@@ -196,6 +196,17 @@ The model can keep a command running while it goes on: `bash` with `background` 
 - **A server that stops** starts no new work: a turn, task or compaction asked for meanwhile is refused with `-32022`. Running turns get the stop's grace (10 seconds for the person's server, none for a program's own) to end on their own; the rest are stopped and end `interrupted`, not `cancelled`, since the person did not stop them, and so do the tasks they ran. A turn waiting for an approval or an answer is among them until waits are durable ("A paused turn will be durable").
 - If the server dies mid-turn, the log ends without `turn.ended`. Resuming records the turn as `interrupted` and gives every unanswered tool call a result, so the thread continues.
 
+## Attachments
+
+Files and images a person adds to a message (#235).
+
+- **Uploaded first, kept a day.** `file/upload` keeps a file in a project (the caller's Chats when it names none) as a blob no thread refers to yet, and answers its content's SHA-256, name, media type and size. `turn/start`'s `files` names uploads by hash; the thread refers to each from then on, and the message records each as a `file` part after its text. An upload no message names is swept a day after (`storage.md`, "Blobs"); naming it after that is refused with `-32030` and a sentence saying to add it again.
+- **What is taken.** Images (PNG, JPEG, GIF, WebP) up to 5 MB, other files up to 10 MB, at most 20 to a message; more is refused with `-32015`, saying the size. Videos are refused: glave can't use them yet, and the sentence says to add a screenshot or a few images instead. Content comes as base64 over every transport, so uploading needs nothing but the session API.
+- **What the model is sent,** at each model call, read from the blob store then and held nowhere between calls: an image inline, beside the message's text, in the provider's own form (OpenAI's `image_url` with a `data:` URL, Anthropic's base64 `image` block); a text file (`text/*`, JSON, XML, YAML, TOML, scripts) as its text in a `file` element with its name, cut at 256 KiB with a line saying so; anything else (a PDF, an archive) by its name.
+- **Refused before anything is sent:** an image on a thread whose model `model/list` says does not read images, with `-32031` and a sentence saying to choose one that can or remove the image. A model the list says nothing about is assumed to read them; the gateway still skips a target its catalog says cannot (`gateway.md`).
+- **Scope.** A file is kept in one project and only a thread there may name it: one named from elsewhere is "no longer here", exactly as one never uploaded (the isolation suite's `@files`).
+- **Not yet:** files on a task (`background`), refused today (a message queued to a running turn keeps its files); images normalized (made WebP, resized, metadata stripped, #362); PDFs sent as documents; images in tool results (#236); downloading a file back through the server.
+
 ## Steering a turn
 
 A person steers the agent while it works: what they send while a turn runs reaches the model at its next call, not after the whole turn. Claude Code reads a message queued while it works as soon as the running tool calls finish, within the same turn, and sends what is still queued when the turn ends; Codex's `turn/start` during an active turn steers it, its core draining pending input into the conversation before each model request, through the `UserPromptSubmit` hooks.

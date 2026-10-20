@@ -5,8 +5,8 @@ mod summary;
 use std::borrow::Cow;
 
 use glave_event::{
-    ApprovalMode, CallId, EventId, MemoryId, MessageAdded, ModelRef, Outcome, Part, Principal,
-    Role, StopReason, ThreadId, ToolCallRequested, TurnEnded, TurnStarted,
+    ApprovalMode, BlobRef, CallId, EventId, MemoryId, MessageAdded, ModelRef, Outcome, Part,
+    Principal, Role, StopReason, ThreadId, ToolCallRequested, TurnEnded, TurnStarted,
 };
 use glave_ports::{
     BlobStore, BoxFuture, Caller, Completion, Delta, EventLog, Failure, Message, ModelProvider,
@@ -118,10 +118,19 @@ pub enum Live {
     },
 }
 
+/// A person's message: its text, and the files they added to it, as `file` parts.
+#[derive(Debug, Clone, Copy)]
+pub struct Said<'a> {
+    pub text: &'a str,
+    pub files: &'a [Part],
+}
+
 /// What the person asked for, and who asked.
 #[derive(Clone, Copy)]
 pub(crate) struct Prompt<'a> {
     pub(crate) text: &'a str,
+    /// The files the person added to it, as `file` parts after its text.
+    pub(crate) files: &'a [Part],
     pub(crate) caller: &'a Caller,
     /// Whether glave wrote the prompt, as a goal's continuation: recorded as glave's, and
     /// never read as the person's say-so.
@@ -136,6 +145,7 @@ impl<'a> Prompt<'a> {
     pub(crate) fn new(text: &'a str, caller: &'a Caller) -> Self {
         Self {
             text,
+            files: &[],
             caller,
             by_glave: false,
             id: None,
@@ -207,8 +217,30 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
-        self.run_prompt(thread, Prompt::new(prompt, caller), cancel, live)
+        let said = Said {
+            text: prompt,
+            files: &[],
+        };
+        self.run_turn_with_files(thread, said, caller, cancel, live)
             .await
+    }
+
+    /// Runs one turn for `caller`'s message `said`: its text, and the files they added to
+    /// it (`file` parts, already in the blob store), which the model is sent as it can read
+    /// them.
+    pub async fn run_turn_with_files(
+        &self,
+        thread: &mut Thread,
+        said: Said<'_>,
+        caller: &Caller,
+        cancel: &Cancel,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Result<TurnSummary, HarnessError> {
+        let prompt = Prompt {
+            files: said.files,
+            ..Prompt::new(said.text, caller)
+        };
+        self.run_prompt(thread, prompt, cancel, live).await
     }
 
     /// Runs one turn for `prompt`, as the person wrote it: a command is sent as its text.
@@ -438,36 +470,17 @@ where
     ) -> Result<(), HarnessError> {
         let Prompt {
             text: prompt,
+            files,
             caller,
             by_glave,
             id,
         } = prompt;
         // What ended in the background since the last turn is recorded before this one.
         self.check_commands(thread).await?;
-        let memory = self.look_at_memory(thread).await;
         let sent_to = self.model_for(thread);
         let provider = self.current_default().provider;
-        let config = TurnConfig {
-            v: CONFIG_VERSION,
-            model: &sent_to,
-            provider: &provider,
-            system: &offer.system,
-            tools: &offer.specs,
-            max_output_tokens: self.settings.max_output_tokens,
-            approval: self.approval_for(thread),
-            sandbox: self.workspace_for(thread).sandbox().map(recorded),
-            memory,
-        };
-        let bytes = serde_json::to_vec(&config).map_err(|e| HarnessError::Event(e.to_string()))?;
         let config = self
-            .blobs
-            .put(
-                &thread.scope,
-                Some(thread.id),
-                "application/json",
-                CONFIG_LIMIT,
-                Box::new(Pieces::from(bytes)),
-            )
+            .store_config(thread, offer, &sent_to, &provider)
             .await?;
         let model = ModelRef {
             provider,
@@ -482,6 +495,7 @@ where
         parts.push(Part::Text {
             text: prompt.to_owned(),
         });
+        parts.extend_from_slice(files);
         let mut events = Vec::new();
         self.stage(
             thread,
@@ -518,6 +532,38 @@ where
         Ok(())
     }
 
+    /// Stores the turn's full configuration, as sent to `model` at `provider`, and answers
+    /// the reference `turn.started` holds.
+    async fn store_config(
+        &self,
+        thread: &mut Thread,
+        offer: &ToolSet,
+        model: &str,
+        provider: &str,
+    ) -> Result<BlobRef, HarnessError> {
+        let memory = self.look_at_memory(thread).await;
+        let config = TurnConfig {
+            v: CONFIG_VERSION,
+            model,
+            provider,
+            system: &offer.system,
+            tools: &offer.specs,
+            max_output_tokens: self.settings.max_output_tokens,
+            approval: self.approval_for(thread),
+            sandbox: self.workspace_for(thread).sandbox().map(recorded),
+            memory,
+        };
+        let bytes = serde_json::to_vec(&config).map_err(|e| HarnessError::Event(e.to_string()))?;
+        let stored = self.blobs.put(
+            &thread.scope,
+            Some(thread.id),
+            "application/json",
+            CONFIG_LIMIT,
+            Box::new(Pieces::from(bytes)),
+        );
+        Ok(stored.await?)
+    }
+
     /// Sends the conversation to the model, forwarding live text as it arrives.
     async fn ask_model(
         &self,
@@ -526,10 +572,11 @@ where
         tool_choice: ToolChoice,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Completion, HarnessError> {
+        let (messages, files) = self.with_files(&thread.scope, self.sent(thread)).await;
         let request = ModelRequest {
             model: self.model_for(thread),
             system: offer.system.clone(),
-            messages: self.sent(thread),
+            messages,
             tools: offer.specs.clone(),
             tool_choice,
             max_output_tokens: self.settings.max_output_tokens,
@@ -539,6 +586,7 @@ where
                 Purpose::Main
             },
             threads: thread.lineage(),
+            files,
             effort: thread.effort.clone(),
         };
         let retries = self.settings.retries;

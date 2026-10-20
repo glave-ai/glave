@@ -10,8 +10,8 @@ use glave_ports::{Project, ProjectId, Standing};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    ApprovalMode, CredentialInfo, DeviceCode, GoneFolder, ModelInfo, ProjectFolder, ProviderInfo,
-    ScheduleInfo, TaskInfo, TrustAsk,
+    ApprovalMode, CredentialInfo, DeviceCode, FileInfo, GoneFolder, ModelInfo, ProjectFolder,
+    ProviderInfo, ScheduleInfo, TaskInfo, TrustAsk,
 };
 
 /// What the server is.
@@ -144,6 +144,9 @@ pub enum Reply {
     },
     #[schemars(title = "Turn")]
     Turn { turn: TurnResult },
+    /// A file kept for a message.
+    #[schemars(title = "File")]
+    File { file: FileInfo },
     /// A message sent while a turn ran, queued to it: answered at once.
     #[schemars(title = "Queued")]
     Queued { queued: QueuedMessage },

@@ -88,6 +88,7 @@ pub async fn judge<P: ModelProvider>(
         max_output_tokens: Some(MOST_OUTPUT_TOKENS),
         purpose: Purpose::Judge,
         threads,
+        files: Vec::new(),
         effort: None,
     };
     match provider.complete(&request, &mut |_| {}).await {

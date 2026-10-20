@@ -1,3 +1,5 @@
+@use '../../styles/working';
+
 :host {
   display: block;
 }
@@ -7,6 +9,11 @@
   color: var(--glz-color-text-muted);
   font-size: var(--glz-text-sm);
   cursor: pointer;
+}
+
+// While the model thinks, its line shimmers as the working state's does; the marker stays still.
+.thinking {
+  @include working.shimmer;
 }
 
 .summary:focus-visible {

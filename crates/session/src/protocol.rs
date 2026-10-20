@@ -5,6 +5,7 @@
 pub mod code;
 mod credentials;
 mod error;
+mod files;
 mod live;
 mod models;
 mod projects;
@@ -23,6 +24,7 @@ use serde::{Deserialize, Serialize};
 
 pub use credentials::{Ability, CredentialInfo, DeviceCode};
 pub use error::{ApiError, ErrorData};
+pub use files::{AttachedFile, FileInfo};
 pub use glave_event::ApprovalMode;
 pub use glave_event::{Forge, ProviderKind};
 pub use live::Update;
@@ -154,6 +156,11 @@ methods! {
     "turn/start" => TurnStart {
         thread: ThreadId,
         prompt: String,
+        /// Files the person added to the message, each one `file/upload` kept in the thread's
+        /// project: the thread refers to them from now on, and the model is sent them as it can
+        /// read them. Not with `background`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        files: Vec<AttachedFile>,
         /// Runs the turn as a task, with no one attached: answered at once with the task.
         #[serde(default, skip_serializing_if = "is_false")]
         background: bool,
@@ -184,6 +191,19 @@ methods! {
         meta: Meta,
     } -> [Turn, Task, Queued],
     "turn/cancel" => TurnCancel { thread: ThreadId } -> [Done],
+    /// Keeps a file the person added to a message they are writing, in `project` (their Chats
+    /// when absent), for `turn/start` to name: kept a day unless a message is sent with it.
+    /// Images (PNG, JPEG, GIF, WebP) up to 5 MB, other files up to 10 MB; videos are refused.
+    "file/upload" => FileUpload {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<ProjectId>,
+        /// Its name, as the person's computer called it.
+        name: String,
+        /// Its media type, such as `image/png`; `application/octet-stream` when unknown.
+        media_type: String,
+        /// Its content, in base64.
+        data: String,
+    } -> [File],
     "thread/compact" => ThreadCompact { thread: ThreadId } -> [Compacted],
     "approval/decide" => ApprovalDecide {
         thread: ThreadId,

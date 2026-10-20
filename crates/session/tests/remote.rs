@@ -57,6 +57,7 @@ fn turn_saying(thread: glave_event::ThreadId, prompt: &str) -> Request {
         effort: None,
         meta: Meta::default(),
         unattended: false,
+        files: Vec::new(),
     }
 }
 

@@ -78,6 +78,7 @@ fn on_a_thread(thread: ThreadId) -> Vec<Request> {
             approval: None,
             effort: None,
             unattended: false,
+            files: Vec::new(),
         },
         Request::ApprovalDecide {
             thread,
@@ -109,6 +110,7 @@ async fn turn_over(web: &mut Web, thread: ThreadId, prompt: &str) -> Value {
         approval: None,
         effort: None,
         unattended: false,
+        files: Vec::new(),
     });
     web.post(&message)
         .await

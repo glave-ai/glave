@@ -20,7 +20,7 @@ use glave_ports::{
     ProjectId, Projects,
 };
 use glave_session::Answering;
-use glave_session::protocol::{Meta, NewFolder, ProjectFolder, Reply, Request, code};
+use glave_session::protocol::{NewFolder, ProjectFolder, Reply, Request, code};
 use glave_session::signin::person;
 use serde_json::json;
 
@@ -360,20 +360,7 @@ fn a_thread_opens_with_its_own_folder_s_instructions_and_a_chat_with_the_person_
             "{bound:?}"
         );
         server
-            .request_as(
-                &grace,
-                Request::TurnStart {
-                    thread: chat.id,
-                    prompt: "hello".into(),
-                    background: false,
-                    budget: None,
-                    model: None,
-                    approval: None,
-                    effort: None,
-                    meta: Meta::default(),
-                    unattended: false,
-                },
-            )
+            .request_as(&grace, turn_start(chat.id, "hello", None))
             .await
             .unwrap();
         let sent = json(&seen);

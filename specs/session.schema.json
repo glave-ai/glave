@@ -80,6 +80,23 @@
       "description": "When an event was recorded, in UTC at millisecond precision. For people only: events are\nordered by [`Seq`]. Always written with three fractional digits, such as\n`2026-10-07T21:14:01.250Z`, so every instant has exactly one spelling.",
       "type": "string"
     },
+    "AttachedFile": {
+      "description": "A file `turn/start` adds to its message: one `file/upload` kept in the thread's project.",
+      "properties": {
+        "name": {
+          "description": "Its name, shown with the message and told to the model.",
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sha256",
+        "name"
+      ],
+      "type": "object"
+    },
     "CallId": {
       "description": "Links a tool call to its result: 1 to 128 printable ASCII characters.",
       "type": "string"
@@ -293,6 +310,36 @@
           "type": "string"
         }
       ]
+    },
+    "FileInfo": {
+      "description": "A file the server keeps, as `file/upload` answers it.",
+      "properties": {
+        "bytes": {
+          "description": "Its size.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "media_type": {
+          "description": "Its media type, such as `image/png`.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Its name, as the person's computer called it.",
+          "type": "string"
+        },
+        "sha256": {
+          "description": "Its content's SHA-256, which `turn/start` names it by.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sha256",
+        "name",
+        "media_type",
+        "bytes"
+      ],
+      "type": "object"
     },
     "FolderSource": {
       "description": "Where a folder's files come from.",
@@ -2092,6 +2139,10 @@
       "code": -32024,
       "message": "No such git host, or sign-in, here"
     },
+    "NO_FILE": {
+      "code": -32030,
+      "message": "No such file here: never kept in this project, or no message used it within a day"
+    },
     "NO_FOLDER": {
       "code": -32029,
       "message": "The project's folder isn't there anymore: give it its new place (`project/folder/set`) or remove the project (`project/remove`)"
@@ -2099,6 +2150,10 @@
     "NO_GOAL": {
       "code": -32007,
       "message": "The thread has no active goal (or, to resume, no paused one)"
+    },
+    "NO_IMAGES": {
+      "code": -32031,
+      "message": "The thread's model does not read images"
     },
     "NO_MEMORY": {
       "code": -32017,
@@ -2387,6 +2442,53 @@
         "type": "object"
       },
       "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "file/upload": {
+      "params": {
+        "properties": {
+          "data": {
+            "description": "Its content, in base64.",
+            "type": "string"
+          },
+          "media_type": {
+            "description": "Its media type, such as `image/png`; `application/octet-stream` when unknown.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Its name, as the person's computer called it.",
+            "type": "string"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ProjectId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "media_type",
+          "data"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A file kept for a message.",
+        "properties": {
+          "file": {
+            "$ref": "#/$defs/FileInfo"
+          }
+        },
+        "required": [
+          "file"
+        ],
         "type": "object"
       },
       "streams": false
@@ -3859,6 +3961,13 @@
               "string",
               "null"
             ]
+          },
+          "files": {
+            "description": "Files the person added to the message, each one `file/upload` kept in the thread's\nproject: the thread refers to them from now on, and the model is sent them as it can\nread them. Not with `background`.",
+            "items": {
+              "$ref": "#/$defs/AttachedFile"
+            },
+            "type": "array"
           },
           "model": {
             "description": "The model this turn, and the thread's turns after it, go to: one `model/list`\nnames. The thread's latest choice when absent, else the server's default. Not while\na turn runs.",

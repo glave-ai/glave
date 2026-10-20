@@ -4,7 +4,7 @@
 use std::future::Future;
 
 use glave_event::{
-    Arguments, CallId, Cost, ModelRef, ModelResponded, Part, StopReason, ThreadId, Usage,
+    Arguments, CallId, Cost, ModelRef, ModelResponded, Part, Sha256, StopReason, ThreadId, Usage,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -48,6 +48,31 @@ pub struct ModelRequest {
     /// a target does not offer; a provider that has no way to send it leaves it out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
+    /// The content of the images the messages hold, for the provider to send inline where a
+    /// [`Part::File`] names them; a file not here is sent by its name alone.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<InlineFile>,
+}
+
+/// An image a message holds, its content ready to send inline.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InlineFile {
+    /// The blob it is, as the [`Part::File`] that holds it names it.
+    pub sha256: Sha256,
+    /// Its media type: `image/png`, `image/jpeg`, `image/gif` or `image/webp`.
+    pub media_type: String,
+    /// Its bytes, in base64.
+    pub data: String,
+}
+
+impl ModelRequest {
+    /// The content of the file `part` names, when it is sent inline.
+    pub fn inline(&self, part: &Part) -> Option<&InlineFile> {
+        let Part::File { blob, .. } = part else {
+            return None;
+        };
+        self.files.iter().find(|file| file.sha256 == blob.sha256)
+    }
 }
 
 /// What a model call is for. A stable public vocabulary: gateway routes are named by it.
