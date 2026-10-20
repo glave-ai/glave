@@ -1,6 +1,8 @@
 import type { RawEvent, Update } from '@glave/client';
 import type { GlzDecision, GlzQuestion, GlzReceiptStatus } from '@glave/glaze';
 
+import { sizeOf } from './attachments';
+
 /** What every item of a thread has: its key, and the `seq` of the event that put it there. */
 interface Placed {
   readonly key: string;
@@ -15,6 +17,14 @@ export interface MessageItem extends Placed {
   readonly reasoning: string;
   /** Whether the person sent it while the turn ran, and the model read it as it worked. */
   readonly steered: boolean;
+  /** The files sent with it, in order. */
+  readonly files: readonly SentFile[];
+}
+
+/** A file a message was sent with: its name, and its size as a person reads it. */
+export interface SentFile {
+  readonly name: string;
+  readonly size: string;
 }
 
 /** A tool call: what it did and what came of it. */
@@ -82,6 +92,19 @@ export function partsText(parts: unknown): { readonly text: string; readonly rea
       .filter((part) => part !== '')
       .join('\n');
   return { text: of('text'), reasoning: of('reasoning') };
+}
+
+/** The files of a message's `parts`, in order. */
+export function filesOf(parts: unknown): readonly SentFile[] {
+  const list = Array.isArray(parts) ? (parts as readonly unknown[]) : [];
+  return list
+    .filter(isRecord)
+    .filter((part) => part['type'] === 'file')
+    .map((part) => {
+      const blob = isRecord(part['blob']) ? part['blob'] : {};
+      const bytes = typeof blob['bytes'] === 'number' ? blob['bytes'] : 0;
+      return { name: text(part['name']) || 'file', size: sizeOf(bytes) };
+    });
 }
 
 /**
@@ -184,6 +207,7 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
           text: person ? promptOf(data['parts']) : parts.text,
           reasoning: parts.reasoning,
           steered: theirs && running && asked,
+          files: filesOf(data['parts']),
         });
         asked ||= theirs;
         break;

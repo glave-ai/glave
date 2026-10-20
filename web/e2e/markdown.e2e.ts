@@ -55,9 +55,9 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await fakeApi(page);
     await streamReply(page);
     const response = await page.goto(`/t/${THREAD}${SIGNED_IN}`);
-    // Images come from the app alone, under Trusted Types.
+    // Images come from the app, and from files the person adds (`blob:`), under Trusted Types.
     const policy = response?.headers()['content-security-policy'] ?? '';
-    expect(policy).toMatch(/(^|; )img-src 'self'(;|$)/u);
+    expect(policy).toMatch(/(^|; )img-src 'self' blob:(;|$)/u);
     expect(policy).toContain("require-trusted-types-for 'script'");
     await expect(byTestId(page, 'thread-message').last()).toContainText('They pass now.');
     await watchReply(page);

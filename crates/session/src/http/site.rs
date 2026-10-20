@@ -163,14 +163,16 @@ impl fmt::Debug for Site {
     }
 }
 
-/// The policy every answer carries; `nonce` admits the styles Angular adds at run time.
+/// The policy every answer carries; `nonce` admits the styles Angular adds at run time. Images
+/// come from the app, and from the person's own computer: a file they add to a message is
+/// shown from a `blob:` URL the page makes of it, never fetched from anywhere.
 pub(crate) fn policy(nonce: &str) -> String {
     [
         "default-src 'none'",
         "script-src 'self'",
         &format!("style-src 'self' 'nonce-{nonce}'"),
         "font-src 'self'",
-        "img-src 'self'",
+        "img-src 'self' blob:",
         "connect-src 'self'",
         "manifest-src 'self'",
         "base-uri 'self'",

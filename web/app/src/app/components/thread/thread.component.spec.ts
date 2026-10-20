@@ -456,3 +456,65 @@ describe('ThreadComponent', () => {
     ]);
   });
 });
+
+describe('ThreadComponent with files', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: () => 'blob:test/1',
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: () => undefined });
+  });
+
+  it('adds a file to the message, keeps it in the project, and sends it with the message', async () => {
+    const sha = 'a'.repeat(64);
+    const fake = session([])
+      .answer('file/upload', {
+        file: { sha256: sha, name: 'cat.png', media_type: 'image/png', bytes: 3 },
+      })
+      .streams([
+        {
+          jsonrpc: '2.0',
+          method: 'thread/event',
+          params: {
+            thread: 'thread-1',
+            event: event(1, 'message.added', {
+              role: 'user',
+              parts: [
+                { type: 'text', text: 'What is this?' },
+                {
+                  type: 'file',
+                  name: 'cat.png',
+                  blob: { sha256: sha, bytes: 3, media_type: 'image/png' },
+                },
+              ],
+            }),
+          },
+        },
+      ]);
+    const { root, fixture } = await open(fake);
+    const picker = root.querySelector<HTMLInputElement>('[data-testid="thread-composer-picker"]');
+    expect(picker).not.toBeNull();
+    const file = new File(['png'], 'cat.png', { type: 'image/png' });
+    Object.defineProperty(picker, 'files', { configurable: true, value: [file] });
+    picker?.dispatchEvent(new Event('change'));
+    await vi.waitFor(() => {
+      expect(fake.paramsOf('file/upload')).toHaveLength(1);
+    });
+    await fixture.whenStable();
+    const chip = root.querySelector('[data-testid="thread-composer-file"]');
+    expect(chip?.textContent).toContain('cat.png');
+    expect(chip?.querySelector('img')?.getAttribute('src')).toBe('blob:test/1');
+    await expectAccessible(root);
+    await type(root, 'What is this?');
+    expect(fake.paramsOf('turn/start')).toEqual([
+      { thread: 'thread-1', prompt: 'What is this?', files: [{ sha256: sha, name: 'cat.png' }] },
+    ]);
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="thread-composer-file"]')).toBeNull();
+    const sent = root.querySelector('[data-testid="thread-message-file"]');
+    expect(sent?.textContent).toContain('cat.png');
+    expect(sent?.textContent).toContain('3 B');
+  });
+});

@@ -187,6 +187,7 @@ export function startingTurn(prompt: string): Turn {
         text: prompt,
         reasoning: '',
         steered: false,
+        files: [],
       },
     ],
     files: [],

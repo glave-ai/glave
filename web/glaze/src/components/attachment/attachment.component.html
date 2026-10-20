@@ -1,0 +1,24 @@
+@if (preview(); as src) {
+  <img class="thumb" alt="" [src]="src" />
+} @else {
+  <span class="mark"><glz-icon [icon]="icons.file" /></span>
+}
+<span class="text">
+  <span class="name">{{ name() }}</span>
+  @if (detail(); as detail) {
+    <span class="detail">{{ detail }}</span>
+  }
+</span>
+@if (removeLabel(); as label) {
+  <button
+    glzIconButton
+    size="sm"
+    type="button"
+    class="remove"
+    [attr.data-testid]="ids().remove"
+    [label]="label"
+    (click)="removed()"
+  >
+    <glz-icon [icon]="icons.remove" />
+  </button>
+}

@@ -4,6 +4,7 @@ import type { Turn } from './turns';
 
 const ask: MessageItem = {
   kind: 'message',
+  files: [],
   key: 'm1',
   seq: 1,
   from: 'person',
@@ -15,6 +16,7 @@ const ask: MessageItem = {
 function say(seq: number, text: string, reasoning = ''): MessageItem {
   return {
     kind: 'message',
+    files: [],
     key: `m${String(seq)}`,
     seq,
     from: 'model',

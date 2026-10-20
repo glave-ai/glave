@@ -3,15 +3,18 @@ import {
   Component,
   afterRenderEffect,
   computed,
+  effect,
   inject,
   input,
   linkedSignal,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import type { ApprovalMode, ThreadStartParams } from '@glave/client';
+import type { ApprovalMode, AttachedFile, ThreadStartParams } from '@glave/client';
 import {
+  GlzAttachmentComponent,
   GlzComposerComponent,
   GlzIconComponent,
   type GlzMenuOption,
@@ -19,6 +22,7 @@ import {
 } from '@glave/glaze';
 import { Folder, Lock, MessageCircle } from 'lucide';
 
+import { AttachmentsService } from '../../services/attachments.service';
 import { effortToSend } from '../../lib/effort';
 import { ModelsService } from '../../services/models.service';
 import { NavService } from '../../services/nav.service';
@@ -31,6 +35,7 @@ import { PageHeaderComponent } from '../page-header/page-header.component';
 
 const COPY = {
   heading: 'What should we work on?',
+  attach: 'Add files or photos',
   placeholder: 'Ask anything, or describe a task',
   failed: 'Could not start a thread:',
   where: 'Where',
@@ -38,9 +43,10 @@ const COPY = {
   private: 'Private on this computer. Only the model you pick sees what you send.',
 } as const;
 
-/** The navigation state that carries a new thread's first prompt (never the URL). */
+/** The navigation state that carries a new thread's first prompt and its files (never the URL). */
 export interface FirstPrompt {
   readonly prompt: string;
+  readonly files?: readonly AttachedFile[];
 }
 
 /**
@@ -55,6 +61,7 @@ export interface FirstPrompt {
   selector: 'app-home',
   imports: [
     ApprovalModeComponent,
+    GlzAttachmentComponent,
     EffortPickerComponent,
     GlzComposerComponent,
     GlzIconComponent,
@@ -65,6 +72,7 @@ export interface FirstPrompt {
   templateUrl: './home.component.html',
   styleUrl: './home.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  providers: [AttachmentsService],
 })
 export class HomeComponent {
   /**
@@ -112,8 +120,16 @@ export class HomeComponent {
   protected readonly whereInBox = computed(() => this.places().length > 0 && !this.narrow());
   protected readonly whereInStatus = computed(() => this.places().length > 0 && this.narrow());
   private readonly composer = viewChild.required(GlzComposerComponent);
+  /** The files added to the first message, kept where the thread will start. */
+  protected readonly attachments = inject(AttachmentsService);
 
   constructor() {
+    effect(() => {
+      const where = this.where();
+      untracked(() => {
+        this.attachments.keepIn(where);
+      });
+    });
     // A link that names a project (a project just made, a project's +) is there to start a
     // thread in it: the cursor goes to the composer.
     afterRenderEffect(() => {
@@ -140,7 +156,8 @@ export class HomeComponent {
         ...(effort === null ? {} : { effort }),
       };
       const { thread } = await this.session.call('thread/start', params);
-      const state: FirstPrompt = { prompt };
+      const files = this.attachments.attached();
+      const state: FirstPrompt = files.length === 0 ? { prompt } : { prompt, files };
       await this.router.navigate(['/t', thread.id], { state });
       void this.projects.refresh();
     } catch (error: unknown) {

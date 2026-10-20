@@ -1,6 +1,7 @@
 import { DOCUMENT, DestroyRef, Service, computed, inject, signal } from '@angular/core';
 import type {
   ApprovalMode,
+  AttachedFile,
   Notification,
   RawEvent,
   ThreadId,
@@ -141,16 +142,17 @@ export class ThreadService {
   }
 
   /**
-   * Sends `prompt` and follows the turn as it runs. With `model`, the turn and the thread's
-   * turns after it go to that model; with `approval`, they run in that approval mode; with
-   * `effort`, their model reasons that much. While a turn runs, the message goes to it
-   * instead, for the model to read at its next step, and waits in the thread until it has;
-   * the model, mode and level go with the next turn.
+   * Sends `prompt`, with the `files` kept for it, and follows the turn as it runs. With
+   * `model`, the turn and the thread's turns after it go to that model; with `approval`, they
+   * run in that approval mode; with `effort`, their model reasons that much. While a turn runs,
+   * the message goes to it instead, for the model to read at its next step, and waits in the
+   * thread until it has; the model, mode and level go with the next turn.
    */
   async send(
     prompt: string,
     model: string | null = null,
     approval: ApprovalMode | null = null,
+    files: readonly AttachedFile[] = [],
     effort: string | null = null,
   ): Promise<void> {
     const thread = this.id();
@@ -161,12 +163,13 @@ export class ThreadService {
       this.sentWhileRunning += 1;
       const key = `queued-${String(this.sentWhileRunning)}`;
       this.waiting.update((waiting) => [...waiting, { key, text: prompt, id: null }]);
-      await this.follow(thread, { thread, prompt }, key);
+      await this.follow(thread, { thread, prompt, ...withFiles(files) }, key);
       return;
     }
     const params: TurnStartParams = {
       thread,
       prompt,
+      ...withFiles(files),
       ...(model === null ? {} : { model }),
       ...(approval === null ? {} : { approval }),
       ...(effort === null ? {} : { effort }),
@@ -419,4 +422,9 @@ export class ThreadService {
       this.failed.set(error instanceof Error ? error.message : String(error));
     }
   }
+}
+
+/** `files` as `turn/start` takes them: left out when there are none. */
+function withFiles(files: readonly AttachedFile[]): Pick<TurnStartParams, 'files'> {
+  return files.length === 0 ? {} : { files };
 }

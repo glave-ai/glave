@@ -5,6 +5,7 @@
 // re-exports the app's build keeps every module, so its first load carries all of Glaze.
 
 export * from './components/approval-card/approval-card.component';
+export * from './components/attachment/attachment.component';
 export * from './components/avatar/avatar.component';
 export * from './components/badge/badge.component';
 export * from './components/button/button.component';
