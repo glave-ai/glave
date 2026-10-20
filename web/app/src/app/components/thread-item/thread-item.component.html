@@ -3,7 +3,7 @@
   @case ('message') {
     <glz-message data-testid="thread-message" [from]="item.from" [author]="item.author">
       @if (item.reasoning) {
-        <glz-reasoning>{{ item.reasoning }}</glz-reasoning>
+        <glz-reasoning testId="thread-reasoning">{{ item.reasoning }}</glz-reasoning>
       }
       <app-message-text [text]="item.text" [markdown]="item.markdown" />
       @if (item.steered) {

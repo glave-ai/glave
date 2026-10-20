@@ -35,6 +35,12 @@ export interface TurnResults {
   readonly reply: MessageItem | null;
   /** The reply being written, in the turn that runs. */
   readonly live: Draft | null;
+  /**
+   * Whether the turn runs and waits on its model with nothing to show yet: no reply or
+   * reasoning streaming, no call running, nothing waiting for the person, and not just after
+   * the model's last words.
+   */
+  readonly working: boolean;
   readonly files: readonly ChangedFile[];
   /** The work folded behind the receipt, in order. */
   readonly steps: readonly ThreadItem[];
@@ -58,6 +64,14 @@ function isCall(item: ThreadItem): boolean {
 
 function said(item: ThreadItem): item is MessageItem {
   return item.kind === 'message' && item.from === 'model' && item.text.trim() !== '';
+}
+
+/** Whether `turn`, running, waits on its model with nothing of it to show yet. */
+function workingOn(turn: Turn, live: Draft | null, running: boolean, waiting: number): boolean {
+  const last = turn.items.at(-1);
+  const answered = last?.kind === 'message' && last.from === 'model';
+  const going = turn.items.some((item) => item.kind === 'call' && item.status === 'running');
+  return running && turn.outcome === null && live === null && waiting === 0 && !going && !answered;
 }
 
 function statusOf(turn: Turn, waiting: readonly Waiting[], running: boolean): GlzRunStatus {
@@ -122,6 +136,7 @@ export function turnResults(turn: Turn, live: Draft | null, running: boolean): T
     before: worked ? [] : along,
     reply,
     live,
+    working: workingOn(turn, live, running, waiting.length),
     files: turn.files,
     steps: worked ? along : [],
     receipt: worked

@@ -1,0 +1,34 @@
+// Text that says glave is working ("Thinking…"): muted, with a band in the text's own colour
+// passing across it in the ambient loop, so it never reads fainter than muted text. Still when
+// the person asks for less motion, and plain text where colours are forced.
+@mixin shimmer {
+  background: linear-gradient(
+      90deg,
+      var(--glz-color-text-muted) 40%,
+      var(--glz-color-text) 50%,
+      var(--glz-color-text-muted) 60%
+    )
+    0 0 / 300% 100%;
+  background-clip: text;
+  color: transparent;
+  animation: glz-shimmer var(--glz-duration-ambient) linear infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+
+  @media (forced-colors: active) {
+    background: none;
+    color: CanvasText;
+  }
+}
+
+@keyframes glz-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: 0 0;
+  }
+}

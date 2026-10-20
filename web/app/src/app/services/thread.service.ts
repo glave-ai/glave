@@ -39,6 +39,8 @@ export class ThreadService {
   /** The turn streams followed now: the turn, and any message sent to it meanwhile. */
   private readonly following = signal(0);
   private readonly waiting = signal<readonly Waiting[]>([]);
+  /** What the person sent to start a turn, until the server records it. */
+  private readonly asking = signal<string | null>(null);
   /** Messages the model will not read, given back once the turn has ended. */
   private givenBack: string[] = [];
   /** Whether the person stopped the turn, so what waited is sent next. */
@@ -61,6 +63,11 @@ export class ThreadService {
   readonly commandChange = computed(() => lastCommandChange(this.events()));
   readonly reply = this.draft.asReadonly();
   readonly busy = computed(() => this.following() > 0);
+  /**
+   * What the person sent to start a turn, shown at once as theirs while the server starts the
+   * turn, until it records their message; `null` when nothing is on its way.
+   */
+  readonly starting = this.asking.asReadonly();
   /** What the composer holds: the person's next message. */
   readonly composer = signal('');
   /** What the person sent while the turn ran that the model has not read yet, oldest first. */
@@ -96,6 +103,7 @@ export class ThreadService {
     this.events.set([]);
     this.draft.set(NO_DRAFT);
     this.waiting.set([]);
+    this.asking.set(null);
     this.givenBack = [];
     this.stopped = false;
     this.failed.set(null);
@@ -222,6 +230,9 @@ export class ThreadService {
     this.controllers.add(controller);
     this.following.update((streams) => streams + 1);
     this.failed.set(null);
+    if (queued === null) {
+      this.asking.set(params.prompt);
+    }
     try {
       const turn = this.session.stream('turn/start', params, controller.signal);
       let next = await turn.next();
@@ -246,10 +257,14 @@ export class ThreadService {
         this.failed.set(said);
         // Refused, as when too many wait: back in the box at once, saying why.
         this.giveBack(queued, said);
+        this.giveBackStart(queued);
       }
     } finally {
       // Not when it was let go of, on leaving the thread.
       if (this.controllers.delete(controller)) {
+        if (queued === null) {
+          this.asking.set(null);
+        }
         this.following.update((streams) => streams - 1);
         if (this.following() === 0) {
           this.settle(thread);
@@ -295,8 +310,18 @@ export class ThreadService {
     }
   }
 
+  /** A turn's start the server refused before recording it: what the person sent goes back in the box. */
+  private giveBackStart(queued: string | null): void {
+    const prompt = this.asking();
+    if (queued !== null || prompt === null) {
+      return;
+    }
+    this.asking.set(null);
+    this.composer.update((draft) => together([prompt, draft].filter(Boolean)));
+  }
+
   /**
-   * Once nothing is followed any more: what the model never read is sent next when the person
+   * Once nothing is followed any more:what the model never read is sent next when the person
    * stopped the turn, as Claude Code and Codex do; otherwise it goes back in the box.
    */
   private settle(thread: ThreadId): void {
@@ -361,6 +386,9 @@ export class ThreadService {
     this.events.update((events) => mergeEvents(events, [event]));
     if (event.type === 'message.added') {
       this.draft.set(NO_DRAFT);
+      if (event.data['role'] === 'user') {
+        this.asking.set(null);
+      }
     }
   }
 

@@ -1,7 +1,7 @@
 import type { RawEvent } from '@glave/client';
 
 import { event } from '../testing/fixtures';
-import { threadTurns } from './turns';
+import { startingTurn, threadTurns } from './turns';
 
 function at(seq: number, type: string, data: Record<string, unknown>, time: string): RawEvent {
   return { ...event(seq, type, data), at: time };
@@ -93,5 +93,13 @@ describe('turns', () => {
 
   it('makes no turn of events that put nothing in the conversation', () => {
     expect(threadTurns([event(1, 'thread.started', {}), event(2, 'model.chosen', {})])).toEqual([]);
+  });
+
+  it('starts a turn the person just asked for with their message alone, not yet ended', () => {
+    const starting = startingTurn('Fix the flaky test');
+    expect(starting.items).toEqual([
+      expect.objectContaining({ kind: 'message', from: 'person', text: 'Fix the flaky test' }),
+    ]);
+    expect(starting.outcome).toBeNull();
   });
 });

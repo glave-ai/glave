@@ -156,4 +156,21 @@ describe('results', () => {
     expect(shown.reply).toBeNull();
     expect(shown.steps.map((item) => item.key)).toEqual(['c2', 'm3']);
   });
+
+  it('is working while the turn runs and waits on its model with nothing to show', () => {
+    const working = (items: readonly ThreadItem[], more: Partial<Turn> = {}): boolean =>
+      turnResults(turn(items, more), null, true).working;
+    // Just asked, and between a call's end and the model's next words.
+    expect(working([ask])).toBe(true);
+    expect(working([ask, say(2, ''), call(3)])).toBe(true);
+    // Not while a call runs, something waits for the person, or after the model's last words.
+    expect(working([ask, call(2, 'running')])).toBe(false);
+    expect(working([ask, approval(2, false)])).toBe(false);
+    expect(working([ask, call(2), say(3, 'Done.')])).toBe(false);
+    // Not once it ended, nor in a turn that is not running.
+    expect(working([ask], { outcome: 'failed' })).toBe(false);
+    expect(turnResults(turn([ask]), null, false).working).toBe(false);
+    // Not while reasoning or a reply streams: they show instead.
+    expect(turnResults(turn([ask]), { text: '', reasoning: 'Hm' }, true).working).toBe(false);
+  });
 });

@@ -182,6 +182,36 @@ describe('ThreadService', () => {
     expect(fake.paramsOf('turn/start')).toHaveLength(2);
   });
 
+  it('shows what the person sent at once, until the server records their message', async () => {
+    const turn = new FakeTurn();
+    const fake = new FakeSession().answer('thread/events', { events: [] }).turn(turn);
+    const service = make(fake);
+    await service.open('thread-1');
+    const sending = service.send('go');
+    expect(service.starting()).toBe('go');
+    turn.send(recorded(event(1, 'turn.started', {})));
+    await settled();
+    expect(service.starting()).toBe('go');
+    turn.send(said(2, 'go'));
+    await settled();
+    expect(service.starting()).toBeNull();
+    turn.end();
+    await sending;
+    expect(service.starting()).toBeNull();
+  });
+
+  it('puts a turn the server refused to start back in the box, saying why', async () => {
+    const busy = new ApiError({ code: ErrorCode.QUEUE_FULL, message: 'The server is stopping' });
+    const fake = new FakeSession().answer('thread/events', { events: [] }).turn(busy);
+    const service = make(fake);
+    await service.open('thread-1');
+    service.composer.set('and then');
+    await service.send('go');
+    expect(service.starting()).toBeNull();
+    expect(service.composer()).toBe('go\n\nand then');
+    expect(service.error()).toContain('The server is stopping');
+  });
+
   it('puts a message the server refused back in the box at once, saying why', async () => {
     const first = new FakeTurn();
     const full = new ApiError({

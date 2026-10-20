@@ -7,10 +7,20 @@
 @if (turn().reply; as reply) {
   <app-thread-item [item]="reply" />
 }
+@if (turn().working) {
+  <glz-working testId="thread-working" [label]="copy.thinking" />
+}
 @if (turn().live; as live) {
   <glz-message from="model" streaming data-testid="thread-reply" [author]="copy.reply">
     @if (live.reasoning) {
-      <glz-reasoning streaming>{{ live.reasoning }}</glz-reasoning>
+      <glz-reasoning
+        testId="thread-reasoning"
+        [streaming]="thinking()"
+        [label]="copy.reasoning"
+        [thinkingLabel]="copy.thinking"
+        [(open)]="reasoningOpen"
+        >{{ live.reasoning }}</glz-reasoning
+      >
     }
     <div testId="thread-markdown" streaming [glzMarkdown]="live.text"></div>
   </glz-message>
