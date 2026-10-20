@@ -40,6 +40,12 @@ fn touching(then: &str, after: &[&str]) -> FakeServer {
     FakeServer::start(replies.into_iter().chain(more).collect()).unwrap()
 }
 
+/// `shown`, with what the person's server in `place` wrote to its log, for a failure to say why.
+fn with_log(place: &Place, shown: &str) -> String {
+    let log = std::fs::read_to_string(place.home.join("run/server.log")).unwrap_or_default();
+    format!("{shown}\n--- the server's log ---\n{log}")
+}
+
 /// The person's server in `place`, as a program on this computer reaches it.
 fn api(place: &Place) -> Remote {
     let url = std::fs::read_to_string(place.home.join("serve.url")).unwrap();
@@ -94,7 +100,7 @@ fn a_turn_goes_through_the_person_s_server_which_asks_once_for_a_new_folder() {
     let mut declined = terminal(&place, &model, &["touch it"]);
     typed(&mut declined, "n\n");
     let said = declined.wait_with_output().unwrap();
-    let shown = text(&said);
+    let shown = with_log(&place, &text(&said));
     assert!(said.status.success(), "{shown}");
     assert!(shown.contains("a glave project? [y/N]"), "{shown}");
     assert!(shown.contains("nothing was made"), "{shown}");
@@ -207,7 +213,7 @@ fn a_project_s_trust_is_asked_in_the_terminal_once() {
     let mut first = terminal(&place, &model, &["hello"]);
     typed(&mut first, "y\ny\n");
     let said = first.wait_with_output().unwrap();
-    let shown = text(&said);
+    let shown = with_log(&place, &text(&said));
     assert!(said.status.success(), "{shown}");
     assert!(
         shown.contains("This project can run commands on your computer"),
@@ -226,12 +232,14 @@ fn a_project_s_trust_is_asked_in_the_terminal_once() {
 #[test]
 fn a_turn_in_the_home_folder_is_a_chat_and_asks_about_no_project() {
     let place = asking("th");
-    let _stopped = Stopped(&place);
     let model = FakeServer::start(vec![Reply::text("Hello.")]).unwrap();
+    // The person's server runs with the person's own environment; only this terminal's
+    // home folder is the folder it runs in.
+    let (_served, _) = crate::http::serve_http(&place, &model, &[]);
     let home = place.project.to_string_lossy().into_owned();
     let chat = terminal_with(&place, &model, &["hi"], &[("HOME", &home)]);
     let said = chat.wait_with_output().unwrap();
-    let shown = text(&said);
+    let shown = with_log(&place, &text(&said));
     assert!(said.status.success(), "{shown}");
     assert!(!shown.contains("a glave project?"), "{shown}");
     assert!(shown.contains("Hello."), "{shown}");
