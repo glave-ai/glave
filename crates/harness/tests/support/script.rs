@@ -217,6 +217,9 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::CatalogRefreshed(_) => "catalog.refreshed",
             Body::AcmeRegistered(_) => "acme.registered",
             Body::CertificateIssued(_) => "certificate.issued",
+            Body::PasskeyAdded(_) => "passkey.added",
+            Body::PasskeyUsed(_) => "passkey.used",
+            Body::PasskeyRemoved(_) => "passkey.removed",
             Body::Unknown(_) => "unknown",
         })
         .collect()

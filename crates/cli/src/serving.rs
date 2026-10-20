@@ -224,7 +224,7 @@ pub(crate) async fn browsers(
 async fn open_browsers(store: &Data, person: PrincipalId) -> anyhow::Result<Browsers> {
     let server = store.server(random_uuid()?).await?.to_string();
     let scope = crate::projects::personal(store, person).await?;
-    Ok(Browsers::open(store.log(), scope, server, Box::new(SystemClock)).await?)
+    Ok(Browsers::open(store.log(), scope, server, None, Box::new(SystemClock)).await?)
 }
 
 /// A new one-time code for a sign-in link, from `server`.

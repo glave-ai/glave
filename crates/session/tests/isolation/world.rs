@@ -119,6 +119,7 @@ async fn serve<L: EventLog + Clone + 'static>(n: u128, parts: &Parts<L>, dir: &P
         parts.log.clone(),
         personal,
         format!("server-{n}"),
+        None,
         Box::new(clock.clone()),
     );
     let browsers = Arc::new(browsers.await.unwrap());

@@ -171,6 +171,9 @@ tree-sitter = "0.27"
 tree-sitter-bash = "0.25"
 url = "2"
 uuid = { version = "1", default-features = false, features = ["std", "serde"] }
+# Passkeys (WebAuthn) for the person's own server (glave-identity): kanidm's relying party, its
+# 0.6 line on RustCrypto rather than OpenSSL (a pre-release, so pinned exactly).
+webauthn-rs = { version = "=0.6.1-dev", default-features = false }
 # When a certificate's life begins and ends (glave-acme), so it is renewed with a third left.
 x509-parser = { version = "0.18", default-features = false }
 zeroize = "1"

@@ -115,8 +115,14 @@ impl From<MemoryError> for ApiError {
 impl From<BrowserError> for ApiError {
     fn from(error: BrowserError) -> Self {
         match error {
-            BrowserError::Code | BrowserError::Ended => {
-                Self::new(code::NO_SIGN_IN, error.to_string())
+            BrowserError::Code
+            | BrowserError::Ended
+            | BrowserError::Setup
+            | BrowserError::TooMany
+            | BrowserError::Ceremony
+            | BrowserError::Passkey(_) => Self::new(code::NO_SIGN_IN, error.to_string()),
+            BrowserError::NoPasskeys | BrowserError::NoPasskey => {
+                Self::new(code::NOT_AVAILABLE, error.to_string())
             }
             // Where and why go to the server's log; the person is told what to do.
             BrowserError::Keep { .. } | BrowserError::Random(_) => {

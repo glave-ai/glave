@@ -22,7 +22,7 @@ fn scope() -> Scope {
 }
 
 async fn open(log: SqliteLog, clock: &ManualClock) -> Browsers {
-    Browsers::open(log, scope(), "server".into(), Box::new(clock.clone()))
+    Browsers::open(log, scope(), "server".into(), None, Box::new(clock.clone()))
         .await
         .unwrap()
 }

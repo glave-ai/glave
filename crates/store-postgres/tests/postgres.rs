@@ -264,7 +264,7 @@ fn a_browser_signed_in_on_one_server_is_signed_in_on_another_on_the_database() {
         assert_eq!(second.server(Uuid::from_u128(8)).await.unwrap(), server);
         let clock = || Box::new(glave_ports::testing::ManualClock::at_second(1_791_590_400));
         let open =
-            |store: &Store| Browsers::open(store.log(), scope(), server.to_string(), clock());
+            |store: &Store| Browsers::open(store.log(), scope(), server.to_string(), None, clock());
         let (one, two) = (open(&first).await.unwrap(), open(&second).await.unwrap());
         let session = one.redeem(one.link().unwrap().expose()).await.unwrap();
         let verified = two.verify(session.token.expose()).await;

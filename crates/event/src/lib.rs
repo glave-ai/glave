@@ -45,4 +45,5 @@ pub use payload::{
     CredentialConnected, CredentialRemoved, Forge, ProjectFolderSet, ProjectRemoved,
     ProviderConnected, ProviderKind, ProviderRemoved, Renewal, sealed_under_account,
 };
+pub use payload::{PasskeyAdded, PasskeyRemoved, PasskeyUsed};
 pub use secret::{Secret, serialize_exposed};

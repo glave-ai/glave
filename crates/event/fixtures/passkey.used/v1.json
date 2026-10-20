@@ -1,0 +1,1 @@
+{"glave":1,"id":"0192f5c2-7000-7000-8000-000000000092","thread":"00000000-0000-7000-8000-000000000005","seq":5,"at":"2026-10-21T09:00:00.000Z","type":"passkey.used","v":1,"data":{"passkey":"0192f5c7-0000-7000-8000-000000000001","credential":"{\"cred\":\"fixture-not-a-real-credential\",\"counter\":2}"}}

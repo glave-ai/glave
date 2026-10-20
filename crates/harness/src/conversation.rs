@@ -82,6 +82,9 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::CatalogRefreshed(_)
         | Body::AcmeRegistered(_)
         | Body::CertificateIssued(_)
+        | Body::PasskeyAdded(_)
+        | Body::PasskeyUsed(_)
+        | Body::PasskeyRemoved(_)
         | Body::Unknown(_) => {}
     }
 }
