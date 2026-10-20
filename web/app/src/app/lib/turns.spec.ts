@@ -66,6 +66,22 @@ describe('turns', () => {
     expect(turns.map((turn) => turn.items.length)).toEqual([2, 1]);
   });
 
+  it('says where a turn’s model calls ran, once each, as their records name them', () => {
+    const ran = (data: Readonly<Record<string, unknown>>, seq: number): RawEvent =>
+      event(seq, 'model.responded', data);
+    const routes = (events: readonly RawEvent[]): unknown =>
+      threadTurns([ASK(1, 'x'), ...events])[0]?.routes;
+    expect(
+      routes([
+        ran({ service: 'OpenRouter', upstream: 'Anthropic' }, 2),
+        ran({ service: 'OpenRouter', upstream: 'Anthropic' }, 3),
+        ran({ service: 'Anthropic' }, 4),
+        ran({}, 5),
+      ]),
+    ).toEqual(['OpenRouter (Anthropic)', 'Anthropic']);
+    expect(routes([])).toEqual([]);
+  });
+
   it('says what a turn cost only when every response said, in one currency', () => {
     const cost = (events: readonly RawEvent[]): unknown =>
       threadTurns([ASK(1, 'x'), ...events])[0]?.cost;

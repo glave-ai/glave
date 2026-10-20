@@ -243,6 +243,7 @@ fn scripted() -> anyhow::Result<ScriptedModel> {
         usage: usage.clone(),
         cost: None,
         served: None,
+        upstream: None,
     };
     let mut arguments = serde_json::Map::new();
     arguments.insert("path".into(), "README.md".into());

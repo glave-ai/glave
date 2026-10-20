@@ -257,6 +257,7 @@ impl Assembler {
             usage: usage(self.usage, interrupted)?,
             cost: None,
             served: None,
+            upstream: None,
         })
     }
 }

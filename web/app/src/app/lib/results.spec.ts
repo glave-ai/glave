@@ -66,7 +66,16 @@ function question(seq: number): QuestionItem {
 }
 
 function turn(items: readonly ThreadItem[], more: Partial<Turn> = {}): Turn {
-  return { key: 't', items, files: [], took: null, outcome: null, cost: null, ...more };
+  return {
+    key: 't',
+    items,
+    files: [],
+    took: null,
+    outcome: null,
+    cost: null,
+    routes: [],
+    ...more,
+  };
 }
 
 describe('results', () => {
@@ -76,6 +85,7 @@ describe('results', () => {
         took: 242_000,
         outcome: 'completed',
         cost: { micros: 42_000, currency: 'USD' },
+        routes: ['OpenRouter (Anthropic)'],
       }),
       null,
       false,
@@ -84,7 +94,11 @@ describe('results', () => {
     expect(shown.reply?.text).toBe('Fixed');
     expect(shown.before).toEqual([]);
     expect(shown.steps.map((item) => item.key)).toEqual(['m2', 'c3', 'a4', 'c5']);
-    expect(shown.receipt).toEqual({ status: 'done', facts: ['4m 02s', '$0.04'], steps: '2 steps' });
+    expect(shown.receipt).toEqual({
+      status: 'done',
+      facts: ['4m 02s', '$0.04', 'via OpenRouter (Anthropic)'],
+      steps: '2 steps',
+    });
     expect(shown.waiting).toEqual([]);
   });
 

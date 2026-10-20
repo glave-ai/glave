@@ -209,6 +209,9 @@ pub(crate) struct Chunk {
     pub id: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
+    /// The provider a service that routes calls passed this one on to (OpenRouter's).
+    #[serde(default)]
+    pub provider: Option<String>,
     #[serde(default)]
     pub choices: Vec<Choice>,
     /// Kept raw so the provider's exact numbers (and a reported cost) survive.

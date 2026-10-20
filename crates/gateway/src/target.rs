@@ -71,6 +71,8 @@ pub struct Target {
     pub can: Capabilities,
     /// What it costs per token, when configured.
     pub price: Option<Price>,
+    /// The service it is at, in a person's words, such as `OpenRouter`, for receipts.
+    pub service: Option<String>,
     /// The model it serves, by a name it shares with targets at other providers that serve the
     /// same one: a thread that chooses any of them is sent to them all, tried in order.
     pub same_model: Option<String>,
@@ -92,6 +94,7 @@ impl Target {
             model,
             can: Capabilities::default(),
             price: None,
+            service: None,
             same_model: None,
             handle,
         }
@@ -122,6 +125,13 @@ impl Target {
         self
     }
 
+    /// The target at the service people know as `service`.
+    #[must_use]
+    pub fn at_service(mut self, service: impl Into<String>) -> Self {
+        self.service = Some(service.into());
+        self
+    }
+
     /// The target serving the model known everywhere as `model`.
     #[must_use]
     pub fn serving(mut self, model: impl Into<String>) -> Self {
@@ -138,6 +148,7 @@ impl fmt::Debug for Target {
             .field("model", &self.model)
             .field("can", &self.can)
             .field("price", &self.price)
+            .field("service", &self.service)
             .field("same_model", &self.same_model)
             .finish_non_exhaustive()
     }
