@@ -5,8 +5,8 @@
 use std::sync::PoisonError;
 
 use glave_event::CredentialConnected;
-use glave_ports::BoxFuture;
 use glave_ports::computer::{CredentialAsk, CredentialHost, GitCredential, GitCredentials};
+use glave_ports::{BoxFuture, Clock as _, SystemClock};
 
 use super::Hosts;
 use super::renewing::Renewing;
@@ -90,7 +90,7 @@ impl Hosts {
 /// Seconds until `credential`'s token expires, for one that does.
 fn left(credential: &CredentialConnected) -> Option<i64> {
     let renewal = credential.renewal.as_ref()?;
-    let now = jiff::Timestamp::now().as_second();
+    let now = SystemClock.now().as_second();
     Some(renewal.expires.timestamp().as_second().saturating_sub(now))
 }
 

@@ -287,6 +287,10 @@ pub(crate) fn progress(pod: &Value) -> Progress {
 
 #[cfg(test)]
 mod tests {
+    use std::time::SystemTime;
+
+    use glave_ports::{Clock as _, SystemClock};
+
     use super::*;
     use crate::tls::Identity;
     use crate::token::Token;
@@ -301,7 +305,7 @@ mod tests {
             network,
             identity: Identity::mint().unwrap(),
             token: Token::mint(
-                std::time::SystemTime::now(),
+                SystemTime::from(SystemClock.now()),
                 std::time::Duration::from_secs(60),
             )
             .unwrap(),

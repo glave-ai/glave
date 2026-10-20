@@ -14,6 +14,7 @@ use glave_config::policy::GithubFile;
 use glave_event::{At, Forge, Renewal, Secret};
 use glave_ports::auth::safe_to_send;
 use glave_ports::computer::CredentialHost;
+use glave_ports::{Clock as _, SystemClock};
 use glave_session::protocol::{ApiError, DeviceCode, code};
 use serde_json::Value;
 
@@ -208,7 +209,8 @@ fn granted(answer: &Value) -> Option<Grant> {
     let renewal = match (expires_in, refresh) {
         (Some(seconds), Some(refresh)) => {
             let seconds = seconds.clamp(0, LONGEST_TOKEN);
-            let expires = jiff::Timestamp::now()
+            let expires = SystemClock
+                .now()
                 .checked_add(jiff::SignedDuration::from_secs(seconds))
                 .ok()?;
             Some(Renewal {
@@ -383,7 +385,7 @@ mod tests {
         let left = renewal
             .expires
             .timestamp()
-            .duration_since(jiff::Timestamp::now());
+            .duration_since(SystemClock.now());
         assert!(left.as_secs() > 28_000, "{left:?}");
         assert!(granted(&json!({"error": "authorization_pending"})).is_none());
         for absurd in [-1, i64::MAX] {

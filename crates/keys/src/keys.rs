@@ -9,8 +9,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use glave_event::{RawEvent, Seq, Sha256, ThreadId, sealed_under_account, sealed_under_memory};
-use glave_ports::Scope;
-use jiff::Timestamp;
+use glave_ports::{Clock, Scope, SystemClock};
 
 use crate::error::KeyError;
 use crate::key_id::{KeyId, Month, Period};
@@ -25,7 +24,7 @@ use self::cache::Cache;
 #[derive(Clone)]
 pub struct KeySettings {
     pub root: Arc<dyn Root>,
-    pub clock: Arc<dyn Fn() -> Timestamp + Send + Sync>,
+    pub clock: Arc<dyn Clock>,
     pub cache_entries: usize,
 }
 
@@ -34,7 +33,7 @@ impl KeySettings {
     pub fn new(root: Arc<dyn Root>) -> Self {
         Self {
             root,
-            clock: Arc::new(Timestamp::now),
+            clock: Arc::new(SystemClock),
             cache_entries: 4096,
         }
     }
@@ -80,7 +79,7 @@ impl<'a> From<&'a RawEvent> for EventFields<'a> {
 /// The key hierarchy over one store's wrapped keys.
 pub struct Keys<S> {
     root: Arc<dyn Root>,
-    clock: Arc<dyn Fn() -> Timestamp + Send + Sync>,
+    clock: Arc<dyn Clock>,
     storage: S,
     cache: Cache,
 }
@@ -171,7 +170,7 @@ impl<S: KeyStorage> Keys<S> {
         sha256: &Sha256,
         bytes: &[u8],
     ) -> Result<(String, Sealed), KeyError> {
-        let month = Month::of((self.clock)());
+        let month = Month::of(self.clock.now());
         let (id, key) = self.sealing_key(scope, Period::Month(month)).await?;
         let name = self
             .blob_name(scope, sha256)

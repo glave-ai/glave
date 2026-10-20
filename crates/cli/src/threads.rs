@@ -7,9 +7,10 @@ use std::process::ExitCode;
 
 use glave_event::ThreadId;
 use glave_harness::{Change, change_standing};
-use glave_ports::{Entropy, EventLog, OsEntropy, Scope, Standing, ThreadQuery};
+use glave_ports::{
+    Clock as _, Entropy, EventLog, OsEntropy, Scope, Standing, SystemClock, ThreadQuery,
+};
 use glave_session::protocol::{Reply, Request, Show};
-use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::reach::Reached;
@@ -193,7 +194,7 @@ async fn apply<L: EventLog>(
     change: Change,
     thread: ThreadId,
 ) -> anyhow::Result<()> {
-    let now = Timestamp::now();
+    let now = SystemClock.now();
     change_standing(log, &scope, thread, now, OsEntropy.bytes()?, change).await?;
     println!("{} {thread}", done(change));
     if change != Change::Unarchive {

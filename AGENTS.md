@@ -143,6 +143,7 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - Iterate a `BTreeMap`, `BTreeSet` or `Vec` wherever order can be seen (output, ids, eviction, tests); a `HashMap` is for lookups. Where order truly can't matter, `#[expect(clippy::iter_over_hash_type, reason = "…")]` with that reason.
 - A function that runs until it is dropped or cancelled returns `!`; an `async fn`, which can't, says so with `#[expect(clippy::infinite_loop, reason = "…")]`.
 - An impl that forwards a port to another (the CLI's `DataLog` and `DataBlobs`, the session's `Observed`, the gateway's `Model` for every provider) carries `#[deny(clippy::missing_trait_methods)]`, so a new port method can't fall back to a default unseen.
+- Read the time through a `glave_ports::Clock`: the one handed in where a test sets the time, else `SystemClock`. `Timestamp::now` and `SystemTime::now` belong to `SystemClock` alone (`disallowed-methods`, tests and the binary included).
 - Doc links are `` [`Item`] `` paths that resolve from where they're written, to items as public as the doc; anything else is plain `` `code` ``. `cargo xtask ci` builds the docs with warnings denied.
 
 **Structure**

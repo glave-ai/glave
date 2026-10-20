@@ -3,7 +3,7 @@
 use std::fmt::Write as _;
 
 use glave_event::Sha256;
-use glave_ports::{OrgId, Scope};
+use glave_ports::{Clock as _, OrgId, Scope};
 use hmac::{Hmac, KeyInit as _, Mac as _};
 use zeroize::Zeroizing;
 
@@ -292,7 +292,7 @@ impl<S: KeyStorage> Keys<S> {
                     n: record.next_n(period),
                 };
                 let key = KeyMaterial::random()?;
-                let made = Month::of((self.clock)());
+                let made = Month::of(self.clock.now());
                 let (month, memory, provider) = match period {
                     Period::Month(month) => (month, None, None),
                     Period::Memory(memory) => (made, Some(memory), None),

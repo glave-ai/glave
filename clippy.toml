@@ -5,3 +5,8 @@ allow-expect-in-tests = true
 allow-panic-in-tests = true
 allow-indexing-slicing-in-tests = true
 allow-print-in-tests = true
+# The computer's clock is read in one place, `glave_ports::SystemClock` (AGENTS.md, "Rust").
+disallowed-methods = [
+  { path = "jiff::Timestamp::now", reason = "read the time through a glave_ports::Clock: the one handed in, or SystemClock" },
+  { path = "std::time::SystemTime::now", reason = "read the time through a glave_ports::Clock: the one handed in, or SystemClock" },
+]

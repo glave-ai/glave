@@ -14,8 +14,8 @@ use std::sync::{Arc, PoisonError, RwLock};
 
 use glave_config::policy::GithubFile;
 use glave_event::{CredentialConnected, CredentialId, Forge, Principal, PrincipalId, Secret};
-use glave_ports::BoxFuture;
 use glave_ports::computer::CredentialHost;
+use glave_ports::{BoxFuture, Clock as _, SystemClock};
 use glave_session::protocol::{ApiError, CredentialInfo, DeviceCode, code, hint};
 use glave_session::{GitHosts, NewCredential};
 
@@ -250,7 +250,7 @@ pub(crate) fn origin(url: &str) -> Option<String> {
 
 /// A new credential's id.
 fn new_id() -> anyhow::Result<CredentialId> {
-    Ok(CredentialId::new(jiff::Timestamp::now(), random()?)?)
+    Ok(CredentialId::new(SystemClock.now(), random()?)?)
 }
 
 /// `text` without the spaces around it, when it is one line of visible characters.

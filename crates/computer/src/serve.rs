@@ -10,10 +10,10 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-use glave_ports::BoxFuture;
 use glave_ports::computer::{
     Command, ComputerError, Computers, CredentialHost, Output, WorkspaceId,
 };
+use glave_ports::{BoxFuture, Clock as _, SystemClock};
 use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::io::{
@@ -170,9 +170,10 @@ async fn authenticate<R: AsyncBufRead + Unpin>(
         return Ok(false);
     };
     let (id, accepted) = match wire::parse(&line) {
-        Ok((id, Request::Authenticate { token: given })) => {
-            (id, token.admits(&given, SystemTime::now()))
-        }
+        Ok((id, Request::Authenticate { token: given })) => (
+            id,
+            token.admits(&given, SystemTime::from(SystemClock.now())),
+        ),
         Ok((id, _)) | Err((id, _)) => (id, false),
     };
     let answer = if accepted {
@@ -464,7 +465,7 @@ pub async fn serve_tls<C: Computers + 'static>(
                 return Ok(());
             };
             // The token as it is now: the side that minted it may have renewed it.
-            let token = tokens.current(SystemTime::now()).await?;
+            let token = tokens.current(SystemTime::from(SystemClock.now())).await?;
             let (read, write) = tokio::io::split(stream);
             serve(computers, BufReader::new(read), write, Some(token)).await
         });

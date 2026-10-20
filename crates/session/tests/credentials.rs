@@ -8,8 +8,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use glave_event::{CredentialId, Forge, Secret};
-use glave_ports::BoxFuture;
 use glave_ports::testing::FAKE_SECRET;
+use glave_ports::{BoxFuture, Clock as _, SystemClock};
 use glave_session::protocol::{ApiError, CredentialInfo, DeviceCode, Request, code, hint};
 use glave_session::signin::{LocalToken, SignIn};
 use glave_session::{Answering, GitHosts, NewCredential};
@@ -38,7 +38,7 @@ impl Hosts {
         let mut kept = self.kept.lock().unwrap();
         let n = u8::try_from(kept.len()).unwrap();
         let info = CredentialInfo {
-            id: CredentialId::new(jiff::Timestamp::now(), [n + 1; 10]).unwrap(),
+            id: CredentialId::new(SystemClock.now(), [n + 1; 10]).unwrap(),
             forge: Forge::Github,
             url,
             login,

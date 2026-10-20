@@ -11,6 +11,7 @@ use std::time::SystemTime;
 
 use anyhow::{Context as _, bail};
 use glave_computer::{Identity, LocalComputers, MIN_SECRET, Tokens, serve, serve_tcp, serve_tls};
+use glave_ports::{Clock as _, SystemClock};
 use tokio::io::BufReader;
 use tokio::net::TcpListener;
 
@@ -178,7 +179,7 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
             // missing or malformed token stops glave before it listens.
             let token = Tokens::file(folder.join("token"));
             token
-                .current(SystemTime::now())
+                .current(SystemTime::from(SystemClock.now()))
                 .await
                 .with_context(|| format!("could not read {}", folder.join("token").display()))?;
             let listener = TcpListener::bind(address)

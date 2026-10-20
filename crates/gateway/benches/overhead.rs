@@ -14,8 +14,8 @@ use std::time::{Duration, Instant};
 use glave_event::{Arguments, CallId, ModelRef, Part, StopReason, ThreadId, TokenCounts, Usage};
 use glave_gateway::{Budgets, Gateway, Limit, Model, Routes, Target};
 use glave_ports::{
-    Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError, Purpose, ToolCall,
-    ToolChoice, ToolSpec,
+    Clock as _, Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError, Purpose,
+    SystemClock, ToolCall, ToolChoice, ToolSpec,
 };
 
 /// Calls timed each way.
@@ -164,7 +164,7 @@ fn request() -> Result<ModelRequest> {
             }],
         });
     }
-    let thread = ThreadId::new(jiff::Timestamp::now(), [7; 10])?;
+    let thread = ThreadId::new(SystemClock.now(), [7; 10])?;
     Ok(ModelRequest {
         model: "bench-model".into(),
         system: "You are a careful coding agent. ".repeat(250),
