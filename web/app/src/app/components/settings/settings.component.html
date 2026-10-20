@@ -46,10 +46,23 @@
       @if (problem(); as problem) {
         <p class="error" role="alert" data-testid="settings-account-problem">{{ problem }}</p>
       }
+      @if (refreshed(); as refreshed) {
+        <p class="details" role="status" data-testid="settings-refreshed">{{ refreshed }}</p>
+      }
       <div glzCardFooter class="glz-row glz-gap-2">
         <a glzButton data-testid="settings-add-account" [routerLink]="connectLink">{{
           copy.add
         }}</a>
+        @if (hasAccounts()) {
+          <button
+            glzButton
+            data-testid="settings-refresh-models"
+            [disabled]="refreshing()"
+            (click)="refresh()"
+          >
+            {{ refreshLabel() }}
+          </button>
+        }
       </div>
     </glz-card>
     <app-accounts class="accounts" [id]="accountsSection" />

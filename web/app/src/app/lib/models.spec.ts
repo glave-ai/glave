@@ -6,8 +6,11 @@ import {
   companyName,
   defaultModel,
   displayName,
+  contextText,
+  modelHint,
   modelOptions,
   orderedOptions,
+  priceText,
   shortName,
   slugWords,
   toRecent,
@@ -81,6 +84,36 @@ describe('models', () => {
       { value: 'hope-12b', label: 'Hope', short: 'Hope' },
       { value: 'hope-lookalike', label: 'Hope Lookalike', short: 'Hope Lookalike' },
     ]);
+  });
+
+  it('says under each model its service, context and price, as the server gives them', () => {
+    const haiku: ModelInfo = {
+      id: 'anthropic/claude-haiku-5.5',
+      name: 'Claude Haiku 5.5',
+      maker: 'Anthropic',
+      default: false,
+      providers: ['OpenRouter', 'Anthropic'],
+      context: 1_000_000,
+      price: { input: 100_000, output: 500_000 },
+    };
+    expect(modelHint(haiku)).toBe('OpenRouter · 1M context · $0.10 in, $0.50 out per 1M tokens');
+    expect(modelOptions([haiku])[0]).toEqual({
+      value: 'anthropic/claude-haiku-5.5',
+      label: 'Anthropic · Claude Haiku 5.5',
+      short: 'Claude Haiku 5.5',
+      hint: 'OpenRouter · 1M context · $0.10 in, $0.50 out per 1M tokens',
+    });
+    expect(contextText(200_000)).toBe('200K context');
+    expect(contextText(1_048_576)).toBe('1M context');
+    expect(contextText(131_072)).toBe('131K context');
+    expect(priceText({ input: 3_000_000, output: 15_000_000 })).toBe(
+      '$3.00 in, $15.00 out per 1M tokens',
+    );
+    expect(priceText({ input: 37_500, output: 150_000 })).toBe(
+      '$0.038 in, $0.15 out per 1M tokens',
+    );
+    expect(priceText({ input: 0, output: 0 })).toBe('Free');
+    expect(modelHint({ id: 'm', default: true })).toBe('Default');
   });
 
   it('reads back the recent models’ ids only, at most five', () => {

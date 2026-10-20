@@ -32,7 +32,13 @@ function serve(request: IncomingMessage, response: ServerResponse): void {
   }
   if (request.method === 'GET' && request.url === '/v1/models') {
     response.writeHead(200, { 'content-type': 'application/json' });
-    response.end(JSON.stringify({ object: 'list', data: [{ id: 'fake-chat', created: 1 }] }));
+    const model = {
+      id: 'fake-chat',
+      created: 1,
+      context_length: 32_768,
+      pricing: { prompt: '0', completion: '0' },
+    };
+    response.end(JSON.stringify({ object: 'list', data: [model] }));
     return;
   }
   request.resume();
@@ -79,6 +85,8 @@ test('a first run adds a model in the browser, then chats with it', async ({ pag
     await expectAccessible(page);
   }
 
+  // OpenRouter comes first; this run connects a server of its own.
+  await expect(page.getByRole('radio', { name: 'OpenRouter' })).toBeChecked();
   await page.getByRole('radio', { name: 'Another server' }).check();
   await byTestId(page, 'connect-address').fill(`http://127.0.0.1:${String(port)}/v1`);
   await byTestId(page, 'connect-key').fill(WRONG);
@@ -93,10 +101,17 @@ test('a first run adds a model in the browser, then chats with it', async ({ pag
   await prompt.fill('Hi');
   await prompt.press('Enter');
   await expect(byTestId(page, 'thread-message').last()).toContainText(REPLY);
+  // The model as its service describes it.
+  await byTestId(page, 'model-picker-trigger').click();
+  await expect(byTestId(page, 'model-picker-option')).toContainText('33K context · Free');
+  await page.keyboard.press('Escape');
 
   await page.goto(`${FIRST_RUN_URL}/settings`);
   await expect(byTestId(page, 'settings-account')).toContainText(`127.0.0.1:${String(port)}`);
-  await expect(byTestId(page, 'settings-account')).toContainText('Key ending wxyz');
+  await expect(byTestId(page, 'settings-account')).toContainText('Key ending wxyz · 1 model');
+  await byTestId(page, 'settings-refresh-models').click();
+  await expect(byTestId(page, 'settings-refreshed')).toContainText('up to date');
+  await expectAccessible(page);
   expect(await page.content()).not.toContain(KEY);
   expect(await page.locator('body').innerText()).not.toMatch(ADMIN_WORDS);
   expect(problems()).toEqual([]);
