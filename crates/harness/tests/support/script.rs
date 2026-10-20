@@ -7,21 +7,21 @@ use glave_event::{
     Arguments, Body, Event, ModelRef, Part, RawEvent, StopReason, TokenCounts, Usage, decode,
 };
 use glave_harness::{ApprovalRequest, Approver, Decision, Harness, Parts, Settings, Workspace};
-pub use glave_ports::block_on;
+pub(crate) use glave_ports::block_on;
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
-pub use glave_ports::testing::{ScriptedModel, Seen};
+pub(crate) use glave_ports::testing::{ScriptedModel, Seen};
 use glave_ports::{
     Completion, EventLog, InMemoryBlobs, InMemoryLog, OrgId, ProjectId, RequestedCall, Scope,
 };
 
-pub struct Refuse;
+pub(crate) struct Refuse;
 impl Approver for Refuse {
     fn decide(&self, _request: &ApprovalRequest) -> impl Future<Output = Decision> + Send {
         ready(Decision::Deny)
     }
 }
 
-pub fn answer(
+pub(crate) fn answer(
     text: Option<&str>,
     calls: Vec<(&str, serde_json::Value)>,
     stop: StopReason,
@@ -59,22 +59,22 @@ pub fn answer(
     }
 }
 
-pub fn folder(name: &str) -> TempDir {
+pub(crate) fn folder(name: &str) -> TempDir {
     TempDir::new(&format!("turn-{name}")).unwrap()
 }
 
-pub fn scope() -> Scope {
+pub(crate) fn scope() -> Scope {
     Scope::glaves_own(
         OrgId::from_uuid(uuid_like(1)),
         ProjectId::from_uuid(uuid_like(2)),
     )
 }
 
-pub fn uuid_like(n: u8) -> uuid::Uuid {
+pub(crate) fn uuid_like(n: u8) -> uuid::Uuid {
     uuid::Uuid::from_bytes([n; 16])
 }
 
-pub async fn harness<A: Approver>(
+pub(crate) async fn harness<A: Approver>(
     dir: &std::path::Path,
     answers: Vec<Completion>,
     approver: A,
@@ -82,19 +82,19 @@ pub async fn harness<A: Approver>(
     harness_on(dir, answers, approver, InMemoryLog::new(), 1, settings()).await
 }
 
-pub fn settings() -> Settings {
+pub(crate) fn settings() -> Settings {
     Settings::new("test-model", "script")
 }
 
 /// Settings for the cautious mode, where changes and commands ask.
-pub fn asking() -> Settings {
+pub(crate) fn asking() -> Settings {
     let mut settings = settings();
     settings.approval = glave_harness::ApprovalMode::Ask;
     settings
 }
 
 /// A harness in the cautious mode.
-pub async fn asking_harness<A: Approver>(
+pub(crate) async fn asking_harness<A: Approver>(
     dir: &std::path::Path,
     answers: Vec<Completion>,
     approver: A,
@@ -103,7 +103,7 @@ pub async fn asking_harness<A: Approver>(
 }
 
 /// A harness on a given log. `seed` keeps ids distinct between harnesses sharing a log.
-pub async fn harness_on<L: EventLog, A: Approver>(
+pub(crate) async fn harness_on<L: EventLog, A: Approver>(
     dir: &std::path::Path,
     answers: Vec<Completion>,
     approver: A,
@@ -117,7 +117,7 @@ pub async fn harness_on<L: EventLog, A: Approver>(
 }
 
 /// Like `harness_on`, also returning what the model is sent.
-pub async fn harness_seeing<L: EventLog, A: Approver>(
+pub(crate) async fn harness_seeing<L: EventLog, A: Approver>(
     dir: &std::path::Path,
     answers: Vec<Completion>,
     approver: A,
@@ -129,7 +129,7 @@ pub async fn harness_seeing<L: EventLog, A: Approver>(
 }
 
 /// Like `harness_seeing`, on a given workspace.
-pub fn harness_with<L: EventLog, A: Approver>(
+pub(crate) fn harness_with<L: EventLog, A: Approver>(
     workspace: Workspace,
     answers: Vec<Completion>,
     approver: A,
@@ -152,19 +152,19 @@ pub fn harness_with<L: EventLog, A: Approver>(
 }
 
 /// `dir` on this machine as the tools' workspace, as the CLI opens the folder it starts in.
-pub async fn workspace(dir: &std::path::Path) -> Workspace {
+pub(crate) async fn workspace(dir: &std::path::Path) -> Workspace {
     let (computers, info) = glave_computer::LocalComputers::here(dir, std::env::vars_os())
         .await
         .unwrap();
     Workspace::new(computers, info)
 }
 
-pub async fn events<L: EventLog>(log: &L, thread: glave_event::ThreadId) -> Vec<Event> {
+pub(crate) async fn events<L: EventLog>(log: &L, thread: glave_event::ThreadId) -> Vec<Event> {
     let raw: Vec<RawEvent> = log.read(&scope(), thread, None, usize::MAX).await.unwrap();
     raw.into_iter().map(|e| decode(e).unwrap()).collect()
 }
 
-pub fn kinds(events: &[Event]) -> Vec<&'static str> {
+pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
     events
         .iter()
         .map(|e| match e.body {

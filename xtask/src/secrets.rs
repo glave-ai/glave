@@ -26,7 +26,7 @@ const JWT_PART: usize = 19;
 
 /// Fails on a secret-shaped literal in a tracked file, or on an allowed file that no longer
 /// holds one.
-pub fn check() -> Result<(), String> {
+pub(crate) fn check() -> Result<(), String> {
     let root = workspace::root()?;
     let listed = cmd::output("git", &["ls-files", "-z"])?;
     let mut problems = Vec::new();

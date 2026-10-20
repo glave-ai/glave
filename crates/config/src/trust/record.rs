@@ -16,7 +16,7 @@ pub struct Record {
 }
 
 /// The decision `trusted` about `item`.
-pub fn decision(item: &Item, trusted: bool) -> Decision {
+pub(super) fn decision(item: &Item, trusted: bool) -> Decision {
     Decision {
         definition: item.definition.clone(),
         trusted,

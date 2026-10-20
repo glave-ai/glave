@@ -14,7 +14,7 @@ const HEADER: &str = "\
 ";
 
 /// The TypeScript module for `schema`, or what in it could not be read.
-pub fn module(schema: &Value) -> Result<String, String> {
+pub(crate) fn module(schema: &Value) -> Result<String, String> {
     let mut out = String::from(HEADER);
     let protocol = schema["protocol"]
         .as_str()

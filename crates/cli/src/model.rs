@@ -10,11 +10,11 @@ use glave_provider_openai::{Config, OpenAiCompatible};
 use crate::config::Endpoint;
 
 /// The host whose API is Anthropic's own rather than OpenAI-compatible.
-pub const ANTHROPIC_HOST: &str = "api.anthropic.com";
+pub(crate) const ANTHROPIC_HOST: &str = "api.anthropic.com";
 
 /// Claude's Messages API at a cloud, beside its Chat Completions, and which models go there.
 #[derive(Clone)]
-pub struct Claude {
+pub(crate) struct Claude {
     /// Where and how; its idle timeout is the endpoint's.
     pub config: glave_provider_anthropic::Config,
     pub models: Family,
@@ -22,7 +22,7 @@ pub struct Claude {
 
 /// Which models are asked through Anthropic's Messages API.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Family {
+pub(crate) enum Family {
     /// Every model (`api = "anthropic"`).
     All,
     /// Claude on Vertex AI: ids that start with `claude`, such as `claude-opus-5-5`.
@@ -34,7 +34,7 @@ pub enum Family {
 
 impl Family {
     /// Whether `model` is asked through the Messages API.
-    pub fn takes(self, model: &str) -> bool {
+    pub(crate) fn takes(self, model: &str) -> bool {
         let model = model.trim().to_ascii_lowercase();
         match self {
             Self::All => true,
@@ -45,7 +45,7 @@ impl Family {
 }
 
 /// The adapter that speaks the endpoint's API.
-pub enum Model {
+pub(crate) enum Model {
     OpenAi(OpenAiCompatible),
     Anthropic(Anthropic),
     /// A cloud that serves some models by each API.
@@ -58,7 +58,7 @@ pub enum Model {
 
 impl Model {
     /// The adapter for `endpoint`.
-    pub fn for_endpoint(endpoint: &Endpoint) -> Result<Self, ProviderError> {
+    pub(crate) fn for_endpoint(endpoint: &Endpoint) -> Result<Self, ProviderError> {
         let config = &endpoint.provider;
         let Some(claude) = &endpoint.claude else {
             return if speaks_anthropic(config) {
@@ -93,7 +93,7 @@ impl Model {
 impl Model {
     /// A `GET` of `path` under the endpoint's API, with its credentials, such as `models`:
     /// what it lists beside its answers.
-    pub async fn get(&self, path: &str) -> Result<serde_json::Value, ProviderError> {
+    pub(crate) async fn get(&self, path: &str) -> Result<serde_json::Value, ProviderError> {
         match self {
             Self::OpenAi(provider)
             | Self::Both {
@@ -105,7 +105,7 @@ impl Model {
 }
 
 /// Whether the endpoint is Anthropic's own API.
-pub fn speaks_anthropic(config: &Config) -> bool {
+pub(crate) fn speaks_anthropic(config: &Config) -> bool {
     config.host().as_deref() == Some(ANTHROPIC_HOST)
 }
 

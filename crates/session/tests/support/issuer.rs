@@ -20,18 +20,18 @@ use tokio::net::TcpListener;
 use tokio::task::{JoinHandle, JoinSet};
 
 /// The audience every test server expects.
-pub const AUDIENCE: &str = "glave-test";
+pub(crate) const AUDIENCE: &str = "glave-test";
 
 /// The time every sign-in check sees, in seconds since 1970.
-pub const NOW: i64 = 1_791_590_400;
+pub(crate) const NOW: i64 = 1_791_590_400;
 
 /// A clock stopped at `NOW`.
-pub fn fixed_clock() -> ManualClock {
+pub(crate) fn fixed_clock() -> ManualClock {
     ManualClock::at_second(NOW)
 }
 
 /// Text as unpadded base64url, as JWTs and JWKs carry it.
-pub fn base64url(bytes: &[u8]) -> String {
+pub(crate) fn base64url(bytes: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let mut out = String::new();
     for chunk in bytes.chunks(3) {
@@ -49,13 +49,13 @@ pub fn base64url(bytes: &[u8]) -> String {
 }
 
 /// A signing key and its id.
-pub enum Signer {
+pub(crate) enum Signer {
     Ec { kid: String, key: EcdsaKeyPair },
     Rsa { kid: String, key: RsaKeyPair },
 }
 
 impl Signer {
-    pub fn es256(kid: &str) -> Self {
+    pub(crate) fn es256(kid: &str) -> Self {
         let key = EcdsaKeyPair::generate(&ECDSA_P256_SHA256_FIXED_SIGNING).unwrap();
         Self::Ec {
             kid: kid.into(),
@@ -63,7 +63,7 @@ impl Signer {
         }
     }
 
-    pub fn rs256(kid: &str) -> Self {
+    pub(crate) fn rs256(kid: &str) -> Self {
         let key = RsaKeyPair::generate(KeySize::Rsa2048).unwrap();
         Self::Rsa {
             kid: kid.into(),
@@ -72,7 +72,7 @@ impl Signer {
     }
 
     /// The public key, as a JWKS lists it.
-    pub fn jwk(&self) -> Value {
+    pub(crate) fn jwk(&self) -> Value {
         match self {
             Self::Ec { kid, key } => {
                 // An uncompressed point: 0x04, then x and y.
@@ -94,7 +94,7 @@ impl Signer {
     }
 
     /// A token with `claims`, signed by this key and naming it.
-    pub fn sign(&self, claims: &Value) -> String {
+    pub(crate) fn sign(&self, claims: &Value) -> String {
         let (alg, kid) = match self {
             Self::Ec { kid, .. } => ("ES256", kid),
             Self::Rsa { kid, .. } => ("RS256", kid),
@@ -103,7 +103,7 @@ impl Signer {
     }
 
     /// A token with any header, signed by this key.
-    pub fn sign_as(&self, header: &Value, claims: &Value) -> String {
+    pub(crate) fn sign_as(&self, header: &Value, claims: &Value) -> String {
         let signed = format!(
             "{}.{}",
             base64url(header.to_string().as_bytes()),
@@ -124,7 +124,7 @@ impl Signer {
 }
 
 /// The identity provider: its URL is its issuer.
-pub struct Issuer {
+pub(crate) struct Issuer {
     pub url: String,
     published: Arc<Mutex<Vec<Value>>>,
     fetches: Arc<AtomicUsize>,
@@ -138,7 +138,7 @@ impl Drop for Issuer {
 }
 
 impl Issuer {
-    pub async fn start() -> Self {
+    pub(crate) async fn start() -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let published = Arc::new(Mutex::new(Vec::new()));
@@ -175,17 +175,17 @@ impl Issuer {
     }
 
     /// Lists `signer`'s key in the JWKS, beside any listed already.
-    pub fn publish(&self, signer: &Signer) {
+    pub(crate) fn publish(&self, signer: &Signer) {
         self.published.lock().unwrap().push(signer.jwk());
     }
 
     /// How often the JWKS has been fetched.
-    pub fn fetches(&self) -> usize {
+    pub(crate) fn fetches(&self) -> usize {
         self.fetches.load(Ordering::SeqCst)
     }
 
     /// The claims of a good token for `subject`, valid for ten minutes around `NOW`.
-    pub fn claims(&self, subject: &str) -> Value {
+    pub(crate) fn claims(&self, subject: &str) -> Value {
         json!({
             "iss": self.url, "sub": subject, "aud": AUDIENCE,
             "iat": NOW, "exp": NOW + 600, "sid": "session-1",

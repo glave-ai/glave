@@ -13,7 +13,7 @@ use crate::policy::rules::Constraints;
 
 /// `choices`, kept within `constraints`. Fails on a choice outside them, and on any rule glave
 /// cannot enforce yet.
-pub fn settle(mut choices: Choices, constraints: &Constraints) -> crate::Result<Choices> {
+pub(super) fn settle(mut choices: Choices, constraints: &Constraints) -> crate::Result<Choices> {
     if let Some((rule, why)) = constraints.not_enforced().first() {
         refuse!("glave will not run under {rule}: it is not enforced yet ({why})");
     }

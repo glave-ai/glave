@@ -8,7 +8,7 @@ use glave_harness::Question;
 use crate::terminal::{DIM, paint};
 
 /// The question as the terminal shows it, ending where the answer is typed.
-pub fn shown(color: bool, question: &Question) -> String {
+pub(crate) fn shown(color: bool, question: &Question) -> String {
     let mut text = format!(
         "\n\n{} {}\n",
         paint(color, "\x1b[33m", "question"),
@@ -32,7 +32,7 @@ pub fn shown(color: bool, question: &Question) -> String {
 
 /// The answer to `question` in what was typed: the chosen labels when it was choice numbers,
 /// otherwise the words themselves.
-pub fn answer(question: &Question, typed: &str) -> String {
+pub(crate) fn answer(question: &Question, typed: &str) -> String {
     let typed = typed.trim();
     let numbers: Option<Vec<usize>> = typed
         .split([',', ' '])

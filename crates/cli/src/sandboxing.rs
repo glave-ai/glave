@@ -16,7 +16,7 @@ use crate::{home, identity};
 
 /// The sandbox `choices` ask for, if any: the person's home, and glave's folder
 /// (`glave_home`), protected in it.
-pub fn sandbox_of(choices: &Choices, glave_home: Option<&Path>) -> Option<Sandbox> {
+pub(crate) fn sandbox_of(choices: &Choices, glave_home: Option<&Path>) -> Option<Sandbox> {
     choices.sandbox.value.map(|level| Sandbox {
         level,
         network: choices.network.value,
@@ -28,7 +28,7 @@ pub fn sandbox_of(choices: &Choices, glave_home: Option<&Path>) -> Option<Sandbo
 /// `choices` once glave's default sandbox turned out not to run here, for the reason `why`:
 /// approval becomes `ask` (`policy::unsandboxed`), unless threads work on workers, whose own
 /// container or virtual machine is their wall.
-pub fn given_up(choices: Choices, why: &str, constraints: &Constraints) -> Choices {
+pub(crate) fn given_up(choices: Choices, why: &str, constraints: &Constraints) -> Choices {
     let approval = choices.approval.clone();
     let mut choices = policy::unsandboxed(choices, why, constraints);
     if choices.on.value == On::Cloud {
@@ -41,7 +41,7 @@ pub fn given_up(choices: Choices, why: &str, constraints: &Constraints) -> Choic
 /// default sandbox cannot run, commands go unconfined and the choices say so
 /// ([`given_up`]). A sandbox someone chose, or a policy requires, is never given up: glave
 /// refuses to start instead.
-pub async fn workspace(
+pub(crate) async fn workspace(
     folder: &Path,
     setup: &mut Setup,
     database: &Path,

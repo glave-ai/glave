@@ -19,7 +19,7 @@ use crate::setup::Setup;
 
 /// What the models are built from, kept to build them again.
 #[derive(Clone)]
-pub struct Lineup {
+pub(crate) struct Lineup {
     /// The endpoint the settings choose, when they choose a model.
     pub configured: Option<Endpoint>,
     judge: Judge,
@@ -33,7 +33,7 @@ pub struct Lineup {
 /// The models of one lineup: the gateway to them, what `model/list` offers, and the endpoint
 /// of the default; none of it while no model is set up.
 #[derive(Default)]
-pub struct Built {
+pub(crate) struct Built {
     pub gateway: Option<Gateway>,
     pub models: Models,
     pub endpoint: Option<Endpoint>,
@@ -41,7 +41,7 @@ pub struct Built {
 
 impl Lineup {
     /// The lineup of `setup`'s choices, with `configured` the endpoint they choose, if any.
-    pub fn new(setup: &Setup, configured: Option<Endpoint>) -> Self {
+    pub(crate) fn new(setup: &Setup, configured: Option<Endpoint>) -> Self {
         let choices = &setup.choices;
         Self {
             configured,
@@ -61,7 +61,7 @@ impl Lineup {
     }
 
     /// The models of the configured endpoint and of `accounts`, those the policy allows.
-    pub fn build(&self, accounts: &[ProviderConnected]) -> anyhow::Result<Built> {
+    pub(crate) fn build(&self, accounts: &[ProviderConnected]) -> anyhow::Result<Built> {
         let mut targets = Vec::new();
         let mut first = None;
         for account in accounts {
@@ -122,7 +122,7 @@ impl Lineup {
 
 /// The gateway elsewhere, when `[gateway] url` names one, and the endpoint model calls go to:
 /// that gateway, or the model chosen, if any is.
-pub fn endpoint(choices: &Choices) -> anyhow::Result<(Option<Remote>, Option<Endpoint>)> {
+pub(crate) fn endpoint(choices: &Choices) -> anyhow::Result<(Option<Remote>, Option<Endpoint>)> {
     let remote = choices
         .gateway
         .as_ref()

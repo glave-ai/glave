@@ -31,7 +31,7 @@ const STOP_POLL: Duration = Duration::from_millis(50);
 const NOT_RUNNING: u8 = 3;
 
 /// `glave server …`, reading the words after `server`.
-pub fn main(words: &[String]) -> ExitCode {
+pub(crate) fn main(words: &[String]) -> ExitCode {
     let words: Vec<&str> = words.iter().map(String::as_str).collect();
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()

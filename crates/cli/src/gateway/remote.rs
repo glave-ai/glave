@@ -13,24 +13,24 @@ use crate::config::Endpoint;
 use glave_config::policy::Chosen;
 
 /// The variable that holds the person's sign-in for the gateway: an OIDC access token.
-pub const TOKEN: &str = "GLAVE_GATEWAY_TOKEN";
+pub(crate) const TOKEN: &str = "GLAVE_GATEWAY_TOKEN";
 
 /// What glave calls the gateway: the provider its answers are recorded under, and the name of
 /// its catalog among the MCP servers.
-pub const NAME: &str = "gateway";
+pub(crate) const NAME: &str = "gateway";
 
 /// The model asked for when the person chose none: the gateway's main route.
 const MAIN: &str = "main";
 
 /// A gateway elsewhere, and the person's sign-in for it.
-pub struct Remote {
+pub(crate) struct Remote {
     url: String,
     token: String,
 }
 
 impl Remote {
     /// The gateway `chosen` names, signed in with the token in `GLAVE_GATEWAY_TOKEN`.
-    pub fn from_choice(chosen: &Chosen<String>) -> anyhow::Result<Self> {
+    pub(crate) fn from_choice(chosen: &Chosen<String>) -> anyhow::Result<Self> {
         let token = std::env::var(TOKEN)
             .ok()
             .map(|token| token.trim().to_owned())
@@ -51,7 +51,7 @@ impl Remote {
 
     /// The endpoint for `model` at the gateway, or its main route when none is chosen. The
     /// gateway speaks OpenAI's Chat Completions, so the same adapter reaches it.
-    pub fn endpoint(&self, model: Option<String>) -> anyhow::Result<Endpoint> {
+    pub(crate) fn endpoint(&self, model: Option<String>) -> anyhow::Result<Endpoint> {
         let base_url = format!("{}/v1", self.url);
         let mut provider = Config::for_url(base_url.clone(), Some(self.token.clone()))
             .with_context(|| format!("[gateway] url is not a URL: {}", self.url))?;
@@ -69,7 +69,7 @@ impl Remote {
 
     /// The gateway's tool catalog, as one MCP server whose tools reach the model named as
     /// if each catalog server were the person's own: `mcp__<server>__<tool>`.
-    pub fn catalog(&self) -> McpServer {
+    pub(crate) fn catalog(&self) -> McpServer {
         let headers =
             BTreeMap::from([("Authorization".to_owned(), format!("Bearer {}", self.token))]);
         McpServer::catalog(

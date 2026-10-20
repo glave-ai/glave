@@ -14,11 +14,11 @@ use glave_ports::{Entropy, EventLog, Scope};
 use jiff::{SignedDuration, Timestamp};
 
 /// How long a thread may do nothing before its worktree is cleaned up.
-pub const IDLE: SignedDuration = SignedDuration::from_hours(30 * 24);
+pub(super) const IDLE: SignedDuration = SignedDuration::from_hours(30 * 24);
 
 /// What a cleanup works with: the log the threads are in, the environment git runs with, the
 /// Trash, and the moment it runs.
-pub struct Cleanup<'a, L> {
+pub(crate) struct Cleanup<'a, L> {
     pub log: &'a L,
     pub environment: &'a [(OsString, OsString)],
     pub trash: Option<&'a Trash>,
@@ -38,7 +38,7 @@ fn named(reason: RemovedReason) -> &'static str {
 }
 
 /// The name a person gives a worktree on the command line: its folder's name.
-pub fn leaf(kept: &Kept) -> String {
+pub(super) fn leaf(kept: &Kept) -> String {
     kept.path
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
@@ -48,7 +48,7 @@ pub fn leaf(kept: &Kept) -> String {
 impl<L: EventLog> Cleanup<'_, L> {
     /// Releases `kept` for `reason`, recording a removal on its thread; one line saying what
     /// happened, for the person.
-    pub async fn release(&self, kept: &Kept, reason: RemovedReason) -> String {
+    pub(crate) async fn release(&self, kept: &Kept, reason: RemovedReason) -> String {
         let why = named(reason);
         let path = kept.path.display();
         match worktrees::release(kept, self.environment, why, self.trash).await {
@@ -73,7 +73,7 @@ impl<L: EventLog> Cleanup<'_, L> {
     }
 
     /// Removes `kept` whatever it holds, as the person asked by name; its branch stays.
-    pub async fn force(&self, kept: &Kept) -> String {
+    pub(crate) async fn force(&self, kept: &Kept) -> String {
         let path = kept.path.display();
         match worktrees::remove(kept, self.environment).await {
             Ok(()) => {
@@ -117,7 +117,7 @@ impl<L: EventLog> Cleanup<'_, L> {
     /// `glave worktrees prune`: removes every safe worktree, trashes those whose repository
     /// is gone, removes the ones named in `forced` whatever they hold, and says why each other
     /// one stays.
-    pub async fn prune(&self, kept: &[Kept], forced: &[String]) -> Vec<String> {
+    pub(crate) async fn prune(&self, kept: &[Kept], forced: &[String]) -> Vec<String> {
         let mut lines = Vec::new();
         for kept in kept {
             let named = forced.iter().any(|name| *name == leaf(kept));
@@ -142,7 +142,7 @@ impl<L: EventLog> Cleanup<'_, L> {
 
     /// The daily check: worktrees whose repository is gone go to the Trash, and those whose
     /// thread has done nothing for [`IDLE`] are released as idle.
-    pub async fn idle(&self, kept: &[Kept]) -> Vec<String> {
+    pub(crate) async fn idle(&self, kept: &[Kept]) -> Vec<String> {
         let mut lines = Vec::new();
         for kept in kept {
             if kept.condition == Condition::RepositoryGone {
@@ -167,7 +167,12 @@ impl<L: EventLog> Cleanup<'_, L> {
     }
 
     /// The thread in `scope` was archived or deleted: its worktrees are released.
-    pub async fn archived(&self, kept: &[Kept], scope: Scope, thread: ThreadId) -> Vec<String> {
+    pub(crate) async fn archived(
+        &self,
+        kept: &[Kept],
+        scope: Scope,
+        thread: ThreadId,
+    ) -> Vec<String> {
         let owner = owner_label(scope, thread);
         let mut lines = Vec::new();
         for kept in kept

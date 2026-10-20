@@ -14,7 +14,7 @@ use crate::error::EvalError;
 const PLACEHOLDER: &str = "{web}";
 
 /// Serves the files in `dir`, by their names (`setup.html` at `/setup.html`).
-pub async fn serve(dir: &Path) -> Result<Pages, EvalError> {
+pub(crate) async fn serve(dir: &Path) -> Result<Pages, EvalError> {
     let files = read(dir).await?;
     // The pages may name the server's address, known once it is listening.
     let replies = |base: &str| -> HashMap<String, Reply> {
@@ -32,7 +32,7 @@ pub async fn serve(dir: &Path) -> Result<Pages, EvalError> {
 }
 
 /// `text` with `{web}` replaced by `base`.
-pub fn fill(text: &str, base: &str) -> String {
+pub(crate) fn fill(text: &str, base: &str) -> String {
     text.replace(PLACEHOLDER, base)
 }
 

@@ -9,7 +9,7 @@ use crate::terminal::{DIM, flush, paint};
 /// The "waiting for the model · 12 s" line, shown only on a terminal, from the moment a model
 /// is asked until anything comes back. Clones share it.
 #[derive(Clone)]
-pub struct Waiting(Arc<Mutex<WaitingLine>>);
+pub(crate) struct Waiting(Arc<Mutex<WaitingLine>>);
 
 struct WaitingLine {
     /// Off when the output is not a terminal, where a line cannot be rewritten.
@@ -21,7 +21,7 @@ struct WaitingLine {
 }
 
 impl Waiting {
-    pub fn new(color: bool, speaker: &str) -> Self {
+    pub(crate) fn new(color: bool, speaker: &str) -> Self {
         Self(Arc::new(Mutex::new(WaitingLine {
             enabled: std::io::stdout().is_terminal(),
             color,
@@ -36,12 +36,12 @@ impl Waiting {
         change(&mut line);
     }
 
-    pub fn start(&self) {
+    pub(crate) fn start(&self) {
         self.update(|line| line.since = Some(Instant::now()));
     }
 
     /// Clears the line, if shown, before anything else is printed.
-    pub fn stop(&self) {
+    pub(crate) fn stop(&self) {
         self.update(|line| {
             line.since = None;
             if line.shown {
@@ -52,7 +52,7 @@ impl Waiting {
     }
 
     /// Rewrites the line with the seconds waited so far, after the first.
-    pub fn tick(&self) {
+    pub(crate) fn tick(&self) {
         self.update(|line| {
             let Some(since) = line.since.filter(|_| line.enabled) else {
                 return;

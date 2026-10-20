@@ -4,7 +4,7 @@ use glave_event::{Outcome, When};
 use glave_session::protocol::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 
 /// One task: status, kind, elapsed time, tokens, cost, model, thread and title.
-pub fn task_line(task: &TaskInfo) -> String {
+pub(super) fn task_line(task: &TaskInfo) -> String {
     let status = match (task.status, task.outcome) {
         (TaskStatus::Running, _) => "running".to_owned(),
         (TaskStatus::Elsewhere, _) => "elsewhere".to_owned(),
@@ -32,7 +32,7 @@ pub fn task_line(task: &TaskInfo) -> String {
 }
 
 /// One schedule: when it runs, what it runs, and when it runs next.
-pub fn schedule_line(schedule: &ScheduleInfo) -> String {
+pub(super) fn schedule_line(schedule: &ScheduleInfo) -> String {
     let when = match &schedule.when {
         When::Cron(cron) => format!("cron {cron:?} (UTC)"),
         When::At(at) => format!("once at {at}"),

@@ -16,7 +16,7 @@ use crate::model::{self, Claude};
 const DEFAULT_BASE_URL: &str = "http://localhost:11434/v1";
 
 /// What to do when no model is chosen.
-pub const NO_MODEL: &str = "no model chosen: connect a model account in glave's web app (glave \
+pub(crate) const NO_MODEL: &str = "no model chosen: connect a model account in glave's web app (glave \
      serve --http), set GLAVE_MODEL, pass --model, or set model in config.toml (for example \
      gemma4:12b with Ollama, or an OpenRouter model id with \
      GLAVE_BASE_URL=https://openrouter.ai/api/v1)";
@@ -26,7 +26,7 @@ const KEY: &str = "GLAVE_API_KEY";
 
 /// The model endpoint and the model to use.
 #[derive(Clone)]
-pub struct Endpoint {
+pub(crate) struct Endpoint {
     pub provider: Config,
     /// Claude's Messages API at the same cloud, for the models whose family speaks it.
     pub claude: Option<Claude>,
@@ -44,7 +44,7 @@ pub struct Endpoint {
 
 /// The endpoint for `model`, the model chosen, at the cloud `provider` names, else at
 /// `GLAVE_BASE_URL`'s server; an error saying how to choose a model when none is.
-pub fn endpoint(
+pub(crate) fn endpoint(
     model: Option<String>,
     provider: Option<&Chosen<ProviderFile>>,
 ) -> anyhow::Result<Endpoint> {
@@ -93,7 +93,7 @@ pub fn endpoint(
 
 /// `[provider]` in the `config.toml` in glave's folder, for a command that reads no project
 /// settings, such as `glave gateway serve`: a project never chooses it.
-pub async fn provider_here() -> anyhow::Result<Option<Chosen<ProviderFile>>> {
+pub(crate) async fn provider_here() -> anyhow::Result<Option<Chosen<ProviderFile>>> {
     let path = crate::home::folder()?.join(glave_config::policy::CONFIG);
     let text = match tokio::fs::read_to_string(&path).await {
         Ok(text) => text,
@@ -110,7 +110,7 @@ pub async fn provider_here() -> anyhow::Result<Option<Chosen<ProviderFile>>> {
 }
 
 /// What to change when a model call fails in a way the person can fix, naming the setting.
-pub fn fix(failure: Failure, endpoint: &Endpoint) -> Option<String> {
+pub(crate) fn fix(failure: Failure, endpoint: &Endpoint) -> Option<String> {
     if let Some(gateway) = &endpoint.gateway {
         return through_gateway(failure, gateway, &endpoint.model);
     }
@@ -196,7 +196,7 @@ fn through_gateway(failure: Failure, gateway: &str, model: &str) -> Option<Strin
 }
 
 /// How long the model may send nothing, from `GLAVE_IDLE_TIMEOUT` in seconds, when it is set.
-pub fn idle_timeout() -> anyhow::Result<Option<Duration>> {
+pub(crate) fn idle_timeout() -> anyhow::Result<Option<Duration>> {
     match std::env::var("GLAVE_IDLE_TIMEOUT") {
         Ok(text) => {
             let seconds: u64 = text.trim().parse().with_context(|| {
@@ -210,7 +210,7 @@ pub fn idle_timeout() -> anyhow::Result<Option<Duration>> {
 }
 
 /// The model's context window from `GLAVE_CONTEXT_WINDOW`, in tokens, when it is set.
-pub fn context_window() -> anyhow::Result<Option<u64>> {
+pub(crate) fn context_window() -> anyhow::Result<Option<u64>> {
     match std::env::var("GLAVE_CONTEXT_WINDOW") {
         Ok(text) => {
             let tokens: u64 = text.trim().parse().with_context(|| {

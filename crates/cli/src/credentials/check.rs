@@ -19,7 +19,7 @@ const MOST: usize = 256 * 1024;
 
 /// What the host said of a token.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Checked {
+pub(super) struct Checked {
     pub forge: Forge,
     /// Whom the token is for, when the host said.
     pub login: Option<String>,
@@ -31,13 +31,13 @@ pub struct Checked {
 /// one to another host, and no proxy for plain http, which reaches only this computer, so a
 /// token never crosses a proxy in the clear.
 #[derive(Clone)]
-pub struct Http {
+pub(super) struct Http {
     through_proxy: reqwest::Client,
     direct: reqwest::Client,
 }
 
 impl Http {
-    pub fn new() -> anyhow::Result<Self> {
+    pub(super) fn new() -> anyhow::Result<Self> {
         let builder = || {
             reqwest::Client::builder()
                 .timeout(CALL)
@@ -51,7 +51,7 @@ impl Http {
     }
 
     /// The client for a call to `url`.
-    pub fn to(&self, url: &str) -> &reqwest::Client {
+    pub(super) fn to(&self, url: &str) -> &reqwest::Client {
         if url.starts_with("http://") {
             &self.direct
         } else {
@@ -93,7 +93,7 @@ enum Found {
 }
 
 /// Checks `token` with the host at `url` (its origin, as connecting keeps it).
-pub async fn check(http: &Http, url: &str, token: &Secret) -> Result<Checked, ApiError> {
+pub(super) async fn check(http: &Http, url: &str, token: &Secret) -> Result<Checked, ApiError> {
     let name = url.split_once("://").map_or(url, |(_, host)| host);
     let mut refused = false;
     let mut reached = false;
@@ -196,7 +196,7 @@ fn github_api(url: &str) -> Probe {
 }
 
 /// Where GitHub at `url` has its API.
-pub fn api(url: &str) -> String {
+pub(super) fn api(url: &str) -> String {
     if url == "https://github.com" {
         "https://api.github.com".to_owned()
     } else {
@@ -205,7 +205,7 @@ pub fn api(url: &str) -> String {
 }
 
 /// Whom GitHub at `url` says `token` is for: the account a sign-in in the browser connected.
-pub async fn github_login(
+pub(super) async fn github_login(
     http: &Http,
     url: &str,
     token: &Secret,
@@ -260,7 +260,7 @@ async fn ask(http: &Http, probe: &Probe, token: &Secret) -> Found {
 }
 
 /// The answer's JSON, read up to [`MOST`] bytes; none when it is not JSON.
-pub async fn read(mut response: reqwest::Response) -> Option<Value> {
+pub(super) async fn read(mut response: reqwest::Response) -> Option<Value> {
     let mut body = Vec::new();
     while let Ok(Some(chunk)) = response.chunk().await {
         body.extend_from_slice(&chunk);

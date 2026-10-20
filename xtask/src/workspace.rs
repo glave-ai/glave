@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 /// Found at run time, not from where xtask was built: worktrees can share one build folder
 /// (`CARGO_TARGET_DIR`), and a root fixed at build time would check whichever worktree built
 /// xtask last.
-pub fn root() -> Result<PathBuf, String> {
+pub(crate) fn root() -> Result<PathBuf, String> {
     let here =
         std::env::current_dir().map_err(|e| format!("could not read the current folder: {e}"))?;
     root_from(&here).ok_or_else(|| {
@@ -20,7 +20,7 @@ pub fn root() -> Result<PathBuf, String> {
 }
 
 /// What `cargo metadata` says of the workspace's own packages.
-pub fn metadata() -> Result<serde_json::Value, String> {
+pub(crate) fn metadata() -> Result<serde_json::Value, String> {
     let text = crate::cmd::output("cargo", &["metadata", "--format-version", "1", "--no-deps"])?;
     serde_json::from_str(&text)
         .map_err(|err| format!("`cargo metadata` wrote something not JSON: {err}"))

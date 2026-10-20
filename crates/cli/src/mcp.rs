@@ -23,20 +23,20 @@ use glave_ports::ToolSource;
 use glave_ports::settings::mcp::ServerConfig;
 use glave_process::{Owner, Processes};
 
-pub use own::{Servers, wanted};
+pub(crate) use own::{Servers, wanted};
 
 /// The settings file, in glave's folder.
-pub const FILE: &str = "mcp.json";
+pub(crate) const FILE: &str = "mcp.json";
 
 /// The environment servers' `${VAR}` are filled from.
-pub fn environment() -> BTreeMap<String, String> {
+pub(crate) fn environment() -> BTreeMap<String, String> {
     std::env::vars_os()
         .filter_map(|(name, value)| Some((name.into_string().ok()?, value.into_string().ok()?)))
         .collect()
 }
 
 /// `started` as tool sources, in order, then their resources.
-pub fn sources(started: &[Arc<McpServer>]) -> Vec<Arc<dyn ToolSource>> {
+pub(crate) fn sources(started: &[Arc<McpServer>]) -> Vec<Arc<dyn ToolSource>> {
     let mut sources: Vec<Arc<dyn ToolSource>> = started
         .iter()
         .map(|server| Arc::clone(server) as Arc<dyn ToolSource>)
@@ -46,7 +46,7 @@ pub fn sources(started: &[Arc<McpServer>]) -> Vec<Arc<dyn ToolSource>> {
 }
 
 /// Closes `started` side by side, so one slow to exit holds up no other.
-pub async fn close(started: &[Arc<McpServer>]) {
+pub(crate) async fn close(started: &[Arc<McpServer>]) {
     let mut closing = tokio::task::JoinSet::new();
     for server in started {
         let server = Arc::clone(server);
@@ -57,7 +57,7 @@ pub async fn close(started: &[Arc<McpServer>]) {
 
 /// Starts the trusted `servers` of the project at `root` (by name, each as JSON), in its
 /// folder, for the threads that work in it.
-pub fn start_project(
+pub(crate) fn start_project(
     servers: &BTreeMap<String, String>,
     root: &Path,
     constraints: &Constraints,

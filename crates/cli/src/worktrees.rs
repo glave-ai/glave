@@ -18,13 +18,13 @@ use jiff::{SignedDuration, Timestamp};
 use crate::client::Glave;
 use crate::home;
 
-pub use cleanup::Cleanup;
+pub(crate) use cleanup::Cleanup;
 
 /// The folder in glave's folder where threads' worktrees are kept, one folder per repository.
-pub const FOLDER: &str = "worktrees";
+pub(crate) const FOLDER: &str = "worktrees";
 
 /// The folder in glave's folder where threads with no project get a scratch folder each.
-pub const SCRATCH: &str = "scratch";
+pub(crate) const SCRATCH: &str = "scratch";
 
 /// The file in glave's folder holding when worktrees were last checked.
 const SWEPT: &str = "worktrees-checked";
@@ -32,7 +32,7 @@ const SWEPT: &str = "worktrees-checked";
 /// How often glave checks worktrees as it starts.
 const EVERY: SignedDuration = SignedDuration::from_hours(24);
 
-pub const USAGE: &str = "\
+pub(crate) const USAGE: &str = "\
 glave worktrees: the worktrees threads made on this machine
 
 Usage:
@@ -49,7 +49,7 @@ and held otherwise.
 
 A thread works in a worktree of its own with --worktree, or worktree = true in config.toml.";
 
-pub fn main(arguments: &[String]) -> ExitCode {
+pub(crate) fn main(arguments: &[String]) -> ExitCode {
     let mut forced = Vec::new();
     let prune = match arguments.split_first() {
         None => false,
@@ -138,7 +138,7 @@ async fn run(prune: bool, forced: &[String]) -> anyhow::Result<()> {
 
 /// Releases the worktrees of `thread` in `scope`, which was just archived or deleted, with
 /// what `log` holds: one line for each, saying what became of it.
-pub async fn release_archived<L: EventLog>(
+pub(crate) async fn release_archived<L: EventLog>(
     log: &L,
     scope: Scope,
     thread: ThreadId,
@@ -167,7 +167,7 @@ fn this_machines_trash(now: Timestamp) -> Option<Trash> {
 
 /// Checks this machine's worktrees as glave starts, and in the person's server as it runs, at
 /// most once a day, with what `log` holds; says what it did on standard error. Never stops glave.
-pub async fn check_daily<L: EventLog>(log: &L) {
+pub(crate) async fn check_daily<L: EventLog>(log: &L) {
     let Ok(home) = home::folder() else {
         return;
     };
@@ -188,7 +188,10 @@ pub async fn check_daily<L: EventLog>(log: &L) {
 
 /// The daily check, when the last one was a day or more before `cleanup.now`: it records the
 /// time first, so a check that fails is not retried until tomorrow.
-pub async fn check_if_due<L: EventLog>(home: &Path, cleanup: &Cleanup<'_, L>) -> Vec<String> {
+pub(crate) async fn check_if_due<L: EventLog>(
+    home: &Path,
+    cleanup: &Cleanup<'_, L>,
+) -> Vec<String> {
     let stamp = home.join(SWEPT);
     let last = tokio::fs::read_to_string(&stamp)
         .await
@@ -249,7 +252,7 @@ fn listing(kept: &[Kept], base: &Path) -> String {
 }
 
 /// Where `thread` works, when it is a worktree: for the person to see before the first turn.
-pub async fn note(server: &Glave, thread: ThreadId) -> Option<String> {
+pub(crate) async fn note(server: &Glave, thread: ThreadId) -> Option<String> {
     let page = Request::ThreadEvents {
         thread,
         after: None,

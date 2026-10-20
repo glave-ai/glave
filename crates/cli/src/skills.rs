@@ -26,7 +26,7 @@ fn folders(root: &Path) -> anyhow::Result<Vec<PathBuf>> {
 }
 
 /// The skills for the project at `root`, with a warning printed for each one skipped.
-pub async fn find(root: &Path) -> anyhow::Result<Found> {
+pub(crate) async fn find(root: &Path) -> anyhow::Result<Found> {
     let found = find_skills(&folders(root)?).await;
     for warning in &found.warnings {
         eprintln!("glave: skill {warning}");
@@ -35,7 +35,7 @@ pub async fn find(root: &Path) -> anyhow::Result<Found> {
 }
 
 /// The `skill` tool for the project at `root`, when there are any skills; nothing otherwise.
-pub async fn offered(root: &Path) -> anyhow::Result<Vec<Arc<dyn ToolSource>>> {
+pub(crate) async fn offered(root: &Path) -> anyhow::Result<Vec<Arc<dyn ToolSource>>> {
     let found = find(root).await?;
     Ok(Skills::offer(found.skills)
         .map(|skills| Arc::new(skills) as Arc<dyn ToolSource>)
@@ -44,7 +44,7 @@ pub async fn offered(root: &Path) -> anyhow::Result<Vec<Arc<dyn ToolSource>>> {
 }
 
 /// `glave skills`: every skill the model is offered here, and where each comes from.
-pub async fn list() -> anyhow::Result<ExitCode> {
+pub(crate) async fn list() -> anyhow::Result<ExitCode> {
     let root = std::env::current_dir()?;
     let found = find(&root).await?;
     if found.skills.is_empty() {

@@ -156,7 +156,7 @@ impl Layer {
 }
 
 /// Fails when a crate depends on one its layer may not, naming both and the rule.
-pub fn check() -> Result<(), String> {
+pub(crate) fn check() -> Result<(), String> {
     let metadata = crate::workspace::metadata()?;
     let problems = problems(&graph(&metadata)?, LAYERS, ALLOWED);
     if problems.is_empty() {

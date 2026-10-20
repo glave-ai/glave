@@ -13,7 +13,7 @@ use glave_session::protocol::{
 use super::setup::{Tested, scope};
 
 /// A project called `name` whose folder is `path`, on this computer.
-pub async fn make_project<L: EventLog + 'static>(
+pub(crate) async fn make_project<L: EventLog + 'static>(
     server: &Tested<L>,
     name: &str,
     path: &Path,
@@ -33,7 +33,7 @@ pub async fn make_project<L: EventLog + 'static>(
 
 /// Starts a thread to run tasks in, in `project` (by default the server's own): on a copy of
 /// its own.
-pub async fn start_for_tasks<L: EventLog + 'static>(
+pub(crate) async fn start_for_tasks<L: EventLog + 'static>(
     server: &Tested<L>,
     project: Option<ProjectId>,
 ) -> Result<ThreadId, ApiError> {
@@ -52,7 +52,7 @@ pub async fn start_for_tasks<L: EventLog + 'static>(
 }
 
 /// Where `thread` was bound to work, and its root there.
-pub async fn opened<L: EventLog + 'static>(
+pub(crate) async fn opened<L: EventLog + 'static>(
     server: &Tested<L>,
     thread: ThreadId,
 ) -> (Opened, String) {
@@ -67,7 +67,7 @@ pub async fn opened<L: EventLog + 'static>(
 }
 
 /// Starts a thread, in a worktree of its own when `worktree`.
-pub async fn start<L: EventLog + 'static>(server: &Tested<L>, worktree: bool) -> ThreadId {
+pub(crate) async fn start<L: EventLog + 'static>(server: &Tested<L>, worktree: bool) -> ThreadId {
     let started = Request::ThreadStart {
         project: Some(scope().project()),
         background: false,
@@ -83,7 +83,7 @@ pub async fn start<L: EventLog + 'static>(server: &Tested<L>, worktree: bool) ->
 }
 
 /// Runs a turn saying `prompt`, answered when it has ended.
-pub async fn turn<L: EventLog + 'static>(
+pub(crate) async fn turn<L: EventLog + 'static>(
     server: &Tested<L>,
     thread: ThreadId,
     prompt: &str,
@@ -102,7 +102,7 @@ pub async fn turn<L: EventLog + 'static>(
 }
 
 /// `turn/start` saying `prompt` in `thread`, with `key` when given.
-pub fn turn_start(thread: ThreadId, prompt: &str, key: Option<IdempotencyKey>) -> Request {
+pub(crate) fn turn_start(thread: ThreadId, prompt: &str, key: Option<IdempotencyKey>) -> Request {
     Request::TurnStart {
         background: false,
         budget: None,
@@ -119,7 +119,7 @@ pub fn turn_start(thread: ThreadId, prompt: &str, key: Option<IdempotencyKey>) -
 
 /// Starts a turn saying `prompt` and streams it, through the entry every transport uses. With
 /// `key`, a turn already started under it is followed instead.
-pub async fn stream_turn<L: EventLog + 'static>(
+pub(crate) async fn stream_turn<L: EventLog + 'static>(
     server: &Tested<L>,
     thread: ThreadId,
     prompt: &str,
@@ -130,7 +130,10 @@ pub async fn stream_turn<L: EventLog + 'static>(
 }
 
 /// The thread's events, checked to be numbered 1, 2, 3, ... with no gap or repeat.
-pub async fn events<L: EventLog + 'static>(server: &Tested<L>, thread: ThreadId) -> Vec<RawEvent> {
+pub(crate) async fn events<L: EventLog + 'static>(
+    server: &Tested<L>,
+    thread: ThreadId,
+) -> Vec<RawEvent> {
     let page = Request::ThreadEvents {
         thread,
         after: None,
@@ -146,7 +149,10 @@ pub async fn events<L: EventLog + 'static>(server: &Tested<L>, thread: ThreadId)
 }
 
 /// The types of the thread's events, in order.
-pub async fn kinds<L: EventLog + 'static>(server: &Tested<L>, thread: ThreadId) -> Vec<String> {
+pub(crate) async fn kinds<L: EventLog + 'static>(
+    server: &Tested<L>,
+    thread: ThreadId,
+) -> Vec<String> {
     events(server, thread)
         .await
         .iter()
@@ -155,7 +161,7 @@ pub async fn kinds<L: EventLog + 'static>(server: &Tested<L>, thread: ThreadId) 
 }
 
 /// Starts a turn as a task, with `budget`.
-pub async fn background<L: EventLog + 'static>(
+pub(crate) async fn background<L: EventLog + 'static>(
     server: &Tested<L>,
     thread: ThreadId,
     budget: Option<u64>,
@@ -175,7 +181,7 @@ pub async fn background<L: EventLog + 'static>(
     }
 }
 
-pub async fn tasks<L: EventLog + 'static>(server: &Tested<L>) -> Vec<TaskInfo> {
+pub(crate) async fn tasks<L: EventLog + 'static>(server: &Tested<L>) -> Vec<TaskInfo> {
     match server
         .request(Request::TasksList { limit: None })
         .await
@@ -187,7 +193,7 @@ pub async fn tasks<L: EventLog + 'static>(server: &Tested<L>) -> Vec<TaskInfo> {
 }
 
 /// Lets the server's own work run until no task runs here any more.
-pub async fn settle<L: EventLog + 'static>(server: &Tested<L>) {
+pub(crate) async fn settle<L: EventLog + 'static>(server: &Tested<L>) {
     for _ in 0..100_000 {
         if tasks(server)
             .await

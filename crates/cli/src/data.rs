@@ -20,14 +20,14 @@ use crate::{home, keys};
 
 /// The one data store.
 #[derive(Clone)]
-pub enum Data {
+pub(crate) enum Data {
     Sqlite(sqlite::Store),
     Postgres(postgres::Store),
 }
 
 impl Data {
     /// The store `url` names, or the local SQLite file when it names none.
-    pub async fn open(url: Option<&str>) -> anyhow::Result<Self> {
+    pub(crate) async fn open(url: Option<&str>) -> anyhow::Result<Self> {
         // Made first when it is not there yet: the key file may be kept in it.
         let database = home::database().await?;
         let folder = home::folder()?;
@@ -45,14 +45,14 @@ impl Data {
     }
 
     /// The store the choices name: `[store] url` or GLAVE_STORE_URL, else the local file.
-    pub async fn chosen(choices: &glave_config::policy::Choices) -> anyhow::Result<Self> {
+    pub(crate) async fn chosen(choices: &glave_config::policy::Choices) -> anyhow::Result<Self> {
         Self::open(choices.store.as_ref().map(|url| url.value.as_str())).await
     }
 
     /// The store for a command that reads no project settings: GLAVE_STORE_URL, else the
     /// person's own `[store] url`, else the local file. The same rule as [`Data::chosen`],
     /// since a project never chooses the store.
-    pub async fn here() -> anyhow::Result<Self> {
+    pub(crate) async fn here() -> anyhow::Result<Self> {
         if let Some(url) = environment() {
             return Self::open(Some(&url)).await;
         }
@@ -69,21 +69,21 @@ impl Data {
         Self::open(url.as_deref()).await
     }
 
-    pub fn log(&self) -> DataLog {
+    pub(crate) fn log(&self) -> DataLog {
         match self {
             Self::Sqlite(store) => DataLog::Sqlite(store.log()),
             Self::Postgres(store) => DataLog::Postgres(store.log()),
         }
     }
 
-    pub fn blobs(&self) -> DataBlobs {
+    pub(crate) fn blobs(&self) -> DataBlobs {
         match self {
             Self::Sqlite(store) => DataBlobs::Sqlite(store.blobs()),
             Self::Postgres(store) => DataBlobs::Postgres(store.blobs()),
         }
     }
 
-    pub fn projects(&self) -> Arc<dyn Projects> {
+    pub(crate) fn projects(&self) -> Arc<dyn Projects> {
         match self {
             Self::Sqlite(store) => Arc::new(store.projects()),
             Self::Postgres(store) => Arc::new(store.projects()),
@@ -91,7 +91,7 @@ impl Data {
     }
 
     /// The keys, for what erases by destroying one.
-    pub fn eraser(&self) -> Arc<dyn Eraser> {
+    pub(crate) fn eraser(&self) -> Arc<dyn Eraser> {
         match self {
             Self::Sqlite(store) => store.keyring(),
             Self::Postgres(store) => store.keyring(),
@@ -99,7 +99,7 @@ impl Data {
     }
 
     /// The one organization this store holds, made the first time.
-    pub async fn org(&self) -> anyhow::Result<OrgId> {
+    pub(crate) async fn org(&self) -> anyhow::Result<OrgId> {
         Ok(match self {
             Self::Sqlite(store) => store.org(random_uuid()?).await?,
             Self::Postgres(store) => store.org(random_uuid()?).await?,
@@ -107,7 +107,7 @@ impl Data {
     }
 
     /// The person's server's id, which browsers check, made with the id `new` the first time.
-    pub async fn server(&self, new: uuid::Uuid) -> anyhow::Result<uuid::Uuid> {
+    pub(crate) async fn server(&self, new: uuid::Uuid) -> anyhow::Result<uuid::Uuid> {
         Ok(match self {
             Self::Sqlite(store) => store.server(new).await?,
             Self::Postgres(store) => store.server(new).await?,
@@ -115,7 +115,7 @@ impl Data {
     }
 
     /// The local person and their agent, kept as `new` the first time.
-    pub async fn identity(
+    pub(crate) async fn identity(
         &self,
         new: (PrincipalId, PrincipalId),
     ) -> anyhow::Result<(PrincipalId, PrincipalId)> {
@@ -127,7 +127,7 @@ impl Data {
 }
 
 /// The store GLAVE_STORE_URL names, when it is set and not empty.
-pub fn environment() -> Option<String> {
+pub(crate) fn environment() -> Option<String> {
     std::env::var("GLAVE_STORE_URL")
         .ok()
         .filter(|url| !url.trim().is_empty())
@@ -135,7 +135,7 @@ pub fn environment() -> Option<String> {
 
 /// The event log of the one store.
 #[derive(Clone)]
-pub enum DataLog {
+pub(crate) enum DataLog {
     Sqlite(sqlite::SqliteLog),
     Postgres(postgres::PostgresLog),
 }
@@ -229,7 +229,7 @@ impl EventLog for DataLog {
 
 /// The blob store of the one store.
 #[derive(Clone)]
-pub enum DataBlobs {
+pub(crate) enum DataBlobs {
     Sqlite(sqlite::SqliteBlobs),
     Postgres(postgres::PostgresBlobs),
 }

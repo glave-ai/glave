@@ -14,7 +14,7 @@ const OWNER: &str = "crates/process/";
 const RAW: &[&str] = &["process::Command", "CommandExt", "TokioChildProcess"];
 
 /// Fails on a source that starts a process another way.
-pub fn check() -> Result<(), String> {
+pub(crate) fn check() -> Result<(), String> {
     let root = workspace::root()?;
     let listed = cmd::output("git", &["ls-files", "-z", "crates"])?;
     let mut problems = Vec::new();

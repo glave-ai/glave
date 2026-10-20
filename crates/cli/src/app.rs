@@ -21,15 +21,15 @@ use crate::args::{Action, Args};
 use crate::home;
 
 /// The file a running server's address is kept in, beside its token.
-pub const URL_FILE: &str = "serve.url";
+pub(crate) const URL_FILE: &str = "serve.url";
 
 /// The page that sends the browser to the sign-in link.
-pub const OPEN_FILE: &str = "open.html";
+pub(crate) const OPEN_FILE: &str = "open.html";
 
 /// Whether `glave` with `args` opens the browser rather than a terminal session: nothing asked
 /// of it, a person at the terminal of a computer with a screen (`screen`), and no model set up
 /// anywhere.
-pub fn first_run(args: &Args, terminal: bool, screen: bool, set_up: bool) -> bool {
+pub(crate) fn first_run(args: &Args, terminal: bool, screen: bool, set_up: bool) -> bool {
     let bare = args.action == Action::Run
         && args.prompt.is_empty()
         && args.goal.is_none()
@@ -41,7 +41,7 @@ pub fn first_run(args: &Args, terminal: bool, screen: bool, set_up: bool) -> boo
 
 /// Whether a browser here would show on the person's screen, on `os` with the variables `var`
 /// gives: not over SSH, and on Linux and the like only with a display.
-pub fn has_screen(os: &str, var: impl Fn(&str) -> bool) -> bool {
+pub(crate) fn has_screen(os: &str, var: impl Fn(&str) -> bool) -> bool {
     if var("SSH_CONNECTION") || var("SSH_TTY") {
         return false;
     }
@@ -49,14 +49,14 @@ pub fn has_screen(os: &str, var: impl Fn(&str) -> bool) -> bool {
 }
 
 /// Whether a browser here would show on the person's screen.
-pub fn screen_here() -> bool {
+pub(crate) fn screen_here() -> bool {
     has_screen(std::env::consts::OS, |name| {
         std::env::var_os(name).is_some()
     })
 }
 
 /// The program that opens `target` with the person's browser on `os`, and its arguments.
-pub fn opener(os: &str, target: &Path) -> (&'static str, Vec<String>) {
+pub(crate) fn opener(os: &str, target: &Path) -> (&'static str, Vec<String>) {
     let target = target.display().to_string();
     match os {
         "macos" => ("open", vec![target]),
@@ -71,7 +71,7 @@ pub fn opener(os: &str, target: &Path) -> (&'static str, Vec<String>) {
 
 /// The page that sends a browser to `link` at once, with the link itself for a browser that
 /// does not follow it.
-pub fn redirect(link: &str) -> String {
+pub(crate) fn redirect(link: &str) -> String {
     format!(
         "<!doctype html>\n<meta charset=\"utf-8\">\n<meta http-equiv=\"refresh\" \
          content=\"0;url={link}\">\n<title>Opening glave</title>\n<p><a href=\"{link}\">Open \
@@ -81,7 +81,7 @@ pub fn redirect(link: &str) -> String {
 
 /// `glave app`: opens the person's server in the browser, starting it first when it is not
 /// running and someone is at the terminal.
-pub async fn main() -> anyhow::Result<ExitCode> {
+pub(crate) async fn main() -> anyhow::Result<ExitCode> {
     let Some(mut server) = crate::server::connect_or_start().await? else {
         anyhow::bail!(
             "glave is not running, and only glave app run in a terminal starts it: run it in \
@@ -117,7 +117,11 @@ pub async fn main() -> anyhow::Result<ExitCode> {
 
 /// Opens glave at `url` in the person's browser, signed in by the link with `code`: through the
 /// page in glave's folder, so the code is never an argument of a program.
-pub async fn show(folder: &Path, url: &str, code: &glave_event::Secret) -> anyhow::Result<()> {
+pub(crate) async fn show(
+    folder: &Path,
+    url: &str,
+    code: &glave_event::Secret,
+) -> anyhow::Result<()> {
     let page = folder.join(OPEN_FILE);
     let link = format!("{}/#code={}", url.trim_end_matches('/'), code.expose());
     crate::serving::keep(&page, &redirect(&link))?;

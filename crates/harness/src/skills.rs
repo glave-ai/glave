@@ -15,14 +15,14 @@ use frontmatter::Value;
 pub use tool::{SKILL, Skills};
 
 /// The file that makes a folder a skill.
-pub const SKILL_MD: &str = "SKILL.md";
+pub(crate) const SKILL_MD: &str = "SKILL.md";
 
 /// The folders in a project, and in the person's home, that hold skills: glave's own, then the
 /// shared `.agents/skills` that Codex and OpenCode read, then Claude Code's.
-pub const PROJECT_FOLDERS: [&str; 3] = [".glave/skills", ".agents/skills", ".claude/skills"];
+pub(crate) const PROJECT_FOLDERS: [&str; 3] = [".glave/skills", ".agents/skills", ".claude/skills"];
 
 /// The most skills offered, so a crowded folder cannot crowd the model's context.
-pub const MAX_SKILLS: usize = 100;
+pub(crate) const MAX_SKILLS: usize = 100;
 
 /// The most characters of names and descriptions offered in all, as Codex budgets its listing
 /// when it does not know the context window.

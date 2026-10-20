@@ -34,7 +34,7 @@ const GRACE: Duration = Duration::from_secs(10);
 const DAILY: Duration = Duration::from_hours(24);
 
 /// What the server does once a day, beside what it serves.
-pub struct Daily<'a> {
+pub(crate) struct Daily<'a> {
     /// The store's log, which the worktrees' check records in.
     pub log: DataLog,
     /// Memory, when it is on.
@@ -70,7 +70,7 @@ impl Daily<'_> {
 /// Serves `server` as the person's server, holding its lock, until it is told to stop: first
 /// recording the tasks a server before it left running as interrupted, then firing every
 /// project's schedules and doing the `daily` work while it runs.
-pub async fn run(
+pub(crate) async fn run(
     args: &Args,
     server: &Glave,
     daily: &Daily<'_>,

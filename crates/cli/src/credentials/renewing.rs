@@ -30,7 +30,7 @@ const KEEP_PAUSE: Duration = Duration::from_millis(500);
 
 /// The renewals of one person's git hosts.
 #[derive(Default)]
-pub struct Renewals(Mutex<State>);
+pub(super) struct Renewals(Mutex<State>);
 
 #[derive(Default)]
 struct State {
@@ -54,7 +54,7 @@ enum Ended {
 }
 
 /// One renewal: what its task needs, its own.
-pub struct Renewing {
+pub(super) struct Renewing {
     pub ledger: Ledger,
     pub http: Http,
     pub github: Github,
@@ -68,7 +68,7 @@ impl Renewals {
     /// `renewing` gives, handed any renewal made but not yet kept. None when one ended under a
     /// minute ago, `credential` was renewed already, or `renewing` gives none. The renewal
     /// it made when glave could not keep it, for this command to use.
-    pub async fn wait(
+    pub(super) async fn wait(
         &self,
         credential: CredentialId,
         renewing: impl FnOnce(Option<CredentialConnected>) -> Option<Renewing>,

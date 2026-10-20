@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use glave_event::{ModelRef, Opaque, Part, StopReason, TokenCounts, Usage};
 use glave_gateway::{Model, Target};
-pub use glave_ports::block_on;
+pub(crate) use glave_ports::block_on;
 use glave_ports::{
     BoxFuture, Completion, Delta, Message, ModelRequest, ProviderError, Purpose, ToolChoice,
     ToolSpec,
@@ -16,7 +16,7 @@ use tokio::sync::Semaphore;
 
 /// A provider that answers each call with the next scripted result, or a plain answer when the
 /// script is empty.
-pub struct Fake {
+pub(crate) struct Fake {
     pub provider: String,
     pub script: Mutex<VecDeque<Result<Completion, ProviderError>>>,
     pub seen: Mutex<Vec<ModelRequest>>,
@@ -27,7 +27,7 @@ pub struct Fake {
 }
 
 impl Fake {
-    pub fn new(provider: &str) -> Arc<Self> {
+    pub(crate) fn new(provider: &str) -> Arc<Self> {
         Arc::new(Self {
             provider: provider.into(),
             script: Mutex::new(VecDeque::new()),
@@ -37,13 +37,13 @@ impl Fake {
         })
     }
 
-    pub fn failing(provider: &str, error: ProviderError) -> Arc<Self> {
+    pub(crate) fn failing(provider: &str, error: ProviderError) -> Arc<Self> {
         let fake = Self::new(provider);
         fake.script.lock().unwrap().push_back(Err(error));
         fake
     }
 
-    pub fn gated(provider: &str, gate: Arc<Semaphore>) -> Arc<Self> {
+    pub(crate) fn gated(provider: &str, gate: Arc<Semaphore>) -> Arc<Self> {
         Arc::new(Self {
             provider: provider.into(),
             script: Mutex::new(VecDeque::new()),
@@ -53,11 +53,11 @@ impl Fake {
         })
     }
 
-    pub fn seen(&self) -> Vec<ModelRequest> {
+    pub(crate) fn seen(&self) -> Vec<ModelRequest> {
         self.seen.lock().unwrap().clone()
     }
 
-    pub fn target(self: &Arc<Self>, model: &str) -> Target {
+    pub(crate) fn target(self: &Arc<Self>, model: &str) -> Target {
         Target::new(
             Arc::clone(self) as Arc<dyn Model>,
             self.provider.clone(),
@@ -85,7 +85,7 @@ impl Model for Fake {
 }
 
 /// A plain text answer from `model` at `provider`, with this usage.
-pub fn answer(provider: &str, model: &str, input: u64, output: u64) -> Completion {
+pub(crate) fn answer(provider: &str, model: &str, input: u64, output: u64) -> Completion {
     let counts = TokenCounts {
         input,
         output,
@@ -108,7 +108,7 @@ pub fn answer(provider: &str, model: &str, input: u64, output: u64) -> Completio
 }
 
 /// A short request for `purpose`, with no tools.
-pub fn request(purpose: Purpose) -> ModelRequest {
+pub(crate) fn request(purpose: Purpose) -> ModelRequest {
     ModelRequest {
         model: "asked-for".into(),
         system: "Be brief.".into(),
@@ -126,7 +126,7 @@ pub fn request(purpose: Purpose) -> ModelRequest {
 }
 
 /// The same request, offering one tool.
-pub fn with_tool(mut request: ModelRequest) -> ModelRequest {
+pub(crate) fn with_tool(mut request: ModelRequest) -> ModelRequest {
     request.tools.push(ToolSpec {
         name: "read".into(),
         description: "Read a file".into(),
@@ -136,7 +136,11 @@ pub fn with_tool(mut request: ModelRequest) -> ModelRequest {
 }
 
 /// The same request, after an answer that carried `provider`'s opaque reasoning for `model`.
-pub fn with_reasoning(mut request: ModelRequest, provider: &str, model: &str) -> ModelRequest {
+pub(crate) fn with_reasoning(
+    mut request: ModelRequest,
+    provider: &str,
+    model: &str,
+) -> ModelRequest {
     request.messages.push(Message::Assistant {
         parts: vec![
             Part::Reasoning {

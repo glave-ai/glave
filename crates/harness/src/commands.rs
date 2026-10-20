@@ -11,7 +11,7 @@ use crate::skills::frontmatter::{self, Value};
 
 /// The folders in a project, and in the person's home, that hold commands: glave's own, then
 /// Claude Code's.
-pub const COMMAND_FOLDERS: [&str; 2] = [".glave/commands", ".claude/commands"];
+pub(crate) const COMMAND_FOLDERS: [&str; 2] = [".glave/commands", ".claude/commands"];
 
 /// The largest command file read, in bytes; a bigger one is skipped with a warning.
 const MAX_FILE: u64 = 256 * 1024;
@@ -78,7 +78,10 @@ impl Command {
 /// The command `prompt` invokes, with what follows its name: `/review 12` invokes `review`
 /// with `12`. `None` when the prompt names no command in `commands`, so a prompt that only
 /// starts with a slash, such as a path, goes to the model as written.
-pub fn invoked<'a>(commands: &'a [Command], prompt: &'a str) -> Option<(&'a Command, &'a str)> {
+pub(crate) fn invoked<'a>(
+    commands: &'a [Command],
+    prompt: &'a str,
+) -> Option<(&'a Command, &'a str)> {
     let rest = prompt.trim_start().strip_prefix('/')?;
     let (name, arguments) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
     commands

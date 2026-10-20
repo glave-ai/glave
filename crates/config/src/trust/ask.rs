@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 use crate::trust::assess::{Assessment, Why};
 
 /// The question for the items of `assessment` not yet decided.
-pub fn question(assessment: &Assessment) -> String {
+pub(super) fn question(assessment: &Assessment) -> String {
     let mut text = format!(
         "\nThis project can run commands on your computer:\n  {}\n",
         assessment.project.root.display()
@@ -25,7 +25,7 @@ pub fn question(assessment: &Assessment) -> String {
 }
 
 /// How a typed line answers: `y` or `yes` trusts; anything else, even nothing, does not.
-pub fn trusts(typed: &str) -> bool {
+pub(super) fn trusts(typed: &str) -> bool {
     matches!(typed.trim().to_ascii_lowercase().as_str(), "y" | "yes")
 }
 

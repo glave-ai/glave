@@ -5,10 +5,10 @@ use glave_event::{
 };
 use glave_ports::{Completion, RequestedCall};
 
-pub use glave_ports::testing::{ScriptedModel, Seen};
+pub(crate) use glave_ports::testing::{ScriptedModel, Seen};
 
 /// Every request a scripted model received, as JSON.
-pub fn json(seen: &Seen) -> Vec<String> {
+pub(crate) fn json(seen: &Seen) -> Vec<String> {
     let seen = seen.lock().unwrap();
     seen.iter()
         .map(|request| serde_json::to_string(request).unwrap())
@@ -16,7 +16,7 @@ pub fn json(seen: &Seen) -> Vec<String> {
 }
 
 /// An answer saying `text`, or calling a tool with arguments.
-pub fn answer(text: Option<&str>, call: Option<(&str, serde_json::Value)>) -> Completion {
+pub(crate) fn answer(text: Option<&str>, call: Option<(&str, serde_json::Value)>) -> Completion {
     Completion {
         model: ModelRef {
             provider: "script".into(),
@@ -48,7 +48,12 @@ pub fn answer(text: Option<&str>, call: Option<(&str, serde_json::Value)>) -> Co
 }
 
 /// `completion`, having used `input` and `output` tokens and cost `micros`.
-pub fn costing(mut completion: Completion, input: u64, output: u64, micros: i64) -> Completion {
+pub(crate) fn costing(
+    mut completion: Completion,
+    input: u64,
+    output: u64,
+    micros: i64,
+) -> Completion {
     completion.usage = Usage::new(
         TokenCounts {
             input,

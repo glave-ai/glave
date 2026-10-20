@@ -32,7 +32,7 @@ use crate::trust::Trust;
 use crate::{home, identity};
 
 /// The server for this folder, and what the terminal needs to show it.
-pub struct Wired {
+pub(crate) struct Wired {
     pub server: Glave,
     pub(crate) servers: Arc<Servers>,
     /// The default model's endpoint; none while no model is set up.
@@ -358,13 +358,13 @@ async fn store(setup: &Setup) -> anyhow::Result<Data> {
 
 /// A server in this process for a command's requests, where none runs for the person and no
 /// one is at the terminal: answered by no one, asking nothing.
-pub async fn here() -> anyhow::Result<Wired> {
+pub(crate) async fn here() -> anyhow::Result<Wired> {
     wire(&Args::default(), Answering::NoOne, Asking::NoOne).await
 }
 
 impl Wired {
     /// Lets go of what the server started: workers, MCP servers, projects' tools, memory.
-    pub async fn close(&self) {
+    pub(crate) async fn close(&self) {
         if let Some(workers) = &self.workers {
             crate::cloud::release(&self.server, workers).await;
         }

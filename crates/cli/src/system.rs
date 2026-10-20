@@ -1,12 +1,12 @@
 //! The operating system's randomness for this run's local ids.
 
 /// A random UUID v4, for this run's local organization and project.
-pub fn random_uuid() -> anyhow::Result<uuid::Uuid> {
+pub(crate) fn random_uuid() -> anyhow::Result<uuid::Uuid> {
     Ok(uuid::Builder::from_random_bytes(random()?).into_uuid())
 }
 
 /// A new UUID v7, time-ordered, for an id glave makes here, such as a new project's.
-pub fn new_uuid_v7() -> anyhow::Result<uuid::Uuid> {
+pub(crate) fn new_uuid_v7() -> anyhow::Result<uuid::Uuid> {
     let random: [u8; 10] = random()?;
     let millis = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

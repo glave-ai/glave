@@ -22,8 +22,8 @@ use anyhow::{Context as _, bail};
 use crate::home;
 use crate::socket::{self, Connection};
 
-pub use command::main;
-pub use serve::{Daily, run};
+pub(crate) use command::main;
+pub(crate) use serve::{Daily, run};
 
 /// The port the person's server listens on over HTTP when it is free, so the browser's origin
 /// stays the same across restarts.
@@ -44,25 +44,25 @@ fn run_folder() -> anyhow::Result<PathBuf> {
 
 /// Where the person's server listens: `run/server.sock`, or where a path too long for a socket
 /// moves to.
-pub fn socket_path() -> anyhow::Result<PathBuf> {
+pub(crate) fn socket_path() -> anyhow::Result<PathBuf> {
     socket::place(run_folder()?.join("server.sock"))
 }
 
 /// Where a server started in the background writes what it says: `run/server.log`.
-pub fn log_path() -> anyhow::Result<PathBuf> {
+pub(crate) fn log_path() -> anyhow::Result<PathBuf> {
     Ok(run_folder()?.join("server.log"))
 }
 
 /// The person's server's lock, held for its whole life. The system lets go of it when the
 /// process ends, however it ends, so a crash leaves no stale lock.
 #[derive(Debug)]
-pub struct Lock {
+pub(crate) struct Lock {
     _file: File,
 }
 
 impl Lock {
     /// The lock, unless another server holds it.
-    pub async fn take() -> anyhow::Result<Option<Self>> {
+    pub(crate) async fn take() -> anyhow::Result<Option<Self>> {
         use std::os::unix::fs::OpenOptionsExt as _;
         let path = run_folder()?.join("server.lock");
         socket::private_folder_for(&path).await?;
@@ -85,7 +85,7 @@ impl Lock {
 
 /// Where the person's server listens over HTTP when nothing else is chosen: 127.0.0.1:4180
 /// when it is free, else any free port.
-pub fn loopback() -> SocketAddr {
+pub(crate) fn loopback() -> SocketAddr {
     let usual = SocketAddr::from((Ipv4Addr::LOCALHOST, PORT));
     if TcpListener::bind(usual).is_ok() {
         usual
@@ -95,18 +95,18 @@ pub fn loopback() -> SocketAddr {
 }
 
 /// Whether someone is at this command's terminal: a terminal on its input and its output.
-pub fn at_terminal() -> bool {
+pub(crate) fn at_terminal() -> bool {
     std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
 }
 
 /// The person's server, if one runs: only their own.
-pub async fn connect() -> anyhow::Result<Option<Connection>> {
+pub(crate) async fn connect() -> anyhow::Result<Option<Connection>> {
     Connection::open(&socket_path()?, WHAT).await
 }
 
 /// The person's server: the one running, or one started now when someone is at the terminal;
 /// none when no one is and none runs.
-pub async fn connect_or_start() -> anyhow::Result<Option<Connection>> {
+pub(crate) async fn connect_or_start() -> anyhow::Result<Option<Connection>> {
     if let Some(server) = connect().await? {
         return Ok(Some(server));
     }
@@ -119,7 +119,7 @@ pub async fn connect_or_start() -> anyhow::Result<Option<Connection>> {
 /// Starts the person's server apart from this command and its terminal, from this shell and
 /// folder, and waits until it answers. Two commands that start one at once each start a
 /// server; one takes the lock, the other exits, and both connect to the one that runs.
-pub async fn start() -> anyhow::Result<Connection> {
+pub(crate) async fn start() -> anyhow::Result<Connection> {
     let log_path = log_path()?;
     socket::private_folder_for(&log_path).await?;
     let log = {
@@ -162,7 +162,7 @@ pub async fn start() -> anyhow::Result<Connection> {
 /// terminal that started it or Ctrl-C there never reaches it; then the lock, refused when
 /// another server holds it; and loopback HTTP when nothing else is chosen. No lock for a
 /// program's own server.
-pub async fn claim(args: &mut crate::args::Args) -> anyhow::Result<Option<Lock>> {
+pub(crate) async fn claim(args: &mut crate::args::Args) -> anyhow::Result<Option<Lock>> {
     if !args.person_s_server() {
         return Ok(None);
     }

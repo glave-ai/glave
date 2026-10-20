@@ -16,14 +16,14 @@ const GREEN: &str = "\x1b[32m";
 const CYAN: &str = "\x1b[36m";
 const YELLOW: &str = "\x1b[33m";
 const RED: &str = "\x1b[31m";
-pub const DIM: &str = "\x1b[2m";
+pub(crate) const DIM: &str = "\x1b[2m";
 const RESET: &str = "\x1b[0m";
 
 fn color_enabled() -> bool {
     std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
 }
 
-pub fn paint(color: bool, code: &str, text: &str) -> String {
+pub(crate) fn paint(color: bool, code: &str, text: &str) -> String {
     if color {
         format!("{code}{text}{RESET}")
     } else {
@@ -31,7 +31,7 @@ pub fn paint(color: bool, code: &str, text: &str) -> String {
     }
 }
 
-pub fn flush() {
+pub(crate) fn flush() {
     let _ = std::io::stdout().flush();
 }
 
@@ -43,7 +43,7 @@ enum Showing {
 }
 
 /// Prints live progress and receipts.
-pub struct Printer {
+pub(crate) struct Printer {
     color: bool,
     showing: Showing,
     /// Who the answers come from: the model's own name, never one it is not.
@@ -56,7 +56,7 @@ pub struct Printer {
 }
 
 impl Printer {
-    pub fn new(model: &str, protections: String) -> Self {
+    pub(crate) fn new(model: &str, protections: String) -> Self {
         let color = color_enabled();
         let speaker = speaker(model).to_owned();
         Self {
@@ -71,11 +71,11 @@ impl Printer {
 
     /// The line that counts the seconds while the model has not answered, for a clock to
     /// update.
-    pub fn waiting(&self) -> Waiting {
+    pub(crate) fn waiting(&self) -> Waiting {
         self.waiting.clone()
     }
 
-    pub fn banner(&self, model: &str, provider: &str, folder: &str, note: &str) {
+    pub(crate) fn banner(&self, model: &str, provider: &str, folder: &str, note: &str) {
         println!(
             "{} {}",
             paint(self.color, GREEN, "glave"),
@@ -95,7 +95,7 @@ impl Printer {
     }
 
     /// The banner of a session on a server elsewhere, which chooses the model.
-    pub fn banner_elsewhere(&self, server: &str, note: &str) {
+    pub(crate) fn banner_elsewhere(&self, server: &str, note: &str) {
         println!(
             "{} {}",
             paint(self.color, GREEN, "glave"),
@@ -107,12 +107,12 @@ impl Printer {
         );
     }
 
-    pub fn ask(&self) {
+    pub(crate) fn ask(&self) {
         print!("\n{} ", paint(self.color, GREEN, "›"));
         flush();
     }
 
-    pub fn update(&mut self, update: Update) {
+    pub(crate) fn update(&mut self, update: Update) {
         self.waiting.stop();
         match update {
             Update::Waiting => self.waiting.start(),
@@ -210,7 +210,7 @@ impl Printer {
     }
 
     /// The receipt that closes a turn: what happened and what it cost.
-    pub fn receipt(&mut self, summary: &TurnResult, local: bool) {
+    pub(crate) fn receipt(&mut self, summary: &TurnResult, local: bool) {
         self.waiting.stop();
         let (word, color) = match summary.outcome {
             Outcome::Completed => ("done", CYAN),
@@ -232,7 +232,7 @@ impl Printer {
     /// Asks the person about an action the model wants to take, why when a caution says so,
     /// and, for a command that would run outside the sandbox, the model's reason; the answer
     /// is typed next.
-    pub fn approval(
+    pub(crate) fn approval(
         &mut self,
         summary: &str,
         caution: Option<&str>,
@@ -271,7 +271,7 @@ impl Printer {
 
     /// What a subagent did, one finished step per line under its description. Its words go
     /// to the parent, not here.
-    pub fn child(&mut self, subagent: ThreadId, update: Update) {
+    pub(crate) fn child(&mut self, subagent: ThreadId, update: Update) {
         let Some(label) = self.subagents.get(&subagent) else {
             return;
         };
@@ -301,7 +301,7 @@ impl Printer {
     }
 
     /// `summary` with the subagent it comes from, when a subagent asks.
-    pub fn labeled(&self, subagent: ThreadId, summary: &str) -> String {
+    pub(crate) fn labeled(&self, subagent: ThreadId, summary: &str) -> String {
         match self.subagents.get(&subagent) {
             Some(label) => format!("[{label}] {summary}"),
             None => summary.to_owned(),
@@ -309,7 +309,7 @@ impl Printer {
     }
 
     /// One of the model's questions; the answer is typed next.
-    pub fn ask_question(&mut self, question: &Question) {
+    pub(crate) fn ask_question(&mut self, question: &Question) {
         self.waiting.stop();
         print!("{}", crate::asking::shown(self.color, question));
         self.showing = Showing::Nothing;
@@ -317,13 +317,13 @@ impl Printer {
     }
 
     /// What the person can change to fix the error just shown.
-    pub fn fix(&mut self, text: &str) {
+    pub(crate) fn fix(&mut self, text: &str) {
         println!("  {} {text}", paint(self.color, YELLOW, "fix:"));
         flush();
     }
 
     /// How a goal ended, the tokens its turns used, and, when paused, what the model needs.
-    pub fn goal_ended(&mut self, reason: GoalReason, tokens: u64, note: Option<&str>) {
+    pub(crate) fn goal_ended(&mut self, reason: GoalReason, tokens: u64, note: Option<&str>) {
         self.waiting.stop();
         let (word, color, why) = match reason {
             GoalReason::Met => ("goal met", CYAN, "the model checked it is done"),
@@ -342,18 +342,18 @@ impl Printer {
     }
 
     /// Something beside the turn that went wrong; the turn goes on without it.
-    pub fn warning(&mut self, message: &str) {
+    pub(crate) fn warning(&mut self, message: &str) {
         println!("{} {message}", paint(self.color, YELLOW, "warning"));
         flush();
     }
 
     /// What glave is doing before the turn starts.
-    pub fn status(&mut self, message: &str) {
+    pub(crate) fn status(&mut self, message: &str) {
         println!("{}", paint(self.color, DIM, message));
         flush();
     }
 
-    pub fn error(&mut self, message: &str) {
+    pub(crate) fn error(&mut self, message: &str) {
         self.waiting.stop();
         println!("\n\n{} {message}", paint(self.color, RED, "error"));
         self.showing = Showing::Nothing;

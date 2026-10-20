@@ -16,9 +16,9 @@ use crate::book::{Book, Entry, by_glave};
 use crate::similar::near;
 
 /// The longest memory, in characters.
-pub const MOST_CHARS: usize = 500;
+pub(super) const MOST_CHARS: usize = 500;
 /// About how many tokens each scope's memories may take, all loaded.
-pub const BUDGET_TOKENS: usize = 1_000;
+pub(super) const BUDGET_TOKENS: usize = 1_000;
 /// Characters each memory's line adds beside its text: its id, scope and dates.
 const LINE_CHARS: usize = 60;
 /// How long glave's own changes can be undone, and its forgets wait before erasing.

@@ -7,7 +7,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 /// Whether `ip` is a public internet address. IPv6 forms that carry an IPv4 address (mapped,
 /// compatible, NAT64 and 6to4) are judged by that address.
-pub fn is_public(ip: IpAddr) -> bool {
+pub(crate) fn is_public(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => is_public_v4(v4),
         IpAddr::V6(v6) => is_public_v6(v6),

@@ -20,16 +20,16 @@ const SCRIPT_TIMEOUT: Duration = Duration::from_secs(600);
 const LAST_LINES: usize = 8;
 
 /// The environment commands run with: glave's own, then the run's, then the task's.
-pub type Environment = BTreeMap<OsString, OsString>;
+pub(crate) type Environment = BTreeMap<OsString, OsString>;
 
 /// A workspace ready for the agent.
-pub struct Prepared {
+pub(crate) struct Prepared {
     pub workspace: PathBuf,
     pub environment: Environment,
 }
 
 /// Copies the task's files into `<dir>/workspace` and runs its setup commands there.
-pub async fn prepare(
+pub(crate) async fn prepare(
     base: &[(OsString, OsString)],
     task: &Task,
     dir: &Path,
@@ -89,7 +89,7 @@ fn target(dir: &Path, task: &Task) -> PathBuf {
 }
 
 /// Removes what a run built, keeping its workspace and records.
-pub async fn tidy(dir: &Path, task: &Task) {
+pub(crate) async fn tidy(dir: &Path, task: &Task) {
     // Best effort: a leftover build folder costs disk space, not correctness.
     let target = target(dir, task);
     let built = match task.sandbox {
@@ -100,7 +100,7 @@ pub async fn tidy(dir: &Path, task: &Task) {
 }
 
 /// A finished script.
-pub struct Output {
+pub(crate) struct Output {
     pub success: bool,
     /// Standard output and error, as text.
     pub text: String,
@@ -108,7 +108,7 @@ pub struct Output {
 
 /// Runs a setup command or script in `dir`, outside any sandbox, without glave's endpoint
 /// variables.
-pub async fn script(
+pub(crate) async fn script(
     program: &str,
     args: &[&str],
     dir: &Path,
@@ -147,7 +147,7 @@ pub async fn script(
 }
 
 /// The end of a script's output, on one line.
-pub fn last_lines(text: &str) -> String {
+pub(crate) fn last_lines(text: &str) -> String {
     let lines: Vec<&str> = text
         .lines()
         .filter(|line| !line.trim().is_empty())

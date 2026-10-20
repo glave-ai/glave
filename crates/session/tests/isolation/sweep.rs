@@ -14,11 +14,11 @@ use super::table::{Kind, placeholders, table};
 use super::world::{World, ask, request};
 
 /// What one call found: which method, who called with whose ids, and what each answer was.
-pub type Finding = String;
+pub(super) type Finding = String;
 
 /// Calls every template that names nothing of anyone's, as each person: what they answer
 /// must name nothing of anyone else's.
-pub async fn own_calls<L: EventLog + Clone + 'static>(world: &World<L>) -> Vec<Finding> {
+pub(super) async fn own_calls<L: EventLog + Clone + 'static>(world: &World<L>) -> Vec<Finding> {
     let mut found = Vec::new();
     for (index, person) in world.people.iter().enumerate() {
         let org = &world.orgs[person.org];
@@ -151,7 +151,7 @@ fn normalized(answer: &Value, filled: &[(String, String, &'static str)], nobody:
 }
 
 /// Every person calls every method with every other person's ids.
-pub async fn sweep<L: EventLog + Clone + 'static>(world: &World<L>) -> Vec<Finding> {
+pub(super) async fn sweep<L: EventLog + Clone + 'static>(world: &World<L>) -> Vec<Finding> {
     let mut found = Vec::new();
     for (a, attacker) in world.people.iter().enumerate() {
         let org = &world.orgs[attacker.org];
@@ -193,7 +193,7 @@ pub async fn sweep<L: EventLog + Clone + 'static>(world: &World<L>) -> Vec<Findi
 }
 
 /// What each person sees of their own things, by person.
-pub async fn snapshot<L: EventLog + Clone + 'static>(world: &World<L>) -> Vec<Value> {
+pub(super) async fn snapshot<L: EventLog + Clone + 'static>(world: &World<L>) -> Vec<Value> {
     let mut seen = Vec::new();
     for person in &world.people {
         let org = &world.orgs[person.org];

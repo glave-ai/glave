@@ -21,7 +21,7 @@ const MAX_SOCKET: usize = 100;
 
 /// Where a socket meant to be at `usual` listens: there, or in `/tmp/glave-<uid>` when that
 /// path is too long for a socket.
-pub fn place(usual: PathBuf) -> anyhow::Result<PathBuf> {
+pub(crate) fn place(usual: PathBuf) -> anyhow::Result<PathBuf> {
     if usual.as_os_str().len() <= MAX_SOCKET {
         return Ok(usual);
     }
@@ -51,7 +51,7 @@ async fn person() -> anyhow::Result<u32> {
 
 /// Makes the folder `path` goes in, readable only by the person, and refuses one that someone
 /// else could open.
-pub async fn private_folder_for(path: &Path) -> anyhow::Result<()> {
+pub(crate) async fn private_folder_for(path: &Path) -> anyhow::Result<()> {
     use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
     let folder = path.parent().context("the socket has no folder")?;
     let mut builder = tokio::fs::DirBuilder::new();
@@ -72,7 +72,7 @@ pub async fn private_folder_for(path: &Path) -> anyhow::Result<()> {
 
 /// Listens at `path`, `0600` in a folder private to the person, in place of a socket file a
 /// server that stopped without removing it left there: only for the lock's holder.
-pub async fn listen(path: &Path) -> anyhow::Result<UnixListener> {
+pub(crate) async fn listen(path: &Path) -> anyhow::Result<UnixListener> {
     use std::os::unix::fs::PermissionsExt as _;
     private_folder_for(path).await?;
     let _ = tokio::fs::remove_file(path).await;
@@ -103,7 +103,7 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 }
 
 /// A connection to a glave serving on one of the person's sockets.
-pub struct Connection {
+pub(crate) struct Connection {
     lines: Lines<BufReader<OwnedReadHalf>>,
     writer: OwnedWriteHalf,
     next_id: u64,
@@ -115,7 +115,7 @@ impl Connection {
     /// The glave serving at `path` (`what` names it in errors), if one answers there. Only the
     /// person's own: a socket in a folder others may open, or one another user listens on, is
     /// refused before anything is sent.
-    pub async fn open(path: &Path, what: &str) -> anyhow::Result<Option<Self>> {
+    pub(crate) async fn open(path: &Path, what: &str) -> anyhow::Result<Option<Self>> {
         use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
         let Ok(stream) = UnixStream::connect(path).await else {
             return Ok(None);
@@ -142,12 +142,12 @@ impl Connection {
     }
 
     /// The process that listens, where the system tells.
-    pub fn pid(&self) -> Option<i32> {
+    pub(crate) fn pid(&self) -> Option<i32> {
         self.pid
     }
 
     /// Sends `request` and answers with the reply, or the error the server gave.
-    pub async fn request(&mut self, request: Request) -> anyhow::Result<Reply> {
+    pub(crate) async fn request(&mut self, request: Request) -> anyhow::Result<Reply> {
         let id = self.next_id;
         self.next_id = self.next_id.saturating_add(1);
         let mut line = rpc::message(id, &request).to_string();

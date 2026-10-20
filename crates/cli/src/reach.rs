@@ -13,7 +13,7 @@ use crate::socket::Connection;
 use crate::wiring::Wired;
 
 /// The server a command's requests go to.
-pub enum Reached {
+pub(crate) enum Reached {
     /// The person's server.
     Server(Connection),
     /// A server in this process.
@@ -22,7 +22,7 @@ pub enum Reached {
 
 /// Runs `run` with the server [`Reached::open`] finds, and lets go of it after, however `run`
 /// ends.
-pub async fn with<T>(
+pub(crate) async fn with<T>(
     run: impl AsyncFnOnce(&mut Reached) -> anyhow::Result<T>,
 ) -> anyhow::Result<T> {
     let mut reached = Reached::open().await?;
@@ -34,7 +34,7 @@ pub async fn with<T>(
 impl Reached {
     /// The person's server, started first from the person's own terminal; a server in this
     /// process where none runs and no one is at the terminal.
-    pub async fn open() -> anyhow::Result<Self> {
+    pub(crate) async fn open() -> anyhow::Result<Self> {
         Ok(match crate::server::connect_or_start().await? {
             Some(server) => Self::Server(server),
             None => Self::Here(Box::new(crate::wiring::here().await?)),
@@ -42,7 +42,7 @@ impl Reached {
     }
 
     /// Sends `request` and answers with the reply, or the error the server gave.
-    pub async fn request(&mut self, request: Request) -> anyhow::Result<Reply> {
+    pub(crate) async fn request(&mut self, request: Request) -> anyhow::Result<Reply> {
         match self {
             Self::Server(server) => server.request(request).await,
             Self::Here(wired) => Box::pin(wired.server.request(request))
@@ -53,7 +53,7 @@ impl Reached {
 
     /// The project `folder` leads to, made the first time, with `folder` as its folder: where
     /// its tasks and schedules' runs make their copies.
-    pub async fn project(&mut self, folder: &Path) -> anyhow::Result<ProjectId> {
+    pub(crate) async fn project(&mut self, folder: &Path) -> anyhow::Result<ProjectId> {
         let name = folder.file_name().map_or_else(
             || folder.to_string_lossy().into_owned(),
             |name| name.to_string_lossy().into_owned(),
@@ -71,7 +71,7 @@ impl Reached {
     }
 
     /// Lets go of a server in this process; a connection to the person's server just closes.
-    pub async fn close(self) {
+    pub(crate) async fn close(self) {
         if let Self::Here(wired) = self {
             wired.server.shutdown().await;
             wired.close().await;

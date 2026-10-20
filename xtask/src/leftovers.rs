@@ -22,14 +22,14 @@ const KEPT: &[(&str, &str)] = &[
 
 /// The tests' own temp folder, made fresh for one run.
 #[derive(Debug)]
-pub struct Run {
+pub(crate) struct Run {
     folder: PathBuf,
 }
 
 impl Run {
     /// A new, private folder for this run. Under `/tmp` where there is one: its path is short,
     /// so the sockets tests make in it stay under the length a socket's path may have.
-    pub fn start() -> Result<Self, String> {
+    pub(crate) fn start() -> Result<Self, String> {
         let base = if Path::new("/tmp").is_dir() {
             PathBuf::from("/tmp")
         } else {
@@ -47,13 +47,13 @@ impl Run {
     }
 
     /// The variables that give a command this folder as its temp folder.
-    pub fn env(&self) -> Vec<(&'static str, String)> {
+    pub(crate) fn env(&self) -> Vec<(&'static str, String)> {
         vec![("TMPDIR", self.folder.display().to_string())]
     }
 
     /// Fails, listing them, if a process started with this folder still runs or a `glave-*`
     /// entry glave does not keep is left in it.
-    pub fn check(self) -> Result<(), String> {
+    pub(crate) fn check(self) -> Result<(), String> {
         let processes = running(&self.folder)?;
         for (pid, _) in &processes {
             let _ = Command::new("kill").args(["-KILL", pid]).status();

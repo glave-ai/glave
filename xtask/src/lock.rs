@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 /// How a command shares the machine with other test and benchmark runs.
 #[derive(Debug, Clone, Copy)]
-pub enum Mode {
+pub(crate) enum Mode {
     /// Test runs: many may hold the lock at once.
     Shared,
     /// Benchmark runs: one holder, no test runs alongside it.
@@ -18,7 +18,7 @@ pub enum Mode {
 
 /// A held lock, released when dropped.
 #[derive(Debug)]
-pub struct Guard {
+pub(crate) struct Guard {
     _file: File,
 }
 
@@ -27,7 +27,7 @@ fn path() -> PathBuf {
 }
 
 /// Acquires the lock in `mode`, waiting (with a notice) if another run holds it.
-pub fn acquire(mode: Mode) -> Result<Guard, String> {
+pub(crate) fn acquire(mode: Mode) -> Result<Guard, String> {
     let path = path();
     let file = OpenOptions::new()
         .create(true)

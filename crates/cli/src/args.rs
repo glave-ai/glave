@@ -7,7 +7,7 @@ use glave_harness::ApprovalMode;
 
 use glave_config::policy::{On, SandboxChoice};
 
-pub const USAGE: &str = "\
+pub(crate) const USAGE: &str = "\
 glave: run hope, or any model, on the project in this folder
 
 Usage:
@@ -166,7 +166,7 @@ In a session, /compact summarizes the thread now, and /exit leaves.";
 
 /// What to do.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum Action {
+pub(crate) enum Action {
     #[default]
     Run,
     /// Serve the session API to another program over stdin and stdout.
@@ -189,7 +189,7 @@ pub enum Action {
     clippy::struct_excessive_bools,
     reason = "independent command-line flags, each a yes or no"
 )]
-pub struct Args {
+pub(crate) struct Args {
     pub action: Action,
     pub model: Option<String>,
     /// How much to ask before acting; `auto` when not given.
@@ -238,12 +238,12 @@ pub struct Args {
 
 impl Args {
     /// Whether `glave serve` runs as the person's server: not a program's own over stdio.
-    pub fn person_s_server(&self) -> bool {
+    pub(crate) fn person_s_server(&self) -> bool {
         self.action == Action::Serve && !self.stdio
     }
 }
 
-pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String> {
+pub(crate) fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let mut args = Args::default();
     let mut words = Vec::new();
     let mut rest = arguments.into_iter().peekable();
@@ -451,7 +451,7 @@ fn transport(args: &Args) -> Result<(), String> {
 }
 
 /// The value of `--http`: `host:port`, or a port alone on 127.0.0.1.
-pub fn http_address(value: Option<String>) -> Result<SocketAddr, String> {
+pub(crate) fn http_address(value: Option<String>) -> Result<SocketAddr, String> {
     address(value)
 }
 

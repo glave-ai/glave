@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::reach::Reached;
 use crate::worktrees;
 
-pub const USAGE: &str = "\
+pub(crate) const USAGE: &str = "\
 glave threads: the threads in this folder
 
 Usage:
@@ -58,7 +58,7 @@ fn parse(words: &[String]) -> Result<Command, String> {
     }
 }
 
-pub fn main(arguments: &[String]) -> ExitCode {
+pub(crate) fn main(arguments: &[String]) -> ExitCode {
     if arguments
         .iter()
         .any(|word| word == "--help" || word == "-h")

@@ -29,7 +29,7 @@ use crate::mcp::Servers;
 use crate::terminal::Printer;
 use crate::waiting::Waiting;
 
-pub type Glave = Server<GatewaySwitch, DataLog, DataBlobs>;
+pub(crate) type Glave = Server<GatewaySwitch, DataLog, DataBlobs>;
 
 /// The approvals a turn requested, by thread and call, until each is pending or decided.
 type Requested = HashMap<(ThreadId, CallId), ApprovalRequested>;
@@ -37,14 +37,14 @@ type Requested = HashMap<(ThreadId, CallId), ApprovalRequested>;
 /// The session API the terminal is a client of: the server in this process, or one elsewhere
 /// over HTTP. The terminal uses the same requests and follows turns the same way with either.
 #[derive(Clone, Copy)]
-pub enum Session<'a> {
+pub(crate) enum Session<'a> {
     Here(&'a Glave),
     Elsewhere(&'a Remote),
 }
 
 impl Session<'_> {
     /// Answers `request`, one that does not stream.
-    pub async fn request(&self, request: Request) -> Result<Reply, ApiError> {
+    pub(crate) async fn request(&self, request: Request) -> Result<Reply, ApiError> {
         // Boxed, as starting a turn below: the server's futures are large, and awaited often.
         match self {
             Self::Here(server) => Box::pin(server.request(request)).await,
@@ -53,7 +53,7 @@ impl Session<'_> {
     }
 
     /// Starts `request`, a turn or a goal, and follows it.
-    pub async fn start(&self, request: Request) -> Result<Following, ApiError> {
+    pub(crate) async fn start(&self, request: Request) -> Result<Following, ApiError> {
         match self {
             Self::Here(server) => Box::pin(server.start_streaming(&Caller::default(), request))
                 .await
@@ -66,7 +66,7 @@ impl Session<'_> {
 }
 
 /// A turn or a goal as it runs, here or elsewhere.
-pub enum Following {
+pub(crate) enum Following {
     Here(TurnStream),
     Elsewhere(RemoteTurn),
 }
@@ -81,7 +81,7 @@ impl Following {
 }
 
 /// What a turn is followed with.
-pub struct Client<'a> {
+pub(crate) struct Client<'a> {
     pub server: Session<'a>,
     pub thread: ThreadId,
     pub input: &'a Input,
@@ -100,7 +100,7 @@ pub struct Client<'a> {
 
 impl Client<'_> {
     /// Runs one turn, which Ctrl-C cancels, printing its progress and receipt.
-    pub async fn turn(&self, prompt: &str, printer: &mut Printer) -> ExitCode {
+    pub(crate) async fn turn(&self, prompt: &str, printer: &mut Printer) -> ExitCode {
         self.report(printer).await;
         let started = self
             .server
@@ -119,7 +119,7 @@ impl Client<'_> {
 
     /// Works toward `goal` across turns until it ends, which Ctrl-C does too, printing every
     /// turn's progress and then the receipt for all of them. Succeeds only when it is met.
-    pub async fn goal(&self, goal: Goal, printer: &mut Printer) -> ExitCode {
+    pub(crate) async fn goal(&self, goal: Goal, printer: &mut Printer) -> ExitCode {
         self.report(printer).await;
         let started = self
             .server
@@ -355,7 +355,7 @@ impl Client<'_> {
     }
 
     /// Summarizes the thread now, which Ctrl-C cancels.
-    pub async fn compact(&self, printer: &mut Printer) {
+    pub(crate) async fn compact(&self, printer: &mut Printer) {
         let interrupt = Cancel::new();
         let _ctrl_c = CtrlC::cancels(&interrupt);
         let compact = self.server.request(Request::ThreadCompact {
@@ -420,7 +420,11 @@ async fn ticking<T>(work: impl Future<Output = T>, waiting: &Waiting) -> T {
 }
 
 /// Writes the thread's events as JSON Lines, one event per line, exactly as stored.
-pub async fn export(server: Session<'_>, thread: ThreadId, path: &Path) -> anyhow::Result<()> {
+pub(crate) async fn export(
+    server: Session<'_>,
+    thread: ThreadId,
+    path: &Path,
+) -> anyhow::Result<()> {
     let mut lines = String::new();
     let mut after = None;
     loop {

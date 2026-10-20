@@ -18,7 +18,7 @@ use crate::policy::workers::{On, WorkerRules, WorkersFile};
 use serde::Deserialize;
 
 /// The only version of `policy.toml` there is.
-pub const POLICY_VERSION: u32 = 1;
+pub(super) const POLICY_VERSION: u32 = 1;
 
 /// `config.toml`: what a person or project chooses. Every key is optional.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
@@ -465,7 +465,7 @@ pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
 }
 
 /// `policy.toml` at `path`, from its `text`: a version glave knows, and globs that compile.
-pub fn policy(text: &str, path: &Path) -> crate::Result<PolicyFile> {
+pub(super) fn policy(text: &str, path: &Path) -> crate::Result<PolicyFile> {
     let file: PolicyFile = toml::from_str(text)
         .map_err(|error| crate::Error::Invalid(format!("{}: {error}", path.display())))?;
     if file.version != POLICY_VERSION {

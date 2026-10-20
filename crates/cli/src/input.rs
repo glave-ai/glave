@@ -13,7 +13,7 @@ const READ_AHEAD: usize = 16;
 
 /// The person's input, one line at a time. Clones share it.
 #[derive(Clone)]
-pub struct Input {
+pub(crate) struct Input {
     lines: Arc<Mutex<mpsc::Receiver<String>>>,
 }
 
@@ -21,7 +21,7 @@ impl Input {
     /// Starts reading standard input. The reader is a plain thread, since a blocking read of a
     /// terminal cannot be cancelled; it ends at the end of input, or at the first line after
     /// everyone has stopped listening.
-    pub fn start() -> Self {
+    pub(crate) fn start() -> Self {
         let (sender, receiver) = mpsc::channel(READ_AHEAD);
         std::thread::spawn(move || {
             for line in std::io::stdin().lock().lines() {
@@ -37,18 +37,18 @@ impl Input {
     }
 
     /// The next line, without its line ending; `None` at the end of input.
-    pub async fn line(&self) -> Option<String> {
+    pub(crate) async fn line(&self) -> Option<String> {
         self.lines.lock().await.recv().await
     }
 }
 
 /// Cancels a [`Cancel`] when the person presses Ctrl-C, for as long as this lives.
-pub struct CtrlC(JoinHandle<()>);
+pub(crate) struct CtrlC(JoinHandle<()>);
 
 impl CtrlC {
     /// Listens from the moment it returns, so a Ctrl-C right after is never missed.
     #[cfg(unix)]
-    pub fn cancels(cancel: &Cancel) -> Self {
+    pub(crate) fn cancels(cancel: &Cancel) -> Self {
         use tokio::signal::unix::{SignalKind, signal};
         let cancel = cancel.clone();
         let interrupts = signal(SignalKind::interrupt()).ok();

@@ -13,7 +13,7 @@ use crate::support::{Place, start_with, text};
 
 /// `glave serve --stdio` with `args`, logging everything into the home, and a client of it;
 /// the server is stopped when this drops.
-pub struct Served {
+pub(crate) struct Served {
     child: Running,
     input: ChildStdin,
     output: Lines<BufReader<ChildStdout>>,
@@ -22,12 +22,12 @@ pub struct Served {
 }
 
 impl Served {
-    pub fn start(place: &Place, server: &FakeServer, args: &[&str]) -> Self {
+    pub(crate) fn start(place: &Place, server: &FakeServer, args: &[&str]) -> Self {
         Self::start_with(place, server, args, &[])
     }
 
     /// As [`Served::start`], with the variables `env` too.
-    pub fn start_with(
+    pub(crate) fn start_with(
         place: &Place,
         server: &FakeServer,
         args: &[&str],
@@ -51,7 +51,7 @@ impl Served {
     }
 
     /// Calls `method` and waits for its answer.
-    pub fn call(&mut self, method: &str, params: &Value) -> Value {
+    pub(crate) fn call(&mut self, method: &str, params: &Value) -> Value {
         let id = self.send(method, params);
         loop {
             let message = self.read();
@@ -72,7 +72,7 @@ impl Served {
     /// what `decide` returns for its notification (`allow_once`, `deny`); and how many asked.
     /// Before each answer the models are listed, which reads the server's settings again
     /// while the turn waits, as another client's request would.
-    pub fn call_deciding(
+    pub(crate) fn call_deciding(
         &mut self,
         method: &str,
         params: &Value,
@@ -109,7 +109,7 @@ impl Served {
         id
     }
 
-    pub fn models(&mut self) -> Vec<String> {
+    pub(crate) fn models(&mut self) -> Vec<String> {
         let listed = self.call("model/list", &json!({}));
         listed["result"]["models"]
             .as_array()
@@ -120,7 +120,7 @@ impl Served {
     }
 
     /// Ends the server, and everything it said, on either stream.
-    pub fn end(self) -> String {
+    pub(crate) fn end(self) -> String {
         drop(self.input);
         let output = self.child.wait_with_output().unwrap();
         assert!(output.status.success(), "{}", text(&output));
@@ -130,7 +130,7 @@ impl Served {
 
 /// Trusts everything the project folder of `place` brings, as the person does in the app: a
 /// thread in that folder's project, and their yes to what it asks. With the variables `env`.
-pub fn trust_project(place: &Place, env: &[(&str, &str)]) {
+pub(crate) fn trust_project(place: &Place, env: &[(&str, &str)]) {
     let model = FakeServer::start(Vec::new()).unwrap();
     let mut served = Served::start_with(place, &model, &[], env);
     let folder = std::fs::canonicalize(&place.project).unwrap();
@@ -151,7 +151,7 @@ pub fn trust_project(place: &Place, env: &[(&str, &str)]) {
 }
 
 /// Whether any file in `folder` holds `needle` as written.
-pub fn holds(folder: &Path, needle: &str) -> bool {
+pub(crate) fn holds(folder: &Path, needle: &str) -> bool {
     std::fs::read_dir(folder).unwrap().any(|entry| {
         let path = entry.unwrap().path();
         if path.is_dir() {

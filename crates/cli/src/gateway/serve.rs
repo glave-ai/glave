@@ -25,7 +25,7 @@ use crate::model::Model;
 use crate::{home, mcp};
 use glave_config::policy::{self, Constraints, ORGANIZATION_POLICY, Source};
 
-pub const USAGE: &str = "\
+pub(crate) const USAGE: &str = "\
 glave gateway: the gateway as a service, for everyone in an organization
 
 Usage:
@@ -95,7 +95,7 @@ fn parse(arguments: &[String]) -> Result<Options, String> {
     }
 }
 
-pub fn main(arguments: &[String]) -> ExitCode {
+pub(crate) fn main(arguments: &[String]) -> ExitCode {
     if arguments
         .iter()
         .any(|word| word == "--help" || word == "-h")

@@ -16,7 +16,7 @@ const KEY_FILE: &str = "root.key";
 /// default folder. A key file in the folder is used instead when the folder was moved with
 /// `GLAVE_HOME` (each folder its own root), when one is already there, or, with a warning,
 /// when this machine has no keychain.
-pub async fn settings(home: &Path, relocated: bool) -> anyhow::Result<KeySettings> {
+pub(crate) async fn settings(home: &Path, relocated: bool) -> anyhow::Result<KeySettings> {
     let file = home.join(KEY_FILE);
     let root = tokio::task::spawn_blocking(move || -> anyhow::Result<Arc<dyn Root>> {
         if relocated || file.exists() {

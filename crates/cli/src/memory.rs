@@ -21,7 +21,7 @@ use crate::reach::Reached;
 use crate::setup::Setup;
 use glave_config::policy::MemorySettings;
 
-pub const USAGE: &str = "\
+pub(crate) const USAGE: &str = "\
 glave memory: what glave remembers here, for later threads
 
 Usage:
@@ -36,28 +36,28 @@ Memory is on when `memory = \"on\"` is in your config.toml (glave policy explain
 In a session, /memory lists them.";
 
 /// Memory as running here: the server, and the projects it keeps.
-pub struct Running {
+pub(crate) struct Running {
     pub memory: Arc<GlaveMemory<DataLog>>,
     pub scopes: Vec<Scope>,
 }
 
 impl Running {
     /// Memory as the session server and its threads use it.
-    pub fn handle(&self) -> Arc<dyn Memory> {
+    pub(crate) fn handle(&self) -> Arc<dyn Memory> {
         Arc::clone(&self.memory) as Arc<dyn Memory>
     }
 
     /// Tidies this person's and this project's memory in the background with `tidier` (the
     /// gateway's `summary` route): now, when due, and after saves that bring a scope near its
     /// budget.
-    pub fn tidy_with<P: ModelProvider + 'static>(&self, tidier: Tidier<P>) {
+    pub(crate) fn tidy_with<P: ModelProvider + 'static>(&self, tidier: Tidier<P>) {
         self.memory.tidy_with(tidier);
         self.memory.tidy_soon(&self.scopes);
     }
 
     /// Housekeeping: retention, erasure that is due, and rotating project keys once keys were
     /// destroyed. Failures are reported, never fatal.
-    pub async fn housekeep(&self) {
+    pub(crate) async fn housekeep(&self) {
         if let Err(error) = self.memory.memories().housekeep(&self.scopes).await {
             eprintln!("glave: memory housekeeping failed: {error}");
         }
@@ -65,7 +65,7 @@ impl Running {
 }
 
 /// Starts memory for a run with `setup`, when its choices turn it on and the policy allows.
-pub async fn start_for(
+pub(crate) async fn start_for(
     store: &Data,
     setup: &Setup,
     person: PrincipalId,
@@ -79,7 +79,7 @@ pub async fn start_for(
 /// Starts memory for `person`, tidied in `scope` and their own, when `settings` turn it on:
 /// each project with the setting `settings` choose, until its project's settings choose another
 /// (`project_folders.rs`).
-pub async fn start(
+pub(crate) async fn start(
     store: &Data,
     settings: &MemorySettings,
     person: PrincipalId,
@@ -163,7 +163,7 @@ fn parse(words: &[String]) -> Result<Command, String> {
     Ok(Command::Run(vec![control]))
 }
 
-pub fn main(arguments: &[String]) -> ExitCode {
+pub(crate) fn main(arguments: &[String]) -> ExitCode {
     if arguments
         .iter()
         .any(|word| word == "--help" || word == "-h")
@@ -340,7 +340,7 @@ async fn in_the_store(command: Command) -> anyhow::Result<()> {
 }
 
 /// One memory as listed: id, scope, dates, where it came from, and the text.
-pub fn line(memory: &Remembered) -> String {
+pub(crate) fn line(memory: &Remembered) -> String {
     let day = |at: glave_event::At| at.to_string().chars().take(10).collect::<String>();
     let mut about = format!("{}, saved {}", memory.scope.as_str(), day(memory.saved_at));
     if let Some(edited) = memory.edited_at {

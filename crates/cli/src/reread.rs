@@ -26,7 +26,7 @@ use crate::providers::{Lineup, ModelAccounts};
 use crate::setup::{NO_SANDBOX, Setup};
 
 /// What the person's settings change as they are read again.
-pub struct Rereading {
+pub(crate) struct Rereading {
     args: Args,
     /// Where the person's `config.toml` and the policies are, as glave started.
     locations: Locations,
@@ -49,7 +49,7 @@ pub struct Rereading {
 }
 
 /// What a [`Rereading`] is made with.
-pub struct Parts {
+pub(crate) struct Parts {
     pub args: Args,
     pub folder: PathBuf,
     pub home: PathBuf,
@@ -62,7 +62,7 @@ pub struct Parts {
 
 impl Rereading {
     /// Reads again what `parts` started with, from the content of its files now.
-    pub async fn new(parts: Parts) -> Self {
+    pub(crate) async fn new(parts: Parts) -> Self {
         let locations = Locations::here(&parts.home, &parts.folder);
         let files = [locations.person.clone()]
             .into_iter()

@@ -21,7 +21,7 @@ use crate::config::Endpoint;
 use crate::gateway::GatewaySwitch;
 use crate::model;
 
-pub use lineup::{Built, Lineup, endpoint};
+pub(crate) use lineup::{Built, Lineup, endpoint};
 
 /// The longest key taken, in bytes.
 const LONGEST_KEY: usize = 4096;
@@ -33,7 +33,7 @@ const KEY_FROM: &str = "the key of the model account you connected";
 const AT: &str = "the model account you connected";
 
 /// The person's model accounts, and the gateway their models run on.
-pub struct ModelAccounts {
+pub(crate) struct ModelAccounts {
     ledger: Ledger,
     /// What the models are built from: replaced when the person's settings change.
     lineup: Mutex<Lineup>,
@@ -41,7 +41,7 @@ pub struct ModelAccounts {
 }
 
 impl ModelAccounts {
-    pub fn new(ledger: Ledger, lineup: Lineup, switch: GatewaySwitch) -> Self {
+    pub(crate) fn new(ledger: Ledger, lineup: Lineup, switch: GatewaySwitch) -> Self {
         Self {
             ledger,
             lineup: Mutex::new(lineup),
@@ -59,7 +59,7 @@ impl ModelAccounts {
 
     /// Builds the models from `lineup` from now on, with the accounts kept, and sends calls
     /// to them.
-    pub async fn relined(&self, lineup: Lineup) -> anyhow::Result<Models> {
+    pub(crate) async fn relined(&self, lineup: Lineup) -> anyhow::Result<Models> {
         let accounts = self.ledger.accounts().await?;
         let built = lineup.build(&accounts.providers)?;
         *self.lineup.lock().unwrap_or_else(PoisonError::into_inner) = lineup;
@@ -158,7 +158,7 @@ fn base_url(kind: ProviderKind, url: Option<&str>) -> Option<String> {
 }
 
 /// The endpoint of `model` at `account`, with its key.
-pub fn endpoint_of(account: &ProviderConnected, model: &str) -> Option<Endpoint> {
+pub(crate) fn endpoint_of(account: &ProviderConnected, model: &str) -> Option<Endpoint> {
     let base = base_url(account.kind, account.url.as_deref())?;
     let mut provider = Config::for_url(base, Some(account.key.expose().to_owned()))?;
     if model::speaks_anthropic(&provider) {

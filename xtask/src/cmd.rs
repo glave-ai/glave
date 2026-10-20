@@ -6,7 +6,7 @@ use std::process::Command;
 /// output; standard error passes through.
 ///
 /// Fails if the program cannot start or exits unsuccessfully.
-pub fn output(program: &str, args: &[&str]) -> Result<String, String> {
+pub(crate) fn output(program: &str, args: &[&str]) -> Result<String, String> {
     let output = Command::new(program)
         .args(args)
         .current_dir(crate::workspace::root()?)
@@ -31,12 +31,12 @@ pub fn output(program: &str, args: &[&str]) -> Result<String, String> {
 /// Runs `program` with `args` from the workspace root, streaming its output.
 ///
 /// Fails if the program cannot start or exits unsuccessfully.
-pub fn run(program: &str, args: &[&str]) -> Result<(), String> {
+pub(crate) fn run(program: &str, args: &[&str]) -> Result<(), String> {
     run_with(program, args, &[])
 }
 
 /// [`run`], with `env` added to the program's environment.
-pub fn run_with(program: &str, args: &[&str], env: &[(&str, String)]) -> Result<(), String> {
+pub(crate) fn run_with(program: &str, args: &[&str], env: &[(&str, String)]) -> Result<(), String> {
     let status = Command::new(program)
         .args(args)
         .envs(env.iter().map(|(name, value)| (*name, value)))

@@ -14,7 +14,7 @@ use std::time::SystemTime;
 const MINIMUM: (u32, u32, u32) = (22, 22, 3);
 
 /// Runs the web checks, or skips them when asked to.
-pub fn check() -> Result<(), String> {
+pub(crate) fn check() -> Result<(), String> {
     if std::env::var_os("GLAVE_SKIP_WEB").is_some_and(|value| value == "1") {
         println!("web: skipped (GLAVE_SKIP_WEB=1)");
         return Ok(());

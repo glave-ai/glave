@@ -206,7 +206,7 @@ impl Check {
 }
 
 /// Every turn ended as `expected`: normally, for most tasks.
-pub fn ended(expected: Outcome, outcomes: &[Outcome]) -> Result<(), String> {
+pub(crate) fn ended(expected: Outcome, outcomes: &[Outcome]) -> Result<(), String> {
     match outcomes.iter().find(|outcome| **outcome != expected) {
         _ if outcomes.is_empty() => Err("no turn ended".to_owned()),
         Some(outcome) => Err(format!("a turn ended {outcome:?}")),

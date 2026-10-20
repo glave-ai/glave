@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 /// The nearest `.env`: at or above `root`, else at the main checkout's root when `root` is a
 /// git worktree.
-pub fn nearest(root: &Path) -> Option<PathBuf> {
+pub(crate) fn nearest(root: &Path) -> Option<PathBuf> {
     nearest_from(root, || {
         let git = crate::cmd::output("git", &["rev-parse", "--git-common-dir"]).ok()?;
         Some(root.join(git.trim()))
@@ -24,7 +24,7 @@ fn nearest_from(root: &Path, main_git: impl FnOnce() -> Option<PathBuf>) -> Opti
 }
 
 /// What the `.env` file at `path` sets each of `names` to, for the names it sets.
-pub fn read<'a>(path: &Path, names: &[&'a str]) -> Result<Vec<(&'a str, String)>, String> {
+pub(crate) fn read<'a>(path: &Path, names: &[&'a str]) -> Result<Vec<(&'a str, String)>, String> {
     let text = std::fs::read_to_string(path)
         .map_err(|err| format!("could not read {}: {err}", path.display()))?;
     Ok(values(&text, names))

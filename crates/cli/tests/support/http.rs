@@ -11,7 +11,7 @@ use crate::support::Place;
 
 /// `glave serve --http` for `place` with `args`, talking only to `server`, stopped when
 /// dropped, and the address it serves on, once it answers on its socket too.
-pub fn serve_http(place: &Place, server: &FakeServer, args: &[&str]) -> (Running, String) {
+pub(crate) fn serve_http(place: &Place, server: &FakeServer, args: &[&str]) -> (Running, String) {
     // No titles: a title call would race the next turn for the fake model's replies. First,
     // so a table the test's own settings end with does not take it in.
     std::fs::create_dir_all(&place.home).unwrap();
@@ -53,6 +53,6 @@ pub fn serve_http(place: &Place, server: &FakeServer, args: &[&str]) -> (Running
 
 /// Leaves `place`'s settings unreadable, so a command run there cannot answer in its own
 /// process and only the person's server, which read them as it started, answers it.
-pub fn only_the_server_answers(place: &Place) {
+pub(crate) fn only_the_server_answers(place: &Place) {
     std::fs::write(place.home.join("config.toml"), "this is not = = toml\n").unwrap();
 }

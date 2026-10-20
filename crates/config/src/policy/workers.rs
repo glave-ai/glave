@@ -185,7 +185,7 @@ impl WorkerRules {
 
 /// The limits of every `[workers]` rule at once: the smallest of each, the least network, and
 /// the most isolation.
-pub fn limits<'a>(rules: impl IntoIterator<Item = &'a WorkerRules>) -> Limits {
+pub(super) fn limits<'a>(rules: impl IntoIterator<Item = &'a WorkerRules>) -> Limits {
     let smallest = |a: Option<u32>, b: Option<u32>| match (a, b) {
         (Some(a), Some(b)) => Some(a.min(b)),
         (a, b) => a.or(b),

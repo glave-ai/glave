@@ -35,7 +35,7 @@ fn rotate(log: &Path, cap: u64) -> io::Result<Option<File>> {
 
 /// Keeps this process's log at `log` under the cap: moves it aside when it is over, and points
 /// standard output and error at the new one.
-pub async fn keep_capped(log: PathBuf) -> io::Result<()> {
+pub(super) async fn keep_capped(log: PathBuf) -> io::Result<()> {
     tokio::task::spawn_blocking(move || {
         if let Some(file) = rotate(&log, CAP)? {
             rustix::stdio::dup2_stdout(&file)?;

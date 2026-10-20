@@ -26,7 +26,7 @@ pub(crate) const MAX_LINE: u64 = 32 * 1024 * 1024;
 /// `project` sources of `workspace/open`, a new project's folder. `2026-10-17` added commands
 /// in the background: `command/start`, `command/output`, `command/stop` and `command/list`,
 /// `on_timeout` on a command, and the `backgrounded` and `idle` endings.
-pub const PROTOCOL: &str = "2026-10-17";
+pub(crate) const PROTOCOL: &str = "2026-10-17";
 
 /// The notification that carries a command's output.
 pub(crate) const OUTPUT: &str = "command/output";

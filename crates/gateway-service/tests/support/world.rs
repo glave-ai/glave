@@ -12,7 +12,7 @@ use glave_gateway_service::{Policy, Service, Wiring, serve, stream_id};
 use glave_identity::signin::{SignIn, Trust, person};
 use glave_mcp::{Limits, McpServer};
 use glave_ports::Caller;
-pub use glave_ports::block_on;
+pub(crate) use glave_ports::block_on;
 use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::testing::{CountingEntropy, FAKE_SECRET};
 use glave_ports::{EventLog, InMemoryLog, Located, LogError, OrgId, ProjectId, Purpose, Scope};
@@ -24,11 +24,11 @@ use tokio::task::JoinHandle;
 use super::issuer::{AUDIENCE, Issuer, Signer, fixed_clock};
 
 /// The key the gateway holds for its model provider.
-pub const KEY: &str = FAKE_SECRET;
+pub(crate) const KEY: &str = FAKE_SECRET;
 
 /// One log shared by every service a test starts, as a restart would find it.
 #[derive(Clone, Default)]
-pub struct SharedLog(pub Arc<InMemoryLog>);
+pub(crate) struct SharedLog(pub Arc<InMemoryLog>);
 
 impl EventLog for SharedLog {
     async fn append(&self, scope: &Scope, events: &[RawEvent]) -> Result<(), LogError> {
@@ -84,7 +84,7 @@ impl EventLog for SharedLog {
 }
 
 /// Bob may not use the judge's model, nor any tool of the `tracker` server.
-pub struct Rules;
+pub(crate) struct Rules;
 
 impl Policy for Rules {
     fn refuses_model(&self, caller: &Caller, target: &str) -> Option<String> {
@@ -107,7 +107,7 @@ fn subject(caller: &Caller) -> &str {
 }
 
 /// glave's MCP test server, built beside this test by `cargo xtask ci`.
-pub fn test_server() -> PathBuf {
+pub(crate) fn test_server() -> PathBuf {
     let path = std::env::current_exe()
         .unwrap()
         .parent()
@@ -122,7 +122,7 @@ pub fn test_server() -> PathBuf {
 }
 
 /// The catalog: the test server as `docs` and as `tracker`.
-pub fn catalog() -> Vec<Arc<McpServer>> {
+pub(crate) fn catalog() -> Vec<Arc<McpServer>> {
     let config = ServerConfig::Stdio {
         command: test_server().display().to_string(),
         args: Vec::new(),
@@ -145,7 +145,7 @@ pub fn catalog() -> Vec<Arc<McpServer>> {
 }
 
 /// A running gateway service and what stands behind it.
-pub struct World {
+pub(crate) struct World {
     pub url: String,
     pub issuer: Issuer,
     pub signer: Signer,
@@ -159,7 +159,7 @@ pub struct World {
 
 impl World {
     /// A gateway over `replies`, with `budgets`, its catalog empty unless `with_catalog`.
-    pub async fn start(replies: Vec<Reply>, budgets: Budgets, with_catalog: bool) -> Self {
+    pub(crate) async fn start(replies: Vec<Reply>, budgets: Budgets, with_catalog: bool) -> Self {
         let issuer = Issuer::start().await;
         let signer = Signer::es256("k1");
         issuer.publish(&signer);
@@ -181,7 +181,7 @@ impl World {
     }
 
     /// Starts (or starts again, on the same log) the service.
-    pub async fn serve(&mut self, budgets: Budgets, with_catalog: bool) {
+    pub(crate) async fn serve(&mut self, budgets: Budgets, with_catalog: bool) {
         self.halt().await;
         let config = Config::for_url(self.upstream.url(), Some(KEY.to_owned())).unwrap();
         let handle: Arc<dyn Model> = Arc::new(OpenAiCompatible::new(config).unwrap());
@@ -231,12 +231,12 @@ impl World {
     }
 
     /// A good token for `subject`.
-    pub fn token(&self, subject: &str) -> String {
+    pub(crate) fn token(&self, subject: &str) -> String {
         self.signer.sign(&self.issuer.claims(subject))
     }
 
     /// The events recorded for `subject`, decoded.
-    pub async fn recorded(&self, subject: &str) -> Vec<Body> {
+    pub(crate) async fn recorded(&self, subject: &str) -> Vec<Body> {
         let person = person(&self.issuer.url, subject).unwrap();
         let thread = stream_id(person).unwrap();
         let raw = self
