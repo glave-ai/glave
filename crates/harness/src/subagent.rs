@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 /// The tool's name.
-pub const AGENT: &str = "agent";
+pub(crate) const AGENT: &str = "agent";
 
 /// Subagents running at once, as Codex caps them.
 pub(crate) const AT_ONCE: usize = 6;

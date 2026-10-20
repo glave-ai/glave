@@ -4,14 +4,14 @@
 use std::sync::Arc;
 
 use glave_keys::{InMemoryRoot, KeySettings};
-pub use glave_ports::block_on;
+pub(crate) use glave_ports::block_on;
 use glave_store_postgres::{Config, Store, StoreError};
 use tokio::task::JoinHandle;
 use tokio_postgres::{Client, NoTls};
 
 /// A schema of the test's own, an admin connection to make, inspect and drop it, and the
 /// root every store on it shares.
-pub struct Scratch {
+pub(crate) struct Scratch {
     pub admin: Client,
     connection: JoinHandle<()>,
     pub schema: String,
@@ -21,7 +21,7 @@ pub struct Scratch {
 
 impl Scratch {
     /// A fresh, empty schema, or `None` when no database was given.
-    pub async fn new(name: &str) -> Option<Self> {
+    pub(crate) async fn new(name: &str) -> Option<Self> {
         let Ok(url) = std::env::var("GLAVE_TEST_POSTGRES_URL") else {
             eprintln!("skipped: set GLAVE_TEST_POSTGRES_URL to run the Postgres tests");
             return None;
@@ -50,15 +50,15 @@ impl Scratch {
     }
 
     /// Keys under the root this scratch schema's stores share.
-    pub fn keys(&self) -> KeySettings {
+    pub(crate) fn keys(&self) -> KeySettings {
         KeySettings::new(Arc::<InMemoryRoot>::clone(&self.root))
     }
 
-    pub async fn store(&self) -> Result<Store, StoreError> {
+    pub(crate) async fn store(&self) -> Result<Store, StoreError> {
         Store::connect_with(self.config.clone(), self.keys()).await
     }
 
-    pub async fn drop_schema(self) {
+    pub(crate) async fn drop_schema(self) {
         self.admin
             .batch_execute(&format!("DROP SCHEMA {} CASCADE", self.schema))
             .await

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Runs `script` in `dir` with git as no one in particular, and checks it worked.
-pub fn sh(dir: &Path, script: &str) {
+pub(crate) fn sh(dir: &Path, script: &str) {
     let ran = Command::new("bash")
         .args(["-c", script])
         .current_dir(dir)
@@ -16,7 +16,7 @@ pub fn sh(dir: &Path, script: &str) {
 }
 
 /// A repository at `dir/name` with one commit holding `AGENTS.md`.
-pub fn repository(dir: &Path, name: &str) -> PathBuf {
+pub(crate) fn repository(dir: &Path, name: &str) -> PathBuf {
     let repo = dir.join(name);
     std::fs::create_dir_all(&repo).unwrap();
     sh(

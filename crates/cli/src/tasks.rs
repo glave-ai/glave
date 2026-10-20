@@ -17,7 +17,7 @@ use uuid::Uuid;
 use crate::args::Args;
 use crate::reach::{self, Reached};
 
-pub const TASKS_USAGE: &str = "\
+pub(crate) const TASKS_USAGE: &str = "\
 glave tasks: what runs here with no one attached
 
 Usage:
@@ -34,7 +34,7 @@ Usage:
 
 Read a task's thread with `glave threads`, or continue it in a session with --continue.";
 
-pub const SCHEDULE_USAGE: &str = "\
+pub(crate) const SCHEDULE_USAGE: &str = "\
 glave schedule: run a prompt or a goal as a task at set times
 
 Usage:
@@ -53,7 +53,7 @@ background, which these commands start from a terminal; runs missed while it was
 running run once, as soon as it is, never once for each.";
 
 /// `glave tasks ...`.
-pub fn tasks_main(words: &[String]) -> ExitCode {
+pub(crate) fn tasks_main(words: &[String]) -> ExitCode {
     run_with(words, TASKS_USAGE, |words| async move {
         let stop = match words.as_slice() {
             [] => None,
@@ -69,7 +69,7 @@ pub fn tasks_main(words: &[String]) -> ExitCode {
 }
 
 /// `glave schedule ...`.
-pub fn schedule_main(words: &[String]) -> ExitCode {
+pub(crate) fn schedule_main(words: &[String]) -> ExitCode {
     run_with(words, SCHEDULE_USAGE, |words| async move {
         let asked = match words.split_first() {
             Some((add, rest)) if add == "add" => Asked::Add(schedule_request(rest, None)?),
@@ -143,7 +143,7 @@ async fn stop_task(server: &mut Reached, thread: ThreadId) -> anyhow::Result<()>
 
 /// Starts `prompt` (or `args.goal`) as a task in a new thread of this folder's project, for
 /// `glave --background`: only in the person's server, since a task outlives this command.
-pub async fn background(args: &Args) -> anyhow::Result<ExitCode> {
+pub(crate) async fn background(args: &Args) -> anyhow::Result<ExitCode> {
     let folder = std::env::current_dir()?;
     let Some(server) = crate::server::connect_or_start().await? else {
         bail!(

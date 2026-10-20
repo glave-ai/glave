@@ -9,8 +9,8 @@
 //! models of the accounts the person connected (`providers`), leaving out those it refuses.
 //! The gateway in use is replaced whole when those accounts change ([`GatewaySwitch`]).
 
-pub mod remote;
-pub mod serve;
+pub(crate) mod remote;
+pub(crate) mod serve;
 
 use std::sync::{Arc, PoisonError, RwLock};
 
@@ -25,7 +25,7 @@ use glave_config::policy::{Constraints, ModelEntry, Source, check_model};
 use glave_session::protocol::ModelInfo;
 
 /// Which models a policy allows, and where the main and judge models were chosen.
-pub struct Allowed<'a> {
+pub(crate) struct Allowed<'a> {
     pub constraints: &'a Constraints,
     /// Where the main model was chosen, when anyone chose it.
     pub main: Option<&'a Source>,
@@ -38,7 +38,7 @@ pub struct Allowed<'a> {
 /// other than the main one, and each of `offered` as choices. Fails
 /// when `allowed` refuses any of them. Then each of `accounts` the policy allows is a choice
 /// too, unless a model of the same id already is.
-pub fn gateway(
+pub(crate) fn gateway(
     provider: Model,
     endpoint: &Endpoint,
     judge: Option<&str>,
@@ -90,15 +90,15 @@ pub fn gateway(
 /// connects or removes a model account, so each call goes to the models set up when it
 /// starts. Clones share it.
 #[derive(Clone, Default)]
-pub struct GatewaySwitch(Arc<RwLock<Option<Arc<Gateway>>>>);
+pub(crate) struct GatewaySwitch(Arc<RwLock<Option<Arc<Gateway>>>>);
 
 impl GatewaySwitch {
-    pub fn new(gateway: Option<Gateway>) -> Self {
+    pub(crate) fn new(gateway: Option<Gateway>) -> Self {
         Self(Arc::new(RwLock::new(gateway.map(Arc::new))))
     }
 
     /// Sends calls to `gateway` from now on; calls already sent finish where they are.
-    pub fn set(&self, gateway: Option<Gateway>) {
+    pub(crate) fn set(&self, gateway: Option<Gateway>) {
         *self.0.write().unwrap_or_else(PoisonError::into_inner) = gateway.map(Arc::new);
     }
 
@@ -110,7 +110,7 @@ impl GatewaySwitch {
     }
 
     /// Whether a thread may be sent to `model` now: one `model/list` offers.
-    pub fn offers(&self, model: &str) -> bool {
+    pub(crate) fn offers(&self, model: &str) -> bool {
         self.current()
             .is_some_and(|gateway| models(&gateway).any(|target| target.model == model))
     }
@@ -145,7 +145,7 @@ impl ModelProvider for GatewaySwitch {
 /// What `model/list` offers besides the main model, which the server adds itself: the
 /// gateway's choices, each named and marked as `[[models]]` says, and the main model's own
 /// entry, for its name and mark.
-pub fn offered(gateway: &Gateway, entries: &[ModelEntry]) -> Vec<ModelInfo> {
+pub(crate) fn offered(gateway: &Gateway, entries: &[ModelEntry]) -> Vec<ModelInfo> {
     let info = |id: &str| {
         let entry = entries.iter().find(|entry| entry.id.trim() == id);
         ModelInfo {

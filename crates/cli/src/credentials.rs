@@ -30,7 +30,7 @@ const LONGEST: usize = 4096;
 
 /// The person's git hosts: kept in the accounts ledger, offered to commands, and connected by
 /// a token or by signing in to GitHub in the browser.
-pub struct Hosts {
+pub(crate) struct Hosts {
     ledger: Ledger,
     http: Http,
     github: Option<Github>,
@@ -44,7 +44,7 @@ impl Hosts {
     /// The git hosts of `person` in `store`, when they may connect them here: everywhere but
     /// a server people sign in to with OIDC (`others_sign_in`), where an organization will
     /// grant them instead.
-    pub async fn for_person(
+    pub(crate) async fn for_person(
         store: &Data,
         person: PrincipalId,
         github: Option<&GithubFile>,

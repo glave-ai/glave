@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 
 /// What an id names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Kind {
+pub(super) enum Kind {
     Thread,
     Project,
     Approval,
@@ -36,7 +36,7 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub const ALL: [Self; 14] = [
+    pub(super) const ALL: [Self; 14] = [
         Self::Thread,
         Self::Project,
         Self::Approval,
@@ -54,7 +54,7 @@ impl Kind {
     ];
 
     /// How a template writes it.
-    pub fn placeholder(self) -> &'static str {
+    pub(super) fn placeholder(self) -> &'static str {
         match self {
             Self::Thread => "@thread",
             Self::Project => "@project",
@@ -74,14 +74,14 @@ impl Kind {
     }
 
     /// The kind a template's string stands for, if it is a placeholder.
-    pub fn of(text: &str) -> Option<Self> {
+    pub(super) fn of(text: &str) -> Option<Self> {
         Self::ALL
             .into_iter()
             .find(|kind| kind.placeholder() == text)
     }
 
     /// The protocol type of a param that names one: each such param must be a placeholder.
-    pub fn schema_type(self) -> Option<&'static str> {
+    pub(super) fn schema_type(self) -> Option<&'static str> {
         match self {
             Self::Thread => Some("ThreadId"),
             Self::Project => Some("ProjectId"),
@@ -97,7 +97,7 @@ impl Kind {
     }
 
     /// One nobody has: what an id of someone's must be answered like.
-    pub fn nobodys(self) -> Value {
+    pub(super) fn nobodys(self) -> Value {
         // UUID v7s no clock or counter in a test reaches.
         let uuid = |last: u64| format!("0192f5c0-0000-7000-8000-{last:012x}");
         Value::String(match self {
@@ -120,7 +120,7 @@ impl Kind {
 
 /// Kinds no one in the suite's world holds, and why: their templates are still called with
 /// ids nobody has, and checked to name no one's data, but never with another's.
-pub const NOT_HELD: &[(Kind, &str)] = &[
+pub(super) const NOT_HELD: &[(Kind, &str)] = &[
     (
         Kind::Ask,
         "a project asks only from a folder of its own with something to trust",
@@ -141,7 +141,7 @@ pub const NOT_HELD: &[(Kind, &str)] = &[
     clippy::too_many_lines,
     reason = "one entry per method: the suite's one table"
 )]
-pub fn table() -> Vec<(&'static str, Vec<Value>)> {
+pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
     let on_thread = || vec![json!({"thread": "@thread"})];
     let cron = json!({"cron": "0 9 * * *"});
     vec![
@@ -317,7 +317,7 @@ pub fn table() -> Vec<(&'static str, Vec<Value>)> {
 }
 
 /// The placeholders in `template`, by param.
-pub fn placeholders(template: &Value) -> Vec<(String, Kind)> {
+pub(super) fn placeholders(template: &Value) -> Vec<(String, Kind)> {
     template
         .as_object()
         .into_iter()

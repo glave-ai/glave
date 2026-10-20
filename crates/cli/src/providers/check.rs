@@ -39,7 +39,10 @@ const NOT_CHAT: &[&str] = &[
 
 /// The models the account at `endpoint` offers, asked with its key: an error when the key
 /// does not work there, or the service cannot be reached.
-pub async fn models(kind: ProviderKind, endpoint: &Endpoint) -> Result<Vec<String>, ProviderError> {
+pub(super) async fn models(
+    kind: ProviderKind,
+    endpoint: &Endpoint,
+) -> Result<Vec<String>, ProviderError> {
     let model = Model::for_endpoint(endpoint)?;
     let asked = async {
         // OpenRouter lists its models to anyone, so the key is checked on its own.
@@ -62,7 +65,7 @@ pub async fn models(kind: ProviderKind, endpoint: &Endpoint) -> Result<Vec<Strin
 }
 
 /// The models of `listing`, a `/models` answer, that glave offers for an account at `kind`.
-pub fn offered(kind: ProviderKind, listing: &Value) -> Vec<String> {
+pub(super) fn offered(kind: ProviderKind, listing: &Value) -> Vec<String> {
     let Some(data) = listing.get("data").and_then(Value::as_array) else {
         return Vec::new();
     };

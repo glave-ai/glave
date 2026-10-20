@@ -136,7 +136,7 @@ impl Layer {
 }
 
 /// The choices of `layers`, nearest first: for each key, the first level that sets it wins.
-pub fn resolve(layers: &[Layer]) -> Choices {
+pub(super) fn resolve(layers: &[Layer]) -> Choices {
     Choices {
         model: nearest(layers, "model", |file| file.model.clone()),
         judge: defaulted(

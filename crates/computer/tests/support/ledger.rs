@@ -15,10 +15,10 @@ use glave_ports::computer::{
 use glave_ports::{BoxFuture, Cancellation};
 
 /// How long a `slow` command takes.
-pub const SLOW: Duration = Duration::from_secs(60);
+pub(crate) const SLOW: Duration = Duration::from_secs(60);
 
 #[derive(Default)]
-pub struct Ledger {
+pub(crate) struct Ledger {
     /// How many times each command and each write (`path=content`) was done.
     done: Mutex<HashMap<String, usize>>,
     files: Mutex<HashMap<String, Bytes>>,
@@ -26,12 +26,12 @@ pub struct Ledger {
 
 impl Ledger {
     /// How many times `what` was done: a command's script, or `path=content` for a write.
-    pub fn times(&self, what: &str) -> usize {
+    pub(crate) fn times(&self, what: &str) -> usize {
         self.done.lock().unwrap().get(what).copied().unwrap_or(0)
     }
 
     /// Puts a file in place without counting it.
-    pub fn seed(&self, path: &str, content: &str) {
+    pub(crate) fn seed(&self, path: &str, content: &str) {
         self.files
             .lock()
             .unwrap()
@@ -43,11 +43,11 @@ impl Ledger {
     }
 }
 
-pub fn computer() -> ComputerId {
+pub(crate) fn computer() -> ComputerId {
     ComputerId::from_uuid(uuid::Uuid::from_bytes([7; 16]))
 }
 
-pub fn workspace() -> WorkspaceId {
+pub(crate) fn workspace() -> WorkspaceId {
     WorkspaceId::from_uuid(uuid::Uuid::from_bytes([8; 16]))
 }
 

@@ -18,7 +18,7 @@ use crate::lock::{self, Mode};
 const ENDPOINT: [&str; 2] = ["GLAVE_BASE_URL", "GLAVE_API_KEY"];
 
 /// Runs `glave-eval` with `args`, sharing the machine with tests but never with benchmarks.
-pub fn run(args: &[String]) -> Result<(), String> {
+pub(crate) fn run(args: &[String]) -> Result<(), String> {
     let (given, args) = env_file_option(args)?;
     let file = match given {
         Some(file) => Some(file),

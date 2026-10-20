@@ -37,7 +37,7 @@ const LONGEST_TOKEN: i64 = 366 * 24 * 3600;
 
 /// The GitHub App sign-ins go through.
 #[derive(Debug, Clone)]
-pub struct Github {
+pub(super) struct Github {
     client_id: String,
     /// Where GitHub is: `https://github.com`, or a GitHub Enterprise Server.
     pub url: String,
@@ -46,7 +46,7 @@ pub struct Github {
 }
 
 /// What GitHub granted: a user token, and how to renew it when it expires.
-pub struct Grant {
+pub(super) struct Grant {
     pub token: Secret,
     pub renewal: Option<Renewal>,
 }
@@ -61,10 +61,10 @@ struct Flow {
 
 /// The sign-ins waiting, by flow id.
 #[derive(Default)]
-pub struct Flows(Mutex<HashMap<String, Flow>>);
+pub(super) struct Flows(Mutex<HashMap<String, Flow>>);
 
 /// How a poll went.
-pub enum Polled {
+pub(super) enum Polled {
     Waiting,
     Granted(Grant),
 }
@@ -72,7 +72,7 @@ pub enum Polled {
 impl Github {
     /// The app `[github]` names; none when its `url` is not a host's origin, which reading
     /// the configuration refuses first.
-    pub fn new(file: &GithubFile) -> Option<Self> {
+    pub(super) fn new(file: &GithubFile) -> Option<Self> {
         let url = file.url.as_deref().unwrap_or("https://github.com");
         Some(Self {
             client_id: file.client_id.trim().to_owned(),
@@ -83,7 +83,7 @@ impl Github {
 
     /// The page where the person installs the app on their account or organizations and
     /// chooses its repositories, when the app's name is known.
-    pub fn install(&self) -> Option<String> {
+    pub(super) fn install(&self) -> Option<String> {
         let app = self.app.as_ref()?;
         let apps = if self.url == "https://github.com" {
             "apps"
@@ -94,7 +94,7 @@ impl Github {
     }
 
     /// Asks GitHub for a code for the person to enter, and keeps the sign-in as `flow`.
-    pub async fn start(
+    pub(super) async fn start(
         &self,
         http: &Http,
         flows: &Flows,
@@ -143,7 +143,12 @@ impl Github {
     /// Waits until GitHub allows the next poll of `flow`, then asks once: the grant once the
     /// person approved the app. Only waits, saying so, when that is further off than one poll
     /// waits.
-    pub async fn poll(&self, http: &Http, flows: &Flows, flow: &str) -> Result<Polled, ApiError> {
+    pub(super) async fn poll(
+        &self,
+        http: &Http,
+        flows: &Flows,
+        flow: &str,
+    ) -> Result<Polled, ApiError> {
         let Some((device_code, slot)) = flows.waiting(flow)? else {
             tokio::time::sleep(LONGEST_WAIT).await;
             return Ok(Polled::Waiting);
@@ -185,7 +190,7 @@ impl Github {
     }
 
     /// A new token for the one `refresh` renews, and a new refresh token with it.
-    pub async fn refresh(&self, http: &Http, refresh: &Secret) -> Result<Grant, ApiError> {
+    pub(super) async fn refresh(&self, http: &Http, refresh: &Secret) -> Result<Grant, ApiError> {
         let form = format!(
             "client_id={}&grant_type=refresh_token&refresh_token={}",
             encoded(&self.client_id),

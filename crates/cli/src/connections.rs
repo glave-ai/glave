@@ -18,7 +18,7 @@ use uuid::Uuid;
 use crate::reach::{self, Reached};
 use crate::tasks::run_with;
 
-pub const CONNECT_USAGE: &str = "\
+pub(crate) const CONNECT_USAGE: &str = "\
 glave connect: connect a git host, so git and the host's own tool sign in as you
 
 Usage:
@@ -34,7 +34,7 @@ Usage:
 
 Connecting the same host again replaces it. List or remove them with glave connections.";
 
-pub const CONNECTIONS_USAGE: &str = "\
+pub(crate) const CONNECTIONS_USAGE: &str = "\
 glave connections: the git hosts you connected
 
 Usage:
@@ -46,7 +46,7 @@ Usage:
 const GITHUB: &str = "https://github.com";
 
 /// `glave connect ...`.
-pub fn connect_main(words: &[String]) -> ExitCode {
+pub(crate) fn connect_main(words: &[String]) -> ExitCode {
     run_with(words, CONNECT_USAGE, |words| async move {
         let words: Vec<&str> = words.iter().map(String::as_str).collect();
         let token = |word: &&str| *word == "--token" || token::looks_like(word);
@@ -63,7 +63,7 @@ pub fn connect_main(words: &[String]) -> ExitCode {
 }
 
 /// `glave connections ...`.
-pub fn connections_main(words: &[String]) -> ExitCode {
+pub(crate) fn connections_main(words: &[String]) -> ExitCode {
     run_with(words, CONNECTIONS_USAGE, |words| async move {
         let words: Vec<&str> = words.iter().map(String::as_str).collect();
         match words.as_slice() {

@@ -15,7 +15,7 @@ use tokio::task::{AbortHandle, JoinHandle};
 
 /// What happens to one message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Fault {
+pub(crate) enum Fault {
     /// The connection drops before the message is passed on.
     Drop,
     /// The message is held this long, then passed on.
@@ -36,7 +36,7 @@ pub enum Fault {
 
 /// Which way a message goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Way {
+pub(crate) enum Way {
     /// From the client to the computer: requests.
     Out,
     /// From the computer to the client: answers and output.
@@ -45,14 +45,14 @@ pub enum Way {
 
 /// One fault: what happens to the `at`-th message (from 0) going `way`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Planned {
+pub(crate) struct Planned {
     pub way: Way,
     pub at: usize,
     pub fault: Fault,
 }
 
 /// The pumps and the serving side, stopped when this is dropped.
-pub struct Link {
+pub(crate) struct Link {
     tasks: Vec<JoinHandle<()>>,
 }
 
@@ -65,7 +65,7 @@ impl Drop for Link {
 }
 
 /// Serves `computers` across a link that applies `faults`, and the client at its other end.
-pub fn faulty<C: Computers + 'static>(
+pub(crate) fn faulty<C: Computers + 'static>(
     computers: Arc<C>,
     faults: &[Planned],
 ) -> (RemoteComputers, Link) {

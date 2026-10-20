@@ -2,14 +2,14 @@
 //! most tests make, a fake identity provider, and a client of the HTTP transport.
 
 mod git;
-pub mod issuer;
+pub(crate) mod issuer;
 mod requests;
 mod script;
 mod setup;
-pub mod web;
+pub(crate) mod web;
 
-pub use git::*;
-pub use glave_ports::block_on;
-pub use requests::*;
-pub use script::*;
-pub use setup::*;
+pub(crate) use git::*;
+pub(crate) use glave_ports::block_on;
+pub(crate) use requests::*;
+pub(crate) use script::*;
+pub(crate) use setup::*;

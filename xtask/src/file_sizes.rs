@@ -40,7 +40,7 @@ fn classify(lines: usize) -> Verdict {
 }
 
 /// Scans the source tree, warns about long files, and fails on files over the hard limit.
-pub fn check() -> Result<(), String> {
+pub(crate) fn check() -> Result<(), String> {
     let root = crate::workspace::root()?;
     let mut files = Vec::new();
     for dir in SCANNED_DIRS {

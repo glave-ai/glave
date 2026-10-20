@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 /// The tool's name.
-pub const QUESTION: &str = "question";
+pub(crate) const QUESTION: &str = "question";
 
 /// Most questions in one call.
 const MOST: usize = 4;

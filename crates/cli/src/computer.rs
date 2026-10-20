@@ -17,7 +17,7 @@ use tokio::net::TcpListener;
 
 use crate::home;
 
-pub const USAGE: &str = "\
+pub(crate) const USAGE: &str = "\
 glave computer: this machine as a computer for a harness elsewhere
 
 Usage:
@@ -46,7 +46,7 @@ enum Transport {
 
 /// Runs glave as the Linux sandbox's helper when it was started as one (`specs/sandbox.md`):
 /// it confines itself, then becomes the command, so this returns only on failure.
-pub fn sandbox_helper() -> Option<ExitCode> {
+pub(crate) fn sandbox_helper() -> Option<ExitCode> {
     let args: Vec<OsString> = std::env::args_os().collect();
     let failure = glave_computer::sandbox_helper(&args)?;
     eprintln!("glave sandbox: {failure}");
@@ -55,7 +55,7 @@ pub fn sandbox_helper() -> Option<ExitCode> {
 
 /// `computers` with this program as the sandbox's helper, which Linux needs where
 /// bubblewrap cannot start.
-pub fn with_sandbox_helper(computers: LocalComputers) -> LocalComputers {
+pub(crate) fn with_sandbox_helper(computers: LocalComputers) -> LocalComputers {
     match std::env::current_exe() {
         Ok(program) => computers.with_sandbox_helper(program),
         Err(_) => computers,
@@ -95,7 +95,7 @@ fn parse(arguments: &[String]) -> Result<Transport, String> {
     }
 }
 
-pub fn main(arguments: &[String]) -> ExitCode {
+pub(crate) fn main(arguments: &[String]) -> ExitCode {
     if arguments
         .iter()
         .any(|argument| argument == "--help" || argument == "-h")

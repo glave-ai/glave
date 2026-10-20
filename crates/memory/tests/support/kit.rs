@@ -8,53 +8,53 @@ use glave_event::{Arguments, ModelRef, Part, PrincipalId, StopReason, TokenCount
 use glave_harness::{ApprovalRequest, Approver, Decision, Harness, Parts, Settings, Workspace};
 use glave_keys::{InMemoryRoot, KeySettings};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules};
-pub use glave_ports::block_on;
+pub(crate) use glave_ports::block_on;
 use glave_ports::memories::ProjectMemory;
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
-pub use glave_ports::testing::{ScriptedModel, Seen};
+pub(crate) use glave_ports::testing::{ScriptedModel, Seen};
 use glave_ports::{Clock, Completion, OrgId, ProjectId, RequestedCall, Scope};
 use glave_store_sqlite::{SqliteBlobs, SqliteLog, Store};
 use jiff::Timestamp;
 
 /// 2026-10-03, in milliseconds.
-pub const START: i64 = 1_791_000_000_000;
+pub(crate) const START: i64 = 1_791_000_000_000;
 
-pub fn uuid(n: u128) -> uuid::Uuid {
+pub(crate) fn uuid(n: u128) -> uuid::Uuid {
     uuid::Uuid::from_u128(0x0192_f5c0_0000_7000_8000_0000_0000_0000 | n)
 }
 
-pub fn scope(org: u128, project: u128) -> Scope {
+pub(crate) fn scope(org: u128, project: u128) -> Scope {
     Scope::glaves_own(
         OrgId::from_uuid(uuid(org)),
         ProjectId::from_uuid(uuid(project)),
     )
 }
 
-pub fn person() -> PrincipalId {
+pub(crate) fn person() -> PrincipalId {
     PrincipalId::try_from(uuid(50)).unwrap()
 }
 
-pub fn agent() -> PrincipalId {
+pub(crate) fn agent() -> PrincipalId {
     PrincipalId::try_from(uuid(51)).unwrap()
 }
 
 /// The person's personal project, where their personal memory lives.
-pub fn inbox() -> Scope {
+pub(crate) fn inbox() -> Scope {
     scope(1, 100)
 }
 
 /// A shared project, an isolated one, and one where memory is off.
-pub fn shared() -> Scope {
+pub(crate) fn shared() -> Scope {
     scope(1, 2)
 }
-pub fn isolated() -> Scope {
+pub(crate) fn isolated() -> Scope {
     scope(1, 3)
 }
-pub fn off() -> Scope {
+pub(crate) fn off() -> Scope {
     scope(1, 4)
 }
 
-pub fn rules() -> Rules {
+pub(crate) fn rules() -> Rules {
     let mut rules = Rules {
         personal: Some(Personal {
             scope: inbox(),
@@ -69,7 +69,6 @@ pub fn rules() -> Rules {
     rules
 }
 
-/// A sealed store in memory, its clock shared with whatever is wired to it.
 /// The kit's clock as the keys read it: what it reads now, without moving it on.
 struct Reading(ManualClock);
 
@@ -79,13 +78,14 @@ impl Clock for Reading {
     }
 }
 
-pub struct Kit {
+/// A sealed store in memory, its clock shared with whatever is wired to it.
+pub(crate) struct Kit {
     pub store: Store,
     pub clock: ManualClock,
 }
 
 impl Kit {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let clock = ManualClock::ticking(START);
         let mut keys = KeySettings::new(Arc::new(InMemoryRoot::new().unwrap()));
         keys.clock = Arc::new(Reading(clock.clone()));
@@ -95,7 +95,7 @@ impl Kit {
         }
     }
 
-    pub fn memories(&self, rules: Rules, seed: u64) -> Memories<SqliteLog> {
+    pub(crate) fn memories(&self, rules: Rules, seed: u64) -> Memories<SqliteLog> {
         Memories::new(
             self.store.log(),
             self.store.keyring(),
@@ -105,7 +105,7 @@ impl Kit {
         )
     }
 
-    pub async fn memory(&self, rules: Rules, seed: u64) -> Arc<GlaveMemory<SqliteLog>> {
+    pub(crate) async fn memory(&self, rules: Rules, seed: u64) -> Arc<GlaveMemory<SqliteLog>> {
         Arc::new(
             GlaveMemory::start(self.memories(rules, seed))
                 .await
@@ -114,7 +114,7 @@ impl Kit {
     }
 
     /// A harness on this store, with `memory` when given, and what the model is sent.
-    pub async fn harness<A: Approver>(
+    pub(crate) async fn harness<A: Approver>(
         &self,
         dir: &std::path::Path,
         answers: Vec<Completion>,
@@ -144,7 +144,7 @@ impl Kit {
     }
 }
 
-pub fn settings() -> Settings {
+pub(crate) fn settings() -> Settings {
     let mut settings = Settings::new("test-model", "script");
     settings.person = Some(person());
     settings.agent = Some(agent());
@@ -152,7 +152,7 @@ pub fn settings() -> Settings {
     settings
 }
 
-pub fn answer(text: Option<&str>, calls: Vec<(&str, serde_json::Value)>) -> Completion {
+pub(crate) fn answer(text: Option<&str>, calls: Vec<(&str, serde_json::Value)>) -> Completion {
     let counts = TokenCounts {
         input: 100,
         cache_read: 0,
@@ -191,16 +191,16 @@ pub fn answer(text: Option<&str>, calls: Vec<(&str, serde_json::Value)>) -> Comp
     }
 }
 
-pub fn said(text: &str) -> Completion {
+pub(crate) fn said(text: &str) -> Completion {
     answer(Some(text), Vec::new())
 }
 
-pub fn folder(name: &str) -> TempDir {
+pub(crate) fn folder(name: &str) -> TempDir {
     TempDir::new(&format!("memory-{name}")).unwrap()
 }
 
 /// Every text part of a user message, in order.
-pub fn user_texts(message: &glave_ports::Message) -> Vec<String> {
+pub(crate) fn user_texts(message: &glave_ports::Message) -> Vec<String> {
     match message {
         glave_ports::Message::User { parts } => parts
             .iter()
@@ -214,7 +214,7 @@ pub fn user_texts(message: &glave_ports::Message) -> Vec<String> {
 }
 
 /// Says yes to everything it is asked.
-pub struct Yes;
+pub(crate) struct Yes;
 impl Approver for Yes {
     fn decide(&self, _request: &ApprovalRequest) -> impl Future<Output = Decision> + Send {
         ready(Decision::AllowOnce)

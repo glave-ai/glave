@@ -44,7 +44,7 @@ impl Read {
 }
 
 /// `web_fetch` as `web` sets it up, offering nothing when it is off.
-pub fn web_fetch(web: &WebFile) -> anyhow::Result<Web> {
+pub(super) fn web_fetch(web: &WebFile) -> anyhow::Result<Web> {
     let settings = WebSettings {
         policy: web.policy()?,
         limits: glave_web::Limits::default(),
@@ -53,7 +53,7 @@ pub fn web_fetch(web: &WebFile) -> anyhow::Result<Web> {
 }
 
 /// `web_fetch` as `web` sets it up, as a tool source; nothing when it is off.
-pub fn web_offered(web: &WebFile) -> anyhow::Result<Option<Arc<dyn ToolSource>>> {
+pub(crate) fn web_offered(web: &WebFile) -> anyhow::Result<Option<Arc<dyn ToolSource>>> {
     let web = web_fetch(web)?;
     Ok(web
         .offers_any()

@@ -35,7 +35,7 @@ use crate::setup::off_note;
 use crate::trust::Trust;
 use servers::Running;
 
-pub use settle::web_offered;
+pub(crate) use settle::web_offered;
 
 /// How often glave looks for projects' servers to close.
 const TIDY_EVERY: Duration = Duration::from_secs(60);
@@ -46,7 +46,7 @@ const FOR_OTHERS: &str = "a project's own tools and settings run only for the pe
      computer glave runs on, never for anyone else's threads";
 
 /// What glave runs with itself, which each project's settings go among.
-pub struct Own {
+pub(crate) struct Own {
     /// The levels glave's choices came from, and the constraints.
     pub loaded: Loaded,
     /// glave's own settled choices, its sandbox as it runs: what a project's settings change.
@@ -74,7 +74,7 @@ struct Base {
 }
 
 /// Every project as this glave reads it: see the module's documentation.
-pub struct ProjectFolders {
+pub(crate) struct ProjectFolders {
     /// glave's folder: the person's AGENTS.md.
     home: PathBuf,
     /// What the person decided about each project.
@@ -103,7 +103,7 @@ pub struct ProjectFolders {
 impl ProjectFolders {
     /// The projects of a glave in `home` that runs with `own`. `later`: the person can answer
     /// what a project asks from an app; else no one can.
-    pub fn new(home: PathBuf, own: Own, later: bool) -> Self {
+    pub(crate) fn new(home: PathBuf, own: Own, later: bool) -> Self {
         Self {
             home,
             trust: own.trust,
@@ -129,7 +129,7 @@ impl ProjectFolders {
 
     /// Closes the servers of `projects` no turn has used for 30 minutes, every
     /// [`TIDY_EVERY`], until [`ProjectFolders::close`].
-    pub fn tidy(projects: &Arc<Self>) {
+    pub(crate) fn tidy(projects: &Arc<Self>) {
         let weak = Arc::downgrade(projects);
         let task = tokio::spawn(async move {
             loop {
@@ -151,14 +151,14 @@ impl ProjectFolders {
 
     /// Closes every project's servers no turn of the project has used for 30 minutes, and
     /// those put away that no turn holds any more.
-    pub async fn sweep(&self) {
+    pub(crate) async fn sweep(&self) {
         let closing = self.lock().idle(self.clock.now());
         servers::close(closing).await;
     }
 
     /// Closes every project's servers, and stops closing idle ones. Call when glave ends, once
     /// no turn runs.
-    pub async fn close(&self) {
+    pub(crate) async fn close(&self) {
         let tidying = self
             .tidying
             .lock()
@@ -174,7 +174,7 @@ impl ProjectFolders {
 
     /// What of the project around `folder` glave sets aside, and why, one sentence each, to
     /// tell the person: settings it cannot use, and servers that give way to the person's own.
-    pub async fn set_aside(&self, folder: &Path) -> Vec<String> {
+    pub(crate) async fn set_aside(&self, folder: &Path) -> Vec<String> {
         let root = self.root(folder).await;
         match self.outcome(&root).await {
             Ok(outcome) => [
@@ -189,7 +189,7 @@ impl ProjectFolders {
     /// Settles each project's settings among `loaded`'s levels and constraints, and glave's
     /// own `choices`, from its threads' next turn on, and runs memory by them from its next
     /// read or write: the person's settings as read again.
-    pub fn set_own(&self, loaded: Loaded, choices: Choices) {
+    pub(crate) fn set_own(&self, loaded: Loaded, choices: Choices) {
         self.remember(&loaded, &choices);
         let base = Arc::new(Base { loaded, choices });
         *self.base.write().unwrap_or_else(PoisonError::into_inner) = base;
@@ -228,7 +228,7 @@ impl ProjectFolders {
     }
 
     /// Gives way to the person's own servers named `taken` from now on, as they run now.
-    pub fn set_taken(&self, taken: Vec<String>) {
+    pub(crate) fn set_taken(&self, taken: Vec<String>) {
         *self.taken.write().unwrap_or_else(PoisonError::into_inner) = taken;
     }
 

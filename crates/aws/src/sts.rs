@@ -18,7 +18,7 @@ const VERSION: &str = "2011-06-15";
 const SESSION_NAME: &str = "glave";
 
 /// A role assumed with the cluster's web identity token.
-pub struct WebIdentity {
+pub(crate) struct WebIdentity {
     sts: String,
     role_arn: String,
     token_file: PathBuf,

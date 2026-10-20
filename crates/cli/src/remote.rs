@@ -22,10 +22,10 @@ use crate::session::{converse, pick_thread};
 use crate::terminal::Printer;
 
 /// Where the token that signs this client in comes from.
-pub const TOKEN: &str = "GLAVE_SERVER_TOKEN";
+pub(crate) const TOKEN: &str = "GLAVE_SERVER_TOKEN";
 
 /// The server this run is a client of: `--server`, else the person's own `[server] url`.
-pub async fn chosen(args: &Args) -> anyhow::Result<Option<String>> {
+pub(crate) async fn chosen(args: &Args) -> anyhow::Result<Option<String>> {
     if let Some(url) = &args.server {
         return Ok(Some(url.clone()));
     }
@@ -40,7 +40,7 @@ pub async fn chosen(args: &Args) -> anyhow::Result<Option<String>> {
 }
 
 /// Runs the turn, goal or session `args` ask for on the server at `url`.
-pub async fn run(args: &Args, url: &str) -> anyhow::Result<ExitCode> {
+pub(crate) async fn run(args: &Args, url: &str) -> anyhow::Result<ExitCode> {
     if let Some(flag) = local_only(args) {
         bail!(
             "{flag} chooses how glave runs on this computer: not with --server, whose server chooses"

@@ -20,13 +20,13 @@ use crate::data::Data;
 const COMPUTER: &str = "computer";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Identity {
+pub(crate) struct Identity {
     pub person: PrincipalId,
     pub agent: PrincipalId,
 }
 
 /// Your identity from the store, made and kept there the first time.
-pub async fn load_or_make(store: &Data) -> anyhow::Result<Identity> {
+pub(crate) async fn load_or_make(store: &Data) -> anyhow::Result<Identity> {
     let (person, agent) = store.identity((make()?, make()?)).await?;
     Ok(Identity { person, agent })
 }
@@ -34,7 +34,7 @@ pub async fn load_or_make(store: &Data) -> anyhow::Result<Identity> {
 /// This computer's id from glave's folder, made and saved there the first time. It is created
 /// whole or not at all, so a crash never leaves one glave cannot read; when two glaves make it
 /// at once, both take the one created first.
-pub async fn computer(home: &Path) -> anyhow::Result<ComputerId> {
+pub(crate) async fn computer(home: &Path) -> anyhow::Result<ComputerId> {
     let path = home.join(COMPUTER);
     if let Some(id) = read_computer(&path).await? {
         return Ok(ComputerId::from_uuid(id));

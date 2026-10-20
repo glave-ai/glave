@@ -158,7 +158,7 @@ fn cell(now: Option<Rate>, before: Option<Rate>) -> String {
 
 /// Micros as dollars to the nearest hundredth of a cent, or a dash when a cost was not
 /// reported.
-pub fn dollars(micros: Option<i64>) -> String {
+pub(crate) fn dollars(micros: Option<i64>) -> String {
     micros.map_or_else(
         || "-".to_owned(),
         |micros| {
@@ -195,7 +195,7 @@ fn median_seconds(attempts: &[&Attempt]) -> String {
 type Row = dyn Fn(&[&Attempt]) -> String;
 
 /// One line per finished attempt, for following a run as it goes.
-pub fn line(attempt: &Attempt) -> String {
+pub(crate) fn line(attempt: &Attempt) -> String {
     let result = if attempt.skipped {
         "skip"
     } else if attempt.passed() {

@@ -18,7 +18,7 @@ const ECS: &str = "http://169.254.170.2";
 const NODE_HOSTS: &[&str] = &["169.254.170.2", "169.254.170.23", "[fd00:ec2::23]"];
 
 /// A container credentials endpoint and how the pod proves itself to it.
-pub struct Container {
+pub(crate) struct Container {
     uri: String,
     token: Option<Token>,
 }

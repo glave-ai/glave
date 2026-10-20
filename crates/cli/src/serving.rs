@@ -29,7 +29,7 @@ use crate::data::Data;
 use crate::system::random_uuid;
 
 /// The file the local token is kept in, in glave's folder.
-pub const TOKEN_FILE: &str = "serve.token";
+pub(crate) const TOKEN_FILE: &str = "serve.token";
 
 /// The folder beside the binary a built web app may be in.
 const WEB_FOLDER: &str = "web";
@@ -38,7 +38,7 @@ const WEB_FOLDER: &str = "web";
 static BUILT_IN: Option<Files> = include!(concat!(env!("OUT_DIR"), "/app.rs"));
 
 /// The HTTP listener, bound, with its address and token written for programs here to find.
-pub struct Http {
+pub(crate) struct Http {
     listener: TcpListener,
     signin: SignIn,
     site: Option<Site>,
@@ -49,7 +49,7 @@ pub struct Http {
 
 /// Listens on `address` for the server `args` choose, and writes its address and a new local
 /// token where programs here find them.
-pub async fn open(args: &Args, address: SocketAddr) -> anyhow::Result<Http> {
+pub(crate) async fn open(args: &Args, address: SocketAddr) -> anyhow::Result<Http> {
     let token = LocalToken::new(random()?);
     let signin = if args.issuers.is_empty() {
         SignIn::local(token.clone(), Box::new(SystemClock))
@@ -89,7 +89,11 @@ pub async fn open(args: &Args, address: SocketAddr) -> anyhow::Result<Http> {
 impl Http {
     /// Serves `server` until `stop` completes, then cancels its running turns. The token and
     /// address go with it.
-    pub async fn serve(self, server: Glave, stop: impl Future<Output = ()>) -> anyhow::Result<()> {
+    pub(crate) async fn serve(
+        self,
+        server: Glave,
+        stop: impl Future<Output = ()>,
+    ) -> anyhow::Result<()> {
         if std::io::stderr().is_terminal() {
             // Shown only to a person at a terminal: a service's error output often ends up in
             // a log. The code is good once, for five minutes, so the link is no key left behind.
@@ -135,7 +139,7 @@ fn site(args: &Args) -> anyhow::Result<Option<Site>> {
 
 /// The browsers a server signs in, when it serves over HTTP: kept in the store, in the
 /// browsers ledger of `person`'s personal project, so a browser's session outlives a restart.
-pub async fn browsers(
+pub(crate) async fn browsers(
     args: &Args,
     store: &Data,
     person: PrincipalId,
@@ -173,7 +177,7 @@ fn random() -> anyhow::Result<[u8; LOCAL_BYTES]> {
 
 /// Writes `contents` to `path`, readable and writable only by you, replacing any earlier one
 /// whole.
-pub fn keep(path: &Path, contents: &str) -> anyhow::Result<()> {
+pub(crate) fn keep(path: &Path, contents: &str) -> anyhow::Result<()> {
     glave_ports::file::replace(path, contents.as_bytes())
         .with_context(|| format!("could not write {}", path.display()))
 }

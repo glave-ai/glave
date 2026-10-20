@@ -22,7 +22,7 @@ use crate::token::Token;
 /// Where glave and its identity go inside a worker.
 const HOME: &str = "/opt/glave";
 /// The label every worker container carries, so leftovers can be found.
-pub const LABEL: &str = "glave.worker";
+pub(super) const LABEL: &str = "glave.worker";
 /// Bytes a stream link holds ahead of a slow reader.
 const PIPE: usize = 256 * 1024;
 /// The most processes one worker may run at once.

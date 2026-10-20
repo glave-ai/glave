@@ -19,7 +19,7 @@ use super::issuer::{AUDIENCE, Issuer, fixed_clock};
 use super::setup::{Tested, scope};
 
 /// A session server listening over HTTP until it is closed.
-pub struct Served {
+pub(crate) struct Served {
     pub address: SocketAddr,
     pub url: String,
     stop: oneshot::Sender<()>,
@@ -28,7 +28,10 @@ pub struct Served {
 
 /// Serves `server` over HTTP, trusting `issuer` for `AUDIENCE`, with `ada` of that issuer
 /// working in the server's own project beside its person.
-pub async fn serve_http<L: EventLog + 'static>(server: Tested<L>, issuer: &Issuer) -> Served {
+pub(crate) async fn serve_http<L: EventLog + 'static>(
+    server: Tested<L>,
+    issuer: &Issuer,
+) -> Served {
     let mut home = server.home_project().await.unwrap();
     let ada = glave_session::signin::person(&issuer.url, "ada").unwrap();
     home.members.push(glave_event::Principal::person(ada));
@@ -47,7 +50,7 @@ pub async fn serve_http<L: EventLog + 'static>(server: Tested<L>, issuer: &Issue
 
 /// Serves `server` over HTTP on 127.0.0.1, each request signed in through `signin`, with the
 /// web app in `site` beside it.
-pub async fn serve_with<L: EventLog + 'static>(
+pub(crate) async fn serve_with<L: EventLog + 'static>(
     server: Tested<L>,
     signin: SignIn,
     site: Option<Site>,
@@ -74,14 +77,14 @@ pub async fn serve_with<L: EventLog + 'static>(
 
 impl Served {
     /// Stops the server and waits until it has.
-    pub async fn close(self) {
+    pub(crate) async fn close(self) {
         let _ = self.stop.send(());
         self.serving.await.unwrap().unwrap();
     }
 }
 
 /// A client of one served session API, signed in with one token.
-pub struct Web {
+pub(crate) struct Web {
     http: reqwest::Client,
     url: String,
     pub token: Option<String>,
@@ -89,7 +92,7 @@ pub struct Web {
 }
 
 /// What came back for one request.
-pub struct Answered {
+pub(crate) struct Answered {
     pub status: u16,
     pub content_type: String,
     pub www_authenticate: Option<String>,
@@ -98,7 +101,7 @@ pub struct Answered {
 }
 
 impl Web {
-    pub fn new(served: &Served, token: Option<String>) -> Self {
+    pub(crate) fn new(served: &Served, token: Option<String>) -> Self {
         Self {
             http: reqwest::Client::new(),
             url: served.url.clone(),
@@ -108,13 +111,13 @@ impl Web {
     }
 
     /// `request` as a JSON-RPC message with the next id, and that id.
-    pub fn message(&mut self, request: &Request) -> (Value, u64) {
+    pub(crate) fn message(&mut self, request: &Request) -> (Value, u64) {
         self.next_id += 1;
         (rpc::message(self.next_id, request), self.next_id)
     }
 
     /// Posts `message`, naming `method` in the Glave-Method header when given.
-    pub async fn open(&self, message: &Value, method: Option<&str>) -> reqwest::Response {
+    pub(crate) async fn open(&self, message: &Value, method: Option<&str>) -> reqwest::Response {
         let mut post = self.http.post(&self.url).body(message.to_string());
         if let Some(token) = &self.token {
             post = post.bearer_auth(token);
@@ -126,7 +129,7 @@ impl Web {
     }
 
     /// Posts `message` and reads the whole answer.
-    pub async fn post(&self, message: &Value) -> Answered {
+    pub(crate) async fn post(&self, message: &Value) -> Answered {
         let method = message["method"].as_str().map(str::to_owned);
         let response = self.open(message, method.as_deref()).await;
         let header = |name: &str| {
@@ -159,7 +162,7 @@ impl Web {
     }
 
     /// Calls `request` and returns its one answer.
-    pub async fn call(&mut self, request: &Request) -> Value {
+    pub(crate) async fn call(&mut self, request: &Request) -> Value {
         let (message, _) = self.message(request);
         let answered = self.post(&message).await;
         answered.messages.into_iter().next().unwrap()
@@ -167,7 +170,7 @@ impl Web {
 }
 
 /// Server-sent events, read as they arrive.
-pub struct Events {
+pub(crate) struct Events {
     response: reqwest::Response,
     decoder: SseDecoder,
     /// Events decoded and not yet read.
@@ -175,7 +178,7 @@ pub struct Events {
 }
 
 impl Events {
-    pub fn new(response: reqwest::Response) -> Self {
+    pub(crate) fn new(response: reqwest::Response) -> Self {
         Self {
             response,
             decoder: SseDecoder::default(),
@@ -184,7 +187,7 @@ impl Events {
     }
 
     /// The next event's message, or `None` at the end of the stream.
-    pub async fn next(&mut self) -> Option<Value> {
+    pub(crate) async fn next(&mut self) -> Option<Value> {
         loop {
             if let Some(data) = self.ready.pop_front() {
                 return Some(serde_json::from_str(&data).unwrap());
@@ -202,7 +205,7 @@ impl Events {
     }
 
     /// The whole answer, as text, when it is not a stream.
-    pub async fn rest(mut self) -> String {
+    pub(crate) async fn rest(mut self) -> String {
         let mut text = Vec::new();
         while let Some(chunk) = self.response.chunk().await.unwrap() {
             text.extend_from_slice(&chunk);

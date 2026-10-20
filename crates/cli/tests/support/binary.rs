@@ -10,7 +10,7 @@ use glave_provider_openai::fake::FakeServer;
 use serde_json::Value;
 
 /// A project folder and a glave home for one test, inside the system temp folder.
-pub struct Place {
+pub(crate) struct Place {
     pub project: PathBuf,
     pub home: PathBuf,
     /// The folder both are in, removed when the place drops; none for a place made of
@@ -18,7 +18,7 @@ pub struct Place {
     pub _folder: Option<TempDir>,
 }
 
-pub fn place(name: &str) -> Place {
+pub(crate) fn place(name: &str) -> Place {
     // Named without a prefix: a longer path would be too long for its server's socket.
     let dir = TempDir::new(name).unwrap();
     let project = dir.join("project");
@@ -32,7 +32,7 @@ pub fn place(name: &str) -> Place {
 }
 
 /// `glave` with `args`, talking only to `server`, with nothing from the person's own setup.
-pub fn glave(place: &Place, server: &FakeServer, args: &[&str], stdin: &str) -> Output {
+pub(crate) fn glave(place: &Place, server: &FakeServer, args: &[&str], stdin: &str) -> Output {
     let mut child = start(place, server, args);
     child
         .stdin
@@ -44,13 +44,13 @@ pub fn glave(place: &Place, server: &FakeServer, args: &[&str], stdin: &str) -> 
 }
 
 /// `glave` started with `args`, still running, and stopped when dropped.
-pub fn start(place: &Place, server: &FakeServer, args: &[&str]) -> Running {
+pub(crate) fn start(place: &Place, server: &FakeServer, args: &[&str]) -> Running {
     start_with(place, server, args, &[])
 }
 
 /// `glave` started with `args` and the variables `env`, still running, and stopped when
 /// dropped.
-pub fn start_with(
+pub(crate) fn start_with(
     place: &Place,
     server: &FakeServer,
     args: &[&str],
@@ -74,7 +74,7 @@ pub fn start_with(
     Running::new(child)
 }
 
-pub fn text(output: &Output) -> String {
+pub(crate) fn text(output: &Output) -> String {
     format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
@@ -83,7 +83,7 @@ pub fn text(output: &Output) -> String {
 }
 
 /// The text of every message of `role` in a request the model received.
-pub fn said(body: &Value, role: &str) -> Vec<String> {
+pub(crate) fn said(body: &Value, role: &str) -> Vec<String> {
     body["messages"]
         .as_array()
         .unwrap()

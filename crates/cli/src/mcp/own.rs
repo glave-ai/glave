@@ -21,7 +21,7 @@ use crate::terminal::Printer;
 /// One of the person's servers as their settings describe it: started again when this
 /// changes.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Wanted {
+pub(crate) struct Wanted {
     name: String,
     config: ServerConfig,
     untrusted: bool,
@@ -30,7 +30,7 @@ pub struct Wanted {
 /// What the person's settings turn on: the servers of `home`'s `mcp.json` that `chosen`
 /// names, or every one, those `constraints` allow, and how far each is trusted. With no
 /// settings file there are none. `through_gateway`: the person uses a gateway's catalog.
-pub async fn wanted(
+pub(crate) async fn wanted(
     home: &Path,
     chosen: Option<&Chosen<Vec<String>>>,
     constraints: &Constraints,
@@ -85,7 +85,7 @@ struct Running {
 
 /// The person's own servers, for their threads everywhere; first the catalog of the gateway
 /// they use, when there is one.
-pub struct Servers {
+pub(crate) struct Servers {
     catalog: Option<Arc<McpServer>>,
     running: Mutex<Running>,
     /// Where they start: the person's home folder.
@@ -97,7 +97,7 @@ pub struct Servers {
 
 impl Servers {
     /// Starts `wanted` in `root`, after the catalog of the `remote` gateway, when there is one.
-    pub fn start(
+    pub(crate) fn start(
         wanted: Vec<Wanted>,
         root: &Path,
         remote: Option<&Remote>,
@@ -140,7 +140,7 @@ impl Servers {
 
     /// Runs `wanted` from now on: keeps the servers that stay the same, starts those added or
     /// changed, and puts away those removed or changed. Whether anything changed.
-    pub fn reconcile(&self, wanted: Vec<Wanted>) -> bool {
+    pub(crate) fn reconcile(&self, wanted: Vec<Wanted>) -> bool {
         let mut running = self.lock();
         let before = std::mem::take(&mut running.servers);
         let unchanged = before.len() == wanted.len()
@@ -173,7 +173,7 @@ impl Servers {
     }
 
     /// Closes the servers put away that no turn uses any more.
-    pub async fn tidy(&self) {
+    pub(crate) async fn tidy(&self) {
         let idle: Vec<Arc<McpServer>> = {
             let mut running = self.lock();
             let (busy, idle) = std::mem::take(&mut running.retired)
@@ -186,7 +186,7 @@ impl Servers {
     }
 
     /// Where glave's servers start: the person's, and each project's.
-    pub fn processes(&self) -> &Processes {
+    pub(crate) fn processes(&self) -> &Processes {
         &self.processes
     }
 
@@ -202,12 +202,12 @@ impl Servers {
 
     /// The servers as tool sources, the catalog first, then in the order of their names,
     /// then their resources.
-    pub fn sources(&self) -> Vec<Arc<dyn ToolSource>> {
+    pub(crate) fn sources(&self) -> Vec<Arc<dyn ToolSource>> {
         super::sources(&self.all())
     }
 
     /// The servers' names, in order.
-    pub fn names(&self) -> Vec<String> {
+    pub(crate) fn names(&self) -> Vec<String> {
         self.all()
             .iter()
             .map(|server| server.name().to_owned())
@@ -215,7 +215,7 @@ impl Servers {
     }
 
     /// Before the first turn only: waits for every server to start, and says why any did not.
-    pub async fn report(&self, printer: &mut Printer) {
+    pub(crate) async fn report(&self, printer: &mut Printer) {
         if self.reported.swap(true, Ordering::SeqCst) {
             return;
         }
@@ -237,7 +237,7 @@ impl Servers {
     }
 
     /// Closes every server side by side, so one slow to exit holds up no other.
-    pub async fn close(&self) {
+    pub(crate) async fn close(&self) {
         let retired = std::mem::take(&mut self.lock().retired);
         super::close(&[self.all(), retired].concat()).await;
     }

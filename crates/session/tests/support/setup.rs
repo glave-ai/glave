@@ -28,16 +28,16 @@ use tokio::sync::Notify;
 use super::script::{ScriptedModel, Seen};
 
 /// A test server on the log `L`.
-pub type Tested<L = InMemoryLog> = Server<ScriptedModel, L, InMemoryBlobs>;
+pub(crate) type Tested<L = InMemoryLog> = Server<ScriptedModel, L, InMemoryBlobs>;
 
 /// A fresh folder for the test called `name`, removed when it drops.
-pub fn folder(name: &str) -> TempDir {
+pub(crate) fn folder(name: &str) -> TempDir {
     TempDir::new(&format!("session-{name}")).unwrap()
 }
 
 /// The SQLite store at `database`, sealed under a key file beside it, so opening it again
 /// reads what was written before.
-pub async fn sqlite(database: &Path) -> Store {
+pub(crate) async fn sqlite(database: &Path) -> Store {
     let root = KeyFileRoot::open_or_create(database.with_extension("key")).unwrap();
     Store::open(database, KeySettings::new(Arc::new(root)))
         .await
@@ -45,7 +45,7 @@ pub async fn sqlite(database: &Path) -> Store {
 }
 
 /// The organization and project every test server serves.
-pub fn scope() -> Scope {
+pub(crate) fn scope() -> Scope {
     Scope::glaves_own(
         OrgId::from_uuid(uuid::Uuid::from_u128(1)),
         ProjectId::from_uuid(uuid::Uuid::from_u128(2)),
@@ -53,7 +53,7 @@ pub fn scope() -> Scope {
 }
 
 /// What a test server is built from.
-pub struct Setup {
+pub(crate) struct Setup {
     pub answers: Vec<Completion>,
     /// Each answer waits here until the test lets it through.
     pub gate: Option<Arc<Notify>>,
@@ -95,7 +95,7 @@ pub struct Setup {
 
 impl Setup {
     /// A server answering `answers` in the product's defaults, with clients to ask.
-    pub fn new(answers: Vec<Completion>) -> Self {
+    pub(crate) fn new(answers: Vec<Completion>) -> Self {
         Self {
             answers,
             gate: None,
@@ -121,7 +121,7 @@ impl Setup {
     }
 
     /// A server answering `answers` in ask mode, so commands ask, with `answering` to ask.
-    pub fn asking(answers: Vec<Completion>, answering: Answering) -> Self {
+    pub(crate) fn asking(answers: Vec<Completion>, answering: Answering) -> Self {
         let mut setup = Self::new(answers);
         setup.answering = answering;
         setup.settings.approval = ApprovalMode::Ask;
@@ -129,14 +129,14 @@ impl Setup {
     }
 
     /// The server on a log of its own; see `build_on`.
-    pub async fn build(self, dir: &Path) -> (Tested, Seen) {
+    pub(crate) async fn build(self, dir: &Path) -> (Tested, Seen) {
         self.build_on(dir, InMemoryLog::new()).await
     }
 
     /// The server on `log`, its own project a project whose folder is a repository made in the
     /// fresh folder `name`, with worktrees kept beside it, so its tasks work on copies of it;
     /// that repository; and the folder, removed when it drops.
-    pub async fn build_in_repository<L: EventLog + 'static>(
+    pub(crate) async fn build_in_repository<L: EventLog + 'static>(
         mut self,
         name: &str,
         log: L,
@@ -150,7 +150,11 @@ impl Setup {
 
     /// The server on `log`, its own project a project whose folder is `dir`, and every request
     /// its model receives. Threads in projects with no folder get scratch folders beside `dir`.
-    pub async fn build_on<L: EventLog + 'static>(self, dir: &Path, log: L) -> (Tested<L>, Seen) {
+    pub(crate) async fn build_on<L: EventLog + 'static>(
+        self,
+        dir: &Path,
+        log: L,
+    ) -> (Tested<L>, Seen) {
         let provider = ScriptedModel::new(self.answers);
         let provider = match self.gate {
             Some(gate) => provider.gated(gate),
@@ -250,13 +254,13 @@ async fn keep_folder<L: EventLog>(log: &L, home: Scope, info: &WorkspaceInfo) {
 }
 
 /// The server of `Setup::asking`.
-pub async fn server(dir: &Path, answers: Vec<Completion>, answering: Answering) -> Tested {
+pub(crate) async fn server(dir: &Path, answers: Vec<Completion>, answering: Answering) -> Tested {
     Setup::asking(answers, answering).build(dir).await.0
 }
 
 /// A log in memory that two servers can share, as two processes share a database.
 #[derive(Clone, Default)]
-pub struct Shared(pub Arc<InMemoryLog>);
+pub(crate) struct Shared(pub Arc<InMemoryLog>);
 
 impl EventLog for Shared {
     fn append(

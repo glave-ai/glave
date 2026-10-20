@@ -24,7 +24,7 @@ use crate::error::EvalError;
 use crate::task::Task;
 
 /// The person every attempt works for.
-pub fn person() -> Result<PrincipalId, EvalError> {
+pub(crate) fn person() -> Result<PrincipalId, EvalError> {
     PrincipalId::try_from(uuid::Uuid::from_u128(
         0x0192_f5c0_0000_7000_8000_0000_0000_0001,
     ))
@@ -36,7 +36,7 @@ fn org() -> OrgId {
 }
 
 /// The project named `name`: the first thread's (`None`) is the one attempts always used.
-pub fn project(name: Option<&str>) -> Scope {
+pub(crate) fn project(name: Option<&str>) -> Scope {
     let project = match name {
         None => 2,
         Some(name) => name.bytes().fold(0x0100_u128, |sum, byte| {
@@ -57,7 +57,7 @@ fn setting(name: Option<&str>) -> ProjectMemory {
 }
 
 /// An attempt's store, and its memory when memory is on.
-pub struct Remembering {
+pub(crate) struct Remembering {
     pub store: Store,
     pub memory: Option<Arc<GlaveMemory<SqliteLog>>>,
     /// Every project the attempt uses, the person's own first.
@@ -81,7 +81,7 @@ pub struct MemoryReport {
 
 impl Remembering {
     /// The store for `task`'s attempt, with memory when `on`, and its seeded memories saved.
-    pub async fn open(task: &Task, on: bool) -> Result<Self, EvalError> {
+    pub(crate) async fn open(task: &Task, on: bool) -> Result<Self, EvalError> {
         let fail = |error: &dyn std::fmt::Display| EvalError::Setup(format!("memory: {error}"));
         let root = InMemoryRoot::new().map_err(|e| fail(&e))?;
         let store =
@@ -139,7 +139,7 @@ impl Remembering {
 
     /// Tidies every project's memory now, on `model`, whether or not it is due. What each run
     /// did, for the transcript.
-    pub async fn tidy<P: ModelProvider>(
+    pub(crate) async fn tidy<P: ModelProvider>(
         &self,
         model: &Tidier<P>,
     ) -> Result<Vec<String>, EvalError> {
@@ -162,7 +162,7 @@ impl Remembering {
     }
 
     /// What the memory ledgers hold now.
-    pub async fn report(&self) -> Result<MemoryReport, EvalError> {
+    pub(crate) async fn report(&self) -> Result<MemoryReport, EvalError> {
         let fail = |error: &dyn std::fmt::Display| EvalError::Setup(format!("memory: {error}"));
         let ledger = Reserved::Memory.id();
         let mut report = MemoryReport::default();

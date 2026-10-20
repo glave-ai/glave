@@ -21,7 +21,7 @@ const DEFAULT_LEVEL: LevelFilter = LevelFilter::INFO;
 
 /// Logs and telemetry while this lives; flushed and stopped when it is dropped.
 #[must_use = "telemetry stops when this is dropped"]
-pub struct Telemetry {
+pub(crate) struct Telemetry {
     _guard: Option<DefaultGuard>,
     #[cfg(feature = "otlp")]
     _otlp: Option<otlp::Providers>,
@@ -29,7 +29,7 @@ pub struct Telemetry {
 
 impl Telemetry {
     /// Nothing recorded.
-    pub fn off() -> Self {
+    pub(crate) fn off() -> Self {
         Self {
             _guard: None,
             #[cfg(feature = "otlp")]
@@ -39,14 +39,14 @@ impl Telemetry {
 }
 
 /// Starts recording glave's spans to the file `log`, and to the collector `choices` name.
-pub fn start_for(log: Option<&Path>, choices: &Choices) -> anyhow::Result<Telemetry> {
+pub(crate) fn start_for(log: Option<&Path>, choices: &Choices) -> anyhow::Result<Telemetry> {
     let otlp = choices.telemetry.as_ref();
     start(log, otlp.map(|chosen| chosen.value.as_str()))
 }
 
 /// Starts recording glave's spans to the file `log`, and sending them to the collector at
 /// `otlp`, as asked; nothing when neither is.
-pub fn start(log: Option<&Path>, otlp: Option<&str>) -> anyhow::Result<Telemetry> {
+pub(crate) fn start(log: Option<&Path>, otlp: Option<&str>) -> anyhow::Result<Telemetry> {
     if log.is_none() && otlp.is_none() {
         return Ok(Telemetry::off());
     }

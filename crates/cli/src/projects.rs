@@ -34,7 +34,11 @@ fn new_project(kind: ProjectKind, name: String, owner: Principal) -> anyhow::Res
 
 /// The scope of the project `folder` leads to, for `person`: found by its path, else by
 /// the repository's `origin` remote, else made as theirs.
-pub async fn here(store: &Data, folder: &Path, person: PrincipalId) -> anyhow::Result<Scope> {
+pub(crate) async fn here(
+    store: &Data,
+    folder: &Path,
+    person: PrincipalId,
+) -> anyhow::Result<Scope> {
     let org = org(store).await?;
     let owner = Principal::person(person);
     let canonical = tokio::fs::canonicalize(folder)
@@ -55,7 +59,7 @@ pub async fn here(store: &Data, folder: &Path, person: PrincipalId) -> anyhow::R
 }
 
 /// The scope of `person`'s personal project, made the first time.
-pub async fn personal(store: &Data, person: PrincipalId) -> anyhow::Result<Scope> {
+pub(crate) async fn personal(store: &Data, person: PrincipalId) -> anyhow::Result<Scope> {
     let org = org(store).await?;
     let new = new_project(
         ProjectKind::Personal,
@@ -69,7 +73,7 @@ pub async fn personal(store: &Data, person: PrincipalId) -> anyhow::Result<Scope
 
 /// The scope glave keeps a record of its own under `name`, such as the gateway's, which no
 /// person works in.
-pub async fn named(store: &Data, name: &str) -> anyhow::Result<Scope> {
+pub(crate) async fn named(store: &Data, name: &str) -> anyhow::Result<Scope> {
     let org = org(store).await?;
     let new = new_project(ProjectKind::Project, name.to_owned(), Principal::glave())?;
     let keys = [FolderKey::Path(name.to_owned())];

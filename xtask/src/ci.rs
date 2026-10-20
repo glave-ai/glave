@@ -11,10 +11,10 @@ use crate::lock::{self, Mode};
 
 /// The feature that builds the web app into glave. It needs the app built first, so the Rust
 /// checks run with every feature but this one, and the web checks test it.
-pub const BUILT_IN_APP: (&str, &str) = ("glave", "web");
+pub(crate) const BUILT_IN_APP: (&str, &str) = ("glave", "web");
 
 /// Runs every check in order and stops at the first failure.
-pub fn run() -> Result<(), String> {
+pub(crate) fn run() -> Result<(), String> {
     let _guard = lock::acquire(Mode::Shared)?;
     step("format", || cmd::run("cargo", &["fmt", "--all", "--check"]))?;
     step("secrets", crate::secrets::check)?;

@@ -11,7 +11,7 @@ use rustix::termios::{LocalModes, OptionalActions, Termios, tcgetattr, tcsetattr
 use crate::input::Input;
 
 /// Said when a token was given as an argument, without repeating it.
-pub const NOT_AN_ARGUMENT: &str = "that looks like a token. glave never takes one as an \
+pub(super) const NOT_AN_ARGUMENT: &str = "that looks like a token. glave never takes one as an \
      argument, since it would stay in your shell's history and show in the list of processes: \
      revoke it on its host, then run glave connect <address> and paste a new one when asked";
 
@@ -27,13 +27,13 @@ const PREFIXES: [&str; 7] = [
 ];
 
 /// Whether `word` looks like a token rather than an address.
-pub fn looks_like(word: &str) -> bool {
+pub(super) fn looks_like(word: &str) -> bool {
     PREFIXES.iter().any(|prefix| word.starts_with(prefix))
 }
 
 /// The token for `url` from standard input: on a terminal, asked for with its echo off; else
 /// the first line piped in.
-pub async fn read(url: &str) -> anyhow::Result<Secret> {
+pub(super) async fn read(url: &str) -> anyhow::Result<Secret> {
     let terminal = std::io::stdin().is_terminal();
     // Echo off before the question, and anything typed before it thrown away.
     let hidden = terminal.then(Hidden::on).flatten();

@@ -24,7 +24,7 @@ use glave_config::policy::{Backend, Choices, Constraints, On, WorkersFile};
 /// Threads on workers, when `on` is `cloud`: what the session server needs, and the workers
 /// themselves, to remove any left at the end. Tasks too work on workers only then; otherwise
 /// on a worktree here, like any thread asking for a copy.
-pub async fn workers(
+pub(crate) async fn workers(
     choices: &Choices,
     constraints: &Constraints,
     folder: &Path,
@@ -144,7 +144,7 @@ fn inside(folder: &Path, name: &str) -> Option<PathBuf> {
 
 /// Releases every worker the session's threads work on, says what each left, and removes any
 /// worker still running.
-pub async fn release(server: &Glave, workers: &WorkerComputers) {
+pub(crate) async fn release(server: &Glave, workers: &WorkerComputers) {
     for (thread, released) in server.release_workers().await {
         match released {
             Ok(left) => {

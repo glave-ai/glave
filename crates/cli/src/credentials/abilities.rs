@@ -38,7 +38,7 @@ const ALL: [Ability; 4] = [
 /// What glave can do with `credential` now: a GitHub App's token as GitHub says of the app's
 /// installations, a classic GitHub token as GitHub says of its scopes (else as it said when it
 /// was connected), any other as its host said when it was connected.
-pub async fn now(http: &Http, credential: &CredentialConnected) -> Option<Vec<Ability>> {
+pub(super) async fn now(http: &Http, credential: &CredentialConnected) -> Option<Vec<Ability>> {
     let token = &credential.token;
     if credential.forge == Forge::Github && token.expose().starts_with("ghu_") {
         let expired = credential
@@ -85,7 +85,7 @@ async fn asking(http: &Http, url: &str, token: &Secret) -> Option<reqwest::Respo
 
 /// A classic GitHub token's scopes that glave reads, from the headers of GitHub's answer to
 /// it. None for any other token: for others the header says nothing.
-pub fn github_scopes(headers: &HeaderMap, token: &Secret) -> Option<Vec<String>> {
+pub(super) fn github_scopes(headers: &HeaderMap, token: &Secret) -> Option<Vec<String>> {
     let header = headers.get("x-oauth-scopes")?.to_str().ok()?;
     classic(token).then(|| known(header.split(',').map(str::trim)))
 }
@@ -99,7 +99,7 @@ fn known<'a>(scopes: impl Iterator<Item = &'a str>) -> Vec<String> {
 }
 
 /// A GitLab token's scopes, as GitLab says of the token it is asked with.
-pub async fn gitlab_scopes(http: &Http, url: &str, token: &Secret) -> Option<Vec<String>> {
+pub(super) async fn gitlab_scopes(http: &Http, url: &str, token: &Secret) -> Option<Vec<String>> {
     let asked = format!("{url}/api/v4/personal_access_tokens/self");
     let response = http
         .to(&asked)
@@ -117,7 +117,7 @@ pub async fn gitlab_scopes(http: &Http, url: &str, token: &Secret) -> Option<Vec
 
 /// What a GitHub App's user `token` lets glave do at GitHub at `url`: what the app may do on
 /// the installations the person reaches, all of them together; nothing before it is installed.
-pub async fn installations(http: &Http, url: &str, token: &Secret) -> Option<Vec<Ability>> {
+pub(super) async fn installations(http: &Http, url: &str, token: &Secret) -> Option<Vec<Ability>> {
     let asked = format!("{}/user/installations", api(url));
     let answer = read(asking(http, &asked, token).await?).await?;
     let mut can = Vec::new();
@@ -148,7 +148,7 @@ pub async fn installations(http: &Http, url: &str, token: &Secret) -> Option<Vec
 /// What glave can do on `forge` with a token the host said may do `scopes`; none when it did
 /// not say, or said only what glave cannot tell apart (a classic token for public
 /// repositories alone).
-pub fn abilities(forge: Forge, scopes: Option<&[String]>) -> Option<Vec<Ability>> {
+pub(super) fn abilities(forge: Forge, scopes: Option<&[String]>) -> Option<Vec<Ability>> {
     let scopes = scopes?;
     let has = |scope: &str| scopes.iter().any(|given| given == scope);
     let can: &[Ability] = match forge {

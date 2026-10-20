@@ -11,7 +11,7 @@ use crate::error::{DecodeError, EncodeError, InvalidValue};
 use crate::id::{EventId, ThreadId};
 
 /// The envelope version this crate reads and writes.
-pub const ENVELOPE_VERSION: u32 = 1;
+pub(crate) const ENVELOPE_VERSION: u32 = 1;
 
 /// An event's position in its thread, starting at 1 and assigned gap-free by the thread's
 /// single writer. This is the order of events; time never is.

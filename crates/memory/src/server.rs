@@ -66,7 +66,7 @@ impl<L> Clone for MemoryServer<L> {
 }
 
 impl<L: EventLog + 'static> MemoryServer<L> {
-    pub fn new(memories: Memories<L>) -> Self {
+    pub(crate) fn new(memories: Memories<L>) -> Self {
         Self { memories }
     }
 }

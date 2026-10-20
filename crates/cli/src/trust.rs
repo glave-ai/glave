@@ -15,7 +15,7 @@ use crate::data::{Data, DataLog};
 
 /// The person's trust ledger, in the store.
 #[derive(Clone)]
-pub struct Trust {
+pub(crate) struct Trust {
     log: DataLog,
     scope: Scope,
     person: PrincipalId,
@@ -23,7 +23,7 @@ pub struct Trust {
 
 impl Trust {
     /// The trust ledger of `person`, in their personal project in `store`.
-    pub async fn open(store: &Data, person: PrincipalId) -> anyhow::Result<Self> {
+    pub(crate) async fn open(store: &Data, person: PrincipalId) -> anyhow::Result<Self> {
         let scope = crate::projects::personal(store, person).await?;
         Ok(Self {
             log: store.log(),
@@ -33,13 +33,13 @@ impl Trust {
     }
 
     /// Every project's latest decisions.
-    pub async fn record(&self) -> anyhow::Result<Record> {
+    pub(crate) async fn record(&self) -> anyhow::Result<Record> {
         Ok(self.read().await?.0)
     }
 
     /// Keeps `entry`, replacing what was decided about its project: appended after the
     /// ledger's last event, read again and tried again when another process wrote first.
-    pub async fn keep(&self, mut entry: Entry) -> anyhow::Result<()> {
+    pub(crate) async fn keep(&self, mut entry: Entry) -> anyhow::Result<()> {
         entry.by = Some(Principal::person(self.person));
         let (this, entry) = (self, &entry);
         append_retrying(
@@ -91,7 +91,7 @@ fn event(entry: &Entry, seq: u64) -> anyhow::Result<RawEvent> {
 #[cfg(test)]
 impl Trust {
     /// A new person's trust ledger on a store in memory; and the store.
-    pub async fn in_memory() -> anyhow::Result<(Data, Self)> {
+    pub(crate) async fn in_memory() -> anyhow::Result<(Data, Self)> {
         let root = glave_keys::InMemoryRoot::new()?;
         let keys = glave_keys::KeySettings::new(std::sync::Arc::new(root));
         let store = Data::Sqlite(glave_store_sqlite::Store::open_in_memory(keys)?);

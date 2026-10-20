@@ -26,7 +26,7 @@ fn folders(root: &Path) -> anyhow::Result<Vec<PathBuf>> {
 }
 
 /// The commands for the project at `root`, with a warning printed for each one skipped.
-pub async fn find(root: &Path) -> anyhow::Result<Vec<Command>> {
+pub(crate) async fn find(root: &Path) -> anyhow::Result<Vec<Command>> {
     let FoundCommands {
         mut commands,
         mut warnings,
@@ -49,7 +49,7 @@ pub async fn find(root: &Path) -> anyhow::Result<Vec<Command>> {
 }
 
 /// `glave commands`: every command that can be typed here, and where each comes from.
-pub async fn list() -> anyhow::Result<ExitCode> {
+pub(crate) async fn list() -> anyhow::Result<ExitCode> {
     let root = std::env::current_dir()?;
     let commands = find(&root).await?;
     if commands.is_empty() {

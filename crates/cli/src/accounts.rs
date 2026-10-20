@@ -9,10 +9,10 @@ use glave_ports::{OsEntropy, SystemClock};
 use crate::data::{Data, DataLog};
 
 /// The person's accounts, in the store.
-pub type Ledger = glave_session::AccountLedger<DataLog>;
+pub(crate) type Ledger = glave_session::AccountLedger<DataLog>;
 
 /// The ledger of `person`, in their personal project in `store`.
-pub async fn open(store: &Data, person: PrincipalId) -> anyhow::Result<Ledger> {
+pub(crate) async fn open(store: &Data, person: PrincipalId) -> anyhow::Result<Ledger> {
     let scope = crate::projects::personal(store, person).await?;
     Ok(Ledger::new(
         store.log(),
@@ -25,7 +25,7 @@ pub async fn open(store: &Data, person: PrincipalId) -> anyhow::Result<Ledger> {
 }
 
 /// Random bytes for a new id, from the operating system.
-pub fn random() -> anyhow::Result<[u8; 10]> {
+pub(crate) fn random() -> anyhow::Result<[u8; 10]> {
     let mut bytes = [0u8; 10];
     getrandom::fill(&mut bytes)
         .map_err(|e| anyhow::anyhow!("could not get random bytes for a new id: {e}"))?;
@@ -34,7 +34,7 @@ pub fn random() -> anyhow::Result<[u8; 10]> {
 
 /// A new person's ledger, on a store in memory.
 #[cfg(test)]
-pub async fn in_memory() -> anyhow::Result<Ledger> {
+pub(crate) async fn in_memory() -> anyhow::Result<Ledger> {
     use glave_ports::Clock as _;
     let root = glave_keys::InMemoryRoot::new()?;
     let keys = glave_keys::KeySettings::new(Arc::new(root));

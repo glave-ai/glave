@@ -21,9 +21,9 @@ use crate::harness::{Harness, HarnessError, Thread};
 use crate::tools::workspace::Workspace;
 
 /// Where a worker's attachments go, in its workspace.
-pub const ATTACHMENTS: &str = ".glave/in";
+pub(crate) const ATTACHMENTS: &str = ".glave/in";
 /// Where the model puts files to hand back, in its workspace; never committed.
-pub const HAND_BACK: &str = ".glave/out";
+pub(crate) const HAND_BACK: &str = ".glave/out";
 /// The most files handed back from one worker.
 const MAX_HANDED_BACK: usize = 100;
 

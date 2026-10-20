@@ -24,7 +24,7 @@ const READ_ONLY: &str = "\npermissions:\n  \"contents\": \"read\"\n";
 const PUBLISHER: &str = "host";
 
 /// Has dist write the workflow, then makes its token read-only.
-pub fn run(args: &[String]) -> Result<(), String> {
+pub(crate) fn run(args: &[String]) -> Result<(), String> {
     if !args.is_empty() {
         return Err("usage: cargo xtask release-workflow".to_owned());
     }
@@ -51,7 +51,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
 }
 
 /// Fails unless only the publishing job of the checked-in workflow can write.
-pub fn check() -> Result<(), String> {
+pub(crate) fn check() -> Result<(), String> {
     let workflow = read(&workspace::root()?.join(WORKFLOW))?;
     only_publisher_writes(&workflow)
         .map_err(|err| format!("{WORKFLOW}: {err}: run `cargo xtask release-workflow`"))?;

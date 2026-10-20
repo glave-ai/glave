@@ -41,7 +41,7 @@ const SUBCOMMANDS: [(&str, Subcommand); 10] = [
     ("gateway", crate::gateway::serve::main),
 ];
 
-pub fn main() -> ExitCode {
+pub(crate) fn main() -> ExitCode {
     let words: Vec<String> = std::env::args().skip(1).collect();
     if let Some((first, rest)) = words.split_first()
         && let Some((_, subcommand)) = SUBCOMMANDS.iter().find(|(name, _)| name == first)
@@ -132,7 +132,7 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
 
 /// Serves the session API: to the program that started glave until its input ends, or as the
 /// person's server until it is told to stop.
-pub async fn serve(mut args: Args) -> anyhow::Result<ExitCode> {
+pub(crate) async fn serve(mut args: Args) -> anyhow::Result<ExitCode> {
     let lock = crate::server::claim(&mut args).await?; // Held to the very end.
     // The session API owns standard input: a project is asked about through it, in an app.
     let wired = crate::wiring::wire(&args, Answering::Clients, Asking::Later).await?;
@@ -226,7 +226,7 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
 /// The thread to use in `project` (the caller's Chats when none): the newest one there with
 /// `--continue`, otherwise a new one, in a worktree of its own when `worktree` says so (the
 /// server's choice when it says nothing), choosing `model` and `approval` when they are given.
-pub async fn pick_thread(
+pub(crate) async fn pick_thread(
     server: Session<'_>,
     project: Option<ProjectId>,
     resume: bool,
@@ -276,7 +276,7 @@ pub async fn pick_thread(
 
 /// The interactive session: each line typed is a turn, until `/exit`, the end of input, or
 /// Ctrl-C at the prompt. Ctrl-C during a turn or `/compact` cancels just that.
-pub async fn converse(client: &Client<'_>, printer: &mut Printer) -> ExitCode {
+pub(crate) async fn converse(client: &Client<'_>, printer: &mut Printer) -> ExitCode {
     let mut code = ExitCode::SUCCESS;
     loop {
         printer.ask();

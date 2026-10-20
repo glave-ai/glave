@@ -13,10 +13,10 @@ use serde_json::Value;
 use crate::policy::{self, ConfigFile, HooksFile, SandboxChoice, WebFile};
 
 /// A project's MCP servers, in Claude Code's format, at the repository's root.
-pub const MCP_FILE: &str = ".mcp.json";
+pub(super) const MCP_FILE: &str = ".mcp.json";
 
 /// The id of the settings item, beside `mcp:<server>` ids.
-pub const SETTINGS: &str = "settings";
+pub(super) const SETTINGS: &str = "settings";
 
 /// The start of a hook's id: `hook:<point>:<n>`, the nth hook at that point.
 const HOOK: &str = "hook:";

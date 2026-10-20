@@ -26,20 +26,20 @@ use crate::support::*;
 const ISSUER: &str = "https://id.example.com";
 
 /// What a store gives each organization's server.
-pub struct Parts<L> {
+pub(super) struct Parts<L> {
     pub log: L,
     pub projects: Arc<dyn Projects>,
     pub eraser: Arc<dyn Eraser>,
 }
 
 /// One organization: its server, and the browsers it signs in.
-pub struct Org<L: EventLog + 'static> {
+pub(super) struct Org<L: EventLog + 'static> {
     pub server: Tested<L>,
     pub browsers: Arc<Browsers>,
 }
 
 /// One person: their organization, how they call, and the ids of what they made.
-pub struct Person {
+pub(super) struct Person {
     pub name: &'static str,
     pub org: usize,
     pub caller: Caller,
@@ -50,7 +50,7 @@ pub struct Person {
 
 impl Person {
     /// Their first id of `kind`: theirs to call with beside another's.
-    pub fn own(&self, kind: Kind) -> Option<&Value> {
+    pub(super) fn own(&self, kind: Kind) -> Option<&Value> {
         self.ids.get(&kind).and_then(|ids| ids.first())
     }
 
@@ -59,7 +59,7 @@ impl Person {
     }
 }
 
-pub struct World<L: EventLog + 'static> {
+pub(super) struct World<L: EventLog + 'static> {
     pub orgs: Vec<Org<L>>,
     pub people: Vec<Person>,
     /// Turns waiting for the person, by organization and thread, followed until the end.
@@ -150,7 +150,11 @@ async fn serve<L: EventLog + Clone + 'static>(n: u128, parts: &Parts<L>, dir: &P
 }
 
 /// Answers `request` from `caller`, as JSON: the reply, or the error.
-pub async fn ask<L: EventLog + 'static>(org: &Org<L>, caller: &Caller, request: Request) -> Value {
+pub(super) async fn ask<L: EventLog + 'static>(
+    org: &Org<L>,
+    caller: &Caller,
+    request: Request,
+) -> Value {
     match org.server.request_as(caller, request).await {
         Ok(reply) => json!({"result": reply}),
         Err(error) => json!({"error": error}),
@@ -158,7 +162,7 @@ pub async fn ask<L: EventLog + 'static>(org: &Org<L>, caller: &Caller, request: 
 }
 
 /// `method` with `params`.
-pub fn request(method: &str, params: Value) -> Request {
+pub(super) fn request(method: &str, params: Value) -> Request {
     let shown = params.to_string();
     let mut message = serde_json::Map::new();
     message.insert("method".to_owned(), Value::String(method.to_owned()));
@@ -218,7 +222,7 @@ async fn make<L: EventLog + 'static>(org: &Org<L>, person: &mut Person, local: b
 
 impl<L: EventLog + Clone + 'static> World<L> {
     /// Two organizations on `parts`, in folders under `name`, each person's things made.
-    pub async fn build(name: &str, parts: &Parts<L>) -> Self {
+    pub(super) async fn build(name: &str, parts: &Parts<L>) -> Self {
         let (mut orgs, mut folders) = (Vec::new(), Vec::new());
         for n in 1..=2 {
             let dir = folder(&format!("{name}-{n}"));
@@ -248,7 +252,7 @@ impl<L: EventLog + Clone + 'static> World<L> {
     /// What only the person on each computer has, made last so that nothing the people's own
     /// calls do ends it: a browser session, its link's code, and for the first organization
     /// a turn waiting on an approval and one on a question.
-    pub async fn sign_in_and_hold(&mut self) {
+    pub(super) async fn sign_in_and_hold(&mut self) {
         for person in &mut self.people {
             if person.caller.auth.is_some() {
                 continue;
@@ -287,7 +291,7 @@ impl<L: EventLog + Clone + 'static> World<L> {
     }
 
     /// Ends the held turns, and lets every task end.
-    pub async fn settle(&mut self) {
+    pub(super) async fn settle(&mut self) {
         for (org, thread, mut stream) in self.held.drain(..) {
             let server = &self.orgs[org].server;
             let _ = server.request(Request::TurnCancel { thread }).await;

@@ -20,11 +20,11 @@ use crate::data::Data;
 use crate::trust::Trust;
 
 /// Why the sandbox cannot run, as `glave policy explain` says it without trying.
-pub const NO_SANDBOX: &str = "this computer has no sandbox glave can use (macOS's Seatbelt, or \
+pub(crate) const NO_SANDBOX: &str = "this computer has no sandbox glave can use (macOS's Seatbelt, or \
                           bubblewrap on Linux)";
 
 /// What this run uses: the files read, and the choices within the constraints.
-pub struct Setup {
+pub(crate) struct Setup {
     pub loaded: Loaded,
     pub choices: Choices,
     /// The hooks that run for the person's threads everywhere: their own. A project's trusted
@@ -35,7 +35,7 @@ pub struct Setup {
 impl Setup {
     /// Reads the files for this run in `folder`, the project's own aside, and keeps its choices
     /// within the policy.
-    pub async fn load(args: &Args, folder: &Path) -> anyhow::Result<Self> {
+    pub(crate) async fn load(args: &Args, folder: &Path) -> anyhow::Result<Self> {
         let loaded = read(args, folder, None).await?;
         let choices = loaded.settle()?;
         if args.network.is_some() && choices.sandbox.value.is_none() {
@@ -69,7 +69,10 @@ impl Setup {
     /// [`Setup::load`] reads them, but it cannot refuse to start: a choice the constraints
     /// refuse now gives way as glave's default would, and the person's hooks a rule forbids
     /// are left out. What gave way, one sentence each.
-    pub async fn reload(args: &Args, locations: &Locations) -> anyhow::Result<(Self, Vec<String>)> {
+    pub(crate) async fn reload(
+        args: &Args,
+        locations: &Locations,
+    ) -> anyhow::Result<(Self, Vec<String>)> {
         let loaded = read_at(args, locations, None).await?;
         let (choices, mut aside) = loaded.settle_giving_way()?;
         let mine = &loaded.person_hooks;
@@ -94,7 +97,7 @@ impl Setup {
 /// Asks the person about the project around `folder` once, if `asking` allows and there is a
 /// question, keeping the answer where every server reads it; then what it brings that stays
 /// off, and why, to tell the person.
-pub async fn ask_here(
+pub(crate) async fn ask_here(
     folder: &Path,
     setup: &Setup,
     asking: Asking,
@@ -106,7 +109,7 @@ pub async fn ask_here(
 
 /// What the model is told of `withheld`, a project's tools and settings that stay off with
 /// why, so it does not look for them; nothing when nothing is off.
-pub fn off_note(withheld: &[String]) -> Option<String> {
+pub(crate) fn off_note(withheld: &[String]) -> Option<String> {
     (!withheld.is_empty()).then(|| {
         format!(
             "# Project tools that are off\n\nThis project brings tools or settings that glave \
@@ -123,7 +126,7 @@ pub fn off_note(withheld: &[String]) -> Option<String> {
 
 /// `glave policy explain`: prints every setting and constraint as a thread in this folder's
 /// project would run with them, and fails when glave would refuse to run here.
-pub async fn explain(args: &Args) -> anyhow::Result<ExitCode> {
+pub(crate) async fn explain(args: &Args) -> anyhow::Result<ExitCode> {
     let folder = std::env::current_dir()?;
     let home = home::folder()?;
     let policies = policy::policies(&Locations::here(&home, &folder)).await?;

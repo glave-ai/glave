@@ -24,7 +24,7 @@ const AZURE_KEYS: &[&str] = &["GLAVE_API_KEY", "AZURE_OPENAI_API_KEY"];
 const BEDROCK_KEYS: &[&str] = &["GLAVE_API_KEY", "AWS_BEARER_TOKEN_BEDROCK"];
 
 /// How a cloud's models are reached.
-pub struct Reached {
+pub(super) struct Reached {
     /// Its OpenAI-compatible Chat Completions.
     pub provider: Config,
     /// Anthropic's Messages API there, for the models whose family speaks it.
@@ -34,7 +34,7 @@ pub struct Reached {
 }
 
 /// The provider `[provider]` names, with credentials from `env`.
-pub fn provider(
+pub(super) fn provider(
     chosen: &Chosen<ProviderFile>,
     env: &dyn Fn(&str) -> Option<String>,
 ) -> anyhow::Result<Reached> {

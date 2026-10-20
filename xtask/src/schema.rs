@@ -12,7 +12,7 @@ const SCHEMA: &str = "specs/session.schema.json";
 const TYPES: &str = "web/client/src/generated/api.ts";
 
 /// Writes both files, or with `--check` compares them with what the code makes.
-pub fn run(args: &[String]) -> Result<(), String> {
+pub(crate) fn run(args: &[String]) -> Result<(), String> {
     let check = match args {
         [] => false,
         [flag] if flag == "--check" => true,

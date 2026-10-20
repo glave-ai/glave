@@ -136,6 +136,7 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - Libraries define typed errors with `thiserror`; binaries use `anyhow`. Errors say what failed and with what input.
 
 **Written to pass the lints** (`[workspace.lints]`, `clippy.toml`), the first time:
+- Write `pub(crate)` unless another crate calls it; a binary's and a test's own modules use `pub(crate)` too.
 - Name an item by what `use` already brought in; no full path for something imported.
 - Clone an `Arc` or `Rc` as `Arc::clone(&x)`, never `x.clone()`, so cheap clones look cheap.
 - Show a type's lifetime in paths: `&[Crate<'_>]`, `Formatter<'_>`.

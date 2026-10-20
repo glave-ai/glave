@@ -165,13 +165,13 @@ mod collector {
 
     type Posts = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
 
-    pub struct Collector {
+    pub(super) struct Collector {
         url: String,
         posts: Posts,
     }
 
     impl Collector {
-        pub fn start() -> Self {
+        pub(super) fn start() -> Self {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
             let url = format!("http://{}", listener.local_addr().unwrap());
             let posts = Posts::default();
@@ -206,11 +206,11 @@ mod collector {
             Self { url, posts }
         }
 
-        pub fn url(&self) -> &str {
+        pub(super) fn url(&self) -> &str {
             &self.url
         }
 
-        pub fn posts(&self) -> Vec<(String, Vec<u8>)> {
+        pub(super) fn posts(&self) -> Vec<(String, Vec<u8>)> {
             self.posts.lock().unwrap().clone()
         }
     }
