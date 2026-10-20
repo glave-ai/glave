@@ -79,7 +79,7 @@ pub fn skill_folders(root: &Path, personal: &[PathBuf]) -> Vec<PathBuf> {
 
 /// Every valid skill in `folders`, each a subfolder holding a SKILL.md, sorted by name. A
 /// skill that cannot be read or breaks the format is skipped with a warning, never fatal, and
-/// past [`MAX_SKILLS`] or [`MAX_LISTED`] the rest are left out with one.
+/// past `MAX_SKILLS` or [`MAX_LISTED`] the rest are left out with one.
 pub async fn find_skills(folders: &[PathBuf]) -> Found {
     let mut found = Found::default();
     let mut names: HashMap<String, PathBuf> = HashMap::new();

@@ -2,7 +2,7 @@
 //! made from the project's environment on the backend `[workers]` in `config.toml` names,
 //! within the organization's `[workers]` limits, with this repository cloned in at the current
 //! commit (which must be pushed, so the worker can fetch it). When the session ends, every
-//! worker is released: files it handed back are saved under GLAVE_HOME/out/<thread>, unpushed
+//! worker is released: files it handed back are saved under `GLAVE_HOME/out/<thread>`, unpushed
 //! work goes to a glave/wip/ branch, and the worker is destroyed.
 
 use std::path::{Component, Path, PathBuf};
@@ -174,7 +174,7 @@ pub async fn release(server: &Glave, workers: &WorkerComputers) {
     }
 }
 
-/// Saves handed-back files under GLAVE_HOME/out/<thread>.
+/// Saves handed-back files under `GLAVE_HOME/out/<thread>`.
 async fn save(
     thread: &str,
     files: &[(String, glave_ports::computer::Bytes)],

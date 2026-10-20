@@ -96,7 +96,7 @@ cargo build --release -p glave --features web   # the binary as it ships, the we
 
 ## Definition of done
 
-`cargo xtask ci` passes: format, no secret-shaped literals (`cargo xtask secrets`), the dependency rule (`cargo xtask deps`), clippy with `-D warnings`, all tests, with nothing left behind (no process they started still running, no `glave-*` entry in their temp folder but what glave keeps there), `cargo deny`, no unused dependencies (`cargo machete`), file sizes. New behavior has tests. User-visible numbers stay within budget. The change is small, focused and reviewed through a pull request.
+`cargo xtask ci` passes: format, no secret-shaped literals (`cargo xtask secrets`), the dependency rule (`cargo xtask deps`), clippy with `-D warnings`, docs with `-D warnings`, all tests, with nothing left behind (no process they started still running, no `glave-*` entry in their temp folder but what glave keeps there), `cargo deny`, no unused dependencies (`cargo machete`), file sizes. New behavior has tests. User-visible numbers stay within budget. The change is small, focused and reviewed through a pull request.
 
 ## Quality
 
@@ -134,6 +134,7 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - `#[allow]` is banned. If a style lint is genuinely wrong in one spot, use `#[expect(lint, reason = "...")]`, which fails the build if the lint ever stops firing. Safety lints can't be suppressed at all.
 - Don't use `#[tokio::main]` or `#[tokio::test]`: they emit `#[allow(clippy::expect_used)]`, which the forbidden lint rejects. Build the runtime explicitly in `main`; tests use `glave_ports::block_on!` (the `conformance` feature).
 - Libraries define typed errors with `thiserror`; binaries use `anyhow`. Errors say what failed and with what input.
+- Doc links are `` [`Item`] `` paths that resolve from where they're written, to items as public as the doc; anything else is plain `` `code` ``. `cargo xtask ci` builds the docs with warnings denied.
 
 **Structure**
 - `lib.rs` and `main.rs` are tables of contents: module declarations, re-exports, crate docs. No logic.

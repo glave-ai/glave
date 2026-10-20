@@ -1,7 +1,8 @@
-//! `cargo xtask ci`: the full local gate, identical to what CI runs: the Rust checks, that no
-//! tracked file holds a secret-shaped literal, that crates keep the dependency rule and start
-//! processes only through glave-process, that the tests leave nothing behind (`leftovers.rs`),
-//! then the web checks (`web.rs`), which need Node unless `GLAVE_SKIP_WEB=1` skips them.
+//! `cargo xtask ci`: the full local gate, identical to what CI runs: the Rust checks and docs,
+//! that no tracked file holds a secret-shaped literal, that crates keep the dependency rule and
+//! start processes only through glave-process, that the tests leave nothing behind
+//! (`leftovers.rs`), then the web checks (`web.rs`), which need Node unless `GLAVE_SKIP_WEB=1`
+//! skips them.
 
 use serde_json::Value;
 
@@ -33,6 +34,15 @@ pub fn run() -> Result<(), String> {
                 "-D",
                 "warnings",
             ],
+        )
+    })?;
+    // Doc links that no longer resolve, or that point at private items, fail here rather than
+    // rot (`[workspace.lints.rustdoc]`); every other rustdoc warning fails too.
+    step("docs", || {
+        cmd::run_with(
+            "cargo",
+            &["doc", "--workspace", "--no-deps", "--features", &features],
+            &[("RUSTDOCFLAGS", "-D warnings".to_owned())],
         )
     })?;
     let run = crate::leftovers::Run::start()?;
