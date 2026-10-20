@@ -184,7 +184,7 @@ fn an_unclear_contradiction_keeps_both_and_asks_until_one_changes() {
         assert!(!memories.tidy_due(shared()).await.unwrap(), "just tidied");
 
         // The next run never offers the pair again while it waits.
-        let again = scripted("{}");
+        let again = scripted(r#"{"merge": [], "conflict": []}"#);
         memories.tidy(shared(), &again).await.unwrap();
         assert!(
             again.provider.seen().lock().unwrap().is_empty(),
@@ -273,6 +273,59 @@ fn prose_first_then_json_after_the_reminder_is_carried_out() {
 }
 
 #[test]
+fn an_answer_cut_off_at_its_limit_is_asked_for_again_never_read_as_nothing_to_do() {
+    block_on!(async {
+        let kit = Kit::new();
+        seed(&kit, FLY, false).await;
+        let render = seed(&kit, RENDER, false).await;
+        // Cut off in its second proposal: the first, complete on its own, is only a draft.
+        let cut = glave_ports::Completion {
+            stop: glave_event::StopReason::MaxTokens,
+            ..said(
+                r#"{"conflict": [{"memories": [1, 2], "clear": true}], "merge": [{"memories": [1"#,
+            )
+        };
+        let whole = said(r#"{"conflict": [{"memories": [1, 2], "clear": true}]}"#);
+        let script = Tidier {
+            provider: ScriptedModel::cycling(vec![cut, whole]),
+            model: "small".to_owned(),
+        };
+        let memories = kit.memories(rules(), 1);
+        let tidied = memories.tidy(shared(), &script).await.unwrap();
+        assert_eq!(
+            script.provider.seen().lock().unwrap().len(),
+            2,
+            "asked again"
+        );
+        assert_eq!(tidied.forgotten, 1, "{tidied:?}");
+        let now: Vec<_> = live(&kit).await.into_iter().map(|(id, _, _)| id).collect();
+        assert_eq!(now, [render]);
+    });
+}
+
+#[test]
+fn a_contradiction_between_memories_that_share_no_word_forgets_neither() {
+    block_on!(async {
+        let kit = Kit::new();
+        seed(&kit, "The tests need `make db` to run first", false).await;
+        seed(&kit, RENDER, false).await;
+        let before = live(&kit).await;
+        let memories = kit.memories(rules(), 1);
+        let script = scripted(r#"{"conflict": [{"memories": [1, 2], "clear": true}]}"#);
+        let tidied = memories.tidy(shared(), &script).await.unwrap();
+        assert_eq!(tidied.forgotten, 0, "{tidied:?}");
+        assert!(
+            tidied
+                .refused
+                .iter()
+                .any(|why| why.contains("share no word")),
+            "{tidied:?}"
+        );
+        assert_eq!(live(&kit).await, before);
+    });
+}
+
+#[test]
 fn near_the_budget_tidy_up_compacts_and_runs_again_sooner() {
     block_on!(async {
         let kit = Kit::new();
@@ -284,7 +337,7 @@ fn near_the_budget_tidy_up_compacts_and_runs_again_sooner() {
             seed(&kit, &text, false).await;
         }
         let memories = kit.memories(rules(), 1);
-        let script = scripted("{}");
+        let script = scripted(r#"{"merge": [], "conflict": []}"#);
         memories.tidy(shared(), &script).await.unwrap();
         assert!(
             sent(&script).contains("near their size limit"),

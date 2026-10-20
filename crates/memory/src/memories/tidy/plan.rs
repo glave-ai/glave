@@ -5,7 +5,7 @@
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
-use glave_event::{At, Part};
+use glave_event::{At, Part, StopReason};
 use glave_ports::memories::MemoryError;
 use glave_ports::{Message, ModelProvider, ModelRequest, Purpose, ToolChoice};
 use serde::Deserialize;
@@ -59,12 +59,13 @@ impl Proposal {
     }
 }
 
+/// The answer's object. It names `merge` or `conflict`, or both: an object with neither (one of
+/// its proposals, or a draft cut off around one) is not an answer, so it is never read as
+/// "nothing to do".
 #[derive(Deserialize)]
 struct Answer {
-    #[serde(default)]
-    merge: Vec<Merge>,
-    #[serde(default)]
-    conflict: Vec<Conflict>,
+    merge: Option<Vec<Merge>>,
+    conflict: Option<Vec<Conflict>>,
 }
 
 #[derive(Deserialize)]
@@ -138,8 +139,8 @@ pub(super) async fn ask<P: ModelProvider>(
     compact: bool,
 ) -> Result<Result<Vec<Proposal>, String>, MemoryError> {
     let mut request = request(&tidier.model, candidates, compact);
-    let first = answer(tidier, &request).await?;
-    let why = match parse(&first, candidates.len()) {
+    let (first, cut) = answer(tidier, &request).await?;
+    let why = match read(&first, cut, candidates.len()) {
         Ok(proposals) => return Ok(Ok(proposals)),
         Err(why) => why,
     };
@@ -152,20 +153,36 @@ pub(super) async fn ask<P: ModelProvider>(
             text: REMINDER.to_owned(),
         }],
     });
-    let second = answer(tidier, &request).await?;
-    Ok(parse(&second, candidates.len()).map_err(|again| format!("{why}; asked again: {again}")))
+    let (second, cut) = answer(tidier, &request).await?;
+    Ok(
+        read(&second, cut, candidates.len())
+            .map_err(|again| format!("{why}; asked again: {again}")),
+    )
 }
 
-/// The answer's text; its readable reasoning when it gave no text, as some reasoning models do.
+/// The proposals in an answer, unless it was `cut` off at its length limit: what it holds then
+/// is a draft, never the whole answer.
+fn read(answer: &str, cut: bool, listed: usize) -> Result<Vec<Proposal>, String> {
+    if cut {
+        return Err(format!(
+            "tidy-up's model was cut off at {ANSWER_TOKENS} tokens"
+        ));
+    }
+    parse(answer, listed)
+}
+
+/// The answer's text, or its readable reasoning when it gave no text, as some reasoning models
+/// do; and whether it was cut off at its length limit.
 async fn answer<P: ModelProvider>(
     tidier: &Tidier<P>,
     request: &ModelRequest,
-) -> Result<String, MemoryError> {
+) -> Result<(String, bool), MemoryError> {
     let completion = tidier
         .provider
         .complete(request, &mut |_| {})
         .await
         .map_err(|error| MemoryError::Storage(format!("tidy-up's model failed: {error}")))?;
+    let cut = completion.stop == StopReason::MaxTokens;
     let text: String = completion
         .parts
         .iter()
@@ -175,7 +192,7 @@ async fn answer<P: ModelProvider>(
         })
         .collect();
     if text.contains('{') {
-        return Ok(text);
+        return Ok((text, cut));
     }
     let reasoning: String = completion
         .parts
@@ -187,11 +204,12 @@ async fn answer<P: ModelProvider>(
             _ => None,
         })
         .collect();
-    Ok(if reasoning.contains('{') {
+    let shown = if reasoning.contains('{') {
         reasoning
     } else {
         text
-    })
+    };
+    Ok((shown, cut))
 }
 
 /// The proposals in `answer`: the JSON object in it, however it is wrapped. Numbers outside the
@@ -207,7 +225,7 @@ pub(super) fn parse(answer: &str, listed: usize) -> Result<Vec<Proposal>, String
             .into_iter::<Answer>()
             .next()
         {
-            Some(Ok(parsed)) => {
+            Some(Ok(parsed)) if parsed.merge.is_some() || parsed.conflict.is_some() => {
                 found = Some(parsed);
                 break;
             }
@@ -221,12 +239,17 @@ pub(super) fn parse(answer: &str, listed: usize) -> Result<Vec<Proposal>, String
             |error| format!("tidy-up's model answered in the wrong shape: {error}"),
         ));
     };
-    let merges = parsed.merge.into_iter().map(|merge| Proposal::Merge {
-        memories: merge.memories,
-        text: merge.text,
-    });
+    let merges = parsed
+        .merge
+        .unwrap_or_default()
+        .into_iter()
+        .map(|merge| Proposal::Merge {
+            memories: merge.memories,
+            text: merge.text,
+        });
     let conflicts = parsed
         .conflict
+        .unwrap_or_default()
         .into_iter()
         .map(|conflict| Proposal::Conflict {
             memories: conflict.memories,
@@ -296,7 +319,11 @@ mod tests {
                 },
             ]
         );
-        assert_eq!(parse("{}", 2).unwrap(), []);
+        assert_eq!(parse("{\"merge\": []}", 2).unwrap(), []);
+        assert!(parse("{}", 2).is_err(), "names neither list");
+        // Cut off in its second proposal: the first, complete on its own, is not the answer.
+        let cut = "{\"merge\": [{\"memories\": [1, 2], \"text\": \"Use tabs\"}, {\"memories\": [3";
+        assert!(parse(cut, 4).is_err(), "{:?}", parse(cut, 4));
         assert!(parse("nothing to do", 2).is_err());
         assert!(parse("{\"merge\": 3}", 2).is_err());
         let prose = "Looking at {these} memories, 1 and 2 match.\n{\"merge\": [], \"conflict\": \
