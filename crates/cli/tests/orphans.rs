@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use glave_ports::testing::HUNG;
 use glave_provider_openai::fake::{FakeServer, Reply};
 use serde_json::{Value, json};
 
@@ -81,7 +82,7 @@ fn a_killed_glave_s_commands_and_servers_are_stopped_at_the_next_start() {
     choose(&place, "sandbox", "\"off\"");
     let args = ["--model", "m", "--approval", "auto", "go"];
     let mut killed = start(&place, &model, &args);
-    let running = until(Duration::from_secs(60), || recorded(&place.home).len() == 3);
+    let running = until(HUNG, || recorded(&place.home).len() == 3);
     let entries = recorded(&place.home);
     assert!(
         running,
@@ -99,9 +100,7 @@ fn a_killed_glave_s_commands_and_servers_are_stopped_at_the_next_start() {
     );
     let next = glave(&place, &model, &["serve", "--stdio"], "");
     assert!(next.status.success(), "{}", text(&next));
-    let stopped = until(Duration::from_secs(10), || {
-        !left.iter().any(|pid| alive(*pid))
-    });
+    let stopped = until(HUNG, || !left.iter().any(|pid| alive(*pid)));
     assert!(
         stopped,
         "the next start stops everything the killed glave left: {left:?}"

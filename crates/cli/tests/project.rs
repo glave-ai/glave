@@ -176,7 +176,8 @@ fn an_untrusted_projects_judge_is_ignored_with_the_reason_but_off_applies() {
     std::fs::create_dir_all(place.project.join(".glave")).unwrap();
     let config = place.project.join(".glave/config.toml");
     std::fs::write(&config, "judge_model = \"lenient\"\n").unwrap();
-    let model = FakeServer::start(vec![Reply::text("Fine.")]).unwrap();
+    // A reply for each turn: one the model has none for is retried, and waits.
+    let model = FakeServer::start(vec![Reply::text("Fine."), Reply::text("Fine.")]).unwrap();
     let output = glave(&place, &model, &["--model", "m", "hello"], "");
     let shown = text(&output);
     assert!(output.status.success(), "{shown}");

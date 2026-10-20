@@ -62,9 +62,8 @@ fn a_background_turn_runs_in_the_person_s_server_after_the_command_returns() {
     assert!(shown.contains("glave tasks stop"), "{shown}");
     // The server runs it; the command that started it is gone.
     only_the_server_answers(&place);
-    let limit = std::time::Duration::from_secs(20);
     assert!(
-        model.wait_for_requests(1, limit),
+        model.wait_for_requests(1, glave_ports::testing::HUNG),
         "the task called the model"
     );
     let listed = (0..200)

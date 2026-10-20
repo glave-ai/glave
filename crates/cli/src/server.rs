@@ -29,8 +29,10 @@ pub(crate) use serve::{Daily, run};
 /// stays the same across restarts.
 pub(crate) const PORT: u16 = 4180;
 
-/// How long a new server has to start listening.
-const START_WAIT: Duration = Duration::from_secs(20);
+/// How long a new server has to start listening before glave calls it hung: a guard, not a
+/// speed limit. A newly installed or built glave can take many seconds to start the first time
+/// on a busy Mac, while the system checks it.
+const START_WAIT: Duration = Duration::from_secs(120);
 /// How often a starting server is tried.
 const START_POLL: Duration = Duration::from_millis(50);
 

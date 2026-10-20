@@ -69,7 +69,7 @@ fn ctrl_c_cancels_the_turn_and_the_thread_carries_on() {
         &["--model", "m", "--events", &events_arg, "think hard"],
     );
     assert!(
-        server.wait_for_requests(1, std::time::Duration::from_secs(30)),
+        server.wait_for_requests(1, glave_ports::testing::HUNG),
         "the model was asked"
     );
     let sent = Command::new("kill")
