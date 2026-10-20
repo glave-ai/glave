@@ -4,7 +4,9 @@
 //! beside it in `serve.url`). A browser here signs in through a link whose fragment carries a
 //! one-time code, never the token, which it trades for a browser session kept in the store as
 //! hashes alone, so it stays signed in across restarts. Callers
-//! on other computers sign in with OIDC (`--issuer`, `--audience`).
+//! on other computers sign in with OIDC (`--issuer`, `--audience`). It answers beyond this
+//! computer only once HTTPS is in place: a tunnel or a proxy in front of it serving its public
+//! origin (`[serve] origin`), through which it is reached on loopback too.
 //! The web app is served at `/` beside the API: the build in `--web`, else the app built into
 //! glave (the `web` feature, which release builds turn on), else a `web` folder beside the
 //! binary.
@@ -14,10 +16,11 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::Context as _;
+use anyhow::{Context as _, bail};
 use glave_event::PrincipalId;
 use glave_event::Secret;
 use glave_ports::SystemClock;
+use glave_ports::host::{PublicOrigin, is_loopback};
 use glave_session::http::{Files, Site};
 use glave_session::protocol::{Reply, Request};
 use glave_session::signin::{Browsers, LOCAL_BYTES, LocalToken, SignIn, Trust};
@@ -47,9 +50,14 @@ pub(crate) struct Http {
     folder: PathBuf,
 }
 
-/// Listens on `address` for the server `args` choose, and writes its address and a new local
-/// token where programs here find them.
-pub(crate) async fn open(args: &Args, address: SocketAddr) -> anyhow::Result<Http> {
+/// Listens on `address` for the server `args` choose, reached from elsewhere at `origin` if
+/// anywhere, and writes its address and a new local token where programs here find them.
+pub(crate) async fn open(
+    args: &Args,
+    address: SocketAddr,
+    origin: Option<&PublicOrigin>,
+) -> anyhow::Result<Http> {
+    within_reach(address, origin)?;
     let token = LocalToken::new(random()?);
     let signin = if args.issuers.is_empty() {
         SignIn::local(token.clone(), Box::new(SystemClock))
@@ -86,6 +94,12 @@ pub(crate) async fn open(args: &Args, address: SocketAddr) -> anyhow::Result<Htt
         &format!("http://{}", here(bound)),
     )?;
     eprintln!("glave: serving the session API on http://{bound}");
+    if let Some(origin) = origin {
+        eprintln!(
+            "glave: reached from elsewhere at {origin}, through the tunnel or proxy that serves \
+             HTTPS for it"
+        );
+    }
     if site.is_none() {
         eprintln!(
             "glave: no web app beside glave; build it (npm run build in web/) and pass --web <folder>"
@@ -134,6 +148,22 @@ impl Http {
         ended?;
         Ok(())
     }
+}
+
+/// Refuses a listener at `address` beyond this computer with nothing serving HTTPS in front of
+/// it, `origin`: sign-ins would cross a network in the clear. glave answers on loopback alone
+/// until HTTPS is in place.
+fn within_reach(address: SocketAddr, origin: Option<&PublicOrigin>) -> anyhow::Result<()> {
+    if is_loopback(address.ip()) || origin.is_some() {
+        return Ok(());
+    }
+    bail!(
+        "glave would listen on {address}, beyond this computer, with nothing serving HTTPS in \
+         front of it, so sign-ins would cross the network in the clear. Put a tunnel or a proxy \
+         that serves HTTPS in front of glave, and set the address people reach it at as origin \
+         under [serve] in config.toml (such as origin = \"https://glave.example.com\"); or \
+         listen on 127.0.0.1"
+    )
 }
 
 /// The web app to serve: `--web`, which must hold a build, else the one built into glave, else
@@ -227,6 +257,22 @@ mod tests {
             assert_eq!(again.server(), first.server());
             assert!(again.verify(session.token.expose()).await.is_ok());
         });
+    }
+
+    #[test]
+    fn beyond_this_computer_glave_listens_only_behind_https() {
+        let at = |text: &str| text.parse::<SocketAddr>().unwrap();
+        let origin = PublicOrigin::parse("https://glave.example.com").unwrap();
+        for here in ["127.0.0.1:4180", "[::1]:4180"] {
+            assert!(within_reach(at(here), None).is_ok(), "{here}");
+            assert!(within_reach(at(here), Some(&origin)).is_ok(), "{here}");
+        }
+        for beyond in ["0.0.0.0:4180", "[::]:4180", "192.168.1.2:4180"] {
+            let refused = within_reach(at(beyond), None).unwrap_err().to_string();
+            assert!(refused.contains("HTTPS"), "{refused}");
+            assert!(refused.contains("origin under [serve]"), "{refused}");
+            assert!(within_reach(at(beyond), Some(&origin)).is_ok(), "{beyond}");
+        }
     }
 
     #[test]

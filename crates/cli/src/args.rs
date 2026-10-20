@@ -46,7 +46,10 @@ Usage:
                                 OIDC access token from that issuer for that audience.
                                 The address is host:port, or a port on 127.0.0.1; without
                                 --issuer it must be this computer's. The listener has no
-                                TLS, so put it behind a proxy that has.
+                                TLS: beyond this computer, a tunnel or a proxy that serves
+                                HTTPS goes in front, and origin under [serve] in config.toml
+                                says where people reach it (https://glave.example.com); a
+                                tunnel on this computer reaches 127.0.0.1 at that name too.
                                 --issuer may be given more than once. The web app is
                                 served at / too: from --web <folder> (the app's build),
                                 else the one built into glave, else the web folder beside
@@ -140,8 +143,9 @@ Settings: config.toml in GLAVE_HOME may set model, judge_model, approval, sandbo
 worktree (true or false), on (here or cloud), [workers] (backend = \"docker\" and glave,
 a Linux build of glave for workers), mcp (the servers in mcp.json to turn on) and
 [telemetry] (otlp = an OpenTelemetry collector's OTLP/HTTP URL, for builds with the otlp
-feature: spans and metrics, never content) and [store] (url = a postgres:// database, over TLS
-off this computer); flags and the environment win over it. An
+feature: spans and metrics, never content), [store] (url = a postgres:// database, over TLS
+off this computer) and [serve] (origin = the https address people reach glave at from
+elsewhere, through a tunnel or a proxy in front of it); flags and the environment win over it. An
 organization's policy at /etc/glave/policy.toml limits what may be chosen.
 
 A new thread starts with your AGENTS.md (in GLAVE_HOME), then every AGENTS.md from the

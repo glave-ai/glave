@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use glave_event::ApprovalMode;
 use glave_ports::computer::SandboxLevel;
+use glave_ports::host::PublicOrigin;
 use glave_ports::memories::ProjectMemory;
 use glave_ports::settings::Judge;
 
@@ -93,6 +94,9 @@ pub struct Choices {
     pub bucket: Option<Chosen<String>>,
     /// The session server elsewhere this CLI is a client of, if any: its URL.
     pub server: Option<Chosen<String>>,
+    /// Where people reach this glave from elsewhere, if they do: its public origin, for which a
+    /// tunnel or a proxy serves HTTPS. Without one, glave answers only on this computer.
+    pub origin: Option<Chosen<PublicOrigin>>,
     /// A cloud contract's models, if any, in place of `GLAVE_BASE_URL`'s server.
     pub provider: Option<Chosen<ProviderFile>>,
     /// The GitHub app people sign in to GitHub through in the browser, if one is set up.
@@ -169,6 +173,9 @@ pub(super) fn resolve(layers: &[Layer]) -> Choices {
             file.server
                 .as_ref()
                 .map(|server| server.url.trim().to_owned())
+        }),
+        origin: nearest(layers, "serve", |file| {
+            PublicOrigin::parse(&file.serve.as_ref()?.origin)
         }),
         provider: nearest(layers, "provider", |file| file.provider.clone()),
         github: nearest(layers, "github", |file| file.github.clone()),

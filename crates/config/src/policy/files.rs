@@ -7,6 +7,7 @@ use crate::error::invalid;
 use glave_event::{ApprovalMode, HookPoint, Money};
 use glave_ports::auth::safe_to_send;
 use glave_ports::computer::{CredentialHost, Forge, SandboxLevel};
+use glave_ports::host::PublicOrigin;
 use glave_ports::settings::{Hook, Hooks};
 use globset::Glob;
 
@@ -62,6 +63,9 @@ pub struct ConfigFile {
     /// A session server elsewhere this CLI is a client of. Only the person's own file sets
     /// it: their sign-in goes there.
     pub server: Option<ServerFile>,
+    /// How people reach this glave from elsewhere. Only the person's or the server's own file
+    /// sets it: sign-ins come in there.
+    pub serve: Option<ServeFile>,
     /// A cloud contract's models, in place of `GLAVE_BASE_URL`'s server. Only the person's or
     /// the server's own file sets it: the organization's credentials go there.
     pub provider: Option<ProviderFile>,
@@ -119,6 +123,16 @@ pub struct ServerFile {
     /// Where it is, such as `https://glave.example.com`: https, or http only on this
     /// computer.
     pub url: String,
+}
+
+/// `[serve]`: how people reach this glave from elsewhere (`specs/one-server.md`, "Finding
+/// it"). Without it, glave answers only on this computer.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ServeFile {
+    /// Its public origin, such as `https://glave.example.com`, for which a tunnel or a proxy
+    /// in front of glave serves HTTPS.
+    pub origin: String,
 }
 
 /// `[store]`: the one data store (AGENTS.md, "One of each"). The local SQLite file in glave's
@@ -453,6 +467,16 @@ pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
              goes there",
             path.display(),
             server.url
+        );
+    }
+    if let Some(serve) = &file.serve
+        && PublicOrigin::parse(&serve.origin).is_none()
+    {
+        invalid!(
+            "{}: [serve] origin = {:?} is not an address people reach glave at: https:// and \
+             its name, such as https://glave.example.com, and nothing after it",
+            path.display(),
+            serve.origin
         );
     }
     if let Some(url) = file.store.as_ref().and_then(|store| store.url.as_ref())

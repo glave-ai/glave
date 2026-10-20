@@ -224,3 +224,73 @@ mod stopped {
         assert!(!there(id.unwrap()), "gone once the failed test unwound");
     }
 }
+
+mod reached {
+    use glave_ports::block_on;
+    use glave_provider_openai::fake::FakeServer;
+
+    use crate::http::serve_http;
+    use crate::support::*;
+
+    const DISCOVER: &str = r#"{"jsonrpc":"2.0","id":1,"method":"server/discover"}"#;
+
+    /// The status of `server/discover` at `url`, sent to the name `host` from a page at
+    /// `page`, as a tunnel on this computer forwards a browser's request.
+    async fn discovered(url: &str, host: &str, page: &str) -> u16 {
+        reqwest::Client::new()
+            .post(format!("{url}/"))
+            .header("host", host)
+            .header("origin", page)
+            .header("content-type", "application/json")
+            .body(DISCOVER)
+            .send()
+            .await
+            .unwrap()
+            .status()
+            .as_u16()
+    }
+
+    #[test]
+    fn a_tunnel_here_reaches_glave_at_its_public_origin_and_no_other_name() {
+        let place = place("serve-origin");
+        let model = FakeServer::start(vec![]).unwrap();
+        let public = "https://glave.example.com";
+        let (served, url) = serve_http(&place, &model, &[]);
+        block_on!(async {
+            assert_eq!(discovered(&url, "glave.example.com", public).await, 403);
+        });
+        drop(served);
+        let origin = format!("{{ origin = \"{public}\" }}");
+        choose(&place, "serve", &origin);
+        // First again, as the server's own settings begin.
+        choose(&place, "titles", "false");
+        let (_served, url) = serve_http(&place, &model, &[]);
+        block_on!(async {
+            assert_eq!(discovered(&url, "glave.example.com", public).await, 200);
+            let elsewhere = discovered(&url, "other.example.com", public).await;
+            assert_eq!(elsewhere, 403);
+            let page = discovered(&url, "glave.example.com", "https://evil.example.com").await;
+            assert_eq!(page, 403);
+        });
+    }
+
+    #[test]
+    fn beyond_this_computer_glave_listens_only_behind_https() {
+        let place = place("serve-exposed");
+        let model = FakeServer::start(vec![]).unwrap();
+        let args = [
+            "serve",
+            "--http",
+            "0.0.0.0:0",
+            "--issuer",
+            "https://id.example.com",
+            "--audience",
+            "glave",
+        ];
+        let refused = glave(&place, &model, &args, "");
+        assert!(!refused.status.success());
+        let said = text(&refused);
+        assert!(said.contains("nothing serving HTTPS"), "{said}");
+        assert!(said.contains("origin under [serve]"), "{said}");
+    }
+}
