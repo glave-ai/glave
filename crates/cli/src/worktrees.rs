@@ -11,7 +11,7 @@ use std::process::ExitCode;
 use glave_computer::worktrees::{self, Kept, Trash};
 use glave_event::{Body, Opened, ThreadId, decode};
 use glave_ports::secrets::without_secrets;
-use glave_ports::{EventLog, OsEntropy, Scope};
+use glave_ports::{Clock as _, EventLog, OsEntropy, Scope, SystemClock};
 use glave_session::protocol::{Reply, Request};
 use jiff::{SignedDuration, Timestamp};
 
@@ -121,7 +121,7 @@ async fn run(prune: bool, forced: &[String]) -> anyhow::Result<()> {
         return Ok(());
     }
     let store = crate::data::Data::here().await?;
-    let now = Timestamp::now();
+    let now = SystemClock.now();
     let trash = this_machines_trash(now);
     let cleanup = Cleanup {
         log: &store.log(),
@@ -145,7 +145,7 @@ pub(crate) async fn release_archived<L: EventLog>(
 ) -> anyhow::Result<Vec<String>> {
     let environment = without_secrets(std::env::vars_os());
     let kept = kept(&home::folder()?, &environment).await?;
-    let now = Timestamp::now();
+    let now = SystemClock.now();
     let trash = this_machines_trash(now);
     let cleanup = Cleanup {
         log,
@@ -172,7 +172,7 @@ pub(crate) async fn check_daily<L: EventLog>(log: &L) {
         return;
     };
     let environment = without_secrets(std::env::vars_os());
-    let now = Timestamp::now();
+    let now = SystemClock.now();
     let trash = this_machines_trash(now);
     let cleanup = Cleanup {
         log,

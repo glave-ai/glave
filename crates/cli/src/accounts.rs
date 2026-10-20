@@ -35,9 +35,10 @@ pub(crate) fn random() -> anyhow::Result<[u8; 10]> {
 /// A new person's ledger, on a store in memory.
 #[cfg(test)]
 pub(crate) async fn in_memory() -> anyhow::Result<Ledger> {
+    use glave_ports::Clock as _;
     let root = glave_keys::InMemoryRoot::new()?;
     let keys = glave_keys::KeySettings::new(Arc::new(root));
     let store = Data::Sqlite(glave_store_sqlite::Store::open_in_memory(keys)?);
-    let person = PrincipalId::new(jiff::Timestamp::now(), random()?)?;
+    let person = PrincipalId::new(SystemClock.now(), random()?)?;
     open(&store, person).await
 }

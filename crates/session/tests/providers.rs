@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use glave_event::{ProviderId, ProviderKind, Secret};
 use glave_harness::Settings;
 use glave_ports::testing::FAKE_SECRET;
-use glave_ports::{BoxFuture, Failure};
+use glave_ports::{BoxFuture, Clock as _, Failure, SystemClock};
 use glave_session::protocol::{ApiError, ErrorData, ModelInfo, ProviderInfo, Request, code, hint};
 use glave_session::signin::{LocalToken, SignIn};
 use glave_session::{Answering, Models, NewProvider, Providers};
@@ -57,7 +57,7 @@ impl Providers for Accounts {
             }
             let n = u8::try_from(self.0.lock().unwrap().len()).unwrap();
             let info = ProviderInfo {
-                id: ProviderId::new(jiff::Timestamp::now(), [n + 1; 10]).unwrap(),
+                id: ProviderId::new(SystemClock.now(), [n + 1; 10]).unwrap(),
                 kind: new.kind,
                 url: new.url,
                 hint: hint(new.key.expose()),

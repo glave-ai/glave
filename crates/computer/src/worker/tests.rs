@@ -5,11 +5,10 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::UNIX_EPOCH;
 
 use glave_ports::block_on;
 use glave_ports::computer::{Bytes, Glob, Image, Isolation, Network, Save};
-use glave_ports::testing::TempDir;
+use glave_ports::testing::{ManualClock, TempDir};
 use tokio::io::BufReader;
 use tokio::net::TcpListener;
 
@@ -300,19 +299,15 @@ fn a_worker_is_made_cloned_into_set_up_saved_and_removed() {
 fn a_worker_runs_within_its_minutes_and_can_still_be_saved_after() {
     let dir = scratch("minutes");
     let url = origin(&dir);
-    let now = Arc::new(AtomicU64::new(1_000));
-    let clock = {
-        let now = Arc::clone(&now);
-        Arc::new(move || UNIX_EPOCH + Duration::from_secs(now.load(Ordering::SeqCst)))
-    };
+    let now = ManualClock::at_second(1_000);
     let limits = Limits {
         max_minutes: Some(5),
         per_person: Some(1),
         ..Limits::default()
     };
     let backend = InProcess::new(&dir.join("copies"));
-    let workers =
-        WorkerComputers::on(Box::new(backend), limits, WorkerCredentials::None).with_clock(clock);
+    let workers = WorkerComputers::on(Box::new(backend), limits, WorkerCredentials::None)
+        .with_clock(Arc::new(now.clone()));
     block_on!(async {
         let made = workers.create(&environment()).await.unwrap();
         let second = workers.create(&environment()).await;
@@ -322,7 +317,7 @@ fn a_worker_runs_within_its_minutes_and_can_still_be_saved_after() {
         );
         let sources = Sources::Git { url, at: None };
         let opened = workers.open(made.id, &sources).await.unwrap();
-        now.store(1_000 + 5 * 60, Ordering::SeqCst);
+        now.advance_seconds(5 * 60);
         let late = workers
             .run(
                 opened.id,

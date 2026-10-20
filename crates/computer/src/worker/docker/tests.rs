@@ -9,10 +9,10 @@
 //! and git, pinned) add the whole path: a real worker reached over TLS.
 
 use std::collections::BTreeMap;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
-use glave_ports::block_on;
 use glave_ports::computer::{Command, Computers, Ending, Environment, Image, Limits, Sources};
+use glave_ports::{Clock as _, SystemClock, block_on};
 use http::Method;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
@@ -71,7 +71,11 @@ fn spec(network: bool) -> Spec {
         memory_gb: Some(1),
         network,
         identity: Identity::mint().unwrap(),
-        token: Token::mint(std::time::SystemTime::now(), Duration::from_secs(600)).unwrap(),
+        token: Token::mint(
+            SystemTime::from(SystemClock.now()),
+            Duration::from_secs(600),
+        )
+        .unwrap(),
     }
 }
 

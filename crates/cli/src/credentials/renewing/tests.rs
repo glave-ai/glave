@@ -4,13 +4,15 @@
 use glave_config::policy::GithubFile;
 use glave_event::{At, Forge, Principal, Renewal, Secret};
 use glave_ports::testing::{FakeHttp, fake_secret};
+use glave_ports::{Clock as _, SystemClock};
 use serde_json::json;
 
 use super::*;
 
 /// A GitHub App's sign-in to `url`, about to expire.
 fn signed_in(url: &str) -> CredentialConnected {
-    let soon = jiff::Timestamp::now()
+    let soon = SystemClock
+        .now()
         .checked_add(jiff::SignedDuration::from_secs(60))
         .unwrap();
     CredentialConnected {

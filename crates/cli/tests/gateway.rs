@@ -7,8 +7,10 @@ use std::io::{BufRead as _, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, mpsc};
+use std::time::SystemTime;
 
 use glave_ports::testing::{FAKE_SECRET, Running};
+use glave_ports::{Clock as _, SystemClock};
 use glave_provider_openai::fake::{FakeServer, Reply};
 use serde_json::json;
 
@@ -50,7 +52,7 @@ impl Identity {
 
     /// A token for `subject`, good for ten minutes from now.
     fn token(&self, subject: &str) -> String {
-        let now = std::time::SystemTime::now()
+        let now = SystemTime::from(SystemClock.now())
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();

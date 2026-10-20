@@ -10,12 +10,12 @@
 //! and one without a network reached through attach.
 
 use std::collections::BTreeMap;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
-use glave_ports::block_on;
 use glave_ports::computer::{
     Command, Computers, Ending, Environment, Image, Limits, Network, Sources,
 };
+use glave_ports::{Clock as _, SystemClock, block_on};
 use k8s_openapi::api::core::v1::{Pod, Secret};
 use k8s_openapi::api::networking::v1::NetworkPolicy;
 use kube::Api;
@@ -82,7 +82,11 @@ fn spec(network: bool) -> Spec {
         memory_gb: Some(1),
         network,
         identity: Identity::mint().unwrap(),
-        token: Token::mint(std::time::SystemTime::now(), Duration::from_secs(600)).unwrap(),
+        token: Token::mint(
+            SystemTime::from(SystemClock.now()),
+            Duration::from_secs(600),
+        )
+        .unwrap(),
     }
 }
 

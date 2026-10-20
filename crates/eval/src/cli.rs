@@ -11,8 +11,8 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use glave_event::Money;
+use glave_ports::{Clock as _, SystemClock};
 use glave_provider_openai::Config;
-use jiff::Timestamp;
 
 use crate::report::{self, Report};
 use crate::run::Setup;
@@ -111,7 +111,7 @@ fn run(options: &Options) -> Result<bool, String> {
     // Outside any repository, so the workspaces are not mistaken for part of glave's own.
     let base = std::env::temp_dir().join("glave-eval");
     prune(&base, KEEP_RUNS);
-    let started = Timestamp::now();
+    let started = SystemClock.now();
     let dir = base.join(started.strftime("%Y%m%d-%H%M%S").to_string());
     let setup = Arc::new(Setup {
         endpoint,

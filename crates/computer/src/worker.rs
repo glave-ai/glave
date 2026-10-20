@@ -23,7 +23,7 @@ use glave_ports::computer::{
     Command, ComputerError, ComputerId, ComputerInfo, Computers, Ending, Environment, Limits,
     Output, Sources, WorkspaceId, WorkspaceInfo,
 };
-use glave_ports::{BoxFuture, Cancellation, NeverCancelled};
+use glave_ports::{BoxFuture, Cancellation, Clock, NeverCancelled, SystemClock};
 use tokio::task::JoinHandle;
 
 use crate::remote::RemoteComputers;
@@ -48,9 +48,6 @@ const RETRY: Duration = Duration::from_millis(250);
 const SETUP_TIMEOUT_SECS: u64 = 30 * 60;
 /// The most setup output kept for an error.
 const SETUP_TAIL: usize = 4_000;
-
-/// The time now; injected so tests decide when a worker runs out of time.
-pub type Clock = Arc<dyn Fn() -> SystemTime + Send + Sync>;
 
 /// One worker as the harness side holds it.
 struct Worker {
@@ -79,7 +76,8 @@ pub struct WorkerComputers {
     backend: Box<dyn Backend>,
     limits: Limits,
     credentials: WorkerCredentials,
-    clock: Clock,
+    /// The time now; injected so tests decide when a worker runs out of time.
+    clock: Arc<dyn Clock>,
     held: Mutex<Held>,
 }
 
@@ -116,14 +114,14 @@ impl WorkerComputers {
             backend,
             limits,
             credentials,
-            clock: Arc::new(SystemTime::now),
+            clock: Arc::new(SystemClock),
             held: Mutex::new(Held::default()),
         }
     }
 
     /// Uses `clock` for the time, instead of the system's.
     #[must_use]
-    pub fn with_clock(mut self, clock: Clock) -> Self {
+    pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
         self.clock = clock;
         self
     }
@@ -169,7 +167,7 @@ impl WorkerComputers {
         let Some(deadline) = worker.deadline else {
             return Ok(None);
         };
-        match deadline.duration_since((self.clock)()) {
+        match deadline.duration_since(SystemTime::from(self.clock.now())) {
             Ok(left) if !left.is_zero() => Ok(Some(left)),
             _ => Err(ComputerError::Refused(format!(
                 "this worker has run its {} minutes ([workers] max_minutes); its work is kept \
@@ -190,9 +188,9 @@ impl WorkerComputers {
                     .into(),
             ));
         }
-        let now = (self.clock)();
+        let now = SystemTime::from(self.clock.now());
         // The worker checks its token against its own clock, so the token keeps real time.
-        let token = Token::mint(SystemTime::now(), TOKEN_LIFETIME)?;
+        let token = Token::mint(SystemTime::from(SystemClock.now()), TOKEN_LIFETIME)?;
         let spec = Spec {
             image: decided.image,
             env: environment.env.clone(),

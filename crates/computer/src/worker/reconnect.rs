@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use glave_ports::computer::ComputerError;
+use glave_ports::{Clock as _, SystemClock};
 
 use super::TOKEN_LIFETIME;
 use super::backend::Backend;
@@ -96,7 +97,7 @@ impl Connection {
                     .into(),
             ));
         };
-        let token = Token::mint(SystemTime::now(), TOKEN_LIFETIME)?;
+        let token = Token::mint(SystemTime::from(SystemClock.now()), TOKEN_LIFETIME)?;
         backend.renew(name, &token).await?;
         connect_tls(*address, fingerprint, token.secret()).await
     }

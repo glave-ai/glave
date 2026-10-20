@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use glave_ports::block_on;
+use glave_ports::testing::ManualClock;
 
 use crate::conformance;
 use crate::root::InMemoryRoot;
@@ -11,7 +12,8 @@ use super::*;
 fn keys(cache_entries: usize) -> Keys<InMemoryKeyStorage> {
     let mut settings = KeySettings::new(Arc::new(InMemoryRoot::new().unwrap()));
     settings.cache_entries = cache_entries;
-    settings.clock = Arc::new(|| "2026-10-10T12:00:00Z".parse().unwrap());
+    let at: jiff::Timestamp = "2026-10-10T12:00:00Z".parse().unwrap();
+    settings.clock = Arc::new(ManualClock::at_millis(at.as_millisecond()));
     Keys::new(settings, InMemoryKeyStorage::new())
 }
 

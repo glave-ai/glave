@@ -9,6 +9,7 @@
 use std::time::Duration;
 
 use glave_event::{CredentialConnected, Forge, Secret};
+use glave_ports::{Clock as _, SystemClock};
 use glave_session::protocol::Ability;
 use reqwest::header::HeaderMap;
 use serde_json::Value;
@@ -43,7 +44,7 @@ pub(super) async fn now(http: &Http, credential: &CredentialConnected) -> Option
         let expired = credential
             .renewal
             .as_ref()
-            .is_some_and(|renewal| renewal.expires.timestamp() <= jiff::Timestamp::now());
+            .is_some_and(|renewal| renewal.expires.timestamp() <= SystemClock.now());
         if expired {
             return None;
         }

@@ -37,6 +37,10 @@ impl<T: Entropy + ?Sized> Entropy for Arc<T> {
 pub struct SystemClock;
 
 impl Clock for SystemClock {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the one place glave reads the computer's clock"
+    )]
     fn now(&self) -> Timestamp {
         Timestamp::now()
     }

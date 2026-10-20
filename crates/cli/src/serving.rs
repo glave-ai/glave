@@ -195,6 +195,8 @@ fn here(bound: SocketAddr) -> SocketAddr {
 
 #[cfg(test)]
 mod tests {
+    use glave_ports::Clock as _;
+
     use super::*;
 
     #[test]
@@ -203,7 +205,7 @@ mod tests {
             let root = glave_keys::InMemoryRoot::new().unwrap();
             let keys = glave_keys::KeySettings::new(Arc::new(root));
             let store = Data::Sqlite(glave_store_sqlite::Store::open_in_memory(keys).unwrap());
-            let person = PrincipalId::new(jiff::Timestamp::now(), [1; 10]).unwrap();
+            let person = PrincipalId::new(SystemClock.now(), [1; 10]).unwrap();
             let first = open_browsers(&store, person).await.unwrap();
             let code = first.link().unwrap();
             let session = first.redeem(code.expose()).await.unwrap();
