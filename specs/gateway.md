@@ -10,6 +10,7 @@ Each piece built has one line, which the pull requests that change it edit.
 
 - **In process** (`crates/gateway`): routes by purpose, capability-checked and reasoning-sticky fallback, reserve-then-settle budgets held in memory (organization, person, and each thread within the threads above it), and `model.responded` version 2 recording the route, the target and any reasoning stripped. The harness sends every call with its purpose and the threads it counts in; the judge's calls are recorded in the thread whose action they judged. The CLI builds the gateway from `GLAVE_MODEL` (`main`) and `GLAVE_JUDGE_MODEL` (when it names another model, a choice the judge's calls ask for by name, so a project's own judge is asked for the same way), with no budgets, so nothing changes by default.
 - **As a service** (`crates/gateway-service`, `glave gateway serve`): the OpenAI and Anthropic surfaces below, streamed or whole; every request signed in with the session API's OIDC verifier (`session.md`, "Signing in"); each caller held to the organization's policy on every call (`[models]`) and to a budget of their own per UTC day (`[budget] person_per_day_usd`, read back from their stream after a restart); every call recorded, content-free, in the caller's stream; and the tool catalog at `/mcp`. glave reaches a gateway elsewhere with `[gateway] url` ("Client mode").
+- **Catalogs** (#290): each model account's service's own model list, kept in the store and listed again daily and on demand ("Catalogs", below); the accounts' models follow it.
 - **Cloud contracts:** built for Azure OpenAI, Amazon Bedrock and Google Vertex AI, through their OpenAI-compatible APIs and, for Claude on Bedrock and Vertex, Anthropic's Messages API, keyless on Kubernetes ("Cloud contracts", below): `[provider]` in `config.toml`, for glave and for `glave gateway serve`.
 - **Not yet:** the Responses surface, grouping stateless calls into threads, credential sources besides the environment and workload identity (the OS keychain, a KMS, a secrets manager), more than one provider at once, typed TOML configuration of routes (the policy's `[models]` allow-list is kept by the CLI when it builds the targets, `policy.md`), space-level budgets, policies that tell callers apart (groups from the identity provider; the service's `Policy` already gets each caller), budgets shared by several gateway processes, opaque reasoning through the surfaces, images, a sign-in command for client mode, and instruction-count gates for the overhead benchmark (`cargo xtask bench --bench overhead` measures wall-clock time today).
 
@@ -27,6 +28,14 @@ A **route** names a purpose and maps it to an ordered list of **targets** (provi
 - **Capability-checked:** a target that cannot honour the request (no tools, a smaller context than the conversation) is skipped, never sent a degraded request.
 - **Thread-sticky:** a conversation that holds a provider's opaque reasoning falls back only to targets that accept it. Otherwise the reasoning is stripped explicitly and that is recorded.
 - Failures that may pass (rate limits, overload, timeouts) move to the next target after the provider's own retries.
+
+## Catalogs
+
+What a model can do and costs is the provider's to say, never glave's: its context window, longest answer, whether it reads images, its price and the levels of reasoning effort it offers come from the service's own model list, read the same way from every service (OpenRouter's `GET /api/v1/models` says all of it, vLLM its context, most services little beyond the id). Nothing about a model is written into glave's code.
+
+- **Kept in the store**, never in a cache server of its own: one catalog per service a person connected (its kind, and its URL for another server), each with when it was listed and its models as the list described them, in the catalog ledger (`events.md`). Only the latest `catalog.refreshed` is read.
+- **Listed when an account is added**, by the call that checks its key; **daily**, when the server is next asked for its models or starts a turn after a catalog grew a day old, in a task no one waits for; and **on demand** (`provider/refresh`). A service that cannot be reached keeps its catalog and is tried again an hour later; one that answers the same is not written again.
+- **An account's models are its service's catalog's**, those glave can talk with, newest first, at most a thousand: a model the service adds shows up from the next refresh, with no new glave and no reconnecting.
 
 ## Keys
 

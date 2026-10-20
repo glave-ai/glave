@@ -17,6 +17,7 @@ use glave_process::Processes;
 use glave_session::{Answering, GitHosts, ProjectTrust, Providers, Rereads, Server, Wiring};
 
 use crate::args::Args;
+use crate::catalogs::Catalogs;
 use crate::client::Glave;
 use crate::config::{self, Endpoint};
 use crate::credentials::Hosts;
@@ -343,27 +344,37 @@ async fn line_up(
     person: glave_event::PrincipalId,
     through_gateway: bool,
 ) -> anyhow::Result<Lined> {
-    let ledger = if through_gateway || !args.issuers.is_empty() {
+    let ledgers = if through_gateway || !args.issuers.is_empty() {
         None
     } else {
-        Some(crate::accounts::open(store, person).await?)
+        let accounts = crate::accounts::open(store, person).await?;
+        Some((accounts, Catalogs::open(store, person).await?))
     };
-    let accounts = match &ledger {
-        Some(ledger) => ledger.accounts().await?.providers,
-        None => Vec::new(),
+    let (accounts, catalogs) = match &ledgers {
+        Some((accounts, catalogs)) => (
+            accounts.accounts().await?.providers,
+            catalogs.latest().await?,
+        ),
+        None => (Vec::new(), Vec::new()),
     };
     // An account that no longer lines up with the settings never stops glave starting.
-    let mut built = match lineup.build(&accounts) {
+    let mut built = match lineup.build(&accounts, &catalogs) {
         Ok(built) => built,
         Err(error) if !accounts.is_empty() => {
             eprintln!("glave: the model accounts you connected are set aside: {error:#}");
-            lineup.build(&[])?
+            lineup.build(&[], &[])?
         }
         Err(error) => return Err(error),
     };
     let switch = GatewaySwitch::new(built.gateway.take());
-    let model_accounts =
-        ledger.map(|ledger| Arc::new(ModelAccounts::new(ledger, lineup, switch.clone())));
+    let model_accounts = ledgers.map(|(accounts, catalogs)| {
+        Arc::new(ModelAccounts::new(
+            accounts,
+            catalogs,
+            lineup,
+            switch.clone(),
+        ))
+    });
     Ok(Lined {
         built,
         switch,

@@ -34,6 +34,7 @@ pub use payload::{
     ToolCallRequested, TraceId, TurnEnded, TurnStarted, Usage, Verdict,
 };
 pub use payload::{BrowserSignedIn, BrowserSignedOut, BrowserUsed, Decision, TrustDecided};
+pub use payload::{Catalog, CatalogModel, CatalogRefreshed, Reasoning, TokenPrice};
 pub use payload::{Checkout, CommandEnded, CommandEnding, CommandStarted, FolderSource};
 pub use payload::{
     ComputerKind, ComputerRef, Fired, Opened, RemovedReason, ScheduleCreated, ScheduleDeleted,

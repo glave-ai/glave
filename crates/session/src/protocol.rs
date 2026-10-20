@@ -353,6 +353,9 @@ methods! {
     } -> [Provider],
     /// The model accounts connected here.
     "provider/list" => ProviderList {} -> [Providers],
+    /// Lists every account's models again with its service, now, and answers with the
+    /// accounts. Their catalogs are also refreshed daily on their own.
+    "provider/refresh" => ProviderRefresh {} -> [Providers],
     /// Removes a model account, destroying the key it was kept with.
     "provider/remove" => ProviderRemove { provider: ProviderId } -> [Done],
     /// Connects a git host: the token is checked with the host where it has a way to, then

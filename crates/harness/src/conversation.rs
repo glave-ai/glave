@@ -91,6 +91,7 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::BrowserSignedIn(_)
         | Body::BrowserUsed(_)
         | Body::BrowserSignedOut(_)
+        | Body::CatalogRefreshed(_)
         | Body::Unknown(_) => {}
     }
 }

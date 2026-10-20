@@ -46,7 +46,7 @@ pub use credentials::{GitHosts, NewCredential};
 pub use dispatch::Answered;
 pub use glave_identity::signin;
 pub use projects::PERSONAL_NAME;
-pub use providers::{Models, NewProvider, Providers};
+pub use providers::{Models, NewProvider, Providers, Refreshed};
 pub use reread::{Apply, Changed, Rereads, Runs};
 pub use server::{OnWorkers, Server, Wiring};
 pub use tasks::TaskLimits;

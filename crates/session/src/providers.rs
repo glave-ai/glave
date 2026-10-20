@@ -25,6 +25,15 @@ pub struct Models {
     pub offered: Vec<ModelInfo>,
 }
 
+/// How a refresh of the accounts' catalogs went.
+#[derive(Debug, Default)]
+pub struct Refreshed {
+    /// Whether any account's models changed: the server runs them again.
+    pub changed: bool,
+    /// Why a service's models could not be listed: its catalog stays as it was.
+    pub failed: Option<ApiError>,
+}
+
 /// What keeps model accounts for a server: the host, which builds its models from them. Each
 /// change answers with the models the server runs from then on.
 pub trait Providers: Send + Sync {
@@ -36,6 +45,17 @@ pub trait Providers: Send + Sync {
 
     /// Removes `provider`, destroying its key, and answers with the models now.
     fn remove(&self, provider: ProviderId) -> BoxFuture<'_, Result<Models, ApiError>>;
+
+    /// Whether the accounts' catalogs are due their daily refresh. True once for each, so
+    /// the caller refreshes them.
+    fn due(&self) -> bool;
+
+    /// Lists every account's models again with its service and keeps what it says: only the
+    /// catalogs a day old or more, or with `all`, every one.
+    fn refresh(&self, all: bool) -> BoxFuture<'_, Result<Refreshed, ApiError>>;
+
+    /// Builds the models of the accounts and catalogs kept now, and answers with them.
+    fn models(&self) -> BoxFuture<'_, Result<Models, ApiError>>;
 }
 
 /// Whether `caller` is the person on this computer: over a local transport, or signed in with
@@ -102,6 +122,54 @@ where
         let models = providers.remove(provider).await?;
         self.offer(models);
         Ok(Reply::Done {})
+    }
+
+    /// Answers `provider/refresh`: every account's models listed again now.
+    pub(crate) async fn refresh_providers(&self, caller: &Caller) -> Result<Reply, ApiError> {
+        let providers = self.providers_for(caller)?;
+        let refreshed = providers.refresh(true).await?;
+        self.rerun(providers, refreshed.changed).await?;
+        if let Some(failed) = refreshed.failed {
+            return Err(failed);
+        }
+        self.list_providers(caller).await
+    }
+
+    /// Refreshes the accounts' catalogs, when they are due, in a task the server owns: no one
+    /// waits for it, and the models follow once it ends.
+    pub(crate) fn refresh_when_due(&self) {
+        let Some(providers) = self.inner.providers.clone() else {
+            return;
+        };
+        if !providers.due() {
+            return;
+        }
+        let server = self.clone();
+        let task = tokio::spawn(async move {
+            let refreshed = match providers.refresh(false).await {
+                Ok(refreshed) => refreshed,
+                Err(error) => Refreshed {
+                    changed: false,
+                    failed: Some(error),
+                },
+            };
+            if let Some(failed) = &refreshed.failed {
+                tracing::warn!("could not refresh the models' catalogs: {}", failed.message);
+            }
+            if let Err(error) = server.rerun(providers.as_ref(), refreshed.changed).await {
+                tracing::warn!("could not run the refreshed models: {}", error.message);
+            }
+        });
+        self.own(task);
+    }
+
+    /// Runs the models of the accounts kept now, when `changed`.
+    async fn rerun(&self, providers: &dyn Providers, changed: bool) -> Result<(), ApiError> {
+        if changed {
+            let _changing = self.inner.changing_models.lock().await;
+            self.offer(providers.models().await?);
+        }
+        Ok(())
     }
 
     /// Runs `models` from now on: threads that chose none go to its default from their next

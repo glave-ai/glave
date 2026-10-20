@@ -918,6 +918,12 @@ export type ProviderListResult = {
   readonly providers: readonly (ProviderInfo)[];
 };
 
+export type ProviderRefreshParams = Readonly<Record<string, never>>;
+
+export type ProviderRefreshResult = {
+  readonly providers: readonly (ProviderInfo)[];
+};
+
 export type ProviderRemoveParams = {
   readonly provider: ProviderId;
 };
@@ -1192,6 +1198,7 @@ export interface Methods {
   readonly "project/rename": { readonly params: ProjectRenameParams; readonly result: ProjectRenameResult };
   readonly "provider/connect": { readonly params: ProviderConnectParams; readonly result: ProviderConnectResult };
   readonly "provider/list": { readonly params: ProviderListParams; readonly result: ProviderListResult };
+  readonly "provider/refresh": { readonly params: ProviderRefreshParams; readonly result: ProviderRefreshResult };
   readonly "provider/remove": { readonly params: ProviderRemoveParams; readonly result: ProviderRemoveResult };
   readonly "question/answer": { readonly params: QuestionAnswerParams; readonly result: QuestionAnswerResult };
   readonly "schedule/create": { readonly params: ScheduleCreateParams; readonly result: ScheduleCreateResult };

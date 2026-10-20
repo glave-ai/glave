@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use glave_config::policy::{Choices, Constraints, ModelEntry, Source, check_model};
-use glave_event::ProviderConnected;
+use glave_event::{Catalog, ProviderConnected};
 use glave_gateway::{Gateway, Target};
 use glave_ports::settings::Judge;
 use glave_session::Models;
@@ -60,14 +60,18 @@ impl Lineup {
         }
     }
 
-    /// The models of the configured endpoint and of `accounts`, those the policy allows.
-    pub(crate) fn build(&self, accounts: &[ProviderConnected]) -> anyhow::Result<Built> {
+    /// The models of the configured endpoint and of `accounts`, as their services' `catalogs`
+    /// list them, those the policy allows.
+    pub(crate) fn build(
+        &self,
+        accounts: &[ProviderConnected],
+        catalogs: &[Catalog],
+    ) -> anyhow::Result<Built> {
         let mut targets = Vec::new();
         let mut first = None;
         for account in accounts {
-            let allowed: Vec<&String> = account
-                .models
-                .iter()
+            let allowed: Vec<&str> = super::offered_by(account, catalogs)
+                .into_iter()
                 .filter(|model| {
                     super::endpoint_of(account, model).is_some_and(|endpoint| {
                         let name = format!("{}/{model}", endpoint.provider.provider);
@@ -86,7 +90,7 @@ impl Lineup {
             targets.extend(
                 allowed
                     .into_iter()
-                    .map(|model| Target::new(Arc::clone(&handle), provider.clone(), model.clone())),
+                    .map(|model| Target::new(Arc::clone(&handle), provider.clone(), model)),
             );
             first.get_or_insert(endpoint);
         }

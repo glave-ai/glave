@@ -125,3 +125,41 @@ fn a_model_the_settings_choose_stays_the_default_beside_an_account() {
     assert_eq!(listed["result"]["models"][0]["default"], true);
     served.end();
 }
+
+#[test]
+fn refreshing_lists_the_models_again_and_keeps_them_when_the_server_cannot_say() {
+    let key = key();
+    let place = place("accounts-refresh");
+    let newer = Reply::Status(
+        200,
+        json!({"object": "list", "data": [
+            {"id": "fake-old", "created": 1},
+            {"id": "fake-new", "created": 2},
+            {"id": "fake-newest", "created": 3, "max_model_len": 32_768},
+        ]})
+        .to_string(),
+    );
+    let down = Reply::Status(503, r#"{"error":{"message":"overloaded"}}"#.into());
+    let fake = FakeServer::start(vec![listing(), newer, down]).unwrap();
+    let mut served = Served::start(&place, &fake, &[]);
+    served.call("provider/connect", &connect(fake.url(), &key));
+    let refreshed = served.call("provider/refresh", &json!({}));
+    assert_eq!(
+        refreshed["result"]["providers"][0]["models"],
+        json!(["fake-newest", "fake-new", "fake-old"]),
+        "{refreshed}"
+    );
+    assert_eq!(served.models(), ["fake-newest", "fake-new", "fake-old"]);
+    let failed = served.call("provider/refresh", &json!({}));
+    assert_eq!(failed["error"]["code"], -32020, "{failed}");
+    let message = failed["error"]["message"].as_str().unwrap();
+    assert!(message.contains("busy right now"), "{message}");
+    served.end();
+
+    // The catalog kept is the one the next start runs; a fresh one is not listed again.
+    let mut served = Served::start(&place, &fake, &[]);
+    assert_eq!(served.models(), ["fake-newest", "fake-new", "fake-old"]);
+    let lines: Vec<String> = fake.received().iter().map(|r| r.line.clone()).collect();
+    assert_eq!(lines, ["GET /v1/models"; 3]);
+    served.end();
+}

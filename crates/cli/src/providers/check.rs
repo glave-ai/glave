@@ -1,11 +1,12 @@
-//! Checking a key when the person adds it: one small call that lists the account's models, so
-//! a key that does not work is refused at once with what to do, and the models glave offers
-//! come from the answer: newest first, only those it can talk with, at most 100.
+//! Listing an account's models: when the person adds it, so a key that does not work is
+//! refused at once with what to do, and again whenever its catalog is refreshed. The models
+//! glave offers come from the answer, each as the listing describes it: newest first, only
+//! those it can talk with, at most a thousand.
 
 use std::cmp::Reverse;
 use std::time::Duration;
 
-use glave_event::ProviderKind;
+use glave_event::{CatalogModel, ProviderKind};
 use glave_ports::ProviderError;
 use serde_json::Value;
 
@@ -16,7 +17,7 @@ use crate::model::Model;
 const CHECK: Duration = Duration::from_secs(20);
 
 /// The most models one account offers.
-const MOST: usize = 100;
+const MOST: usize = 1_000;
 
 /// The longest model id kept, in bytes, as the harness allows.
 const LONGEST_ID: usize = 255;
@@ -42,7 +43,7 @@ const NOT_CHAT: &[&str] = &[
 pub(super) async fn models(
     kind: ProviderKind,
     endpoint: &Endpoint,
-) -> Result<Vec<String>, ProviderError> {
+) -> Result<Vec<CatalogModel>, ProviderError> {
     let model = Model::for_endpoint(endpoint)?;
     let asked = async {
         // OpenRouter lists its models to anyone, so the key is checked on its own.
@@ -64,30 +65,31 @@ pub(super) async fn models(
     Ok(offered(kind, &listing))
 }
 
-/// The models of `listing`, a `/models` answer, that glave offers for an account at `kind`.
-pub(super) fn offered(kind: ProviderKind, listing: &Value) -> Vec<String> {
+/// The models of `listing`, a `/models` answer, that glave offers for an account at `kind`,
+/// each as the listing describes it.
+pub(super) fn offered(kind: ProviderKind, listing: &Value) -> Vec<CatalogModel> {
     let Some(data) = listing.get("data").and_then(Value::as_array) else {
         return Vec::new();
     };
-    let mut listed: Vec<(i64, &str)> = data
+    let mut listed: Vec<(i64, &str, &Value)> = data
         .iter()
         .filter_map(|model| {
             let id = model.get("id")?.as_str()?.trim();
             let printable = !id.chars().any(|c| c.is_control() || c.is_whitespace());
             let usable =
                 !id.is_empty() && id.len() <= LONGEST_ID && printable && chats(kind, id, model);
-            usable.then(|| (created(model), id))
+            usable.then(|| (created(model), id, model))
         })
         .collect();
     // Stable: models the service gives no date keep its order.
-    listed.sort_by_key(|(created, _)| Reverse(*created));
-    let mut models: Vec<String> = Vec::new();
-    for (_, id) in listed {
+    listed.sort_by_key(|(created, _, _)| Reverse(*created));
+    let mut models: Vec<CatalogModel> = Vec::new();
+    for (_, id, model) in listed {
         if models.len() == MOST {
             break;
         }
-        if !models.iter().any(|kept| kept == id) {
-            models.push(id.to_owned());
+        if !models.iter().any(|kept| kept.id == id) {
+            models.push(super::card::described(id, model));
         }
     }
     models
@@ -132,6 +134,11 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    /// The ids `offered` gives.
+    fn ids(kind: ProviderKind, listing: &Value) -> Vec<String> {
+        offered(kind, listing).into_iter().map(|m| m.id).collect()
+    }
+
     #[test]
     fn openai_offers_its_chat_models_newest_first() {
         let listing = json!({"data": [
@@ -144,7 +151,7 @@ mod tests {
             {"id": "omni-moderation-latest", "created": 6},
         ]});
         assert_eq!(
-            offered(ProviderKind::Openai, &listing),
+            ids(ProviderKind::Openai, &listing),
             ["gpt-new", "o4-mini", "gpt-old"]
         );
     }
@@ -156,7 +163,7 @@ mod tests {
             {"id": "b/silent", "created": 3, "supported_parameters": ["temperature"]},
             {"id": "c/unknown", "created": 4},
         ]});
-        assert_eq!(offered(ProviderKind::Openrouter, &listing), ["a/talks"]);
+        assert_eq!(ids(ProviderKind::Openrouter, &listing), ["a/talks"]);
     }
 
     #[test]
@@ -166,7 +173,7 @@ mod tests {
             {"id": "claude-old", "created_at": "2025-01-01T00:00:00Z"},
         ]});
         assert_eq!(
-            offered(ProviderKind::Anthropic, &listing),
+            ids(ProviderKind::Anthropic, &listing),
             ["claude-new", "claude-old"]
         );
         let ollama = json!({"data": [
@@ -174,7 +181,7 @@ mod tests {
             {"id": "gemma4:12b"}, {"id": " "}, {"id": "two\nlines"},
         ]});
         assert_eq!(
-            offered(ProviderKind::Compatible, &ollama),
+            ids(ProviderKind::Compatible, &ollama),
             ["gemma4:12b", "qwen3:8b"]
         );
         let unlisted = offered(ProviderKind::Compatible, &json!({"models": []}));
@@ -182,8 +189,8 @@ mod tests {
     }
 
     #[test]
-    fn an_account_offers_at_most_a_hundred_models() {
-        let many: Vec<Value> = (0..150).map(|n| json!({"id": format!("m{n}")})).collect();
+    fn an_account_offers_at_most_a_thousand_models() {
+        let many: Vec<Value> = (0..1_500).map(|n| json!({"id": format!("m{n}")})).collect();
         let listing = json!({ "data": many });
         assert_eq!(offered(ProviderKind::Compatible, &listing).len(), MOST);
     }
