@@ -1,0 +1,10 @@
+@if (choosable()) {
+  <glz-menu-select
+    testId="effort-picker"
+    quiet
+    [label]="copy.label"
+    [options]="options()"
+    [value]="shown()"
+    (valueChange)="pick($event)"
+  />
+}
