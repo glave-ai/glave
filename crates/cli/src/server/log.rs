@@ -60,7 +60,7 @@ mod tests {
         assert!(rotate(&log, 8).unwrap().is_none(), "at the cap, not over");
         std::fs::write(&log, "first log!").unwrap();
         let mut new = rotate(&log, 8).unwrap().unwrap();
-        std::io::Write::write_all(&mut new, b"second log").unwrap();
+        io::Write::write_all(&mut new, b"second log").unwrap();
         assert_eq!(std::fs::read_to_string(older(&log)).unwrap(), "first log!");
         assert!(rotate(&log, 8).unwrap().is_some());
         assert_eq!(

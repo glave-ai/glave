@@ -144,7 +144,7 @@ fn a_project_s_tools_hooks_and_mode_are_on_from_the_turn_after_it_is_trusted() {
         let (harness, seen) =
             harness_seeing(&dir, answers, Refuse, InMemoryLog::new(), 1, asking()).await;
         let harness =
-            harness.with_project_folders(Some(project.clone() as Arc<dyn ProjectFolders>));
+            harness.with_project_folders(Some(Arc::clone(&project) as Arc<dyn ProjectFolders>));
         let place = Place::Folder(project_dir.to_string_lossy().into_owned());
         let mut thread = harness
             .start_thread_in(scope(), &Caller::default(), place)
@@ -225,7 +225,7 @@ fn another_person_s_thread_gets_nothing_the_project_brings() {
         // The harness's own hooks and tools are the person's, run with their sign-ins: not
         // for grace.
         let harness = harness
-            .with_project_folders(Some(project.clone() as Arc<dyn ProjectFolders>))
+            .with_project_folders(Some(Arc::clone(&project) as Arc<dyn ProjectFolders>))
             .with_hooks(Hooks::new(vec![prompt_hook()]).unwrap())
             .with_own_tools(vec![Arc::new(tool("mcp__mine__search", "Mine."))]);
         let someone = glave_event::PrincipalId::new(jiff::Timestamp::UNIX_EPOCH, [9; 10]);
@@ -443,7 +443,7 @@ fn a_project_that_turned_the_sandbox_off_runs_its_commands_without_it_once_trust
             settings(),
         );
         let harness =
-            harness.with_project_folders(Some(project.clone() as Arc<dyn ProjectFolders>));
+            harness.with_project_folders(Some(Arc::clone(&project) as Arc<dyn ProjectFolders>));
         let place = Place::Folder(project_dir.to_string_lossy().into_owned());
         let mut thread = harness
             .start_thread_in(scope(), &Caller::default(), place)

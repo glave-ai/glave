@@ -2,6 +2,12 @@
 //!
 //! Run `cargo xtask help` for the command list.
 
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "a developer's command: it reports in the terminal"
+)]
+
 mod bench;
 mod ci;
 mod cli;

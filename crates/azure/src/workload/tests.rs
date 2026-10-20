@@ -149,8 +149,12 @@ fn the_environment_is_checked_naming_what_is_wrong() {
             .iter()
             .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
             .collect();
-        WorkloadIdentity::from_env(|name| vars.get(name).cloned(), DEFAULT_SCOPE, clock.clone())
-            .map(|identity| identity.map(|identity| identity.describe()))
+        WorkloadIdentity::from_env(
+            |name| vars.get(name).cloned(),
+            DEFAULT_SCOPE,
+            Arc::clone(&clock),
+        )
+        .map(|identity| identity.map(|identity| identity.describe()))
     };
     assert_eq!(build(&[]), Ok(None), "not a pod with workload identity");
     let file = ("AZURE_FEDERATED_TOKEN_FILE", "/var/run/token");

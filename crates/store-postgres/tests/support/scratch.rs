@@ -51,7 +51,7 @@ impl Scratch {
 
     /// Keys under the root this scratch schema's stores share.
     pub fn keys(&self) -> KeySettings {
-        KeySettings::new(self.root.clone())
+        KeySettings::new(Arc::<InMemoryRoot>::clone(&self.root))
     }
 
     pub async fn store(&self) -> Result<Store, StoreError> {

@@ -132,7 +132,7 @@ where
     ) -> Result<(), ApiError>
     where
         W: FnOnce(Arc<Inner<P, L, B>>, Thread, Cancel) -> F + Send + 'static,
-        F: std::future::Future<Output = (Thread, Result<R, HarnessError>)> + Send + 'static,
+        F: Future<Output = (Thread, Result<R, HarnessError>)> + Send + 'static,
         R: Send + Sync + 'static,
     {
         self.occupy_for(thread, done, Use::Work, work).await
@@ -148,7 +148,7 @@ where
     ) -> Result<(), ApiError>
     where
         W: FnOnce(Arc<Inner<P, L, B>>, Thread, Cancel) -> F + Send + 'static,
-        F: std::future::Future<Output = (Thread, Result<R, HarnessError>)> + Send + 'static,
+        F: Future<Output = (Thread, Result<R, HarnessError>)> + Send + 'static,
         R: Send + Sync + 'static,
     {
         // Nothing but changing whether it is shown runs where its project's folder was.

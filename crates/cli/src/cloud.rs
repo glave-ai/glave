@@ -50,7 +50,7 @@ pub async fn workers(
     let computers = Arc::new(computers(&backend.value, constraints).await?);
     let on = OnWorkers {
         workers: Workers {
-            computers: computers.clone(),
+            computers: Arc::<WorkerComputers>::clone(&computers),
             sources,
             attachments: Vec::new(),
         },

@@ -7,6 +7,12 @@
 //! The judge scored today is glave's deterministic checks, as auto mode applies them: the
 //! baseline any model judge has to beat.
 
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "the judge's command line: it reports in the terminal"
+)]
+
 mod baseline;
 mod case;
 mod model;

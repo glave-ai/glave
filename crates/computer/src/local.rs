@@ -215,7 +215,7 @@ impl LocalComputers {
             .registry
             .environment(computer)?
             .ok_or_else(|| ComputerError::NotFound(format!("no computer {computer}")))?;
-        let id = WorkspaceId::from_uuid(registry::new_id()?);
+        let id = WorkspaceId::from_uuid(new_id()?);
         let (root, copy, git_common) = self
             .made(computer, id, &environment, sources, credential)
             .await?;
@@ -328,7 +328,7 @@ impl LocalComputers {
     ) -> Result<CommandId, ComputerError> {
         let opened = self.registry.workspace(workspace)?;
         self.background.room(workspace)?;
-        let id = CommandId::from_uuid(registry::new_id()?);
+        let id = CommandId::from_uuid(new_id()?);
         let helper = self.sandbox_helper.as_deref();
         let sandbox = command.sandbox.as_ref();
         let spawned = command::spawn(&opened, &command.script, sandbox, helper, None).await?;
@@ -399,7 +399,7 @@ impl Computers for LocalComputers {
     ) -> BoxFuture<'a, Result<ComputerInfo, ComputerError>> {
         Box::pin(async move {
             check_host(environment)?;
-            let id = ComputerId::from_uuid(registry::new_id()?);
+            let id = ComputerId::from_uuid(new_id()?);
             self.registry.add_computer(id, environment.clone())?;
             Ok(Self::describe(id, Some(environment.clone())))
         })

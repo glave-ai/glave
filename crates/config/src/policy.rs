@@ -105,7 +105,7 @@ impl Loaded {
     pub fn settle(&self) -> crate::Result<Choices> {
         let choices = effective::settle(self.choices.clone(), &self.constraints)?;
         Ok(match &self.no_sandbox_here {
-            Some(why) => effective::unsandboxed(choices, why, &self.constraints),
+            Some(why) => unsandboxed(choices, why, &self.constraints),
             None => choices,
         })
     }
@@ -113,12 +113,9 @@ impl Loaded {
     /// The choices within the constraints for a server that already runs ([`give_way`]),
     /// and what gave way, one sentence each.
     pub fn settle_giving_way(&self) -> crate::Result<(Choices, Vec<String>)> {
-        let (choices, aside) = effective::give_way(self.choices.clone(), &self.constraints)?;
+        let (choices, aside) = give_way(self.choices.clone(), &self.constraints)?;
         Ok(match &self.no_sandbox_here {
-            Some(why) => (
-                effective::unsandboxed(choices, why, &self.constraints),
-                aside,
-            ),
+            Some(why) => (unsandboxed(choices, why, &self.constraints), aside),
             None => (choices, aside),
         })
     }
@@ -219,7 +216,7 @@ pub async fn load(
     env: ConfigFile,
 ) -> crate::Result<Loaded> {
     let person = match read(&locations.person).await? {
-        Some(text) => Some(files::config(&text, &locations.person)?),
+        Some(text) => Some(config(&text, &locations.person)?),
         None => None,
     };
     let person_hooks = person
@@ -258,7 +255,7 @@ pub async fn load(
 /// The choices of `layers`, nearest first, under the rules of `policies`.
 pub fn assemble(
     layers: &[Layer],
-    policies: &[(PathBuf, files::PolicyFile)],
+    policies: &[(PathBuf, PolicyFile)],
     project: Option<ProjectTrust>,
 ) -> Loaded {
     Loaded {

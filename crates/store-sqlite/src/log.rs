@@ -252,7 +252,7 @@ impl EventLog for SqliteLog {
         scope: &Scope,
         query: &ThreadQuery,
     ) -> impl Future<Output = Result<Vec<ThreadView>, LogError>> + Send {
-        let (scope, query, connection) = (*scope, *query, self.connection.clone());
+        let (scope, query, connection) = (*scope, *query, Arc::clone(&self.connection));
         async move { crate::views::page(&connection, &scope, &query).await }
     }
 
@@ -261,7 +261,7 @@ impl EventLog for SqliteLog {
         scope: &Scope,
         thread: ThreadId,
     ) -> impl Future<Output = Result<Option<ThreadView>, LogError>> + Send {
-        let (scope, connection) = (*scope, self.connection.clone());
+        let (scope, connection) = (*scope, Arc::clone(&self.connection));
         async move { crate::views::one(&connection, &scope, thread).await }
     }
 
@@ -278,7 +278,7 @@ impl EventLog for SqliteLog {
         &self,
         thread: ThreadId,
     ) -> impl Future<Output = Result<Option<Located>, LogError>> + Send {
-        let connection = self.connection.clone();
+        let connection = Arc::clone(&self.connection);
         async move {
             let found = run(&connection, move |connection| {
                 let mut statement = connection.prepare_cached(
