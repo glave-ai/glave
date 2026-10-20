@@ -37,7 +37,9 @@ pub mod testing;
 mod tools;
 mod view;
 
-pub use blob::{Blob, BlobError, BlobStore, Chunks, Pieces, digest, read_all};
+pub use blob::{
+    Blob, BlobError, BlobStore, Chunks, Pieces, Swept, UNREFERENCED_FOR_MS, digest, read_all,
+};
 pub use caller::Caller;
 pub use env::{Clock, Entropy, EntropyError, OsEntropy, SystemClock};
 pub use erase::{Erasable, EraseError, Eraser};
@@ -48,7 +50,7 @@ pub use model::{
     Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError, Purpose, RequestedCall,
     Served, ToolCall, ToolChoice, ToolSpec,
 };
-pub use objects::{ObjectWriter, Objects, object_name_ok};
+pub use objects::{Listed, ObjectWriter, Objects, object_name_ok};
 pub use projects::{
     FolderKey, MAX_NAME, Project, ProjectError, ProjectKind, Projects, origin_remote,
 };

@@ -118,7 +118,8 @@ fn the_blobs_pass_the_blob_store_conformance_suite() {
             return;
         };
         let store = scratch.store().await.unwrap();
-        let verdict = conformance::blob_store(&store.blobs()).await;
+        let verdict =
+            conformance::blob_store(&store.blobs(), &scratch.clock, Some(&scratch.objects)).await;
         drop(store);
         scratch.drop_schema().await;
         assert_eq!(verdict, Ok(()));
@@ -137,7 +138,7 @@ fn data_survives_reconnecting_and_the_schema_is_recorded_once() {
             .blobs()
             .put(
                 &scope,
-                thread(),
+                Some(thread()),
                 "text/plain",
                 4,
                 Box::new(Pieces::from(b"kept".to_vec())),

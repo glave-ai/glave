@@ -1,14 +1,17 @@
 //! The blob store on SQLite: each blob's record (under an HMAC of its SHA-256, so the file does
 //! not reveal which known content it holds) in the file, its bytes sealed as an object of random
-//! name in the deployment's objects (`specs/storage.md`, "Which stores").
+//! name in the deployment's objects (`specs/storage.md`, "Which stores"); kept while a thread
+//! refers to it, then swept.
+
+mod sweep;
 
 use std::future::Future;
 use std::sync::Arc;
 
 use glave_event::{BlobRef, Sha256, ThreadId};
 use glave_keys::{KeyError, Opened, seal_into};
-use glave_ports::{Blob, BlobError, BlobStore, Chunks, Objects, Scope};
-use rusqlite::{OptionalExtension as _, Transaction, params};
+use glave_ports::{Blob, BlobError, BlobStore, Chunks, Clock, Objects, OrgId, Scope, Swept};
+use rusqlite::{OptionalExtension as _, params};
 
 use crate::store::{Shared, SqliteKeyring, StoreError, run};
 
@@ -18,6 +21,7 @@ pub struct SqliteBlobs {
     connection: Shared,
     keys: Arc<SqliteKeyring>,
     objects: Arc<dyn Objects>,
+    clock: Arc<dyn Clock>,
 }
 
 /// A blob's record, as the `blobs` table keeps it.
@@ -33,32 +37,40 @@ impl SqliteBlobs {
         connection: Shared,
         keys: Arc<SqliteKeyring>,
         objects: Arc<dyn Objects>,
+        clock: Arc<dyn Clock>,
     ) -> Self {
         Self {
             connection,
             keys,
             objects,
+            clock,
         }
     }
 
-    /// Records `record` under `name` with `thread` referring to it, unless content of the same
-    /// name is kept already: then that is kept and `thread` refers to it. The record kept.
+    /// Records `record` under `name`, `thread` referring to it when given, unless content of
+    /// the same name is kept already: then that is kept and `thread` refers to it. An upload
+    /// (no thread) is kept a day from now. The record kept.
     async fn record(
         &self,
         scope: Scope,
         name: String,
-        thread: ThreadId,
+        thread: Option<ThreadId>,
         record: Record,
     ) -> Result<Record, BlobError> {
+        let now = self.clock.now().as_millisecond();
         run(&self.connection, move |connection| {
             let (org, project) = (scope.org().to_string(), scope.project().to_string());
             let transaction = connection.transaction()?;
             let size = i64::try_from(record.size).unwrap_or(i64::MAX);
             let (object, media_type, size, key_id): (String, String, i64, String) = transaction
                 .query_row(
-                    "INSERT INTO blobs (org, project, name, media_type, size, key_id, object)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-                     ON CONFLICT (org, project, name) DO UPDATE SET name = excluded.name
+                    "INSERT INTO blobs
+                         (org, project, name, media_type, size, key_id, object, referred, uploaded)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                     ON CONFLICT (org, project, name) DO UPDATE
+                     SET referred = max(blobs.referred, excluded.referred),
+                         uploaded = CASE WHEN excluded.referred = 1 THEN blobs.uploaded
+                                         ELSE excluded.uploaded END
                      RETURNING object, media_type, size, key_id",
                     params![
                         org,
@@ -67,15 +79,19 @@ impl SqliteBlobs {
                         record.media_type,
                         size,
                         record.key_id,
-                        record.object
+                        record.object,
+                        thread.is_some(),
+                        now
                     ],
                     |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
                 )?;
-            transaction.execute(
-                "INSERT OR IGNORE INTO blob_threads (org, project, name, thread)
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![org, project, name, thread.to_string()],
-            )?;
+            if let Some(thread) = thread {
+                transaction.execute(
+                    "INSERT OR IGNORE INTO blob_threads (org, project, name, thread)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![org, project, name, thread.to_string()],
+                )?;
+            }
             transaction.commit()?;
             Ok(Record {
                 media_type,
@@ -99,7 +115,7 @@ impl SqliteBlobs {
     async fn put_now(
         &self,
         scope: Scope,
-        thread: ThreadId,
+        thread: Option<ThreadId>,
         media_type: String,
         limit: u64,
         mut bytes: Box<dyn Chunks>,
@@ -201,19 +217,55 @@ impl SqliteBlobs {
         }))
     }
 
-    async fn release_now(&self, scope: Scope, thread: ThreadId) -> Result<(), BlobError> {
-        let objects = run(&self.connection, move |connection| {
+    async fn refer_now(
+        &self,
+        scope: Scope,
+        sha256: Sha256,
+        thread: ThreadId,
+    ) -> Result<bool, BlobError> {
+        let name = self
+            .keys
+            .blob_name(&scope, &sha256)
+            .await
+            .map_err(|e| sealing(&e))?;
+        let Some(name) = name else {
+            return Ok(false);
+        };
+        run(&self.connection, move |connection| {
+            let (org, project) = (scope.org().to_string(), scope.project().to_string());
             let transaction = connection.transaction()?;
-            let objects = release(&transaction, &scope, thread)?;
+            let found = transaction.execute(
+                "UPDATE blobs SET referred = 1 WHERE org = ?1 AND project = ?2 AND name = ?3",
+                params![org, project, name],
+            )?;
+            if found == 1 {
+                transaction.execute(
+                    "INSERT OR IGNORE INTO blob_threads (org, project, name, thread)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![org, project, name, thread.to_string()],
+                )?;
+            }
             transaction.commit()?;
-            Ok(objects)
+            Ok(found == 1)
         })
         .await
-        .map_err(|e| storage(&e))?;
-        for object in objects {
-            self.forget(scope, &object).await;
-        }
-        Ok(())
+        .map_err(|e| storage(&e))
+    }
+
+    async fn release_now(&self, scope: Scope, thread: ThreadId) -> Result<(), BlobError> {
+        run(&self.connection, move |connection| {
+            connection.execute(
+                "DELETE FROM blob_threads WHERE org = ?1 AND project = ?2 AND thread = ?3",
+                params![
+                    scope.org().to_string(),
+                    scope.project().to_string(),
+                    thread.to_string()
+                ],
+            )
+        })
+        .await
+        .map(drop)
+        .map_err(|e| storage(&e))
     }
 }
 
@@ -221,7 +273,7 @@ impl BlobStore for SqliteBlobs {
     fn put(
         &self,
         scope: &Scope,
-        thread: ThreadId,
+        thread: Option<ThreadId>,
         media_type: &str,
         limit: u64,
         bytes: Box<dyn Chunks>,
@@ -237,6 +289,15 @@ impl BlobStore for SqliteBlobs {
         self.get_now(*scope, sha256.clone())
     }
 
+    fn refer(
+        &self,
+        scope: &Scope,
+        sha256: &Sha256,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<bool, BlobError>> + Send {
+        self.refer_now(*scope, sha256.clone(), thread)
+    }
+
     fn release(
         &self,
         scope: &Scope,
@@ -244,40 +305,10 @@ impl BlobStore for SqliteBlobs {
     ) -> impl Future<Output = Result<(), BlobError>> + Send {
         self.release_now(*scope, thread)
     }
-}
 
-/// Drops `thread`'s references in `scope`, then the records of what it referred to that no
-/// thread refers to any more, and answers their objects, which go once this commits. One
-/// transaction, so a thread storing the same content at once either keeps the record or makes
-/// a new one.
-fn release(
-    transaction: &Transaction<'_>,
-    scope: &Scope,
-    thread: ThreadId,
-) -> rusqlite::Result<Vec<String>> {
-    let (org, project) = (scope.org().to_string(), scope.project().to_string());
-    let names: Vec<String> = transaction
-        .prepare(
-            "DELETE FROM blob_threads WHERE org = ?1 AND project = ?2 AND thread = ?3
-             RETURNING name",
-        )?
-        .query_map(params![org, project, thread.to_string()], |row| row.get(0))?
-        .collect::<rusqlite::Result<_>>()?;
-    let mut objects = Vec::new();
-    for name in names {
-        let object: Option<String> = transaction
-            .query_row(
-                "DELETE FROM blobs WHERE org = ?1 AND project = ?2 AND name = ?3
-                 AND NOT EXISTS (SELECT 1 FROM blob_threads AS t
-                     WHERE t.org = ?1 AND t.project = ?2 AND t.name = ?3)
-                 RETURNING object",
-                params![org, project, name],
-                |row| row.get(0),
-            )
-            .optional()?;
-        objects.extend(object);
+    fn sweep(&self, org: OrgId) -> impl Future<Output = Result<Swept, BlobError>> + Send {
+        self.sweep_now(org)
     }
-    Ok(objects)
 }
 
 fn storage(error: &StoreError) -> BlobError {

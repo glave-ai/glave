@@ -11,6 +11,7 @@ mod objects;
 mod projects;
 mod racing;
 mod search;
+mod sweep;
 mod threads;
 
 pub use at_rest::{AtRest, KeptBlob, KeptPayload, at_rest};

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use glave_bucket::Bucket;
 use glave_event::ThreadId;
 use glave_keys::{InMemoryRoot, KeySettings};
-use glave_ports::testing::TempDir;
+use glave_ports::testing::{ManualClock, TempDir};
 use glave_ports::{
     BlobError, BlobStore as _, OrgId, Pieces, ProjectId, Scope, block_on, conformance, digest,
 };
@@ -24,7 +24,13 @@ fn places(name: &str) -> (TempDir, PathBuf, PathBuf) {
 
 async fn store(blobs: &Path, database: &Path) -> Store {
     let bucket = Bucket::folder(blobs).await.unwrap();
-    let keys = KeySettings::new(Arc::new(InMemoryRoot::new().unwrap()));
+    on(bucket, database, &ManualClock::at_millis(1_791_000_000_000)).await
+}
+
+/// The local database at `database`, its blobs' bytes in `bucket`, its time `clock`'s.
+pub(crate) async fn on(bucket: Bucket, database: &Path, clock: &ManualClock) -> Store {
+    let mut keys = KeySettings::new(Arc::new(InMemoryRoot::new().unwrap()));
+    keys.clock = Arc::new(clock.clone());
     Store::open(database, keys, Arc::new(bucket)).await.unwrap()
 }
 
@@ -71,8 +77,11 @@ fn a_folder_passes_the_objects_suite() {
 fn blobs_in_a_folder_pass_the_blob_store_suite() {
     let (_dir, blobs, database) = places("blobs");
     block_on!(async {
-        let store = store(&blobs, &database).await;
-        assert_eq!(conformance::blob_store(&store.blobs()).await, Ok(()));
+        let bucket = Bucket::folder(&blobs).await.unwrap();
+        let clock = ManualClock::at_millis(1_791_000_000_000);
+        let store = on(bucket.clone(), &database, &clock).await;
+        let verdict = conformance::blob_store(&store.blobs(), &clock, Some(&bucket)).await;
+        assert_eq!(verdict, Ok(()));
     });
 }
 
@@ -86,7 +95,7 @@ fn the_folder_holds_only_sealed_bytes_under_random_names() {
             .blobs()
             .put(
                 &scope(),
-                thread(1),
+                Some(thread(1)),
                 "image/png",
                 1024,
                 Box::new(Pieces::from(content.clone())),
@@ -118,7 +127,7 @@ fn the_folder_holds_only_sealed_bytes_under_random_names() {
 }
 
 #[test]
-fn a_refused_write_and_a_released_thread_leave_nothing_in_the_folder() {
+fn a_refused_write_and_a_swept_blob_leave_nothing_in_the_folder() {
     let (_dir, blobs, database) = places("tidy");
     block_on!(async {
         let store = store(&blobs, &database).await;
@@ -126,7 +135,7 @@ fn a_refused_write_and_a_released_thread_leave_nothing_in_the_folder() {
             .blobs()
             .put(
                 &scope(),
-                thread(1),
+                Some(thread(1)),
                 "image/png",
                 10,
                 Box::new(Pieces::from(vec![1; 11])),
@@ -138,7 +147,7 @@ fn a_refused_write_and_a_released_thread_leave_nothing_in_the_folder() {
             .blobs()
             .put(
                 &scope(),
-                thread(2),
+                Some(thread(2)),
                 "text/plain",
                 10,
                 Box::new(Pieces::from(b"kept".to_vec())),
@@ -147,6 +156,7 @@ fn a_refused_write_and_a_released_thread_leave_nothing_in_the_folder() {
             .unwrap();
         assert_eq!(files(&blobs).len(), 1);
         store.blobs().release(&scope(), thread(2)).await.unwrap();
+        store.blobs().sweep(scope().org()).await.unwrap();
         assert_eq!(files(&blobs), Vec::<PathBuf>::new());
     });
 }

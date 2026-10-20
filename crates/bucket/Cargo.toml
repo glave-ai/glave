@@ -17,13 +17,13 @@ glave-ports.workspace = true
 object_store.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["fs"] }
+uuid.workspace = true
 
 [dev-dependencies]
 glave-event.workspace = true
 glave-keys = { workspace = true, features = ["conformance"] }
 glave-ports = { workspace = true, features = ["conformance"] }
 glave-store-sqlite.workspace = true
-uuid.workspace = true
 
 [[test]]
 name = "bucket"

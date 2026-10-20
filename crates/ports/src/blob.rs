@@ -9,20 +9,27 @@ use glave_event::{BlobRef, Sha256, ThreadId};
 use sha2::Digest as _;
 use thiserror::Error;
 
-use crate::scope::Scope;
+use crate::scope::{OrgId, Scope};
 use crate::tools::BoxFuture;
 
+/// How long a blob no thread has referred to yet is kept: an upload waiting for the message
+/// it was added to (`specs/storage.md`, "Blobs"). One day, in milliseconds.
+pub const UNREFERENCED_FOR_MS: i64 = 24 * 60 * 60 * 1000;
+
 /// Holds content by hash: turn configurations, large tool outputs, files. A blob's record
-/// (its name, size, key and the threads that refer to it) is kept apart from its bytes.
+/// (its name, size, key and the threads that refer to it) is kept apart from its bytes. A blob
+/// lives while a thread refers to it; [`BlobStore::sweep`] deletes the rest (eviction by
+/// reference, not age).
 pub trait BlobStore: Send + Sync {
-    /// Stores what `bytes` yields, at most `limit` bytes, for `thread`, which refers to it, and
-    /// returns a reference to it. Storing the same content twice keeps one copy; each thread
-    /// that stores it is recorded, so erasing a thread can find the blobs only it used. More
-    /// than `limit` bytes is refused ([`BlobError::TooLarge`]) and nothing is kept.
+    /// Stores what `bytes` yields, at most `limit` bytes, and returns a reference to it.
+    /// `thread`, when given, refers to it; with none it is an upload, kept for
+    /// [`UNREFERENCED_FOR_MS`] for a thread to refer to it. Storing the same content twice keeps
+    /// one copy (an upload again keeps it a day more). More than `limit` bytes is refused
+    /// ([`BlobError::TooLarge`]) and nothing is kept.
     fn put(
         &self,
         scope: &Scope,
-        thread: ThreadId,
+        thread: Option<ThreadId>,
         media_type: &str,
         limit: u64,
         bytes: Box<dyn Chunks>,
@@ -35,14 +42,38 @@ pub trait BlobStore: Send + Sync {
         sha256: &Sha256,
     ) -> impl Future<Output = Result<Option<Blob>, BlobError>> + Send;
 
-    /// Drops every reference `thread` holds, as deleting or erasing it does, and deletes the
-    /// blobs it referred to that no thread refers to any more. A blob another thread refers to
-    /// stays.
+    /// Makes `thread` refer to the blob stored under `sha256` in `scope`, as sending a message
+    /// with an upload does. Whether the blob was still there: a sweep that deleted it first
+    /// wins, and one that comes after keeps it (the store orders the two, not the clock).
+    fn refer(
+        &self,
+        scope: &Scope,
+        sha256: &Sha256,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<bool, BlobError>> + Send;
+
+    /// Drops every reference `thread` holds, as deleting or erasing it does. The blobs no
+    /// thread refers to any more go at the next sweep; one another thread refers to stays.
     fn release(
         &self,
         scope: &Scope,
         thread: ThreadId,
     ) -> impl Future<Output = Result<(), BlobError>> + Send;
+
+    /// Deletes, in `org`, the blobs no thread refers to: those whose last reference went, and
+    /// uploads no thread referred to within [`UNREFERENCED_FOR_MS`]; and bytes with no record
+    /// that old (a write a crash cut short). The server's daily work runs it, on a folder and
+    /// a bucket alike. How many blobs and orphaned bytes went.
+    fn sweep(&self, org: OrgId) -> impl Future<Output = Result<Swept, BlobError>> + Send;
+}
+
+/// What a sweep deleted.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Swept {
+    /// Blobs no thread referred to, record and bytes.
+    pub blobs: u64,
+    /// Bytes no record named.
+    pub orphans: u64,
 }
 
 /// A blob found: what it is, and its bytes.

@@ -7,12 +7,16 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use futures_core::Stream;
-use glave_ports::{BlobError, BoxFuture, Chunks, ObjectWriter, Objects, Scope, object_name_ok};
+use glave_ports::{
+    BlobError, BoxFuture, Chunks, Listed, ObjectWriter, Objects, OrgId, ProjectId, Scope,
+    object_name_ok,
+};
 use object_store::aws::{AmazonS3Builder, AmazonS3ConfigKey};
 use object_store::local::LocalFileSystem;
 use object_store::path::Path;
 use object_store::{Error, GetResult, ObjectStore, ObjectStoreExt as _, WriteMultipart};
 use thiserror::Error as ThisError;
+use uuid::Uuid;
 
 /// Parts uploaded at once while an object is written.
 const PARTS_AT_ONCE: usize = 4;
@@ -96,6 +100,31 @@ impl Bucket {
         }
     }
 
+    async fn list_now(&self, org: OrgId) -> Result<Vec<Listed>, BlobError> {
+        let mut found = self.store.list(Some(&Path::from(org.to_string())));
+        let mut listed = Vec::new();
+        while let Some(meta) = poll_fn(|cx| found.as_mut().poll_next(cx)).await {
+            let meta = meta.map_err(|e| failed("list", &e))?;
+            let parts: Vec<_> = meta.location.parts().collect();
+            // Anything not laid out as glave lays objects out is not glave's to sweep.
+            let [_, project, object] = parts.as_slice() else {
+                continue;
+            };
+            let (Ok(project), true) = (
+                project.as_ref().parse::<Uuid>(),
+                object_name_ok(object.as_ref()),
+            ) else {
+                continue;
+            };
+            listed.push(Listed {
+                scope: Scope::glaves_own(org, ProjectId::from_uuid(project)),
+                object: object.as_ref().to_owned(),
+                written_ms: meta.last_modified.timestamp_millis(),
+            });
+        }
+        Ok(listed)
+    }
+
     async fn delete_now(&self, path: Path) -> Result<(), BlobError> {
         match self.store.delete(&path).await {
             Ok(()) | Err(Error::NotFound { .. }) => Ok(()),
@@ -148,6 +177,10 @@ impl Objects for Bucket {
     fn delete(&self, scope: Scope, object: &str) -> BoxFuture<'_, Result<(), BlobError>> {
         let path = located(scope, object);
         Box::pin(async move { self.delete_now(path?).await })
+    }
+
+    fn list(&self, org: OrgId) -> BoxFuture<'_, Result<Vec<Listed>, BlobError>> {
+        Box::pin(self.list_now(org))
     }
 }
 
