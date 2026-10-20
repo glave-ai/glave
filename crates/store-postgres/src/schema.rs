@@ -8,7 +8,7 @@ use crate::store::{StoreError, describe};
 
 /// The schema this build makes and reads. Bumped whenever [`SCHEMA`] changes. It starts past
 /// every version the migrations it replaced wrote, so a database one of them made is refused.
-pub(crate) const VERSION: i32 = 10;
+pub(crate) const VERSION: i32 = 11;
 
 /// Every table, made in one transaction in a new database.
 const SCHEMA: &str = "
@@ -37,15 +37,17 @@ const SCHEMA: &str = "
     -- A thread's latest event of a type, found without reading the rest (`EventLog::latest_of`).
     CREATE INDEX events_by_type ON events (org, project, thread, type, seq);
 
-    -- Blobs, sealed, stored under a keyed name derived from their hash, with the threads that
-    -- use each.
+    -- Blobs' records: each under a keyed name derived from its hash, with its media type, size,
+    -- the data key that sealed it and the object its bytes are kept as; and the threads that
+    -- refer to each.
     CREATE TABLE blobs (
-        org         uuid  NOT NULL,
-        project     uuid  NOT NULL,
-        name        text  NOT NULL,
-        media_type  text  NOT NULL,
-        bytes       bytea NOT NULL,
-        key_id      text  NOT NULL,
+        org         uuid   NOT NULL,
+        project     uuid   NOT NULL,
+        name        text   NOT NULL,
+        media_type  text   NOT NULL,
+        size        bigint NOT NULL,
+        key_id      text   NOT NULL,
+        object      text   NOT NULL,
         PRIMARY KEY (org, project, name)
     );
 
@@ -55,6 +57,18 @@ const SCHEMA: &str = "
         name     text NOT NULL,
         thread   uuid NOT NULL,
         PRIMARY KEY (org, project, name, thread)
+    );
+
+    CREATE INDEX blob_threads_by_thread ON blob_threads (org, project, thread);
+
+    -- Blobs' bytes, apart from their records: each object's sealed chunks, in order.
+    CREATE TABLE blob_chunks (
+        org      uuid   NOT NULL,
+        project  uuid   NOT NULL,
+        object   text   NOT NULL,
+        n        bigint NOT NULL,
+        bytes    bytea  NOT NULL,
+        PRIMARY KEY (org, project, object, n)
     );
 
     -- The wrapped keys: one per organization, and one record of keys per project.

@@ -393,6 +393,11 @@ where
         &self.log
     }
 
+    /// The blobs its events refer to.
+    pub fn blobs(&self) -> &B {
+        &self.blobs
+    }
+
     /// What the harness was set up with: the default model and the approval mode among them,
     /// as it started. Those now are [`Harness::default_model`] and [`Harness::defaults`].
     pub fn settings(&self) -> &Settings {

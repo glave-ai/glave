@@ -6,7 +6,7 @@
 use glave_event::{Seq, ThreadId};
 
 use super::{Verdict, ensure, events, scope, thread};
-use crate::blob::{BlobStore, digest};
+use crate::blob::{BlobStore, Pieces, digest, read_all};
 use crate::log::EventLog;
 use crate::scope::Scope;
 use crate::tools::BoxFuture;
@@ -24,6 +24,7 @@ pub struct KeptPayload {
 pub struct KeptBlob {
     /// The name it is stored under.
     pub name: String,
+    /// Its sealed chunks, one after another.
     pub bytes: Vec<u8>,
     /// Every thread recorded as storing it.
     pub threads: Vec<ThreadId>,
@@ -121,7 +122,13 @@ async fn blobs_kept<B: BlobStore>(blobs: &B, rows: &dyn AtRest) -> Verdict {
     let bytes = b"shared at rest".to_vec();
     for by in [a, b] {
         blobs
-            .put(&here, by, bytes.clone(), "text/plain")
+            .put(
+                &here,
+                by,
+                "text/plain",
+                1024,
+                Box::new(Pieces::from(bytes.clone())),
+            )
             .await
             .map_err(|e| e.to_string())?;
     }
@@ -148,12 +155,13 @@ async fn blobs_kept<B: BlobStore>(blobs: &B, rows: &dyn AtRest) -> Verdict {
         threads == both,
         "every thread that stored a blob must be recorded with it",
     )?;
-    let got = blobs
+    let mut got = blobs
         .get(&here, &digest(&bytes))
         .await
+        .map_err(|e| e.to_string())?
+        .ok_or("a sealed blob must be found")?;
+    let read_back = read_all(got.bytes.as_mut(), 1024)
+        .await
         .map_err(|e| e.to_string())?;
-    ensure(
-        got.as_deref() == Some(bytes.as_slice()),
-        "a sealed blob must read back exactly",
-    )
+    ensure(read_back == bytes, "a sealed blob must read back exactly")
 }

@@ -164,6 +164,10 @@ where
             Change::Unarchive => self.record(thread, &ThreadUnarchived { by }).await,
             Change::Delete => self.record(thread, &ThreadDeleted { by }).await,
         }?;
+        // A deleted thread no longer refers to its blobs: those only it used go.
+        if change == Change::Delete {
+            self.blobs.release(&thread.scope, thread.id).await?;
+        }
         thread.standing = change.result();
         // Glave's own record: call ids do not count it, so the model is sent the same.
         thread.unnumbered = thread.unnumbered.saturating_add(1);

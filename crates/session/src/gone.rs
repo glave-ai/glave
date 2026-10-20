@@ -6,7 +6,7 @@
 //! threads work from then on; `project/remove` archives its threads and lists it no more.
 
 use glave_event::{Principal, ProjectRemoved, ThreadId};
-use glave_harness::{Change, change_standing};
+use glave_harness::{Change, HarnessError, change_standing};
 use glave_ports::{
     BlobStore, Caller, EventLog, FolderKey, ModelProvider, Project, ProjectError, ProjectId,
     ProjectKind, Scope, Standing, ThreadQuery,
@@ -186,6 +186,15 @@ where
         )
         .await
         .map_err(|error| ApiError::from(&error))?;
+        // A deleted thread no longer refers to its blobs: those only it used go.
+        if change == Change::Delete {
+            self.inner
+                .harness
+                .blobs()
+                .release(&scope, thread)
+                .await
+                .map_err(|error| ApiError::from(&HarnessError::from(error)))?;
+        }
         Ok(Reply::Done {})
     }
 

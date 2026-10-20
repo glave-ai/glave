@@ -369,18 +369,35 @@ async fn blobs<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
         keys.blob_name(&here, &sha).await.map_err(text)?.is_none(),
         "a project without keys has no blob names",
     )?;
-    let (name, sealed) = keys.seal_blob(&here, &sha, b"blob").await.map_err(text)?;
+    let mut sealer = keys.blob_sealer(&here).await.map_err(text)?;
+    let (object, key_id) = (sealer.object().to_owned(), sealer.key_id().to_owned());
+    ensure(
+        sealer.write(b"blob").map_err(text)?.is_empty(),
+        "a short blob waits for its last chunk",
+    )?;
+    let finished = sealer.finish().map_err(text)?;
+    ensure(
+        finished.sha256 == sha,
+        "a sealed blob is named by its SHA-256",
+    )?;
+    let name = keys
+        .blob_name(&here, &sha)
+        .await
+        .map_err(text)?
+        .ok_or("sealing a blob makes the project's key")?;
     ensure(
         name != sha.as_str() && name.len() == 64,
         "a blob is stored under an HMAC of its hash, not the hash",
     )?;
     let opened = keys
-        .open_blob(&here, &name, &sealed.key_id, &sealed.bytes)
+        .blob_opener(&here, &key_id, &object, &sha)
         .await
+        .map_err(text)?
+        .open(&finished.last, true)
         .map_err(text)?;
     ensure(opened == b"blob", "a sealed blob must open")?;
     let other = Scope::glaves_own(here.org(), scope(6).project());
-    keys.seal_blob(&other, &sha, b"blob").await.map_err(text)?;
+    keys.blob_sealer(&other).await.map_err(text)?;
     ensure(
         keys.blob_name(&other, &sha).await.map_err(text)? != Some(name.clone()),
         "the same blob is named differently in another project",
@@ -389,13 +406,13 @@ async fn blobs<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
         &here,
         KeyId {
             n: 99,
-            ..sealed.key_id.parse().map_err(text)?
+            ..key_id.parse().map_err(text)?
         },
     )
     .await
     .err()
     .ok_or("destroying an unknown key must fail")?;
-    let first: KeyId = sealed.key_id.parse().map_err(text)?;
+    let first: KeyId = key_id.parse().map_err(text)?;
     keys.seal_event(&here, &event(1, 1, "2020-01")?)
         .await
         .map_err(text)?;

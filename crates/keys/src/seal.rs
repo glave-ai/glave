@@ -9,6 +9,9 @@ use crate::material::{KeyMaterial, random};
 
 const NONCE: usize = 24;
 
+/// What sealing adds to the plaintext: the nonce before it, and Poly1305's 16-byte tag after.
+pub(crate) const OVERHEAD: usize = NONCE + 16;
+
 /// Associated data from `fields`, each preceded by its length as four big-endian bytes, so
 /// no two different lists of fields encode alike.
 pub(crate) fn associated(fields: &[&[u8]]) -> Vec<u8> {

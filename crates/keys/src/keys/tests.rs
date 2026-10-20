@@ -28,19 +28,6 @@ fn the_suite_passes_with_no_cache_so_every_key_is_unwrapped_from_storage() {
 }
 
 #[test]
-fn blobs_are_sealed_under_the_clocks_month() {
-    let keys = keys(16);
-    let scope = Scope::glaves_own(
-        glave_ports::OrgId::from_uuid(uuid::Uuid::from_u128(1)),
-        glave_ports::ProjectId::from_uuid(uuid::Uuid::from_u128(2)),
-    );
-    let sha = glave_ports::digest(b"x");
-    let (_, sealed) = block_on!(keys.seal_blob(&scope, &sha, b"x")).unwrap();
-    let id: KeyId = sealed.key_id.parse().unwrap();
-    assert_eq!(id.period.to_string(), "2026-10");
-}
-
-#[test]
 fn another_root_cannot_open_what_this_one_sealed() {
     let storage = InMemoryKeyStorage::new();
     let scope = Scope::glaves_own(

@@ -1,6 +1,7 @@
 //! The key hierarchy at work: sealing and opening event payloads and blobs, and erasing by
 //! destroying keys.
 
+mod blob;
 mod cache;
 mod erase;
 mod hierarchy;
@@ -17,6 +18,7 @@ use crate::root::Root;
 use crate::seal::{associated, open, seal};
 use crate::storage::KeyStorage;
 
+pub use self::blob::{BlobOpener, BlobSealer, CHUNK, Finished, SEALED_CHUNK, chunks_in};
 use self::cache::Cache;
 
 /// How a store's keys are set up: the root that wraps organization keys, the clock that
@@ -161,43 +163,6 @@ impl<S: KeyStorage> Keys<S> {
             .collect::<Result<Vec<_>, _>>()
             .map(Some)
     }
-
-    /// Seals a blob under the project's data key for this month. Returns the name to store it
-    /// under and the sealed bytes.
-    pub async fn seal_blob(
-        &self,
-        scope: &Scope,
-        sha256: &Sha256,
-        bytes: &[u8],
-    ) -> Result<(String, Sealed), KeyError> {
-        let month = Month::of(self.clock.now());
-        let (id, key) = self.sealing_key(scope, Period::Month(month)).await?;
-        let name = self
-            .blob_name(scope, sha256)
-            .await?
-            .ok_or_else(|| KeyError::Contended(scope.to_string()))?;
-        let key_id = id.to_string();
-        let sealed = seal(&key, &blob_aad(scope, &name, &key_id), bytes)?;
-        Ok((
-            name,
-            Sealed {
-                key_id,
-                bytes: sealed,
-            },
-        ))
-    }
-
-    /// Opens a blob [`Keys::seal_blob`] sealed under `name`.
-    pub async fn open_blob(
-        &self,
-        scope: &Scope,
-        name: &str,
-        key_id: &str,
-        sealed: &[u8],
-    ) -> Result<Vec<u8>, KeyError> {
-        let key = self.data_key(scope, key_id.parse()?).await?;
-        open(&key, &blob_aad(scope, name, key_id), sealed, key_id)
-    }
 }
 
 /// What a payload reads as once the item key that sealed it, a memory's or a model account's,
@@ -224,17 +189,6 @@ fn event_aad(scope: &Scope, fields: &EventFields<'_>, key_id: &str) -> Vec<u8> {
         fields.seq.get().to_string().as_bytes(),
         fields.kind.as_bytes(),
         fields.v.to_string().as_bytes(),
-        key_id.as_bytes(),
-    ])
-}
-
-/// What binds a sealed blob to its scope and name.
-fn blob_aad(scope: &Scope, name: &str, key_id: &str) -> Vec<u8> {
-    associated(&[
-        b"glave/blob/v1",
-        scope.org().to_string().as_bytes(),
-        scope.project().to_string().as_bytes(),
-        name.as_bytes(),
         key_id.as_bytes(),
     ])
 }

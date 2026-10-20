@@ -26,7 +26,10 @@ pub use error::KeyError;
 pub use key_id::{KeyId, Month, Period};
 #[cfg(feature = "keychain")]
 pub use keychain::KeychainRoot;
-pub use keys::{EventFields, KeySettings, Keys, Sealed, erased_payload};
+pub use keys::{
+    BlobOpener, BlobSealer, CHUNK, EventFields, Finished, KeySettings, Keys, SEALED_CHUNK, Sealed,
+    chunks_in, erased_payload,
+};
 pub use material::KeyMaterial;
 pub use root::{InMemoryRoot, KeyFileRoot, Root};
 pub use storage::{InMemoryKeyStorage, KeyStorage, StoredProject};

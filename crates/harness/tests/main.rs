@@ -8,6 +8,7 @@ mod support;
 mod actors;
 mod approvals;
 mod background;
+mod blobs;
 mod cancel;
 mod checks;
 mod compaction;

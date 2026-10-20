@@ -8,7 +8,7 @@ use std::process::ExitCode;
 use glave_event::ThreadId;
 use glave_harness::{Change, change_standing};
 use glave_ports::{
-    Clock as _, Entropy, EventLog, OsEntropy, Scope, Standing, SystemClock, ThreadQuery,
+    BlobStore, Clock as _, Entropy, EventLog, OsEntropy, Scope, Standing, SystemClock, ThreadQuery,
 };
 use glave_session::protocol::{Reply, Request, Show};
 use uuid::Uuid;
@@ -183,19 +183,24 @@ async fn in_the_log(command: Command) -> anyhow::Result<()> {
             }
             Ok(())
         }
-        Command::Change(change, thread) => apply(&log, scope, change, thread).await,
+        Command::Change(change, thread) => apply(&log, &store.blobs(), scope, change, thread).await,
     }
 }
 
-/// Changes `thread`, and releases its worktrees when it is archived or deleted.
-async fn apply<L: EventLog>(
+/// Changes `thread`, and releases its worktrees when it is archived or deleted, and its blobs
+/// when it is deleted.
+async fn apply<L: EventLog, B: BlobStore>(
     log: &L,
+    blobs: &B,
     scope: Scope,
     change: Change,
     thread: ThreadId,
 ) -> anyhow::Result<()> {
     let now = SystemClock.now();
     change_standing(log, &scope, thread, now, OsEntropy.bytes()?, change).await?;
+    if change == Change::Delete {
+        blobs.release(&scope, thread).await?;
+    }
     println!("{} {thread}", done(change));
     if change != Change::Unarchive {
         for line in worktrees::release_archived(log, scope, thread).await? {

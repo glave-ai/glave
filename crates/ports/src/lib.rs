@@ -36,7 +36,7 @@ pub mod testing;
 mod tools;
 mod view;
 
-pub use blob::{BlobError, BlobStore, digest};
+pub use blob::{Blob, BlobError, BlobStore, Chunks, Pieces, digest, read_all};
 pub use caller::Caller;
 pub use env::{Clock, Entropy, EntropyError, OsEntropy, SystemClock};
 pub use erase::{Erasable, EraseError, Eraser};

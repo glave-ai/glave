@@ -6,7 +6,7 @@ use glave_event::{RawEvent, Seq, ThreadId};
 use glave_keys::KeyId;
 use glave_keys::conformance::event;
 use glave_ports::conformance::{AtRest, KeptBlob, KeptPayload};
-use glave_ports::{BlobStore, BoxFuture, EventLog, LogError, OrgId, ProjectId, Scope};
+use glave_ports::{BlobStore, BoxFuture, EventLog, LogError, OrgId, Pieces, ProjectId, Scope};
 use glave_store_postgres::Store;
 use uuid::Uuid;
 
@@ -94,7 +94,12 @@ impl Rows<'_> {
             .0
             .admin
             .query(
-                &format!("SELECT name, bytes FROM {schema}.blobs WHERE org = $1 AND project = $2"),
+                &format!(
+                    "SELECT b.name, (SELECT string_agg(c.bytes, '' ORDER BY c.n)
+                         FROM {schema}.blob_chunks AS c
+                         WHERE c.org = b.org AND c.project = b.project AND c.object = b.object)
+                     FROM {schema}.blobs AS b WHERE b.org = $1 AND b.project = $2"
+                ),
                 &[&org, &project],
             )
             .await
@@ -200,7 +205,13 @@ fn erasure_makes_content_unreadable_and_keeps_the_rest() {
         store.log().append(&other, &written).await.unwrap();
         let blob = store
             .blobs()
-            .put(&here, written[0].thread, b"x".to_vec(), "t/p")
+            .put(
+                &here,
+                written[0].thread,
+                "t/p",
+                1,
+                Box::new(Pieces::from(b"x".to_vec())),
+            )
             .await
             .unwrap();
         let kept = Rows(&scratch)
