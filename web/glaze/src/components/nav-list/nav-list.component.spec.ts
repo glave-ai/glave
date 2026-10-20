@@ -15,8 +15,8 @@ import { GlzNavListComponent } from './nav-list.component';
         <a glzNavItem href="/t/1" current>Plan the launch</a>
       </glz-nav-list>
       <glz-nav-list testId="plain"><a glzNavItem href="/t/2">Other</a></glz-nav-list>
-      <glz-nav-list heading="glave" testId="space" collapsible [(expanded)]="expanded">
-        <button glzNavListActions type="button" data-testid="add">New thread in glave</button>
+      <glz-nav-list heading="Atlas" testId="space" collapsible [(expanded)]="expanded">
+        <button glzNavListActions type="button" data-testid="add">New item in Atlas</button>
         <glz-badge glzNavListEnd tone="accent" variant="dot">needs you</glz-badge>
         <a glzNavItem href="/t/3">Fix the build</a>
       </glz-nav-list>
@@ -58,7 +58,7 @@ describe('GlzNavListComponent', () => {
     const root: HTMLElement = fixture.nativeElement;
     const toggle = root.querySelector<HTMLButtonElement>('[data-testid="space-toggle"]');
     const items = root.querySelector<HTMLElement>('[data-testid="space-items"]');
-    expect(toggle?.textContent.trim()).toBe('glave');
+    expect(toggle?.textContent.trim()).toBe('Atlas');
     expect(toggle?.lastElementChild?.getAttribute('data-testid')).toBe('space-caret');
     expect(toggle?.getAttribute('aria-expanded')).toBe('true');
     expect(toggle?.getAttribute('aria-controls')).toBe(items?.id);

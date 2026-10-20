@@ -23,7 +23,7 @@ describe('ShowcaseFormsComponent', () => {
     expect(root.textContent).toContain('Read and accept the policy to go on.');
 
     const name = find<HTMLInputElement>(root, 'showcase-space-name');
-    name.value = 'glave';
+    name.value = 'Atlas';
     name.dispatchEvent(new Event('input'));
     root.querySelector<HTMLInputElement>('glz-checkbox input')?.click();
     await fixture.whenStable();

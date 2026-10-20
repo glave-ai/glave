@@ -9,7 +9,7 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
  * <header>
  *   <glz-top-bar>
  *     <button glzTopBarStart glzIconButton label="Menu" (click)="layout.toggle()"><glz-icon [icon]="menuIcon" /></button>
- *     <span>glave</span>
+ *     <span>Atlas</span>
  *     <glz-theme-toggle glzTopBarEnd />
  *   </glz-top-bar>
  * </header>

@@ -12,7 +12,7 @@ import { GlzMessageComponent } from './message.component';
       <p>Hello</p>
       <button type="button" glzMessageActions data-testid="copy">Copy</button>
     </glz-message>
-    <glz-message from="note" author="glave" data-testid="note">Compacted</glz-message>
+    <glz-message from="note" author="Atlas" data-testid="note">Compacted</glz-message>
     <glz-message from="person" author="You" data-testid="mine"><p>Hi</p></glz-message>
   `,
 })
@@ -48,7 +48,7 @@ describe('GlzMessageComponent', () => {
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelector('[data-testid="reply"] .author')).toBeNull();
     expect(root.querySelector('[data-testid="mine"] .author')).toBeNull();
-    expect(root.querySelector('[data-testid="note"] .author')?.textContent).toBe('glave');
+    expect(root.querySelector('[data-testid="note"] .author')?.textContent).toBe('Atlas');
   });
 
   it('puts its actions under the body, outside the bubble', async () => {

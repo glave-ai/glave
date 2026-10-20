@@ -14,12 +14,12 @@ import { testIds } from '../../lib/test-ids';
 const PARTS = { label: 'label' } as const;
 
 /**
- * That glave is working, in the place its reply will take: a mark, then one quiet line
- * ("Thinking…") that shimmers, both still when the person asks for less motion. Screen readers
+ * That work is going on, in the place a reply will take: a mark, then one quiet line
+ * ("Working…") that shimmers, both still when the person asks for less motion. Screen readers
  * hear the line once, politely, when it appears. A mark of the app's own replaces the dot:
  *
  * ```html
- * <glz-working [label]="thinking">
+ * <glz-working [label]="label">
  *   <svg glzWorkingMark>…</svg>
  * </glz-working>
  * ```
@@ -36,8 +36,8 @@ export class GlzWorkingComponent {
   readonly testId = input<string | null>(null);
   protected readonly ids = computed(() => testIds(this.testId(), PARTS));
 
-  /** What glave is doing, in a few words. */
-  readonly label = input('Thinking…');
+  /** What is being done, in a few words. */
+  readonly label = input('Working…');
 
   constructor() {
     const announcer = inject(LiveAnnouncer);

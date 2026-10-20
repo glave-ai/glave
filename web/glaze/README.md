@@ -1,12 +1,12 @@
 # Glaze
 
-`@glave/glaze`: glave's Angular component library. Accessible (WCAG 2.2 AA, axe in every test), themed only through CSS custom properties, built on the web platform first and the Angular CDK second. Open source with glave; it will be published as 0.x once the app's design settles.
+`@glave/glaze`: an Angular component library for any app. Accessible (WCAG 2.2 AA, axe in every test), themed only through CSS custom properties, built on the web platform first and the Angular CDK second. Open source; it will be published as 0.x once its API settles.
 
-See every component live in the showcase (`npm run showcase` in `web/`), a dev-only app that ships with neither glave nor Glaze. Coding agents: [AGENTS.md](AGENTS.md) says how to use it. A Glaze CLI (a schematic) will later add that guidance to a consuming project's own AGENTS.md.
+See every component live in the showcase (`npm run showcase` in `web/`), a dev-only app that ships in no package. Coding agents: [AGENTS.md](AGENTS.md) says how to use it. A Glaze CLI (a schematic) will later add that guidance to a consuming project's own AGENTS.md.
 
 ## What is in it
 
-Only what glave's app uses: a piece the app stops using leaves Glaze.
+Only what an app uses today: a piece no app uses leaves Glaze.
 
 - **Styles** (`styles/glaze.css`): the tokens, the layout primitives (`glz-stack`, `glz-row`, `glz-grid`, `glz-gap-*`) and the prose flow (`glz-flow`).
 - **Actions and display**: `glzButton`, `glzIconButton`, `glz-icon`, `glz-badge`, `glz-avatar`, `glz-card`, `glz-empty-state`.

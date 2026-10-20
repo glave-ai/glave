@@ -15,7 +15,7 @@ const SORTS: readonly GlzOption[] = [
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `<glz-menu-button
     testId="more"
-    label="Options for glave"
+    label="Options for Atlas"
     choiceLabel="Sort by"
     [actions]="actions"
     [choices]="sorts"
@@ -71,7 +71,7 @@ describe('GlzMenuButtonComponent', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     const button = trigger(root, 'more');
-    expect(button.getAttribute('aria-label')).toBe('Options for glave');
+    expect(button.getAttribute('aria-label')).toBe('Options for Atlas');
     expect(button.getAttribute('aria-haspopup')).toBe('menu');
     expect(button.getAttribute('aria-expanded')).toBe('false');
     expect(button.querySelector('glz-icon')).not.toBeNull();
@@ -84,7 +84,7 @@ describe('GlzMenuButtonComponent', () => {
     trigger(fixture.nativeElement as HTMLElement, 'more').click();
     await fixture.whenStable();
     const menu = document.querySelector('[role="menu"]');
-    expect(menu?.getAttribute('aria-label')).toBe('Options for glave');
+    expect(menu?.getAttribute('aria-label')).toBe('Options for Atlas');
     expect(
       shown('more-action').map((item) => [item.getAttribute('role'), item.textContent.trim()]),
     ).toEqual([['menuitem', 'Rename']]);

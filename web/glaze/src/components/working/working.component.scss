@@ -1,6 +1,6 @@
 @use '../../styles/working';
 
-// One quiet line where a reply will be: the mark, then what glave is doing.
+// One quiet line where a reply will be: the mark, then what is being done.
 :host {
   display: flex;
   align-items: center;
@@ -17,7 +17,7 @@
   height: 1em;
 }
 
-// Until glave's own mark slots in: a dot in the accent that breathes.
+// Until the app's own mark slots in: a dot in the accent that breathes.
 .dot {
   width: 0.5em;
   height: 0.5em;

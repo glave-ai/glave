@@ -39,7 +39,7 @@ class HostComponent {
 class PlacesComponent {
   readonly options: readonly GlzMenuOption[] = [
     { value: 'me', label: 'A chat', icon: MessageCircle },
-    { value: 'p1', label: 'glave', icon: Folder },
+    { value: 'p1', label: 'Atlas', icon: Folder },
   ];
   readonly value = signal<string | null>('me');
 }

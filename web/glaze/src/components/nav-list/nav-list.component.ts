@@ -37,8 +37,8 @@ const PARTS = { toggle: 'toggle', caret: 'caret', end: 'end', items: 'items' } a
  * </glz-nav-list>
  * <glz-nav-list heading="Projects" collapsible [(expanded)]="projects">
  *   <button glzNavListActions glzIconButton size="sm" label="New project">…</button>
- *   <glz-nav-list heading="glave" collapsible [(expanded)]="open">
- *     <button glzNavListActions glzIconButton size="sm" label="New thread in glave">…</button>
+ *   <glz-nav-list heading="Atlas" collapsible [(expanded)]="open">
+ *     <button glzNavListActions glzIconButton size="sm" label="New item in Atlas">…</button>
  *     <glz-badge glzNavListEnd tone="accent" variant="dot">needs you</glz-badge>
  *     …
  *   </glz-nav-list>

@@ -41,7 +41,7 @@ const COPY = {
   reply:
     'The parser read local time. I changed `parse_date` to **UTC**, and the tests pass now:\n\n' +
     '```sh\ncargo test dates\n```',
-  noteAuthor: 'glave',
+  noteAuthor: 'Atlas',
   note: 'The conversation was compacted to fit.',
   latest: 'Jump to latest',
   model: 'Model',
@@ -110,7 +110,7 @@ const APPROVAL = {
 const TRUST: readonly GlzTrustItem[] = [
   { text: 'Runs a tool server', detail: 'npx @acme/mcp' },
   { text: 'Runs a hook before each command', detail: './scripts/check.sh' },
-  { text: 'Lets glave approve actions without asking' },
+  { text: 'Lets the assistant approve actions without asking' },
 ];
 
 /** A message in the demo thread. */
