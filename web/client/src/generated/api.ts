@@ -1166,6 +1166,11 @@ export type ThreadStartParams = {
    */
   readonly computer?: ComputerId | null;
   /**
+   * How much the model reasons in the thread's turns: one of the levels `model/list`
+   * gives for its model, such as `high`. The model's own default when absent.
+   */
+  readonly effort?: string | null;
+  /**
    * The model the thread's turns go to, one `model/list` names; the server's default
    * when absent.
    */
@@ -1218,6 +1223,12 @@ export type TurnStartParams = {
   readonly background?: boolean;
   /** With `background`, tokens the turn may use, subagents' included. */
   readonly budget?: number | null;
+  /**
+   * How much the model reasons in this turn, and the thread's turns after it: one of
+   * the levels `model/list` gives for the model the turn goes to. The thread's latest
+   * choice when absent, else the model's own default. Not while a turn runs.
+   */
+  readonly effort?: string | null;
   /**
    * Files the person added to the message, each one `file/upload` kept in the thread's
    * project: the thread refers to them from now on, and the model is sent them as it can

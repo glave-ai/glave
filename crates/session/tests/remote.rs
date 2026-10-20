@@ -37,6 +37,7 @@ async fn thread_through(remote: &Remote) -> glave_event::ThreadId {
         computer: None,
         model: None,
         approval: None,
+        effort: None,
     };
     let Reply::Thread { thread } = remote.request(&started).await.unwrap() else {
         panic!("a thread")
@@ -53,6 +54,7 @@ fn turn_saying(thread: glave_event::ThreadId, prompt: &str) -> Request {
         budget: None,
         model: None,
         approval: None,
+        effort: None,
         meta: Meta::default(),
         unattended: false,
         files: Vec::new(),

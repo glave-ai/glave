@@ -142,6 +142,8 @@ pub struct Thread {
     pub(crate) model: Option<String>,
     /// The approval mode chosen for the thread (`chosen.rs`); the harness's own when `None`.
     pub(crate) approval: Option<ApprovalMode>,
+    /// How much its model is asked to reason (`chosen.rs`); the model's own way when `None`.
+    pub(crate) effort: Option<String>,
     /// The instructions the thread opens with, and the judge reads as the project's rules:
     /// its folder's, or the settings' own (`bind.rs`). A subagent's thread has its parent's.
     pub(crate) instructions: Option<String>,
@@ -480,6 +482,7 @@ where
             for_,
             model: None,
             approval: None,
+            effort: None,
             instructions,
             project,
             brought: Arc::default(),

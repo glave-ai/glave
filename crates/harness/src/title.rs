@@ -124,6 +124,7 @@ where
             purpose: Purpose::Title,
             threads: case.threads.clone(),
             files: Vec::new(),
+            effort: None,
         };
         let answer = self.provider.complete(&request, &mut |_| {}).await.ok()?;
         let text: String = texts(&answer.parts).collect();

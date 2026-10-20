@@ -76,6 +76,9 @@ pub struct Target {
     /// The model it serves, by a name it shares with targets at other providers that serve the
     /// same one: a thread that chooses any of them is sent to them all, tried in order.
     pub same_model: Option<String>,
+    /// The reasoning levels it offers, in its provider's names: a request asking for another
+    /// is sent without one, so the model reasons its own way.
+    pub efforts: Vec<String>,
     pub(crate) handle: Arc<dyn Model>,
 }
 
@@ -96,6 +99,7 @@ impl Target {
             price: None,
             service: None,
             same_model: None,
+            efforts: Vec::new(),
             handle,
         }
     }
@@ -125,6 +129,13 @@ impl Target {
         self
     }
 
+    /// The target, offering the reasoning levels `efforts`.
+    #[must_use]
+    pub fn with_efforts(mut self, efforts: Vec<String>) -> Self {
+        self.efforts = efforts;
+        self
+    }
+
     /// The target at the service people know as `service`.
     #[must_use]
     pub fn at_service(mut self, service: impl Into<String>) -> Self {
@@ -150,6 +161,7 @@ impl fmt::Debug for Target {
             .field("price", &self.price)
             .field("service", &self.service)
             .field("same_model", &self.same_model)
+            .field("efforts", &self.efforts)
             .finish_non_exhaustive()
     }
 }

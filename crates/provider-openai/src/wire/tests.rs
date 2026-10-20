@@ -46,6 +46,7 @@ fn a_request_has_the_chat_completions_shape() {
         max_output_tokens: Some(1024),
         purpose: glave_ports::Purpose::Main,
         threads: Vec::new(),
+        effort: None,
         files: Vec::new(),
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
@@ -95,6 +96,7 @@ fn consecutive_user_messages_are_sent_as_one() {
         max_output_tokens: None,
         purpose: glave_ports::Purpose::Main,
         threads: Vec::new(),
+        effort: None,
         files: Vec::new(),
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
@@ -123,6 +125,7 @@ fn text_only_requests_keep_their_tools_and_say_none() {
         max_output_tokens: None,
         purpose: glave_ports::Purpose::Main,
         threads: Vec::new(),
+        effort: None,
         files: Vec::new(),
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
@@ -158,6 +161,7 @@ fn automatic_caching_is_asked_for_only_where_it_works() {
         max_output_tokens: None,
         purpose: glave_ports::Purpose::Main,
         threads: Vec::new(),
+        effort: None,
         files: Vec::new(),
     };
     let cached = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
@@ -180,6 +184,7 @@ fn openrouter_is_told_not_to_cut_a_long_prompt() {
         max_output_tokens: None,
         purpose: glave_ports::Purpose::Main,
         threads: Vec::new(),
+        effort: None,
         files: Vec::new(),
     };
     let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
@@ -189,6 +194,55 @@ fn openrouter_is_told_not_to_cut_a_long_prompt() {
     );
     let plain = serde_json::to_value(chat_request(&request, "openai")).unwrap();
     assert!(plain.get("plugins").is_none());
+}
+
+#[test]
+fn openrouter_keeps_prompts_private_and_every_parameter_used() {
+    let request = ModelRequest {
+        model: "openai/gpt-6-luna".into(),
+        system: String::new(),
+        messages: Vec::new(),
+        tools: Vec::new(),
+        tool_choice: ToolChoice::Auto,
+        max_output_tokens: None,
+        purpose: glave_ports::Purpose::Main,
+        threads: Vec::new(),
+        effort: None,
+        files: Vec::new(),
+    };
+    let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
+    assert_eq!(
+        routed["provider"],
+        json!({"data_collection": "deny", "require_parameters": true})
+    );
+    assert!(
+        routed.get("reasoning").is_none(),
+        "no level: the model's own"
+    );
+    let plain = serde_json::to_value(chat_request(&request, "openai")).unwrap();
+    assert!(plain.get("provider").is_none());
+}
+
+#[test]
+fn a_reasoning_level_is_sent_as_each_service_takes_it() {
+    let request = ModelRequest {
+        model: "m".into(),
+        system: String::new(),
+        messages: Vec::new(),
+        tools: Vec::new(),
+        tool_choice: ToolChoice::Auto,
+        max_output_tokens: None,
+        purpose: glave_ports::Purpose::Main,
+        threads: Vec::new(),
+        effort: Some("high".into()),
+        files: Vec::new(),
+    };
+    let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
+    assert_eq!(routed["reasoning"], json!({"effort": "high"}));
+    assert!(routed.get("reasoning_effort").is_none());
+    let openai = serde_json::to_value(chat_request(&request, "openai")).unwrap();
+    assert_eq!(openai["reasoning_effort"], "high");
+    assert!(openai.get("reasoning").is_none());
 }
 
 #[test]
@@ -233,6 +287,7 @@ fn an_image_is_sent_inline_beside_the_text_and_a_file_not_inline_by_name() {
         max_output_tokens: None,
         purpose: glave_ports::Purpose::Main,
         threads: Vec::new(),
+        effort: None,
         files: vec![glave_ports::InlineFile {
             sha256: image.sha256,
             media_type: "image/png".into(),

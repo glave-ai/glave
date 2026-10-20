@@ -81,6 +81,7 @@ where
             for_,
             model: crate::chosen::chosen_in(&events),
             approval: crate::chosen::approval_in(&events),
+            effort: crate::chosen::effort_in(&events),
             instructions,
             project,
             brought: std::sync::Arc::default(),

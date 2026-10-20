@@ -1,6 +1,7 @@
-//! What someone chose for a thread's turns: `model.chosen`, the model they are sent to, and
-//! `approval.mode.chosen`, how much glave asks before acting in them. The latest of each type
-//! is the thread's choice; a thread with none uses the deployment's own.
+//! What someone chose for a thread's turns: `model.chosen`, the model they are sent to,
+//! `effort.chosen`, how much that model reasons, and `approval.mode.chosen`, how much glave
+//! asks before acting in them. The latest of each type is the thread's choice; a thread with
+//! none uses the deployment's own.
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
@@ -10,6 +11,7 @@ use crate::payload::principal::Principal;
 
 pub(crate) const TYPE: &str = "model.chosen";
 pub(crate) const APPROVAL: &str = "approval.mode.chosen";
+pub(crate) const EFFORT: &str = "effort.chosen";
 
 /// The thread's turns go to `model` from now on, until another is chosen.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,6 +30,30 @@ impl Payload for ModelChosen {
 }
 
 pub(crate) fn decode(version: u32, data: &RawValue) -> Option<serde_json::Result<ModelChosen>> {
+    (version == 1).then(|| parse(data))
+}
+
+/// The thread's turns ask their model to reason at `effort` from now on, until another is
+/// chosen: a level in its provider's own names, as `model/list` gives them, such as `high` or
+/// `none`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EffortChosen {
+    pub effort: String,
+    /// Who chose it. Absent: the thread's `for`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<Principal>,
+}
+
+impl Payload for EffortChosen {
+    const TYPE: &'static str = EFFORT;
+    const VERSION: u32 = 1;
+}
+
+pub(crate) fn decode_effort(
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<EffortChosen>> {
     (version == 1).then(|| parse(data))
 }
 

@@ -152,6 +152,9 @@ where
         } = message;
         let scope = self.authorize(caller, thread).await?;
         let model = self.model_of(thread, choice.model.as_deref()).await?;
+        if let Some(effort) = &choice.effort {
+            self.offered_effort(&model, effort)?;
+        }
         self.check_approval(thread, choice.approval).await?;
         let files = self.attach(&scope, thread, files, &model).await?;
         let (finish, done) = watch::channel(None);

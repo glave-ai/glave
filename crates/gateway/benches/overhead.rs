@@ -175,6 +175,7 @@ fn request() -> Result<ModelRequest> {
         purpose: Purpose::Main,
         threads: vec![thread],
         files: Vec::new(),
+        effort: None,
     })
 }
 

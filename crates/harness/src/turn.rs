@@ -587,6 +587,7 @@ where
             },
             threads: thread.lineage(),
             files,
+            effort: thread.effort.clone(),
         };
         let retries = self.settings.retries;
         let mut retry = 0;

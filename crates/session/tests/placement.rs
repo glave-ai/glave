@@ -22,6 +22,7 @@ fn a_thread_on_a_computer_of_one_s_own_is_not_available_yet() {
                 computer: Some(laptop),
                 model: None,
                 approval: None,
+                effort: None,
             })
             .await
             .unwrap_err();

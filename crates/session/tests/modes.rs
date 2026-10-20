@@ -51,6 +51,7 @@ async fn start_in(
             computer: None,
             model: None,
             approval,
+            effort: None,
         })
         .await
 }
@@ -78,6 +79,7 @@ async fn turn_in(
             approval,
             unattended: false,
             files: Vec::new(),
+            effort: None,
         })
         .await
 }

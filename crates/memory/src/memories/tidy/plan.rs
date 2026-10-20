@@ -125,6 +125,7 @@ fn request(model: &str, candidates: &[Entry], compact: bool) -> ModelRequest {
         purpose: Purpose::Summary,
         threads: Vec::new(),
         files: Vec::new(),
+        effort: None,
     }
 }
 

@@ -28,7 +28,7 @@ pub(crate) mod workspace;
 pub use approval::{ApprovalDecided, ApprovalRequested, OutsideSandbox, Verdict};
 pub use browser::{BrowserSignedIn, BrowserSignedOut, BrowserUsed};
 pub use catalog::{Catalog, CatalogModel, CatalogRefreshed, Reasoning, TokenPrice};
-pub use chosen::{ApprovalMode, ApprovalModeChosen, ModelChosen};
+pub use chosen::{ApprovalMode, ApprovalModeChosen, EffortChosen, ModelChosen};
 pub use command::{CommandEnded, CommandEnding, CommandStarted};
 pub use credential::{CredentialConnected, CredentialRemoved, Forge, Renewal};
 pub use gateway::GatewayToolCalled;

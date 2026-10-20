@@ -89,6 +89,7 @@ pub async fn judge<P: ModelProvider>(
         purpose: Purpose::Judge,
         threads,
         files: Vec::new(),
+        effort: None,
     };
     match provider.complete(&request, &mut |_| {}).await {
         Ok(completion) => {

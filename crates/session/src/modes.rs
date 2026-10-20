@@ -21,6 +21,8 @@ pub(crate) struct Choice {
     pub(crate) model: Option<String>,
     /// How much its turns ask before acting.
     pub(crate) approval: Option<ApprovalMode>,
+    /// How much its model reasons.
+    pub(crate) effort: Option<String>,
 }
 
 /// The modes a thread may choose on a server whose own mode is `own`: `allowed`, cautious
@@ -50,6 +52,9 @@ where
     }
     if let Some(mode) = choice.approval {
         harness.choose_approval(thread, caller, mode).await?;
+    }
+    if let Some(effort) = &choice.effort {
+        harness.choose_effort(thread, caller, effort).await?;
     }
     Ok(())
 }

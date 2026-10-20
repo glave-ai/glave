@@ -27,6 +27,7 @@ fn ask(model: &str, text: &str) -> ModelRequest {
         purpose: glave_ports::Purpose::Main,
         threads: Vec::new(),
         files: Vec::new(),
+        effort: None,
     }
 }
 

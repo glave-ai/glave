@@ -58,6 +58,7 @@ async fn start_on(server: &Tested<Shared>, model: Option<&str>) -> Result<Thread
         computer: None,
         model: model.map(str::to_owned),
         approval: None,
+        effort: None,
     };
     match server.request(started).await? {
         Reply::Thread { thread } => Ok(thread.id),
@@ -79,6 +80,7 @@ async fn turn_on(
             meta: Meta::default(),
             model: model.map(str::to_owned),
             approval: None,
+            effort: None,
             unattended: false,
             files: Vec::new(),
         })
@@ -276,6 +278,7 @@ fn a_background_turn_runs_on_the_model_it_chose_and_the_task_says_so() {
                 meta: Meta::default(),
                 model: Some("other".into()),
                 approval: None,
+                effort: None,
                 unattended: false,
                 files: Vec::new(),
             })
@@ -285,6 +288,62 @@ fn a_background_turn_runs_on_the_model_it_chose_and_the_task_says_so() {
             panic!("a task, not {reply:?}");
         };
         assert_eq!(task.model, "other");
+        server.shutdown().await;
+    });
+}
+
+#[test]
+fn a_reasoning_level_the_model_offers_is_kept_for_every_turn_after_it() {
+    let dir = folder("models-effort");
+    block_on!(async {
+        let answers = vec![from("hope-12b", "One."), from("hope-12b", "Two.")];
+        let (server, seen) = setup(answers).build_on(&dir, Shared::default()).await;
+        let thread = start_on(&server, Some("hope-12b")).await.unwrap();
+        let with_effort = |effort: &str| Request::TurnStart {
+            thread,
+            prompt: "hi".into(),
+            background: false,
+            budget: None,
+            meta: Meta::default(),
+            model: None,
+            approval: None,
+            effort: Some(effort.into()),
+            unattended: false,
+            files: Vec::new(),
+        };
+        let refused = server.request(with_effort("medium")).await.unwrap_err();
+        assert_eq!(refused.code, code::INVALID_PARAMS);
+        assert!(refused.message.contains("high, low, none"), "{refused}");
+        server.request(with_effort("high")).await.unwrap();
+        turn_on(&server, thread, None).await.unwrap();
+        let efforts: Vec<Value> = json(&seen)
+            .iter()
+            .map(|json| serde_json::from_str::<Value>(json).unwrap()["effort"].clone())
+            .collect();
+        assert_eq!(efforts, ["high", "high"], "kept for the turn after it");
+        let chosen: Vec<String> = events(&server, thread)
+            .await
+            .iter()
+            .filter_map(|event| match &event.body {
+                Body::EffortChosen(chosen) => Some(chosen.effort.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(chosen, ["high"]);
+        let started = Request::ThreadStart {
+            project: Some(scope().project()),
+            worktree: None,
+            background: false,
+            computer: None,
+            model: None,
+            approval: None,
+            effort: Some("high".into()),
+        };
+        let none = server.request(started).await.unwrap_err();
+        assert!(
+            none.message.contains("no choice"),
+            "the default offers none: {none}"
+        );
         server.shutdown().await;
     });
 }

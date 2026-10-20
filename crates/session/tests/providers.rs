@@ -165,6 +165,7 @@ async fn first_run(client: &mut impl Client) {
             computer: None,
             model: None,
             approval: None,
+            effort: None,
         })
         .await
         .unwrap();
@@ -177,6 +178,7 @@ async fn first_run(client: &mut impl Client) {
             budget: None,
             model: None,
             approval: None,
+            effort: None,
             meta: glave_session::protocol::Meta::default(),
             unattended: false,
             files: Vec::new(),

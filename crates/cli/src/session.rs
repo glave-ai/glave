@@ -244,6 +244,7 @@ pub(crate) async fn pick_thread(
             computer: None,
             model,
             approval,
+            effort: None,
         })
         .await?
     {

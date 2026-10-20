@@ -20,7 +20,7 @@ use glave_ports::{
     ProjectId, Projects,
 };
 use glave_session::Answering;
-use glave_session::protocol::{Meta, NewFolder, ProjectFolder, Reply, Request, code};
+use glave_session::protocol::{NewFolder, ProjectFolder, Reply, Request, code};
 use glave_session::signin::person;
 use serde_json::json;
 
@@ -58,6 +58,7 @@ async fn start_in(server: &Tested, project: ProjectId, worktree: Option<bool>) -
         computer: None,
         model: None,
         approval: None,
+        effort: None,
     };
     match server.request(started).await.unwrap() {
         Reply::Thread { thread } => thread.id,
@@ -337,6 +338,7 @@ fn a_thread_opens_with_its_own_folder_s_instructions_and_a_chat_with_the_person_
                     computer: None,
                     model: None,
                     approval: None,
+                    effort: None,
                 },
             )
             .await
@@ -358,20 +360,7 @@ fn a_thread_opens_with_its_own_folder_s_instructions_and_a_chat_with_the_person_
             "{bound:?}"
         );
         server
-            .request_as(
-                &grace,
-                Request::TurnStart {
-                    thread: chat.id,
-                    prompt: "hello".into(),
-                    background: false,
-                    budget: None,
-                    model: None,
-                    approval: None,
-                    meta: Meta::default(),
-                    unattended: false,
-                    files: Vec::new(),
-                },
-            )
+            .request_as(&grace, turn_start(chat.id, "hello", None))
             .await
             .unwrap();
         let sent = json(&seen);
@@ -510,6 +499,7 @@ fn a_caller_signed_in_elsewhere_gives_no_folder_and_sees_none() {
                     computer: None,
                     model: None,
                     approval: None,
+                    effort: None,
                 },
             )
             .await
@@ -587,6 +577,7 @@ fn a_project_whose_folder_is_on_another_computer_starts_no_thread_here() {
                 computer: None,
                 model: None,
                 approval: None,
+                effort: None,
             })
             .await
             .unwrap_err();

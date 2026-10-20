@@ -109,6 +109,32 @@ where
         ))
     }
 
+    /// Refuses `effort` with `-32602` unless `model` offers it, as `model/list` says.
+    pub(crate) fn offered_effort(&self, model: &str, effort: &str) -> Result<(), ApiError> {
+        let models = self
+            .inner
+            .models
+            .read()
+            .unwrap_or_else(PoisonError::into_inner);
+        let levels = models
+            .iter()
+            .find(|known| known.id == model)
+            .and_then(|known| known.reasoning.as_ref())
+            .map_or(&[][..], |reasoning| reasoning.efforts.as_slice());
+        if levels.iter().any(|level| level == effort) {
+            return Ok(());
+        }
+        let message = if levels.is_empty() {
+            format!("{model} offers no choice of how much it reasons: start without a level")
+        } else {
+            format!(
+                "{model} does not offer the reasoning level {effort:?}: choose one of {}",
+                levels.join(", ")
+            )
+        };
+        Err(ApiError::new(code::INVALID_PARAMS, message))
+    }
+
     /// The model `thread`'s next turn goes to, once the host's settings are read again:
     /// `asked`, else the thread's latest choice, else its project's, else the default. Refused
     /// with `-32021` when this server does not run it, as when a model chosen before is no

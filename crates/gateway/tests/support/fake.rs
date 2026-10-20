@@ -124,6 +124,7 @@ pub(crate) fn request(purpose: Purpose) -> ModelRequest {
         purpose,
         threads: Vec::new(),
         files: Vec::new(),
+        effort: None,
     }
 }
 

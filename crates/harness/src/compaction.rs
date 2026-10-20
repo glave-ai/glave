@@ -245,6 +245,7 @@ where
             purpose: Purpose::Summary,
             threads: thread.lineage(),
             files: Vec::new(),
+            effort: None,
         };
         let completion = self.summarize(request, cancel).await?;
         let summary: Vec<&str> = completion

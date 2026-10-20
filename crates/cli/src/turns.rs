@@ -182,6 +182,7 @@ async fn thread(
         computer: None,
         model: args.model.clone(),
         approval: args.approval,
+        effort: None,
     };
     summary(session.request(started).await?)
 }

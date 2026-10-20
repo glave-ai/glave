@@ -128,6 +128,7 @@ fn thread_start(project: ProjectId) -> Request {
         computer: None,
         model: None,
         approval: None,
+        effort: None,
     }
 }
 
@@ -385,6 +386,7 @@ fn a_caller_signed_in_elsewhere_is_never_asked_and_cannot_answer() {
             budget: None,
             model: None,
             approval: None,
+            effort: None,
             meta: glave_session::protocol::Meta::default(),
             unattended: false,
             files: Vec::new(),

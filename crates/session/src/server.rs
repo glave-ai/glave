@@ -358,6 +358,11 @@ where
         if let Some(model) = &choice.model {
             self.known_model(model)?;
         }
+        if let Some(effort) = &choice.effort {
+            let model = choice.model.clone();
+            let model = model.unwrap_or_else(|| self.inner.harness.default_model());
+            self.offered_effort(&model, effort)?;
+        }
         if let Some(mode) = choice.approval {
             self.allowed_mode(mode)?;
         }

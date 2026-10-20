@@ -54,6 +54,7 @@ async fn send<L: glave_ports::EventLog + 'static>(
             budget: None,
             meta: Meta::default(),
             model: model.map(str::to_owned),
+            effort: None,
             approval: None,
             unattended: false,
         })
@@ -160,6 +161,7 @@ fn files_are_refused_plainly_before_anything_is_sent() {
                 budget: None,
                 meta: Meta::default(),
                 model: None,
+                effort: None,
                 approval: None,
                 unattended: false,
             })

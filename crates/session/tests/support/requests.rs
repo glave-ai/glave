@@ -44,6 +44,7 @@ pub(crate) async fn start_for_tasks<L: EventLog + 'static>(
         computer: None,
         model: None,
         approval: None,
+        effort: None,
     };
     match server.request(started).await? {
         Reply::Thread { thread } => Ok(thread.id),
@@ -75,6 +76,7 @@ pub(crate) async fn start<L: EventLog + 'static>(server: &Tested<L>, worktree: b
         computer: None,
         model: None,
         approval: None,
+        effort: None,
     };
     match server.request(started).await.unwrap() {
         Reply::Thread { thread } => thread.id,
@@ -97,6 +99,7 @@ pub(crate) async fn turn<L: EventLog + 'static>(
             meta: Meta::default(),
             model: None,
             approval: None,
+            effort: None,
             unattended: false,
             files: Vec::new(),
         })
@@ -118,6 +121,7 @@ pub(crate) fn turn_start(thread: ThreadId, prompt: &str, key: Option<Idempotency
         model: None,
         approval: None,
         files: Vec::new(),
+        effort: None,
     }
 }
 
@@ -178,6 +182,7 @@ pub(crate) async fn background<L: EventLog + 'static>(
         meta: Meta::default(),
         model: None,
         approval: None,
+        effort: None,
         unattended: false,
         files: Vec::new(),
     };

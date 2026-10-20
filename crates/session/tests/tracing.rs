@@ -16,6 +16,7 @@ fn turn_with(thread: glave_event::ThreadId, traceparent: &str) -> Request {
         model: None,
         approval: None,
         files: Vec::new(),
+        effort: None,
         thread,
         prompt: "go".into(),
         meta: Meta {
