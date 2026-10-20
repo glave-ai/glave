@@ -17,7 +17,7 @@ use crate::faulty::{Fault, Planned, Way, faulty};
 use crate::ledger::{Ledger, computer, workspace};
 
 /// A runtime on paused time: it jumps ahead whenever every task waits on the clock.
-fn paused<F: std::future::Future>(future: F) -> F::Output {
+fn paused<F: Future>(future: F) -> F::Output {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .start_paused(true)

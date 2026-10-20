@@ -140,6 +140,7 @@ pub enum DataLog {
     Postgres(postgres::PostgresLog),
 }
 
+#[deny(clippy::missing_trait_methods)]
 impl EventLog for DataLog {
     async fn append(&self, scope: &Scope, events: &[RawEvent]) -> Result<(), LogError> {
         match self {
@@ -233,6 +234,7 @@ pub enum DataBlobs {
     Postgres(postgres::PostgresBlobs),
 }
 
+#[deny(clippy::missing_trait_methods)]
 impl BlobStore for DataBlobs {
     async fn put(
         &self,

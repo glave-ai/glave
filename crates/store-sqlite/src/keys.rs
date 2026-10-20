@@ -2,6 +2,7 @@
 //! keys, replaced whole by compare-and-swap on its revision.
 
 use std::future::Future;
+use std::sync::Arc;
 
 use glave_keys::{KeyError, KeyStorage, StoredProject};
 use glave_ports::{OrgId, Scope};
@@ -30,7 +31,7 @@ impl KeyStorage for SqliteKeys {
         &self,
         org: OrgId,
     ) -> impl Future<Output = Result<Option<Vec<u8>>, KeyError>> + Send {
-        let connection = self.connection.clone();
+        let connection = Arc::clone(&self.connection);
         async move {
             run(&connection, move |connection| {
                 connection
@@ -51,7 +52,7 @@ impl KeyStorage for SqliteKeys {
         org: OrgId,
         wrapped: Vec<u8>,
     ) -> impl Future<Output = Result<Vec<u8>, KeyError>> + Send {
-        let connection = self.connection.clone();
+        let connection = Arc::clone(&self.connection);
         async move {
             run(&connection, move |connection| {
                 let transaction = connection.transaction()?;
@@ -77,7 +78,7 @@ impl KeyStorage for SqliteKeys {
         scope: &Scope,
     ) -> impl Future<Output = Result<Option<StoredProject>, KeyError>> + Send {
         let scope = *scope;
-        let connection = self.connection.clone();
+        let connection = Arc::clone(&self.connection);
         async move {
             let row: Option<(i64, Vec<u8>)> = run(&connection, move |connection| {
                 connection
@@ -107,7 +108,7 @@ impl KeyStorage for SqliteKeys {
         record: Vec<u8>,
     ) -> impl Future<Output = Result<bool, KeyError>> + Send {
         let scope = *scope;
-        let connection = self.connection.clone();
+        let connection = Arc::clone(&self.connection);
         async move {
             let expected = expected
                 .map(|revision| i64::try_from(revision).map_err(storage))

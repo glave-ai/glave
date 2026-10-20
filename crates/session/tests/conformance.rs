@@ -82,11 +82,7 @@ impl OverJsonRpc {
     pub(crate) fn new(server: Tested) -> Self {
         let (client_out, server_in) = tokio::io::duplex(1 << 16);
         let (server_out, client_in) = tokio::io::duplex(1 << 16);
-        let serving = tokio::spawn(glave_session::rpc::serve(
-            server,
-            BufReader::new(server_in),
-            server_out,
-        ));
+        let serving = tokio::spawn(rpc::serve(server, BufReader::new(server_in), server_out));
         Self {
             to_server: Box::new(client_out),
             from_server: BufReader::new(Box::new(client_in) as Reader).lines(),
@@ -107,7 +103,7 @@ impl OverJsonRpc {
         let serving = tokio::spawn(async move {
             let (stream, _) = listener.accept().await?;
             let (read, write) = stream.into_split();
-            glave_session::rpc::serve_connection(serving_server, BufReader::new(read), write).await
+            rpc::serve_connection(serving_server, BufReader::new(read), write).await
         });
         let stream = tokio::net::UnixStream::connect(&path).await.unwrap();
         let _ = std::fs::remove_file(&path);

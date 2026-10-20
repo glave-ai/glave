@@ -87,7 +87,7 @@ fn other_tools_are_offered_after_the_built_ins_and_called_through_the_harness() 
         let tools = extra();
         let (harness, seen) =
             harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings()).await;
-        let harness = harness.with_tools(vec![tools.clone()]);
+        let harness = harness.with_tools(vec![Arc::<InMemoryTools>::clone(&tools)]);
         let mut thread = harness.start_thread(scope()).await.unwrap();
         harness
             .run_turn(&mut thread, "how do I set up?", &Cancel::new(), &mut |_| {})
@@ -134,7 +134,7 @@ fn a_tool_that_runs_things_asks_like_a_command() {
         let tools = extra();
         let harness = asking_harness(&dir, answers, NoOneToAsk)
             .await
-            .with_tools(vec![tools.clone()]);
+            .with_tools(vec![Arc::<InMemoryTools>::clone(&tools)]);
         let mut thread = harness.start_thread(scope()).await.unwrap();
         harness
             .run_turn(&mut thread, "file it", &Cancel::new(), &mut |_| {})
@@ -163,7 +163,7 @@ fn allowed_for_the_thread_by_name() {
         let approver = ForThreadOnce(AtomicU32::new(0));
         let harness = asking_harness(&dir, answers, approver)
             .await
-            .with_tools(vec![tools.clone()]);
+            .with_tools(vec![Arc::<InMemoryTools>::clone(&tools)]);
         let mut thread = harness.start_thread(scope()).await.unwrap();
         harness
             .run_turn(&mut thread, "file two", &Cancel::new(), &mut |_| {})

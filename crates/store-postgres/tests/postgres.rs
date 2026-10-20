@@ -183,7 +183,7 @@ fn servers_on_one_database_racing_to_make_the_identity_all_get_the_first() {
         };
         let principal = |n: u8| {
             glave_event::PrincipalId::try_from(
-                uuid::Builder::from_unix_timestamp_millis(1, &[n; 10]).into_uuid(),
+                Builder::from_unix_timestamp_millis(1, &[n; 10]).into_uuid(),
             )
             .unwrap()
         };

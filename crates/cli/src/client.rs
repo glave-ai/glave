@@ -372,7 +372,7 @@ impl Client<'_> {
             Ok(Reply::Compacted {
                 before_tokens,
                 after_tokens,
-            }) => printer.update(glave_session::protocol::Update::Compacted {
+            }) => printer.update(Update::Compacted {
                 before_tokens,
                 after_tokens,
             }),

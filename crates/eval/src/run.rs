@@ -165,7 +165,7 @@ pub async fn attempt(
             ));
         }
     }
-    let last = trace::parse(&crate::trace::last_thread(&events)).unwrap_or_default();
+    let last = trace::parse(&trace::last_thread(&events)).unwrap_or_default();
     let cx = Context {
         trace: &trace,
         last: &last,

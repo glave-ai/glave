@@ -262,7 +262,7 @@ impl<L: EventLog + 'static> Memories<L> {
         &self,
         person: Option<PrincipalId>,
         scope: Scope,
-        memory: glave_event::MemoryId,
+        memory: MemoryId,
     ) -> Result<(Scope, Entry), MemoryError> {
         for (kind, ledger) in self.rules().readable(person, scope) {
             let entry = self

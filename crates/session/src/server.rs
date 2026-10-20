@@ -76,7 +76,7 @@ pub struct Wiring<P, L, B> {
     pub models: Vec<ModelInfo>,
     /// The approval modes a thread may choose besides the settings' own: those the policy
     /// leaves, where auto runs behind a wall (`specs/approvals.md`).
-    pub modes: Vec<glave_harness::ApprovalMode>,
+    pub modes: Vec<ApprovalMode>,
     /// The model accounts the person on this computer connects, which the models follow;
     /// none where whoever runs the server sets up its models.
     pub providers: Option<Arc<dyn Providers>>,

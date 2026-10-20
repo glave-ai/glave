@@ -66,7 +66,7 @@ fn commands_see_this_machine_and_the_computer_but_nothing_else() {
 }
 
 #[derive(Default)]
-struct Collect(std::sync::Mutex<String>);
+struct Collect(Mutex<String>);
 
 impl Output for Collect {
     fn write<'a>(&'a self, text: &'a str) -> BoxFuture<'a, ()> {
@@ -164,7 +164,7 @@ fn characters_are_never_split_across_chunks() {
 }
 
 /// Every file under `dir`, read as bytes.
-fn every_file(dir: &std::path::Path) -> Vec<(PathBuf, Vec<u8>)> {
+fn every_file(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     let mut found = Vec::new();
     for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
         let path = entry.path();
@@ -247,8 +247,8 @@ fn a_credential_reaches_git_through_its_helper_and_never_a_disk() {
             .open_with_credential(computer.id, &sources, &credential)
             .await
             .unwrap();
-        std::fs::write(std::path::Path::new(&opened.root).join("b.txt"), "two").unwrap();
-        let save = glave_ports::computer::Save {
+        std::fs::write(Path::new(&opened.root).join("b.txt"), "two").unwrap();
+        let save = Save {
             branch: "glave/wip/test".into(),
             message: "work".into(),
         };

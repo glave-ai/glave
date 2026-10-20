@@ -1,5 +1,11 @@
 //! `glave-eval`: the command that runs the suite and writes the report.
 
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "the eval's command line: it reports in the terminal"
+)]
+
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;

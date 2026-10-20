@@ -135,6 +135,15 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - Don't use `#[tokio::main]` or `#[tokio::test]`: they emit `#[allow(clippy::expect_used)]`, which the forbidden lint rejects. Build the runtime explicitly in `main`; tests use `glave_ports::block_on!` (the `conformance` feature).
 - Libraries define typed errors with `thiserror`; binaries use `anyhow`. Errors say what failed and with what input.
 
+**Written to pass the lints** (`[workspace.lints]`), the first time:
+- Name an item by what `use` already brought in; no full path for something imported.
+- Clone an `Arc` or `Rc` as `Arc::clone(&x)`, never `x.clone()`, so cheap clones look cheap.
+- Show a type's lifetime in paths: `&[Crate<'_>]`, `Formatter<'_>`.
+- Libraries never print: return the value or emit `tracing`. Only glave's binary, xtask, eval's command line, benches and examples print, each saying so once with `#![expect(clippy::print_stdout, …)]` at its root; tests may print.
+- Iterate a `BTreeMap`, `BTreeSet` or `Vec` wherever order can be seen (output, ids, eviction, tests); a `HashMap` is for lookups. Where order truly can't matter, `#[expect(clippy::iter_over_hash_type, reason = "…")]` with that reason.
+- A function that runs until it is dropped or cancelled returns `!`; an `async fn`, which can't, says so with `#[expect(clippy::infinite_loop, reason = "…")]`.
+- An impl that forwards a port to another (the CLI's `DataLog` and `DataBlobs`, the session's `Observed`, the gateway's `Model` for every provider) carries `#[deny(clippy::missing_trait_methods)]`, so a new port method can't fall back to a default unseen.
+
 **Structure**
 - `lib.rs` and `main.rs` are tables of contents: module declarations, re-exports, crate docs. No logic.
 - One concept per module. If a file can't be described in one sentence, split it.

@@ -1,6 +1,12 @@
 //! The `glave` command: run hope, or any model behind an OpenAI-compatible API or Anthropic's
 //! own, on the project in the current folder, from the terminal.
 
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "glave's binary: the terminal is where it answers"
+)]
+
 mod accounts;
 mod app;
 mod args;
