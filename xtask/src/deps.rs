@@ -40,7 +40,7 @@ const LAYERS: &[(&str, Layer)] = &[
     ("glave-process", Adapter),
     // The computer port: this machine, and workers on Docker or Kubernetes.
     ("glave-computer", Adapter),
-    // The verified caller: OIDC (jsonwebtoken) and local sign-in.
+    // The verified caller: OIDC (jsonwebtoken), passkeys (webauthn-rs) and local sign-in.
     ("glave-identity", Adapter),
     // HTTPS of glave's own: certificates from an ACME authority, through instant-acme.
     ("glave-acme", Adapter),

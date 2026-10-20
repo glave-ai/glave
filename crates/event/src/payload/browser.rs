@@ -1,6 +1,6 @@
 //! The browsers ledger's records (`specs/one-server.md`, "Finding it"): the browser sessions
-//! of the person on their own server. `browser.signed_in`: a link's code was traded for a
-//! session, kept as its token's SHA-256 alone. `browser.used`: a session was used, which keeps
+//! of the person on their own server. `browser.signed_in`: a link's code, or a passkey, was
+//! traded for a session, kept as its token's SHA-256 alone. `browser.used`: a session was used, which keeps
 //! it going for 30 days from then. `browser.signed_out`: sessions ended.
 
 use serde::{Deserialize, Serialize};
@@ -21,6 +21,9 @@ pub struct BrowserSignedIn {
     pub session: Uuid,
     /// The SHA-256 of its token, in hex: never the token.
     pub hash: String,
+    /// The passkey it was signed in with, which it ends with; none for a link's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub passkey: Option<Uuid>,
 }
 
 /// A browser session was used at the event's time.

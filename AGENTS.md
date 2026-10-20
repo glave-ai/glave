@@ -41,7 +41,7 @@ Cargo.toml          workspace: lints, profiles, shared dependencies
 xtask/              developer automation (`cargo xtask`)
 crates/event/       glave-event: the versioned event format (envelope, payloads, upgrade-on-read)
 crates/ports/       glave-ports: event log, blob store and the objects that hold blobs' bytes, key erasure, model provider (and how one is reached: a key, or credentials that change), tool source, computer and memory ports, the settings config fills and the domain crates read (hooks, the judge, a project's protections, worker limits, what the web tools reach, `.mcp.json`), glave's own streams beside threads (the ledgers' reserved ids, reads caught up, appends retried), the caller, the clock and entropy, in-memory versions, conformance suites and the test doubles every crate shares
-crates/identity/    glave-identity: who is calling: OIDC and local sign-in that verify the caller, browsers signed in by one-time links to sessions kept as hashes, the person an issuer's subject is
+crates/identity/    glave-identity: who is calling: OIDC and local sign-in that verify the caller, browsers signed in by one-time links or passkeys (webauthn-rs) to sessions kept as hashes, the person an issuer's subject is
 crates/acme/        glave-acme: HTTPS of glave's own for a domain: a certificate from an ACME authority over TLS-ALPN-01 (instant-acme), renewed with a third of its life left, kept sealed in the store
 crates/config/      glave-config: config and policy (specs/policy.md): choices nearest-wins, constraints that only narrow, project trust, `policy explain`; shared by the CLI and the servers
 crates/provider-openai/  glave-provider-openai: OpenAI-compatible streaming provider

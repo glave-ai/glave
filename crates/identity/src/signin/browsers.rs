@@ -1,21 +1,24 @@
 //! Browser sessions on the person's own server (`specs/one-server.md`, "Finding it"). A
 //! program on this computer signed in as the local person asks for a link; its code, good once
 //! and for five minutes, is traded for a browser session: a bearer token the tab keeps and
-//! sends as a header, never a cookie, accepted only from loopback as the local person, and
-//! good for 30 days from its last use. Codes are kept in memory, as their SHA-256 alone.
-//! Sessions are kept in the store, in the browsers ledger of the person's personal project
-//! (glave's own stream under a reserved id), as the SHA-256 of each token alone, so nothing
+//! sends as a header, never a cookie, good for 30 days from its last use. A server reached
+//! from elsewhere at a public origin signs browsers there in with passkeys instead
+//! (`passkeys`). Codes are kept in memory, as their SHA-256 alone. Sessions and passkeys are
+//! kept in the store, in the browsers ledger of the person's personal project (glave's own
+//! stream under a reserved id), each session as the SHA-256 of its token alone, so nothing
 //! kept signs anyone in; every server on one store signs in the same browsers. The server's
 //! id, which a browser checks before it presents its session, is the caller's to keep.
 
 mod ledger;
+mod passkeys;
+mod state;
+
+pub use self::passkeys::{Ceremony, PasskeyInfo, Proof};
 
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use glave_event::{
-    At, Body, BrowserSignedIn, BrowserSignedOut, BrowserUsed, EventId, Header, RawEvent, Secret,
-    Seq, decode, encode,
-};
+use glave_event::{RawEvent, Secret, Seq};
+use glave_ports::host::PublicOrigin;
 use glave_ports::stream::{Reserved, StreamError};
 use glave_ports::{BoxFuture, Clock, EventLog, Scope};
 use jiff::{SignedDuration, Timestamp};
@@ -23,6 +26,8 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use self::ledger::{Ledger, Made, Stream};
+use self::passkeys::{Ceremonies, Relying};
+use self::state::{Change, Kept, State};
 use super::local::{digest, hex, same};
 
 /// What every browser session's token starts with.
@@ -52,8 +57,23 @@ const SECRET_BYTES: usize = 32;
 pub enum BrowserError {
     #[error("that sign-in link was used already or has expired: open glave again for a new one")]
     Code,
+    #[error(
+        "that link to make a passkey was used already or has expired: on the computer glave \
+         runs on, ask glave for a new one"
+    )]
+    Setup,
+    #[error("too many sign-in links that do not work were tried: wait a minute, then try again")]
+    TooMany,
     #[error("this browser's sign-in has ended: open glave again to sign in")]
     Ended,
+    #[error("this glave is reached only on its own computer, so it signs no one in with passkeys")]
+    NoPasskeys,
+    #[error("no passkey signs in to this glave yet: open the link glave gave you to make one")]
+    NoPasskey,
+    #[error("that passkey request has expired: try again")]
+    Ceremony,
+    #[error("the passkey was not accepted: {0}")]
+    Passkey(String),
     #[error("could not keep this computer's browser sign-ins: {0}")]
     Keep(String),
     #[error("could not get random bytes for a sign-in: {0}")]
@@ -74,43 +94,34 @@ pub struct Session {
     pub id: String,
 }
 
-/// The codes and browser sessions of one server, the sessions kept in the store.
+/// The codes, browser sessions and passkeys of one server, the sessions and passkeys kept in
+/// the store.
 pub struct Browsers {
     ledger: Box<dyn Ledger>,
     server: String,
     clock: Box<dyn Clock>,
     state: Mutex<State>,
-}
-
-/// What is known: the codes waiting, and the sessions as the ledger has them so far.
-#[derive(Default)]
-struct State {
-    /// Each code's digest and when it was made.
-    codes: Vec<([u8; 32], Timestamp)>,
-    sessions: Vec<Kept>,
-    /// The `seq` the ledger's next event takes.
-    next: u64,
-}
-
-/// One session as the ledger has it.
-struct Kept {
-    id: Uuid,
-    /// The SHA-256 of its token, in hex.
-    hash: String,
-    /// When it was last recorded as used.
-    used: Timestamp,
+    /// Passkeys' relying party, where the server is reached from elsewhere.
+    relying: Option<Relying>,
+    /// The passkey requests begun and not yet answered.
+    ceremonies: Mutex<Ceremonies>,
 }
 
 impl Browsers {
-    /// The sessions the browsers ledger in `scope` of `log` holds, for the server whose id is
-    /// `server`.
+    /// The sessions and passkeys the browsers ledger in `scope` of `log` holds, for the server
+    /// whose id is `server`, reached from elsewhere at `origin` if anywhere: only there does it
+    /// make passkeys and sign browsers in with them.
     pub async fn open<L: EventLog + 'static>(
         log: L,
         scope: Scope,
         server: String,
+        origin: Option<&PublicOrigin>,
         clock: Box<dyn Clock>,
     ) -> Result<Self, BrowserError> {
         let thread = Reserved::Browsers.id();
+        let relying = origin
+            .map(|origin| Relying::new(origin, &server))
+            .transpose()?;
         let browsers = Self {
             ledger: Box::new(Stream { log, scope, thread }),
             server,
@@ -119,6 +130,8 @@ impl Browsers {
                 next: 1,
                 ..State::default()
             }),
+            relying,
+            ceremonies: Mutex::new(Ceremonies::default()),
         };
         browsers.catch_up().await?;
         Ok(browsers)
@@ -159,18 +172,29 @@ impl Browsers {
             };
             state.codes.remove(at);
         }
+        self.begin(None, Vec::new()).await
+    }
+
+    /// Begins a session, signed in with `passkey` if with one, recording `with` beside it.
+    async fn begin(
+        &self,
+        passkey: Option<Uuid>,
+        with: Vec<Change>,
+    ) -> Result<Session, BrowserError> {
+        let now = self.clock.now();
         let token = format!("{SESSION_PREFIX}{}", random_hex()?);
         let id = new_id(now)?;
         let hash = hex(&digest(&token));
+        let with = &with;
         self.change(|state, now| {
-            let mut changes = Vec::new();
+            let mut changes = with.clone();
             let live: Vec<&Kept> = state.live(now).collect();
             if live.len() >= MOST_SESSIONS
                 && let Some(oldest) = live.iter().min_by_key(|session| session.used)
             {
                 changes.push(Change::SignedOut(vec![oldest.id]));
             }
-            changes.push(Change::SignedIn(id, hash.clone()));
+            changes.push(Change::SignedIn(id, hash.clone(), passkey));
             changes
         })
         .await?;
@@ -286,72 +310,6 @@ impl Browsers {
             }
         };
         Ok(self.ledger.catch_up(after, &mut take).await?)
-    }
-}
-
-impl State {
-    /// The sessions used within [`SESSION_LIFETIME`] of `now`.
-    fn live(&self, now: Timestamp) -> impl Iterator<Item = &Kept> {
-        self.sessions
-            .iter()
-            .filter(move |session| now.duration_since(session.used) <= SESSION_LIFETIME)
-    }
-
-    /// Takes in the ledger's event at the next `seq`; any other is already in, or not yet.
-    fn take(&mut self, raw: RawEvent) {
-        if raw.seq.get() != self.next {
-            return;
-        }
-        self.next = self.next.saturating_add(1);
-        let at = raw.at.timestamp();
-        let Ok(event) = decode(raw) else {
-            return;
-        };
-        match event.body {
-            Body::BrowserSignedIn(signed_in) => self.sessions.push(Kept {
-                id: signed_in.session,
-                hash: signed_in.hash,
-                used: at,
-            }),
-            Body::BrowserUsed(used) => {
-                for session in &mut self.sessions {
-                    if session.id == used.session {
-                        session.used = session.used.max(at);
-                    }
-                }
-            }
-            Body::BrowserSignedOut(out) => self
-                .sessions
-                .retain(|session| !out.sessions.contains(&session.id)),
-            _ => {}
-        }
-    }
-}
-
-/// One change to the sessions.
-enum Change {
-    /// A session began: its id, and its token's hash.
-    SignedIn(Uuid, String),
-    Used(Uuid),
-    SignedOut(Vec<Uuid>),
-}
-
-impl Change {
-    /// This change as the ledger's event at `seq`, made at `now`.
-    fn event(self, seq: u64, now: Timestamp) -> Result<RawEvent, BrowserError> {
-        let failed = |error: &dyn std::fmt::Display| BrowserError::Keep(error.to_string());
-        let header = Header {
-            id: EventId::try_from(new_id(now)?).map_err(|e| failed(&e))?,
-            thread: Reserved::Browsers.id(),
-            seq: Seq::new(seq).map_err(|e| failed(&e))?,
-            at: At::from(now),
-        };
-        match self {
-            Self::SignedIn(session, hash) => encode(header, &BrowserSignedIn { session, hash }),
-            Self::Used(session) => encode(header, &BrowserUsed { session }),
-            Self::SignedOut(sessions) => encode(header, &BrowserSignedOut { sessions }),
-        }
-        .map_err(|e| failed(&e))
     }
 }
 

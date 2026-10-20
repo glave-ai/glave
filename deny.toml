@@ -11,6 +11,11 @@ ignore = [
     { id = "RUSTSEC-2026-0370", reason = "zvariant merged into zbus 6; no fix through keyring yet" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names merged into zbus 6; no fix through keyring yet" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive merged into zbus 6; no fix through keyring yet" },
+    # rsa's Marvin attack recovers a private key from the timing of operations with it
+    # (decrypting, signing). glave holds no RSA private key: webauthn-rs, through crypto-glue,
+    # uses rsa only to check the RS256 signatures of passkeys with their public keys. Remove
+    # when rsa has a constant-time release.
+    { id = "RUSTSEC-2023-0071", reason = "rsa only checks passkey signatures with public keys" },
 ]
 
 [licenses]

@@ -4,5 +4,7 @@
 //! way without depending on each other.
 
 pub mod signin;
+#[cfg(any(test, feature = "fake-authenticator"))]
+pub mod testing;
 
 pub use signin::{SignIn, SignInError, Trust, person};

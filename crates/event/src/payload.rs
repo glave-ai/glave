@@ -15,6 +15,7 @@ pub(crate) mod memory;
 pub(crate) mod message;
 pub(crate) mod model;
 pub(crate) mod part;
+pub(crate) mod passkey;
 pub(crate) mod principal;
 pub(crate) mod project;
 pub(crate) mod provider;
@@ -43,6 +44,7 @@ pub use memory::{
 pub use message::{MessageAdded, Role};
 pub use model::{Cost, ModelRef, ModelResponded, StopReason, TokenCounts, Usage};
 pub use part::{Opaque, Part};
+pub use passkey::{PasskeyAdded, PasskeyRemoved, PasskeyUsed};
 pub use principal::{Principal, PrincipalKind};
 pub use project::{Checkout, FolderSource, ProjectFolderSet, ProjectRemoved};
 pub use provider::{ProviderConnected, ProviderKind, ProviderRemoved, sealed_under_account};

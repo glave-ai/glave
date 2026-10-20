@@ -12,13 +12,14 @@ use crate::payload::{
     BrowserSignedOut, BrowserUsed, CatalogRefreshed, CertificateIssued, CommandEnded,
     CommandStarted, CredentialConnected, CredentialRemoved, EffortChosen, GatewayToolCalled,
     GoalEnded, GoalResumed, GoalSet, HookRan, MemoryEdited, MemoryForgotten, MemoryRestored,
-    MemorySaved, MemoryTidied, MessageAdded, ModelChosen, ModelResponded, ProjectFolderSet,
-    ProjectRemoved, ProviderConnected, ProviderRemoved, ScheduleCreated, ScheduleDeleted,
-    TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed,
-    ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested, TrustDecided, TurnEnded,
-    TurnStarted, WorkspaceBound, WorkspaceRemoved, approval, browser, catalog, certificate, chosen,
-    command, credential, gateway, goal, hook, memory, message, model, project, provider, standing,
-    task, thread, tool, trust, turn, workspace,
+    MemorySaved, MemoryTidied, MessageAdded, ModelChosen, ModelResponded, PasskeyAdded,
+    PasskeyRemoved, PasskeyUsed, ProjectFolderSet, ProjectRemoved, ProviderConnected,
+    ProviderRemoved, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, ThreadArchived,
+    ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived,
+    ToolCallCompleted, ToolCallRequested, TrustDecided, TurnEnded, TurnStarted, WorkspaceBound,
+    WorkspaceRemoved, approval, browser, catalog, certificate, chosen, command, credential,
+    gateway, goal, hook, memory, message, model, passkey, project, provider, standing, task,
+    thread, tool, trust, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -80,6 +81,9 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (catalog::REFRESHED, 1),
     (certificate::REGISTERED, 1),
     (certificate::ISSUED, 1),
+    (passkey::ADDED, 1),
+    (passkey::USED, 1),
+    (passkey::REMOVED, 1),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -140,6 +144,9 @@ pub enum Body {
     CatalogRefreshed(CatalogRefreshed),
     AcmeRegistered(AcmeRegistered),
     CertificateIssued(CertificateIssued),
+    PasskeyAdded(PasskeyAdded),
+    PasskeyUsed(PasskeyUsed),
+    PasskeyRemoved(PasskeyRemoved),
     /// An event this reader does not understand: an unknown type, or a newer version of a
     /// known one. Kept exactly as written.
     Unknown(Unknown),
@@ -315,6 +322,9 @@ impl Event {
             Body::CatalogRefreshed(payload) => encode(header, payload),
             Body::AcmeRegistered(payload) => encode(header, payload),
             Body::CertificateIssued(payload) => encode(header, payload),
+            Body::PasskeyAdded(payload) => encode(header, payload),
+            Body::PasskeyUsed(payload) => encode(header, payload),
+            Body::PasskeyRemoved(payload) => encode(header, payload),
             Body::Unknown(unknown) => Ok(RawEvent {
                 glave: ENVELOPE_VERSION,
                 id: header.id,
@@ -386,6 +396,11 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         }
         certificate::ISSUED => {
             certificate::decode_issued(version, data).map(|r| r.map(Body::CertificateIssued))
+        }
+        passkey::ADDED => passkey::decode_added(version, data).map(|r| r.map(Body::PasskeyAdded)),
+        passkey::USED => passkey::decode_used(version, data).map(|r| r.map(Body::PasskeyUsed)),
+        passkey::REMOVED => {
+            passkey::decode_removed(version, data).map(|r| r.map(Body::PasskeyRemoved))
         }
         _ => None,
     }
