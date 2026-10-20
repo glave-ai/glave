@@ -21,7 +21,7 @@ export const SIGNED_IN = '#code=e2e-code';
 
 /**
  * A sign-in link's one-time code from the real glave at `url` whose home is `home`, asked for
- * with its local token, as `glave app` asks for one.
+ * with its local token, as `glave` alone asks for one.
  */
 export async function signInCode(url: string, home: string): Promise<string> {
   const token = readFileSync(join(home, 'serve.token'), 'utf8').trim();

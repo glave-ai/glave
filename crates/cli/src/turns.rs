@@ -2,7 +2,8 @@
 //! (`specs/one-server.md`, "The CLI as a client"): the folder's project, asked about once when
 //! it is new; the thread; what its project asks to be trusted; then the turn, followed with the
 //! code that follows a server elsewhere. With no one at the terminal, nothing is asked: the
-//! folder becomes a project, and the turn is answered by no one.
+//! folder becomes a project, and the turn is answered by no one. `glave` alone finds the
+//! folder's project the same way (`app.rs`).
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -19,7 +20,7 @@ use crate::socket::Connection;
 use crate::terminal::Printer;
 
 /// Where the folder's threads go.
-enum Here {
+pub(crate) enum Here {
     /// Its project.
     Project(ProjectId),
     /// The person's Chats: the home folder, the folders above it, the temporary folder.
@@ -84,7 +85,7 @@ pub(crate) async fn run(
 
 /// Where `folder`'s threads go: its project, found by the server; for a folder that leads to
 /// none, a project made now, after asking once when someone is at the terminal.
-async fn here(
+pub(crate) async fn here(
     session: Session<'_>,
     folder: &Path,
     terminal: bool,

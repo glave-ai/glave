@@ -17,7 +17,7 @@ use glave_harness::{ApprovalMode, Cancel, Goal, Question};
 use glave_ports::Caller;
 use glave_session::client::{Remote, RemoteTurn};
 use glave_session::protocol::Meta;
-use glave_session::protocol::{Answer, ApiError, Notification, Reply, Request, Update, code};
+use glave_session::protocol::{Answer, ApiError, Notification, Reply, Request, Update};
 use glave_session::{Server, TurnItem, TurnStream};
 
 use crate::asking;
@@ -353,36 +353,6 @@ impl Client<'_> {
             })
             .await;
         true
-    }
-
-    /// Summarizes the thread now, which Ctrl-C cancels.
-    pub(crate) async fn compact(&self, printer: &mut Printer) {
-        let interrupt = Cancel::new();
-        let _ctrl_c = CtrlC::cancels(&interrupt);
-        let compact = self.server.request(Request::ThreadCompact {
-            thread: self.thread,
-        });
-        let mut compact = pin!(compact);
-        let replied = if let Some(replied) = interrupt.run(compact.as_mut()).await {
-            replied
-        } else {
-            self.cancel().await;
-            compact.await
-        };
-        match replied {
-            Ok(Reply::Compacted {
-                before_tokens,
-                after_tokens,
-            }) => printer.update(Update::Compacted {
-                before_tokens,
-                after_tokens,
-            }),
-            Ok(_) => {}
-            Err(error) if error.code == code::CANCELLED => {
-                printer.error("compaction cancelled; the thread is as it was");
-            }
-            Err(error) => self.show_error(printer, &error),
-        }
     }
 
     /// Reports the MCP servers started here, if there are any.

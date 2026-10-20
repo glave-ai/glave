@@ -13,11 +13,6 @@ use crate::policy::tests::constraints;
 use crate::trust::assess::Standing;
 use crate::trust::project::MCP_FILE;
 
-/// A terminal no one answers.
-async fn no_one(_question: String) -> std::io::Result<Option<String>> {
-    Ok(None)
-}
-
 fn scratch(name: &str) -> TempDir {
     TempDir::new(&format!("trust-{name}")).unwrap()
 }
@@ -148,11 +143,6 @@ fn asked_once_then_remembered_until_the_servers_change() {
     let why: Vec<_> = assessment.undecided().iter().map(|(_, why)| *why).collect();
     assert_eq!(why.len(), 2);
     assert!(why.contains(&assess::Why::Changed) && why.contains(&assess::Why::New));
-    insta::assert_snapshot!(
-        "question",
-        ask::question(&assessment)
-            .replace(&assessment.project.root.display().to_string(), "/code/app")
-    );
 }
 
 #[test]
@@ -359,18 +349,11 @@ fn resolve_keeps_nothing_when_no_one_is_asked() {
     let rules = Constraints::default();
     let record = Record::default();
     for asking in [Asking::NoOne, Asking::Explaining] {
-        let outcome = block_on!(resolve(&record, project.clone(), &rules, asking, no_one)).unwrap();
+        let outcome = resolve(&record, project.clone(), &rules, asking);
         assert!(outcome.servers.is_empty());
         assert!(outcome.decisions.is_none());
     }
-    let explained = block_on!(resolve(
-        &record,
-        project,
-        &rules,
-        Asking::Explaining,
-        no_one
-    ))
-    .unwrap();
+    let explained = resolve(&record, project, &rules, Asking::Explaining);
     assert!(explained.rows[0][1].contains("glave will ask once"));
 }
 

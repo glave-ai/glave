@@ -5,7 +5,6 @@
 //! from what [`Outcome::decisions`] says), and asks again only about what changes. Policy can trust projects without a question or forbid their
 //! servers. Until someone answers, they stay off.
 
-mod ask;
 mod assess;
 mod project;
 mod protect;
@@ -22,11 +21,10 @@ pub use record::{Decision, Entry, Record};
 
 use crate::policy::Constraints;
 
-/// Who can be asked.
+/// Who can be asked. The terminal asks through the person's server, as an app does
+/// (`specs/one-server.md`, "The CLI as a client").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Asking {
-    /// The person at the terminal.
-    Person,
     /// No one: a script, a pipe.
     NoOne,
     /// No one here, but the person can answer later from an app: the session server.
@@ -35,33 +33,21 @@ pub enum Asking {
     Explaining,
 }
 
-/// What `project` does under `record`, asking the person if that is needed and possible. The
-/// answer to keep, when there is one, is the outcome's `decisions`. `ask` shows the question
-/// and returns the line typed, or nothing when input ends without one, which counts as no one
-/// being there.
-pub async fn resolve(
+/// What `project` does under `record`, as `asking` leaves it: nothing is asked here. The
+/// answer to keep, when there is one, is the outcome's `decisions`.
+pub fn resolve(
     record: &Record,
     project: Project,
     constraints: &Constraints,
     asking: Asking,
-    ask: impl AsyncFnOnce(String) -> std::io::Result<Option<String>>,
-) -> crate::Result<Outcome> {
+) -> Outcome {
     let assessment = assess(project, record, constraints);
     let answer = match asking {
         Asking::Explaining => Answer::Explaining,
         Asking::NoOne => Answer::NoOne,
         Asking::Later => Answer::Later,
-        Asking::Person if assessment.undecided().is_empty() => Answer::NoOne,
-        Asking::Person => match ask(ask::question(&assessment))
-            .await
-            .map_err(|error| crate::Error::within("could not ask about the project", error))?
-        {
-            Some(typed) if ask::trusts(&typed) => Answer::Yes,
-            Some(_) => Answer::No,
-            None => Answer::NoOne,
-        },
     };
-    Ok(assessment.apply(answer))
+    assessment.apply(answer)
 }
 
 /// The trusted project servers as one `.mcp.json`, ready to read like the person's own.

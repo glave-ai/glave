@@ -1,8 +1,9 @@
-//! `glave app`: glave in the browser, signed in, with nothing to type, as `opencode web` and
-//! `jupyter lab` open theirs. It opens the person's server, started in the background first
-//! when it is not running and someone is at the terminal. `glave` alone does the same when no
-//! model is set up yet, since the browser is where a first model is added; with one, `glave`
-//! stays the terminal session.
+//! `glave` alone: glave in the browser, signed in, with nothing to type, as `opencode web` and
+//! `jupyter lab` open theirs (`specs/one-server.md`, "The CLI as a client"). It opens the
+//! person's server, started in the background first when it is not running and someone is at
+//! the terminal, at this folder's project (asking once when the folder is new), at the
+//! person's Chats in the home folder, or with `--continue` at the newest thread there. With no
+//! model set up yet, the app adds one first.
 //!
 //! The browser is sent to a sign-in link, whose one-time code the server gives glave over its
 //! socket, through a page in glave's folder, readable only by you, as Jupyter does, so the
@@ -14,30 +15,21 @@ use std::io::IsTerminal as _;
 use std::path::Path;
 use std::process::ExitCode;
 
-use anyhow::Context as _;
+use anyhow::{Context as _, bail};
+use glave_ports::ProjectId;
 use glave_session::protocol::{Reply, Request};
 
-use crate::args::{Action, Args};
+use crate::args::Args;
+use crate::client::Session;
 use crate::home;
+use crate::input::Input;
+use crate::turns::Here;
 
 /// The file a running server's address is kept in, beside its token.
 pub(crate) const URL_FILE: &str = "serve.url";
 
 /// The page that sends the browser to the sign-in link.
 pub(crate) const OPEN_FILE: &str = "open.html";
-
-/// Whether `glave` with `args` opens the browser rather than a terminal session: nothing asked
-/// of it, a person at the terminal of a computer with a screen (`screen`), and no model set up
-/// anywhere.
-pub(crate) fn first_run(args: &Args, terminal: bool, screen: bool, set_up: bool) -> bool {
-    let bare = args.action == Action::Run
-        && args.prompt.is_empty()
-        && args.goal.is_none()
-        && !args.background
-        && !args.resume
-        && args.events.is_none();
-    bare && terminal && screen && !set_up
-}
 
 /// Whether a browser here would show on the person's screen, on `os` with the variables `var`
 /// gives: not over SSH, and on Linux and the like only with a display.
@@ -79,24 +71,31 @@ pub(crate) fn redirect(link: &str) -> String {
     )
 }
 
-/// `glave app`: opens the person's server in the browser, starting it first when it is not
+/// `glave` alone, or `glave -c` alone: opens the person's server in the browser at this
+/// folder's project, or the newest thread there, starting the server first when it is not
 /// running and someone is at the terminal.
-pub(crate) async fn main() -> anyhow::Result<ExitCode> {
+pub(crate) async fn open(args: &Args) -> anyhow::Result<ExitCode> {
     let Some(server) = crate::server::connect_or_start().await? else {
-        anyhow::bail!(
-            "glave is not running, and only glave app run in a terminal starts it: run it in \
-             one, or run glave serve"
-        );
+        bail!("glave opens in your browser when you run it from a terminal: run glave in one");
+    };
+    let session = Session::Elsewhere(server.remote());
+    let folder = std::env::current_dir()?;
+    let input = Input::start();
+    let terminal = crate::server::at_terminal();
+    let page = match crate::turns::here(session, &folder, terminal, &input).await? {
+        Here::Declined => return Ok(ExitCode::SUCCESS),
+        Here::Project(project) => page(session, Some(project), args.resume).await?,
+        Here::Chats => page(session, None, args.resume).await?,
     };
     let Reply::Link { code } = server.request(Request::SigninLink {}).await? else {
-        anyhow::bail!("glave answered signin/link with something else");
+        bail!("glave answered signin/link with something else");
     };
-    let folder = home::folder()?;
-    let url = std::fs::read_to_string(folder.join(URL_FILE))
+    let home = home::folder()?;
+    let url = std::fs::read_to_string(home.join(URL_FILE))
         .context("glave runs, but did not say where a browser reaches it")?;
-    let url = url.trim();
+    let url = format!("{}{page}", url.trim().trim_end_matches('/'));
     let shown = if screen_here() {
-        show(&folder, url, &code).await
+        show(&home, &url, &code).await
     } else {
         Err(anyhow::anyhow!("no screen here to open a browser on"))
     };
@@ -106,7 +105,7 @@ pub(crate) async fn main() -> anyhow::Result<ExitCode> {
             // Shown only to a person at a terminal: error output often ends up in a log.
             anyhow::ensure!(std::io::stderr().is_terminal(), error);
             eprintln!(
-                "glave: {error:#}; open {url}/#code={} in a browser on this computer (it works \
+                "glave: {error:#}; open {url}#code={} in a browser on this computer (it works \
                  once, for five minutes)",
                 code.expose()
             );
@@ -115,7 +114,30 @@ pub(crate) async fn main() -> anyhow::Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Opens glave at `url` in the person's browser, signed in by the link with `code`: through the
+/// The app's page for `project` (the person's Chats when none): with `resume`, its newest
+/// thread, when it has one; else the project's page, or Chats' new-thread page.
+async fn page(
+    session: Session<'_>,
+    project: Option<ProjectId>,
+    resume: bool,
+) -> anyhow::Result<String> {
+    if resume {
+        let listed = Request::ThreadList {
+            project,
+            limit: Some(1),
+            show: None,
+            cursor: None,
+        };
+        if let Reply::Threads { threads, .. } = session.request(listed).await?
+            && let Some(newest) = threads.first()
+        {
+            return Ok(format!("/t/{}", newest.id));
+        }
+    }
+    Ok(project.map_or_else(|| "/".to_owned(), |project| format!("/p/{project}")))
+}
+
+/// Opens `link`, glave signed in by the code it carries, in the person's browser: through the
 /// page in glave's folder, so the code is never an argument of a program.
 pub(crate) async fn show(
     folder: &Path,
@@ -123,7 +145,7 @@ pub(crate) async fn show(
     code: &glave_event::Secret,
 ) -> anyhow::Result<()> {
     let page = folder.join(OPEN_FILE);
-    let link = format!("{}/#code={}", url.trim_end_matches('/'), code.expose());
+    let link = format!("{url}#code={}", code.expose());
     crate::serving::keep(&page, &redirect(&link))?;
     let (program, arguments) = opener(std::env::consts::OS, &page);
     let opened = glave_process::Program::new(program)
@@ -144,25 +166,6 @@ pub(crate) async fn show(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn bare_glave_opens_the_browser_only_on_a_first_run_at_a_terminal() {
-        let bare = crate::args::parse(Vec::<String>::new()).unwrap();
-        assert!(first_run(&bare, true, true, false));
-        assert!(!first_run(&bare, true, true, true), "a model is set up");
-        assert!(
-            !first_run(&bare, false, true, false),
-            "no one at the terminal"
-        );
-        assert!(
-            !first_run(&bare, true, false, false),
-            "no screen to show a browser on"
-        );
-        for words in [&["fix", "it"][..], &["--continue"], &["--goal", "pass"]] {
-            let args = crate::args::parse(words.iter().map(|w| (*w).to_owned())).unwrap();
-            assert!(!first_run(&args, true, true, false), "{words:?}");
-        }
-    }
 
     #[test]
     fn a_browser_shows_on_a_screen_here_not_over_ssh() {
@@ -192,8 +195,8 @@ mod tests {
 
     #[test]
     fn the_page_sends_the_browser_to_the_link() {
-        let page = redirect("http://127.0.0.1:4180/#code=abc");
-        assert!(page.contains("content=\"0;url=http://127.0.0.1:4180/#code=abc\""));
-        assert!(page.contains("<a href=\"http://127.0.0.1:4180/#code=abc\">"));
+        let page = redirect("http://127.0.0.1:4180/p/x#code=abc");
+        assert!(page.contains("content=\"0;url=http://127.0.0.1:4180/p/x#code=abc\""));
+        assert!(page.contains("<a href=\"http://127.0.0.1:4180/p/x#code=abc\">"));
     }
 }

@@ -20,12 +20,12 @@ On macOS or Linux:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/glave-ai/glave/releases/latest/download/glave-installer.sh | sh
-glave app
+glave
 ```
 
-Your browser opens, signed in. Add a model by pasting a key, and start a chat. glave keeps running in the background, so the page stays connected; `glave server stop` stops it.
+Your browser opens, signed in, at the project in the folder you ran it from (glave asks once before making a new folder a project; in your home folder, it opens your chats). Add a model by pasting a key, and start a thread. glave keeps running in the background, so the page stays connected and work goes on when you close the terminal; `glave server stop` stops it.
 
-Prefer the terminal? `glave` starts a session right there. `glave --help` lists everything.
+Prefer the terminal? `glave "fix the failing test"` answers right there, asking in place before anything risky; `glave -c "…"` continues the folder's last thread. `glave --help` lists everything.
 
 With Homebrew instead: `brew install glave-ai/tap/glave`. Both ways work once the first release is published; until then, build glave from source.
 
@@ -38,7 +38,7 @@ git clone https://github.com/glave-ai/glave
 cd glave
 (cd web && npm ci && npm run build)
 cargo build --release -p glave --features web
-./target/release/glave app
+./target/release/glave
 ```
 
 ## For companies

@@ -38,7 +38,8 @@ fn run(place: &Place, args: &[&str]) -> Output {
     start(place, args).wait_with_output().unwrap()
 }
 
-/// `glave` with `args` in a terminal of its own, which closes when it ends.
+/// `glave` with `args` in a terminal of its own, which closes when it ends, in a folder that is
+/// its home, so `glave` alone opens the person's Chats with nothing to ask.
 fn in_terminal(place: &Place, args: &[&str]) -> Running {
     let glave = env!("CARGO_BIN_EXE_glave");
     let spawn = "import pty, sys; sys.exit(pty.spawn(sys.argv[1:]) >> 8)";
@@ -48,6 +49,7 @@ fn in_terminal(place: &Place, args: &[&str]) -> Running {
         .args(python)
         .current_dir(&place.project)
         .env("GLAVE_HOME", &place.home)
+        .env("HOME", &place.project)
         .env("SSH_CONNECTION", "test")
         .env_remove("GLAVE_MODEL")
         .env_remove("GLAVE_BASE_URL")
@@ -84,8 +86,8 @@ fn serve(place: &Place) -> Running {
 fn two_starts_at_once_make_one_server_which_outlives_their_terminals_and_stops() {
     let place = place("two");
     let stopped_at_end = Stopped(&place);
-    let first = in_terminal(&place, &["app"]);
-    let second = in_terminal(&place, &["app"]);
+    let first = in_terminal(&place, &[]);
+    let second = in_terminal(&place, &[]);
     for started in [first, second] {
         let said = started.wait_with_output().unwrap();
         assert!(said.status.success(), "{}", text(&said));
@@ -109,10 +111,10 @@ fn two_starts_at_once_make_one_server_which_outlives_their_terminals_and_stops()
 #[test]
 fn no_command_without_a_terminal_starts_one() {
     let place = place("scripted");
-    let refused = run(&place, &["app"]);
+    let refused = run(&place, &[]);
     assert!(!refused.status.success());
     assert!(
-        text(&refused).contains("only glave app run in a terminal starts it"),
+        text(&refused).contains("when you run it from a terminal"),
         "{}",
         text(&refused)
     );

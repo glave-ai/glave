@@ -3,7 +3,6 @@
 //! to trust; and `glave policy explain`, which shows them. A project's own settings are its
 //! threads' alone (`project_folders.rs`), never the server's.
 
-use std::io::Write as _;
 use std::path::Path;
 use std::process::ExitCode;
 
@@ -171,7 +170,7 @@ async fn resolve(
     let root = Locations::here(&home, folder).root;
     let project = Project::read(&root, &mcp::environment()).await?;
     let record = trust.record().await?;
-    let outcome = trust::resolve(&record, project.clone(), constraints, asking, ask).await?;
+    let outcome = trust::resolve(&record, project.clone(), constraints, asking);
     if let Some(decisions) = &outcome.decisions {
         trust
             .keep(Record::deciding(&project, decisions.clone()))
@@ -203,21 +202,6 @@ async fn read_at(
             rows: outcome.rows.clone(),
         });
     Ok(loaded)
-}
-
-/// Shows `question` in the terminal and reads the line typed; nothing when input ends first.
-async fn ask(question: String) -> std::io::Result<Option<String>> {
-    tokio::task::spawn_blocking(move || {
-        let mut err = std::io::stderr();
-        let _ = write!(err, "{question}");
-        let _ = err.flush();
-        let mut line = String::new();
-        std::io::stdin()
-            .read_line(&mut line)
-            .map(|read| (read > 0).then_some(line))
-    })
-    .await
-    .map_err(std::io::Error::other)?
 }
 
 /// The choices made with flags. A prompt given on the command line is answered once, so its

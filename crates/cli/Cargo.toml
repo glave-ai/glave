@@ -20,7 +20,7 @@ name = "glave"
 path = "src/main.rs"
 
 [features]
-# The web app built into glave (build.rs), so `glave app` opens it with no folder to pass.
+# The web app built into glave (build.rs), so `glave` opens it with no folder to pass.
 # Release builds turn it on, after `npm run build` in web/: `--features web`. Off by default,
 # so building glave needs no Node; `--web <folder>` serves a build from a folder either way.
 web = []

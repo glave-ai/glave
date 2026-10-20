@@ -75,43 +75,6 @@ impl Printer {
         self.waiting.clone()
     }
 
-    pub(crate) fn banner(&self, model: &str, provider: &str, folder: &str, note: &str) {
-        println!(
-            "{} {}",
-            paint(self.color, GREEN, "glave"),
-            paint(
-                self.color,
-                DIM,
-                &format!(
-                    "· {model} via {provider} · {folder} · {} · {note}",
-                    self.protections
-                )
-            )
-        );
-        println!(
-            "{}",
-            paint(self.color, DIM, "Type a request. /exit to leave.")
-        );
-    }
-
-    /// The banner of a session on a server elsewhere, which chooses the model.
-    pub(crate) fn banner_elsewhere(&self, server: &str, note: &str) {
-        println!(
-            "{} {}",
-            paint(self.color, GREEN, "glave"),
-            paint(self.color, DIM, &format!("· on {server} · {note}"))
-        );
-        println!(
-            "{}",
-            paint(self.color, DIM, "Type a request. /exit to leave.")
-        );
-    }
-
-    pub(crate) fn ask(&self) {
-        print!("\n{} ", paint(self.color, GREEN, "›"));
-        flush();
-    }
-
     pub(crate) fn update(&mut self, update: Update) {
         self.waiting.stop();
         match update {

@@ -40,8 +40,6 @@ pub(crate) struct Wired {
     /// The project of the folder glave runs in, where the terminal's threads are.
     pub(crate) project: ProjectId,
     pub(crate) root: PathBuf,
-    /// The instruction files the model is given, for the banner.
-    pub(crate) files: Vec<PathBuf>,
     /// The settings in use, for the banner and receipts.
     pub(crate) choices: Choices,
     /// The workers threads work on, with `--on cloud`.
@@ -155,7 +153,6 @@ pub(crate) async fn wire(
         endpoint: lined.built.endpoint,
         project: scope.project(),
         root,
-        files: instructions.map(|loaded| loaded.files).unwrap_or_default(),
         choices: setup.choices,
         workers,
         memory,
