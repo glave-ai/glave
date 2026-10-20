@@ -124,6 +124,7 @@ fn request(model: &str, candidates: &[Entry], compact: bool) -> ModelRequest {
         max_output_tokens: Some(ANSWER_TOKENS),
         purpose: Purpose::Summary,
         threads: Vec::new(),
+        files: Vec::new(),
         effort: None,
     }
 }

@@ -215,6 +215,7 @@ fn a_task_never_works_in_a_folder_itself() {
                 approval: None,
                 effort: None,
                 unattended: false,
+                files: Vec::new(),
             })
             .await
             .unwrap_err();
@@ -268,6 +269,7 @@ fn approvals_in_a_task_are_answered_no_one_there_and_the_model_is_sent_the_same(
                 approval: None,
                 effort: None,
                 unattended: false,
+                files: Vec::new(),
             })
             .await
             .unwrap();
@@ -380,6 +382,7 @@ fn a_turn_stops_at_its_budget() {
                 approval: None,
                 effort: None,
                 unattended: false,
+                files: Vec::new(),
             })
             .await;
         assert_eq!(followed.unwrap_err().code, code::INVALID_PARAMS);
@@ -407,6 +410,7 @@ fn policy_limits_how_many_tasks_run_at_once() {
                 approval: None,
                 effort: None,
                 unattended: false,
+                files: Vec::new(),
             })
             .await
             .unwrap_err();

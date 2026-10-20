@@ -174,6 +174,7 @@ fn the_queue_is_bounded_a_message_chooses_no_model_and_stop_gives_back_what_wait
             effort: None,
             meta: glave_session::protocol::Meta::default(),
             unattended: false,
+            files: Vec::new(),
         };
         assert_eq!(
             server.request(choosing).await.unwrap_err().code,

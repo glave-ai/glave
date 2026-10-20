@@ -27,6 +27,8 @@ pub struct Queued {
     pub id: EventId,
     /// What the person wrote; a `/command` is sent as the command's text, as a prompt is.
     pub text: String,
+    /// The files they added to it, as `file` parts.
+    pub files: Vec<Part>,
     /// Who sent it: its `author` when that is not the person the thread is for.
     pub caller: Caller,
 }
@@ -209,6 +211,7 @@ where
             };
             let prompt = Prompt {
                 text: &next.text,
+                files: &next.files,
                 caller: &next.caller,
                 by_glave: false,
                 id: Some(next.id),
@@ -252,6 +255,7 @@ mod tests {
         Queued {
             id: EventId::new(jiff::Timestamp::UNIX_EPOCH, [n; 10]).unwrap(),
             text: format!("message {n}"),
+            files: Vec::new(),
             caller: Caller::default(),
         }
     }

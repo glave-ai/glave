@@ -75,6 +75,7 @@ impl<'a> Steering<'a> {
         let queued = Queued {
             id: EventId::new(clock.now(), entropy.bytes().ok()?).ok()?,
             text: self.steer.message.clone(),
+            files: Vec::new(),
             caller: Caller::default(),
         };
         self.inbox.push(queued).ok()?;

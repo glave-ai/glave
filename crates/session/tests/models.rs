@@ -82,6 +82,7 @@ async fn turn_on(
             approval: None,
             effort: None,
             unattended: false,
+            files: Vec::new(),
         })
         .await
 }
@@ -279,6 +280,7 @@ fn a_background_turn_runs_on_the_model_it_chose_and_the_task_says_so() {
                 approval: None,
                 effort: None,
                 unattended: false,
+                files: Vec::new(),
             })
             .await
             .unwrap();
@@ -307,6 +309,7 @@ fn a_reasoning_level_the_model_offers_is_kept_for_every_turn_after_it() {
             approval: None,
             effort: Some(effort.into()),
             unattended: false,
+            files: Vec::new(),
         };
         let refused = server.request(with_effort("medium")).await.unwrap_err();
         assert_eq!(refused.code, code::INVALID_PARAMS);

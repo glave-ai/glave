@@ -19,6 +19,7 @@ fn queued(n: u8, text: &str) -> Queued {
     Queued {
         id: EventId::new(jiff::Timestamp::UNIX_EPOCH, [n; 10]).unwrap(),
         text: text.into(),
+        files: Vec::new(),
         caller: Caller::default(),
     }
 }

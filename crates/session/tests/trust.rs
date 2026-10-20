@@ -389,6 +389,7 @@ fn a_caller_signed_in_elsewhere_is_never_asked_and_cannot_answer() {
             effort: None,
             meta: glave_session::protocol::Meta::default(),
             unattended: false,
+            files: Vec::new(),
         };
         server.request_as(&elsewhere, turn).await.unwrap();
         assert!(!offered(&seen, 0), "no project tools for another's thread");

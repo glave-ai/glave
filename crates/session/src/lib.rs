@@ -12,6 +12,7 @@ mod cron;
 mod cursor;
 mod dispatch;
 mod errors;
+mod files;
 mod folders;
 mod goal;
 mod gone;

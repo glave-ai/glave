@@ -115,6 +115,7 @@ impl Client<'_> {
                 meta: Meta::default(),
                 // With no one here, no one answers: what would ask is declined at once.
                 unattended: !self.asks,
+                files: Vec::new(),
             })
             .await;
         self.follow(started, printer).await

@@ -70,6 +70,9 @@ enum Block<'a> {
     Text {
         text: &'a str,
     },
+    Image {
+        source: ImageSource<'a>,
+    },
     Thinking {
         thinking: &'a str,
         signature: &'a str,
@@ -90,6 +93,15 @@ enum Block<'a> {
     },
 }
 
+/// An image sent inline: its media type and its bytes in base64.
+#[derive(Debug, Serialize)]
+struct ImageSource<'a> {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    media_type: &'a str,
+    data: &'a str,
+}
+
 #[derive(Debug, Serialize)]
 struct WireTool<'a> {
     name: &'a str,
@@ -106,7 +118,7 @@ pub(crate) fn messages_request<'a>(
 ) -> MessagesRequest<'a> {
     let mut messages: Vec<WireMessage<'a>> = Vec::with_capacity(request.messages.len());
     for message in &request.messages {
-        let (role, content) = blocks(message, provider, &request.model);
+        let (role, content) = blocks(request, message, provider);
         if content.is_empty() {
             continue;
         }
@@ -140,10 +152,31 @@ fn wire_tool(tool: &ToolSpec) -> WireTool<'_> {
     }
 }
 
-/// One message as a role and its content blocks.
-fn blocks<'a>(message: &'a Message, provider: &str, model: &str) -> (Role, Vec<Block<'a>>) {
+/// One message as a role and its content blocks: a person's images inline where `request`
+/// holds their content.
+fn blocks<'a>(
+    request: &'a ModelRequest,
+    message: &'a Message,
+    provider: &str,
+) -> (Role, Vec<Block<'a>>) {
+    let model = request.model.as_str();
     match message {
-        Message::User { parts } => (Role::User, texts(parts).collect()),
+        Message::User { parts } => {
+            let content = parts
+                .iter()
+                .filter_map(|part| match request.inline(part) {
+                    Some(file) => Some(Block::Image {
+                        source: ImageSource {
+                            kind: "base64",
+                            media_type: &file.media_type,
+                            data: &file.data,
+                        },
+                    }),
+                    None => texts(std::slice::from_ref(part)).next(),
+                })
+                .collect();
+            (Role::User, content)
+        }
         Message::Assistant { parts, tool_calls } => {
             // Thinking comes first, in its original order, then the text, then the calls.
             let mut content: Vec<Block<'a>> = parts
@@ -177,8 +210,8 @@ fn blocks<'a>(message: &'a Message, provider: &str, model: &str) -> (Role, Vec<B
     }
 }
 
-/// The text blocks of a message: its text, and files named rather than inlined until
-/// attachments are supported. Empty text is left out, since the API refuses it.
+/// The text blocks of a message: its text, and files not sent inline by their names. Empty
+/// text is left out, since the API refuses it.
 fn texts(parts: &[Part]) -> impl Iterator<Item = Block<'_>> {
     parts.iter().filter_map(|part| {
         let text = match part {

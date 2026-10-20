@@ -33,6 +33,13 @@ export type ApprovalMode = "ask" | "auto";
  */
 export type At = string;
 
+/** A file `turn/start` adds to its message: one `file/upload` kept in the thread's project. */
+export type AttachedFile = {
+  /** Its name, shown with the message and told to the model. */
+  readonly name: string;
+  readonly sha256: string;
+};
+
 /** Links a tool call to its result: 1 to 128 printable ASCII characters. */
 export type CallId = string;
 
@@ -110,6 +117,18 @@ export type EventId = string;
 
 /** The kind of a failed model request. */
 export type Failure = "refused" | "no_credit" | "unknown_model" | "too_long" | "rate_limited" | "unavailable" | "unreachable" | "silent" | "malformed" | "rejected" | "over_budget";
+
+/** A file the server keeps, as `file/upload` answers it. */
+export type FileInfo = {
+  /** Its size. */
+  readonly bytes: number;
+  /** Its media type, such as `image/png`. */
+  readonly media_type: string;
+  /** Its name, as the person's computer called it. */
+  readonly name: string;
+  /** Its content's SHA-256, which `turn/start` names it by. */
+  readonly sha256: string;
+};
 
 /** Where a folder's files come from. */
 export type FolderSource = {
@@ -738,6 +757,21 @@ export type CredentialRemoveParams = {
 
 export type CredentialRemoveResult = Readonly<Record<string, never>>;
 
+export type FileUploadParams = {
+  /** Its content, in base64. */
+  readonly data: string;
+  /** Its media type, such as `image/png`; `application/octet-stream` when unknown. */
+  readonly media_type: string;
+  /** Its name, as the person's computer called it. */
+  readonly name: string;
+  readonly project?: ProjectId | null;
+};
+
+/** A file kept for a message. */
+export type FileUploadResult = {
+  readonly file: FileInfo;
+};
+
 export type FolderListParams = {
   /** A folder's full path. */
   readonly path?: string | null;
@@ -1196,6 +1230,12 @@ export type TurnStartParams = {
    */
   readonly effort?: string | null;
   /**
+   * Files the person added to the message, each one `file/upload` kept in the thread's
+   * project: the thread refers to them from now on, and the model is sent them as it can
+   * read them. Not with `background`.
+   */
+  readonly files?: readonly (AttachedFile)[];
+  /**
    * The model this turn, and the thread's turns after it, go to: one `model/list`
    * names. The thread's latest choice when absent, else the server's default. Not while
    * a turn runs.
@@ -1229,6 +1269,7 @@ export interface Methods {
   readonly "credential/device/start": { readonly params: CredentialDeviceStartParams; readonly result: CredentialDeviceStartResult };
   readonly "credential/list": { readonly params: CredentialListParams; readonly result: CredentialListResult };
   readonly "credential/remove": { readonly params: CredentialRemoveParams; readonly result: CredentialRemoveResult };
+  readonly "file/upload": { readonly params: FileUploadParams; readonly result: FileUploadResult };
   readonly "folder/list": { readonly params: FolderListParams; readonly result: FolderListResult };
   readonly "goal/get": { readonly params: GoalGetParams; readonly result: GoalGetResult };
   readonly "goal/start": { readonly params: GoalStartParams; readonly result: GoalStartResult };
@@ -1332,10 +1373,14 @@ export const ErrorCode = {
   NO_COMMAND: -32027,
   /** No such git host, or sign-in, here */
   NO_CREDENTIAL: -32024,
+  /** No such file here: never kept in this project, or no message used it within a day */
+  NO_FILE: -32030,
   /** The project's folder isn't there anymore: give it its new place (`project/folder/set`) or remove the project (`project/remove`) */
   NO_FOLDER: -32029,
   /** The thread has no active goal (or, to resume, no paused one) */
   NO_GOAL: -32007,
+  /** The thread's model does not read images */
+  NO_IMAGES: -32031,
   /** No such memory here */
   NO_MEMORY: -32017,
   /** No such method */

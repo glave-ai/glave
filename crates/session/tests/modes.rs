@@ -78,6 +78,7 @@ async fn turn_in(
             model: None,
             approval,
             unattended: false,
+            files: Vec::new(),
             effort: None,
         })
         .await

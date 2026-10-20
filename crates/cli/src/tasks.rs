@@ -184,6 +184,7 @@ pub(crate) async fn background(args: &Args) -> anyhow::Result<ExitCode> {
             approval: None,
             effort: None,
             unattended: false,
+            files: Vec::new(),
         },
     };
     let Reply::Task { task } = server.request(request).await? else {
