@@ -182,14 +182,33 @@ export type Meta = {
 
 /** One model a thread may be sent to. */
 export type ModelInfo = {
+  /** Its context window, in tokens. */
+  readonly context?: number | null;
   /** Whether threads that choose no model use this one. Exactly one model is the default. */
   readonly default: boolean;
-  /** Whether this is Hope, glave's own model, for clients to show as such. */
-  readonly hope: boolean;
   /** What `thread/start` and `turn/start` take as `model`: the name the gateway knows it by. */
   readonly id: string;
-  /** A name to show for it, when one is configured. */
+  /** Whether it reads images. */
+  readonly images?: boolean | null;
+  /** Who made it, such as `Anthropic`, when its provider says. */
+  readonly maker?: string | null;
+  /** The longest answer it gives, in tokens. */
+  readonly max_output?: number | null;
+  /**
+   * Its own name, without its maker's, such as `Claude Haiku 5.5`, when its provider or the
+   * settings give one.
+   */
   readonly name?: string | null;
+  /** What its tokens cost at the first of its providers. */
+  readonly price?: TokenPrice | null;
+  /**
+   * The services that run it, in a person's words (`OpenRouter`, `Anthropic`, a server's
+   * address), in the order glave tries them: the first, then each after it only when the
+   * one before fails.
+   */
+  readonly providers?: readonly (string)[];
+  /** How it reasons, when it can: the levels of effort it offers, in its provider's names. */
+  readonly reasoning?: Reasoning | null;
 };
 
 /**
@@ -326,6 +345,19 @@ export type RawEvent = {
   readonly thread: ThreadId;
   readonly type: TypeName;
   readonly v: PayloadVersion;
+};
+
+/** How a model reasons: the levels of effort it offers, in its service's own names. */
+export type Reasoning = {
+  /** The level it uses when none is asked for. */
+  readonly default?: string | null;
+  /**
+   * The levels it offers, as its service lists them, such as `high`, `medium`, `low`, and
+   * `none` where reasoning can be turned off. Empty when it offers no choice.
+   */
+  readonly efforts?: readonly (string)[];
+  /** Whether it always reasons. */
+  readonly mandatory?: boolean;
 };
 
 /** One memory as it is shown: to the model, and to the person. */
@@ -499,6 +531,14 @@ export type TokenCounts = {
   readonly input: number;
   readonly output: number;
   readonly reasoning: number;
+};
+
+/** What a model's tokens cost, in millionths of a US dollar per million tokens. */
+export type TokenPrice = {
+  /** Input read from the service's cache, when it prices that apart. */
+  readonly cache_read?: number | null;
+  readonly input: number;
+  readonly output: number;
 };
 
 /**

@@ -21,6 +21,7 @@ use glave_ports::{
 
 use crate::config::Endpoint;
 use crate::model::Model;
+use crate::providers::identity;
 use glave_config::policy::{Constraints, ModelEntry, Source, check_model};
 use glave_session::protocol::ModelInfo;
 
@@ -35,9 +36,10 @@ pub(crate) struct Allowed<'a> {
 }
 
 /// The gateway over `provider` at `endpoint`, with the judge's model, when `judge` names one
-/// other than the main one, and each of `offered` as choices. Fails
-/// when `allowed` refuses any of them. Then each of `accounts` the policy allows is a choice
-/// too, unless a model of the same id already is.
+/// other than the main one, and each of `offered` as choices. Fails when `allowed` refuses any
+/// of them. Then each of `accounts` the policy allows: after the main model, when it serves
+/// the same one, in its place when it is the very same; else a choice, unless a model of the
+/// same id already is.
 pub(crate) fn gateway(
     provider: Model,
     endpoint: &Endpoint,
@@ -48,14 +50,15 @@ pub(crate) fn gateway(
 ) -> anyhow::Result<Gateway> {
     let handle: Arc<dyn glave_gateway::Model> = Arc::new(provider);
     let name = &endpoint.provider.provider;
-    let main = Target::new(Arc::clone(&handle), name.clone(), endpoint.model.clone());
+    let mut main = Target::new(Arc::clone(&handle), name.clone(), endpoint.model.clone());
     let chosen = allowed.main.unwrap_or(&Source::Default);
     // A gateway elsewhere keeps the policy's models itself, for each caller.
     let checks = endpoint.gateway.is_none();
     if checks {
         check_model(&main.name, chosen, allowed.constraints)?;
     }
-    let routes = Routes::new(vec![main])?;
+    let same = identity(&endpoint.model);
+    let mut fallbacks = Vec::new();
     let mut choices: Vec<Target> = Vec::new();
     // The judge's calls name its model, so a project's judge is found among the choices too.
     if let Some(model) = judge.filter(|model| *model != endpoint.model) {
@@ -77,12 +80,18 @@ pub(crate) fn gateway(
         choices.push(target);
     }
     for target in accounts {
-        let taken =
-            target.model == endpoint.model || choices.iter().any(|c| c.model == target.model);
-        if !taken && check_model(&target.name, &Source::Default, allowed.constraints).is_ok() {
+        if check_model(&target.name, &Source::Default, allowed.constraints).is_err() {
+            continue;
+        }
+        if target.name == main.name {
+            main = target;
+        } else if target.same_model.as_ref() == Some(&same) || target.model == endpoint.model {
+            fallbacks.push(target);
+        } else if !choices.iter().any(|c| c.model == target.model) {
             choices.push(target);
         }
     }
+    let routes = Routes::new([main].into_iter().chain(fallbacks).collect())?;
     Ok(Gateway::new(routes.with_choices(choices)))
 }
 
@@ -111,19 +120,35 @@ impl GatewaySwitch {
 
     /// Whether a thread may be sent to `model` now: one `model/list` offers.
     pub(crate) fn offers(&self, model: &str) -> bool {
-        self.current()
-            .is_some_and(|gateway| models(&gateway).any(|target| target.model == model))
+        self.current().is_some_and(|gateway| {
+            models(&gateway).any(|group| group.first().is_some_and(|t| t.model == model))
+        })
     }
 }
 
-/// The models `gateway` offers threads: the main one, then its choices.
-fn models(gateway: &Gateway) -> impl Iterator<Item = &Target> {
+/// The models `gateway` offers threads: the main one, then its choices, each model once with
+/// every target that serves it, in the order they are tried.
+fn models(gateway: &Gateway) -> impl Iterator<Item = Vec<&Target>> {
     let routes = gateway.routes();
-    routes
-        .targets(Purpose::Main)
-        .first()
-        .into_iter()
-        .chain(routes.choices())
+    let choices = routes.choices();
+    let main = Some(routes.targets(Purpose::Main).iter().collect::<Vec<_>>());
+    let grouped = choices.iter().enumerate().filter_map(move |(at, target)| {
+        let Some(same) = &target.same_model else {
+            return Some(vec![target]);
+        };
+        let earlier = choices.iter().take(at);
+        if earlier.clone().any(|t| t.same_model.as_ref() == Some(same)) {
+            return None;
+        }
+        Some(
+            choices
+                .iter()
+                .skip(at)
+                .filter(|t| t.same_model.as_ref() == Some(same))
+                .collect(),
+        )
+    });
+    main.into_iter().chain(grouped)
 }
 
 impl ModelProvider for GatewaySwitch {
@@ -142,20 +167,13 @@ impl ModelProvider for GatewaySwitch {
     }
 }
 
-/// What `model/list` offers besides the main model, which the server adds itself: the
-/// gateway's choices, each named and marked as `[[models]]` says, and the main model's own
-/// entry, for its name and mark.
-pub(crate) fn offered(gateway: &Gateway, entries: &[ModelEntry]) -> Vec<ModelInfo> {
-    let info = |id: &str| {
-        let entry = entries.iter().find(|entry| entry.id.trim() == id);
-        ModelInfo {
-            id: id.to_owned(),
-            name: entry.and_then(|entry| entry.name.clone()),
-            default: false,
-            hope: entry.is_some_and(|entry| entry.hope),
-        }
-    };
-    models(gateway).map(|target| info(&target.model)).collect()
+/// What `model/list` offers: the main model's entry, then one for each of the gateway's
+/// choices, as `describe` says of the targets that serve it.
+pub(crate) fn offered(
+    gateway: &Gateway,
+    describe: impl Fn(&[&Target]) -> ModelInfo,
+) -> Vec<ModelInfo> {
+    models(gateway).map(|group| describe(&group)).collect()
 }
 
 #[cfg(test)]
@@ -208,21 +226,20 @@ pub(crate) mod tests {
         gateway(provider, &endpoint, judge, offered, Vec::new(), &allowed)
     }
 
-    fn entry(id: &str, name: Option<&str>, hope: bool) -> ModelEntry {
+    fn entry(id: &str, name: Option<&str>) -> ModelEntry {
         ModelEntry {
             id: id.into(),
             name: name.map(str::to_owned),
-            hope,
         }
     }
 
     #[test]
     fn the_judge_and_each_model_offered_are_choices_once_and_the_main_one_is_not() {
         let offered = [
-            entry("hope-12b", Some("Hope"), true),
-            entry("big", Some("Big"), false),
-            entry("small", None, false),
-            entry("hope-12b", None, false),
+            entry("hope-12b", Some("Hope")),
+            entry("big", Some("Big")),
+            entry("small", None),
+            entry("hope-12b", None),
         ];
         let gateway = offering(Some("small"), &offered, &Constraints::default()).unwrap();
         let choices: Vec<&str> = gateway
@@ -232,25 +249,15 @@ pub(crate) mod tests {
             .map(|target| target.name.as_str())
             .collect();
         assert_eq!(choices, ["openrouter/small", "openrouter/hope-12b"]);
-        let listed = offered_models(&gateway, &offered);
-        let ids: Vec<(&str, Option<&str>, bool)> = listed
-            .iter()
-            .map(|m| (m.id.as_str(), m.name.as_deref(), m.hope))
-            .collect();
-        assert_eq!(
-            ids,
-            [
-                ("big", Some("Big"), false),
-                ("small", None, false),
-                ("hope-12b", Some("Hope"), true)
-            ]
-        );
+        let listed = offered_models(&gateway, |group| ModelInfo::new(&group[0].model));
+        let ids: Vec<&str> = listed.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, ["big", "small", "hope-12b"]);
     }
 
     #[test]
     fn a_model_offered_that_the_policy_does_not_allow_is_refused_naming_the_rule() {
         let policy = constraints("version = 1\n[models]\ndeny = [\"*/secret\"]\n");
-        let refused = offering(None, &[entry("secret", None, false)], &policy)
+        let refused = offering(None, &[entry("secret", None)], &policy)
             .unwrap_err()
             .to_string();
         assert!(

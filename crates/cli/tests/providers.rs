@@ -127,6 +127,66 @@ fn a_model_the_settings_choose_stays_the_default_beside_an_account() {
 }
 
 #[test]
+fn each_model_is_listed_once_as_its_services_describe_it_and_falls_back_between_them() {
+    let key = key();
+    let place = place("accounts-described");
+    let described = |price: &str| {
+        Reply::Status(
+            200,
+            json!({"object": "list", "data": [{
+                "id": "acme/rocket-1.5",
+                "name": "Acme: Rocket 1.5",
+                "context_length": 200_000,
+                "architecture": {"input_modalities": ["text", "image"]},
+                "pricing": {"prompt": price, "completion": "0.000004"},
+                "top_provider": {"max_completion_tokens": 16_000},
+                "reasoning": {"supported_efforts": ["high", "low", "none"], "default_effort": "low"},
+            }]})
+            .to_string(),
+        )
+    };
+    let overloaded = Reply::Status(503, r#"{"error":{"message":"overloaded"}}"#.into());
+    let first = FakeServer::start(vec![described("0.000001"), overloaded]).unwrap();
+    let second = FakeServer::start(vec![
+        Reply::Status(200, json!({"data": [{"id": "rocket-1-5"}]}).to_string()),
+        Reply::text("From the second."),
+    ])
+    .unwrap();
+    let mut served = Served::start(&place, &first, &[]);
+    served.call("provider/connect", &connect(first.url(), &key));
+    served.call("provider/connect", &connect(second.url(), &key));
+    let listed = served.call("model/list", &json!({}));
+    let models = listed["result"]["models"].as_array().unwrap();
+    assert_eq!(models.len(), 1, "one entry for the model: {listed}");
+    let model = &models[0];
+    assert_eq!(model["id"], "acme/rocket-1.5");
+    assert_eq!(model["name"], "Rocket 1.5");
+    assert_eq!(model["maker"], "Acme");
+    assert_eq!(model["providers"], json!(["Local server", "Local server"]));
+    assert_eq!(model["context"], 200_000);
+    assert_eq!(model["max_output"], 16_000);
+    assert_eq!(model["images"], true);
+    assert_eq!(
+        model["price"],
+        json!({"input": 1_000_000, "output": 4_000_000})
+    );
+    assert_eq!(
+        model["reasoning"]["efforts"],
+        json!(["high", "low", "none"])
+    );
+
+    let thread = served.call("thread/start", &json!({}))["result"]["thread"]["id"].clone();
+    let turn = served.call("turn/start", &json!({"thread": thread, "prompt": "hi"}));
+    assert_eq!(turn["result"]["turn"]["outcome"], "completed", "{turn}");
+    let tried = second.received();
+    assert_eq!(
+        tried[1].body["model"], "rocket-1-5",
+        "the second, once the first failed"
+    );
+    served.end();
+}
+
+#[test]
 fn refreshing_lists_the_models_again_and_keeps_them_when_the_server_cannot_say() {
     let key = key();
     let place = place("accounts-refresh");

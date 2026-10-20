@@ -525,30 +525,86 @@
     "ModelInfo": {
       "description": "One model a thread may be sent to.",
       "properties": {
+        "context": {
+          "description": "Its context window, in tokens.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "default": {
           "description": "Whether threads that choose no model use this one. Exactly one model is the default.",
-          "type": "boolean"
-        },
-        "hope": {
-          "description": "Whether this is Hope, glave's own model, for clients to show as such.",
           "type": "boolean"
         },
         "id": {
           "description": "What `thread/start` and `turn/start` take as `model`: the name the gateway knows it by.",
           "type": "string"
         },
-        "name": {
-          "description": "A name to show for it, when one is configured.",
+        "images": {
+          "description": "Whether it reads images.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "maker": {
+          "description": "Who made it, such as `Anthropic`, when its provider says.",
           "type": [
             "string",
             "null"
           ]
+        },
+        "max_output": {
+          "description": "The longest answer it gives, in tokens.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Its own name, without its maker's, such as `Claude Haiku 5.5`, when its provider or the\nsettings give one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "price": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TokenPrice"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What its tokens cost at the first of its providers."
+        },
+        "providers": {
+          "description": "The services that run it, in a person's words (`OpenRouter`, `Anthropic`, a server's\naddress), in the order glave tries them: the first, then each after it only when the\none before fails.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "reasoning": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Reasoning"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How it reasons, when it can: the levels of effort it offers, in its provider's names."
         }
       },
       "required": [
         "id",
-        "default",
-        "hope"
+        "default"
       ],
       "type": "object"
     },
@@ -922,6 +978,31 @@
         "v",
         "data"
       ],
+      "type": "object"
+    },
+    "Reasoning": {
+      "additionalProperties": false,
+      "description": "How a model reasons: the levels of effort it offers, in its service's own names.",
+      "properties": {
+        "default": {
+          "description": "The level it uses when none is asked for.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "efforts": {
+          "description": "The levels it offers, as its service lists them, such as `high`, `medium`, `low`, and\n`none` where reasoning can be turned off. Empty when it offers no choice.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "mandatory": {
+          "description": "Whether it always reasons.",
+          "type": "boolean"
+        }
+      },
       "type": "object"
     },
     "Remembered": {
@@ -1459,6 +1540,36 @@
         "cache_write",
         "output",
         "reasoning"
+      ],
+      "type": "object"
+    },
+    "TokenPrice": {
+      "additionalProperties": false,
+      "description": "What a model's tokens cost, in millionths of a US dollar per million tokens.",
+      "properties": {
+        "cache_read": {
+          "description": "Input read from the service's cache, when it prices that apart.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "input": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "output": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input",
+        "output"
       ],
       "type": "object"
     },

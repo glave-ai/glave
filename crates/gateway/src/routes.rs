@@ -75,7 +75,8 @@ impl Routes {
 
     /// The targets for a call for `purpose` that asks for `model`. When the purpose uses
     /// `main`'s route and `model` names one of the choices other than `main`'s first target,
-    /// the default, that choice alone; otherwise the purpose's route, whatever was asked for.
+    /// the default, that choice, with every other choice serving the same model after it in
+    /// their order; otherwise the purpose's route, whatever was asked for.
     pub fn for_model(&self, purpose: Purpose, model: &str) -> Cow<'_, [Target]> {
         let route = self.targets(purpose);
         let own = purpose != Purpose::Main && self.others.contains_key(&purpose);
@@ -83,10 +84,19 @@ impl Routes {
         if own || default {
             return Cow::Borrowed(route);
         }
-        match self.choices.iter().find(|target| is(target, model)) {
-            Some(chosen) => Cow::Owned(vec![chosen.clone()]),
-            None => Cow::Borrowed(route),
-        }
+        let Some(chosen) = self.choices.iter().find(|target| is(target, model)) else {
+            return Cow::Borrowed(route);
+        };
+        let Some(same) = &chosen.same_model else {
+            return Cow::Owned(vec![chosen.clone()]);
+        };
+        Cow::Owned(
+            self.choices
+                .iter()
+                .filter(|target| target.same_model.as_ref() == Some(same))
+                .cloned()
+                .collect(),
+        )
     }
 }
 

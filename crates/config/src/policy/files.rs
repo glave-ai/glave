@@ -157,9 +157,6 @@ pub struct ModelEntry {
     pub id: String,
     /// A name to show for it.
     pub name: Option<String>,
-    /// Whether this model is Hope, glave's own, for clients to show as such.
-    #[serde(default)]
-    pub hope: bool,
 }
 
 /// `[gateway]`: the organization's gateway (`specs/gateway.md`, "Client mode").

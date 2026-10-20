@@ -69,7 +69,6 @@ fn offering(models: &[&str]) -> GatewaySwitch {
         .map(|id| ModelEntry {
             id: (*id).to_owned(),
             name: None,
-            hope: false,
         })
         .collect();
     let allowed = Allowed {

@@ -108,7 +108,7 @@ fn each_choice_comes_from_the_nearest_level_that_sets_it() {
 fn models_offered_come_from_the_nearest_file_that_lists_them() {
     let project = file(
         PROJECT,
-        "[[models]]\nid = \"hope-12b\"\nname = \"Hope\"\nhope = true\n\n[[models]]\nid = \"small\"\n",
+        "[[models]]\nid = \"hope-12b\"\nname = \"Hope\"\n\n[[models]]\nid = \"small\"\n",
     );
     let person = file(PERSON, "[[models]]\nid = \"mine\"\n");
     let none = ConfigFile::default;
@@ -121,12 +121,10 @@ fn models_offered_come_from_the_nearest_file_that_lists_them() {
             ModelEntry {
                 id: "hope-12b".into(),
                 name: Some("Hope".into()),
-                hope: true,
             },
             ModelEntry {
                 id: "small".into(),
                 name: None,
-                hope: false,
             },
         ]
     );

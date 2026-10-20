@@ -41,7 +41,7 @@ describe('ModelPickerComponent', () => {
   });
 
   it('takes the person’s pick from the list by name, and lists it after the default since', async () => {
-    const models = [...MODELS, { id: 'openai/gpt-6-sol', default: false, hope: false }];
+    const models = [...MODELS, { id: 'openai/gpt-6-sol', default: false }];
     const fixture = await render(models);
     const root: HTMLElement = fixture.nativeElement;
     const names = (): readonly string[] =>
