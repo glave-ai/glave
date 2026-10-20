@@ -8,6 +8,7 @@ mod error;
 mod files;
 mod live;
 mod models;
+mod passkeys;
 mod projects;
 mod providers;
 mod reply;
@@ -29,6 +30,7 @@ pub use glave_event::ApprovalMode;
 pub use glave_event::{Forge, ProviderKind};
 pub use live::Update;
 pub use models::ModelInfo;
+pub use passkeys::{PasskeySummary, SignInWay};
 pub use projects::{GoneFolder, NewFolder, ProjectFolder};
 pub use providers::{ProviderInfo, hint};
 pub use reply::{QueuedMessage, Reply, ServerInfo, Status, ThreadSummary, TurnResult};
@@ -90,6 +92,48 @@ methods! {
     "signin/end" => SigninEnd {} -> [Done],
     /// Ends every browser session but this one's: signing other browsers out.
     "signin/end_others" => SigninEndOthers {} -> [Done],
+    /// A one-time code for a link that makes a passkey on a device elsewhere, at the server's
+    /// public origin: good once, for ten minutes. Only glave on this computer: a local
+    /// transport, or the local token.
+    "signin/setup" => SigninSetup {} -> [Link],
+    /// Begins making a passkey with a setup link's code. Over HTTP it needs no sign-in.
+    "passkey/create_options" => PasskeyCreateOptions {
+        #[serde(serialize_with = "glave_event::serialize_exposed")]
+        code: Secret,
+    } -> [PasskeyOptions],
+    /// Makes the passkey that answers a setup link's request, spends the code, and signs the
+    /// browser in. Over HTTP it needs no sign-in.
+    "passkey/create" => PasskeyCreate {
+        /// The request, as `passkey/create_options` named it.
+        ceremony: String,
+        /// The browser's answer, as WebAuthn's JSON: `PublicKeyCredential`'s, buffers in
+        /// base64url.
+        credential: serde_json::Value,
+        /// What to call the passkey; when it was added, if nothing.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    } -> [Browser],
+    /// Begins adding a passkey on this device, for the person signed in.
+    "passkey/add_options" => PasskeyAddOptions {} -> [PasskeyOptions],
+    /// Adds the passkey that answers the person's request.
+    "passkey/add" => PasskeyAdd {
+        ceremony: String,
+        credential: serde_json::Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    } -> [Passkey],
+    /// Begins signing a browser in with a passkey. Over HTTP it needs no sign-in.
+    "passkey/get_options" => PasskeyGetOptions {} -> [PasskeyOptions],
+    /// Signs a browser in with the passkey that answers the request. Over HTTP it needs no
+    /// sign-in.
+    "passkey/get" => PasskeyGet {
+        ceremony: String,
+        credential: serde_json::Value,
+    } -> [Browser],
+    /// The person's passkeys, oldest first.
+    "passkey/list" => PasskeyList {} -> [Passkeys],
+    /// Removes a passkey, and ends the browser sessions it began.
+    "passkey/remove" => PasskeyRemove { passkey: String } -> [Done],
     /// The models this server can run: the default first.
     "model/list" => ModelList {} -> [Models],
     "thread/start" => ThreadStart {

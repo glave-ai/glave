@@ -223,7 +223,11 @@ pub(super) async fn snapshot<L: EventLog + Clone + 'static>(world: &World<L>) ->
             call(method, json!({})).await;
         }
         if let Some(token) = &person.token {
-            let verified = org.browsers.verify(token).await.map_err(|e| e.to_string());
+            let verified = org
+                .browsers
+                .verify(token, true)
+                .await
+                .map_err(|e| e.to_string());
             mine.push(json!({"browser": format!("{verified:?}")}));
         }
         seen.push(Value::Array(mine));

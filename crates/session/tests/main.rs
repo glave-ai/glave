@@ -24,6 +24,7 @@ mod memory;
 mod models;
 mod modes;
 mod outside;
+mod passkeys;
 mod placement;
 mod projects;
 mod providers;

@@ -66,6 +66,8 @@ pub enum BrowserError {
     TooMany,
     #[error("this browser's sign-in has ended: open glave again to sign in")]
     Ended,
+    #[error("this browser was signed in on the computer glave runs on, and signs in only there")]
+    Elsewhere,
     #[error("this glave is reached only on its own computer, so it signs no one in with passkeys")]
     NoPasskeys,
     #[error("no passkey signs in to this glave yet: open the link glave gave you to make one")]
@@ -204,8 +206,9 @@ impl Browsers {
         })
     }
 
-    /// The id of the session `token` is, renewed for `SESSION_LIFETIME` from now.
-    pub async fn verify(&self, token: &str) -> Result<String, BrowserError> {
+    /// The id of the session `token` is, renewed for `SESSION_LIFETIME` from now, when it is
+    /// presented `here`, on the server's own computer, or was signed in with a passkey.
+    pub async fn verify(&self, token: &str, here: bool) -> Result<String, BrowserError> {
         let presented = hex(&digest(token));
         let mut found = self.find(&presented);
         if found.is_none() {
@@ -213,7 +216,11 @@ impl Browsers {
             self.catch_up().await?;
             found = self.find(&presented);
         }
-        let (id, used) = found.ok_or(BrowserError::Ended)?;
+        let (id, used, passkey) = found.ok_or(BrowserError::Ended)?;
+        // Checked before it is renewed, so a link's session is never renewed from elsewhere.
+        if !here && !passkey {
+            return Err(BrowserError::Elsewhere);
+        }
         if self.clock.now().duration_since(used) >= RECORD_USE {
             // A use not recorded is recorded with the next one: the session goes on.
             let _ = self.change(|_, _| vec![Change::Used(id)]).await;
@@ -252,14 +259,15 @@ impl Browsers {
         .await
     }
 
-    /// The live session whose token's hash is `presented`: its id, and when it was last used.
-    fn find(&self, presented: &str) -> Option<(Uuid, Timestamp)> {
+    /// The live session whose token's hash is `presented`: its id, when it was last used,
+    /// and whether a passkey signed it in.
+    fn find(&self, presented: &str) -> Option<(Uuid, Timestamp, bool)> {
         let now = self.clock.now();
         let state = self.state();
         state
             .live(now)
             .find(|session| same(session.hash.as_bytes(), presented.as_bytes()))
-            .map(|session| (session.id, session.used))
+            .map(|session| (session.id, session.used, session.passkey.is_some()))
     }
 
     fn state(&self) -> MutexGuard<'_, State> {

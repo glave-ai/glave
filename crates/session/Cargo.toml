@@ -51,6 +51,8 @@ uuid.workspace = true
 
 [dev-dependencies]
 aws-lc-rs.workspace = true
+# The software authenticator the passkey tests sign in with.
+glave-identity = { workspace = true, features = ["fake-authenticator"] }
 glave-computer.workspace = true
 glave-keys.workspace = true
 glave-memory.workspace = true

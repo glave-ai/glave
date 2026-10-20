@@ -10,8 +10,8 @@ use glave_ports::{Project, ProjectId, Standing};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    ApprovalMode, CredentialInfo, DeviceCode, FileInfo, GoneFolder, ModelInfo, ProjectFolder,
-    ProviderInfo, ScheduleInfo, TaskInfo, TrustAsk,
+    ApprovalMode, CredentialInfo, DeviceCode, FileInfo, GoneFolder, ModelInfo, PasskeySummary,
+    ProjectFolder, ProviderInfo, ScheduleInfo, SignInWay, TaskInfo, TrustAsk,
 };
 
 /// What the server is.
@@ -31,6 +31,12 @@ pub struct ServerInfo {
     /// browser's session must name before the browser presents it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
+    /// Where people reach the server from elsewhere, if they do: its public origin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
+    /// How a browser signs in to it; none where no browser does, as over stdio.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub signin: Vec<SignInWay>,
 }
 
 /// A thread, as a list shows it: from the threads view, with what it is doing now.
@@ -226,6 +232,17 @@ pub enum Reply {
         #[serde(serialize_with = "glave_event::serialize_exposed")]
         code: Secret,
     },
+    /// A request to make or use a passkey: its id, and the options the browser hands its
+    /// authenticator, as WebAuthn's JSON (`{"publicKey": …}`, buffers in base64url).
+    #[schemars(title = "PasskeyOptions")]
+    PasskeyOptions {
+        ceremony: String,
+        options: serde_json::Value,
+    },
+    #[schemars(title = "Passkey")]
+    Passkey { passkey: PasskeySummary },
+    #[schemars(title = "Passkeys")]
+    Passkeys { passkeys: Vec<PasskeySummary> },
     /// A browser session, sent once.
     #[schemars(title = "Browser")]
     Browser {

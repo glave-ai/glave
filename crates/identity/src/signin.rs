@@ -3,19 +3,19 @@
 //! ES256 by a key in the issuer's JWKS, names a trusted issuer and this server's audience, and
 //! is within its lifetime. The verified caller is a person whose id comes from the token's
 //! issuer and subject. And local sign-in: a program on the person's own computer presents the
-//! server's local token from a loopback address, and is the local person, as is a browser
-//! that traded a link's code for a browser session. A token is never logged or stored.
+//! server's local token from there, and is the local person, as is a browser there that traded
+//! a link's code for a browser session, or a browser anywhere signed in with a passkey through
+//! the server's public origin. Which way a request came in is its [`Door`]. A token is never
+//! logged or stored.
 
 mod browsers;
 mod keys;
 mod local;
 
-use std::net::IpAddr;
 use std::sync::Arc;
 
 use glave_event::{Auth, AuthMethod, PrincipalId};
 use glave_ports::auth::safe_to_send;
-use glave_ports::host::is_loopback;
 use glave_ports::{Caller, Clock};
 use jsonwebtoken::{Algorithm, Validation, decode, decode_header};
 use serde::Deserialize;
@@ -29,6 +29,17 @@ pub use self::local::{LOCAL_BYTES, LOCAL_PREFIX, LocalToken};
 
 /// How far the clocks of the server and the identity provider may disagree, in seconds.
 const SKEW: f64 = 60.0;
+
+/// Which way a request came in, as its transport saw it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Door {
+    /// From this computer, to the server's own address.
+    Here,
+    /// Through the server's public origin: a tunnel, a proxy, or its HTTPS of its own.
+    Public,
+    /// From another computer, to a server with no public origin.
+    Elsewhere,
+}
 
 /// Who may sign in: the identity providers trusted, and the audience their tokens must name.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,6 +85,11 @@ pub enum SignInError {
     WrongLocalToken,
     #[error("this browser's sign-in has ended: open glave again to sign in")]
     EndedSession,
+    #[error(
+        "this browser was signed in on the computer glave runs on, and its sign-in works only \
+         there: sign in with a passkey here"
+    )]
+    OnlyThere,
 }
 
 /// Checks sign-in tokens for one server. Keys are fetched from each issuer when first needed,
@@ -82,9 +98,10 @@ pub struct SignIn {
     audience: String,
     issuers: Vec<Keys>,
     clock: Box<dyn Clock>,
-    /// The local token, accepted from loopback callers as the local person.
+    /// The local token, accepted from this computer as the local person.
     local: Option<LocalToken>,
-    /// Browser sessions, accepted from loopback callers as the local person.
+    /// Browser sessions, accepted as the local person: a link's from this computer, a
+    /// passkey's through the public origin too.
     browsers: Option<Arc<Browsers>>,
 }
 
@@ -143,33 +160,37 @@ impl SignIn {
         }
     }
 
-    /// Accepts `token` too, from loopback callers, as the local person.
+    /// Accepts `token` too, from this computer, as the local person.
     #[must_use]
     pub fn with_local(mut self, token: LocalToken) -> Self {
         self.local = Some(token);
         self
     }
 
-    /// Accepts the sessions of `browsers` too, from loopback callers, as the local person.
+    /// Accepts the sessions of `browsers` too, as the local person.
     #[must_use]
     pub fn with_browsers(mut self, browsers: Arc<Browsers>) -> Self {
         self.browsers = Some(browsers);
         self
     }
 
-    /// The caller a token proves when it comes from `peer`: the local person for the local
-    /// token or a browser session from this computer, else whoever an OIDC token names.
-    pub async fn verify_from(&self, token: &str, peer: IpAddr) -> Result<Caller, SignInError> {
+    /// The caller a token proves when it comes in at `door`: the local person for the local
+    /// token from this computer, or a browser session (a link's from this computer, a
+    /// passkey's through the public origin too); else whoever an OIDC token names.
+    pub async fn verify_from(&self, token: &str, door: Door) -> Result<Caller, SignInError> {
         if token.starts_with(SESSION_PREFIX) {
             let browsers = self.browsers.as_ref().ok_or(SignInError::EndedSession)?;
             // Checked first, so a session is never renewed from elsewhere.
-            if !is_loopback(peer) {
-                return Err(SignInError::NotLoopback);
+            if door == Door::Elsewhere {
+                return Err(SignInError::OnlyThere);
             }
             let session = browsers
-                .verify(token)
+                .verify(token, door == Door::Here)
                 .await
-                .map_err(|_| SignInError::EndedSession)?;
+                .map_err(|refused| match refused {
+                    BrowserError::Elsewhere => SignInError::OnlyThere,
+                    _ => SignInError::EndedSession,
+                })?;
             return Ok(local_person(Some(session)));
         }
         if token.starts_with(LOCAL_PREFIX) {
@@ -180,7 +201,7 @@ impl SignIn {
             {
                 return Err(SignInError::WrongLocalToken);
             }
-            if !is_loopback(peer) {
+            if door != Door::Here {
                 return Err(SignInError::NotLoopback);
             }
             return Ok(local_person(None));

@@ -267,12 +267,12 @@ fn a_browser_signed_in_on_one_server_is_signed_in_on_another_on_the_database() {
             |store: &Store| Browsers::open(store.log(), scope(), server.to_string(), None, clock());
         let (one, two) = (open(&first).await.unwrap(), open(&second).await.unwrap());
         let session = one.redeem(one.link().unwrap().expose()).await.unwrap();
-        let verified = two.verify(session.token.expose()).await;
+        let verified = two.verify(session.token.expose(), true).await;
         two.end(&session.id).await.unwrap();
         let ended = open(&first)
             .await
             .unwrap()
-            .verify(session.token.expose())
+            .verify(session.token.expose(), true)
             .await;
         drop((one, two, first, second));
         scratch.drop_schema().await;

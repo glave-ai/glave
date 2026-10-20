@@ -265,6 +265,16 @@ export type OriginKind = string;
 /** How a turn ended. */
 export type Outcome = "completed" | "cancelled" | "failed" | "interrupted" | "limit_reached";
 
+/** A passkey that signs the person in. */
+export type PasskeySummary = {
+  readonly added: At;
+  readonly id: string;
+  /** What it is called: the name the browser gave it, else when it was added. */
+  readonly name: string;
+  /** When it last signed a browser in. */
+  readonly used?: At | null;
+};
+
 /** The version of one payload type, starting at 1. */
 export type PayloadVersion = number;
 
@@ -453,13 +463,20 @@ export type ServerInfo = {
    */
   readonly id?: string | null;
   readonly name: string;
+  /** Where people reach the server from elsewhere, if they do: its public origin. */
+  readonly origin?: string | null;
   /** The protocol versions spoken. */
   readonly protocols: readonly (string)[];
+  /** How a browser signs in to it; none where no browser does, as over stdio. */
+  readonly signin?: readonly (SignInWay)[];
   readonly version: string;
 };
 
 /** Which threads `thread/list` shows. */
 export type Show = "archived" | "active" | "deleted";
+
+/** A way a browser signs in to the server, as `server/discover` says. */
+export type SignInWay = "link" | "passkey";
 
 /**
  * Whether a thread is shown: the latest `thread.archived`, `thread.unarchived` or
@@ -897,6 +914,96 @@ export type ModelListResult = {
   readonly models: readonly (ModelInfo)[];
 };
 
+export type PasskeyAddParams = {
+  readonly ceremony: string;
+  readonly credential: unknown;
+  readonly name?: string | null;
+};
+
+export type PasskeyAddResult = {
+  readonly passkey: PasskeySummary;
+};
+
+export type PasskeyAddOptionsParams = Readonly<Record<string, never>>;
+
+/**
+ * A request to make or use a passkey: its id, and the options the browser hands its
+ * authenticator, as WebAuthn's JSON (`{"publicKey": …}`, buffers in base64url).
+ */
+export type PasskeyAddOptionsResult = {
+  readonly ceremony: string;
+  readonly options: unknown;
+};
+
+export type PasskeyCreateParams = {
+  /** The request, as `passkey/create_options` named it. */
+  readonly ceremony: string;
+  /**
+   * The browser's answer, as WebAuthn's JSON: `PublicKeyCredential`'s, buffers in
+   * base64url.
+   */
+  readonly credential: unknown;
+  /** What to call the passkey; when it was added, if nothing. */
+  readonly name?: string | null;
+};
+
+/** A browser session, sent once. */
+export type PasskeyCreateResult = {
+  /** The id of the server it is for: the browser presents it to no other. */
+  readonly server: string;
+  /** The bearer token the browser signs in with, kept in the tab. */
+  readonly session: Secret;
+};
+
+export type PasskeyCreateOptionsParams = {
+  readonly code: Secret;
+};
+
+/**
+ * A request to make or use a passkey: its id, and the options the browser hands its
+ * authenticator, as WebAuthn's JSON (`{"publicKey": …}`, buffers in base64url).
+ */
+export type PasskeyCreateOptionsResult = {
+  readonly ceremony: string;
+  readonly options: unknown;
+};
+
+export type PasskeyGetParams = {
+  readonly ceremony: string;
+  readonly credential: unknown;
+};
+
+/** A browser session, sent once. */
+export type PasskeyGetResult = {
+  /** The id of the server it is for: the browser presents it to no other. */
+  readonly server: string;
+  /** The bearer token the browser signs in with, kept in the tab. */
+  readonly session: Secret;
+};
+
+export type PasskeyGetOptionsParams = Readonly<Record<string, never>>;
+
+/**
+ * A request to make or use a passkey: its id, and the options the browser hands its
+ * authenticator, as WebAuthn's JSON (`{"publicKey": …}`, buffers in base64url).
+ */
+export type PasskeyGetOptionsResult = {
+  readonly ceremony: string;
+  readonly options: unknown;
+};
+
+export type PasskeyListParams = Readonly<Record<string, never>>;
+
+export type PasskeyListResult = {
+  readonly passkeys: readonly (PasskeySummary)[];
+};
+
+export type PasskeyRemoveParams = {
+  readonly passkey: string;
+};
+
+export type PasskeyRemoveResult = Readonly<Record<string, never>>;
+
 export type ProjectCreateParams = {
   readonly folder?: NewFolder | null;
   readonly members?: readonly (Principal)[];
@@ -1067,6 +1174,13 @@ export type SigninRedeemResult = {
   readonly server: string;
   /** The bearer token the browser signs in with, kept in the tab. */
   readonly session: Secret;
+};
+
+export type SigninSetupParams = Readonly<Record<string, never>>;
+
+/** A link's one-time code, sent once. */
+export type SigninSetupResult = {
+  readonly code: Secret;
 };
 
 export type TasksListParams = {
@@ -1281,6 +1395,14 @@ export interface Methods {
   readonly "memory/restore": { readonly params: MemoryRestoreParams; readonly result: MemoryRestoreResult };
   readonly "memory/save": { readonly params: MemorySaveParams; readonly result: MemorySaveResult };
   readonly "model/list": { readonly params: ModelListParams; readonly result: ModelListResult };
+  readonly "passkey/add": { readonly params: PasskeyAddParams; readonly result: PasskeyAddResult };
+  readonly "passkey/add_options": { readonly params: PasskeyAddOptionsParams; readonly result: PasskeyAddOptionsResult };
+  readonly "passkey/create": { readonly params: PasskeyCreateParams; readonly result: PasskeyCreateResult };
+  readonly "passkey/create_options": { readonly params: PasskeyCreateOptionsParams; readonly result: PasskeyCreateOptionsResult };
+  readonly "passkey/get": { readonly params: PasskeyGetParams; readonly result: PasskeyGetResult };
+  readonly "passkey/get_options": { readonly params: PasskeyGetOptionsParams; readonly result: PasskeyGetOptionsResult };
+  readonly "passkey/list": { readonly params: PasskeyListParams; readonly result: PasskeyListResult };
+  readonly "passkey/remove": { readonly params: PasskeyRemoveParams; readonly result: PasskeyRemoveResult };
   readonly "project/create": { readonly params: ProjectCreateParams; readonly result: ProjectCreateResult };
   readonly "project/find": { readonly params: ProjectFindParams; readonly result: ProjectFindResult };
   readonly "project/folder/set": { readonly params: ProjectFolderSetParams; readonly result: ProjectFolderSetResult };
@@ -1301,6 +1423,7 @@ export interface Methods {
   readonly "signin/end_others": { readonly params: SigninEndOthersParams; readonly result: SigninEndOthersResult };
   readonly "signin/link": { readonly params: SigninLinkParams; readonly result: SigninLinkResult };
   readonly "signin/redeem": { readonly params: SigninRedeemParams; readonly result: SigninRedeemResult };
+  readonly "signin/setup": { readonly params: SigninSetupParams; readonly result: SigninSetupResult };
   readonly "tasks/list": { readonly params: TasksListParams; readonly result: TasksListResult };
   readonly "tasks/stop": { readonly params: TasksStopParams; readonly result: TasksStopResult };
   readonly "thread/archive": { readonly params: ThreadArchiveParams; readonly result: ThreadArchiveResult };

@@ -7,4 +7,4 @@ pub mod signin;
 #[cfg(any(test, feature = "fake-authenticator"))]
 pub mod testing;
 
-pub use signin::{SignIn, SignInError, Trust, person};
+pub use signin::{Door, SignIn, SignInError, Trust, person};

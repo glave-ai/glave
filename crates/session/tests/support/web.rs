@@ -93,6 +93,9 @@ pub(crate) struct Web {
     http: reqwest::Client,
     url: String,
     pub token: Option<String>,
+    /// The origin whose name its requests come to, as a tunnel on this computer forwards a
+    /// browser's there; the listener's own address when none.
+    reaching: Option<String>,
     next_id: u64,
 }
 
@@ -111,8 +114,16 @@ impl Web {
             http: reqwest::Client::new(),
             url: served.url.clone(),
             token,
+            reaching: None,
             next_id: 0,
         }
+    }
+
+    /// This client's requests come to `origin`'s name, from a page there, as a tunnel on this
+    /// computer forwards a browser's requests to the loopback listener.
+    pub(crate) fn reaching(mut self, origin: &str) -> Self {
+        self.reaching = Some(origin.to_owned());
+        self
     }
 
     /// `request` as a JSON-RPC message with the next id, and that id.
@@ -129,6 +140,10 @@ impl Web {
         }
         if let Some(method) = method {
             post = post.header("Glave-Method", method);
+        }
+        if let Some(origin) = &self.reaching {
+            let host = origin.strip_prefix("https://").unwrap_or(origin);
+            post = post.header("host", host).header("origin", origin);
         }
         post.send().await.unwrap()
     }
