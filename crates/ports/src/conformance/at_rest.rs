@@ -124,7 +124,7 @@ async fn blobs_kept<B: BlobStore>(blobs: &B, rows: &dyn AtRest) -> Verdict {
         blobs
             .put(
                 &here,
-                by,
+                Some(by),
                 "text/plain",
                 1024,
                 Box::new(Pieces::from(bytes.clone())),

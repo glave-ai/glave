@@ -90,7 +90,7 @@ glave never leaves an orphaned process (#361): everything it starts is owned, an
 
 ### What runs in it on its own
 
-The scheduler; task recovery when it starts; the daily worktree check (today at each run's start, `computers.md`); memory's tidy-up and key rotation, daily (today when a session ends, which a long-lived server never reaches, `memory.md`); renewing git hosts' tokens (as today). Built: tasks recovered as it starts, then the scheduler while it runs, and every 30 seconds a look whether the day's work is due: the worktree check when a day has passed since any glave last made it (a glave in-process still makes it as it starts), and memory's housekeeping and tidy-up a day after the server started or last did them. None of it runs in `glave serve --stdio`, and a server people sign in to with `--issuer` recovers tasks but fires no schedules.
+The scheduler; task recovery when it starts; the daily worktree check (today at each run's start, `computers.md`); memory's tidy-up and key rotation, daily (today when a session ends, which a long-lived server never reaches, `memory.md`); renewing git hosts' tokens (as today). Built: tasks recovered as it starts, then the scheduler while it runs, and every 30 seconds a look whether the day's work is due: the worktree check when a day has passed since any glave last made it (a glave in-process still makes it as it starts), memory's housekeeping and tidy-up a day after the server started or last did them, and the blobs no thread refers to swept at the first look and a day after each sweep (`storage.md`, "Blobs"). None of it runs in `glave serve --stdio`, and a server people sign in to with `--issuer` recovers tasks but fires no schedules.
 
 ### Bounds
 

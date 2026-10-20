@@ -1,6 +1,9 @@
 //! The blob store on Postgres: each blob's record (under an HMAC of its SHA-256, so the database
 //! does not reveal which known content it holds) in the database, its bytes sealed as an object
-//! of random name in the deployment's objects (`specs/storage.md`, "Which stores").
+//! of random name in the deployment's objects (`specs/storage.md`, "Which stores"); kept while a
+//! thread refers to it, then swept.
+
+mod sweep;
 
 use std::future::Future;
 use std::sync::Arc;
@@ -8,7 +11,7 @@ use std::sync::Arc;
 use deadpool_postgres::Pool;
 use glave_event::{BlobRef, Sha256, ThreadId};
 use glave_keys::{KeyError, Opened, seal_into};
-use glave_ports::{Blob, BlobError, BlobStore, Chunks, Objects, Scope};
+use glave_ports::{Blob, BlobError, BlobStore, Chunks, Clock, Objects, OrgId, Scope, Swept};
 
 use crate::store::{PostgresKeyring, StoreError, connection, database};
 
@@ -18,6 +21,7 @@ pub struct PostgresBlobs {
     pool: Pool,
     keys: Arc<PostgresKeyring>,
     objects: Arc<dyn Objects>,
+    clock: Arc<dyn Clock>,
 }
 
 /// A blob's record, as the `blobs` table keeps it.
@@ -29,26 +33,34 @@ struct Record {
 }
 
 impl PostgresBlobs {
-    pub(crate) fn new(pool: Pool, keys: Arc<PostgresKeyring>, objects: Arc<dyn Objects>) -> Self {
+    pub(crate) fn new(
+        pool: Pool,
+        keys: Arc<PostgresKeyring>,
+        objects: Arc<dyn Objects>,
+        clock: Arc<dyn Clock>,
+    ) -> Self {
         Self {
             pool,
             keys,
             objects,
+            clock,
         }
     }
 
-    /// Records `record` under `name` with `thread` referring to it, unless content of the same
-    /// name is kept already: then that is kept and `thread` refers to it. The record kept. The
-    /// record's row is locked until the reference is in, so a release running at once either
-    /// sees the reference or deletes the record first.
+    /// Records `record` under `name`, `thread` referring to it when given, unless content of
+    /// the same name is kept already: then that is kept and `thread` refers to it. An upload
+    /// (no thread) is kept a day from now. The record kept. Its row is locked until the
+    /// reference is in, so a sweep running at once either sees the reference or deletes the
+    /// record first.
     async fn record(
         &self,
         scope: Scope,
         name: &str,
-        thread: ThreadId,
+        thread: Option<ThreadId>,
         record: Record,
     ) -> Result<Record, BlobError> {
         let (org, project) = (scope.org().as_uuid(), scope.project().as_uuid());
+        let now = self.clock.now().as_millisecond();
         let mut client = connection(&self.pool).await.map_err(|e| storage(&e))?;
         let transaction = client
             .transaction()
@@ -57,9 +69,13 @@ impl PostgresBlobs {
         let size = i64::try_from(record.size).unwrap_or(i64::MAX);
         let row = transaction
             .query_one(
-                "INSERT INTO blobs (org, project, name, media_type, size, key_id, object)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)
-                 ON CONFLICT (org, project, name) DO UPDATE SET name = blobs.name
+                "INSERT INTO blobs
+                     (org, project, name, media_type, size, key_id, object, referred, uploaded)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                 ON CONFLICT (org, project, name) DO UPDATE
+                 SET referred = blobs.referred OR excluded.referred,
+                     uploaded = CASE WHEN excluded.referred THEN blobs.uploaded
+                                     ELSE excluded.uploaded END
                  RETURNING object, media_type, size, key_id",
                 &[
                     &org,
@@ -69,6 +85,8 @@ impl PostgresBlobs {
                     &size,
                     &record.key_id,
                     &record.object,
+                    &thread.is_some(),
+                    &now,
                 ],
             )
             .await
@@ -80,14 +98,16 @@ impl PostgresBlobs {
             size: u64::try_from(size).unwrap_or_default(),
             key_id: row.try_get(3).map_err(database(BlobError::Storage))?,
         };
-        transaction
-            .execute(
-                "INSERT INTO blob_threads (org, project, name, thread)
-                 VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
-                &[&org, &project, &name, &thread.as_uuid()],
-            )
-            .await
-            .map_err(database(BlobError::Storage))?;
+        if let Some(thread) = thread {
+            transaction
+                .execute(
+                    "INSERT INTO blob_threads (org, project, name, thread)
+                     VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+                    &[&org, &project, &name, &thread.as_uuid()],
+                )
+                .await
+                .map_err(database(BlobError::Storage))?;
+        }
         transaction
             .commit()
             .await
@@ -106,7 +126,7 @@ impl PostgresBlobs {
     async fn put_now(
         &self,
         scope: Scope,
-        thread: ThreadId,
+        thread: Option<ThreadId>,
         media_type: String,
         limit: u64,
         mut bytes: Box<dyn Chunks>,
@@ -206,58 +226,63 @@ impl PostgresBlobs {
         }))
     }
 
-    async fn release_now(&self, scope: Scope, thread: ThreadId) -> Result<(), BlobError> {
+    /// The record's row is locked by the update, so a sweep that locked it first has deleted
+    /// it by the time this reads it, and one that comes after sees the reference.
+    async fn refer_now(
+        &self,
+        scope: Scope,
+        sha256: Sha256,
+        thread: ThreadId,
+    ) -> Result<bool, BlobError> {
+        let name = self
+            .keys
+            .blob_name(&scope, &sha256)
+            .await
+            .map_err(|e| sealing(&e))?;
+        let Some(name) = name else {
+            return Ok(false);
+        };
         let (org, project) = (scope.org().as_uuid(), scope.project().as_uuid());
         let mut client = connection(&self.pool).await.map_err(|e| storage(&e))?;
         let transaction = client
             .transaction()
             .await
             .map_err(database(BlobError::Storage))?;
-        let names: Vec<String> = transaction
-            .query(
-                "DELETE FROM blob_threads WHERE org = $1 AND project = $2 AND thread = $3
-                 RETURNING name",
-                &[&org, &project, &thread.as_uuid()],
-            )
-            .await
-            .map_err(database(BlobError::Storage))?
-            .iter()
-            .map(|row| row.try_get(0))
-            .collect::<Result<_, _>>()
-            .map_err(database(BlobError::Storage))?;
-        // Each record is locked first, so a put referring to it at once has either committed
-        // its reference, which the delete then sees, or waits and makes the record anew.
-        transaction
+        let found = transaction
             .execute(
-                "SELECT name FROM blobs WHERE org = $1 AND project = $2 AND name = ANY($3)
-                 ORDER BY name FOR UPDATE",
-                &[&org, &project, &names],
+                "UPDATE blobs SET referred = true WHERE org = $1 AND project = $2 AND name = $3",
+                &[&org, &project, &name],
             )
             .await
             .map_err(database(BlobError::Storage))?;
-        let objects: Vec<String> = transaction
-            .query(
-                "DELETE FROM blobs AS b WHERE b.org = $1 AND b.project = $2 AND b.name = ANY($3)
-                 AND NOT EXISTS (SELECT 1 FROM blob_threads AS t
-                     WHERE t.org = b.org AND t.project = b.project AND t.name = b.name)
-                 RETURNING object",
-                &[&org, &project, &names],
-            )
-            .await
-            .map_err(database(BlobError::Storage))?
-            .iter()
-            .map(|row| row.try_get(0))
-            .collect::<Result<_, _>>()
-            .map_err(database(BlobError::Storage))?;
+        if found == 1 {
+            transaction
+                .execute(
+                    "INSERT INTO blob_threads (org, project, name, thread)
+                     VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+                    &[&org, &project, &name, &thread.as_uuid()],
+                )
+                .await
+                .map_err(database(BlobError::Storage))?;
+        }
         transaction
             .commit()
             .await
             .map_err(database(BlobError::Storage))?;
-        drop(client);
-        for object in &objects {
-            self.forget(scope, object).await;
-        }
-        Ok(())
+        Ok(found == 1)
+    }
+
+    async fn release_now(&self, scope: Scope, thread: ThreadId) -> Result<(), BlobError> {
+        let (org, project) = (scope.org().as_uuid(), scope.project().as_uuid());
+        let client = connection(&self.pool).await.map_err(|e| storage(&e))?;
+        client
+            .execute(
+                "DELETE FROM blob_threads WHERE org = $1 AND project = $2 AND thread = $3",
+                &[&org, &project, &thread.as_uuid()],
+            )
+            .await
+            .map(drop)
+            .map_err(database(BlobError::Storage))
     }
 }
 
@@ -265,7 +290,7 @@ impl BlobStore for PostgresBlobs {
     fn put(
         &self,
         scope: &Scope,
-        thread: ThreadId,
+        thread: Option<ThreadId>,
         media_type: &str,
         limit: u64,
         bytes: Box<dyn Chunks>,
@@ -281,12 +306,25 @@ impl BlobStore for PostgresBlobs {
         self.get_now(*scope, sha256.clone())
     }
 
+    fn refer(
+        &self,
+        scope: &Scope,
+        sha256: &Sha256,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<bool, BlobError>> + Send {
+        self.refer_now(*scope, sha256.clone(), thread)
+    }
+
     fn release(
         &self,
         scope: &Scope,
         thread: ThreadId,
     ) -> impl Future<Output = Result<(), BlobError>> + Send {
         self.release_now(*scope, thread)
+    }
+
+    fn sweep(&self, org: OrgId) -> impl Future<Output = Result<Swept, BlobError>> + Send {
+        self.sweep_now(org)
     }
 }
 

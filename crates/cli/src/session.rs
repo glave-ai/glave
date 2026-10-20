@@ -130,6 +130,8 @@ pub(crate) async fn serve(mut args: Args) -> anyhow::Result<ExitCode> {
     let served = if let Some(lock) = &lock {
         let daily = crate::server::Daily {
             log: wired.log.clone(),
+            blobs: wired.blobs.clone(),
+            org: wired.org,
             memory: wired.memory.as_ref(),
         };
         crate::server::run(&args, &wired.server, &daily, lock).await

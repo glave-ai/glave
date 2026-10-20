@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use glave_event::PrincipalId;
 use glave_keys::{KeySettings, Keys};
-use glave_ports::{InMemoryObjects, Objects, OrgId};
+use glave_ports::{Clock, InMemoryObjects, Objects, OrgId};
 use rusqlite::{Connection, params};
 use thiserror::Error;
 use uuid::Uuid;
@@ -46,6 +46,8 @@ pub struct Store {
     connection: Shared,
     keys: Arc<SqliteKeyring>,
     objects: Arc<dyn Objects>,
+    /// The keys' clock, which times uploads for the sweep too.
+    clock: Arc<dyn Clock>,
 }
 
 impl Store {
@@ -75,7 +77,8 @@ impl Store {
     pub fn open_in_memory(keys: KeySettings) -> Result<Self, StoreError> {
         let connection =
             Connection::open_in_memory().map_err(|e| StoreError::Open(e.to_string()))?;
-        Self::prepare(connection, keys, Arc::new(InMemoryObjects::new()))
+        let objects = InMemoryObjects::with_clock(Arc::clone(&keys.clock));
+        Self::prepare(connection, keys, Arc::new(objects))
     }
 
     fn prepare(
@@ -96,11 +99,13 @@ impl Store {
             .map_err(|e| StoreError::Open(e.to_string()))?;
         schema::prepare(&mut connection)?;
         let connection = Arc::new(Mutex::new(connection));
+        let clock = Arc::clone(&keys.clock);
         let keys = Arc::new(Keys::new(keys, SqliteKeys::new(Arc::clone(&connection))));
         Ok(Self {
             connection,
             keys,
             objects,
+            clock,
         })
     }
 
@@ -113,6 +118,7 @@ impl Store {
             Arc::clone(&self.connection),
             Arc::clone(&self.keys),
             Arc::clone(&self.objects),
+            Arc::clone(&self.clock),
         )
     }
 

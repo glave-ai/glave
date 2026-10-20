@@ -118,6 +118,18 @@ async fn written_whole(objects: &dyn Objects) -> Verdict {
     ensure(
         read(objects, here, "c0ffee0003").await? == Some(Vec::new()),
         "an empty object must read back empty",
+    )?;
+    let mut listed: Vec<(Scope, String)> = objects
+        .list(here.org())
+        .await
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|listed| (listed.scope, listed.object))
+        .collect();
+    listed.sort();
+    ensure(
+        listed == [(here, "c0ffee0001".into()), (here, "c0ffee0003".into())],
+        "a listing must name exactly the organization's finished objects, with their scope",
     )
 }
 

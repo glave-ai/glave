@@ -3,13 +3,9 @@
 //! `GLAVE_TEST_S3_ENDPOINT` names, unsigned, as a SeaweedFS with no keys takes it. CI runs them
 //! against SeaweedFS; without the variables they are skipped.
 
-use std::sync::Arc;
-
 use glave_bucket::Bucket;
-use glave_keys::{InMemoryRoot, KeySettings};
-use glave_ports::testing::TempDir;
+use glave_ports::testing::{ManualClock, TempDir};
 use glave_ports::{block_on, conformance};
-use glave_store_sqlite::Store;
 
 /// The bucket the tests may use, or `None` when none was given.
 fn bucket() -> Option<Bucket> {
@@ -45,11 +41,10 @@ fn blobs_in_a_bucket_pass_the_blob_store_suite() {
         return;
     };
     let dir = TempDir::new("bucket-s3").unwrap();
+    let clock = ManualClock::at_millis(1_791_000_000_000);
     block_on!(async {
-        let keys = KeySettings::new(Arc::new(InMemoryRoot::new().unwrap()));
-        let store = Store::open(dir.join("glave.db"), keys, Arc::new(bucket))
-            .await
-            .unwrap();
-        assert_eq!(conformance::blob_store(&store.blobs()).await, Ok(()));
+        let store = crate::folder::on(bucket.clone(), &dir.join("glave.db"), &clock).await;
+        let verdict = conformance::blob_store(&store.blobs(), &clock, Some(&bucket)).await;
+        assert_eq!(verdict, Ok(()));
     });
 }

@@ -49,6 +49,9 @@ pub(crate) struct Wired {
     pub(crate) memory: Option<crate::memory::Running>,
     /// The store's log, for the daily work of the person's server.
     pub(crate) log: crate::data::DataLog,
+    /// The store's blobs and its organization, which the daily work sweeps.
+    pub(crate) blobs: crate::data::DataBlobs,
+    pub(crate) org: glave_ports::OrgId,
     /// Each project's own servers, hooks and settings, and what it asks to be trusted.
     pub(crate) projects: Arc<ProjectFolders>,
     /// Logs and telemetry, stopped last.
@@ -158,6 +161,8 @@ pub(crate) async fn wire(
         workers,
         memory,
         log: store.log(),
+        blobs: store.blobs(),
+        org: scope.org(),
         projects,
         _telemetry: telemetry,
     })

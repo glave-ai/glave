@@ -6,6 +6,7 @@ use std::sync::Arc;
 use glave_keys::{InMemoryRoot, KeySettings};
 use glave_ports::InMemoryObjects;
 pub(crate) use glave_ports::block_on;
+use glave_ports::testing::ManualClock;
 use glave_store_postgres::{Config, Store, StoreError};
 use tokio::task::JoinHandle;
 use tokio_postgres::{Client, NoTls};
@@ -20,6 +21,8 @@ pub(crate) struct Scratch {
     root: Arc<InMemoryRoot>,
     /// The objects every store on this schema keeps blobs' bytes in.
     pub objects: InMemoryObjects,
+    /// The clock every store on this schema, and its objects, read.
+    pub clock: ManualClock,
 }
 
 impl Scratch {
@@ -41,6 +44,7 @@ impl Scratch {
             ))
             .await
             .unwrap();
+        let clock = ManualClock::at_millis(1_791_000_000_000);
         let mut config: Config = url.parse().unwrap();
         config.options(format!("-c search_path={schema}"));
         Some(Self {
@@ -49,13 +53,16 @@ impl Scratch {
             schema,
             config,
             root: Arc::new(InMemoryRoot::new().unwrap()),
-            objects: InMemoryObjects::new(),
+            objects: InMemoryObjects::with_clock(Arc::new(clock.clone())),
+            clock,
         })
     }
 
     /// Keys under the root this scratch schema's stores share.
     pub(crate) fn keys(&self) -> KeySettings {
-        KeySettings::new(Arc::<InMemoryRoot>::clone(&self.root))
+        let mut keys = KeySettings::new(Arc::<InMemoryRoot>::clone(&self.root));
+        keys.clock = Arc::new(self.clock.clone());
+        keys
     }
 
     pub(crate) async fn store(&self) -> Result<Store, StoreError> {

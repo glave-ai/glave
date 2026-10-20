@@ -12,7 +12,7 @@ use glave_event::{BlobRef, PrincipalId, RawEvent, Seq, Sha256, ThreadId};
 use glave_ports::search::Found;
 use glave_ports::{
     Blob, BlobError, BlobStore, Chunks, Eraser, EventLog, Located, LogError, Objects, OrgId,
-    Projects, Scope, ThreadQuery, ThreadView,
+    Projects, Scope, Swept, ThreadQuery, ThreadView,
 };
 use glave_store_postgres as postgres;
 use glave_store_sqlite as sqlite;
@@ -258,7 +258,7 @@ impl BlobStore for DataBlobs {
     async fn put(
         &self,
         scope: &Scope,
-        thread: ThreadId,
+        thread: Option<ThreadId>,
         media_type: &str,
         limit: u64,
         bytes: Box<dyn Chunks>,
@@ -276,10 +276,29 @@ impl BlobStore for DataBlobs {
         }
     }
 
+    async fn refer(
+        &self,
+        scope: &Scope,
+        sha256: &Sha256,
+        thread: ThreadId,
+    ) -> Result<bool, BlobError> {
+        match self {
+            Self::Sqlite(blobs) => blobs.refer(scope, sha256, thread).await,
+            Self::Postgres(blobs) => blobs.refer(scope, sha256, thread).await,
+        }
+    }
+
     async fn release(&self, scope: &Scope, thread: ThreadId) -> Result<(), BlobError> {
         match self {
             Self::Sqlite(blobs) => blobs.release(scope, thread).await,
             Self::Postgres(blobs) => blobs.release(scope, thread).await,
+        }
+    }
+
+    async fn sweep(&self, org: OrgId) -> Result<Swept, BlobError> {
+        match self {
+            Self::Sqlite(blobs) => blobs.sweep(org).await,
+            Self::Postgres(blobs) => blobs.sweep(org).await,
         }
     }
 }

@@ -1,39 +1,53 @@
 //! What every blob store must do (`specs/storage.md`, "Blobs"): name content by its SHA-256 and
 //! keep one copy of it per scope, read it back exactly however it was cut into pieces, refuse
 //! more than the limit and keep nothing of it, keep each scope's blobs apart, and keep a blob
-//! while a thread refers to it: releasing a thread deletes only the blobs no other thread uses.
+//! while a thread refers to it (`sweep.rs`).
 
 use glave_event::{BlobRef, Sha256, ThreadId};
 
 use super::{Verdict, ensure, scope, thread};
 use crate::blob::{BlobError, BlobStore, Pieces, digest, read_all};
+use crate::objects::Objects;
 use crate::scope::Scope;
+use crate::testing::ManualClock;
 
 /// A limit no blob here reaches.
 const ROOMY: u64 = 64 * 1024 * 1024;
 
-/// The suite. The store must be empty.
-pub async fn blob_store<B: BlobStore>(blobs: &B) -> Verdict {
+/// The suite, on a store whose clock is `clock`. The store must be empty. With `objects`, the
+/// place it keeps bytes in, the sweep is shown to delete bytes no record names, too.
+pub async fn blob_store<B: BlobStore>(
+    blobs: &B,
+    clock: &ManualClock,
+    objects: Option<&dyn Objects>,
+) -> Verdict {
     named_kept_once_and_isolated(blobs).await?;
     large_and_empty(blobs).await?;
     over_the_limit(blobs).await?;
-    released(blobs).await
+    super::sweep::sweeping(blobs, clock, objects).await
 }
 
-async fn put<B: BlobStore>(
+/// Stores `pieces` in `scope` for `thread`.
+pub(super) async fn put<B: BlobStore>(
     blobs: &B,
     scope: &Scope,
     thread: ThreadId,
     pieces: Pieces,
 ) -> Result<BlobRef, String> {
     blobs
-        .put(scope, thread, "application/json", ROOMY, Box::new(pieces))
+        .put(
+            scope,
+            Some(thread),
+            "application/json",
+            ROOMY,
+            Box::new(pieces),
+        )
         .await
         .map_err(|e| e.to_string())
 }
 
 /// The content stored under `sha256`, read whole, or `None`.
-async fn read<B: BlobStore>(
+pub(super) async fn read<B: BlobStore>(
     blobs: &B,
     scope: &Scope,
     sha256: &Sha256,
@@ -121,7 +135,7 @@ async fn over_the_limit<B: BlobStore>(blobs: &B) -> Verdict {
     let refused = blobs
         .put(
             &here,
-            thread(4)?,
+            Some(thread(4)?),
             "image/png",
             199_999,
             Box::new(bytes.chunks(70_000).map(<[u8]>::to_vec).collect::<Pieces>()),
@@ -138,7 +152,7 @@ async fn over_the_limit<B: BlobStore>(blobs: &B) -> Verdict {
     let at_the_limit = blobs
         .put(
             &here,
-            thread(4)?,
+            Some(thread(4)?),
             "image/png",
             200_000,
             Box::new(Pieces::from(bytes)),
@@ -147,53 +161,5 @@ async fn over_the_limit<B: BlobStore>(blobs: &B) -> Verdict {
     ensure(
         at_the_limit.is_ok(),
         "content exactly at the limit must be kept",
-    )
-}
-
-/// Releasing a thread deletes the blobs only it used; one another thread uses stays until that
-/// one is released too; other scopes' are untouched.
-async fn released<B: BlobStore>(blobs: &B) -> Verdict {
-    let (here, elsewhere) = (scope(5), scope(6));
-    let (a, b) = (thread(5)?, thread(6)?);
-    let shared = put(blobs, &here, a, Pieces::from(b"shared".to_vec())).await?;
-    put(blobs, &here, b, Pieces::from(b"shared".to_vec())).await?;
-    let only_a = put(blobs, &here, a, Pieces::from(b"only a".to_vec())).await?;
-    let only_b = put(blobs, &here, b, Pieces::from(b"only b".to_vec())).await?;
-    let a_elsewhere = put(blobs, &elsewhere, a, Pieces::from(b"only a".to_vec())).await?;
-    let release = |thread| async move {
-        blobs
-            .release(&here, thread)
-            .await
-            .map_err(|e| e.to_string())
-    };
-    release(a).await?;
-    ensure(
-        read(blobs, &here, &only_a.sha256).await?.is_none(),
-        "a blob only a released thread used must be deleted",
-    )?;
-    ensure(
-        read(blobs, &here, &shared.sha256).await?.is_some(),
-        "a blob another thread still uses must stay",
-    )?;
-    ensure(
-        read(blobs, &here, &only_b.sha256).await?.is_some(),
-        "another thread's own blobs must stay",
-    )?;
-    ensure(
-        read(blobs, &elsewhere, &a_elsewhere.sha256)
-            .await?
-            .is_some(),
-        "releasing a thread in one scope must not touch another scope's blobs",
-    )?;
-    release(a).await?;
-    release(b).await?;
-    ensure(
-        read(blobs, &here, &shared.sha256).await?.is_none(),
-        "a blob must be deleted once its last thread is released",
-    )?;
-    let again = put(blobs, &here, b, Pieces::from(b"shared".to_vec())).await?;
-    ensure(
-        again == shared && read(blobs, &here, &shared.sha256).await?.is_some(),
-        "content deleted can be stored again",
     )
 }

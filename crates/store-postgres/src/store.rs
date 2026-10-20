@@ -6,7 +6,7 @@ use std::sync::Arc;
 use deadpool_postgres::{Manager, ManagerConfig, Object, Pool, RecyclingMethod};
 use glave_event::PrincipalId;
 use glave_keys::{KeySettings, Keys};
-use glave_ports::{Objects, OrgId};
+use glave_ports::{Clock, Objects, OrgId};
 use thiserror::Error;
 use tokio_postgres::Config;
 
@@ -38,6 +38,8 @@ pub struct Store {
     pool: Pool,
     keys: Arc<PostgresKeyring>,
     objects: Arc<dyn Objects>,
+    /// The keys' clock, which times uploads for the sweep too.
+    clock: Arc<dyn Clock>,
 }
 
 impl Store {
@@ -83,11 +85,13 @@ impl Store {
             .map_err(|e| StoreError::Connect(e.to_string()))?;
         schema::prepare(&mut client).await?;
         drop(client);
+        let clock = Arc::clone(&keys.clock);
         let keys = Arc::new(Keys::new(keys, PostgresKeys::new(pool.clone())));
         let store = Self {
             pool,
             keys,
             objects,
+            clock,
         };
         crate::views::refresh(&store.log(), &store.pool).await?;
         Ok(store)
@@ -102,6 +106,7 @@ impl Store {
             self.pool.clone(),
             Arc::clone(&self.keys),
             Arc::clone(&self.objects),
+            Arc::clone(&self.clock),
         )
     }
 

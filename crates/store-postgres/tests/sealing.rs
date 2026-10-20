@@ -207,7 +207,7 @@ fn erasure_makes_content_unreadable_and_keeps_the_rest() {
             .blobs()
             .put(
                 &here,
-                written[0].thread,
+                Some(written[0].thread),
                 "t/p",
                 1,
                 Box::new(Pieces::from(b"x".to_vec())),
