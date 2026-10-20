@@ -112,6 +112,7 @@ impl Gateway {
                     completion.served = Some(Served {
                         route: request.purpose.id().to_owned(),
                         target: target.name.clone(),
+                        service: target.service.clone(),
                         reasoning_stripped: stripped,
                     });
                     return Ok(completion);

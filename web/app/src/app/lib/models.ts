@@ -1,8 +1,54 @@
-import type { ModelInfo, RawEvent } from '@glave/client';
+import type { ModelInfo, RawEvent, TokenPrice } from '@glave/client';
 import type { GlzMenuOption } from '@glave/glaze';
 
 /** What marks the server's default model in the picker. */
 const DEFAULT_HINT = 'Default';
+
+/** Between the parts of a model's line in the picker. */
+const DOT = ' · ';
+
+/** A price of nothing. */
+const FREE = 'Free';
+
+const DOLLARS = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 3,
+});
+
+/** A context window, in tokens, as people say it: `1M`, `200K`, `32K`. */
+export function contextText(tokens: number): string {
+  if (tokens >= 1_000_000) {
+    return `${String(Math.round(tokens / 100_000) / 10)}M context`;
+  }
+  return `${String(Math.round(tokens / 1000))}K context`;
+}
+
+/** What a model's tokens cost, in and out, per million: `$0.10 in, $0.50 out per 1M`. */
+export function priceText(price: TokenPrice): string {
+  if (price.input === 0 && price.output === 0) {
+    return FREE;
+  }
+  const dollars = (micros: number): string => DOLLARS.format(micros / 1_000_000);
+  return `${dollars(price.input)} in, ${dollars(price.output)} out per 1M tokens`;
+}
+
+/**
+ * The line under a model in the picker: whether it is the default, the service that runs it,
+ * its context and its price, as far as the server says.
+ */
+export function modelHint(model: ModelInfo): string {
+  const context = model.context ?? null;
+  const price = model.price ?? null;
+  const parts = [
+    model.default ? DEFAULT_HINT : '',
+    model.providers?.[0] ?? '',
+    context === null ? '' : contextText(context),
+    price === null ? '' : priceText(price),
+  ];
+  return parts.filter((part) => part !== '').join(DOT);
+}
 
 /** Between a model's company and its own name: `Anthropic · Claude Haiku 5.5`. */
 const SEPARATOR = ' · ';
@@ -132,16 +178,20 @@ export function defaultModel(models: readonly ModelInfo[]): string | null {
 }
 
 /**
- * The picker's options: each model by its display name, the default marked, and its own name
- * alone for the button once chosen. Hope is one of them.
+ * The picker's options: each model by its display name, a line saying whether it is the
+ * default, which service runs it, its context and its price, and its own name alone for the
+ * button once chosen.
  */
 export function modelOptions(models: readonly ModelInfo[]): readonly GlzMenuOption[] {
-  return models.map((model) => ({
-    value: model.id,
-    label: displayName(model),
-    short: shortName(model),
-    ...(model.default ? { hint: DEFAULT_HINT } : {}),
-  }));
+  return models.map((model) => {
+    const hint = modelHint(model);
+    return {
+      value: model.id,
+      label: displayName(model),
+      short: shortName(model),
+      ...(hint === '' ? {} : { hint }),
+    };
+  });
 }
 
 /** How many recent models the picker remembers. */

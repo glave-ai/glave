@@ -168,7 +168,8 @@ async fn threads(dir: &Path) -> anyhow::Result<(Duration, Duration)> {
         let root = KeyFileRoot::open_or_create(database.with_extension("key"))?;
         Ok(KeySettings::new(std::sync::Arc::new(root)))
     };
-    let store = Store::open(&database, keys()?).await?;
+    let bucket = glave_bucket::Bucket::folder(&dir.join("blobs")).await?;
+    let store = Store::open(&database, keys()?, std::sync::Arc::new(bucket.clone())).await?;
     let scope = glave_ports::Scope::glaves_own(
         store.org(uuid(1)).await?,
         glave_ports::ProjectId::from_uuid(uuid(2)),
@@ -185,7 +186,7 @@ async fn threads(dir: &Path) -> anyhow::Result<(Duration, Duration)> {
     let mut resumes = Vec::with_capacity(RESUMES);
     for _ in 0..RESUMES {
         let started = Instant::now();
-        let store = Store::open(&database, keys()?).await?;
+        let store = Store::open(&database, keys()?, std::sync::Arc::new(bucket.clone())).await?;
         let fresh = harness_on(&store, &project).await?;
         let again = fresh.resume_thread(scope, thread.id).await?;
         resumes.push(started.elapsed());
@@ -243,6 +244,7 @@ fn scripted() -> anyhow::Result<ScriptedModel> {
         usage: usage.clone(),
         cost: None,
         served: None,
+        upstream: None,
     };
     let mut arguments = serde_json::Map::new();
     arguments.insert("path".into(), "README.md".into());

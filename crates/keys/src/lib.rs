@@ -27,8 +27,8 @@ pub use key_id::{KeyId, Month, Period};
 #[cfg(feature = "keychain")]
 pub use keychain::KeychainRoot;
 pub use keys::{
-    BlobOpener, BlobSealer, CHUNK, EventFields, Finished, KeySettings, Keys, SEALED_CHUNK, Sealed,
-    chunks_in, erased_payload,
+    BlobOpener, BlobSealer, EventFields, Finished, KeySettings, Keys, Opened, Sealed,
+    erased_payload, seal_into,
 };
 pub use material::KeyMaterial;
 pub use root::{InMemoryRoot, KeyFileRoot, Root};

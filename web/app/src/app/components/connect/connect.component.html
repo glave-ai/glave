@@ -7,12 +7,13 @@
   <form class="glz-stack" data-testid="connect" (submit)="connect($event)">
     <glz-form-field [label]="copy.service">
       <glz-radio-group
+        cards
         data-testid="connect-service"
         [value]="picked()"
         (valueChange)="pick($event)"
       >
-        @for (service of services; track service.kind) {
-          <glz-radio [value]="service.kind">{{ service.name }}</glz-radio>
+        @for (service of services(); track service.kind) {
+          <glz-radio [value]="service.kind" [hint]="service.hint">{{ service.name }}</glz-radio>
         }
       </glz-radio-group>
     </glz-form-field>

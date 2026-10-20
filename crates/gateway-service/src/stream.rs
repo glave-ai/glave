@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::task::{Context, Poll};
 
 use bytes::Bytes;
-use glave_event::{ModelResponded, PrincipalId};
+use glave_event::PrincipalId;
 use glave_gateway::{BudgetKey, Target};
 use glave_ports::{Completion, Delta, EventLog, ModelRequest};
 use hyper::body::{Body, Frame, SizeHint};
@@ -85,29 +85,13 @@ where
                 refusal.message = service.redact(&refusal.message);
                 refusal
             })?;
-        if let Err(error) = service.meter.record(person, &responded(&completion)).await {
+        if let Err(error) = service.meter.record(person, &completion.responded()).await {
             service.notice(&format!(
                 "a model call by {person} was not recorded: {error}"
             ));
         }
         Ok(completion)
     })
-}
-
-/// The content-free record of a finished call.
-fn responded(completion: &Completion) -> ModelResponded {
-    let served = completion.served.as_ref();
-    ModelResponded {
-        model: completion.model.clone(),
-        response_id: completion.response_id.clone(),
-        stop: completion.stop,
-        provider_stop: completion.provider_stop.clone(),
-        usage: completion.usage.clone(),
-        cost: completion.cost.clone(),
-        route: served.map(|served| served.route.clone()),
-        target: served.map(|served| served.target.clone()),
-        reasoning_stripped: served.is_some_and(|served| served.reasoning_stripped),
-    }
 }
 
 /// Runs a call whole, for a client that did not ask for a stream.

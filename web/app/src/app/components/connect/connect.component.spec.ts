@@ -63,6 +63,32 @@ describe('ConnectComponent', () => {
     await expectAccessible(root);
   });
 
+  it('leads with OpenRouter and any OpenAI-compatible server, each said in a line', async () => {
+    const fake = new FakeSession()
+      .answer('model/list', { models: [] })
+      .answer('provider/connect', { provider: { ...ACCOUNT, kind: 'openrouter', url: undefined } })
+      .answer('provider/list', { providers: [] });
+    const fixture = await setUp(fake);
+    const root = fixture.nativeElement as HTMLElement;
+    const radios = Array.from(root.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
+    expect(radios.map((radio) => radio.value)).toEqual(['openrouter', 'openai', 'compatible']);
+    expect(radios[0]?.checked).toBe(true);
+    expect(find(root, 'connect-service').textContent).toContain('every major model');
+    type(root, 'connect-key', 'router-key');
+    await submit(fixture);
+    expect(fake.paramsOf('provider/connect')).toEqual([{ kind: 'openrouter', key: 'router-key' }]);
+  });
+
+  it('still changes the key of an account with a service no longer offered', async () => {
+    const fixture = await setUp(
+      new FakeSession().answer('model/list', { models: MODELS }),
+      'anthropic',
+    );
+    const root = fixture.nativeElement as HTMLElement;
+    const checked = root.querySelector<HTMLInputElement>('input[type="radio"]:checked');
+    expect(checked?.value).toBe('anthropic');
+  });
+
   it('asks for an address for another server, and sends the key to be checked', async () => {
     let connected = false;
     const fake = new FakeSession()

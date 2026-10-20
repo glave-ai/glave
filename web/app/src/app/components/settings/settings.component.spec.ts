@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
+import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import { SessionService } from '../../services/session.service';
@@ -109,6 +110,60 @@ describe('SettingsComponent', () => {
     expect(fake.paramsOf('provider/remove')).toEqual([{ provider: account.id }]);
     expect(root.querySelector('[data-testid="settings-account"]')).toBeNull();
     expect(navigate).toHaveBeenCalledWith('/connect');
+  });
+
+  it('refreshes the models, and says so, or why it could not', async () => {
+    const account = {
+      id: '01900000-0000-7000-8000-000000000302',
+      kind: 'openrouter',
+      hint: 'c3d4',
+      models: ['anthropic/claude-haiku-5.5', 'openai/gpt-6-luna'],
+    } as const;
+    let refreshes = 0;
+    const fake = new FakeSession()
+      .answer('server/discover', SERVER)
+      .answer('provider/list', { providers: [account] })
+      .answer('credential/list', { credentials: [], device: false })
+      .answer('model/list', { models: MODELS })
+      .answer('provider/refresh', () => {
+        refreshes += 1;
+        if (refreshes > 1) {
+          return new ApiError({
+            code: ErrorCode.PROVIDER,
+            message: 'OpenRouter is busy right now: try again in a minute',
+            data: { failure: 'unavailable' },
+          });
+        }
+        return { providers: [account] };
+      });
+    TestBed.configureTestingModule({ providers: [provideRouter([]), ...provideFakeSession(fake)] });
+    const fixture = TestBed.createComponent(SettingsComponent);
+    await new Promise((resolve) => setTimeout(resolve));
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('[data-testid="settings-account"]')?.textContent).toContain(
+      'Key ending c3d4 · 2 models',
+    );
+    const refresh = (): void => {
+      root.querySelector<HTMLButtonElement>('[data-testid="settings-refresh-models"]')?.click();
+    };
+    refresh();
+    for (let turn = 0; turn < 5; turn += 1) {
+      await new Promise((resolve) => setTimeout(resolve));
+    }
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="settings-refreshed"]')?.textContent).toContain(
+      'up to date',
+    );
+    await expectAccessible(root);
+    refresh();
+    for (let turn = 0; turn < 5; turn += 1) {
+      await new Promise((resolve) => setTimeout(resolve));
+    }
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="settings-account-problem"]')?.textContent).toBe(
+      'OpenRouter is busy right now: try again in a minute.',
+    );
   });
 
   it('scrolls to the connected accounts once the model accounts above them are in', async () => {

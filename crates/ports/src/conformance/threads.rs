@@ -105,7 +105,9 @@ fn responded() -> Result<ModelResponded, String> {
         }),
         route: None,
         target: None,
+        service: None,
         reasoning_stripped: false,
+        upstream: None,
     })
 }
 

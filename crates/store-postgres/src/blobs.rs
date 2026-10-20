@@ -1,23 +1,23 @@
 //! The blob store on Postgres: each blob's record (under an HMAC of its SHA-256, so the database
-//! does not reveal which known content it holds) apart from its bytes, sealed a chunk at a time
-//! as an object of random name.
+//! does not reveal which known content it holds) in the database, its bytes sealed as an object
+//! of random name in the deployment's objects (`specs/storage.md`, "Which stores").
 
 use std::future::Future;
 use std::sync::Arc;
 
-use deadpool_postgres::{GenericClient, Pool};
+use deadpool_postgres::Pool;
 use glave_event::{BlobRef, Sha256, ThreadId};
-use glave_keys::{BlobOpener, BlobSealer, Finished, KeyError, chunks_in};
-use glave_ports::{Blob, BlobError, BlobStore, BoxFuture, Chunks, Scope};
-use uuid::Uuid;
+use glave_keys::{KeyError, Opened, seal_into};
+use glave_ports::{Blob, BlobError, BlobStore, Chunks, Objects, Scope};
 
 use crate::store::{PostgresKeyring, StoreError, connection, database};
 
-/// The blob store in the database.
+/// The blob store in the database and the deployment's objects.
 #[derive(Clone)]
 pub struct PostgresBlobs {
     pool: Pool,
     keys: Arc<PostgresKeyring>,
+    objects: Arc<dyn Objects>,
 }
 
 /// A blob's record, as the `blobs` table keeps it.
@@ -29,54 +29,18 @@ struct Record {
 }
 
 impl PostgresBlobs {
-    pub(crate) fn new(pool: Pool, keys: Arc<PostgresKeyring>) -> Self {
-        Self { pool, keys }
-    }
-
-    /// Seals what `bytes` yields into `sealer`'s object, a chunk at a time, refusing more than
-    /// `limit` bytes.
-    async fn write(
-        &self,
-        scope: Scope,
-        mut sealer: BlobSealer,
-        limit: u64,
-        bytes: &mut dyn Chunks,
-    ) -> Result<Finished, BlobError> {
-        let object = sealer.object().to_owned();
-        let client = connection(&self.pool).await.map_err(|e| storage(&e))?;
-        let insert = client
-            .prepare_cached(
-                "INSERT INTO blob_chunks (org, project, object, n, bytes)
-                 VALUES ($1, $2, $3, $4, $5)",
-            )
-            .await
-            .map_err(database(BlobError::Storage))?;
-        let (org, project) = (scope.org().as_uuid(), scope.project().as_uuid());
-        let mut n = 0_i64;
-        while let Some(piece) = bytes.next_chunk().await? {
-            for chunk in sealer.write(&piece).map_err(|e| sealing(&e))? {
-                client
-                    .execute(&insert, &[&org, &project, &object, &n, &chunk])
-                    .await
-                    .map_err(database(BlobError::Storage))?;
-                n += 1;
-            }
-            if sealer.size() > limit {
-                return Err(BlobError::TooLarge(limit));
-            }
+    pub(crate) fn new(pool: Pool, keys: Arc<PostgresKeyring>, objects: Arc<dyn Objects>) -> Self {
+        Self {
+            pool,
+            keys,
+            objects,
         }
-        let finished = sealer.finish().map_err(|e| sealing(&e))?;
-        client
-            .execute(&insert, &[&org, &project, &object, &n, &finished.last])
-            .await
-            .map_err(database(BlobError::Storage))?;
-        Ok(finished)
     }
 
     /// Records `record` under `name` with `thread` referring to it, unless content of the same
-    /// name is kept already: then that is kept, `thread` refers to it, and this object goes.
-    /// The record kept. The record's row is locked until the reference is in, so a release
-    /// running at once either sees the reference or deletes the record first.
+    /// name is kept already: then that is kept and `thread` refers to it. The record kept. The
+    /// record's row is locked until the reference is in, so a release running at once either
+    /// sees the reference or deletes the record first.
     async fn record(
         &self,
         scope: Scope,
@@ -96,7 +60,7 @@ impl PostgresBlobs {
                 "INSERT INTO blobs (org, project, name, media_type, size, key_id, object)
                  VALUES ($1, $2, $3, $4, $5, $6, $7)
                  ON CONFLICT (org, project, name) DO UPDATE SET name = blobs.name
-                 RETURNING object, media_type, size",
+                 RETURNING object, media_type, size, key_id",
                 &[
                     &org,
                     &project,
@@ -109,9 +73,13 @@ impl PostgresBlobs {
             )
             .await
             .map_err(database(BlobError::Storage))?;
-        let object: String = row.try_get(0).map_err(database(BlobError::Storage))?;
-        let media_type: String = row.try_get(1).map_err(database(BlobError::Storage))?;
         let size: i64 = row.try_get(2).map_err(database(BlobError::Storage))?;
+        let kept = Record {
+            object: row.try_get(0).map_err(database(BlobError::Storage))?,
+            media_type: row.try_get(1).map_err(database(BlobError::Storage))?,
+            size: u64::try_from(size).unwrap_or_default(),
+            key_id: row.try_get(3).map_err(database(BlobError::Storage))?,
+        };
         transaction
             .execute(
                 "INSERT INTO blob_threads (org, project, name, thread)
@@ -120,32 +88,18 @@ impl PostgresBlobs {
             )
             .await
             .map_err(database(BlobError::Storage))?;
-        if object != record.object {
-            drop_object(&transaction, org, project, &record.object).await?;
-        }
         transaction
             .commit()
             .await
             .map_err(database(BlobError::Storage))?;
-        Ok(Record {
-            media_type,
-            size: u64::try_from(size).unwrap_or_default(),
-            key_id: record.key_id,
-            object,
-        })
+        Ok(kept)
     }
 
-    /// Deletes an object no record names: one a refused or failed write left.
+    /// Deletes an object no record names: one a refused or failed write left, a second copy, or
+    /// one whose record went.
     async fn forget(&self, scope: Scope, object: &str) {
-        let dropped = match connection(&self.pool).await {
-            Ok(client) => {
-                let (org, project) = (scope.org().as_uuid(), scope.project().as_uuid());
-                drop_object(&client, org, project, object).await
-            }
-            Err(error) => Err(storage(&error)),
-        };
-        if let Err(error) = dropped {
-            tracing::warn!(%error, "an unfinished blob could not be removed");
+        if let Err(error) = self.objects.delete(scope, object).await {
+            tracing::warn!(%error, "a blob's bytes could not be removed");
         }
     }
 
@@ -163,20 +117,25 @@ impl PostgresBlobs {
             .await
             .map_err(|e| sealing(&e))?;
         let (object, key_id) = (sealer.object().to_owned(), sealer.key_id().to_owned());
-        let written = self.write(scope, sealer, limit, bytes.as_mut()).await;
-        let finished = match written {
+        let mut writer = self.objects.create(scope, &object).await?;
+        let finished = match seal_into(sealer, limit, bytes.as_mut(), writer.as_mut()).await {
             Ok(finished) => finished,
             Err(error) => {
-                self.forget(scope, &object).await;
+                if let Err(abandoned) = writer.abort().await {
+                    tracing::warn!(error = %abandoned, "an unfinished blob could not be abandoned");
+                }
                 return Err(error);
             }
         };
-        let name = self.keys.blob_name(&scope, &finished.sha256).await;
-        let Ok(Some(name)) = name else {
-            self.forget(scope, &object).await;
-            return Err(BlobError::Storage(format!(
-                "the project's key is gone, so a blob cannot be named: {name:?}"
-            )));
+        writer.finish().await?;
+        let name = match self.keys.blob_name(&scope, &finished.sha256).await {
+            Ok(Some(name)) => name,
+            named => {
+                self.forget(scope, &object).await;
+                return Err(BlobError::Storage(format!(
+                    "the project's key is gone, so a blob cannot be named: {named:?}"
+                )));
+            }
         };
         let record = Record {
             media_type,
@@ -184,13 +143,11 @@ impl PostgresBlobs {
             key_id,
             object: object.clone(),
         };
-        let kept = match self.record(scope, &name, thread, record).await {
-            Ok(kept) => kept,
-            Err(error) => {
-                self.forget(scope, &object).await;
-                return Err(error);
-            }
-        };
+        let kept = self.record(scope, &name, thread, record).await;
+        if kept.as_ref().map_or(true, |kept| kept.object != object) {
+            self.forget(scope, &object).await;
+        }
+        let kept = kept?;
         Ok(BlobRef {
             sha256: finished.sha256,
             bytes: kept.size,
@@ -200,12 +157,12 @@ impl PostgresBlobs {
 
     async fn get_now(&self, scope: Scope, sha256: Sha256) -> Result<Option<Blob>, BlobError> {
         // A project with no key yet (or an erased one) has nothing that can be found.
-        let Some(name) = self
+        let name = self
             .keys
             .blob_name(&scope, &sha256)
             .await
-            .map_err(|e| sealing(&e))?
-        else {
+            .map_err(|e| sealing(&e))?;
+        let Some(name) = name else {
             return Ok(None);
         };
         let client = connection(&self.pool).await.map_err(|e| storage(&e))?;
@@ -218,6 +175,7 @@ impl PostgresBlobs {
             )
             .await
             .map_err(database(BlobError::Storage))?;
+        drop(client);
         let Some(row) = row else {
             return Ok(None);
         };
@@ -233,20 +191,18 @@ impl PostgresBlobs {
             .blob_opener(&scope, &record.key_id, &record.object, &sha256)
             .await
             .map_err(|e| sealing(&e))?;
+        let sealed = self
+            .objects
+            .read(scope, &record.object)
+            .await?
+            .ok_or_else(|| BlobError::Storage("a blob's bytes are missing".into()))?;
         Ok(Some(Blob {
             reference: BlobRef {
                 sha256,
                 bytes: record.size,
                 media_type: record.media_type,
             },
-            bytes: Box::new(Stored {
-                pool: self.pool.clone(),
-                scope,
-                object: record.object,
-                n: 0,
-                count: chunks_in(record.size),
-                opener,
-            }),
+            bytes: Box::new(Opened::new(sealed, opener)),
         }))
     }
 
@@ -293,13 +249,15 @@ impl PostgresBlobs {
             .map(|row| row.try_get(0))
             .collect::<Result<_, _>>()
             .map_err(database(BlobError::Storage))?;
-        for object in &objects {
-            drop_object(&transaction, org, project, object).await?;
-        }
         transaction
             .commit()
             .await
-            .map_err(database(BlobError::Storage))
+            .map_err(database(BlobError::Storage))?;
+        drop(client);
+        for object in &objects {
+            self.forget(scope, object).await;
+        }
+        Ok(())
     }
 }
 
@@ -329,66 +287,6 @@ impl BlobStore for PostgresBlobs {
         thread: ThreadId,
     ) -> impl Future<Output = Result<(), BlobError>> + Send {
         self.release_now(*scope, thread)
-    }
-}
-
-/// Deletes the chunks of `object`.
-async fn drop_object<C: GenericClient>(
-    client: &C,
-    org: Uuid,
-    project: Uuid,
-    object: &str,
-) -> Result<(), BlobError> {
-    client
-        .execute(
-            "DELETE FROM blob_chunks WHERE org = $1 AND project = $2 AND object = $3",
-            &[&org, &project, &object],
-        )
-        .await
-        .map(drop)
-        .map_err(database(BlobError::Storage))
-}
-
-/// A blob's bytes, read and opened a chunk at a time.
-struct Stored {
-    pool: Pool,
-    scope: Scope,
-    object: String,
-    n: u64,
-    count: u64,
-    opener: BlobOpener,
-}
-
-impl Stored {
-    async fn next_now(&mut self) -> Result<Option<Vec<u8>>, BlobError> {
-        if self.n >= self.count {
-            return Ok(None);
-        }
-        let n = i64::try_from(self.n).map_err(|e| BlobError::Storage(e.to_string()))?;
-        let (org, project) = (self.scope.org().as_uuid(), self.scope.project().as_uuid());
-        let client = connection(&self.pool).await.map_err(|e| storage(&e))?;
-        let row = client
-            .query_opt(
-                "SELECT bytes FROM blob_chunks
-                 WHERE org = $1 AND project = $2 AND object = $3 AND n = $4",
-                &[&org, &project, &self.object, &n],
-            )
-            .await
-            .map_err(database(BlobError::Storage))?
-            .ok_or_else(|| BlobError::Storage(format!("chunk {n} of a blob is missing")))?;
-        let sealed: Vec<u8> = row.try_get(0).map_err(database(BlobError::Storage))?;
-        self.n += 1;
-        let last = self.n == self.count;
-        self.opener
-            .open(&sealed, last)
-            .map(Some)
-            .map_err(|e| sealing(&e))
-    }
-}
-
-impl Chunks for Stored {
-    fn next_chunk(&mut self) -> BoxFuture<'_, Result<Option<Vec<u8>>, BlobError>> {
-        Box::pin(self.next_now())
     }
 }
 

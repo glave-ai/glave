@@ -18,14 +18,14 @@ import {
   GlzTopBarComponent,
 } from '@glave/glaze';
 
-import { SERVICES, connectProblem, needsAddress } from '../../lib/providers';
+import { connectProblem, isServiceKind, needsAddress, servicesFor } from '../../lib/providers';
 import { ModelsService } from '../../services/models.service';
 import { ProvidersService } from '../../services/providers.service';
 
 const COPY = {
   name: 'glave',
   heading: 'Add a model',
-  lead: 'glave works with the AI service you already use. Choose it, then paste your key from it.',
+  lead: 'Choose where glave reaches models, then paste your key from there. With OpenRouter, one key reaches every major model.',
   service: 'Service',
   address: 'Server address',
   addressHint: 'Its API address, such as http://localhost:11434/v1',
@@ -37,11 +37,6 @@ const COPY = {
   missing: 'Paste your key first.',
   noAddress: 'Give the server address first.',
 } as const;
-
-/** Whether `value` names a service this page offers. */
-function isKind(value: unknown): value is ProviderKind {
-  return SERVICES.some((service) => service.kind === value);
-}
 
 /**
  * Adding a model: choose a service by its plain name, paste the key, and glave checks it
@@ -70,10 +65,14 @@ export class ConnectComponent {
   readonly url = input<string | undefined>(undefined);
 
   protected readonly copy = COPY;
-  protected readonly services = SERVICES;
   protected readonly picked = linkedSignal<ProviderKind>(() => {
     const kind = this.kind();
-    return isKind(kind) ? kind : 'openai';
+    return isServiceKind(kind) ? kind : 'openrouter';
+  });
+  /** The services offered, and the one a link picked to change its key. */
+  protected readonly services = computed(() => {
+    const kind = this.kind();
+    return servicesFor(isServiceKind(kind) ? kind : 'openrouter');
   });
   protected readonly address = linkedSignal(() => this.url() ?? '');
   protected readonly key = signal('');
@@ -92,7 +91,7 @@ export class ConnectComponent {
   }
 
   protected pick(kind: string | null): void {
-    if (isKind(kind)) {
+    if (isServiceKind(kind)) {
       this.picked.set(kind);
       this.problem.set(null);
     }

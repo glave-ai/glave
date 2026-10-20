@@ -200,5 +200,6 @@ fn answer() -> Result<Completion> {
         usage: Usage::new(counts, false, None)?,
         cost: None,
         served: None,
+        upstream: None,
     })
 }

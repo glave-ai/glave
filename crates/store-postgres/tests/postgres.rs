@@ -2,6 +2,8 @@
 //! names one (CI sets it) and are skipped otherwise. Each test works in a schema of its own
 //! and drops it at the end, so tests run in parallel and leave nothing behind.
 
+use std::sync::Arc;
+
 use glave_event::ThreadId;
 use glave_identity::signin::Browsers;
 use glave_ports::{BlobStore, OrgId, Pieces, ProjectId, Scope, conformance, digest, read_all};
@@ -174,7 +176,14 @@ fn openers_racing_on_a_new_database_make_its_schema_once() {
             return;
         };
         let openers: Vec<_> = (0..4)
-            .map(|_| tokio::spawn(Store::connect_with(scratch.config.clone(), scratch.keys())))
+            .map(|_| {
+                let objects = Arc::new(scratch.objects.clone());
+                tokio::spawn(Store::connect_with(
+                    scratch.config.clone(),
+                    scratch.keys(),
+                    objects,
+                ))
+            })
             .collect();
         let mut results = Vec::new();
         for opener in openers {

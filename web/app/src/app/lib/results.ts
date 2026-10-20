@@ -113,6 +113,7 @@ export function turnResults(turn: Turn, live: Draft | null, running: boolean): T
   const facts = [
     ...(turn.took === null || turn.took === 0 ? [] : [formatDuration(turn.took)]),
     ...(turn.cost === null ? [] : [formatMoney(turn.cost)]),
+    ...(turn.routes.length === 0 ? [] : [`via ${turn.routes.join(', ')}`]),
     ...outsideSandbox(rest),
   ];
   return {

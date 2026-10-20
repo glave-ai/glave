@@ -10,6 +10,9 @@ use serde_json::{Map, Value};
 
 use crate::wire::{Chunk, WireUsage};
 
+/// The longest provider name a chunk may give, in bytes.
+const LONGEST_UPSTREAM: usize = 100;
+
 #[derive(Debug, Default)]
 struct PartialCall {
     id: Option<String>,
@@ -27,6 +30,8 @@ pub(crate) struct Assembler {
     calls: BTreeMap<u32, PartialCall>,
     finish: Option<String>,
     usage: Option<Box<RawValue>>,
+    /// The provider the service passed the call on to, as its chunks name it.
+    upstream: Option<String>,
 }
 
 impl Assembler {
@@ -39,6 +44,7 @@ impl Assembler {
             calls: BTreeMap::new(),
             finish: None,
             usage: None,
+            upstream: None,
         }
     }
 
@@ -63,6 +69,10 @@ impl Assembler {
         }
         if let Some(model) = chunk.model.filter(|model| !model.is_empty()) {
             self.model = model;
+        }
+        let named = chunk.provider.map(|provider| provider.trim().to_owned());
+        if let Some(provider) = named.filter(|p| !p.is_empty() && p.len() <= LONGEST_UPSTREAM) {
+            self.upstream = Some(provider);
         }
         if chunk.usage.is_some() {
             self.usage = chunk.usage;
@@ -171,6 +181,7 @@ impl Assembler {
             usage,
             cost,
             served: None,
+            upstream: self.upstream,
         })
     }
 }

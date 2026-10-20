@@ -56,6 +56,7 @@ pub(crate) fn answer(
         usage: Usage::new(counts, false, None).unwrap(),
         cost: None,
         served: None,
+        upstream: None,
     }
 }
 

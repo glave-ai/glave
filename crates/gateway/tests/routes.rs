@@ -23,6 +23,7 @@ fn a_purpose_without_a_route_uses_main() {
             Some(Served {
                 route: purpose.id().into(),
                 target: "openrouter/big".into(),
+                service: None,
                 reasoning_stripped: false,
             })
         );

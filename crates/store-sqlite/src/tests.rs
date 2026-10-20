@@ -3,12 +3,19 @@ use std::sync::Arc;
 
 use glave_keys::{InMemoryRoot, KeyFileRoot, KeySettings};
 use glave_ports::testing::TempDir;
-use glave_ports::{EventLog, Projects as _, Standing, ThreadQuery, block_on, conformance};
+use glave_ports::{
+    EventLog, InMemoryObjects, Objects, Projects as _, Standing, ThreadQuery, block_on, conformance,
+};
 use uuid::Uuid;
 
 use super::*;
 
 mod sealing;
+
+/// Objects that live only in this process.
+fn objects() -> Arc<dyn Objects> {
+    Arc::new(InMemoryObjects::new())
+}
 
 /// Keys under a root that lives only in this process.
 fn keys() -> KeySettings {
@@ -44,7 +51,9 @@ fn the_log_passes_the_search_conformance_suite() {
 fn the_search_index_holds_no_word_in_the_clear() {
     let (_dir, path) = temp_db("search");
     block_on!(async {
-        let store = Store::open(&path, file_keys(&path)).await.unwrap();
+        let store = Store::open(&path, file_keys(&path), objects())
+            .await
+            .unwrap();
         assert_eq!(conformance::search(&store.log()).await, Ok(()));
     });
     let raw = rusqlite::Connection::open(&path).unwrap();
@@ -108,7 +117,9 @@ fn principal(n: u8) -> glave_event::PrincipalId {
 fn the_identity_is_kept_the_first_time_and_survives_reopening() {
     let (_dir, path) = temp_db("identity");
     block_on!(async {
-        let store = Store::open(&path, file_keys(&path)).await.unwrap();
+        let store = Store::open(&path, file_keys(&path), objects())
+            .await
+            .unwrap();
         let first = (principal(1), principal(2));
         assert_eq!(store.identity(first).await.unwrap(), first);
         assert_eq!(
@@ -117,7 +128,9 @@ fn the_identity_is_kept_the_first_time_and_survives_reopening() {
             "a second identity never replaces the first"
         );
         drop(store);
-        let reopened = Store::open(&path, file_keys(&path)).await.unwrap();
+        let reopened = Store::open(&path, file_keys(&path), objects())
+            .await
+            .unwrap();
         assert_eq!(
             reopened
                 .identity((principal(5), principal(6)))
@@ -132,7 +145,9 @@ fn the_identity_is_kept_the_first_time_and_survives_reopening() {
 fn events_and_projects_survive_closing_and_reopening() {
     let (_dir, path) = temp_db("reopen");
     block_on!(async {
-        let store = Store::open(&path, file_keys(&path)).await.unwrap();
+        let store = Store::open(&path, file_keys(&path), objects())
+            .await
+            .unwrap();
         assert_eq!(conformance::event_log(&store.log()).await, Ok(()));
         let org = store.org(Uuid::from_u128(1)).await.unwrap();
         let key = [glave_ports::FolderKey::Path("/work/app".into())];
@@ -142,7 +157,9 @@ fn events_and_projects_survive_closing_and_reopening() {
             .await
             .unwrap();
         drop(store);
-        let reopened = Store::open(&path, file_keys(&path)).await.unwrap();
+        let reopened = Store::open(&path, file_keys(&path), objects())
+            .await
+            .unwrap();
         assert_eq!(reopened.org(Uuid::max()).await.unwrap(), org);
         let again = reopened
             .projects()
@@ -171,7 +188,7 @@ fn a_file_of_another_schema_is_refused_and_left_as_it_was() {
                 .pragma_update(None, "user_version", found)
                 .unwrap();
         }
-        let result = block_on!(Store::open(&path, keys()));
+        let result = block_on!(Store::open(&path, keys(), objects()));
         assert!(
             matches!(&result, Err(StoreError::Schema(message))
                 if message.contains("Remove glave's data folder")),
@@ -190,8 +207,14 @@ fn a_file_of_another_schema_is_refused_and_left_as_it_was() {
 fn a_new_file_gets_the_schema_and_opens_again() {
     let (_dir, path) = temp_db("fresh");
     block_on!(async {
-        drop(Store::open(&path, file_keys(&path)).await.unwrap());
-        let again = Store::open(&path, file_keys(&path)).await.unwrap();
+        drop(
+            Store::open(&path, file_keys(&path), objects())
+                .await
+                .unwrap(),
+        );
+        let again = Store::open(&path, file_keys(&path), objects())
+            .await
+            .unwrap();
         assert_eq!(conformance::search(&again.log()).await, Ok(()));
     });
     let raw = rusqlite::Connection::open(&path).unwrap();
@@ -253,7 +276,9 @@ fn views(path: &std::path::Path) -> Vec<(String, String, String, String)> {
 fn views_rebuilt_from_the_log_equal_the_kept_ones() {
     let (_dir, path) = temp_db("views");
     block_on!(async {
-        let store = Store::open(&path, file_keys(&path)).await.unwrap();
+        let store = Store::open(&path, file_keys(&path), objects())
+            .await
+            .unwrap();
         assert_eq!(conformance::thread_views(&store.log()).await, Ok(()));
         drop(store);
         let kept = views(&path);
@@ -265,7 +290,9 @@ fn views_rebuilt_from_the_log_equal_the_kept_ones() {
             .execute_batch("DELETE FROM threads; DELETE FROM settings WHERE key = 'threads_view';")
             .unwrap();
         drop(connection);
-        let _reopened = Store::open(&path, file_keys(&path)).await.unwrap();
+        let _reopened = Store::open(&path, file_keys(&path), objects())
+            .await
+            .unwrap();
         assert_eq!(views(&path), kept, "opening fills the view from the log");
     });
 }

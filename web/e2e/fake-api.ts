@@ -1,6 +1,5 @@
 import type {
   CredentialInfo,
-  ModelInfo,
   RawEvent,
   Remembered,
   Project,
@@ -28,6 +27,7 @@ import {
   listedGone,
   refusedTurn,
 } from './fake-gone';
+import { DEFAULT_MODEL, MODELS } from './fake-models';
 import { Refusal, THREAD, bound, call, done, event } from './fake-records';
 import { FAKE_SERVER, signIn } from './fake-signin';
 
@@ -110,24 +110,6 @@ const THREADS: Readonly<Record<string, readonly ThreadSummary[]>> = {
     thread('01900000-0000-7000-8000-000000000105', 'Dinner ideas for Saturday', 'idle', PERSONAL),
   ],
 };
-
-/** The default model: no name configured, so the app names it from its id. */
-const DEFAULT_MODEL = 'anthropic/claude-haiku-5.5';
-
-/**
- * The models the fake server runs: its default, Hope, two more, and a long catalogue like
- * OpenRouter's, which the picker must search and scroll.
- */
-export const MODELS: readonly ModelInfo[] = [
-  { id: DEFAULT_MODEL, default: true },
-  { id: 'hope-12b', name: 'Hope', default: false },
-  { id: 'openai/gpt-6-luna', default: false },
-  { id: 'deepseek/deepseek-v4.1-flash', default: false },
-  ...Array.from({ length: 200 }, (_, index) => ({
-    id: `lab-${String(index % 20)}/model-${String(index)}`,
-    default: false,
-  })),
-];
 
 const HISTORY = [
   event(1, 'thread.started', {}),

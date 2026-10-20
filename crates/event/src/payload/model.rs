@@ -40,6 +40,13 @@ pub struct ModelResponded {
     /// The gateway target that answered.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
+    /// The service the target is at, in a person's words, such as `OpenRouter`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service: Option<String>,
+    /// The provider a service that routes calls passed this one on to, as it names it, such
+    /// as `Anthropic`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream: Option<String>,
     /// True when the gateway left opaque reasoning out of the request because the target
     /// that answered could not accept it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]

@@ -8,7 +8,7 @@ use crate::store::StoreError;
 
 /// The schema this build makes and reads. Bumped whenever [`SCHEMA`] changes. It starts past
 /// every version the migrations it replaced wrote, so a file one of them made is refused.
-pub(crate) const VERSION: u32 = 10;
+pub(crate) const VERSION: u32 = 11;
 
 /// Every table, made in one transaction in a new file.
 const SCHEMA: &str = "
@@ -32,8 +32,8 @@ const SCHEMA: &str = "
     CREATE INDEX events_by_thread ON events (thread);
 
     -- Blobs' records: each under a keyed name derived from its hash, with its media type, size,
-    -- the data key that sealed it and the object its bytes are kept as; and the threads that
-    -- refer to each.
+    -- the data key that sealed it and the object its bytes are kept as, in the objects beside
+    -- the database (never in it); and the threads that refer to each.
     CREATE TABLE blobs (
         org         TEXT    NOT NULL,
         project     TEXT    NOT NULL,
@@ -54,16 +54,6 @@ const SCHEMA: &str = "
     ) STRICT;
 
     CREATE INDEX blob_threads_by_thread ON blob_threads (org, project, thread);
-
-    -- Blobs' bytes, apart from their records: each object's sealed chunks, in order.
-    CREATE TABLE blob_chunks (
-        org      TEXT    NOT NULL,
-        project  TEXT    NOT NULL,
-        object   TEXT    NOT NULL,
-        n        INTEGER NOT NULL,
-        bytes    BLOB    NOT NULL,
-        PRIMARY KEY (org, project, object, n)
-    ) STRICT;
 
     -- The local settings: the organization, the server, the local person and their agent, and
     -- which fold built the threads view.

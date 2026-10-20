@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use glave_keys::{InMemoryRoot, KeySettings};
+use glave_ports::InMemoryObjects;
 pub(crate) use glave_ports::block_on;
 use glave_store_postgres::{Config, Store, StoreError};
 use tokio::task::JoinHandle;
@@ -17,6 +18,8 @@ pub(crate) struct Scratch {
     pub schema: String,
     pub config: Config,
     root: Arc<InMemoryRoot>,
+    /// The objects every store on this schema keeps blobs' bytes in.
+    pub objects: InMemoryObjects,
 }
 
 impl Scratch {
@@ -46,6 +49,7 @@ impl Scratch {
             schema,
             config,
             root: Arc::new(InMemoryRoot::new().unwrap()),
+            objects: InMemoryObjects::new(),
         })
     }
 
@@ -55,7 +59,12 @@ impl Scratch {
     }
 
     pub(crate) async fn store(&self) -> Result<Store, StoreError> {
-        Store::connect_with(self.config.clone(), self.keys()).await
+        Store::connect_with(
+            self.config.clone(),
+            self.keys(),
+            Arc::new(self.objects.clone()),
+        )
+        .await
     }
 
     pub(crate) async fn drop_schema(self) {

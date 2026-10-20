@@ -4,7 +4,7 @@
 
 use std::fmt::Write as _;
 
-use glave_event::{Arguments, ModelResponded, Part, Seq, ThreadCompacted};
+use glave_event::{Arguments, Part, Seq, ThreadCompacted};
 
 use glave_ports::{
     BlobStore, Completion, EventLog, Failure, Message, ModelProvider, ModelRequest, ProviderError,
@@ -271,7 +271,7 @@ where
             text: restart_text(&summary, thread.request.as_deref()),
         });
         let mut events = Vec::new();
-        self.stage(thread, &mut events, &responded(&completion))?;
+        self.stage(thread, &mut events, &completion.responded())?;
         let compacted = ThreadCompacted {
             through,
             parts: parts.clone(),
@@ -327,23 +327,6 @@ where
                 other => return Ok(other?),
             }
         }
-    }
-}
-
-/// The content-free record of a model call, with the gateway route and target that served
-/// it when a gateway did.
-pub(crate) fn responded(completion: &Completion) -> ModelResponded {
-    let served = completion.served.as_ref();
-    ModelResponded {
-        model: completion.model.clone(),
-        response_id: completion.response_id.clone(),
-        stop: completion.stop,
-        provider_stop: completion.provider_stop.clone(),
-        usage: completion.usage.clone(),
-        cost: completion.cost.clone(),
-        route: served.map(|served| served.route.clone()),
-        target: served.map(|served| served.target.clone()),
-        reasoning_stripped: served.is_some_and(|served| served.reasoning_stripped),
     }
 }
 
