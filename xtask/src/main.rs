@@ -9,6 +9,7 @@
 )]
 
 mod bench;
+mod changed;
 mod ci;
 mod cli;
 mod cmd;

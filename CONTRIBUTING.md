@@ -8,9 +8,9 @@ Thanks for wanting to help. glave is built by people and AI agents together, and
 2. **One branch, one change.** Branch names start with the change's type (`feat/`, `fix/`, `docs/`, `chore/`), and pull request titles are conventional (`feat(web): …`).
 3. **Run the full gate** before asking for review:
    ```sh
-   cargo xtask ci
+   cargo xtask ci --all
    ```
-   It covers formatting, lints, tests, the dependency audit and file-size limits, plus the web checks when Node is installed.
+   It covers formatting, lints, tests, the dependency audit and file-size limits, plus the web checks when Node is installed. While you work, `cargo xtask ci` alone checks only the crates your change reaches, and the web when you changed it.
 4. **Every pull request is reviewed before it merges.**
 
 ## Sign your work (DCO)

@@ -79,7 +79,8 @@ specs/              the model (`model.md`: organization to thread, server and co
 ## Commands
 
 ```sh
-cargo xtask ci          # the full gate; must pass before anything is "done" (on a laptop, half the cores run tests; GLAVE_TEST_THREADS=n sets it)
+cargo xtask ci          # the gate; on a laptop it checks only the crates a change since origin/main reaches (and the web when web/ changed), on half the cores (GLAVE_TEST_THREADS=n)
+cargo xtask ci --all    # the full gate, everything, as CI runs it; must pass before anything is "done"
 cargo xtask deps        # the dependency rule: each crate depends only on the layers its own may use
 cargo xtask file-sizes  # line limits only
 cargo xtask secrets     # no secret-shaped literal in a tracked file
