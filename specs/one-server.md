@@ -4,7 +4,15 @@ How a person's glave runs as one server on their own computer: how it starts and
 
 ## Status
 
-Reviewed adversarially on 2026-10-17. Pull requests 1a (#344), 1b and 2a are built, and 2b in part: the lock, the socket, `glave serve` in the foreground, the start on first use (`glave app`, `glave` on a first run and the commands 2c moved; turns need it from PR 3), `glave server status|stop|restart`, loopback HTTP always on, the capped log, and the graceful stop: no new requests or work, 10 seconds for running turns and tasks, the rest recorded `interrupted`, the socket removed and the lock let go last, which `glave server stop` waits for. 2c: the person's settings read again by hash, with `mcp.json` reconciled and every per-turn choice following ("Its settings"); the daily work ("What runs in it on its own"); `--background`, `glave tasks`, `schedule`, `threads`, `memory`, `connect` and `connections` as its clients; and the folder's task host gone, with its two locks, so `server.lock` alone keeps one glave firing schedules and recovering tasks. `memory/*` takes the project it acts in. Until waits are durable (PR 5), a turn waiting for the person is interrupted with the rest rather than kept waiting. The rest is designed, not built. Decisions marked *decided* were made in that review; those marked (decided) were made with #294. "The pull requests" gives the order. Each pull request moves the sections of `session.md`, `policy.md`, `computers.md`, `storage.md` and `events.md` that it changes, and AGENTS.md where a rule or a budget changes; this spec keeps the decisions that span them.
+Reviewed adversarially on 2026-10-17. Decisions marked *decided* were made in that review; those marked (decided) were made with #294. "The pull requests" gives the order. Each pull request moves the sections of `session.md`, `policy.md`, `computers.md`, `storage.md` and `events.md` that it changes, and AGENTS.md where a rule or a budget changes; this spec keeps the decisions that span them. Each pull request below has one line, which it alone edits.
+
+- **1a** (#344): built.
+- **1b**: built.
+- **2a**: built.
+- **2b**, in part: the lock, the socket, `glave serve` in the foreground, the start on first use (`glave app`, `glave` on a first run and the commands 2c moved; turns need it from PR 3), `glave server status|stop|restart`, loopback HTTP always on, the capped log, and the graceful stop: no new requests or work, 10 seconds for running turns and tasks, the rest recorded `interrupted`, the socket removed and the lock let go last, which `glave server stop` waits for.
+- **2c**: the person's settings read again by hash, with `mcp.json` reconciled and every per-turn choice following ("Its settings"); the daily work ("What runs in it on its own"); `--background`, `glave tasks`, `schedule`, `threads`, `memory`, `connect` and `connections` as its clients; the folder's task host gone, with its two locks, so `server.lock` alone keeps one glave firing schedules and recovering tasks; and `memory/*` taking the project it acts in.
+- **5**, not yet: until waits are durable, a turn waiting for the person is interrupted with the rest rather than kept waiting.
+- Everything else is designed, not built.
 
 ## How the others do it
 
