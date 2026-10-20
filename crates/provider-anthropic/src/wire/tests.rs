@@ -45,6 +45,7 @@ fn request(messages: Vec<Message>) -> ModelRequest {
         max_output_tokens: None,
         purpose: glave_ports::Purpose::Main,
         threads: Vec::new(),
+        effort: None,
     }
 }
 

@@ -90,6 +90,7 @@ pub(crate) fn parse(body: &[u8]) -> Result<Parsed, Refusal> {
             max_output_tokens,
             purpose: glave_ports::Purpose::Main,
             threads: Vec::new(),
+            effort: None,
         },
         model,
         stream,

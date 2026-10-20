@@ -235,6 +235,7 @@ fn the_signed_in_caller_is_recorded_and_the_token_never_is() {
                 computer: None,
                 model: None,
                 approval: None,
+                effort: None,
             })
             .await;
         let thread = started["result"]["thread"]["id"].clone();
@@ -301,6 +302,7 @@ fn the_method_header_must_agree_and_only_post_to_the_root_is_served() {
             computer: None,
             model: None,
             approval: None,
+            effort: None,
         });
         let mismatched = web.open(&message, Some("turn/start")).await;
         let answer: Value = serde_json::from_str(&Events::new(mismatched).rest().await).unwrap();
@@ -336,6 +338,7 @@ fn a_retried_turn_start_returns_the_turn_already_started() {
                 computer: None,
                 model: None,
                 approval: None,
+                effort: None,
             })
             .await;
         let thread = started["result"]["thread"]["id"].clone();

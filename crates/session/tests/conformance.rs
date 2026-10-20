@@ -192,6 +192,7 @@ impl Client for OverJsonRpc {
             meta: Meta::default(),
             model: None,
             approval: None,
+            effort: None,
             unattended: false,
         };
         let id = self.send(&request).await;
@@ -255,6 +256,7 @@ impl Client for OverHttp {
             meta: Meta::default(),
             model: None,
             approval: None,
+            effort: None,
             unattended: false,
         };
         let (message, id) = self.web.message(&request);
@@ -298,6 +300,7 @@ async fn thread_of(client: &mut impl Client) -> ThreadId {
             computer: None,
             model: None,
             approval: None,
+            effort: None,
         })
         .await
         .unwrap();
@@ -470,6 +473,7 @@ fn a_message_sent_while_a_turn_runs_reaches_the_model_in_the_same_stream() {
                                 meta: Meta::default(),
                                 model: None,
                                 approval: None,
+                                effort: None,
                                 unattended: false,
                             },
                             Request::ApprovalDecide {
@@ -553,6 +557,7 @@ fn models_are_listed_and_one_the_server_does_not_run_is_refused() {
                     computer: None,
                     model: Some("elsewhere".into()),
                     approval: None,
+                    effort: None,
                 })
                 .await
                 .unwrap_err();
@@ -578,6 +583,7 @@ fn a_thread_chooses_its_approval_mode_and_its_summary_shows_it() {
                     computer: None,
                     model: None,
                     approval: Some(glave_session::protocol::ApprovalMode::Auto),
+                    effort: None,
                 })
                 .await
                 .unwrap();
@@ -608,6 +614,7 @@ fn a_background_turn_in_another_project_answers_at_once_and_its_task_is_listed_w
                     computer: None,
                     model: None,
                     approval: None,
+                    effort: None,
                 })
                 .await
                 .unwrap();
@@ -621,6 +628,7 @@ fn a_background_turn_in_another_project_answers_at_once_and_its_task_is_listed_w
                     meta: Meta::default(),
                     model: None,
                     approval: None,
+                    effort: None,
                     unattended: false,
                 })
                 .await

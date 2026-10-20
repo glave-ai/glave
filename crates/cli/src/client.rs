@@ -111,6 +111,7 @@ impl Client<'_> {
                 budget: None,
                 model: self.model.clone(),
                 approval: self.approval,
+                effort: None,
                 meta: Meta::default(),
                 // With no one here, no one answers: what would ask is declined at once.
                 unattended: !self.asks,

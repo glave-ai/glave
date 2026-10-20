@@ -54,6 +54,7 @@ fn start_request(project: ProjectId, worktree: Option<bool>) -> Request {
         computer: None,
         model: None,
         approval: None,
+        effort: None,
     }
 }
 

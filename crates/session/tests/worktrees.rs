@@ -33,6 +33,7 @@ fn a_thread_works_in_the_folder_unless_it_asks_for_a_worktree() {
                 computer: None,
                 model: None,
                 approval: None,
+                effort: None,
             })
             .await
             .unwrap_err();

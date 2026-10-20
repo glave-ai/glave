@@ -539,6 +539,7 @@ where
                 Purpose::Main
             },
             threads: thread.lineage(),
+            effort: thread.effort.clone(),
         };
         let retries = self.settings.retries;
         let mut retry = 0;

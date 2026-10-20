@@ -78,11 +78,12 @@ where
         if cancel.is_cancelled() {
             return Ok(Queue::Ending(finished.clone()));
         }
-        if choice.model.is_some() || choice.approval.is_some() {
+        if choice != &Choice::default() {
             return Err(ApiError::new(
                 code::INVALID_PARAMS,
-                "a model or approval mode is chosen for a turn to start with: while a turn runs, \
-                 send the message without one, or choose once the turn has ended",
+                "a model, reasoning level or approval mode is chosen for a turn to start with: \
+                 while a turn runs, send the message without one, or choose once the turn has \
+                 ended",
             ));
         }
         let harness = &self.inner.harness;

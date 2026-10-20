@@ -115,6 +115,10 @@ methods! {
         /// the server's own mode when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         approval: Option<ApprovalMode>,
+        /// How much the model reasons in the thread's turns: one of the levels `model/list`
+        /// gives for its model, such as `high`. The model's own default when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        effort: Option<String>,
     } -> [Thread],
     "thread/list" => ThreadList {
         /// The project whose threads to list, by default as `thread/start` picks one.
@@ -166,6 +170,11 @@ methods! {
         /// Not while a turn runs.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         approval: Option<ApprovalMode>,
+        /// How much the model reasons in this turn, and the thread's turns after it: one of
+        /// the levels `model/list` gives for the model the turn goes to. The thread's latest
+        /// choice when absent, else the model's own default. Not while a turn runs.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        effort: Option<String>,
         /// No one answers the turn it starts: what would ask is declined at once and
         /// `question` is not offered, as in a task, for its subagents too, while it still
         /// streams to whoever follows it. For a client with no one at it, such as a script.

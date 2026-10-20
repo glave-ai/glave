@@ -33,6 +33,7 @@ fn gemini_is_asked_with_the_workload_s_token() {
         max_output_tokens: None,
         purpose: glave_ports::Purpose::Main,
         threads: Vec::new(),
+        effort: None,
     };
     let completion = block_on!(provider.complete(&request, &mut |_| {})).unwrap();
     assert_eq!(

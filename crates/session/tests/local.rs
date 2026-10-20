@@ -37,6 +37,7 @@ fn a_browser_here_signs_in_with_the_local_token_as_the_local_person() {
                 computer: None,
                 model: None,
                 approval: None,
+                effort: None,
             })
             .await;
         let thread = started["result"]["thread"]["id"].clone();
@@ -49,6 +50,7 @@ fn a_browser_here_signs_in_with_the_local_token_as_the_local_person() {
             meta: Meta::default(),
             model: None,
             approval: None,
+            effort: None,
             unattended: false,
         });
         let answered = web.post(&message).await;

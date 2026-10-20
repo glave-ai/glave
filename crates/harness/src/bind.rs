@@ -62,6 +62,7 @@ pub(crate) fn own_records(events: &[Event]) -> u64 {
                     | Body::ThreadRenamed(_)
                     | Body::ModelChosen(_)
                     | Body::ApprovalModeChosen(_)
+                    | Body::EffortChosen(_)
                     | Body::CommandStarted(_)
                     | Body::CommandEnded(_)
             )

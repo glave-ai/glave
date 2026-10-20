@@ -123,6 +123,7 @@ where
             max_output_tokens: Some(MOST_OUTPUT_TOKENS),
             purpose: Purpose::Title,
             threads: case.threads.clone(),
+            effort: None,
         };
         let answer = self.provider.complete(&request, &mut |_| {}).await.ok()?;
         let text: String = texts(&answer.parts).collect();

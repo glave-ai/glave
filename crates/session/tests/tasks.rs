@@ -198,6 +198,7 @@ fn a_task_never_works_in_a_folder_itself() {
                 computer: None,
                 model: None,
                 approval: None,
+                effort: None,
             })
             .await
             .unwrap_err();
@@ -212,6 +213,7 @@ fn a_task_never_works_in_a_folder_itself() {
                 meta: glave_session::protocol::Meta::default(),
                 model: None,
                 approval: None,
+                effort: None,
                 unattended: false,
             })
             .await
@@ -264,6 +266,7 @@ fn approvals_in_a_task_are_answered_no_one_there_and_the_model_is_sent_the_same(
                 meta: glave_session::protocol::Meta::default(),
                 model: None,
                 approval: None,
+                effort: None,
                 unattended: false,
             })
             .await
@@ -375,6 +378,7 @@ fn a_turn_stops_at_its_budget() {
                 meta: glave_session::protocol::Meta::default(),
                 model: None,
                 approval: None,
+                effort: None,
                 unattended: false,
             })
             .await;
@@ -401,6 +405,7 @@ fn policy_limits_how_many_tasks_run_at_once() {
                 meta: glave_session::protocol::Meta::default(),
                 model: None,
                 approval: None,
+                effort: None,
                 unattended: false,
             })
             .await

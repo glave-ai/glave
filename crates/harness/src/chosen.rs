@@ -5,7 +5,7 @@
 use std::borrow::Cow;
 use std::sync::PoisonError;
 
-use glave_event::{ApprovalMode, ApprovalModeChosen, Body, Event, ModelChosen};
+use glave_event::{ApprovalMode, ApprovalModeChosen, Body, EffortChosen, Event, ModelChosen};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
 use crate::approval::Approver;
@@ -14,6 +14,9 @@ use crate::prompt::system_prompt;
 
 /// The longest model id, in bytes.
 pub(crate) const MAX_MODEL_ID: usize = 255;
+
+/// The longest reasoning level, in bytes.
+const MAX_EFFORT: usize = 32;
 
 /// The model the latest `model.chosen` in `events` names, if any.
 pub(crate) fn chosen_in(events: &[Event]) -> Option<String> {
@@ -41,6 +44,11 @@ impl Thread {
     /// instead of the harness's own.
     pub fn approval(&self) -> Option<ApprovalMode> {
         self.approval
+    }
+
+    /// How much this thread's model is asked to reason, when someone chose it.
+    pub fn effort(&self) -> Option<&str> {
+        self.effort.as_deref()
     }
 }
 
@@ -163,6 +171,47 @@ where
         thread.approval = Some(mode);
         Ok(())
     }
+
+    /// Asks `thread`'s model to reason at `effort` from now on, recorded as `effort.chosen`
+    /// for `caller`. Choosing the level already chosen records nothing. A level that is empty,
+    /// longer than 32 bytes or not one plain word is refused; whether the model offers it is
+    /// the caller's to check.
+    pub async fn choose_effort(
+        &self,
+        thread: &mut Thread,
+        caller: &Caller,
+        effort: &str,
+    ) -> Result<(), HarnessError> {
+        let effort = effort.trim();
+        let plain = effort
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_');
+        if effort.is_empty() || effort.len() > MAX_EFFORT || !plain {
+            return Err(HarnessError::Invalid(format!(
+                "a reasoning level is one word of 1 to {MAX_EFFORT} letters, such as high"
+            )));
+        }
+        if thread.effort.as_deref() == Some(effort) {
+            return Ok(());
+        }
+        let chosen = EffortChosen {
+            effort: effort.to_owned(),
+            by: Self::other_than_for(thread, caller.person),
+        };
+        self.record(thread, &chosen).await?;
+        // Glave's own record: call ids do not count it, so the model is sent the same.
+        thread.unnumbered = thread.unnumbered.saturating_add(1);
+        thread.effort = Some(effort.to_owned());
+        Ok(())
+    }
+}
+
+/// The level the latest `effort.chosen` in `events` names, if any.
+pub(crate) fn effort_in(events: &[Event]) -> Option<String> {
+    events.iter().rev().find_map(|event| match &event.body {
+        Body::EffortChosen(chosen) => Some(chosen.effort.clone()),
+        _ => None,
+    })
 }
 
 /// The approval mode the latest `approval.mode.chosen` in `events` names, if any.

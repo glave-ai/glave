@@ -182,6 +182,7 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::ModelResponded(_) => "model.responded",
             Body::ModelChosen(_) => "model.chosen",
             Body::ApprovalModeChosen(_) => "approval.mode.chosen",
+            Body::EffortChosen(_) => "effort.chosen",
             Body::TurnEnded(_) => "turn.ended",
             Body::ApprovalRequested(_) => "approval.requested",
             Body::ApprovalDecided(_) => "approval.decided",
