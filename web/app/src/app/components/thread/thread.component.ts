@@ -26,7 +26,9 @@ import { type TurnResults, turnResults } from '../../lib/results';
 import { threadTitle } from '../../lib/threads';
 import { startingTurn } from '../../lib/turns';
 import { AttachmentsService } from '../../services/attachments.service';
+import { effortToSend } from '../../lib/effort';
 import { CommandsService } from '../../services/commands.service';
+import { ModelsService } from '../../services/models.service';
 import { ProjectsService } from '../../services/projects.service';
 import { ThreadService } from '../../services/thread.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
@@ -34,6 +36,7 @@ import { ApprovalModeComponent } from '../approval-mode/approval-mode.component'
 import { FolderGoneComponent } from '../folder-gone/folder-gone.component';
 import type { FirstPrompt } from '../home/home.component';
 import { MessageTextComponent } from '../message-text/message-text.component';
+import { EffortPickerComponent } from '../effort-picker/effort-picker.component';
 import { ModelPickerComponent } from '../model-picker/model-picker.component';
 import { RenameDialogComponent } from '../rename-dialog/rename-dialog.component';
 import { ThreadHeaderComponent } from '../thread-header/thread-header.component';
@@ -92,6 +95,7 @@ function isFirstPrompt(state: unknown): state is FirstPrompt {
     ThreadHeaderComponent,
     ToolsPanelComponent,
     TurnComponent,
+    EffortPickerComponent,
   ],
   providers: [ThreadService, CommandsService, AttachmentsService],
   templateUrl: './thread.component.html',
@@ -118,6 +122,11 @@ export class ThreadComponent {
   protected readonly picked = signal<string | null>(null);
   /** The approval mode the person picked for the next turn, or `null` for the thread's own. */
   protected readonly pickedMode = signal<ApprovalMode | null>(null);
+  /** How much the person picked the next turn's model reasons, or `null` for the thread's own. */
+  protected readonly pickedEffort = signal<string | null>(null);
+  /** The model the next turn goes to: the person's pick, else the thread's, else the default. */
+  protected readonly nextModel = computed(() => this.picked() ?? this.service.chosen());
+  private readonly models = inject(ModelsService);
   protected readonly renaming = signal(false);
   protected readonly panelOpen = this.panel.open;
   protected readonly panelWidth = this.panel.width;
@@ -170,6 +179,7 @@ export class ThreadComponent {
         this.picked.set(null);
         this.pickedMode.set(null);
         this.attachments.clear();
+        this.pickedEffort.set(null);
         void this.service
           .open(thread)
           .then(() =>
@@ -193,7 +203,10 @@ export class ThreadComponent {
     const model = picked !== null && picked !== this.service.chosen() ? picked : null;
     const pickedMode = this.pickedMode();
     const mode = pickedMode !== null && pickedMode !== this.mode() ? pickedMode : null;
-    void this.service.send(text, model, mode, this.attachments.attached());
+    const next = this.nextModel() ?? this.models.default();
+    const info = this.models.models().find((each) => each.id === next);
+    const effort = effortToSend(this.pickedEffort(), this.service.chosenEffort(), info);
+    void this.service.send(text, model, mode, this.attachments.attached(), effort);
     this.attachments.clear();
   }
 

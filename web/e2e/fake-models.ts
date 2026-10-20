@@ -17,7 +17,12 @@ export const MODELS: readonly ModelInfo[] = [
     context: 1_000_000,
     price: { input: 100_000, output: 500_000 },
   },
-  { id: 'hope-12b', name: 'Hope', default: false },
+  {
+    id: 'hope-12b',
+    name: 'Hope',
+    default: false,
+    reasoning: { efforts: ['high', 'low', 'none'], default: 'low' },
+  },
   { id: 'openai/gpt-6-luna', default: false },
   { id: 'deepseek/deepseek-v4.1-flash', default: false },
   ...Array.from({ length: 200 }, (_, index) => ({

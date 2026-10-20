@@ -52,6 +52,7 @@
     }
     <app-approval-mode glzComposerStatus [(value)]="pickedMode" />
     <app-model-picker glzComposerStatus [(value)]="picked" />
+    <app-effort-picker glzComposerStatus [model]="picked()" [(value)]="pickedEffort" />
   </glz-composer>
   @if (local()) {
     <p class="private" data-testid="home-private">

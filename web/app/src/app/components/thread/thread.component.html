@@ -87,6 +87,12 @@
           }
           <app-approval-mode glzComposerStatus [current]="mode()" [(value)]="pickedMode" />
           <app-model-picker glzComposerStatus [current]="service.chosen()" [(value)]="picked" />
+          <app-effort-picker
+            glzComposerStatus
+            [model]="nextModel()"
+            [current]="service.chosenEffort()"
+            [(value)]="pickedEffort"
+          />
         </glz-composer>
       </div>
     </div>
