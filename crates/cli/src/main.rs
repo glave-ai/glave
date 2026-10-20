@@ -47,6 +47,7 @@ mod telemetry;
 mod terminal;
 mod threads;
 mod trust;
+mod turns;
 mod waiting;
 mod wiring;
 mod worktrees;

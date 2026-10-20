@@ -109,7 +109,7 @@ pub(crate) async fn wire(
     let root = workspace.root().to_owned();
     settings.commands = crate::commands::find(&root).await?;
     let servers = mcp_servers(&setup, remote.as_ref(), &processes).await?;
-    let scope = crate::projects::here(&store, &root, identity.person).await?;
+    let scope = scope_here(args, choices, &store, &root, identity.person).await?;
     let (on_workers, workers) =
         crate::cloud::workers(choices, &setup.loaded.constraints, &folder, scope.project()).await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
@@ -146,7 +146,9 @@ pub(crate) async fn wire(
         )
     };
     let server = Server::new(wiring, settings, scope.org(), answering);
-    keep_here(&server, scope.project(), &root).await?;
+    if start_folder(args, &setup.choices) {
+        keep_here(&server, scope.project(), &root).await?;
+    }
     Ok(Wired {
         server,
         servers,
@@ -161,6 +163,30 @@ pub(crate) async fn wire(
         projects,
         _telemetry: telemetry,
     })
+}
+
+/// The scope glave's own work here keeps to: the project of `root`, the folder it starts in,
+/// when that is a project of its own ([`start_folder`]); else `person`'s Chats.
+async fn scope_here(
+    args: &Args,
+    choices: &Choices,
+    store: &Data,
+    root: &Path,
+    person: glave_event::PrincipalId,
+) -> anyhow::Result<glave_ports::Scope> {
+    if start_folder(args, choices) {
+        crate::projects::here(store, root, person).await
+    } else {
+        crate::projects::personal(store, person).await
+    }
+}
+
+/// Whether the folder glave starts in is a project of its own: for a command run in it, or a
+/// program's own server; for the person's server, which has no folder of its own
+/// (`specs/one-server.md`), only where its threads go to workers, which clone that folder's
+/// repository.
+fn start_folder(args: &Args, choices: &Choices) -> bool {
+    !args.person_s_server() || choices.on.value == policy::On::Cloud
 }
 
 /// Keeps `root`, the folder glave runs in, as the folder of its project, `project`: where its

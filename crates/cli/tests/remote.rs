@@ -82,7 +82,11 @@ fn a_turn_runs_on_the_server_and_shows_here() {
         Some(&token),
     );
     assert!(!unknown.status.success());
-    assert!(text(&unknown).contains("model/list"), "{}", text(&unknown));
+    assert!(
+        text(&unknown).contains("it runs fake-model"),
+        "{}",
+        text(&unknown)
+    );
 }
 
 /// `glave serve --http` where commands run as the person and only cautions ask, the judge
@@ -148,8 +152,11 @@ fn an_action_the_judge_leaves_to_the_person_is_still_answered() {
     );
     let shown = text(&bumped);
     assert!(bumped.status.success(), "{shown}");
-    // It waits, and with no one at this terminal the answer is no.
-    assert!(shown.contains("bash: npm publish … declined"), "{shown}");
+    // With no one at this terminal, the turn is answered by no one: the action does not run.
+    assert!(
+        shown.contains("bash: npm publish … not run: no one here to approve it"),
+        "{shown}"
+    );
     assert!(!shown.contains("no approval"), "{shown}");
     assert!(shown.contains("Left it."), "{shown}");
 }

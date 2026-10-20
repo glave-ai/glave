@@ -77,25 +77,14 @@ Usage:
                                 list the git hosts you connected, or remove one
 
 Options:
-  --model <name>     the model to use (default: $GLAVE_MODEL)
+  --model <name>     the model to use: one glave runs (default: its default model)
   --continue, -c     continue your last thread in this folder
   --approval <mode>  how much to ask before acting: auto (only reading secret files asks;
                      the default when commands run in the sandbox) or ask (every change
                      and command asks; the default when they cannot). With no one at the
                      keyboard, anything that would ask is declined
-  --sandbox <level>  the wall around commands: project (the default wherever this computer
-                     can run it: writes only the project and temp folders, hooks and
-                     settings stay read-only), read-only, or off; never reads secrets
-  --no-network       keep sandboxed commands off the network
-  --network          let sandboxed commands use the network (the default)
   --worktree         work in a new worktree of this repository, on a branch glave/<id>,
                      kept under GLAVE_HOME/worktrees, rather than in this folder itself
-  --on <place>       where threads work: here (the default), or cloud: a disposable worker
-                     of their own, made from the project's devcontainer.json or
-                     .glave/environment.toml, with this repository cloned in at its
-                     current commit; work comes back as pushed branches
-  --max-steps <n>    end each turn after n model calls, the last one a text report of
-                     what is done and what is left (default: no limit)
   --events <file>    save the thread's events to this file as JSON Lines
   --server <url>     be a client of the session server at this URL (or [server] url in
                      config.toml): threads, turns and approvals run there and show here;
@@ -104,6 +93,24 @@ Options:
                      timings, never prompts, answers, file contents or secrets
   --help             show this help
   --version          show the version
+
+A turn, --continue and --goal run in glave running for you in the background, started from
+a terminal when it is not running, and go on if the terminal closes; Ctrl-C stops the turn.
+With no one at the terminal and glave not running, they run in this command alone, and
+anything that would ask is declined.
+
+How glave runs is its settings, set in config.toml or given to glave serve:
+  --sandbox <level>  the wall around commands: project (the default wherever this computer
+                     can run it: writes only the project and temp folders, hooks and
+                     settings stay read-only), read-only, or off; never reads secrets
+  --no-network       keep sandboxed commands off the network
+  --network          let sandboxed commands use the network (the default)
+  --on <place>       where threads work: here (the default), or cloud: a disposable worker
+                     of their own, made from the project's devcontainer.json or
+                     .glave/environment.toml, with this repository cloned in at its
+                     current commit; work comes back as pushed branches
+  --max-steps <n>    end each turn after n model calls, the last one a text report of
+                     what is done and what is left (default: no limit)
 
 Environment:
   GLAVE_BASE_URL     an OpenAI-compatible API (default: http://localhost:11434/v1, Ollama),
@@ -315,7 +322,34 @@ pub(crate) fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args,
     }
     goal(&args)?;
     background(&args)?;
+    settings_only(&args)?;
     Ok(args)
+}
+
+/// Refuses, for a turn, the flags that choose how glave runs rather than one turn: they are
+/// the server's settings (`specs/one-server.md`, "The flags"), which `glave serve` and
+/// `glave policy explain` still take.
+fn settings_only(args: &Args) -> Result<(), String> {
+    if !matches!(args.action, Action::Run | Action::Help | Action::Version) {
+        return Ok(());
+    }
+    let given = [
+        (args.sandbox.is_some(), "--sandbox"),
+        (args.network == Some(true), "--network"),
+        (args.network == Some(false), "--no-network"),
+        (args.on.is_some(), "--on"),
+        (args.max_steps.is_some(), "--max-steps"),
+    ];
+    match given
+        .into_iter()
+        .find_map(|(given, flag)| given.then_some(flag))
+    {
+        Some(flag) => Err(format!(
+            "{flag} chooses how glave runs, not one turn: set it in config.toml, or give it to \
+             glave serve"
+        )),
+        None => Ok(()),
+    }
 }
 
 /// The command the first words name, taking them: `policy explain`, `skills`, `commands` or
@@ -368,14 +402,6 @@ fn background(args: &Args) -> Result<(), String> {
     }
     if args.resume || args.events.is_some() {
         return Err("--background starts a new thread: not with --continue or --events".into());
-    }
-    let runs_here = args.sandbox.is_some() || args.network.is_some() || args.on.is_some();
-    if runs_here || args.max_steps.is_some() {
-        return Err(
-            "--sandbox, --network, --no-network, --on and --max-steps choose how glave \
-                    runs, not one task: set them in config.toml"
-                .into(),
-        );
     }
     Ok(())
 }

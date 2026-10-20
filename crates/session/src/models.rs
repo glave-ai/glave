@@ -82,9 +82,13 @@ where
                 "no model is set up here yet: connect a model account first",
             ));
         }
+        let offered: Vec<&str> = models.iter().map(|known| known.id.as_str()).collect();
         Err(ApiError::new(
             code::NO_MODEL,
-            format!("this server does not run model {model:?}; model/list names the ones it does"),
+            format!(
+                "glave does not run the model {model:?} here; it runs {}",
+                offered.join(", ")
+            ),
         ))
     }
 

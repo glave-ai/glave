@@ -15,7 +15,7 @@ use glave_ports::{Clock as _, EventLog, OsEntropy, Scope, SystemClock};
 use glave_session::protocol::{Reply, Request};
 use jiff::{SignedDuration, Timestamp};
 
-use crate::client::Glave;
+use crate::client::Session;
 use crate::home;
 
 pub(crate) use cleanup::Cleanup;
@@ -252,7 +252,7 @@ fn listing(kept: &[Kept], base: &Path) -> String {
 }
 
 /// Where `thread` works, when it is a worktree: for the person to see before the first turn.
-pub(crate) async fn note(server: &Glave, thread: ThreadId) -> Option<String> {
+pub(crate) async fn note(server: Session<'_>, thread: ThreadId) -> Option<String> {
     let page = Request::ThreadEvents {
         thread,
         after: None,

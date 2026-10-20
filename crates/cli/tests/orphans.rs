@@ -78,15 +78,8 @@ fn a_killed_glave_s_commands_and_servers_are_stopped_at_the_next_start() {
     ])
     .unwrap();
     // Unconfined, so nothing but the ledger can stop what it leaves.
-    let args = [
-        "--model",
-        "m",
-        "--sandbox",
-        "off",
-        "--approval",
-        "auto",
-        "go",
-    ];
+    choose(&place, "sandbox", "\"off\"");
+    let args = ["--model", "m", "--approval", "auto", "go"];
     let mut killed = start(&place, &model, &args);
     let running = until(Duration::from_secs(60), || recorded(&place.home).len() == 3);
     let entries = recorded(&place.home);

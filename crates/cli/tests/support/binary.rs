@@ -31,6 +31,21 @@ pub(crate) fn place(name: &str) -> Place {
     }
 }
 
+/// Sets `key = value` in `place`'s own settings (`config.toml` in its home), as the person
+/// chooses how glave runs: a turn takes no flag for it.
+pub(crate) fn choose(place: &Place, key: &str, value: &str) {
+    std::fs::create_dir_all(&place.home).unwrap();
+    let config = place.home.join("config.toml");
+    let own = std::fs::read_to_string(&config).unwrap_or_default();
+    let mut lines = vec![format!("{key} = {value}")];
+    lines.extend(
+        own.lines()
+            .filter(|line| !line.starts_with(&format!("{key} =")))
+            .map(str::to_owned),
+    );
+    std::fs::write(&config, lines.join("\n") + "\n").unwrap();
+}
+
 /// `glave` with `args`, talking only to `server`, with nothing from the person's own setup.
 pub(crate) fn glave(place: &Place, server: &FakeServer, args: &[&str], stdin: &str) -> Output {
     let mut child = start(place, server, args);
@@ -91,4 +106,72 @@ pub(crate) fn said(body: &Value, role: &str) -> Vec<String> {
         .filter(|message| message["role"] == role)
         .map(|message| message["content"].to_string())
         .collect()
+}
+
+/// `glave` with `args` in a terminal of its own, talking only to `server`, still running and
+/// stopped when dropped: what is written to its input is typed at that terminal (Ctrl-C is
+/// `\x03`), and the terminal closes when it ends. No screen, so no browser opens.
+pub(crate) fn terminal(place: &Place, server: &FakeServer, args: &[&str]) -> Running {
+    terminal_with(place, server, args, &[])
+}
+
+/// As [`terminal`], with the variables `env` too.
+pub(crate) fn terminal_with(
+    place: &Place,
+    server: &FakeServer,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> Running {
+    let spawn = "import pty, sys; sys.exit(pty.spawn(sys.argv[1:]) >> 8)";
+    let python = [&["-c", spawn, env!("CARGO_BIN_EXE_glave")][..], args].concat();
+    std::fs::create_dir_all(&place.home).unwrap();
+    let child = Command::new("python3")
+        .args(python)
+        .current_dir(&place.project)
+        .env("GLAVE_BASE_URL", server.url())
+        .env("GLAVE_HOME", &place.home)
+        .env("GLAVE_API_KEY", FAKE_SECRET)
+        .env("NO_COLOR", "1")
+        .env("SSH_CONNECTION", "test")
+        .env_remove("GLAVE_MODEL")
+        .env_remove("GLAVE_PROVIDER")
+        .envs(env.iter().copied())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    Running::new(child)
+}
+
+/// Types `keys` at the terminal `running` is in.
+pub(crate) fn typed(running: &mut Running, keys: &str) {
+    let input = running.stdin.as_mut().unwrap();
+    input.write_all(keys.as_bytes()).unwrap();
+    input.flush().unwrap();
+}
+
+/// The person's server in `place`, stopped when this drops, however the test ends: asked to
+/// stop, and if that fails, whatever still holds its lock killed. Never panics, so a failed
+/// test still reports its own failure.
+pub(crate) struct Stopped<'a>(pub(crate) &'a Place);
+
+impl Drop for Stopped<'_> {
+    fn drop(&mut self) {
+        let stopped = Command::new(env!("CARGO_BIN_EXE_glave"))
+            .args(["server", "stop"])
+            .env("GLAVE_HOME", &self.0.home)
+            .stdin(Stdio::null())
+            .output();
+        if stopped.is_ok_and(|stopped| stopped.status.success()) {
+            return;
+        }
+        let lock = self.0.home.join("run/server.lock");
+        let Ok(holders) = Command::new("lsof").arg("-t").arg(&lock).output() else {
+            return;
+        };
+        for pid in String::from_utf8_lossy(&holders.stdout).split_whitespace() {
+            let _ = Command::new("kill").args(["-KILL", pid]).status();
+        }
+    }
 }

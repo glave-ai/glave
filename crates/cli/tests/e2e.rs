@@ -69,14 +69,13 @@ fn a_tool_call_changes_the_project() {
     .unwrap();
     let events = place.project.join("../events.jsonl");
     let events_arg = events.to_string_lossy().into_owned();
+    choose(&place, "sandbox", "\"off\"");
     let output = glave(
         &place,
         &server,
         &[
             "--model",
             "m",
-            "--sandbox",
-            "off",
             "--approval",
             "auto",
             "--events",
@@ -182,12 +181,8 @@ fn by_default_commands_run_in_the_sandbox_or_ask_where_it_cannot() {
 fn sandbox_off_asks_unless_auto_is_chosen_too() {
     let place = place("off");
     let server = changes_and_commands();
-    let output = glave(
-        &place,
-        &server,
-        &["--model", "m", "--sandbox", "off", "write notes"],
-        "",
-    );
+    choose(&place, "sandbox", "\"off\"");
+    let output = glave(&place, &server, &["--model", "m", "write notes"], "");
     let shown = text(&output);
     assert!(output.status.success(), "{shown}");
     assert!(shown.contains("approval: ask"), "{shown}");
@@ -196,15 +191,7 @@ fn sandbox_off_asks_unless_auto_is_chosen_too() {
     let output = glave(
         &place,
         &server,
-        &[
-            "--model",
-            "m",
-            "--sandbox",
-            "off",
-            "--approval",
-            "auto",
-            "write notes",
-        ],
+        &["--model", "m", "--approval", "auto", "write notes"],
         "",
     );
     let shown = text(&output);

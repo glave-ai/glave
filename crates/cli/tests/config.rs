@@ -24,19 +24,15 @@ fn the_person_s_choices_reach_the_run_and_flags_win_over_them() {
     assert!(output.status.success(), "{shown}");
     assert!(shown.contains("approval: ask"), "{shown}");
     assert_eq!(model.received()[0].body["model"], "from-file");
+    choose(
+        &place,
+        "model = \"from-file\"\napproval = \"ask\"\nsandbox = \"off\"\n",
+    );
     let output = glave(
         &place,
         &model,
-        // With the sandbox off too: auto without a sandbox needs both choices.
-        &[
-            "--approval",
-            "auto",
-            "--sandbox",
-            "off",
-            "--model",
-            "m",
-            "hi",
-        ],
+        // Auto without a sandbox needs both choices: the sandbox is the settings'.
+        &["--approval", "auto", "--model", "m", "hi"],
         "",
     );
     let shown = text(&output);

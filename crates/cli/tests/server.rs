@@ -8,8 +8,9 @@ use std::io::{BufRead as _, BufReader};
 use std::process::{Command, Output, Stdio};
 
 use glave_ports::testing::Running;
+use glave_provider_openai::fake::FakeServer;
 
-use crate::support::{Place, place, text};
+use crate::support::{Place, Stopped, place, text};
 
 /// `glave` with `args` in `place`, with nothing from the person's own setup, still running.
 fn start(place: &Place, args: &[&str]) -> Running {
@@ -56,26 +57,6 @@ fn in_terminal(place: &Place, args: &[&str]) -> Running {
         .spawn()
         .unwrap();
     Running::new(child)
-}
-
-/// The person's server in `place`, stopped when this drops, however the test ends: asked to
-/// stop, and if that fails, whatever still holds its lock killed. Never panics, so a failed
-/// test still reports its own failure.
-struct Stopped<'a>(&'a Place);
-
-impl Drop for Stopped<'_> {
-    fn drop(&mut self) {
-        if run(self.0, &["server", "stop"]).status.success() {
-            return;
-        }
-        let lock = self.0.home.join("run/server.lock");
-        let Ok(holders) = Command::new("lsof").arg("-t").arg(&lock).output() else {
-            return;
-        };
-        for pid in String::from_utf8_lossy(&holders.stdout).split_whitespace() {
-            let _ = Command::new("kill").args(["-KILL", pid]).status();
-        }
-    }
 }
 
 /// `glave server status`: its exit code and what it said.
@@ -193,47 +174,49 @@ fn a_socket_in_a_folder_others_may_open_is_refused() {
     );
 }
 
-/// What a command the model runs in `place` with `sandbox` printed, through the in-process
-/// glave: `None` when the sandbox cannot run here and no one requires it.
-fn ran(place: &Place, sandbox: &str, script: &str) -> Option<String> {
-    use glave_provider_openai::fake::{FakeServer, Reply};
-    let call = serde_json::json!({ "command": script });
-    let model = FakeServer::start(vec![
-        Reply::tool_call("call_1", "bash", &call),
-        Reply::text("Done."),
-    ])
-    .unwrap();
-    let args = ["--model", "m", "--sandbox", sandbox, "--approval", "auto"];
-    let said = crate::support::glave(place, &model, &[&args[..], &["go"]].concat(), "");
+/// What a command the model runs in `place` with `sandbox` printed, through the person's
+/// server, which `model` answers: `None` when the sandbox cannot run here and no one requires
+/// it.
+fn ran(place: &Place, model: &FakeServer, sandbox: &str) -> Option<String> {
+    crate::support::choose(place, "sandbox", &format!("\"{sandbox}\""));
+    let said = crate::support::glave(place, model, &["go"], "");
+    let shown = text(&said);
     let required = std::env::var_os("GLAVE_REQUIRE_SANDBOX").is_some();
-    if !said.status.success() && text(&said).contains("sandbox") && !required {
+    if !said.status.success() && shown.contains("sandbox") && !required {
         return None;
     }
-    assert!(said.status.success(), "{}", text(&said));
+    assert!(said.status.success(), "{shown}");
     let asked = model.received();
-    Some(crate::support::said(&asked[1].body, "tool").concat())
+    Some(crate::support::said(&asked.last()?.body, "tool").concat())
 }
 
 #[test]
 fn a_sandboxed_command_reaches_neither_the_socket_nor_the_token_or_keys() {
-    let place = place("sandbox");
-    std::fs::create_dir_all(&place.home).unwrap();
-    std::fs::write(place.home.join("config.toml"), "titles = false\n").unwrap();
-    let served = serve(&place);
-    let (_, said) = status(&place);
-    let socket = said
-        .lines()
-        .find_map(|line| line.trim().strip_prefix("socket: "))
-        .unwrap()
-        .to_owned();
+    use glave_provider_openai::fake::Reply;
+    // A short name: the socket's path must stay short enough for a socket.
+    let place = place("sb");
+    let socket = place.home.join("run/server.sock");
+    assert!(socket.as_os_str().len() <= 100, "{}", socket.display());
     // Spelled so no approval rule stops it first: the sandbox alone must.
     let script = format!(
         "d='{}'; cat \"$d\"/serve.t* && echo token-read; cat \"$d\"/root.k* && echo key-read; \
              python3 -c \"import socket; s = socket.socket(socket.AF_UNIX); \
-             s.connect('{socket}'); print('socket' + '-reached')\"; echo ran",
-        place.home.display()
+             s.connect('{}'); print('socket' + '-reached')\"; echo ran",
+        place.home.display(),
+        socket.display()
     );
-    let Some(confined) = ran(&place, "project", &script) else {
+    let call = serde_json::json!({ "command": script });
+    let model = FakeServer::start(vec![
+        Reply::tool_call("call_1", "bash", &call),
+        Reply::text("Done."),
+        Reply::tool_call("call_2", "bash", &call),
+        Reply::text("Done."),
+    ])
+    .unwrap();
+    // Auto without a sandbox needs both choices.
+    crate::support::choose(&place, "approval", "\"auto\"");
+    let (_served, _) = crate::http::serve_http(&place, &model, &["--model", "m"]);
+    let Some(confined) = ran(&place, &model, "project") else {
         return;
     };
     assert!(confined.contains("ran"), "{confined}");
@@ -241,9 +224,8 @@ fn a_sandboxed_command_reaches_neither_the_socket_nor_the_token_or_keys() {
         assert!(!confined.contains(reached), "{reached}: {confined}");
     }
     // Control: unconfined, the same command reaches all three.
-    let open = ran(&place, "off", &script).unwrap();
+    let open = ran(&place, &model, "off").unwrap();
     for reached in ["token-read", "key-read", "socket-reached"] {
         assert!(open.contains(reached), "{reached}: {open}");
     }
-    drop(served);
 }

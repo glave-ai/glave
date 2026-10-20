@@ -136,6 +136,11 @@ impl Connection {
         }))
     }
 
+    /// The session API's client on this connection, which follows turns too.
+    pub(crate) fn remote(&self) -> &Remote {
+        &self.remote
+    }
+
     /// The process that listens, where the system tells.
     pub(crate) fn pid(&self) -> Option<i32> {
         self.pid
