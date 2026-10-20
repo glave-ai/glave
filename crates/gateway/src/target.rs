@@ -71,6 +71,9 @@ pub struct Target {
     pub can: Capabilities,
     /// What it costs per token, when configured.
     pub price: Option<Price>,
+    /// The model it serves, by a name it shares with targets at other providers that serve the
+    /// same one: a thread that chooses any of them is sent to them all, tried in order.
+    pub same_model: Option<String>,
     pub(crate) handle: Arc<dyn Model>,
 }
 
@@ -89,6 +92,7 @@ impl Target {
             model,
             can: Capabilities::default(),
             price: None,
+            same_model: None,
             handle,
         }
     }
@@ -117,6 +121,13 @@ impl Target {
         self.price = Some(price);
         self
     }
+
+    /// The target serving the model known everywhere as `model`.
+    #[must_use]
+    pub fn serving(mut self, model: impl Into<String>) -> Self {
+        self.same_model = Some(model.into());
+        self
+    }
 }
 
 impl fmt::Debug for Target {
@@ -127,6 +138,7 @@ impl fmt::Debug for Target {
             .field("model", &self.model)
             .field("can", &self.can)
             .field("price", &self.price)
+            .field("same_model", &self.same_model)
             .finish_non_exhaustive()
     }
 }

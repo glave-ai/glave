@@ -15,26 +15,29 @@ use crate::server::Server;
 const CHOSEN: &str = "model.chosen";
 
 /// The models a server built on `default` runs: the default first, then each of `offered`
-/// once, in order. An offered entry for the default lends it its name and its Hope mark. With
-/// no default, none: nothing is set up yet.
+/// once, in order. An offered entry for the default describes it. With no default, none:
+/// nothing is set up yet.
 pub(crate) fn catalog(default: &str, offered: Vec<ModelInfo>) -> Vec<ModelInfo> {
     if default.trim().is_empty() {
         return Vec::new();
     }
-    let mut first = ModelInfo::new(default);
-    first.default = true;
-    let mut models = vec![first];
+    let mut models = vec![ModelInfo::new(default)];
     for mut model in offered {
-        if model.id.trim().is_empty() {
+        if model.id.trim().is_empty() || models.iter().skip(1).any(|known| known.id == model.id) {
             continue;
         }
-        if let Some(known) = models.iter_mut().find(|known| known.id == model.id) {
-            known.name = known.name.take().or(model.name);
-            known.hope |= model.hope;
+        if model.id == default {
+            model.default = true;
+            if let Some(first) = models.first_mut() {
+                *first = model;
+            }
         } else {
             model.default = false;
             models.push(model);
         }
+    }
+    if let Some(first) = models.first_mut() {
+        first.default = true;
     }
     models
 }
@@ -142,10 +145,9 @@ where
 mod tests {
     use super::*;
 
-    fn named(id: &str, name: &str, hope: bool) -> ModelInfo {
+    fn named(id: &str, name: &str) -> ModelInfo {
         ModelInfo {
             name: Some(name.into()),
-            hope,
             ..ModelInfo::new(id)
         }
     }
@@ -155,8 +157,8 @@ mod tests {
         let models = catalog(
             "big",
             vec![
-                named("hope-12b", "Hope", true),
-                named("big", "Big", false),
+                named("hope-12b", "Hope"),
+                named("big", "Big"),
                 ModelInfo::new("hope-12b"),
                 ModelInfo::new(" "),
             ],
@@ -171,10 +173,10 @@ mod tests {
             models[0],
             ModelInfo {
                 default: true,
-                ..named("big", "Big", false)
+                ..named("big", "Big")
             }
         );
-        assert_eq!(models[1], named("hope-12b", "Hope", true));
+        assert_eq!(models[1], named("hope-12b", "Hope"));
     }
 
     #[test]
@@ -183,5 +185,6 @@ mod tests {
         offered.default = true;
         let models = catalog("big", vec![offered]);
         assert_eq!(models.iter().filter(|m| m.default).count(), 1, "{models:?}");
+        assert!(models[0].default);
     }
 }

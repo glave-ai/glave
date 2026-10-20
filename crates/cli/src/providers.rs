@@ -8,6 +8,7 @@
 
 mod card;
 mod check;
+mod describe;
 mod lineup;
 mod refresh;
 
@@ -27,6 +28,7 @@ use crate::config::Endpoint;
 use crate::gateway::GatewaySwitch;
 use crate::model;
 
+pub(crate) use describe::identity;
 pub(crate) use lineup::{Built, Lineup, endpoint};
 
 /// The longest key taken, in bytes.

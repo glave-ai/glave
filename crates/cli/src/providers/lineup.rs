@@ -3,6 +3,7 @@
 //! connected, the first account's first model the default when nothing else chooses one.
 //! Built again whenever the accounts change.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use glave_config::policy::{Choices, Constraints, ModelEntry, Source, check_model};
@@ -16,6 +17,8 @@ use crate::gateway::remote::Remote;
 use crate::gateway::{Allowed, gateway, offered};
 use crate::model::Model;
 use crate::setup::Setup;
+
+use super::describe::{self, cards_for, rank, service_name};
 
 /// What the models are built from, kept to build them again.
 #[derive(Clone)]
@@ -61,13 +64,15 @@ impl Lineup {
     }
 
     /// The models of the configured endpoint and of `accounts`, as their services' `catalogs`
-    /// list them, those the policy allows.
+    /// describe them, those the policy allows: one entry per model, whichever accounts run
+    /// it, in the order of their services' [`rank`].
     pub(crate) fn build(
         &self,
         accounts: &[ProviderConnected],
         catalogs: &[Catalog],
     ) -> anyhow::Result<Built> {
-        let mut targets = Vec::new();
+        let mut targets: Vec<(u8, Target)> = Vec::new();
+        let mut about = HashMap::new();
         let mut first = None;
         for account in accounts {
             let allowed: Vec<&str> = super::offered_by(account, catalogs)
@@ -87,13 +92,20 @@ impl Lineup {
             };
             let handle: Arc<dyn glave_gateway::Model> = Arc::new(Model::for_endpoint(&endpoint)?);
             let provider = &endpoint.provider.provider;
-            targets.extend(
-                allowed
-                    .into_iter()
-                    .map(|model| Target::new(Arc::clone(&handle), provider.clone(), model)),
-            );
+            let catalog = super::catalog_of(account, catalogs);
+            for model in allowed {
+                let target = Target::new(Arc::clone(&handle), provider.clone(), model);
+                let card = catalog.and_then(|catalog| {
+                    let card = catalog.models.iter().find(|card| card.id == model)?;
+                    Some((card, catalog))
+                });
+                about.insert(target.name.clone(), (catalog, service_name(provider)));
+                targets.push((rank(account.kind), describe::described(target, card)));
+            }
             first.get_or_insert(endpoint);
         }
+        // Stable: each service's models keep their order.
+        targets.sort_by_key(|(rank, _)| *rank);
         let Some(endpoint) = self.configured.clone().or(first) else {
             return Ok(Built::default());
         };
@@ -109,12 +121,27 @@ impl Lineup {
             &endpoint,
             judge.as_deref(),
             &self.entries,
-            targets,
+            targets.into_iter().map(|(_, target)| target).collect(),
             &allowed,
         )?;
+        let describe = |group: &[&Target]| {
+            let mut cards = Vec::new();
+            let mut providers = Vec::new();
+            for target in group {
+                let (own, service) = about
+                    .get(&target.name)
+                    .cloned()
+                    .unwrap_or_else(|| (None, service_name(&target.provider)));
+                cards.extend(cards_for(&target.model, own, catalogs));
+                providers.push(service);
+            }
+            let id = group.first().map_or("", |target| target.model.as_str());
+            let entry = self.entries.iter().find(|entry| entry.id.trim() == id);
+            describe::info(id, &cards, providers, entry.and_then(|e| e.name.as_deref()))
+        };
         let models = Models {
             default: Some((endpoint.model.clone(), endpoint.provider.provider.clone())),
-            offered: offered(&gateway, &self.entries),
+            offered: offered(&gateway, describe),
         };
         Ok(Built {
             gateway: Some(gateway),

@@ -74,7 +74,7 @@ impl CatalogModel {
 }
 
 /// What a model's tokens cost, in millionths of a US dollar per million tokens.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TokenPrice {
     pub input: u64,
@@ -85,7 +85,7 @@ pub struct TokenPrice {
 }
 
 /// How a model reasons: the levels of effort it offers, in its service's own names.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Reasoning {
     /// The levels it offers, as its service lists them, such as `high`, `medium`, `low`, and

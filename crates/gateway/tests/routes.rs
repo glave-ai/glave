@@ -86,6 +86,37 @@ fn a_chosen_model_replaces_main_but_never_a_purpose_with_its_own_route() {
 }
 
 #[test]
+fn a_chosen_model_served_at_several_providers_falls_back_among_them_in_order() {
+    let main = Fake::new("openrouter");
+    let overloaded = glave_ports::ProviderError::Http {
+        status: 529,
+        body: "overloaded".into(),
+    };
+    let maker = Fake::failing("anthropic", overloaded.clone());
+    maker.script.lock().unwrap().push_back(Err(overloaded));
+    let routes = Routes::new(vec![main.target("big")])
+        .unwrap()
+        .with_choices(vec![
+            maker.target("claude-haiku-5-5").serving("claude-haiku-5-5"),
+            main.target("other"),
+            main.target("anthropic/claude-haiku-5.5")
+                .serving("claude-haiku-5-5"),
+        ]);
+    let gateway = Gateway::new(routes);
+    for named in ["claude-haiku-5-5", "anthropic/claude-haiku-5.5"] {
+        let mut asked = request(Purpose::Main);
+        asked.model = named.into();
+        let answer = block_on!(gateway.complete(&asked, &mut |_| {})).unwrap();
+        assert_eq!(
+            answer.served.unwrap().target,
+            "openrouter/anthropic/claude-haiku-5.5",
+            "the maker's own API first, then the aggregator: {named}"
+        );
+    }
+    assert_eq!(maker.seen().len(), 2);
+}
+
+#[test]
 fn a_route_needs_a_target() {
     assert_eq!(
         Routes::new(Vec::new()).unwrap_err(),

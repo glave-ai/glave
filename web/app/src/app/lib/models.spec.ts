@@ -15,9 +15,9 @@ import {
 } from './models';
 
 const MODELS: readonly ModelInfo[] = [
-  { id: 'gpt-6-luna', default: true, hope: false },
-  { id: 'hope-12b', name: 'Hope', default: false, hope: true },
-  { id: 'hope-lookalike', name: '  ', default: false, hope: false },
+  { id: 'gpt-6-luna', default: true },
+  { id: 'hope-12b', name: 'Hope', default: false },
+  { id: 'hope-lookalike', name: '  ', default: false },
 ];
 
 describe('models', () => {
@@ -35,7 +35,7 @@ describe('models', () => {
 
   it('finds the default, or the first, or none', () => {
     expect(defaultModel(MODELS)).toBe('gpt-6-luna');
-    expect(defaultModel([{ id: 'only', default: false, hope: false }])).toBe('only');
+    expect(defaultModel([{ id: 'only', default: false }])).toBe('only');
     expect(defaultModel([])).toBeNull();
   });
 
@@ -54,6 +54,9 @@ describe('models', () => {
     expect(displayName({ id: 'acme-labs/rocket-2:free' })).toBe('Acme Labs · Rocket 2 (Free)');
     expect(displayName({ id: 'openrouter/meta-llama/llama-4-scout' })).toBe('Meta · Llama 4 Scout');
     expect(displayName({ id: 'hope-12b', name: 'Hope' })).toBe('Hope');
+    expect(displayName({ id: 'rocket-1-5', name: 'Rocket 1.5', maker: 'Acme' })).toBe(
+      'Acme · Rocket 1.5',
+    );
     expect(displayName({ id: 'gpt-6-luna', name: '  ' })).toBe('GPT-6 Luna');
   });
 

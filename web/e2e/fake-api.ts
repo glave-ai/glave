@@ -119,14 +119,13 @@ const DEFAULT_MODEL = 'anthropic/claude-haiku-5.5';
  * OpenRouter's, which the picker must search and scroll.
  */
 export const MODELS: readonly ModelInfo[] = [
-  { id: DEFAULT_MODEL, default: true, hope: false },
-  { id: 'hope-12b', name: 'Hope', default: false, hope: true },
-  { id: 'openai/gpt-6-luna', default: false, hope: false },
-  { id: 'deepseek/deepseek-v4.1-flash', default: false, hope: false },
+  { id: DEFAULT_MODEL, default: true },
+  { id: 'hope-12b', name: 'Hope', default: false },
+  { id: 'openai/gpt-6-luna', default: false },
+  { id: 'deepseek/deepseek-v4.1-flash', default: false },
   ...Array.from({ length: 200 }, (_, index) => ({
     id: `lab-${String(index % 20)}/model-${String(index)}`,
     default: false,
-    hope: false,
   })),
 ];
 

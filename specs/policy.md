@@ -95,7 +95,6 @@ on = "cloud"                                  # each thread on a worker of its o
 [[models]]                                    # models a person may choose for a thread besides
 id = "hope-12b"                               # `model` (session.md, "Choosing a model…"), nearest list wins;
 name = "Hope"                                 # each is checked against [models] like `model`
-hope = true                                   # optional: it is Hope, glave's own model
 
 [web]                                         # what web_fetch may reach (approvals.md), nearest wins
 fetch = true                                  # default true; false turns web_fetch off

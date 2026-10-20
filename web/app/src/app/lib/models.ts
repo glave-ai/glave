@@ -83,21 +83,22 @@ function fromName(name: string): { readonly company: string; readonly own: strin
 
 /**
  * What people read for a model, `Company · Model`, never its slug: its own name from the
- * configured `name` when there is one (`Claude Haiku 5.5`, or OpenRouter's `Anthropic: Claude
- * Haiku 5.5`), else from the id's last part; its company from that name, else from the id's
- * prefix (`anthropic/claude-haiku-5.5`). A model with no company in either is its name alone.
+ * server's `name` when there is one (`Claude Haiku 5.5`, or a configured `Anthropic: Claude
+ * Haiku 5.5`), else from the id's last part; its company the server's `maker`, else from that
+ * name, else from the id's prefix (`anthropic/claude-haiku-5.5`). A model with no company in
+ * any is its name alone.
  */
-export function displayName(model: Pick<ModelInfo, 'id' | 'name'>): string {
+export function displayName(model: Pick<ModelInfo, 'id' | 'name' | 'maker'>): string {
   const { company, own } = names(model);
   return company === '' ? own : `${company}${SEPARATOR}${own}`;
 }
 
 /** A model's own name alone, with no company: `Claude Haiku 5.5`. */
-export function shortName(model: Pick<ModelInfo, 'id' | 'name'>): string {
+export function shortName(model: Pick<ModelInfo, 'id' | 'name' | 'maker'>): string {
   return names(model).own;
 }
 
-function names(model: Pick<ModelInfo, 'id' | 'name'>): {
+function names(model: Pick<ModelInfo, 'id' | 'name' | 'maker'>): {
   readonly company: string;
   readonly own: string;
 } {
@@ -106,7 +107,15 @@ function names(model: Pick<ModelInfo, 'id' | 'name'>): {
   const prefix = parts.length > 1 ? (parts.at(-2) ?? '') : '';
   const named = fromName(model.name?.trim() ?? '');
   const own = named.own === '' ? slugWords(slug) : named.own;
-  const company = named.company !== '' ? named.company : prefix === '' ? '' : companyName(prefix);
+  const maker = model.maker?.trim() ?? '';
+  const company =
+    maker !== ''
+      ? maker
+      : named.company !== ''
+        ? named.company
+        : prefix === ''
+          ? ''
+          : companyName(prefix);
   return { company, own };
 }
 

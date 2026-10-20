@@ -115,8 +115,8 @@ export function schedule(id: string, next: string | null): ScheduleInfo {
 
 /** A server's models: the default, and Hope. */
 export const MODELS: readonly ModelInfo[] = [
-  { id: 'gpt-6-luna', default: true, hope: false },
-  { id: 'hope-12b', name: 'Hope', default: false, hope: true },
+  { id: 'gpt-6-luna', default: true },
+  { id: 'hope-12b', name: 'Hope', default: false },
 ];
 
 /** What `server/discover` says. */
