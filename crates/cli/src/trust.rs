@@ -7,9 +7,8 @@ use glave_config::trust::{Entry, Record};
 use glave_event::{
     At, Body, EventId, Header, Principal, PrincipalId, RawEvent, Seq, decode, encode,
 };
-use glave_ports::Scope;
 use glave_ports::stream::{Reserved, append_retrying, catch_up};
-use jiff::Timestamp;
+use glave_ports::{Clock as _, Scope, SystemClock};
 
 use crate::accounts::random;
 use crate::data::{Data, DataLog};
@@ -79,7 +78,7 @@ impl Trust {
 
 /// `entry` as the ledger's event at `seq`.
 fn event(entry: &Entry, seq: u64) -> anyhow::Result<RawEvent> {
-    let now = Timestamp::now();
+    let now = SystemClock.now();
     let header = Header {
         id: EventId::new(now, random()?)?,
         thread: Reserved::Trust.id(),
@@ -96,7 +95,7 @@ impl Trust {
         let root = glave_keys::InMemoryRoot::new()?;
         let keys = glave_keys::KeySettings::new(std::sync::Arc::new(root));
         let store = Data::Sqlite(glave_store_sqlite::Store::open_in_memory(keys)?);
-        let person = PrincipalId::new(Timestamp::now(), random()?)?;
+        let person = PrincipalId::new(SystemClock.now(), random()?)?;
         let trust = Self::open(&store, person).await?;
         Ok((store, trust))
     }

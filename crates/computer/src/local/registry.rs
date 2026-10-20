@@ -5,11 +5,11 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use glave_ports::computer::{
     ComputerError, ComputerId, Environment, GitCredential, Sandbox, WorkspaceId,
 };
+use glave_ports::{Clock as _, Entropy as _, OsEntropy, SystemClock};
 use uuid::{Builder, Uuid};
 
 use super::sandbox::Prepared;
@@ -81,17 +81,10 @@ pub(crate) struct Registry {
 /// A new UUID v7: this moment and the operating system's randomness, or why there is no
 /// randomness: an id is never left with a zero-filled random part.
 pub(crate) fn new_id() -> Result<Uuid, ComputerError> {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |since| {
-            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
-        });
-    let mut random = [0u8; 10];
-    getrandom::fill(&mut random).map_err(|error| {
-        ComputerError::Failed(format!(
-            "this machine's random source failed ({error}), so no id was made; try again"
-        ))
-    })?;
+    let random = OsEntropy
+        .bytes()
+        .map_err(|error| ComputerError::Failed(error.to_string()))?;
+    let millis = u64::try_from(SystemClock.now().as_millisecond()).unwrap_or(0);
     Ok(Builder::from_unix_timestamp_millis(millis, &random).into_uuid())
 }
 

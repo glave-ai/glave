@@ -5,7 +5,9 @@
 use std::path::Path;
 
 use glave_event::{At, Principal, PrincipalId};
-use glave_ports::{FolderKey, OrgId, Project, ProjectId, ProjectKind, Scope};
+use glave_ports::{
+    Clock as _, FolderKey, OrgId, Project, ProjectId, ProjectKind, Scope, SystemClock,
+};
 
 use crate::data::Data;
 use crate::system::new_uuid_v7;
@@ -17,7 +19,7 @@ async fn org(store: &Data) -> anyhow::Result<OrgId> {
 
 /// A new project record, owned by `owner`, made now.
 fn new_project(kind: ProjectKind, name: String, owner: Principal) -> anyhow::Result<Project> {
-    let now = At::from(jiff::Timestamp::now());
+    let now = At::from(SystemClock.now());
     Ok(Project {
         id: ProjectId::from_uuid(new_uuid_v7()?),
         kind,

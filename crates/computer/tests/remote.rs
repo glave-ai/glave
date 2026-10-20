@@ -11,7 +11,7 @@ use glave_computer::{
     Identity, LocalComputers, RemoteComputers, Token, connect_tls, serve, serve_tcp, serve_tls,
 };
 use glave_ports::computer::{ComputerError, ComputerId, Computers, Environment};
-use glave_ports::{block_on, conformance};
+use glave_ports::{Clock as _, SystemClock, block_on, conformance};
 use tokio::io::BufReader;
 use tokio::net::{TcpListener, TcpStream};
 
@@ -232,7 +232,11 @@ type JoinHandle = tokio::task::JoinHandle<std::io::Result<()>>;
 fn a_computer_over_tls_passes_the_suite_with_its_certificate_pinned() {
     let (_dir, work, copies) = scratch("tls");
     block_on!(async {
-        let token = Token::mint(SystemTime::now(), Duration::from_secs(600)).unwrap();
+        let token = Token::mint(
+            SystemTime::from(SystemClock.now()),
+            Duration::from_secs(600),
+        )
+        .unwrap();
         let (address, identity, serving) = tls(&copies, token.clone()).await;
         let remote = connect_tls(address, &identity.fingerprint, token.secret())
             .await

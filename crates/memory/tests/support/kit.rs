@@ -12,7 +12,7 @@ pub use glave_ports::block_on;
 use glave_ports::memories::ProjectMemory;
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
 pub use glave_ports::testing::{ScriptedModel, Seen};
-use glave_ports::{Completion, OrgId, ProjectId, RequestedCall, Scope};
+use glave_ports::{Clock, Completion, OrgId, ProjectId, RequestedCall, Scope};
 use glave_store_sqlite::{SqliteBlobs, SqliteLog, Store};
 use jiff::Timestamp;
 
@@ -70,6 +70,15 @@ pub fn rules() -> Rules {
 }
 
 /// A sealed store in memory, its clock shared with whatever is wired to it.
+/// The kit's clock as the keys read it: what it reads now, without moving it on.
+struct Reading(ManualClock);
+
+impl Clock for Reading {
+    fn now(&self) -> Timestamp {
+        Timestamp::from_millisecond(self.0.millis()).unwrap()
+    }
+}
+
 pub struct Kit {
     pub store: Store,
     pub clock: ManualClock,
@@ -79,8 +88,7 @@ impl Kit {
     pub fn new() -> Self {
         let clock = ManualClock::ticking(START);
         let mut keys = KeySettings::new(Arc::new(InMemoryRoot::new().unwrap()));
-        let reading = clock.clone();
-        keys.clock = Arc::new(move || Timestamp::from_millisecond(reading.millis()).unwrap());
+        keys.clock = Arc::new(Reading(clock.clone()));
         Self {
             store: Store::open_in_memory(keys).unwrap(),
             clock,

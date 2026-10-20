@@ -12,6 +12,7 @@ use std::sync::{Mutex, OnceLock, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use glave_ports::file::{self, WRITING};
+use glave_ports::{Clock as _, SystemClock};
 use serde::{Deserialize, Serialize};
 
 use crate::error::ProcessError;
@@ -183,7 +184,7 @@ impl Ledger {
         let Ok(listed) = std::fs::read_dir(&self.folder) else {
             return;
         };
-        let now = SystemTime::now();
+        let now = SystemTime::from(SystemClock.now());
         for path in listed.filter_map(Result::ok).map(|entry| entry.path()) {
             let old = std::fs::metadata(&path)
                 .and_then(|metadata| metadata.modified())

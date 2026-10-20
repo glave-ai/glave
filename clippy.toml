@@ -4,3 +4,7 @@ allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-panic-in-tests = true
 allow-indexing-slicing-in-tests = true
+disallowed-methods = [
+  { path = "jiff::Timestamp::now", reason = "read the time through a glave_ports::Clock: the one handed in, or SystemClock" },
+  { path = "std::time::SystemTime::now", reason = "read the time through a glave_ports::Clock: the one handed in, or SystemClock" },
+]

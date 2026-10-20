@@ -11,7 +11,7 @@ use std::sync::{Mutex, PoisonError};
 
 use glave_event::{Principal, ProviderConnected, ProviderId, ProviderKind, Secret};
 use glave_ports::auth::safe_to_send;
-use glave_ports::{BoxFuture, Failure, ProviderError};
+use glave_ports::{BoxFuture, Clock as _, Failure, ProviderError, SystemClock};
 use glave_provider_openai::Config;
 use glave_session::protocol::{ApiError, ErrorData, ProviderInfo, code, hint};
 use glave_session::{Models, NewProvider, Providers};
@@ -83,7 +83,7 @@ impl ModelAccounts {
         let key = checked_key(&new.key)?;
         let mut account = ProviderConnected {
             provider: random()
-                .and_then(|random| Ok(ProviderId::new(jiff::Timestamp::now(), random)?))
+                .and_then(|random| Ok(ProviderId::new(SystemClock.now(), random)?))
                 .map_err(|e| ApiError::internal(&e))?,
             kind: new.kind,
             url,
