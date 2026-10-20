@@ -61,9 +61,23 @@ pub(crate) async fn open(args: &Args, address: SocketAddr) -> anyhow::Result<Htt
         SignIn::new(trust, Box::new(SystemClock))?.with_local(token.clone())
     };
     let site = site(args)?;
-    let listener = TcpListener::bind(address)
-        .await
-        .with_context(|| format!("could not listen on {address}"))?;
+    let listener = match TcpListener::bind(address).await {
+        Ok(listener) => listener,
+        // The usual port, free when it was looked at and taken since, as by a second server
+        // starting beside this one (which then finds the lock held): any free one, as when it
+        // was taken before.
+        Err(error)
+            if error.kind() == std::io::ErrorKind::AddrInUse
+                && address.ip().is_loopback()
+                && address.port() == crate::server::PORT =>
+        {
+            let any = SocketAddr::new(address.ip(), 0);
+            TcpListener::bind(any)
+                .await
+                .with_context(|| format!("could not listen on {any}"))?
+        }
+        Err(error) => return Err(error).with_context(|| format!("could not listen on {address}")),
+    };
     let bound = listener.local_addr()?;
     let folder = crate::home::private().await?;
     keep(&folder.join(TOKEN_FILE), token.reveal())?;
