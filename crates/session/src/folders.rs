@@ -271,6 +271,41 @@ where
         })
     }
 
+    /// Answers `project/find`: the project the folder at `path` leads to, when the caller works
+    /// in it, making nothing.
+    pub(crate) async fn find_project(
+        &self,
+        caller: &Caller,
+        path: &str,
+    ) -> Result<Reply, ApiError> {
+        if !local(caller) {
+            return Err(only_here(
+                "a project's folder is on the computer glave runs on, so only the person there \
+                 can look for one",
+            ));
+        }
+        let person = Principal::person(self.person_of(caller)?);
+        let looked = self
+            .inner
+            .harness
+            .workspace()
+            .look(path)
+            .await
+            .map_err(|error| no_folder(path, &error))?;
+        let mut keys = vec![FolderKey::Path(looked.root)];
+        if let Some(url) = looked.origin {
+            keys.push(FolderKey::Remote(url));
+        }
+        let found = self
+            .inner
+            .projects
+            .find_folder(self.inner.org, &keys)
+            .await?
+            .filter(|project| project.kind == ProjectKind::Project && project.admits(&person));
+        let (projects, gone) = self.listed(found.into_iter().collect()).await?;
+        Ok(Reply::Projects { projects, gone })
+    }
+
     /// The folder `folder` asks for on this server's computer, for the project `name`: where
     /// it is, and where its files come from.
     pub(crate) async fn make_folder(

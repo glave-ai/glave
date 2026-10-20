@@ -11,7 +11,7 @@ Reviewed adversarially on 2026-10-17. Decisions marked *decided* were made in th
 - **2a**: built.
 - **2b**, in part: the lock, the socket, `glave serve` in the foreground, the start on first use (`glave app`, `glave` on a first run and the commands 2c moved; turns need it from PR 3), `glave server status|stop|restart`, loopback HTTP always on, the capped log, and the graceful stop: no new requests or work, 10 seconds for running turns and tasks, the rest recorded `interrupted`, the socket removed and the lock let go last, which `glave server stop` waits for.
 - **2c**: the person's settings read again by hash, with `mcp.json` reconciled and every per-turn choice following ("Its settings"); the daily work ("What runs in it on its own"); `--background`, `glave tasks`, `schedule`, `threads`, `memory`, `connect` and `connections` as its clients; the folder's task host gone, with its two locks, so `server.lock` alone keeps one glave firing schedules and recovering tasks; and `memory/*` taking the project it acts in.
-- **3**, in part: a server with no project of its own (`Server::new` takes its organization); turns answered by no one (`unattended` on `turn/start` and `goal/start`).
+- **3**, in part: a server with no project of its own (`Server::new` takes its organization); turns answered by no one (`unattended` on `turn/start` and `goal/start`); `project/find`, the lookup that makes nothing.
 - **5**, not yet: until waits are durable, a turn waiting for the person is interrupted with the rest rather than kept waiting.
 - Everything else is designed, not built.
 

@@ -123,6 +123,20 @@ impl InMemoryProjects {
     }
 }
 
+impl InMemoryProjects {
+    fn find_folder_now(
+        &self,
+        org: OrgId,
+        keys: &[FolderKey],
+    ) -> Result<Option<Project>, ProjectError> {
+        let held = self.held()?;
+        let found = keys
+            .iter()
+            .find_map(|key| held.folders.get(&(org, key.stored())).copied());
+        Ok(found.and_then(|id| held.projects.get(&(org, id)).cloned()))
+    }
+}
+
 fn personal_of(held: &Held, org: OrgId, owner: &Principal) -> Option<Project> {
     held.projects
         .iter()
@@ -221,6 +235,14 @@ impl Projects for InMemoryProjects {
         new: &'a Project,
     ) -> BoxFuture<'a, Result<Project, ProjectError>> {
         Box::pin(std::future::ready(self.folder_now(org, keys, new)))
+    }
+
+    fn find_folder<'a>(
+        &'a self,
+        org: OrgId,
+        keys: &'a [FolderKey],
+    ) -> BoxFuture<'a, Result<Option<Project>, ProjectError>> {
+        Box::pin(std::future::ready(self.find_folder_now(org, keys)))
     }
 }
 

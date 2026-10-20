@@ -431,6 +431,42 @@ fn the_person_here_sees_the_folders_in_a_folder_by_name() {
 }
 
 #[test]
+fn finding_a_folder_s_project_makes_nothing_and_finds_it_once_made() {
+    let dir = folder("projects-find");
+    let garden = dir.join("garden");
+    std::fs::create_dir_all(&garden).unwrap();
+    block_on!(async {
+        let server = server(&dir, Vec::new(), Answering::NoOne).await;
+        let path = canonical(&garden);
+        let find = || Request::ProjectFind { path: path.clone() };
+        let found = |reply: Reply| match reply {
+            Reply::Projects { projects, .. } => projects.into_iter().map(|p| p.id).collect(),
+            other => panic!("projects, not {other:?}"),
+        };
+        let listed = || Request::ProjectList { limit: None };
+        let before: Vec<ProjectId> = found(server.request(listed()).await.unwrap());
+        let none: Vec<ProjectId> = found(server.request(find()).await.unwrap());
+        assert!(none.is_empty(), "{none:?}");
+        let after: Vec<ProjectId> = found(server.request(listed()).await.unwrap());
+        assert_eq!(after, before, "finding makes nothing");
+        let folder = NewFolder::Path { path: path.clone() };
+        let (project, _) = made(
+            server
+                .request(create("garden", Some(folder)))
+                .await
+                .unwrap(),
+        );
+        let once_made: Vec<ProjectId> = found(server.request(find()).await.unwrap());
+        assert_eq!(once_made, [project.id]);
+        let missing = Request::ProjectFind {
+            path: canonical(&dir) + "/nowhere",
+        };
+        let refused = server.request(missing).await.unwrap_err();
+        assert_eq!(refused.code, code::INVALID_PARAMS, "{refused}");
+    });
+}
+
+#[test]
 fn a_caller_signed_in_elsewhere_gives_no_folder_and_sees_none() {
     let dir = folder("projects-elsewhere-caller");
     block_on!(async {
@@ -448,6 +484,7 @@ fn a_caller_signed_in_elsewhere_gives_no_folder_and_sees_none() {
         let path = dir.to_string_lossy().into_owned();
         for request in [
             Request::FolderList { path: None },
+            Request::ProjectFind { path: path.clone() },
             create("Theirs", Some(NewFolder::Path { path })),
             create("Theirs", Some(NewFolder::Empty)),
         ] {
@@ -625,6 +662,14 @@ impl Projects for Meddled {
         new: &'a Project,
     ) -> BoxFuture<'a, Result<Project, ProjectError>> {
         self.projects.folder(org, keys, new)
+    }
+
+    fn find_folder<'a>(
+        &'a self,
+        org: OrgId,
+        keys: &'a [FolderKey],
+    ) -> BoxFuture<'a, Result<Option<Project>, ProjectError>> {
+        self.projects.find_folder(org, keys)
     }
 }
 

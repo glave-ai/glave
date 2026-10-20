@@ -278,6 +278,7 @@ where
             Request::ScheduleDelete { schedule } => self.delete_schedule(caller, schedule).await,
             Request::ProjectList { limit } => self.list_projects(caller, limit).await,
             Request::ProjectGet { project } => self.get_project(caller, project).await,
+            Request::ProjectFind { path } => self.find_project(caller, &path).await,
             Request::ProjectCreate {
                 name,
                 members,

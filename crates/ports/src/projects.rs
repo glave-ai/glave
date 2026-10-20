@@ -247,4 +247,12 @@ pub trait Projects: Send + Sync {
         keys: &'a [FolderKey],
         new: &'a Project,
     ) -> BoxFuture<'a, Result<Project, ProjectError>>;
+
+    /// The project a folder leads to, as [`Projects::folder`] finds it, making nothing: the
+    /// one the first of `keys` that is known leads to, or none.
+    fn find_folder<'a>(
+        &'a self,
+        org: OrgId,
+        keys: &'a [FolderKey],
+    ) -> BoxFuture<'a, Result<Option<Project>, ProjectError>>;
 }

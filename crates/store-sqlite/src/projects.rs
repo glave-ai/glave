@@ -292,6 +292,27 @@ fn folder_now(
     Ok(project)
 }
 
+/// The project the first known of `keys` leads to in `org`, making nothing.
+fn find_folder_now(
+    connection: &Connection,
+    org: &str,
+    keys: &[FolderKey],
+) -> Result<Option<Project>, Failure> {
+    for key in keys {
+        let found = connection
+            .query_row(
+                "SELECT project FROM project_folders WHERE org = ?1 AND key = ?2",
+                params![org, key.stored()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        if let Some(id) = found {
+            return get_now(connection, org, &id);
+        }
+    }
+    Ok(None)
+}
+
 impl Projects for SqliteProjects {
     fn create<'a>(
         &'a self,
@@ -413,5 +434,14 @@ impl Projects for SqliteProjects {
     ) -> BoxFuture<'a, Result<Project, ProjectError>> {
         let (keys, new) = (keys.to_vec(), new.clone());
         Box::pin(self.with(move |connection| folder_now(connection, &org.to_string(), &keys, &new)))
+    }
+
+    fn find_folder<'a>(
+        &'a self,
+        org: OrgId,
+        keys: &'a [FolderKey],
+    ) -> BoxFuture<'a, Result<Option<Project>, ProjectError>> {
+        let keys = keys.to_vec();
+        Box::pin(self.with(move |connection| find_folder_now(connection, &org.to_string(), &keys)))
     }
 }

@@ -251,6 +251,13 @@ methods! {
         limit: Option<usize>,
     } -> [Projects],
     "project/get" => ProjectGet { project: ProjectId } -> [Project],
+    /// The project the folder at `path` on this computer leads to, as glave run there opens
+    /// it: by the folder, else by its repository's `origin`. None, and nothing made, when it
+    /// leads to none, or to one the caller does not work in. Only the person on this computer.
+    "project/find" => ProjectFind {
+        /// The folder's full path.
+        path: String,
+    } -> [Projects],
     /// A new project, owned by the caller, with `members` working in it too, and its
     /// folder, if it has one: its threads work there. A folder that already leads to a
     /// project answers that project, its name and members as they were. Only the person on
