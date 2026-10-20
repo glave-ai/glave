@@ -42,11 +42,14 @@ pub enum Reserved {
     /// `…0006`: the catalogs of the services whose model accounts a person connected
     /// (`catalog.refreshed`), in their personal project.
     Catalogs,
+    /// `…0007`: what the person's own server serves HTTPS with (`acme.registered`,
+    /// `certificate.issued`), in their personal project.
+    Certificates,
 }
 
 impl Reserved {
     /// Every ledger, by number.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Tasks,
         Self::Memory,
         Self::Accounts,
@@ -54,6 +57,7 @@ impl Reserved {
         Self::Trust,
         Self::Browsers,
         Self::Catalogs,
+        Self::Certificates,
     ];
 
     /// The ledger's id, the same in every project.
@@ -66,6 +70,7 @@ impl Reserved {
             Self::Trust => 4,
             Self::Browsers => 5,
             Self::Catalogs => 6,
+            Self::Certificates => 7,
         };
         ThreadId::reserved(number)
     }

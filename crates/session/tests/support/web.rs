@@ -67,7 +67,7 @@ pub(crate) async fn serve_with<L: EventLog + 'static>(
         server,
         signin,
         site,
-        listener,
+        listener.into(),
         async move {
             let _ = stopped.await;
         },

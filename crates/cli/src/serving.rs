@@ -6,7 +6,8 @@
 //! hashes alone, so it stays signed in across restarts. Callers
 //! on other computers sign in with OIDC (`--issuer`, `--audience`). It answers beyond this
 //! computer only once HTTPS is in place: a tunnel or a proxy in front of it serving its public
-//! origin (`[serve] origin`), through which it is reached on loopback too.
+//! origin (`[serve] origin`), through which it is reached on loopback too, or HTTPS of its own
+//! for a domain (`[serve] domain`, `https`).
 //! The web app is served at `/` beside the API: the build in `--web`, else the app built into
 //! glave (the `web` feature, which release builds turn on), else a `web` folder beside the
 //! binary.
@@ -21,7 +22,7 @@ use glave_event::PrincipalId;
 use glave_event::Secret;
 use glave_ports::SystemClock;
 use glave_ports::host::{PublicOrigin, is_loopback};
-use glave_session::http::{Files, Site};
+use glave_session::http::{Files, Listeners, Site};
 use glave_session::protocol::{Reply, Request};
 use glave_session::signin::{Browsers, LOCAL_BYTES, LocalToken, SignIn, Trust};
 use tokio::net::TcpListener;
@@ -30,6 +31,10 @@ use crate::args::Args;
 use crate::client::Glave;
 use crate::data::Data;
 use crate::system::random_uuid;
+
+mod https;
+
+pub(crate) use self::https::{Reach, keep as keep_https, reach};
 
 /// The file the local token is kept in, in glave's folder.
 pub(crate) const TOKEN_FILE: &str = "serve.token";
@@ -40,9 +45,11 @@ const WEB_FOLDER: &str = "web";
 /// The web app built into glave (the `web` feature, `build.rs`), if it is.
 static BUILT_IN: Option<Files> = include!(concat!(env!("OUT_DIR"), "/app.rs"));
 
-/// The HTTP listener, bound, with its address and token written for programs here to find.
+/// The HTTP listener, bound, with its address and token written for programs here to find,
+/// and the listener for HTTPS of glave's own beside it, with what it serves HTTPS with.
 pub(crate) struct Http {
     listener: TcpListener,
+    secure: Option<(TcpListener, Arc<glave_acme::Https<crate::data::DataLog>>)>,
     signin: SignIn,
     site: Option<Site>,
     token: LocalToken,
@@ -50,14 +57,10 @@ pub(crate) struct Http {
     folder: PathBuf,
 }
 
-/// Listens on `address` for the server `args` choose, reached from elsewhere at `origin` if
-/// anywhere, and writes its address and a new local token where programs here find them.
-pub(crate) async fn open(
-    args: &Args,
-    address: SocketAddr,
-    origin: Option<&PublicOrigin>,
-) -> anyhow::Result<Http> {
-    within_reach(address, origin)?;
+/// Listens on `address` for the server `args` choose, reached from elsewhere as `reach` says,
+/// and writes its address and a new local token where programs here find them.
+pub(crate) async fn open(args: &Args, address: SocketAddr, reach: &Reach) -> anyhow::Result<Http> {
+    within_reach(address, reach.behind())?;
     let token = LocalToken::new(random()?);
     let signin = if args.issuers.is_empty() {
         SignIn::local(token.clone(), Box::new(SystemClock))
@@ -94,12 +97,28 @@ pub(crate) async fn open(
         &format!("http://{}", here(bound)),
     )?;
     eprintln!("glave: serving the session API on http://{bound}");
-    if let Some(origin) = origin {
+    if let Some(origin) = reach.behind() {
         eprintln!(
             "glave: reached from elsewhere at {origin}, through the tunnel or proxy that serves \
              HTTPS for it"
         );
     }
+    let secure = match (&reach.https, &reach.origin) {
+        (Some(own), Some(origin)) => {
+            let listener = https::listen(args).await?;
+            let bound = listener.local_addr()?;
+            if own.ready() {
+                eprintln!("glave: serving HTTPS at {origin} on {bound}");
+            } else {
+                eprintln!(
+                    "glave: serving HTTPS at {origin} on {bound} once its certificate is in hand, \
+                     which glave is getting now"
+                );
+            }
+            Some((listener, Arc::clone(own)))
+        }
+        _ => None,
+    };
     if site.is_none() {
         eprintln!(
             "glave: no web app beside glave; build it (npm run build in web/) and pass --web <folder>"
@@ -107,6 +126,7 @@ pub(crate) async fn open(
     }
     Ok(Http {
         listener,
+        secure,
         signin,
         site,
         token,
@@ -135,8 +155,12 @@ impl Http {
         } else {
             eprintln!("glave: run glave on this computer to open glave in a browser");
         }
+        let listeners = Listeners {
+            plain: self.listener,
+            secure: self.secure.map(|(listener, https)| (listener, https.tls())),
+        };
         let ended =
-            glave_session::http::serve(server, self.signin, self.site, self.listener, stop).await;
+            glave_session::http::serve(server, self.signin, self.site, listeners, stop).await;
         // The token is good only while this server runs; the next start makes another. A newer
         // server's files are left alone.
         let kept = std::fs::read_to_string(self.folder.join(TOKEN_FILE));

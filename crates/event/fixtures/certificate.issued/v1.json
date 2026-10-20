@@ -1,0 +1,1 @@
+{"glave":1,"id":"0192f5c2-7000-7000-8000-000000000082","thread":"00000000-0000-7000-8000-000000000007","seq":2,"at":"2026-10-20T09:00:00.000Z","type":"certificate.issued","v":1,"data":{"name":"glave.example.com","chain":"fixture-not-a-real-chain","key":"fixture-not-a-real-key","not_before":"2026-10-20T09:00:00.000Z","not_after":"2027-01-18T09:00:00.000Z"}}

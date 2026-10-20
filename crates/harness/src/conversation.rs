@@ -2,7 +2,7 @@
 //! to resume a thread: nothing the model needs lives anywhere else. A compaction restarts the
 //! conversation from its summary; the events before it stay in the log.
 
-use glave_event::{Body, Event, Role};
+use glave_event::{Body, Event, Role, ToolCallRequested};
 use glave_ports::{Message, ToolCall};
 
 /// The conversation recorded in `events`, in order, from the latest compaction on.
@@ -26,20 +26,7 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
                 tool_calls: Vec::new(),
             },
         }),
-        Body::ToolCallRequested(requested) => {
-            let call = ToolCall {
-                call_id: requested.call_id.clone(),
-                tool: requested.tool.clone(),
-                arguments: requested.arguments.clone(),
-            };
-            match messages.last_mut() {
-                Some(Message::Assistant { tool_calls, .. }) => tool_calls.push(call),
-                _ => messages.push(Message::Assistant {
-                    parts: Vec::new(),
-                    tool_calls: vec![call],
-                }),
-            }
-        }
+        Body::ToolCallRequested(requested) => call(messages, requested),
         Body::ToolCallCompleted(completed) => messages.push(Message::Tool {
             call_id: completed.call_id.clone(),
             is_error: completed.is_error,
@@ -93,6 +80,25 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::BrowserUsed(_)
         | Body::BrowserSignedOut(_)
         | Body::CatalogRefreshed(_)
+        | Body::AcmeRegistered(_)
+        | Body::CertificateIssued(_)
         | Body::Unknown(_) => {}
+    }
+}
+
+/// Takes a tool call the model asked for into the conversation: with the rest of its
+/// response's calls, or as an answer of its own.
+fn call(messages: &mut Vec<Message>, requested: &ToolCallRequested) {
+    let call = ToolCall {
+        call_id: requested.call_id.clone(),
+        tool: requested.tool.clone(),
+        arguments: requested.arguments.clone(),
+    };
+    match messages.last_mut() {
+        Some(Message::Assistant { tool_calls, .. }) => tool_calls.push(call),
+        _ => messages.push(Message::Assistant {
+            parts: Vec::new(),
+            tool_calls: vec![call],
+        }),
     }
 }

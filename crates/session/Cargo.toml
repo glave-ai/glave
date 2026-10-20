@@ -35,12 +35,15 @@ jiff.workspace = true
 opentelemetry = { workspace = true, optional = true }
 # The client of a session server elsewhere (`client`), on the HTTP stack glave already uses.
 reqwest = { workspace = true, features = ["json"] }
+# HTTPS of the server's own: the handshakes, answered as glave-acme says (`http/listen.rs`).
+rustls.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 # The scheduler waits for the next due run with a timer.
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }
+tokio-rustls.workspace = true
 # A content-free span for each request.
 tracing.workspace = true
 tracing-opentelemetry = { workspace = true, optional = true }

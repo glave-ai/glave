@@ -95,8 +95,11 @@ pub struct Choices {
     /// The session server elsewhere this CLI is a client of, if any: its URL.
     pub server: Option<Chosen<String>>,
     /// Where people reach this glave from elsewhere, if they do: its public origin, for which a
-    /// tunnel or a proxy serves HTTPS. Without one, glave answers only on this computer.
+    /// tunnel or a proxy serves HTTPS, or glave itself. Without one, glave answers only on this
+    /// computer.
     pub origin: Option<Chosen<PublicOrigin>>,
+    /// The ACME directory glave's own certificate comes from, when it serves HTTPS itself.
+    pub acme: Option<Chosen<String>>,
     /// A cloud contract's models, if any, in place of `GLAVE_BASE_URL`'s server.
     pub provider: Option<Chosen<ProviderFile>>,
     /// The GitHub app people sign in to GitHub through in the browser, if one is set up.
@@ -174,9 +177,8 @@ pub(super) fn resolve(layers: &[Layer]) -> Choices {
                 .as_ref()
                 .map(|server| server.url.trim().to_owned())
         }),
-        origin: nearest(layers, "serve", |file| {
-            PublicOrigin::parse(&file.serve.as_ref()?.origin)
-        }),
+        origin: nearest(layers, "serve", |file| file.serve.as_ref()?.public_origin()),
+        acme: nearest(layers, "serve", |file| file.serve.as_ref()?.directory()),
         provider: nearest(layers, "provider", |file| file.provider.clone()),
         github: nearest(layers, "github", |file| file.github.clone()),
         store: nearest(layers, "store", |file| {

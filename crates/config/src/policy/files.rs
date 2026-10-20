@@ -126,13 +126,84 @@ pub struct ServerFile {
 }
 
 /// `[serve]`: how people reach this glave from elsewhere (`specs/one-server.md`, "Finding
-/// it"). Without it, glave answers only on this computer.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+/// it"): through a tunnel or a proxy that serves HTTPS for its `origin`, or at a `domain` glave
+/// serves HTTPS for itself. Without it, glave answers only on this computer.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ServeFile {
     /// Its public origin, such as `https://glave.example.com`, for which a tunnel or a proxy
     /// in front of glave serves HTTPS.
-    pub origin: String,
+    pub origin: Option<String>,
+    /// The name glave serves HTTPS for itself, such as `glave.example.com`, its certificate
+    /// from an ACME authority.
+    pub domain: Option<String>,
+    /// The ACME directory that certificate comes from: Let's Encrypt's when absent.
+    pub acme: Option<String>,
+}
+
+impl ServeFile {
+    /// Let's Encrypt's directory, where glave's certificate comes from unless `acme` says.
+    pub const LETS_ENCRYPT: &str = "https://acme-v02.api.letsencrypt.org/directory";
+
+    /// Where people reach glave from elsewhere: its origin, or its domain over HTTPS.
+    pub fn public_origin(&self) -> Option<PublicOrigin> {
+        match (&self.origin, &self.domain) {
+            (Some(origin), None) => PublicOrigin::parse(origin),
+            (None, Some(domain)) => Self::named(domain),
+            _ => None,
+        }
+    }
+
+    /// The ACME directory glave gets its certificate from, when it serves HTTPS itself.
+    pub fn directory(&self) -> Option<String> {
+        self.domain.as_ref()?;
+        let directory = self.acme.as_deref().unwrap_or(Self::LETS_ENCRYPT);
+        Some(directory.trim().to_owned())
+    }
+
+    /// The origin of `domain`, when it is a name and nothing more.
+    fn named(domain: &str) -> Option<PublicOrigin> {
+        let domain = domain.trim();
+        let name = domain
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');
+        name.then(|| PublicOrigin::parse(&format!("https://{domain}")))
+            .flatten()
+    }
+
+    /// What is wrong with it, if anything.
+    fn problem(&self) -> Option<String> {
+        if let Some(origin) = &self.origin
+            && PublicOrigin::parse(origin).is_none()
+        {
+            return Some(format!(
+                "origin = {origin:?} is not an address people reach glave at: https:// and its \
+                 name, such as https://glave.example.com, and nothing after it"
+            ));
+        }
+        if let Some(domain) = &self.domain
+            && Self::named(domain).is_none()
+        {
+            return Some(format!(
+                "domain = {domain:?} is not a name glave can get a certificate for, such as \
+                 glave.example.com"
+            ));
+        }
+        if self.public_origin().is_none() {
+            return Some(
+                "needs origin, where a tunnel or a proxy serves HTTPS for glave, or domain, \
+                 for which glave serves HTTPS itself: one of them"
+                    .to_owned(),
+            );
+        }
+        match (&self.acme, &self.domain) {
+            (Some(_), None) => Some("acme is for domain: where its certificate comes from".into()),
+            (Some(acme), Some(_)) if !safe_to_send(acme, &[]) => Some(format!(
+                "acme = {acme:?} is not an ACME directory's https URL"
+            )),
+            _ => None,
+        }
+    }
 }
 
 /// `[store]`: the one data store (AGENTS.md, "One of each"). The local SQLite file in glave's
@@ -469,15 +540,8 @@ pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
             server.url
         );
     }
-    if let Some(serve) = &file.serve
-        && PublicOrigin::parse(&serve.origin).is_none()
-    {
-        invalid!(
-            "{}: [serve] origin = {:?} is not an address people reach glave at: https:// and \
-             its name, such as https://glave.example.com, and nothing after it",
-            path.display(),
-            serve.origin
-        );
+    if let Some(problem) = file.serve.as_ref().and_then(ServeFile::problem) {
+        invalid!("{}: [serve] {problem}", path.display());
     }
     if let Some(url) = file.store.as_ref().and_then(|store| store.url.as_ref())
         && !StoreFile::postgres(url)

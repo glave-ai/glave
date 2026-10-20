@@ -364,6 +364,56 @@ fn where_people_reach_glave_is_the_person_s_to_say_and_only_an_https_origin() {
 }
 
 #[test]
+fn a_domain_glave_serves_https_for_is_its_origin_with_certificates_from_let_s_encrypt() {
+    let dir = scratch("domain");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let mut locations = Locations::here(&home, &dir);
+    locations.policies = vec![];
+    std::fs::write(
+        home.join("config.toml"),
+        "[serve]\ndomain = \"Glave.Example.com\"\n",
+    )
+    .unwrap();
+    let loaded = load_all(&locations, None).unwrap();
+    let origin = &loaded.choices.origin.as_ref().unwrap().value;
+    assert_eq!(origin.as_str(), "https://glave.example.com");
+    let acme = loaded.choices.acme.as_ref().unwrap();
+    assert_eq!(acme.value, ServeFile::LETS_ENCRYPT);
+    let (shown, _) = explain(&loaded, None);
+    assert!(shown.contains(ServeFile::LETS_ENCRYPT), "{shown}");
+    let elsewhere = "[serve]\ndomain = \"glave.test\"\nacme = \"https://localhost:14000/dir\"\n";
+    let file = files::config(elsewhere, &locations.person).unwrap();
+    let serve = file.serve.unwrap();
+    assert_eq!(
+        serve.directory().as_deref(),
+        Some("https://localhost:14000/dir")
+    );
+    let behind = files::config("[serve]\norigin = \"https://glave.test\"\n", &home).unwrap();
+    assert_eq!(
+        behind.serve.unwrap().directory(),
+        None,
+        "a tunnel's needs none"
+    );
+    for wrong in [
+        "origin = \"https://glave.test\"\ndomain = \"glave.test\"",
+        "acme = \"https://localhost:14000/dir\"",
+        "origin = \"https://glave.test\"\nacme = \"https://localhost:14000/dir\"",
+        "domain = \"glave.test\"\nacme = \"http://acme.example.com/dir\"",
+        "domain = \"https://glave.test\"",
+        "domain = \"glave.test:8443\"",
+        "domain = \"localhost\"",
+        "",
+    ] {
+        let text = format!("[serve]\n{wrong}\n");
+        let refused = files::config(&text, &locations.person)
+            .unwrap_err()
+            .to_string();
+        assert!(refused.contains("[serve]"), "{wrong}: {refused}");
+    }
+}
+
+#[test]
 fn the_bucket_is_the_person_s_choice_and_only_an_s3_one() {
     let dir = scratch("bucket");
     let home = dir.join("home");

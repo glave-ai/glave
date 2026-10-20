@@ -37,6 +37,8 @@ otlp = [
 [dependencies]
 anyhow.workspace = true
 getrandom.workspace = true
+# HTTPS of glave's own for a domain (`[serve] domain`): its certificate from an ACME authority.
+glave-acme.workspace = true
 glave-aws.workspace = true
 glave-azure.workspace = true
 glave-google.workspace = true
