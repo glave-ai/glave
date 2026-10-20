@@ -14,6 +14,7 @@ use glave_computer::{
     https_url, read_environment,
 };
 use glave_harness::Workers;
+use glave_ports::ProjectId;
 use glave_ports::computer::Sources;
 use glave_session::OnWorkers;
 
@@ -21,13 +22,15 @@ use crate::client::Glave;
 use crate::home;
 use glave_config::policy::{Backend, Choices, Constraints, On, WorkersFile};
 
-/// Threads on workers, when `on` is `cloud`: what the session server needs, and the workers
-/// themselves, to remove any left at the end. Tasks too work on workers only then; otherwise
-/// on a worktree here, like any thread asking for a copy.
+/// Threads of `project`, the project of `folder`, on workers, when its settings say `on` is
+/// `cloud`: what the session server needs, and the workers themselves, to remove any left at
+/// the end. Tasks too work on workers only then; otherwise on a worktree here, like any thread
+/// asking for a copy.
 pub(crate) async fn workers(
     choices: &Choices,
     constraints: &Constraints,
     folder: &Path,
+    project: ProjectId,
 ) -> anyhow::Result<(Option<OnWorkers>, Option<Arc<WorkerComputers>>)> {
     if choices.on.value != On::Cloud {
         return Ok((None, None));
@@ -55,6 +58,7 @@ pub(crate) async fn workers(
             attachments: Vec::new(),
         },
         environment: found.environment,
+        project,
     };
     Ok((Some(on), Some(computers)))
 }
@@ -214,12 +218,18 @@ mod tests {
             .build()
             .unwrap();
         let constraints = Constraints::default();
+        let project = ProjectId::from_uuid(uuid::Uuid::from_u128(1));
         let here = runtime
-            .block_on(workers(&chosen(""), &constraints, &dir))
+            .block_on(workers(&chosen(""), &constraints, &dir, project))
             .unwrap();
         assert!(here.0.is_none() && here.1.is_none(), "here by default");
         let no_backend = runtime
-            .block_on(workers(&chosen("on = \"cloud\"\n"), &constraints, &dir))
+            .block_on(workers(
+                &chosen("on = \"cloud\"\n"),
+                &constraints,
+                &dir,
+                project,
+            ))
             .unwrap_err();
         assert!(
             no_backend.to_string().contains("[workers] backend"),
@@ -227,7 +237,7 @@ mod tests {
         );
         let backend = "on = \"cloud\"\n[workers]\nbackend = \"docker\"\nglave = \"/x\"\n";
         let no_environment = runtime
-            .block_on(workers(&chosen(backend), &constraints, &dir))
+            .block_on(workers(&chosen(backend), &constraints, &dir, project))
             .unwrap_err();
         assert!(
             no_environment.to_string().contains("devcontainer.json"),

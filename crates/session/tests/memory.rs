@@ -156,10 +156,34 @@ fn a_request_that_names_a_project_acts_in_that_project_s_memory() {
             project,
         };
         let here = listed(server.request(list(None)).await.unwrap());
-        assert!(here.is_empty(), "not the server's own project's: {here:?}");
+        assert!(here.is_empty(), "not the caller's Chats': {here:?}");
         let there = listed(server.request(list(Some(other.id))).await.unwrap());
         assert_eq!(there.len(), 1);
         assert_eq!(there[0].text, "the other project ships on Fridays");
+    });
+}
+
+#[test]
+fn a_request_that_names_no_project_acts_in_the_caller_s_chats_never_the_folder_s_project() {
+    block_on!(async {
+        let (server, _store, _dir) = served("memory-chats").await;
+        let save = Request::MemorySave {
+            text: "Ada keeps her notes in Chats".into(),
+            scope: MemoryScope::Project,
+            project: None,
+        };
+        assert_eq!(listed(server.request(save).await.unwrap()).len(), 1);
+        let list = |project| Request::MemoryList {
+            scope: Some(MemoryScope::Project),
+            project,
+        };
+        let chats = listed(server.request(list(None)).await.unwrap());
+        assert_eq!(chats.len(), 1, "{chats:?}");
+        let folder = listed(server.request(list(Some(scope().project()))).await.unwrap());
+        assert!(
+            folder.is_empty(),
+            "the folder's project has none: {folder:?}"
+        );
     });
 }
 
@@ -188,8 +212,8 @@ fn another_person_may_not_change_the_persons_own_memory() {
             )
             .await
             .unwrap_err();
-        // They do not work in the server's project, so to them it is not there.
-        assert_eq!(refused.code, code::NO_PROJECT);
+        // It acts in their own Chats, and the person's own memory is still not theirs.
+        assert_eq!(refused.code, code::NOT_ALLOWED);
     });
 }
 

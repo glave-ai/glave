@@ -745,7 +745,7 @@ export type GoalStopResult = Readonly<Record<string, never>>;
 
 export type MemoryEditParams = {
   readonly memory: MemoryId;
-  /** The project whose memory, beside the person's own: the server's own when absent. */
+  /** The project whose memory, beside the person's own: the caller's Chats when absent. */
   readonly project?: ProjectId | null;
   readonly text: string;
 };
@@ -758,7 +758,7 @@ export type MemoryEditResult = {
 export type MemoryForgetParams = {
   readonly all?: boolean;
   readonly memory?: MemoryId | null;
-  /** The project whose memory, beside the person's own: the server's own when absent. */
+  /** The project whose memory, beside the person's own: the caller's Chats when absent. */
   readonly project?: ProjectId | null;
   readonly scope?: MemoryScope | null;
 };
@@ -769,7 +769,7 @@ export type MemoryForgetResult = {
 };
 
 export type MemoryListParams = {
-  /** The project whose memory, beside the person's own: the server's own when absent. */
+  /** The project whose memory, beside the person's own: the caller's Chats when absent. */
   readonly project?: ProjectId | null;
   readonly scope?: MemoryScope | null;
 };
@@ -781,7 +781,7 @@ export type MemoryListResult = {
 
 export type MemoryMoveParams = {
   readonly memory: MemoryId;
-  /** The project whose memory, beside the person's own: the server's own when absent. */
+  /** The project whose memory, beside the person's own: the caller's Chats when absent. */
   readonly project?: ProjectId | null;
   readonly scope: MemoryScope;
 };
@@ -793,7 +793,7 @@ export type MemoryMoveResult = {
 
 export type MemoryRestoreParams = {
   readonly memory: MemoryId;
-  /** The project whose memory, beside the person's own: the server's own when absent. */
+  /** The project whose memory, beside the person's own: the caller's Chats when absent. */
   readonly project?: ProjectId | null;
 };
 
@@ -803,7 +803,7 @@ export type MemoryRestoreResult = {
 };
 
 export type MemorySaveParams = {
-  /** The project whose memory, beside the person's own: the server's own when absent. */
+  /** The project whose memory, beside the person's own: the caller's Chats when absent. */
   readonly project?: ProjectId | null;
   readonly scope: MemoryScope;
   readonly text: string;
@@ -1077,10 +1077,7 @@ export type ThreadStartParams = {
    * when absent.
    */
   readonly model?: string | null;
-  /**
-   * The project the thread is in: by default the server's own, for a caller who works in
-   * it, else the caller's personal project.
-   */
+  /** The project the thread is in: by default the caller's personal project, their Chats. */
   readonly project?: ProjectId | null;
   /**
    * Whether the thread works in a worktree of its own rather than in the folder itself;

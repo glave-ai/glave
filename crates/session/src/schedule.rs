@@ -265,7 +265,7 @@ where
             .new_thread(
                 &caller,
                 // Glave's own: a schedule's run, in its project.
-                Scope::glaves_own(self.inner.home.org(), project),
+                Scope::glaves_own(self.inner.org, project),
                 None,
                 true,
                 &Choice::default(),

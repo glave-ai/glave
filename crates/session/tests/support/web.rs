@@ -32,7 +32,12 @@ pub(crate) async fn serve_http<L: EventLog + 'static>(
     server: Tested<L>,
     issuer: &Issuer,
 ) -> Served {
-    let mut home = server.home_project().await.unwrap();
+    let mut home = server
+        .projects()
+        .get(scope().org(), scope().project())
+        .await
+        .unwrap()
+        .unwrap();
     let ada = glave_session::signin::person(&issuer.url, "ada").unwrap();
     home.members.push(glave_event::Principal::person(ada));
     server

@@ -27,7 +27,7 @@ What glave takes: Claude Code's start on first use, one server per glave folder,
 ### One per glave folder
 
 - **One server per glave folder** (`GLAVE_HOME`, `~/.glave` by default), the holder of its lock. It opens the data store, holds the keys, runs the harness and the gateway, and is the only glave that fires schedules and recovers tasks, and the one whose tasks outlive the clients that start them. Other glaves may write the same store meanwhile, as today: a command run in-process where no server runs, `glave serve --stdio`'s own server, and worktree cleanup; the log's `(thread, seq)` guard and "Records from outside" (`session.md`) keep them apart. A second glave folder (tests, a second profile) is a second person's server.
-- **It has no folder of its own.** Nothing depends on where it started: no start folder's project, settings, tools or instructions. Today the in-process CLI still asks about the folder it runs in and works there, and that folder still gives every thread its skills and commands, and is the project `memory/*` acts in when a request names none, and the folder workers clone.
+- **It has no folder of its own.** Nothing depends on where it started: no start folder's project, settings, tools or instructions. Today the in-process CLI still asks about the folder it runs in and works there, and that folder still gives every thread its skills and commands, and is the folder workers clone. The server itself has no project of its own (`Server::new` takes only its organization): a request that names none acts in the caller's Chats.
 - **An organization runs the same program** (`glave serve` in a unit or a container), its people reaching it over HTTP.
 
 ### Starting

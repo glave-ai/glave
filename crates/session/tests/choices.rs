@@ -83,7 +83,12 @@ fn a_project_s_choices_reach_the_person_s_threads_in_it_never_another_s() {
             .build_in_repository("choices-project", InMemoryLog::new())
             .await;
         let grace = person("https://id.example.com", "grace").unwrap();
-        let mut home = server.home_project().await.unwrap();
+        let mut home = server
+            .projects()
+            .get(scope().org(), scope().project())
+            .await
+            .unwrap()
+            .unwrap();
         home.members.push(Principal::person(grace));
         server
             .projects()

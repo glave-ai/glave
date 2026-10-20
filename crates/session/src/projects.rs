@@ -1,9 +1,8 @@
 //! Projects over the session API, and who may do what in them (`specs/session.md`, "Projects and
-//! who may do what"). A server serves many projects of one organization: its own, any other its
-//! callers work in, and each caller's Chats, where requests that name none act. Every request
-//! that acts on a thread, or
-//! on the server's own project as a whole, is checked against the caller: they must own the
-//! thread's project or be one of its members, or it is answered before anything is read or
+//! who may do what"). A server serves many projects of one organization, with none of its own:
+//! those its callers work in, and each caller's Chats, where requests that name none act. Every
+//! request that acts on a thread, or on a project, is checked against the caller: they must own
+//! the project or be one of its members, or it is answered before anything is read or
 //! recorded exactly as a thread or project that does not exist is, so whether it exists never
 //! leaks.
 
@@ -66,45 +65,11 @@ where
             .ok_or_else(|| ApiError::new(code::INTERNAL, "this server has no person"))
     }
 
-    /// The server's own project: the folder it serves. Kept as the local person's project when
-    /// the store has no record of it yet.
-    pub async fn home_project(&self) -> Result<Project, ApiError> {
-        let home = self.inner.home;
-        if let Some(project) = self.inner.projects.get(home.org(), home.project()).await? {
-            return Ok(project);
-        }
-        let now = At::from(self.inner.harness.clock().now());
-        let project = Project {
-            id: home.project(),
-            kind: ProjectKind::Project,
-            name: "this folder".to_owned(),
-            owner: Principal::person(self.person_of(&Caller::default())?),
-            members: Vec::new(),
-            created_at: now,
-            updated_at: now,
-            revision: 0,
-        };
-        match self.inner.projects.create(home.org(), &project).await {
-            Ok(kept) => Ok(kept),
-            // Another process kept it first.
-            Err(ProjectError::Conflict(_)) => self
-                .inner
-                .projects
-                .get(home.org(), home.project())
-                .await?
-                .ok_or_else(|| no_project(home.project())),
-            Err(error) => Err(error.into()),
-        }
-    }
-
     /// The project `project` of this server's organization.
     async fn project(&self, project: ProjectId) -> Result<Project, ApiError> {
-        if project == self.inner.home.project() {
-            return self.home_project().await;
-        }
         self.inner
             .projects
-            .get(self.inner.home.org(), project)
+            .get(self.inner.org, project)
             .await?
             .ok_or_else(|| no_project(project))
     }
@@ -120,8 +85,8 @@ where
     ) -> Result<(Project, Scope), ApiError> {
         let found = self.project(project).await?;
         let person = self.person_of(caller)?;
-        let scope = Scope::of_member(self.inner.home.org(), &found, person)
-            .ok_or_else(|| no_project(project))?;
+        let scope =
+            Scope::of_member(self.inner.org, &found, person).ok_or_else(|| no_project(project))?;
         Ok((found, scope))
     }
 
@@ -151,14 +116,10 @@ where
             updated_at: At::from(now),
             revision: 0,
         };
-        let kept = self
-            .inner
-            .projects
-            .personal(self.inner.home.org(), &new)
-            .await?;
+        let kept = self.inner.projects.personal(self.inner.org, &new).await?;
         let person = self.person_of(caller)?;
-        let scope = Scope::of_member(self.inner.home.org(), &kept, person)
-            .ok_or_else(|| no_project(kept.id))?;
+        let scope =
+            Scope::of_member(self.inner.org, &kept, person).ok_or_else(|| no_project(kept.id))?;
         Ok((kept, scope))
     }
 
@@ -176,16 +137,13 @@ where
         }
     }
 
-    /// The projects `caller` works in, the server's own among them when they do: those whose
-    /// tasks and schedules they see.
+    /// The projects `caller` works in: those whose tasks and schedules they see.
     pub(crate) async fn projects_of(&self, caller: &Caller) -> Result<Vec<ProjectId>, ApiError> {
-        // The server's own project is kept first, so it is listed for those who work in it.
-        self.home_project().await?;
         let person = Principal::person(self.person_of(caller)?);
         let projects = self
             .inner
             .projects
-            .list(self.inner.home.org(), &person, MOST_PROJECTS)
+            .list(self.inner.org, &person, MOST_PROJECTS)
             .await?;
         Ok(projects.into_iter().map(|project| project.id).collect())
     }
@@ -208,7 +166,7 @@ where
             .log()
             .locate(thread)
             .await?
-            .filter(|located| located.org == self.inner.home.org())
+            .filter(|located| located.org == self.inner.org)
             .ok_or_else(|| no_thread(thread))?;
         self.places().insert(thread, located.project);
         Ok(located.project)
@@ -219,7 +177,7 @@ where
     /// own work on it (tasks, schedules, titles, recovery).
     pub(crate) async fn scope_of(&self, thread: ThreadId) -> Result<Scope, ApiError> {
         let project = self.located(thread).await?;
-        Ok(Scope::glaves_own(self.inner.home.org(), project))
+        Ok(Scope::glaves_own(self.inner.org, project))
     }
 
     /// The scope of `thread`, when `caller` works in its project; otherwise "no such thread",
@@ -241,11 +199,11 @@ where
     }
 
     /// Refuses `request` unless `caller` may make it: for a thread, they work in its project;
-    /// for a project's memory, in that project, the server's own when it names none.
+    /// for a project's memory, in the project it names (with none, their own Chats).
     pub(crate) async fn allow(&self, caller: &Caller, request: &Request) -> Result<(), ApiError> {
         if let Some(thread) = request.thread() {
             self.authorize(caller, thread).await?;
-        } else if let Some(project) = request.memory_project(self.inner.home.project()) {
+        } else if let Some(project) = request.memory_project() {
             self.member_of(caller, project).await?;
         }
         Ok(())
@@ -258,14 +216,12 @@ where
         caller: &Caller,
         limit: Option<usize>,
     ) -> Result<Reply, ApiError> {
-        // The server's own project is listed for those who work in it, record or not.
-        self.home_project().await?;
         let person = Principal::person(self.person_of(caller)?);
         let limit = limit.unwrap_or(100).clamp(1, 1_000);
         let projects = self
             .inner
             .projects
-            .list(self.inner.home.org(), &person, limit)
+            .list(self.inner.org, &person, limit)
             .await?;
         let (projects, gone) = self.listed(projects).await?;
         Ok(Reply::Projects { projects, gone })
@@ -296,11 +252,7 @@ where
         if let Some(folder) = folder {
             return self.create_with_folder(caller, project, folder).await;
         }
-        let project = self
-            .inner
-            .projects
-            .create(self.inner.home.org(), &project)
-            .await?;
+        let project = self.inner.projects.create(self.inner.org, &project).await?;
         Ok(Reply::Project {
             project,
             folder: None,
@@ -338,12 +290,7 @@ where
             found.updated_at = At::from(self.inner.harness.clock().now());
             tries += 1;
             // Changed by someone else since it was read: the name goes on what they left.
-            match self
-                .inner
-                .projects
-                .update(self.inner.home.org(), &found)
-                .await
-            {
+            match self.inner.projects.update(self.inner.org, &found).await {
                 Err(ProjectError::Changed(_)) if tries < UPDATE_TRIES => {}
                 updated => break updated?,
             }

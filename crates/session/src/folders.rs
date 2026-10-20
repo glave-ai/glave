@@ -125,7 +125,7 @@ where
     /// removed since, and the `seq` of the ledger's last event.
     async fn read_project_ledger(&self, project: ProjectId) -> Result<ProjectLedger, ApiError> {
         // Glave's own: the project's ledger of folders.
-        let scope = Scope::glaves_own(self.inner.home.org(), project);
+        let scope = Scope::glaves_own(self.inner.org, project);
         let mut read = ProjectLedger::default();
         let log = self.inner.harness.log();
         catch_up(log, &scope, Reserved::Project.id(), None, |page| {
@@ -159,7 +159,7 @@ where
     ) -> Result<(), ApiError> {
         let ledger = Reserved::Project.id();
         // Glave's own: the project's ledger of folders.
-        let scope = Scope::glaves_own(self.inner.home.org(), project);
+        let scope = Scope::glaves_own(self.inner.org, project);
         let (this, next) = (self, &next);
         let log = self.inner.harness.log();
         append_retrying(log, &scope, ledger, move || async move {
@@ -254,7 +254,7 @@ where
         let project = self
             .inner
             .projects
-            .folder(self.inner.home.org(), &keys, &new)
+            .folder(self.inner.org, &keys, &new)
             .await?;
         if project.kind != ProjectKind::Project || !project.admits(&person) {
             return Err(ApiError::new(

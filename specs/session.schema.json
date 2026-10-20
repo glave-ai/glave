@@ -2444,7 +2444,7 @@
                 "type": "null"
               }
             ],
-            "description": "The project whose memory, beside the person's own: the server's own when absent."
+            "description": "The project whose memory, beside the person's own: the caller's Chats when absent."
           },
           "text": {
             "type": "string"
@@ -2498,7 +2498,7 @@
                 "type": "null"
               }
             ],
-            "description": "The project whose memory, beside the person's own: the server's own when absent."
+            "description": "The project whose memory, beside the person's own: the caller's Chats when absent."
           },
           "scope": {
             "anyOf": [
@@ -2542,7 +2542,7 @@
                 "type": "null"
               }
             ],
-            "description": "The project whose memory, beside the person's own: the server's own when absent."
+            "description": "The project whose memory, beside the person's own: the caller's Chats when absent."
           },
           "scope": {
             "anyOf": [
@@ -2589,7 +2589,7 @@
                 "type": "null"
               }
             ],
-            "description": "The project whose memory, beside the person's own: the server's own when absent."
+            "description": "The project whose memory, beside the person's own: the caller's Chats when absent."
           },
           "scope": {
             "$ref": "#/$defs/MemoryScope"
@@ -2633,7 +2633,7 @@
                 "type": "null"
               }
             ],
-            "description": "The project whose memory, beside the person's own: the server's own when absent."
+            "description": "The project whose memory, beside the person's own: the caller's Chats when absent."
           }
         },
         "required": [
@@ -2670,7 +2670,7 @@
                 "type": "null"
               }
             ],
-            "description": "The project whose memory, beside the person's own: the server's own when absent."
+            "description": "The project whose memory, beside the person's own: the caller's Chats when absent."
           },
           "scope": {
             "$ref": "#/$defs/MemoryScope"
@@ -3552,7 +3552,7 @@
                 "type": "null"
               }
             ],
-            "description": "The project the thread is in: by default the server's own, for a caller who works in\nit, else the caller's personal project."
+            "description": "The project the thread is in: by default the caller's personal project, their Chats."
           },
           "worktree": {
             "description": "Whether the thread works in a worktree of its own rather than in the folder itself;\nthe server's default (`worktree` in `config.toml`) when absent.",
