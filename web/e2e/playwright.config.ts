@@ -65,6 +65,11 @@ export default defineConfig({
   workers: Number(process.env['GLAVE_TEST_THREADS']) || undefined,
   forbidOnly: process.env['CI'] !== undefined,
   retries: 0,
+  // Time limits are guards against a hang, not speed limits, as for the unit tests
+  // (vitest.config.mjs) and nextest: a page that answers in a second on an idle machine can
+  // take twenty on a laptop busy with other builds. A test gets 3 minutes, each expectation 30 s.
+  timeout: 180_000,
+  expect: { timeout: 30_000 },
   reporter: [['list']],
   use: {
     baseURL: APP_URL,
