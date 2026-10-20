@@ -2,12 +2,10 @@
 //! and is the local person, recorded as signed in `local`; without the token, or with another,
 //! it is refused; and the token is refused from any other computer.
 
-use std::net::IpAddr;
-
 use glave_event::AuthMethod;
 use glave_session::Answering;
 use glave_session::protocol::{Meta, Request, code};
-use glave_session::signin::{LocalToken, SignIn, SignInError};
+use glave_session::signin::{Door, LocalToken, SignIn, SignInError};
 use serde_json::{Value, json};
 
 use crate::support::issuer::fixed_clock;
@@ -105,16 +103,17 @@ fn the_local_token_is_refused_from_another_computer() {
     block_on!(async {
         let token = LocalToken::new([9; 32]);
         let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
-        let here: IpAddr = "127.0.0.1".parse().unwrap();
-        let there: IpAddr = "192.168.1.20".parse().unwrap();
-        let caller = signin.verify_from(token.reveal(), here).await.unwrap();
+        let caller = signin
+            .verify_from(token.reveal(), Door::Here)
+            .await
+            .unwrap();
         assert_eq!(caller.person, None, "the local person");
         assert_eq!(caller.auth.map(|auth| auth.method), Some(AuthMethod::Local));
-        assert!(matches!(
-            signin.verify_from(token.reveal(), there).await,
-            Err(SignInError::NotLoopback)
-        ));
-        let ipv6: IpAddr = "::1".parse().unwrap();
-        assert!(signin.verify_from(token.reveal(), ipv6).await.is_ok());
+        for there in [Door::Public, Door::Elsewhere] {
+            assert!(matches!(
+                signin.verify_from(token.reveal(), there).await,
+                Err(SignInError::NotLoopback)
+            ));
+        }
     });
 }

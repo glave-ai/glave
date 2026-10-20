@@ -278,19 +278,37 @@ mod reached {
     fn beyond_this_computer_glave_listens_only_behind_https() {
         let place = place("serve-exposed");
         let model = FakeServer::start(vec![]).unwrap();
-        let args = [
-            "serve",
-            "--http",
-            "0.0.0.0:0",
-            "--issuer",
-            "https://id.example.com",
-            "--audience",
-            "glave",
-        ];
-        let refused = glave(&place, &model, &args, "");
+        let refused = glave(&place, &model, &["serve", "--http", "0.0.0.0:0"], "");
         assert!(!refused.status.success());
         let said = text(&refused);
         assert!(said.contains("nothing serving HTTPS"), "{said}");
         assert!(said.contains("origin under [serve]"), "{said}");
+    }
+
+    #[test]
+    fn glave_server_link_prints_a_setup_link_where_glave_is_reached_from_elsewhere() {
+        let place = place("serve-link");
+        let model = FakeServer::start(vec![]).unwrap();
+        let (served, _) = serve_http(&place, &model, &[]);
+        let refused = glave(&place, &model, &["server", "link"], "");
+        assert!(!refused.status.success());
+        let said = text(&refused);
+        assert!(said.contains("reached only on this computer"), "{said}");
+        drop(served);
+        choose(
+            &place,
+            "serve",
+            "{ origin = \"https://glave.example.com\" }",
+        );
+        choose(&place, "titles", "false");
+        let (_served, _) = serve_http(&place, &model, &[]);
+        let linked = glave(&place, &model, &["server", "link"], "");
+        let said = text(&linked);
+        assert!(linked.status.success(), "{said}");
+        let (_, code) = said
+            .split_once("https://glave.example.com/#setup=")
+            .unwrap();
+        let code: String = code.chars().take_while(char::is_ascii_hexdigit).collect();
+        assert_eq!(code.len(), 64, "{said}");
     }
 }

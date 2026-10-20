@@ -130,8 +130,10 @@ fn serving_over_http_needs_sign_in() {
     let local = parse_words(&["serve", "--http", "8080"]).unwrap();
     assert_eq!(local.http, Some("127.0.0.1:8080".parse().unwrap()));
     assert!(parse_words(&["serve", "--http", "[::1]:8080"]).is_ok());
-    let exposed = parse_words(&["serve", "--http", "0.0.0.0:9"]).unwrap_err();
-    assert!(exposed.contains("--issuer"), "{exposed}");
+    // Beyond this computer, passkeys sign people in, where HTTPS is in front: the server
+    // checks that as it starts, from its settings.
+    let reached = parse_words(&["serve", "--http", "0.0.0.0:9"]).unwrap();
+    assert_eq!(reached.http, Some("0.0.0.0:9".parse().unwrap()));
     let half = parse_words(&["serve", "--http", "8080", "--issuer", "i"]).unwrap_err();
     assert!(half.contains("go together"), "{half}");
     assert!(parse_words(&["serve", "--http", "8080", "--stdio"]).is_err());

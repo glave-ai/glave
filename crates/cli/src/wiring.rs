@@ -145,7 +145,7 @@ pub(crate) async fn wire(
         memory: memory.as_ref().map(crate::memory::Running::handle),
         project_folders: Some(Arc::clone(&projects) as Arc<dyn glave_harness::ProjectFolders>),
         trust: Some(Arc::clone(&projects) as Arc<dyn ProjectTrust>),
-        browsers: crate::serving::browsers(args, &store, identity.person).await?,
+        browsers: crate::serving::browsers(args, choices, &store, identity.person).await?,
         origin: choices.origin.as_ref().map(|origin| origin.value.clone()),
         ..Wiring::new(
             lined.switch,

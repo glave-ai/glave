@@ -3,8 +3,10 @@
 //! token. The answer is JSON, or for `turn/start` a
 //! `text/event-stream` of the turn's notifications ending with its response. The method may
 //! also be named in the `Glave-Method` header, for proxies and logs; when it is, it must match.
-//! Every request needs a valid sign-in, but `server/discover` and, from this computer,
-//! `signin/redeem`: without one the answer is HTTP 401 with error `-32013`. Served with a
+//! Every request needs a valid sign-in, but `server/discover`, from this computer
+//! `signin/redeem`, and anywhere but where the server has no public origin the passkey methods
+//! that sign a browser in: without one the answer is HTTP 401 with error `-32013`. Which way
+//! a request came in, its door, is the listener's and the request's (`hosts`). Served with a
 //! [`Site`], any `GET` is the web app instead (`site`), with no sign-in: the app signs in to
 //! the API itself. A foreign `Host` on a loopback listener, or a page of another origin, is
 //! refused (`hosts`). Beside plain HTTP, the server may serve HTTPS of its own (`listen`).
@@ -19,7 +21,6 @@ pub use self::site::{Files, NoSite, Site};
 
 use std::convert::Infallible;
 use std::future::{Future, poll_fn};
-use std::net::IpAddr;
 use std::pin::{Pin, pin};
 use std::sync::Arc;
 use std::time::Duration;
@@ -34,19 +35,20 @@ use hyper_util::rt::{TokioIo, TokioTimer};
 use tokio::task::JoinSet;
 
 use self::body::Answer;
+use self::hosts::door;
 use self::listen::connected;
 use crate::dispatch::Answered;
 use crate::protocol::{ApiError, Request, code};
 use crate::rpc::{Id, parse, respond};
 use crate::server::Server;
-use crate::signin::{SignIn, SignInError};
-use glave_ports::host::is_loopback;
+use crate::signin::{Door, SignIn, SignInError};
 
 /// The largest request body accepted, in bytes.
 const MAX_BODY: usize = 16 * 1024 * 1024;
 
-/// The largest request body accepted without a sign-in, in bytes: room for a code.
-const MAX_OPEN_BODY: usize = 4 * 1024;
+/// The largest request body accepted without a sign-in, in bytes: room for a code, or a
+/// passkey's answer.
+const MAX_OPEN_BODY: usize = 16 * 1024;
 
 /// Connections served at once.
 const MAX_CONNECTIONS: usize = 1_024;
@@ -107,10 +109,9 @@ where
             let service = service_fn(move |request: HttpRequest<Incoming>| {
                 let (server, signin, site) =
                     (server.clone(), Arc::clone(&signin), Arc::clone(&site));
-                let foreign = hosts
-                    .as_ref()
-                    .as_ref()
-                    .is_some_and(|hosts| !hosts.allow(request.headers()));
+                let names = hosts.as_ref().as_ref();
+                let foreign = names.is_some_and(|hosts| !hosts.allow(request.headers()));
+                let door = door(names, request.headers(), peer);
                 async move {
                     if foreign {
                         return Ok::<_, Infallible>(plain(StatusCode::FORBIDDEN));
@@ -119,7 +120,7 @@ where
                         Some(site) if is_read(request.method()) => {
                             site.answer(request.uri().path()).await
                         }
-                        _ => answer(&server, &signin, peer, request).await,
+                        _ => answer(&server, &signin, door, request).await,
                     };
                     Ok::<_, Infallible>(answered)
                 }
@@ -141,11 +142,11 @@ where
     Ok(())
 }
 
-/// Answers one HTTP request.
+/// Answers one HTTP request, which came in at `door`.
 async fn answer<P, L, B>(
     server: &Server<P, L, B>,
     signin: &SignIn,
-    peer: IpAddr,
+    door: Door,
     request: HttpRequest<Incoming>,
 ) -> Response<Answer>
 where
@@ -165,7 +166,7 @@ where
     }
     let token = bearer(request.headers()).map(str::to_owned);
     let caller = match &token {
-        Some(token) => match signin.verify_from(token, peer).await {
+        Some(token) => match signin.verify_from(token, door).await {
             Ok(caller) => Some(caller),
             Err(refused) => return unauthorized(&refused),
         },
@@ -184,7 +185,7 @@ where
     };
     let caller = match caller {
         Some(caller) => caller,
-        None => match open(&request, peer) {
+        None => match open(&request, door) {
             // Neither reads who calls.
             Ok(()) => glave_ports::Caller::default(),
             Err(refused) => return unauthorized(&refused),
@@ -222,13 +223,23 @@ async fn message(
     Ok((id, request))
 }
 
-/// Whether `request` may be answered without a sign-in, from `peer`: what the server is, and
-/// trading a link's code for a session from this computer.
-fn open(request: &Request, peer: IpAddr) -> Result<(), SignInError> {
+/// Whether `request` may be answered without a sign-in, coming in at `door`: what the server
+/// is; trading a link's code for a session, from this computer; and signing a browser in with
+/// a passkey, or making the first with a setup link's code, but where the server has no public
+/// origin.
+fn open(request: &Request, door: Door) -> Result<(), SignInError> {
     match request {
         Request::Discover {} => Ok(()),
-        Request::SigninRedeem { .. } if is_loopback(peer) => Ok(()),
+        Request::SigninRedeem { .. } if door == Door::Here => Ok(()),
         Request::SigninRedeem { .. } => Err(SignInError::NotLoopback),
+        Request::PasskeyCreateOptions { .. }
+        | Request::PasskeyCreate { .. }
+        | Request::PasskeyGetOptions {}
+        | Request::PasskeyGet { .. }
+            if door != Door::Elsewhere =>
+        {
+            Ok(())
+        }
         _ => Err(SignInError::Missing),
     }
 }

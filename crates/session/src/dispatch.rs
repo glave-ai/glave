@@ -103,9 +103,34 @@ where
                     approval: self.inner.harness.defaults().approval,
                     approvals: self.modes(),
                     id: self.server_id(),
+                    origin: self.inner.origin.as_ref().map(ToString::to_string),
+                    signin: self.signin_ways(),
                 }))
             }
             Request::SigninLink {} => self.link(caller),
+            Request::SigninSetup {} => self.setup(caller),
+            Request::PasskeyCreateOptions { code } => self.create_options(&code),
+            Request::PasskeyCreate {
+                ceremony,
+                credential,
+                name,
+            } => self.create(&ceremony, &credential, name.as_deref()).await,
+            Request::PasskeyAddOptions {} => self.add_options(caller),
+            Request::PasskeyAdd {
+                ceremony,
+                credential,
+                name,
+            } => {
+                self.add(caller, &ceremony, &credential, name.as_deref())
+                    .await
+            }
+            Request::PasskeyGetOptions {} => self.get_options(),
+            Request::PasskeyGet {
+                ceremony,
+                credential,
+            } => self.get(&ceremony, &credential).await,
+            Request::PasskeyList {} => self.passkeys(caller),
+            Request::PasskeyRemove { passkey } => self.remove_passkey(caller, &passkey).await,
             Request::SigninRedeem { code } => self.redeem(code.expose()).await,
             Request::SigninEnd {} => self.end_session(caller).await,
             Request::SigninEndOthers {} => self.end_others(caller).await,

@@ -11,7 +11,7 @@ use glave_ports::testing::ManualClock;
 use glave_session::Answering;
 use glave_session::client::Remote;
 use glave_session::protocol::{Reply, Request, code};
-use glave_session::signin::{Browsers, LocalToken, SignIn, Trust};
+use glave_session::signin::{Browsers, Door, LocalToken, SignIn, SignInError, Trust};
 use serde_json::{Value, json};
 
 use crate::support::issuer::{AUDIENCE, Issuer, NOW, Signer, fixed_clock};
@@ -167,14 +167,13 @@ fn a_session_is_one_servers_and_this_computers_alone() {
 
         let browsers = browsers(&ours, &fixed_clock()).await;
         let signin = SignIn::local(token.clone(), Box::new(fixed_clock())).with_browsers(browsers);
-        let there = "192.168.1.20".parse().unwrap();
-        assert!(signin.verify_from(&session, there).await.is_err());
-        assert!(
-            signin
-                .verify_from(&session, "127.0.0.1".parse().unwrap())
-                .await
-                .is_ok()
-        );
+        for there in [Door::Public, Door::Elsewhere] {
+            assert!(matches!(
+                signin.verify_from(&session, there).await,
+                Err(SignInError::OnlyThere)
+            ));
+        }
+        assert!(signin.verify_from(&session, Door::Here).await.is_ok());
         served.close().await;
         other.close().await;
     });

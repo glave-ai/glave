@@ -165,6 +165,26 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         ("signin/end", vec![json!({"@caller": "@session"})]),
         // Ends every session but the caller's own: there is no one else's to name.
         ("signin/end_others", vec![json!({})]),
+        ("signin/setup", vec![json!({})]),
+        // Passkeys are the person's own, on their own server: a request or a passkey is named
+        // by an id only its server's browsers ledger knows.
+        ("passkey/create_options", vec![json!({"code": "@code"})]),
+        (
+            "passkey/create",
+            vec![json!({"ceremony": "x", "credential": {}})],
+        ),
+        ("passkey/add_options", vec![json!({})]),
+        (
+            "passkey/add",
+            vec![json!({"ceremony": "x", "credential": {}})],
+        ),
+        ("passkey/get_options", vec![json!({})]),
+        (
+            "passkey/get",
+            vec![json!({"ceremony": "x", "credential": {}})],
+        ),
+        ("passkey/list", vec![json!({})]),
+        ("passkey/remove", vec![json!({"passkey": "x"})]),
         ("model/list", vec![json!({})]),
         (
             "thread/start",

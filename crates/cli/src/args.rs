@@ -41,11 +41,14 @@ Usage:
                                 unless --http says where. A browser on this computer signs
                                 in by a link glave prints or opens, good once for five
                                 minutes, and stays signed in; programs here use the token
-                                in GLAVE_HOME/serve.token, made at every start; with
-                                --issuer and --audience, clients elsewhere sign in with an
-                                OIDC access token from that issuer for that audience.
-                                The address is host:port, or a port on 127.0.0.1; without
-                                --issuer it must be this computer's. The listener has no
+                                in GLAVE_HOME/serve.token, made at every start. Reached
+                                from elsewhere, at origin or domain under [serve] in
+                                config.toml, a browser there signs in with a passkey: the
+                                first made through a link glave server link prints here.
+                                With --issuer and --audience, clients elsewhere sign in
+                                with an OIDC access token from that issuer for that
+                                audience. The address is host:port, or a port on
+                                127.0.0.1. The listener has no
                                 TLS: beyond this computer, a tunnel or a proxy that serves
                                 HTTPS goes in front, and origin under [serve] in config.toml
                                 says where people reach it (https://glave.example.com); a
@@ -61,9 +64,10 @@ Usage:
                                 the glave binary, if any. Anyone who reaches the listener
                                 gets a folder's files without signing in, so it must hold
                                 only the build and must not be writable by an agent
-  glave server status|stop|restart
-                                whether glave runs for you in the background, stop it, or
-                                restart it from this terminal (glave server --help)
+  glave server status|stop|restart|link
+                                whether glave runs for you in the background, stop it,
+                                restart it from this terminal, or print a link that makes
+                                a passkey on a device elsewhere (glave server --help)
   glave gateway serve --http <address> --issuer <url> --audience <name>
                                 serve the gateway to an organization: model calls and the
                                 tool catalog, every call signed in (glave gateway --help)
@@ -478,17 +482,8 @@ fn transport(args: &Args) -> Result<(), String> {
     if stdio && signs_in {
         return Err("--issuer and --audience are for --http; stdio needs no sign-in".into());
     }
-    if let Some(address) = args.http {
-        if args.issuers.is_empty() != args.audience.is_none() {
-            return Err("--issuer and --audience go together: OIDC needs both".into());
-        }
-        if args.issuers.is_empty() && !address.ip().is_loopback() {
-            return Err(format!(
-                "glave serve --http {address} would listen beyond this computer: without \
-                 --issuer <url> and --audience <name> only a browser here can sign in, so \
-                 listen on 127.0.0.1 or ::1"
-            ));
-        }
+    if args.http.is_some() && args.issuers.is_empty() != args.audience.is_none() {
+        return Err("--issuer and --audience go together: OIDC needs both".into());
     }
     Ok(())
 }

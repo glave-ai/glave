@@ -7,9 +7,10 @@
 //! cannot know, so it checks no `Host`; with a public origin it refuses every other page, and
 //! without one it checks nothing.
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 
-use glave_ports::host::{PublicOrigin, is_loopback};
+use glave_identity::Door;
+use glave_ports::host::{PublicOrigin, is_loopback, is_this_computer};
 use hyper::header::{self, HeaderMap};
 
 /// What a listener answers to.
@@ -73,6 +74,37 @@ impl ListenerNames {
             }
         }
     }
+}
+
+/// Which way a request with `headers` from `peer` came in, to a listener with `names` (none
+/// where it checks no names): through the public origin when it came to that name, or to a
+/// listener beyond this computer from elsewhere; else from this computer to the server's own
+/// address when it came from here, and from elsewhere when not.
+pub(crate) fn door(names: Option<&ListenerNames>, headers: &HeaderMap, peer: IpAddr) -> Door {
+    let host = headers
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    match names {
+        Some(ListenerNames::Loopback {
+            origin: Some(origin),
+            ..
+        }) if origin.authority().eq_ignore_ascii_case(host) => Door::Public,
+        Some(ListenerNames::Loopback { .. }) => Door::Here,
+        Some(ListenerNames::Public(_)) if is_loopback(peer) && here(host) => Door::Here,
+        Some(ListenerNames::Public(_)) => Door::Public,
+        None if is_loopback(peer) => Door::Here,
+        None => Door::Elsewhere,
+    }
+}
+
+/// Whether `host`, a `Host` header's name and any port, names this computer.
+fn here(host: &str) -> bool {
+    let name = match host.rsplit_once(':') {
+        Some((name, port)) if port.bytes().all(|b| b.is_ascii_digit()) => name,
+        _ => host,
+    };
+    is_this_computer(name)
 }
 
 #[cfg(test)]
@@ -155,6 +187,34 @@ mod tests {
         assert!(hosts.allow(&headers(None, Some("https://glave.example.com"))));
         assert!(!hosts.allow(&headers(None, Some("https://evil.example.com"))));
         assert!(!hosts.allow(&headers(None, Some("http://10.0.0.5:8080"))));
+    }
+
+    #[test]
+    fn a_request_comes_in_here_through_the_public_origin_or_from_elsewhere() {
+        let at = |text: &str| text.parse::<IpAddr>().unwrap();
+        let (local, remote) = (at("127.0.0.1"), at("203.0.113.9"));
+        let origin = PublicOrigin::parse("https://glave.example.com").unwrap();
+        let tunnel = ListenerNames::of("127.0.0.1:4180".parse().unwrap(), Some(&origin));
+        let named = |host| headers(Some(host), None);
+        let came = |names: Option<&ListenerNames>, host, peer| door(names, &named(host), peer);
+        assert_eq!(came(tunnel.as_ref(), "127.0.0.1:4180", local), Door::Here);
+        assert_eq!(
+            came(tunnel.as_ref(), "glave.example.com", local),
+            Door::Public
+        );
+        let beyond = ListenerNames::of("0.0.0.0:443".parse().unwrap(), Some(&origin));
+        assert_eq!(
+            came(beyond.as_ref(), "glave.example.com", remote),
+            Door::Public
+        );
+        assert_eq!(
+            came(beyond.as_ref(), "glave.example.com", local),
+            Door::Public
+        );
+        assert_eq!(came(beyond.as_ref(), "localhost:443", local), Door::Here);
+        assert_eq!(came(beyond.as_ref(), "localhost:443", remote), Door::Public);
+        assert_eq!(came(None, "10.0.0.5:8080", remote), Door::Elsewhere);
+        assert_eq!(came(None, "127.0.0.1:8080", local), Door::Here);
     }
 
     #[test]

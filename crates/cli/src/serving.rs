@@ -18,12 +18,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context as _, bail};
+use glave_config::policy::Choices;
 use glave_event::PrincipalId;
 use glave_event::Secret;
 use glave_ports::SystemClock;
 use glave_ports::host::{PublicOrigin, is_loopback};
 use glave_session::http::{Files, Listeners, Site};
-use glave_session::protocol::{Reply, Request};
+use glave_session::protocol::{Reply, Request, SignInWay};
 use glave_session::signin::{Browsers, LOCAL_BYTES, LocalToken, SignIn, Trust};
 use tokio::net::TcpListener;
 
@@ -152,6 +153,12 @@ impl Http {
                  for five minutes; glave opens another)",
                 code.expose()
             );
+            if let Some(setup) = first_setup(&server).await? {
+                eprintln!(
+                    "glave: to sign in from elsewhere, open {setup} on that device: it works \
+                     once, for ten minutes, and makes a passkey there"
+                );
+            }
         } else {
             eprintln!("glave: run glave on this computer to open glave in a browser");
         }
@@ -206,25 +213,34 @@ fn site(args: &Args) -> anyhow::Result<Option<Site>> {
 }
 
 /// The browsers a server signs in, when it serves over HTTP: kept in the store, in the
-/// browsers ledger of `person`'s personal project, so a browser's session outlives a restart.
+/// browsers ledger of `person`'s personal project, so a browser's session outlives a restart;
+/// with passkeys where `choices` say it is reached from elsewhere.
 pub(crate) async fn browsers(
     args: &Args,
+    choices: &Choices,
     store: &Data,
     person: PrincipalId,
 ) -> anyhow::Result<Option<Arc<Browsers>>> {
     if args.http.is_none() {
         return Ok(None);
     }
-    open_browsers(store, person)
+    let origin = choices.origin.as_ref().map(|origin| &origin.value);
+    open_browsers(store, person, origin)
         .await
         .map(|browsers| Some(Arc::new(browsers)))
 }
 
-/// The browsers of `person` in `store`, signed in by the server whose id the store keeps.
-async fn open_browsers(store: &Data, person: PrincipalId) -> anyhow::Result<Browsers> {
+/// The browsers of `person` in `store`, signed in by the server whose id the store keeps,
+/// reached from elsewhere at `origin` if anywhere.
+async fn open_browsers(
+    store: &Data,
+    person: PrincipalId,
+    origin: Option<&PublicOrigin>,
+) -> anyhow::Result<Browsers> {
     let server = store.server(random_uuid()?).await?.to_string();
     let scope = crate::projects::personal(store, person).await?;
-    Ok(Browsers::open(store.log(), scope, server, None, Box::new(SystemClock)).await?)
+    let clock = Box::new(SystemClock);
+    Ok(Browsers::open(store.log(), scope, server, origin, clock).await?)
 }
 
 /// A new one-time code for a sign-in link, from `server`.
@@ -233,6 +249,30 @@ async fn link(server: &Glave) -> anyhow::Result<Secret> {
         Reply::Link { code } => Ok(code),
         other => anyhow::bail!("asked for a sign-in link, the server answered {other:?}"),
     }
+}
+
+/// A setup link for a device elsewhere, from `server`, when it is reached from there and no
+/// passkey signs anyone in yet.
+async fn first_setup(server: &Glave) -> anyhow::Result<Option<String>> {
+    let Reply::Server(info) = server.request(Request::Discover {}).await? else {
+        return Ok(None);
+    };
+    let Some(origin) = info
+        .origin
+        .filter(|_| info.signin.contains(&SignInWay::Passkey))
+    else {
+        return Ok(None);
+    };
+    let Reply::Passkeys { passkeys } = server.request(Request::PasskeyList {}).await? else {
+        return Ok(None);
+    };
+    if !passkeys.is_empty() {
+        return Ok(None);
+    }
+    let Reply::Link { code } = server.request(Request::SigninSetup {}).await? else {
+        return Ok(None);
+    };
+    Ok(Some(format!("{origin}/#setup={}", code.expose())))
 }
 
 /// Random bytes for the local token, from the operating system.
@@ -274,12 +314,12 @@ mod tests {
             let keys = glave_keys::KeySettings::new(Arc::new(root));
             let store = Data::Sqlite(glave_store_sqlite::Store::open_in_memory(keys).unwrap());
             let person = PrincipalId::new(SystemClock.now(), [1; 10]).unwrap();
-            let first = open_browsers(&store, person).await.unwrap();
+            let first = open_browsers(&store, person, None).await.unwrap();
             let code = first.link().unwrap();
             let session = first.redeem(code.expose()).await.unwrap();
-            let again = open_browsers(&store, person).await.unwrap();
+            let again = open_browsers(&store, person, None).await.unwrap();
             assert_eq!(again.server(), first.server());
-            assert!(again.verify(session.token.expose()).await.is_ok());
+            assert!(again.verify(session.token.expose(), true).await.is_ok());
         });
     }
 

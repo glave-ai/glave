@@ -85,11 +85,11 @@ fn a_session_survives_a_restart_and_the_store_keeps_only_hashes() {
         assert!(!kept.contains(code.expose()), "no code kept");
         let again = open(store.log(), &clock).await;
         assert_eq!(
-            again.verify(session.token.expose()).await.unwrap(),
+            again.verify(session.token.expose(), true).await.unwrap(),
             session.id
         );
         assert!(matches!(
-            again.verify(&format!("{SESSION_PREFIX}00")).await,
+            again.verify(&format!("{SESSION_PREFIX}00"), true).await,
             Err(BrowserError::Ended)
         ));
     });
@@ -104,7 +104,7 @@ fn a_browser_signed_in_on_one_server_is_signed_in_on_another_on_the_same_store()
         let second = open(store.log(), &clock).await;
         let session = first.redeem(first.link().unwrap().expose()).await.unwrap();
         assert_eq!(
-            second.verify(session.token.expose()).await.unwrap(),
+            second.verify(session.token.expose(), true).await.unwrap(),
             session.id
         );
         // Both write; neither loses the other's.
@@ -114,12 +114,15 @@ fn a_browser_signed_in_on_one_server_is_signed_in_on_another_on_the_same_store()
             .unwrap();
         first.end(&session.id).await.unwrap();
         assert!(
-            second.verify(session.token.expose()).await.is_ok(),
+            second.verify(session.token.expose(), true).await.is_ok(),
             "until it looks again"
         );
         second.end_others(Some(&other.id)).await.unwrap();
-        assert_eq!(first.verify(other.token.expose()).await.unwrap(), other.id);
-        assert!(first.verify(session.token.expose()).await.is_err());
+        assert_eq!(
+            first.verify(other.token.expose(), true).await.unwrap(),
+            other.id
+        );
+        assert!(first.verify(session.token.expose(), true).await.is_err());
     });
 }
 
@@ -138,13 +141,13 @@ fn a_session_lasts_thirty_days_from_its_last_use() {
             .await
             .unwrap();
         later(&clock, SESSION_LIFETIME - SignedDuration::from_hours(1));
-        browsers.verify(used.token.expose()).await.unwrap();
+        browsers.verify(used.token.expose(), true).await.unwrap();
         later(&clock, SignedDuration::from_hours(2));
         // Renewed when it was used, and the renewal outlives a restart.
         let browsers = open(store.log(), &clock).await;
-        browsers.verify(used.token.expose()).await.unwrap();
+        browsers.verify(used.token.expose(), true).await.unwrap();
         assert!(matches!(
-            browsers.verify(idle.token.expose()).await,
+            browsers.verify(idle.token.expose(), true).await,
             Err(BrowserError::Ended)
         ));
     });
@@ -164,12 +167,15 @@ fn signing_out_ends_a_session_and_other_browsers_end_theirs() {
             panic!("three sessions");
         };
         browsers.end(&gone.id).await.unwrap();
-        assert!(browsers.verify(gone.token.expose()).await.is_err());
+        assert!(browsers.verify(gone.token.expose(), true).await.is_err());
         browsers.end_others(Some(&this.id)).await.unwrap();
-        assert!(browsers.verify(other.token.expose()).await.is_err());
-        assert_eq!(browsers.verify(this.token.expose()).await.unwrap(), this.id);
+        assert!(browsers.verify(other.token.expose(), true).await.is_err());
+        assert_eq!(
+            browsers.verify(this.token.expose(), true).await.unwrap(),
+            this.id
+        );
         browsers.end_others(None).await.unwrap();
-        assert!(browsers.verify(this.token.expose()).await.is_err());
+        assert!(browsers.verify(this.token.expose(), true).await.is_err());
     });
 }
 
@@ -192,6 +198,6 @@ fn codes_and_sessions_are_bounded() {
             let code = browsers.link().unwrap();
             browsers.redeem(code.expose()).await.unwrap();
         }
-        assert!(browsers.verify(oldest.token.expose()).await.is_err());
+        assert!(browsers.verify(oldest.token.expose(), true).await.is_err());
     });
 }

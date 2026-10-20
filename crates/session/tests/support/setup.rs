@@ -90,6 +90,8 @@ pub(crate) struct Setup {
     pub projects: Option<Arc<dyn Projects>>,
     /// The browsers it signs in; with none, it signs in none.
     pub browsers: Option<Arc<Browsers>>,
+    /// Where people reach it from elsewhere; with none, only on its own computer.
+    pub origin: Option<glave_ports::host::PublicOrigin>,
     /// Its organization and its own project: `scope()` unless a test serves another.
     pub home: Scope,
 }
@@ -117,6 +119,7 @@ impl Setup {
             credentials: None,
             projects: None,
             browsers: None,
+            origin: None,
             home: scope(),
         }
     }
@@ -197,6 +200,7 @@ impl Setup {
             project_folders: self.project_folders,
             trust: self.trust,
             browsers: self.browsers,
+            origin: self.origin,
             ..Wiring::new(provider, log, InMemoryBlobs::new(), workspace, projects)
         };
         let server = Server::new(wiring, self.settings, home.org(), self.answering);

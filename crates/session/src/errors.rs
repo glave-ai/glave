@@ -117,6 +117,7 @@ impl From<BrowserError> for ApiError {
         match error {
             BrowserError::Code
             | BrowserError::Ended
+            | BrowserError::Elsewhere
             | BrowserError::Setup
             | BrowserError::TooMany
             | BrowserError::Ceremony

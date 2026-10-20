@@ -71,7 +71,7 @@ fn a_setup_link_makes_a_passkey_once_and_signs_that_browser_in() {
         let (passkey, session) = browsers.create(&asked.id, &answer, None).await.unwrap();
         assert_eq!(passkey.name, "Passkey added 2026-10-10");
         assert_eq!(
-            browsers.verify(session.token.expose()).await.unwrap(),
+            browsers.verify(session.token.expose(), true).await.unwrap(),
             session.id
         );
         assert!(matches!(
@@ -94,7 +94,7 @@ fn a_passkey_signs_a_browser_in_across_a_restart_and_another_origin_s_answer_is_
         let mut phone = Authenticator::new(ORIGIN).unwrap();
         set_up(&browsers, &mut phone).await;
         let session = sign_in(&browsers, &mut phone).await.unwrap();
-        assert!(browsers.verify(session.token.expose()).await.is_ok());
+        assert!(browsers.verify(session.token.expose(), true).await.is_ok());
 
         let reopened = open(store.log(), &clock).await;
         let listed = reopened.passkeys();
@@ -113,6 +113,29 @@ fn a_passkey_signs_a_browser_in_across_a_restart_and_another_origin_s_answer_is_
             reopened.get(&asked.id, &answer).await,
             Err(BrowserError::Passkey(_))
         ));
+    });
+}
+
+#[test]
+fn a_passkey_s_session_signs_in_from_elsewhere_and_a_link_s_only_here() {
+    block_on!(async {
+        let clock = ManualClock::at_second(START);
+        let browsers = open(store().log(), &clock).await;
+        let mut phone = Authenticator::new(ORIGIN).unwrap();
+        let (_, by_passkey) = set_up(&browsers, &mut phone).await;
+        let link = browsers.link().unwrap();
+        let by_link = browsers.redeem(link.expose()).await.unwrap();
+        assert!(
+            browsers
+                .verify(by_passkey.token.expose(), false)
+                .await
+                .is_ok()
+        );
+        assert!(matches!(
+            browsers.verify(by_link.token.expose(), false).await,
+            Err(BrowserError::Elsewhere)
+        ));
+        assert!(browsers.verify(by_link.token.expose(), true).await.is_ok());
     });
 }
 
@@ -160,10 +183,10 @@ fn removing_a_passkey_ends_the_sessions_it_began_and_it_signs_in_no_more() {
         browsers.remove(&added.id).await.unwrap();
         assert_eq!(browsers.passkeys(), Vec::new());
         for ended in [&first, &second] {
-            assert!(browsers.verify(ended.token.expose()).await.is_err());
+            assert!(browsers.verify(ended.token.expose(), true).await.is_err());
         }
         assert!(
-            browsers.verify(link.token.expose()).await.is_ok(),
+            browsers.verify(link.token.expose(), true).await.is_ok(),
             "a link's stays"
         );
         assert!(matches!(

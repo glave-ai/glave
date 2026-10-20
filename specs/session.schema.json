@@ -771,6 +771,38 @@
       ],
       "type": "string"
     },
+    "PasskeySummary": {
+      "description": "A passkey that signs the person in.",
+      "properties": {
+        "added": {
+          "$ref": "#/$defs/At"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "description": "What it is called: the name the browser gave it, else when it was added.",
+          "type": "string"
+        },
+        "used": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/At"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "When it last signed a browser in."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "added"
+      ],
+      "type": "object"
+    },
     "PayloadVersion": {
       "description": "The version of one payload type, starting at 1.",
       "format": "uint32",
@@ -1236,10 +1268,24 @@
         "name": {
           "type": "string"
         },
+        "origin": {
+          "description": "Where people reach the server from elsewhere, if they do: its public origin.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "protocols": {
           "description": "The protocol versions spoken.",
           "items": {
             "type": "string"
+          },
+          "type": "array"
+        },
+        "signin": {
+          "description": "How a browser signs in to it; none where no browser does, as over stdio.",
+          "items": {
+            "$ref": "#/$defs/SignInWay"
           },
           "type": "array"
         },
@@ -1273,6 +1319,21 @@
         {
           "const": "deleted",
           "description": "Deleted threads, waiting for their content to be erased: for the operator that does it.",
+          "type": "string"
+        }
+      ]
+    },
+    "SignInWay": {
+      "description": "A way a browser signs in to the server, as `server/discover` says.",
+      "oneOf": [
+        {
+          "const": "link",
+          "description": "A link glave on the server's own computer makes, good once, for a browser there.",
+          "type": "string"
+        },
+        {
+          "const": "passkey",
+          "description": "A passkey, at the server's public origin; a setup link from glave on its computer makes\nthe first.",
           "type": "string"
         }
       ]
@@ -2940,6 +3001,222 @@
       },
       "streams": false
     },
+    "passkey/add": {
+      "params": {
+        "properties": {
+          "ceremony": {
+            "type": "string"
+          },
+          "credential": true,
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "ceremony",
+          "credential"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "passkey": {
+            "$ref": "#/$defs/PasskeySummary"
+          }
+        },
+        "required": [
+          "passkey"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "passkey/add_options": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "A request to make or use a passkey: its id, and the options the browser hands its\nauthenticator, as WebAuthn's JSON (`{\"publicKey\": …}`, buffers in base64url).",
+        "properties": {
+          "ceremony": {
+            "type": "string"
+          },
+          "options": true
+        },
+        "required": [
+          "ceremony",
+          "options"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "passkey/create": {
+      "params": {
+        "properties": {
+          "ceremony": {
+            "description": "The request, as `passkey/create_options` named it.",
+            "type": "string"
+          },
+          "credential": {
+            "description": "The browser's answer, as WebAuthn's JSON: `PublicKeyCredential`'s, buffers in\nbase64url."
+          },
+          "name": {
+            "description": "What to call the passkey; when it was added, if nothing.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "ceremony",
+          "credential"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A browser session, sent once.",
+        "properties": {
+          "server": {
+            "description": "The id of the server it is for: the browser presents it to no other.",
+            "type": "string"
+          },
+          "session": {
+            "$ref": "#/$defs/Secret",
+            "description": "The bearer token the browser signs in with, kept in the tab."
+          }
+        },
+        "required": [
+          "session",
+          "server"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "passkey/create_options": {
+      "params": {
+        "properties": {
+          "code": {
+            "$ref": "#/$defs/Secret"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A request to make or use a passkey: its id, and the options the browser hands its\nauthenticator, as WebAuthn's JSON (`{\"publicKey\": …}`, buffers in base64url).",
+        "properties": {
+          "ceremony": {
+            "type": "string"
+          },
+          "options": true
+        },
+        "required": [
+          "ceremony",
+          "options"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "passkey/get": {
+      "params": {
+        "properties": {
+          "ceremony": {
+            "type": "string"
+          },
+          "credential": true
+        },
+        "required": [
+          "ceremony",
+          "credential"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A browser session, sent once.",
+        "properties": {
+          "server": {
+            "description": "The id of the server it is for: the browser presents it to no other.",
+            "type": "string"
+          },
+          "session": {
+            "$ref": "#/$defs/Secret",
+            "description": "The bearer token the browser signs in with, kept in the tab."
+          }
+        },
+        "required": [
+          "session",
+          "server"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "passkey/get_options": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "A request to make or use a passkey: its id, and the options the browser hands its\nauthenticator, as WebAuthn's JSON (`{\"publicKey\": …}`, buffers in base64url).",
+        "properties": {
+          "ceremony": {
+            "type": "string"
+          },
+          "options": true
+        },
+        "required": [
+          "ceremony",
+          "options"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "passkey/list": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "passkeys": {
+            "items": {
+              "$ref": "#/$defs/PasskeySummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "passkeys"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "passkey/remove": {
+      "params": {
+        "properties": {
+          "passkey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "passkey"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
     "project/create": {
       "params": {
         "properties": {
@@ -3485,6 +3762,24 @@
         "required": [
           "session",
           "server"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "signin/setup": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "A link's one-time code, sent once.",
+        "properties": {
+          "code": {
+            "$ref": "#/$defs/Secret"
+          }
+        },
+        "required": [
+          "code"
         ],
         "type": "object"
       },
