@@ -13,8 +13,9 @@ use std::time::SystemTime;
 /// The oldest Node the web build supports (Angular's own minimum, `web/package.json`).
 const MINIMUM: (u32, u32, u32) = (22, 22, 3);
 
-/// Runs the web checks, or skips them when asked to.
-pub(crate) fn check() -> Result<(), String> {
+/// Runs the web checks, or skips them when asked to, with `threads`' variables: how many tests
+/// run at once.
+pub(crate) fn check(threads: &[(&str, String)]) -> Result<(), String> {
     if std::env::var_os("GLAVE_SKIP_WEB").is_some_and(|value| value == "1") {
         println!("web: skipped (GLAVE_SKIP_WEB=1)");
         return Ok(());
@@ -33,14 +34,14 @@ pub(crate) fn check() -> Result<(), String> {
     let root = crate::workspace::root()?;
     let web = root.join("web");
     if stale(&web) {
-        npm(&web, &["ci"], None)?;
+        npm(&web, &["ci"], &[])?;
     }
-    npm(&web, &["run", "e2e:install"], None)?;
+    npm(&web, &["run", "e2e:install"], &[])?;
     // glave with the app inside, which its serving tests check; the end-to-end tests run
     // against this glave too.
-    npm(&web, &["run", "build"], None)?;
+    npm(&web, &["run", "build"], &[])?;
     let (package, feature) = crate::ci::BUILT_IN_APP;
-    crate::cmd::run(
+    crate::cmd::run_with(
         "cargo",
         &[
             "nextest",
@@ -54,9 +55,11 @@ pub(crate) fn check() -> Result<(), String> {
             "-E",
             "test(/^serve::/)",
         ],
+        threads,
     )?;
     let glave = target_directory()?.join("debug/glave");
-    npm(&web, &["run", "check"], Some(&glave))
+    let glave = ("GLAVE_BIN", glave.display().to_string());
+    npm(&web, &["run", "check"], &[threads, &[glave]].concat())
 }
 
 /// Where cargo builds this workspace: `CARGO_TARGET_DIR` or `build.target-dir` when set, else
@@ -105,12 +108,10 @@ fn parse(text: &str) -> Option<(u32, u32, u32)> {
     ))
 }
 
-fn npm(dir: &Path, args: &[&str], glave: Option<&Path>) -> Result<(), String> {
+fn npm(dir: &Path, args: &[&str], env: &[(&str, String)]) -> Result<(), String> {
     let mut command = Command::new("npm");
     command.args(args).current_dir(dir);
-    if let Some(glave) = glave {
-        command.env("GLAVE_BIN", glave);
-    }
+    command.envs(env.iter().map(|(name, value)| (*name, value)));
     let status = command
         .status()
         .map_err(|err| format!("could not start npm: {err}"))?;

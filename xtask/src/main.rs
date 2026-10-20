@@ -18,6 +18,7 @@ mod eval;
 mod file_sizes;
 mod leftovers;
 mod lock;
+mod parallel;
 mod release_workflow;
 mod schema;
 mod secrets;
