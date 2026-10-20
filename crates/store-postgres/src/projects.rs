@@ -454,4 +454,29 @@ impl Projects for PostgresProjects {
     ) -> BoxFuture<'a, Result<Project, ProjectError>> {
         Box::pin(self.folder_now(org, keys, new))
     }
+
+    fn find_folder<'a>(
+        &'a self,
+        org: OrgId,
+        keys: &'a [FolderKey],
+    ) -> BoxFuture<'a, Result<Option<Project>, ProjectError>> {
+        Box::pin(async move {
+            let org = org.as_uuid();
+            let client = connection(&self.pool).await.map_err(unavailable)?;
+            for key in keys {
+                let row = client
+                    .query_opt(
+                        "SELECT project FROM project_folders WHERE org = $1 AND key = $2",
+                        &[&org, &key.stored()],
+                    )
+                    .await
+                    .map_err(database(ProjectError::Storage))?;
+                if let Some(row) = row {
+                    let id = row.try_get::<_, Uuid>(0).map_err(corrupt)?;
+                    return get_now(&client, org, id).await;
+                }
+            }
+            Ok(None)
+        })
+    }
 }

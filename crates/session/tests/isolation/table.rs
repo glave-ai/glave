@@ -236,6 +236,7 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         ("schedule/delete", vec![json!({"schedule": "@schedule"})]),
         ("project/list", vec![json!({})]),
         ("project/get", vec![json!({"project": "@project"})]),
+        ("project/find", vec![json!({"path": "/nowhere/at/all"})]),
         ("project/create", vec![json!({"name": "probe"})]),
         (
             "project/rename",

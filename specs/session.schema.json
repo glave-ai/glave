@@ -2780,6 +2780,42 @@
       },
       "streams": false
     },
+    "project/find": {
+      "params": {
+        "properties": {
+          "path": {
+            "description": "The folder's full path.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "gone": {
+            "description": "The projects among them whose folder isn't there anymore.",
+            "items": {
+              "$ref": "#/$defs/GoneFolder"
+            },
+            "type": "array"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/$defs/Project"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "projects"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
     "project/folder/set": {
       "params": {
         "properties": {

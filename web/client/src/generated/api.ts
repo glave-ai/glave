@@ -836,6 +836,17 @@ export type ProjectCreateResult = {
   readonly project: Project;
 };
 
+export type ProjectFindParams = {
+  /** The folder's full path. */
+  readonly path: string;
+};
+
+export type ProjectFindResult = {
+  /** The projects among them whose folder isn't there anymore. */
+  readonly gone?: readonly (GoneFolder)[];
+  readonly projects: readonly (Project)[];
+};
+
 export type ProjectFolderSetParams = {
   /** The folder's full path. */
   readonly path: string;
@@ -1173,6 +1184,7 @@ export interface Methods {
   readonly "memory/save": { readonly params: MemorySaveParams; readonly result: MemorySaveResult };
   readonly "model/list": { readonly params: ModelListParams; readonly result: ModelListResult };
   readonly "project/create": { readonly params: ProjectCreateParams; readonly result: ProjectCreateResult };
+  readonly "project/find": { readonly params: ProjectFindParams; readonly result: ProjectFindResult };
   readonly "project/folder/set": { readonly params: ProjectFolderSetParams; readonly result: ProjectFolderSetResult };
   readonly "project/get": { readonly params: ProjectGetParams; readonly result: ProjectGetResult };
   readonly "project/list": { readonly params: ProjectListParams; readonly result: ProjectListResult };

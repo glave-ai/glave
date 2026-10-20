@@ -1,7 +1,7 @@
 //! What every [`Projects`] must do: keep whole records apart by organization, refuse a taken id
 //! or a second personal project, keep each owner's project names apart, list a person's projects
 //! in id order, change only what may change and never lose an update to another, and lead every
-//! folder key to one project; and all of it with writers racing each other.
+//! folder key to one project, found without making one; and all of it with writers racing each other.
 
 use glave_event::{At, Principal, PrincipalId};
 
@@ -269,6 +269,11 @@ async fn folders(store: &dyn Projects, org: OrgId, other_org: OrgId, ada: &Princ
     let remote = FolderKey::Remote("git@example.com:glave/app.git".into());
     let first = record(20, ProjectKind::Project, ada)?;
     let unused = record(21, ProjectKind::Project, ada)?;
+    let looked = store
+        .find_folder(org, &[path("/code/app"), remote.clone()])
+        .await
+        .map_err(failed)?;
+    ensure(looked.is_none(), "a folder no key leads to must find none")?;
     let found = store
         .folder(org, &[path("/code/app"), remote.clone()], &first)
         .await
@@ -276,6 +281,30 @@ async fn folders(store: &dyn Projects, org: OrgId, other_org: OrgId, ada: &Princ
     ensure(
         found == first,
         "a folder no key leads to must get the new project",
+    )?;
+    let looked = store
+        .find_folder(org, &[path("/nowhere/app"), remote.clone()])
+        .await
+        .map_err(failed)?;
+    ensure(
+        looked.as_ref() == Some(&first),
+        "finding a folder must find the project its first known key leads to",
+    )?;
+    ensure(
+        store
+            .find_folder(org, &[path("/nowhere/app")])
+            .await
+            .map_err(failed)?
+            .is_none(),
+        "finding a folder must make no key lead anywhere",
+    )?;
+    ensure(
+        store
+            .find_folder(other_org, &[path("/code/app")])
+            .await
+            .map_err(failed)?
+            .is_none(),
+        "finding a folder must not lead across organizations",
     )?;
     let clone = store
         .folder(org, &[path("/elsewhere/app"), remote.clone()], &unused)
