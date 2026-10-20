@@ -4,7 +4,12 @@ description = "The tests need `make db` before every run; a new thread runs them
 
 [glave]
 memory = true
-# The quirk was learned in the first thread: the second runs `make db` before the tests.
+# The quirk was learned in the first thread: the second runs `make db` before the tests. The
+# error says the database is removed after every run, so the whole quirk can be learned from
+# what the first thread sees; without that, a model that remembered "make db first" ran it once,
+# fixed the code and failed on its second run of the tests.
+# Known model limitation: DeepSeek V4.1 Flash now and then learns the quirk in the first thread
+# and says it, but saves nothing; about 1 in 10.
 checks = [{ last_thread_never_printed = "the test database is missing" }]
 
 [[glave.threads]]

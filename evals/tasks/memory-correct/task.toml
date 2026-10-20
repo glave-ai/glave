@@ -4,6 +4,9 @@ description = "A remembered fact is corrected in a later thread; a third thread 
 
 [glave]
 memory = true
+# Known model limitation: DeepSeek V4.1 Flash now and then saves a note about its own search in
+# the last thread ("no deploy config in the repo; the memory says Render"), a second memory about
+# the deploy, against the tool's "not what was done in this thread"; about 1 in 10.
 checks = [
     { answer_contains = "Render" },
     { memory_superseded = { old = "Fly", new = "Render" } },

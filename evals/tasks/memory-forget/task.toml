@@ -4,6 +4,8 @@ description = "A remembered preference is forgotten when the person asks: a late
 
 [glave]
 memory = true
+# The first message only asks to remember: with "Reply with just OK" after it, DeepSeek V4.1
+# Flash sometimes only replied, saved nothing, and failed a task about forgetting.
 checks = [{ answer_lacks = ["marigold"] }, "memory_forgotten"]
 
 [[glave.threads]]
