@@ -43,8 +43,8 @@ pub struct Http {
     signin: SignIn,
     site: Option<Site>,
     token: LocalToken,
-    /// `serve.token`, with `serve.url` beside it.
-    path: PathBuf,
+    /// glave's folder, where `serve.token` and `serve.url` are kept.
+    folder: PathBuf,
 }
 
 /// Listens on `address` for the server `args` choose, and writes its address and a new local
@@ -65,10 +65,10 @@ pub async fn open(args: &Args, address: SocketAddr) -> anyhow::Result<Http> {
         .await
         .with_context(|| format!("could not listen on {address}"))?;
     let bound = listener.local_addr()?;
-    let path = crate::home::database().await?.with_file_name(TOKEN_FILE);
-    keep(&path, token.reveal())?;
+    let folder = crate::home::private().await?;
+    keep(&folder.join(TOKEN_FILE), token.reveal())?;
     keep(
-        &path.with_file_name(crate::app::URL_FILE),
+        &folder.join(crate::app::URL_FILE),
         &format!("http://{}", here(bound)),
     )?;
     eprintln!("glave: serving the session API on http://{bound}");
@@ -82,7 +82,7 @@ pub async fn open(args: &Args, address: SocketAddr) -> anyhow::Result<Http> {
         signin,
         site,
         token,
-        path,
+        folder,
     })
 }
 
@@ -93,7 +93,7 @@ impl Http {
         if std::io::stderr().is_terminal() {
             // Shown only to a person at a terminal: a service's error output often ends up in
             // a log. The code is good once, for five minutes, so the link is no key left behind.
-            let url = std::fs::read_to_string(self.path.with_file_name(crate::app::URL_FILE))?;
+            let url = std::fs::read_to_string(self.folder.join(crate::app::URL_FILE))?;
             let code = link(&server).await?;
             eprintln!(
                 "glave: open {url}/#code={} in a browser on this computer (the link works once, \
@@ -107,10 +107,10 @@ impl Http {
             glave_session::http::serve(server, self.signin, self.site, self.listener, stop).await;
         // The token is good only while this server runs; the next start makes another. A newer
         // server's files are left alone.
-        let path = &self.path;
-        if std::fs::read_to_string(path).is_ok_and(|kept| kept == self.token.reveal()) {
+        let kept = std::fs::read_to_string(self.folder.join(TOKEN_FILE));
+        if kept.is_ok_and(|kept| kept == self.token.reveal()) {
             for file in [TOKEN_FILE, crate::app::URL_FILE, crate::app::OPEN_FILE] {
-                let _ = std::fs::remove_file(path.with_file_name(file));
+                let _ = std::fs::remove_file(self.folder.join(file));
             }
         }
         ended?;

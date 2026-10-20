@@ -62,9 +62,9 @@ pub fn relocated() -> bool {
     std::env::var_os("GLAVE_HOME").is_some()
 }
 
-/// The database file, in glave's folder. The folder is created readable only by you: content
-/// is sealed, but the envelope of each event is not yet.
-pub async fn database() -> anyhow::Result<PathBuf> {
+/// glave's folder, made if it is not there yet and readable only by you: content is sealed,
+/// but the envelope of each event is not yet, and the local token is kept there too.
+pub async fn private() -> anyhow::Result<PathBuf> {
     let home = folder()?;
     let mut builder = tokio::fs::DirBuilder::new();
     builder.recursive(true);
@@ -82,5 +82,10 @@ pub async fn database() -> anyhow::Result<PathBuf> {
             .await
             .with_context(|| format!("could not make {} private", home.display()))?;
     }
-    Ok(home.join("glave.db"))
+    Ok(home)
+}
+
+/// The database file, in glave's folder (made private first).
+pub async fn database() -> anyhow::Result<PathBuf> {
+    Ok(private().await?.join("glave.db"))
 }
