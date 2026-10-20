@@ -1,15 +1,20 @@
 //! `cargo nextest run`, as `cargo xtask ci` runs the tests. On macOS every new program waits
-//! on the system's check before its first run, and one that carries only the signature the
-//! linker gives it counts as unsigned, which takes the check's slow path: a debug glave's
-//! first run took 7 s on an idle M3, against 1.2 s signed ad hoc (`codesign --sign -`).
-//! Cargo copies glave anew on every build there, so every run of the tests pays it. So on
-//! macOS the tests are built first, the workspace's own programs they start (glave) are signed
-//! ad hoc, and the tests run from that build, which nothing copies over again. The test
-//! binaries are left as the linker signed them: they pay once per link, and signing them all
-//! cost about what it saved. Elsewhere the tests build and run in one go.
+//! before its first run while the system checks it, one at a time for the whole machine, so
+//! beside other builds the wait for one program can pass a test's time limit (225 s, seen).
+//! A program that carries only the signature the linker gives it counts as unsigned there,
+//! which takes the check's slow path: a debug glave's first run took 7 s on an idle M3,
+//! against 1.2 s signed ad hoc (`codesign --sign -`). Cargo copies glave anew on every build
+//! there, so every run of the tests pays it.
+//!
+//! So on macOS the tests are built first; the workspace's own programs they start (glave) are
+//! signed ad hoc and run once, so the check happens here, where nothing times it; and the
+//! tests run from that build, which nothing copies over again. The test binaries are left as
+//! the linker signed them: nextest runs each before the tests, untimed, to list them, and
+//! signing them all cost about what it saved. Elsewhere the tests build and run in one go.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
@@ -34,6 +39,7 @@ pub(crate) fn run(build: &[&str], options: &[&str], env: &[(&str, String)]) -> R
         .map_err(|err| format!("could not read the tests' programs nextest listed: {err}"))?;
     for program in programs(&binaries)? {
         sign(&program)?;
+        first_run(&program)?;
     }
     // Named for this run: two runs of `cargo xtask ci` may share the target directory.
     let metadata = target(&binaries)?.join(format!("xtask-tests-{}.json", std::process::id()));
@@ -93,6 +99,29 @@ fn sign(program: &Path) -> Result<(), String> {
             String::from_utf8_lossy(&signed.stderr).trim()
         ))
     }
+}
+
+/// Runs `program` once, asking only for its help, and waits for it to end, so macOS checks it
+/// now rather than while a test that starts it is timing it; says so when that took a while.
+fn first_run(program: &Path) -> Result<(), String> {
+    let started = Instant::now();
+    Command::new(program)
+        .arg("--help")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_err(|err| format!("could not start {}: {err}", program.display()))?;
+    let waited = started.elapsed();
+    if waited > Duration::from_secs(1) {
+        let name = program.file_name().unwrap_or(program.as_os_str());
+        println!(
+            "xtask: {}'s first run waited {} s on macOS's check of a new program",
+            name.display(),
+            waited.as_secs()
+        );
+    }
+    Ok(())
 }
 
 /// `codesign` with `args` on `program`, its output kept.
