@@ -22,7 +22,7 @@ use crate::tools::{BoxFuture, Cancellation};
 pub use git::{FAKE_COMMIT, FakeGitHost, FixedGitCredentials};
 pub use http::{FakeHttp, Received};
 pub use model::{Answer, ScriptedModel, Seen};
-pub use process::Running;
+pub use process::{HUNG, Running};
 pub use secret::{FAKE_SECRET, fake_secret};
 pub use temp::TempDir;
 

@@ -102,6 +102,9 @@ impl Client<'_> {
     /// Runs one turn, which Ctrl-C cancels, printing its progress and receipt.
     pub(crate) async fn turn(&self, prompt: &str, printer: &mut Printer) -> ExitCode {
         self.report(printer).await;
+        // Listening before the turn starts: the model may be asked before its answer arrives.
+        let interrupt = Cancel::new();
+        let _ctrl_c = CtrlC::cancels(&interrupt);
         let started = self
             .server
             .start(Request::TurnStart {
@@ -118,13 +121,15 @@ impl Client<'_> {
                 files: Vec::new(),
             })
             .await;
-        self.follow(started, printer).await
+        self.follow(started, &interrupt, printer).await
     }
 
     /// Works toward `goal` across turns until it ends, which Ctrl-C does too, printing every
     /// turn's progress and then the receipt for all of them. Succeeds only when it is met.
     pub(crate) async fn goal(&self, goal: Goal, printer: &mut Printer) -> ExitCode {
         self.report(printer).await;
+        let interrupt = Cancel::new();
+        let _ctrl_c = CtrlC::cancels(&interrupt);
         let started = self
             .server
             .start(Request::GoalStart {
@@ -136,7 +141,7 @@ impl Client<'_> {
                 unattended: !self.asks,
             })
             .await;
-        let code = self.follow(started, printer).await;
+        let code = self.follow(started, &interrupt, printer).await;
         let get = Request::GoalGet {
             thread: self.thread,
         };
@@ -149,10 +154,11 @@ impl Client<'_> {
         }
     }
 
-    /// Follows a started turn, or a goal's turns, to the end.
+    /// Follows a started turn, or a goal's turns, to the end, cancelling it on `interrupt`.
     async fn follow(
         &self,
         started: Result<Following, ApiError>,
+        interrupt: &Cancel,
         printer: &mut Printer,
     ) -> ExitCode {
         let mut stream = match started {
@@ -162,8 +168,6 @@ impl Client<'_> {
                 return ExitCode::FAILURE;
             }
         };
-        let interrupt = Cancel::new();
-        let _ctrl_c = CtrlC::cancels(&interrupt);
         let waiting = printer.waiting();
         let ended = ticking(
             async {
@@ -181,7 +185,7 @@ impl Client<'_> {
                     match item {
                         Some(TurnItem::Ended(ended)) => return Some(ended),
                         Some(TurnItem::Note(note)) => {
-                            if self.note(&note, &mut requested, printer, &interrupt).await {
+                            if self.note(&note, &mut requested, printer, interrupt).await {
                                 cancelling = self.cancel().await;
                             }
                         }

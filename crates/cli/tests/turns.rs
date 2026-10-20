@@ -7,18 +7,16 @@
 //! With no one at the terminal and no server running, the turn runs in the command's own
 //! process, answered by no one, and leaves no server behind.
 
-use std::time::Duration;
+use std::time::Instant;
 
 use glave_event::{Body, decode};
+use glave_ports::testing::HUNG;
 use glave_provider_openai::fake::{FakeServer, Reply};
 use glave_session::client::Remote;
 use glave_session::protocol::{Answer, Reply as Answered, Request, Status};
 use serde_json::json;
 
 use crate::support::*;
-
-/// How long a scripted model waits for glave's requests before a test gives up.
-const PATIENCE: Duration = Duration::from_secs(60);
 
 /// `place` where the person's settings answer with the model `m`, ask before commands run,
 /// and title no threads (a title call would take one of the model's replies).
@@ -75,9 +73,10 @@ async fn newest_thread(remote: &Remote, place: &Place) -> glave_event::ThreadId 
     threads[0].id
 }
 
-/// `thread`'s status, once it is `wanted`; read again until it is.
+/// `thread`'s status, once it is `wanted`; read again until it is, or until it is hung.
 async fn once(remote: &Remote, thread: glave_event::ThreadId, wanted: Status) {
-    for _ in 0..10_000 {
+    let deadline = Instant::now() + HUNG;
+    while Instant::now() < deadline {
         let Answered::Thread { thread: summary } = remote
             .request(&Request::ThreadGet { thread })
             .await
@@ -152,7 +151,7 @@ fn ctrl_c_stops_the_turn_and_the_server_goes_on() {
     let model = FakeServer::start(vec![Reply::Stall]).unwrap();
     let mut turn = terminal(&place, &model, &["wait for it"]);
     typed(&mut turn, "y\n");
-    assert!(model.wait_for_requests(1, PATIENCE), "the model was asked");
+    assert!(model.wait_for_requests(1, HUNG), "the model was asked");
     typed(&mut turn, "\x03");
     let said = turn.wait_with_output().unwrap();
     assert_eq!(said.status.code(), Some(130), "{}", text(&said));
@@ -170,7 +169,7 @@ fn a_client_killed_mid_turn_leaves_the_turn_to_finish_answered_by_any_client() {
     let model = touching("Finished.", &[]);
     let mut turn = terminal(&place, &model, &["touch it"]);
     typed(&mut turn, "y\n");
-    assert!(model.wait_for_requests(1, PATIENCE), "the model was asked");
+    assert!(model.wait_for_requests(1, HUNG), "the model was asked");
     turn.kill().unwrap();
     turn.wait().unwrap();
     glave_ports::block_on!(async {
@@ -199,7 +198,7 @@ fn a_client_killed_mid_turn_leaves_the_turn_to_finish_answered_by_any_client() {
             decision: Answer::AllowOnce,
         };
         remote.request(&decide).await.unwrap();
-        assert!(model.wait_for_requests(2, PATIENCE), "the turn went on");
+        assert!(model.wait_for_requests(2, HUNG), "the turn went on");
         once(&remote, thread, Status::Idle).await;
     });
     assert!(place.project.join("ran.txt").exists());
