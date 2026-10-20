@@ -14,7 +14,7 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 4. **Consumer defaults, enterprise plugs.** No enterprise feature may add a single click for a consumer. If it would, it belongs in a plug.
 5. **One of each.** One storage backend per deployment, one identity source, one event log. No component brings its own database.
 6. **One job each.** Every piece owns its data; anything else that needs that data asks through its port.
-7. **Standards first.** OpenAI-compatible API (models), MCP (tools), A2A (agents), OIDC/SAML/SCIM (identity), S3/Postgres (storage), AGENTS.md (instructions). Define our own only where none exists and the protocol is part of the product: the event log format, receipts, the session API, computer lifecycle, eval reports. Storage has none of its own: SQLite and Postgres, S3-compatible buckets for blobs (a KMS later), and clients reach data through the server (`specs/storage.md`, "Which stores").
+7. **Standards first.** OpenAI-compatible API (models: the one default seam; a native format is an exception that must justify itself, `specs/gateway.md`), MCP (tools), A2A (agents), OIDC/SAML/SCIM (identity), S3/Postgres (storage), AGENTS.md (instructions). Define our own only where none exists and the protocol is part of the product: the event log format, receipts, the session API, computer lifecycle, eval reports. Storage has none of its own: SQLite and Postgres, S3-compatible buckets for blobs (a KMS later), and clients reach data through the server (`specs/storage.md`, "Which stores").
 8. **Subtract before adding.** Nothing optional is on by default unless it is invisible and harmless.
 9. **Measure, don't guess.** Design and performance decisions are settled by evals and benchmarks.
 

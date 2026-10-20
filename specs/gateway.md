@@ -4,6 +4,14 @@ The single door out for model calls and remote tools: which model serves each pu
 
 The seam: the harness owns the tools that act on the computer and the rules for using any tool; the gateway owns everything that leaves for the outside world.
 
+## One default seam
+
+Decided by the owner, 2026-10-19 (#392): **OpenAI's API is the one default seam for models.** glave speaks Chat Completions to OpenRouter, OpenAI, Azure, Bedrock's and Vertex's compatible endpoints, and any server that copies them (Ollama, LM Studio, vLLM, an organization's own).
+
+- **"Add a model" offers OpenRouter and any OpenAI-compatible server up front** (and OpenAI's own). A model's capabilities and price come from the service's model list ("Catalogs"), so a new provider needs no code when it speaks the seam.
+- **A native format is an exception that must justify itself:** only where the compatible path loses something material, such as prompt caching, reasoning sent back, or an enterprise route served no other way. Anthropic's Messages API is one today, for Claude on Bedrock and Vertex (served only that way) and a direct key; it stays an internal route, not offered to add, and is expected to go once the routes glave uses no longer need it.
+- **No new native format** without that justification written here first.
+
 ## Status
 
 Each piece built has one line, which the pull requests that change it edit.
