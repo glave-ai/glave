@@ -45,7 +45,8 @@ impl Tokens {
         [
             ("the token", self.signed_in.as_str()),
             ("the renewed token", self.renewed.as_str()),
-            ("the device code", "dc-e2e"),
+            // Underscores, which no id glave prints has, so a random id never matches it.
+            ("the device code", "device_code_e2e"),
             ("the refresh token", self.refresh.as_str()),
             ("the second refresh token", self.second_refresh.as_str()),
         ]
@@ -140,7 +141,7 @@ fn github(tokens: &Tokens, then: Vec<(u16, String)>) -> FakeHttp {
     let signed_in = vec![
         (
             200,
-            json!({"device_code": "dc-e2e", "user_code": "WDJB-MJHT",
+            json!({"device_code": "device_code_e2e", "user_code": "WDJB-MJHT",
                        "verification_uri": "https://github.com/login/device",
                        "expires_in": 900, "interval": 0})
             .to_string(),
