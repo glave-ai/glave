@@ -129,13 +129,61 @@ jobs:
             exit 1
           fi
 
-  # web/: the session API's TypeScript client, Glaze and the app. Format, lint (eslint and
-  # stylelint), type-check, the licences and audit of what ships, unit tests with axe, the
-  # library and app builds, glave built with the app inside (the `web` feature) and its
-  # serving tests, and end-to-end tests in Chromium and WebKit with axe in light and dark,
-  # against that real `glave serve --http --web` and its Content Security Policy.
-  web:
+  # web/: the session API's TypeScript client, Glaze and the app, in jobs side by side: the
+  # checks, and the end-to-end tests in four shards. `web`, below them, passes only when every
+  # one did; it is the check the `main` ruleset requires.
+  #
+  # The checks: format, lint (eslint and stylelint), type-check, the licences and audit of
+  # what ships, unit tests with axe, the library, app and showcase builds, and glave built with
+  # the app inside (the `web` feature) and its serving tests.
+  web-checks:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the pinned toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+        working-directory: .
+      # One build cache for the web jobs: this job saves it (from main), the shards restore it.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: web
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run licenses
+      - run: npm run audit
+      - run: npm test
+      - run: npm run build:glaze
+      - run: npm run build
+      - run: npm run build:showcase
+      - name: Build glave with the app inside, and test that it serves it
+        run: cargo nextest run -p glave --features web --test cli -E 'test(/^serve::/)'
+        working-directory: .
+
+  # End-to-end tests in Chromium and WebKit with axe in light and dark, against the real
+  # `glave serve --http --web` and its Content Security Policy: each browser's tests split in
+  # two shards, each on a runner of its own, with the app, the showcase and glave built there.
+  e2e:
+    name: e2e (${{ matrix.browser }} ${{ matrix.shard }}/2)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, webkit]
+        shard: [1, 2]
     defaults:
       run:
         working-directory: web
@@ -148,32 +196,52 @@ jobs:
         working-directory: .
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest
+          shared-key: web
+          save-if: false
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
-      - name: Install Chromium and WebKit for the end-to-end tests, with what they need
-        run: npm run e2e:install -- --with-deps
-      - run: npm run format:check
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm run licenses
-      - run: npm run audit
-      - run: npm test
-      - run: npm run build:glaze
+      # The browser lives in node_modules (PLAYWRIGHT_BROWSERS_PATH=0), which `npm ci` empties,
+      # so it is cached apart, by browser and Playwright's version, and saved from main.
+      - name: Which Playwright
+        id: playwright
+        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v6
+        id: browser
+        with:
+          path: web/node_modules/playwright-core/.local-browsers
+          key: playwright-${{ matrix.browser }}-${{ steps.playwright.outputs.version }}
+      - name: Install ${{ matrix.browser }}, with what it needs
+        run: PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install --with-deps --only-shell ${{ matrix.browser }}
+      - if: github.ref == 'refs/heads/main' && steps.browser.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: web/node_modules/playwright-core/.local-browsers
+          key: ${{ steps.browser.outputs.cache-primary-key }}
       - run: npm run build
-      # The glave this builds serves the end-to-end tests too.
-      - name: Build glave with the app inside, and test that it serves it
-        run: cargo nextest run -p glave --features web --test cli -E 'test(/^serve::/)'
-        working-directory: .
       - run: npm run build:showcase
-      - run: npm run e2e
+      # Built as the checks build it for its serving tests, so the cache they save serves it.
+      - name: Build glave with the app inside
+        run: cargo test -p glave --features web --test cli --no-run
+        working-directory: .
+      - run: npm run e2e -- --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/2
+
+  web:
+    if: always()
+    needs: [web-checks, e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: The checks and every end-to-end shard passed
+        env:
+          CHECKS: ${{ needs.web-checks.result }}
+          E2E: ${{ needs.e2e.result }}
+        run: |
+          echo "checks: $CHECKS, end-to-end: $E2E"
+          test "$CHECKS" = success
+          test "$E2E" = success
 
   # The release workflow is dist's, with every job's token read-only but the publishing job's
   # (`cargo xtask release-workflow`). dist doesn't check a workflow its config says is edited by
