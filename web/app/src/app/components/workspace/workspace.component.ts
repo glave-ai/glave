@@ -55,7 +55,7 @@ export class WorkspaceComponent {
   protected readonly currentPage = computed(() => pageFromUrl(this.url()));
 
   constructor() {
-    void inject(ProjectsService).refresh();
+    inject(ProjectsService).follow();
     // A refused sign-in (or signing out) ends the session: back to the sign-in page.
     const session = inject(SessionService);
     effect(() => {

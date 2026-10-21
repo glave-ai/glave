@@ -32,10 +32,11 @@ interface SeenCall {
 
 type Answer = object | ((params: unknown) => unknown);
 
-/** What a turn the test drives sends next: a notification, or its result, last. */
+/** What a turn the test drives sends next: a notification, or its result or error, last. */
 type Sent =
   | { readonly kind: 'note'; readonly note: Notification }
-  | { readonly kind: 'end'; readonly result: unknown };
+  | { readonly kind: 'end'; readonly result: unknown }
+  | { readonly kind: 'fail'; readonly error: unknown };
 
 /** How a turn that completed ends, unless a test says otherwise. */
 const COMPLETED = {
@@ -65,6 +66,12 @@ export class FakeTurn {
     this.wake?.();
   }
 
+  /** Ends it with `error`, as a stream cut off or refused does. */
+  fail(error: unknown): void {
+    this.sent.push({ kind: 'fail', error });
+    this.wake?.();
+  }
+
   /** What the test sends, until it ends; stopped by `signal`, as a request is aborted. */
   async *run<R>(signal?: AbortSignal): AsyncGenerator<Notification, R, void> {
     for (;;) {
@@ -82,6 +89,8 @@ export class FakeTurn {
         });
       } else if (next.kind === 'end') {
         return next.result as R;
+      } else if (next.kind === 'fail') {
+        throw next.error;
       } else {
         yield next.note;
       }
@@ -94,7 +103,7 @@ export class FakeTurn {
  * watch, and every call recorded. An answer that is an `ApiError` is thrown. Unanswered,
  * `thread/get` answers the thread as the fixtures make one, idle and asking nothing;
  * `command/list`, nothing running; `awake/get`, a server, which keeps no computer awake; a
- * watch sends nothing until it is stopped; any other method, `{}`.
+ * watch, of a thread or of the lists, sends nothing until it is stopped; any other method, `{}`.
  */
 export class FakeSession implements SessionClient {
   readonly calls: SeenCall[] = [];
@@ -105,6 +114,8 @@ export class FakeSession implements SessionClient {
   private readonly turns: (FakeTurn | object)[] = [];
   /** What the next `thread/watch`es send, in order, each driven by the test. */
   private readonly watches: FakeTurn[] = [];
+  /** What the next `thread/list/watch`es send, in order, each driven by the test. */
+  private readonly listWatches: FakeTurn[] = [];
 
   answer(method: Method, answer: Answer): this {
     this.answers.set(method, answer);
@@ -135,6 +146,12 @@ export class FakeSession implements SessionClient {
     return this;
   }
 
+  /** Answers the next `thread/list/watch` with `watch`, which the test drives. */
+  listWatch(watch: FakeTurn): this {
+    this.listWatches.push(watch);
+    return this;
+  }
+
   call<M extends Method>(method: M, params: Methods[M]['params']): Promise<Methods[M]['result']> {
     this.calls.push({ method, params });
     const answer = this.answers.get(method) ?? unanswered(method, params);
@@ -151,8 +168,9 @@ export class FakeSession implements SessionClient {
     signal?: AbortSignal,
   ): AsyncGenerator<Notification, Methods[M]['result'], void> {
     this.calls.push({ method, params });
-    if (method === 'thread/watch') {
-      const watch = this.watches.shift() ?? new FakeTurn();
+    if (method === 'thread/watch' || method === 'thread/list/watch') {
+      const waiting = method === 'thread/watch' ? this.watches : this.listWatches;
+      const watch = waiting.shift() ?? new FakeTurn();
       return yield* watch.run<Methods[M]['result']>(signal);
     }
     const next = this.turns.shift();

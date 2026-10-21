@@ -1,7 +1,5 @@
 import { DOCUMENT, DestroyRef, Service, computed, inject, signal } from '@angular/core';
 import {
-  ApiError,
-  ErrorCode,
   type ApprovalMode,
   type AttachedFile,
   type Notification,
@@ -24,13 +22,9 @@ import { folderGone } from '../lib/projects';
 import { type Waiting, named, notRead, together } from '../lib/queued';
 import { onApple } from '../lib/shortcuts';
 import { threadTurns, turnRuns } from '../lib/turns';
+import { FIRST_RETRY_MS, LAST_RETRY_MS, cutOff, pause } from '../lib/watching';
 import { SessionService } from './session.service';
 import { ProjectsService } from './projects.service';
-
-/** How long the first try again waits after a watch was cut off; each one after, twice that. */
-const FIRST_RETRY_MS = 1_000;
-/** The longest a try again waits. */
-const LAST_RETRY_MS = 30_000;
 
 /**
  * One open thread: its events, read from the log, then followed live as anyone records them,
@@ -166,7 +160,7 @@ export class ThreadService {
 
   /**
    * Answers what the thread's project asks: trusting turns it on from the next turn; not now
-   * keeps it off. Either way the card rests, and the side nav's lists are read again.
+   * keeps it off. Either way the card rests, and the side nav hears of it from the server.
    */
   async answerTrust(answer: TrustChoice): Promise<void> {
     const thread = this.id();
@@ -185,7 +179,6 @@ export class ThreadService {
       await this.readAsk(thread);
     } finally {
       this.deciding.set(false);
-      void this.projects.refresh();
     }
   }
 
@@ -235,7 +228,7 @@ export class ThreadService {
     }
   }
 
-  /** Gives the thread a new title, then reads the side nav's lists again. */
+  /** Gives the thread a new title, which the side nav hears of from the server. */
   async rename(title: string): Promise<void> {
     const thread = this.id();
     if (thread === null) {
@@ -244,7 +237,6 @@ export class ThreadService {
     try {
       await this.session.call('thread/rename', { thread, title });
       this.failed.set(null);
-      await this.projects.refresh();
     } catch (error: unknown) {
       this.failed.set(error instanceof Error ? error.message : String(error));
     }
@@ -404,10 +396,9 @@ export class ThreadService {
     }
   }
 
-  /** A turn this view did not follow ended: its draft goes, and the lists say how it ended. */
+  /** A turn this view did not follow ended: its draft goes. */
   private endedElsewhere(): void {
     this.draft.set(NO_DRAFT);
-    void this.projects.refresh();
   }
 
   /**
@@ -557,7 +548,6 @@ export class ThreadService {
    */
   private settle(thread: ThreadId): void {
     this.draft.set(NO_DRAFT);
-    void this.projects.refresh();
     const unread = [...this.givenBack, ...this.queued().map((message) => message.text)];
     this.givenBack = [];
     this.waiting.set([]);
@@ -605,11 +595,7 @@ export class ThreadService {
       if (this.id() !== thread) {
         return null;
       }
-      const ask = summary.trust ?? null;
-      this.asked.set(ask);
-      if (ask !== null) {
-        void this.projects.refresh();
-      }
+      this.asked.set(summary.trust ?? null);
       return summary;
     } catch (error: unknown) {
       if (!quiet) {
@@ -677,14 +663,6 @@ export class ThreadService {
 }
 
 /**
- * Whether a watch that failed with `error` was cut off, and comes back: not when the tab was
- * signed out, or the thread is not there to watch.
- */
-function cutOff(error: unknown): boolean {
-  return !(error instanceof ApiError && (error.signedOut || error.code === ErrorCode.NO_THREAD));
-}
-
-/**
  * Whether a turn runs in the thread, as the server's summary of it says, with its events read
  * before: one does, or waits for the person (not a project's ask, which waits with no turn).
  */
@@ -701,19 +679,6 @@ function latestStart(events: readonly RawEvent[]): number | null {
     }
   }
   return null;
-}
-
-/** Waits `ms` milliseconds, or until `signal` aborts. */
-function pause(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    const done = (): void => {
-      clearTimeout(timer);
-      signal.removeEventListener('abort', done);
-      resolve();
-    };
-    const timer = setTimeout(done, ms);
-    signal.addEventListener('abort', done);
-  });
 }
 
 /** `files` as `turn/start` takes them: left out when there are none. */

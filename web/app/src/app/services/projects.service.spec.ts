@@ -1,9 +1,33 @@
 import { TestBed } from '@angular/core/testing';
-import { ApiError, ErrorCode, type Project } from '@glave/client';
+import {
+  ApiError,
+  ErrorCode,
+  type Notification,
+  type Project,
+  type ThreadSummary,
+} from '@glave/client';
 
-import { FakeSession, provideFakeSession } from '../testing/fake-session';
+import { FakeSession, FakeTurn, provideFakeSession } from '../testing/fake-session';
 import { record, thread } from '../testing/fixtures';
-import { REFRESH_MS, ProjectsService } from './projects.service';
+import { CLOCK_MS } from './lists-feed';
+import { ProjectsService } from './projects.service';
+
+/** What the server sends when `summary`'s thread changes. */
+function changed(summary: ThreadSummary): Notification {
+  return { jsonrpc: '2.0', method: 'thread/changed', params: { thread: summary.id, summary } };
+}
+
+/** Lets what is under way run. */
+function settled(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** Follows the lists, once what follows them has loaded and done what it could. */
+async function following(projects: ProjectsService): Promise<void> {
+  projects.follow();
+  await vi.dynamicImportSettled();
+  await settled();
+}
 
 describe('ProjectsService', () => {
   it('lists projects before the personal project, each with its threads', async () => {
@@ -202,20 +226,121 @@ describe('ProjectsService', () => {
     expect(projects.projects().map((entry) => entry.project.name)).toEqual(['Personal']);
   });
 
-  it('polls only while the tab is shown', () => {
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
-    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+  it('follows the lists from the newest update they hold, as the server says each thread changes', async () => {
+    const watch = new FakeTurn();
+    const fake = new FakeSession()
+      .answer('project/list', { projects: [record('project-1', 'glave')] })
+      .answer('thread/list', { threads: [thread('t1', 'Plan')] })
+      .listWatch(watch);
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const projects = TestBed.inject(ProjectsService);
+    await following(projects);
+    expect(fake.paramsOf('thread/list/watch')).toEqual([{ after: '2026-10-11T10:05:00.000Z' }]);
+    const at = '2026-10-11T10:06:00.000Z';
+    watch.send(changed(thread('t1', 'Plan', { status: 'running', updated_at: at })));
+    await settled();
+    expect(projects.thread('t1')?.status).toBe('running');
+    watch.send(changed(thread('t2', 'Fix the build', { updated_at: at })));
+    watch.send(changed(thread('t1', 'Plan', { status: 'waiting', updated_at: at })));
+    await settled();
+    expect(projects.thread('t1')?.status).toBe('waiting');
+    expect(projects.projects()[0]?.threads.map((each) => each.id)).toEqual(['t1', 't2']);
+    watch.send(changed(thread('t2', 'Fix the build', { standing: 'deleted', updated_at: at })));
+    await settled();
+    expect(projects.thread('t2')).toBeUndefined();
+    // Nothing was read again: the watch said it all.
+    expect(fake.paramsOf('project/list')).toHaveLength(1);
+    expect(fake.paramsOf('thread/list')).toHaveLength(1);
+  });
+
+  it('reads the lists again when a thread turns up in a project they lack', async () => {
+    const watch = new FakeTurn();
+    let listed = [record('project-1', 'glave')];
+    const fake = new FakeSession()
+      .answer('project/list', () => ({ projects: listed }))
+      .answer('thread/list', { threads: [] })
+      .listWatch(watch);
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const projects = TestBed.inject(ProjectsService);
+    await following(projects);
+    listed = [...listed, record('project-2', 'site')];
+    watch.send(changed(thread('t9', 'Launch', { project: 'project-2' })));
+    await settled();
+    expect(fake.paramsOf('project/list')).toHaveLength(2);
+    // Heard while the lists were read again, so taken in once they were.
+    expect(projects.thread('t9')?.title).toBe('Launch');
+  });
+
+  it('reads the lists again and comes back from the newest update once its watch is cut off', async () => {
+    vi.useFakeTimers();
     try {
+      const [cut, again] = [new FakeTurn(), new FakeTurn()];
+      const fake = new FakeSession()
+        .answer('project/list', { projects: [record('project-1', 'glave')] })
+        .answer('thread/list', { threads: [thread('t1', 'Plan')] })
+        .listWatch(cut)
+        .listWatch(again);
+      TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+      const projects = TestBed.inject(ProjectsService);
+      projects.follow();
+      await vi.dynamicImportSettled();
+      await vi.advanceTimersByTimeAsync(0);
+      cut.end({ ended: 'unwatched' });
+      await vi.advanceTimersByTimeAsync(999);
+      expect(fake.paramsOf('project/list')).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(fake.paramsOf('project/list')).toHaveLength(2);
+      expect(fake.paramsOf('thread/list/watch')).toHaveLength(2);
+      // Signed out, it stops.
+      again.fail(new ApiError({ code: ErrorCode.NO_SIGN_IN, message: 'signed out' }));
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(fake.paramsOf('thread/list/watch')).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lets go of its watch while the tab is hidden, and reads the lists again when shown', async () => {
+    const fake = new FakeSession()
+      .answer('project/list', { projects: [] })
+      .answer('thread/list', { threads: [] });
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const projects = TestBed.inject(ProjectsService);
+    const shown = (state: DocumentVisibilityState): void => {
+      Object.defineProperty(document, 'visibilityState', { value: state, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    try {
+      // Read for the first page, but not watched while hidden.
+      shown('hidden');
+      await following(projects);
+      expect(fake.paramsOf('project/list')).toHaveLength(1);
+      expect(fake.paramsOf('thread/list/watch')).toHaveLength(0);
+      shown('visible');
+      await settled();
+      shown('hidden');
+      await settled();
+      shown('visible');
+      await settled();
+      expect(fake.paramsOf('project/list')).toHaveLength(3);
+      expect(fake.paramsOf('thread/list/watch')).toEqual([{}, {}]);
+    } finally {
+      Reflect.deleteProperty(document, 'visibilityState');
+    }
+  });
+
+  it('moves its times on each minute while it follows the lists', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(Date.parse('2026-10-11T10:00:00.000Z'));
       const fake = new FakeSession().answer('project/list', { projects: [] });
       TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
-      TestBed.inject(ProjectsService);
-      vi.advanceTimersByTime(REFRESH_MS * 3);
-      expect(fake.paramsOf('project/list')).toHaveLength(0);
-      hidden.mockReturnValue(false);
-      vi.advanceTimersByTime(REFRESH_MS);
-      expect(fake.paramsOf('project/list')).toHaveLength(1);
+      const projects = TestBed.inject(ProjectsService);
+      projects.follow();
+      await vi.dynamicImportSettled();
+      await vi.advanceTimersByTimeAsync(CLOCK_MS);
+      expect(projects.readAt()).toBe(Date.parse('2026-10-11T10:01:00.000Z'));
     } finally {
-      hidden.mockRestore();
       vi.useRealTimers();
     }
   });
