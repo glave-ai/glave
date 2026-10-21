@@ -1,0 +1,17 @@
+@if (shown()) {
+  <glz-card data-testid="awake">
+    <h2 glzCardHeader>{{ copy.heading }}</h2>
+    @if (cannot(); as reason) {
+      <p class="details" data-testid="awake-cannot">{{ reason }}</p>
+    } @else {
+      <glz-form-field [label]="copy.label" [hint]="copy.hint">
+        <glz-checkbox testId="awake-on" [checked]="on()" (checkedChange)="set($event)">{{
+          copy.keep
+        }}</glz-checkbox>
+      </glz-form-field>
+    }
+    @if (problem(); as problem) {
+      <p class="error" role="alert" data-testid="awake-problem">{{ problem }}</p>
+    }
+  </glz-card>
+}

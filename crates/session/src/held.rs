@@ -277,9 +277,14 @@ where
         let held = self.take_busy(thread, purpose, &cancel, finished)?;
         let server = self.clone();
         let inner = Arc::clone(&self.inner);
+        // The computer stays awake while the work runs, however it ends (`awake.rs`).
+        let working = (purpose != Use::Manage)
+            .then(|| inner.awake.as_ref().map(crate::awake::Awake::hold))
+            .flatten();
         // The work stays in the span of the request that started it.
         let span = tracing::Span::current();
         let task = tokio::spawn(async move {
+            let _working = working;
             let leases = Arc::clone(&inner.leases);
             let work = work(Arc::clone(&inner), held, cancel.clone());
             let work = tracing::Instrument::instrument(work, span);

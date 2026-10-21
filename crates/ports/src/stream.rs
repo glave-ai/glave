@@ -45,11 +45,14 @@ pub enum Reserved {
     /// `…0007`: what the person's own server serves HTTPS with (`acme.registered`,
     /// `certificate.issued`), in their personal project.
     Certificates,
+    /// `…0008`: the person's own settings, today whether their computer is kept awake while
+    /// glave works on it (`awake.set`), in their personal project.
+    Settings,
 }
 
 impl Reserved {
     /// Every ledger, by number.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Tasks,
         Self::Memory,
         Self::Accounts,
@@ -58,6 +61,7 @@ impl Reserved {
         Self::Browsers,
         Self::Catalogs,
         Self::Certificates,
+        Self::Settings,
     ];
 
     /// The ledger's id, the same in every project.
@@ -71,6 +75,7 @@ impl Reserved {
             Self::Browsers => 5,
             Self::Catalogs => 6,
             Self::Certificates => 7,
+            Self::Settings => 8,
         };
         ThreadId::reserved(number)
     }

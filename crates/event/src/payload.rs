@@ -2,6 +2,7 @@
 //! decoder, which upgrades older versions on read.
 
 pub(crate) mod approval;
+pub(crate) mod awake;
 pub(crate) mod browser;
 pub(crate) mod catalog;
 pub(crate) mod certificate;
@@ -28,6 +29,7 @@ pub(crate) mod turn;
 pub(crate) mod workspace;
 
 pub use approval::{ApprovalDecided, ApprovalRequested, OutsideSandbox, Verdict};
+pub use awake::AwakeSet;
 pub use browser::{BrowserSignedIn, BrowserSignedOut, BrowserUsed};
 pub use catalog::{Catalog, CatalogModel, CatalogRefreshed, Reasoning, TokenPrice};
 pub use certificate::{AcmeRegistered, CertificateIssued};

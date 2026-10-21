@@ -21,7 +21,9 @@ use glave_ports::{
 };
 use glave_session::protocol::ModelInfo;
 use glave_session::signin::Browsers;
-use glave_session::{Answering, GitHosts, ProjectTrust, Providers, Server, TaskLimits, Wiring};
+use glave_session::{
+    Answering, GitHosts, KeepAwake, ProjectTrust, Providers, Server, TaskLimits, Wiring,
+};
 use glave_store_sqlite::Store;
 use tokio::sync::Notify;
 
@@ -92,6 +94,8 @@ pub(crate) struct Setup {
     pub browsers: Option<Arc<Browsers>>,
     /// Where people reach it from elsewhere; with none, only on its own computer.
     pub origin: Option<glave_ports::host::PublicOrigin>,
+    /// What keeps its computer awake while work runs; with none, nothing does.
+    pub awake: Option<Arc<dyn KeepAwake>>,
     /// Its organization and its own project: `scope()` unless a test serves another.
     pub home: Scope,
     /// The leases another server keeps, to share its store; its own in memory when none.
@@ -126,6 +130,7 @@ impl Setup {
             projects: None,
             browsers: None,
             origin: None,
+            awake: None,
             home: scope(),
             leases: None,
             model: None,
@@ -214,6 +219,7 @@ impl Setup {
             origin: self.origin,
             leases: self.leases,
             tools: self.tools,
+            awake: self.awake,
             ..Wiring::new(provider, log, InMemoryBlobs::new(), workspace, projects)
         };
         let server = Server::new(wiring, self.settings, home.org(), self.answering);

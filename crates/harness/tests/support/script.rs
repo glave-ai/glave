@@ -220,6 +220,7 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::PasskeyAdded(_) => "passkey.added",
             Body::PasskeyUsed(_) => "passkey.used",
             Body::PasskeyRemoved(_) => "passkey.removed",
+            Body::AwakeSet(_) => "awake.set",
             Body::Unknown(_) => "unknown",
         })
         .collect()

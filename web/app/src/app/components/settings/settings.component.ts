@@ -36,6 +36,7 @@ import { ServerService } from '../../services/server.service';
 import { SessionService } from '../../services/session.service';
 import { ThemeService, isChoice } from '../../services/theme.service';
 import { AccountsComponent } from '../accounts/accounts.component';
+import { AwakeComponent } from '../awake/awake.component';
 import { PasskeysComponent } from '../passkeys/passkeys.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 
@@ -70,13 +71,15 @@ const COPY = {
 /**
  * Settings: the theme, the model accounts (add, change, remove), the connected accounts git
  * signs in with, memory (its own page), the passkeys that sign the person in where glave is
- * reached from elsewhere, the server, signing this tab or every other browser out. A link to
- * `#accounts` scrolls to the connected accounts.
+ * reached from elsewhere, whether their own computer stays awake while glave works, the
+ * server, signing this tab or every other browser out. A link to `#accounts` scrolls to the
+ * connected accounts.
  */
 @Component({
   selector: 'app-settings',
   imports: [
     AccountsComponent,
+    AwakeComponent,
     PasskeysComponent,
     PageHeaderComponent,
     GlzButtonComponent,
