@@ -37,6 +37,7 @@ mod server;
 mod sessions;
 mod settings;
 mod skills;
+mod starter;
 mod subagents;
 mod tasks;
 mod telemetry;

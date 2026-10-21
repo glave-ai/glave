@@ -92,6 +92,7 @@ fn serve(place: &Place, identity: &Identity, upstream: &FakeServer) -> Gateway {
         .arg("--policy")
         .arg(&policy)
         .env("GLAVE_HOME", &home)
+        .env(Lifeline::VARIABLE, &place.lifeline.path)
         .env("GLAVE_BASE_URL", upstream.url())
         .env("GLAVE_API_KEY", KEY)
         .env("GLAVE_MODEL", "big")

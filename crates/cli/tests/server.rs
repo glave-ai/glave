@@ -10,7 +10,7 @@ use std::process::{Command, Output, Stdio};
 use glave_ports::testing::Running;
 use glave_provider_openai::fake::FakeServer;
 
-use crate::support::{Place, Stopped, place, text};
+use crate::support::{Lifeline, Place, Stopped, place, text};
 
 /// `glave` with `args` in `place`, with nothing from the person's own setup, still running.
 fn start(place: &Place, args: &[&str]) -> Running {
@@ -19,6 +19,7 @@ fn start(place: &Place, args: &[&str]) -> Running {
         .args(args)
         .current_dir(&place.project)
         .env("GLAVE_HOME", &place.home)
+        .env(Lifeline::VARIABLE, &place.lifeline.path)
         .env("NO_COLOR", "1")
         // No screen, so a link is printed rather than a browser opened.
         .env("SSH_CONNECTION", "test")
@@ -49,6 +50,7 @@ fn in_terminal(place: &Place, args: &[&str]) -> Running {
         .args(python)
         .current_dir(&place.project)
         .env("GLAVE_HOME", &place.home)
+        .env(Lifeline::VARIABLE, &place.lifeline.path)
         .env("HOME", &place.project)
         .env("SSH_CONNECTION", "test")
         .env_remove("GLAVE_MODEL")

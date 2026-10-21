@@ -1,4 +1,5 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { type Socket, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -9,6 +10,7 @@ import {
   ACCOUNTS,
   APP,
   FIRST_RUN,
+  LIFELINE,
   LIVE,
   LIVE_MODEL_URL,
   PASSKEYS,
@@ -39,6 +41,38 @@ function home(site: Site, settings?: string): string {
 }
 
 /**
+ * The socket every glave the run starts is handed (`GLAVE_LIFELINE`), so they end when the run
+ * does, however it ends, killed outright included (#558): each glave connects and waits, and
+ * the connections close when the run that listens ends. Made once, in the run that starts the
+ * servers, which alone listens, and removed when that run exits; its workers read its path
+ * again from the variable.
+ */
+function lifeline(): string {
+  const kept = process.env[LIFELINE];
+  if (kept !== undefined) {
+    return kept;
+  }
+  const folder = mkdtempSync(join(tmpdir(), 'glave-e2e-lifeline-'));
+  const path = join(folder, 'lifeline');
+  const held: Socket[] = [];
+  // Neither the listener nor a connection keeps the run from ending.
+  createServer((connection) => {
+    connection.unref();
+    held.push(connection);
+  })
+    .listen(path)
+    .unref();
+  process.on('exit', () => {
+    rmSync(folder, { recursive: true, force: true });
+  });
+  process.env[LIFELINE] = path;
+  return path;
+}
+
+/** The run's lifeline, handed to each glave it starts. */
+const tied = { GLAVE_LIFELINE: lifeline() };
+
+/**
  * The fake model service the live glave asks, started once, in the run that starts the servers,
  * on a port the system picks; its workers read its address again from the variable.
  */
@@ -53,26 +87,31 @@ process.env[LIVE_MODEL_URL] = liveModel;
  * fake service and which asks before commands run, to follow a thread from two tabs.
  */
 const SITES: readonly { site: Site; web: string; env: Record<string, string> }[] = [
-  { site: APP, web: 'dist/app/browser', env: { GLAVE_HOME: home(APP), GLAVE_MODEL: 'e2e' } },
+  {
+    site: APP,
+    web: 'dist/app/browser',
+    env: { ...tied, GLAVE_HOME: home(APP), GLAVE_MODEL: 'e2e' },
+  },
   {
     site: SHOWCASE,
     web: 'dist/showcase/browser',
-    env: { GLAVE_HOME: home(SHOWCASE), GLAVE_MODEL: 'e2e' },
+    env: { ...tied, GLAVE_HOME: home(SHOWCASE), GLAVE_MODEL: 'e2e' },
   },
   {
     site: FIRST_RUN,
     web: 'dist/app/browser',
-    env: { GLAVE_HOME: home(FIRST_RUN), GLAVE_MODEL: '' },
+    env: { ...tied, GLAVE_HOME: home(FIRST_RUN), GLAVE_MODEL: '' },
   },
   {
     site: ACCOUNTS,
     web: 'dist/app/browser',
-    env: { GLAVE_HOME: home(ACCOUNTS), GLAVE_MODEL: 'e2e' },
+    env: { ...tied, GLAVE_HOME: home(ACCOUNTS), GLAVE_MODEL: 'e2e' },
   },
   {
     site: PASSKEYS,
     web: 'dist/app/browser',
     env: {
+      ...tied,
       GLAVE_HOME: home(PASSKEYS, `[serve]\norigin = "${PASSKEYS_ORIGIN}"\n`),
       GLAVE_MODEL: 'e2e',
     },
@@ -81,6 +120,7 @@ const SITES: readonly { site: Site; web: string; env: Record<string, string> }[]
     site: LIVE,
     web: 'dist/app/browser',
     env: {
+      ...tied,
       GLAVE_HOME: home(LIVE, 'approval = "ask"\n'),
       GLAVE_BASE_URL: liveModel,
       GLAVE_MODEL: LIVE_MODEL,

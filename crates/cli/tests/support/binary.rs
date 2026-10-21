@@ -2,8 +2,9 @@
 //! run against a fake model server with nothing from the person's own setup.
 
 use std::io::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::sync::Arc;
 
 use glave_ports::testing::{FAKE_SECRET, Running, TempDir};
 use glave_provider_openai::fake::FakeServer;
@@ -13,6 +14,8 @@ use serde_json::Value;
 pub(crate) struct Place {
     pub project: PathBuf,
     pub home: PathBuf,
+    /// Handed to every glave started for the place, so each ends with the test.
+    pub lifeline: Lifeline,
     /// The folder both are in, removed when the place drops; none for a place made of
     /// another's folders.
     pub _folder: Option<TempDir>,
@@ -27,8 +30,91 @@ pub(crate) fn place(name: &str) -> Place {
     Place {
         project,
         home: dir.join("home"),
+        lifeline: Lifeline::new(&dir),
         _folder: Some(dir),
     }
+}
+
+/// A socket a test listens on and hands every glave it starts (`GLAVE_LIFELINE`), so they end
+/// when the test does, however it ends, killed outright included, and so does the person's
+/// server one of them starts in the background (`specs/one-server.md`, "No orphaned
+/// processes"). Each glave's connection waits unanswered; the system closes them all when the
+/// listener goes. Clones share it; it goes when the last does.
+#[derive(Clone)]
+pub(crate) struct Lifeline {
+    pub path: PathBuf,
+    _held: Arc<Listening>,
+}
+
+/// The listener, and its socket's file, removed when it goes.
+struct Listening {
+    _listener: std::os::unix::net::UnixListener,
+    path: PathBuf,
+}
+
+impl Drop for Listening {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+impl Lifeline {
+    /// The variable that hands it to glave.
+    pub(crate) const VARIABLE: &str = "GLAVE_LIFELINE";
+
+    /// A new one for `folder`, listening.
+    pub(crate) fn new(folder: &Path) -> Self {
+        let path = socket_path(folder, "lifeline");
+        let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
+        Self {
+            path: path.clone(),
+            _held: Arc::new(Listening {
+                _listener: listener,
+                path,
+            }),
+        }
+    }
+}
+
+/// Where a socket named `name` for `folder` goes: in it, or, where that path would be too long
+/// for a socket's (a deep system temp folder), in `/tmp`, named after the temp folder `folder`
+/// is in (`glave-<name>-<pid>-<n>`, this process's own), and any file a killed run left there
+/// removed first.
+pub(crate) fn socket_path(folder: &Path, name: &str) -> PathBuf {
+    let path = folder.join(name);
+    let Some(owner) = folder.parent().and_then(Path::file_name) else {
+        return path;
+    };
+    if path.as_os_str().len() <= 100 {
+        return path;
+    }
+    let mut short = owner.to_os_string();
+    short.push(format!(".{name}"));
+    let short = Path::new("/tmp").join(short);
+    let _ = std::fs::remove_file(&short);
+    short
+}
+
+/// Whether the process `pid` still runs (or waits to be reaped).
+pub(crate) fn alive(pid: u32) -> bool {
+    Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stderr(Stdio::null())
+        .status()
+        .unwrap()
+        .success()
+}
+
+/// Waits up to `limit` for `done`, looking every 50 ms.
+pub(crate) fn until(limit: std::time::Duration, mut done: impl FnMut() -> bool) -> bool {
+    let deadline = std::time::Instant::now() + limit;
+    while !done() {
+        if std::time::Instant::now() > deadline {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    true
 }
 
 /// Sets `key = value` in `place`'s own settings (`config.toml` in its home), as the person
@@ -73,6 +159,7 @@ pub(crate) fn start_with(
 ) -> Running {
     let child = Command::new(env!("CARGO_BIN_EXE_glave"))
         .args(args)
+        .env(Lifeline::VARIABLE, &place.lifeline.path)
         .envs(env.iter().copied())
         .current_dir(&place.project)
         .env("GLAVE_BASE_URL", server.url())
@@ -133,6 +220,7 @@ pub(crate) fn terminal_with(
         .env("GLAVE_API_KEY", FAKE_SECRET)
         .env("NO_COLOR", "1")
         .env("SSH_CONNECTION", "test")
+        .env(Lifeline::VARIABLE, &place.lifeline.path)
         .env_remove("GLAVE_MODEL")
         .env_remove("GLAVE_PROVIDER")
         .envs(env.iter().copied())
@@ -161,6 +249,7 @@ impl Drop for Stopped<'_> {
         let stopped = Command::new(env!("CARGO_BIN_EXE_glave"))
             .args(["server", "stop"])
             .env("GLAVE_HOME", &self.0.home)
+            .env(Lifeline::VARIABLE, &self.0.lifeline.path)
             .stdin(Stdio::null())
             .output();
         if stopped.is_ok_and(|stopped| stopped.status.success()) {
