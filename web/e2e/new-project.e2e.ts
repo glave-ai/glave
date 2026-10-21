@@ -66,8 +66,8 @@ test('a project made from a folder picked on this computer, then its first threa
   // The cursor waits in the composer for the project's first message.
   await expect(byTestId(page, 'home-composer-input')).toBeFocused();
   await expect(byTestId(page, 'home-where-trigger')).toContainText('glave 2');
-  // glave, where a thread waits for the person, stays first; then the project just made.
-  await expect(byTestId(page, 'nav-project-toggle')).toHaveText(['glave', 'glave 2']);
+  // The project just made is the newest, so it comes first, though a thread in glave waits.
+  await expect(byTestId(page, 'nav-project-toggle')).toHaveText(['glave 2', 'glave']);
   expect(created(api.requests)).toEqual([
     { name: 'glave', folder: { kind: 'path', path: '/Users/ana/code/glave' } },
   ]);
