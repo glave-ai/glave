@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use glave_event::{At, Fired, ScheduleCreated, ScheduleDeleted, ScheduleId, ThreadId, When};
 use glave_harness::Goal;
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope};
+use glave_ports::{BlobStore, Caller, EventLog, Leased, ModelProvider, ProjectId, Scope};
 use jiff::Timestamp;
 
 use crate::cron::Cron;
@@ -24,6 +24,10 @@ use crate::tasks::Work;
 /// The longest the scheduler sleeps before looking again: schedules made by another process
 /// are found within this.
 const LOOK_AGAIN: Duration = Duration::from_secs(60);
+/// How long the organization's scheduler lease lasts unless renewed: past the longest wait
+/// between ticks, so the server firing its schedules keeps it from tick to tick, and another
+/// takes over this long after one stops without letting go.
+const SCHEDULING: Duration = Duration::from_secs(180);
 /// Occurrences of a cron expression walked to find the latest one missed.
 const MOST_MISSED: usize = 100_000;
 
@@ -168,6 +172,10 @@ where
     pub async fn tick(&self) -> Result<Vec<ThreadId>, ApiError> {
         // Threads idle for 30 minutes are let go even when nothing else happens.
         self.let_go_stale();
+        // One server of the organization fires its schedules: the holder of their lease.
+        if !self.fires().await? {
+            return Ok(Vec::new());
+        }
         for project in self.task_projects().await? {
             // A ledger that cannot be read now is read again on the next tick.
             if let Err(error) = self.catch_up(project).await {
@@ -204,6 +212,21 @@ where
             }
         }
         Ok(started)
+    }
+
+    /// Whether this server fires the organization's schedules: it takes their lease, or renews
+    /// it, for [`SCHEDULING`]; none while another server holds it.
+    async fn fires(&self) -> Result<bool, ApiError> {
+        let (org, holder) = (self.inner.org, self.holder()?);
+        let taken = self
+            .inner
+            .leases
+            .acquire(org, Leased::Scheduler, holder, SCHEDULING)
+            .await
+            .map_err(|error| ApiError::internal(&error))?;
+        let fires = taken.is_some();
+        *self.scheduling() = taken;
+        Ok(fires)
     }
 
     /// Holds back `schedule`'s run that was due at `at` and could not start, until the

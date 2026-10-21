@@ -17,6 +17,7 @@ use glave_harness::Goal;
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope, title_from};
 
 use crate::held::{Slot, busy};
+use crate::leased::Repaired;
 use crate::ledger::Recorded;
 use crate::modes::Choice;
 use crate::protocol::{
@@ -361,10 +362,13 @@ where
         Ok(Reply::Tasks { tasks: running })
     }
 
-    /// Records as interrupted every task a ledger has open that this server does not run, in
-    /// every project whose tasks it runs: for the one server that runs them, when it starts.
-    pub async fn recover_tasks(&self) -> Result<usize, ApiError> {
-        let mut recovered = 0;
+    /// Records as interrupted every task a ledger has open that no server runs any more, in
+    /// every project whose tasks this server runs: those whose thread's lease lapsed or that
+    /// have none, since a task's turn holds its thread's lease wherever it runs. For the one
+    /// server that runs tasks, as it starts, and again while another server's lease holds one
+    /// (`Repaired::held`), until it lapses.
+    pub async fn recover_tasks(&self) -> Result<Repaired, ApiError> {
+        let mut recovered = Repaired::default();
         for project in self.task_projects().await? {
             self.catch_up(project).await?;
             let stale: Vec<ThreadId> = {
@@ -380,18 +384,40 @@ where
                 })
             };
             for thread in stale {
-                let ended = TaskEnded {
-                    thread,
-                    outcome: Outcome::Interrupted,
-                    tokens: TokenCounts::default(),
-                    cost: None,
-                    by: None,
+                let Some(lease) = self.take(thread).await? else {
+                    recovered.held = recovered.held.saturating_add(1);
+                    continue;
                 };
-                self.record_in_ledger(project, &ended).await?;
-                recovered += 1;
+                let ended = self.interrupt(project, thread).await;
+                self.let_go(&lease).await;
+                if ended? {
+                    recovered.closed = recovered.closed.saturating_add(1);
+                }
             }
         }
         Ok(recovered)
+    }
+
+    /// Records `thread`'s task in `project` interrupted, under its thread's lease, unless its
+    /// ending was recorded meanwhile; says whether it recorded.
+    async fn interrupt(&self, project: ProjectId, thread: ThreadId) -> Result<bool, ApiError> {
+        self.catch_up(project).await?;
+        let open = self
+            .ledgers()
+            .get(&project)
+            .is_some_and(|ledger| ledger.open.contains_key(&thread));
+        if !open {
+            return Ok(false);
+        }
+        let ended = TaskEnded {
+            thread,
+            outcome: Outcome::Interrupted,
+            tokens: TokenCounts::default(),
+            cost: None,
+            by: None,
+        };
+        self.record_in_ledger(project, &ended).await?;
+        Ok(true)
     }
 
     pub(crate) fn tasks(&self) -> std::sync::MutexGuard<'_, Tasks> {

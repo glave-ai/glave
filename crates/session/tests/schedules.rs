@@ -5,10 +5,11 @@
 //! stops its runs; every run has a budget; and policy limits how many schedules are kept.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use glave_event::{At, Opened, ScheduleId, When};
 use glave_ports::testing::{ManualClock, TempDir};
-use glave_ports::{EventLog, InMemoryLog, ProjectId};
+use glave_ports::{EventLog, InMemoryLeases, InMemoryLog, Leases, ProjectId};
 use glave_session::protocol::{Reply, Request, ScheduleInfo, code};
 use jiff::Timestamp;
 
@@ -221,7 +222,8 @@ fn a_fresh_server_runs_what_was_missed_while_none_ran_once() {
         later.worktrees = repo.parent().map(|dir| dir.join("worktrees"));
         set(&now, "2026-10-11T10:30:00Z");
         let (restarted, _) = later.build_on(&repo, log).await;
-        assert_eq!(restarted.recover_tasks().await.unwrap(), 0);
+        let recovered = restarted.recover_tasks().await.unwrap();
+        assert_eq!(recovered, glave_session::Repaired::default());
         assert_eq!(tick(&restarted).await, 1);
         assert_eq!(tick(&restarted).await, 0);
         set(&now, "2026-10-11T11:00:00Z");
@@ -287,5 +289,47 @@ fn the_task_ledger_is_never_listed_or_read_as_a_thread() {
             .await
             .unwrap_err();
         assert_eq!(read.code, code::NO_THREAD);
+    });
+}
+
+/// One server of the organization fires its schedules, the holder of their lease: a second
+/// server on the store fires none while the first holds it, and takes over once it stops.
+#[test]
+fn schedules_fire_from_one_server_at_a_time() {
+    block_on!(async {
+        let log = Shared::default();
+        let first = setup();
+        let now = first.clock.clone();
+        let leases = Arc::new(InMemoryLeases::new(Arc::new(now.clone())));
+        let mut first = first;
+        first.leases = Some(Arc::clone(&leases) as Arc<dyn Leases>);
+        let (one, _, repo, _dir) = first
+            .build_in_repository("schedule-lease", log.clone())
+            .await;
+        let mut second = setup();
+        second.clock = now.clone();
+        second.seed = 2;
+        second.settings.person = one.person();
+        second.projects = Some(Arc::clone(one.projects()));
+        second.leases = Some(Arc::clone(&leases) as Arc<dyn Leases>);
+        second.worktrees = repo.parent().map(|dir| dir.join("worktrees"));
+        let (two, _) = second.build_on(&repo, log).await;
+        let at_time = |text: &str| When::At(At::from(text.parse::<Timestamp>().unwrap()));
+        create(&one, at_time("2026-10-10T10:05:00Z"), 5_000)
+            .await
+            .unwrap();
+        create(&one, at_time("2026-10-10T10:07:00Z"), 5_000)
+            .await
+            .unwrap();
+        // Nothing is due at 10:03: the first to look takes the schedules' lease.
+        assert_eq!(tick(&one).await, 0);
+        set(&now, "2026-10-10T10:05:00Z");
+        assert_eq!(tick(&two).await, 0, "the first server fires them");
+        assert_eq!(tick(&one).await, 1);
+        // The first stops, letting go: the second fires the next run.
+        one.shutdown().await;
+        set(&now, "2026-10-10T10:07:00Z");
+        assert_eq!(tick(&two).await, 1);
+        assert_eq!(tick(&two).await, 0, "each run once");
     });
 }

@@ -11,11 +11,10 @@ use std::sync::Arc;
 
 use glave_event::{Opened, Outcome};
 use glave_harness::ApprovalMode;
-use glave_ports::Caller;
-use glave_ports::InMemoryLog;
 use glave_ports::testing::TempDir;
+use glave_ports::{Caller, InMemoryLog, Leases};
 use glave_session::protocol::{Notification, Reply, Request, TaskStatus, code};
-use glave_session::{Answering, Watched};
+use glave_session::{Answering, Repaired, Watched};
 use serde_json::json;
 use tokio::sync::Notify;
 
@@ -469,9 +468,11 @@ fn recovering_tasks_covers_every_project() {
     block_on!(async {
         let log = Shared::default();
         // A server that runs a task in its own project and one in another, then is gone
-        // without ending them.
+        // without ending them; its leases on their threads lapse after a while.
+        let (clock, leases) = shared_leases();
         let mut first = Setup::new(vec![answer(Some("a"), None), answer(Some("b"), None)]);
         first.gate = Some(Arc::new(Notify::new()));
+        first.leases = Some(Arc::clone(&leases) as Arc<dyn Leases>);
         let (gone, _, repo, _dir) = first.build_in_repository("task-recover", log.clone()).await;
         let other = make_project(
             &gone,
@@ -483,13 +484,29 @@ fn recovering_tasks_covers_every_project() {
             let thread = start_for_tasks(&gone, project).await.unwrap();
             background(&gone, thread, None).await;
         }
-        // The next server on the same store finds both open, and records them interrupted.
+        // The next server on the same store finds both open, held by the gone server's leases
+        // until they lapse, then records them interrupted.
         let mut next = Setup::new(Vec::new());
         next.seed = 2;
         next.projects = Some(Arc::clone(gone.projects()));
         next.settings.person = gone.person();
+        next.leases = Some(Arc::clone(&leases) as Arc<dyn Leases>);
         let (server, _) = next.build_on(&repo, log).await;
-        assert_eq!(server.recover_tasks().await.unwrap(), 2);
+        let held = Repaired { closed: 0, held: 2 };
+        assert_eq!(
+            server.recover_tasks().await.unwrap(),
+            held,
+            "still running there"
+        );
+        assert!(
+            tasks(&server)
+                .await
+                .iter()
+                .all(|task| task.outcome.is_none())
+        );
+        clock.advance_seconds(31);
+        let recovered = server.recover_tasks().await.unwrap();
+        assert_eq!(recovered, Repaired { closed: 2, held: 0 });
         let listed = tasks(&server).await;
         assert_eq!(listed.len(), 2, "{listed:?}");
         assert!(
@@ -498,6 +515,7 @@ fn recovering_tasks_covers_every_project() {
                 .all(|task| task.outcome == Some(Outcome::Interrupted)),
             "{listed:?}"
         );
-        assert_eq!(server.recover_tasks().await.unwrap(), 0, "once");
+        let again = server.recover_tasks().await.unwrap();
+        assert_eq!(again, Repaired::default(), "once");
     });
 }

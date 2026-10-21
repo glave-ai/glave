@@ -16,8 +16,8 @@ use glave_ports::computer::{ComputerId, GitCredentials, WorkspaceInfo};
 use glave_ports::memories::Memory;
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
 use glave_ports::{
-    Completion, EventLog, InMemoryBlobs, InMemoryLog, InMemoryProjects, Leases, Located, LogError,
-    OrgId, Project, ProjectId, ProjectKind, Projects, Scope,
+    Completion, EventLog, InMemoryBlobs, InMemoryLeases, InMemoryLog, InMemoryProjects, Leases,
+    Located, LogError, OrgId, Project, ProjectId, ProjectKind, Projects, Scope,
 };
 use glave_session::protocol::ModelInfo;
 use glave_session::signin::Browsers;
@@ -265,6 +265,14 @@ async fn keep_folder<L: EventLog>(log: &L, home: Scope, info: &WorkspaceInfo) {
 /// The server of `Setup::asking`.
 pub(crate) async fn server(dir: &Path, answers: Vec<Completion>, answering: Answering) -> Tested {
     Setup::asking(answers, answering).build(dir).await.0
+}
+
+/// Leases in memory that two servers can share, as two processes share a database, on a clock
+/// the test moves.
+pub(crate) fn shared_leases() -> (ManualClock, Arc<InMemoryLeases>) {
+    let clock = ManualClock::at_millis(1_791_001_000_000);
+    let leases = Arc::new(InMemoryLeases::new(Arc::new(clock.clone())));
+    (clock, leases)
 }
 
 /// A log in memory that two servers can share, as two processes share a database.

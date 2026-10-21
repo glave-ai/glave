@@ -32,12 +32,13 @@ const RENEW: Duration = Duration::from_secs(10);
 /// Views of open turns read at a time as the server starts.
 const PAGE: usize = 500;
 
-/// What a server found left open as it started.
+/// What a server found left open as it started: turns ([`Server::repair_left_open`]), or tasks
+/// ([`Server::recover_tasks`]).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Repaired {
-    /// Turns it closed, `interrupted`.
+    /// Those it closed, `interrupted`.
     pub closed: usize,
-    /// Turns another server's lease still holds: running there, or left by a server that
+    /// Those another server's lease still holds: running there, or left by a server that
     /// stopped less than a lease ago. Look again once it may have lapsed.
     pub held: usize,
 }
@@ -60,7 +61,7 @@ where
     B: BlobStore + 'static,
 {
     /// The id this server holds leases by, made the first time it takes one.
-    fn holder(&self) -> Result<Holder, ApiError> {
+    pub(crate) fn holder(&self) -> Result<Holder, ApiError> {
         if let Some(holder) = self.inner.holder.get() {
             return Ok(*holder);
         }
@@ -70,7 +71,7 @@ where
     }
 
     /// Takes `thread`'s lease for this server: `None` while another server holds it.
-    async fn take(&self, thread: ThreadId) -> Result<Option<Lease>, ApiError> {
+    pub(crate) async fn take(&self, thread: ThreadId) -> Result<Option<Lease>, ApiError> {
         let on = Leased::Thread(thread);
         let leases = &self.inner.leases;
         leases

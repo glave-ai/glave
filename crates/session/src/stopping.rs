@@ -2,11 +2,12 @@
 //! runs a grace to end on its own, then interrupts the rest, which end `interrupted`, not
 //! `cancelled`, since the person did not stop them.
 
-use std::sync::PoisonError;
 use std::sync::atomic::Ordering;
+use std::sync::{MutexGuard, PoisonError};
 use std::time::Duration;
 
 use glave_harness::Cancel;
+use glave_ports::Lease;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
@@ -54,6 +55,21 @@ impl<P, L, B> Server<P, L, B> {
         for task in tasks {
             let _ = task.await;
         }
+        // Another server may fire the organization's schedules at once.
+        let scheduling = self.scheduling().take();
+        if let Some(lease) = scheduling
+            && let Err(error) = self.inner.leases.release(&lease).await
+        {
+            tracing::warn!(%error, "the scheduler's lease could not be let go; it lapses on its own");
+        }
+    }
+
+    /// The organization's scheduler lease, while this server holds it.
+    pub(crate) fn scheduling(&self) -> MutexGuard<'_, Option<Lease>> {
+        self.inner
+            .scheduling
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Stops the server with no grace: whatever runs is interrupted at once.

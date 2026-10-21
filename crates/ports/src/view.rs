@@ -249,16 +249,6 @@ pub struct ThreadQuery {
 }
 
 impl ThreadQuery {
-    /// The views of `standing`, a page of `limit` from the most recently written.
-    pub fn of(standing: Standing, limit: usize) -> Self {
-        Self {
-            standing,
-            limit,
-            after: None,
-            open: false,
-        }
-    }
-
     /// Whether `view` belongs in this listing, before the limit.
     pub fn admits(&self, view: &ThreadView) -> bool {
         view.standing == self.standing
