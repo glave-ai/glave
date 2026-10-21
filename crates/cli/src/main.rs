@@ -24,6 +24,7 @@ mod credentials;
 
 mod data;
 mod gateway;
+mod helpers;
 mod home;
 mod identity;
 mod input;
@@ -57,7 +58,7 @@ mod worktrees;
 
 fn main() -> std::process::ExitCode {
     capabilities::keep_to_itself();
-    if let Some(code) = computer::sandbox_helper() {
+    if let Some(code) = helpers::run() {
         return code;
     }
     session::main()

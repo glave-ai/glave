@@ -151,7 +151,7 @@ fn outcome(message: &Value) -> Result<Value, ApiError> {
         Some(error) => Err(
             serde_json::from_value(error.clone()).unwrap_or_else(|err| ApiError {
                 code: 0,
-                message: format!("unreadable error: {err}"),
+                message: format!("unreadable error: {err}").into(),
                 data: None,
             }),
         ),

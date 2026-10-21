@@ -20,6 +20,7 @@ use crate::modes::Choice;
 use crate::protocol::{ApiError, Reply, ScheduleInfo, code};
 use crate::server::Server;
 use crate::tasks::Work;
+use crate::words::Sentence;
 
 /// The longest the scheduler sleeps before looking again: schedules made by another process
 /// are found within this.
@@ -57,13 +58,13 @@ where
         if new.budget == 0 {
             return Err(ApiError::new(
                 code::INVALID_PARAMS,
-                "a schedule's budget is the tokens each run may use, more than 0",
+                Sentence::ScheduleNoBudget,
             ));
         }
         if new.prompt.trim().is_empty() {
             return Err(ApiError::new(
                 code::INVALID_PARAMS,
-                "a schedule needs a prompt",
+                Sentence::ScheduleNoPrompt,
             ));
         }
         let project = self.project_for(caller, new.project).await?.0.id;
@@ -80,10 +81,7 @@ where
             if kept >= max {
                 return Err(ApiError::new(
                     code::LIMIT,
-                    format!(
-                        "{kept} schedules are kept, the most policy allows ([tasks] \
-                         max_schedules = {max}); delete one first"
-                    ),
+                    Sentence::TooManySchedules { kept, most: max },
                 ));
             }
         }
@@ -106,7 +104,7 @@ where
             .get(&project)
             .and_then(|ledger| ledger.schedules.get(&schedule))
             .map(|scheduled| info(scheduled, self.inner.harness.clock().now()))
-            .ok_or_else(|| ApiError::new(code::INTERNAL, "the schedule was not kept"))?;
+            .ok_or_else(|| ApiError::new(code::INTERNAL, Sentence::ScheduleNotKept))?;
         Ok(Reply::Schedule { schedule: info })
     }
 
@@ -141,7 +139,9 @@ where
         let Some(project) = project else {
             return Err(ApiError::new(
                 code::NO_SCHEDULE,
-                format!("no schedule {schedule} here"),
+                Sentence::NoSchedule {
+                    schedule: schedule.to_string(),
+                },
             ));
         };
         let deleted = ScheduleDeleted {

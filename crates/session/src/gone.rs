@@ -17,13 +17,20 @@ use crate::held::Slot;
 use crate::protocol::{ApiError, GoneFolder, NewFolder, Reply, code};
 use crate::providers::local;
 use crate::server::{MAX_PAGE, Server};
-
-/// What the person is told about a project whose folder isn't there anymore.
-const GONE: &str = "This project's folder isn't there anymore.";
+use crate::words::Sentence;
 
 /// Refused: the project's folder isn't there anymore, so nothing runs in it.
 pub(crate) fn folder_gone() -> ApiError {
-    ApiError::new(code::NO_FOLDER, GONE)
+    ApiError::new(code::NO_FOLDER, Sentence::FolderGone)
+}
+
+/// What only a project's owner, on the computer glave runs on, does to it.
+#[derive(Clone, Copy)]
+enum OwnersOnly {
+    /// Gives it its folder's new place.
+    SetFolder,
+    /// Removes it.
+    Remove,
 }
 
 /// Whether `error` says the project's folder isn't there anymore.
@@ -56,7 +63,7 @@ where
                 {
                     gone.push(GoneFolder {
                         project: project.id,
-                        message: GONE.to_owned(),
+                        message: Sentence::FolderGone.into(),
                     });
                 }
             }
@@ -75,7 +82,7 @@ where
         path: String,
     ) -> Result<Reply, ApiError> {
         let found = self
-            .owned_here(caller, project, "gives a project its folder")
+            .owned_here(caller, project, OwnersOnly::SetFolder)
             .await?;
         let was = match self.folder_found(project).await {
             Err(error) if is_gone(&error) => self.folder_of(project).await?,
@@ -83,7 +90,7 @@ where
             Ok(_) => {
                 return Err(ApiError::new(
                     code::INVALID_PARAMS,
-                    "this project's folder is still where it was",
+                    Sentence::FolderStillThere,
                 ));
             }
         };
@@ -105,10 +112,7 @@ where
             .await
         {
             Ok(led) if led.id != project => {
-                return Err(ApiError::new(
-                    code::NOT_ALLOWED,
-                    "that folder is already another project's",
-                ));
+                return Err(ApiError::new(code::NOT_ALLOWED, Sentence::FolderOthers));
             }
             // No key was known: the project keeps its folder in its ledger alone.
             Ok(_) | Err(ProjectError::Conflict(_)) => {}
@@ -130,17 +134,13 @@ where
         caller: &Caller,
         project: ProjectId,
     ) -> Result<Reply, ApiError> {
-        self.owned_here(caller, project, "removes a project")
-            .await?;
+        self.owned_here(caller, project, OwnersOnly::Remove).await?;
         let threads = self.active_threads(project).await?;
         if threads
             .iter()
             .any(|thread| matches!(self.lock().get(thread), Some(Slot::Busy { .. })))
         {
-            return Err(ApiError::new(
-                code::TURN_RUNNING,
-                "something is running in this project: stop it first, then remove the project",
-            ));
+            return Err(ApiError::new(code::TURN_RUNNING, Sentence::ProjectBusy));
         }
         self.let_go_in(project);
         // Glave's own: archiving the threads of a project its owner removes.
@@ -199,30 +199,29 @@ where
     }
 
     /// The project `project`, for `caller` on this computer, who owns it; refused otherwise, as
-    /// only the person on this computer `does` what this is.
+    /// only its owner, on this computer, `does` this.
     async fn owned_here(
         &self,
         caller: &Caller,
         project: ProjectId,
-        does: &str,
+        does: OwnersOnly,
     ) -> Result<Project, ApiError> {
         if !local(caller) {
-            return Err(only_here(&format!(
-                "only the person on the computer glave runs on {does}"
-            )));
+            return Err(only_here(match does {
+                OwnersOnly::SetFolder => Sentence::SetFolderOnlyHere,
+                OwnersOnly::Remove => Sentence::RemoveOnlyHere,
+            }));
         }
         let found = self.member_of(caller, project).await?;
         if found.kind != ProjectKind::Project {
-            return Err(ApiError::new(
-                code::INVALID_PARAMS,
-                "only a project has a folder, and can be removed",
-            ));
+            return Err(ApiError::new(code::INVALID_PARAMS, Sentence::OnlyProjects));
         }
         if found.owner != Principal::person(self.person_of(caller)?) {
-            return Err(ApiError::new(
-                code::NOT_ALLOWED,
-                format!("only its owner {does}"),
-            ));
+            let sentence = match does {
+                OwnersOnly::SetFolder => Sentence::SetFolderOnlyOwner,
+                OwnersOnly::Remove => Sentence::RemoveOnlyOwner,
+            };
+            return Err(ApiError::new(code::NOT_ALLOWED, sentence));
         }
         Ok(found)
     }

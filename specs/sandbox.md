@@ -165,7 +165,7 @@ profile bwrap /usr/bin/bwrap flags=(unconfined) {
 - Landlock grants whole folders and cannot take access back below them, so it cannot keep protected paths read-only inside a writable project. A `project` sandbox is refused with the reason and what to install, rather than run with protections missing.
 - Reads are denied by granting every neighbour on the way down to a secret instead of its parent. Folders stay listable, so a secret folder's names show though its files do not, and a file created later beside a secret, by someone else, is unreadable until the next command.
 - There is no network namespace: with the network off, seccomp (and Landlock's TCP rules from ABI 4) refuse it; signals and abstract Unix sockets stay inside where the kernel has Landlock's scopes (ABI 6).
-- No PID namespace and no die-with-parent: a command and what it starts are stopped through their session's process group, as unsandboxed ones are.
+- No PID namespace and no die-with-parent: a command and what it starts are stopped through their session's process group, as unsandboxed ones are, by glave or, when glave is killed outright, by its lifeline's helper (`one-server.md`, "No orphaned processes").
 - A project inside `/tmp` makes `/tmp` itself unwritable (only its other entries are granted), so new files directly in `/tmp` fail there.
 
 **Neither**: a sandboxed command is refused, naming bubblewrap and the AppArmor step.

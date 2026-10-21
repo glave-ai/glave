@@ -96,6 +96,8 @@ pub(crate) struct Web {
     /// The origin whose name its requests come to, as a tunnel on this computer forwards a
     /// browser's there; the listener's own address when none.
     reaching: Option<String>,
+    /// The languages its requests ask for (`Accept-Language`), if any.
+    reading: Option<String>,
     next_id: u64,
 }
 
@@ -115,6 +117,7 @@ impl Web {
             url: served.url.clone(),
             token,
             reaching: None,
+            reading: None,
             next_id: 0,
         }
     }
@@ -123,6 +126,12 @@ impl Web {
     /// computer forwards a browser's requests to the loopback listener.
     pub(crate) fn reaching(mut self, origin: &str) -> Self {
         self.reaching = Some(origin.to_owned());
+        self
+    }
+
+    /// This client's requests ask for the languages `accepted`, as a browser set to them does.
+    pub(crate) fn reading(mut self, accepted: &str) -> Self {
+        self.reading = Some(accepted.to_owned());
         self
     }
 
@@ -140,6 +149,9 @@ impl Web {
         }
         if let Some(method) = method {
             post = post.header("Glave-Method", method);
+        }
+        if let Some(accepted) = &self.reading {
+            post = post.header("accept-language", accepted);
         }
         if let Some(origin) = &self.reaching {
             let host = origin.strip_prefix("https://").unwrap_or(origin);

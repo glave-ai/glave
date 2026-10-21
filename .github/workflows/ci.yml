@@ -345,6 +345,8 @@ jobs:
         with:
           tool: cargo-nextest
       - run: cargo build -p glave
+      # The MCP server the binary's tests start, killed with glave in orphans.rs.
+      - run: cargo build -p glave-mcp --features test-server
       - name: Landlock, without bubblewrap
         env:
           GLAVE_REQUIRE_LANDLOCK: "1"
@@ -353,6 +355,7 @@ jobs:
           sudo apt-get remove -y bubblewrap >/dev/null 2>&1 || true
           if command -v bwrap; then echo "bubblewrap is still installed"; exit 1; fi
           cargo nextest run -p glave-computer -E 'test(/landlock/)'
+          cargo nextest run -p glave --test cli -E 'test(/landlock/)'
       # Ubuntu 23.10 and later let only programs AppArmor allows create user namespaces; this
       # is the profile the person adds too (specs/sandbox.md).
       - name: Install bubblewrap, with an AppArmor profile that lets it make user namespaces

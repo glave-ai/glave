@@ -14,6 +14,7 @@ use tokio::sync::watch;
 use crate::held::{Slot, Use, finished};
 use crate::protocol::{ApiError, Reply, code};
 use crate::server::{Server, no_thread};
+use crate::words::Sentence;
 
 impl<P, L, B> Server<P, L, B>
 where
@@ -59,17 +60,16 @@ where
         let stopped = commands.stop_for(command, by).await.map_err(|error| {
             ApiError::new(
                 code::INTERNAL,
-                format!("the command could not be stopped: {}", error.message()),
+                Sentence::CommandNotStopped {
+                    reason: error.message().to_owned(),
+                },
             )
         })?;
         self.record_commands(thread).await;
         if stopped {
             Ok(Reply::Done {})
         } else {
-            Err(ApiError::new(
-                code::NO_COMMAND,
-                "that command is not running in this thread",
-            ))
+            Err(ApiError::new(code::NO_COMMAND, Sentence::NoCommand))
         }
     }
 

@@ -14,29 +14,23 @@ use glave_ports::{EntropyError, LogError, ProjectError};
 use crate::accounts::AccountsError;
 use crate::protocol::{ApiError, ErrorData, code};
 use crate::server::no_thread;
-
-/// What a person is told when glave's records fail them.
-const RECORDS_FAILED: &str =
-    "glave could not read or save its records: try again, and restart glave if it keeps happening";
+use crate::words::Sentence;
 
 impl ApiError {
     /// A failure of glave's own records, `error`, which goes to the server's log; the client
     /// is told what to do.
     pub fn internal(error: &dyn Display) -> Self {
         tracing::warn!(%error, "glave's records failed");
-        Self::new(code::INTERNAL, RECORDS_FAILED)
+        Self::new(code::INTERNAL, Sentence::RecordsFailed)
     }
 }
-
-/// Another writer took the place glave was writing to: trying again reads what it wrote.
-const WRITTEN_ELSEWHERE: &str =
-    "this changed elsewhere while glave was saving it: look again, then try again";
 
 impl From<LogError> for ApiError {
     fn from(error: LogError) -> Self {
         match error {
+            // Another writer took the place glave was writing to: trying again reads it.
             LogError::Conflict { .. } | LogError::Gap { .. } => {
-                Self::new(code::INTERNAL, WRITTEN_ELSEWHERE)
+                Self::new(code::INTERNAL, Sentence::WrittenElsewhere)
             }
             _ => Self::internal(&error),
         }
@@ -128,10 +122,7 @@ impl From<BrowserError> for ApiError {
             // Where and why go to the server's log; the person is told what to do.
             BrowserError::Keep { .. } | BrowserError::Random(_) => {
                 tracing::warn!(%error, "could not sign a browser in");
-                Self::new(
-                    code::INTERNAL,
-                    "glave could not keep this browser's sign-in: try again",
-                )
+                Self::new(code::INTERNAL, Sentence::BrowserNotKept)
             }
         }
     }
@@ -143,14 +134,14 @@ impl From<&HarnessError> for ApiError {
         match error {
             HarnessError::Provider(failed) => Self {
                 code: code::PROVIDER,
-                message: error.to_string(),
+                message: error.to_string().into(),
                 data: Some(ErrorData {
                     failure: failed.failure(),
                 }),
             },
             HarnessError::NotFound(thread) => no_thread(*thread),
             HarnessError::Archived(_) => Self::new(code::ARCHIVED, error.to_string()),
-            HarnessError::Cancelled => Self::new(code::CANCELLED, "cancelled"),
+            HarnessError::Cancelled => Self::new(code::CANCELLED, Sentence::Cancelled),
             HarnessError::NoGoal(_) => Self::new(code::NO_GOAL, error.to_string()),
             HarnessError::Workspace(_) => Self::new(code::WORKSPACE, error.to_string()),
             HarnessError::PromptBlocked(_) => Self::new(code::PROMPT_BLOCKED, error.to_string()),
@@ -170,6 +161,8 @@ impl From<&HarnessError> for ApiError {
 mod tests {
     use glave_ports::ProjectId;
 
+    use crate::protocol::Told;
+
     use super::*;
 
     #[test]
@@ -183,7 +176,7 @@ mod tests {
         ];
         for error in errors {
             assert_eq!(error.code, code::INTERNAL);
-            assert_eq!(error.message, RECORDS_FAILED);
+            assert_eq!(error.message, Told::from(Sentence::RecordsFailed));
         }
     }
 
@@ -191,7 +184,7 @@ mod tests {
     fn what_the_person_can_fix_keeps_its_own_words() {
         let invalid = ApiError::from(ProjectError::Invalid("the name is empty".into()));
         assert_eq!(
-            (invalid.code, invalid.message.as_str()),
+            (invalid.code, &*invalid.message),
             (code::INVALID_PARAMS, "the name is empty")
         );
         let project = ProjectId::from_uuid(uuid::Uuid::nil());

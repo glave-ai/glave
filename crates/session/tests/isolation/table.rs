@@ -163,6 +163,12 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         // Whether the server's own computer stays awake: no one's id to name.
         ("awake/get", vec![json!({})]),
         ("awake/set", vec![json!({"on": false})]),
+        // The caller's own language: no one else's to name.
+        ("language/get", vec![json!({})]),
+        (
+            "language/set",
+            vec![json!({"language": "en-XA"}), json!({})],
+        ),
         ("signin/link", vec![json!({})]),
         ("signin/redeem", vec![json!({"code": "@code"})]),
         ("signin/end", vec![json!({"@caller": "@session"})]),

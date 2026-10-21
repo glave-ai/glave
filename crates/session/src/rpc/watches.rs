@@ -13,6 +13,7 @@ use glave_ports::ProjectId;
 use tokio::sync::{Notify, watch};
 
 use crate::protocol::{ApiError, code};
+use crate::words::Sentence;
 
 /// The most threads and lists one connection watches at once.
 const MOST_WATCHES: usize = 64;
@@ -91,37 +92,34 @@ impl Watches {
     pub(super) fn claim(self: &Arc<Self>, key: Key, after: Option<Seq>) -> Result<Claim, ApiError> {
         let mut held = self.held();
         if held.closed {
-            return Err(ApiError::new(code::INTERNAL, "the connection closed"));
+            return Err(ApiError::new(code::INTERNAL, Sentence::ConnectionClosed));
         }
         if let Key::Thread(thread) = key
             && held.turns.contains_key(&thread)
         {
             return Err(ApiError::new(
                 code::INVALID_PARAMS,
-                format!(
-                    "this connection follows a turn in thread {thread}: watch it once the turn has \
-                     answered, or from another connection"
-                ),
+                Sentence::FollowsTurn {
+                    thread: thread.to_string(),
+                },
             ));
         }
         if held.threads.contains_key(&key) {
             let watched = match key {
-                Key::Thread(thread) => format!("thread {thread}"),
-                Key::List(Some(project)) => format!("the threads of project {project}"),
-                Key::List(None) => "your threads".to_owned(),
+                Key::Thread(thread) => Sentence::WatchesThread {
+                    thread: thread.to_string(),
+                },
+                Key::List(Some(project)) => Sentence::WatchesProject {
+                    project: project.to_string(),
+                },
+                Key::List(None) => Sentence::WatchesYours,
             };
-            return Err(ApiError::new(
-                code::INVALID_PARAMS,
-                format!("this connection watches {watched} already"),
-            ));
+            return Err(ApiError::new(code::INVALID_PARAMS, watched));
         }
         if held.threads.len() >= MOST_WATCHES {
             return Err(ApiError::new(
                 code::LIMIT,
-                format!(
-                    "a connection watches at most {MOST_WATCHES} threads and lists at once: \
-                     unwatch one first"
-                ),
+                Sentence::TooManyWatches { most: MOST_WATCHES },
             ));
         }
         let end = Arc::new(Notify::new());

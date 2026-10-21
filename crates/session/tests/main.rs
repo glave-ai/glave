@@ -19,6 +19,7 @@ mod goals;
 mod gone;
 mod http;
 mod isolation;
+mod languages;
 mod leases;
 mod list_watching;
 mod listing;

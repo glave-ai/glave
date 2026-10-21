@@ -16,6 +16,7 @@ use crate::held::{Slot, Use, finished};
 use crate::modes::Choice;
 use crate::protocol::{ApiError, Reply, Show, ThreadSummary, code};
 use crate::server::{MAX_PAGE, Server, no_thread};
+use crate::words::Sentence;
 
 impl<P, L, B> Server<P, L, B>
 where
@@ -104,7 +105,7 @@ where
         }
         let ended = finished(&mut done)
             .await
-            .ok_or_else(|| ApiError::new(code::INTERNAL, "the change stopped"))?;
+            .ok_or_else(|| ApiError::new(code::INTERNAL, Sentence::ChangeStopped))?;
         ended.as_ref().as_ref().map_err(ApiError::from)?;
         Ok(Reply::Done {})
     }
@@ -130,7 +131,7 @@ where
         .await?;
         let ended = finished(&mut done)
             .await
-            .ok_or_else(|| ApiError::new(code::INTERNAL, "the rename stopped"))?;
+            .ok_or_else(|| ApiError::new(code::INTERNAL, Sentence::RenameStopped))?;
         ended.as_ref().as_ref().map_err(ApiError::from)?;
         let scope = self.scope_of(thread).await?;
         let summary = self.summary(scope, thread).await?;

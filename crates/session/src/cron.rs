@@ -7,6 +7,8 @@ use jiff::Timestamp;
 use jiff::civil::{Date, DateTime};
 use jiff::tz::Offset;
 
+use crate::words::Sentence;
+
 /// Days looked ahead for a match: a valid expression that never matches in five years (such
 /// as the 31st of February) has no next time.
 const LOOKAHEAD_DAYS: u32 = 366 * 5;
@@ -26,12 +28,12 @@ pub(crate) struct Cron {
 
 impl Cron {
     /// Parses `text`, or says what is wrong with it.
-    pub(crate) fn parse(text: &str) -> Result<Self, String> {
+    pub(crate) fn parse(text: &str) -> Result<Self, Sentence> {
         let fields: Vec<&str> = text.split_whitespace().collect();
         let [minute, hour, day, month, weekday] = fields.as_slice() else {
-            return Err(format!(
-                "a cron expression has five fields (minute hour day month weekday), got {text:?}"
-            ));
+            return Err(Sentence::CronFields {
+                text: text.escape_debug().to_string(),
+            });
         };
         let mut weekdays = field(weekday, 0, 7, "weekday")?;
         // 7 is Sunday too.
@@ -98,9 +100,14 @@ fn has(set: u64, value: i8) -> bool {
         .is_some_and(|bit| set & bit != 0)
 }
 
-/// The values one field allows, as bits.
-fn field(text: &str, low: u8, high: u8, name: &str) -> Result<u64, String> {
-    let bad = || format!("the {name} field {text:?} is not valid: {low} to {high}, *, a-b, */n");
+/// The values one field allows, as bits; `name` is its name in the expression's own words.
+fn field(text: &str, low: u8, high: u8, name: &str) -> Result<u64, Sentence> {
+    let bad = || Sentence::CronField {
+        field: name.to_owned(),
+        text: text.escape_debug().to_string(),
+        low,
+        high,
+    };
     let mut set = 0u64;
     for part in text.split(',') {
         let (range, step) = match part.split_once('/') {
