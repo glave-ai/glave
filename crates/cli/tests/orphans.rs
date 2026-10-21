@@ -176,6 +176,14 @@ fn kill_outright(glave: &mut Running) {
 }
 
 fn killed_mid_turn_leaves_nothing(name: &str, sandbox: Option<&str>) {
+    // Where no sandbox can run, a sandboxed command asks, and no one is here to answer: nothing
+    // would run to prove anything. Where CI requires one, it runs.
+    let required = ["GLAVE_REQUIRE_SANDBOX", "GLAVE_REQUIRE_LANDLOCK"]
+        .iter()
+        .any(|variable| std::env::var_os(variable).is_some());
+    if sandbox != Some("\"off\"") && !glave_computer::sandbox_available() && !required {
+        return;
+    }
     let place = place(name);
     let (mut killed, _model, every) = mid_turn(&place, sandbox, true);
     let _folders = TempFolders(killed.id());
@@ -223,6 +231,13 @@ fn a_glave_killed_outright_has_what_it_started_stopped_at_once() {
 #[test]
 fn a_glave_killed_outright_has_its_sandboxed_commands_stopped_at_once() {
     killed_mid_turn_leaves_nothing("sandboxed", None);
+}
+
+#[test]
+fn a_glave_killed_outright_has_its_landlocked_commands_stopped_at_once() {
+    // Read-only, the level Landlock keeps where bubblewrap cannot start (CI's Landlock job):
+    // there each command runs under glave's own sandbox helper, in a session of its own.
+    killed_mid_turn_leaves_nothing("landlocked", Some("\"read-only\""));
 }
 
 #[test]
