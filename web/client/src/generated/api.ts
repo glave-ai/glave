@@ -700,7 +700,7 @@ export type Update = {
   readonly text?: string | null;
 };
 
-/** Why a watch ended (`thread/watch`). */
+/** Why a watch ended (`thread/watch`, `thread/list/watch`). */
 export type WatchEnd = "unwatched" | "deleted";
 
 /** When a schedule runs. */
@@ -1286,6 +1286,27 @@ export type ThreadListResult = {
   readonly threads: readonly (ThreadSummary)[];
 };
 
+export type ThreadListUnwatchParams = {
+  readonly project?: ProjectId | null;
+};
+
+export type ThreadListUnwatchResult = Readonly<Record<string, never>>;
+
+export type ThreadListWatchParams = {
+  /**
+   * The latest `updated_at` the client has: the threads updated since are sent first,
+   * read from the threads view, oldest first. Only what changes from now when absent.
+   */
+  readonly after?: At | null;
+  /** The project whose threads to follow: every project the caller works in when absent. */
+  readonly project?: ProjectId | null;
+};
+
+/** How a watch ended: its stream's last message. */
+export type ThreadListWatchResult = {
+  readonly ended: WatchEnd;
+};
+
 export type ThreadRenameParams = {
   readonly thread: ThreadId;
   readonly title: string;
@@ -1487,6 +1508,8 @@ export interface Methods {
   readonly "thread/events": { readonly params: ThreadEventsParams; readonly result: ThreadEventsResult };
   readonly "thread/get": { readonly params: ThreadGetParams; readonly result: ThreadGetResult };
   readonly "thread/list": { readonly params: ThreadListParams; readonly result: ThreadListResult };
+  readonly "thread/list/unwatch": { readonly params: ThreadListUnwatchParams; readonly result: ThreadListUnwatchResult };
+  readonly "thread/list/watch": { readonly params: ThreadListWatchParams; readonly result: ThreadListWatchResult };
   readonly "thread/rename": { readonly params: ThreadRenameParams; readonly result: ThreadRenameResult };
   readonly "thread/start": { readonly params: ThreadStartParams; readonly result: ThreadStartResult };
   readonly "thread/unarchive": { readonly params: ThreadUnarchiveParams; readonly result: ThreadUnarchiveResult };
@@ -1500,12 +1523,17 @@ export interface Methods {
 export type Method = keyof Methods;
 
 /** The methods that answer with server-sent events, unless run in the background. */
-export const STREAMING = ["goal/start", "thread/watch", "turn/start"] as const;
+export const STREAMING = ["goal/start", "thread/list/watch", "thread/watch", "turn/start"] as const;
 
 export type StreamingMethod = (typeof STREAMING)[number];
 
 export type TaskFinishedParams = {
   readonly task: TaskInfo;
+  readonly thread: ThreadId;
+};
+
+export type ThreadChangedParams = {
+  readonly summary: ThreadSummary;
   readonly thread: ThreadId;
 };
 
@@ -1522,6 +1550,7 @@ export type TurnLiveParams = {
 /** What a server sends while a turn runs or a client watches. */
 export type Notification =
   | { readonly jsonrpc: "2.0"; readonly method: "task/finished"; readonly params: TaskFinishedParams }
+  | { readonly jsonrpc: "2.0"; readonly method: "thread/changed"; readonly params: ThreadChangedParams }
   | { readonly jsonrpc: "2.0"; readonly method: "thread/event"; readonly params: ThreadEventParams }
   | { readonly jsonrpc: "2.0"; readonly method: "turn/live"; readonly params: TurnLiveParams };
 

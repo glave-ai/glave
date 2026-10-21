@@ -275,6 +275,12 @@ where
         let cancel = Cancel::new();
         let (finish, finished) = watch::channel(false);
         let held = self.take_busy(thread, purpose, &cancel, finished)?;
+        // Busy here, so its summary says it runs: lists are told, and again once it ends. Not
+        // for a change to whether it is shown, which never shows as running.
+        let project = scope.project();
+        if purpose != Use::Manage {
+            self.inner.hub.changed(project, thread);
+        }
         let server = self.clone();
         let inner = Arc::clone(&self.inner);
         // The computer stays awake while the work runs, however it ends (`awake.rs`).
@@ -305,6 +311,7 @@ where
             let now = inner.harness.clock().now();
             leave(&mut threads, thread, held, &result, now);
             drop(threads);
+            inner.hub.changed(project, thread);
             for queued in unread {
                 let id = queued.id;
                 publish(&inner.hub, thread, Live::Unread { id, reason: None });

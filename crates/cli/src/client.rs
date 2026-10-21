@@ -226,8 +226,8 @@ impl Client<'_> {
         interrupt: &Cancel,
     ) -> bool {
         match note {
-            // A turn the terminal follows is not a task.
-            Notification::TaskFinished { .. } => false,
+            // A turn the terminal follows is not a task, nor a list.
+            Notification::TaskFinished { .. } | Notification::Changed { .. } => false,
             Notification::Live {
                 thread,
                 update: Update::ApprovalPending { approval },

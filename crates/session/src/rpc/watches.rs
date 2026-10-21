@@ -1,4 +1,4 @@
-//! What one connection of lines follows: the threads it watches, each once, at most
+//! What one connection of lines follows: the threads and lists it watches, each once, at most
 //! [`MOST_WATCHES`] at a time, until the client unwatches it or the connection's input ends;
 //! and the turns it follows. A thread's notifications are written to the connection once: a
 //! turn started in a thread the connection watches writes nothing of its own (its watch
@@ -9,12 +9,21 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use glave_event::{Seq, ThreadId};
+use glave_ports::ProjectId;
 use tokio::sync::{Notify, watch};
 
 use crate::protocol::{ApiError, code};
 
-/// The most threads one connection watches at once.
+/// The most threads and lists one connection watches at once.
 const MOST_WATCHES: usize = 64;
+
+/// What a connection watches: a thread, or the list of a project's threads (every project's,
+/// when none).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum Key {
+    Thread(ThreadId),
+    List(Option<ProjectId>),
+}
 
 /// What a connection follows.
 #[derive(Default)]
@@ -22,15 +31,15 @@ pub(super) struct Watches(Mutex<Held>);
 
 #[derive(Default)]
 struct Held {
-    /// Each thread watched.
-    threads: BTreeMap<ThreadId, Watched>,
+    /// Each thread and list watched.
+    threads: BTreeMap<Key, Watched>,
     /// How many turns the connection follows in each thread.
     turns: BTreeMap<ThreadId, usize>,
     /// Set once the connection's input ended: it watches nothing more.
     closed: bool,
 }
 
-/// One thread the connection watches.
+/// One thread, or list, the connection watches.
 struct Watched {
     /// What ends the watch.
     end: Arc<Notify>,
@@ -58,7 +67,7 @@ struct Progress {
 /// One watch held for its request, let go when it drops.
 pub(super) struct Claim {
     watches: Arc<Watches>,
-    thread: ThreadId,
+    key: Key,
     end: Arc<Notify>,
     progress: watch::Sender<Progress>,
 }
@@ -76,19 +85,17 @@ impl Watches {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Holds a watch of `thread` for a request, its client having its events up to `after`;
-    /// refused when the connection watches it already, follows a turn in it, watches as many
-    /// threads as it may, or has closed.
-    pub(super) fn claim(
-        self: &Arc<Self>,
-        thread: ThreadId,
-        after: Option<Seq>,
-    ) -> Result<Claim, ApiError> {
+    /// Holds a watch of `key` for a request, its client having a thread's events up to
+    /// `after`; refused when the connection watches it already, follows a turn in the thread,
+    /// watches as many as it may, or has closed.
+    pub(super) fn claim(self: &Arc<Self>, key: Key, after: Option<Seq>) -> Result<Claim, ApiError> {
         let mut held = self.held();
         if held.closed {
             return Err(ApiError::new(code::INTERNAL, "the connection closed"));
         }
-        if held.turns.contains_key(&thread) {
+        if let Key::Thread(thread) = key
+            && held.turns.contains_key(&thread)
+        {
             return Err(ApiError::new(
                 code::INVALID_PARAMS,
                 format!(
@@ -97,18 +104,23 @@ impl Watches {
                 ),
             ));
         }
-        if held.threads.contains_key(&thread) {
+        if held.threads.contains_key(&key) {
+            let watched = match key {
+                Key::Thread(thread) => format!("thread {thread}"),
+                Key::List(Some(project)) => format!("the threads of project {project}"),
+                Key::List(None) => "your threads".to_owned(),
+            };
             return Err(ApiError::new(
                 code::INVALID_PARAMS,
-                format!("this connection watches thread {thread} already"),
+                format!("this connection watches {watched} already"),
             ));
         }
         if held.threads.len() >= MOST_WATCHES {
             return Err(ApiError::new(
                 code::LIMIT,
                 format!(
-                    "a connection watches at most {MOST_WATCHES} threads at once: unwatch one \
-                     first"
+                    "a connection watches at most {MOST_WATCHES} threads and lists at once: \
+                     unwatch one first"
                 ),
             ));
         }
@@ -122,10 +134,10 @@ impl Watches {
             seen,
             unwatched: false,
         };
-        held.threads.insert(thread, watched);
+        held.threads.insert(key, watched);
         Ok(Claim {
             watches: Arc::clone(self),
-            thread,
+            key,
             end,
             progress,
         })
@@ -136,7 +148,7 @@ impl Watches {
         let mut held = self.held();
         let quiet = held
             .threads
-            .get(&thread)
+            .get(&Key::Thread(thread))
             .map(|watched| watched.seen.clone());
         *held.turns.entry(thread).or_default() += 1;
         Turn {
@@ -146,15 +158,19 @@ impl Watches {
         }
     }
 
-    /// Ends the connection's watch of `thread`, if it has one, from now on free to be watched
-    /// again; while turns it writes run, once they have answered, so none goes silent.
-    pub(super) fn end(&self, thread: ThreadId) {
+    /// Ends the connection's watch of `key`, if it has one, from now on free to be watched
+    /// again; a thread's while turns it writes run, once they have answered, so none goes
+    /// silent.
+    pub(super) fn end(&self, key: Key) {
         let mut held = self.held();
-        let writes_turns = held.turns.contains_key(&thread);
-        match held.threads.get_mut(&thread) {
+        let writes_turns = match key {
+            Key::Thread(thread) => held.turns.contains_key(&thread),
+            Key::List(_) => false,
+        };
+        match held.threads.get_mut(&key) {
             Some(watched) if writes_turns => watched.unwatched = true,
             Some(_) => {
-                if let Some(watched) = held.threads.remove(&thread) {
+                if let Some(watched) = held.threads.remove(&key) {
                     watched.end();
                 }
             }
@@ -196,10 +212,10 @@ impl Drop for Claim {
         let mut held = self.watches.held();
         let ours = held
             .threads
-            .get(&self.thread)
+            .get(&self.key)
             .is_some_and(|watched| Arc::ptr_eq(&watched.end, &self.end));
         if ours {
-            held.threads.remove(&self.thread);
+            held.threads.remove(&self.key);
         }
     }
 }
@@ -238,11 +254,12 @@ impl Drop for Turn {
             if *count == 0 {
                 held.turns.remove(&self.thread);
                 // A watch unwatched while it wrote this thread's turns ends now.
+                let key = Key::Thread(self.thread);
                 if held
                     .threads
-                    .get(&self.thread)
+                    .get(&key)
                     .is_some_and(|watched| watched.unwatched)
-                    && let Some(watched) = held.threads.remove(&self.thread)
+                    && let Some(watched) = held.threads.remove(&key)
                 {
                     watched.end();
                 }

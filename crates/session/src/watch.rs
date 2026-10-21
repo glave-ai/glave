@@ -269,7 +269,9 @@ impl Watch {
         let (thread, seq) = match note.as_ref() {
             Notification::Event { thread, event } => (*thread, event.seq),
             Notification::Live { thread, .. } if self.stale.contains_key(thread) => return None,
-            Notification::Live { .. } | Notification::TaskFinished { .. } => {
+            Notification::Live { .. }
+            | Notification::TaskFinished { .. }
+            | Notification::Changed { .. } => {
                 return Some(Watched::Note(note));
             }
         };

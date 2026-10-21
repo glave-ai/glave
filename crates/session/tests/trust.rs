@@ -2,7 +2,8 @@
 //! person trusts it asks them when it is opened or started, and waits; trusting turns it on
 //! from the next turn and asks nothing more; not now keeps it off and stops asking in that
 //! thread alone; an ask the project no longer makes trusts nothing; nothing is ever on without
-//! an answer; and a caller signed in from elsewhere is never asked and cannot answer.
+//! an answer; a caller signed in from elsewhere is never asked and cannot answer; and a list's
+//! watch hears each ask raised and answered.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -13,11 +14,11 @@ use glave_ports::{
     BoxFuture, Caller, Effect, InMemoryTools, ProjectId, ToolInfo, ToolOutput, ToolSpec,
 };
 use glave_session::protocol::{
-    ApiError, NewFolder, Reply, Request, Status, ThreadSummary, TrustAsk, TrustChoice, TrustItem,
-    code,
+    ApiError, NewFolder, Notification, Reply, Request, Status, ThreadSummary, TrustAsk,
+    TrustChoice, TrustItem, code,
 };
 use glave_session::signin::person;
-use glave_session::{Answering, ProjectTrust};
+use glave_session::{Answering, ListWatch, ProjectTrust, Watched};
 use serde_json::json;
 
 use crate::support::*;
@@ -393,5 +394,50 @@ fn a_caller_signed_in_elsewhere_is_never_asked_and_cannot_answer() {
         };
         server.request_as(&elsewhere, turn).await.unwrap();
         assert!(!offered(&seen, 0), "no project tools for another's thread");
+    });
+}
+
+/// Reads `watch` until it has sent, of each of `threads`, a summary that `wanted` takes.
+async fn heard(
+    watch: &mut ListWatch,
+    threads: &[ThreadId],
+    wanted: impl Fn(&ThreadSummary) -> bool,
+) {
+    let mut left: Vec<ThreadId> = threads.to_vec();
+    while !left.is_empty() {
+        let Some(Watched::Note(note)) = watch.next().await else {
+            panic!("the list's watch ended");
+        };
+        if let Notification::Changed { summary, .. } = note.as_ref()
+            && wanted(summary)
+        {
+            left.retain(|thread| *thread != summary.id);
+        }
+    }
+}
+
+#[test]
+fn a_list_watch_hears_threads_ask_and_every_one_stop_once_the_project_is_trusted() {
+    let dir = folder("trust-list");
+    block_on!(async {
+        let repository = Arc::new(Repository::default());
+        let (server, _) = serving(&dir, &repository, 0, Answering::Clients).await;
+        let mut watch = server
+            .watch_list(&Caller::default(), None, None)
+            .await
+            .unwrap();
+        let start = || server.request(thread_start(scope().project()));
+        let first = summary(start().await.unwrap());
+        let second = summary(start().await.unwrap());
+        let waits = |s: &ThreadSummary| s.status == Status::Waiting && s.trust.is_some();
+        heard(&mut watch, &[first.id, second.id], waits).await;
+        let ask = first.trust.expect("it asks").ask;
+        server
+            .request(answering(first.id, &ask, TrustChoice::Trust))
+            .await
+            .unwrap();
+        // Trusted from one thread, the other asks no more either.
+        let asks_nothing = |s: &ThreadSummary| s.status == Status::Idle && s.trust.is_none();
+        heard(&mut watch, &[first.id, second.id], asks_nothing).await;
     });
 }
