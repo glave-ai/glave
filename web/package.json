@@ -20,6 +20,7 @@
     "typecheck": "tsc -p client && tsc -p tsconfig.all.json",
     "e2e": "PLAYWRIGHT_BROWSERS_PATH=0 playwright test -c e2e/playwright.config.ts",
     "e2e:install": "PLAYWRIGHT_BROWSERS_PATH=0 playwright install chromium webkit --only-shell",
+    "e2e:twice": "PLAYWRIGHT_BROWSERS_PATH=0 node e2e/twice.mjs",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run licenses && npm run audit && npm test && npm run build:glaze && npm run build && npm run build:showcase && npm run e2e",
     "licenses": "node tools/licenses.mjs",
     "audit": "npm audit --omit=dev --audit-level=high"

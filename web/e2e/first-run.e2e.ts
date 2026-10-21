@@ -4,10 +4,10 @@ import type { AddressInfo } from 'node:net';
 import { expect, test } from '@playwright/test';
 
 import {
-  FIRST_RUN_HOME,
-  FIRST_RUN_URL,
+  FIRST_RUN,
   byTestId,
   expectAccessible,
+  served,
   signInCode,
   watchForProblems,
 } from './support';
@@ -73,10 +73,11 @@ test.afterAll(async () => {
 
 test('a first run adds a model in the browser, then chats with it', async ({ page }) => {
   const problems = watchForProblems(page);
-  const code = await signInCode(FIRST_RUN_URL, process.env[FIRST_RUN_HOME] ?? '');
+  const glave = served(FIRST_RUN);
+  const code = await signInCode(FIRST_RUN);
   const { port } = service.address() as AddressInfo;
 
-  await page.goto(`${FIRST_RUN_URL}/#code=${code}`);
+  await page.goto(`${glave}/#code=${code}`);
   await expect(page).toHaveURL(/\/connect$/u);
   await expect(page.getByRole('heading', { name: 'Add a model' })).toBeVisible();
   expect(await page.locator('body').innerText()).not.toMatch(ADMIN_WORDS);
@@ -96,7 +97,7 @@ test('a first run adds a model in the browser, then chats with it', async ({ pag
 
   await byTestId(page, 'connect-key').fill(KEY);
   await byTestId(page, 'connect-submit').click();
-  await expect(page).toHaveURL(`${FIRST_RUN_URL}/`);
+  await expect(page).toHaveURL(`${glave}/`);
   const prompt = byTestId(page, 'home-composer-input');
   await prompt.fill('Hi');
   await prompt.press('Enter');
@@ -106,7 +107,7 @@ test('a first run adds a model in the browser, then chats with it', async ({ pag
   await expect(byTestId(page, 'model-picker-option')).toContainText('33K context · Free');
   await page.keyboard.press('Escape');
 
-  await page.goto(`${FIRST_RUN_URL}/settings`);
+  await page.goto(`${glave}/settings`);
   await expect(byTestId(page, 'settings-account')).toContainText(`127.0.0.1:${String(port)}`);
   await expect(byTestId(page, 'settings-account')).toContainText('Key ending wxyz · 1 model');
   await byTestId(page, 'settings-refresh-models').click();
