@@ -206,7 +206,7 @@ impl EventLog for PostgresLog {
         scope: &Scope,
         query: &ThreadQuery,
     ) -> impl Future<Output = Result<Vec<ThreadView>, LogError>> + Send {
-        let (scope, query, pool) = (*scope, *query, self.pool.clone());
+        let (scope, query, pool) = (*scope, query.clone(), self.pool.clone());
         async move { crate::views::page(&pool, &scope, &query).await }
     }
 

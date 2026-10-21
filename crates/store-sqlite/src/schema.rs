@@ -8,7 +8,7 @@ use crate::store::StoreError;
 
 /// The schema this build makes and reads. Bumped whenever [`SCHEMA`] changes. It starts past
 /// every version the migrations it replaced wrote, so a file one of them made is refused.
-pub(crate) const VERSION: u32 = 14;
+pub(crate) const VERSION: u32 = 15;
 
 /// Every table, made in one transaction in a new file.
 const SCHEMA: &str = "
@@ -120,21 +120,26 @@ const SCHEMA: &str = "
     -- Content-free. `updated` is when its latest event was recorded, in milliseconds; a page
     -- starts after the last row's own `(updated, thread)`, never a position across the store.
     -- `open` is whether a turn is open in it, for a server that starts to find those a glave
-    -- before it left open.
+    -- before it left open; a subagent's thread has the thread and call that started it
+    -- (`parent`, `parent_call`), which only it names.
     CREATE TABLE threads (
-        org       TEXT    NOT NULL,
-        project   TEXT    NOT NULL,
-        thread    TEXT    NOT NULL,
-        standing  TEXT    NOT NULL,
-        updated   INTEGER NOT NULL,
-        open      INTEGER NOT NULL,
-        view      TEXT    NOT NULL,
+        org          TEXT    NOT NULL,
+        project      TEXT    NOT NULL,
+        thread       TEXT    NOT NULL,
+        standing     TEXT    NOT NULL,
+        updated      INTEGER NOT NULL,
+        open         INTEGER NOT NULL,
+        parent       TEXT,
+        parent_call  TEXT,
+        view         TEXT    NOT NULL,
         PRIMARY KEY (org, project, thread)
     ) STRICT;
 
     CREATE INDEX threads_by_update ON threads (org, project, standing, updated DESC, thread DESC);
     CREATE INDEX threads_open ON threads (org, project, standing, updated DESC, thread DESC)
         WHERE open;
+    CREATE INDEX threads_by_parent ON threads (org, project, parent, parent_call)
+        WHERE parent IS NOT NULL;
 
     -- Work in flight (`glave_ports::Leases`): what each lease keeps (`Leased::key`), in an
     -- organization, its holder, and when it lapses, in milliseconds on this file's clock.

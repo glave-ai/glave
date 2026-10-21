@@ -324,6 +324,7 @@ fn a_worktree_outside_a_repository_fails_the_start_and_records_nothing() {
             limit: 10,
             after: None,
             open: false,
+            parent: None,
         };
         let listed = harness.log().thread_views(&scope(), &query).await.unwrap();
         assert_eq!(listed, []);
@@ -402,6 +403,7 @@ fn a_thread_on_a_computer_that_dialled_in_is_not_available_yet() {
             limit: 10,
             after: None,
             open: false,
+            parent: None,
         };
         let listed = harness.log().thread_views(&scope(), &query).await.unwrap();
         assert!(listed.is_empty(), "nothing is recorded");

@@ -176,6 +176,7 @@ async fn in_the_log(command: Command) -> anyhow::Result<()> {
                 limit: MOST_LISTED,
                 after: None,
                 open: false,
+                parent: None,
             };
             for view in log.thread_views(&scope, &query).await? {
                 if glave_ports::stream::Reserved::of(view.thread).is_none() {
