@@ -5,7 +5,7 @@
 //! and the next glave to start stops every one.
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 use glave_ports::testing::{HUNG, Running};
 use glave_provider_openai::fake::{FakeServer, Reply};
