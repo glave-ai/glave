@@ -2,12 +2,14 @@ import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 
 import { expectAccessible } from '../../testing/axe';
-import { GlzBadgeComponent } from '../badge/badge.component';
+import { Hand } from 'lucide';
+
+import { GlzIconComponent } from '../icon/icon.component';
 import { GlzNavItemComponent } from '../nav-item/nav-item.component';
 import { GlzNavListComponent } from './nav-list.component';
 
 @Component({
-  imports: [GlzBadgeComponent, GlzNavListComponent, GlzNavItemComponent],
+  imports: [GlzIconComponent, GlzNavListComponent, GlzNavItemComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <nav aria-label="Threads">
@@ -17,7 +19,7 @@ import { GlzNavListComponent } from './nav-list.component';
       <glz-nav-list testId="plain"><a glzNavItem href="/t/2">Other</a></glz-nav-list>
       <glz-nav-list heading="Atlas" testId="space" collapsible [(expanded)]="expanded">
         <button glzNavListActions type="button" data-testid="add">New item in Atlas</button>
-        <glz-badge glzNavListEnd tone="accent" variant="dot">needs you</glz-badge>
+        <glz-icon glzNavListEnd label="needs you" [icon]="mark" />
         <a glzNavItem href="/t/3">Fix the build</a>
       </glz-nav-list>
       <glz-nav-list heading="Projects" testId="projects" collapsible>
@@ -31,6 +33,7 @@ import { GlzNavListComponent } from './nav-list.component';
 })
 class HostComponent {
   readonly expanded = signal(true);
+  readonly mark = Hand;
 }
 
 function render(): ReturnType<typeof TestBed.createComponent<HostComponent>> {
@@ -83,7 +86,7 @@ describe('GlzNavListComponent', () => {
     const root: HTMLElement = fixture.nativeElement;
     const toggle = root.querySelector('[data-testid="space-toggle"]');
     const end = root.ownerDocument.getElementById(toggle?.getAttribute('aria-describedby') ?? '');
-    expect(end?.textContent.trim()).toBe('needs you');
+    expect(end?.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('needs you');
     expect(end?.previousElementSibling?.classList).toContain('actions');
   });
 

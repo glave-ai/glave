@@ -3,15 +3,18 @@ import { provideRouter } from '@angular/router';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import type { NavThread } from '../../lib/nav';
-import { threadMark } from '../../lib/threads';
 import { NavThreadComponent } from './nav-thread.component';
+
+const SINCE = { at: '2026-10-11T10:05:00.000Z', short: '5m', long: '5 minutes ago' };
 
 function line(id: string, title: string, more: Partial<NavThread> = {}): NavThread {
   return {
     id,
     link: ['/t', id],
     title,
-    mark: null,
+    running: false,
+    waiting: false,
+    since: SINCE,
     current: false,
     children: [],
     hasChildren: false,
@@ -30,17 +33,49 @@ async function render(thread: NavThread): Promise<{
   return { root: fixture.nativeElement as HTMLElement, fixture };
 }
 
+function find(root: ParentNode, testId: string): Element | null {
+  return root.querySelector(`[data-testid="${testId}"]`);
+}
+
+function text(element: Element | null | undefined): string {
+  return element?.textContent.replace(/\s+/gu, ' ').trim() ?? '';
+}
+
 describe('NavThreadComponent', () => {
-  it('links to the thread, marked quietly, current when it is shown', async () => {
-    const { root } = await render(
-      line('t1', 'Fix the build', { current: true, mark: threadMark({ status: 'waiting' }) }),
-    );
-    const link = root.querySelector('[data-testid="nav-thread"]');
+  it('links to the thread with when it was last active, said in words', async () => {
+    const { root } = await render(line('t1', 'Plan the launch'));
+    const link = find(root, 'nav-thread');
     expect(link?.getAttribute('href')).toBe('/t/t1');
-    expect(link?.getAttribute('aria-current')).toBe('page');
-    expect(link?.textContent.replace(/\s+/gu, ' ').trim()).toBe('Fix the build needs you');
-    expect(link?.querySelector('glz-badge')?.classList).toContain('glz-badge--dot');
-    expect(root.querySelector('[data-testid="nav-children"]')).toBeNull();
+    expect(text(find(root, 'nav-thread-title'))).toBe('Plan the launch');
+    expect(link?.getAttribute('aria-current')).toBeNull();
+    const since = find(root, 'nav-thread-since');
+    expect(since?.getAttribute('datetime')).toBe(SINCE.at);
+    expect(text(since?.querySelector('[aria-hidden="true"]'))).toBe('5m');
+    expect(text(since?.querySelector('.glz-visually-hidden'))).toBe('5 minutes ago');
+    expect(find(root, 'nav-thread-running')).toBeNull();
+    expect(find(root, 'nav-thread-waiting')).toBeNull();
+    await expectAccessible(root);
+  });
+
+  it('turns a ring in its time’s place while it runs, read out as running', async () => {
+    const { root } = await render(line('t1', 'Nightly audit', { running: true, current: true }));
+    expect(find(root, 'nav-thread')?.getAttribute('aria-current')).toBe('page');
+    const ring = find(root, 'nav-thread-running');
+    expect(ring?.classList).toContain('glz-spin');
+    expect(ring?.getAttribute('role')).toBe('img');
+    expect(ring?.getAttribute('aria-label')).toBe('running');
+    expect(find(root, 'nav-thread-since')).toBeNull();
+    await expectAccessible(root);
+  });
+
+  it('shows a small mark in its time’s place while it waits, read out as needs you', async () => {
+    const { root } = await render(line('t1', 'Fix the build', { waiting: true }));
+    const mark = find(root, 'nav-thread-waiting');
+    expect(mark?.tagName).toBe('GLZ-ICON');
+    expect(mark?.getAttribute('role')).toBe('img');
+    expect(mark?.getAttribute('aria-label')).toBe('needs you');
+    expect(find(root, 'nav-thread-since')).toBeNull();
+    expect(find(root, 'nav-children')).toBeNull();
     await expectAccessible(root);
   });
 
@@ -54,9 +89,7 @@ describe('NavThreadComponent', () => {
     fixture.componentInstance.navigated.subscribe(() => (navigated += 1));
     const under = root.querySelector(':scope > [data-testid="nav-children"]');
     expect(
-      Array.from(under?.querySelectorAll('[data-testid="nav-thread"]') ?? []).map((each) =>
-        each.textContent.trim(),
-      ),
+      Array.from(under?.querySelectorAll('[data-testid="nav-thread-title"]') ?? []).map(text),
     ).toEqual(['Check the parser', 'Read the logs']);
     expect(under?.querySelectorAll('[data-testid="nav-children"]')).toHaveLength(1);
     await expectAccessible(root);

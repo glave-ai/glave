@@ -4,6 +4,27 @@ const READER: Reader = { locale: 'en-US', timeZone: 'UTC' };
 const NOW = Date.parse('2026-10-14T12:00:00.000Z');
 
 describe('when', () => {
+  it('says how long ago, short on a row and in words for a screen reader', () => {
+    const times = readerTimes(NOW, READER);
+    const shown = (at: string): readonly string[] => {
+      const { short, long } = times.since(at);
+      return [short, long];
+    };
+    expect(shown('2026-10-14T11:59:30.000Z')).toEqual(['now', 'now']);
+    expect(shown('2026-10-14T11:55:00.000Z')).toEqual(['5m', '5 minutes ago']);
+    expect(shown('2026-10-14T09:00:00.000Z')).toEqual(['3h', '3 hours ago']);
+    expect(shown('2026-10-12T12:00:00.000Z')).toEqual(['2d', '2 days ago']);
+    expect(shown('2026-10-01T08:00:00.000Z')).toEqual(['Oct 1', 'October 1']);
+    expect(shown('2025-12-30T08:00:00.000Z')).toEqual(['Dec 30, 2025', 'December 30, 2025']);
+    expect(times.since('2026-10-14T11:55:00.000Z').at).toBe('2026-10-14T11:55:00.000Z');
+  });
+
+  it('takes a time ahead of this clock as now, and one it cannot read as none', () => {
+    const times = readerTimes(NOW, READER);
+    expect(times.since('2026-10-14T12:00:40.000Z').short).toBe('now');
+    expect(times.since('soon')).toEqual({ at: 'soon', short: '', long: '' });
+  });
+
   it('writes a day each way it might be searched by, today and yesterday too', () => {
     const times = readerTimes(NOW, READER);
     expect(times.day('2026-10-14T01:00:00.000Z')).toEqual([
@@ -19,6 +40,7 @@ describe('when', () => {
 
   it('writes the reader’s own language', () => {
     const times = readerTimes(NOW, { locale: 'en-GB', timeZone: 'UTC' });
+    expect(times.since('2026-10-01T08:00:00.000Z').short).toBe('1 Oct');
     expect(times.day('2026-10-01T08:00:00.000Z')).toContain('01/10/2026');
   });
 

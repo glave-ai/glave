@@ -1,7 +1,9 @@
 import type { Project, ThreadSummary } from '@glave/client';
+import type { GlzIconData } from '@glave/glaze';
+import { Hand, TriangleAlert } from 'lucide';
 
-import { type ThreadMark, threadMark, threadTitle } from './threads';
-import { type Reader, type Times, readerTimes } from './when';
+import { threadTitle } from './threads';
+import { type Reader, type Since, type Times, readerTimes } from './when';
 
 /** What the side nav calls the person's own chats (their personal projects' threads). */
 const CHATS = 'Chats';
@@ -18,22 +20,40 @@ export interface ProjectWithThreads {
   readonly gone?: string;
 }
 
+/**
+ * What says a thread or a closed list needs the person: a small, neutral mark, and what screen
+ * readers hear.
+ */
+export const NEEDS_YOU = { icon: Hand, label: 'needs you' } as const;
+
 /** A thread's line in the side nav, with the threads it started under it. */
 export interface NavThread {
   readonly id: string;
   readonly link: readonly string[];
   readonly title: string;
-  readonly mark: ThreadMark | null;
+  /** What the server says it is doing: running, or waiting for the person; else neither. */
+  readonly running: boolean;
+  readonly waiting: boolean;
+  /** When it was last active, which its line shows while it neither runs nor waits. */
+  readonly since: Since;
   readonly current: boolean;
   readonly children: readonly NavThread[];
   readonly hasChildren: boolean;
+}
+
+/** A mark at a heading's end, an icon with what screen readers hear. */
+export interface HeadingMark {
+  readonly icon: GlzIconData;
+  readonly label: string;
+  /** Whether it warns, in the warning tone: the project's folder is gone. */
+  readonly warning: boolean;
 }
 
 /** A heading in the side nav, and how the list under it shows. */
 interface NavHeading {
   readonly expanded: boolean;
   /** While closed with something in it waiting for the person, the mark that says so. */
-  readonly mark: ThreadMark | null;
+  readonly mark: HeadingMark | null;
 }
 
 /** A project in the side nav, with its threads. */
@@ -61,7 +81,7 @@ export interface NavSections {
 /**
  * What the side nav shows: the search, the thread shown now, the lists the person closed
  * (`PROJECTS_LIST`, `CHATS_LIST` or a project's id), and now, in milliseconds since the epoch,
- * for its reader (their own language and time zone unless set): the search finds days by it.
+ * for its reader (their own language and time zone unless set): its times count from it.
  */
 export interface NavView {
   readonly query: string;
@@ -89,7 +109,7 @@ interface Dated<T> {
 }
 
 /** The mark of a closed list with something in it waiting for the person. */
-const WAITING_MARK = threadMark({ status: 'waiting' });
+const WAITING_MARK: HeadingMark = { ...NEEDS_YOU, warning: false };
 
 /** The fewest characters a search needs before it looks at threads' days too. */
 const DAY_QUERY = 3;
@@ -128,9 +148,11 @@ export function navSections(lists: readonly ProjectWithThreads[], view: NavView)
   const found = (thread: ThreadSummary): boolean => isFound(thread, view, times);
   const projects = lists
     .filter(({ project }) => project.kind === 'project')
-    .map(({ project, threads, gone }) => datedProject(project, threads, view, found, gone ?? null))
+    .map(({ project, threads, gone }) =>
+      datedProject(project, threads, view, times, found, gone ?? null),
+    )
     .filter(({ item }) => !searching(view) || item.threads.length > 0);
-  const chats = threadTree(personalThreads(lists), view, found);
+  const chats = threadTree(personalThreads(lists), view, times, found);
   return {
     needsYou: waitingThreads(lists, view, found),
     projects: {
@@ -201,16 +223,17 @@ function datedProject(
   project: Project,
   threads: readonly ThreadSummary[],
   view: NavView,
+  times: Times,
   found: (thread: ThreadSummary) => boolean,
   gone: string | null,
 ): Dated<NavProject> {
-  const tree = threadTree(threads, view, found);
+  const tree = threadTree(threads, view, times, found);
   const shown = heading(project.id, tree.waiting, view);
   return {
     item: {
       ...shown,
       // A folder that went is marked open or closed: nothing runs there until it is found.
-      mark: gone === null ? shown.mark : { text: gone, tone: 'warning', variant: 'dot' },
+      mark: gone === null ? shown.mark : { icon: TriangleAlert, label: gone, warning: true },
       id: project.id,
       name: project.name,
       threads: tree.list,
@@ -235,6 +258,7 @@ interface ThreadTree {
 function threadTree(
   threads: readonly ThreadSummary[],
   view: NavView,
+  times: Times,
   found: (thread: ThreadSummary) => boolean,
 ): ThreadTree {
   const shown = threads.filter(found);
@@ -252,7 +276,9 @@ function threadTree(
               id: thread.id,
               link: ['/t', thread.id],
               title: threadTitle(thread),
-              mark: threadMark(thread),
+              running: thread.status === 'running',
+              waiting: thread.status === 'waiting',
+              since: times.since(thread.updated_at),
               current: thread.id === view.current,
               children: children.map(({ item }) => item),
               hasChildren: children.length > 0,

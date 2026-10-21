@@ -234,7 +234,10 @@
   --glz-duration-normal: 200ms;
   --glz-easing: cubic-bezier(0.2, 0, 0, 1);
 
-  /* A quiet loop while work goes on (the working state's mark and shimmer); still when the person asks for less. */
+  /*
+   * A quiet loop while work goes on (the working state's mark and shimmer, `glz-spin`'s turn);
+   * still when the person asks for less.
+   */
   --glz-duration-ambient: 2s;
 }
 

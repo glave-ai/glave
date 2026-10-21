@@ -9,12 +9,7 @@ import {
   signal,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import {
-  GlzBadgeComponent,
-  GlzIconButtonComponent,
-  GlzIconComponent,
-  GlzNavItemComponent,
-} from '@glave/glaze';
+import { GlzIconButtonComponent, GlzIconComponent, GlzNavItemComponent } from '@glave/glaze';
 import { ListChecks, PenLine, Search } from 'lucide';
 
 import { TasksService } from '../../services/tasks.service';
@@ -39,7 +34,6 @@ const COPY = {
   selector: 'app-side-nav',
   imports: [
     RouterLink,
-    GlzBadgeComponent,
     GlzIconButtonComponent,
     GlzIconComponent,
     GlzNavItemComponent,

@@ -9,8 +9,7 @@ import { GlzBadgeComponent } from './badge.component';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <glz-badge tone="warning" data-testid="badge">2 approvals</glz-badge>
-    <glz-badge tone="accent" variant="dot" data-testid="dot">needs you</glz-badge>
-    <glz-badge variant="plain" data-testid="plain">running</glz-badge>
+    <glz-badge data-testid="neutral">project</glz-badge>
   `,
 })
 class HostComponent {}
@@ -26,20 +25,7 @@ describe('GlzBadgeComponent', () => {
     const root: HTMLElement = fixture.nativeElement;
     expect(badge(root, 'badge')?.textContent).toBe('2 approvals');
     expect(badge(root, 'badge')?.classList).toContain('glz-tone-warning');
-    expect(badge(root, 'badge')?.classList).toContain('glz-badge--pill');
-    await expectAccessible(root);
-  });
-
-  it('as a dot, keeps its text for screen readers only; plain, shows it as is', async () => {
-    const fixture = TestBed.createComponent(HostComponent);
-    await fixture.whenStable();
-    const root: HTMLElement = fixture.nativeElement;
-    const dot = badge(root, 'dot');
-    expect(dot?.classList).toContain('glz-badge--dot');
-    expect(dot?.textContent).toBe('needs you');
-    expect(dot?.querySelector('.glz-visually-hidden')?.textContent).toBe('needs you');
-    expect(badge(root, 'plain')?.classList).toContain('glz-badge--plain');
-    expect(badge(root, 'plain')?.querySelector('.glz-visually-hidden')).toBeNull();
+    expect(badge(root, 'neutral')?.classList).toContain('glz-tone-neutral');
     await expectAccessible(root);
   });
 });

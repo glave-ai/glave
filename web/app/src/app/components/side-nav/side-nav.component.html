@@ -43,8 +43,8 @@
     >
       {{ copy.tasks }}
       @if (tasksGoing(); as going) {
-        <glz-badge glzNavItemEnd variant="plain"
-          >{{ going }} <span class="glz-visually-hidden">{{ copy.going }}</span></glz-badge
+        <span glzNavItemEnd class="going"
+          >{{ going }} <span class="glz-visually-hidden">{{ copy.going }}</span></span
         >
       }
     </a>

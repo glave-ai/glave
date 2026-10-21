@@ -35,9 +35,13 @@
         <glz-icon [icon]="icons.add" />
       </button>
       @if (projects().mark; as mark) {
-        <glz-badge glzNavListEnd [tone]="mark.tone" [variant]="mark.variant">{{
-          mark.text
-        }}</glz-badge>
+        <glz-icon
+          glzNavListEnd
+          class="mark"
+          [class.warning]="mark.warning"
+          [icon]="mark.icon"
+          [label]="mark.label"
+        />
       }
       @for (project of projectList(); track project.id) {
         <glz-nav-list
@@ -75,9 +79,13 @@
             }
           </span>
           @if (project.mark; as mark) {
-            <glz-badge glzNavListEnd [tone]="mark.tone" [variant]="mark.variant">{{
-              mark.text
-            }}</glz-badge>
+            <glz-icon
+              glzNavListEnd
+              class="mark"
+              [class.warning]="mark.warning"
+              [icon]="mark.icon"
+              [label]="mark.label"
+            />
           }
           @if (project.gone; as gone) {
             @defer (on immediate) {
@@ -111,9 +119,13 @@
         <glz-icon [icon]="icons.add" />
       </a>
       @if (chats().mark; as mark) {
-        <glz-badge glzNavListEnd [tone]="mark.tone" [variant]="mark.variant">{{
-          mark.text
-        }}</glz-badge>
+        <glz-icon
+          glzNavListEnd
+          class="mark"
+          [class.warning]="mark.warning"
+          [icon]="mark.icon"
+          [label]="mark.label"
+        />
       }
       @for (thread of chats().list; track thread.id) {
         <app-nav-thread [thread]="thread" (navigated)="followed()" />

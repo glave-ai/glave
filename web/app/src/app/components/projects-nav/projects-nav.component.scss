@@ -29,3 +29,15 @@
 .more {
   display: inline-flex;
 }
+
+// A heading's mark, as large as a thread's: in the ink of the text, a gone folder's in the
+// warning tone.
+.mark {
+  --glz-icon-size: 1em;
+
+  color: var(--glz-color-text);
+}
+
+.mark.warning {
+  color: var(--glz-color-warning);
+}

@@ -209,7 +209,7 @@ test('the search keeps the threads whose title matches', async ({ page }) => {
   await page.goto(`/${SIGNED_IN}`);
   await expect(byTestId(page, 'nav-thread')).toHaveCount(5);
   await byTestId(page, 'nav-search').fill('release');
-  await expect(byTestId(page, 'nav-thread')).toHaveText(['Review the release notes needs you']);
+  await expect(byTestId(page, 'nav-thread-title')).toHaveText(['Review the release notes']);
   await byTestId(page, 'nav-search').fill('zebra');
   await expect(byTestId(page, 'nav-thread')).toHaveCount(0);
   await expect(byTestId(page, 'nav-no-match')).toBeVisible();

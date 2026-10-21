@@ -56,7 +56,7 @@ describe('SideNavComponent', () => {
     }
     await fixture.whenStable();
     expect(
-      Array.from(root.querySelectorAll('[data-testid="nav-thread"]')).map((each) =>
+      Array.from(root.querySelectorAll('[data-testid="nav-thread-title"]')).map((each) =>
         each.textContent.trim(),
       ),
     ).toEqual(['Fix CI']);

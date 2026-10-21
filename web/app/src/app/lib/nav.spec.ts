@@ -1,4 +1,5 @@
 import type { Project, ThreadSummary } from '@glave/client';
+import { TriangleAlert } from 'lucide';
 
 import { record, thread } from '../testing/fixtures';
 import {
@@ -7,6 +8,7 @@ import {
   type NavThread,
   type NavView,
   PROJECTS_LIST,
+  NEEDS_YOU,
   type ProjectWithThreads,
   matchesQuery,
   navSections,
@@ -94,10 +96,24 @@ describe('nav', () => {
     expect(projectNames(sections)).toEqual(['Garden', 'Notes', 'glave']);
     const glave = sections.projects.list[2];
     expect(titles(glave?.threads ?? [])).toEqual(['Fix the build', 'Plan the launch']);
-    expect(glave?.threads[1]).toMatchObject({ link: ['/t', 't1'], current: true, mark: null });
+    expect(glave?.threads[1]).toMatchObject({
+      link: ['/t', 't1'],
+      current: true,
+      running: false,
+      waiting: false,
+    });
     expect(titles(sections.chats.list)).toEqual(['New chat', 'Café ideas']);
     expect(sections.projects).toMatchObject({ expanded: true, mark: null });
     expect(sections.chats).toMatchObject({ expanded: true, mark: null });
+  });
+
+  it('gives each thread when it was last active, counted from the view’s moment', () => {
+    const { chats } = navSections(PROJECTS, VIEW);
+    expect(chats.list.map(({ since }) => [since.short, since.long])).toEqual([
+      ['2m', '2 minutes ago'],
+      ['10m', '10 minutes ago'],
+    ]);
+    expect(chats.list[1]?.since.at).toBe(at(0));
   });
 
   it('keeps one order however the threads stand: what waits or runs is not lifted', () => {
@@ -119,10 +135,12 @@ describe('nav', () => {
       'Audit the dependencies',
       'Write the notes',
     ]);
-    expect(sections.projects.list[1]?.threads.map(({ mark }) => mark?.text)).toEqual([
-      'running',
-      undefined,
-      'needs you',
+    expect(
+      sections.projects.list[1]?.threads.map(({ running, waiting }) => [running, waiting]),
+    ).toEqual([
+      [true, false],
+      [false, false],
+      [false, true],
     ]);
   });
 
@@ -155,8 +173,8 @@ describe('nav', () => {
     const collapsed = new Set(['p1', 'p2', PROJECTS_LIST, CHATS_LIST]);
     const { projects, chats } = navSections(lists, { ...VIEW, collapsed });
     expect(projects.expanded).toBe(false);
-    expect(projects.mark).toMatchObject({ text: 'needs you', variant: 'dot' });
-    expect(projects.list.map((each) => [each.name, each.expanded, each.mark?.text])).toEqual([
+    expect(projects.mark).toEqual({ ...NEEDS_YOU, warning: false });
+    expect(projects.list.map((each) => [each.name, each.expanded, each.mark?.label])).toEqual([
       ['Garden', false, undefined],
       ['glave', false, 'needs you'],
     ]);
@@ -178,7 +196,7 @@ describe('nav', () => {
     for (const collapsed of [new Set<string>(), new Set(['p1'])]) {
       const [playground, garden] = navSections(projects, { ...VIEW, collapsed }).projects.list;
       expect(playground?.gone).toBe(gone);
-      expect(playground?.mark).toEqual({ text: gone, tone: 'warning', variant: 'dot' });
+      expect(playground?.mark).toEqual({ icon: TriangleAlert, label: gone, warning: true });
       expect(garden?.gone).toBeNull();
     }
   });

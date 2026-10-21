@@ -19,7 +19,7 @@ describe('ShowcaseLayoutComponent', () => {
       root.querySelector('[data-testid="showcase-earlier-toggle"]')?.getAttribute('aria-expanded'),
     ).toBe('false');
     // Closed, Earlier says something in it waits.
-    expect(root.querySelector('[data-testid="showcase-earlier"] .end')?.textContent.trim()).toBe(
+    expect(root.querySelector('[data-testid="showcase-earlier-end"] [role="img"]')?.ariaLabel).toBe(
       'needs you',
     );
     expect(root.querySelector<HTMLElement>('[data-testid="showcase-panel-panel"]')?.inert).toBe(

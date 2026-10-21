@@ -8,7 +8,7 @@ See every component live in the showcase (`npm run showcase` in `web/`), a dev-o
 
 Only what an app uses today: a piece no app uses leaves Glaze.
 
-- **Styles** (`styles/glaze.css`): the tokens, the layout primitives (`glz-stack`, `glz-row`, `glz-grid`, `glz-gap-*`) and the prose flow (`glz-flow`).
+- **Styles** (`styles/glaze.css`): the tokens, the layout primitives (`glz-stack`, `glz-row`, `glz-grid`, `glz-gap-*`), the prose flow (`glz-flow`) and `glz-spin`, which turns a ring while work goes on.
 - **Actions and display**: `glzButton`, `glzIconButton`, `glz-icon`, `glz-badge`, `glz-avatar`, `glz-card`, `glz-empty-state`.
 - **Forms**: `glz-form-field`, `glz-error`, `glzInput`, `glz-checkbox`, `glz-radio-group`, `glz-radio`.
 - **Layout**: `glz-sidenav-layout`, `glz-panel-layout`, `glz-top-bar`, `glz-nav-list`, `glzNavItem`, `glz-tabs`, `glz-tab`.

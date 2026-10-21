@@ -3,20 +3,25 @@ import { type Locator, type Page, expect, test } from '@playwright/test';
 import { NEW_THREAD, PERSONAL, PROJECT, THREAD, WAITING, fakeApi } from './fake-api';
 import { SIGNED_IN, byTestId, expectAccessible, shownOpacity } from './support';
 
-/** The side nav's threads a person can see, in order. */
+/** The titles of the side nav's threads a person can see, in order. */
 function shown(page: Page): Locator {
-  return byTestId(page, 'nav-thread').filter({ visible: true });
+  return byTestId(page, 'nav-thread-title').filter({ visible: true });
 }
 
 /** The project's threads by recent activity, a thread's own under it: one order, whatever waits. */
 const BY_ACTIVITY = [
-  'Nightly dependency audit running',
+  'Nightly dependency audit',
   'Make the tests pass',
   'Check the parser’s edge cases',
-  'Review the release notes needs you',
+  'Review the release notes',
 ];
 
-/** The day the fixtures' threads were last active, read in English in UTC. */
+/** The name of the animation turning the ring `locator`, `none` while it holds still. */
+async function turning(locator: Locator): Promise<string> {
+  return locator.evaluate((element) => getComputedStyle(element).animationName);
+}
+
+/** Ten minutes after the fixtures' threads were last active, read in English in UTC. */
 const NOW = new Date('2026-10-11T10:10:00.000Z');
 test.use({ locale: 'en-US', timezoneId: 'UTC' });
 
@@ -85,7 +90,7 @@ test('projects come first, then Chats; each list newest first, in one order', as
   const heading = await byTestId(page, 'nav-project-toggle').boundingBox();
   const parent = byTestId(page, 'nav-thread').filter({ hasText: 'Make the tests pass' });
   const child = byTestId(page, 'nav-children').getByTestId('nav-thread');
-  await expect(child).toHaveText('Check the parser’s edge cases');
+  await expect(child.getByTestId('nav-thread-title')).toHaveText('Check the parser’s edge cases');
   const [over, under] = [await parent.boundingBox(), await child.boundingBox()];
   expect(over?.x).toBe(heading?.x);
   expect(under?.x ?? 0).toBeGreaterThan(over?.x ?? Infinity);
@@ -103,8 +108,8 @@ test('a thread moves up when it gets a new message', async ({ page }) => {
   await expect(shown(page)).toHaveText([
     'Make the tests pass',
     'Check the parser’s edge cases',
-    'Nightly dependency audit running',
-    'Review the release notes needs you',
+    'Nightly dependency audit',
+    'Review the release notes',
     'Dinner ideas for Saturday',
   ]);
 });
@@ -144,11 +149,63 @@ test('the search finds a thread by its day as well as its title', async ({ page 
   await expect(byTestId(page, 'needs-you')).toHaveCount(0);
   await expect(byTestId(page, 'nav-no-match')).toBeVisible();
   await search.fill('release');
-  await expect(shown(page)).toHaveText(['Review the release notes needs you']);
+  await expect(shown(page)).toHaveText(['Review the release notes']);
   await expect(byTestId(page, 'needs-you-thread')).toHaveText(['Review the release notes glave']);
   await search.fill('');
   await expect(shown(page)).toHaveText([...BY_ACTIVITY, 'Dinner ideas for Saturday']);
 });
+
+test('where a thread’s time sits, a ring turns while it runs and a mark says it needs you', async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(NOW);
+  await fakeApi(page);
+  await page.goto(`/${SIGNED_IN}`);
+  // The rest say how long ago they were last active, in words for a screen reader.
+  await expect(byTestId(page, 'nav-thread-since')).toHaveText([/^5m/u, /^6m/u, /^5m/u]);
+  const row = (title: string): Locator => byTestId(page, 'nav-thread').filter({ hasText: title });
+  await expect(row('Make the tests pass')).toHaveAccessibleName(
+    /^Make the tests pass\s*5 minutes ago$/u,
+  );
+  await expect(row('Nightly dependency audit')).toHaveAccessibleName(
+    /^Nightly dependency audit\s*running$/u,
+  );
+  await expect(row('Review the release notes')).toHaveAccessibleName(
+    /^Review the release notes\s*needs you$/u,
+  );
+  // At the row's end, where the time sits, and as large as the title.
+  const ring = byTestId(page, 'nav-thread-running');
+  const mark = byTestId(page, 'nav-thread-waiting');
+  for (const [status, title] of [
+    [ring, 'Nightly dependency audit'],
+    [mark, 'Review the release notes'],
+  ] as const) {
+    const [box, line] = [await status.boundingBox(), await row(title).boundingBox()];
+    expect((line?.x ?? 0) + (line?.width ?? 0) - ((box?.x ?? 0) + (box?.width ?? 0))).toBeLessThan(
+      20,
+    );
+    expect(box?.height ?? 0).toBeLessThanOrEqual(20);
+  }
+  expect(await turning(ring)).not.toBe('none');
+  await expectAccessible(page);
+});
+
+for (const colorScheme of ['light', 'dark'] as const) {
+  test(`under reduced motion the ring holds still, the mark of work in progress (${colorScheme})`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
+    await fakeApi(page);
+    await page.goto(`/${SIGNED_IN}`);
+    const ring = byTestId(page, 'nav-thread-running');
+    await expect(ring).toBeVisible();
+    expect(await turning(ring)).toBe('none');
+    await expect(
+      byTestId(page, 'nav-thread').filter({ hasText: 'Nightly dependency audit' }),
+    ).toHaveAccessibleName(/running$/u);
+    await expectAccessible(page);
+  });
+}
 
 test('a heading opens and closes by click and by keyboard, remembered', async ({ page }) => {
   await fakeApi(page);
@@ -163,8 +220,8 @@ test('a heading opens and closes by click and by keyboard, remembered', async ({
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(shown(page)).toHaveText(['Dinner ideas for Saturday']);
-  // Closed, glave still says a thread in it needs the person.
-  await expect(byTestId(page, 'nav-project-end')).toHaveText('needs you');
+  // Closed, glave still says a thread in it needs the person, with the same small mark.
+  await expect(byTestId(page, 'nav-project-end')).toBeVisible();
   await expect(toggle).toHaveAccessibleDescription('needs you');
   await page.reload();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -175,7 +232,7 @@ test('a heading opens and closes by click and by keyboard, remembered', async ({
   await expect.poll(() => shownOpacity(caret)).toBe(1);
   await page.keyboard.press('Enter');
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  await expect(byTestId(page, 'nav-project-end')).toHaveText('');
+  await expect(toggle).toHaveAccessibleDescription('');
   await page.keyboard.press('Space');
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await page.keyboard.press('Space');
@@ -184,7 +241,7 @@ test('a heading opens and closes by click and by keyboard, remembered', async ({
   await byTestId(page, 'nav-projects-toggle').click();
   await byTestId(page, 'nav-chats-toggle').click();
   await expect(shown(page)).toHaveCount(0);
-  await expect(byTestId(page, 'nav-projects-end')).toHaveText('needs you');
+  await expect(byTestId(page, 'nav-projects-toggle')).toHaveAccessibleDescription('needs you');
 });
 
 test('each + starts in its own place: a project, a thread in the project, a chat', async ({
@@ -236,9 +293,9 @@ for (const colorScheme of ['light', 'dark'] as const) {
     expect(marker.againstSidebar).toBeGreaterThanOrEqual(3);
     expect((await markerOf(other)).width).toBe('auto');
     await expectAccessible(page);
-    // A closed project with its dot, and its menu open: what can be done with it, no sorting.
+    // A closed project with its mark, and its menu open: what can be done with it, no sorting.
     await byTestId(page, 'nav-project-toggle').click();
-    await expect(byTestId(page, 'nav-project-end')).toHaveText('needs you');
+    await expect(byTestId(page, 'nav-project-toggle')).toHaveAccessibleDescription('needs you');
     await byTestId(page, 'nav-project-toggle').hover();
     await byTestId(page, 'nav-project-more-trigger').click();
     await expect(byTestId(page, 'nav-project-more-action')).toHaveText(['Rename']);

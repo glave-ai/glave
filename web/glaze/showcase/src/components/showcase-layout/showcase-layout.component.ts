@@ -12,7 +12,7 @@ import {
   GlzTabsComponent,
   GlzTopBarComponent,
 } from '@glave/glaze';
-import { Hash, Menu, PanelRight, Plus } from 'lucide';
+import { Hand, Hash, LoaderCircle, Menu, PanelRight, Plus } from 'lucide';
 
 const COPY = {
   heading: 'Layout and navigation',
@@ -72,6 +72,8 @@ export class ShowcaseLayoutComponent {
     thread: Hash,
     panel: PanelRight,
     add: Plus,
+    running: LoaderCircle,
+    waiting: Hand,
   };
   protected readonly tab = signal(0);
   protected readonly earlier = signal(true);
