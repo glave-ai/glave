@@ -225,6 +225,76 @@ fn a_shared_project_finds_memories_its_threads_and_the_persons_never_another_pro
     });
 }
 
+/// `memory-month`'s probe 9 (#555): a project's memories all name it, and a fact said once in
+/// passing, in a thread run earlier in the same store, holds every word of the query.
+#[test]
+fn a_turn_holding_every_word_outranks_memories_sharing_only_the_projects_name() {
+    block_on!(async {
+        let kit = Kit::new();
+        let memory = kit.memory(rules(), 2).await;
+        let dir = folder("recall-ranked");
+        let (harness, _) = kit
+            .harness(
+                &dir,
+                vec![said("Try Tune, Dial or Prefs.")],
+                AllowAll,
+                Some(memory),
+                settings(),
+            )
+            .await;
+        let mut earlier = harness.start_thread(shared()).await.unwrap();
+        harness
+            .run_turn(
+                &mut earlier,
+                "Can you suggest three short, friendly names for beacon's new settings screen? \
+                 I'm trying them out on the staging server, gannet-7, this afternoon.",
+                &Cancel::new(),
+                &mut |_| {},
+            )
+            .await
+            .unwrap();
+        let memories = kit.memories(rules(), 3);
+        let writer = Writer {
+            person: Some(person()),
+            scope: shared(),
+            by: Principal::person(person()),
+            source: None,
+            untrusted_read: false,
+        };
+        for fact in [
+            "Beacon uses SQLite, not Postgres: kiosk data travels to head office on a USB stick",
+            "Beacon releases go out every Thursday",
+            "Beacon is built with Flutter",
+            "Beacon crash reports land in #beacon-crashes",
+            "Beacon translations live in lib/l10n and go through Weblate",
+            "Beacon needs Android 10 or later",
+        ] {
+            memories
+                .remember(&writer, fact, MemoryScope::Project, None, true)
+                .await
+                .unwrap();
+        }
+        let hits = memories
+            .recall(&on(shared(), thread(9)), "Beacon staging server", 5)
+            .await
+            .unwrap();
+        assert!(
+            hits.first()
+                .is_some_and(|hit| hit.text.contains("gannet-7")),
+            "{:?}",
+            sources(&hits)
+        );
+        assert_eq!(hits.len(), 5);
+        assert!(
+            hits.iter()
+                .skip(1)
+                .any(|hit| matches!(hit.source, Source::Memory { .. })),
+            "memories sharing one word still follow: {:?}",
+            sources(&hits)
+        );
+    });
+}
+
 #[test]
 fn forgetting_a_memory_takes_the_turn_it_came_from_out_of_recall() {
     block_on!(async {
