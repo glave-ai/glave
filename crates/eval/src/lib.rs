@@ -6,6 +6,7 @@
 //! `cargo xtask eval` runs it; see `glave-eval --help` for the options. `glave-eval judge`
 //! scores the action judge on the cases in `evals/judge` (see `judging`).
 
+mod calendar;
 mod check;
 pub mod cli;
 mod error;
@@ -13,6 +14,7 @@ mod judging;
 mod memory;
 mod oracle;
 mod prepare;
+mod probe;
 mod report;
 mod run;
 mod steer;

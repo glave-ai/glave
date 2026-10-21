@@ -22,7 +22,7 @@ pub use housekeep::Housekept;
 pub(crate) use recall::DEFAULT_HITS;
 pub use recall::{MOST_HITS, Recalled, Source};
 pub use tidy::{Tidied, Tidier};
-pub use write::{Remembering, Writer};
+pub use write::{BUDGET_TOKENS, Remembering, Writer, tokens};
 
 /// Projects whose views are kept in memory at once.
 const MOST_BOOKS: usize = 64;

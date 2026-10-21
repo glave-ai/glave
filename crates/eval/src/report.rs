@@ -1,10 +1,11 @@
 //! The report: every attempt as JSON, and a Markdown table of pass rates per task and model,
 //! compared with an earlier report when one is given.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use glave_event::{Currency, Money};
+use glave_memory::BUDGET_TOKENS;
 use serde::{Deserialize, Serialize};
 
 use crate::run::Attempt;
@@ -74,6 +75,7 @@ impl Report {
             let _ = writeln!(out, "| {task} | {} |", cells.join(" | "));
         }
         self.totals(&mut out);
+        self.probed(&mut out);
         let failed: Vec<&Attempt> = self.attempts.iter().filter(|a| !a.passed()).collect();
         if !failed.is_empty() {
             let _ = writeln!(out, "\nNot passed:\n");
@@ -140,6 +142,59 @@ impl Report {
             let _ = writeln!(out, "| {name} | {} |", per_model(row));
         }
     }
+
+    /// A row for each attempt with probes: how many passed and which searched with `recall`,
+    /// how often tidy-up ran and what it forgot, and memory's size at the end and at each
+    /// thread's start; then each probe that failed and each memory tidy-up forgot.
+    fn probed(&self, out: &mut String) {
+        let probed: Vec<&Attempt> = (self.attempts.iter())
+            .filter(|attempt| attempt.probes.is_some())
+            .collect();
+        if probed.is_empty() {
+            return;
+        }
+        let _ = writeln!(
+            out,
+            "\nProbes and memory, in tokens as memory's budget counts them ({} a scope):\n\n\
+             | attempt | probes | probes that recalled | tidy-up runs | tidied away | in force at \
+             the end | at each thread's start |\n| --- | --- | --- | --- | --- | --- | --- |",
+            thousands(as_u64(BUDGET_TOKENS))
+        );
+        let mut notes = Vec::new();
+        for attempt in probed {
+            let model = attempt.model.rsplit('/').next().unwrap_or(&attempt.model);
+            let name = format!("{} · {model} #{}", attempt.task, attempt.number);
+            let share = (attempt.probes.as_ref()).map_or_else(String::new, |probes| {
+                let recalled: Vec<String> = probes.recalled.iter().map(u32::to_string).collect();
+                let recalled = if recalled.is_empty() {
+                    "none".to_owned()
+                } else {
+                    recalled.join(", ")
+                };
+                format!("{}/{} | {recalled}", probes.passed, probes.of)
+            });
+            let memory = attempt.memory.as_ref().map_or_else(
+                || "- | - | - | -".to_owned(),
+                |memory| {
+                    format!(
+                        "{} | {} | {} | {}",
+                        memory.tidy_runs,
+                        memory.tidied_away.len(),
+                        used(&memory.used),
+                        in_view(&memory.in_view)
+                    )
+                },
+            );
+            let _ = writeln!(out, "| {name} | {share} | {memory} |");
+            let failed = attempt.probes.iter().flat_map(|probes| &probes.failed);
+            notes.extend(failed.map(|failed| format!("- {name}: {failed}")));
+            let away = attempt.memory.iter().flat_map(|memory| &memory.tidied_away);
+            notes.extend(away.map(|text| format!("- {name}: tidied away {text:?}")));
+        }
+        if !notes.is_empty() {
+            let _ = writeln!(out, "\n{}", notes.join("\n"));
+        }
+    }
 }
 
 fn cell(now: Option<Rate>, before: Option<Rate>) -> String {
@@ -194,6 +249,29 @@ fn median_seconds(attempts: &[&Attempt]) -> String {
 /// One row of totals: a model's attempts in, a cell out.
 type Row = dyn Fn(&[&Attempt]) -> String;
 
+/// Tokens in force per scope: `personal 870, project 1,010`.
+fn used(used: &BTreeMap<String, usize>) -> String {
+    let scopes: Vec<String> = (used.iter())
+        .map(|(scope, tokens)| format!("{scope} {}", thousands(as_u64(*tokens))))
+        .collect();
+    scopes.join(", ")
+}
+
+/// Tokens at each thread's start: their mean and the most.
+fn in_view(tokens: &[usize]) -> String {
+    let mean = tokens.iter().sum::<usize>() / tokens.len().max(1);
+    let most = tokens.iter().max().copied().unwrap_or_default();
+    format!(
+        "{} on average, {} at most",
+        thousands(as_u64(mean)),
+        thousands(as_u64(most))
+    )
+}
+
+fn as_u64(n: usize) -> u64 {
+    u64::try_from(n).unwrap_or(u64::MAX)
+}
+
 /// One line per finished attempt, for following a run as it goes.
 pub(crate) fn line(attempt: &Attempt) -> String {
     let result = if attempt.skipped {
@@ -213,6 +291,9 @@ pub(crate) fn line(attempt: &Attempt) -> String {
         dollars(attempt.cost_micros),
         attempt.seconds,
     );
+    if let Some(probes) = &attempt.probes {
+        let _ = write!(line, " · probes {}/{}", probes.passed, probes.of);
+    }
     for failure in &attempt.failures {
         let _ = write!(line, "\n    {failure}");
     }
@@ -222,6 +303,8 @@ pub(crate) fn line(attempt: &Attempt) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::memory::MemoryUse;
+    use crate::probe::Probes;
 
     fn attempt(task: &str, model: &str, number: u32, passed: bool) -> Attempt {
         let mut attempt = Attempt::unrun(task, model, number, false, "wrong".into());
@@ -283,11 +366,64 @@ mod tests {
         assert!(!now.passed(), "an incomplete run is not a pass");
     }
 
+    /// An attempt at a month of threads: 9 of 10 probes, and what memory did.
+    fn month(number: u32) -> Attempt {
+        let mut month = attempt("memory-month", "a/one", number, true);
+        month.probes = Some(Probes {
+            passed: 9,
+            of: 10,
+            failed: vec!["probe 4 (thread 31): the answer does not mention \"Railway\"".into()],
+            recalled: vec![3, 9],
+        });
+        month.memory = Some(MemoryUse {
+            tidy_runs: 6,
+            tidied_away: vec!["Atlas deploys to Heroku.".into()],
+            used: [("personal".to_owned(), 870), ("project".to_owned(), 1_010)].into(),
+            in_view: vec![0, 500, 1_900],
+        });
+        month
+    }
+
     #[test]
     fn reports_round_trip_through_json() {
-        let now = report(vec![attempt("fix", "a/one", 1, true)]);
+        let now = report(vec![attempt("fix", "a/one", 1, true), month(1)]);
         let json = serde_json::to_string(&now).unwrap();
         assert_eq!(serde_json::from_str::<Report>(&json).unwrap(), now);
+        let plain = serde_json::to_string(&report(vec![attempt("fix", "a/one", 1, true)])).unwrap();
+        assert!(
+            !plain.contains("probes") && !plain.contains("memory"),
+            "{plain}"
+        );
+    }
+
+    #[test]
+    fn probes_and_memory_get_a_row_per_attempt_and_their_details() {
+        let mut off = month(2);
+        off.memory = None;
+        let table = report(vec![attempt("fix", "a/one", 1, true), month(1), off]).markdown(None);
+        assert!(
+            table.contains("| memory-month · one #1 | 9/10 | 3, 9 | 6 | 1 | personal 870, project 1,010 | 800 on average, 1,900 at most |"),
+            "{table}"
+        );
+        assert!(
+            table.contains("| memory-month · one #2 | 9/10 | 3, 9 | - | - | - | - |"),
+            "{table}"
+        );
+        assert!(!table.contains("| fix · one"), "{table}");
+        assert!(
+            table.contains("- memory-month · one #1: probe 4 (thread 31): the answer does not mention \"Railway\""),
+            "{table}"
+        );
+        assert!(
+            table.contains("- memory-month · one #1: tidied away \"Atlas deploys to Heroku.\""),
+            "{table}"
+        );
+        assert!(line(&month(1)).contains(" · probes 9/10"));
+        assert!(
+            !report(vec![attempt("fix", "a/one", 1, true)])
+                .markdown(None)
+                .contains("Probes")
+        );
     }
 
     #[test]

@@ -1,17 +1,20 @@
 //! Memory for one attempt (`specs/memory.md`, "Evals"): a sealed store of the attempt's own, the
 //! projects its threads work in, glave's memory server over them when memory is on, the memories
 //! seeded before the first thread, the past conversations `recall` searches, tidy-up when the
-//! task asks for it, and afterwards what the memory ledgers hold, for the checks.
+//! task asks for it, and afterwards what the memory ledgers hold, for the checks, and what memory
+//! held and cost, for the result.
+
+mod ledger;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use glave_event::{
-    Body, EventId, Header, MemoryId, MemoryScope, MessageAdded, Part, Principal, PrincipalId, Role,
-    Seq, ThreadId, decode, encode,
+    EventId, Header, MemoryId, MemoryScope, MessageAdded, Part, Principal, PrincipalId, Role, Seq,
+    ThreadId, encode,
 };
 use glave_keys::{InMemoryRoot, KeySettings};
-use glave_memory::{GlaveMemory, Memories, Personal, Rules, Tidier, Writer};
+use glave_memory::{GlaveMemory, Memories, Personal, Rules, Tidier, Writer, tokens};
 use glave_ports::memories::ProjectMemory;
 use glave_ports::stream::Reserved;
 use glave_ports::{
@@ -19,9 +22,15 @@ use glave_ports::{
     SystemClock,
 };
 use glave_store_sqlite::{SqliteLog, Store};
+use serde::{Deserialize, Serialize};
 
+use self::ledger::Ledger;
+use crate::calendar::Calendar;
 use crate::error::EvalError;
 use crate::task::Task;
+
+/// What a thread names as its project to work in the person's Chats.
+const CHATS: &str = "chats";
 
 /// The person every attempt works for.
 pub(crate) fn person() -> Result<PrincipalId, EvalError> {
@@ -35,10 +44,12 @@ fn org() -> OrgId {
     OrgId::from_uuid(uuid::Uuid::from_u128(1))
 }
 
-/// The project named `name`: the first thread's (`None`) is the one attempts always used.
+/// The project named `name`: the first thread's (`None`) is the one attempts always used, and
+/// `chats` is the person's own.
 pub(crate) fn project(name: Option<&str>) -> Scope {
     let project = match name {
         None => 2,
+        Some(CHATS) => return personal(),
         Some(name) => name.bytes().fold(0x0100_u128, |sum, byte| {
             sum.wrapping_mul(31).wrapping_add(u128::from(byte))
         }),
@@ -46,7 +57,7 @@ pub(crate) fn project(name: Option<&str>) -> Scope {
     Scope::glaves_own(org(), ProjectId::from_uuid(uuid::Uuid::from_u128(project)))
 }
 
-/// The person's own project, where their personal memory lives.
+/// The person's own project, their Chats, where their personal memory lives.
 fn personal() -> Scope {
     Scope::glaves_own(org(), ProjectId::from_uuid(uuid::Uuid::from_u128(100)))
 }
@@ -60,8 +71,10 @@ fn setting(name: Option<&str>) -> ProjectMemory {
 pub(crate) struct Remembering {
     pub store: Store,
     pub memory: Option<Arc<GlaveMemory<SqliteLog>>>,
-    /// Every project the attempt uses, the person's own first.
-    scopes: Vec<Scope>,
+    person: PrincipalId,
+    /// Every project the attempt uses, the person's own first, each with what the result calls
+    /// it: `personal`, `project` (the first thread's), or its name.
+    scopes: Vec<(String, Scope)>,
 }
 
 /// What the memory ledgers hold once an attempt is over.
@@ -77,11 +90,34 @@ pub struct MemoryReport {
     pub readable_forgotten: Vec<MemoryId>,
     /// The ledgers' events as stored, as JSON Lines.
     pub ledger: String,
+    /// What memory held and cost, when it was on.
+    pub usage: Option<MemoryUse>,
+}
+
+/// What memory held and cost over an attempt, for its result.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MemoryUse {
+    /// Tidy-up's runs, over every ledger.
+    pub tidy_runs: u32,
+    /// What tidy-up forgot: memories merged into another, or replaced by a later one.
+    pub tidied_away: Vec<String>,
+    /// About how many tokens the memories in force take at the end, as the budget counts them
+    /// (about 1,000 each): `personal`, `chats` (project memories saved in the person's Chats),
+    /// `project` (the first thread's) and each other project by name.
+    pub used: BTreeMap<String, usize>,
+    /// About how many tokens of memory each thread started with, as the budget counts them, in
+    /// the order they ran.
+    pub in_view: Vec<usize>,
 }
 
 impl Remembering {
-    /// The store for `task`'s attempt, with memory when `on`, and its seeded memories saved.
-    pub(crate) async fn open(task: &Task, on: bool) -> Result<Self, EvalError> {
+    /// The store for `task`'s attempt, with memory when `on`, read and written on `calendar`'s
+    /// days, and its seeded memories saved.
+    pub(crate) async fn open(
+        task: &Task,
+        on: bool,
+        calendar: &Calendar,
+    ) -> Result<Self, EvalError> {
         let fail = |error: &dyn std::fmt::Display| EvalError::Setup(format!("memory: {error}"));
         let root = InMemoryRoot::new().map_err(|e| fail(&e))?;
         let store =
@@ -98,7 +134,10 @@ impl Remembering {
             project(None).project(),
             setting(task.project_memory.as_deref()),
         );
-        let mut scopes = vec![personal(), project(None)];
+        let mut scopes = vec![
+            ("personal".to_owned(), personal()),
+            ("project".to_owned(), project(None)),
+        ];
         for thread in &task.threads {
             let here = project(thread.project.as_deref());
             if thread.project.is_some() {
@@ -106,26 +145,24 @@ impl Remembering {
                     .projects
                     .insert(here.project(), setting(thread.project_memory.as_deref()));
             }
-            if !scopes.contains(&here) {
-                scopes.push(here);
+            if !scopes.iter().any(|(_, scope)| *scope == here) {
+                scopes.push((thread.project.clone().unwrap_or_default(), here));
             }
         }
-        let memories = || {
-            Memories::new(
-                store.log(),
-                store.keyring(),
-                rules.clone(),
-                Box::new(SystemClock),
-                Box::new(OsEntropy),
-            )
-        };
         seed(&store, &rules, person, &task.memories).await?;
         for past in &task.past {
             write_past(&store, project(past.project.as_deref()), &past.messages).await?;
         }
         let memory = if on {
+            let memories = Memories::new(
+                store.log(),
+                store.keyring(),
+                rules,
+                Box::new(calendar.clone()),
+                Box::new(OsEntropy),
+            );
             Some(Arc::new(
-                GlaveMemory::start(memories()).await.map_err(|e| fail(&e))?,
+                GlaveMemory::start(memories).await.map_err(|e| fail(&e))?,
             ))
         } else {
             None
@@ -133,6 +170,7 @@ impl Remembering {
         Ok(Self {
             store,
             memory,
+            person,
             scopes,
         })
     }
@@ -147,72 +185,107 @@ impl Remembering {
             return Ok(Vec::new());
         };
         let mut done = Vec::new();
-        for scope in &self.scopes {
+        for (name, scope) in &self.scopes {
             let tidied = memory
                 .memories()
                 .tidy(*scope, model)
                 .await
                 .map_err(|e| EvalError::Setup(format!("tidy-up failed: {e}")))?;
             done.push(format!(
-                "merged {}, forgot {}, asked {}, refused {:?}",
+                "{name}: merged {}, forgot {}, asked {}, refused {:?}",
                 tidied.merged, tidied.forgotten, tidied.questions, tidied.refused
             ));
         }
         Ok(done)
     }
 
-    /// What the memory ledgers hold now.
+    /// Tidies on `model` in the background from now on, as the server does: each ledger a save
+    /// or an edit changes, and each one `tidy_soon` asks for, once it is due.
+    pub(crate) fn tidy_as_served<P: ModelProvider + 'static>(&self, model: Tidier<P>) {
+        if let Some(memory) = &self.memory {
+            memory.tidy_with(model);
+        }
+    }
+
+    /// Asks tidy-up in the background to look at the ledgers a thread in `scope` reads, as a
+    /// session does when it starts.
+    pub(crate) fn tidy_soon(&self, scope: Scope) {
+        if let Some(memory) = &self.memory {
+            memory.tidy_soon(&self.ledgers(scope));
+        }
+    }
+
+    /// The ledgers a thread in `scope` reads: the person's, in a shared project, and its own.
+    fn ledgers(&self, scope: Scope) -> Vec<Scope> {
+        let Some(memory) = &self.memory else {
+            return Vec::new();
+        };
+        let mut ledgers: Vec<Scope> = (memory.memories().rules())
+            .readable(Some(self.person), scope)
+            .into_iter()
+            .map(|(_, ledger)| ledger)
+            .collect();
+        // The person's Chats hold both their personal memory and the project's.
+        ledgers.dedup();
+        ledgers
+    }
+
+    /// About how many tokens of memory a thread in `scope` would start with now, as the budget
+    /// counts them; `None` when memory is off.
+    pub(crate) async fn in_view(&self, scope: Scope) -> Result<Option<usize>, EvalError> {
+        let Some(memory) = &self.memory else {
+            return Ok(None);
+        };
+        let shown = memory
+            .memories()
+            .list_as(Some(self.person), scope, None)
+            .await
+            .map_err(|e| EvalError::Setup(format!("memory: {e}")))?;
+        Ok(Some(shown.iter().map(|memory| tokens(&memory.text)).sum()))
+    }
+
+    /// What the memory ledgers hold now, once memory has stopped: a tidy-up still running in
+    /// the background is stopped first, so the ledgers read the same throughout.
     pub(crate) async fn report(&self) -> Result<MemoryReport, EvalError> {
+        if let Some(memory) = &self.memory {
+            memory.close().await;
+        }
         let fail = |error: &dyn std::fmt::Display| EvalError::Setup(format!("memory: {error}"));
-        let ledger = Reserved::Memory.id();
         let mut report = MemoryReport::default();
-        for scope in &self.scopes {
+        let mut usage = MemoryUse::default();
+        for (name, scope) in &self.scopes {
             let raw = self
                 .store
                 .log()
-                .read(scope, ledger, None, usize::MAX)
+                .read(scope, Reserved::Memory.id(), None, usize::MAX)
                 .await
                 .map_err(|e| fail(&e))?;
-            let mut texts: BTreeMap<MemoryId, (MemoryScope, String)> = BTreeMap::new();
-            let mut forgotten = Vec::new();
-            for event in raw {
+            for event in &raw {
                 report
                     .ledger
                     .push_str(&event.to_json().map_err(|e| fail(&e))?);
                 report.ledger.push('\n');
-                // A memory whose key was destroyed reads as erased: it does not decode.
-                match decode(event).map(|event| event.body) {
-                    Ok(Body::MemorySaved(saved)) => {
-                        texts.insert(saved.memory, (saved.scope, saved.text));
-                    }
-                    Ok(Body::MemoryEdited(edited)) => {
-                        if let Some(entry) = texts.get_mut(&edited.memory) {
-                            entry.1 = edited.text;
-                        }
-                    }
-                    Ok(Body::MemoryForgotten(gone)) => forgotten.push(gone.memory),
-                    Ok(Body::MemoryRestored(restored)) => {
-                        forgotten.retain(|memory| *memory != restored.memory);
-                    }
-                    _ => {}
-                }
             }
-            for memory in &forgotten {
-                if texts.remove(memory).is_some() {
-                    report.readable_forgotten.push(*memory);
-                }
-            }
-            for (scope, text) in texts.into_values() {
-                if scope == MemoryScope::Personal {
+            let read = Ledger::read(raw);
+            usage.tidy_runs = usage.tidy_runs.saturating_add(read.tidied);
+            report.readable_forgotten.extend(read.readable_forgotten());
+            usage.tidied_away.extend(read.by_glave());
+            for (kind, text) in read.live() {
+                let place = match kind {
+                    MemoryScope::Personal => "personal",
+                    MemoryScope::Project if *scope == personal() => CHATS,
+                    MemoryScope::Project => name.as_str(),
+                };
+                let used = usage.used.entry(place.to_owned()).or_default();
+                *used = used.saturating_add(tokens(text));
+                if kind == MemoryScope::Personal {
                     report.personal.push(text.clone());
                 }
-                report.live.push(text);
+                report.live.push(text.clone());
             }
-            report.forgotten.extend(forgotten);
+            report.forgotten.extend(read.forgotten);
         }
-        if let Some(memory) = &self.memory {
-            memory.close().await;
-        }
+        report.usage = self.memory.is_some().then_some(usage);
         Ok(report)
     }
 }
@@ -309,5 +382,29 @@ mod tests {
         assert_ne!(project(Some("client")), project(Some("other")));
         assert_eq!(project(Some("client")), project(Some("client")));
         assert_ne!(project(Some("client")), personal());
+        assert_eq!(project(Some("chats")), personal(), "the person's Chats");
+    }
+
+    #[test]
+    fn a_thread_asks_tidy_up_about_the_ledgers_it_reads() {
+        let dir = glave_ports::testing::TempDir::new("eval-ledgers").unwrap();
+        std::fs::write(dir.join("instruction.md"), "Hi.").unwrap();
+        let threads = "[[glave.threads]]\nproject = \"chats\"\nmessages = [\"a\"]\n\
+                       [[glave.threads]]\nproject = \"secret\"\nproject_memory = \"isolated\"\n\
+                       messages = [\"b\"]\n";
+        std::fs::write(dir.join("task.toml"), threads).unwrap();
+        let task = crate::task::load(&dir).unwrap();
+        let clock = glave_ports::testing::ManualClock::at_second(1_800_000_000);
+        let calendar = Calendar::new(Arc::new(clock));
+        glave_ports::block_on!(async {
+            let on = Remembering::open(&task, true, &calendar).await.unwrap();
+            let (first, secret) = (project(None), project(Some("secret")));
+            assert_eq!(on.ledgers(first), [personal(), first]);
+            assert_eq!(on.ledgers(personal()), [personal()], "Chats hold both");
+            assert_eq!(on.ledgers(secret), [secret], "isolated");
+            on.report().await.unwrap();
+            let off = Remembering::open(&task, false, &calendar).await.unwrap();
+            assert_eq!(off.ledgers(first), []);
+        });
     }
 }
