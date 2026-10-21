@@ -6,7 +6,10 @@ import { chromium } from '@playwright/test';
 
 import { THREAD, fakeApi } from './fake-api.ts';
 
-const [url = 'http://127.0.0.1:4310', out = 'test-results'] = process.argv.slice(2);
+const [url, out = 'test-results'] = process.argv.slice(2);
+if (url === undefined) {
+  throw new Error('usage: node e2e/shots.mjs <url> <out-dir>, the url where glave serves the app');
+}
 const SCREENS = [
   { name: '1440x900', width: 1440, height: 900, tools: true, touch: false },
   { name: '390x844', width: 390, height: 844, tools: false, touch: true },

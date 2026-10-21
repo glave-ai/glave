@@ -4,10 +4,10 @@ import type { AddressInfo } from 'node:net';
 import { expect, test } from '@playwright/test';
 
 import {
-  ACCOUNTS_HOME,
-  ACCOUNTS_URL,
+  ACCOUNTS,
   byTestId,
   expectAccessible,
+  served,
   signInCode,
   watchForProblems,
 } from './support';
@@ -53,13 +53,14 @@ test('a git host is connected with its address and a token, which never shows', 
   page,
 }) => {
   const problems = watchForProblems(page);
-  const code = await signInCode(ACCOUNTS_URL, process.env[ACCOUNTS_HOME] ?? '');
+  const glave = served(ACCOUNTS);
+  const code = await signInCode(ACCOUNTS);
   const { port } = host.address() as AddressInfo;
   const address = `http://127.0.0.1:${String(port)}`;
 
-  await page.goto(`${ACCOUNTS_URL}/#code=${code}`);
+  await page.goto(`${glave}/#code=${code}`);
   await expect(byTestId(page, 'home-composer-input')).toBeVisible();
-  await page.goto(`${ACCOUNTS_URL}/settings`);
+  await page.goto(`${glave}/settings`);
   await expect(page.getByRole('heading', { name: 'Connected accounts' })).toBeVisible();
   await expect(byTestId(page, 'accounts-none')).toBeVisible();
   for (const colorScheme of ['light', 'dark'] as const) {

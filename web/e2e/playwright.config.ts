@@ -5,60 +5,67 @@ import { join, resolve } from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
 
 import {
-  ACCOUNTS_HOME,
-  ACCOUNTS_URL,
-  APP_URL,
-  FIRST_RUN_HOME,
-  FIRST_RUN_URL,
-  PASSKEYS_HOME,
+  ACCOUNTS,
+  APP,
+  FIRST_RUN,
+  PASSKEYS,
   PASSKEYS_ORIGIN,
-  PASSKEYS_URL,
-  SHOWCASE_URL,
+  SHOWCASE,
+  type Site,
 } from './support';
 
 /** The glave binary that serves the app: GLAVE_BIN, else the workspace's debug build. */
 const glave = process.env['GLAVE_BIN'] ?? resolve(import.meta.dirname, '../../target/debug/glave');
 
-/** A home of its own for each glave, so the tests touch nothing of the person's. */
-function home(): string {
-  return mkdtempSync(join(tmpdir(), 'glave-e2e-'));
+/**
+ * A home of its own for the glave of `site`, with `settings` as its config.toml, so the tests
+ * touch nothing of the person's: made once, in the run that starts the servers, whose workers
+ * read this file again with its variable set.
+ */
+function home(site: Site, settings?: string): string {
+  const kept = process.env[site.home];
+  if (kept !== undefined) {
+    return kept;
+  }
+  const made = mkdtempSync(join(tmpdir(), 'glave-e2e-'));
+  if (settings !== undefined) {
+    writeFileSync(join(made, 'config.toml'), settings);
+  }
+  process.env[site.home] = made;
+  return made;
 }
 
 /**
- * The first run's home, which its test reads the sign-in token from: made once, in the run
- * that starts the servers, whose workers read this file again with the variable set.
- */
-const firstRun = process.env[FIRST_RUN_HOME] ?? home();
-process.env[FIRST_RUN_HOME] = firstRun;
-/** The home of the glave that accounts are connected to, kept the same way. */
-const accounts = process.env[ACCOUNTS_HOME] ?? home();
-process.env[ACCOUNTS_HOME] = accounts;
-/** The home of the glave reached from elsewhere, its settings naming its public origin. */
-const passkeys =
-  process.env[PASSKEYS_HOME] ??
-  ((): string => {
-    const made = home();
-    writeFileSync(join(made, 'config.toml'), `[serve]\norigin = "${PASSKEYS_ORIGIN}"\n`);
-    return made;
-  })();
-process.env[PASSKEYS_HOME] = passkeys;
-
-/**
- * What glave serves, and where: the app on a model the fake API names, Glaze's showcase, the
- * app on a glave with nothing set up, for the first run against the real server, the app on a
- * real glave with a model, to connect accounts to, and the app on a real glave reached from
+ * What glave serves: the app on a model the fake API names, Glaze's showcase, the app on a
+ * glave with nothing set up, for the first run against the real server, the app on a real
+ * glave with a model, to connect accounts to, and the app on a real glave reached from
  * elsewhere at a public origin, to sign in to with passkeys.
  */
 const SITES = [
-  { url: APP_URL, web: 'dist/app/browser', env: { GLAVE_HOME: home(), GLAVE_MODEL: 'e2e' } },
+  { site: APP, web: 'dist/app/browser', env: { GLAVE_HOME: home(APP), GLAVE_MODEL: 'e2e' } },
   {
-    url: SHOWCASE_URL,
+    site: SHOWCASE,
     web: 'dist/showcase/browser',
-    env: { GLAVE_HOME: home(), GLAVE_MODEL: 'e2e' },
+    env: { GLAVE_HOME: home(SHOWCASE), GLAVE_MODEL: 'e2e' },
   },
-  { url: FIRST_RUN_URL, web: 'dist/app/browser', env: { GLAVE_HOME: firstRun, GLAVE_MODEL: '' } },
-  { url: ACCOUNTS_URL, web: 'dist/app/browser', env: { GLAVE_HOME: accounts, GLAVE_MODEL: 'e2e' } },
-  { url: PASSKEYS_URL, web: 'dist/app/browser', env: { GLAVE_HOME: passkeys, GLAVE_MODEL: 'e2e' } },
+  {
+    site: FIRST_RUN,
+    web: 'dist/app/browser',
+    env: { GLAVE_HOME: home(FIRST_RUN), GLAVE_MODEL: '' },
+  },
+  {
+    site: ACCOUNTS,
+    web: 'dist/app/browser',
+    env: { GLAVE_HOME: home(ACCOUNTS), GLAVE_MODEL: 'e2e' },
+  },
+  {
+    site: PASSKEYS,
+    web: 'dist/app/browser',
+    env: {
+      GLAVE_HOME: home(PASSKEYS, `[serve]\norigin = "${PASSKEYS_ORIGIN}"\n`),
+      GLAVE_MODEL: 'e2e',
+    },
+  },
 ];
 
 /**
@@ -86,7 +93,8 @@ export default defineConfig({
   expect: { timeout: 30_000 },
   reporter: [['list']],
   use: {
-    baseURL: APP_URL,
+    // Read in the workers, which start once every glave has said where it serves.
+    baseURL: process.env[APP.address],
     trace: 'retain-on-failure',
   },
   projects: [
@@ -99,10 +107,12 @@ export default defineConfig({
       testIgnore: ['first-run.e2e.ts', 'accounts.e2e.ts'],
     },
   ],
-  webServer: SITES.map(({ url, web, env }) => ({
-    command: `"${glave}" serve --http ${new URL(url).port} --web ${web}`,
-    url,
-    reuseExistingServer: false,
+  // Each glave listens on a port the system picks (port 0), so two runs on one machine, such as
+  // two `cargo xtask ci` side by side, never meet. It is ready once it says where it serves,
+  // and Playwright keeps that address in the site's variable, which the workers inherit.
+  webServer: SITES.map(({ site, web, env }) => ({
+    command: `"${glave}" serve --http 0 --web ${web}`,
+    wait: { stderr: new RegExp(`serving the session API on (?<${site.address}>http://\\S+)`, 'u') },
     cwd: '..',
     env,
   })),

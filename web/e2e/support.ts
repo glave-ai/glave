@@ -4,50 +4,86 @@ import { join } from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { type Locator, type Page, expect } from '@playwright/test';
 
-/** Where the app is served, and Glaze's showcase (playwright.config.ts). */
-export const APP_URL = 'http://127.0.0.1:4310';
-export const SHOWCASE_URL = 'http://127.0.0.1:4311';
-/** Where a glave with nothing set up serves the app, for the first run (first-run.e2e.ts). */
-export const FIRST_RUN_URL = 'http://127.0.0.1:4312';
-/** The variable that names that glave's home, so the test can read its local token. */
-export const FIRST_RUN_HOME = 'GLAVE_E2E_FIRST_RUN_HOME';
-/** Where a glave with a model serves the app, for connecting accounts (accounts.e2e.ts). */
-export const ACCOUNTS_URL = 'http://127.0.0.1:4313';
-/** The variable that names that glave's home. */
-export const ACCOUNTS_HOME = 'GLAVE_E2E_ACCOUNTS_HOME';
-
 /**
- * Where a glave reached from elsewhere serves the app, for passkeys (passkeys.e2e.ts), and the
- * public origin its settings name, which the tests route to it as a tunnel would.
+ * A glave the tests are served by (playwright.config.ts), known by the variables that hold the
+ * address it serves on and its home. Each listens on a port it picks when it starts, so runs
+ * side by side on one machine never meet; the run that starts them sets both variables, and its
+ * workers read them.
  */
-export const PASSKEYS_URL = 'http://127.0.0.1:4314';
+export interface Site {
+  /** The variable that holds its address, as it said when it started. */
+  readonly address: string;
+  /** The variable that holds its home. */
+  readonly home: string;
+}
+
+/** The app, its session API answered by each test's fake (fake-api.ts). */
+export const APP: Site = { address: 'GLAVE_E2E_APP_URL', home: 'GLAVE_E2E_APP_HOME' };
+/** Glaze's showcase. */
+export const SHOWCASE: Site = {
+  address: 'GLAVE_E2E_SHOWCASE_URL',
+  home: 'GLAVE_E2E_SHOWCASE_HOME',
+};
+/** A glave with nothing set up, for the first run against the real server (first-run.e2e.ts). */
+export const FIRST_RUN: Site = {
+  address: 'GLAVE_E2E_FIRST_RUN_URL',
+  home: 'GLAVE_E2E_FIRST_RUN_HOME',
+};
+/** A glave with a model, for signing in and connecting accounts (accounts.e2e.ts). */
+export const ACCOUNTS: Site = {
+  address: 'GLAVE_E2E_ACCOUNTS_URL',
+  home: 'GLAVE_E2E_ACCOUNTS_HOME',
+};
+/** A glave reached from elsewhere, for passkeys (passkeys.e2e.ts). */
+export const PASSKEYS: Site = {
+  address: 'GLAVE_E2E_PASSKEYS_URL',
+  home: 'GLAVE_E2E_PASSKEYS_HOME',
+};
+/**
+ * The public origin the passkeys glave's settings name, which the tests route to it as a
+ * tunnel would.
+ */
 export const PASSKEYS_ORIGIN = 'https://glave.test';
-/** The variable that names that glave's home. */
-export const PASSKEYS_HOME = 'GLAVE_E2E_PASSKEYS_HOME';
+
+/** Where `site` serves, such as `http://127.0.0.1:52114`. */
+export function served(site: Site): string {
+  return kept(site.address);
+}
+
+/** The value the run keeps in `variable`; fails when it keeps none, outside a run. */
+function kept(variable: string): string {
+  const value = process.env[variable];
+  if (value === undefined) {
+    throw new Error(
+      `${variable} is not set: run the tests with playwright.config.ts, which sets it`,
+    );
+  }
+  return value;
+}
 
 /** The fragment of the link that signs the app in, with a code the fake API takes. */
 export const SIGNED_IN = '#code=e2e-code';
 
 /**
- * A sign-in link's one-time code from the real glave at `url` whose home is `home`, asked for
- * with its local token, as `glave` alone asks for one.
+ * A sign-in link's one-time code from the real glave of `site`, asked for with its local token,
+ * as `glave` alone asks for one.
  */
-export async function signInCode(url: string, home: string): Promise<string> {
-  return codeFrom(url, home, 'signin/link');
+export async function signInCode(site: Site): Promise<string> {
+  return codeFrom(site, 'signin/link');
 }
 
 /**
- * A setup link's code from the real glave at `url` whose home is `home`, asked for with its
- * local token, as `glave server link` asks for one.
+ * A setup link's code from the real glave of `site`, asked for with its local token, as
+ * `glave server link` asks for one.
  */
-export async function setupCode(url: string, home: string): Promise<string> {
-  return codeFrom(url, home, 'signin/setup');
+export async function setupCode(site: Site): Promise<string> {
+  return codeFrom(site, 'signin/setup');
 }
 
-/** The code `method` answers from the real glave at `url` whose home is `home`. */
-async function codeFrom(url: string, home: string, method: string): Promise<string> {
-  const token = readFileSync(join(home, 'serve.token'), 'utf8').trim();
-  const response = await fetch(`${url}/`, {
+/** The code `method` answers from the real glave of `site`. */
+async function codeFrom(site: Site, method: string): Promise<string> {
+  const token = readFileSync(join(kept(site.home), 'serve.token'), 'utf8').trim();
+  const response = await fetch(`${served(site)}/`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: {} }),

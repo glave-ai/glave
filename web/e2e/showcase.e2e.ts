@@ -1,15 +1,16 @@
 import { expect, test } from '@playwright/test';
 
 import {
-  SHOWCASE_URL,
+  SHOWCASE,
   byTestId,
   expectAccessible,
   expectDialogShown,
   watchForProblems,
 } from './support';
 
-// Glaze's showcase, a dev-only app served by its own glave (playwright.config.ts).
-test.use({ baseURL: SHOWCASE_URL });
+// Glaze's showcase, a dev-only app served by its own glave (playwright.config.ts), read as the
+// config reads the app's.
+test.use({ baseURL: process.env[SHOWCASE.address] });
 
 for (const colorScheme of ['light', 'dark'] as const) {
   test(`the showcase passes axe in ${colorScheme}, under a strict CSP`, async ({

@@ -55,6 +55,8 @@ npm run e2e            # Playwright in Chromium and WebKit against glave serve -
 
 `cargo xtask ci` runs `npm run check`, after building the app and `glave` with it inside (and its serving tests) for the end-to-end tests, which run against the real `glave serve --http --web`. It needs Node 22.22.3 or later; `GLAVE_SKIP_WEB=1` skips it. Run `npm run e2e` by itself after `cargo build -p glave` (or set `GLAVE_BIN`).
 
+Every glave the end-to-end tests start listens on a port the system picks, so two runs on one machine at once (two `cargo xtask ci` side by side) never meet. `npm run e2e:twice` shows it: it runs the tests twice at once and fails unless both pass, taking Playwright's arguments after `--` (such as `-- --project=chromium`). It is not part of `npm run check`, since it doubles the tests' time.
+
 Playwright's Chromium and WebKit (Safari's engine) are installed into `node_modules` (`npm run e2e:install`, `PLAYWRIGHT_BROWSERS_PATH=0`), nothing global. Every end-to-end test runs in both, headless; one that skips WebKit says why.
 
 ## How the app is built

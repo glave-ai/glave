@@ -1,11 +1,11 @@
 import { type BrowserContext, type CDPSession, type Page, expect, test } from '@playwright/test';
 
 import {
-  PASSKEYS_HOME,
+  PASSKEYS,
   PASSKEYS_ORIGIN,
-  PASSKEYS_URL,
   byTestId,
   expectAccessible,
+  served,
   setupCode,
   watchForProblems,
 } from './support';
@@ -18,10 +18,11 @@ const ADMIN_WORDS = /policy|organization|member|group|admin|SSO|config\.toml|GLA
  * does: the page stays at `https://glave.test`, a secure origin, WebAuthn's relying party.
  */
 async function tunnel(context: BrowserContext): Promise<void> {
+  const glave = served(PASSKEYS);
   await context.route(`${PASSKEYS_ORIGIN}/**`, async (route) => {
     const asked = new URL(route.request().url());
     const response = await route.fetch({
-      url: `${PASSKEYS_URL}${asked.pathname}${asked.search}`,
+      url: `${glave}${asked.pathname}${asked.search}`,
       headers: { ...route.request().headers(), host: new URL(PASSKEYS_ORIGIN).host },
     });
     await route.fulfill({ response });
@@ -227,7 +228,7 @@ test('a setup link makes a passkey here, and the passkey signs the browser in ag
 }) => {
   await tunnel(context);
   const tab = oneDevice(context, browserName);
-  const code = await setupCode(PASSKEYS_URL, process.env[PASSKEYS_HOME] ?? '');
+  const code = await setupCode(PASSKEYS);
 
   const page = await tab();
   const problems = watchForProblems(page);
