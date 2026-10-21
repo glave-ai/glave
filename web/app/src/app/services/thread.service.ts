@@ -1,13 +1,16 @@
 import { DOCUMENT, DestroyRef, Service, computed, inject, signal } from '@angular/core';
-import type {
-  ApprovalMode,
-  AttachedFile,
-  Notification,
-  RawEvent,
-  ThreadId,
-  TrustAsk,
-  TrustChoice,
-  TurnStartParams,
+import {
+  ApiError,
+  ErrorCode,
+  type ApprovalMode,
+  type AttachedFile,
+  type Notification,
+  type RawEvent,
+  type ThreadId,
+  type ThreadSummary,
+  type TrustAsk,
+  type TrustChoice,
+  type TurnStartParams,
 } from '@glave/client';
 import type { GlzDecision } from '@glave/glaze';
 
@@ -20,16 +23,21 @@ import { placeOf } from '../lib/place';
 import { folderGone } from '../lib/projects';
 import { type Waiting, named, notRead, together } from '../lib/queued';
 import { onApple } from '../lib/shortcuts';
-import { threadTurns } from '../lib/turns';
+import { threadTurns, turnRuns } from '../lib/turns';
 import { SessionService } from './session.service';
 import { ProjectsService } from './projects.service';
 
+/** How long the first try again waits after a watch was cut off; each one after, twice that. */
+const FIRST_RETRY_MS = 1_000;
+/** The longest a try again waits. */
+const LAST_RETRY_MS = 30_000;
+
 /**
- * One open thread: its events, read from the log and followed live while a turn runs; the
- * reply being written; what the person sent while it ran, until the model reads it; the
- * composer's draft; what its project asks the person to trust, raised by opening it; and the
- * person's actions in it (send, stop, decide, answer, trust). Each thread view provides its
- * own.
+ * One open thread: its events, read from the log, then followed live as anyone records them,
+ * from this tab, another, or the terminal, while the tab is shown; the reply being written;
+ * what the person sent while a turn ran, until the model reads it; the composer's draft; what
+ * its project asks the person to trust, raised by opening it; and the person's actions in it
+ * (send, stop, decide, answer, trust). Each thread view provides its own.
  */
 @Service({ autoProvided: false })
 export class ThreadService {
@@ -47,14 +55,29 @@ export class ThreadService {
   private givenBack: string[] = [];
   /** Whether the person stopped the turn, so what waited is sent next. */
   private stopped = false;
+  /** The `seq` of the start of the turn the person stopped, which `stopped` is about. */
+  private stoppedAt: number | null = null;
+  /**
+   * Whether a turn runs in the thread, as far as this view knows: from the server's word when it
+   * opened the thread, then from each turn's start and end as they come.
+   */
+  private readonly running = signal(false);
+  /**
+   * The turns of its own this view has asked for and follows by their streams, from asking to
+   * their end: its watch rests meanwhile.
+   */
+  private readonly streaming = signal(0);
   private sentWhileRunning = 0;
   private readonly failed = signal<string | null>(null);
   private readonly deciding = signal(false);
   private readonly asked = signal<TrustAsk | null>(null);
   private readonly trustAnswered = signal<TrustChoice | null>(null);
   private readonly controllers = new Set<AbortController>();
+  /** The watch of the thread, while one runs. */
+  private watching: AbortController | null = null;
 
-  private readonly mac = onApple(inject(DOCUMENT));
+  private readonly document = inject(DOCUMENT);
+  private readonly mac = onApple(this.document);
 
   readonly thread = this.id.asReadonly();
   /** The thread's turns, each with its items, the files it changed, its time and cost. */
@@ -64,7 +87,8 @@ export class ThreadService {
   /** The `seq` of the latest start or end of a command in the background it recorded, if any. */
   readonly commandChange = computed(() => lastCommandChange(this.events()));
   readonly reply = this.draft.asReadonly();
-  readonly busy = computed(() => this.following() > 0);
+  /** Whether a turn runs in the thread: one this view follows, or one anyone else started. */
+  readonly busy = computed(() => this.following() > 0 || this.running());
   /**
    * What the person sent to start a turn, shown at once as theirs while the server starts the
    * turn, until it records their message; `null` when nothing is on its way.
@@ -91,8 +115,20 @@ export class ThreadService {
   );
 
   constructor() {
-    // Leaving the thread stops following its turn; the turn itself goes on in the server.
+    // A hidden tab lets go of its watch, so tabs in the background hold no connection, and
+    // comes back from where it was once shown.
+    const shown = (): void => {
+      const thread = this.id();
+      if (this.document.visibilityState === 'hidden') {
+        this.stopWatching();
+      } else if (thread !== null && this.watching === null && this.streaming() === 0) {
+        void this.watch(thread);
+      }
+    };
+    this.document.addEventListener('visibilitychange', shown);
+    // Leaving the thread stops following it; a turn itself goes on in the server.
     inject(DestroyRef).onDestroy(() => {
+      this.document.removeEventListener('visibilitychange', shown);
       this.abortAll();
     });
   }
@@ -110,10 +146,22 @@ export class ThreadService {
     this.asking.set(null);
     this.givenBack = [];
     this.stopped = false;
+    this.stoppedAt = null;
+    this.running.set(false);
     this.failed.set(null);
     this.asked.set(null);
     this.trustAnswered.set(null);
-    await Promise.all([this.readAsk(thread), this.readAll(thread)]);
+    await this.readAll(thread);
+    // Read after the events: a turn they leave open runs only when the server says so, not
+    // when glave stopped in the middle of it.
+    const summary = await this.readAsk(thread);
+    if (this.id() !== thread) {
+      return;
+    }
+    this.running.set(summary !== null && runs(summary, this.events()));
+    if (this.document.visibilityState !== 'hidden') {
+      void this.watch(thread, true);
+    }
   }
 
   /**
@@ -182,6 +230,7 @@ export class ThreadService {
     const thread = this.id();
     if (thread !== null) {
       this.stopped = this.busy();
+      this.stoppedAt = latestStart(this.events());
       await this.act(() => this.session.call('turn/cancel', { thread }));
     }
   }
@@ -239,23 +288,35 @@ export class ThreadService {
     this.controllers.add(controller);
     this.following.update((streams) => streams + 1);
     this.failed.set(null);
-    if (queued === null) {
+    // A turn of its own is followed by its own stream: the watch rests meanwhile, unless the
+    // message is likely to be queued to a turn already running.
+    let own = queued === null;
+    if (own) {
       this.asking.set(params.prompt);
+      this.streaming.update((streams) => streams + 1);
+      if (!this.running()) {
+        this.stopWatching();
+      }
     }
     try {
       const turn = this.session.stream('turn/start', params, controller.signal);
       let next = await turn.next();
-      if (!next.done && queued !== null) {
+      if (!next.done) {
+        if (!own) {
+          own = true;
+          this.streaming.update((streams) => streams + 1);
+        }
+        this.stopWatching();
         // The turn had ended meanwhile, so the message started one of its own.
         this.waiting.update((waiting) => waiting.filter((message) => message.key !== queued));
       }
       while (!next.done) {
-        this.take(thread, next.value);
+        this.take(thread, next.value, 'turn');
         next = await turn.next();
       }
       const result = next.value;
-      if (queued !== null && 'queued' in result) {
-        this.waiting.update((waiting) => named(waiting, queued, result.queued.id));
+      if ('queued' in result) {
+        this.keepWaiting(queued, params.prompt, result.queued.id);
       }
     } catch (error: unknown) {
       if (folderGone(error)) {
@@ -275,28 +336,189 @@ export class ThreadService {
           this.asking.set(null);
         }
         this.following.update((streams) => streams - 1);
-        if (this.following() === 0) {
+        if (own) {
+          this.streaming.update((streams) => streams - 1);
+        }
+        // A message queued to a turn another tab follows waits for that turn, as its draft does.
+        if (this.following() === 0 && !this.running()) {
           this.settle(thread);
+        }
+        if (this.streaming() === 0 && this.watching === null) {
+          this.watchIfShown(thread);
         }
       }
     }
   }
 
-  /** Takes one notification of the turn followed in `thread`. */
-  private take(thread: ThreadId, note: Notification): void {
+  /**
+   * Keeps the message the server queued under `id` waiting until the model reads it: the one
+   * sent while a turn ran (`key`), or one sent to start a turn that another had started first.
+   */
+  private keepWaiting(key: string | null, text: string, id: string): void {
+    if (key !== null) {
+      this.waiting.update((waiting) => named(waiting, key, id));
+      return;
+    }
+    this.sentWhileRunning += 1;
+    const queued = `queued-${String(this.sentWhileRunning)}`;
+    this.waiting.update((waiting) => [...waiting, { key: queued, text, id }]);
+    // Queued: a turn runs that this view has not seen start yet.
+    this.running.set(true);
+  }
+
+  /**
+   * Takes one notification about `thread`, from a turn this view follows or from its watch.
+   * The reply being written is drawn from one of them: the turn's stream while it follows a
+   * turn of its own, else the watch; a message recorded there takes its place.
+   */
+  private take(thread: ThreadId, note: Notification, from: 'turn' | 'watch'): void {
     if (note.params.thread !== thread) {
       return;
     }
+    const drawn = from === 'turn' || this.streaming() === 0;
     if (note.method === 'thread/event') {
-      this.add(note.params.event);
-    } else if (note.method === 'turn/live') {
+      const event = note.params.event;
+      // A thread's events are numbered without gaps: one missed between two streams is read.
+      const newest = this.events().at(-1)?.seq;
+      if (newest !== undefined && event.seq > newest + 1) {
+        void this.readAll(thread, newest, true);
+      }
+      const added = this.add(event);
+      if (drawn && event.type === 'message.added') {
+        this.draft.set(NO_DRAFT);
+      }
+      if (added && event.type === 'turn.ended' && this.streaming() === 0) {
+        this.endedElsewhere();
+      }
+    } else if (note.method === 'turn/live' && drawn) {
       const update = note.params.update;
       if (update.kind === 'unread') {
         const given = this.waiting().find((message) => message.id === update.id);
         this.giveBack(given?.key ?? null, update.reason ?? null);
+        if (!this.busy()) {
+          this.returnGivenBack(thread);
+        }
       } else {
         this.draft.update((draft) => applyUpdate(draft, update));
       }
+    }
+  }
+
+  /** A turn this view did not follow ended: its draft goes, and the lists say how it ended. */
+  private endedElsewhere(): void {
+    this.draft.set(NO_DRAFT);
+    void this.projects.refresh();
+  }
+
+  /**
+   * What the model never read, given back after a turn this view did not follow had ended:
+   * sent next when the person stopped it here, else back in the box.
+   */
+  private returnGivenBack(thread: ThreadId): void {
+    const unread = this.givenBack;
+    this.givenBack = [];
+    if (unread.length === 0) {
+      return;
+    }
+    if (this.stopped && this.stoppedAt === latestStart(this.events())) {
+      this.stopped = false;
+      void this.follow(thread, { thread, prompt: together(unread) }, null);
+    } else {
+      this.composer.update((draft) => together([...unread, draft].filter(Boolean)));
+    }
+  }
+
+  /**
+   * Follows `thread` live from the last event this view has: what any client records in it, and
+   * the live updates of a turn another tab or the terminal follows, its approvals and questions
+   * among them. Cut off, it comes back from where it was, waiting longer each time; it ends once
+   * the thread is deleted, the tab signs out, or the view lets go of it.
+   */
+  private async watch(thread: ThreadId, read = false): Promise<void> {
+    this.stopWatching();
+    const controller = new AbortController();
+    this.watching = controller;
+    const stopped = (): boolean => controller.signal.aborted;
+    let [wait, fresh] = [FIRST_RETRY_MS, read];
+    while (!stopped()) {
+      // Live updates start afresh with each watch: a reply's text missed meanwhile is gone.
+      this.draft.set(NO_DRAFT);
+      // Just read, the thread needs no second look.
+      if (!fresh) {
+        await this.resync(thread);
+      }
+      fresh = false;
+      const began = Date.now();
+      const after = this.events().at(-1)?.seq;
+      try {
+        const params = { thread, ...(after === undefined ? {} : { after }) };
+        const watch = this.session.stream('thread/watch', params, controller.signal);
+        let next = await watch.next();
+        while (!next.done) {
+          this.take(thread, next.value, 'watch');
+          wait = FIRST_RETRY_MS;
+          next = await watch.next();
+        }
+        if (next.value.ended === 'deleted') {
+          break;
+        }
+      } catch (error: unknown) {
+        if (stopped() || !cutOff(error)) {
+          break;
+        }
+      }
+      // A watch that lasted was not failing: the next waits only a little.
+      if (Date.now() - began > 2 * wait) {
+        wait = FIRST_RETRY_MS;
+      }
+      await pause(wait, controller.signal);
+      wait = Math.min(wait * 2, LAST_RETRY_MS);
+    }
+    if (this.watching === controller) {
+      this.watching = null;
+    }
+  }
+
+  private stopWatching(): void {
+    this.watching?.abort();
+    this.watching = null;
+  }
+
+  private watchIfShown(thread: ThreadId): void {
+    if (this.document.visibilityState !== 'hidden') {
+      void this.watch(thread);
+    }
+  }
+
+  /**
+   * Before a watch comes back, while the view believes a turn runs or has sent messages the
+   * model has not read: it may have missed that turn's end, or the turn giving them back, since
+   * live updates are never replayed and a turn left open by a crash ends only later. The
+   * server's word on whether a turn runs comes first, then the events recorded since; with no
+   * turn running, what waited goes back in the box.
+   */
+  private async resync(thread: ThreadId): Promise<void> {
+    const stranded = (): readonly string[] =>
+      this.queued()
+        .filter((message) => message.id !== null)
+        .map((message) => message.text);
+    if (this.following() > 0 || (!this.running() && stranded().length === 0)) {
+      return;
+    }
+    const summary = await this.readAsk(thread, true);
+    if (summary === null || this.following() > 0 || this.id() !== thread) {
+      return;
+    }
+    // The server's word first; a turn's start or end read after it says more.
+    this.running.set(runs(summary, this.events()));
+    await this.readAll(thread, this.events().at(-1)?.seq, true);
+    if (this.following() > 0 || this.id() !== thread) {
+      return;
+    }
+    const unread = this.running() ? [] : stranded();
+    if (unread.length > 0) {
+      this.waiting.update((waiting) => waiting.filter((message) => message.id === null));
+      this.composer.update((draft) => together([...unread, draft].filter(Boolean)));
     }
   }
 
@@ -352,11 +574,13 @@ export class ThreadService {
   }
 
   private abortAll(): void {
+    this.stopWatching();
     for (const controller of this.controllers) {
       controller.abort();
     }
     this.controllers.clear();
     this.following.set(0);
+    this.streaming.set(0);
   }
 
   private async act(call: () => Promise<unknown>): Promise<void> {
@@ -374,34 +598,54 @@ export class ThreadService {
     }
   }
 
-  /** Reads the thread's summary, which raises its project's ask, and shows the ask. */
-  private async readAsk(thread: ThreadId): Promise<void> {
+  /** Reads the thread's summary, which raises its project's ask, and shows the ask: the summary. */
+  private async readAsk(thread: ThreadId, quiet = false): Promise<ThreadSummary | null> {
     try {
       const { thread: summary } = await this.session.call('thread/get', { thread });
       if (this.id() !== thread) {
-        return;
+        return null;
       }
       const ask = summary.trust ?? null;
       this.asked.set(ask);
       if (ask !== null) {
         void this.projects.refresh();
       }
+      return summary;
     } catch (error: unknown) {
-      this.failed.set(error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  private add(event: RawEvent): void {
-    this.events.update((events) => mergeEvents(events, [event]));
-    if (event.type === 'message.added') {
-      this.draft.set(NO_DRAFT);
-      if (event.data['role'] === 'user') {
-        this.asking.set(null);
+      if (!quiet) {
+        this.failed.set(error instanceof Error ? error.message : String(error));
       }
+      return null;
     }
   }
 
-  private async readAll(thread: ThreadId, from?: number): Promise<void> {
+  /**
+   * Adds `event`, unless this view has it already, as a turn's stream and the watch may both
+   * send it: whether it is new. A turn runs from its start to its end.
+   */
+  private add(event: RawEvent): boolean {
+    const newest = this.events().at(-1)?.seq ?? 0;
+    if (event.seq <= newest && this.events().some((known) => known.seq === event.seq)) {
+      return false;
+    }
+    this.events.update((events) => mergeEvents(events, [event]));
+    if (event.type === 'turn.started') {
+      this.running.set(true);
+      // A turn after the one the person stopped is not the one they stopped.
+      if (this.stoppedAt !== null && event.seq > this.stoppedAt) {
+        this.stopped = false;
+        this.stoppedAt = null;
+      }
+    } else if (event.type === 'turn.ended') {
+      this.running.set(false);
+    } else if (event.type === 'message.added' && event.data['role'] === 'user') {
+      this.asking.set(null);
+    }
+    return true;
+  }
+
+  /** Reads `thread`'s events after `from`, saying why it could not unless `quiet`. */
+  private async readAll(thread: ThreadId, from?: number, quiet = false): Promise<void> {
     try {
       let after = from;
       for (;;) {
@@ -413,15 +657,63 @@ export class ThreadService {
           return;
         }
         this.events.update((events) => mergeEvents(events, page.events));
+        const turns = page.events.some(
+          (event) => event.type === 'turn.started' || event.type === 'turn.ended',
+        );
+        if (turns) {
+          this.running.set(turnRuns(this.events()));
+        }
         if (page.next === undefined || page.next === null) {
           return;
         }
         after = page.next;
       }
     } catch (error: unknown) {
-      this.failed.set(error instanceof Error ? error.message : String(error));
+      if (!quiet) {
+        this.failed.set(error instanceof Error ? error.message : String(error));
+      }
     }
   }
+}
+
+/**
+ * Whether a watch that failed with `error` was cut off, and comes back: not when the tab was
+ * signed out, or the thread is not there to watch.
+ */
+function cutOff(error: unknown): boolean {
+  return !(error instanceof ApiError && (error.signedOut || error.code === ErrorCode.NO_THREAD));
+}
+
+/**
+ * Whether a turn runs in the thread, as the server's summary of it says, with its events read
+ * before: one does, or waits for the person (not a project's ask, which waits with no turn).
+ */
+function runs(summary: ThreadSummary, events: readonly RawEvent[]): boolean {
+  return summary.status === 'running' || (summary.status === 'waiting' && turnRuns(events));
+}
+
+/** The `seq` of the latest turn's start, if a turn ever started. */
+function latestStart(events: readonly RawEvent[]): number | null {
+  for (let at = events.length - 1; at >= 0; at -= 1) {
+    const event = events[at];
+    if (event?.type === 'turn.started') {
+      return event.seq;
+    }
+  }
+  return null;
+}
+
+/** Waits `ms` milliseconds, or until `signal` aborts. */
+function pause(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const done = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener('abort', done);
+  });
 }
 
 /** `files` as `turn/start` takes them: left out when there are none. */

@@ -329,6 +329,11 @@ describe('ThreadComponent', () => {
     expect(root.querySelector('[data-testid="thread-message-read"]')?.textContent).toBe(
       'Read while working',
     );
+    turn.send({
+      jsonrpc: '2.0',
+      method: 'thread/event',
+      params: { thread: 'thread-1', event: event(7, 'turn.ended', { outcome: 'completed' }) },
+    });
     turn.end();
     await settle();
     await fixture.whenStable();

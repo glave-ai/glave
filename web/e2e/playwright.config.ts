@@ -4,10 +4,13 @@ import { join, resolve } from 'node:path';
 
 import { defineConfig, devices } from '@playwright/test';
 
+import { LIVE_MODEL, startFakeModel } from './fake-model';
 import {
   ACCOUNTS,
   APP,
   FIRST_RUN,
+  LIVE,
+  LIVE_MODEL_URL,
   PASSKEYS,
   PASSKEYS_ORIGIN,
   SHOWCASE,
@@ -36,12 +39,20 @@ function home(site: Site, settings?: string): string {
 }
 
 /**
+ * The fake model service the live glave asks, started once, in the run that starts the servers,
+ * on a port the system picks; its workers read its address again from the variable.
+ */
+const liveModel = process.env[LIVE_MODEL_URL] ?? (await startFakeModel());
+process.env[LIVE_MODEL_URL] = liveModel;
+
+/**
  * What glave serves: the app on a model the fake API names, Glaze's showcase, the app on a
  * glave with nothing set up, for the first run against the real server, the app on a real
- * glave with a model, to connect accounts to, and the app on a real glave reached from
- * elsewhere at a public origin, to sign in to with passkeys.
+ * glave with a model, to connect accounts to, the app on a real glave reached from elsewhere
+ * at a public origin, to sign in to with passkeys, and the app on a real glave whose model is a
+ * fake service and which asks before commands run, to follow a thread from two tabs.
  */
-const SITES = [
+const SITES: readonly { site: Site; web: string; env: Record<string, string> }[] = [
   { site: APP, web: 'dist/app/browser', env: { GLAVE_HOME: home(APP), GLAVE_MODEL: 'e2e' } },
   {
     site: SHOWCASE,
@@ -64,6 +75,15 @@ const SITES = [
     env: {
       GLAVE_HOME: home(PASSKEYS, `[serve]\norigin = "${PASSKEYS_ORIGIN}"\n`),
       GLAVE_MODEL: 'e2e',
+    },
+  },
+  {
+    site: LIVE,
+    web: 'dist/app/browser',
+    env: {
+      GLAVE_HOME: home(LIVE, 'approval = "ask"\n'),
+      GLAVE_BASE_URL: liveModel,
+      GLAVE_MODEL: LIVE_MODEL,
     },
   },
 ];

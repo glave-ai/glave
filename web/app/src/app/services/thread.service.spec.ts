@@ -155,6 +155,7 @@ describe('ThreadService', () => {
     expect(service.queued()).toEqual([]);
     const items = service.turns().flatMap((turn) => turn.items);
     expect(items.at(-1)).toMatchObject({ from: 'person', text: 'actually, 4000', steered: true });
+    first.send(recorded(event(5, 'turn.ended', { outcome: 'completed' })));
     first.end();
     await sending;
     expect(service.busy()).toBe(false);
@@ -309,6 +310,7 @@ describe('ThreadService', () => {
     own.send(recorded(event(5, 'turn.started', {})), said(6, 'two'));
     await settled();
     expect(service.queued()).toEqual([]);
+    own.send(recorded(event(7, 'turn.ended', { outcome: 'completed' })));
     own.end();
     await second;
     expect(service.busy()).toBe(false);
@@ -404,5 +406,280 @@ describe('ThreadService', () => {
     );
     await service.rename('Again');
     expect(service.error()).toBe('a turn is running');
+  });
+
+  it('follows the thread live once read: a turn another tab started, its progress and its approval', async () => {
+    const watch = new FakeTurn();
+    const fake = new FakeSession()
+      .answer('thread/events', { events: [event(1, 'thread.started', {})] })
+      .watch(watch);
+    const service = make(fake);
+    await service.open('thread-1');
+    expect(fake.paramsOf('thread/watch')).toEqual([{ thread: 'thread-1', after: 1 }]);
+    expect(service.busy()).toBe(false);
+    watch.send(
+      recorded(event(2, 'turn.started', {})),
+      said(3, 'touch a file'),
+      live({ kind: 'text', text: 'Let me' }),
+    );
+    await settled();
+    expect(service.busy()).toBe(true);
+    expect(service.reply().text).toBe('Let me');
+    watch.send(
+      recorded(
+        event(4, 'approval.requested', {
+          call_id: 'call_1',
+          tool: 'bash',
+          summary: 'touch a.txt',
+        }),
+      ),
+    );
+    await settled();
+    const items = service.turns().flatMap((turn) => turn.items);
+    expect(items.map((item) => item.kind)).toEqual(['message', 'approval']);
+    watch.send(recorded(event(5, 'turn.ended', { outcome: 'cancelled' })));
+    await settled();
+    expect(service.busy()).toBe(false);
+    expect(service.reply().text).toBe('');
+  });
+
+  it('rests its watch while it follows a turn of its own, then watches from where it ended', async () => {
+    const [before, after] = [new FakeTurn(), new FakeTurn()];
+    const turn = new FakeTurn();
+    const fake = new FakeSession()
+      .answer('thread/events', { events: [event(1, 'thread.started', {})] })
+      .watch(before)
+      .watch(after)
+      .turn(turn);
+    const service = make(fake);
+    await service.open('thread-1');
+    const sending = service.send('hi');
+    turn.send(
+      recorded(event(2, 'turn.started', {})),
+      said(3, 'hi'),
+      live({ kind: 'text', text: 'Hel' }),
+    );
+    await settled();
+    // The watch rested: what it would have said is not taken.
+    before.send(live({ kind: 'text', text: 'Hel' }));
+    await settled();
+    expect(service.reply().text).toBe('Hel');
+    turn.send(recorded(event(4, 'turn.ended', { outcome: 'completed' })));
+    turn.end();
+    await sending;
+    await settled();
+    expect(fake.paramsOf('thread/watch')).toEqual([
+      { thread: 'thread-1', after: 1 },
+      { thread: 'thread-1', after: 4 },
+    ]);
+    expect(service.reply().text).toBe('');
+  });
+
+  it('shows a turn the log leaves open as running only when the server says it runs', async () => {
+    const open = [event(1, 'thread.started', {}), event(2, 'turn.started', {})];
+    const stopped = make(new FakeSession().answer('thread/events', { events: open }));
+    await stopped.open('thread-1');
+    expect(stopped.busy()).toBe(false);
+    TestBed.resetTestingModule();
+    const waiting = make(
+      new FakeSession()
+        .answer('thread/events', { events: open })
+        .answer('thread/get', { thread: thread('thread-1', null, { status: 'waiting' }) }),
+    );
+    await waiting.open('thread-1');
+    expect(waiting.busy()).toBe(true);
+  });
+
+  it('keeps waiting a message the server queued to a turn that had started meanwhile', async () => {
+    const fake = new FakeSession()
+      .answer('thread/events', { events: [] })
+      .turn({ queued: { id: 'event-5' } });
+    const service = make(fake);
+    await service.open('thread-1');
+    await service.send('one more thing');
+    expect(service.queued().map((message) => message.text)).toEqual(['one more thing']);
+    expect(service.starting()).toBeNull();
+  });
+
+  it('gives back what waited for a turn it lost sight of, once no turn runs', async () => {
+    vi.useFakeTimers();
+    try {
+      const cut = new FakeTurn();
+      let [read, gets] = [0, 0];
+      const fake = new FakeSession()
+        .answer('thread/events', () => {
+          read += 1;
+          return read === 1
+            ? { events: [event(1, 'turn.started', {})] }
+            : { events: [event(2, 'turn.ended', { outcome: 'cancelled' })] };
+        })
+        .answer('thread/get', () => {
+          gets += 1;
+          return { thread: thread('thread-1', null, { status: gets === 1 ? 'running' : 'idle' }) };
+        })
+        .watch(cut)
+        .turn({ queued: { id: 'event-9' } });
+      const service = make(fake);
+      await service.open('thread-1');
+      expect(service.busy()).toBe(true);
+      await service.send('and this');
+      expect(service.queued().map((message) => message.text)).toEqual(['and this']);
+      // Cut off while the turn ended and gave the message back, unseen.
+      cut.end({ ended: 'unwatched' });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(service.queued()).toEqual([]);
+      expect(service.composer()).toBe('and this');
+      expect(service.busy()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a message queued to a turn another tab follows until that turn reads it', async () => {
+    const watch = new FakeTurn();
+    const fake = new FakeSession()
+      .answer('thread/events', { events: [] })
+      .watch(watch)
+      .turn({ queued: { id: 'event-9' } });
+    const service = make(fake);
+    await service.open('thread-1');
+    watch.send(recorded(event(1, 'turn.started', {})), said(2, 'go'));
+    await settled();
+    await service.send('and then this');
+    expect(service.queued().map((message) => message.text)).toEqual(['and then this']);
+    expect(service.composer()).toBe('');
+    watch.send({
+      jsonrpc: '2.0',
+      method: 'thread/event',
+      params: {
+        thread: 'thread-1',
+        event: {
+          ...event(3, 'message.added', {
+            role: 'user',
+            parts: [{ type: 'text', text: 'and then this' }],
+          }),
+          id: 'event-9',
+        },
+      },
+    });
+    await settled();
+    expect(service.queued()).toEqual([]);
+  });
+
+  it('comes back from where it was once its watch is cut off, and not for a deleted thread', async () => {
+    vi.useFakeTimers();
+    try {
+      const cut = new FakeTurn();
+      const again = new FakeTurn();
+      const fake = new FakeSession()
+        .answer('thread/events', { events: [event(1, 'thread.started', {})] })
+        .watch(cut)
+        .watch(again);
+      const service = make(fake);
+      await service.open('thread-1');
+      cut.send(recorded(event(2, 'thread.renamed', { title: 'Garden' })));
+      cut.end({ ended: 'unwatched' });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(fake.paramsOf('thread/watch')).toEqual([
+        { thread: 'thread-1', after: 1 },
+        { thread: 'thread-1', after: 2 },
+      ]);
+      again.end({ ended: 'deleted' });
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(fake.paramsOf('thread/watch').length).toBe(2);
+      expect(service.error()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lets go of its watch while the tab is hidden, and comes back from where it was', async () => {
+    const fake = new FakeSession().answer('thread/events', {
+      events: [event(1, 'thread.started', {})],
+    });
+    const service = make(fake);
+    await service.open('thread-1');
+    const shown = (state: DocumentVisibilityState): void => {
+      Object.defineProperty(document, 'visibilityState', { value: state, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    try {
+      shown('hidden');
+      await settled();
+      shown('visible');
+      await settled();
+      expect(fake.paramsOf('thread/watch')).toEqual([
+        { thread: 'thread-1', after: 1 },
+        { thread: 'thread-1', after: 1 },
+      ]);
+    } finally {
+      Reflect.deleteProperty(document, 'visibilityState');
+    }
+  });
+
+  it('asks the server again, coming back, whether the turn it saw start still runs', async () => {
+    vi.useFakeTimers();
+    try {
+      const cut = new FakeTurn();
+      const fake = new FakeSession()
+        .answer('thread/events', { events: [event(1, 'thread.started', {})] })
+        .watch(cut);
+      const service = make(fake);
+      await service.open('thread-1');
+      cut.send(recorded(event(2, 'turn.started', {})));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(service.busy()).toBe(true);
+      // glave stopped mid-turn: the log leaves it open, and the server says no turn runs.
+      cut.end({ ended: 'unwatched' });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(service.busy()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reads from the log an event that came between two streams', async () => {
+    const watch = new FakeTurn();
+    const fake = new FakeSession()
+      .answer('thread/events', (params) =>
+        (params as { after?: number }).after === undefined
+          ? { events: [event(1, 'thread.started', {})] }
+          : { events: [event(2, 'thread.renamed', { title: 'Garden' })] },
+      )
+      .watch(watch);
+    const service = make(fake);
+    await service.open('thread-1');
+    watch.send(recorded(event(3, 'turn.started', {})));
+    await settled();
+    expect(fake.paramsOf('thread/events')).toEqual([
+      { thread: 'thread-1' },
+      { thread: 'thread-1', after: 1 },
+    ]);
+  });
+
+  it('takes a turn’s end read after the server said it runs, coming back', async () => {
+    vi.useFakeTimers();
+    try {
+      const cut = new FakeTurn();
+      let read = 0;
+      const fake = new FakeSession()
+        .answer('thread/events', () => {
+          read += 1;
+          return read === 1
+            ? { events: [event(1, 'turn.started', {})] }
+            : { events: [event(2, 'turn.ended', { outcome: 'completed' })] };
+        })
+        .answer('thread/get', { thread: thread('thread-1', null, { status: 'running' }) })
+        .watch(cut);
+      const service = make(fake);
+      await service.open('thread-1');
+      expect(service.busy()).toBe(true);
+      // The turn ended while the server was asked: what was recorded after says so.
+      cut.end({ ended: 'unwatched' });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(service.busy()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
