@@ -2,16 +2,13 @@ import { NAV_LISTS_KEPT, toNavLists, withList } from './nav-lists';
 
 describe('nav lists', () => {
   it('reads what was stored, and nothing from anything else', () => {
-    expect(toNavLists({ collapsed: ['p1', 'chats'], byName: ['projects'] })).toEqual({
-      collapsed: ['p1', 'chats'],
-      byName: ['projects'],
-    });
-    expect(toNavLists({ collapsed: ['p1', 7, '', null], byName: 'projects' })).toEqual({
+    expect(toNavLists({ collapsed: ['p1', 'chats'] })).toEqual({ collapsed: ['p1', 'chats'] });
+    // A sort stored by an earlier version is left behind.
+    expect(toNavLists({ collapsed: ['p1', 7, '', null], byName: ['projects'] })).toEqual({
       collapsed: ['p1'],
-      byName: [],
     });
-    for (const stored of [null, 'chats', 3, ['p1']]) {
-      expect(toNavLists(stored)).toEqual({ collapsed: [], byName: [] });
+    for (const stored of [null, 'chats', 3, ['p1'], { collapsed: 'p1' }]) {
+      expect(toNavLists(stored)).toEqual({ collapsed: [] });
     }
   });
 

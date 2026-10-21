@@ -18,23 +18,18 @@ import {
 } from '@glave/glaze';
 import { Ellipsis, FolderPlus, Plus } from 'lucide';
 
-import {
-  CHATS_LIST,
-  type NavProject,
-  type NavSort,
-  PROJECTS_LIST,
-  navSections,
-} from '../../lib/nav';
+import { CHATS_LIST, type NavProject, PROJECTS_LIST, navSections } from '../../lib/nav';
 import { NavListsService } from '../../services/nav-lists.service';
 import { ProjectsService } from '../../services/projects.service';
 import { FolderGoneComponent } from '../folder-gone/folder-gone.component';
 import { NavListMenuComponent } from '../nav-list-menu/nav-list-menu.component';
 import { NavThreadComponent } from '../nav-thread/nav-thread.component';
+import { NeedsYouComponent } from '../needs-you/needs-you.component';
 import { NewProjectComponent } from '../new-project/new-project.component';
 import { RenameDialogComponent } from '../rename-dialog/rename-dialog.component';
 
 const COPY = {
-  threads: 'Projects and chats',
+  threads: 'Threads',
   chats: 'Chats',
   projects: 'Projects',
   newProject: 'New project',
@@ -43,26 +38,24 @@ const COPY = {
   noMatch: 'No threads match',
   newIn: 'New thread in',
   optionsFor: 'Options for',
-  projectsOptions: 'Options for Projects',
-  chatsOptions: 'Options for Chats',
   renameFailed: 'Could not rename the project:',
 } as const;
 
-/** What a project's menu does besides sorting its threads. */
+/** What a project's menu does. */
 const RENAME = 'rename';
 const PROJECT_ACTIONS: readonly GlzOption[] = [{ value: RENAME, label: 'Rename' }];
 
 /**
- * The person's threads in the side nav: each project with its threads, then their chats, by
- * recent activity unless they sort a list by name, and what waits for them first. Each heading
- * opens and closes its list; beside it, on hover and focus, its + starts a project, a thread
- * in the project or a chat, and its ⋯ sorts the list (and renames a project). A closed list
- * still shows, with a dot, that something in it needs the person. A thread another started sits
- * under it. A project whose folder isn't there anymore says so, in the server's words: a mark
- * on its heading, and above its threads, what can be done about it. How the person left the
- * lists is kept in this browser. A search keeps the threads
- * whose title matches. A list with nothing in it does not show: with no projects yet, one quiet
- * row offers to start one, as the + beside Projects does once there are some.
+ * The person's threads in the side nav: Needs you pinned first while something waits for them,
+ * then each project with its threads, then their chats, each list newest first in one order,
+ * whatever waits or runs. Each heading opens and closes its list; beside it, on hover and focus,
+ * its + starts a project, a thread in the project or a chat, and a project's ⋯ renames it. A
+ * closed list still shows, with a dot, that something in it needs the person. A thread another
+ * started sits under it. A project whose folder isn't there anymore says so, in the server's
+ * words: a mark on its heading, and above its threads, what can be done about it. How the
+ * person left the lists is kept in this browser. A search keeps the threads it finds by title or
+ * by day. A list with nothing in it does not show: with no projects yet, one quiet row offers
+ * to start one, as the + beside Projects does once there are some.
  */
 @Component({
   selector: 'app-projects-nav',
@@ -76,6 +69,7 @@ const PROJECT_ACTIONS: readonly GlzOption[] = [{ value: RENAME, label: 'Rename' 
     GlzNavListComponent,
     NavListMenuComponent,
     NavThreadComponent,
+    NeedsYouComponent,
     NewProjectComponent,
     RenameDialogComponent,
   ],
@@ -104,9 +98,10 @@ export class ProjectsNavComponent {
       query: this.query(),
       current: this.current(),
       collapsed: this.navLists.collapsed(),
-      byName: this.navLists.byName(),
+      now: this.service.readAt(),
     }),
   );
+  protected readonly needsYou = computed(() => this.sections().needsYou);
   protected readonly projects = computed(() => this.sections().projects);
   protected readonly projectList = computed(() =>
     this.projects().list.map((project) => ({
@@ -141,10 +136,6 @@ export class ProjectsNavComponent {
 
   protected setExpanded(list: string, expanded: boolean): void {
     this.navLists.setExpanded(list, expanded);
-  }
-
-  protected setSort(list: string, sort: NavSort): void {
-    this.navLists.setSort(list, sort);
   }
 
   protected act(project: NavProject, action: string): void {

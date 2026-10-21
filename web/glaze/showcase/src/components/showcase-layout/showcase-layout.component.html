@@ -36,9 +36,6 @@
               testId="showcase-earlier-more"
               [label]="copy.more"
               [actions]="actions"
-              [choiceLabel]="copy.sortBy"
-              [choices]="sorts"
-              [(choice)]="sort"
             />
             @if (earlierClosed()) {
               <glz-badge glzNavListEnd tone="accent" variant="dot">{{ copy.needsYou }}</glz-badge>

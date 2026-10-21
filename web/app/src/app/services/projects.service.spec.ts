@@ -53,6 +53,22 @@ describe('ProjectsService', () => {
     expect(projects.home()).toBeUndefined();
   });
 
+  it('counts the lists’ times from when it last read them', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(Date.parse('2026-10-11T10:00:00.000Z'));
+      const fake = new FakeSession().answer('project/list', { projects: [] });
+      TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+      const projects = TestBed.inject(ProjectsService);
+      vi.setSystemTime(Date.parse('2026-10-11T10:05:00.000Z'));
+      expect(projects.readAt()).toBe(Date.parse('2026-10-11T10:00:00.000Z'));
+      await projects.refresh();
+      expect(projects.readAt()).toBe(Date.parse('2026-10-11T10:05:00.000Z'));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('says what went wrong', async () => {
     const fake = new FakeSession().answer(
       'project/list',
