@@ -1,4 +1,4 @@
-import { test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 import { THREAD, fakeApi } from './fake-api';
 import { SIGNED_IN, byTestId, expectDialogShown } from './support';
@@ -71,6 +71,9 @@ for (const { name, from, account = false, opener, dialog, shows } of DIALOGS) {
     await page.goto(`${from}${SIGNED_IN}`);
     await byTestId(page, opener).click();
     await expectDialogShown(page, dialog, shows);
+    // The browser moves focus in, to its first control, the close button, named: in a dialog
+    // made as it opens (New project's), too, whose buttons are out of reach until bound.
+    await expect(byTestId(page, `${dialog}-close`)).toBeFocused();
   });
 }
 

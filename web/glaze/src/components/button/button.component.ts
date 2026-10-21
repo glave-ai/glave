@@ -6,6 +6,8 @@ import {
   input,
 } from '@angular/core';
 
+import { INERT_UNTIL_BOUND } from '../../lib/inert-until-bound';
+
 /** How much a button stands out: one primary action per view, the rest quieter. */
 export type GlzButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 
@@ -33,7 +35,7 @@ export function buttonClasses(variant: GlzButtonVariant, size: GlzButtonSize): s
   templateUrl: './button.component.html',
   styleUrl: './button.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { '[class]': 'classes()', '[class.glz-button--pill]': 'pill()' },
+  host: { ...INERT_UNTIL_BOUND, '[class]': 'classes()', '[class.glz-button--pill]': 'pill()' },
 })
 export class GlzButtonComponent {
   readonly variant = input<GlzButtonVariant>('secondary');

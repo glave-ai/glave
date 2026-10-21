@@ -16,6 +16,7 @@ import {
 } from '@angular/core';
 import { Check, ChevronDown } from 'lucide';
 
+import { INERT_UNTIL_BOUND } from '../../lib/inert-until-bound';
 import { filterOptions } from '../../lib/options';
 import { positionPopover } from '../../lib/popover';
 import { testIds } from '../../lib/test-ids';
@@ -66,7 +67,11 @@ interface ShownOption {
   templateUrl: './picker.component.html',
   styleUrl: './picker.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { '[attr.data-testid]': 'testId()', '[class.glz-picker--quiet]': 'quiet()' },
+  host: {
+    ...INERT_UNTIL_BOUND,
+    '[attr.data-testid]': 'testId()',
+    '[class.glz-picker--quiet]': 'quiet()',
+  },
 })
 export class GlzPickerComponent {
   /** The test hook for this component; its parts get `<testId>-<part>`. */
