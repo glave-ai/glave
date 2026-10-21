@@ -28,18 +28,31 @@ fn alive(pid: u32) -> bool {
         .success()
 }
 
+/// The stand-in, killed when the test ends however it ends: one the test failed to see stopped
+/// would sleep on for five minutes.
+struct Stopped(u32);
+
+impl Drop for Stopped {
+    fn drop(&mut self) {
+        if alive(self.0) {
+            let _ = Command::new("kill")
+                .args(["-KILL", &self.0.to_string()])
+                .status();
+        }
+    }
+}
+
 #[test]
 fn what_xtask_runs_ends_when_xtask_is_killed_outright() {
     let folder = TempDir::new("xtask-killed").unwrap();
     let started = folder.join("started");
     // Says it started, by its process's id, then sleeps as a long build would.
     let cargo = folder.join("cargo");
-    std::fs::write(
-        &cargo,
-        "#!/bin/sh\necho $$ > \"$1.part\"\nmv \"$1.part\" \"$1\"\nexec sleep 300\n"
-            .replace("$1", "$XTASK_TEST_STARTED"),
-    )
-    .unwrap();
+    let script = "#!/bin/sh\n\
+        echo $$ > \"$XTASK_TEST_STARTED.part\"\n\
+        mv \"$XTASK_TEST_STARTED.part\" \"$XTASK_TEST_STARTED\"\n\
+        exec sleep 300\n";
+    std::fs::write(&cargo, script).unwrap();
     std::fs::set_permissions(&cargo, std::fs::Permissions::from_mode(0o755)).unwrap();
     let path = format!("{}:{}", folder.display(), std::env::var("PATH").unwrap());
     let child = Command::new(env!("CARGO_BIN_EXE_xtask"))
@@ -65,6 +78,7 @@ fn what_xtask_runs_ends_when_xtask_is_killed_outright() {
         .trim()
         .parse()
         .unwrap();
+    let _stopped = Stopped(pid);
 
     xtask.kill().unwrap();
     xtask.wait().unwrap();

@@ -65,6 +65,11 @@ struct Options {
 }
 
 pub fn main() -> ExitCode {
+    // As the lifeline's helper that ties the model's commands to the eval (`tied`).
+    let whole: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    if let Some(code) = glave_process::lifeline_helper(&whole) {
+        return code;
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(("judge", rest)) = args
         .split_first()

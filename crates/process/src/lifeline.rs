@@ -104,9 +104,7 @@ impl Lifeline {
         match ready {
             Ok(Ok(())) if heard == READY => Ok(lifeline),
             Ok(Err(error)) => Err(lifeline.failed(error)),
-            _ => Err(lifeline.failed(std::io::Error::other(
-                "it did not say it was ready; reinstalling glave mends a damaged install",
-            ))),
+            _ => Err(lifeline.failed(std::io::Error::other("it did not say it was ready"))),
         }
     }
 
@@ -144,11 +142,15 @@ impl Lifeline {
     /// (Ctrl-C, a test runner stopping glave's) reaches it, and tells it every group glave
     /// holds. What it says goes to `said`, and is handed back when that is a pipe.
     fn launch(&self, state: &mut State, said: Stdio) -> std::io::Result<Option<ChildStdout>> {
+        // Named as this program is, where Linux would show `/proc/self/exe`.
+        let name = std::env::args_os()
+            .next()
+            .unwrap_or_else(|| self.program.clone().into_os_string());
         let (mut process, mut pipe) = {
             let _alone = self.forking.write().unwrap_or_else(PoisonError::into_inner);
             let (read, pipe) = std::io::pipe()?;
             let process = tokio::process::Command::new(&self.program)
-                .arg0("glave")
+                .arg0(name)
                 .arg(HELPER_ARG)
                 .stdin(Stdio::from(read))
                 .stdout(said)

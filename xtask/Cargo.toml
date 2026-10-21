@@ -17,7 +17,7 @@ glave-process.workspace = true
 # Reading the generated API schema to write the web client's types.
 serde_json.workspace = true
 # The runtime glave-process starts and waits for programs on.
-tokio = { workspace = true, features = ["rt"] }
+tokio = { workspace = true, features = ["io-util", "rt"] }
 
 [dev-dependencies]
 # Temp folders and the guard against a hang the tests share.
