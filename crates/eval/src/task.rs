@@ -78,12 +78,17 @@ pub struct Task {
     pub project_memory: Option<String>,
     /// Threads after the first, each new, run in order in the same store.
     pub threads: Vec<TaskThread>,
+    /// How many days ago the first thread happens: today unless the task says.
+    pub days_ago: u32,
+    /// The share of probe threads (`probe`) that must pass for the attempt to pass: all of them
+    /// unless the task says.
+    pub probe_share: f64,
     /// Memories saved before the first thread.
     pub memories: Vec<Seeded>,
     /// Past conversations, written to the store before the first thread, for `recall`.
     pub past: Vec<PastThread>,
-    /// Whether tidy-up runs over every project's memory once the threads are done, on the model
-    /// under test (`specs/memory.md`, "Tidy-up"): `[glave] tidy = true`.
+    /// When tidy-up runs, on the model under test (`specs/memory.md`, "Tidy-up"): `[glave]
+    /// tidy = true` once the threads are done, `"due"` as the server runs it.
     pub tidy: Tidying,
 }
 
@@ -92,8 +97,19 @@ pub struct Task {
 pub enum Tidying {
     #[default]
     Never,
-    /// Once every thread is done.
+    /// Once every thread is done, over every project, due or not.
     AfterThreads,
+    /// As the server tidies: as each thread starts, each ledger it reads that is due (a week
+    /// since tidy-up last ran there, or past 90% of the budget and an hour since).
+    WhenDue,
+}
+
+/// `tidy`: `true`, or the name of when.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum TidyKey {
+    Once(bool),
+    Named(String),
 }
 
 /// A past conversation: `[[glave.past]]`, the person's messages in a thread of their own.
@@ -111,10 +127,18 @@ pub struct PastThread {
 pub struct TaskThread {
     /// Its messages, in order; each after the first resumes it from its log.
     pub messages: Vec<String>,
-    /// The project it works in, by name; the first thread's when absent.
+    /// The project it works in, by name; the first thread's when absent, and the person's
+    /// Chats, where their personal memory lives, when `chats`.
     pub project: Option<String>,
     /// That project's setting, when it is a project of its own.
     pub project_memory: Option<String>,
+    /// How many days ago it happens: today when absent. Never more than the thread before.
+    #[serde(default)]
+    pub days_ago: u32,
+    /// Checks of this thread's own answer and events: a probe, counted toward the task's
+    /// `probe_share`.
+    #[serde(default)]
+    pub probe: Vec<Check>,
 }
 
 /// A memory seeded before the first thread: `[[glave.memories]]`.
@@ -223,8 +247,10 @@ struct Glave {
     memories: Vec<Seeded>,
     #[serde(default)]
     past: Vec<PastThread>,
+    tidy: Option<TidyKey>,
     #[serde(default)]
-    tidy: bool,
+    days_ago: u32,
+    probe_share: Option<f64>,
 }
 
 /// Loads the task in `dir`. Its paths are absolute, since the grader runs from the workspace.
@@ -275,6 +301,8 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         return Err(bad("context_window is under 1,000 tokens".into()));
     }
     memory_named(&glave).map_err(bad)?;
+    timeline(&glave).map_err(bad)?;
+    let tidy = tidying(glave.tidy.as_ref()).map_err(bad)?;
     let mut turns = vec![instruction];
     turns.extend(glave.turns);
     Ok(Task {
@@ -301,12 +329,44 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         threads: glave.threads,
         memories: glave.memories,
         past: glave.past,
-        tidy: if glave.tidy {
-            Tidying::AfterThreads
-        } else {
-            Tidying::Never
-        },
+        days_ago: glave.days_ago,
+        probe_share: glave.probe_share.unwrap_or(1.0),
+        tidy,
     })
+}
+
+/// When `tidy` asks for tidy-up.
+fn tidying(tidy: Option<&TidyKey>) -> Result<Tidying, String> {
+    match tidy {
+        None | Some(TidyKey::Once(false)) => Ok(Tidying::Never),
+        Some(TidyKey::Once(true)) => Ok(Tidying::AfterThreads),
+        Some(TidyKey::Named(name)) if name == "due" => Ok(Tidying::WhenDue),
+        Some(TidyKey::Named(name)) => Err(format!("tidy is true or \"due\", not {name:?}")),
+    }
+}
+
+/// Whether the threads' days run forward, and the probes' share is one a run can reach.
+fn timeline(glave: &Glave) -> Result<(), String> {
+    let mut before = glave.days_ago;
+    for thread in &glave.threads {
+        if thread.days_ago > before {
+            return Err(format!(
+                "threads run in order, so a thread's days_ago ({}) is never more than the one \
+                 before it ({before})",
+                thread.days_ago
+            ));
+        }
+        before = thread.days_ago;
+    }
+    match glave.probe_share {
+        Some(share) if !(share > 0.0 && share <= 1.0) => Err(format!(
+            "probe_share is a share above 0 and at most 1, not {share}"
+        )),
+        Some(_) if glave.threads.iter().all(|thread| thread.probe.is_empty()) => {
+            Err("probe_share needs threads with a probe".to_owned())
+        }
+        _ => Ok(()),
+    }
 }
 
 /// Whether the memory settings and seeded memories of `glave` name things that exist.
@@ -462,12 +522,58 @@ mod tests {
         assert!(error("[glave]\ncontext_window = 10").contains("under 1,000"));
         let early = "[glave]\nsteer = { after = 0, message = \"now\" }";
         assert!(error(early).contains("1 or more tool calls"));
+        assert!(error("[glave]\ntidy = \"weekly\"").contains("tidy is true or \"due\""));
+        let back = "[glave]\ndays_ago = 1\n[[glave.threads]]\ndays_ago = 2\nmessages = [\"x\"]";
+        assert!(error(back).contains("never more than the one before it (1)"));
+        let probed = "[[glave.threads]]\nmessages = [\"x\"]\nprobe = [\"one_thread\"]";
+        let share = |share: &str| error(&format!("[glave]\nprobe_share = {share}\n{probed}"));
+        assert!(share("1.5").contains("at most 1"));
+        assert!(share("0.0").contains("above 0"));
+        assert!(error("[glave]\nprobe_share = 0.5").contains("needs threads with a probe"));
         assert!(
             load(&folder("empty", "", "  \n"))
                 .unwrap_err()
                 .to_string()
                 .contains("instruction.md is empty")
         );
+    }
+
+    #[test]
+    fn a_month_of_threads_loads_with_its_days_probes_and_tidy_up() {
+        let dir = folder(
+            "month",
+            r#"
+            [glave]
+            memory = true
+            tidy = "due"
+            days_ago = 30
+            probe_share = 0.5
+            [[glave.threads]]
+            project = "chats"
+            days_ago = 12
+            messages = ["Remember: I use Helix."]
+            [[glave.threads]]
+            messages = ["Which editor do I use?"]
+            probe = [{ answer_contains = "Helix" }]
+            "#,
+            "Hello.",
+        );
+        let task = load(&dir).unwrap();
+        assert_eq!(task.tidy, Tidying::WhenDue);
+        assert_eq!(task.days_ago, 30);
+        let days: Vec<u32> = task.threads.iter().map(|thread| thread.days_ago).collect();
+        assert_eq!(days, [12, 0], "today when absent");
+        let probes: Vec<&[Check]> = task.threads.iter().map(|t| t.probe.as_slice()).collect();
+        assert_eq!(
+            probes,
+            [&[][..], &[Check::AnswerContains("Helix".into())][..]]
+        );
+        assert!((task.probe_share - 0.5).abs() < f64::EPSILON);
+        let bare = load(&folder("whole", "", "Hi.")).unwrap();
+        assert!((bare.probe_share - 1.0).abs() < f64::EPSILON, "every probe");
+        assert_eq!((bare.tidy, bare.days_ago), (Tidying::Never, 0));
+        let once = load(&folder("once", "[glave]\ntidy = true", "Hi.")).unwrap();
+        assert_eq!(once.tidy, Tidying::AfterThreads);
     }
 
     /// Every task in the repository loads and grades something beyond finishing, so a broken
@@ -479,9 +585,10 @@ mod tests {
         assert!(!tasks.is_empty());
         for task in &tasks {
             assert!(task.dir.is_absolute(), "{}", task.dir.display());
+            let probed = task.threads.iter().any(|thread| !thread.probe.is_empty());
             assert!(
-                !task.checks.is_empty() || task.test_script().is_some(),
-                "{} has no checks and no tests/test.sh",
+                !task.checks.is_empty() || task.test_script().is_some() || probed,
+                "{} has no checks, no probes and no tests/test.sh",
                 task.name
             );
         }

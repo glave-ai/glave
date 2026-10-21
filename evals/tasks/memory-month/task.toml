@@ -1,0 +1,261 @@
+[task]
+name = "glave/memory-month"
+description = "A month of daily use in one store: preferences stated then changed, a quirk the agent finds, decisions and their reasons, more lasting facts than fit, tidy-up as the server runs it; then ten probes, each needing one earlier fact."
+
+[agent]
+# 39 threads and the tidy-ups between them.
+timeout_sec = 2400
+
+[glave]
+tier = "hard"
+memory = true
+# As the server tidies: as each thread starts, each ledger it reads that is due (a week since
+# the last run, or past 90% of the budget and an hour since).
+tidy = "due"
+# The month runs from 30 days ago to today, the probes all today. Threads work in three places:
+# the first thread's project (atlas, whose files the workspace holds), beacon, and the person's
+# Chats. Atlas gets more lasting facts than its ~1,000-token budget holds, and the person's own
+# memory comes near it, so saves are refused and tidy-up compacts.
+days_ago = 30
+# A probe passes when its answer names the current fact and no replaced one; the attempt passes
+# with 8 of the 10.
+probe_share = 0.8
+
+[[glave.threads]]
+project = "chats"
+days_ago = 30
+messages = ["""A few things about me, for future chats:
+- I use Helix as my editor.
+- I write British English (colour, organise).
+- Give me times on the 12-hour clock, with am and pm.
+- Temperatures in Celsius, please.
+- Keep answers short, without headings.
+Please remember all of that."""]
+
+[[glave.threads]]
+days_ago = 29
+messages = ["""A few atlas conventions I'd like you to remember:
+- Who's on call is posted in the #ops-tern channel.
+- Branches are named after the ticket, like ATL-123-short-title.
+- We squash-merge, and the pull request title becomes the commit message.
+- Every pull request needs an approval from someone outside the author's pod.
+- Config lives in config/atlas.toml; nothing reads environment variables directly.
+- Logs are JSON, one object per line."""]
+
+[[glave.threads]]
+project = "beacon"
+days_ago = 28
+messages = ["For beacon, we've settled on SQLite rather than Postgres, because each kiosk's data travels to head office on a USB stick every week. Please remember the decision and why."]
+
+[[glave.threads]]
+days_ago = 27
+messages = ["For the record: we deploy atlas to Heroku, and merging to main ships it. Remember that."]
+
+[[glave.threads]]
+project = "beacon"
+days_ago = 26
+messages = ["""Some beacon facts to remember:
+- Releases go out every second Tuesday.
+- The app is built with Flutter.
+- Crash reports land in the #beacon-crashes channel."""]
+
+[[glave.threads]]
+days_ago = 26
+messages = ["We picked Postgres over MySQL for atlas because we lean on JSONB columns. Worth remembering, with the reason."]
+
+[[glave.threads]]
+project = "chats"
+days_ago = 25
+messages = ["What's a quick lunch I can make with eggs and spinach in ten minutes?"]
+
+[[glave.threads]]
+days_ago = 23
+messages = ["""More atlas conventions to remember:
+- API errors are problem+json with a stable type URL.
+- Money is stored as integer cents, never floats.
+- Store times in UTC and convert only at the edges.
+- Feature flags live in config/flags.toml and default to off.
+- Migrations are named with a timestamp and never edited once merged.
+- The public API is versioned in the path; /v2/ is current."""]
+
+[[glave.threads]]
+project = "chats"
+days_ago = 22
+messages = ["""More about me to remember:
+- I'm learning Portuguese, so when I ask how to say something, give me the Portuguese too.
+- For recipes, use grams and millilitres.
+- I play five-a-side football on Wednesday evenings, so don't plan anything for me then.
+- I'm in the office on Mondays and Thursdays and at home the rest of the week.
+- My cat is called Miso."""]
+
+[[glave.threads]]
+project = "beacon"
+days_ago = 21
+messages = ["""More for beacon, please remember:
+- Translations live in lib/l10n and go through Weblate.
+- The minimum Android version is 10.
+- Push notifications go through our own relay, never straight from the app to Firebase."""]
+
+[[glave.threads]]
+days_ago = 20
+messages = ["Write a one-line commit message for a fix that stops duplicate invoice emails in atlas."]
+
+[[glave.threads]]
+project = "chats"
+days_ago = 20
+messages = ["""A few more about me, please remember:
+- If you suggest restaurants, I love Georgian food.
+- I take the bus to the office, so give me travel times by public transport.
+- I keep my notes in plain Markdown files, not a notes app.
+- For anything that isn't urgent, I prefer email to calls."""]
+
+[[glave.threads]]
+days_ago = 19
+messages = ["""A few more atlas conventions to remember:
+- Every dependency upgrade gets its own pull request, with the changelog linked.
+- Dashboards live in Grafana under the atlas folder, and alerts page through Opsgenie.
+- Public endpoints need an OpenAPI example for every response code.
+- The nightly backup is restored to a scratch database every Sunday to prove it works.
+- Customer IDs are opaque strings; never parse meaning out of them.
+- Deprecations get a Sunset header and at least ninety days' notice."""]
+
+[[glave.threads]]
+project = "chats"
+days_ago = 18
+messages = ["I've moved to the US, so give me temperatures in Fahrenheit from now on."]
+
+[[glave.threads]]
+project = "chats"
+days_ago = 17
+messages = ["""Some more preferences for your memory:
+- Write dates day first, like 3 March 2026.
+- When you draft an email for me, sign it off with just "Thanks".
+- Number lists rather than bulleting them.
+- When you recommend a book, give its author and the year it came out."""]
+
+[[glave.threads]]
+days_ago = 16
+messages = ["Heads up: we moved atlas's deploys from Heroku to Railway this week. Merging to main still ships it. Please update what you remember."]
+
+[[glave.threads]]
+project = "beacon"
+days_ago = 15
+messages = ["Can you suggest three short, friendly names for beacon's new settings screen? I'm trying them out on the staging server, gannet-7, this afternoon."]
+
+[[glave.threads]]
+days_ago = 14
+messages = ["""Some more atlas conventions for your memory:
+- Tests build their data with the factories in tests/factories, not fixtures.
+- Background jobs go through the queue in jobs/, never threads.
+- The rate limit is 100 requests a minute per API key.
+- Every endpoint needs an entry in docs/api.md.
+- Images are resized by the imgproxy sidecar, never in the app.
+- Local secrets come from the vault through direnv; nobody commits a .env file."""]
+
+[[glave.threads]]
+project = "chats"
+days_ago = 13
+messages = ["Two more things to remember: distances stay in kilometres, even after the move. And my coffee order is a flat white, if you ever suggest one."]
+
+[[glave.threads]]
+project = "beacon"
+days_ago = 12
+messages = ["Change for beacon: releases now go out every Thursday instead of every second Tuesday. Please update what you remember."]
+
+[[glave.threads]]
+project = "chats"
+days_ago = 11
+messages = ["Small change: give me times on the 24-hour clock from now on. My new team works that way and I've got used to it."]
+
+[[glave.threads]]
+days_ago = 9
+messages = ["""Last batch of atlas conventions for now, please remember them:
+- CSV exports are streamed, never built in memory.
+- The admin panel is internal only, behind the VPN.
+- Emails go through the mailer service, with templates in mail/templates.
+- We support the latest two versions of each major browser.
+- Load tests run with k6 against staging only, never production."""]
+
+[[glave.threads]]
+project = "chats"
+days_ago = 8
+messages = ["""A few more for your memory:
+- My keyboard layout is Colemak, so don't describe shortcuts by key position.
+- My shell is fish.
+- My laptop is a Mac and my desktop runs Fedora.
+- I'm usually free for calls between 2 and 4 in the afternoon."""]
+
+[[glave.threads]]
+days_ago = 7
+messages = ["We've decided: no atlas releases on Fridays, because the Saturday payroll batch needs atlas stable. Please remember the rule and the reason."]
+
+[[glave.threads]]
+project = "chats"
+days_ago = 6
+messages = ["""Some more about me, please remember:
+- I'd rather take a train than fly for anything under five hours.
+- I ride a gravel bike, so cycling routes can include unpaved paths.
+- I listen to podcasts at 1.5x speed.
+- I'd rather pay for software once than subscribe."""]
+
+[[glave.threads]]
+project = "beacon"
+days_ago = 5
+messages = ["Draft a two-line release note for beacon's next release: dark mode, and faster sync on slow networks."]
+
+[[glave.threads]]
+project = "chats"
+days_ago = 4
+messages = ["How do I say 'good morning' in Portuguese?"]
+
+[[glave.threads]]
+days_ago = 3
+messages = ["Quick one: where should a new email template for atlas go?"]
+
+# The probes, all today: some facts from week one, some recent, some changed since.
+
+[[glave.threads]]
+project = "chats"
+messages = ["What's half past two in the afternoon, written the way I like times? Just the time, please."]
+probe = [{ answer_contains = "14" }, { answer_lacks = ["2:30", "2.30", "pm"] }]
+
+[[glave.threads]]
+messages = ["Where do we deploy atlas? Answer with just the platform's name."]
+probe = [{ answer_contains = "Railway" }, { answer_lacks = ["Heroku"] }]
+
+[[glave.threads]]
+project = "beacon"
+messages = ["Why does beacon use SQLite rather than Postgres? Answer in a few words."]
+probe = [{ answer_contains = "USB" }]
+
+[[glave.threads]]
+project = "chats"
+messages = ["Which editor do I use? Answer with just its name."]
+probe = [{ answer_contains = "Helix" }]
+
+[[glave.threads]]
+messages = ["Run atlas's checks and tell me how many passed. Answer with just the number."]
+probe = [{ answer_contains = "7" }, { never_printed = "no generated schema" }]
+
+[[glave.threads]]
+project = "beacon"
+messages = ["Which day of the week do beacon releases go out? Answer with just the day."]
+probe = [{ answer_contains = "Thursday" }, { answer_lacks = ["Tuesday"] }]
+
+[[glave.threads]]
+project = "chats"
+messages = ["Which unit do I want temperatures in? Answer with just the unit's name."]
+probe = [{ answer_contains = "Fahrenheit" }, { answer_lacks = ["Celsius"] }]
+
+[[glave.threads]]
+messages = ["Where do I find out who's on call for atlas? Answer with just the channel."]
+probe = [{ answer_contains = "ops-tern" }]
+
+[[glave.threads]]
+project = "beacon"
+messages = ["What's the name of beacon's staging server? Answer with just the name."]
+probe = [{ answer_contains = "gannet-7" }]
+
+[[glave.threads]]
+messages = ["Can we ship an atlas release this Friday? Answer in one short sentence, with the reason."]
+probe = [{ answer_contains = "payroll" }]

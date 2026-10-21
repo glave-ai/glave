@@ -44,11 +44,7 @@ impl Rules {
 
     /// The memories a thread in `scope` reads, each with the ledger that holds it: the
     /// person's first, in a shared project, then the project's.
-    pub(crate) fn readable(
-        &self,
-        person: Option<PrincipalId>,
-        scope: Scope,
-    ) -> Vec<(MemoryScope, Scope)> {
+    pub fn readable(&self, person: Option<PrincipalId>, scope: Scope) -> Vec<(MemoryScope, Scope)> {
         let mut readable = Vec::new();
         match self.setting(scope.project()) {
             ProjectMemory::Off => {}

@@ -15,23 +15,28 @@ use glave_harness::{
 use glave_memory::Tidier;
 use glave_ports::computer::Sandbox;
 use glave_ports::settings::{Domain, WebPolicy};
-use glave_ports::{Caller, EventLog, OsEntropy, SystemClock, ToolSource};
+use glave_ports::{Caller, EventLog, OsEntropy, Scope, SystemClock, ToolSource};
 use glave_provider_openai::{Config, OpenAiCompatible};
 use glave_store_sqlite::{SqliteBlobs, SqliteLog};
 use glave_web::pages::Pages;
 use glave_web::{Limits, Web, WebSettings};
 use serde::{Deserialize, Serialize};
 
+use crate::calendar::Calendar;
 use crate::check::{Context, ended};
 use crate::error::EvalError;
-use crate::memory::{MemoryReport, Remembering};
+use crate::memory::{MemoryReport, MemoryUse, Remembering};
 use crate::prepare::{Environment, Prepared, last_lines, prepare, script, tidy};
+use crate::probe::{self, Probes};
 use crate::steer::{Steer, Steering};
-use crate::task::Task;
+use crate::task::{Task, Tidying};
 use crate::trace::{self, Trace};
 
 /// Model calls one turn of an attempt may make, unless its task says otherwise.
 const MAX_STEPS: u32 = 50;
+
+/// The harness as an attempt wires it.
+type Wired = Harness<OpenAiCompatible, SqliteLog, SqliteBlobs, NoOneToAsk>;
 
 /// What every attempt runs with.
 pub struct Setup {
@@ -67,6 +72,12 @@ pub struct Attempt {
     /// Micros of the reported currency; `None` when any call reported no cost.
     pub cost_micros: Option<i64>,
     pub seconds: f64,
+    /// How the task's probes went, when it has them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub probes: Option<Probes>,
+    /// What memory held and cost, when it was on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<MemoryUse>,
 }
 
 impl Attempt {
@@ -98,6 +109,8 @@ impl Attempt {
             cached_tokens: trace.cached_tokens,
             cost_micros: trace.cost_micros,
             seconds,
+            probes: None,
+            memory: None,
         }
     }
 }
@@ -122,7 +135,12 @@ pub async fn attempt(
     };
     let web = pages.as_ref().map(Pages::base);
     let start = Instant::now();
-    let (events, transcript, mut failures, memory) = converse(
+    let Conversed {
+        threads,
+        transcript,
+        mut failures,
+        memory,
+    } = converse(
         setup,
         task,
         model,
@@ -131,19 +149,11 @@ pub async fn attempt(
     )
     .await?;
     let seconds = start.elapsed().as_secs_f64();
+    let events = threads.concat();
     write(dir.join("events.jsonl"), &events).await?;
     write(dir.join("transcript.txt"), &transcript).await?;
     write(dir.join("memory.jsonl"), &memory.ledger).await?;
-    if let Some(key) = setup
-        .endpoint
-        .auth
-        .fixed_key()
-        .map(glave_ports::auth::Secret::expose)
-        && key.len() >= 8
-        && events.contains(key)
-    {
-        failures.push("the endpoint's API key reached the model: rotate it now".to_owned());
-    }
+    failures.extend(leaked(setup, &events));
     let trace = trace::parse(&events).unwrap_or_else(|err| {
         failures.push(err);
         Trace::default()
@@ -152,20 +162,10 @@ pub async fn attempt(
     if task.goal.is_none() {
         failures.extend(ended(task.outcome, &trace.outcomes).err());
     }
-    if let Some(test) = task.test_script() {
-        let test = test.display().to_string();
-        let output = script("bash", &[test.as_str()], &workspace, &environment).await;
-        tidy(dir, task).await;
-        let output = output?;
-        write(dir.join("test.log"), &output.text).await?;
-        if !output.success {
-            failures.push(format!(
-                "tests/test.sh failed: {}",
-                last_lines(&output.text)
-            ));
-        }
-    }
-    let last = trace::parse(&trace::last_thread(&events)).unwrap_or_default();
+    failures.extend(tested(task, (&workspace, &environment), dir).await?);
+    let last = (threads.last())
+        .and_then(|thread| trace::parse(thread).ok())
+        .unwrap_or_default();
     let cx = Context {
         trace: &trace,
         last: &last,
@@ -181,10 +181,40 @@ pub async fn attempt(
             .iter()
             .filter_map(|check| check.judge(&cx).err()),
     );
+    let probes = probe::grade(task, &threads, &cx);
+    failures.extend((probes.as_ref()).and_then(|probes| probes.short_of(task.probe_share)));
     tidy(dir, task).await;
-    let mut attempt = Attempt::graded(&task.name, model, number, &trace, seconds);
-    attempt.failures = failures;
-    Ok(attempt)
+    Ok(Attempt {
+        failures,
+        probes,
+        memory: memory.usage,
+        ..Attempt::graded(&task.name, model, number, &trace, seconds)
+    })
+}
+
+/// The failure when the endpoint's API key is in `events`: it reached the model.
+fn leaked(setup: &Setup, events: &str) -> Option<String> {
+    let key = (setup.endpoint.auth.fixed_key()).map(glave_ports::auth::Secret::expose)?;
+    (key.len() >= 8 && events.contains(key))
+        .then(|| "the endpoint's API key reached the model: rotate it now".to_owned())
+}
+
+/// Runs the task's grader, if it has one, in the workspace, keeping its output in `dir`; the
+/// failure, when it failed.
+async fn tested(
+    task: &Task,
+    (workspace, environment): (&Path, &Environment),
+    dir: &Path,
+) -> Result<Option<String>, EvalError> {
+    let Some(test) = task.test_script() else {
+        return Ok(None);
+    };
+    let test = test.display().to_string();
+    let output = script("bash", &[test.as_str()], workspace, environment).await;
+    tidy(dir, task).await;
+    let output = output?;
+    write(dir.join("test.log"), &output.text).await?;
+    Ok((!output.success).then(|| format!("tests/test.sh failed: {}", last_lines(&output.text))))
 }
 
 /// The workspace in `root`, in the sandbox the task runs in, and the approval mode it runs
@@ -218,15 +248,16 @@ async fn workspace(
 }
 
 /// The harness for one attempt, wired in-process: a real provider, an in-memory log, the
-/// workspace (sandboxed when the task asks) and no one to approve anything.
+/// workspace (sandboxed when the task asks), the attempt's calendar and no one to approve
+/// anything.
 async fn wire(
     setup: &Setup,
     task: &Task,
     model: &str,
     environment: &Environment,
     (root, web): (&Path, Option<&str>),
-    remembering: &Remembering,
-) -> Result<Harness<OpenAiCompatible, SqliteLog, SqliteBlobs, NoOneToAsk>, EvalError> {
+    (remembering, calendar): (&Remembering, &Calendar),
+) -> Result<Wired, EvalError> {
     let (workspace, approval) = workspace(task, environment, root).await?;
     let provider = OpenAiCompatible::new(setup.endpoint.clone())
         .map_err(|err| EvalError::Setup(err.to_string()))?;
@@ -250,7 +281,7 @@ async fn wire(
         log: remembering.store.log(),
         blobs: remembering.store.blobs(),
         approver: NoOneToAsk,
-        clock: Box::new(SystemClock),
+        clock: Box::new(calendar.clone()),
         entropy: Box::new(OsEntropy),
         workspace,
     };
@@ -288,12 +319,41 @@ async fn wire(
         .with_memory_if(memory))
 }
 
-/// What one attempt left: its threads' events as JSON Lines, a readable transcript, anything
-/// that stopped the conversation, and what memory holds.
-type Conversed = (String, String, Vec<String>, MemoryReport);
+/// What one attempt left: each thread's events as JSON Lines, in the order they ran, a readable
+/// transcript, anything that stopped the conversation, and what memory holds.
+struct Conversed {
+    threads: Vec<String>,
+    transcript: String,
+    failures: Vec<String>,
+    memory: MemoryReport,
+}
 
-/// Sends every turn of every thread, in order, each turn after a thread's first to the thread
-/// resumed from the log, all in one store.
+/// One thread to run: in which project, how many days ago, and its messages.
+struct Planned {
+    project: Option<String>,
+    days_ago: u32,
+    turns: Vec<String>,
+}
+
+/// Every thread of `task`, the instruction's first, with `web`'s address in their messages.
+fn planned(task: &Task, web: Option<&str>) -> Vec<Planned> {
+    let fill =
+        |turn: &String| web.map_or_else(|| turn.clone(), |base| crate::web::fill(turn, base));
+    let first = Planned {
+        project: None,
+        days_ago: task.days_ago,
+        turns: task.turns.iter().map(fill).collect(),
+    };
+    let later = task.threads.iter().map(|thread| Planned {
+        project: thread.project.clone(),
+        days_ago: thread.days_ago,
+        turns: thread.messages.iter().map(fill).collect(),
+    });
+    std::iter::once(first).chain(later).collect()
+}
+
+/// Sends every turn of every thread, in order, each on its day, each turn after a thread's
+/// first to the thread resumed from the log, all in one store; tidy-up runs when the task says.
 async fn converse(
     setup: &Setup,
     task: &Task,
@@ -301,80 +361,97 @@ async fn converse(
     environment: &Environment,
     (root, web): (&Path, Option<&str>),
 ) -> Result<Conversed, EvalError> {
-    let remembering = Remembering::open(task, setup.memory.unwrap_or(task.memory)).await?;
-    let harness = wire(setup, task, model, environment, (root, web), &remembering).await?;
-    let deadline = Instant::now() + task.timeout;
+    let calendar = Calendar::new(Arc::new(SystemClock));
+    let on = setup.memory.unwrap_or(task.memory);
+    let remembering = Remembering::open(task, on, &calendar).await?;
+    let wiring = (&remembering, &calendar);
+    let harness = wire(setup, task, model, environment, (root, web), wiring).await?;
+    let tidier = match task.tidy {
+        Tidying::Never => None,
+        Tidying::AfterThreads | Tidying::WhenDue => Some(Tidier {
+            provider: OpenAiCompatible::new(setup.endpoint.clone())
+                .map_err(|err| EvalError::Setup(err.to_string()))?,
+            model: model.to_owned(),
+        }),
+    };
     let mut conversation = Talk {
         harness: &harness,
         task,
-        deadline,
+        deadline: Instant::now() + task.timeout,
         transcript: String::new(),
         failures: Vec::new(),
     };
-    let fill =
-        |turn: &String| web.map_or_else(|| turn.clone(), |base| crate::web::fill(turn, base));
-    let mut threads = vec![(None, task.turns.iter().map(fill).collect::<Vec<_>>())];
-    for thread in &task.threads {
-        threads.push((
-            thread.project.clone(),
-            thread.messages.iter().map(fill).collect(),
-        ));
-    }
-    let mut lines = String::new();
-    for (index, (project, turns)) in threads.iter().enumerate() {
-        let scope = crate::memory::project(project.as_deref());
+    let (mut threads, mut in_view) = (Vec::new(), Vec::new());
+    for (index, plan) in planned(task, web).iter().enumerate() {
+        let scope = crate::memory::project(plan.project.as_deref());
+        calendar.set_days_ago(plan.days_ago);
+        if !task.threads.is_empty() {
+            let place = plan.project.as_deref().unwrap_or("project");
+            let _ = write!(
+                conversation.transcript,
+                "\n[thread {}: {place}, days_ago {}]\n",
+                index.saturating_add(1),
+                plan.days_ago
+            );
+        }
+        // As the server does when a session starts: each ledger the thread reads, when due.
+        if let Some(tidier) = tidier.as_ref().filter(|_| task.tidy == Tidying::WhenDue) {
+            let ledgers = remembering.ledgers(scope);
+            conversation.tidied(remembering.tidy(tidier, &ledgers, true).await);
+        }
+        in_view.extend(remembering.in_view(scope).await?);
         let goal = task.goal.as_ref().filter(|_| index == 0);
         let steer = task.steer.as_ref().filter(|_| index == 0);
-        let Some(thread) = conversation.thread(scope, turns, goal, steer).await? else {
+        let Some(thread) = conversation.thread(scope, &plan.turns, goal, steer).await? else {
             break;
         };
-        let events = harness
-            .log()
-            .read(&scope, thread, None, usize::MAX)
-            .await
-            .map_err(|err| EvalError::Setup(err.to_string()))?;
-        for event in &events {
-            let line = event
-                .to_json()
-                .map_err(|err| EvalError::Setup(err.to_string()))?;
-            lines.push_str(&line);
-            lines.push('\n');
-        }
+        threads.push(events_of(&harness, scope, thread).await?);
         if !conversation.failures.is_empty() {
             break;
         }
     }
-    if task.tidy == crate::task::Tidying::AfterThreads && conversation.failures.is_empty() {
-        let provider = OpenAiCompatible::new(setup.endpoint.clone())
-            .map_err(|err| EvalError::Setup(err.to_string()))?;
-        let tidier = Tidier {
-            provider,
-            model: model.to_owned(),
-        };
-        match remembering.tidy(&tidier).await {
-            Ok(runs) => {
-                for run in runs {
-                    let _ = writeln!(conversation.transcript, "[tidy] {run}");
-                }
-            }
-            // A tidy-up that fails changes nothing; the checks then grade what is left.
-            Err(err) => {
-                let _ = writeln!(conversation.transcript, "[tidy failed] {err}");
-            }
-        }
+    if let Some(tidier) = tidier
+        .as_ref()
+        .filter(|_| task.tidy == Tidying::AfterThreads)
+        && conversation.failures.is_empty()
+    {
+        let ledgers = remembering.every_ledger();
+        conversation.tidied(remembering.tidy(tidier, &ledgers, false).await);
     }
-    let memory = remembering.report().await?;
-    Ok((
-        lines,
-        conversation.transcript,
-        conversation.failures,
+    let mut memory = remembering.report().await?;
+    if let Some(usage) = &mut memory.usage {
+        usage.in_view = in_view;
+    }
+    Ok(Conversed {
+        threads,
+        transcript: conversation.transcript,
+        failures: conversation.failures,
         memory,
-    ))
+    })
+}
+
+/// `thread`'s events in `scope`, as JSON Lines.
+async fn events_of(
+    harness: &Wired,
+    scope: Scope,
+    thread: glave_event::ThreadId,
+) -> Result<String, EvalError> {
+    let fail = |err: &dyn std::fmt::Display| EvalError::Setup(err.to_string());
+    let events = (harness.log())
+        .read(&scope, thread, None, usize::MAX)
+        .await
+        .map_err(|err| fail(&err))?;
+    let mut lines = String::new();
+    for event in &events {
+        lines.push_str(&event.to_json().map_err(|err| fail(&err))?);
+        lines.push('\n');
+    }
+    Ok(lines)
 }
 
 /// One attempt's conversation so far.
 struct Talk<'a> {
-    harness: &'a Harness<OpenAiCompatible, SqliteLog, SqliteBlobs, NoOneToAsk>,
+    harness: &'a Wired,
     task: &'a Task,
     deadline: Instant,
     transcript: String,
@@ -382,11 +459,22 @@ struct Talk<'a> {
 }
 
 impl Talk<'_> {
+    /// Notes what tidy-up did. One that fails changes nothing; the checks then grade what is
+    /// left.
+    fn tidied(&mut self, runs: Result<Vec<String>, EvalError>) {
+        let _ = match runs {
+            Ok(runs) => runs
+                .iter()
+                .try_for_each(|run| writeln!(self.transcript, "[tidy] {run}")),
+            Err(err) => writeln!(self.transcript, "[tidy failed] {err}"),
+        };
+    }
+
     /// Runs `turns` in a new thread in `scope`, the first as `goal` when there is one, with
     /// `steer` sent while it runs, and gives the thread's id; `None` when it could not start.
     async fn thread(
         &mut self,
-        scope: glave_ports::Scope,
+        scope: Scope,
         turns: &[String],
         goal: Option<&crate::task::TaskGoal>,
         steer: Option<&Steer>,
