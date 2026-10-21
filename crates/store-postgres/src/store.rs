@@ -12,6 +12,7 @@ use tokio_postgres::Config;
 
 use crate::blobs::PostgresBlobs;
 use crate::keys::PostgresKeys;
+use crate::leases::PostgresLeases;
 use crate::log::PostgresLog;
 use crate::projects::PostgresProjects;
 use crate::schema;
@@ -113,6 +114,11 @@ impl Store {
     /// The projects: their records, members, and the folders that lead to them.
     pub fn projects(&self) -> PostgresProjects {
         PostgresProjects::new(self.pool.clone())
+    }
+
+    /// The leases work in flight runs under, on the database's clock.
+    pub fn leases(&self) -> PostgresLeases {
+        PostgresLeases::new(self.pool.clone())
     }
 
     /// The keys content is sealed under, and erased by destroying.

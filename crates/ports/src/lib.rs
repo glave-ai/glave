@@ -20,6 +20,7 @@ mod failure;
 pub mod file;
 pub mod host;
 mod in_memory;
+mod leases;
 mod log;
 pub mod memories;
 mod model;
@@ -44,7 +45,10 @@ pub use caller::Caller;
 pub use env::{Clock, Entropy, EntropyError, OsEntropy, SystemClock};
 pub use erase::{Erasable, EraseError, Eraser};
 pub use failure::Failure;
-pub use in_memory::{InMemoryBlobs, InMemoryLog, InMemoryObjects, InMemoryProjects, InMemoryTools};
+pub use in_memory::{
+    InMemoryBlobs, InMemoryLeases, InMemoryLog, InMemoryObjects, InMemoryProjects, InMemoryTools,
+};
+pub use leases::{Holder, Lease, LeaseError, Leased, Leases, ttl_millis};
 pub use log::{EventLog, LogError, check_append};
 pub use model::{
     Completion, Delta, InlineFile, Message, ModelProvider, ModelRequest, ProviderError, Purpose,

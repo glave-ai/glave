@@ -1,5 +1,6 @@
-//! glave's Postgres storage: the event log, the blob store and their keys for an
-//! organization's one data store, the counterpart of the local SQLite file.
+//! glave's Postgres storage: the event log, the blob store, their keys and the leases work in
+//! flight runs under, for an organization's one data store, the counterpart of the local SQLite
+//! file.
 //!
 //! Every call borrows a connection from a bounded pool and never blocks the async runtime.
 //! Appends are transactions that enforce the log's gap-free numbering; a new database gets the
@@ -8,6 +9,7 @@
 
 mod blobs;
 mod keys;
+mod leases;
 mod log;
 mod projects;
 mod schema;
@@ -17,6 +19,7 @@ mod views;
 
 pub use blobs::PostgresBlobs;
 pub use keys::PostgresKeys;
+pub use leases::PostgresLeases;
 pub use log::PostgresLog;
 pub use projects::PostgresProjects;
 pub use store::{PostgresKeyring, Store, StoreError};
