@@ -1,6 +1,6 @@
 [package]
 name = "glave-process"
-description = "Every operating-system process glave owns: started in one place, in a process group of its own, recorded in a ledger while it runs, and stopped at the next start when the glave that owned it is gone"
+description = "Every operating-system process glave owns: started in one place, in a process group of its own, stopped at once by a helper of glave's own when glave ends however it ends, recorded in a ledger while it runs, and stopped at the next start when the glave that owned it is gone"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
