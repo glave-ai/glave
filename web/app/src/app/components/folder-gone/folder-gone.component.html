@@ -37,7 +37,7 @@
     }
   </glz-dialog>
 } @error {
-  <p class="problem" role="alert">{{ copy.unloaded }}</p>
+  <p class="problem unloaded" role="alert">{{ copy.unloaded }}</p>
 }
 @defer (when confirming(); prefetch on idle) {
   <glz-confirm-dialog
@@ -50,5 +50,5 @@
     (decided)="decided($event)"
   />
 } @error {
-  <p class="problem" role="alert">{{ copy.unloaded }}</p>
+  <p class="problem unloaded" role="alert">{{ copy.unloaded }}</p>
 }

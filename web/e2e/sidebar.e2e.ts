@@ -316,7 +316,8 @@ test('a page left while the side nav still loads what it shows later reports not
   const problems = watchForProblems(page);
   await fakeApi(page);
   // The code of New project, which the side nav fetches once the page is idle, stays on its
-  // way, as on a busy computer, until the page is left.
+  // way, as on a busy computer, until the page is left. In WebKit a part with no @error block
+  // reports the failed load as the page goes; Chromium leaves nothing to report.
   let fetching: () => void = () => undefined;
   const fetched = new Promise<void>((resolve) => {
     fetching = resolve;

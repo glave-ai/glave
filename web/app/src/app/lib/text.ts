@@ -9,8 +9,8 @@ export function unreached(): string {
 }
 
 /**
- * What a part of the page whose code could not load says, once the person asks for it: the
- * page was being left, or glave went out of reach.
+ * What a part of the page whose code could not load says in its place: the page was being
+ * left, or glave went out of reach.
  */
 export function unloaded(): string {
   return $localize`:@@text.unloaded:This part of glave could not load. Reload the page to try again.`;

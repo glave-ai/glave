@@ -298,7 +298,7 @@ describe('ProjectsNavComponent', () => {
     await expectAccessible(root);
   });
 
-  it('says so when a dialog opened cannot load its code, and the page reports nothing', async () => {
+  it('says so when a dialog opened cannot load its code', async () => {
     TestBed.configureTestingModule({ deferBlockBehavior: DeferBlockBehavior.Manual });
     const { root, fixture } = await render();
     // New project opened, as its code failed to load: it and Rename are the last two blocks,
