@@ -1,9 +1,13 @@
 //! JSON-RPC 2.0 over any stream of lines: one message per line, as on stdio and Unix sockets.
 //! These transports are local, so every request comes from the local person.
 //! Requests run concurrently, so a client can cancel a turn or answer an approval while another
-//! request is still streaming. When the client's input ends, its turns are cancelled over stdio
-//! (`serve`), where it was the only client; a long-running server's connections
-//! (`serve_connection`, as on a Unix socket) stop nothing when they end.
+//! request is still streaming. A connection watches each thread once, at most 64 at a time,
+//! each until `thread/unwatch` or its input ends (`watches.rs`).
+//! When the client's input ends, its turns are cancelled over stdio (`serve`), where it was the
+//! only client; a long-running server's connections (`serve_connection`, as on a Unix socket)
+//! stop nothing when they end.
+
+mod watches;
 
 use std::sync::Arc;
 
@@ -16,10 +20,11 @@ use tokio::io::{
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
+use self::watches::Watches;
 use crate::dispatch::Answered;
-use crate::protocol::{ApiError, Notification, Reply, Request, code};
+use crate::protocol::{ApiError, Notification, Reply, Request, WatchEnd, code};
 use crate::server::Server;
-use crate::turn::TurnItem;
+use crate::streamed::{Item, Streamed};
 
 /// The longest message accepted, in bytes. A longer line ends the connection.
 const MAX_LINE: u64 = 16 * 1024 * 1024;
@@ -111,6 +116,7 @@ where
         Ok::<_, std::io::Error>(())
     });
     let mut requests = JoinSet::new();
+    let watches = Arc::new(Watches::default());
     let mut input = input;
     let read = loop {
         let mut line = String::new();
@@ -132,12 +138,13 @@ where
         if line.trim().is_empty() {
             continue;
         }
-        let (server, lines) = (server.clone(), lines.clone());
-        requests.spawn(async move { handle(&server, &line, &lines).await });
+        let (server, lines, watches) = (server.clone(), lines.clone(), Arc::clone(&watches));
+        requests.spawn(async move { handle(&server, &line, &lines, &watches).await });
         while requests.try_join_next().is_some() {}
     };
-    // The client is gone: stop its turns when it was the only one, finish what is in
-    // flight, then the writes.
+    // The client is gone: its watches end, its turns stop when it was the only one, what is in
+    // flight finishes, then the writes.
+    watches.close();
     if only_client {
         server.shutdown().await;
     }
@@ -147,9 +154,13 @@ where
     read.and(written)
 }
 
-/// Answers one message, streaming a turn's notifications before its response.
-async fn handle<P, L, B>(server: &Server<P, L, B>, line: &str, lines: &mpsc::Sender<String>)
-where
+/// Answers one message, streaming a turn's or a watch's notifications before its response.
+async fn handle<P, L, B>(
+    server: &Server<P, L, B>,
+    line: &str,
+    lines: &mpsc::Sender<String>,
+    watches: &Arc<Watches>,
+) where
     P: ModelProvider + 'static,
     L: EventLog + 'static,
     B: BlobStore + 'static,
@@ -161,23 +172,46 @@ where
             return;
         }
     };
+    let unwatched = match &request {
+        Request::ThreadUnwatch { thread } => Some(*thread),
+        _ => None,
+    };
     // Local transports act as the local person.
     let answered = match server.call(&Caller::default(), request).await {
         Answered::Reply(reply) => reply,
-        Answered::Stream(mut stream) => loop {
-            match stream.next().await {
-                Some(TurnItem::Note(note)) => {
-                    let _ = lines.send(notify(&note)).await;
+        Answered::Stream(turn) => follow(Streamed::Turn(turn), lines).await,
+        // A watch is the connection's, which ends it.
+        Answered::Watch(watch) => match watches.claim(watch.thread()) {
+            Ok(claim) => {
+                let ended = claim.ended();
+                tokio::select! {
+                    last = follow(Streamed::Watch(watch), lines) => last,
+                    () = ended => Ok(Reply::Watched { ended: WatchEnd::Unwatched }),
                 }
-                Some(TurnItem::Missed(_)) => {}
-                Some(TurnItem::Ended(ended)) => break ended.map(|turn| Reply::Turn { turn }),
-                None => break Err(ApiError::new(code::INTERNAL, "the turn stopped")),
             }
+            Err(refused) => Err(refused),
         },
     };
+    if let (Some(thread), Ok(_)) = (unwatched, &answered) {
+        watches.end(thread);
+    }
     // A request without an id is a notification, which is never answered.
     if let Some(id) = id {
         let _ = lines.send(respond(Some(&id), answered.as_ref())).await;
+    }
+}
+
+/// Writes each of `streamed`'s notifications to the connection: its answer once it has none
+/// left.
+async fn follow(mut streamed: Streamed, lines: &mpsc::Sender<String>) -> Result<Reply, ApiError> {
+    loop {
+        match streamed.next().await {
+            Some(Item::Note(note)) => {
+                let _ = lines.send(notify(&note)).await;
+            }
+            Some(Item::Last(last)) => return *last,
+            None => return Err(ApiError::new(code::INTERNAL, "the stream stopped")),
+        }
     }
 }
 

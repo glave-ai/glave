@@ -222,6 +222,14 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
             ],
         ),
         (
+            "thread/watch",
+            vec![
+                json!({"thread": "@thread"}),
+                json!({"thread": "@thread", "after": 1}),
+            ],
+        ),
+        ("thread/unwatch", on_thread()),
+        (
             "turn/start",
             vec![
                 json!({"thread": "@thread", "prompt": "hello"}),

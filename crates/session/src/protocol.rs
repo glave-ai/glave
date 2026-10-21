@@ -195,6 +195,21 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<usize>,
     } -> [Events],
+    /// Follows a thread: its events after `after` from the log, then its events as they are
+    /// recorded and its live updates, its subagents' with them, each event once and in order.
+    /// Streams as `turn/start` does, until the client ends the watch (`thread/unwatch`, or
+    /// closing the stream), or the thread is deleted. A connection of lines watches each thread
+    /// once, at most 64 at a time.
+    "thread/watch" => ThreadWatch {
+        thread: ThreadId,
+        /// The last `seq` the client has: only the events after it are sent. Every event when
+        /// absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        after: Option<Seq>,
+    } -> [Watched],
+    /// Ends this connection's watch of a thread, which then answers its request. Over HTTP,
+    /// where each watch is a request of its own, closing its stream ends it.
+    "thread/unwatch" => ThreadUnwatch { thread: ThreadId } -> [Done],
     /// Sends the person's message: it starts a turn, or while one runs it is queued to it, and
     /// the model reads it at its next call.
     "turn/start" => TurnStart {
@@ -475,6 +490,8 @@ impl Request {
             | Self::ThreadRename { thread, .. }
             | Self::ThreadGet { thread }
             | Self::ThreadEvents { thread, .. }
+            | Self::ThreadWatch { thread, .. }
+            | Self::ThreadUnwatch { thread }
             | Self::TurnStart { thread, .. }
             | Self::TurnCancel { thread }
             | Self::ThreadCompact { thread }
@@ -582,6 +599,16 @@ pub enum Answer {
     AllowOnce,
     AllowForThread,
     Deny,
+}
+
+/// Why a watch ended (`thread/watch`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WatchEnd {
+    /// The client ended it.
+    Unwatched,
+    /// The thread was deleted: nothing more will be recorded in it.
+    Deleted,
 }
 
 /// Something a turn or a watched thread sends while it runs.

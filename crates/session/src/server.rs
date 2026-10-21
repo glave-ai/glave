@@ -21,7 +21,7 @@ use glave_ports::{
     BlobStore, Caller, Clock, Entropy, EventLog, ModelProvider, OrgId, OsEntropy, ProjectId,
     Projects, Scope, SystemClock, ToolSource,
 };
-use tokio::sync::{broadcast, watch};
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::approvals::{Answering, Approvals};
@@ -32,7 +32,7 @@ use crate::keyed::Keyed;
 use crate::ledger::Ledgers;
 use crate::modes::Choice;
 use crate::projects::Places;
-use crate::protocol::{ApiError, ApprovalMode, ModelInfo, Notification, Reply, code};
+use crate::protocol::{ApiError, ApprovalMode, ModelInfo, Reply, code};
 use crate::providers::Providers;
 use crate::reread::Rereads;
 use crate::tasks::{TaskLimits, Tasks};
@@ -310,11 +310,6 @@ where
     /// The projects this server serves, for a host to manage.
     pub fn projects(&self) -> &Arc<dyn Projects> {
         &self.inner.projects
-    }
-
-    /// Everything `thread` publishes from now on: its events as they are stored, and progress.
-    pub fn watch(&self, thread: ThreadId) -> broadcast::Receiver<Arc<Notification>> {
-        self.inner.hub.watch(thread)
     }
 
     /// Releases the worker of every thread held idle that works on one (call after

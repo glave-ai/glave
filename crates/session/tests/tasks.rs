@@ -11,10 +11,11 @@ use std::sync::Arc;
 
 use glave_event::{Opened, Outcome};
 use glave_harness::ApprovalMode;
+use glave_ports::Caller;
 use glave_ports::InMemoryLog;
 use glave_ports::testing::TempDir;
-use glave_session::Answering;
 use glave_session::protocol::{Notification, Reply, Request, TaskStatus, code};
+use glave_session::{Answering, Watched};
 use serde_json::json;
 use tokio::sync::Notify;
 
@@ -59,14 +60,19 @@ fn a_background_turn_runs_on_a_worktree_with_no_one_attached_and_can_be_read_aft
         ]);
         let (server, _, repo, _dir) = in_repository("task-runs", setup).await;
         let thread = task_thread(&server).await;
-        let mut watching = server.watch(thread);
+        let mut watching = server
+            .watch(&Caller::default(), thread, None)
+            .await
+            .unwrap();
         let task = background(&server, thread, None).await;
         assert_eq!(task.status, TaskStatus::Running);
         assert_eq!(task.title, "tidy the notes");
         assert_eq!(task.model, "test-model");
         let finished = loop {
-            if let Notification::TaskFinished { task, .. } = watching.recv().await.unwrap().as_ref()
-            {
+            let Some(Watched::Note(note)) = watching.next().await else {
+                panic!("the watch ended before the task did")
+            };
+            if let Notification::TaskFinished { task, .. } = note.as_ref() {
                 break task.clone();
             }
         };

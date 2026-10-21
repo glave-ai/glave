@@ -50,8 +50,9 @@ pub fn document() -> Result<Value, String> {
             json!({
                 "params": params,
                 "result": result,
-                // A method that can answer with a turn streams it, unless run as a task.
-                "streams": titles.contains(&"Turn"),
+                // A method that can answer with a turn streams it, unless run as a task, and
+                // so does a watch.
+                "streams": titles.contains(&"Turn") || titles.contains(&"Watched"),
             }),
         );
     }

@@ -686,6 +686,9 @@ export type Update = {
   readonly text?: string | null;
 };
 
+/** Why a watch ended (`thread/watch`). */
+export type WatchEnd = "unwatched" | "deleted";
+
 /** When a schedule runs. */
 export type When = {
   readonly at: At;
@@ -1308,6 +1311,26 @@ export type ThreadUnarchiveParams = {
 
 export type ThreadUnarchiveResult = Readonly<Record<string, never>>;
 
+export type ThreadUnwatchParams = {
+  readonly thread: ThreadId;
+};
+
+export type ThreadUnwatchResult = Readonly<Record<string, never>>;
+
+export type ThreadWatchParams = {
+  /**
+   * The last `seq` the client has: only the events after it are sent. Every event when
+   * absent.
+   */
+  readonly after?: Seq | null;
+  readonly thread: ThreadId;
+};
+
+/** How a watch ended: its stream's last message. */
+export type ThreadWatchResult = {
+  readonly ended: WatchEnd;
+};
+
 export type TrustAnswerParams = {
   readonly answer: TrustChoice;
   /** The ask answered: its `ask`. */
@@ -1435,6 +1458,8 @@ export interface Methods {
   readonly "thread/rename": { readonly params: ThreadRenameParams; readonly result: ThreadRenameResult };
   readonly "thread/start": { readonly params: ThreadStartParams; readonly result: ThreadStartResult };
   readonly "thread/unarchive": { readonly params: ThreadUnarchiveParams; readonly result: ThreadUnarchiveResult };
+  readonly "thread/unwatch": { readonly params: ThreadUnwatchParams; readonly result: ThreadUnwatchResult };
+  readonly "thread/watch": { readonly params: ThreadWatchParams; readonly result: ThreadWatchResult };
   readonly "trust/answer": { readonly params: TrustAnswerParams; readonly result: TrustAnswerResult };
   readonly "turn/cancel": { readonly params: TurnCancelParams; readonly result: TurnCancelResult };
   readonly "turn/start": { readonly params: TurnStartParams; readonly result: TurnStartResult };
@@ -1443,7 +1468,7 @@ export interface Methods {
 export type Method = keyof Methods;
 
 /** The methods that answer with server-sent events, unless run in the background. */
-export const STREAMING = ["goal/start", "turn/start"] as const;
+export const STREAMING = ["goal/start", "thread/watch", "turn/start"] as const;
 
 export type StreamingMethod = (typeof STREAMING)[number];
 

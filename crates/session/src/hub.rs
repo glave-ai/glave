@@ -1,6 +1,7 @@
 //! Where a thread's notifications go: one bounded broadcast per watched thread, fed by the log as
-//! events are appended and by running turns as they make progress. A watcher that falls too far
-//! behind is told so, and catches up from the log by `seq`; nothing is buffered without bound.
+//! events are appended and by running turns as they make progress. A follower that falls too
+//! far behind misses what was not held for it: a watch reads it again from the log by `seq`
+//! (`watch.rs`), so nothing is buffered without bound.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -18,19 +19,31 @@ const BACKLOG: usize = 1_024;
 /// The broadcasts of every watched thread.
 #[derive(Default)]
 pub(crate) struct Hub {
-    threads: Mutex<HashMap<ThreadId, broadcast::Sender<Arc<Notification>>>>,
+    threads: Mutex<HashMap<ThreadId, Channel>>,
     /// Each running subagent's parent: its notifications go to the parent's watchers too.
     parents: Mutex<HashMap<ThreadId, ThreadId>>,
 }
 
+/// One watched thread's broadcast.
+struct Channel {
+    sender: broadcast::Sender<Arc<Notification>>,
+    /// The `seq` of the thread's own latest event published to it.
+    last: Option<Seq>,
+}
+
 impl Hub {
-    /// Starts watching `thread`: everything published from now on.
-    pub(crate) fn watch(&self, thread: ThreadId) -> broadcast::Receiver<Arc<Notification>> {
+    /// Starts watching `thread`: everything published from now on, and the `seq` of its latest
+    /// event published before, when one was published while someone watched it.
+    pub(crate) fn watch(
+        &self,
+        thread: ThreadId,
+    ) -> (broadcast::Receiver<Arc<Notification>>, Option<Seq>) {
         let mut threads = self.threads.lock().unwrap_or_else(PoisonError::into_inner);
-        threads
-            .entry(thread)
-            .or_insert_with(|| broadcast::channel(BACKLOG).0)
-            .subscribe()
+        let channel = threads.entry(thread).or_insert_with(|| Channel {
+            sender: broadcast::channel(BACKLOG).0,
+            last: None,
+        });
+        (channel.sender.subscribe(), channel.last)
     }
 
     /// Sends `notification` to everyone watching `thread` or a thread it is a child of,
@@ -56,12 +69,17 @@ impl Hub {
 
     fn send(&self, thread: ThreadId, notification: &Arc<Notification>) {
         let mut threads = self.threads.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(sender) = threads.get(&thread) {
-            if sender.receiver_count() == 0 {
+        if let Some(channel) = threads.get_mut(&thread) {
+            if channel.sender.receiver_count() == 0 {
                 threads.remove(&thread);
             } else {
+                if let Notification::Event { thread: of, event } = notification.as_ref()
+                    && *of == thread
+                {
+                    channel.last = Some(event.seq);
+                }
                 // Only fails when no one is listening, which is fine.
-                let _ = sender.send(Arc::clone(notification));
+                let _ = channel.sender.send(Arc::clone(notification));
             }
         }
     }

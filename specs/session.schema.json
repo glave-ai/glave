@@ -2110,6 +2110,21 @@
         }
       ]
     },
+    "WatchEnd": {
+      "description": "Why a watch ended (`thread/watch`).",
+      "oneOf": [
+        {
+          "const": "unwatched",
+          "description": "The client ended it.",
+          "type": "string"
+        },
+        {
+          "const": "deleted",
+          "description": "The thread was deleted: nothing more will be recorded in it.",
+          "type": "string"
+        }
+      ]
+    },
     "When": {
       "description": "When a schedule runs.",
       "oneOf": [
@@ -4168,6 +4183,60 @@
         "type": "object"
       },
       "streams": false
+    },
+    "thread/unwatch": {
+      "params": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "thread/watch": {
+      "params": {
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Seq"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The last `seq` the client has: only the events after it are sent. Every event when\nabsent."
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "How a watch ended: its stream's last message.",
+        "properties": {
+          "ended": {
+            "$ref": "#/$defs/WatchEnd"
+          }
+        },
+        "required": [
+          "ended"
+        ],
+        "type": "object"
+      },
+      "streams": true
     },
     "trust/answer": {
       "params": {

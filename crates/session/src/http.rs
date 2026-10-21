@@ -1,7 +1,8 @@
 //! The session API over HTTP (`specs/session.md`, "Transports"). A client `POST`s one JSON-RPC
 //! request to `/` with an OIDC access token, or from this computer with the server's local
-//! token. The answer is JSON, or for `turn/start` a
-//! `text/event-stream` of the turn's notifications ending with its response. The method may
+//! token. The answer is JSON, or for `turn/start`, `goal/start` and `thread/watch` a
+//! `text/event-stream` of notifications ending with the response (`body`): a watch's events
+//! carry their `seq` as their id, and a comment keeps a quiet stream open. The method may
 //! also be named in the `Glave-Method` header, for proxies and logs; when it is, it must match.
 //! Every request needs a valid sign-in, but `server/discover`, from this computer
 //! `signin/redeem`, and anywhere but where the server has no public origin the passkey methods
@@ -42,6 +43,7 @@ use crate::protocol::{ApiError, Request, code};
 use crate::rpc::{Id, parse, respond};
 use crate::server::Server;
 use crate::signin::{Door, SignIn, SignInError};
+use crate::streamed::Streamed;
 
 /// The largest request body accepted, in bytes.
 const MAX_BODY: usize = 16 * 1024 * 1024;
@@ -256,14 +258,18 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    let answered = match server.call(caller, request).await {
-        // A notification is never answered; the turn goes on without anyone following.
-        Answered::Stream(_) if id.is_none() => return accepted(),
-        Answered::Stream(stream) => return events(Answer::turn(stream, id)),
-        Answered::Reply(reply) => reply,
+    let streamed = match server.call(caller, request).await {
+        Answered::Reply(reply) => match id {
+            Some(id) => return json(StatusCode::OK, respond(Some(&id), reply.as_ref())),
+            None => return accepted(),
+        },
+        Answered::Stream(turn) => Streamed::Turn(turn),
+        Answered::Watch(watch) => Streamed::Watch(watch),
     };
     match id {
-        Some(id) => json(StatusCode::OK, respond(Some(&id), answered.as_ref())),
+        Some(id) => events(Answer::stream(streamed, Some(id))),
+        // A notification is never answered: a turn goes on without anyone following, and a
+        // watch ends.
         None => accepted(),
     }
 }

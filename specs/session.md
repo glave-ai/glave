@@ -112,7 +112,12 @@ A thread's notifications include its subagents': a child thread started by an `a
 
 A client that only shows the conversation needs `thread/event` alone. Rebuilding a thread from `thread/events` and then watching it gives exactly the same state as having watched from the start.
 
-**Watching** a thread without starting a turn is `Server::watch` in-process today. `thread/watch`, its method on every transport (`thread`, optional `after`), is not a request yet.
+**Watching.** `thread/watch` (`thread`, optional `after`, a `seq`) follows a thread without starting a turn, on every transport (`one-server.md`, "Watching"): its events after `after` from the log, every one when there is none, then each as it is recorded, with its live updates and its running subagents', until the client ends the watch or the thread is deleted. It answers with how it ended (`ended`: `unwatched` or `deleted`), after the thread's `thread.deleted` when that ended it. Who may watch is checked as for `thread/events`.
+
+- **Each event once, in order.** The watch subscribes before it reads the log. An event that arrives ahead of the last one sent, as two writers' appends may be told out of order, has the rest read from the log, itself with it; so does every thread whose events a watcher missed by falling behind its backlog of 1,024 notifications. A subagent first seen part way, as when the watch began while it ran, is read from its start. Copies of what was sent are dropped.
+- **Live updates are never replayed.** One older than what the watch read from the log (sent before the event that read took in, as at the start or after falling behind) is dropped, and they flow again from the next event, so a client never draws a reply's text after the message it became.
+- **Over a connection of lines** (stdio, the Unix socket) its notifications are written to the connection, each naming its thread; the connection watches each thread once and at most 64 at a time (`-32602` for a second watch of one, `-32015` past 64), and `thread/unwatch` ends one, which then answers its request. Closing the connection ends every watch on it.
+- **Over HTTP** each watch is a request of its own, its stream a `text/event-stream` as a turn's is: each event of the watched thread carries its `seq` as the event's `id`, a stream quiet for 15 seconds gets a comment so proxies keep it open, and closing it ends the watch. A client comes back by sending it again with `after`, the last `seq` it has. `thread/unwatch` there has nothing to end and answers at once.
 
 ## Approvals
 
@@ -235,7 +240,7 @@ Standard codes, `-32700` to `-32603`, for malformed messages; a method the serve
 | In-process | Typed messages over a channel; nothing is serialized | The CLI; programs that link glave's crates | None: same process |
 | stdio | One JSON message per line (`glave serve --stdio`) | Programs that run glave as a child process | None: the parent started it |
 | Unix socket | One JSON message per line (the person's server, `GLAVE_HOME/run/server.sock`) | Local clients of a long-running glave | File permissions on the socket (`0600`, in the person's private GLAVE_HOME) |
-| HTTP + SSE | `POST` one request; the answer is JSON, or for streaming methods an `text/event-stream` of notifications ending with the response. The method is also sent as the `Glave-Method` header, so proxies and logs can see it | Web, desktop and remote clients | Required, but for `server/discover`, `signin/redeem` and the passkey methods that sign a browser in ("Doors"): a browser session, the local token from this computer, or OIDC |
+| HTTP + SSE | `POST` one request; the answer is JSON, or for streaming methods (`turn/start`, `goal/start`, `thread/watch`) a `text/event-stream` of notifications ending with the response, a comment every 15 seconds it is quiet. The method is also sent as the `Glave-Method` header, so proxies and logs can see it | Web, desktop and remote clients | Required, but for `server/discover`, `signin/redeem` and the passkey methods that sign a browser in ("Doors"): a browser session, the local token from this computer, or OIDC |
 
 WebSocket, one JSON message per text frame for clients that want one connection for many threads, comes later.
 
@@ -286,7 +291,7 @@ Version 1: in-process (`glave-session`, used by the CLI), over stdio (`glave ser
 - **Commands in the background** (issue #321), not yet: credentials for a command in the background (its git asks no one); telling the model at a turn's start which of its commands ended meanwhile (it learns on its next read); `glave threads archive` stopping them, since a command in another glave process is out of its reach (the idle hour stops them).
 - **Projects** (issue #64), not yet: promoting a one-off chat into a project (`storage.md`), managing members over the API, and the organization's policy in the check.
 - **Projects' folders** (#294), not yet: more than one folder per project and changing a project's folder while it is still there (project settings, #267); moving a thread's worktree with a folder that moved; an archive of removed projects; checking a project out again on another computer, or after one is reset, from its source; a project's own skills and commands, which the folder the server started in still gives every thread; and telling a client, rather than the log and the terminal, which of a project's settings were set aside.
-- Still to come from "Over the network" (issue #64): `thread/watch` as a request, SAML and glave session tokens, durable paused turns, leases and `-32011`, and WebSocket.
+- Still to come from "Over the network" (issue #64): SAML and glave session tokens, durable paused turns, leases and `-32011`, and WebSocket.
 
 ## Later
 
