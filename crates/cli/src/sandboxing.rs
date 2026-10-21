@@ -84,7 +84,7 @@ async fn open_here(folder: &Path, processes: &Processes) -> anyhow::Result<Works
         .with_scratch(home::folder()?.join(crate::worktrees::SCRATCH))
         .with_projects(home::projects()?)
         .with_processes(processes.clone());
-    let (computers, here) = crate::computer::with_sandbox_helper(computers)
+    let (computers, here) = crate::helpers::with_sandbox_helper(computers)
         .open_here(folder)
         .await?;
     Ok(Workspace::new(computers, here))

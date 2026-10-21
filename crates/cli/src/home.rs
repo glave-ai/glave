@@ -17,9 +17,15 @@ pub(crate) fn folder() -> anyhow::Result<PathBuf> {
 }
 
 /// Where this glave's processes are recorded while they run: its folder's `run`, once what a
-/// glave that ended without stopping them left running is stopped, as glave starts.
+/// glave that ended without stopping them left running is stopped, as glave starts. What it
+/// starts is tied to it by the lifeline: this program, started again as its helper, stops it
+/// at once if glave is killed outright.
 pub(crate) async fn reaped() -> anyhow::Result<Processes> {
-    let processes = Processes::recorded(folder()?.join("run"));
+    let helper =
+        crate::helpers::this_program().context("could not find this glave to start its helper")?;
+    let processes = Processes::recorded(folder()?.join("run"))
+        .with_lifeline(helper)
+        .await?;
     match processes.reap().await {
         Ok(0) => {}
         Ok(stopped) => {

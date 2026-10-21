@@ -1,6 +1,6 @@
 //! A process glave started to run on its own, owned by whoever holds it: it leads a process
-//! group of its own, and when this drops, everything still in that group is killed and its
-//! ledger entry removed, so nothing it started outlives its owner.
+//! group of its own, and when this drops, everything still in that group is killed, its ledger
+//! entry removed and the lifeline's helper told, so nothing it started outlives its owner.
 
 use std::ops::{Deref, DerefMut};
 
@@ -8,9 +8,11 @@ use rustix::process::{Pid, Signal};
 
 use crate::group::{self, GRACE};
 use crate::ledger::Entry;
+use crate::lifeline::Tie;
 
-/// A running process and the group it leads. It derefs to tokio's child for its pipes and its
-/// exit; stopping it, and dropping it, reach its whole group.
+/// A running process and the group it leads. It derefs to tokio's child for its pipes; waiting
+/// for its exit goes through its own [`Child::wait`] and [`Child::try_wait`]; stopping it, and
+/// dropping it, reach its whole group.
 #[derive(Debug)]
 #[must_use = "dropping it stops the process and everything it started"]
 pub struct Child {
@@ -18,6 +20,10 @@ pub struct Child {
     group: Option<Pid>,
     /// Its ledger entry, when it has one; removed once the group is gone.
     entry: Option<Entry>,
+    /// Its tie to glave, when glave has a lifeline: held while the leader is glave's unreaped
+    /// child, so its number, and its group's, cannot be another's; let go once the leader is
+    /// reaped and the group is no longer stopped by glave, or once the group is gone.
+    tie: Option<Tie>,
 }
 
 impl Child {
@@ -30,13 +36,39 @@ impl Child {
             inner,
             group,
             entry: None,
+            tie: None,
         }
+    }
+
+    /// The same child, tied to glave by the lifeline.
+    pub(crate) fn tied(mut self, tie: Tie) -> Self {
+        self.tie = Some(tie);
+        self
     }
 
     /// The same child, with its ledger entry.
     pub(crate) fn recorded(mut self, entry: Option<Entry>) -> Self {
         self.entry = entry;
         self
+    }
+
+    /// Waits for it to exit, as tokio's does. Once it has, its number is free to be given to
+    /// another process, so the lifeline lets its group go, as the reaper leaves a group whose
+    /// leader ended: what it left running is stopped by whoever holds this
+    /// ([`Child::stop_left`], or dropping it).
+    pub async fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
+        let status = self.inner.wait().await?;
+        self.tie = None;
+        Ok(status)
+    }
+
+    /// Whether it has exited, as tokio's says; once it has, as [`Child::wait`].
+    pub fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
+        let status = self.inner.try_wait()?;
+        if status.is_some() {
+            self.tie = None;
+        }
+        Ok(status)
     }
 
     /// Stops it and everything it started: SIGTERM to its group, then SIGKILL to whatever is
@@ -53,6 +85,7 @@ impl Child {
         }
         let _ = self.inner.kill().await;
         self.entry = None;
+        self.tie = None;
     }
 
     /// Stops what is left of its group once it has exited: what it left running.
@@ -61,6 +94,7 @@ impl Child {
             group::stop_all(&[group]).await;
         }
         self.entry = None;
+        self.tie = None;
     }
 
     /// Resolves once the leader has exited and nothing is left in its group, not even a

@@ -55,7 +55,7 @@ crates/keys/        glave-keys: the key hierarchy (root, organization, project, 
 crates/bucket/      glave-bucket: blobs' sealed bytes, apart from their records, in a folder in glave's folder or an S3-compatible bucket (`[store] bucket`), through object_store
 crates/store-sqlite/  glave-store-sqlite: the event log, blobs' records, wrapped keys and leases on one local SQLite file, content sealed
 crates/store-postgres/  glave-store-postgres: the event log, blobs' records, wrapped keys and leases on Postgres, an organization's one data store (`[store] url`), TLS off this computer, content sealed
-crates/process/     glave-process: every operating-system process glave starts, through one place (`cargo xtask spawns` checks): its own process group, a ledger under GLAVE_HOME/run while it runs, and what a glave that ended left stopped at the next start
+crates/process/     glave-process: every operating-system process glave starts, through one place (`cargo xtask spawns` checks): its own process group, stopped at once by a helper of glave's own when glave ends however it ends (the lifeline), a ledger under GLAVE_HOME/run while it runs, and what a glave that ended left stopped at the next start
 crates/shell/       glave-shell: shell commands read before they run (tree-sitter-bash): read-only, risky with a reason, or neither
 crates/mcp/         glave-mcp: MCP servers as tool sources, through the official rmcp SDK (a test server behind `test-server`); open-world tools and servers marked untrusted return untrusted output
 crates/memory/      glave-memory: memory (specs/memory.md): an in-process MCP server over the data store, each memory sealed under its own key, scoped by the session

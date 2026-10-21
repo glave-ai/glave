@@ -1,8 +1,6 @@
 use std::io::{BufRead as _, BufReader};
-use std::os::unix::process::CommandExt as _;
 use std::path::Path;
 use std::process::Stdio;
-use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use rustix::process::{Pid, test_kill_process};
@@ -10,6 +8,7 @@ use rustix::process::{Pid, test_kill_process};
 use super::*;
 use crate::ledger::{Process, Record};
 use crate::start::{self, Start};
+use crate::testing::Orphan;
 
 fn folder(name: &str) -> glave_ports::testing::TempDir {
     glave_ports::testing::TempDir::new(&format!("process-{name}")).unwrap()
@@ -22,51 +21,6 @@ fn entries(folder: &Path) -> usize {
             .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
             .count()
     })
-}
-
-/// A process left by a glave that is gone: `sleep` leading a group of its own, reaped the
-/// moment it exits (as the system's init reaps a dead glave's children), its exit sent on.
-struct Orphan {
-    pid: i32,
-    exited: mpsc::Receiver<()>,
-}
-
-impl Orphan {
-    fn start() -> Self {
-        let mut child = std::process::Command::new("sleep")
-            .arg("300")
-            .process_group(0)
-            .spawn()
-            .unwrap();
-        let pid = i32::try_from(child.id()).unwrap();
-        let (sender, exited) = mpsc::channel();
-        std::thread::spawn(move || {
-            let _ = child.wait();
-            let _ = sender.send(());
-        });
-        Self { pid, exited }
-    }
-
-    fn start_time(&self) -> Start {
-        start::of(&[self.pid]).remove(&self.pid).unwrap()
-    }
-
-    fn alive(&self) -> bool {
-        self.exited.try_recv().is_err()
-    }
-
-    fn ended(&self) -> bool {
-        self.exited.recv_timeout(Duration::from_secs(10)).is_ok()
-    }
-}
-
-impl Drop for Orphan {
-    fn drop(&mut self) {
-        let _ = rustix::process::kill_process_group(
-            Pid::from_raw(self.pid).unwrap(),
-            rustix::process::Signal::KILL,
-        );
-    }
 }
 
 /// A glave that has ended: a process that ran and was reaped, with a start no process has.
