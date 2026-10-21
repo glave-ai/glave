@@ -7,6 +7,7 @@
 //! event `by` glave, and glave's forgets wait 30 days before their keys are destroyed, so each
 //! can be undone until then.
 
+mod merge;
 mod plan;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -16,9 +17,10 @@ use glave_ports::memories::MemoryError;
 use glave_ports::{EventLog, ModelProvider, Scope};
 use jiff::SignedDuration;
 
-use self::plan::{Proposal, ask, keeps_facts};
+use self::merge::keeps_facts;
+use self::plan::{Proposal, ask};
 use super::Memories;
-use super::write::{BUDGET_TOKENS, checked, tokens};
+use super::write::{BUDGET_TOKENS, Erasure, checked, tokens};
 use crate::book::Entry;
 use crate::similar::words;
 
@@ -193,7 +195,7 @@ impl<L: EventLog + 'static> Memories<L> {
                 };
                 self.append(ledger, &edited).await?;
                 for memory in rest {
-                    self.forget_in(ledger, *memory, &glave, (Some(erase_at), Some(*keep)))
+                    self.forget_in(ledger, *memory, &glave, Erasure::Merged(erase_at, *keep))
                         .await?;
                 }
                 used.extend(ids.iter().copied());
@@ -219,7 +221,7 @@ impl<L: EventLog + 'static> Memories<L> {
                     return Ok(Settled::Asked([one.memory, other.memory]));
                 }
                 let older = if one_at < other_at { one } else { other };
-                self.forget_in(ledger, older.memory, &glave, (Some(erase_at), None))
+                self.forget_in(ledger, older.memory, &glave, Erasure::At(erase_at))
                     .await?;
                 Ok(Settled::Superseded)
             }

@@ -24,6 +24,17 @@ const LINE_CHARS: usize = 60;
 /// How long glave's own changes can be undone, and its forgets wait before erasing.
 const UNDO_DAYS: i64 = 30;
 
+/// When a forget destroys the memory's key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Erasure {
+    /// At once: the person's forget, or the model's for them.
+    Now,
+    /// Then, so glave's forget can be undone until then.
+    At(At),
+    /// Then, and tidy-up merged it into this memory.
+    Merged(At, MemoryId),
+}
+
 /// Who changes memory, and from where: always the session's or the thread's, never the model's.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Writer {
@@ -135,7 +146,7 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
         };
         self.append(ledger, &saved).await?;
         if let Some((old_ledger, entry)) = old {
-            self.forget_in(old_ledger, entry.memory, &who.by, (None, None))
+            self.forget_in(old_ledger, entry.memory, &who.by, Erasure::Now)
                 .await?;
         }
         let memory = self
@@ -178,26 +189,40 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
         .ok_or_else(|| MemoryError::Storage("the edited memory did not read back".into()))
     }
 
-    /// Forgets a memory now: its key is destroyed at once, so no version can be read again.
+    /// Forgets a memory now: its key is destroyed at once, so no version can be read again, and
+    /// so are those of the memories tidy-up merged into it that still wait to be erased.
     pub async fn forget(&self, who: &Writer, memory: MemoryId) -> Result<(), MemoryError> {
         let (ledger, entry) = self.locate(who.person, who.scope, memory).await?;
         // A memory glave forgot waits to be erased; anyone else's forget erases it now.
         if entry.forgot.is_some() && by_glave(&who.by) {
             return Ok(());
         }
-        self.forget_in(ledger, memory, &who.by, (None, None)).await
+        self.forget_in(ledger, memory, &who.by, Erasure::Now)
+            .await?;
+        let merged = self
+            .with_book(ledger, |book| book.merged_into(memory))
+            .await?;
+        for merged in merged {
+            self.forget_in(ledger, merged, &who.by, Erasure::Now)
+                .await?;
+        }
+        Ok(())
     }
 
-    /// Records the forget in `ledger`: erased now, or at `erase_at` when glave forgets, `into`
-    /// the memory a merge folded it into.
+    /// Records the forget in `ledger`, erased as `erasure` says.
     pub(crate) async fn forget_in(
         &self,
         ledger: Scope,
         memory: MemoryId,
         by: &Principal,
-        (erase_at, into): (Option<At>, Option<MemoryId>),
+        erasure: Erasure,
     ) -> Result<(), MemoryError> {
         let now = self.now();
+        let (erase_at, into) = match erasure {
+            Erasure::Now => (now, None),
+            Erasure::At(at) => (at, None),
+            Erasure::Merged(at, into) => (at, Some(into)),
+        };
         let source = self
             .with_book(ledger, |book| {
                 book.entries.get(&memory).and_then(|entry| entry.source)
@@ -205,13 +230,13 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
             .await?;
         let forgotten = MemoryForgotten {
             memory,
-            erase_at: erase_at.unwrap_or(now),
+            erase_at,
             source,
             into,
             by: by.clone(),
         };
         self.append(ledger, &forgotten).await?;
-        if erase_at.is_none() {
+        if erasure == Erasure::Now {
             self.inner
                 .eraser
                 .destroy(ledger, Erasable::Memory(memory))
@@ -220,21 +245,25 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
         Ok(())
     }
 
-    /// Forgets every memory of `which` scope the writer may change.
+    /// Forgets every memory of `which` scope the writer may change, and erases now those glave
+    /// forgot that still wait to be erased. The memories that were in force.
     pub async fn forget_all(
         &self,
         who: &Writer,
         which: MemoryScope,
     ) -> Result<Vec<Remembered>, MemoryError> {
         let ledger = self.rules().place(who.person, who.scope, which)?;
-        let all: Vec<Remembered> = self
-            .with_book(ledger, Book::live)
-            .await?
+        let (all, waiting) = self
+            .with_book(ledger, |book| (book.live(), book.waiting()))
+            .await?;
+        let all: Vec<Remembered> = all
             .into_iter()
             .filter(|memory| memory.scope == which)
             .collect();
-        for memory in &all {
-            self.forget_in(ledger, memory.memory, &who.by, (None, None))
+        let waiting = waiting.into_iter().filter(|(_, scope)| *scope == which);
+        let every = all.iter().map(|memory| memory.memory);
+        for memory in every.chain(waiting.map(|(memory, _)| memory)) {
+            self.forget_in(ledger, memory, &who.by, Erasure::Now)
                 .await?;
         }
         Ok(all)

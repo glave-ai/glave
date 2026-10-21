@@ -4,8 +4,8 @@
 //! thread left out, untrusted output marked so and counted as untrusted content read.
 
 use glave_event::{
-    At, CallId, EventId, Header, MemoryScope, MessageAdded, Part, Principal, RawEvent, Role, Seq,
-    ThreadId, ToolCallCompleted, encode,
+    At, CallId, EventId, Header, MemoryId, MemoryScope, MessageAdded, Part, Principal, RawEvent,
+    Role, Seq, ThreadId, ToolCallCompleted, encode,
 };
 use glave_harness::{AllowAll, Cancel};
 use glave_memory::{MOST_HITS, Recalled, Source, Tidier, Writer};
@@ -374,74 +374,124 @@ fn persons(hits: &[Recalled]) -> Vec<String> {
     said
 }
 
+const MERGED_QUERY: &str = "atlas Railway merging";
+
+/// Two threads, each saving a memory, then tidy-up merging the two: the memories, oldest (the
+/// one that takes the merged text) first.
+async fn merged(kit: &Kit) -> Vec<MemoryId> {
+    let memory = kit.memory(rules(), 2).await;
+    let dir = folder("recall-merged");
+    let save = |text: &str| {
+        let args = json!({"text": text, "scope": "project", "force": true});
+        answer(None, vec![(REMEMBER, args)])
+    };
+    let answers = vec![
+        save("Atlas deploys to Railway"),
+        said("Noted."),
+        save("Merging to main ships atlas to Railway"),
+        said("Noted."),
+    ];
+    // No AGENTS.md, so the person's first message is only their words.
+    let mut plain = settings();
+    plain.instructions = None;
+    let (harness, _) = kit
+        .harness(&dir, answers, AllowAll, Some(memory), plain)
+        .await;
+    for message in [
+        "We deploy atlas to Railway.",
+        "Merging to main ships atlas.",
+    ] {
+        let mut thread = harness.start_thread(shared()).await.unwrap();
+        harness
+            .run_turn(&mut thread, message, &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+    }
+    let memories = kit.memories(rules(), 3);
+    let saved: Vec<MemoryId> = memories
+        .list(&on(shared(), thread(9)))
+        .await
+        .unwrap()
+        .iter()
+        .map(|memory| memory.memory)
+        .collect();
+    let tidier = Tidier {
+        provider: ScriptedModel::cycling(vec![said(
+            r#"{"merge": [{"memories": [1, 2], "text": "Atlas deploys to Railway: merging to main ships it"}]}"#,
+        )]),
+        model: "small".to_owned(),
+    };
+    assert_eq!(memories.tidy(shared(), &tidier).await.unwrap().merged, 1);
+    let hits = memories
+        .recall(&on(shared(), thread(9)), MERGED_QUERY, 10)
+        .await
+        .unwrap();
+    assert_eq!(
+        persons(&hits),
+        [
+            "Merging to main ships atlas.",
+            "We deploy atlas to Railway."
+        ],
+        "the merged text lives on, so both turns stay"
+    );
+    saved
+}
+
+fn persons_writer() -> Writer {
+    Writer {
+        person: Some(person()),
+        scope: shared(),
+        by: Principal::person(person()),
+        source: None,
+        untrusted_read: false,
+    }
+}
+
 /// #555: tidy-up merged away the memory a turn saved, and the turn dropped out of recall though
 /// the person forgot nothing.
 #[test]
-fn a_merge_hides_no_turn_and_forgetting_what_it_made_hides_every_turn_it_came_from() {
+fn a_merge_hides_no_turn_and_forgetting_what_it_made_hides_and_erases_what_went_in() {
     block_on!(async {
         let kit = Kit::new();
-        let memory = kit.memory(rules(), 2).await;
-        let dir = folder("recall-merged");
-        let save = |text: &str| {
-            let args = json!({"text": text, "scope": "project", "force": true});
-            answer(None, vec![(REMEMBER, args)])
+        let saved = merged(&kit).await;
+        let [kept, folded] = saved.as_slice() else {
+            panic!("{saved:?}");
         };
-        let answers = vec![
-            save("Atlas deploys to Railway"),
-            said("Noted."),
-            save("Merging to main ships atlas to Railway"),
-            said("Noted."),
-        ];
-        // No AGENTS.md, so the person's first message is only their words.
-        let mut plain = settings();
-        plain.instructions = None;
-        let (harness, _) = kit
-            .harness(&dir, answers, AllowAll, Some(memory), plain)
-            .await;
-        for message in [
-            "We deploy atlas to Railway.",
-            "Merging to main ships atlas.",
-        ] {
-            let mut thread = harness.start_thread(shared()).await.unwrap();
-            harness
-                .run_turn(&mut thread, message, &Cancel::new(), &mut |_| {})
-                .await
-                .unwrap();
-        }
-        let memories = kit.memories(rules(), 3);
-        let tidier = Tidier {
-            provider: ScriptedModel::cycling(vec![said(
-                r#"{"merge": [{"memories": [1, 2], "text": "Atlas deploys to Railway: merging to main ships it"}]}"#,
-            )]),
-            model: "small".to_owned(),
-        };
-        assert_eq!(memories.tidy(shared(), &tidier).await.unwrap().merged, 1);
-        let asking = on(shared(), thread(9));
-        let query = "atlas Railway merging";
-        let before = memories.recall(&asking, query, 10).await.unwrap();
-        assert_eq!(
-            persons(&before),
-            [
-                "Merging to main ships atlas.",
-                "We deploy atlas to Railway."
-            ],
-            "the merged text lives on, so both turns stay"
+        let memories = kit.memories(rules(), 4);
+        memories.forget(&persons_writer(), *kept).await.unwrap();
+        let after = kit
+            .memories(rules(), 5)
+            .recall(&on(shared(), thread(9)), MERGED_QUERY, 10)
+            .await
+            .unwrap();
+        assert!(after.is_empty(), "{after:?}");
+        assert!(
+            memories.restore(&persons_writer(), *folded).await.is_err(),
+            "what went into the forgotten memory is erased with it, not waiting to be restored"
         );
+    });
+}
 
-        let merged = memories.list(&asking).await.unwrap();
-        let [merged] = merged.as_slice() else {
-            panic!("{merged:?}");
-        };
-        let writer = Writer {
-            person: Some(person()),
-            scope: shared(),
-            by: Principal::person(person()),
-            source: None,
-            untrusted_read: false,
-        };
-        memories.forget(&writer, merged.memory).await.unwrap();
-        let fresh = kit.memories(rules(), 4);
-        let after = fresh.recall(&asking, query, 10).await.unwrap();
+#[test]
+fn once_the_merged_away_memory_is_erased_forgetting_the_merge_still_hides_its_turn() {
+    block_on!(async {
+        let kit = Kit::new();
+        let saved = merged(&kit).await;
+        let kept = saved.first().copied().unwrap();
+        kit.clock.advance_millis(31 * 86_400_000);
+        let memories = kit.memories(rules(), 4);
+        let housekept = memories.housekeep(&[shared()]).await.unwrap();
+        assert_eq!(housekept.erased, 1, "{housekept:?}");
+        let fresh = kit.memories(rules(), 5);
+        let asking = on(shared(), thread(9));
+        let hits = fresh.recall(&asking, MERGED_QUERY, 10).await.unwrap();
+        assert_eq!(persons(&hits).len(), 2, "{hits:?}");
+        fresh.forget(&persons_writer(), kept).await.unwrap();
+        let after = kit
+            .memories(rules(), 6)
+            .recall(&asking, MERGED_QUERY, 10)
+            .await
+            .unwrap();
         assert!(after.is_empty(), "{after:?}");
     });
 }
