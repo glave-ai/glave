@@ -17,10 +17,13 @@ const SESSION = { token: 'glave_session_abc', server: 'server-1' } as const;
 describe('token', () => {
   it('takes the code from the link, out of the address bar', () => {
     const replaceState = vi.fn();
-    const code = takeCode({
-      location: { hash: '#code=abc', pathname: '/t/1', search: '?x=1' },
-      history: { replaceState },
-    });
+    const code = takeCode(
+      {
+        location: { hash: '#code=abc', pathname: '/t/1', search: '?x=1' },
+        history: { replaceState },
+      },
+      'code',
+    );
     expect(code).toBe('abc');
     expect(replaceState).toHaveBeenCalledWith(null, '', '/t/1?x=1');
   });
@@ -28,9 +31,23 @@ describe('token', () => {
   it('finds no code in a link without one, and leaves the address alone', () => {
     const replaceState = vi.fn();
     const place = { location: { hash: '', pathname: '/', search: '' }, history: { replaceState } };
-    expect(takeCode(place)).toBeNull();
-    expect(takeCode({ ...place, location: { ...place.location, hash: '#token=x' } })).toBeNull();
+    expect(takeCode(place, 'code')).toBeNull();
+    const other = { ...place, location: { ...place.location, hash: '#token=x' } };
+    expect(takeCode(other, 'code')).toBeNull();
     expect(replaceState).not.toHaveBeenCalled();
+  });
+
+  it("takes a setup link's code out of the address bar, and nothing else", () => {
+    const replaceState = vi.fn();
+    const at = (hash: string): Parameters<typeof takeCode>[0] => ({
+      location: { hash, pathname: '/', search: '' },
+      history: { replaceState },
+    });
+    expect(takeCode(at('#code=abc'), 'setup')).toBeNull();
+    expect(takeCode(at('#setup='), 'setup')).toBeNull();
+    expect(replaceState).not.toHaveBeenCalled();
+    expect(takeCode(at('#setup=f00d'), 'setup')).toBe('f00d');
+    expect(replaceState).toHaveBeenCalledWith(null, '', '/');
   });
 
   it('keeps a session for the tab, and reads back only a whole one', () => {

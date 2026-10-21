@@ -2,7 +2,29 @@
   <glz-top-bar>{{ copy.name }}</glz-top-bar>
 </header>
 <main class="page">
-  <glz-empty-state data-testid="sign-in" [heading]="copy.heading" [icon]="icon">
-    <p>{{ copy.text }}</p>
+  <glz-empty-state data-testid="sign-in" [heading]="heading()" [icon]="icon">
+    @if (setup()) {
+      <p>{{ copy.setupText }}</p>
+    } @else if (withPasskey()) {
+      <p>{{ copy.passkeyText }}</p>
+      <p class="hint">{{ copy.passkeyHint }}</p>
+    } @else {
+      <p>{{ copy.text }}</p>
+    }
+    @if (problem(); as problem) {
+      <p class="problem" role="alert" data-testid="sign-in-problem">{{ problem }}</p>
+    }
+    @if (withPasskey()) {
+      <button
+        glzEmptyStateAction
+        glzButton
+        variant="primary"
+        data-testid="sign-in-passkey"
+        [disabled]="busy()"
+        (click)="go()"
+      >
+        {{ action() }}
+      </button>
+    }
   </glz-empty-state>
 </main>

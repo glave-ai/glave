@@ -1,0 +1,109 @@
+import { DOCUMENT } from '@angular/common';
+import { InjectionToken, Service, inject, signal } from '@angular/core';
+import { ApiError, type PasskeySummary } from '@glave/client';
+
+import { type Authenticator, made, used } from '../lib/passkeys';
+import { SessionService } from './session.service';
+
+/** The browser's authenticator, where it has one. */
+export const AUTHENTICATOR = new InjectionToken<Authenticator | null>('AUTHENTICATOR', {
+  providedIn: 'root',
+  factory: () => inject(DOCUMENT).defaultView?.navigator.credentials ?? null,
+});
+
+/** What the person is told when their device makes or uses no passkey: the app's own words. */
+export const PASSKEY_REFUSED =
+  'Your device made or used no passkey. Try again, and allow it when your device asks.';
+
+/** What the person is told when the server cannot be reached: the app's own words. */
+export const PASSKEYS_UNREACHED = 'glave could not be reached. Try again.';
+
+/**
+ * Passkeys, where glave is reached from elsewhere: making the first with a setup link and
+ * signing in with one, which begin the tab's session; then the person's passkeys, adding one
+ * on this device, and removing one, which signs out the browsers it signed in. Each says
+ * `null` when it did, else why not, in a sentence: the server's when it refused.
+ */
+@Service()
+export class PasskeysService {
+  private readonly session = inject(SessionService);
+  private readonly authenticator = inject(AUTHENTICATOR);
+  private readonly listed = signal<readonly PasskeySummary[]>([]);
+
+  /** The person's passkeys, oldest first, as the server last listed them. */
+  readonly passkeys = this.listed.asReadonly();
+
+  /** Makes a passkey on this device with the tab's setup link, and signs the tab in with it. */
+  async make(): Promise<string | null> {
+    const code = this.session.setupCode();
+    if (code === null) {
+      return PASSKEY_REFUSED;
+    }
+    return this.asking(async () => {
+      const asked = await this.session.call('passkey/create_options', { code });
+      const credential = await made(this.authenticator, asked.options);
+      if (credential === null) {
+        return PASSKEY_REFUSED;
+      }
+      const created = { ceremony: asked.ceremony, credential };
+      return this.begun(await this.session.call('passkey/create', created));
+    });
+  }
+
+  /** Signs the tab in with a passkey on this device. */
+  async signIn(): Promise<string | null> {
+    return this.asking(async () => {
+      const asked = await this.session.call('passkey/get_options', {});
+      const credential = await used(this.authenticator, asked.options);
+      if (credential === null) {
+        return PASSKEY_REFUSED;
+      }
+      const got = { ceremony: asked.ceremony, credential };
+      return this.begun(await this.session.call('passkey/get', got));
+    });
+  }
+
+  /** Lists the person's passkeys again. */
+  async load(): Promise<string | null> {
+    return this.asking(async () => {
+      const { passkeys } = await this.session.call('passkey/list', {});
+      this.listed.set(passkeys);
+      return null;
+    });
+  }
+
+  /** Adds a passkey on this device. */
+  async add(): Promise<string | null> {
+    return this.asking(async () => {
+      const asked = await this.session.call('passkey/add_options', {});
+      const credential = await made(this.authenticator, asked.options);
+      if (credential === null) {
+        return PASSKEY_REFUSED;
+      }
+      await this.session.call('passkey/add', { ceremony: asked.ceremony, credential });
+      return this.load();
+    });
+  }
+
+  /** Removes the passkey `id`. */
+  async remove(id: string): Promise<string | null> {
+    return this.asking(async () => {
+      await this.session.call('passkey/remove', { passkey: id });
+      return this.load();
+    });
+  }
+
+  /** Keeps the session a passkey began, when the server that served the app began it. */
+  private begun(began: { readonly session: string; readonly server: string }): string | null {
+    return this.session.begin(began) ? null : PASSKEY_REFUSED;
+  }
+
+  /** What `ask` says, or the server's sentence when it refused, or the app's own. */
+  private async asking(ask: () => Promise<string | null>): Promise<string | null> {
+    try {
+      return await ask();
+    } catch (error: unknown) {
+      return error instanceof ApiError ? error.message : PASSKEYS_UNREACHED;
+    }
+  }
+}

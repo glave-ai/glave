@@ -16,6 +16,15 @@ export const ACCOUNTS_URL = 'http://127.0.0.1:4313';
 /** The variable that names that glave's home. */
 export const ACCOUNTS_HOME = 'GLAVE_E2E_ACCOUNTS_HOME';
 
+/**
+ * Where a glave reached from elsewhere serves the app, for passkeys (passkeys.e2e.ts), and the
+ * public origin its settings name, which the tests route to it as a tunnel would.
+ */
+export const PASSKEYS_URL = 'http://127.0.0.1:4314';
+export const PASSKEYS_ORIGIN = 'https://glave.test';
+/** The variable that names that glave's home. */
+export const PASSKEYS_HOME = 'GLAVE_E2E_PASSKEYS_HOME';
+
 /** The fragment of the link that signs the app in, with a code the fake API takes. */
 export const SIGNED_IN = '#code=e2e-code';
 
@@ -24,11 +33,24 @@ export const SIGNED_IN = '#code=e2e-code';
  * with its local token, as `glave` alone asks for one.
  */
 export async function signInCode(url: string, home: string): Promise<string> {
+  return codeFrom(url, home, 'signin/link');
+}
+
+/**
+ * A setup link's code from the real glave at `url` whose home is `home`, asked for with its
+ * local token, as `glave server link` asks for one.
+ */
+export async function setupCode(url: string, home: string): Promise<string> {
+  return codeFrom(url, home, 'signin/setup');
+}
+
+/** The code `method` answers from the real glave at `url` whose home is `home`. */
+async function codeFrom(url: string, home: string, method: string): Promise<string> {
   const token = readFileSync(join(home, 'serve.token'), 'utf8').trim();
   const response = await fetch(`${url}/`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'signin/link', params: {} }),
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: {} }),
   });
   const answer = (await response.json()) as { readonly result?: { readonly code?: unknown } };
   const code = answer.result?.code;

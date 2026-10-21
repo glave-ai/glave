@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -10,6 +10,9 @@ import {
   APP_URL,
   FIRST_RUN_HOME,
   FIRST_RUN_URL,
+  PASSKEYS_HOME,
+  PASSKEYS_ORIGIN,
+  PASSKEYS_URL,
   SHOWCASE_URL,
 } from './support';
 
@@ -30,11 +33,21 @@ process.env[FIRST_RUN_HOME] = firstRun;
 /** The home of the glave that accounts are connected to, kept the same way. */
 const accounts = process.env[ACCOUNTS_HOME] ?? home();
 process.env[ACCOUNTS_HOME] = accounts;
+/** The home of the glave reached from elsewhere, its settings naming its public origin. */
+const passkeys =
+  process.env[PASSKEYS_HOME] ??
+  ((): string => {
+    const made = home();
+    writeFileSync(join(made, 'config.toml'), `[serve]\norigin = "${PASSKEYS_ORIGIN}"\n`);
+    return made;
+  })();
+process.env[PASSKEYS_HOME] = passkeys;
 
 /**
  * What glave serves, and where: the app on a model the fake API names, Glaze's showcase, the
- * app on a glave with nothing set up, for the first run against the real server, and the app
- * on a real glave with a model, to connect accounts to.
+ * app on a glave with nothing set up, for the first run against the real server, the app on a
+ * real glave with a model, to connect accounts to, and the app on a real glave reached from
+ * elsewhere at a public origin, to sign in to with passkeys.
  */
 const SITES = [
   { url: APP_URL, web: 'dist/app/browser', env: { GLAVE_HOME: home(), GLAVE_MODEL: 'e2e' } },
@@ -45,6 +58,7 @@ const SITES = [
   },
   { url: FIRST_RUN_URL, web: 'dist/app/browser', env: { GLAVE_HOME: firstRun, GLAVE_MODEL: '' } },
   { url: ACCOUNTS_URL, web: 'dist/app/browser', env: { GLAVE_HOME: accounts, GLAVE_MODEL: 'e2e' } },
+  { url: PASSKEYS_URL, web: 'dist/app/browser', env: { GLAVE_HOME: passkeys, GLAVE_MODEL: 'e2e' } },
 ];
 
 /**
