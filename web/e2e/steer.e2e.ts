@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
-import { THREAD, fakeApi, steerTurn } from './fake-api';
+import { THREAD, fakeApi } from './fake-api';
+import { steerTurn } from './fake-steer';
 import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './support';
 
 for (const colorScheme of ['light', 'dark'] as const) {

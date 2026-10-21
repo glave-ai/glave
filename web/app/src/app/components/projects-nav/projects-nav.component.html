@@ -63,7 +63,8 @@
           >
             <glz-icon [icon]="icons.add" />
           </a>
-          <!-- Its menu loads once the page is idle, keeping the CDK's menu out of the first load. -->
+          <!-- Its menu loads once the page is idle, keeping the CDK's menu out of the first load; if it
+               cannot (the page is being left, or glave is out of reach), the ⋯ is left out. -->
           <span glzNavListActions class="more">
             @defer (on idle) {
               <app-nav-list-menu
@@ -76,7 +77,7 @@
               <button glzIconButton size="sm" type="button" [label]="project.optionsLabel">
                 <glz-icon [icon]="icons.more" />
               </button>
-            }
+            } @error {}
           </span>
           @if (project.mark; as mark) {
             <glz-icon
@@ -90,6 +91,8 @@
           @if (project.gone; as gone) {
             @defer (on immediate) {
               <app-folder-gone testId="nav-gone" [project]="project.id" [message]="gone" />
+            } @error {
+              <p class="error" role="alert">{{ copy.unloaded }}</p>
             }
           }
           @for (thread of project.threads; track thread.id) {
@@ -136,9 +139,12 @@
     <p class="empty" data-testid="nav-no-match">{{ copy.noMatch }}</p>
   }
 </nav>
-<!-- Loaded the first time they open: their forms stay out of the app's first load. -->
+<!-- Loaded the first time they open: their forms stay out of the app's first load. If their code
+     cannot load, opening one says so. -->
 @defer (when newProject(); prefetch on idle) {
   <app-new-project [(open)]="newProject" (navigated)="followed()" />
+} @error {
+  <p class="error" role="alert">{{ copy.unloaded }}</p>
 }
 @defer (when renameOpen(); prefetch on idle) {
   <app-rename-dialog
@@ -147,4 +153,6 @@
     [(open)]="renameOpen"
     (renamed)="rename($event)"
   />
+} @error {
+  <p class="error" role="alert">{{ copy.unloaded }}</p>
 }

@@ -5,7 +5,7 @@
   @for (task of rows(); track task.thread) {
     <glz-card data-testid="task">
       <div glzCardHeader class="heading">
-        <a class="title" [routerLink]="task.link">{{ task.title }}</a>
+        <a class="title" dir="auto" [routerLink]="task.link">{{ task.title }}</a>
         <glz-badge [tone]="task.tone">{{ task.status }}</glz-badge>
       </div>
       <p class="details">{{ task.details }}</p>

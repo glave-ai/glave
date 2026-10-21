@@ -54,10 +54,14 @@
   color: var(--glz-color-text);
 }
 
+// What it acted on (a command, a path) reads left to right in any page.
 .what {
   flex: 1;
   min-width: 0;
   overflow: hidden;
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: match-parent;
   font-family: var(--glz-font-mono);
   font-size: var(--glz-text-xs);
   white-space: nowrap;
@@ -75,8 +79,10 @@
 
 // The evidence hangs under the line, behind a rule, as reasoning does.
 .evidence {
-  /* stylelint-disable-next-line declaration-property-value-allowed-list -- the content of a <details> takes no gap (::details-content is not Baseline) */
-  margin: var(--glz-space-1) 0 var(--glz-space-2) var(--glz-space-3);
+  /* stylelint-disable declaration-property-value-allowed-list -- the content of a <details> takes no gap (::details-content is not Baseline) */
+  margin-block: var(--glz-space-1) var(--glz-space-2);
+  margin-inline: var(--glz-space-3) 0;
+  /* stylelint-enable declaration-property-value-allowed-list */
   padding-inline-start: var(--glz-space-3);
   overflow-x: auto;
   border-inline-start: 2px solid var(--glz-color-border);

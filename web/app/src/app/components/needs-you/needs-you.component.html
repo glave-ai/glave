@@ -8,7 +8,8 @@
         [current]="thread.current"
         (click)="followed()"
       >
-        {{ thread.title }}
+        <!-- The title in its own direction; the space after it keeps it apart from its place. -->
+        <span dir="auto">{{ thread.title }} </span>
         @if (thread.place; as place) {
           <span glzNavItemEnd class="place">{{ place }}</span>
         }

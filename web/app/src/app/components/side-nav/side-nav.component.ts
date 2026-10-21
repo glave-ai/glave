@@ -11,7 +11,9 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { GlzIconButtonComponent, GlzIconComponent, GlzNavItemComponent } from '@glave/glaze';
-import { ListChecks, PenLine, Search } from 'lucide';
+import ListChecks from 'lucide/dist/esm/icons/list-checks.mjs';
+import PenLine from 'lucide/dist/esm/icons/pen-line.mjs';
+import Search from 'lucide/dist/esm/icons/search.mjs';
 
 import { TasksService } from '../../services/tasks.service';
 import { PersonComponent } from '../person/person.component';

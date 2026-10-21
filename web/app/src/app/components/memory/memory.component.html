@@ -13,7 +13,7 @@
   <div class="list">
     @for (row of rows(); track row.id) {
       <glz-card data-testid="memory">
-        <p>{{ row.text }}</p>
+        <p dir="auto">{{ row.text }}</p>
         <p class="details">
           <glz-badge>{{ row.scope }}</glz-badge>
           @if (row.untrusted) {

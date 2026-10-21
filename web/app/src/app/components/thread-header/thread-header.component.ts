@@ -81,12 +81,13 @@ export class ThreadHeaderComponent {
     return this.changed()
       ? {
           icon: FileDiff,
+          mirrored: false,
           label: plural(
             $localize`:@@threadHeader.changesFiles:Changes, {${count}:COUNT:, plural, one {# file} other {# files}}`,
             this.locale,
           ),
         }
-      : { icon: PanelRight, label: this.copy.tools };
+      : { icon: PanelRight, mirrored: true, label: this.copy.tools };
   });
 
   protected startRename(): void {

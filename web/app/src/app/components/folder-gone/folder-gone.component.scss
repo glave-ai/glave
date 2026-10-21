@@ -19,3 +19,8 @@
   color: var(--glz-color-danger);
   font-size: var(--glz-text-sm);
 }
+
+// What could not load says so under the strip, apart from its border.
+.unloaded {
+  padding-block-start: var(--glz-space-2);
+}

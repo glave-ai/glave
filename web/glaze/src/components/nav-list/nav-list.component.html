@@ -12,7 +12,11 @@
         (click)="toggle()"
       >
         <span class="text">{{ heading() }}</span>
-        <glz-icon class="caret" [icon]="icons.caret" [attr.data-testid]="ids().caret" />
+        <glz-icon
+          class="caret glz-mirrored"
+          [icon]="icons.caret"
+          [attr.data-testid]="ids().caret"
+        />
       </button>
     } @else {
       <p class="heading" [id]="headingId">{{ heading() }}</p>
