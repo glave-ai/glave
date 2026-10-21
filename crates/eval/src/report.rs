@@ -142,6 +142,59 @@ impl Report {
             let _ = writeln!(out, "| {name} | {} |", per_model(row));
         }
     }
+
+    /// A row for each attempt with probes: how many passed and which searched with `recall`,
+    /// how often tidy-up ran and what it forgot, and memory's size at the end and at each
+    /// thread's start; then each probe that failed and each memory tidy-up forgot.
+    fn probed(&self, out: &mut String) {
+        let probed: Vec<&Attempt> = (self.attempts.iter())
+            .filter(|attempt| attempt.probes.is_some())
+            .collect();
+        if probed.is_empty() {
+            return;
+        }
+        let _ = writeln!(
+            out,
+            "\nProbes and memory, in tokens as memory's budget counts them ({} a scope):\n\n\
+             | attempt | probes | probes that recalled | tidy-up runs | tidied away | in force at \
+             the end | at each thread's start |\n| --- | --- | --- | --- | --- | --- | --- |",
+            thousands(as_u64(BUDGET_TOKENS))
+        );
+        let mut notes = Vec::new();
+        for attempt in probed {
+            let model = attempt.model.rsplit('/').next().unwrap_or(&attempt.model);
+            let name = format!("{} · {model} #{}", attempt.task, attempt.number);
+            let share = (attempt.probes.as_ref()).map_or_else(String::new, |probes| {
+                let recalled: Vec<String> = probes.recalled.iter().map(u32::to_string).collect();
+                let recalled = if recalled.is_empty() {
+                    "none".to_owned()
+                } else {
+                    recalled.join(", ")
+                };
+                format!("{}/{} | {recalled}", probes.passed, probes.of)
+            });
+            let memory = attempt.memory.as_ref().map_or_else(
+                || "- | - | - | -".to_owned(),
+                |memory| {
+                    format!(
+                        "{} | {} | {} | {}",
+                        memory.tidy_runs,
+                        memory.tidied_away.len(),
+                        used(&memory.used),
+                        in_view(&memory.in_view)
+                    )
+                },
+            );
+            let _ = writeln!(out, "| {name} | {share} | {memory} |");
+            let failed = attempt.probes.iter().flat_map(|probes| &probes.failed);
+            notes.extend(failed.map(|failed| format!("- {name}: {failed}")));
+            let away = attempt.memory.iter().flat_map(|memory| &memory.tidied_away);
+            notes.extend(away.map(|text| format!("- {name}: tidied away {text:?}")));
+        }
+        if !notes.is_empty() {
+            let _ = writeln!(out, "\n{}", notes.join("\n"));
+        }
+    }
 }
 
 fn cell(now: Option<Rate>, before: Option<Rate>) -> String {
@@ -195,54 +248,6 @@ fn median_seconds(attempts: &[&Attempt]) -> String {
 
 /// One row of totals: a model's attempts in, a cell out.
 type Row = dyn Fn(&[&Attempt]) -> String;
-
-impl Report {
-    /// A row for each attempt with probes: how many passed, how often tidy-up ran and what it
-    /// forgot, and memory's size at the end and at each thread's start; then each probe that
-    /// failed and each memory tidy-up forgot.
-    fn probed(&self, out: &mut String) {
-        let probed: Vec<&Attempt> = (self.attempts.iter())
-            .filter(|attempt| attempt.probes.is_some())
-            .collect();
-        if probed.is_empty() {
-            return;
-        }
-        let _ = writeln!(
-            out,
-            "\nProbes and memory, in tokens as memory's budget counts them ({} a scope):\n\n\
-             | attempt | probes | tidy-up runs | tidied away | in force at the end | at each thread's \
-             start |\n| --- | --- | --- | --- | --- | --- |",
-            thousands(as_u64(BUDGET_TOKENS))
-        );
-        let mut notes = Vec::new();
-        for attempt in probed {
-            let model = attempt.model.rsplit('/').next().unwrap_or(&attempt.model);
-            let name = format!("{} · {model} #{}", attempt.task, attempt.number);
-            let share = (attempt.probes.as_ref())
-                .map_or_else(String::new, |p| format!("{}/{}", p.passed, p.of));
-            let memory = attempt.memory.as_ref().map_or_else(
-                || "- | - | - | -".to_owned(),
-                |memory| {
-                    format!(
-                        "{} | {} | {} | {}",
-                        memory.tidy_runs,
-                        memory.tidied_away.len(),
-                        used(&memory.used),
-                        in_view(&memory.in_view)
-                    )
-                },
-            );
-            let _ = writeln!(out, "| {name} | {share} | {memory} |");
-            let failed = attempt.probes.iter().flat_map(|probes| &probes.failed);
-            notes.extend(failed.map(|failed| format!("- {name}: {failed}")));
-            let away = attempt.memory.iter().flat_map(|memory| &memory.tidied_away);
-            notes.extend(away.map(|text| format!("- {name}: tidied away {text:?}")));
-        }
-        if !notes.is_empty() {
-            let _ = writeln!(out, "\n{}", notes.join("\n"));
-        }
-    }
-}
 
 /// Tokens in force per scope: `personal 870, project 1,010`.
 fn used(used: &BTreeMap<String, usize>) -> String {
@@ -368,6 +373,7 @@ mod tests {
             passed: 9,
             of: 10,
             failed: vec!["probe 4 (thread 31): the answer does not mention \"Railway\"".into()],
+            recalled: vec![3, 9],
         });
         month.memory = Some(MemoryUse {
             tidy_runs: 6,
@@ -396,11 +402,11 @@ mod tests {
         off.memory = None;
         let table = report(vec![attempt("fix", "a/one", 1, true), month(1), off]).markdown(None);
         assert!(
-            table.contains("| memory-month · one #1 | 9/10 | 6 | 1 | personal 870, project 1,010 | 800 on average, 1,900 at most |"),
+            table.contains("| memory-month · one #1 | 9/10 | 3, 9 | 6 | 1 | personal 870, project 1,010 | 800 on average, 1,900 at most |"),
             "{table}"
         );
         assert!(
-            table.contains("| memory-month · one #2 | 9/10 | - | - | - | - |"),
+            table.contains("| memory-month · one #2 | 9/10 | 3, 9 | - | - | - | - |"),
             "{table}"
         );
         assert!(!table.contains("| fix · one"), "{table}");

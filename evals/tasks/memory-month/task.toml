@@ -3,22 +3,23 @@ name = "glave/memory-month"
 description = "A month of daily use in one store: preferences stated then changed, a quirk the agent finds, decisions and their reasons, more lasting facts than fit, tidy-up as the server runs it; then ten probes, each needing one earlier fact."
 
 [agent]
-# 39 threads and the tidy-ups between them.
-timeout_sec = 2400
+# 39 threads, one after another, with tidy-up beside them.
+timeout_sec = 3600
 
 [glave]
 tier = "hard"
 memory = true
-# As the server tidies: as each thread starts, each ledger it reads that is due (a week since
-# the last run, or past 90% of the budget and an hour since).
+# As the server tidies: in the background, with glave's own tidier, each ledger a save or an
+# edit changes and, as each thread starts, each ledger it reads, once that ledger is due (a week
+# since tidy-up last ran there, or past 90% of its budget and an hour since).
 tidy = "due"
 # The month runs from 30 days ago to today, the probes all today. Threads work in three places:
 # the first thread's project (atlas, whose files the workspace holds), beacon, and the person's
-# Chats. Atlas gets more lasting facts than its ~1,000-token budget holds, and the person's own
-# memory comes near it, so saves are refused and tidy-up compacts.
+# Chats. Saved one to a memory, atlas's lasting facts come to about 1,350 tokens against its
+# ~1,000-token budget and the person's to about 1,000, so saves are refused and tidy-up compacts.
 days_ago = 30
 # A probe passes when its answer names the current fact and no replaced one; the attempt passes
-# with 8 of the 10.
+# with 8 of the 10. The checks probe needs ./gen.sh first, and its output proves they ran.
 probe_share = 0.8
 
 [[glave.threads]]
@@ -30,6 +31,7 @@ messages = ["""A few things about me, for future chats:
 - Give me times on the 12-hour clock, with am and pm.
 - Temperatures in Celsius, please.
 - Keep answers short, without headings.
+- When you explain code, show a small example before the theory.
 Please remember all of that."""]
 
 [[glave.threads]]
@@ -40,7 +42,9 @@ messages = ["""A few atlas conventions I'd like you to remember:
 - We squash-merge, and the pull request title becomes the commit message.
 - Every pull request needs an approval from someone outside the author's pod.
 - Config lives in config/atlas.toml; nothing reads environment variables directly.
-- Logs are JSON, one object per line."""]
+- Logs are JSON, one object per line, with the request ID in every line.
+- Code review comments marked "nit:" never block a merge.
+- The main branch is protected; hotfixes branch from the latest release tag."""]
 
 [[glave.threads]]
 project = "beacon"
@@ -76,7 +80,9 @@ messages = ["""More atlas conventions to remember:
 - Store times in UTC and convert only at the edges.
 - Feature flags live in config/flags.toml and default to off.
 - Migrations are named with a timestamp and never edited once merged.
-- The public API is versioned in the path; /v2/ is current."""]
+- The public API is versioned in the path; /v2/ is current.
+- Pagination is cursor-based, never by page number, with at most 100 items a page.
+- Every new table gets created_at and updated_at columns, both in UTC."""]
 
 [[glave.threads]]
 project = "chats"
@@ -86,7 +92,8 @@ messages = ["""More about me to remember:
 - For recipes, use grams and millilitres.
 - I play five-a-side football on Wednesday evenings, so don't plan anything for me then.
 - I'm in the office on Mondays and Thursdays and at home the rest of the week.
-- My cat is called Miso."""]
+- My cat is called Miso.
+- I read on an e-reader, so suggest ebooks rather than audiobooks."""]
 
 [[glave.threads]]
 project = "beacon"
@@ -107,7 +114,8 @@ messages = ["""A few more about me, please remember:
 - If you suggest restaurants, I love Georgian food.
 - I take the bus to the office, so give me travel times by public transport.
 - I keep my notes in plain Markdown files, not a notes app.
-- For anything that isn't urgent, I prefer email to calls."""]
+- For anything that isn't urgent, I prefer email to calls.
+- When you suggest films, skip horror; anything else is fine."""]
 
 [[glave.threads]]
 days_ago = 19
@@ -117,7 +125,8 @@ messages = ["""A few more atlas conventions to remember:
 - Public endpoints need an OpenAPI example for every response code.
 - The nightly backup is restored to a scratch database every Sunday to prove it works.
 - Customer IDs are opaque strings; never parse meaning out of them.
-- Deprecations get a Sunset header and at least ninety days' notice."""]
+- Deprecations get a Sunset header and at least ninety days' notice.
+- Webhooks are signed with HMAC-SHA256 and retried with backoff for up to a day."""]
 
 [[glave.threads]]
 project = "chats"
@@ -131,7 +140,8 @@ messages = ["""Some more preferences for your memory:
 - Write dates day first, like 3 March 2026.
 - When you draft an email for me, sign it off with just "Thanks".
 - Number lists rather than bulleting them.
-- When you recommend a book, give its author and the year it came out."""]
+- When you recommend a book, give its author and the year it came out.
+- When you summarise an article, start with a one-line verdict on whether it's worth reading."""]
 
 [[glave.threads]]
 days_ago = 16
@@ -150,7 +160,9 @@ messages = ["""Some more atlas conventions for your memory:
 - The rate limit is 100 requests a minute per API key.
 - Every endpoint needs an entry in docs/api.md.
 - Images are resized by the imgproxy sidecar, never in the app.
-- Local secrets come from the vault through direnv; nobody commits a .env file."""]
+- Local secrets come from the vault through direnv; nobody commits a .env file.
+- Search is served by Meilisearch, reindexed nightly at 03:00 UTC.
+- Error messages shown to customers are reviewed by the support lead before release."""]
 
 [[glave.threads]]
 project = "chats"
@@ -174,7 +186,9 @@ messages = ["""Last batch of atlas conventions for now, please remember them:
 - The admin panel is internal only, behind the VPN.
 - Emails go through the mailer service, with templates in mail/templates.
 - We support the latest two versions of each major browser.
-- Load tests run with k6 against staging only, never production."""]
+- Load tests run with k6 against staging only, never production.
+- Every service exposes /healthz and /readyz, and the load balancer checks only /readyz.
+- Database queries over 200 ms are logged with their plan."""]
 
 [[glave.threads]]
 project = "chats"
@@ -183,7 +197,8 @@ messages = ["""A few more for your memory:
 - My keyboard layout is Colemak, so don't describe shortcuts by key position.
 - My shell is fish.
 - My laptop is a Mac and my desktop runs Fedora.
-- I'm usually free for calls between 2 and 4 in the afternoon."""]
+- I'm usually free for calls between 2 and 4 in the afternoon.
+- I back up my photos to an external drive every Sunday, so remind me if I ask about photos."""]
 
 [[glave.threads]]
 days_ago = 7
@@ -196,7 +211,8 @@ messages = ["""Some more about me, please remember:
 - I'd rather take a train than fly for anything under five hours.
 - I ride a gravel bike, so cycling routes can include unpaved paths.
 - I listen to podcasts at 1.5x speed.
-- I'd rather pay for software once than subscribe."""]
+- I'd rather pay for software once than subscribe.
+- When I plan a trip, I like a rough day-by-day outline before any bookings."""]
 
 [[glave.threads]]
 project = "beacon"
@@ -235,7 +251,7 @@ probe = [{ answer_contains = "Helix" }]
 
 [[glave.threads]]
 messages = ["Run atlas's checks and tell me how many passed. Answer with just the number."]
-probe = [{ answer_contains = "7" }, { never_printed = "no generated schema" }]
+probe = [{ answer_contains = "7" }, { sent = "ok health" }, { never_printed = "no generated schema" }]
 
 [[glave.threads]]
 project = "beacon"

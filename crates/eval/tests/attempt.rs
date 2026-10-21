@@ -341,8 +341,11 @@ fn saved_at(ledger: &str) -> Vec<jiff::Timestamp> {
 }
 
 #[test]
-fn a_month_runs_on_its_days_tidies_when_due_and_grades_its_probes() {
+fn a_month_runs_on_its_days_in_one_store_and_grades_its_probes() {
     let dir = folder("month");
+    // Tidy-up runs as the server runs it, in glave's own background tidier (tested in
+    // glave-memory). Here nothing comes due, the only seeded memory being untrusted, so the fake
+    // model's replies keep their order.
     let task = task(
         &dir,
         r#"memory = true
@@ -352,10 +355,7 @@ fn a_month_runs_on_its_days_tidies_when_due_and_grades_its_probes() {
             [[glave.memories]]
             text = "Ada writes British English"
             scope = "personal"
-            days_ago = 10
-            [[glave.memories]]
-            text = "Ada likes short answers"
-            scope = "personal"
+            untrusted = true
             days_ago = 10
             [[glave.threads]]
             project = "chats"
@@ -370,17 +370,12 @@ fn a_month_runs_on_its_days_tidies_when_due_and_grades_its_probes() {
             probe = [{ answer_contains = "fish" }]"#,
         "exit 0\n",
     );
-    let tidy = Reply::text(r#"{"merge": [], "conflict": []}"#);
     let remember = json!({"text": "Ada edits in Helix", "scope": "personal"});
     let server = FakeServer::start(vec![
-        // Day 9: the person's memories were never tidied.
-        tidy.clone(),
         Reply::text("Hi."),
-        // Day 1, in the person's Chats: a week since tidy-up last ran.
-        tidy,
         Reply::tool_call("call_1", "mcp__memory__remember", &remember),
         Reply::text("Noted."),
-        // Today: tidied a day ago, and far from full, so not due.
+        Reply::tool_call("call_2", "mcp__memory__recall", &json!({"query": "editor"})),
         Reply::text("Helix."),
         Reply::text("Bash, I think."),
     ])
@@ -398,24 +393,21 @@ fn a_month_runs_on_its_days_tidies_when_due_and_grades_its_probes() {
         probes.failed,
         ["probe 2 (thread 4): the answer does not mention \"fish\""]
     );
-    let sent = server.received();
-    let tidying: Vec<bool> = (sent.iter())
-        .map(|request| request.body.to_string().contains("You tidy the memories"))
-        .collect();
-    assert_eq!(tidying, [true, false, true, false, false, false, false]);
+    assert_eq!(probes.recalled, [1]);
     let memory = attempt.memory.unwrap();
-    assert_eq!(memory.tidy_runs, 2);
+    assert_eq!(memory.tidy_runs, 0);
+    assert_eq!(memory.tidied_away, Vec::<String>::new());
     assert_eq!(memory.used.keys().collect::<Vec<_>>(), ["personal"]);
     let shown = &memory.in_view;
     assert_eq!(shown.len(), 4, "one for each thread: {shown:?}");
     assert!(
-        shown[0] > 0 && shown[0] == shown[1] && shown[2] > shown[1],
+        shown[0] > 0 && shown[0] == shown[1] && shown[2] > shown[1] && shown[3] == shown[2],
         "{shown:?}"
     );
-    // Saved in Chats on day 1: nine days after the memories seeded ten days ago.
+    // Saved in Chats on day 1: nine days after the memory seeded ten days ago.
     let ledger = std::fs::read_to_string(run.join("memory.jsonl")).unwrap();
-    let [seeded, _, helix] = saved_at(&ledger)[..] else {
-        panic!("three memories saved: {ledger}");
+    let [seeded, helix] = saved_at(&ledger)[..] else {
+        panic!("two memories saved: {ledger}");
     };
     let days = helix.duration_since(seeded).as_hours() / 24;
     assert_eq!(days, 9, "{ledger}");

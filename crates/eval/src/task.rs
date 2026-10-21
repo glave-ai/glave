@@ -99,8 +99,9 @@ pub enum Tidying {
     Never,
     /// Once every thread is done, over every project, due or not.
     AfterThreads,
-    /// As the server tidies: as each thread starts, each ledger it reads that is due (a week
-    /// since tidy-up last ran there, or past 90% of the budget and an hour since).
+    /// As the server tidies: in the background, with glave's own tidier, each ledger a save or
+    /// an edit changes and, as each thread starts, each ledger it reads, once that ledger is due
+    /// (a week since tidy-up last ran there, or past 90% of its budget and an hour since).
     WhenDue,
 }
 
@@ -135,8 +136,8 @@ pub struct TaskThread {
     /// How many days ago it happens: today when absent. Never more than the thread before.
     #[serde(default)]
     pub days_ago: u32,
-    /// Checks of this thread's own answer and events: a probe, counted toward the task's
-    /// `probe_share`.
+    /// Checks of this thread's own answer, commands and events (those of files and memory see
+    /// how the attempt ended): a probe, counted toward the task's `probe_share`.
     #[serde(default)]
     pub probe: Vec<Check>,
 }
@@ -301,7 +302,8 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         return Err(bad("context_window is under 1,000 tokens".into()));
     }
     memory_named(&glave).map_err(bad)?;
-    timeline(&glave).map_err(bad)?;
+    days_run_forward(&glave).map_err(bad)?;
+    probes_can_pass(&glave).map_err(bad)?;
     let tidy = tidying(glave.tidy.as_ref()).map_err(bad)?;
     let mut turns = vec![instruction];
     turns.extend(glave.turns);
@@ -345,19 +347,25 @@ fn tidying(tidy: Option<&TidyKey>) -> Result<Tidying, String> {
     }
 }
 
-/// Whether the threads' days run forward, and the probes' share is one a run can reach.
-fn timeline(glave: &Glave) -> Result<(), String> {
+/// Whether each thread happens no earlier than the one before it, the first on `[glave]
+/// days_ago`.
+fn days_run_forward(glave: &Glave) -> Result<(), String> {
     let mut before = glave.days_ago;
     for thread in &glave.threads {
         if thread.days_ago > before {
             return Err(format!(
                 "threads run in order, so a thread's days_ago ({}) is never more than the one \
-                 before it ({before})",
+                 before it ({before}; [glave] days_ago is the first thread's)",
                 thread.days_ago
             ));
         }
         before = thread.days_ago;
     }
+    Ok(())
+}
+
+/// Whether the share of probes the task needs is one a run can reach.
+fn probes_can_pass(glave: &Glave) -> Result<(), String> {
     match glave.probe_share {
         Some(share) if !(share > 0.0 && share <= 1.0) => Err(format!(
             "probe_share is a share above 0 and at most 1, not {share}"
@@ -524,7 +532,7 @@ mod tests {
         assert!(error(early).contains("1 or more tool calls"));
         assert!(error("[glave]\ntidy = \"weekly\"").contains("tidy is true or \"due\""));
         let back = "[glave]\ndays_ago = 1\n[[glave.threads]]\ndays_ago = 2\nmessages = [\"x\"]";
-        assert!(error(back).contains("never more than the one before it (1)"));
+        assert!(error(back).contains("never more than the one before it (1;"));
         let probed = "[[glave.threads]]\nmessages = [\"x\"]\nprobe = [\"one_thread\"]";
         let share = |share: &str| error(&format!("[glave]\nprobe_share = {share}\n{probed}"));
         assert!(share("1.5").contains("at most 1"));

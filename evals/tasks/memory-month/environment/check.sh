@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Runs atlas's checks against the generated schema, which is removed after every run.
-if [ ! -f .gen/schema.json ]; then
-	echo "error: no generated schema; it is removed after every run, so run ./gen.sh before each run of the checks" >&2
+what=schema
+if [ ! -f ".gen/$what.json" ]; then
+	echo "error: no generated $what; it is removed after every run, so run ./gen.sh before each run of the checks" >&2
 	exit 1
 fi
 trap 'rm -rf .gen' EXIT

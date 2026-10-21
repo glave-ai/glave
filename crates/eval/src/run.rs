@@ -366,14 +366,16 @@ async fn converse(
     let remembering = Remembering::open(task, on, &calendar).await?;
     let wiring = (&remembering, &calendar);
     let harness = wire(setup, task, model, environment, (root, web), wiring).await?;
-    let tidier = match task.tidy {
-        Tidying::Never => None,
-        Tidying::AfterThreads | Tidying::WhenDue => Some(Tidier {
+    let tidier = || {
+        Ok::<_, EvalError>(Tidier {
             provider: OpenAiCompatible::new(setup.endpoint.clone())
                 .map_err(|err| EvalError::Setup(err.to_string()))?,
             model: model.to_owned(),
-        }),
+        })
     };
+    if task.tidy == Tidying::WhenDue {
+        remembering.tidy_as_served(tidier()?);
+    }
     let mut conversation = Talk {
         harness: &harness,
         task,
@@ -394,11 +396,8 @@ async fn converse(
                 plan.days_ago
             );
         }
-        // As the server does when a session starts: each ledger the thread reads, when due.
-        if let Some(tidier) = tidier.as_ref().filter(|_| task.tidy == Tidying::WhenDue) {
-            let ledgers = remembering.ledgers(scope);
-            conversation.tidied(remembering.tidy(tidier, &ledgers, true).await);
-        }
+        // As a session does when it starts; saves and edits ask again while the thread runs.
+        remembering.tidy_soon(scope);
         in_view.extend(remembering.in_view(scope).await?);
         let goal = task.goal.as_ref().filter(|_| index == 0);
         let steer = task.steer.as_ref().filter(|_| index == 0);
@@ -410,13 +409,8 @@ async fn converse(
             break;
         }
     }
-    if let Some(tidier) = tidier
-        .as_ref()
-        .filter(|_| task.tidy == Tidying::AfterThreads)
-        && conversation.failures.is_empty()
-    {
-        let ledgers = remembering.every_ledger();
-        conversation.tidied(remembering.tidy(tidier, &ledgers, false).await);
+    if task.tidy == Tidying::AfterThreads && conversation.failures.is_empty() {
+        conversation.tidied(remembering.tidy(&tidier()?).await);
     }
     let mut memory = remembering.report().await?;
     if let Some(usage) = &mut memory.usage {
