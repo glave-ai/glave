@@ -26,6 +26,26 @@ fn helper_pid(lifeline: &Lifeline) -> u32 {
     state.helper.as_mut().unwrap().process.id().unwrap()
 }
 
+/// Kills the helper `pid`, and returns once glave would find it gone.
+async fn killed(lifeline: &Lifeline, pid: u32) {
+    let leader = Pid::from_raw(i32::try_from(pid).unwrap()).unwrap();
+    kill_process(leader, Signal::KILL).unwrap();
+    let deadline = Instant::now() + HUNG;
+    while lifeline
+        .lock()
+        .helper
+        .as_mut()
+        .unwrap()
+        .process
+        .try_wait()
+        .unwrap()
+        .is_none()
+    {
+        assert!(Instant::now() < deadline, "the helper did not end");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
 /// What the helper `pid` read, once it has read `wanted` (or the guard against a hang ran out).
 async fn told(folder: &Path, pid: u32, wanted: &str) -> String {
     let path = folder.join(format!("told-{pid}"));
@@ -59,36 +79,57 @@ fn glave_tells_its_helper_what_it_holds_and_a_new_helper_all_it_still_holds() {
     glave_ports::block_on!(async {
         let lifeline = Arc::new(Lifeline::start(fake_helper(&folder)).await.unwrap());
         let first = helper_pid(&lifeline);
-        let (one, two) = (lifeline.tie(101).unwrap(), lifeline.tie(102).unwrap());
+        let (one, two) = (
+            lifeline.tie(101).await.unwrap(),
+            lifeline.tie(102).await.unwrap(),
+        );
         drop(one);
         let said = "+101\n+102\n-101\n";
         assert_eq!(told(&folder, first, said).await, said);
 
         // The helper goes; the next program glave starts finds it gone, starts another and
         // tells it everything glave still holds.
-        let pid = Pid::from_raw(i32::try_from(first).unwrap()).unwrap();
-        kill_process(pid, Signal::KILL).unwrap();
-        let deadline = Instant::now() + HUNG;
-        while lifeline
-            .lock()
-            .helper
-            .as_mut()
-            .unwrap()
-            .process
-            .try_wait()
-            .unwrap()
-            .is_none()
-        {
-            assert!(Instant::now() < deadline, "the helper did not end");
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        let three = lifeline.tie(103).unwrap();
+        killed(&lifeline, first).await;
+        let three = lifeline.tie(103).await.unwrap();
         let second = helper_pid(&lifeline);
         assert_ne!(second, first);
         drop(two);
         let said = "+102\n+103\n-102\n";
         assert_eq!(told(&folder, second, said).await, said);
         drop(three);
+    });
+}
+
+#[test]
+fn a_helper_started_again_that_does_not_say_it_is_ready_is_refused_until_one_does() {
+    let folder = TempDir::new("lifeline-again").unwrap();
+    glave_ports::block_on!(async {
+        let lifeline = Arc::new(Lifeline::start(fake_helper(&folder)).await.unwrap());
+        let first = helper_pid(&lifeline);
+        let held = lifeline.tie(101).await.unwrap();
+
+        // What is at glave's path is no helper now (a rebuild or an upgrade replaced it), and
+        // the helper goes: the next program glave starts is refused, not left untied.
+        std::fs::write(folder.join("helper"), "#!/bin/sh\nexit 0\n").unwrap();
+        killed(&lifeline, first).await;
+        let refused = lifeline.tie(102).await.unwrap_err();
+        assert!(
+            matches!(refused, ProcessError::Lifeline { .. }),
+            "{refused}"
+        );
+        assert!(
+            lifeline.lock().helper.is_none(),
+            "it is not kept as the helper"
+        );
+        assert_eq!(lifeline.lock().live, BTreeSet::from([101]), "102 is let go");
+
+        // A helper at glave's path again: the next program starts it, telling it all glave holds.
+        fake_helper(&folder);
+        let again = lifeline.tie(103).await.unwrap();
+        let second = helper_pid(&lifeline);
+        let said = "+101\n+103\n";
+        assert_eq!(told(&folder, second, said).await, said);
+        drop((held, again));
     });
 }
 

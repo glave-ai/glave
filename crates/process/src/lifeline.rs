@@ -6,7 +6,7 @@
 //! starts, one when glave reaps its leader, and one once glave lets go of it. When glave ends, the system closes glave's end of
 //! the pipe, whatever ended it; the helper reads the end and stops every group glave still
 //! held ([`helper`]). This is glave's end: the helper, started with the lifeline and started
-//! again (told what runs) if it is gone.
+//! again (told what runs) if it is gone, each time only once it says it reads the pipe.
 
 pub(crate) mod helper;
 #[cfg(test)]
@@ -69,6 +69,12 @@ struct State {
     live: BTreeSet<i32>,
 }
 
+/// A helper just started, before it says it is ready: its process and what it says.
+struct Launched {
+    pid: u32,
+    said: ChildStdout,
+}
+
 #[derive(Debug)]
 struct Helper {
     /// Reaped by tokio once let go of; it ends by itself when the pipe closes.
@@ -85,29 +91,14 @@ impl Lifeline {
             state: Mutex::new(State::default()),
             forking: RwLock::new(()),
         };
-        let said = {
+        let launched = {
             let mut state = lifeline.lock();
-            lifeline.launch(&mut state, Stdio::piped())
+            lifeline.launch(&mut state)
         };
-        let mut said = said
-            .and_then(|said| said.ok_or_else(|| std::io::Error::other("its output was not kept")))
-            .map_err(|error| lifeline.failed(error))?;
-        let mut heard = Vec::new();
-        let ready = tokio::time::timeout(READY_WITHIN, async {
-            let mut byte = [0_u8; 1];
-            while heard.len() < READY.len() && said.read(&mut byte).await? == 1 {
-                heard.extend_from_slice(&byte);
-            }
-            std::io::Result::Ok(())
-        })
-        .await;
-        match ready {
-            Ok(Ok(())) if heard == READY => Ok(lifeline),
-            Ok(Err(error)) => Err(lifeline.failed(error)),
-            _ => Err(lifeline.failed(std::io::Error::other(
-                "it did not say it was ready: the program there is of another version, or damaged",
-            ))),
-        }
+        lifeline
+            .ready(launched.map_err(|error| lifeline.failed(error))?)
+            .await?;
+        Ok(lifeline)
     }
 
     /// Held while a program starts: the helper's pipe is not made meanwhile.
@@ -116,20 +107,29 @@ impl Lifeline {
     }
 
     /// Tells the helper that glave holds the group `leader` leads, until the tie drops. A
-    /// helper that is gone is started again and told every group glave holds.
-    pub(crate) fn tie(self: &Arc<Self>, leader: i32) -> Result<Tie, ProcessError> {
-        let mut state = self.lock();
-        state.live.insert(leader);
-        if !state.tell(&format!("+{leader}\n"))
-            && let Err(error) = self.launch(&mut state, Stdio::null())
-        {
-            state.live.remove(&leader);
-            return Err(self.failed(error));
-        }
-        Ok(Tie {
+    /// helper that is gone is started again and told every group glave holds; when what is at
+    /// glave's path no longer starts as one (removed, or replaced by another version), this
+    /// fails, as starting the lifeline would, and glave lets go of `leader` again.
+    pub(crate) async fn tie(self: &Arc<Self>, leader: i32) -> Result<Tie, ProcessError> {
+        // Dropped on failure, which lets go of `leader` again.
+        let tie = Tie {
             lifeline: Arc::clone(self),
             leader,
-        })
+        };
+        let launched = {
+            let mut state = self.lock();
+            state.live.insert(leader);
+            if state.tell(&format!("+{leader}\n")) {
+                None
+            } else {
+                Some(self.launch(&mut state))
+            }
+        };
+        if let Some(launched) = launched {
+            self.ready(launched.map_err(|error| self.failed(error))?)
+                .await?;
+        }
+        Ok(tie)
     }
 
     /// glave lets go of the group `leader` leads. A helper that is gone hears it from the next
@@ -142,8 +142,8 @@ impl Lifeline {
 
     /// Starts the helper in a process group of its own, so no signal meant for glave's group
     /// (Ctrl-C, a test runner stopping glave's) reaches it, and tells it every group glave
-    /// holds. What it says goes to `said`, and is handed back when that is a pipe.
-    fn launch(&self, state: &mut State, said: Stdio) -> std::io::Result<Option<ChildStdout>> {
+    /// holds. What it says is handed back, for [`Lifeline::ready`].
+    fn launch(&self, state: &mut State) -> std::io::Result<Launched> {
         // Named as this program is, where Linux would show `/proc/self/exe`.
         let name = std::env::args_os()
             .next()
@@ -155,7 +155,7 @@ impl Lifeline {
                 .arg0(name)
                 .arg(HELPER_ARG)
                 .stdin(Stdio::from(read))
-                .stdout(said)
+                .stdout(Stdio::piped())
                 .stderr(Stdio::null())
                 .process_group(0)
                 .spawn()?;
@@ -166,9 +166,41 @@ impl Lifeline {
             let _ = writeln!(told, "+{leader}");
         }
         pipe.write_all(told.as_bytes())?;
-        let said = process.stdout.take();
+        let (Some(pid), Some(said)) = (process.id(), process.stdout.take()) else {
+            return Err(std::io::Error::other("it ended as it started"));
+        };
         state.helper = Some(Helper { process, pipe });
-        Ok(said)
+        Ok(Launched { pid, said })
+    }
+
+    /// Waits until the helper `launched` says it reads the pipe. One that does not (another
+    /// program, or another version of glave, now at glave's path) is stopped and forgotten, so
+    /// the next program glave starts tries again rather than tell it anything.
+    async fn ready(&self, launched: Launched) -> Result<(), ProcessError> {
+        let Launched { pid, mut said } = launched;
+        let mut heard = Vec::new();
+        let read = tokio::time::timeout(READY_WITHIN, async {
+            let mut byte = [0_u8; 1];
+            while heard.len() < READY.len() && said.read(&mut byte).await? == 1 {
+                heard.extend_from_slice(&byte);
+            }
+            std::io::Result::Ok(())
+        })
+        .await;
+        let error = match read {
+            Ok(Ok(())) if heard == READY => return Ok(()),
+            Ok(Err(error)) => error,
+            _ => std::io::Error::other(
+                "it did not say it was ready: the program there is of another version, or damaged",
+            ),
+        };
+        let mut state = self.lock();
+        if state.helper.as_ref().and_then(|helper| helper.process.id()) == Some(pid)
+            && let Some(mut helper) = state.helper.take()
+        {
+            let _ = helper.process.start_kill();
+        }
+        Err(self.failed(error))
     }
 
     fn lock(&self) -> MutexGuard<'_, State> {
