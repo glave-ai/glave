@@ -33,6 +33,18 @@ pub(crate) const HELPER_ARG: &str = "--glave-lifeline-1";
 /// What the helper says once it reads glave's pipe.
 pub(crate) const READY: &[u8] = b"glave-lifeline 1\n";
 
+/// This program, to start again as a helper of its own: the lifeline's (it passes this to
+/// [`crate::Processes::with_lifeline`]), or another. On Linux the file the system runs it
+/// from, which still starts after an upgrade or a rebuild replaced or removed the one at its
+/// path.
+pub fn this_program() -> std::io::Result<PathBuf> {
+    if cfg!(target_os = "linux") {
+        Ok(PathBuf::from("/proc/self/exe"))
+    } else {
+        std::env::current_exe()
+    }
+}
+
 /// How long a helper may take to say it is ready: a guard against a hang, not a speed limit.
 const READY_WITHIN: Duration = Duration::from_secs(30);
 

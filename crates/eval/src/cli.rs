@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use glave_event::Money;
 use glave_ports::{Clock as _, SystemClock};
+use glave_process::Processes;
 use glave_provider_openai::Config;
 
 use crate::report::{self, Report};
@@ -113,12 +114,18 @@ fn run(options: &Options) -> Result<bool, String> {
     prune(&base, KEEP_RUNS);
     let started = SystemClock.now();
     let dir = base.join(started.strftime("%Y%m%d-%H%M%S").to_string());
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|err| format!("could not start: {err}"))?;
+    let processes = runtime.block_on(tied())?;
     let setup = Arc::new(Setup {
         endpoint,
         environment: std::env::vars_os().collect(),
         todo: options.todo,
         subagents: options.subagents,
         memory: options.memory,
+        processes,
     });
     let attempts = options
         .repeat
@@ -138,10 +145,6 @@ fn run(options: &Options) -> Result<bool, String> {
         max_cost_micros: options.max_cost_micros,
         dir: dir.clone(),
     };
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .map_err(|err| format!("could not start: {err}"))?;
     let attempts = runtime.block_on(suite::run(Arc::clone(&setup), plan, |attempt| {
         println!("{}", report::line(attempt));
     }));
@@ -157,6 +160,17 @@ fn run(options: &Options) -> Result<bool, String> {
     write(&dir.join("report.md"), &table)?;
     println!("\n{table}\nreport: {}", dir.join("report.json").display());
     Ok(report.passed())
+}
+
+/// How the model's commands start: tied to this eval by glave's lifeline, with this program
+/// as its helper (`main` runs it), so they end when the eval does, however it ends.
+async fn tied() -> Result<Processes, String> {
+    let helper = glave_process::this_program()
+        .map_err(|err| format!("could not find this program to start its helper: {err}"))?;
+    Processes::unrecorded()
+        .with_lifeline(helper)
+        .await
+        .map_err(|err| err.to_string())
 }
 
 /// Runs kept on disk. Each holds a workspace per attempt, so old ones go.

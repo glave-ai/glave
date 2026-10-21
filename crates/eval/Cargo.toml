@@ -27,7 +27,7 @@ glave-keys.workspace = true
 glave-memory.workspace = true
 # The secret a task's `{canary}` becomes, a fake made as it loads (`testing`).
 glave-ports = { workspace = true, features = ["conformance"] }
-# Setup scripts, run to the end.
+# Setup scripts, run to the end, and the lifeline that ties the model's commands to the eval.
 glave-process.workspace = true
 glave-provider-openai.workspace = true
 glave-shell.workspace = true

@@ -6178,7 +6178,9 @@ name = "xtask"
 version = "0.0.0"
 dependencies = [
  "glave-ports",
+ "glave-process",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]

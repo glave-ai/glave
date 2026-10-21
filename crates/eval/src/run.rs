@@ -16,6 +16,7 @@ use glave_memory::Tidier;
 use glave_ports::computer::Sandbox;
 use glave_ports::settings::{Domain, WebPolicy};
 use glave_ports::{Caller, EventLog, OsEntropy, SystemClock, ToolSource};
+use glave_process::Processes;
 use glave_provider_openai::{Config, OpenAiCompatible};
 use glave_store_sqlite::{SqliteBlobs, SqliteLog};
 use glave_web::pages::Pages;
@@ -45,6 +46,9 @@ pub struct Setup {
     pub subagents: bool,
     /// Memory on or off for every task, to measure what it does; each task's own when `None`.
     pub memory: Option<bool>,
+    /// How the model's commands start: tied to the eval by its lifeline, so they end with it
+    /// however it ends.
+    pub processes: Processes,
 }
 
 /// How one attempt went.
@@ -192,11 +196,13 @@ pub async fn attempt(
 /// (with no one to ask, they are not run); a sandbox the task names never gives way.
 async fn workspace(
     task: &Task,
-    environment: &Environment,
+    (environment, processes): (&Environment, &Processes),
     root: &Path,
 ) -> Result<(Workspace, ApprovalMode), EvalError> {
     let open = || async {
-        let (computers, info) = LocalComputers::here(root, environment.clone())
+        let (computers, info) = LocalComputers::for_here(environment.clone())
+            .with_processes(processes.clone())
+            .open_here(root)
             .await
             .map_err(|error| EvalError::io("open", root)(std::io::Error::other(error)))?;
         Ok::<_, EvalError>(Workspace::new(computers, info))
@@ -227,7 +233,7 @@ async fn wire(
     (root, web): (&Path, Option<&str>),
     remembering: &Remembering,
 ) -> Result<Harness<OpenAiCompatible, SqliteLog, SqliteBlobs, NoOneToAsk>, EvalError> {
-    let (workspace, approval) = workspace(task, environment, root).await?;
+    let (workspace, approval) = workspace(task, (environment, &setup.processes), root).await?;
     let provider = OpenAiCompatible::new(setup.endpoint.clone())
         .map_err(|err| EvalError::Setup(err.to_string()))?;
     let mut settings = Settings::new(model, setup.endpoint.provider.clone());

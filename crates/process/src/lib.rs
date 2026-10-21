@@ -28,6 +28,7 @@ mod testing;
 pub use child::Child;
 pub use error::ProcessError;
 pub use lifeline::helper::lifeline_helper;
+pub use lifeline::this_program;
 pub use owner::Owner;
 pub use processes::Processes;
 pub use program::Program;

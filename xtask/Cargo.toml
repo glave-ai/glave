@@ -6,12 +6,26 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
+autotests = false
 
 [dependencies]
 # The one list of the prefixes providers put on keys and tokens, which the secret scan reads.
 glave-ports.workspace = true
+# What xtask runs to its end (the builds, the tests, the web checks, the evals) ends with xtask,
+# however xtask ends: glave's lifeline.
+glave-process.workspace = true
 # Reading the generated API schema to write the web client's types.
 serde_json.workspace = true
+# The runtime glave-process starts and waits for programs on.
+tokio = { workspace = true, features = ["rt"] }
+
+[dev-dependencies]
+# Temp folders and the guard against a hang the tests share.
+glave-ports = { workspace = true, features = ["conformance"] }
+
+[[test]]
+name = "xtask"
+path = "tests/main.rs"
 
 [lints]
 workspace = true
