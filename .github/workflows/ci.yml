@@ -230,6 +230,9 @@ jobs:
         run: cargo test -p glave --features web --test cli --no-run
         working-directory: .
       - run: npm run e2e -- --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/2
+      # A runner killed outright leaves nothing it started (#558): once, on one shard.
+      - if: matrix.browser == 'chromium' && matrix.shard == 1
+        run: npm run e2e:killed
 
   web:
     if: always()

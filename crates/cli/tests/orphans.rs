@@ -5,8 +5,7 @@
 //! and the next glave to start stops every one.
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::process::Command;
 
 use glave_ports::testing::{HUNG, Running};
 use glave_provider_openai::fake::{FakeServer, Reply};
@@ -85,27 +84,6 @@ fn commands(pids: &[u32]) -> Vec<String> {
         .lines()
         .map(|line| line.trim().to_owned())
         .collect()
-}
-
-fn alive(pid: u32) -> bool {
-    Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .stderr(Stdio::null())
-        .status()
-        .unwrap()
-        .success()
-}
-
-/// Waits up to `limit` for `done`.
-fn until(limit: Duration, mut done: impl FnMut() -> bool) -> bool {
-    let deadline = Instant::now() + limit;
-    while !done() {
-        if Instant::now() > deadline {
-            return false;
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    true
 }
 
 /// glave in `place`, mid-turn, in `sandbox` (glave's default when none): a command kept in the
