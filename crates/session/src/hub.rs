@@ -135,7 +135,7 @@ impl Hub {
     }
 
     /// Notes that `child` was started by a call in `parent`, until `child`'s turn ends.
-    fn adopt(&self, child: ThreadId, parent: ThreadId) {
+    pub(crate) fn adopt(&self, child: ThreadId, parent: ThreadId) {
         self.parents
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

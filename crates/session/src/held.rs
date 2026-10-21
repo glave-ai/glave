@@ -11,7 +11,7 @@ use jiff::Timestamp;
 use tokio::sync::watch;
 
 use crate::leased::renewing;
-use crate::protocol::{ApiError, Status, code};
+use crate::protocol::{ApiError, code};
 use crate::server::{Inner, Server, no_thread};
 use crate::turn::publish;
 
@@ -125,9 +125,18 @@ where
                 threads.insert(thread, slot);
                 Err(ApiError::from(&HarnessError::Archived(thread)))
             }
+            // A turn that waits for an answer goes on only with it.
+            Some(slot)
+                if purpose != Use::Answer
+                    && matches!(&slot, Slot::Idle { thread: held, .. } if held.waits()) =>
+            {
+                threads.insert(thread, slot);
+                Err(waiting(thread))
+            }
             Some(Slot::Idle { thread: held, .. }) => {
                 // A turn takes messages from now until it has made its last call.
-                let inbox = (purpose == Use::Steered).then(|| held.inbox().clone());
+                let inbox =
+                    matches!(purpose, Use::Steered | Use::Answer).then(|| held.inbox().clone());
                 if let Some(inbox) = &inbox {
                     inbox.open();
                 }
@@ -157,6 +166,9 @@ where
         }
         match self.lock().get(&thread) {
             Some(Slot::Busy { .. }) => Err(busy(thread)),
+            Some(Slot::Idle { thread: held, .. }) if purpose != Use::Answer && held.waits() => {
+                Err(waiting(thread))
+            }
             Some(Slot::Idle { thread: held, .. })
                 if purpose != Use::Manage && held.standing() == Standing::Archived =>
             {
@@ -184,7 +196,7 @@ where
         if view.is_none_or(|view| view.last_seq.next() == Some(next)) {
             return Ok(());
         }
-        let fresh = self
+        let mut fresh = self
             .inner
             .harness
             .resume_thread_in(scope, thread, folder)
@@ -192,7 +204,8 @@ where
             .map_err(|error| ApiError::from(&error))?;
         let now = self.inner.harness.clock().now();
         let mut threads = self.lock();
-        if matches!(threads.get(&thread), Some(Slot::Idle { .. })) {
+        if let Some(Slot::Idle { thread: held, .. }) = threads.get(&thread) {
+            fresh.keep_inbox_of(held);
             hold_idle(&mut threads, thread, Box::new(fresh), now);
         }
         Ok(())
@@ -215,15 +228,6 @@ where
             .threads
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// What `id` is doing now.
-    pub(crate) fn status(&self, id: ThreadId) -> Status {
-        match self.lock().get(&id) {
-            Some(Slot::Busy { .. }) if self.inner.approvals.waiting(id) => Status::Waiting,
-            Some(Slot::Busy { .. }) => Status::Running,
-            _ => Status::Idle,
-        }
     }
 
     /// Runs `work` on `thread` in a task of its own, holding the thread busy until it ends, so
@@ -260,7 +264,7 @@ where
         // Nothing but changing whether it is shown runs where its project's folder was.
         let folder = match purpose {
             Use::Manage => None,
-            Use::Work | Use::Steered => self.folder_now(scope.project()).await?,
+            Use::Work | Use::Steered | Use::Answer => self.folder_now(scope.project()).await?,
         };
         self.load(thread).await?;
         self.refuse_early(thread, purpose)?;
@@ -291,11 +295,12 @@ where
             // Let go while the thread is still busy here, so no work of this server's starts
             // on it under a lease about to go.
             server.let_go(&lease).await;
-            inner.approvals.forget(thread);
             let mut threads = inner.threads.lock().unwrap_or_else(PoisonError::into_inner);
             // Ended with the thread made idle, so a message sent from now on starts a turn:
             // anything still waiting, which only work that ended early leaves, is given back.
-            let unread = if purpose == Use::Steered {
+            // A turn that stopped at a wait keeps what was sent to it for when it goes on.
+            let waits = matches!(result, Err(HarnessError::Waits(_)));
+            let unread = if matches!(purpose, Use::Steered | Use::Answer) && !waits {
                 held.inbox().end()
             } else {
                 Vec::new()
@@ -405,6 +410,20 @@ pub(crate) enum Use {
     Steered,
     /// Changing whether the thread is shown.
     Manage,
+    /// Going on with a turn that waited, once answered or stopped (`answers.rs`): messages
+    /// sent while it goes on are queued to it.
+    Answer,
+}
+
+/// The refusal for a turn, or other work on the conversation, in `thread` while a turn there
+/// waits for an answer.
+pub(crate) fn waiting(thread: ThreadId) -> ApiError {
+    ApiError::new(
+        code::TURN_RUNNING,
+        format!(
+            "a turn in thread {thread} waits for an answer: answer it, or stop the turn, first"
+        ),
+    )
 }
 
 /// The refusal for work on `thread` while other work runs there that takes no messages.

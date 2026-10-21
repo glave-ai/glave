@@ -30,6 +30,7 @@ use crate::project_folders::{Brought, ProjectFolders};
 use crate::room::LearnedWindows;
 use crate::tools::workspace::Workspace;
 use crate::toolset::ToolSet;
+use crate::waits::Opened;
 use crate::worker::Workers;
 
 pub use error::HarnessError;
@@ -160,9 +161,9 @@ pub struct Thread {
     pub(crate) inbox: Inbox,
     /// Its commands in the background (`background.rs`). A subagent's thread has its own.
     pub(crate) commands: Arc<Commands>,
-    /// Where its log ended as it was read, when it ended in a turn some glave left open
-    /// (`resume.rs`).
-    pub(crate) left_open: Option<Seq>,
+    /// How its log, as it was read, left its turn: waiting, or left open by a glave that
+    /// stopped (`waits.rs`); `None` when no turn was open.
+    pub(crate) opened: Option<Opened>,
     /// Where it works now that its project's folder moved, which its next turn records.
     pub(crate) rebound: Option<WorkspaceBound>,
 }
@@ -192,7 +193,20 @@ impl Thread {
     /// Whether its log, as it was read, ends in a turn a glave left open, running elsewhere or
     /// stopped without ending it: work on the thread repairs it first ([`Harness::repair`]).
     pub fn left_open(&self) -> bool {
-        self.left_open.is_some()
+        matches!(self.opened, Some(Opened::LeftOpen(_)))
+    }
+
+    /// Whether its log, as it was read, has its turn waiting for an answer, or answered and
+    /// not yet gone on with: it goes on from the log ([`Harness::go_on`]), and no other turn
+    /// starts meanwhile.
+    pub fn waits(&self) -> bool {
+        matches!(self.opened, Some(Opened::Waits | Opened::Answered))
+    }
+
+    /// Takes over `before`'s inbox, this thread read again in its place: what was sent to its
+    /// turn while it waited reaches the model when the turn goes on.
+    pub fn keep_inbox_of(&mut self, before: &Self) {
+        self.inbox = before.inbox.clone();
     }
 
     /// The `seq` its next event takes: one past its last as it was read and written here.
@@ -505,7 +519,7 @@ where
             defaults: self.defaults(),
             inbox: Inbox::default(),
             commands: Arc::default(),
-            left_open: None,
+            opened: None,
             rebound: None,
         };
         let mut events = Vec::new();

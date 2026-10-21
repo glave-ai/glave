@@ -7,6 +7,8 @@
 
 mod pursue;
 
+pub(crate) use pursue::{going_on, of_turn, stopped_running};
+
 use glave_event::{Arguments, Body, Event, GoalReason, TokenCounts};
 use glave_ports::{ToolOutput, ToolSpec};
 use serde::{Deserialize, Serialize};
