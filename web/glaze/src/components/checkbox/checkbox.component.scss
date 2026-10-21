@@ -21,7 +21,8 @@
 .native:checked + .mark::after {
   content: '';
   position: absolute;
-  inset-inline-start: 0.3rem;
+  /* stylelint-disable-next-line property-disallowed-list -- a tick is drawn the same way round in any page, so it is placed by the screen */
+  left: 0.3rem;
   top: 0.08rem;
   width: 0.3rem;
   height: 0.6rem;

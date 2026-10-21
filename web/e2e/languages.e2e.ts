@@ -161,8 +161,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
     expect(leftOf(tools, conversation)).toBe(true);
     expect(leftOf(tools, composer)).toBe(true);
     // A chevron that points to what comes next points left.
-    const chevron = await byTestId(page, 'thread-steps-summary').evaluate(
-      (summary) => getComputedStyle(summary.querySelector('.chevron') ?? summary).scale,
+    const chevron = await byTestId(page, 'thread-steps-chevron').evaluate(
+      (element) => getComputedStyle(element).scale,
     );
     expect(chevron).toBe('-1 1');
     await expectAccessible(page);
@@ -173,6 +173,16 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect
       .poll(async () => Math.round((await boxOf(page, 'workspace-nav')).width))
       .toBe(before + 16);
+    // On a phone, the side nav is a drawer from the right, where its button is.
+    await byTestId(page, 'tools-handle').press('Enter');
+    await expect(byTestId(page, 'tools-panel')).toBeHidden();
+    await page.setViewportSize({ width: 390, height: 800 });
+    const menu = await boxOf(page, 'page-menu');
+    await byTestId(page, 'page-menu').click();
+    const drawer = await boxOf(page, 'workspace-nav');
+    expect(Math.round(drawer.x + drawer.width)).toBe(390);
+    expect(menu.x + menu.width / 2).toBeGreaterThan(390 / 2);
+    await expectAccessible(page);
     expect(problems()).toEqual([]);
   });
 }

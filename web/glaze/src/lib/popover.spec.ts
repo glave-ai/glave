@@ -67,6 +67,14 @@ describe('positionPopover', () => {
     expect(panel.style.getPropertyValue('inset')).toBe('324px auto auto 300px');
   });
 
+  it('measures the start of a right-to-left line on the screen’s right', () => {
+    vi.spyOn(CSS, 'supports').mockReturnValue(false);
+    const [anchor, panel] = elements();
+    anchor.style.direction = 'rtl';
+    positionPopover(anchor, panel, 'start', '--glz-test');
+    expect(panel.style.getPropertyValue('inset')).toBe('290px auto auto 404px');
+  });
+
   it('leaves placing to CSS anchor positioning where the browser has it', () => {
     vi.spyOn(CSS, 'supports').mockReturnValue(true);
     const [anchor, panel] = elements();

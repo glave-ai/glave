@@ -12,7 +12,7 @@
   justify-content: space-between;
   gap: var(--glz-space-2);
   height: var(--glz-top-bar-height);
-  padding: 0 var(--glz-space-2) 0 var(--glz-inset-pane-inline);
+  padding-inline: var(--glz-inset-pane-inline) var(--glz-space-2);
 }
 
 .heading {

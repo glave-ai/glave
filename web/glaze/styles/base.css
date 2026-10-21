@@ -59,10 +59,13 @@ a {
   text-underline-offset: 0.15em;
 }
 
+/* Code and commands read left to right in any page, kept apart from the text around them. */
 code,
 kbd,
 pre,
 samp {
+  direction: ltr;
+  unicode-bidi: isolate;
   font-family: var(--glz-font-mono);
   font-size: 0.9em;
 }

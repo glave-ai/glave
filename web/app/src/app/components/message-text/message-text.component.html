@@ -1,7 +1,7 @@
 @if (markdown()) {
-  <div class="markdown" testId="thread-markdown" [glzMarkdown]="text()"></div>
+  <div class="markdown" dir="auto" testId="thread-markdown" [glzMarkdown]="text()"></div>
 } @else {
-  <p class="text" [id]="textId" [class.folded]="folded()">{{ text() }}</p>
+  <p class="text" dir="auto" [id]="textId" [class.folded]="folded()">{{ text() }}</p>
   @if (long()) {
     <button
       type="button"

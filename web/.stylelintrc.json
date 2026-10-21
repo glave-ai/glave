@@ -34,10 +34,13 @@
     ],
     "declaration-property-value-disallowed-list": [
       {
-        "/^(text-align|float|clear)$/": ["left", "right"]
+        "/^(text-align|float|clear)$/": ["left", "right"],
+        "/^(margin|padding|inset|scroll-margin|scroll-padding)$/": [
+          "/^\\s*(?:[^\\s()]|\\((?:[^()]|\\([^()]*\\))*\\))+\\s+(?:[^\\s()]|\\((?:[^()]|\\([^()]*\\))*\\))+\\s+(?:[^\\s()]|\\((?:[^()]|\\([^()]*\\))*\\))+\\s+(?:[^\\s()]|\\((?:[^()]|\\([^()]*\\))*\\))+\\s*$/"
+        ]
       },
       {
-        "message": "Write it for any direction: start and end, not left and right (web/README.md, \"Languages\")"
+        "message": "Write it for any direction: start and end, or -block and -inline, never left and right (web/README.md, \"Languages\")"
       }
     ]
   },

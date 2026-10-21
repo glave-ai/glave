@@ -1,5 +1,4 @@
-/** Which way a language is written, which the whole page follows. */
-export type Direction = 'ltr' | 'rtl';
+import type { Direction } from '@angular/cdk/bidi';
 
 /** The language the app is written in: its messages need nothing loaded. */
 export const ENGLISH = 'en';
