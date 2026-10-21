@@ -126,8 +126,9 @@ jobs:
             tunnel:
               profiles: [tunnel]
           EOF
-          sh install/server.sh --docker --origin https://glave.test --binary target/debug/glave |
+          sh -x install/server.sh --docker --origin https://glave.test --binary target/debug/glave |
             tee "$RUNNER_TEMP/installed.txt"
+          sudo ls -la /opt/glave
           grep -q 'https://glave.test/#setup=' "$RUNNER_TEMP/installed.txt"
           kept="$(sudo stat -c '%a %U' /opt/glave/.env)"
           echo "the tunnel's token is kept $kept"
