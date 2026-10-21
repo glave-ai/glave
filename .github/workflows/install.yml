@@ -1,0 +1,135 @@
+name: install
+
+# The installer for a person's own server (install/server.sh), run on a fresh runner as a
+# person runs it on theirs, each way to reach glave on a runner of its own:
+#
+# - public: as root, glave's HTTPS on port 443 with a certificate from Pebble, Let's
+#   Encrypt's test server, standing in for Let's Encrypt; then the same line again, run by a
+#   person with sudo, updates glave and keeps its passkeys.
+# - private: by a person with sudo, through a stand-in for Tailscale that serves the
+#   runner's tailnet name and forwards to glave's loopback listener, as Tailscale does.
+#
+# Either way the link the installer prints makes a passkey that signs in again, the sandbox
+# starts inside the service, and the command it names prints a new link. A runner, not a
+# container: the installer needs systemd, and the sandbox the kernel a server has.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        way: [public, private]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Lint the installer
+        run: shellcheck install/server.sh
+      - name: Install the pinned toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' && matrix.way == 'public' }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - name: Build glave, and the test that signs in to it
+        run: |
+          cargo build -p glave
+          cargo nextest run -p glave --no-run
+      # Pebble (MPL-2.0), pinned by digest, checks names over TLS-ALPN-01 on port 443 here,
+      # where glave serves HTTPS of its own, and reaches glave.test, this runner. glave trusts
+      # its directory's root through a drop-in beside the unit the installer writes.
+      - name: Start an ACME test server
+        if: matrix.way == 'public'
+        run: |
+          image=ghcr.io/letsencrypt/pebble:2.10.1@sha256:ddf230642b1a584f519f32e347de1b05a6e4c1f6c35c1863b33effeab5f78199
+          docker create --name pebble-config "$image" >/dev/null
+          docker cp pebble-config:/test/config/pebble-config.json "$RUNNER_TEMP/pebble.json"
+          docker rm pebble-config >/dev/null
+          sed -i 's/"tlsPort": 5001/"tlsPort": 443/' "$RUNNER_TEMP/pebble.json"
+          grep -q '"tlsPort": 443' "$RUNNER_TEMP/pebble.json"
+          docker run -d --name pebble -p 14000:14000 -p 15000:15000 \
+            -v "$RUNNER_TEMP/pebble.json:/test/config/pebble-config.json:ro" \
+            --add-host glave.test:host-gateway -e PEBBLE_VA_NOSLEEP=1 -e PEBBLE_WFE_NONCEREJECT=0 \
+            "$image"
+          docker cp pebble:/test/certs/pebble.minica.pem "$RUNNER_TEMP/pebble.minica.pem"
+          for _ in $(seq 1 60); do
+            if curl -sf --cacert "$RUNNER_TEMP/pebble.minica.pem" -o /dev/null https://localhost:14000/dir; then break; fi
+            sleep 1
+          done
+          curl -sf --cacert "$RUNNER_TEMP/pebble.minica.pem" -o /dev/null https://localhost:14000/dir
+          echo "127.0.0.1 glave.test" | sudo tee -a /etc/hosts >/dev/null
+          sudo install -D -m 0644 "$RUNNER_TEMP/pebble.minica.pem" /etc/glave-test/pebble.minica.pem
+          sudo mkdir -p /etc/systemd/system/glave.service.d
+          printf '[Service]\nEnvironment=SSL_CERT_FILE=/etc/glave-test/pebble.minica.pem\n' |
+            sudo tee /etc/systemd/system/glave.service.d/pebble.conf >/dev/null
+      - name: Install glave, reached at its domain
+        if: matrix.way == 'public'
+        run: |
+          sudo sh install/server.sh --public glave.test --acme https://localhost:14000/dir \
+            --binary target/debug/glave | tee "$RUNNER_TEMP/installed.txt"
+          grep -q 'https://glave.test/#setup=' "$RUNNER_TEMP/installed.txt"
+          curl -sf --cacert "$RUNNER_TEMP/pebble.minica.pem" -o "$RUNNER_TEMP/pebble.root.pem" https://localhost:15000/roots/0
+          echo "GLAVE_TEST_INSTALLED_ROOT=$RUNNER_TEMP/pebble.root.pem" >> "$GITHUB_ENV"
+      # A node signed in to a tailnet, serving what it is asked to; the test plays the
+      # forwarding Tailscale does, to the loopback listener with the name it was asked for.
+      - name: Stand in for Tailscale
+        if: matrix.way == 'private'
+        run: |
+          sudo tee /usr/local/bin/tailscale >/dev/null <<'EOF'
+          #!/bin/sh
+          case "$1" in
+          status) if [ "${2:-}" = --json ]; then printf '{\n\t"Self": {\n\t\t"DNSName": "runner.tail1234.ts.net."\n\t}\n}\n'; fi ;;
+          serve) echo "$@" >/tmp/tailscale-serve ;;
+          *) exit 1 ;;
+          esac
+          EOF
+          sudo chmod 0755 /usr/local/bin/tailscale
+          tailscale status --json | grep -q '"DNSName": "runner.tail1234.ts.net."'
+      - name: Install glave, reached through Tailscale
+        if: matrix.way == 'private'
+        run: |
+          sh install/server.sh --private --binary target/debug/glave | tee "$RUNNER_TEMP/installed.txt"
+          grep -q 'https://runner.tail1234.ts.net/#setup=' "$RUNNER_TEMP/installed.txt"
+          grep -qx 'serve --bg --https=443 http://127.0.0.1:4180' /tmp/tailscale-serve
+      - name: Sign in from elsewhere with the link, then with the passkey it made
+        env:
+          GLAVE_TEST_INSTALLED: ${{ runner.temp }}/installed.txt
+        run: cargo nextest run -p glave -E 'test(/^installed::/)'
+      - name: The sandbox runs inside the service
+        run: |
+          systemctl is-active glave
+          systemctl show glave -p User -p NoNewPrivileges -p AmbientCapabilities
+          if sudo journalctl -u glave -o cat | grep -F "sandbox cannot run"; then exit 1; fi
+      - name: The command it names prints a new link
+        run: sudo -u glave -H glave server link | grep -q '/#setup='
+      - name: The same line again updates glave, keeping its settings and passkeys
+        if: matrix.way == 'public'
+        run: |
+          sh install/server.sh --binary target/debug/glave | tee "$RUNNER_TEMP/updated.txt"
+          if grep -q '#setup=' "$RUNNER_TEMP/updated.txt"; then echo "an update prints no setup link"; exit 1; fi
+          systemctl is-active glave
+          curl -sf --cacert "$GLAVE_TEST_INSTALLED_ROOT" -H 'origin: https://glave.test' \
+            -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"passkey/get_options"}' \
+            https://glave.test/ | grep -q '"ceremony"'
+      - name: What glave and Pebble said
+        if: failure()
+        run: |
+          sudo journalctl -u glave --no-pager -o cat | tail -100
+          if [ "${{ matrix.way }}" = public ]; then docker logs pebble 2>&1 | tail -50; fi

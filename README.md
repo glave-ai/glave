@@ -29,6 +29,16 @@ Prefer the terminal? `glave "fix the failing test"` answers right there, asking 
 
 With Homebrew instead: `brew install glave-ai/tap/glave`. Both ways work once the first release is published; until then, build glave from source.
 
+### On a server
+
+On a Linux server of yours (a VPS, a box at home), one line installs glave as a service that starts with the server, and ends with a link: open it on your phone or laptop, and that device makes a passkey and signs in.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/glave-ai/glave/main/install/server.sh | sh -s -- --private
+```
+
+`--private` reaches glave through Tailscale, with no port open on the server (it sets Tailscale up if need be). `--public glave.example.com` serves glave at your domain instead, with its HTTPS certificate from Let's Encrypt. To update glave, run the same line again. Like the lines above, it works once the first release is published.
+
 ### From source
 
 You need Rust (see `rust-toolchain.toml`) and Node 22.22.3 or later.

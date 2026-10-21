@@ -11,6 +11,7 @@ mod accounts;
 mod app;
 mod args;
 mod asking;
+mod capabilities;
 mod catalogs;
 mod client;
 mod cloud;
@@ -54,6 +55,7 @@ mod wiring;
 mod worktrees;
 
 fn main() -> std::process::ExitCode {
+    capabilities::keep_to_itself();
     if let Some(code) = computer::sandbox_helper() {
         return code;
     }

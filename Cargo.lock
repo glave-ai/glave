@@ -1652,6 +1652,7 @@ dependencies = [
  "glave-gateway-service",
  "glave-google",
  "glave-harness",
+ "glave-identity",
  "glave-keys",
  "glave-mcp",
  "glave-memory",
