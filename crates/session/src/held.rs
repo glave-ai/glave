@@ -10,6 +10,7 @@ use glave_ports::{BlobStore, EventLog, ModelProvider, Standing};
 use jiff::Timestamp;
 use tokio::sync::watch;
 
+use crate::leased::renewing;
 use crate::protocol::{ApiError, Status, code};
 use crate::server::{Inner, Server, no_thread};
 use crate::turn::publish;
@@ -93,6 +94,110 @@ where
         }
     }
 
+    /// Takes `thread` from idle to busy with work of the kind `purpose`, which `cancel` stops
+    /// and whose end `finished` tells: the thread, or why the work cannot start after all.
+    fn take_busy(
+        &self,
+        thread: ThreadId,
+        purpose: Use,
+        cancel: &Cancel,
+        finished: watch::Receiver<bool>,
+    ) -> Result<Thread, ApiError> {
+        let mut threads = self.lock();
+        // Checked under the threads' lock, which a stop sets it under.
+        if self.is_stopping() {
+            return Err(crate::stopping::stopping());
+        }
+        match threads.remove(&thread) {
+            // Read again, it may have been deleted from outside.
+            Some(slot)
+                if matches!(&slot, Slot::Idle { thread: held, .. }
+                    if held.standing() == Standing::Deleted) =>
+            {
+                Err(no_thread(thread))
+            }
+            // Turns and compactions do not run in an archived thread.
+            Some(slot)
+                if purpose != Use::Manage
+                    && matches!(&slot, Slot::Idle { thread: held, .. }
+                        if held.standing() == Standing::Archived) =>
+            {
+                threads.insert(thread, slot);
+                Err(ApiError::from(&HarnessError::Archived(thread)))
+            }
+            Some(Slot::Idle { thread: held, .. }) => {
+                // A turn takes messages from now until it has made its last call.
+                let inbox = (purpose == Use::Steered).then(|| held.inbox().clone());
+                if let Some(inbox) = &inbox {
+                    inbox.open();
+                }
+                let slot = Slot::Busy {
+                    cancel: cancel.clone(),
+                    finished,
+                    inbox,
+                    commands: held.commands(),
+                };
+                threads.insert(thread, slot);
+                Ok(*held)
+            }
+            Some(running) => {
+                threads.insert(thread, running);
+                Err(busy(thread))
+            }
+            None => Err(no_thread(thread)),
+        }
+    }
+
+    /// Refuses work of the kind `purpose` on `thread` that cannot start, as this server holds it
+    /// now, before its lease is taken: the server is stopping, other work runs there, or the
+    /// thread is archived for work other than changing whether it is shown.
+    fn refuse_early(&self, thread: ThreadId, purpose: Use) -> Result<(), ApiError> {
+        if self.is_stopping() {
+            return Err(crate::stopping::stopping());
+        }
+        match self.lock().get(&thread) {
+            Some(Slot::Busy { .. }) => Err(busy(thread)),
+            Some(Slot::Idle { thread: held, .. })
+                if purpose != Use::Manage && held.standing() == Standing::Archived =>
+            {
+                Err(ApiError::from(&HarnessError::Archived(thread)))
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Reads `thread` again from the log, where its project's folder is now `folder`, when
+    /// another glave wrote to it since this server read it: for work about to start under its
+    /// lease.
+    async fn read_again(
+        &self,
+        scope: glave_ports::Scope,
+        thread: ThreadId,
+        folder: Option<&str>,
+    ) -> Result<(), ApiError> {
+        let next = match self.lock().get(&thread) {
+            Some(Slot::Idle { thread: held, .. }) => held.next_seq(),
+            _ => return Ok(()),
+        };
+        let log = self.inner.harness.log();
+        let view = log.thread_view(&scope, thread).await?;
+        if view.is_none_or(|view| view.last_seq.next() == Some(next)) {
+            return Ok(());
+        }
+        let fresh = self
+            .inner
+            .harness
+            .resume_thread_in(scope, thread, folder)
+            .await
+            .map_err(|error| ApiError::from(&error))?;
+        let now = self.inner.harness.clock().now();
+        let mut threads = self.lock();
+        if matches!(threads.get(&thread), Some(Slot::Idle { .. })) {
+            hold_idle(&mut threads, thread, Box::new(fresh), now);
+        }
+        Ok(())
+    }
+
     /// Holds `thread` idle, letting go of others idle too long or beyond the cap.
     pub(crate) fn keep(&self, id: ThreadId, thread: Thread) {
         let now = self.inner.harness.clock().now();
@@ -151,58 +256,33 @@ where
         F: Future<Output = (Thread, Result<R, HarnessError>)> + Send + 'static,
         R: Send + Sync + 'static,
     {
+        let scope = self.scope_of(thread).await?;
         // Nothing but changing whether it is shown runs where its project's folder was.
-        if purpose != Use::Manage {
-            let scope = self.scope_of(thread).await?;
-            self.folder_now(scope.project()).await?;
-        }
+        let folder = match purpose {
+            Use::Manage => None,
+            Use::Work | Use::Steered => self.folder_now(scope.project()).await?,
+        };
         self.load(thread).await?;
+        self.refuse_early(thread, purpose)?;
+        // From here the store's lease keeps every other server off the thread; work that does
+        // not start after all lets it lapse rather than end one this server's other work holds.
+        let lease = self.lease(thread).await?;
+        self.read_again(scope, thread, folder.as_deref()).await?;
         let cancel = Cancel::new();
         let (finish, finished) = watch::channel(false);
-        let held = {
-            let mut threads = self.lock();
-            // Checked under the threads' lock, which a stop sets it under.
-            if self.is_stopping() {
-                return Err(crate::stopping::stopping());
-            }
-            match threads.remove(&thread) {
-                // Turns and compactions do not run in an archived thread.
-                Some(slot)
-                    if purpose != Use::Manage
-                        && matches!(&slot, Slot::Idle { thread: held, .. }
-                            if held.standing() == Standing::Archived) =>
-                {
-                    threads.insert(thread, slot);
-                    return Err(ApiError::from(&HarnessError::Archived(thread)));
-                }
-                Some(Slot::Idle { thread: held, .. }) => {
-                    // A turn takes messages from now until it has made its last call.
-                    let inbox = (purpose == Use::Steered).then(|| held.inbox().clone());
-                    if let Some(inbox) = &inbox {
-                        inbox.open();
-                    }
-                    let slot = Slot::Busy {
-                        cancel: cancel.clone(),
-                        finished,
-                        inbox,
-                        commands: held.commands(),
-                    };
-                    threads.insert(thread, slot);
-                    *held
-                }
-                Some(running) => {
-                    threads.insert(thread, running);
-                    return Err(busy(thread));
-                }
-                None => return Err(no_thread(thread)),
-            }
-        };
+        let held = self.take_busy(thread, purpose, &cancel, finished)?;
+        let server = self.clone();
         let inner = Arc::clone(&self.inner);
         // The work stays in the span of the request that started it.
         let span = tracing::Span::current();
         let task = tokio::spawn(async move {
-            let work = work(Arc::clone(&inner), held, cancel);
-            let (held, result) = tracing::Instrument::instrument(work, span).await;
+            let leases = Arc::clone(&inner.leases);
+            let work = work(Arc::clone(&inner), held, cancel.clone());
+            let work = tracing::Instrument::instrument(work, span);
+            let (held, result) = renewing(leases.as_ref(), &lease, &cancel, work).await;
+            // Let go while the thread is still busy here, so no work of this server's starts
+            // on it under a lease about to go.
+            server.let_go(&lease).await;
             inner.approvals.forget(thread);
             let mut threads = inner.threads.lock().unwrap_or_else(PoisonError::into_inner);
             // Ended with the thread made idle, so a message sent from now on starts a turn:

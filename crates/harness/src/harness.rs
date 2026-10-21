@@ -9,7 +9,7 @@ use std::sync::{Arc, PoisonError, RwLock};
 
 use glave_event::{
     ApprovalMode, At, EventId, Header, Origin, OriginKind, ParentCall, Part, Payload, Principal,
-    PrincipalId, Producer, RawEvent, Seq, ThreadId, ThreadStarted, encode,
+    PrincipalId, Producer, RawEvent, Seq, ThreadId, ThreadStarted, WorkspaceBound, encode,
 };
 use glave_ports::memories::Memory;
 use glave_ports::settings::Hooks;
@@ -160,6 +160,11 @@ pub struct Thread {
     pub(crate) inbox: Inbox,
     /// Its commands in the background (`background.rs`). A subagent's thread has its own.
     pub(crate) commands: Arc<Commands>,
+    /// Where its log ended as it was read, when it ended in a turn some glave left open
+    /// (`resume.rs`).
+    pub(crate) left_open: Option<Seq>,
+    /// Where it works now that its project's folder moved, which its next turn records.
+    pub(crate) rebound: Option<WorkspaceBound>,
 }
 
 impl Thread {
@@ -182,6 +187,17 @@ impl Thread {
     /// and stopped while a turn holds the thread.
     pub fn commands(&self) -> Arc<Commands> {
         Arc::clone(&self.commands)
+    }
+
+    /// Whether its log, as it was read, ends in a turn a glave left open, running elsewhere or
+    /// stopped without ending it: work on the thread repairs it first ([`Harness::repair`]).
+    pub fn left_open(&self) -> bool {
+        self.left_open.is_some()
+    }
+
+    /// The `seq` its next event takes: one past its last as it was read and written here.
+    pub fn next_seq(&self) -> Seq {
+        self.next_seq
     }
 
     /// What opens the conversation: the thread's instructions, and where it works when that
@@ -489,6 +505,8 @@ where
             defaults: self.defaults(),
             inbox: Inbox::default(),
             commands: Arc::default(),
+            left_open: None,
+            rebound: None,
         };
         let mut events = Vec::new();
         let mut origin = Origin::of(if parent.is_some() {
@@ -533,8 +551,7 @@ where
 
     /// The `seq` the next staged event will get.
     pub(crate) fn seq_after(thread: &Thread, staged: &[RawEvent]) -> Result<Seq, HarnessError> {
-        let offset = u64::try_from(staged.len()).map_err(|e| HarnessError::Event(e.to_string()))?;
-        Seq::new(thread.next_seq.get().saturating_add(offset)).map_err(HarnessError::from)
+        after(thread.next_seq, staged)
     }
 
     /// Encodes `payload` as the next event of a batch that has not been written yet.
@@ -544,9 +561,21 @@ where
         events: &mut Vec<RawEvent>,
         payload: &T,
     ) -> Result<(), HarnessError> {
+        self.stage_next(thread.id, thread.next_seq, events, payload)
+    }
+
+    /// Like [`Harness::stage`], for thread `thread` whose next event is `next`, as its log has
+    /// it rather than as a thread held here does.
+    pub(crate) fn stage_next<T: Payload>(
+        &self,
+        thread: ThreadId,
+        next: Seq,
+        events: &mut Vec<RawEvent>,
+        payload: &T,
+    ) -> Result<(), HarnessError> {
         let now = self.clock.now();
         let id = EventId::new(now, self.entropy.bytes()?)?;
-        Self::stage_at(thread, events, payload, id, now)
+        Self::stage_at(thread, next, events, payload, id, now)
     }
 
     /// Like [`Harness::stage`], under an id made already: a message the person sent while a
@@ -558,11 +587,13 @@ where
         payload: &T,
         id: EventId,
     ) -> Result<(), HarnessError> {
-        Self::stage_at(thread, events, payload, id, self.clock.now())
+        let now = self.clock.now();
+        Self::stage_at(thread.id, thread.next_seq, events, payload, id, now)
     }
 
     fn stage_at<T: Payload>(
-        thread: &Thread,
+        thread: ThreadId,
+        next: Seq,
         events: &mut Vec<RawEvent>,
         payload: &T,
         id: EventId,
@@ -570,8 +601,8 @@ where
     ) -> Result<(), HarnessError> {
         let header = Header {
             id,
-            thread: thread.id,
-            seq: Self::seq_after(thread, events)?,
+            thread,
+            seq: after(next, events)?,
             at: At::from(now),
         };
         events.push(encode(header, payload)?);
@@ -595,4 +626,10 @@ where
         thread.next_seq = Self::seq_after(thread, &events)?;
         Ok(())
     }
+}
+
+/// The `seq` the next event staged after `staged` gets, in a thread whose next event is `next`.
+fn after(next: Seq, staged: &[RawEvent]) -> Result<Seq, HarnessError> {
+    let offset = u64::try_from(staged.len()).map_err(|e| HarnessError::Event(e.to_string()))?;
+    Seq::new(next.get().saturating_add(offset)).map_err(HarnessError::from)
 }

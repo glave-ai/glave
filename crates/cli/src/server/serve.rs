@@ -116,6 +116,8 @@ pub(crate) async fn run(
             "glave: {interrupted} tasks a glave before this one left running were interrupted"
         );
     }
+    // Turns a glave before this one left open, and later those whose lease had not lapsed yet.
+    let mut left_open = repair(server).await;
     eprintln!("glave: serving you on {}", path.display());
     let mut terminate = signal(SignalKind::terminate())?;
     let mut interrupt = signal(SignalKind::interrupt())?;
@@ -148,6 +150,9 @@ pub(crate) async fn run(
             () = &mut certificates => {}
             _ = tick.tick() => {
                 while clients.try_join_next().is_some() {}
+                if left_open > 0 {
+                    left_open = repair(server).await;
+                }
                 if let Some(log) = &log
                     && let Err(error) = log::keep_capped(log.clone()).await
                 {
@@ -173,6 +178,29 @@ pub(crate) async fn run(
     clients.abort_all();
     while clients.join_next().await.is_some() {}
     outcome
+}
+
+/// Closes the turns a glave before this one left open, `interrupted`, and answers how many
+/// another server's lease still holds, to look at again once it may have lapsed.
+async fn repair(server: &Glave) -> usize {
+    match server.repair_left_open().await {
+        Ok(repaired) => {
+            if repaired.closed > 0 {
+                eprintln!(
+                    "glave: {} turns a glave before this one left open were interrupted",
+                    repaired.closed
+                );
+            }
+            repaired.held
+        }
+        Err(error) => {
+            eprintln!(
+                "glave: could not close the turns left open: {}",
+                error.message
+            );
+            0
+        }
+    }
 }
 
 /// Serves `server` to the client at the other end of `stream`, one of `clients`.

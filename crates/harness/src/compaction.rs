@@ -214,6 +214,7 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Compacted, HarnessError> {
+        self.close_left_open(thread).await?;
         let offer = self.tools(thread).await;
         self.compact_with(thread, &offer, cancel, live).await
     }

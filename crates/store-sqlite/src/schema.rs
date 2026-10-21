@@ -8,7 +8,7 @@ use crate::store::StoreError;
 
 /// The schema this build makes and reads. Bumped whenever [`SCHEMA`] changes. It starts past
 /// every version the migrations it replaced wrote, so a file one of them made is refused.
-pub(crate) const VERSION: u32 = 13;
+pub(crate) const VERSION: u32 = 14;
 
 /// Every table, made in one transaction in a new file.
 const SCHEMA: &str = "
@@ -119,17 +119,22 @@ const SCHEMA: &str = "
     -- (`glave_ports::ThreadView`, as JSON), listed by standing, most recently updated first.
     -- Content-free. `updated` is when its latest event was recorded, in milliseconds; a page
     -- starts after the last row's own `(updated, thread)`, never a position across the store.
+    -- `open` is whether a turn is open in it, for a server that starts to find those a glave
+    -- before it left open.
     CREATE TABLE threads (
         org       TEXT    NOT NULL,
         project   TEXT    NOT NULL,
         thread    TEXT    NOT NULL,
         standing  TEXT    NOT NULL,
         updated   INTEGER NOT NULL,
+        open      INTEGER NOT NULL,
         view      TEXT    NOT NULL,
         PRIMARY KEY (org, project, thread)
     ) STRICT;
 
     CREATE INDEX threads_by_update ON threads (org, project, standing, updated DESC, thread DESC);
+    CREATE INDEX threads_open ON threads (org, project, standing, updated DESC, thread DESC)
+        WHERE open;
 
     -- Work in flight (`glave_ports::Leases`): what each lease keeps (`Leased::key`), in an
     -- organization, its holder, and when it lapses, in milliseconds on this file's clock.

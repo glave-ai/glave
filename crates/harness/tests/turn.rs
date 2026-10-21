@@ -312,60 +312,91 @@ fn a_resumed_thread_continues_where_it_left_off() {
     });
 }
 
+/// The log of a turn that ran its one command, cut before the command's result: a crash
+/// mid-call.
+async fn crashed_mid_call(dir: &std::path::Path) -> (InMemoryLog, glave_event::ThreadId) {
+    let answers = vec![
+        answer(
+            None,
+            vec![("bash", json!({"command": "true"}))],
+            StopReason::ToolUse,
+        ),
+        answer(Some("ok"), vec![], StopReason::EndTurn),
+    ];
+    let harness = harness(dir, answers, AllowAll).await;
+    let mut thread = harness.start_thread(scope()).await.unwrap();
+    harness
+        .run_turn(&mut thread, "go", &Cancel::new(), &mut |_| {})
+        .await
+        .unwrap();
+    let raw = harness
+        .log()
+        .read(&scope(), thread.id, None, usize::MAX)
+        .await
+        .unwrap();
+    let cut: Vec<RawEvent> = raw.into_iter().take(5).collect();
+    let log = InMemoryLog::new();
+    log.append(&scope(), &cut).await.unwrap();
+    (log, thread.id)
+}
+
+/// What a crash left: the turn's start, its response with the call, and no result or end.
+const LEFT: [&str; 5] = [
+    "thread.started",
+    "turn.started",
+    "message.added",
+    "tool.call.requested",
+    "model.responded",
+];
+
 #[test]
-fn resuming_after_a_crash_closes_what_was_left_open() {
+fn resuming_after_a_crash_records_nothing_and_the_next_turn_closes_what_was_left_open() {
     let dir = folder("crash");
     block_on!(async {
-        let answers = vec![
-            answer(
-                None,
-                vec![("bash", json!({"command": "true"}))],
-                StopReason::ToolUse,
-            ),
-            answer(Some("ok"), vec![], StopReason::EndTurn),
-        ];
-        let harness = harness(&dir, answers, AllowAll).await;
-        let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "go", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        let (log, id) = crashed_mid_call(&dir).await;
+        let again = vec![answer(Some("Again."), vec![], StopReason::EndTurn)];
+        let resumed_harness = harness_on(&dir, again, AllowAll, log, 1_000, settings()).await;
+        let mut resumed = resumed_harness.resume_thread(scope(), id).await.unwrap();
+        assert!(resumed.left_open());
+        let read = events(resumed_harness.log(), id).await;
+        assert_eq!(kinds(&read), LEFT, "reading the thread records nothing");
 
-        // Keep only what was written before the tool finished: a crash mid-call.
-        let raw = harness
-            .log()
-            .read(&scope(), thread.id, None, usize::MAX)
+        resumed_harness
+            .run_turn(&mut resumed, "again", &Cancel::new(), &mut |_| {})
             .await
             .unwrap();
-        let cut: Vec<RawEvent> = raw.into_iter().take(5).collect();
-        let log = InMemoryLog::new();
-        log.append(&scope(), &cut).await.unwrap();
-        let resumed_harness = harness_on(&dir, vec![], AllowAll, log, 1_000, settings()).await;
-        let resumed = resumed_harness
-            .resume_thread(scope(), thread.id)
-            .await
-            .unwrap();
+        let events = events(resumed_harness.log(), id).await;
+        let closed = [LEFT.as_slice(), &["tool.call.completed", "turn.ended"]].concat();
+        assert_eq!(kinds(&events).get(..7), Some(closed.as_slice()));
+        assert!(matches!(&events[6].body,
+                Body::TurnEnded(ended) if ended.outcome == Outcome::Interrupted));
+        assert!(matches!(&events[5].body,
+                Body::ToolCallCompleted(done) if done.is_error));
+        assert_eq!(kinds(&events).get(7), Some(&"turn.started"));
+        assert!(!resumed.left_open());
+        assert_eq!(conversation(&events), resumed.messages());
+    });
+}
 
-        let events = events(resumed_harness.log(), thread.id).await;
-        assert_eq!(
-            kinds(&events),
-            [
-                "thread.started",
-                "turn.started",
-                "message.added",
-                "tool.call.requested",
-                "model.responded",
-                "tool.call.completed",
-                "turn.ended",
-            ]
-        );
+#[test]
+fn repairing_closes_a_turn_left_open_once() {
+    let dir = folder("repair");
+    block_on!(async {
+        let (log, id) = crashed_mid_call(&dir).await;
+        let harness = harness_on(&dir, vec![], AllowAll, log, 1_000, settings()).await;
+        assert!(harness.repair(scope(), id).await.unwrap());
+        assert!(!harness.repair(scope(), id).await.unwrap(), "once");
+        let events = events(harness.log(), id).await;
+        let closed = [LEFT.as_slice(), &["tool.call.completed", "turn.ended"]].concat();
+        assert_eq!(kinds(&events), closed);
         assert!(matches!(events.last().map(|e| &e.body),
                 Some(Body::TurnEnded(ended)) if ended.outcome == Outcome::Interrupted));
+        let resumed = harness.resume_thread(scope(), id).await.unwrap();
+        assert!(!resumed.left_open());
         assert!(matches!(
             resumed.messages().last(),
             Some(glave_ports::Message::Tool { is_error: true, .. })
         ));
-        assert_eq!(conversation(&events), resumed.messages());
     });
 }
 

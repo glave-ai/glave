@@ -11,8 +11,8 @@ use glave_config::policy::StoreFile;
 use glave_event::{BlobRef, PrincipalId, RawEvent, Seq, Sha256, ThreadId};
 use glave_ports::search::Found;
 use glave_ports::{
-    Blob, BlobError, BlobStore, Chunks, Eraser, EventLog, Located, LogError, Objects, OrgId,
-    Projects, Scope, Swept, ThreadQuery, ThreadView,
+    Blob, BlobError, BlobStore, Chunks, Eraser, EventLog, Leases, Located, LogError, Objects,
+    OrgId, Projects, Scope, Swept, ThreadQuery, ThreadView,
 };
 use glave_store_postgres as postgres;
 use glave_store_sqlite as sqlite;
@@ -99,6 +99,14 @@ impl Data {
         match self {
             Self::Sqlite(store) => Arc::new(store.projects()),
             Self::Postgres(store) => Arc::new(store.projects()),
+        }
+    }
+
+    /// The leases work in flight runs under, on the store's own clock.
+    pub(crate) fn leases(&self) -> Arc<dyn Leases> {
+        match self {
+            Self::Sqlite(store) => Arc::new(store.leases()),
+            Self::Postgres(store) => Arc::new(store.leases()),
         }
     }
 

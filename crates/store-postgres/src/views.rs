@@ -89,17 +89,18 @@ async fn write<C: GenericClient + Sync>(
     let json = serde_json::to_string(view).map_err(corrupt)?;
     client
         .execute(
-            "INSERT INTO threads (org, project, thread, standing, updated, view)
-             VALUES ($1, $2, $3, $4, $5, $6)
+            "INSERT INTO threads (org, project, thread, standing, updated, open, view)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
              ON CONFLICT (org, project, thread) DO UPDATE SET
                  standing = excluded.standing, updated = excluded.updated,
-                 view = excluded.view",
+                 open = excluded.open, view = excluded.view",
             &[
                 &scope.org().as_uuid(),
                 &scope.project().as_uuid(),
                 &view.thread.as_uuid(),
                 &view.standing.as_str(),
                 &view.updated_at.timestamp().as_millisecond(),
+                &view.turn.is_some(),
                 &json,
             ],
         )
@@ -122,6 +123,7 @@ pub(crate) async fn page(
             "SELECT view FROM threads
              WHERE org = $1 AND project = $2 AND standing = $3
                AND ($4::bigint IS NULL OR (updated, thread) < ($4::bigint, $5::uuid))
+               AND (NOT $7 OR open)
              ORDER BY updated DESC, thread DESC LIMIT $6",
         )
         .await
@@ -138,6 +140,7 @@ pub(crate) async fn page(
                     .map(|after| after.updated_at.timestamp().as_millisecond()),
                 &query.after.map(|after| after.thread.as_uuid()),
                 &i64::try_from(query.limit).unwrap_or(i64::MAX),
+                &query.open,
             ],
         )
         .await

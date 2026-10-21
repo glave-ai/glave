@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, PoisonError, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
 
 use glave_event::{Body, PrincipalId, Seq, ThreadId, decode};
 use glave_harness::{
@@ -18,8 +18,8 @@ use glave_ports::host::PublicOrigin;
 use glave_ports::memories::Memory;
 use glave_ports::settings::Hooks;
 use glave_ports::{
-    BlobStore, Caller, Clock, Entropy, EventLog, ModelProvider, OrgId, OsEntropy, ProjectId,
-    Projects, Scope, SystemClock, ToolSource,
+    BlobStore, Caller, Clock, Entropy, EventLog, Holder, InMemoryLeases, Leases, ModelProvider,
+    OrgId, OsEntropy, ProjectId, Projects, Scope, SystemClock, ToolSource,
 };
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -102,6 +102,10 @@ pub struct Wiring<P, L, B> {
     /// Where people reach the server from elsewhere, through what serves HTTPS for it; none
     /// where it answers only on its own computer.
     pub origin: Option<PublicOrigin>,
+    /// The leases work on a thread runs under, kept in the store beside its log, so servers on
+    /// one store never run one thread at once; none keeps them in this server's memory, for a
+    /// server alone on its store.
+    pub leases: Option<Arc<dyn Leases>>,
 }
 
 impl<P, L, B> Wiring<P, L, B> {
@@ -111,7 +115,7 @@ impl<P, L, B> Wiring<P, L, B> {
     /// `web_fetch`, other tools, hooks, workers, memory, model accounts, git hosts, rereading,
     /// project folders, trust or browsers; no limit on tasks; only the settings' own model and
     /// mode; threads in their project's folder rather than a worktree; reached only on its own
-    /// computer. An embedder names only
+    /// computer; leases in its own memory. An embedder names only
     /// what it changes: `Wiring { hooks, ..Wiring::new(...) }`.
     pub fn new(
         provider: P,
@@ -145,6 +149,7 @@ impl<P, L, B> Wiring<P, L, B> {
             trust: None,
             browsers: None,
             origin: None,
+            leases: None,
         }
     }
 }
@@ -222,6 +227,10 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) asks: Mutex<Asks>,
     /// Set once the server stops: it starts no new work (`stopping.rs`).
     pub(crate) stopping: AtomicBool,
+    /// The leases work on a thread runs under (`leased.rs`).
+    pub(crate) leases: Arc<dyn Leases>,
+    /// Who holds this server's leases, made the first time it takes one.
+    pub(crate) holder: OnceLock<Holder>,
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -244,12 +253,16 @@ where
         let person = settings.person;
         let catalog = crate::models::catalog(&settings.model, wiring.models);
         let choosable = crate::modes::choosable(settings.approval, &wiring.modes);
+        let clock: Arc<dyn Clock> = Arc::from(wiring.clock);
+        let leases = wiring
+            .leases
+            .unwrap_or_else(|| Arc::new(InMemoryLeases::new(Arc::clone(&clock))));
         let parts = Parts {
             provider: wiring.provider,
             log: Observed::new(wiring.log, Arc::clone(&hub)),
             blobs: wiring.blobs,
             approver: approvals.clone(),
-            clock: wiring.clock,
+            clock: Box::new(clock),
             entropy: wiring.entropy,
             workspace: wiring.workspace,
         };
@@ -290,6 +303,8 @@ where
                 browsers: wiring.browsers,
                 origin: wiring.origin,
                 stopping: AtomicBool::new(false),
+                leases,
+                holder: OnceLock::new(),
             }),
         }
     }

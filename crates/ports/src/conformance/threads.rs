@@ -149,6 +149,7 @@ async fn list<L: EventLog>(
         standing,
         limit,
         after: None,
+        open: false,
     };
     log.thread_views(scope, &query)
         .await
@@ -248,7 +249,48 @@ pub async fn thread_views<L: EventLog>(log: &L) -> Verdict {
 
     isolation(log, &here, &elsewhere, a, ledger).await?;
     rebuilding(log, &here, &[a, b, c]).await?;
-    opening_messages(log, &here, thread(15)?).await
+    opening_messages(log, &here, thread(15)?).await?;
+    open_turns(log, &here, thread(16)?).await
+}
+
+/// A turn started and not ended is open: the view says where it started, and only such threads
+/// are listed when the query asks for open turns, until the turn ends.
+async fn open_turns<L: EventLog>(log: &L, here: &Scope, id: ThreadId) -> Verdict {
+    let mut writer = Writer::new(id);
+    let mut events = vec![writer.next(30, &started()?)?];
+    events.extend(turn(&mut writer, 31)?);
+    let ended = events.pop().ok_or("a turn has an end")?;
+    log.append(here, &events).await.map_err(|e| e.to_string())?;
+    let query = ThreadQuery {
+        standing: Standing::Active,
+        limit: 10,
+        after: None,
+        open: true,
+    };
+    let open = log
+        .thread_views(here, &query)
+        .await
+        .map_err(|e| e.to_string())?;
+    ensure(
+        ids(&open) == [id]
+            && open
+                .first()
+                .and_then(|view| view.turn)
+                .is_some_and(|turn| turn.started.get() == 3),
+        "a turn not yet ended must be open, from its start, and alone in a listing of open turns",
+    )?;
+    log.append(here, &[ended])
+        .await
+        .map_err(|e| e.to_string())?;
+    let closed = log
+        .thread_views(here, &query)
+        .await
+        .map_err(|e| e.to_string())?;
+    let view = log.thread_view(here, id).await.map_err(|e| e.to_string())?;
+    ensure(
+        closed.is_empty() && view.is_some_and(|view| view.turn.is_none()),
+        "a turn that ended must no longer be open",
+    )
 }
 
 /// A thread's first message opens with the project's instructions, its last part being what
@@ -296,6 +338,7 @@ async fn paging<L: EventLog>(log: &L, here: &Scope, all: &[ThreadView]) -> Verdi
         standing: Standing::Active,
         limit: 10,
         after: page.last().map(ThreadView::cursor),
+        open: false,
     };
     let rest = log
         .thread_views(here, &query)

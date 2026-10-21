@@ -92,7 +92,7 @@ fn the_log_passes_the_threads_view_conformance_suite() {
         drop(reconnected);
         scratch.drop_schema().await;
         assert_eq!(verdict, Ok(()));
-        assert_eq!(kept.len(), 4);
+        assert_eq!(kept.len(), 5);
         assert_eq!(refilled, kept, "connecting fills the view from the log");
     });
 }
