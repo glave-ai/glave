@@ -101,7 +101,7 @@ where
         Err(ApiError::new(
             code::NO_MODEL,
             Sentence::ModelNotRun {
-                model: model.to_owned(),
+                model: model.escape_debug().to_string(),
                 models: offered.join(", "),
             },
         ))
@@ -128,7 +128,7 @@ where
         } else {
             Sentence::NoSuchEffort {
                 model,
-                effort: effort.to_owned(),
+                effort: effort.escape_debug().to_string(),
                 efforts: levels.join(", "),
             }
         };

@@ -1,6 +1,6 @@
 //! Every sentence the server writes for a person, in one table: its variant, the values it is
 //! written with, its message's id in the catalog, and its English, a Fluent pattern. A
-//! translation (`locales/<tag>/session.ftl`) gives each id the same values in its own words.
+//! translation, once a speaker has read one, gives each id its own words with the same values.
 
 use fluent_bundle::{FluentArgs, FluentValue};
 
@@ -197,6 +197,10 @@ sentences! {
         "{ $running } tasks are running, the most policy allows ([tasks] max_running = { $most }); stop one first",
     TaskStopped = "task-stopped" "the task stopped",
     NoTask { thread: String } = "no-task" "no task is running in thread { $thread } in this server",
+    CronFields { text: String } = "cron-fields"
+        "a cron expression has five fields (minute hour day month weekday), got \"{ $text }\"",
+    CronField { field: String, text: String, low: u8, high: u8 } = "cron-field"
+        "the { $field } field \"{ $text }\" is not valid: { $low } to { $high }, *, a-b, */n",
     ScheduleNoBudget = "schedule-no-budget"
         "a schedule's budget is the tokens each run may use, more than 0",
     ScheduleNoPrompt = "schedule-no-prompt" "a schedule needs a prompt",
@@ -231,5 +235,5 @@ sentences! {
     AwakeOnlyHere = "awake-only-here"
         "only the person on this computer chooses whether it stays awake",
     NoLanguage { tag: String } = "no-language"
-        "glave does not write in \"{ $tag }\": choose another language, or none to follow your browser's",
+        "glave does not write in \"{ $tag }\": choose another language",
 }

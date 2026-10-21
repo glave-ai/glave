@@ -36,12 +36,14 @@ where
         if let Some(tag) = &language
             && Language::of(tag).is_none()
         {
-            let tag = tag.clone();
+            let tag = tag.escape_debug().to_string();
             return Err(ApiError::new(
                 code::INVALID_PARAMS,
                 Sentence::NoLanguage { tag },
             ));
         }
+        // Kept as the person wrote it, but for the spaces around it.
+        let language = language.map(|tag| tag.trim().to_owned());
         let (_, scope) = self.personal_project(caller).await?;
         let (log, ledger) = (self.inner.harness.log(), Reserved::Settings.id());
         let set = LanguageSet {

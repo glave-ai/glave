@@ -47,7 +47,11 @@ impl Language {
             .filter_map(|item| {
                 let mut parts = item.split(';');
                 let tag = parts.next()?.trim();
-                let weight = match parts.find_map(|param| param.trim().strip_prefix("q=")) {
+                let weight = parts.find_map(|param| {
+                    let (name, value) = param.split_once('=')?;
+                    name.trim().eq_ignore_ascii_case("q").then_some(value)
+                });
+                let weight = match weight {
                     Some(weight) => thousandths(weight.trim())?,
                     None => 1000,
                 };
@@ -55,7 +59,7 @@ impl Language {
             })
             .collect();
         // Stable: the header's order among those that weigh the same.
-        asked.sort_by(|a, b| b.0.cmp(&a.0));
+        asked.sort_by_key(|(weight, _)| std::cmp::Reverse(*weight));
         asked.into_iter().find_map(|(_, tag)| Self::of(tag))
     }
 }
@@ -130,6 +134,10 @@ mod tests {
         assert_eq!(
             Language::accepted("en-XA;q=0, en;q=0.1"),
             Some(Language::English)
+        );
+        assert_eq!(
+            Language::accepted("en-XA;Q=0, ar-XB"),
+            Some(Language::RightToLeft)
         );
         assert_eq!(Language::accepted("*, fr"), None);
         assert_eq!(Language::accepted("en;q=2, en-XA;q=abc"), None);

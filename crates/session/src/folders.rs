@@ -310,7 +310,9 @@ where
                 if !Path::new(&path).is_absolute() {
                     return Err(ApiError::new(
                         code::INVALID_PARAMS,
-                        Sentence::TheFullPath { path },
+                        Sentence::TheFullPath {
+                            path: path.escape_debug().to_string(),
+                        },
                     ));
                 }
                 let looked = workspace
@@ -360,7 +362,9 @@ where
             Some(path) => {
                 return Err(ApiError::new(
                     code::INVALID_PARAMS,
-                    Sentence::AFullPath { path },
+                    Sentence::AFullPath {
+                        path: path.escape_debug().to_string(),
+                    },
                 ));
             }
             None => {
@@ -431,7 +435,7 @@ fn repository(url: &str) -> Result<String, ApiError> {
         ApiError::new(
             code::INVALID_PARAMS,
             Sentence::NotARepository {
-                url: url.to_owned(),
+                url: url.escape_debug().to_string(),
             },
         )
     };

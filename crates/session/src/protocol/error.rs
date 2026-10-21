@@ -3,7 +3,7 @@
 use glave_ports::Failure;
 use serde::{Deserialize, Serialize};
 
-use super::{Said, code};
+use super::{Told, code};
 use crate::words::Sentence;
 
 /// A request that failed, as JSON-RPC carries it.
@@ -11,7 +11,7 @@ use crate::words::Sentence;
 pub struct ApiError {
     pub code: i64,
     /// What a person is told, in their language where it is the server's own sentence.
-    pub message: Said,
+    pub message: Told,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<ErrorData>,
 }
@@ -23,7 +23,7 @@ pub struct ErrorData {
 }
 
 impl ApiError {
-    pub fn new(code: i64, message: impl Into<Said>) -> Self {
+    pub fn new(code: i64, message: impl Into<Told>) -> Self {
         Self {
             code,
             message: message.into(),

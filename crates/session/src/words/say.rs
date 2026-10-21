@@ -19,13 +19,14 @@ const NUMBERS: [&str; 10] = [
 ];
 
 /// `sentence` written in `language`: its message alone, read and written by Fluent, as plain
-/// text with no marks around the values it holds. A pattern Fluent cannot read writes its id,
-/// which the catalog's test rules out.
+/// text. In a language written right to left, the values it holds are set apart (Unicode's
+/// isolates), so a path or an id reads whole, left to right. A pattern Fluent cannot read
+/// writes its id, which the catalog's test rules out.
 pub(crate) fn say(language: Language, sentence: &Sentence) -> String {
     let source = format!("{} = {}\n", sentence.id(), sentence.english());
     let resource = FluentResource::try_new(source).unwrap_or_else(|(read, _)| read);
     let mut bundle = FluentBundle::new(Vec::new());
-    bundle.set_use_isolating(false);
+    bundle.set_use_isolating(language == Language::RightToLeft);
     bundle.set_transform(match language {
         Language::English => None,
         Language::Accented => Some(accented),
@@ -145,7 +146,7 @@ mod tests {
         assert_eq!(
             said,
             format!(
-                "{} {} t1 {} {} {}",
+                "{} {} \u{2068}t1\u{2069} {} {} {}",
                 word("no"),
                 word("thread"),
                 word("in"),

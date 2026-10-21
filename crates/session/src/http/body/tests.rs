@@ -85,3 +85,25 @@ fn a_watchs_events_carry_their_seq_and_a_quiet_stream_a_comment_every_15_seconds
         assert_eq!(ready(&mut body).as_deref(), Some("(end)"));
     });
 }
+
+#[test]
+fn a_streams_last_answer_is_in_the_callers_language() {
+    glave_ports::block_on!(async {
+        let hub = Hub::default();
+        let watched = thread(1);
+        let read: Reader = Arc::new(|_, _| Box::pin(async { Ok(Vec::new()) }));
+        let watch = Watch::new(watched, read, hub.watch(watched), None);
+        let mut body = Answer::stream(
+            Streamed::Watch(watch),
+            Some(Id::Number(7)),
+            Language::Accented,
+        );
+        // The server goes, and the watch ends with its own sentence.
+        drop(hub);
+        let last = next(&mut body).await;
+        assert!(
+            last.contains("\"message\":\"[ţĥé šéŕṽéŕ šţöþþéð one"),
+            "{last}"
+        );
+    });
+}

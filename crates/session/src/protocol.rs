@@ -12,8 +12,8 @@ mod passkeys;
 mod projects;
 mod providers;
 mod reply;
-mod said;
 mod tasks;
+mod told;
 mod trust;
 
 use glave_event::{
@@ -35,8 +35,8 @@ pub use passkeys::{PasskeySummary, SignInWay};
 pub use projects::{GoneFolder, NewFolder, ProjectFolder};
 pub use providers::{ProviderInfo, hint};
 pub use reply::{AwakeInfo, QueuedMessage, Reply, ServerInfo, Status, ThreadSummary, TurnResult};
-pub use said::Said;
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
+pub use told::Told;
 pub use trust::{TrustAsk, TrustChoice, TrustItem};
 
 /// The protocol version this server speaks.

@@ -161,7 +161,7 @@ impl From<&HarnessError> for ApiError {
 mod tests {
     use glave_ports::ProjectId;
 
-    use crate::protocol::Said;
+    use crate::protocol::Told;
 
     use super::*;
 
@@ -176,7 +176,7 @@ mod tests {
         ];
         for error in errors {
             assert_eq!(error.code, code::INTERNAL);
-            assert_eq!(error.message, Said::from(Sentence::RecordsFailed));
+            assert_eq!(error.message, Told::from(Sentence::RecordsFailed));
         }
     }
 
@@ -184,7 +184,7 @@ mod tests {
     fn what_the_person_can_fix_keeps_its_own_words() {
         let invalid = ApiError::from(ProjectError::Invalid("the name is empty".into()));
         assert_eq!(
-            (invalid.code, invalid.message.as_str()),
+            (invalid.code, &*invalid.message),
             (code::INVALID_PARAMS, "the name is empty")
         );
         let project = ProjectId::from_uuid(uuid::Uuid::nil());

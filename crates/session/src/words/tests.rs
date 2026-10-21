@@ -80,10 +80,37 @@ fn an_answer_is_written_again_only_where_it_holds_the_servers_own_words() {
     assert!(!says(&Ok(Reply::Done {})));
 }
 
-/// Where the session crate refuses with words of its own that stay in English: errors in the
-/// message itself, for whoever writes a client (JSON-RPC's own codes), and misuse of the API
-/// in-process.
-const FOR_CLIENT_WRITERS: [&str; 3] = ["rpc.rs", "http.rs", "dispatch.rs"];
+#[test]
+fn the_notice_of_a_folder_gone_is_written_again_in_a_list_of_projects() {
+    let gone = crate::protocol::GoneFolder {
+        project: glave_ports::ProjectId::from_uuid(uuid::Uuid::nil()),
+        message: Sentence::FolderGone.into(),
+    };
+    let mut listed: Result<Reply, ApiError> = Ok(Reply::Projects {
+        projects: Vec::new(),
+        gone: vec![gone],
+    });
+    assert!(says(&listed));
+    translate(&mut listed, Language::Accented);
+    let Ok(Reply::Projects { gone, .. }) = listed else {
+        panic!("a list of projects")
+    };
+    assert!(gone[0].message.starts_with("[Ţĥîš þŕöĵéçţ'š ƒöļðéŕ"));
+}
+
+/// The words of its own the session crate writes in English, by file and what they say: about
+/// the message itself, for whoever writes a client (JSON-RPC's own codes), what a client reads
+/// of a server's answer, and misuse of the API in process.
+const FOR_CLIENT_WRITERS: [(&str, &str); 8] = [
+    ("rpc.rs", "a message is longer than"),
+    ("rpc.rs", "a watch the connection does not hold"),
+    ("rpc.rs", "the server failed:"),
+    ("rpc.rs", "the server's page of events"),
+    ("rpc.rs", "the server's answer is not one"),
+    ("http.rs", "the Glave-Method header says"),
+    ("dispatch.rs", "is followed with Server::watch"),
+    ("dispatch.rs", "answered at once: only a turn"),
+];
 
 #[test]
 fn every_sentence_the_server_writes_is_in_the_table() {
@@ -97,10 +124,7 @@ fn every_sentence_the_server_writes_is_in_the_table() {
             .into_owned();
         // The client is the CLI's side, which writes English; tests may say what they like.
         let tests = file.file_name().is_some_and(|name| name == "tests.rs");
-        if tests
-            || relative.starts_with("client")
-            || FOR_CLIENT_WRITERS.contains(&relative.as_str())
-        {
+        if tests || relative.starts_with("client") {
             continue;
         }
         let text = std::fs::read_to_string(&file).unwrap();
@@ -109,9 +133,13 @@ fn every_sentence_the_server_writes_is_in_the_table() {
             .match_indices("ApiError::new(")
             .chain(code.match_indices("Self::new(code"))
         {
-            let message = second_argument(&code[at..]);
-            if message.starts_with('"') || message.starts_with("format!") {
-                written.push(format!("{relative}: {message}"));
+            let message = second_argument(code.get(at..).unwrap_or_default());
+            let opening: String = message.chars().take(120).collect();
+            let english = FOR_CLIENT_WRITERS
+                .iter()
+                .any(|(file, words)| relative == *file && opening.contains(words));
+            if (message.starts_with('"') || message.starts_with("format!")) && !english {
+                written.push(format!("{relative}: {opening}"));
             }
         }
     }
@@ -145,7 +173,7 @@ fn second_argument(call: &str) -> &str {
             '(' | '[' | '{' => depth += 1,
             ')' | ']' | '}' if depth == 1 => return "",
             ')' | ']' | '}' => depth -= 1,
-            ',' if depth == 1 => return call[at + 1..].trim_start(),
+            ',' if depth == 1 => return call.get(at + 1..).unwrap_or_default().trim_start(),
             _ => {}
         }
     }

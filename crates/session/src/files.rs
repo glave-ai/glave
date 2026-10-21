@@ -140,7 +140,7 @@ fn gone(name: &str) -> ApiError {
     ApiError::new(
         code::NO_FILE,
         Sentence::FileGone {
-            name: name.to_owned(),
+            name: name.escape_debug().to_string(),
         },
     )
 }

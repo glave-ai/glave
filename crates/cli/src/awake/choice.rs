@@ -35,7 +35,7 @@ impl Choice {
 
     /// Whether the person wants their computer kept awake: yes until they choose.
     pub(crate) async fn on(&self) -> anyhow::Result<bool> {
-        Ok(self.read().await?.is_none_or(|(on, _)| on))
+        Ok(self.read().await?.is_none_or(|on| on))
     }
 
     /// Keeps `on` as the person's choice: appended after the ledger's last event, whatever
@@ -66,8 +66,8 @@ impl Choice {
         Ok(latest.map(|raw| raw.seq.get()))
     }
 
-    /// The latest choice and the `seq` it was kept at, if any was.
-    async fn read(&self) -> anyhow::Result<Option<(bool, u64)>> {
+    /// The latest choice, if one was kept.
+    async fn read(&self) -> anyhow::Result<Option<bool>> {
         let latest = self
             .log
             .latest_of(&self.scope, Reserved::Settings.id(), &[SET])
@@ -76,11 +76,10 @@ impl Choice {
         let Some(raw) = latest else {
             return Ok(None);
         };
-        let seq = raw.seq.get();
         Ok(Some(match decode(raw).map(|event| event.body) {
-            Ok(Body::AwakeSet(set)) => (set.on, seq),
+            Ok(Body::AwakeSet(set)) => set.on,
             // One this glave cannot read leaves it as it is with none: awake.
-            _ => (true, seq),
+            _ => true,
         }))
     }
 }
@@ -118,6 +117,32 @@ mod tests {
             choice.keep(false).await.unwrap();
             let again = Choice::open(&store, person).await.unwrap();
             assert!(!again.on().await.unwrap());
+        });
+    }
+
+    #[test]
+    fn a_choice_is_kept_after_the_ledgers_last_setting_whatever_it_chose() {
+        block_on!(async {
+            let root = glave_keys::InMemoryRoot::new().unwrap();
+            let keys = glave_keys::KeySettings::new(std::sync::Arc::new(root));
+            let store = Data::Sqlite(glave_store_sqlite::Store::open_in_memory(keys).unwrap());
+            let person = PrincipalId::new(SystemClock.now(), random().unwrap()).unwrap();
+            let choice = Choice::open(&store, person).await.unwrap();
+            // The person chose a language first, as the session API keeps it.
+            let header = Header {
+                id: EventId::new(SystemClock.now(), random().unwrap()).unwrap(),
+                thread: Reserved::Settings.id(),
+                seq: Seq::FIRST,
+                at: At::from(SystemClock.now()),
+            };
+            let language = glave_event::LanguageSet {
+                language: Some("en-XA".into()),
+            };
+            let raw = encode(header, &language).unwrap();
+            choice.log.append(&choice.scope, &[raw]).await.unwrap();
+            choice.keep(false).await.unwrap();
+            assert!(!choice.on().await.unwrap());
+            assert_eq!(choice.last().await.unwrap(), Some(2));
         });
     }
 }
