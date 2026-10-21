@@ -10,9 +10,8 @@ use glave_ports::{Project, ProjectId, Standing};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    ApprovalMode, AwakeInfo, CredentialInfo, DeviceCode, FileInfo, GoneFolder, ModelInfo,
-    PasskeySummary, ProjectFolder, ProviderInfo, ScheduleInfo, SignInWay, TaskInfo, TrustAsk,
-    WatchEnd,
+    ApprovalMode, CredentialInfo, DeviceCode, FileInfo, GoneFolder, ModelInfo, PasskeySummary,
+    ProjectFolder, ProviderInfo, ScheduleInfo, SignInWay, TaskInfo, TrustAsk, WatchEnd,
 };
 
 /// What the server is.
@@ -38,6 +37,21 @@ pub struct ServerInfo {
     /// How a browser signs in to it; none where no browser does, as over stdio.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub signin: Vec<SignInWay>,
+}
+
+/// Whether this server keeps its computer from sleeping on its own while a turn, task or
+/// schedule runs (`specs/one-server.md`, owner decision 10).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AwakeInfo {
+    /// Never: a server, which does not sleep. There is nothing to choose.
+    Never,
+    /// On a person's own computer, as they choose: kept awake while glave works when `on`, the
+    /// screen still free to sleep and closing the lid still sleeping it.
+    Chosen { on: bool },
+    /// On a person's own computer that glave has nothing to keep awake with: why, in a
+    /// sentence.
+    Cannot { reason: String },
 }
 
 /// A thread, as a list shows it: from the threads view, with what it is doing now.

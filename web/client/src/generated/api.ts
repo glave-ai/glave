@@ -42,7 +42,7 @@ export type AttachedFile = {
 
 /**
  * Whether this server keeps its computer from sleeping on its own while a turn, task or
- * schedule runs.
+ * schedule runs (`specs/one-server.md`, owner decision 10).
  */
 export type AwakeInfo = {
   readonly kind: "never";

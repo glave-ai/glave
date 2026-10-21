@@ -98,7 +98,7 @@
       "type": "object"
     },
     "AwakeInfo": {
-      "description": "Whether this server keeps its computer from sleeping on its own while a turn, task or\nschedule runs.",
+      "description": "Whether this server keeps its computer from sleeping on its own while a turn, task or\nschedule runs (`specs/one-server.md`, owner decision 10).",
       "oneOf": [
         {
           "description": "Never: a server, which does not sleep. There is nothing to choose.",

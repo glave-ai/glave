@@ -2,7 +2,6 @@
 //! notifications a turn sends, and errors. Every transport carries these same types; in-process
 //! they are passed as they are, elsewhere as JSON-RPC 2.0.
 
-mod awake;
 pub mod code;
 mod credentials;
 mod error;
@@ -24,7 +23,6 @@ use glave_ports::ProjectId;
 use glave_ports::computer::{CommandId, ComputerId};
 use serde::{Deserialize, Serialize};
 
-pub use awake::AwakeInfo;
 pub use credentials::{Ability, CredentialInfo, DeviceCode};
 pub use error::{ApiError, ErrorData};
 pub use files::{AttachedFile, FileInfo};
@@ -35,7 +33,7 @@ pub use models::ModelInfo;
 pub use passkeys::{PasskeySummary, SignInWay};
 pub use projects::{GoneFolder, NewFolder, ProjectFolder};
 pub use providers::{ProviderInfo, hint};
-pub use reply::{QueuedMessage, Reply, ServerInfo, Status, ThreadSummary, TurnResult};
+pub use reply::{AwakeInfo, QueuedMessage, Reply, ServerInfo, Status, ThreadSummary, TurnResult};
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 pub use trust::{TrustAsk, TrustChoice, TrustItem};
 
