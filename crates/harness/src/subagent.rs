@@ -8,8 +8,8 @@ use glave_ports::{Message, ToolSpec};
 use serde::Deserialize;
 use serde_json::json;
 
-/// The tool's name.
-pub(crate) const AGENT: &str = "agent";
+/// The tool's name, as the threads view knows it too.
+pub(crate) const AGENT: &str = glave_ports::AGENT_TOOL;
 
 /// Subagents running at once, as Codex caps them.
 pub(crate) const AT_ONCE: usize = 6;

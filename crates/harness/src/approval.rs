@@ -113,6 +113,15 @@ pub trait Approver: Send + Sync {
         false
     }
 
+    /// Whether the person answers `thread`'s approvals and questions in the log, at any time,
+    /// from any client: then a turn stops at what it asks, holding nothing, and goes on from the
+    /// log once the answer is recorded ([`crate::Harness::go_on`]), rather than waiting for
+    /// [`Approver::decide_by`] or [`Approver::answer`].
+    fn waits(&self, thread: ThreadId) -> bool {
+        let _ = thread;
+        false
+    }
+
     /// Puts `request`'s questions to the person: one answer for each, or `None` when no one
     /// answered. The question is waiting once this returns, before the future is awaited.
     fn answer(

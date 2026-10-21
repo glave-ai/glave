@@ -5,12 +5,12 @@
 use std::future::pending;
 use std::sync::Arc;
 
-use glave_event::{Part, ThreadId};
-use glave_harness::{Cancel, Live, Said, Thread};
+use glave_event::ThreadId;
+use glave_harness::{Cancel, HarnessError, Live, Said, Thread, TurnSummary};
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 use tokio::sync::watch;
 
-use crate::held::{Use, busy, finished};
+use crate::held::{Finish, Use, busy, finished};
 use crate::hub::Hub;
 use crate::keyed::Done;
 use crate::modes::Choice;
@@ -131,14 +131,26 @@ pub(crate) fn publish(hub: &Hub, thread: ThreadId, live: Live) {
     hub.publish(from, update);
 }
 
-/// How the turn ended, as the API reports it.
+/// How the turn ended, as the API reports it: a turn that stopped at a wait has not ended, and
+/// goes on, under work of its own, once answered (`answers.rs`).
 async fn ending(done: &mut Done) -> Result<TurnResult, ApiError> {
-    match finished(done).await {
-        Some(ended) => match ended.as_ref() {
-            Ok(summary) => Ok(TurnResult::from(summary.clone())),
-            Err(error) => Err(ApiError::from(error)),
-        },
-        None => Err(ApiError::new(code::INTERNAL, "the turn stopped")),
+    loop {
+        let Some(ended) = finished(done).await else {
+            return Err(ApiError::new(code::INTERNAL, "the turn stopped"));
+        };
+        match ended.as_ref() {
+            Ok(summary) => return Ok(TurnResult::from(summary.clone())),
+            Err(HarnessError::Waits(_)) => {
+                if done.changed().await.is_err() {
+                    return Err(ApiError::new(
+                        code::NOT_AVAILABLE,
+                        "the turn waits for an answer, and this server stopped following it: \
+                         answer it, and follow the thread to see it go on",
+                    ));
+                }
+            }
+            Err(error) => return Err(ApiError::from(error)),
+        }
     }
 }
 
@@ -190,6 +202,10 @@ where
                 model, thread, watch, started,
             )));
         }
+        if queue {
+            // Read in, so a turn that waits for an answer takes the message for when it goes on.
+            self.load(thread).await?;
+        }
         let sent = loop {
             if queue {
                 match self.queue(caller, thread, prompt, &files, &choice) {
@@ -207,7 +223,11 @@ where
                 Ok(watch) => watch,
                 Err(failed) => break Err(failed),
             };
-            let work = turn(thread, prompt, &files, caller, &choice, unattended);
+            let said = Said {
+                text: prompt,
+                files: &files,
+            };
+            let work = turn(thread, said, caller, &choice, unattended, finish.clone());
             let started = self
                 .occupy_for(thread, finish.clone(), Use::Steered, work)
                 .await;
@@ -217,7 +237,8 @@ where
                     break Ok(Sent::Started(stream));
                 }
                 // Started by someone else meanwhile: queued to it instead.
-                Err(running) if queue && running.code == code::TURN_RUNNING => {}
+                Err(running)
+                    if queue && running.code == code::TURN_RUNNING && self.is_busy(thread) => {}
                 Err(failed) => break Err(failed),
             }
         };
@@ -239,22 +260,23 @@ type TurnWork<P, L, B> = Box<
 >;
 
 /// A turn's work on a held thread: the model and approval mode `choice` names chosen first,
-/// then the turn, then a turn for each message sent too late for the one before it; answered
-/// by no one throughout when `unattended`.
+/// then the turn on what was `said`, then a turn for each message sent too late for the one
+/// before it; answered by no one throughout when `unattended`. A turn that stops at a wait
+/// keeps `finish`, where it sends how it ends, for the work that goes on with it.
 fn turn<P, L, B>(
     thread: ThreadId,
-    prompt: &str,
-    files: &[Part],
+    said: Said<'_>,
     caller: &Caller,
     choice: &Choice,
     unattended: bool,
+    finish: Finish<TurnSummary>,
 ) -> TurnWork<P, L, B>
 where
     P: ModelProvider + 'static,
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    let (prompt, files) = (prompt.to_owned(), files.to_vec());
+    let (prompt, files) = (said.text.to_owned(), said.files.to_vec());
     let (caller, choice) = (caller.clone(), choice.clone());
     Box::new(move |inner, mut held, cancel| {
         Box::pin(async move {
@@ -288,6 +310,9 @@ where
             let ran = harness
                 .run_queued(&mut held, ran, &cancel, &mut publish)
                 .await;
+            if matches!(ran, Err(HarnessError::Waits(_))) {
+                inner.followed.keep(thread, finish);
+            }
             (held, ran)
         })
     })

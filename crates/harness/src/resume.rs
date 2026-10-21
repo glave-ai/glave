@@ -4,15 +4,13 @@
 
 use std::collections::{HashMap, HashSet};
 
-use glave_event::{
-    Body, CallId, Event, Outcome, Part, Seq, ThreadId, ToolCallCompleted, TurnEnded, Verdict,
-    decode,
-};
-use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
+use glave_event::{Body, CallId, Event, Outcome, Part, Seq, ThreadId, TurnEnded, Verdict, decode};
+use glave_ports::{BlobStore, CallKind, EventLog, ModelProvider, Scope, ToolCall, ToolOutput};
 
 use crate::approval::Approver;
 use crate::conversation::conversation;
 use crate::harness::{Harness, HarnessError, Thread};
+use crate::waits::Opened;
 
 /// Events read per page while loading a thread.
 const PAGE: usize = 1_000;
@@ -28,7 +26,8 @@ where
 {
     /// Continues thread `id`: rebuilds the conversation from its events, recording nothing. A
     /// turn a glave left open stays as the log has it ([`Thread::left_open`]) until
-    /// [`Harness::repair`] closes it, which work on the thread does first.
+    /// [`Harness::repair`] closes it, which work on the thread does first; one that waits
+    /// ([`Thread::waits`]) goes on once its answer comes ([`Harness::go_on`]).
     pub async fn resume_thread(&self, scope: Scope, id: ThreadId) -> Result<Thread, HarnessError> {
         self.resume_thread_in(scope, id, None).await
     }
@@ -89,7 +88,7 @@ where
             defaults: self.defaults(),
             inbox: crate::inbox::Inbox::default(),
             commands: std::sync::Arc::new(commands),
-            left_open: left_open(&events).map(|_| last.header.seq),
+            opened: self.opened(&scope, id, &events).await?,
             rebound: bound.filter(|_| moved),
         };
         self.rebuild_memory(&mut thread, &events).await;
@@ -116,35 +115,43 @@ where
         }
     }
 
-    /// Closes what a turn left open in thread `id`, as its log has it now: each call with no
-    /// result gets the interrupted result, then the turn ends `interrupted`. Records nothing
-    /// when nothing was left open, and says whether it recorded. Only for the holder of the
-    /// thread's lease, which keeps any other glave from running the turn meanwhile; a thread
-    /// held in memory is read again after.
+    /// Closes what a turn left open in thread `id`, as its log has it now, when it does not
+    /// wait (one answered and not gone on with is a crash's leftover here): each call with no
+    /// result gets the interrupted result, but a subagent's call its
+    /// subagent's report, the subagent's own turn closed first; then the turn ends
+    /// `interrupted`. Records nothing when nothing was left open, and says whether it
+    /// recorded. Only for the holder of the thread's lease, which keeps any other glave from
+    /// running the turn meanwhile; a thread held in memory is read again after.
     pub async fn repair(&self, scope: Scope, id: ThreadId) -> Result<bool, HarnessError> {
+        Box::pin(self.repair_now(scope, id)).await
+    }
+
+    async fn repair_now(&self, scope: Scope, id: ThreadId) -> Result<bool, HarnessError> {
         let events = self.load(&scope, id).await?;
-        let Some(left) = left_open(&events) else {
+        if matches!(
+            self.opened(&scope, id, &events).await?,
+            None | Some(Opened::Waits)
+        ) {
             return Ok(false);
-        };
+        }
         let next = events
             .last()
             .and_then(|last| last.header.seq.next())
             .ok_or_else(|| HarnessError::Event(format!("thread {id} is full")))?;
-        let output = vec![Part::Text {
-            text: INTERRUPTED.to_owned(),
-        }];
+        let open = crate::waits::open_turn(&events);
         let mut staged = Vec::new();
-        for call_id in left.calls {
-            let completed = ToolCallCompleted {
-                call_id,
-                is_error: true,
-                output: output.clone(),
-                structured: None,
-                untrusted: false,
+        for call in dangling_calls(&events) {
+            let output = match self.child_of(&scope, id, &call.call_id).await? {
+                Some(child) if CallKind::of(&call.tool) == CallKind::Agent => {
+                    self.repair(scope, child.thread).await?;
+                    self.reported(&scope, child.thread).await?.0
+                }
+                _ => ToolOutput::text(true, INTERRUPTED),
             };
+            let completed = crate::calls::completed(call.call_id, output, None);
             self.stage_next(id, next, &mut staged, &completed)?;
         }
-        if left.turn {
+        if open.is_some() {
             let ended = TurnEnded {
                 outcome: Outcome::Interrupted,
             };
@@ -156,9 +163,9 @@ where
 
     /// Closes what a turn left open in `thread`, as [`Harness::repair`] does, and reads its
     /// conversation again after: before any work on it, which only the holder of its lease
-    /// runs.
+    /// runs. A turn that waits is left to go on ([`Harness::go_on`]).
     pub(crate) async fn close_left_open(&self, thread: &mut Thread) -> Result<(), HarnessError> {
-        if thread.left_open.is_none() {
+        if !matches!(thread.opened, Some(Opened::LeftOpen(_))) {
             return Ok(());
         }
         self.repair(thread.scope, thread.id).await?;
@@ -170,20 +177,13 @@ where
             .next()
             .ok_or_else(|| HarnessError::Event(format!("thread {} is full", thread.id)))?;
         thread.messages = conversation(&events);
-        thread.left_open = None;
+        thread.opened = self.opened(&thread.scope, thread.id, &events).await?;
         Ok(())
     }
 }
 
-/// What a turn left open in a thread's log: its calls with no result, and whether the turn
-/// itself has no end.
-struct LeftOpen {
-    calls: Vec<CallId>,
-    turn: bool,
-}
-
-/// What `events` leave open, if anything.
-fn left_open(events: &[Event]) -> Option<LeftOpen> {
+/// The calls in `events` with no result, in order.
+fn dangling_calls(events: &[Event]) -> Vec<ToolCall> {
     let completed: HashSet<&CallId> = events
         .iter()
         .filter_map(|event| match &event.body {
@@ -191,25 +191,17 @@ fn left_open(events: &[Event]) -> Option<LeftOpen> {
             _ => None,
         })
         .collect();
-    let calls: Vec<CallId> = events
+    events
         .iter()
         .filter_map(|event| match &event.body {
-            Body::ToolCallRequested(call) if !completed.contains(&call.call_id) => {
-                Some(call.call_id.clone())
-            }
+            Body::ToolCallRequested(call) if !completed.contains(&call.call_id) => Some(ToolCall {
+                call_id: call.call_id.clone(),
+                tool: call.tool.clone(),
+                arguments: call.arguments.clone(),
+            }),
             _ => None,
         })
-        .collect();
-    let turn = events
-        .iter()
-        .rev()
-        .find_map(|event| match event.body {
-            Body::TurnStarted(_) => Some(true),
-            Body::TurnEnded(_) => Some(false),
-            _ => None,
-        })
-        .unwrap_or(false);
-    (turn || !calls.is_empty()).then_some(LeftOpen { calls, turn })
+        .collect()
 }
 
 /// The person's own messages, oldest first: the last text of each message they added (a new

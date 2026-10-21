@@ -1,6 +1,6 @@
 //! Why a turn could not run.
 
-use glave_event::{EncodeError, InvalidValue, ThreadId};
+use glave_event::{CallId, EncodeError, InvalidValue, ThreadId};
 use glave_ports::computer::ComputerError;
 use glave_ports::{BlobError, EntropyError, LogError, ProviderError};
 use thiserror::Error;
@@ -36,6 +36,19 @@ pub enum HarnessError {
     /// What was asked for is not valid, such as an empty title.
     #[error("{0}")]
     Invalid(String),
+    /// The turn waits for the person, or for a subagent that does: it stopped where its log
+    /// shows the wait, and goes on from the log once an answer comes ([`crate::Harness::go_on`]).
+    #[error("thread {0} waits for an answer")]
+    Waits(ThreadId),
+    /// No turn is open in the thread to go on with.
+    #[error("no turn is open in thread {0}")]
+    NoTurn(ThreadId),
+    /// No turn in the thread waits for this approval.
+    #[error("no approval {} is pending", .0.as_str())]
+    NoApproval(CallId),
+    /// No turn in the thread waits for answers to this call's questions.
+    #[error("no question {} is waiting", .0.as_str())]
+    NoQuestion(CallId),
 }
 
 impl From<EncodeError> for HarnessError {

@@ -42,6 +42,7 @@ where
         let (finish, done) = watch::channel(None);
         let watch = self.watch_from_now(scope, thread).await?;
         let caller = caller.clone();
+        let followed = finish.clone();
         let work = move |inner: Arc<crate::server::Inner<P, L, B>>, mut held, cancel| async move {
             let _no_one = unattended.then(|| inner.approvals.unattended_while(thread));
             let hub = Arc::clone(&inner.hub);
@@ -61,6 +62,10 @@ where
             };
             // What was sent after the goal's last call starts a turn of its own.
             let ran = harness.run_queued(&mut held, ran, &cancel, &mut live).await;
+            // A turn that stops at a wait goes on, and the goal with it, once answered.
+            if matches!(ran, Err(glave_harness::HarnessError::Waits(_))) {
+                inner.followed.keep(thread, followed);
+            }
             (held, ran)
         };
         self.occupy_for(thread, finish, Use::Steered, work).await?;

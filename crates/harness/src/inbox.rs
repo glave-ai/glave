@@ -196,6 +196,8 @@ where
     ) -> Result<TurnSummary, HarnessError> {
         let mut total = match ran {
             Ok(total) => total,
+            // A turn that waits keeps what was sent to it for when it goes on.
+            Err(waits @ HarnessError::Waits(_)) => return Err(waits),
             Err(error) => {
                 give_back(thread, live);
                 return Err(error);

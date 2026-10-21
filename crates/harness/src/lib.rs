@@ -17,6 +17,7 @@ mod conversation;
 mod defaults;
 mod files;
 mod goal;
+mod going_on;
 mod harness;
 mod hooks;
 mod inbox;
@@ -44,6 +45,7 @@ mod tools;
 mod toolset;
 mod turn;
 mod untrusted;
+mod waits;
 mod worker;
 
 pub use approval::{AllowAll, ApprovalRequest, Approver, Decision, NoOneToAsk};

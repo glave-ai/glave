@@ -1,14 +1,27 @@
 //! Running a goal: its first turn, then a continuation after each turn until the model says
 //! it is met or paused, the person stops it, its budget runs out, or it stalls.
 
-use glave_event::{GoalEnded, GoalReason, GoalResumed, GoalSet, Outcome, Principal, ThreadId};
+use glave_event::{
+    Arguments, Body, CallId, Event, GoalEnded, GoalReason, GoalResumed, GoalSet, Outcome,
+    Principal, ThreadId,
+};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope};
 
-use super::{Goal, GoalProgress, IDLE_TURNS, Pursuit, Verdict, continuation, counted, latest};
+use super::{
+    Goal, GoalProgress, IDLE_TURNS, Pursuit, UPDATE_GOAL, Verdict, continuation, counted, latest,
+    update,
+};
 use crate::approval::Approver;
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::turn::{Live, Prompt, TurnSummary, absorb};
+
+/// Where a goal's turns start: a turn to run, with the objective when the goal is new, or one
+/// that ran already and went on from the log after a wait.
+enum First<'a> {
+    Run(Option<&'a str>),
+    Ran(TurnSummary),
+}
 
 impl<P, L, B, A> Harness<P, L, B, A>
 where
@@ -103,38 +116,56 @@ where
     async fn pursue(
         &self,
         thread: &mut Thread,
-        mut opening: Option<&str>,
+        opening: Option<&str>,
         caller: &Caller,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
+        self.pursue_from(thread, First::Run(opening), caller, cancel, live)
+            .await
+    }
+
+    /// Goes on toward the thread's goal after `turn`, one of its turns that went on from the
+    /// log after a wait (`going_on.rs`): taken in as the goal takes in each turn, then the
+    /// goal's next turns.
+    pub(crate) async fn pursue_after(
+        &self,
+        thread: &mut Thread,
+        turn: TurnSummary,
+        caller: &Caller,
+        cancel: &Cancel,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Result<TurnSummary, HarnessError> {
+        self.pursue_from(thread, First::Ran(turn), caller, cancel, live)
+            .await
+    }
+
+    /// The goal's turns until it ends, from `first`, then each with a continuation.
+    async fn pursue_from(
+        &self,
+        thread: &mut Thread,
+        first: First<'_>,
+        caller: &Caller,
+        cancel: &Cancel,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Result<TurnSummary, HarnessError> {
+        let (mut opening, mut ran) = match first {
+            First::Run(opening) => (opening, None),
+            First::Ran(turn) => (None, Some(turn)),
+        };
         let mut total = TurnSummary::started();
         let mut idle = 0;
-        while let Some(goal) = thread.goal().filter(|goal| goal.active()).cloned() {
-            if goal.spent() {
-                self.end_goal(thread, GoalReason::Budget, None, None)
-                    .await?;
-                break;
-            }
-            self.bring(thread).await?;
-            let mut toolset = self.tools(thread).await;
-            toolset.offer_goal();
-            let opened = opening.take();
-            let text = match opened {
-                Some(objective) => objective.to_owned(),
-                None => continuation(&goal),
+        loop {
+            let turn = match ran.take() {
+                Some(turn) => turn,
+                None => match self
+                    .next_turn(thread, opening.take(), caller, cancel, live)
+                    .await?
+                {
+                    Some(turn) => turn,
+                    None => break,
+                },
             };
-            let prompt = Prompt {
-                text: &text,
-                files: &[],
-                caller,
-                by_glave: opened.is_none(),
-                id: None,
-            };
-            set_running(thread, true);
-            let ran = self.run_with(thread, prompt, toolset, cancel, live).await;
-            set_running(thread, false);
-            let turn = ran?;
             absorb(&mut total, &turn);
             total.outcome = turn.outcome;
             let verdict = note_turn(thread, &turn);
@@ -165,6 +196,44 @@ where
         Ok(total)
     }
 
+    /// Runs the goal's next turn, the objective's when `opening` gives it, else a
+    /// continuation's: `None` once the goal ended or spent its budget.
+    async fn next_turn(
+        &self,
+        thread: &mut Thread,
+        opening: Option<&str>,
+        caller: &Caller,
+        cancel: &Cancel,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Result<Option<TurnSummary>, HarnessError> {
+        let Some(goal) = thread.goal().filter(|goal| goal.active()).cloned() else {
+            return Ok(None);
+        };
+        if goal.spent() {
+            self.end_goal(thread, GoalReason::Budget, None, None)
+                .await?;
+            return Ok(None);
+        }
+        self.bring(thread).await?;
+        let mut toolset = self.tools(thread).await;
+        toolset.offer_goal();
+        let text = match opening {
+            Some(objective) => objective.to_owned(),
+            None => continuation(&goal),
+        };
+        let prompt = Prompt {
+            text: &text,
+            files: &[],
+            caller,
+            by_glave: opening.is_none(),
+            id: None,
+        };
+        set_running(thread, true);
+        let ran = self.run_with(thread, prompt, toolset, cancel, live).await;
+        set_running(thread, false);
+        ran.map(Some)
+    }
+
     /// Records the goal's end with what it used, and the model's note when it paused.
     async fn end_goal(
         &self,
@@ -188,6 +257,61 @@ where
         }
         Ok(())
     }
+}
+
+/// Whether the turn that starts at `started` among `events`, thread's, is a turn of its goal:
+/// one that began while the goal it has now was set and running.
+pub(crate) fn of_turn(thread: &Thread, events: &[Event], started: usize) -> bool {
+    let active = thread.goal().is_some_and(GoalProgress::active);
+    let set = events
+        .iter()
+        .rposition(|event| matches!(event.body, Body::GoalSet(_) | Body::GoalResumed(_)));
+    active && set.is_some_and(|set| set < started)
+}
+
+/// A goal's turn goes on from its log, its events so far `turn`: it runs as the goal's turn,
+/// with how the model ended the goal in it already, if it did, and is counted once it ends, as
+/// any of the goal's turns is (the log counted it, and what it used so far, already).
+pub(crate) fn going_on(thread: &mut Thread, turn: &[Event]) {
+    set_running(thread, true);
+    let completed: Vec<&CallId> = turn
+        .iter()
+        .filter_map(|event| match &event.body {
+            Body::ToolCallCompleted(done) => Some(&done.call_id),
+            _ => None,
+        })
+        .collect();
+    let used: Vec<Arguments> = turn
+        .iter()
+        .filter_map(|event| match &event.body {
+            Body::ToolCallRequested(call)
+                if call.tool.trim().eq_ignore_ascii_case(UPDATE_GOAL)
+                    && completed.contains(&&call.call_id) =>
+            {
+                Some(call.arguments.clone())
+            }
+            _ => None,
+        })
+        .collect();
+    for arguments in &used {
+        update(thread, arguments);
+    }
+    let spent: u64 = turn
+        .iter()
+        .filter_map(|event| match &event.body {
+            Body::ModelResponded(responded) => Some(counted(&responded.usage.counts())),
+            _ => None,
+        })
+        .sum();
+    if let Some(goal) = thread.goal.as_mut() {
+        goal.progress.tokens = goal.progress.tokens.saturating_sub(spent);
+        goal.progress.turns = goal.progress.turns.saturating_sub(1);
+    }
+}
+
+/// The goal's turn that went on from the log has ended.
+pub(crate) fn stopped_running(thread: &mut Thread) {
+    set_running(thread, false);
 }
 
 fn set_running(thread: &mut Thread, running: bool) {

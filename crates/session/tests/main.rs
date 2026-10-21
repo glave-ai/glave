@@ -13,6 +13,7 @@ mod choices;
 mod commands;
 mod conformance;
 mod credentials;
+mod durable;
 mod files;
 mod goals;
 mod gone;

@@ -284,20 +284,15 @@ where
                 thread,
                 approval,
                 decision,
-            } => self
-                .inner
-                .approvals
-                .decide(thread, &approval, decision, caller.person)
-                .map(|()| Reply::Done {}),
+            } => self.decide(caller, thread, approval, decision).await,
             Request::QuestionAnswer {
                 thread,
                 question,
                 answers,
-            } => self
-                .inner
-                .approvals
-                .respond(thread, &question, answers)
-                .map(|()| Reply::Done {}),
+            } => {
+                self.answer_questions(caller, thread, question, answers)
+                    .await
+            }
             Request::TrustAnswer {
                 thread,
                 ask,
