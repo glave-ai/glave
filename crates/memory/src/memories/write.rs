@@ -135,7 +135,7 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
         };
         self.append(ledger, &saved).await?;
         if let Some((old_ledger, entry)) = old {
-            self.forget_in(old_ledger, entry.memory, &who.by, None)
+            self.forget_in(old_ledger, entry.memory, &who.by, (None, None))
                 .await?;
         }
         let memory = self
@@ -185,16 +185,17 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
         if entry.forgot.is_some() && by_glave(&who.by) {
             return Ok(());
         }
-        self.forget_in(ledger, memory, &who.by, None).await
+        self.forget_in(ledger, memory, &who.by, (None, None)).await
     }
 
-    /// Records the forget in `ledger`: erased now, or at `erase_at` when glave forgets.
+    /// Records the forget in `ledger`: erased now, or at `erase_at` when glave forgets, `into`
+    /// the memory a merge folded it into.
     pub(crate) async fn forget_in(
         &self,
         ledger: Scope,
         memory: MemoryId,
         by: &Principal,
-        erase_at: Option<At>,
+        (erase_at, into): (Option<At>, Option<MemoryId>),
     ) -> Result<(), MemoryError> {
         let now = self.now();
         let source = self
@@ -206,6 +207,7 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
             memory,
             erase_at: erase_at.unwrap_or(now),
             source,
+            into,
             by: by.clone(),
         };
         self.append(ledger, &forgotten).await?;
@@ -232,7 +234,8 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
             .filter(|memory| memory.scope == which)
             .collect();
         for memory in &all {
-            self.forget_in(ledger, memory.memory, &who.by, None).await?;
+            self.forget_in(ledger, memory.memory, &who.by, (None, None))
+                .await?;
         }
         Ok(all)
     }

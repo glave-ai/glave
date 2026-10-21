@@ -8,8 +8,8 @@ use glave_event::{
     ThreadId, ToolCallCompleted, encode,
 };
 use glave_harness::{AllowAll, Cancel};
-use glave_memory::{MOST_HITS, Recalled, Source, Writer};
-use glave_ports::memories::{MemoryContext, RECALL};
+use glave_memory::{MOST_HITS, Recalled, Source, Tidier, Writer};
+use glave_ports::memories::{MemoryContext, RECALL, REMEMBER};
 use glave_ports::{EventLog, Scope};
 use serde_json::json;
 
@@ -233,7 +233,7 @@ fn forgetting_a_memory_takes_the_turn_it_came_from_out_of_recall() {
         let dir = folder("recall-forget");
         let save = json!({"text": "The favourite flower is marigold", "scope": "personal"});
         let answers = vec![
-            answer(None, vec![(glave_ports::memories::REMEMBER, save)]),
+            answer(None, vec![(REMEMBER, save)]),
             said("OK, remembered marigold."),
             said("Marigold beds need sun."),
         ];
@@ -352,5 +352,96 @@ fn the_model_recalls_through_the_server_and_untrusted_hits_mark_the_thread() {
             "{completed}"
         );
         assert!(!completed.contains("BLUEHERON"));
+    });
+}
+
+/// What the person said, among `hits`.
+fn persons(hits: &[Recalled]) -> Vec<String> {
+    let mut said: Vec<String> = hits
+        .iter()
+        .filter(|hit| {
+            matches!(
+                hit.source,
+                Source::Thread {
+                    said_by: "person",
+                    ..
+                }
+            )
+        })
+        .map(|hit| hit.text.clone())
+        .collect();
+    said.sort();
+    said
+}
+
+/// #555: tidy-up merged away the memory a turn saved, and the turn dropped out of recall though
+/// the person forgot nothing.
+#[test]
+fn a_merge_hides_no_turn_and_forgetting_what_it_made_hides_every_turn_it_came_from() {
+    block_on!(async {
+        let kit = Kit::new();
+        let memory = kit.memory(rules(), 2).await;
+        let dir = folder("recall-merged");
+        let save = |text: &str| {
+            let args = json!({"text": text, "scope": "project", "force": true});
+            answer(None, vec![(REMEMBER, args)])
+        };
+        let answers = vec![
+            save("Atlas deploys to Railway"),
+            said("Noted."),
+            save("Merging to main ships atlas to Railway"),
+            said("Noted."),
+        ];
+        // No AGENTS.md, so the person's first message is only their words.
+        let mut plain = settings();
+        plain.instructions = None;
+        let (harness, _) = kit
+            .harness(&dir, answers, AllowAll, Some(memory), plain)
+            .await;
+        for message in [
+            "We deploy atlas to Railway.",
+            "Merging to main ships atlas.",
+        ] {
+            let mut thread = harness.start_thread(shared()).await.unwrap();
+            harness
+                .run_turn(&mut thread, message, &Cancel::new(), &mut |_| {})
+                .await
+                .unwrap();
+        }
+        let memories = kit.memories(rules(), 3);
+        let tidier = Tidier {
+            provider: ScriptedModel::cycling(vec![said(
+                r#"{"merge": [{"memories": [1, 2], "text": "Atlas deploys to Railway: merging to main ships it"}]}"#,
+            )]),
+            model: "small".to_owned(),
+        };
+        assert_eq!(memories.tidy(shared(), &tidier).await.unwrap().merged, 1);
+        let asking = on(shared(), thread(9));
+        let query = "atlas Railway merging";
+        let before = memories.recall(&asking, query, 10).await.unwrap();
+        assert_eq!(
+            persons(&before),
+            [
+                "Merging to main ships atlas.",
+                "We deploy atlas to Railway."
+            ],
+            "the merged text lives on, so both turns stay"
+        );
+
+        let merged = memories.list(&asking).await.unwrap();
+        let [merged] = merged.as_slice() else {
+            panic!("{merged:?}");
+        };
+        let writer = Writer {
+            person: Some(person()),
+            scope: shared(),
+            by: Principal::person(person()),
+            source: None,
+            untrusted_read: false,
+        };
+        memories.forget(&writer, merged.memory).await.unwrap();
+        let fresh = kit.memories(rules(), 4);
+        let after = fresh.recall(&asking, query, 10).await.unwrap();
+        assert!(after.is_empty(), "{after:?}");
     });
 }

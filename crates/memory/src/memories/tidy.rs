@@ -193,7 +193,7 @@ impl<L: EventLog + 'static> Memories<L> {
                 };
                 self.append(ledger, &edited).await?;
                 for memory in rest {
-                    self.forget_in(ledger, *memory, &glave, Some(erase_at))
+                    self.forget_in(ledger, *memory, &glave, (Some(erase_at), Some(*keep)))
                         .await?;
                 }
                 used.extend(ids.iter().copied());
@@ -219,7 +219,7 @@ impl<L: EventLog + 'static> Memories<L> {
                     return Ok(Settled::Asked([one.memory, other.memory]));
                 }
                 let older = if one_at < other_at { one } else { other };
-                self.forget_in(ledger, older.memory, &glave, Some(erase_at))
+                self.forget_in(ledger, older.memory, &glave, (Some(erase_at), None))
                     .await?;
                 Ok(Settled::Superseded)
             }

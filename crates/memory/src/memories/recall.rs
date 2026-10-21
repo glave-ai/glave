@@ -73,7 +73,7 @@ impl<L: EventLog + 'static> Memories<L> {
         }
         let readable = self.rules().readable(on.person, on.scope);
         let mut memories = Vec::new();
-        // Where forgotten memories were saved: those turns are never returned.
+        // Where memories the person forgot were saved: those turns are never returned.
         let mut hidden = Vec::new();
         for (kind, ledger) in &readable {
             let (found, sources) = self
@@ -168,8 +168,8 @@ impl<L: EventLog + 'static> Memories<L> {
     }
 }
 
-/// The turns where forgotten memories were saved: a forget takes the turn that gave the memory
-/// out of `recall` too, though the conversation itself stays as it was.
+/// The turns where memories the person forgot were saved (`Book::hidden`): their forget takes
+/// the turn that gave the memory out of `recall` too, though the conversation stays as it was.
 struct Hidden {
     sources: Vec<MemorySource>,
     /// Each source's turn as `seq` bounds, once read.
@@ -184,7 +184,7 @@ impl Hidden {
         }
     }
 
-    /// Whether `found` is in the turn a forgotten memory was saved in. A thread that cannot be
+    /// Whether `found` is in a turn the person's forgets hide. A thread that cannot be
     /// read hides the whole of it, so a failure never shows what was forgotten.
     async fn hides<L: EventLog>(&mut self, log: &L, ledger: Scope, found: Found) -> bool {
         let sources: Vec<MemorySource> = self

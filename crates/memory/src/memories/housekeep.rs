@@ -61,7 +61,7 @@ impl<L: EventLog + 'static> Memories<L> {
                     .await?;
                 let erase_at = days_after(now, ERASE_AFTER_DAYS);
                 for memory in stale {
-                    self.forget_in(*scope, memory, &Principal::glave(), Some(erase_at))
+                    self.forget_in(*scope, memory, &Principal::glave(), (Some(erase_at), None))
                         .await?;
                     done.forgotten = done.forgotten.saturating_add(1);
                 }
