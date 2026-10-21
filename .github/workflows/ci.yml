@@ -135,8 +135,8 @@ jobs:
   #
   # The checks: format, lint (eslint and stylelint), type-check, the licences and audit of
   # what ships, the app's messages against its source and every language, unit tests with axe,
-  # the library, app and showcase builds, and glave built with the app inside (the `web`
-  # feature) and its serving tests.
+  # the library, app and showcase builds, every release archive's third-party notices, and
+  # glave built with the app inside (the `web` feature) and its serving tests.
   web-checks:
     runs-on: ubuntu-latest
     defaults:
@@ -170,6 +170,14 @@ jobs:
       - run: npm test
       - run: npm run build:glaze
       - run: npm run build
+      # Written for each target as the release writes them, by the same script, so a crate or
+      # npm package whose licence is missing, or not one about.toml accepts, fails here rather
+      # than when a release is built.
+      - name: Every release archive's third-party notices
+        run: |
+          shellcheck .github/third-party-notices.sh
+          sh .github/third-party-notices.sh
+        working-directory: .
       - run: npm run build:showcase
       - name: Build glave with the app inside, and test that it serves it
         run: cargo nextest run -p glave --features web --test cli -E 'test(/^serve::/)'
