@@ -164,7 +164,6 @@ export class HomeComponent {
       const files = this.attachments.attached();
       const state: FirstPrompt = files.length === 0 ? { prompt } : { prompt, files };
       await this.router.navigate(['/t', thread.id], { state });
-      void this.projects.refresh();
     } catch (error: unknown) {
       this.draft.set(prompt);
       this.error.set(error instanceof Error ? error.message : String(error));

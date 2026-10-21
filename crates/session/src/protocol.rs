@@ -16,7 +16,7 @@ mod tasks;
 mod trust;
 
 use glave_event::{
-    CallId, CredentialId, MemoryId, MemoryScope, Principal, ProviderId, RawEvent, ScheduleId,
+    At, CallId, CredentialId, MemoryId, MemoryScope, Principal, ProviderId, RawEvent, ScheduleId,
     Secret, Seq, ThreadId, When,
 };
 use glave_ports::ProjectId;
@@ -216,6 +216,25 @@ methods! {
     /// Ends this connection's watch of a thread, which then answers its request. Over HTTP,
     /// where each watch is a request of its own, closing its stream ends it.
     "thread/unwatch" => ThreadUnwatch { thread: ThreadId } -> [Done],
+    /// Follows the caller's threads as `thread/list` shows them: each one's summary
+    /// (`thread/changed`) whenever it changes, whatever its standing, until the client ends the
+    /// watch. Streams as `thread/watch` does; a connection of lines watches each list once,
+    /// within its 64 watches.
+    "thread/list/watch" => ThreadListWatch {
+        /// The project whose threads to follow: every project the caller works in when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<ProjectId>,
+        /// The latest `updated_at` the client has: the threads updated since are sent first,
+        /// read from the threads view, oldest first. Only what changes from now when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        after: Option<At>,
+    } -> [Watched],
+    /// Ends this connection's watch of a list, which then answers its request. Over HTTP,
+    /// closing its stream ends it.
+    "thread/list/unwatch" => ThreadListUnwatch {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<ProjectId>,
+    } -> [Done],
     /// Sends the person's message: it starts a turn, or while one runs it is queued to it, and
     /// the model reads it at its next call.
     "turn/start" => TurnStart {
@@ -607,7 +626,7 @@ pub enum Answer {
     Deny,
 }
 
-/// Why a watch ended (`thread/watch`).
+/// Why a watch ended (`thread/watch`, `thread/list/watch`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum WatchEnd {
@@ -630,4 +649,10 @@ pub enum Notification {
     /// A task ended: sent to the thread's watchers. Never stored as such; the ledger keeps it.
     #[serde(rename = "task/finished")]
     TaskFinished { thread: ThreadId, task: TaskInfo },
+    /// A thread a list watch follows changed: its summary now, as `thread/list` shows it.
+    #[serde(rename = "thread/changed")]
+    Changed {
+        thread: ThreadId,
+        summary: Box<ThreadSummary>,
+    },
 }
