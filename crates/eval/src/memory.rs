@@ -244,8 +244,12 @@ impl Remembering {
         Ok(Some(shown.iter().map(|memory| tokens(&memory.text)).sum()))
     }
 
-    /// What the memory ledgers hold now.
+    /// What the memory ledgers hold now, once memory has stopped: a tidy-up still running in
+    /// the background is stopped first, so the ledgers read the same throughout.
     pub(crate) async fn report(&self) -> Result<MemoryReport, EvalError> {
+        if let Some(memory) = &self.memory {
+            memory.close().await;
+        }
         let fail = |error: &dyn std::fmt::Display| EvalError::Setup(format!("memory: {error}"));
         let mut report = MemoryReport::default();
         let mut usage = MemoryUse::default();
@@ -280,9 +284,6 @@ impl Remembering {
                 report.live.push(text.clone());
             }
             report.forgotten.extend(read.forgotten);
-        }
-        if let Some(memory) = &self.memory {
-            memory.close().await;
         }
         report.usage = self.memory.is_some().then_some(usage);
         Ok(report)
