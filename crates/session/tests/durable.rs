@@ -272,8 +272,30 @@ async fn until_asked(stream: &mut TurnStream) {
     panic!("nothing waited");
 }
 
+/// Follows `stream`, a parent's, until a wait is announced and a subagent's model call has
+/// begun: the model streams the start of its answer, `said`, before it waits for its gate, so
+/// that subagent is inside its call.
+async fn until_asked_while_calling(stream: &mut TurnStream, said: &str) {
+    let (mut asked, mut calling) = (false, false);
+    while let Some(item) = stream.next().await {
+        if let TurnItem::Note(note) = item
+            && let Notification::Live { update, .. } = note.as_ref()
+        {
+            match update {
+                Update::ApprovalPending { .. } | Update::Asked { .. } => asked = true,
+                Update::Text { text } if text == said => calling = true,
+                _ => {}
+            }
+        }
+        if asked && calling {
+            return;
+        }
+    }
+    panic!("nothing waited while a subagent was in its model call");
+}
+
 /// The events of `threads` as runs compare them: each event's type and payload, but for ids
-/// (a thread's, a workspace's), which each run makes anew.
+/// (a thread's, a workspace's), which each run makes anew, and how long commands ran.
 async fn compared<L: EventLog + 'static>(
     server: &Tested<L>,
     threads: &[ThreadId],
@@ -289,14 +311,21 @@ async fn compared<L: EventLog + 'static>(
     seen
 }
 
-/// `value` with every id in it, a string that reads as a UUID, the same placeholder; the
-/// person's and the agent's are the same in every run, and kept.
+/// `value` with every id in it, a string that reads as a UUID, the same placeholder (the
+/// person's and the agent's are the same in every run, and kept), and the time a command's
+/// result says it took (`[exit 0 · 0.1 s]`) the same too.
 fn but_for_ids(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::String(text) => {
             let kept = [person().to_string(), agent().to_string()];
             if uuid::Uuid::parse_str(text).is_ok() && !kept.contains(text) {
                 *text = "id".into();
+            }
+            let took = text.rfind(" · ").zip(text.rfind(" s]"));
+            if let Some((from, to)) = took.filter(|(from, to)| from < to)
+                && let (Some(before), Some(after)) = (text.get(..from), text.get(to..))
+            {
+                *text = format!("{before} · t{after}");
             }
         }
         serde_json::Value::Array(items) => items.iter_mut().for_each(but_for_ids),
@@ -456,9 +485,9 @@ async fn suite<S: Store, F: Future<Output = S>>(store: &str, make: impl Fn(&str)
     side_by_side(&format!("{store}-side-by-side"), &make("side").await).await;
 }
 
-/// Child A waits for an approval while child B runs, and the server stops: B is reported
-/// interrupted, the parent waits with A, and once A is answered the parent takes A's report and
-/// B's, B never started again.
+/// Child A waits for an approval while child B is in its model call, and the server stops: B
+/// is reported interrupted, the parent waits with A, and once A is answered the parent takes
+/// A's report and B's, B never started again.
 async fn side_by_side<S: Store>(name: &str, store: &S) {
     let dir = folder(name);
     let gate = Arc::new(tokio::sync::Notify::new());
@@ -491,7 +520,7 @@ async fn side_by_side<S: Store>(name: &str, store: &S) {
     let mut stream = stream_turn(&first, thread, "PARENT: both", None)
         .await
         .unwrap();
-    until_asked(&mut stream).await;
+    until_asked_while_calling(&mut stream, "Thought.").await;
     first.stop(Duration::ZERO).await;
     drop((stream, first));
 
