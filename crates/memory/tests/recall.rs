@@ -194,16 +194,6 @@ fn a_shared_project_finds_memories_its_threads_and_the_persons_never_another_pro
             ["4#1 person"],
             "an isolated project reads only itself"
         );
-        assert_eq!(
-            sources(
-                &memories
-                    .recall(&on(inbox(), thread(9)), "orca", 10)
-                    .await
-                    .unwrap()
-            ),
-            ["3#1 person"],
-            "in the person's Chats, their one ledger is searched once"
-        );
         let off_hits = memories
             .recall(&on(off(), thread(9)), "orca", 10)
             .await
@@ -232,6 +222,20 @@ fn a_shared_project_finds_memories_its_threads_and_the_persons_never_another_pro
                 .await
                 .is_err()
         );
+    });
+}
+
+#[test]
+fn the_persons_chats_are_one_ledger_searched_once() {
+    block_on!(async {
+        let kit = Kit::new();
+        world(&kit).await;
+        let memories = kit.memories(rules(), 1);
+        let hits = memories
+            .recall(&on(inbox(), thread(9)), "orca", 10)
+            .await
+            .unwrap();
+        assert_eq!(sources(&hits), ["3#1 person"]);
     });
 }
 
