@@ -3,7 +3,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use glave_ports::testing::{HUNG, TempDir};
-use rustix::process::{Pid, Signal, kill_process};
+use rustix::process::{Pid, Signal, kill_process, test_kill_process};
 
 use super::*;
 use crate::testing::Orphan;
@@ -18,6 +18,14 @@ fn fake_helper(folder: &Path) -> PathBuf {
     std::fs::write(&script, text).unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     script
+}
+
+/// A program at glave's path that is no helper (another version): it says something else, then
+/// reads what it is given, keeping its number in `imposter` beside itself.
+fn imposter(folder: &Path) {
+    let text = "#!/bin/sh\necho $$ > \"${0%/*}/imposter\"\nprintf 'glave-lifeline 2\\n'\n\
+                exec cat > /dev/null\n";
+    std::fs::write(folder.join("helper"), text).unwrap();
 }
 
 /// The helper running now.
@@ -108,26 +116,44 @@ fn a_helper_started_again_that_does_not_say_it_is_ready_is_refused_until_one_doe
         let first = helper_pid(&lifeline);
         let held = lifeline.tie(101).await.unwrap();
 
-        // What is at glave's path is no helper now (a rebuild or an upgrade replaced it), and
-        // the helper goes: the next program glave starts is refused, not left untied.
-        std::fs::write(folder.join("helper"), "#!/bin/sh\nexit 0\n").unwrap();
+        // What is at glave's path is no helper now (a rebuild or an upgrade put another version
+        // there), and the helper goes. Two programs start together: the first starts what is
+        // there, the second tells it and waits for it too. Both are refused, not left untied.
+        imposter(&folder);
         killed(&lifeline, first).await;
-        let refused = lifeline.tie(102).await.unwrap_err();
-        assert!(
-            matches!(refused, ProcessError::Lifeline { .. }),
-            "{refused}"
-        );
+        let other = tokio::spawn({
+            let lifeline = Arc::clone(&lifeline);
+            async move { lifeline.tie(103).await.err() }
+        });
+        let refused = [lifeline.tie(102).await.err(), other.await.unwrap()];
+        for refused in refused {
+            assert!(
+                matches!(refused, Some(ProcessError::Lifeline { .. })),
+                "{refused:?}"
+            );
+        }
         assert!(
             lifeline.lock().helper.is_none(),
             "it is not kept as the helper"
         );
-        assert_eq!(lifeline.lock().live, BTreeSet::from([101]), "102 is let go");
+        assert_eq!(
+            lifeline.lock().live,
+            BTreeSet::from([101]),
+            "102 and 103 are let go"
+        );
+        let pid = std::fs::read_to_string(folder.join("imposter")).unwrap();
+        let pid = Pid::from_raw(pid.trim().parse().unwrap()).unwrap();
+        let deadline = Instant::now() + HUNG;
+        while test_kill_process(pid).is_ok() {
+            assert!(Instant::now() < deadline, "what is not a helper is stopped");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
 
         // A helper at glave's path again: the next program starts it, telling it all glave holds.
         fake_helper(&folder);
-        let again = lifeline.tie(103).await.unwrap();
+        let again = lifeline.tie(104).await.unwrap();
         let second = helper_pid(&lifeline);
-        let said = "+101\n+103\n";
+        let said = "+101\n+104\n";
         assert_eq!(told(&folder, second, said).await, said);
         drop((held, again));
     });
