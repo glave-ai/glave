@@ -1,8 +1,10 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  LOCALE_ID,
   computed,
   effect,
+  inject,
   input,
   model,
   output,
@@ -15,6 +17,8 @@ import {
   GlzFormFieldComponent,
   GlzInputDirective,
 } from '@glave/glaze';
+
+import { plural } from '../../lib/plural';
 
 /** The longest title `thread/rename` takes, and the longest name a project is given. */
 const TITLE_LIMIT = 200;
@@ -40,7 +44,10 @@ export class RenameDialogComponent {
   readonly renamed = output<string>();
 
   protected readonly copy = {
-    hint: $localize`:@@renameDialog.hint:Up to ${String(TITLE_LIMIT)}:LIMIT: characters`,
+    hint: plural(
+      $localize`:@@renameDialog.hint:{${TITLE_LIMIT}:LIMIT:, plural, one {Up to # character} other {Up to # characters}}`,
+      inject(LOCALE_ID),
+    ),
     cancel: $localize`:@@renameDialog.cancel:Cancel`,
     save: $localize`:@@renameDialog.save:Save`,
   } as const;

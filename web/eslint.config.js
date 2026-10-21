@@ -68,6 +68,12 @@ export default tseslint.config(
           message:
             'Read a message where it is used, in a function or a class field: at a module’s top level it is read before a translation loads.',
         },
+        {
+          // Each message keeps its id when its English changes, so translations keep it too.
+          selector:
+            "TaggedTemplateExpression[tag.name='$localize'] > TemplateLiteral > TemplateElement:first-child:not([value.raw=/^:@@[A-Za-z][\\w.]*:/])",
+          message: 'Give the message a stable id: $localize`:@@area.key:Text`.',
+        },
       ],
     },
   },

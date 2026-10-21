@@ -1,5 +1,5 @@
 import type { Provider } from '@angular/core';
-import { loadTranslations } from '@angular/localize';
+import { clearTranslations, loadTranslations } from '@angular/localize';
 import { GLZ_TEXT } from '@glave/glaze';
 
 import type { Translated } from './app/lib/language';
@@ -23,6 +23,12 @@ const CATALOGS: Readonly<Record<Translated, () => Promise<{ readonly default: Ca
  */
 export async function translate(language: Translated): Promise<readonly Provider[]> {
   const { default: catalog } = await CATALOGS[language]();
-  loadTranslations(catalog.translations);
+  try {
+    loadTranslations(catalog.translations);
+  } catch (error: unknown) {
+    // Half a language is worse than none: the app starts in English.
+    clearTranslations();
+    throw error;
+  }
   return [{ provide: GLZ_TEXT, useFactory: glazeText }];
 }

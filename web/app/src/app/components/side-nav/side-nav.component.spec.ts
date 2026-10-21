@@ -75,7 +75,9 @@ describe('SideNavComponent', () => {
     const tasks = root.querySelector<HTMLElement>('[data-testid="nav-tasks"]');
     expect(tasks?.getAttribute('href')).toBe('/tasks');
     expect(tasks?.getAttribute('aria-current')).toBe('page');
-    expect(tasks?.textContent.replace(/\s+/gu, ' ').trim()).toBe('Tasks 1 going');
+    // The count shows alone; screen readers hear it in words.
+    expect(tasks?.querySelector('.going [aria-hidden="true"]')?.textContent).toBe('1');
+    expect(tasks?.querySelector('.going .glz-visually-hidden')?.textContent).toBe('1 going');
     await expectAccessible(root);
     tasks?.click();
     await fixture.whenStable();

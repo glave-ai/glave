@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  LOCALE_ID,
   computed,
   inject,
   input,
@@ -49,7 +50,6 @@ export class SideNavComponent {
     search: $localize`:@@sideNav.search:Search threads`,
     searchPlaceholder: $localize`:@@sideNav.searchPlaceholder:Search`,
     tasks: $localize`:@@sideNav.tasks:Tasks`,
-    going: $localize`:@@sideNav.going:going`,
   } as const;
   protected readonly icons = { newChat: PenLine, search: Search, tasks: ListChecks };
   protected readonly tasksLink = '/tasks';
@@ -57,7 +57,16 @@ export class SideNavComponent {
   protected readonly query = signal('');
   private readonly tasks = inject(TasksService);
   protected readonly tasksLive = this.tasks.live;
-  protected readonly tasksGoing = this.tasks.going;
+  private readonly locale = inject(LOCALE_ID);
+  /**
+   * How many tasks are going, as the reader writes numbers: shown alone, and read to screen
+   * readers in words.
+   */
+  protected readonly tasksGoing = computed(() => {
+    const going = this.tasks.going();
+    const count = new Intl.NumberFormat(this.locale).format(going);
+    return going === 0 ? null : { count, words: $localize`:@@sideNav.going:${count}:COUNT: going` };
+  });
   protected readonly tasksCurrent = computed(() => this.page() === 'tasks');
 
   constructor() {

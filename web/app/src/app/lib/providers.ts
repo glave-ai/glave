@@ -15,50 +15,55 @@ export interface Service {
  * The services offered, in order: OpenRouter first, one key for every major model, then any
  * service that speaks OpenAI's API, which is how glave talks with models.
  */
-export function offeredServices(): readonly Service[] {
-  return [
-    {
-      kind: 'openrouter',
-      name: 'OpenRouter',
-      hint: $localize`:@@providers.openrouter:One key for every major model, each priced as you use it.`,
-    },
-    {
-      kind: 'openai',
-      name: 'OpenAI',
-      hint: $localize`:@@providers.openai:GPT models, with a key from OpenAI.`,
-    },
-    {
-      kind: 'compatible',
-      name: $localize`:@@providers.compatible.name:Another server`,
-      hint: $localize`:@@providers.compatible:Any server that speaks OpenAI’s API, such as Ollama, LM Studio or vLLM.`,
-    },
-  ];
-}
+const OFFERED: readonly ProviderKind[] = ['openrouter', 'openai', 'compatible'];
 
 /** Every service glave keeps accounts with: those offered, and one no longer offered. */
-function knownServices(): readonly Service[] {
-  const anthropic: Service = {
-    kind: 'anthropic',
-    name: 'Anthropic',
-    hint: $localize`:@@providers.anthropic:Claude models, with a key from Anthropic.`,
-  };
-  return [...offeredServices(), anthropic];
-}
+const KNOWN: readonly ProviderKind[] = [...OFFERED, 'anthropic'];
 
 /** Whether `value` names a service glave keeps accounts with. */
 export function isServiceKind(value: unknown): value is ProviderKind {
-  return knownServices().some((service) => service.kind === value);
+  return KNOWN.some((kind) => kind === value);
 }
 
-/** The service of `kind`. */
+/** The service of `kind`, by its plain name, with what it is. */
 export function serviceOf(kind: ProviderKind): Service {
-  return knownServices().find((service) => service.kind === kind) ?? { kind, name: kind, hint: '' };
+  switch (kind) {
+    case 'openrouter':
+      return {
+        kind,
+        name: 'OpenRouter',
+        hint: $localize`:@@providers.openrouter:One key for every major model, each priced as you use it.`,
+      };
+    case 'openai':
+      return {
+        kind,
+        name: 'OpenAI',
+        hint: $localize`:@@providers.openai:GPT models, with a key from OpenAI.`,
+      };
+    case 'compatible':
+      return {
+        kind,
+        name: $localize`:@@providers.compatible.name:Another server`,
+        hint: $localize`:@@providers.compatible:Any server that speaks OpenAI’s API, such as Ollama, LM Studio or vLLM.`,
+      };
+    case 'anthropic':
+      return {
+        kind,
+        name: 'Anthropic',
+        hint: $localize`:@@providers.anthropic:Claude models, with a key from Anthropic.`,
+      };
+  }
+}
+
+/** The services offered, in order. */
+export function offeredServices(): readonly Service[] {
+  return OFFERED.map(serviceOf);
 }
 
 /** The services to choose from: those offered, and `kind` too when a link picks another. */
 export function servicesFor(kind: ProviderKind): readonly Service[] {
-  const offered = offeredServices();
-  return offered.some((service) => service.kind === kind) ? offered : [...offered, serviceOf(kind)];
+  const offered = OFFERED.includes(kind) ? OFFERED : [...OFFERED, kind];
+  return offered.map(serviceOf);
 }
 
 /** Whether connecting at `kind` needs the server's address. */

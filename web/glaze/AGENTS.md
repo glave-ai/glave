@@ -55,7 +55,7 @@ Glaze (`@glave/glaze`) is an Angular 22 component library: standalone, zoneless,
 
 ## Rules
 
-- Glaze stays app-independent: it never names an app or uses one app's concepts; an app's marks and words come in through slots and inputs. Glaze writes its own few words (a button's label, a status) in English; an app read in another language gives them all through `GLZ_TEXT` (`GlzText`, by component, each word named as the input that replaces it for one use).
+- Glaze stays app-independent: it never names an app or uses one app's concepts; an app's marks and words come in through slots and inputs. Glaze writes its own few words (a button's label, a status) in English; an app read in another language gives them all through `GLZ_TEXT` (`GlzText`, by component, each word named as the input that replaces it for one use, where there is one).
 - Do: label every control (form field or `label`); give icon buttons a `label`; give components tests reach a `testId` (their parts get `<testId>-<part>`, such as `composer-send`), and plain elements a `data-testid`; keep templates to control flow and signal reads; check with axe.
 - A selected state never relies on a fill alone: a bar for vertical lists, an underline for tabs, a checkmark for picked options, in `--glz-selected-marker`.
 - Do not: add inline styles, `!important` overrides of Glaze classes, or state to Glaze (app state lives in the app's services); do not use colour alone to say something.

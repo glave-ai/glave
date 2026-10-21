@@ -16,7 +16,11 @@ export type Translated = (typeof TRANSLATED)[number];
 export interface Language {
   /** English, or the translation whose messages are loaded before the app starts. */
   readonly messages: typeof ENGLISH | Translated;
-  /** The browser's tag that chose them (`en-GB`), which dates, times and numbers follow. */
+  /**
+   * The locale dates, times and numbers follow, in the messages' language: the browser's tag
+   * that chose them (`en-GB`), or, when the app has none of its languages, English in its
+   * first one's region (`en-DE` for `de-DE`).
+   */
   readonly locale: string;
 }
 
@@ -25,10 +29,12 @@ const LANGUAGES: readonly Language['messages'][] = [ENGLISH, ...TRANSLATED];
 /**
  * The language for a browser that prefers `preferred` (`navigator.languages`), in its order:
  * the first one the app has, by its whole tag or, for a language with no region of its own
- * (`en`), by its language alone (`en-GB` reads English). English when the app has none of them.
+ * (`en`), by its language alone (`en-GB` reads English); else English. A tag that is no tag is
+ * passed over.
  */
 export function chooseLanguage(preferred: readonly string[]): Language {
-  for (const tag of preferred) {
+  const tags = preferred.flatMap(canonical);
+  for (const tag of tags) {
     const wanted = tag.toLowerCase();
     const messages =
       LANGUAGES.find((language) => language.toLowerCase() === wanted) ??
@@ -37,5 +43,16 @@ export function chooseLanguage(preferred: readonly string[]): Language {
       return { messages, locale: tag };
     }
   }
-  return { messages: ENGLISH, locale: ENGLISH };
+  const first = tags[0];
+  const region = first === undefined ? undefined : new Intl.Locale(first).region;
+  return { messages: ENGLISH, locale: region === undefined ? ENGLISH : `${ENGLISH}-${region}` };
+}
+
+/** `tag` as BCP 47 writes it (`en-US` for `en-us`), or none when it is not a tag. */
+function canonical(tag: string): readonly string[] {
+  try {
+    return Intl.getCanonicalLocales(tag);
+  } catch {
+    return [];
+  }
 }

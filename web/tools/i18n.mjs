@@ -33,24 +33,41 @@ const NUMBERS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight',
 
 const command = process.argv[2] ?? 'extract';
 const problems = [];
-if (command === 'extract') {
-  writeCatalog(SOURCE, 'en', extract());
-} else if (command === 'fresh') {
-  freshness();
-} else if (command !== 'check') {
-  problems.push(`no command "${command}": extract, check or fresh`);
-}
-const english = readCatalog(SOURCE);
-if (command === 'extract') {
-  for (const [tag, make] of Object.entries(PSEUDO)) {
-    writeCatalog(`messages.${tag}.json`, tag, pseudo(english, make));
-  }
-} else if (problems.length === 0) {
-  check(english);
+try {
+  run(command);
+} catch (error) {
+  problems.push(error instanceof Error ? error.message : String(error));
 }
 if (problems.length > 0) {
   console.error(`The app's messages need work:\n  ${problems.join('\n  ')}`);
   process.exit(1);
+}
+
+/** Does what `command` says, adding to `problems` what is wrong. */
+function run(command) {
+  if (command === 'extract') {
+    writeCatalog(SOURCE, 'en', extract());
+  } else if (command === 'fresh') {
+    freshness();
+  } else if (command !== 'check') {
+    problems.push(`no command "${command}": extract, check or fresh`);
+    return;
+  }
+  const english = readCatalog(SOURCE);
+  // English's own plurals first: a pseudo-locale is made from them.
+  for (const [id, message] of Object.entries(english)) {
+    problems.push(...pluralProblems(message).map((problem) => `en ${id}: ${problem}`));
+  }
+  if (problems.length > 0) {
+    return;
+  }
+  if (command === 'extract') {
+    for (const [tag, make] of Object.entries(PSEUDO)) {
+      writeCatalog(`messages.${tag}.json`, tag, pseudo(english, make));
+    }
+  } else {
+    check(english);
+  }
 }
 
 /** English as the source says it: Angular extracts it, by id, ordered by id. */
@@ -83,6 +100,10 @@ function check(source) {
   for (const file of files) {
     const tag = file.slice('messages.'.length, -'.json'.length);
     const translated = readCatalog(file);
+    const locale = JSON.parse(readFileSync(join(LOCALE, file), 'utf8')).locale;
+    if (locale !== tag) {
+      problems.push(`${file} says its language is ${String(locale)}, not ${tag}`);
+    }
     for (const id of Object.keys(source)) {
       if (!(id in translated)) {
         problems.push(`${tag} lacks ${id}`);
@@ -118,22 +139,36 @@ function shape(message) {
   return JSON.stringify([...new Set(message.match(PLACEHOLDER) ?? [])].sort());
 }
 
-/** What is wrong with the plurals in `message`: a case that is no case, or no `other`. */
+/**
+ * What is wrong with the plurals in `message`: one that does not close, a case that is no case,
+ * none for `other`, or a case holding braces (a placeholder or another plural), which the app's
+ * plurals (`lib/plural.ts`) do not write: a placeholder's value is put in before the plural is
+ * read.
+ */
 function pluralProblems(message) {
   const found = [];
-  walk(message, {
-    text: () => '',
-    plural: (cases) => {
-      for (const [name] of cases) {
-        if (!CASE.test(name)) {
-          found.push(`"${name}" is not a plural case`);
+  try {
+    walk(message, {
+      text: () => '',
+      plural: (cases) => {
+        for (const [name, body] of cases) {
+          if (!CASE.test(name)) {
+            found.push(`"${name}" is not a plural case`);
+          }
+          if (/[{}]/u.test(body)) {
+            found.push(
+              `the "${name}" case holds braces, a placeholder or a plural: put it outside`,
+            );
+          }
         }
-      }
-      if (!cases.some(([name]) => name === 'other')) {
-        found.push('a plural has no "other" case');
-      }
-    },
-  });
+        if (!cases.some(([name]) => name === 'other')) {
+          found.push('a plural has no "other" case');
+        }
+      },
+    });
+  } catch (error) {
+    found.push(error instanceof Error ? error.message : String(error));
+  }
   return found;
 }
 

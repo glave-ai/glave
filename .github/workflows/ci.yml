@@ -134,8 +134,9 @@ jobs:
   # one did; it is the check the `main` ruleset requires.
   #
   # The checks: format, lint (eslint and stylelint), type-check, the licences and audit of
-  # what ships, unit tests with axe, the library, app and showcase builds, and glave built with
-  # the app inside (the `web` feature) and its serving tests.
+  # what ships, the app's messages against its source and every language, unit tests with axe,
+  # the library, app and showcase builds, and glave built with the app inside (the `web`
+  # feature) and its serving tests.
   web-checks:
     runs-on: ubuntu-latest
     defaults:
@@ -165,6 +166,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run licenses
       - run: npm run audit
+      - run: npm run i18n:check
       - run: npm test
       - run: npm run build:glaze
       - run: npm run build

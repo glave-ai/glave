@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { type Page, expect, test } from '@playwright/test';
 
 import { THREAD, fakeApi } from './fake-api';
@@ -15,6 +17,7 @@ const NOT_THE_APPS = new Set([
   'Make the tests pass',
   'Nightly dependency audit',
   'Review the release notes',
+  'Summarize open issues',
   'They pass now. parse() returned a value for empty input and unwrapped a failed parse; it now returns None for both, and a new test covers the empty case.',
   'src/parse.rs',
   'tests/empty.rs',
@@ -59,6 +62,13 @@ async function skipped(page: Page): Promise<readonly string[]> {
   return plain.filter((text) => !NOT_THE_APPS.has(text)).sort();
 }
 
+/** `en-XA`'s messages, as `npm run i18n` made them, by id. */
+const PSEUDO = (
+  JSON.parse(
+    readFileSync(new URL('../app/src/locale/messages.en-XA.json', import.meta.url), 'utf8'),
+  ) as { readonly translations: Readonly<Record<string, string>> }
+).translations;
+
 /** Ten minutes after the fixtures' threads were last active, in UTC. */
 const NOW = new Date('2026-10-11T10:10:00.000Z');
 test.use({ timezoneId: 'UTC' });
@@ -70,16 +80,30 @@ test('a browser set to en-XA reads every word of the app in it, plurals too', as
   await fakeApi(page);
   await page.goto(`/${SIGNED_IN}`);
   await expect(page.locator('html')).toHaveAttribute('lang', 'en-XA');
-  await expect(byTestId(page, 'nav-new-chat')).toHaveAccessibleName('[Ñéŵ çĥåţ one]');
+  await expect(byTestId(page, 'nav-new-chat')).toHaveAccessibleName(
+    PSEUDO['sideNav.newChat'] ?? '',
+  );
   await expect(byTestId(page, 'home-composer-input')).toBeVisible();
   expect(await skipped(page)).toEqual([]);
   await expectAccessible(page);
 
   await page.goto(`/t/${THREAD}`);
+  await expect(page).toHaveTitle(PSEUDO['routes.thread'] ?? '');
   await expect(byTestId(page, 'thread-steps-summary')).toContainText('4 šţéþš');
   await expect(byTestId(page, 'turn-changes-count')).toHaveText('[2 ƒîļéš one]');
   expect(await skipped(page)).toEqual([]);
   await expectAccessible(page);
+  // The tools beside it, and a dialog over it.
+  await byTestId(page, 'tools-handle').press('Enter');
+  await expect(byTestId(page, 'tools-tabs-tab').first()).toHaveText(
+    PSEUDO['toolsPanel.tasks'] ?? '',
+  );
+  expect(await skipped(page)).toEqual([]);
+  await byTestId(page, 'thread-rename').click();
+  await expect(byTestId(page, 'rename')).toBeVisible();
+  expect(await skipped(page)).toEqual([]);
+  await expectAccessible(page);
+  await byTestId(page, 'rename-cancel').click();
 
   await page.goto('/settings');
   await expect(byTestId(page, 'settings-theme')).toBeVisible();

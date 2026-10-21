@@ -7,7 +7,7 @@ import {
   inject,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import type { TaskInfo } from '@glave/client';
+import type { Outcome, TaskInfo } from '@glave/client';
 import {
   GlzBadgeComponent,
   GlzButtonComponent,
@@ -57,6 +57,14 @@ export class TaskListComponent {
     elsewhere: { text: $localize`:@@taskList.elsewhere:running elsewhere`, tone: 'neutral' },
     finished: { text: $localize`:@@taskList.finished:finished`, tone: 'success' },
   };
+  /** How a finished task's turn ended, in a word. */
+  private readonly outcomes: Readonly<Record<Outcome, string>> = {
+    completed: $localize`:@@taskList.completed:completed`,
+    cancelled: $localize`:@@taskList.cancelled:cancelled`,
+    failed: $localize`:@@taskList.outcomeFailed:failed`,
+    interrupted: $localize`:@@taskList.interrupted:interrupted`,
+    limit_reached: $localize`:@@taskList.limitReached:stopped at its limit`,
+  };
   /** Why the tasks could not be read, as the server says. */
   protected readonly problem = computed(() => {
     const error = this.service.error();
@@ -73,7 +81,7 @@ export class TaskListComponent {
         thread: task.thread,
         link: ['/t', task.thread],
         title: task.title,
-        status: task.outcome ?? this.statuses[task.status].text,
+        status: task.outcome ? this.outcomes[task.outcome] : this.statuses[task.status].text,
         tone: this.statuses[task.status].tone,
         running: task.status === 'running',
         details: [

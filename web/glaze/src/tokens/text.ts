@@ -8,8 +8,8 @@ import type { GlzMarkdownLabels } from '../lib/markdown-html';
 
 /**
  * Every word Glaze writes itself, by component, each named as the input that replaces it for
- * one use. Glaze writes them in English; an app read in another language gives them all in it
- * through `GLZ_TEXT`.
+ * one use where there is one. Glaze writes them in English; an app read in another language
+ * gives them all in it through `GLZ_TEXT`.
  */
 export interface GlzText {
   readonly approvalCard: {

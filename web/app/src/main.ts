@@ -19,7 +19,10 @@ async function language(): Promise<readonly (Provider | EnvironmentProviders)[]>
     $localize.locale = locale;
     document.documentElement.lang = locale;
     return translated;
-  } catch {
+  } catch (error: unknown) {
+    // The app starts in English all the same; the browser console is where this shows.
+    // eslint-disable-next-line no-console -- see above
+    console.warn(error);
     return [];
   }
 }
