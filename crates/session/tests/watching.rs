@@ -363,17 +363,22 @@ fn rebuilding_from_after_then_watching_equals_watching_from_the_start() {
             let (server, _dir) = scripted(&name).await;
             let mut over = Over::new(kind, &server, &name).await;
             let thread = start(&server, false).await;
+            let (mut from_start, mut from_after) = (Seen::default(), Seen::default());
             let mut first = over.watcher().await;
             first.watch(thread, None).await;
+            // Watching once what was recorded before has come: a request over a connection is
+            // answered in its own time.
+            let opened = logged(&server, thread).await;
+            read_through(&mut first, thread, last(&opened), &mut from_start).await;
             run(&server, thread, "hi").await;
             let before = logged(&server, thread).await;
             let k = u64::try_from(before.len() / 2).unwrap();
             let mut second = over.watcher().await;
             second.watch(thread, Some(k)).await;
+            read_through(&mut second, thread, last(&before), &mut from_after).await;
             run(&server, thread, "touch it").await;
             let log = logged(&server, thread).await;
             assert!(log.iter().any(|kind| kind.ends_with("approval.decided")));
-            let (mut from_start, mut from_after) = (Seen::default(), Seen::default());
             read_through(&mut first, thread, last(&log), &mut from_start).await;
             read_through(&mut second, thread, last(&log), &mut from_after).await;
             assert_eq!(from_start.events, log, "{kind:?}");
@@ -420,10 +425,12 @@ fn a_watcher_pushed_past_its_backlog_still_gets_every_event() {
             let thread = start(&server, false).await;
             let mut watcher = over.watcher().await;
             watcher.watch(thread, None).await;
+            let mut seen = Seen::default();
+            let opened = logged(&server, thread).await;
+            read_through(&mut watcher, thread, last(&opened), &mut seen).await;
             // The watcher reads nothing while the turn runs to its end.
             run(&server, thread, "go on").await;
             let log = logged(&server, thread).await;
-            let mut seen = Seen::default();
             read_through(&mut watcher, thread, last(&log), &mut seen).await;
             assert_eq!(seen.events, log, "{kind:?}");
             over.close().await;
@@ -445,9 +452,11 @@ fn a_watcher_that_comes_back_with_after_misses_nothing() {
             let thread = start(&server, false).await;
             let mut watcher = over.watcher().await;
             watcher.watch(thread, None).await;
+            let mut seen = Seen::default();
+            let opened = logged(&server, thread).await;
+            read_through(&mut watcher, thread, last(&opened), &mut seen).await;
             let mut stream = stream_turn(&server, thread, "go", None).await.unwrap();
             // The turn has started and taken the message; its answer waits at the gate.
-            let mut seen = Seen::default();
             let had = read_until(&mut watcher, thread, &mut seen, |_, kind| {
                 kind == "message.added"
             })
@@ -480,9 +489,10 @@ fn deleting_the_thread_ends_its_watch() {
             let thread = start(&server, false).await;
             let mut watcher = over.watcher().await;
             watcher.watch(thread, None).await;
-            // Watching once its first event comes.
+            // Watching once what was recorded has come.
             let mut seen = Seen::default();
-            read_through(&mut watcher, thread, 1, &mut seen).await;
+            let opened = logged(&server, thread).await;
+            read_through(&mut watcher, thread, last(&opened), &mut seen).await;
             server
                 .request(Request::ThreadDelete { thread })
                 .await
