@@ -4,6 +4,7 @@
 //! next turn; anything else stays a conflict.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use glave_event::{
     At, Body, EventId, Header, MessageAdded, Opened, Part, RemovedReason, Role, Seq, ThreadId,
@@ -12,8 +13,8 @@ use glave_event::{
 use glave_harness::{Change, change_standing, record_removed};
 use glave_ports::EventLog;
 use glave_ports::testing::TempDir;
-use glave_session::Answering;
-use glave_session::protocol::{Reply, Request, code};
+use glave_session::protocol::{Notification, Reply, Request, code};
+use glave_session::{Answering, TurnItem};
 use glave_store_sqlite::{SqliteLog, Store};
 use jiff::Timestamp;
 use serde_json::json;
@@ -100,17 +101,27 @@ fn glaves_own_records_are_taken_in_and_the_model_is_sent_the_same() {
     });
 }
 
+/// A message written to a thread while a turn holds it means another harness runs the thread
+/// without its lease: the turn's next write is a conflict, never a conversation changed under
+/// it. (An idle thread holds nothing: work that takes its lease reads it again.)
 #[test]
 fn a_message_from_outside_is_still_a_conflict() {
     let dir = folder("outside-message");
     block_on!(async {
         let (store, _db) = store("outside-message-db").await;
-        let answers = vec![answer(Some("One."), None), answer(Some("Two."), None)];
-        let (server, _) = Setup::asking(answers, Answering::NoOne)
-            .build_on(&dir, store.log())
-            .await;
+        let gate = Arc::new(tokio::sync::Notify::new());
+        let mut setup = Setup::asking(vec![answer(Some("One."), None)], Answering::NoOne);
+        setup.gate = Some(Arc::clone(&gate));
+        let (server, _) = setup.build_on(&dir, store.log()).await;
         let thread = start(&server, false).await;
-        turn(&server, thread, "go").await.unwrap();
+        let mut running = stream_turn(&server, thread, "go", None).await.unwrap();
+        while let Some(TurnItem::Note(note)) = running.next().await {
+            if matches!(note.as_ref(), Notification::Event { event, .. }
+                if event.kind.as_str() == "turn.started")
+            {
+                break;
+            }
+        }
         let next = u64::try_from(events(&server, thread).await.len()).unwrap() + 1;
         let header = Header {
             id: EventId::new(at(1), [3; 10]).unwrap(),
@@ -131,7 +142,8 @@ fn a_message_from_outside_is_still_a_conflict() {
             .await
             .unwrap();
 
-        let refused = turn(&server, thread, "go").await.unwrap_err();
+        gate.notify_one();
+        let refused = running.finish().await.unwrap_err();
         assert_eq!(refused.code, code::INTERNAL);
         assert!(refused.message.contains("changed elsewhere"), "{refused:?}");
     });

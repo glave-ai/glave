@@ -92,7 +92,7 @@ fn a_command_is_recorded_from_the_call_that_started_it_to_the_one_that_stopped_i
 }
 
 #[test]
-fn a_resumed_thread_knows_what_still_runs_and_records_what_ended_meanwhile() {
+fn a_resumed_thread_knows_what_still_runs_and_its_next_work_records_what_ended_meanwhile() {
     let dir = folder("bg-resumed");
     block_on!(async {
         let answers = vec![start("sleep 30"), done(), start("sleep 31"), done()];
@@ -131,8 +131,18 @@ fn a_resumed_thread_knows_what_still_runs_and_records_what_ended_meanwhile() {
         let stored = harness.log().read(&here, thread.id, None, usize::MAX);
         log.append(&here, &stored.await.unwrap()).await.unwrap();
         let elsewhere = harness_on(&dir, vec![], NoOneToAsk, log, 2, settings()).await;
-        let thread = elsewhere.resume_thread(scope(), thread.id).await.unwrap();
+        let mut thread = elsewhere.resume_thread(scope(), thread.id).await.unwrap();
         assert_eq!(thread.commands().running_now().await, []);
+        let read = events(elsewhere.log(), thread.id).await;
+        assert_eq!(
+            endings(&read),
+            [CommandEnding::Stopped {
+                by: Some(person.clone())
+            }],
+            "reading the thread records nothing"
+        );
+        // Its next work records what it found.
+        elsewhere.record_commands(&mut thread).await.unwrap();
         let events = events(elsewhere.log(), thread.id).await;
         assert_eq!(
             endings(&events),

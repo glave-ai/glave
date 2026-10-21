@@ -1559,6 +1559,8 @@ export const ErrorCode = {
   PROVIDER: -32020,
   /** As many messages wait for the running turn as it takes */
   QUEUE_FULL: -32028,
+  /** The thread is working on another server, which holds it */
+  RUNNING_ELSEWHERE: -32011,
   /** A turn is already running in this thread */
   TURN_RUNNING: -32002,
   /** The thread's workspace could not be opened */

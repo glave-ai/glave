@@ -17,6 +17,7 @@ mod goals;
 mod gone;
 mod http;
 mod isolation;
+mod leases;
 mod listing;
 mod local;
 mod many_projects;

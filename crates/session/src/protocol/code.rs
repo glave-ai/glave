@@ -28,6 +28,7 @@ codes! {
     NO_GOAL = -32007, "The thread has no active goal (or, to resume, no paused one)";
     PROMPT_BLOCKED = -32008, "A hook stopped the prompt";
     WORKSPACE = -32009, "The thread's workspace could not be opened";
+    RUNNING_ELSEWHERE = -32011, "The thread is working on another server, which holds it";
     NOT_ALLOWED = -32012, "The caller may not do this";
     NO_SIGN_IN = -32013, "No valid sign-in (network transports)";
     ARCHIVED = -32014, "The thread is archived; unarchive it first";

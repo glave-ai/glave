@@ -237,6 +237,7 @@ where
                 standing: Standing::Active,
                 limit: MAX_PAGE,
                 after,
+                open: false,
             };
             let views = self
                 .inner

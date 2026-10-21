@@ -123,9 +123,8 @@ pub(crate) async fn wire(
         crate::cloud::workers(choices, &setup.loaded.constraints, &folder, scope.project()).await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
     let projects = projects_for(&setup, &servers, &lined.switch, memory.as_ref(), asked)?;
-    for line in [told, projects.set_aside(&folder).await].concat() {
-        eprintln!("glave: {line}");
-    }
+    let set_aside = projects.set_aside(&folder).await;
+    (told.iter().chain(&set_aside)).for_each(|line| eprintln!("glave: {line}"));
     tidy(memory.as_ref(), &lined.switch, model);
     let rereads = rereading(args, &folder, choices, &lined, &servers, &projects).await?;
     let wiring = Wiring {
@@ -147,6 +146,7 @@ pub(crate) async fn wire(
         trust: Some(Arc::clone(&projects) as Arc<dyn ProjectTrust>),
         browsers: crate::serving::browsers(args, choices, &store, identity.person).await?,
         origin: choices.origin.as_ref().map(|origin| origin.value.clone()),
+        leases: Some(store.leases()),
         ..Wiring::new(
             lined.switch,
             store.log(),

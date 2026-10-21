@@ -66,6 +66,6 @@ pub use tools::{
     ToolSource, describe_call, unless_cancelled,
 };
 pub use view::{
-    Standing, THREAD_VIEW_VERSION, TITLE_CHARS, ThreadCursor, ThreadQuery, ThreadView,
+    OpenTurn, Standing, THREAD_VIEW_VERSION, TITLE_CHARS, ThreadCursor, ThreadQuery, ThreadView,
     fold_from_log, title_from, title_of,
 };

@@ -29,6 +29,7 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
+        self.close_left_open(thread).await?;
         let set = GoalSet {
             objective: goal.objective.clone(),
             token_budget: goal.token_budget,
@@ -57,6 +58,7 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
+        self.close_left_open(thread).await?;
         let Some(goal) = thread.goal().filter(|goal| goal.resumable()) else {
             return Err(HarnessError::NoGoal(thread.id));
         };

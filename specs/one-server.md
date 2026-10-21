@@ -15,7 +15,7 @@ Reviewed adversarially on 2026-10-17. Decisions marked *decided* were made in th
 - **4**, in part: `thread/watch` and `thread/unwatch` with `after` on every transport, each event once and in order, caught up from the log when a watcher falls behind; over HTTP a watch's events carry their `seq` as their id, and a quiet stream gets a comment every 15 seconds.
 - **4**, turn streams: `turn/start`'s and `goal/start`'s streams are watches of their thread from where the turn began, ending with its result, so one that falls behind is caught up from the log; over HTTP their events carry their `seq`; a connection of lines writes a thread's notifications once, a turn in a thread it watches by that watch. Not yet: following a turn across its being let go and rebuilt, which no turn is until waits are durable (5): its stream's notifications already come from the log and the hub, its ending still from the work that runs it.
 - **4**, the web app: an open thread is read from the log, then followed live with `thread/watch` from its last event while its tab is shown, whoever started its turn (another tab, the terminal, a schedule): the turn's progress, its approvals and questions, answered from any tab; a watch cut off comes back from where it was, asking the server first whether the turn it saw still runs; a hidden tab lets go of its watch and comes back when shown; and while the tab follows a turn of its own, that turn's stream says how it goes and the watch rests. Tested by two tabs on a real glave (`web/e2e/live.e2e.ts`).
-- **5**, not yet: until waits are durable, a turn waiting for the person is interrupted with the rest rather than kept waiting.
+- **5**, leases and reading that never writes: turns, compactions and changes to a thread run under its lease in the store, and another server is refused (`-32011`); loading a thread records nothing, and what a turn left open is closed by the next work on its thread or as the person's server starts, once no live lease holds it (the threads view keeps whether a turn is open). Not yet: until waits are durable, a turn waiting for the person is interrupted with the rest rather than kept waiting.
 - Everything else is designed, not built.
 
 ## How the others do it
@@ -195,7 +195,7 @@ Every project's trusted servers and hooks reach only its threads (`policy.md`, "
 
 ### After a restart
 
-- **When it starts**, the server repairs every turn the view shows open and not at a wait, its own or a child's: its dangling calls get the interrupted result and the turn ends `interrupted`, as loading a thread does today, so nothing shows running that is not. A turn at a wait is left as it is, and loading its thread no longer closes it (`resume_thread` closes every open turn today).
+- **When it starts**, the server repairs every turn the view shows open and not at a wait, its own or a child's: its dangling calls get the interrupted result and the turn ends `interrupted`, so nothing shows running that is not; one another server's lease still holds is looked at again once it may have lapsed. A turn at a wait is left as it is. Loading a thread closes nothing: it records nothing, and the next work on it, under its lease, closes what a turn left open.
 - **A waiting thread holds nothing in memory**: it is rebuilt from the log when its answer comes, and a client following it keeps following, since `turn/start`'s stream is a watch.
 
 ### An answer continues the turn

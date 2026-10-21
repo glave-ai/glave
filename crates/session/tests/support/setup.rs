@@ -16,8 +16,8 @@ use glave_ports::computer::{ComputerId, GitCredentials, WorkspaceInfo};
 use glave_ports::memories::Memory;
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
 use glave_ports::{
-    Completion, EventLog, InMemoryBlobs, InMemoryLog, InMemoryProjects, Located, LogError, OrgId,
-    Project, ProjectId, ProjectKind, Projects, Scope,
+    Completion, EventLog, InMemoryBlobs, InMemoryLog, InMemoryProjects, Leases, Located, LogError,
+    OrgId, Project, ProjectId, ProjectKind, Projects, Scope,
 };
 use glave_session::protocol::ModelInfo;
 use glave_session::signin::Browsers;
@@ -94,6 +94,8 @@ pub(crate) struct Setup {
     pub origin: Option<glave_ports::host::PublicOrigin>,
     /// Its organization and its own project: `scope()` unless a test serves another.
     pub home: Scope,
+    /// The leases another server keeps, to share its store; its own in memory when none.
+    pub leases: Option<Arc<dyn Leases>>,
 }
 
 impl Setup {
@@ -121,6 +123,7 @@ impl Setup {
             browsers: None,
             origin: None,
             home: scope(),
+            leases: None,
         }
     }
 
@@ -201,6 +204,7 @@ impl Setup {
             trust: self.trust,
             browsers: self.browsers,
             origin: self.origin,
+            leases: self.leases,
             ..Wiring::new(provider, log, InMemoryBlobs::new(), workspace, projects)
         };
         let server = Server::new(wiring, self.settings, home.org(), self.answering);

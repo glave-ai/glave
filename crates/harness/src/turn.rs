@@ -300,6 +300,7 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
+        self.close_left_open(thread).await?;
         self.reopen_removed(thread).await?;
         self.pass_hooks(thread, prompt, cancel).await?;
         self.begin(thread, prompt, &toolset).await?;
@@ -475,6 +476,12 @@ where
             by_glave,
             id,
         } = prompt;
+        // Where it works now that its project's folder moved, before the turn that works there.
+        if let Some(bound) = thread.rebound.take() {
+            self.record(thread, &bound).await?;
+            // Glave's own record: call ids do not count it, so the model is sent the same.
+            thread.unnumbered = thread.unnumbered.saturating_add(1);
+        }
         // What ended in the background since the last turn is recorded before this one.
         self.check_commands(thread).await?;
         let sent_to = self.model_for(thread);

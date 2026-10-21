@@ -68,11 +68,11 @@ fn write(connection: &Connection, scope: &Scope, view: &ThreadView) -> rusqlite:
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     connection
         .prepare_cached(
-            "INSERT INTO threads (org, project, thread, standing, updated, view)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "INSERT INTO threads (org, project, thread, standing, updated, open, view)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT (org, project, thread) DO UPDATE SET
                  standing = excluded.standing, updated = excluded.updated,
-                 view = excluded.view",
+                 open = excluded.open, view = excluded.view",
         )?
         .execute(params![
             scope.org().to_string(),
@@ -80,6 +80,7 @@ fn write(connection: &Connection, scope: &Scope, view: &ThreadView) -> rusqlite:
             view.thread.to_string(),
             view.standing.as_str(),
             view.updated_at.timestamp().as_millisecond(),
+            view.turn.is_some(),
             json,
         ])?;
     Ok(())
@@ -97,6 +98,7 @@ pub(crate) async fn page(
             "SELECT view FROM threads
              WHERE org = ?1 AND project = ?2 AND standing = ?3
                AND (?4 IS NULL OR (updated, thread) < (?4, ?5))
+               AND (NOT ?7 OR open)
              ORDER BY updated DESC, thread DESC LIMIT ?6",
         )?;
         let rows = statement.query_map(
@@ -109,6 +111,7 @@ pub(crate) async fn page(
                     .map(|after| after.updated_at.timestamp().as_millisecond()),
                 query.after.map(|after| after.thread.to_string()),
                 i64::try_from(query.limit).unwrap_or(i64::MAX),
+                query.open,
             ],
             |row| row.get::<_, String>(0),
         )?;

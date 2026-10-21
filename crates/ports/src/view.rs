@@ -14,7 +14,7 @@ use crate::scope::Scope;
 
 /// The version of [`ThreadView`]'s folding. Stores rebuild every view when the version they
 /// built with is older.
-pub const THREAD_VIEW_VERSION: u32 = 1;
+pub const THREAD_VIEW_VERSION: u32 = 2;
 
 /// The longest title taken from a thread's first message, in characters.
 pub const TITLE_CHARS: usize = 80;
@@ -81,6 +81,17 @@ pub struct ThreadView {
     /// True once a call reported no cost, or one in another currency: the cost is unknown.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unpriced: bool,
+    /// Its turn still open: running, or left open by a glave that stopped without ending it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn: Option<OpenTurn>,
+}
+
+/// A turn started and not yet ended, as the threads view keeps it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpenTurn {
+    /// Its `turn.started`.
+    pub started: Seq,
 }
 
 impl ThreadView {
@@ -125,6 +136,7 @@ impl ThreadView {
             tokens: TokenCounts::default(),
             cost: None,
             unpriced: false,
+            turn: None,
         })
     }
 
@@ -136,7 +148,10 @@ impl ThreadView {
             "thread.unarchived" => self.standing = Standing::Active,
             "thread.deleted" => self.standing = Standing::Deleted,
             "thread.renamed" => self.title_seq = Some(event.seq),
-            "turn.started" => self.turns = self.turns.saturating_add(1),
+            "turn.started" => {
+                self.turns = self.turns.saturating_add(1);
+                self.turn = Some(OpenTurn { started: event.seq });
+            }
             "message.added" if self.title_seq.is_none() => {
                 if title_of(event).is_some() {
                     self.title_seq = Some(event.seq);
@@ -153,7 +168,10 @@ impl ThreadView {
             return;
         };
         match decoded.body {
-            Body::TurnEnded(ended) => self.outcome = Some(ended.outcome),
+            Body::TurnEnded(ended) => {
+                self.outcome = Some(ended.outcome);
+                self.turn = None;
+            }
             Body::ModelResponded(responded) => {
                 self.tokens += responded.usage.counts();
                 let cost = responded.cost.map(|cost| cost.amount);
@@ -220,18 +238,32 @@ pub struct ThreadCursor {
     pub thread: ThreadId,
 }
 
-/// Which views to list: one standing, most recently written first, after a cursor.
+/// Which views to list: one standing, most recently written first, after a cursor; only those
+/// with a turn open when `open` says so.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThreadQuery {
     pub standing: Standing,
     pub limit: usize,
     pub after: Option<ThreadCursor>,
+    pub open: bool,
 }
 
 impl ThreadQuery {
+    /// The views of `standing`, a page of `limit` from the most recently written.
+    pub fn of(standing: Standing, limit: usize) -> Self {
+        Self {
+            standing,
+            limit,
+            after: None,
+            open: false,
+        }
+    }
+
     /// Whether `view` belongs in this listing, before the limit.
     pub fn admits(&self, view: &ThreadView) -> bool {
-        view.standing == self.standing && self.after.is_none_or(|after| view.cursor() < after)
+        view.standing == self.standing
+            && self.after.is_none_or(|after| view.cursor() < after)
+            && (!self.open || view.turn.is_some())
     }
 }
 

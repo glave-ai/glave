@@ -169,6 +169,7 @@ where
             // One more than asked shows whether another page follows.
             limit: limit.saturating_add(1),
             after,
+            open: false,
         };
         let mut views = self
             .inner
