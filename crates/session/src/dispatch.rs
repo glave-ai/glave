@@ -7,6 +7,7 @@ use glave_ports::memories::Control;
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
 use crate::credentials::NewCredential;
+use crate::lists::ListWatch;
 use crate::modes::Choice;
 use crate::protocol::{ApiError, QueuedMessage, Reply, Request, ServerInfo, code};
 use crate::providers::NewProvider;
@@ -14,7 +15,6 @@ use crate::schedule::NewSchedule;
 use crate::server::Server;
 use crate::steer::{Message, Sent};
 use crate::tasks::Work;
-use crate::lists::ListWatch;
 use crate::turn::TurnStream;
 use crate::watch::Watch;
 
@@ -54,9 +54,7 @@ where
             Answered::Watch(mut watch) => {
                 watch.finish().await.map(|ended| Reply::Watched { ended })
             }
-            Answered::List(mut watch) => {
-                watch.finish().await.map(|ended| Reply::Watched { ended })
-            }
+            Answered::List(mut watch) => watch.finish().await.map(|ended| Reply::Watched { ended }),
         }
     }
 
@@ -218,7 +216,10 @@ where
             }
             // Only for a project the caller works in, as watching it is.
             Request::ThreadListUnwatch { project } => match project {
-                Some(project) => self.member_of(caller, project).await.map(|_| Reply::Done {}),
+                Some(project) => self
+                    .member_of(caller, project)
+                    .await
+                    .map(|_| Reply::Done {}),
                 None => Ok(Reply::Done {}),
             },
             Request::ThreadCompact { thread } => self.compact(thread).await,

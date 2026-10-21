@@ -430,9 +430,7 @@ async fn ask_and_allow(
     watcher: &mut Watcher,
     heard: &mut Vec<ThreadSummary>,
 ) {
-    let mut stream = stream_turn(server, thread, "touch it", None)
-        .await
-        .unwrap();
+    let mut stream = stream_turn(server, thread, "touch it", None).await.unwrap();
     gate.notify_one();
     let approval = loop {
         match stream.next().await.unwrap() {

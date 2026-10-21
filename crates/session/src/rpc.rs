@@ -282,7 +282,10 @@ async fn watch_thread(
 
 /// Writes each of a list's summaries to the connection as they come: its answer once it ends,
 /// which is only ever why it could not go on.
-async fn follow_list(watch: &mut ListWatch, lines: &mpsc::Sender<String>) -> Result<Reply, ApiError> {
+async fn follow_list(
+    watch: &mut ListWatch,
+    lines: &mpsc::Sender<String>,
+) -> Result<Reply, ApiError> {
     loop {
         match watch.next().await {
             Some(Watched::Note(note)) => {
