@@ -170,6 +170,7 @@ where
             limit: limit.saturating_add(1),
             after,
             open: false,
+            parent: None,
         };
         let mut views = self
             .inner

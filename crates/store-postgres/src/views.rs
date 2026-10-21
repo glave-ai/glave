@@ -89,8 +89,9 @@ async fn write<C: GenericClient + Sync>(
     let json = serde_json::to_string(view).map_err(corrupt)?;
     client
         .execute(
-            "INSERT INTO threads (org, project, thread, standing, updated, open, view)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
+            "INSERT INTO threads (org, project, thread, standing, updated, open, parent,
+                                  parent_call, view)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
              ON CONFLICT (org, project, thread) DO UPDATE SET
                  standing = excluded.standing, updated = excluded.updated,
                  open = excluded.open, view = excluded.view",
@@ -101,6 +102,8 @@ async fn write<C: GenericClient + Sync>(
                 &view.standing.as_str(),
                 &view.updated_at.timestamp().as_millisecond(),
                 &view.turn.is_some(),
+                &view.parent.map(ThreadId::as_uuid),
+                &view.parent_call.as_ref().map(glave_event::CallId::as_str),
                 &json,
             ],
         )
@@ -124,6 +127,7 @@ pub(crate) async fn page(
              WHERE org = $1 AND project = $2 AND standing = $3
                AND ($4::bigint IS NULL OR (updated, thread) < ($4::bigint, $5::uuid))
                AND (NOT $7 OR open)
+               AND ($8::uuid IS NULL OR (parent = $8::uuid AND parent_call = $9::text))
              ORDER BY updated DESC, thread DESC LIMIT $6",
         )
         .await
@@ -141,6 +145,8 @@ pub(crate) async fn page(
                 &query.after.map(|after| after.thread.as_uuid()),
                 &i64::try_from(query.limit).unwrap_or(i64::MAX),
                 &query.open,
+                &query.parent.as_ref().map(|parent| parent.thread.as_uuid()),
+                &query.parent.as_ref().map(|parent| parent.call_id.as_str()),
             ],
         )
         .await

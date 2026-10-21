@@ -252,7 +252,7 @@ impl EventLog for SqliteLog {
         scope: &Scope,
         query: &ThreadQuery,
     ) -> impl Future<Output = Result<Vec<ThreadView>, LogError>> + Send {
-        let (scope, query, connection) = (*scope, *query, Arc::clone(&self.connection));
+        let (scope, query, connection) = (*scope, query.clone(), Arc::clone(&self.connection));
         async move { crate::views::page(&connection, &scope, &query).await }
     }
 

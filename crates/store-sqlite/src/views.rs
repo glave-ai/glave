@@ -68,8 +68,9 @@ fn write(connection: &Connection, scope: &Scope, view: &ThreadView) -> rusqlite:
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     connection
         .prepare_cached(
-            "INSERT INTO threads (org, project, thread, standing, updated, open, view)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            "INSERT INTO threads (org, project, thread, standing, updated, open, parent,
+                                  parent_call, view)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
              ON CONFLICT (org, project, thread) DO UPDATE SET
                  standing = excluded.standing, updated = excluded.updated,
                  open = excluded.open, view = excluded.view",
@@ -81,6 +82,8 @@ fn write(connection: &Connection, scope: &Scope, view: &ThreadView) -> rusqlite:
             view.standing.as_str(),
             view.updated_at.timestamp().as_millisecond(),
             view.turn.is_some(),
+            view.parent.map(|parent| parent.to_string()),
+            view.parent_call.as_ref().map(glave_event::CallId::as_str),
             json,
         ])?;
     Ok(())
@@ -92,15 +95,17 @@ pub(crate) async fn page(
     scope: &Scope,
     query: &ThreadQuery,
 ) -> Result<Vec<ThreadView>, LogError> {
-    let (scope, query) = (*scope, *query);
+    let (scope, query) = (*scope, query.clone());
     let rows = run(connection, move |connection| {
         let mut statement = connection.prepare_cached(
             "SELECT view FROM threads
              WHERE org = ?1 AND project = ?2 AND standing = ?3
                AND (?4 IS NULL OR (updated, thread) < (?4, ?5))
                AND (NOT ?7 OR open)
+               AND (?8 IS NULL OR (parent = ?8 AND parent_call = ?9))
              ORDER BY updated DESC, thread DESC LIMIT ?6",
         )?;
+        let parent = query.parent.as_ref();
         let rows = statement.query_map(
             params![
                 scope.org().to_string(),
@@ -112,6 +117,8 @@ pub(crate) async fn page(
                 query.after.map(|after| after.thread.to_string()),
                 i64::try_from(query.limit).unwrap_or(i64::MAX),
                 query.open,
+                parent.map(|parent| parent.thread.to_string()),
+                parent.map(|parent| parent.call_id.as_str()),
             ],
             |row| row.get::<_, String>(0),
         )?;

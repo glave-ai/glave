@@ -8,7 +8,7 @@ use crate::store::{StoreError, describe};
 
 /// The schema this build makes and reads. Bumped whenever [`SCHEMA`] changes. It starts past
 /// every version the migrations it replaced wrote, so a database one of them made is refused.
-pub(crate) const VERSION: i32 = 15;
+pub(crate) const VERSION: i32 = 16;
 
 /// Every table, made in one transaction in a new database.
 const SCHEMA: &str = "
@@ -119,21 +119,26 @@ const SCHEMA: &str = "
     -- Content-free. `updated` is when its latest event was recorded, in milliseconds; a page
     -- starts after the last row's own `(updated, thread)`, never a position across the store.
     -- `open` is whether a turn is open in it, for a server that starts to find those a glave
-    -- before it left open.
+    -- before it left open; a subagent's thread has the thread and call that started it
+    -- (`parent`, `parent_call`), which only it names.
     CREATE TABLE threads (
-        org       uuid    NOT NULL,
-        project   uuid    NOT NULL,
-        thread    uuid    NOT NULL,
-        standing  text    NOT NULL,
-        updated   bigint  NOT NULL,
-        open      boolean NOT NULL,
-        view      text    NOT NULL,
+        org          uuid    NOT NULL,
+        project      uuid    NOT NULL,
+        thread       uuid    NOT NULL,
+        standing     text    NOT NULL,
+        updated      bigint  NOT NULL,
+        open         boolean NOT NULL,
+        parent       uuid,
+        parent_call  text,
+        view         text    NOT NULL,
         PRIMARY KEY (org, project, thread)
     );
 
     CREATE INDEX threads_by_update ON threads (org, project, standing, updated DESC, thread DESC);
     CREATE INDEX threads_open ON threads (org, project, standing, updated DESC, thread DESC)
         WHERE open;
+    CREATE INDEX threads_by_parent ON threads (org, project, parent, parent_call)
+        WHERE parent IS NOT NULL;
 
     -- The organization, the server, the local person and their agent, and which fold built
     -- the threads view.

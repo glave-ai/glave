@@ -238,6 +238,7 @@ where
                 limit: MAX_PAGE,
                 after,
                 open: false,
+                parent: None,
             };
             let views = self
                 .inner

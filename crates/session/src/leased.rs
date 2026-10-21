@@ -120,6 +120,7 @@ where
                     limit: PAGE,
                     after,
                     open: true,
+                    parent: None,
                 };
                 let page = log.thread_views(scope, &query).await?;
                 after = page.last().map(ThreadView::cursor);

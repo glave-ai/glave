@@ -256,6 +256,7 @@ fn folders_get_their_own_projects_in_one_organization() {
             limit: 10,
             after: None,
             open: false,
+            parent: None,
         };
         let threads = store.log().thread_views(&scope, &query).await.unwrap();
         assert!(threads.is_empty(), "a new project has no threads");
@@ -293,7 +294,7 @@ fn views_rebuilt_from_the_log_equal_the_kept_ones() {
         assert_eq!(conformance::thread_views(&store.log()).await, Ok(()));
         drop(store);
         let kept = views(&path);
-        assert_eq!(kept.len(), 5);
+        assert_eq!(kept.len(), 7);
 
         // As if no fold had built them: no views, and no version recorded.
         let connection = rusqlite::Connection::open(&path).unwrap();

@@ -350,6 +350,7 @@ fn without_workers_a_worker_thread_is_refused_and_nothing_is_recorded() {
             limit: 10,
             after: None,
             open: false,
+            parent: None,
         };
         let listed = harness.log().thread_views(&scope(), &query).await.unwrap();
         assert_eq!(listed, []);

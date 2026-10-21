@@ -4,17 +4,21 @@
 //! sealed like every other payload, so erasing the content erases the title too.
 
 use glave_event::{
-    At, Body, Money, Origin, Outcome, Part, Principal, RawEvent, Role, Seq, ThreadId, TokenCounts,
-    decode,
+    At, Body, CallId, Money, Origin, Outcome, ParentCall, Part, Principal, RawEvent, Role, Seq,
+    ThreadId, TokenCounts, decode,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::log::{EventLog, LogError};
 use crate::scope::Scope;
 
+mod turn;
+
+pub use turn::{AGENT_TOOL, CallKind, OpenTurn, QUESTION_TOOL, Unfinished, Wait, WaitKind};
+
 /// The version of [`ThreadView`]'s folding. Stores rebuild every view when the version they
 /// built with is older.
-pub const THREAD_VIEW_VERSION: u32 = 2;
+pub const THREAD_VIEW_VERSION: u32 = 3;
 
 /// The longest title taken from a thread's first message, in characters.
 pub const TITLE_CHARS: usize = 80;
@@ -60,6 +64,10 @@ pub struct ThreadView {
     /// The thread whose call started this one, for a subagent's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<ThreadId>,
+    /// That call, in the parent's thread: the parent's log never names the child, so a parent
+    /// finds its subagent's thread by it (`ThreadQuery::parent`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_call: Option<CallId>,
     pub created_at: At,
     /// When its latest event was recorded.
     pub updated_at: At,
@@ -81,17 +89,10 @@ pub struct ThreadView {
     /// True once a call reported no cost, or one in another currency: the cost is unknown.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unpriced: bool,
-    /// Its turn still open: running, or left open by a glave that stopped without ending it.
+    /// Its turn still open: running, waiting, or left open by a glave that stopped without
+    /// ending it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn: Option<OpenTurn>,
-}
-
-/// A turn started and not yet ended, as the threads view keeps it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct OpenTurn {
-    /// Its `turn.started`.
-    pub started: Seq,
 }
 
 impl ThreadView {
@@ -126,7 +127,8 @@ impl ThreadView {
             standing: Standing::Active,
             for_: started.for_,
             origin: started.origin,
-            parent: started.parent.map(|parent| parent.thread),
+            parent: started.parent.as_ref().map(|parent| parent.thread),
+            parent_call: started.parent.map(|parent| parent.call_id),
             created_at: event.at,
             updated_at: event.at,
             last_seq: event.seq,
@@ -150,7 +152,7 @@ impl ThreadView {
             "thread.renamed" => self.title_seq = Some(event.seq),
             "turn.started" => {
                 self.turns = self.turns.saturating_add(1);
-                self.turn = Some(OpenTurn { started: event.seq });
+                self.turn = Some(OpenTurn::at(event.seq));
             }
             "message.added" if self.title_seq.is_none() => {
                 if title_of(event).is_some() {
@@ -159,6 +161,9 @@ impl ThreadView {
             }
             "turn.ended" | "model.responded" => self.count(event),
             _ => {}
+        }
+        if let Some(turn) = self.turn.as_mut() {
+            turn.apply(event);
         }
     }
 
@@ -239,13 +244,15 @@ pub struct ThreadCursor {
 }
 
 /// Which views to list: one standing, most recently written first, after a cursor; only those
-/// with a turn open when `open` says so.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// with a turn open when `open` says so, and only the subagent's thread a call started when
+/// `parent` names the call.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ThreadQuery {
     pub standing: Standing,
     pub limit: usize,
     pub after: Option<ThreadCursor>,
     pub open: bool,
+    pub parent: Option<ParentCall>,
 }
 
 impl ThreadQuery {
@@ -254,6 +261,10 @@ impl ThreadQuery {
         view.standing == self.standing
             && self.after.is_none_or(|after| view.cursor() < after)
             && (!self.open || view.turn.is_some())
+            && self.parent.as_ref().is_none_or(|parent| {
+                view.parent == Some(parent.thread)
+                    && view.parent_call.as_ref() == Some(&parent.call_id)
+            })
     }
 }
 

@@ -9,6 +9,8 @@ use glave_event::{
 };
 
 use super::{Verdict, ensure, scope, thread, uuid_v7};
+
+mod waits;
 use crate::blob::digest;
 use crate::log::EventLog;
 use crate::scope::Scope;
@@ -150,6 +152,7 @@ async fn list<L: EventLog>(
         limit,
         after: None,
         open: false,
+        parent: None,
     };
     log.thread_views(scope, &query)
         .await
@@ -250,7 +253,8 @@ pub async fn thread_views<L: EventLog>(log: &L) -> Verdict {
     isolation(log, &here, &elsewhere, a, ledger).await?;
     rebuilding(log, &here, &[a, b, c]).await?;
     opening_messages(log, &here, thread(15)?).await?;
-    open_turns(log, &here, thread(16)?).await
+    open_turns(log, &here, thread(16)?).await?;
+    waits::waits(log, &here).await
 }
 
 /// A turn started and not ended is open: the view says where it started, and only such threads
@@ -266,6 +270,7 @@ async fn open_turns<L: EventLog>(log: &L, here: &Scope, id: ThreadId) -> Verdict
         limit: 10,
         after: None,
         open: true,
+        parent: None,
     };
     let open = log
         .thread_views(here, &query)
@@ -275,7 +280,7 @@ async fn open_turns<L: EventLog>(log: &L, here: &Scope, id: ThreadId) -> Verdict
         ids(&open) == [id]
             && open
                 .first()
-                .and_then(|view| view.turn)
+                .and_then(|view| view.turn.as_ref())
                 .is_some_and(|turn| turn.started.get() == 3),
         "a turn not yet ended must be open, from its start, and alone in a listing of open turns",
     )?;
@@ -339,6 +344,7 @@ async fn paging<L: EventLog>(log: &L, here: &Scope, all: &[ThreadView]) -> Verdi
         limit: 10,
         after: page.last().map(ThreadView::cursor),
         open: false,
+        parent: None,
     };
     let rest = log
         .thread_views(here, &query)

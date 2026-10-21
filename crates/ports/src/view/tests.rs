@@ -132,6 +132,7 @@ fn a_cursor_is_the_views_own_sort_key_ties_broken_by_id() {
         limit: 10,
         after: Some(after),
         open: false,
+        parent: None,
     };
     assert!(
         !query(cursor).admits(&view),
