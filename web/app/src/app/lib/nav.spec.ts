@@ -10,7 +10,6 @@ import {
   type ProjectWithThreads,
   matchesQuery,
   navSections,
-  waitingThreads,
 } from './nav';
 
 /** A time on the fixtures' day, at 10:`minute`. */
@@ -31,7 +30,14 @@ function line(
   return thread(id, title, { updated_at: at(minute), ...more });
 }
 
-const VIEW: NavView = { query: '', current: null, collapsed: new Set(), byName: new Set() };
+/** The side nav at 10:10 on the fixtures' day, for a reader in English in UTC. */
+const VIEW: NavView = {
+  query: '',
+  current: null,
+  collapsed: new Set(),
+  now: Date.parse(at(10)),
+  reader: { locale: 'en-US', timeZone: 'UTC' },
+};
 
 /** The titles of `threads`, each with those it started after it, indented. */
 function titles(threads: readonly NavThread[], indent = ''): readonly string[] {
@@ -57,10 +63,29 @@ const PROJECTS: readonly ProjectWithThreads[] = [
 ];
 
 describe('nav', () => {
-  it('matches titles ignoring case and accents', () => {
-    expect(matchesQuery('Café ideas', 'cafe')).toBe(true);
-    expect(matchesQuery('Café ideas', '  ')).toBe(true);
-    expect(matchesQuery('Café ideas', 'tea')).toBe(false);
+  it('finds titles ignoring case and accents', () => {
+    expect(matchesQuery('Café ideas', [], 'cafe')).toBe(true);
+    expect(matchesQuery('Café ideas', [], '  ')).toBe(true);
+    expect(matchesQuery('Café ideas', [], 'tea')).toBe(false);
+  });
+
+  it('finds a day by the start of each of its words, in any order', () => {
+    const days = ['Sunday, October 11, 2026', 'Oct 11, 2026', '10/11/2026', '2026-10-11', 'today'];
+    for (const query of ['oct 11', '11 Oct', 'october', 'SUN', '10/11', '2026-10', 'today']) {
+      expect(matchesQuery('Plan the launch', days, query)).toBe(true);
+    }
+    for (const query of ['oct 12', 'yesterday', 'Mon', 'tober']) {
+      expect(matchesQuery('Plan the launch', days, query)).toBe(false);
+    }
+  });
+
+  it('looks at days only for a query of a few characters that is not a number alone', () => {
+    const days = ['Sunday, October 11, 2026', '2026-10-11'];
+    // Two letters, or a year or a day alone, would find nearly every thread.
+    for (const query of ['oc', '2026', '11', '10 11']) {
+      expect(matchesQuery('Plan the launch', days, query)).toBe(false);
+    }
+    expect(matchesQuery('Plan 2026', days, '2026')).toBe(true);
   });
 
   it('lists the projects by their latest thread, each one’s threads and the chats newest first', () => {
@@ -71,13 +96,13 @@ describe('nav', () => {
     expect(titles(glave?.threads ?? [])).toEqual(['Fix the build', 'Plan the launch']);
     expect(glave?.threads[1]).toMatchObject({ link: ['/t', 't1'], current: true, mark: null });
     expect(titles(sections.chats.list)).toEqual(['New chat', 'Café ideas']);
-    expect(sections.projects).toMatchObject({ expanded: true, sort: 'recent', mark: null });
-    expect(sections.chats).toMatchObject({ expanded: true, sort: 'recent', mark: null });
+    expect(sections.projects).toMatchObject({ expanded: true, mark: null });
+    expect(sections.chats).toMatchObject({ expanded: true, mark: null });
   });
 
-  it('puts what waits for the person first, whatever the sort', () => {
+  it('keeps one order however the threads stand: what waits or runs is not lifted', () => {
     const projects: readonly ProjectWithThreads[] = [
-      { project: made('p1', 'Alpha', 0), threads: [line('a1', 'Ship it', 20)] },
+      { project: made('p1', 'Alpha', 0), threads: [line('a1', 'Ship it', 9)] },
       {
         project: made('p2', 'Beta', 0),
         threads: [
@@ -87,41 +112,21 @@ describe('nav', () => {
         ],
       },
     ];
-    const recent = navSections(projects, VIEW);
-    expect(projectNames(recent)).toEqual(['Beta', 'Alpha']);
-    expect(titles(recent.projects.list[0]?.threads ?? [])).toEqual([
-      'Write the notes',
+    const sections = navSections(projects, VIEW);
+    expect(projectNames(sections)).toEqual(['Alpha', 'Beta']);
+    expect(titles(sections.projects.list[1]?.threads ?? [])).toEqual([
       'Plan the launch',
       'Audit the dependencies',
+      'Write the notes',
     ]);
-    expect(recent.projects.list[0]?.threads[0]?.mark?.variant).toBe('dot');
-    const byName = navSections(projects, { ...VIEW, byName: new Set(['p2']) });
-    expect(byName.projects.list[0]?.sort).toBe('name');
-    expect(titles(byName.projects.list[0]?.threads ?? [])).toEqual([
-      'Write the notes',
-      'Audit the dependencies',
-      'Plan the launch',
+    expect(sections.projects.list[1]?.threads.map(({ mark }) => mark?.text)).toEqual([
+      'running',
+      undefined,
+      'needs you',
     ]);
   });
 
-  it('sorts a list by name as people read names, when the person asks', () => {
-    const projects: readonly ProjectWithThreads[] = [
-      { project: made('p1', 'plan 10', 9), threads: [] },
-      { project: made('p2', 'Plan 2', 1), threads: [] },
-      { project: made('p3', 'garden', 5), threads: [] },
-      {
-        project: record('me', 'Personal', 'personal'),
-        threads: [line('t1', 'Zebra facts', 9), line('t2', 'apples', 1)],
-      },
-    ];
-    expect(projectNames(navSections(projects, VIEW))).toEqual(['plan 10', 'garden', 'Plan 2']);
-    const byName = navSections(projects, { ...VIEW, byName: new Set([PROJECTS_LIST, CHATS_LIST]) });
-    expect(byName.projects.sort).toBe('name');
-    expect(projectNames(byName)).toEqual(['garden', 'Plan 2', 'plan 10']);
-    expect(titles(byName.chats.list)).toEqual(['apples', 'Zebra facts']);
-  });
-
-  it('puts a thread another started under it, which lifts it when it is newer or waits', () => {
+  it('puts a thread another started under it, which lifts it when it is newer', () => {
     const threads = [
       line('t1', 'Plan the launch', 5),
       line('t2', 'Fix the build', 7),
@@ -152,12 +157,12 @@ describe('nav', () => {
     expect(projects.expanded).toBe(false);
     expect(projects.mark).toMatchObject({ text: 'needs you', variant: 'dot' });
     expect(projects.list.map((each) => [each.name, each.expanded, each.mark?.text])).toEqual([
-      ['glave', false, 'needs you'],
       ['Garden', false, undefined],
+      ['glave', false, 'needs you'],
     ]);
     expect(chats).toMatchObject({ expanded: false, mark: null });
     // Open, a list shows its threads' own marks instead.
-    expect(navSections(lists, VIEW).projects.list[0]?.mark).toBeNull();
+    expect(navSections(lists, VIEW).projects.list[1]?.mark).toBeNull();
   });
 
   it('marks a project whose folder is gone in the server’s words, open or closed', () => {
@@ -165,7 +170,7 @@ describe('nav', () => {
     const projects: readonly ProjectWithThreads[] = [
       {
         project: made('p1', 'playground', 0),
-        threads: [line('t1', 'Sketch', 1, { status: 'waiting' })],
+        threads: [line('t1', 'Sketch', 3, { status: 'waiting' })],
         gone,
       },
       { project: made('p2', 'Garden', 0), threads: [line('t2', 'Plant', 2)] },
@@ -178,7 +183,7 @@ describe('nav', () => {
     }
   });
 
-  it('keeps only the matching threads and their projects, open, while searching', () => {
+  it('keeps only the threads a search finds and their projects, open', () => {
     const cafe = navSections(PROJECTS, { ...VIEW, query: 'CAFE' });
     expect(titles(cafe.chats.list)).toEqual(['Café ideas']);
     expect(cafe.projects.list).toEqual([]);
@@ -198,7 +203,29 @@ describe('nav', () => {
     expect(titles(found.projects.list[0]?.threads ?? [])).toEqual(['Fix the build']);
   });
 
-  it('lists every thread that needs the person, newest first, with its place', () => {
+  it('finds threads by the day they began or were last active', () => {
+    const threads = [
+      line('t1', 'Plan the launch', 5),
+      thread('t2', 'Fix the build', {
+        created_at: '2026-10-08T09:00:00.000Z',
+        updated_at: '2026-10-08T09:30:00.000Z',
+      }),
+      thread('t3', 'Plant the beans', {
+        created_at: '2026-10-08T09:00:00.000Z',
+        updated_at: '2026-10-10T18:00:00.000Z',
+      }),
+    ];
+    const lists = [{ project: record('me', 'Personal', 'personal'), threads }];
+    const found = (query: string): readonly string[] =>
+      titles(navSections(lists, { ...VIEW, query }).chats.list);
+    expect(found('today')).toEqual(['Plan the launch']);
+    expect(found('yesterday')).toEqual(['Plant the beans']);
+    expect(found('Oct 8')).toEqual(['Plant the beans', 'Fix the build']);
+    expect(found('thursday')).toEqual(['Plant the beans', 'Fix the build']);
+    expect(found('Oct 9')).toEqual([]);
+  });
+
+  it('pins every thread that needs the person, newest first, with its place', () => {
     const projects: readonly ProjectWithThreads[] = [
       {
         project: record('p1', 'glave'),
@@ -212,10 +239,26 @@ describe('nav', () => {
         threads: [line('t3', 'Café ideas', 1, { project: 'me', status: 'waiting' })],
       },
     ];
-    expect(waitingThreads(projects)).toEqual([
-      { id: 't2', link: ['/t', 't2'], title: 'Fix the build', place: 'glave' },
-      { id: 't3', link: ['/t', 't3'], title: 'Café ideas', place: 'Chats' },
+    expect(navSections(projects, { ...VIEW, current: 't3' }).needsYou).toEqual([
+      { id: 't2', link: ['/t', 't2'], title: 'Fix the build', place: 'glave', current: false },
+      { id: 't3', link: ['/t', 't3'], title: 'Café ideas', place: 'Chats', current: true },
     ]);
-    expect(waitingThreads([])).toEqual([]);
+    // Each stays in its place in its own list too.
+    expect(titles(navSections(projects, VIEW).chats.list)).toEqual(['Café ideas']);
+    // A search keeps those it finds.
+    expect(navSections(projects, { ...VIEW, query: 'cafe' }).needsYou.map(({ id }) => id)).toEqual([
+      't3',
+    ]);
+    expect(navSections([], VIEW).needsYou).toEqual([]);
+  });
+
+  it('names no place in Needs you when the person has only Chats', () => {
+    const chats: readonly ProjectWithThreads[] = [
+      {
+        project: record('me', 'Personal', 'personal'),
+        threads: [line('t3', 'Café ideas', 1, { project: 'me', status: 'waiting' })],
+      },
+    ];
+    expect(navSections(chats, VIEW).needsYou.map(({ place }) => place)).toEqual([null]);
   });
 });

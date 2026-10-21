@@ -27,7 +27,7 @@ describe('ShowcaseLayoutComponent', () => {
     );
   });
 
-  it('opens a list’s options from its ⋯, and sorts it', async () => {
+  it('opens a list’s options from its ⋯, and picks one', async () => {
     const fixture = TestBed.createComponent(ShowcaseLayoutComponent);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
@@ -35,11 +35,11 @@ describe('ShowcaseLayoutComponent', () => {
     await new Promise((resolve) => setTimeout(resolve));
     root.querySelector<HTMLButtonElement>('[data-testid="showcase-earlier-more-trigger"]')?.click();
     await fixture.whenStable();
-    const choices = Array.from(
-      document.querySelectorAll<HTMLElement>('[data-testid="showcase-earlier-more-choice"]'),
+    const actions = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-testid="showcase-earlier-more-action"]'),
     );
-    expect(choices.map((choice) => choice.getAttribute('aria-checked'))).toEqual(['true', 'false']);
-    choices[1]?.click();
+    expect(actions.map((action) => action.textContent.trim())).toEqual(['Rename', 'Archive']);
+    actions[1]?.click();
     await fixture.whenStable();
     expect(document.querySelector('[role="menu"]')).toBeNull();
   });

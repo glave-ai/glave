@@ -26,7 +26,10 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(card).not.toContainText(/\.mcp\.json|config\.toml|trust\.toml/u);
     await expect(byTestId(page, 'thread-trust-trust')).toHaveText('Trust this project');
     await expect(byTestId(page, 'thread-trust-not-now')).toHaveText('Not now');
-    await expect(byTestId(page, 'needs-you')).toHaveText('Needs you 2');
+    await expect(byTestId(page, 'needs-you-thread')).toHaveText([
+      'Search the Acme docs acme',
+      'Review the release notes glave',
+    ]);
     await expectAccessible(page);
 
     await byTestId(page, 'thread-trust-trust').click();
@@ -36,7 +39,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     expect(answers.map((request) => request.params)).toEqual([
       { thread: TRUSTING, ask: TRUST_ASK.ask, answer: 'trust' },
     ]);
-    await expect(byTestId(page, 'needs-you')).toHaveText('Needs you 1');
+    await expect(byTestId(page, 'needs-you-thread')).toHaveText(['Review the release notes glave']);
     await expectAccessible(page);
     expect(problems()).toEqual([]);
   });

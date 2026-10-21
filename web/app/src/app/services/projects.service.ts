@@ -27,6 +27,7 @@ export class ProjectsService {
   private readonly lists = signal<readonly ProjectWithThreads[]>([]);
   private readonly failed = signal<string | null>(null);
   private readonly done = signal(false);
+  private readonly read = signal(Date.now());
 
   /** Projects first, then the personal project; each with its threads, newest first. */
   readonly projects = computed(() =>
@@ -34,6 +35,11 @@ export class ProjectsService {
   );
   readonly error = this.failed.asReadonly();
   readonly loaded = this.done.asReadonly();
+  /**
+   * When the lists were last read, in milliseconds since the epoch: what their times count from,
+   * moving on with every read.
+   */
+  readonly readAt = this.read.asReadonly();
 
   constructor() {
     // Polling skips a tab no one is looking at, and a read still under way.
@@ -122,6 +128,7 @@ export class ProjectsService {
         }),
       );
       this.lists.set(lists);
+      this.read.set(Date.now());
       this.failed.set(null);
     } catch (error: unknown) {
       this.failed.set(error instanceof Error ? error.message : String(error));

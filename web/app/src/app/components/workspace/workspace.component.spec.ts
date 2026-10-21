@@ -22,7 +22,7 @@ describe('WorkspaceComponent', () => {
     expect(fake.paramsOf('project/list')).toHaveLength(1);
     expect(root.querySelector('[data-testid="workspace-nav"] app-side-nav')).not.toBeNull();
     expect(root.querySelector('main#content')).not.toBeNull();
-    expect(root.querySelector('[data-testid="needs-you"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="nav-search"]')).not.toBeNull();
     await expectAccessible(root);
     TestBed.inject(NavService).toggle();
     await fixture.whenStable();

@@ -39,7 +39,6 @@ const COPY = {
   layoutTitle: 'Atlas',
   newIn: 'New thread in Earlier',
   more: 'Options for Earlier',
-  sortBy: 'Sort by',
   needsYou: 'needs you',
   details: 'Details',
   detailsToggle: 'Show or hide the details',
@@ -78,12 +77,10 @@ export class ShowcaseLayoutComponent {
   protected readonly earlier = signal(true);
   /** Closed, Earlier shows that something in it waits. */
   protected readonly earlierClosed = computed(() => !this.earlier());
-  protected readonly actions = [{ value: 'rename', label: 'Rename' }] as const;
-  protected readonly sorts = [
-    { value: 'recent', label: 'Recent activity' },
-    { value: 'name', label: 'Name' },
+  protected readonly actions = [
+    { value: 'rename', label: 'Rename' },
+    { value: 'archive', label: 'Archive' },
   ] as const;
-  protected readonly sort = signal<string | null>('recent');
   protected readonly details = signal(true);
   protected readonly detailsWidth = signal<number | null>(null);
   protected readonly values = { link: '#layout', narrow: '(max-width: 40rem)' } as const;

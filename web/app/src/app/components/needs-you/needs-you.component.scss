@@ -1,13 +1,10 @@
+// Its list alone takes a place in the side nav's column, so with nothing to list it takes none.
 :host {
-  display: block;
+  display: contents;
 }
 
-.place,
-.empty {
+// Where it waits, quiet at the line's end.
+.place {
   color: var(--glz-color-text-muted);
-  font-size: var(--glz-text-sm);
-}
-
-.empty {
-  padding: var(--glz-inset-row);
+  font-size: var(--glz-text-xs);
 }

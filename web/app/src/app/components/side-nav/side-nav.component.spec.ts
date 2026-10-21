@@ -30,7 +30,7 @@ async function render(tasks: readonly TaskInfo[] = []): Promise<{
 }
 
 describe('SideNavComponent', () => {
-  it('has the name, New chat, a quiet search, the threads, Needs you and the person', async () => {
+  it('has the name, New chat, a quiet search, the threads and the person', async () => {
     const { root, fixture } = await render();
     let navigated = 0;
     fixture.componentInstance.navigated.subscribe(() => (navigated += 1));
@@ -38,7 +38,6 @@ describe('SideNavComponent', () => {
     const newChat = root.querySelector('[data-testid="nav-new-chat"]');
     expect(newChat?.getAttribute('href')).toBe('/');
     expect(newChat?.getAttribute('aria-label')).toBe('New chat');
-    expect(root.querySelector('app-needs-you')).not.toBeNull();
     expect(root.querySelector('app-person')).not.toBeNull();
     // Nothing about tasks until one is going or scheduled.
     expect(root.querySelector('[data-testid="nav-tasks"]')).toBeNull();

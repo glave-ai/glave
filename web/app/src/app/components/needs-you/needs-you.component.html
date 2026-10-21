@@ -1,16 +1,18 @@
-<button glzNavItem data-testid="needs-you" [icon]="icon" [glzPopoverTrigger]="list">
-  {{ copy.label }}
-  @if (count(); as count) {
-    <glz-badge glzNavItemEnd tone="accent" data-testid="needs-you-count">{{ count }}</glz-badge>
-  }
-</button>
-<glz-popover #list testId="needs-you-list">
-  @for (thread of threads(); track thread.id) {
-    <a glzNavItem data-testid="needs-you-thread" [routerLink]="thread.link" (click)="followed()">
-      {{ thread.title }}
-      <span glzNavItemEnd class="place">{{ thread.place }}</span>
-    </a>
-  } @empty {
-    <p class="empty" data-testid="needs-you-none">{{ copy.none }}</p>
-  }
-</glz-popover>
+@if (shown()) {
+  <glz-nav-list testId="needs-you" [heading]="copy.label">
+    @for (thread of threads(); track thread.id) {
+      <a
+        glzNavItem
+        data-testid="needs-you-thread"
+        [routerLink]="thread.link"
+        [current]="thread.current"
+        (click)="followed()"
+      >
+        {{ thread.title }}
+        @if (thread.place; as place) {
+          <span glzNavItemEnd class="place">{{ place }}</span>
+        }
+      </a>
+    }
+  </glz-nav-list>
+}

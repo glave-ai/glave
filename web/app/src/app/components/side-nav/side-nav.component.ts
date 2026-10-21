@@ -18,7 +18,6 @@ import {
 import { ListChecks, PenLine, Search } from 'lucide';
 
 import { TasksService } from '../../services/tasks.service';
-import { NeedsYouComponent } from '../needs-you/needs-you.component';
 import { PersonComponent } from '../person/person.component';
 import { ProjectsNavComponent } from '../projects-nav/projects-nav.component';
 
@@ -32,9 +31,9 @@ const COPY = {
 } as const;
 
 /**
- * The side nav: glave's name with New chat beside it, and the search; the person's projects
- * with their threads, then their chats; and at its foot Tasks (only while tasks are going or a schedule
- * will start one), what needs the person, and the person signed in, with their pages.
+ * The side nav: glave's name with New chat beside it, and the search; what needs the person, the
+ * person's projects with their threads, then their chats; and at its foot Tasks (only while
+ * tasks are going or a schedule will start one) and the person signed in, with their pages.
  */
 @Component({
   selector: 'app-side-nav',
@@ -44,7 +43,6 @@ const COPY = {
     GlzIconButtonComponent,
     GlzIconComponent,
     GlzNavItemComponent,
-    NeedsYouComponent,
     PersonComponent,
     ProjectsNavComponent,
   ],

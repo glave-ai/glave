@@ -21,9 +21,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await fakeApi(page);
     await page.goto(`/${SIGNED_IN}`);
     const project = byTestId(page, 'nav-project').filter({ hasText: 'glave' });
-    await expect(project.getByTestId('nav-thread').first()).toContainText(
-      'Review the release notes',
-    );
+    await expect(project.getByTestId('nav-thread')).toContainText(['Review the release notes']);
     expect(page.url()).not.toContain('code');
     await expectAccessible(page);
     expect(problems()).toEqual([]);
@@ -276,30 +274,15 @@ test('tasks, settings and memory open from the side nav', async ({ page }) => {
 for (const colorScheme of ['light', 'dark'] as const) {
   test(`Needs you lists every thread that waits for the person, and goes to one (${colorScheme})`, async ({
     page,
-    browserName,
   }) => {
-    test.skip(
-      browserName === 'webkit',
-      'Safari gives a clicked button no focus, so none stays on it',
-    );
     await page.emulateMedia({ colorScheme });
     await fakeApi(page);
     await page.goto(`/${SIGNED_IN}`);
-    const needsYou = byTestId(page, 'needs-you');
-    await expect(needsYou).toHaveText('Needs you 1');
-    await expect(needsYou).toHaveAttribute('aria-expanded', 'false');
-    await needsYou.click();
-    await expect(needsYou).toHaveAttribute('aria-expanded', 'true');
     const waiting = byTestId(page, 'needs-you-thread');
     await expect(waiting).toHaveText(['Review the release notes glave']);
     await expectAccessible(page);
-    // Escape closes it, and focus stays on its button.
-    await page.keyboard.press('Escape');
-    await expect(byTestId(page, 'needs-you-list')).toBeHidden();
-    await expect(needsYou).toBeFocused();
-    await needsYou.press('Enter');
     await waiting.click();
     await expect(page).toHaveURL(/\/t\/01900000-0000-7000-8000-000000000103$/u);
-    await expect(byTestId(page, 'needs-you-list')).toBeHidden();
+    await expect(waiting).toHaveAttribute('aria-current', 'page');
   });
 }

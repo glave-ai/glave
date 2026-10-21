@@ -1,47 +1,32 @@
-import { ChangeDetectionStrategy, Component, computed, inject, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import {
-  GlzBadgeComponent,
-  GlzNavItemComponent,
-  GlzPopoverComponent,
-  GlzPopoverTriggerDirective,
-} from '@glave/glaze';
-import { Inbox } from 'lucide';
+import { GlzNavItemComponent, GlzNavListComponent } from '@glave/glaze';
 
-import { waitingThreads } from '../../lib/nav';
-import { ProjectsService } from '../../services/projects.service';
+import type { WaitingThread } from '../../lib/nav';
 
-const COPY = {
-  label: 'Needs you',
-  none: 'Nothing needs you right now.',
-} as const;
+const COPY = { label: 'Needs you' } as const;
 
 /**
- * Needs you, at the foot of the side nav: how many threads wait for the person (an approval or
- * a question), and, opened, each of them with its project or Chats, to go straight to it.
+ * Needs you, pinned at the top of the side nav while something waits for the person (an
+ * approval, a question, a project's trust): each thread that waits, newest first, with its
+ * project or Chats at its end (none with only Chats), to go straight to it. With none, nothing:
+ * not even room in its parent's layout.
  */
 @Component({
   selector: 'app-needs-you',
-  imports: [
-    RouterLink,
-    GlzBadgeComponent,
-    GlzNavItemComponent,
-    GlzPopoverComponent,
-    GlzPopoverTriggerDirective,
-  ],
+  imports: [RouterLink, GlzNavItemComponent, GlzNavListComponent],
   templateUrl: './needs-you.component.html',
   styleUrl: './needs-you.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class NeedsYouComponent {
+  /** The threads that wait for the person. */
+  readonly threads = input.required<readonly WaitingThread[]>();
   /** Emitted when the person goes to a thread, so a drawer can close. */
   readonly navigated = output();
 
   protected readonly copy = COPY;
-  protected readonly icon = Inbox;
-  private readonly projects = inject(ProjectsService);
-  protected readonly threads = computed(() => waitingThreads(this.projects.projects()));
-  protected readonly count = computed(() => this.threads().length);
+  protected readonly shown = computed(() => this.threads().length > 0);
 
   protected followed(): void {
     this.navigated.emit();

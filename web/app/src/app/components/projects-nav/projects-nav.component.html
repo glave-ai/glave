@@ -1,4 +1,5 @@
 <nav class="lists" [attr.aria-label]="copy.threads">
+  <app-needs-you [threads]="needsYou()" (navigated)="followed()" />
   @if (offerProject()) {
     <button
       glzNavItem
@@ -33,21 +34,6 @@
       >
         <glz-icon [icon]="icons.add" />
       </button>
-      <!-- Each list's menu loads once the page is idle, keeping the CDK's menu out of the first load. -->
-      <span glzNavListActions class="more">
-        @defer (on idle) {
-          <app-nav-list-menu
-            testId="nav-projects-more"
-            [label]="copy.projectsOptions"
-            [sort]="projects().sort"
-            (sortChange)="setSort(lists.projects, $event)"
-          />
-        } @placeholder {
-          <button glzIconButton size="sm" type="button" [label]="copy.projectsOptions">
-            <glz-icon [icon]="icons.more" />
-          </button>
-        }
-      </span>
       @if (projects().mark; as mark) {
         <glz-badge glzNavListEnd [tone]="mark.tone" [variant]="mark.variant">{{
           mark.text
@@ -73,14 +59,13 @@
           >
             <glz-icon [icon]="icons.add" />
           </a>
+          <!-- Its menu loads once the page is idle, keeping the CDK's menu out of the first load. -->
           <span glzNavListActions class="more">
             @defer (on idle) {
               <app-nav-list-menu
                 testId="nav-project-more"
                 [label]="project.optionsLabel"
                 [actions]="projectActions"
-                [sort]="project.sort"
-                (sortChange)="setSort(project.id, $event)"
                 (action)="act(project, $event)"
               />
             } @placeholder {
@@ -125,20 +110,6 @@
       >
         <glz-icon [icon]="icons.add" />
       </a>
-      <span glzNavListActions class="more">
-        @defer (on idle) {
-          <app-nav-list-menu
-            testId="nav-chats-more"
-            [label]="copy.chatsOptions"
-            [sort]="chats().sort"
-            (sortChange)="setSort(lists.chats, $event)"
-          />
-        } @placeholder {
-          <button glzIconButton size="sm" type="button" [label]="copy.chatsOptions">
-            <glz-icon [icon]="icons.more" />
-          </button>
-        }
-      </span>
       @if (chats().mark; as mark) {
         <glz-badge glzNavListEnd [tone]="mark.tone" [variant]="mark.variant">{{
           mark.text

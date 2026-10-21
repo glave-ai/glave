@@ -1,6 +1,6 @@
 import { type Locator, type Page, expect, test } from '@playwright/test';
 
-import { NEW_THREAD, PERSONAL, PROJECT, THREAD, fakeApi } from './fake-api';
+import { NEW_THREAD, PERSONAL, PROJECT, THREAD, WAITING, fakeApi } from './fake-api';
 import { SIGNED_IN, byTestId, expectAccessible, shownOpacity } from './support';
 
 /** The side nav's threads a person can see, in order. */
@@ -8,19 +8,17 @@ function shown(page: Page): Locator {
   return byTestId(page, 'nav-thread').filter({ visible: true });
 }
 
-/** The project's threads by recent activity: what waits first, a thread's own under it. */
+/** The project's threads by recent activity, a thread's own under it: one order, whatever waits. */
 const BY_ACTIVITY = [
-  'Review the release notes needs you',
   'Nightly dependency audit running',
   'Make the tests pass',
   'Check the parser’s edge cases',
+  'Review the release notes needs you',
 ];
 
-/** Opens the ⋯ of the list `testId` and picks how to sort it. */
-async function sortBy(page: Page, testId: string, sort: string): Promise<void> {
-  await byTestId(page, `${testId}-trigger`).first().click();
-  await byTestId(page, `${testId}-choice`).filter({ hasText: sort }).click();
-}
+/** The day the fixtures' threads were last active, read in English in UTC. */
+const NOW = new Date('2026-10-11T10:10:00.000Z');
+test.use({ locale: 'en-US', timezoneId: 'UTC' });
 
 /** A row's marker as drawn: its width, and its contrast against the row's fill and the sidebar. */
 interface Marker {
@@ -75,9 +73,7 @@ async function markerOf(locator: Locator): Promise<Marker> {
   });
 }
 
-test('projects come first, then Chats; each list by recent activity, what waits on top', async ({
-  page,
-}) => {
+test('projects come first, then Chats; each list newest first, in one order', async ({ page }) => {
   await fakeApi(page);
   await page.goto(`/${SIGNED_IN}`);
   await expect(shown(page)).toHaveText([...BY_ACTIVITY, 'Dinner ideas for Saturday']);
@@ -105,36 +101,53 @@ test('a thread moves up when it gets a new message', async ({ page }) => {
   await reply.press('Enter');
   await expect(byTestId(page, 'thread-message').last()).toContainText('Glad to help.');
   await expect(shown(page)).toHaveText([
-    'Review the release notes needs you',
     'Make the tests pass',
     'Check the parser’s edge cases',
     'Nightly dependency audit running',
+    'Review the release notes needs you',
     'Dinner ideas for Saturday',
   ]);
 });
 
-test('a list sorts by name from its ⋯, remembered in this browser', async ({ page }) => {
+test('Needs you is pinned at the top while something waits, the thread in its place too', async ({
+  page,
+}) => {
   await fakeApi(page);
   await page.goto(`/${SIGNED_IN}`);
-  await expect(shown(page)).toHaveText([...BY_ACTIVITY, 'Dinner ideas for Saturday']);
-  await byTestId(page, 'nav-project-toggle').hover();
-  await sortBy(page, 'nav-project-more', 'Name');
-  const byName = [
-    'Review the release notes needs you',
-    'Make the tests pass',
-    'Check the parser’s edge cases',
-    'Nightly dependency audit running',
-    'Dinner ideas for Saturday',
+  const needsYou = byTestId(page, 'needs-you');
+  await expect(needsYou).toBeVisible();
+  const [pinned, projects] = [
+    await needsYou.boundingBox(),
+    await byTestId(page, 'nav-projects').boundingBox(),
   ];
-  await expect(shown(page)).toHaveText(byName);
-  await page.reload();
-  await expect(shown(page)).toHaveText(byName);
-  await byTestId(page, 'nav-project-more-trigger').click();
-  await expect(
-    byTestId(page, 'nav-project-more-choice').filter({ hasText: 'Name' }),
-  ).toHaveAttribute('aria-checked', 'true');
-  await page.keyboard.press('Escape');
-  await expect(byTestId(page, 'nav-project-more-choice')).toHaveCount(0);
+  expect(pinned?.y ?? Infinity).toBeLessThan(projects?.y ?? 0);
+  await expect(byTestId(page, 'needs-you-thread')).toHaveText(['Review the release notes glave']);
+  // It stays in its own place in its project too.
+  await expect(shown(page)).toHaveText([...BY_ACTIVITY, 'Dinner ideas for Saturday']);
+  await byTestId(page, 'needs-you-thread').click();
+  await expect(page).toHaveURL(new RegExp(`/t/${WAITING}$`, 'u'));
+  await expect(byTestId(page, 'needs-you-thread')).toHaveAttribute('aria-current', 'page');
+  await expectAccessible(page);
+});
+
+test('the search finds a thread by its day as well as its title', async ({ page }) => {
+  await page.clock.setFixedTime(NOW);
+  await fakeApi(page);
+  await page.goto(`/${SIGNED_IN}`);
+  const search = byTestId(page, 'nav-search');
+  for (const day of ['oct 11', '11 October', 'Sunday', 'today', '10/11']) {
+    await search.fill(day);
+    await expect(shown(page)).toHaveCount(5);
+  }
+  await search.fill('oct 12');
+  await expect(shown(page)).toHaveCount(0);
+  await expect(byTestId(page, 'needs-you')).toHaveCount(0);
+  await expect(byTestId(page, 'nav-no-match')).toBeVisible();
+  await search.fill('release');
+  await expect(shown(page)).toHaveText(['Review the release notes needs you']);
+  await expect(byTestId(page, 'needs-you-thread')).toHaveText(['Review the release notes glave']);
+  await search.fill('');
+  await expect(shown(page)).toHaveText([...BY_ACTIVITY, 'Dinner ideas for Saturday']);
 });
 
 test('a heading opens and closes by click and by keyboard, remembered', async ({ page }) => {
@@ -223,12 +236,12 @@ for (const colorScheme of ['light', 'dark'] as const) {
     expect(marker.againstSidebar).toBeGreaterThanOrEqual(3);
     expect((await markerOf(other)).width).toBe('auto');
     await expectAccessible(page);
-    // A closed project with its dot, and its menu open.
+    // A closed project with its dot, and its menu open: what can be done with it, no sorting.
     await byTestId(page, 'nav-project-toggle').click();
     await expect(byTestId(page, 'nav-project-end')).toHaveText('needs you');
     await byTestId(page, 'nav-project-toggle').hover();
     await byTestId(page, 'nav-project-more-trigger').click();
-    await expect(byTestId(page, 'nav-project-more-action')).toHaveText('Rename');
+    await expect(byTestId(page, 'nav-project-more-action')).toHaveText(['Rename']);
     await expectAccessible(page);
   });
 }
