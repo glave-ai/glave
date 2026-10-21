@@ -426,9 +426,10 @@ services:
     # The commands glave runs go in its sandbox, bubblewrap, which makes namespaces and mounts
     # that Docker's defaults refuse: its seccomp filter refuses new namespaces, its AppArmor
     # profile refuses mounts, and /proc's masked paths keep a new /proc from mounting. These
-    # let it, and the host's AppArmor profile for bubblewrap lets it make user namespaces where
-    # Ubuntu restricts them. glave holds no capability and gains no privilege. Without them
-    # glave says it cannot sandbox commands, and asks before each one.
+    # three lines turn those off for this container alone, and the host's AppArmor profile for
+    # bubblewrap lets it make user namespaces where Ubuntu restricts them. glave holds no
+    # capability and gains no privilege, and the commands it runs keep its own seccomp
+    # filter. Without them glave says it cannot sandbox commands, and asks before each one.
     security_opt:
       - seccomp=unconfined
       - apparmor=unconfined

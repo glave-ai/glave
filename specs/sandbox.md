@@ -147,7 +147,7 @@ The two implementations sit behind one internal interface in `glave-computer` (p
 
 The stand-ins come from a folder per user in the system temp folder (`glave-sandbox-<uid>`, private) that every glave sandbox keeps read-only, so no command can make another's hiding show something.
 
-bubblewrap is the first `bwrap` on `PATH` that a command could not have planted: a real file outside the temp folders, the current folder and the workspace (Codex's rule). Before using it glave checks that it starts. On Ubuntu 23.10 and later AppArmor stops it making user namespaces until it has a profile; this one, the one CI installs, is enough:
+bubblewrap is the first `bwrap` on `PATH` that a command could not have planted: a real file outside the temp folders, the current folder and the workspace (Codex's rule). Before using it glave checks that it starts. In a container it starts only where the container's seccomp filter allows new namespaces, its AppArmor profile allows mounts and `/proc` is not masked; the installer's Docker way turns those three defaults off for glave's container (`one-server.md`, "On a server"). On Ubuntu 23.10 and later AppArmor stops it making user namespaces until it has a profile, which applies inside containers to the same path too; this one, the one CI and the installer add, is enough:
 
 ```
 abi <abi/4.0>,
