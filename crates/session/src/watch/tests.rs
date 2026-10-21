@@ -155,7 +155,7 @@ fn what_is_recorded_while_the_log_is_read_comes_once_and_older_progress_never() 
     glave_ports::block_on!(async {
         let world = World::default();
         let watched = thread(1);
-        world.record(watched, 1, false);
+        world.record(watched, 1, true);
         let mut watch = world.watch(watched, None);
         // Recorded after the watch began and before it read: both read and heard.
         world.record(watched, 2, true);

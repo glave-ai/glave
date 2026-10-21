@@ -43,7 +43,9 @@ pub enum Watched {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Why {
     /// The watched thread's first reading: the `seq` of its latest event the hub had published
-    /// before the watch began, when it knew one. Copies come of what was published after.
+    /// before the watch began, when it knew one. Copies come of what was published after; with
+    /// none known (nothing published since the server started, or the thread long forgotten),
+    /// none is taken to come.
     Begun(Option<Seq>),
     /// An event came ahead of what was sent, at this `seq`: copies come of what is read past it.
     Ahead(Seq),
@@ -56,7 +58,7 @@ impl Why {
     /// no copy of what was read is still to come.
     fn stale_until(self, read: Seq) -> Option<Seq> {
         let waits = match self {
-            Self::Begun(published) => published.is_none_or(|published| published < read),
+            Self::Begun(published) => published.is_some_and(|published| published < read),
             Self::Ahead(came) => came < read,
             Self::Behind => true,
         };

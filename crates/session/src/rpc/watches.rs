@@ -88,12 +88,6 @@ impl Watches {
         if held.closed {
             return Err(ApiError::new(code::INTERNAL, "the connection closed"));
         }
-        if held.threads.contains_key(&thread) {
-            return Err(ApiError::new(
-                code::INVALID_PARAMS,
-                format!("this connection watches thread {thread} already"),
-            ));
-        }
         if held.turns.contains_key(&thread) {
             return Err(ApiError::new(
                 code::INVALID_PARAMS,
@@ -101,6 +95,12 @@ impl Watches {
                     "this connection follows a turn in thread {thread}: watch it once the turn has \
                      answered, or from another connection"
                 ),
+            ));
+        }
+        if held.threads.contains_key(&thread) {
+            return Err(ApiError::new(
+                code::INVALID_PARAMS,
+                format!("this connection watches thread {thread} already"),
             ));
         }
         if held.threads.len() >= MOST_WATCHES {

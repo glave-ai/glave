@@ -225,12 +225,23 @@ async fn handle<P, L, B>(
     let answered = match server.call(&Caller::default(), request).await {
         Answered::Reply(reply) => reply,
         Answered::Stream(stream) => follow_turn(stream, lines, turn.as_mut()).await,
-        Answered::Watch(watch) => match &claim {
+        Answered::Watch(mut watch) => match &claim {
             Some(claim) => {
                 claim.following();
-                tokio::select! {
-                    last = follow_watch(watch, lines, claim) => last,
-                    () = claim.ended() => Ok(Reply::Watched { ended: WatchEnd::Unwatched }),
+                let ended = tokio::select! {
+                    last = follow_watch(&mut watch, lines, claim) => Some(last),
+                    () = claim.ended() => None,
+                };
+                if let Some(last) = ended {
+                    last
+                } else {
+                    // Ended by the connection: what it already has, it writes first.
+                    while let Some(Watched::Note(note)) = watch.rest().await {
+                        write(&note, &watch, lines, claim).await;
+                    }
+                    Ok(Reply::Watched {
+                        ended: WatchEnd::Unwatched,
+                    })
                 }
             }
             None => Err(ApiError::new(
@@ -249,24 +260,31 @@ async fn handle<P, L, B>(
 /// Writes each of a watch's notifications to the connection, noting how far it has written
 /// its thread: its answer once it ends.
 async fn follow_watch(
-    mut watch: Watch,
+    watch: &mut Watch,
     lines: &mpsc::Sender<String>,
     claim: &Claim,
 ) -> Result<Reply, ApiError> {
-    let thread = watch.thread();
     loop {
         match watch.next().await {
-            Some(Watched::Note(note)) => {
-                let _ = lines.send(notify(&note)).await;
-                if let Notification::Event { thread: of, event } = note.as_ref()
-                    && *of == thread
-                {
-                    claim.sent(event.seq);
-                }
-            }
+            Some(Watched::Note(note)) => write(&note, watch, lines, claim).await,
             Some(Watched::Ended(ended)) => return ended.map(|ended| Reply::Watched { ended }),
             None => return Err(ApiError::new(code::INTERNAL, "the watch stopped")),
         }
+    }
+}
+
+/// Writes one of a watch's notifications to the connection, noting how far it has written.
+async fn write(
+    note: &Arc<Notification>,
+    watch: &Watch,
+    lines: &mpsc::Sender<String>,
+    claim: &Claim,
+) {
+    let _ = lines.send(notify(note)).await;
+    if let Notification::Event { thread, event } = note.as_ref()
+        && *thread == watch.thread()
+    {
+        claim.sent(event.seq);
     }
 }
 
