@@ -77,17 +77,22 @@ impl Lifeline {
 }
 
 /// Where a socket named `name` for `folder` goes: in it, or, where that path would be too long
-/// for a socket's (a deep system temp folder), in `/tmp`, named after the folder.
+/// for a socket's (a deep system temp folder), in `/tmp`, named after the temp folder `folder`
+/// is in (`glave-<name>-<pid>-<n>`, this process's own), and any file a killed run left there
+/// removed first.
 pub(crate) fn socket_path(folder: &Path, name: &str) -> PathBuf {
     let path = folder.join(name);
-    match folder.file_name() {
-        Some(folder) if path.as_os_str().len() > 100 => {
-            let mut short = folder.to_os_string();
-            short.push(format!(".{name}"));
-            Path::new("/tmp").join(short)
-        }
-        _ => path,
+    let Some(owner) = folder.parent().and_then(Path::file_name) else {
+        return path;
+    };
+    if path.as_os_str().len() <= 100 {
+        return path;
     }
+    let mut short = owner.to_os_string();
+    short.push(format!(".{name}"));
+    let short = Path::new("/tmp").join(short);
+    let _ = std::fs::remove_file(&short);
+    short
 }
 
 /// Whether the process `pid` still runs (or waits to be reaped).

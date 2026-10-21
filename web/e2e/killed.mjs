@@ -70,7 +70,10 @@ async function run(how) {
   if (how === 'killed' || !holding) {
     runner.kill('SIGKILL');
   }
+  // A runner that does not end on its own within the guard is killed.
+  const timer = setTimeout(() => runner.kill('SIGKILL'), 180_000);
   await exited;
+  clearTimeout(timer);
   const ended = await until(30, () => marked().length === 0);
   const left = marked();
   for (const { pid } of left) {
