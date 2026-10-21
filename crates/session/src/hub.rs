@@ -16,7 +16,8 @@ use crate::protocol::Notification;
 /// Notifications held for a slow watcher before it is told it fell behind.
 const BACKLOG: usize = 1_024;
 
-/// Threads whose latest published event the hub keeps; past it, the oldest thread's is forgotten.
+/// Threads whose latest published event the hub keeps; past it, the one published to least
+/// recently is forgotten.
 const MOST_PUBLISHED: usize = 4_096;
 
 /// The broadcasts of every watched thread.
@@ -31,9 +32,12 @@ pub(crate) struct Hub {
 struct Channels {
     /// The broadcast of each thread someone watches.
     open: HashMap<ThreadId, broadcast::Sender<Arc<Notification>>>,
-    /// The `seq` of each thread's latest event published, watched or not, for the most recent
-    /// threads.
-    published: BTreeMap<ThreadId, Seq>,
+    /// The `seq` of each thread's latest event published, watched or not, for the threads
+    /// published to most recently, and when, by the count of publishes.
+    published: BTreeMap<ThreadId, (Seq, u64)>,
+    /// The threads of `published` by when they were last published to, least recently first.
+    recency: BTreeMap<u64, ThreadId>,
+    publishes: u64,
 }
 
 impl Hub {
@@ -49,7 +53,8 @@ impl Hub {
             .entry(thread)
             .or_insert_with(|| broadcast::channel(BACKLOG).0)
             .subscribe();
-        (notes, channels.published.get(&thread).copied())
+        let published = channels.published.get(&thread).map(|(seq, _)| *seq);
+        (notes, published)
     }
 
     fn channels(&self) -> MutexGuard<'_, Channels> {
@@ -132,16 +137,24 @@ const MOST_GENERATIONS: usize = 8;
 
 impl Channels {
     /// Notes that `thread`'s event `seq` was published, keeping the latest when two writers'
-    /// are told out of order.
+    /// are told out of order, and forgetting the thread published to least recently past the
+    /// most kept.
     fn published(&mut self, thread: ThreadId, seq: Seq) {
-        let latest = self.published.entry(thread).or_insert(seq);
-        *latest = (*latest).max(seq);
-        if self.published.len() > MOST_PUBLISHED {
-            // Ids start with their time: the smallest is the oldest thread.
-            let oldest = self.published.keys().copied().find(|kept| *kept != thread);
-            if let Some(oldest) = oldest {
-                self.published.remove(&oldest);
+        self.publishes = self.publishes.saturating_add(1);
+        let now = self.publishes;
+        let latest = match self.published.insert(thread, (seq, now)) {
+            Some((before, then)) => {
+                self.recency.remove(&then);
+                before.max(seq)
             }
+            None => seq,
+        };
+        self.published.insert(thread, (latest, now));
+        self.recency.insert(now, thread);
+        if self.published.len() > MOST_PUBLISHED
+            && let Some((_, forgotten)) = self.recency.pop_first()
+        {
+            self.published.remove(&forgotten);
         }
     }
 }
@@ -241,5 +254,37 @@ impl<L: EventLog> EventLog for Observed<L> {
         thread: ThreadId,
     ) -> impl Future<Output = Result<Option<glave_ports::ThreadView>, LogError>> + Send {
         self.inner.rebuild_thread_view(scope, thread)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn thread(n: u16) -> ThreadId {
+        let mut random = [3; 10];
+        random[8..].copy_from_slice(&n.to_be_bytes());
+        ThreadId::new(jiff::Timestamp::UNIX_EPOCH, random).unwrap()
+    }
+
+    #[test]
+    fn the_thread_published_to_least_recently_is_forgotten_first_and_the_latest_seq_kept() {
+        let mut channels = Channels::default();
+        let seq = |n| Seq::new(n).unwrap();
+        channels.published(thread(0), seq(5));
+        // Told out of order: the latest stays.
+        channels.published(thread(0), seq(4));
+        for n in 1..u16::try_from(MOST_PUBLISHED).unwrap() {
+            channels.published(thread(n), seq(1));
+        }
+        // The oldest thread is still in use, so another goes when the map is full.
+        channels.published(thread(0), seq(6));
+        channels.published(thread(9_999), seq(1));
+        assert_eq!(channels.published.len(), MOST_PUBLISHED);
+        let kept = channels.published.get(&thread(0)).map(|kept| kept.0);
+        assert_eq!(kept, Some(seq(6)));
+        assert!(!channels.published.contains_key(&thread(1)));
+        assert!(channels.published.contains_key(&thread(2)));
+        assert_eq!(channels.recency.len(), MOST_PUBLISHED);
     }
 }

@@ -336,7 +336,7 @@ fn past_the_most_subagents_the_one_sent_to_longest_ago_is_forgotten() {
     let mut watch = world.watch(watched, Some(1));
     let child = |n: u16| {
         let mut random = [7; 10];
-        random[..2].copy_from_slice(&n.to_be_bytes());
+        random[8..].copy_from_slice(&n.to_be_bytes());
         ThreadId::new(Timestamp::UNIX_EPOCH, random).unwrap()
     };
     for n in 0..=300 {
