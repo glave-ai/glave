@@ -194,6 +194,16 @@ fn a_shared_project_finds_memories_its_threads_and_the_persons_never_another_pro
             ["4#1 person"],
             "an isolated project reads only itself"
         );
+        assert_eq!(
+            sources(
+                &memories
+                    .recall(&on(inbox(), thread(9)), "orca", 10)
+                    .await
+                    .unwrap()
+            ),
+            ["3#1 person"],
+            "in the person's Chats, their one ledger is searched once"
+        );
         let off_hits = memories
             .recall(&on(off(), thread(9)), "orca", 10)
             .await
@@ -278,19 +288,22 @@ fn a_turn_holding_every_word_outranks_memories_sharing_only_the_projects_name() 
             .recall(&on(shared(), thread(9)), "Beacon staging server", 5)
             .await
             .unwrap();
+        let kinds: Vec<&str> = hits
+            .iter()
+            .map(|hit| match hit.source {
+                Source::Memory { .. } => "memory",
+                Source::Thread { thread, .. } if thread == earlier.id => "earlier",
+                Source::Thread { .. } => "elsewhere",
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            ["earlier", "memory", "memory", "memory", "memory"],
+            "{hits:?}"
+        );
         assert!(
             hits.first()
-                .is_some_and(|hit| hit.text.contains("gannet-7")),
-            "{:?}",
-            sources(&hits)
-        );
-        assert_eq!(hits.len(), 5);
-        assert!(
-            hits.iter()
-                .skip(1)
-                .any(|hit| matches!(hit.source, Source::Memory { .. })),
-            "memories sharing one word still follow: {:?}",
-            sources(&hits)
+                .is_some_and(|hit| hit.text.contains("gannet-7"))
         );
     });
 }
