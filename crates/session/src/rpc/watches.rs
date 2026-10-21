@@ -66,9 +66,10 @@ impl Watches {
         })
     }
 
-    /// Ends the connection's watch of `thread`, if it has one.
+    /// Ends the connection's watch of `thread`, if it has one: from now on the thread may be
+    /// watched again.
     pub(super) fn end(&self, thread: ThreadId) {
-        if let Some(end) = self.held().threads.get(&thread) {
+        if let Some(end) = self.held().threads.remove(&thread) {
             end.notify_one();
         }
     }

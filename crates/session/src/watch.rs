@@ -5,7 +5,7 @@
 //! backlog, is read from the log instead, so a watcher never sees a gap in what was recorded.
 //! Live updates it missed are gone: they are never replayed.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 
 use glave_event::{RawEvent, Seq, ThreadId};
@@ -18,8 +18,8 @@ use crate::server::Server;
 /// Events read from the log at a time while a watch catches up.
 const PAGE: usize = 256;
 
-/// The subagents' threads whose place a watch keeps; past it the oldest is forgotten, and read
-/// from its start should it be seen again.
+/// The subagents' threads whose place a watch keeps; past it the one sent to longest ago is
+/// forgotten, and read from its start should it be seen again.
 const MOST_CHILDREN: usize = 256;
 
 /// Reads a page of a thread's events after a `seq`, from its start when there is none.
@@ -38,12 +38,47 @@ pub enum Watched {
     Ended(Result<WatchEnd, ApiError>),
 }
 
-/// The first reading of a watched thread from the log.
-enum Seam {
-    /// Still to end: the `seq` of the thread's latest event published before the watch began,
-    /// when the hub knew it.
-    Reading(Option<Seq>),
-    Read,
+/// Why a thread is read from the log, which says whether copies of what is read, and live
+/// updates older than them, may still come once it is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Why {
+    /// The watched thread's first reading: the `seq` of its latest event the hub had published
+    /// before the watch began, when it knew one. Copies come of what was published after.
+    Begun(Option<Seq>),
+    /// An event came ahead of what was sent, at this `seq`: copies come of what is read past it.
+    Ahead(Seq),
+    /// The watcher fell behind: copies of anything read may still come.
+    Behind,
+}
+
+impl Why {
+    /// The `seq` live updates of the thread wait for, after a reading up to `read`: none when
+    /// no copy of what was read is still to come.
+    fn stale_until(self, read: Seq) -> Option<Seq> {
+        let waits = match self {
+            Self::Begun(published) => published.is_none_or(|published| published < read),
+            Self::Ahead(came) => came < read,
+            Self::Behind => true,
+        };
+        waits.then_some(read)
+    }
+
+    /// Both reasons for one reading: falling behind outweighs the others.
+    fn and(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Behind, _) | (_, Self::Behind) => Self::Behind,
+            (Self::Ahead(one), Self::Ahead(other)) => Self::Ahead(one.min(other)),
+            (Self::Begun(published), _) | (_, Self::Begun(published)) => Self::Begun(published),
+        }
+    }
+}
+
+/// Where a thread's events were sent up to, and when it was last sent one.
+#[derive(Debug, Clone, Copy)]
+struct Place {
+    seq: Seq,
+    /// How many events the watch had sent then.
+    at: u64,
 }
 
 /// A thread followed as it is recorded: its events from the log after a `seq`, then each as it
@@ -52,19 +87,17 @@ pub struct Watch {
     thread: ThreadId,
     read: Reader,
     notes: broadcast::Receiver<Arc<Notification>>,
-    /// The last `seq` sent of each thread whose events were sent: the watched one, and its
-    /// subagents'.
-    sent: BTreeMap<ThreadId, Seq>,
-    /// Threads whose events are read from the log before more are taken as they come.
-    behind: BTreeSet<ThreadId>,
+    /// Where each thread's events were sent up to: the watched one's, and its subagents'.
+    sent: BTreeMap<ThreadId, Place>,
+    /// How many events were sent.
+    sends: u64,
+    /// Threads whose events are read from the log before more are taken as they come, and why.
+    behind: BTreeMap<ThreadId, Why>,
     /// Events read from the log and not sent yet, oldest first: at most a page.
     read_ahead: VecDeque<RawEvent>,
-    /// After reading from the log, live updates may be older than the events read: they are
-    /// dropped until an event comes that is no older than what was sent.
-    stale: bool,
-    /// Where the first reading of the watched thread is: live updates are stale after it
-    /// unless every event it read had been published before the watch began.
-    seam: Seam,
+    /// Threads whose live updates may be older than the events read of them from the log:
+    /// each thread's are dropped until its event at or past the `seq` here comes.
+    stale: BTreeMap<ThreadId, Seq>,
     /// How the watch ends, once the event that ends it was sent.
     ending: Option<Result<WatchEnd, ApiError>>,
     ended: bool,
@@ -80,18 +113,22 @@ impl Watch {
         (notes, published): (broadcast::Receiver<Arc<Notification>>, Option<Seq>),
         after: Option<Seq>,
     ) -> Self {
-        Self {
+        let mut watch = Self {
             thread,
             read,
             notes,
-            sent: after.map(|after| (thread, after)).into_iter().collect(),
-            behind: BTreeSet::from([thread]),
+            sent: BTreeMap::new(),
+            sends: 0,
+            behind: BTreeMap::from([(thread, Why::Begun(published))]),
             read_ahead: VecDeque::new(),
-            stale: false,
-            seam: Seam::Reading(published),
+            stale: BTreeMap::new(),
             ending: None,
             ended: false,
+        };
+        if let Some(after) = after {
+            watch.keep_place(thread, after);
         }
+        watch
     }
 
     /// The thread watched.
@@ -137,8 +174,8 @@ impl Watch {
                 let note = Arc::new(Notification::Event { thread, event });
                 return Some(self.send(note));
             }
-            if let Some(thread) = self.next_behind() {
-                if let Err(failed) = self.catch_up(thread).await {
+            if let Some((thread, why)) = self.next_behind() {
+                if let Err(failed) = self.catch_up(thread, why).await {
                     return Some(Watched::Ended(Err(failed)));
                 }
                 continue;
@@ -170,29 +207,29 @@ impl Watch {
         }
     }
 
-    /// The thread to read from the log next: the watched one first.
-    fn next_behind(&self) -> Option<ThreadId> {
-        if self.behind.contains(&self.thread) {
-            Some(self.thread)
-        } else {
-            self.behind.first().copied()
+    /// The thread to read from the log next, and why: the watched one first.
+    fn next_behind(&self) -> Option<(ThreadId, Why)> {
+        match self.behind.get(&self.thread) {
+            Some(why) => Some((self.thread, *why)),
+            None => self
+                .behind
+                .first_key_value()
+                .map(|(thread, why)| (*thread, *why)),
         }
     }
 
     /// Reads the next page of `thread`'s events after what was sent; once a page is short, the
-    /// thread has caught up.
-    async fn catch_up(&mut self, thread: ThreadId) -> Result<(), ApiError> {
-        let after = self.sent.get(&thread).copied();
+    /// thread has caught up, and its live updates wait for the copy of the last event read
+    /// when one is still to come.
+    async fn catch_up(&mut self, thread: ThreadId, why: Why) -> Result<(), ApiError> {
+        let after = self.sent.get(&thread).map(|place| place.seq);
         let page = (self.read)(thread, after).await?;
         if page.len() < PAGE {
             self.behind.remove(&thread);
-            if thread == self.thread
-                && let Seam::Reading(published) = std::mem::replace(&mut self.seam, Seam::Read)
-            {
-                // Unless the latest event read was published before the watch began, its
-                // copy is still to come, and live updates before it are older than it.
-                let read = page.last().map(|event| event.seq).or(after);
-                self.stale = read.is_some_and(|read| published.is_none_or(|p| p < read));
+            let read = page.last().map(|event| event.seq).or(after);
+            if let Some(until) = read.and_then(|read| why.stale_until(read)) {
+                let waits = self.stale.entry(thread).or_insert(until);
+                *waits = (*waits).max(until);
             }
         }
         self.read_ahead.extend(page);
@@ -200,24 +237,27 @@ impl Watch {
     }
 
     /// Takes one notification as it came: an event in order is sent, a copy of one sent is
-    /// dropped, and one ahead of what was sent has its thread read from the log, itself with it.
+    /// dropped, and one ahead of what was sent has its thread read from the log, itself with
+    /// it. A thread's live updates wait while they may be older than what was read of it.
     fn take(&mut self, note: Arc<Notification>) -> Option<Watched> {
-        let Notification::Event { thread, event } = note.as_ref() else {
-            let live = matches!(note.as_ref(), Notification::Live { .. });
-            return (!(live && self.stale)).then_some(Watched::Note(note));
+        let (thread, seq) = match note.as_ref() {
+            Notification::Event { thread, event } => (*thread, event.seq),
+            Notification::Live { thread, .. } if self.stale.contains_key(thread) => return None,
+            Notification::Live { .. } | Notification::TaskFinished { .. } => {
+                return Some(Watched::Note(note));
+            }
         };
-        let (thread, seq) = (*thread, event.seq);
-        let last = self.sent.get(&thread).copied();
-        if last.is_none_or(|last| seq >= last) {
-            self.stale = false;
+        if self.stale.get(&thread).is_some_and(|until| seq >= *until) {
+            self.stale.remove(&thread);
         }
+        let last = self.sent.get(&thread).map(|place| place.seq);
         if last.is_some_and(|last| seq <= last) {
             return None;
         }
         if Some(seq) == last.map_or(Some(Seq::FIRST), Seq::next) {
             return Some(self.send(note));
         }
-        self.behind.insert(thread);
+        self.read_from_log(thread, Why::Ahead(seq));
         None
     }
 
@@ -233,24 +273,46 @@ impl Watch {
         Watched::Note(note)
     }
 
-    /// Notes that `thread`'s events were sent up to `seq`, forgetting the oldest subagent's
-    /// place past the most kept.
+    /// Notes that `thread`'s events were sent up to `seq`. Past the most kept, the subagent
+    /// sent to longest ago is forgotten, but never one still to be read from the log.
     fn keep_place(&mut self, thread: ThreadId, seq: Seq) {
-        self.sent.insert(thread, seq);
-        if self.sent.len() > MOST_CHILDREN.saturating_add(1) {
-            let oldest = self.sent.keys().copied().find(|kept| *kept != self.thread);
-            if let Some(oldest) = oldest {
-                self.sent.remove(&oldest);
-            }
+        self.sends = self.sends.saturating_add(1);
+        let at = self.sends;
+        self.sent.insert(thread, Place { seq, at });
+        if self.sent.len() <= MOST_CHILDREN.saturating_add(1) {
+            return;
+        }
+        let oldest = self
+            .sent
+            .iter()
+            .filter(|(kept, _)| {
+                **kept != self.thread && **kept != thread && !self.behind.contains_key(*kept)
+            })
+            .min_by_key(|(_, place)| place.at)
+            .map(|(kept, _)| *kept);
+        if let Some(oldest) = oldest {
+            self.sent.remove(&oldest);
+            self.stale.remove(&oldest);
         }
     }
 
+    /// Reads `thread`'s events from the log before more are taken as they come.
+    fn read_from_log(&mut self, thread: ThreadId, why: Why) {
+        let why = match self.behind.get(&thread) {
+            Some(already) => already.and(why),
+            None => why,
+        };
+        self.behind.insert(thread, why);
+    }
+
     /// The watcher missed notifications: every thread it sent events of is read from the log
-    /// again from where it was, and live updates wait for the next event.
+    /// again from where it was, and each one's live updates wait for its next event.
     fn fell_behind(&mut self) {
-        self.stale = true;
-        self.behind.insert(self.thread);
-        self.behind.extend(self.sent.keys().copied());
+        let threads: Vec<ThreadId> = self.sent.keys().copied().collect();
+        self.read_from_log(self.thread, Why::Behind);
+        for thread in threads {
+            self.read_from_log(thread, Why::Behind);
+        }
     }
 }
 

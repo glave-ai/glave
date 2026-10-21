@@ -169,12 +169,11 @@ fn what_is_recorded_while_the_log_is_read_comes_once_and_older_progress_never() 
 }
 
 #[test]
-fn progress_flows_at_once_when_what_was_read_had_been_heard_before() {
+fn progress_flows_at_once_when_what_was_read_had_been_published_before() {
     glave_ports::block_on!(async {
         let world = World::default();
         let watched = thread(1);
-        // Another watcher heard the thread's latest event before this watch began.
-        let _other = world.hub.watch(watched);
+        // Published before the watch began, with no one watching: no copy of it is to come.
         world.record(watched, 2, true);
         let mut watch = world.watch(watched, None);
         world.live(watched, "streaming");
@@ -275,4 +274,80 @@ fn deleting_the_thread_ends_the_watch_once_it_is_sent() {
         assert_eq!(said(&mut watch).await, want);
         assert!(watch.next().await.is_none());
     });
+}
+
+/// Tells the watchers of `parent` of `event`, a subagent's.
+fn tell_child(world: &World, parent: ThreadId, event: &RawEvent) {
+    let note = Notification::Event {
+        thread: event.thread,
+        event: event.clone(),
+    };
+    world.hub.publish(parent, note);
+}
+
+fn child_live(world: &World, parent: ThreadId, child: ThreadId, text: &str) {
+    let update = Update::Text { text: text.into() };
+    world.hub.publish(
+        parent,
+        Notification::Live {
+            thread: child,
+            update,
+        },
+    );
+}
+
+#[test]
+fn after_falling_behind_each_threads_progress_waits_for_its_own_events_only() {
+    glave_ports::block_on!(async {
+        let world = World::default();
+        let (parent, a, b) = (thread(1), thread(2), thread(3));
+        world.record(parent, 1, false);
+        let mut watch = world.watch(parent, None);
+        for child in [a, b] {
+            world.record(child, 1, false);
+            tell_child(&world, parent, &event(child, 1, false));
+        }
+        let mut want = seqs(1, 1..=1);
+        want.extend(seqs(2, 1..=1));
+        want.extend(seqs(3, 1..=1));
+        assert_eq!(said(&mut watch).await, want);
+        for _ in 0..1_100 {
+            world.live(parent, "missed");
+        }
+        for child in [a, b] {
+            world.record(child, 2, false);
+        }
+        tell_child(&world, parent, &event(a, 2, false));
+        child_live(&world, parent, b, "older than b's second");
+        tell_child(&world, parent, &event(b, 2, false));
+        child_live(&world, parent, b, "b fresh");
+        child_live(&world, parent, a, "a fresh");
+        let mut want = seqs(2, 2..=2);
+        want.extend(seqs(3, 2..=2));
+        want.extend(["b fresh".to_owned(), "a fresh".to_owned()]);
+        assert_eq!(said(&mut watch).await, want);
+    });
+}
+
+#[test]
+fn past_the_most_subagents_the_one_sent_to_longest_ago_is_forgotten() {
+    let world = World::default();
+    let watched = thread(1);
+    let mut watch = world.watch(watched, Some(1));
+    let child = |n: u16| {
+        let mut random = [7; 10];
+        random[..2].copy_from_slice(&n.to_be_bytes());
+        ThreadId::new(Timestamp::UNIX_EPOCH, random).unwrap()
+    };
+    for n in 0..=300 {
+        watch.keep_place(child(n), Seq::FIRST);
+    }
+    assert_eq!(watch.sent.len(), MOST_CHILDREN + 1);
+    assert!(watch.sent.contains_key(&watched));
+    // The oldest child, seen again, is kept, and the one sent to longest ago goes instead.
+    watch.keep_place(child(0), Seq::FIRST);
+    assert!(watch.sent.contains_key(&child(0)));
+    assert!(!watch.sent.contains_key(&child(45)));
+    assert!(watch.sent.contains_key(&child(46)));
+    assert_eq!(watch.sent.len(), MOST_CHILDREN + 1);
 }

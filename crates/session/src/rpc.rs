@@ -20,7 +20,7 @@ use tokio::io::{
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
-use self::watches::Watches;
+use self::watches::{Claim, Watches};
 use crate::dispatch::Answered;
 use crate::protocol::{ApiError, Notification, Reply, Request, WatchEnd, code};
 use crate::server::Server;
@@ -138,8 +138,20 @@ where
         if line.trim().is_empty() {
             continue;
         }
-        let (server, lines, watches) = (server.clone(), lines.clone(), Arc::clone(&watches));
-        requests.spawn(async move { handle(&server, &line, &lines, &watches).await });
+        let parsed = parse(&line);
+        // What the connection watches changes in the order its lines come, before requests run
+        // side by side: an unwatch ends the watch sent before it, and frees the thread for one
+        // sent after it.
+        let claim = match &parsed {
+            Ok((_, Request::ThreadWatch { thread, .. })) => Some(watches.claim(*thread)),
+            Ok((_, Request::ThreadUnwatch { thread })) => {
+                watches.end(*thread);
+                None
+            }
+            _ => None,
+        };
+        let (server, lines) = (server.clone(), lines.clone());
+        requests.spawn(async move { handle(&server, parsed, claim, &lines).await });
         while requests.try_join_next().is_some() {}
     };
     // The client is gone: its watches end, its turns stop when it was the only one, what is in
@@ -154,47 +166,52 @@ where
     read.and(written)
 }
 
-/// Answers one message, streaming a turn's or a watch's notifications before its response.
+/// Answers one message, streaming a turn's or a watch's notifications before its response; a
+/// watch held as `claim` until the connection ends it.
 async fn handle<P, L, B>(
     server: &Server<P, L, B>,
-    line: &str,
+    parsed: Parsed,
+    claim: Option<Result<Claim, ApiError>>,
     lines: &mpsc::Sender<String>,
-    watches: &Arc<Watches>,
 ) where
     P: ModelProvider + 'static,
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    let (id, request) = match parse(line) {
+    let (id, request) = match parsed {
         Ok(parsed) => parsed,
         Err((id, failed)) => {
             let _ = lines.send(respond(id.as_ref(), Err(&failed))).await;
             return;
         }
     };
-    let unwatched = match &request {
-        Request::ThreadUnwatch { thread } => Some(*thread),
-        _ => None,
+    let claim = match claim.transpose() {
+        Ok(claim) => claim,
+        Err(refused) => {
+            if let Some(id) = id {
+                let _ = lines.send(respond(Some(&id), Err(&refused))).await;
+            }
+            return;
+        }
     };
     // Local transports act as the local person.
     let answered = match server.call(&Caller::default(), request).await {
         Answered::Reply(reply) => reply,
         Answered::Stream(turn) => follow(Streamed::Turn(turn), lines).await,
-        // A watch is the connection's, which ends it.
-        Answered::Watch(watch) => match watches.claim(watch.thread()) {
-            Ok(claim) => {
-                let ended = claim.ended();
-                tokio::select! {
-                    last = follow(Streamed::Watch(watch), lines) => last,
-                    () = ended => Ok(Reply::Watched { ended: WatchEnd::Unwatched }),
+        Answered::Watch(watch) => {
+            let ended = async {
+                match &claim {
+                    Some(claim) => claim.ended().await,
+                    None => std::future::pending().await,
                 }
+            };
+            tokio::select! {
+                last = follow(Streamed::Watch(watch), lines) => last,
+                () = ended => Ok(Reply::Watched { ended: WatchEnd::Unwatched }),
             }
-            Err(refused) => Err(refused),
-        },
+        }
     };
-    if let (Some(thread), Ok(_)) = (unwatched, &answered) {
-        watches.end(thread);
-    }
+    drop(claim);
     // A request without an id is a notification, which is never answered.
     if let Some(id) = id {
         let _ = lines.send(respond(Some(&id), answered.as_ref())).await;
@@ -215,8 +232,11 @@ async fn follow(mut streamed: Streamed, lines: &mpsc::Sender<String>) -> Result<
     }
 }
 
+/// One message read as a request with its id, or why it is not one.
+type Parsed = Result<(Option<Id>, Request), (Option<Id>, ApiError)>;
+
 /// Reads one message as a request, or says why it is not one.
-pub(crate) fn parse(line: &str) -> Result<(Option<Id>, Request), (Option<Id>, ApiError)> {
+pub(crate) fn parse(line: &str) -> Parsed {
     let failed = ApiError::new;
     let incoming: Incoming = serde_json::from_str(line)
         .map_err(|err| (None, failed(code::PARSE, format!("not JSON-RPC: {err}"))))?;

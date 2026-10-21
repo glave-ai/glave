@@ -584,3 +584,55 @@ fn a_connection_of_lines_watches_each_thread_once_and_at_most_64() {
         }
     });
 }
+
+#[test]
+fn a_connection_of_lines_takes_watches_and_unwatches_in_the_order_sent() {
+    block_on!(async {
+        for kind in [Kind::Stdio, Kind::Socket] {
+            let name = format!("order-{kind:?}").to_lowercase();
+            let dir = folder(&name);
+            let server = server(&dir, Vec::new(), Answering::Clients).await;
+            let mut over = Over::new(kind, &server, &name).await;
+            let freed = start(&server, false).await;
+            let mut watcher = over.watcher().await;
+            watcher.watch(freed, None).await;
+            let mut seen = Seen::default();
+            read_through(&mut watcher, freed, 1, &mut seen).await;
+            let Watcher::Lines(mut lines) = watcher else {
+                unreachable!()
+            };
+            // Each in the order sent: an unwatch ends the watch sent before it, and a watch sent
+            // right after it is not refused.
+            let watch = Request::ThreadWatch {
+                thread: freed,
+                after: None,
+            };
+            let unwatch = Request::ThreadUnwatch { thread: freed };
+            let mut sent = Vec::new();
+            for request in [&unwatch, &watch, &unwatch, &watch] {
+                sent.push(lines.send(request).await);
+            }
+            let mut answers = std::collections::BTreeMap::new();
+            while answers.len() < 5 {
+                let message = lines.receive().await;
+                if let Some(id) = message.get("id").and_then(Value::as_u64)
+                    && sent.contains(&id)
+                {
+                    answers.insert(id, message);
+                }
+                // The last watch runs until it, too, is unwatched.
+                if answers.len() == 3 && sent.len() == 4 {
+                    sent.push(lines.send(&unwatch).await);
+                }
+            }
+            let ended = json!({"ended": "unwatched"});
+            for (at, answer) in [json!({}), ended.clone(), json!({}), ended, json!({})]
+                .into_iter()
+                .enumerate()
+            {
+                assert_eq!(answers[&sent[at]]["result"], answer, "{kind:?} {at}");
+            }
+            over.close().await;
+        }
+    });
+}

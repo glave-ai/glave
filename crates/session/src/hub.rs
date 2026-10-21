@@ -3,9 +3,9 @@
 //! far behind misses what was not held for it: a watch reads it again from the log by `seq`
 //! (`watch.rs`), so nothing is buffered without bound.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use glave_event::{Body, Event, RawEvent, Seq, ThreadId, decode};
 use glave_ports::{EventLog, Located, LogError, Scope};
@@ -16,34 +16,44 @@ use crate::protocol::Notification;
 /// Notifications held for a slow watcher before it is told it fell behind.
 const BACKLOG: usize = 1_024;
 
+/// Threads whose latest published event the hub keeps; past it, the oldest thread's is forgotten.
+const MOST_PUBLISHED: usize = 4_096;
+
 /// The broadcasts of every watched thread.
 #[derive(Default)]
 pub(crate) struct Hub {
-    threads: Mutex<HashMap<ThreadId, Channel>>,
+    channels: Mutex<Channels>,
     /// Each running subagent's parent: its notifications go to the parent's watchers too.
     parents: Mutex<HashMap<ThreadId, ThreadId>>,
 }
 
-/// One watched thread's broadcast.
-struct Channel {
-    sender: broadcast::Sender<Arc<Notification>>,
-    /// The `seq` of the thread's own latest event published to it.
-    last: Option<Seq>,
+#[derive(Default)]
+struct Channels {
+    /// The broadcast of each thread someone watches.
+    open: HashMap<ThreadId, broadcast::Sender<Arc<Notification>>>,
+    /// The `seq` of each thread's latest event published, watched or not, for the most recent
+    /// threads.
+    published: BTreeMap<ThreadId, Seq>,
 }
 
 impl Hub {
     /// Starts watching `thread`: everything published from now on, and the `seq` of its latest
-    /// event published before, when one was published while someone watched it.
+    /// event published before, when the hub still knows it.
     pub(crate) fn watch(
         &self,
         thread: ThreadId,
     ) -> (broadcast::Receiver<Arc<Notification>>, Option<Seq>) {
-        let mut threads = self.threads.lock().unwrap_or_else(PoisonError::into_inner);
-        let channel = threads.entry(thread).or_insert_with(|| Channel {
-            sender: broadcast::channel(BACKLOG).0,
-            last: None,
-        });
-        (channel.sender.subscribe(), channel.last)
+        let mut channels = self.channels();
+        let notes = channels
+            .open
+            .entry(thread)
+            .or_insert_with(|| broadcast::channel(BACKLOG).0)
+            .subscribe();
+        (notes, channels.published.get(&thread).copied())
+    }
+
+    fn channels(&self) -> MutexGuard<'_, Channels> {
+        self.channels.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Sends `notification` to everyone watching `thread` or a thread it is a child of,
@@ -68,18 +78,18 @@ impl Hub {
     }
 
     fn send(&self, thread: ThreadId, notification: &Arc<Notification>) {
-        let mut threads = self.threads.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(channel) = threads.get_mut(&thread) {
-            if channel.sender.receiver_count() == 0 {
-                threads.remove(&thread);
+        let mut channels = self.channels();
+        if let Notification::Event { thread: of, event } = notification.as_ref()
+            && *of == thread
+        {
+            channels.published(thread, event.seq);
+        }
+        if let Some(sender) = channels.open.get(&thread) {
+            if sender.receiver_count() == 0 {
+                channels.open.remove(&thread);
             } else {
-                if let Notification::Event { thread: of, event } = notification.as_ref()
-                    && *of == thread
-                {
-                    channel.last = Some(event.seq);
-                }
                 // Only fails when no one is listening, which is fine.
-                let _ = channel.sender.send(Arc::clone(notification));
+                let _ = sender.send(Arc::clone(notification));
             }
         }
     }
@@ -119,6 +129,22 @@ impl Hub {
 
 /// How far up a child's notifications travel.
 const MOST_GENERATIONS: usize = 8;
+
+impl Channels {
+    /// Notes that `thread`'s event `seq` was published, keeping the latest when two writers'
+    /// are told out of order.
+    fn published(&mut self, thread: ThreadId, seq: Seq) {
+        let latest = self.published.entry(thread).or_insert(seq);
+        *latest = (*latest).max(seq);
+        if self.published.len() > MOST_PUBLISHED {
+            // Ids start with their time: the smallest is the oldest thread.
+            let oldest = self.published.keys().copied().find(|kept| *kept != thread);
+            if let Some(oldest) = oldest {
+                self.published.remove(&oldest);
+            }
+        }
+    }
+}
 
 /// An event log that publishes every event it appends.
 pub(crate) struct Observed<L> {
