@@ -1,10 +1,8 @@
-import { readFileSync, readdirSync } from 'node:fs';
-
 import { expect, test } from '@playwright/test';
 import axe, { type Result } from 'axe-core';
 
 import { fakeApi } from './fake-api';
-import { SIGNED_IN, WCAG, byTestId, described, expectAccessible } from './support';
+import { SIGNED_IN, WCAG, builtChunk, byTestId, described, expectAccessible } from './support';
 
 /** What axe found the moment the side nav's ⋯ appeared, and whether it was bound by then. */
 interface Appeared {
@@ -16,30 +14,14 @@ interface Appeared {
 /** The page, with axe in it and what it found as the ⋯ appeared. */
 type Watched = Window & { axe: typeof axe; appeared?: Promise<Appeared> };
 
-/**
- * The file of the build glave serves that holds the side nav's ⋯ menu, which the side nav
- * loads once the page is idle (`@defer (on idle)`): the one that defines its component.
- */
-function menuChunk(): string {
-  const built = new URL('../dist/app/browser/', import.meta.url);
-  const found = readdirSync(built).find(
-    (file) =>
-      file.endsWith('.js') &&
-      /selectors:\[\[["'`]app-nav-list-menu["'`]\]\]/u.test(
-        readFileSync(new URL(file, built), 'utf8'),
-      ),
-  );
-  if (found === undefined) {
-    throw new Error('the build has no chunk for the side nav’s menu: npm run build first');
-  }
-  return found;
-}
-
 test('the side nav’s ⋯, loaded late, is never in the page unnamed: axe passes the moment it appears', async ({
   page,
 }) => {
   await fakeApi(page);
-  // Its code stays on its way, as on a busy computer, until the test lets it come.
+  // Its code, which the side nav loads once the page is idle (`@defer (on idle)`), stays on its
+  // way, as on a busy computer, until the test lets it come. It is known by the component it
+  // defines, in the build glave serves.
+  const chunk = builtChunk((code) => /selectors:\[\[["'`]app-nav-list-menu["'`]\]\]/u.test(code));
   let asked: () => void = () => undefined;
   const requested = new Promise<void>((resolve) => {
     asked = resolve;
@@ -48,7 +30,7 @@ test('the side nav’s ⋯, loaded late, is never in the page unnamed: axe passe
   const released = new Promise<void>((resolve) => {
     release = resolve;
   });
-  await page.route(`**/${menuChunk()}`, async (route) => {
+  await page.route(`**/${chunk}`, async (route) => {
     asked();
     await released;
     await route.fallback();

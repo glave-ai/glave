@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import AxeBuilder from '@axe-core/playwright';
@@ -116,6 +116,21 @@ export async function readIn(page: Page, language: string): Promise<void> {
     Object.defineProperty(navigator, 'language', { get: () => tag });
     Object.defineProperty(navigator, 'languages', { get: () => [tag] });
   }, language);
+}
+
+/**
+ * The file of the app's build, as glave serves it, whose code `holds` picks out, such as the
+ * chunk with a part the app loads late, for a test to hold on its way. Fails when none does.
+ */
+export function builtChunk(holds: (code: string) => boolean): string {
+  const built = new URL('../dist/app/browser/', import.meta.url);
+  const found = readdirSync(built).find(
+    (file) => file.endsWith('.js') && holds(readFileSync(new URL(file, built), 'utf8')),
+  );
+  if (found === undefined) {
+    throw new Error('no file of the app’s build holds what the test looks for');
+  }
+  return found;
 }
 
 /** Elements end-to-end tests use, by their `data-testid` (AGENTS.md, "Test hooks"). */

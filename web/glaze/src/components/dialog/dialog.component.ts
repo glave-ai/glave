@@ -2,8 +2,8 @@ import {
   ChangeDetectionStrategy,
   Component,
   type ElementRef,
+  afterRenderEffect,
   computed,
-  effect,
   input,
   model,
   viewChild,
@@ -59,16 +59,19 @@ export class GlzDialogComponent {
   protected readonly closeLabel = glzText('dialog', { closeLabel: 'Close' }).closeLabel;
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
 
-  constructor() {
-    effect(() => {
-      const dialog = this.dialog().nativeElement;
-      if (this.open() && !dialog.open) {
-        dialog.showModal();
-      } else if (!this.open() && dialog.open) {
-        dialog.close();
-      }
-    });
-  }
+  /**
+   * Opens and closes the native dialog as `open` says, once the page is rendered: a dialog made
+   * open then opens with its controls bound, and the browser moves focus to the first of them,
+   * named (`INERT_UNTIL_BOUND` keeps them out of reach until then).
+   */
+  protected readonly shown = afterRenderEffect(() => {
+    const dialog = this.dialog().nativeElement;
+    if (this.open() && !dialog.open) {
+      dialog.showModal();
+    } else if (!this.open() && dialog.open) {
+      dialog.close();
+    }
+  });
 
   /** Closes the dialog. */
   close(): void {
