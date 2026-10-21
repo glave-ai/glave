@@ -275,9 +275,12 @@ where
         let cancel = Cancel::new();
         let (finish, finished) = watch::channel(false);
         let held = self.take_busy(thread, purpose, &cancel, finished)?;
-        // Busy here, so its summary says it runs: lists are told, and again once it ends.
+        // Busy here, so its summary says it runs: lists are told, and again once it ends. Not
+        // for a change to whether it is shown, which never shows as running.
         let project = scope.project();
-        self.inner.hub.changed(project, thread);
+        if purpose != Use::Manage {
+            self.inner.hub.changed(project, thread);
+        }
         let server = self.clone();
         let inner = Arc::clone(&self.inner);
         // The computer stays awake while the work runs, however it ends (`awake.rs`).

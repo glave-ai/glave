@@ -1,11 +1,11 @@
 //! Clients of a test server over each of the four transports (in-process, a stream of lines
 //! as stdio carries it, a Unix socket to a long-running server, HTTP with server-sent events),
-//! made to follow a thread: watching it, or a turn in it.
+//! made to follow a thread (watching it, or a turn in it) or a list of threads.
 
-use glave_event::ThreadId;
-use glave_ports::Caller;
+use glave_event::{At, ThreadId};
+use glave_ports::{Caller, ProjectId};
 use glave_session::protocol::{Answer, Notification, Request, Update};
-use glave_session::{Answering, TurnItem, TurnStream, Watch, Watched, rpc};
+use glave_session::{Answering, ListWatch, TurnItem, TurnStream, Watch, Watched, rpc};
 use serde_json::{Value, json};
 use tokio::io::{
     AsyncBufReadExt as _, AsyncRead, AsyncWrite, AsyncWriteExt as _, BufReader, Lines,
@@ -178,6 +178,7 @@ pub(crate) enum Watcher {
 pub(crate) enum InProcess {
     Watch(Watch),
     Turn(TurnStream),
+    List(ListWatch),
 }
 
 /// What a watch said: a notification, or its answer.
@@ -201,6 +202,31 @@ impl Watcher {
             Self::Http(web, watch) => {
                 let (message, id) = web.message(&request);
                 let response = web.open(&message, Some("thread/watch")).await;
+                assert_eq!(response.headers()["content-type"], "text/event-stream");
+                *watch = Some((Events::new(response), id));
+            }
+        }
+    }
+
+    /// Starts watching the threads `caller` sees in `project`, or in every project they work
+    /// in, those updated since `after` first. Over HTTP the caller is the signed-in one, over
+    /// lines the local person.
+    pub(crate) async fn watch_list(
+        &mut self,
+        caller: &Caller,
+        project: Option<ProjectId>,
+        after: Option<At>,
+    ) {
+        let request = Request::ThreadListWatch { project, after };
+        match self {
+            Self::InProcess(server, watch) => {
+                let watched = server.watch_list(caller, project, after).await.unwrap();
+                *watch = Some(InProcess::List(watched));
+            }
+            Self::Lines(lines) => lines.watching = Some(lines.send(&request).await),
+            Self::Http(web, watch) => {
+                let (message, id) = web.message(&request);
+                let response = web.open(&message, Some("thread/list/watch")).await;
                 assert_eq!(response.headers()["content-type"], "text/event-stream");
                 *watch = Some((Events::new(response), id));
             }
@@ -241,6 +267,12 @@ impl Watcher {
                     TurnItem::Missed(missed) => panic!("missed {missed} in the server's process"),
                     TurnItem::Ended(ended) => {
                         Said::Answer(json!({"result": {"turn": ended.unwrap()}}))
+                    }
+                },
+                InProcess::List(watch) => match watch.next().await.unwrap() {
+                    Watched::Note(note) => Said::Note(note.as_ref().clone()),
+                    Watched::Ended(ended) => {
+                        Said::Answer(json!({"result": {"ended": ended.unwrap()}}))
                     }
                 },
             },

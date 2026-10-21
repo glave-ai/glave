@@ -20,6 +20,7 @@ mod gone;
 mod http;
 mod isolation;
 mod leases;
+mod list_watching;
 mod listing;
 mod local;
 mod many_projects;

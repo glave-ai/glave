@@ -232,8 +232,8 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
             ],
         ),
         ("thread/unwatch", on_thread()),
-        // A watch of every project the caller works in names no one's id, and never ends, so
-        // it is called by `lists.rs`'s own tests (`list_watching.rs`), not here.
+        // A watch of every project the caller works in names no one's id and never ends: who
+        // hears of what there is `list_watching.rs`'s to show.
         (
             "thread/list/watch",
             vec![
