@@ -1,28 +1,43 @@
-//! What an HTTP answer sends: one JSON message, or a turn as server-sent events, each
-//! notification as it comes and the response last. A client that stops reading stops only
-//! its stream: the turn goes on in the server.
+//! What an HTTP answer sends: one JSON message, or a stream as server-sent events, each
+//! notification as it comes and the response last. A watch's events carry their `seq` as
+//! their id, so a client knows where to reconnect from, and a stream quiet for 15 seconds gets a
+//! comment, so proxies keep it open. A client that stops reading stops only its stream: a turn
+//! goes on in the server.
 
 use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll, ready};
+use std::time::Duration;
 
+use glave_event::ThreadId;
 use hyper::body::{Body, Bytes, Frame, SizeHint};
+use tokio::time::{Instant, Sleep, sleep};
 
-use crate::protocol::{Notification, Reply};
+use crate::protocol::Notification;
 use crate::rpc::{Id, notify, respond};
-use crate::turn::{TurnItem, TurnStream};
+use crate::streamed::{Item, Streamed};
 
-/// The next item of a turn, with the stream handed back for the one after.
-type Next = Pin<Box<dyn Future<Output = (TurnStream, Option<TurnItem>)> + Send>>;
+/// How long a stream may say nothing before it sends a comment.
+const KEEP_ALIVE: Duration = Duration::from_secs(15);
+
+/// The next item of a stream, with the stream handed back for the one after.
+type Next = Pin<Box<dyn Future<Output = (Streamed, Option<Item>)> + Send>>;
 
 /// An HTTP answer's body.
 pub(crate) enum Answer {
     /// One whole message, or nothing.
     Once(Option<Bytes>),
-    /// A turn as `text/event-stream`, until its response has been sent.
-    Turn { next: Option<Next>, id: Option<Id> },
+    /// A stream as `text/event-stream`, until its response has been sent.
+    Stream {
+        next: Option<Next>,
+        id: Option<Id>,
+        /// The thread a watch watches, whose events' ids are their `seq`s.
+        watched: Option<ThreadId>,
+        /// When the stream has been quiet long enough for a comment.
+        quiet: Pin<Box<Sleep>>,
+    },
 }
 
 impl Answer {
@@ -38,28 +53,37 @@ impl Answer {
         Self::Once(None)
     }
 
-    pub(crate) fn turn(stream: TurnStream, id: Option<Id>) -> Self {
-        Self::Turn {
-            next: Some(following(stream)),
+    /// `streamed` as events, ending with the response to request `id`.
+    pub(crate) fn stream(streamed: Streamed, id: Option<Id>) -> Self {
+        Self::Stream {
+            watched: streamed.watched(),
+            next: Some(following(streamed)),
             id,
+            quiet: Box::pin(sleep(KEEP_ALIVE)),
         }
     }
 }
 
-fn following(mut stream: TurnStream) -> Next {
+fn following(mut streamed: Streamed) -> Next {
     Box::pin(async move {
-        let item = stream.next().await;
-        (stream, item)
+        let item = streamed.next().await;
+        (streamed, item)
     })
 }
 
-/// One server-sent event carrying `message`.
-fn event(message: &str) -> Frame<Bytes> {
-    Frame::data(Bytes::from(format!("data: {message}\n\n")))
+/// One server-sent event carrying `message`, with `id` when it has one.
+fn event(id: Option<u64>, message: &str) -> Frame<Bytes> {
+    let id = id.map(|id| format!("id: {id}\n")).unwrap_or_default();
+    Frame::data(Bytes::from(format!("{id}data: {message}\n\n")))
 }
 
-fn note(note: &Arc<Notification>) -> Frame<Bytes> {
-    event(&notify(note))
+/// `note` as an event: an event of the thread `watched` with its `seq` as its id.
+fn note(note: &Arc<Notification>, watched: Option<ThreadId>) -> Frame<Bytes> {
+    let id = match note.as_ref() {
+        Notification::Event { thread, event } if Some(*thread) == watched => Some(event.seq.get()),
+        _ => None,
+    };
+    event(id, &notify(note))
 }
 
 impl Body for Answer {
@@ -72,37 +96,46 @@ impl Body for Answer {
     ) -> Poll<Option<Result<Frame<Bytes>, Infallible>>> {
         match self.get_mut() {
             Self::Once(bytes) => Poll::Ready(bytes.take().map(|bytes| Ok(Frame::data(bytes)))),
-            Self::Turn { next, id } => loop {
+            Self::Stream {
+                next,
+                id,
+                watched,
+                quiet,
+            } => {
                 let Some(pending) = next.as_mut() else {
                     return Poll::Ready(None);
                 };
-                let (stream, item) = ready!(pending.as_mut().poll(cx));
+                let Poll::Ready((streamed, item)) = pending.as_mut().poll(cx) else {
+                    ready!(quiet.as_mut().poll(cx));
+                    quiet.as_mut().reset(Instant::now() + KEEP_ALIVE);
+                    return Poll::Ready(Some(Ok(Frame::data(Bytes::from_static(
+                        b": keep-alive\n\n",
+                    )))));
+                };
+                quiet.as_mut().reset(Instant::now() + KEEP_ALIVE);
                 match item {
-                    Some(TurnItem::Note(sent)) => {
-                        *next = Some(following(stream));
-                        return Poll::Ready(Some(Ok(note(&sent))));
+                    Some(Item::Note(sent)) => {
+                        *next = Some(following(streamed));
+                        Poll::Ready(Some(Ok(note(&sent, *watched))))
                     }
-                    // Missed notifications are in the log; the client reads them by `seq`.
-                    Some(TurnItem::Missed(_)) => *next = Some(following(stream)),
-                    Some(TurnItem::Ended(ended)) => {
+                    Some(Item::Last(last)) => {
                         *next = None;
-                        let reply = ended.map(|turn| Reply::Turn { turn });
-                        let message = respond(id.as_ref(), reply.as_ref());
-                        return Poll::Ready(Some(Ok(event(&message))));
+                        let message = respond(id.as_ref(), last.as_ref().as_ref());
+                        Poll::Ready(Some(Ok(event(None, &message))))
                     }
                     None => {
                         *next = None;
-                        return Poll::Ready(None);
+                        Poll::Ready(None)
                     }
                 }
-            },
+            }
         }
     }
 
     fn is_end_stream(&self) -> bool {
         match self {
             Self::Once(bytes) => bytes.is_none(),
-            Self::Turn { next, .. } => next.is_none(),
+            Self::Stream { next, .. } => next.is_none(),
         }
     }
 
@@ -112,7 +145,10 @@ impl Body for Answer {
                 SizeHint::with_exact(u64::try_from(bytes.len()).unwrap_or(u64::MAX))
             }
             Self::Once(None) => SizeHint::with_exact(0),
-            Self::Turn { .. } => SizeHint::default(),
+            Self::Stream { .. } => SizeHint::default(),
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

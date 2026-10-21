@@ -1,9 +1,13 @@
 //! JSON-RPC 2.0 over any stream of lines: one message per line, as on stdio and Unix sockets.
 //! These transports are local, so every request comes from the local person.
 //! Requests run concurrently, so a client can cancel a turn or answer an approval while another
-//! request is still streaming. When the client's input ends, its turns are cancelled over stdio
-//! (`serve`), where it was the only client; a long-running server's connections
-//! (`serve_connection`, as on a Unix socket) stop nothing when they end.
+//! request is still streaming. A connection watches each thread once, at most 64 at a time,
+//! each until `thread/unwatch` or its input ends (`watches.rs`).
+//! When the client's input ends, its turns are cancelled over stdio (`serve`), where it was the
+//! only client; a long-running server's connections (`serve_connection`, as on a Unix socket)
+//! stop nothing when they end.
+
+mod watches;
 
 use std::sync::Arc;
 
@@ -16,10 +20,11 @@ use tokio::io::{
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
+use self::watches::{Claim, Watches};
 use crate::dispatch::Answered;
-use crate::protocol::{ApiError, Notification, Reply, Request, code};
+use crate::protocol::{ApiError, Notification, Reply, Request, WatchEnd, code};
 use crate::server::Server;
-use crate::turn::TurnItem;
+use crate::streamed::{Item, Streamed};
 
 /// The longest message accepted, in bytes. A longer line ends the connection.
 const MAX_LINE: u64 = 16 * 1024 * 1024;
@@ -111,6 +116,7 @@ where
         Ok::<_, std::io::Error>(())
     });
     let mut requests = JoinSet::new();
+    let watches = Arc::new(Watches::default());
     let mut input = input;
     let read = loop {
         let mut line = String::new();
@@ -132,12 +138,25 @@ where
         if line.trim().is_empty() {
             continue;
         }
+        let parsed = parse(&line);
+        // What the connection watches changes in the order its lines come, before requests run
+        // side by side: an unwatch ends the watch sent before it, and frees the thread for one
+        // sent after it.
+        let claim = match &parsed {
+            Ok((_, Request::ThreadWatch { thread, .. })) => Some(watches.claim(*thread)),
+            Ok((_, Request::ThreadUnwatch { thread })) => {
+                watches.end(*thread);
+                None
+            }
+            _ => None,
+        };
         let (server, lines) = (server.clone(), lines.clone());
-        requests.spawn(async move { handle(&server, &line, &lines).await });
+        requests.spawn(async move { handle(&server, parsed, claim, &lines).await });
         while requests.try_join_next().is_some() {}
     };
-    // The client is gone: stop its turns when it was the only one, finish what is in
-    // flight, then the writes.
+    // The client is gone: its watches end, its turns stop when it was the only one, what is in
+    // flight finishes, then the writes.
+    watches.close();
     if only_client {
         server.shutdown().await;
     }
@@ -147,42 +166,77 @@ where
     read.and(written)
 }
 
-/// Answers one message, streaming a turn's notifications before its response.
-async fn handle<P, L, B>(server: &Server<P, L, B>, line: &str, lines: &mpsc::Sender<String>)
-where
+/// Answers one message, streaming a turn's or a watch's notifications before its response; a
+/// watch held as `claim` until the connection ends it.
+async fn handle<P, L, B>(
+    server: &Server<P, L, B>,
+    parsed: Parsed,
+    claim: Option<Result<Claim, ApiError>>,
+    lines: &mpsc::Sender<String>,
+) where
     P: ModelProvider + 'static,
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    let (id, request) = match parse(line) {
+    let (id, request) = match parsed {
         Ok(parsed) => parsed,
         Err((id, failed)) => {
             let _ = lines.send(respond(id.as_ref(), Err(&failed))).await;
             return;
         }
     };
+    let claim = match claim.transpose() {
+        Ok(claim) => claim,
+        Err(refused) => {
+            if let Some(id) = id {
+                let _ = lines.send(respond(Some(&id), Err(&refused))).await;
+            }
+            return;
+        }
+    };
     // Local transports act as the local person.
     let answered = match server.call(&Caller::default(), request).await {
         Answered::Reply(reply) => reply,
-        Answered::Stream(mut stream) => loop {
-            match stream.next().await {
-                Some(TurnItem::Note(note)) => {
-                    let _ = lines.send(notify(&note)).await;
+        Answered::Stream(turn) => follow(Streamed::Turn(turn), lines).await,
+        Answered::Watch(watch) => {
+            let ended = async {
+                match &claim {
+                    Some(claim) => claim.ended().await,
+                    None => std::future::pending().await,
                 }
-                Some(TurnItem::Missed(_)) => {}
-                Some(TurnItem::Ended(ended)) => break ended.map(|turn| Reply::Turn { turn }),
-                None => break Err(ApiError::new(code::INTERNAL, "the turn stopped")),
+            };
+            tokio::select! {
+                last = follow(Streamed::Watch(watch), lines) => last,
+                () = ended => Ok(Reply::Watched { ended: WatchEnd::Unwatched }),
             }
-        },
+        }
     };
+    drop(claim);
     // A request without an id is a notification, which is never answered.
     if let Some(id) = id {
         let _ = lines.send(respond(Some(&id), answered.as_ref())).await;
     }
 }
 
+/// Writes each of `streamed`'s notifications to the connection: its answer once it has none
+/// left.
+async fn follow(mut streamed: Streamed, lines: &mpsc::Sender<String>) -> Result<Reply, ApiError> {
+    loop {
+        match streamed.next().await {
+            Some(Item::Note(note)) => {
+                let _ = lines.send(notify(&note)).await;
+            }
+            Some(Item::Last(last)) => return *last,
+            None => return Err(ApiError::new(code::INTERNAL, "the stream stopped")),
+        }
+    }
+}
+
+/// One message read as a request with its id, or why it is not one.
+type Parsed = Result<(Option<Id>, Request), (Option<Id>, ApiError)>;
+
 /// Reads one message as a request, or says why it is not one.
-pub(crate) fn parse(line: &str) -> Result<(Option<Id>, Request), (Option<Id>, ApiError)> {
+pub(crate) fn parse(line: &str) -> Parsed {
     let failed = ApiError::new;
     let incoming: Incoming = serde_json::from_str(line)
         .map_err(|err| (None, failed(code::PARSE, format!("not JSON-RPC: {err}"))))?;

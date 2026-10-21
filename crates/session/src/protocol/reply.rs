@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     ApprovalMode, CredentialInfo, DeviceCode, FileInfo, GoneFolder, ModelInfo, PasskeySummary,
-    ProjectFolder, ProviderInfo, ScheduleInfo, SignInWay, TaskInfo, TrustAsk,
+    ProjectFolder, ProviderInfo, ScheduleInfo, SignInWay, TaskInfo, TrustAsk, WatchEnd,
 };
 
 /// What the server is.
@@ -252,6 +252,9 @@ pub enum Reply {
         /// The id of the server it is for: the browser presents it to no other.
         server: String,
     },
+    /// How a watch ended: its stream's last message.
+    #[schemars(title = "Watched")]
+    Watched { ended: WatchEnd },
     // After every reply with a field of its own, since a missing `goal` reads as `null`;
     // before `Done`, which takes any object.
     /// The thread's latest goal, or `null`.

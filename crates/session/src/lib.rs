@@ -35,11 +35,13 @@ mod server;
 mod standing;
 mod steer;
 mod stopping;
+mod streamed;
 mod tasks;
 mod titles;
 mod trace;
 mod trust;
 mod turn;
+mod watch;
 
 pub use accounts::{AccountLedger, Accounts, AccountsError};
 pub use approvals::Answering;
@@ -53,3 +55,4 @@ pub use server::{OnWorkers, Server, Wiring};
 pub use tasks::TaskLimits;
 pub use trust::ProjectTrust;
 pub use turn::{TurnItem, TurnStream};
+pub use watch::{Watch, Watched};

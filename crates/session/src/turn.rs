@@ -161,7 +161,10 @@ where
         if let Some(key) = key
             && let Some(started) = self.inner.keyed.claim(caller.person, thread, key, &done)
         {
-            let notes = started.borrow().is_none().then(|| self.watch(thread));
+            let notes = started
+                .borrow()
+                .is_none()
+                .then(|| self.inner.hub.watch(thread).0);
             return Ok(Sent::Started(TurnStream::new(model, notes, started)));
         }
         let sent = loop {
@@ -177,7 +180,7 @@ where
                     Err(refused) => break Err(refused),
                 }
             }
-            let notes = self.watch(thread);
+            let notes = self.inner.hub.watch(thread).0;
             let work = turn(thread, prompt, &files, caller, &choice, unattended);
             let started = self
                 .occupy_for(thread, finish.clone(), Use::Steered, work)

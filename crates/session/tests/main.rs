@@ -40,4 +40,5 @@ mod tasks;
 mod titles;
 mod tracing;
 mod trust;
+mod watching;
 mod worktrees;

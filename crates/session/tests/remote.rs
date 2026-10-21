@@ -7,10 +7,11 @@
 use std::sync::Arc;
 
 use glave_event::{Body, Outcome, decode};
+use glave_ports::Caller;
 use glave_session::client::Remote;
 use glave_session::protocol::{Answer, Meta, Notification, Reply, Request, TurnResult, code};
 use glave_session::signin::{LocalToken, SignIn};
-use glave_session::{Answering, TurnItem};
+use glave_session::{Answering, TurnItem, Watched};
 use serde_json::json;
 use tokio::io::BufReader;
 use tokio::sync::Notify;
@@ -173,12 +174,17 @@ fn a_client_that_leaves_mid_turn_stops_nothing_and_the_turn_finishes() {
         let thread = thread_through(&remote).await;
         let mut turn = remote.start(&turn_saying(thread, "go")).await.unwrap();
         assert!(matches!(turn.next().await, Some(TurnItem::Note(_))));
-        let mut watched = server.watch(thread);
+        let mut watched = server
+            .watch(&Caller::default(), thread, None)
+            .await
+            .unwrap();
         drop(turn);
         drop(remote);
         gate.notify_one();
         let ended = loop {
-            let note = watched.recv().await.unwrap();
+            let Some(Watched::Note(note)) = watched.next().await else {
+                panic!("the watch ended before the turn did")
+            };
             if let Notification::Event { event, .. } = note.as_ref()
                 && let Body::TurnEnded(ended) = decode(event.clone()).unwrap().body
             {

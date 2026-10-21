@@ -37,6 +37,7 @@ async fn queue(server: &Tested, thread: ThreadId, prompt: &str) -> EventId {
         Answered::Reply(Ok(Reply::Queued { queued })) => queued.id,
         Answered::Reply(other) => panic!("queued, not {other:?}"),
         Answered::Stream(_) => panic!("queued, not a turn of its own"),
+        Answered::Watch(_) => panic!("queued, not a watch"),
     }
 }
 

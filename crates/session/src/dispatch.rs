@@ -15,18 +15,17 @@ use crate::server::Server;
 use crate::steer::{Message, Sent};
 use crate::tasks::Work;
 use crate::turn::TurnStream;
+use crate::watch::Watch;
 
 /// What a request is answered with.
-#[expect(
-    clippy::large_enum_variant,
-    reason = "one per request, moved once: boxing would only add an allocation"
-)]
 pub enum Answered {
     /// The reply, or why there is none.
     Reply(Result<Reply, ApiError>),
     /// A turn, or a goal's turns, that someone follows: `turn/start` and `goal/start` without
     /// `background`, when they start one. Its notifications, then how it ended.
     Stream(TurnStream),
+    /// A thread watched (`thread/watch`): its notifications, until it ends.
+    Watch(Watch),
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -43,11 +42,14 @@ where
         tracing::Instrument::instrument(self.answer(caller, request), span).await
     }
 
-    /// Answers one request from `caller`; a turn is answered once it has ended.
+    /// Answers one request from `caller`; a turn, or a watch, is answered once it has ended.
     pub async fn request_as(&self, caller: &Caller, request: Request) -> Result<Reply, ApiError> {
         match self.call(caller, request).await {
             Answered::Reply(reply) => reply,
             Answered::Stream(mut stream) => stream.finish().await.map(|turn| Reply::Turn { turn }),
+            Answered::Watch(mut watch) => {
+                watch.finish().await.map(|ended| Reply::Watched { ended })
+            }
         }
     }
 
@@ -67,6 +69,10 @@ where
         match self.call(caller, request).await {
             Answered::Stream(stream) => Ok(stream),
             Answered::Reply(Ok(Reply::Queued { .. })) => Err(ApiError::queued_elsewhere()),
+            Answered::Watch(_) => Err(ApiError::new(
+                code::INVALID_PARAMS,
+                format!("{method} is followed with Server::watch"),
+            )),
             Answered::Reply(reply) => Err(reply.err().unwrap_or_else(|| {
                 ApiError::new(
                     code::INVALID_PARAMS,
@@ -186,6 +192,15 @@ where
                 after,
                 limit,
             } => self.events(thread, after, limit).await,
+            Request::ThreadWatch { thread, after } => {
+                return match self.watch(caller, thread, after).await {
+                    Ok(watch) => Answered::Watch(watch),
+                    Err(refused) => Answered::Reply(Err(refused)),
+                };
+            }
+            // A watch belongs to the connection it was asked on, which ends it (`rpc.rs`); in
+            // the server there is nothing to end.
+            Request::ThreadUnwatch { .. } => Ok(Reply::Done {}),
             Request::ThreadCompact { thread } => self.compact(thread).await,
             Request::TurnStart {
                 thread,

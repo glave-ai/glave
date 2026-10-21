@@ -40,7 +40,7 @@ where
             return Err(no_goal(thread));
         }
         let (finish, done) = watch::channel(None);
-        let notes = self.watch(thread);
+        let notes = self.inner.hub.watch(thread).0;
         let caller = caller.clone();
         let work = move |inner: Arc<crate::server::Inner<P, L, B>>, mut held, cancel| async move {
             let _no_one = unattended.then(|| inner.approvals.unattended_while(thread));
