@@ -2,8 +2,10 @@
 //! Memories are matched here, from the view the ledger already gives; conversations through the
 //! store's own full-text index (`EventLog::search`). Both are scoped exactly as memory is: the
 //! person's and this project's in a shared project, this project's only in an isolated one, nothing
-//! when memory is off, never another organization's. A hit from untrusted tool output says so.
+//! when memory is off, never another organization's. Hits are ranked together by how many of the
+//! query's words they share. A hit from untrusted tool output says so.
 
+use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
 use glave_event::{At, Body, MemoryId, MemoryScope, MemorySource, Role, Seq, ThreadId, decode};
@@ -56,8 +58,10 @@ pub struct Recalled {
 }
 
 impl<L: EventLog + 'static> Memories<L> {
-    /// What `query` finds for a thread of `on`: memories first, best match first, then past
-    /// conversations, at most `limit` (at most [`MOST_HITS`]). The thread asking is left out.
+    /// What `query` finds for a thread of `on`, at most `limit` (at most [`MOST_HITS`]): those
+    /// sharing the most of its words first; among equals, memories (newest first), then this
+    /// project's conversations, then the person's (best match first). The thread asking is left
+    /// out.
     pub async fn recall(
         &self,
         on: &MemoryContext,
@@ -87,43 +91,43 @@ impl<L: EventLog + 'static> Memories<L> {
         }
         memories.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.at.cmp(&a.1.at)));
         let mut hidden = Hidden::new(hidden);
-        let mut hits: Vec<Recalled> = memories.into_iter().map(|(_, hit)| hit).collect();
-        hits.truncate(limit);
-        // This project's conversations, then the person's own.
-        for (_, ledger) in readable.iter().rev() {
-            if hits.len() >= limit {
-                break;
-            }
-            let room = limit.saturating_sub(hits.len());
+        let mut ranked = memories;
+        // This project's conversations, then the person's own (one ledger in their Chats), each
+        // searched whatever memories matched: memories sharing one word (often the project's
+        // name) must not crowd out the message that holds them all.
+        let mut ledgers: Vec<Scope> = readable.iter().rev().map(|(_, ledger)| *ledger).collect();
+        ledgers.dedup();
+        for ledger in ledgers {
             let found = self
-                .conversations(*ledger, on.thread, (query, &wanted), room, &mut hidden)
+                .conversations(ledger, on.thread, (query, &wanted), limit, &mut hidden)
                 .await?;
-            hits.extend(found);
+            ranked.extend(found);
         }
-        Ok(hits)
+        // Stable: among equals, the order above.
+        ranked.sort_by_key(|(shared, _)| Reverse(*shared));
+        Ok(ranked.into_iter().take(limit).map(|(_, hit)| hit).collect())
     }
 
-    /// Up to `room` hits in `ledger`'s conversations, leaving out the thread `asking` and the
+    /// The hits among the index's best few for `limit` in `ledger`'s conversations, best match
+    /// first, each with how many of `wanted` it shares, leaving out the thread `asking` and the
     /// turns `hidden` names.
     async fn conversations(
         &self,
         ledger: Scope,
         asking: ThreadId,
         (query, wanted): (&str, &BTreeSet<String>),
-        room: usize,
+        limit: usize,
         hidden: &mut Hidden,
-    ) -> Result<Vec<Recalled>, MemoryError> {
+    ) -> Result<Vec<(usize, Recalled)>, MemoryError> {
         let log = &self.inner.log;
-        // A few more than needed, since the asking thread's own events are skipped.
+        // A few more than needed, since the asking thread's own events are skipped and a hit
+        // further down may share more words.
         let found = log
-            .search(&ledger, query, room.saturating_mul(2).saturating_add(4))
+            .search(&ledger, query, limit.saturating_mul(2).saturating_add(4))
             .await
             .map_err(storage)?;
         let mut hits = Vec::new();
         for found in found {
-            if hits.len() >= room {
-                break;
-            }
             if found.thread == asking
                 || found.thread == Reserved::Memory.id()
                 || hidden.hides(&self.inner.log, ledger, found).await
@@ -153,7 +157,7 @@ impl<L: EventLog + 'static> Memories<L> {
                 Body::ToolCallCompleted(done) => ("tool output", done.untrusted),
                 _ => continue,
             };
-            hits.push(Recalled {
+            let hit = Recalled {
                 source: Source::Thread {
                     thread: found.thread,
                     seq: found.seq,
@@ -162,7 +166,8 @@ impl<L: EventLog + 'static> Memories<L> {
                 at,
                 text: snippet(&text, wanted),
                 untrusted,
-            });
+            };
+            hits.push((shared(&text, wanted), hit));
         }
         Ok(hits)
     }
@@ -251,8 +256,7 @@ fn matching(book: &Book, kind: MemoryScope, wanted: &BTreeSet<String>) -> Vec<(u
         .into_iter()
         .filter(|memory| memory.scope == kind)
         .filter_map(|memory| {
-            let words = terms(&memory.text, usize::MAX);
-            let shared = words.iter().filter(|word| wanted.contains(*word)).count();
+            let shared = shared(&memory.text, wanted);
             (shared > 0).then(|| {
                 let hit = Recalled {
                     source: Source::Memory {
@@ -268,6 +272,14 @@ fn matching(book: &Book, kind: MemoryScope, wanted: &BTreeSet<String>) -> Vec<(u
             })
         })
         .collect()
+}
+
+/// How many of `wanted`'s words `text` holds.
+fn shared(text: &str, wanted: &BTreeSet<String>) -> usize {
+    terms(text, usize::MAX)
+        .iter()
+        .filter(|word| wanted.contains(*word))
+        .count()
 }
 
 /// The part of `text` around the first word in `wanted`, on one line, at most
