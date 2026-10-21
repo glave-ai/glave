@@ -113,6 +113,8 @@ where
                     signin: self.signin_ways(),
                 }))
             }
+            Request::AwakeGet {} => Ok(self.awake()),
+            Request::AwakeSet { on } => self.set_awake(caller, on).await,
             Request::SigninLink {} => self.link(caller),
             Request::SigninSetup {} => self.setup(caller),
             Request::PasskeyCreateOptions { code } => self.create_options(&code),

@@ -2,6 +2,7 @@
 //! notifications a turn sends, and errors. Every transport carries these same types; in-process
 //! they are passed as they are, elsewhere as JSON-RPC 2.0.
 
+mod awake;
 pub mod code;
 mod credentials;
 mod error;
@@ -23,6 +24,7 @@ use glave_ports::ProjectId;
 use glave_ports::computer::{CommandId, ComputerId};
 use serde::{Deserialize, Serialize};
 
+pub use awake::AwakeInfo;
 pub use credentials::{Ability, CredentialInfo, DeviceCode};
 pub use error::{ApiError, ErrorData};
 pub use files::{AttachedFile, FileInfo};
@@ -79,6 +81,12 @@ methods! {
     /// What the server is. Over HTTP it needs no sign-in, so a browser learns which server it
     /// reached before it presents a session.
     "server/discover" => Discover {} -> [Server],
+    /// Whether this server keeps its computer awake while it works: on a person's own computer,
+    /// as they choose.
+    "awake/get" => AwakeGet {} -> [Awake],
+    /// Chooses whether the person's own computer is kept awake while glave works, from the
+    /// next work on. Only the person on this computer, and only where it is theirs to choose.
+    "awake/set" => AwakeSet { on: bool } -> [Awake],
     /// A one-time code for a link that signs a browser on this computer in: good once, for
     /// five minutes. Only glave on this computer: a local transport, or the local token.
     "signin/link" => SigninLink {} -> [Link],

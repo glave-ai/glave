@@ -17,6 +17,7 @@ import {
   background,
   docsRunning,
 } from './fake-commands';
+import { type Awake, keptAwake } from './fake-awake';
 import { keptFile } from './fake-files';
 import { HOME, listFolders } from './fake-folders';
 import {
@@ -605,6 +606,7 @@ interface Known {
   readonly touched: Set<string>;
   /** Playground, whose folder is gone, when the test has it. */
   readonly gone: Gone | null;
+  readonly awake: Awake;
 }
 
 /** The answer to a call that is not a turn. */
@@ -686,7 +688,7 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
         id: FAKE_SERVER,
       };
     default:
-      return signIn(method, params) ?? {};
+      return signIn(method, params) ?? keptAwake(method, params, known.awake) ?? {};
   }
 }
 
@@ -740,6 +742,7 @@ export async function fakeApi(
     credentials: account ? [GITHUB] : [],
     touched: new Set(),
     gone: gone ? folderGone() : null,
+    awake: { on: true },
   };
   await page.route('**/*', async (route: Route) => {
     const request = route.request();

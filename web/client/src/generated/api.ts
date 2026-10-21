@@ -40,6 +40,20 @@ export type AttachedFile = {
   readonly sha256: string;
 };
 
+/**
+ * Whether this server keeps its computer from sleeping on its own while a turn, task or
+ * schedule runs.
+ */
+export type AwakeInfo = {
+  readonly kind: "never";
+} | {
+  readonly kind: "chosen";
+  readonly on: boolean;
+} | {
+  readonly kind: "cannot";
+  readonly reason: string;
+};
+
 /** Links a tool call to its result: 1 to 128 printable ASCII characters. */
 export type CallId = string;
 
@@ -706,6 +720,22 @@ export type ApprovalDecideParams = {
 };
 
 export type ApprovalDecideResult = Readonly<Record<string, never>>;
+
+export type AwakeGetParams = Readonly<Record<string, never>>;
+
+/** Whether the computer is kept awake while glave works. */
+export type AwakeGetResult = {
+  readonly awake: AwakeInfo;
+};
+
+export type AwakeSetParams = {
+  readonly on: boolean;
+};
+
+/** Whether the computer is kept awake while glave works. */
+export type AwakeSetResult = {
+  readonly awake: AwakeInfo;
+};
 
 export type CommandListParams = {
   readonly thread: ThreadId;
@@ -1399,6 +1429,8 @@ export type TurnStartResult = {
 /** Every method, with its params and result. */
 export interface Methods {
   readonly "approval/decide": { readonly params: ApprovalDecideParams; readonly result: ApprovalDecideResult };
+  readonly "awake/get": { readonly params: AwakeGetParams; readonly result: AwakeGetResult };
+  readonly "awake/set": { readonly params: AwakeSetParams; readonly result: AwakeSetResult };
   readonly "command/list": { readonly params: CommandListParams; readonly result: CommandListResult };
   readonly "command/stop": { readonly params: CommandStopParams; readonly result: CommandStopResult };
   readonly "credential/connect": { readonly params: CredentialConnectParams; readonly result: CredentialConnectResult };

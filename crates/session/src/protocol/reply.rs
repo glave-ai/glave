@@ -10,8 +10,9 @@ use glave_ports::{Project, ProjectId, Standing};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    ApprovalMode, CredentialInfo, DeviceCode, FileInfo, GoneFolder, ModelInfo, PasskeySummary,
-    ProjectFolder, ProviderInfo, ScheduleInfo, SignInWay, TaskInfo, TrustAsk, WatchEnd,
+    ApprovalMode, AwakeInfo, CredentialInfo, DeviceCode, FileInfo, GoneFolder, ModelInfo,
+    PasskeySummary, ProjectFolder, ProviderInfo, ScheduleInfo, SignInWay, TaskInfo, TrustAsk,
+    WatchEnd,
 };
 
 /// What the server is.
@@ -260,6 +261,9 @@ pub enum Reply {
     /// The thread's latest goal, or `null`.
     #[schemars(title = "Goal")]
     Goal { goal: Option<GoalProgress> },
+    /// Whether the computer is kept awake while glave works.
+    #[schemars(title = "Awake")]
+    Awake { awake: AwakeInfo },
     #[schemars(title = "Done")]
     Done {},
 }
