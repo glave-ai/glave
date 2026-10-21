@@ -18,7 +18,8 @@ set -eu
 CDPATH='' cd -- "$(dirname -- "$0")/.."
 
 # cargo-about at a fixed version, built from crates.io with its Cargo.lock when it isn't already
-# there: it publishes no binary for Intel Macs.
+# there: it publishes no binary for Intel Macs. CI installs the same version as a release binary
+# (ci.yml, web-checks): change both.
 ABOUT=0.9.2
 # Where the web app's build writes the licences of the npm packages in it.
 WEB=web/dist/app/3rdpartylicenses.txt
