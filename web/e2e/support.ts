@@ -40,6 +40,13 @@ export const PASSKEYS: Site = {
   home: 'GLAVE_E2E_PASSKEYS_HOME',
 };
 /**
+ * A glave whose model is a fake service (fake-model.ts), asking before commands run, for
+ * following a thread from two tabs (live.e2e.ts).
+ */
+export const LIVE: Site = { address: 'GLAVE_E2E_LIVE_URL', home: 'GLAVE_E2E_LIVE_HOME' };
+/** The variable that holds the address of that glave's fake model service. */
+export const LIVE_MODEL_URL = 'GLAVE_E2E_LIVE_MODEL_URL';
+/**
  * The public origin the passkeys glave's settings name, which the tests route to it as a
  * tunnel would.
  */

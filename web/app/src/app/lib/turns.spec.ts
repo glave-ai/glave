@@ -1,7 +1,7 @@
 import type { RawEvent } from '@glave/client';
 
 import { event } from '../testing/fixtures';
-import { startingTurn, threadTurns } from './turns';
+import { startingTurn, threadTurns, turnRuns } from './turns';
 
 function at(seq: number, type: string, data: Record<string, unknown>, time: string): RawEvent {
   return { ...event(seq, type, data), at: time };
@@ -101,5 +101,15 @@ describe('turns', () => {
       expect.objectContaining({ kind: 'message', from: 'person', text: 'Fix the flaky test' }),
     ]);
     expect(starting.outcome).toBeNull();
+  });
+
+  it('says a turn runs from its start until it ends', () => {
+    expect(turnRuns([])).toBe(false);
+    const started = [event(1, 'thread.started', {}), event(2, 'turn.started', {}), ASK(3, 'Go')];
+    expect(turnRuns(started)).toBe(true);
+    expect(turnRuns([...started, event(4, 'turn.ended', { outcome: 'completed' })])).toBe(false);
+    expect(turnRuns([...started, event(4, 'turn.ended', {}), event(5, 'thread.renamed', {})])).toBe(
+      false,
+    );
   });
 });

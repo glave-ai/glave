@@ -197,3 +197,17 @@ export function startingTurn(prompt: string): Turn {
     routes: [],
   };
 }
+
+/** Whether a turn runs in the thread, as its events say: its latest turn started and has not ended. */
+export function turnRuns(events: readonly RawEvent[]): boolean {
+  for (let at = events.length - 1; at >= 0; at -= 1) {
+    const type = events[at]?.type;
+    if (type === 'turn.ended') {
+      return false;
+    }
+    if (type === 'turn.started') {
+      return true;
+    }
+  }
+  return false;
+}

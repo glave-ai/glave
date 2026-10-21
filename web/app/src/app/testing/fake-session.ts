@@ -65,12 +65,20 @@ export class FakeTurn {
     this.wake?.();
   }
 
-  async *run<R>(): AsyncGenerator<Notification, R, void> {
+  /** What the test sends, until it ends; stopped by `signal`, as a request is aborted. */
+  async *run<R>(signal?: AbortSignal): AsyncGenerator<Notification, R, void> {
     for (;;) {
       const next = this.sent.shift();
       if (next === undefined) {
-        await new Promise<void>((resolve) => {
+        await new Promise<void>((resolve, reject) => {
           this.wake = resolve;
+          signal?.addEventListener(
+            'abort',
+            () => {
+              reject(new DOMException('The request was aborted', 'AbortError'));
+            },
+            { once: true },
+          );
         });
       } else if (next.kind === 'end') {
         return next.result as R;
@@ -82,10 +90,11 @@ export class FakeTurn {
 }
 
 /**
- * A session API in memory for tests: answers by method, notifications for a turn, and every
- * call recorded. An answer that is an `ApiError` is thrown. Unanswered, `thread/get` answers
- * the thread as the fixtures make one, idle and asking nothing; `command/list`, nothing
- * running; any other method, `{}`.
+ * A session API in memory for tests: answers by method, notifications for a turn and for a
+ * watch, and every call recorded. An answer that is an `ApiError` is thrown. Unanswered,
+ * `thread/get` answers the thread as the fixtures make one, idle and asking nothing;
+ * `command/list`, nothing running; a watch sends nothing until it is stopped; any other method,
+ * `{}`.
  */
 export class FakeSession implements SessionClient {
   readonly calls: SeenCall[] = [];
@@ -94,6 +103,8 @@ export class FakeSession implements SessionClient {
   private turnResult: unknown = COMPLETED;
   /** How the next `turn/start`s are answered, in order: a turn the test drives, or a result. */
   private readonly turns: (FakeTurn | object)[] = [];
+  /** What the next `thread/watch`es send, in order, each driven by the test. */
+  private readonly watches: FakeTurn[] = [];
 
   answer(method: Method, answer: Answer): this {
     this.answers.set(method, answer);
@@ -118,6 +129,12 @@ export class FakeSession implements SessionClient {
     return this;
   }
 
+  /** Answers the next `thread/watch` with `watch`, which the test drives. */
+  watch(watch: FakeTurn): this {
+    this.watches.push(watch);
+    return this;
+  }
+
   call<M extends Method>(method: M, params: Methods[M]['params']): Promise<Methods[M]['result']> {
     this.calls.push({ method, params });
     const answer = this.answers.get(method) ?? unanswered(method, params);
@@ -131,8 +148,13 @@ export class FakeSession implements SessionClient {
   async *stream<M extends StreamingMethod>(
     method: M,
     params: Methods[M]['params'],
+    signal?: AbortSignal,
   ): AsyncGenerator<Notification, Methods[M]['result'], void> {
     this.calls.push({ method, params });
+    if (method === 'thread/watch') {
+      const watch = this.watches.shift() ?? new FakeTurn();
+      return yield* watch.run<Methods[M]['result']>(signal);
+    }
     const next = this.turns.shift();
     if (next instanceof FakeTurn) {
       return yield* next.run<Methods[M]['result']>();
