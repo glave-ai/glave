@@ -54,11 +54,11 @@ test('as a page is left, WebKit refusing a call of the session API is no problem
   const left = webkit ? [refusal('/favicon.svg'), SAID] : [SAID];
   expect(problems()).toEqual(left);
 
-  // Left without saying so, the session API's refused call counts too.
+  // Left without saying so, the session API's refused call counts too, as does the app's own if
+  // one began as the page went, in the same words: each line once.
   await actAsLeft(page, '/tasks');
   await page.goto('/tasks');
-  expect(problems()).toEqual([
-    ...left,
-    ...(webkit ? [refusal('/'), refusal('/favicon.svg'), SAID] : [SAID]),
-  ]);
+  expect([...new Set(problems().slice(left.length))]).toEqual(
+    webkit ? [refusal('/'), refusal('/favicon.svg'), SAID] : [SAID],
+  );
 });

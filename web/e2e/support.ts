@@ -208,7 +208,8 @@ export interface Problems {
  * What a page error says, whole. Playwright hands over an error split at its first colon, the
  * character after it dropped: WebKit's `Fetch API cannot load http://…` arrives as the name
  * `Fetch API cannot load http` and the message `/…`. A stack that begins with the name begins
- * with the text whole, frames after it, in both engines; without one, name and message it is.
+ * with the text whole, frames after it, in both engines; without one, it is the name and the
+ * message.
  */
 function whole(error: Error): string {
   const [head = ''] = (error.stack ?? '').split('\n    at ');
