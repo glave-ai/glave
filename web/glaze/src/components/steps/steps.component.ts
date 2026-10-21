@@ -7,7 +7,7 @@ import { glzText } from '../../lib/words';
 import { GlzIconComponent } from '../icon/icon.component';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
-const PARTS = { summary: 'summary', steps: 'steps' } as const;
+const PARTS = { summary: 'summary', steps: 'steps', chevron: 'chevron' } as const;
 
 /** Where a run of steps stands: done, failed, stopped, still going, or waiting for the person. */
 export type GlzRunStatus = 'done' | 'failed' | 'stopped' | 'running' | 'waiting';

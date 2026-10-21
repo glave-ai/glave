@@ -5,7 +5,7 @@
   [current]="thread().current"
   (click)="followed()"
 >
-  <span data-testid="nav-thread-title">{{ thread().title }}</span>
+  <span dir="auto" data-testid="nav-thread-title">{{ thread().title }}</span>
   @if (thread().running) {
     <glz-icon
       glzNavItemEnd

@@ -13,6 +13,10 @@
   color: transparent;
   animation: glz-shimmer var(--glz-duration-ambient) linear infinite;
 
+  &:dir(rtl) {
+    animation-direction: reverse;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     animation: none;
   }

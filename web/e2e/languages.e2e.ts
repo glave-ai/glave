@@ -111,3 +111,78 @@ test('a browser set to en-XA reads every word of the app in it, plurals too', as
   await expectAccessible(page);
   expect(problems()).toEqual([]);
 });
+
+/** A box on the screen, as Playwright measures it. */
+interface Box {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** The box of the element with `testId`, which shows; fails when it has none. */
+async function boxOf(page: Page, testId: string): Promise<Box> {
+  const element = byTestId(page, testId);
+  await expect(element).toBeVisible();
+  const box = await element.boundingBox();
+  if (box === null) {
+    throw new Error(`${testId} has no box`);
+  }
+  return box;
+}
+
+/** Whether `one` lies wholly left of `other`, give or take a pixel of rounding. */
+function leftOf(one: Box, other: Box): boolean {
+  return one.x + one.width <= other.x + 1;
+}
+
+for (const colorScheme of ['light', 'dark'] as const) {
+  test(`a browser set to ar-XB reads the app right to left, the page mirrored (${colorScheme})`, async ({
+    page,
+  }) => {
+    const problems = watchForProblems(page);
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await readIn(page, 'ar-XB');
+    await page.clock.setFixedTime(NOW);
+    await fakeApi(page);
+    await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('html')).toHaveAttribute('lang', 'ar-XB');
+    await byTestId(page, 'tools-handle').press('Enter');
+    // The side nav on the right, the tools on the left, the conversation and its composer
+    // between them, nothing over anything else.
+    const nav = await boxOf(page, 'workspace-nav');
+    const tools = await boxOf(page, 'tools-panel');
+    const conversation = await boxOf(page, 'thread-items');
+    const composer = await boxOf(page, 'thread-composer');
+    expect(leftOf(conversation, nav)).toBe(true);
+    expect(leftOf(composer, nav)).toBe(true);
+    expect(leftOf(tools, conversation)).toBe(true);
+    expect(leftOf(tools, composer)).toBe(true);
+    // A chevron that points to what comes next points left.
+    const chevron = await byTestId(page, 'thread-steps-chevron').evaluate(
+      (element) => getComputedStyle(element).scale,
+    );
+    expect(chevron).toBe('-1 1');
+    await expectAccessible(page);
+    // The side nav's edge faces left: the arrow pointing away from it widens it.
+    const before = Math.round(nav.width);
+    await byTestId(page, 'workspace-handle').focus();
+    await page.keyboard.press('ArrowLeft');
+    await expect
+      .poll(async () => Math.round((await boxOf(page, 'workspace-nav')).width))
+      .toBe(before + 16);
+    // On a phone, the side nav is a drawer from the right, where its button is.
+    await byTestId(page, 'tools-handle').press('Enter');
+    await expect(byTestId(page, 'tools-panel')).toBeHidden();
+    await page.setViewportSize({ width: 390, height: 800 });
+    const menu = await boxOf(page, 'page-menu');
+    await byTestId(page, 'page-menu').click();
+    const drawer = await boxOf(page, 'workspace-nav');
+    expect(Math.round(drawer.x + drawer.width)).toBe(390);
+    expect(menu.x + menu.width / 2).toBeGreaterThan(390 / 2);
+    await expectAccessible(page);
+    expect(problems()).toEqual([]);
+  });
+}

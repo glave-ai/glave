@@ -1,7 +1,9 @@
+import { readFileSync, readdirSync } from 'node:fs';
+
 import { type Locator, type Page, expect, test } from '@playwright/test';
 
 import { NEW_THREAD, PERSONAL, PROJECT, THREAD, WAITING, fakeApi } from './fake-api';
-import { SIGNED_IN, byTestId, expectAccessible, shownOpacity } from './support';
+import { SIGNED_IN, byTestId, expectAccessible, shownOpacity, watchForProblems } from './support';
 
 /** The titles of the side nav's threads a person can see, in order. */
 function shown(page: Page): Locator {
@@ -309,3 +311,35 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expectAccessible(page);
   });
 }
+
+test('a page left while the side nav still loads what it shows later reports nothing', async ({
+  page,
+}) => {
+  const problems = watchForProblems(page);
+  await fakeApi(page);
+  // The code of New project, which the side nav fetches once the page is idle, stays on its
+  // way, as on a busy computer, until the page is left. In WebKit a part with no @error block
+  // reports the failed load as the page goes; Chromium leaves nothing to report.
+  // It is known by its messages, in the build glave serves.
+  const built = new URL('../dist/app/browser/', import.meta.url);
+  const newProject = readdirSync(built).find(
+    (file) =>
+      file.endsWith('.js') && readFileSync(new URL(file, built), 'utf8').includes(':@@newProject.'),
+  );
+  expect(newProject).toBeDefined();
+  let fetching: () => void = () => undefined;
+  const fetched = new Promise<void>((resolve) => {
+    fetching = resolve;
+  });
+  // Held: never answered, nothing awaited.
+  const held = `**/${newProject ?? ''}`;
+  await page.route(held, () => {
+    fetching();
+  });
+  await page.goto(`/${SIGNED_IN}`);
+  await fetched;
+  await page.unroute(held);
+  await page.goto('/settings');
+  await expect(byTestId(page, 'settings-theme')).toBeVisible();
+  expect(problems()).toEqual([]);
+});

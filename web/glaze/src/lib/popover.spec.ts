@@ -1,4 +1,4 @@
-import { hasAnchorPositioning, placePopover, positionPopover } from './popover';
+import { hasAnchorPositioning, placePopover, positionPopover, screenSide } from './popover';
 
 const VIEWPORT = { width: 800, height: 600 };
 const PANEL = { width: 100, height: 40 };
@@ -10,6 +10,13 @@ describe('placePopover', () => {
     expect(placePopover(anchor, PANEL, VIEWPORT, 'below')).toEqual({ top: 324, left: 350 });
     expect(placePopover(anchor, PANEL, VIEWPORT, 'end')).toEqual({ top: 290, left: 454 });
     expect(placePopover(anchor, PANEL, VIEWPORT, 'start')).toEqual({ top: 290, left: 246 });
+  });
+
+  it('puts the start of a right-to-left line on the screen’s right', () => {
+    expect(screenSide('start', 'rtl')).toBe('end');
+    expect(screenSide('end', 'rtl')).toBe('start');
+    expect(screenSide('below', 'rtl')).toBe('below');
+    expect(screenSide('start', 'ltr')).toBe('start');
   });
 
   it('flips to the other side when there is no room', () => {
@@ -58,6 +65,14 @@ describe('positionPopover', () => {
     positionPopover(anchor, panel, 'below', '--glz-test');
     expect(panel.style.getPropertyValue('position')).toBe('fixed');
     expect(panel.style.getPropertyValue('inset')).toBe('324px auto auto 300px');
+  });
+
+  it('measures the start of a right-to-left line on the screen’s right', () => {
+    vi.spyOn(CSS, 'supports').mockReturnValue(false);
+    const [anchor, panel] = elements();
+    anchor.style.direction = 'rtl';
+    positionPopover(anchor, panel, 'start', '--glz-test');
+    expect(panel.style.getPropertyValue('inset')).toBe('290px auto auto 404px');
   });
 
   it('leaves placing to CSS anchor positioning where the browser has it', () => {

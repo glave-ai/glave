@@ -16,9 +16,12 @@ import {
   GlzNavListComponent,
   type GlzOption,
 } from '@glave/glaze';
-import { Ellipsis, FolderPlus, Plus } from 'lucide';
+import Ellipsis from 'lucide/dist/esm/icons/ellipsis.mjs';
+import FolderPlus from 'lucide/dist/esm/icons/folder-plus.mjs';
+import Plus from 'lucide/dist/esm/icons/plus.mjs';
 
 import { CHATS_LIST, type NavProject, PROJECTS_LIST, navSections } from '../../lib/nav';
+import { unloaded } from '../../lib/text';
 import { NavListsService } from '../../services/nav-lists.service';
 import { ProjectsService } from '../../services/projects.service';
 import { FolderGoneComponent } from '../folder-gone/folder-gone.component';
@@ -79,6 +82,7 @@ export class ProjectsNavComponent {
     newChat: $localize`:@@projectsNav.newChat:New chat`,
     startProject: $localize`:@@projectsNav.startProject:Start a project`,
     noMatch: $localize`:@@projectsNav.noMatch:No threads match`,
+    unloaded: unloaded(),
   } as const;
   protected readonly icons = { add: Plus, more: Ellipsis, start: FolderPlus };
   protected readonly newLink = '/';

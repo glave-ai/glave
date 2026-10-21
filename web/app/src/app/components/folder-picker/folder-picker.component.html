@@ -2,7 +2,7 @@
   @for (crumb of crumbs(); track crumb.path) {
     <li class="crumb">
       @if (crumb.after) {
-        <glz-icon class="between" [icon]="icons.go" />
+        <glz-icon class="between glz-mirrored" [icon]="icons.go" />
       }
       @if (crumb.top) {
         <button
@@ -51,7 +51,7 @@
         (click)="into(folder.path)"
       >
         {{ folder.name }}
-        <glz-icon glzNavItemEnd class="go" [icon]="icons.go" />
+        <glz-icon glzNavItemEnd class="go glz-mirrored" [icon]="icons.go" />
       </button>
     </li>
   } @empty {

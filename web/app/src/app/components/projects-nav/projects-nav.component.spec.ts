@@ -1,4 +1,4 @@
-import { TestBed } from '@angular/core/testing';
+import { DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
@@ -295,6 +295,19 @@ describe('ProjectsNavComponent', () => {
     const mark = garden?.querySelector('[data-testid="nav-project-end"] [role="img"]');
     expect(mark?.getAttribute('aria-label')).toBe(gone);
     expect(mark?.classList).toContain('warning');
+    await expectAccessible(root);
+  });
+
+  it('says so when a dialog opened cannot load its code', async () => {
+    TestBed.configureTestingModule({ deferBlockBehavior: DeferBlockBehavior.Manual });
+    const { root, fixture } = await render();
+    // New project opened, as its code failed to load: it and Rename are the last two blocks,
+    // after each project's menu.
+    const newProject = (await fixture.getDeferBlocks()).at(-2);
+    await newProject?.render(DeferBlockState.Error);
+    expect(
+      Array.from(root.querySelectorAll('[role="alert"]'), (each) => each.textContent.trim()),
+    ).toEqual(['This part of glave could not load. Reload the page to try again.']);
     await expectAccessible(root);
   });
 

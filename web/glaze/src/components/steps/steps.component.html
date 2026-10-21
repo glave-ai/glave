@@ -5,7 +5,10 @@
     @for (fact of facts(); track $index) {
       <span class="fact">{{ fact }}</span>
     }
-    <span class="count">{{ steps() }}<glz-icon class="chevron" [icon]="chevron" /></span>
+    <span class="count"
+      >{{ steps()
+      }}<glz-icon class="chevron glz-mirrored" [attr.data-testid]="ids().chevron" [icon]="chevron"
+    /></span>
   </summary>
   <div class="steps" [attr.data-testid]="ids().steps"><ng-content /></div>
 </details>

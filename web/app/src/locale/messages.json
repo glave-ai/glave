@@ -333,6 +333,7 @@
     "tasks.refresh": "Refresh",
     "text.removeFailed": "glave could not remove that account. Try again in a moment.",
     "text.somethingWrong": "Something went wrong. Try again in a moment.",
+    "text.unloaded": "This part of glave could not load. Reload the page to try again.",
     "text.unreached": "glave could not be reached. Try again.",
     "thread.attach": "Add files or photos",
     "thread.conversation": "Conversation",
