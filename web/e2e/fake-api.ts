@@ -20,6 +20,7 @@ import {
 import { type Awake, keptAwake } from './fake-awake';
 import { keptFile } from './fake-files';
 import { HOME, listFolders } from './fake-folders';
+import { FakeLists } from './fake-lists';
 import {
   type Gone,
   LOST,
@@ -744,6 +745,7 @@ export async function fakeApi(
     gone: gone ? folderGone() : null,
     awake: { on: true },
   };
+  const lists = new FakeLists((method, params) => answer(method, params, known));
   await page.route('**/*', async (route: Route) => {
     const request = route.request();
     if (request.method() !== 'POST') {
@@ -761,11 +763,16 @@ export async function fakeApi(
     if (message.method === 'thread/watch') {
       return;
     }
+    if (message.method === 'thread/list/watch') {
+      await lists.hold(route, message.id);
+      return;
+    }
     const turnStart = message.method === 'turn/start';
     const refused = turnStart ? refusedTurn(message.params, known.gone) : undefined;
     if (turnStart && refused === undefined) {
       known.touched.add(String(message.params['thread']));
       await route.fulfill({ contentType: 'text/event-stream', body: turn(message) });
+      await lists.tell(String(message.params['thread']));
       return;
     }
     const folder = message.params['folder'] as { kind: string } | null | undefined;
@@ -784,6 +791,9 @@ export async function fakeApi(
       contentType: 'application/json',
       body: JSON.stringify({ jsonrpc: '2.0', id: message.id, ...reply }),
     });
+    if (message.method === 'trust/answer') {
+      await lists.tell(String(message.params['thread']));
+    }
   });
   return { calls, requests };
 }

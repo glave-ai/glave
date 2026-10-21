@@ -1,7 +1,27 @@
-import { expect, test } from '@playwright/test';
+import { type Page, expect, test } from '@playwright/test';
 
-import { HELLO, LEFT_ALONE, TOUCH } from './fake-model';
-import { LIVE, byTestId, expectAccessible, served, signInCode, watchForProblems } from './support';
+import { HELLO, LEFT_ALONE, TOUCH, holding, letGo } from './fake-model';
+import {
+  LIVE,
+  LIVE_MODEL_URL,
+  byTestId,
+  expectAccessible,
+  served,
+  signInCode,
+  watchForProblems,
+} from './support';
+
+/** The session API's methods `page` calls from now on, in order, by the header that names each. */
+function callsOf(page: Page): readonly string[] {
+  const called: string[] = [];
+  page.on('request', (request) => {
+    const method = request.headers()['glave-method'];
+    if (method !== undefined) {
+      called.push(method);
+    }
+  });
+  return called;
+}
 
 /**
  * A real glave, its model the fake service of fake-model.ts, asking before commands run: what
@@ -48,6 +68,56 @@ test('a second tab sees a turn and its approval as they happen, and answers it',
   }
   // The first tab saw the decision too, in the turn's steps once it ended.
   await expect(byTestId(first, 'thread-approval-decided')).toHaveText('Denied');
+  for (const seen of problems) {
+    expect(seen()).toEqual([]);
+  }
+  await context.close();
+});
+
+/**
+ * The side nav follows the lists live: a turn another tab starts shows running the moment it
+ * runs (its model held until the test lets it go), then needing the person the moment it asks,
+ * then done once answered, from the lists' watch alone, with no list read again on a timer.
+ */
+test('the side nav shows a turn another tab starts running, then needing the person, as it happens', async ({
+  browser,
+  browserName,
+}) => {
+  const context = await browser.newContext();
+  const [watching, working] = [await context.newPage(), await context.newPage()];
+  const problems = [watchForProblems(watching), watchForProblems(working)];
+  const called = callsOf(watching);
+  const live = served(LIVE);
+  // A prompt of its own in each browser, which run side by side on the one glave.
+  const held = `${browserName}-${String(Date.now())}`;
+  const prompt = `${holding(held)}, then touch a file`;
+
+  await watching.goto(`${live}/#code=${await signInCode(LIVE)}`);
+  await expect.poll(() => called.includes('thread/list/watch')).toBe(true);
+  const read = called.length;
+  await working.goto(`${live}/#code=${await signInCode(LIVE)}`);
+  const composer = byTestId(working, 'home-composer-input');
+  await composer.fill(prompt);
+  await composer.press('Enter');
+
+  const row = byTestId(watching, 'nav-thread').filter({ hasText: prompt });
+  await expect(row.getByTestId('nav-thread-running')).toBeVisible();
+  await letGo(process.env[LIVE_MODEL_URL] ?? '', held);
+  await expect(row.getByTestId('nav-thread-waiting')).toBeVisible();
+  const needsYou = byTestId(watching, 'needs-you-thread').filter({ hasText: prompt });
+  await expect(needsYou).toBeVisible();
+  await expect(byTestId(working, 'thread-approval').locator('code')).toHaveText(TOUCH);
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await watching.emulateMedia({ colorScheme });
+    await expectAccessible(watching);
+  }
+
+  await byTestId(working, 'thread-approval-deny').click();
+  await expect(row.getByTestId('nav-thread-since')).toBeVisible();
+  await expect(needsYou).toHaveCount(0);
+  // Heard from the lists' watch alone: nothing read the lists again.
+  const reads = called.slice(read).filter((method) => /^(project|thread)\/list$/u.test(method));
+  expect(reads).toEqual([]);
   for (const seen of problems) {
     expect(seen()).toEqual([]);
   }

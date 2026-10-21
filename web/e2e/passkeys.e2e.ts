@@ -20,6 +20,11 @@ const ADMIN_WORDS = /policy|organization|member|group|admin|SSO|config\.toml|GLA
 async function tunnel(context: BrowserContext): Promise<void> {
   const glave = served(PASSKEYS);
   await context.route(`${PASSKEYS_ORIGIN}/**`, async (route) => {
+    // A watch streams for as long as the page lives, which a tunnel of whole answers cannot
+    // carry: it is left waiting, as a quiet one would be.
+    if (route.request().headers()['glave-method']?.endsWith('/watch') === true) {
+      return;
+    }
     const asked = new URL(route.request().url());
     const response = await route.fetch({
       url: `${glave}${asked.pathname}${asked.search}`,

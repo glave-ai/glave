@@ -389,7 +389,7 @@ describe('ThreadService', () => {
     expect(service.chosen()).toBe('hope-12b');
   });
 
-  it('renames the thread and reads the lists again, or says why it could not', async () => {
+  it('renames the thread, which the lists hear of from the server, or says why it could not', async () => {
     const fake = new FakeSession()
       .answer('thread/events', { events: [] })
       .answer('project/list', { projects: [] });
@@ -399,7 +399,7 @@ describe('ThreadService', () => {
     await service.open('thread-1');
     await service.rename('Launch plan');
     expect(fake.paramsOf('thread/rename')).toEqual([{ thread: 'thread-1', title: 'Launch plan' }]);
-    expect(fake.paramsOf('project/list')).toHaveLength(1);
+    expect(fake.paramsOf('project/list')).toHaveLength(0);
     fake.answer(
       'thread/rename',
       new ApiError({ code: ErrorCode.TURN_RUNNING, message: 'a turn is running' }),

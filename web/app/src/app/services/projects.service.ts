@@ -1,5 +1,5 @@
 import { DOCUMENT } from '@angular/common';
-import { DestroyRef, Service, computed, inject, signal } from '@angular/core';
+import { DestroyRef, Service, computed, effect, inject, signal } from '@angular/core';
 import type {
   Project,
   ProjectCreateParams,
@@ -9,14 +9,17 @@ import type {
 } from '@glave/client';
 
 import type { ProjectWithThreads } from '../lib/nav';
+import type { Following, ListsHost } from './lists-feed';
 import { SessionService } from './session.service';
 
-/** How often the lists are read again while the app is open, in milliseconds. */
-export const REFRESH_MS = 10_000;
+/** How many of each project's threads the lists hold: the newest. */
+const LIMIT = 30;
 
 /**
- * The projects the person works in and each one's latest threads, read again every few seconds
- * and after anything the app changes, so the side nav shows what is running and waiting.
+ * The projects the person works in and each one's latest threads: read, then followed live
+ * (`thread/list/watch`) while the tab is shown, so the side nav shows a thread running, waiting
+ * for the person, renamed, new or gone the moment the server says so (`lists-feed.ts`, loaded
+ * after the first page). Read again too after the app changes a project.
  */
 @Service()
 export class ProjectsService {
@@ -24,10 +27,25 @@ export class ProjectsService {
   private readonly document = inject(DOCUMENT);
   /** The read under way, which a second asks join rather than start another. */
   private pending: Promise<void> | null = null;
+  /** What follows the lists, once loaded; and what stops it for good. */
+  private feed: Promise<Following> | null = null;
+  private readonly stop = new AbortController();
   private readonly lists = signal<readonly ProjectWithThreads[]>([]);
   private readonly failed = signal<string | null>(null);
   private readonly done = signal(false);
   private readonly read = signal(Date.now());
+  /** What following the lists works with. */
+  private readonly host: ListsHost = {
+    session: this.session,
+    document: this.document,
+    lists: this.lists,
+    read: this.read,
+    error: this.failed,
+    limit: LIMIT,
+    refresh: () => this.refresh(),
+    reread: () => this.reread(),
+    reading: () => this.pending,
+  };
 
   /** Projects first, then the personal project; each with its threads, newest first. */
   readonly projects = computed(() =>
@@ -36,21 +54,42 @@ export class ProjectsService {
   readonly error = this.failed.asReadonly();
   readonly loaded = this.done.asReadonly();
   /**
-   * When the lists were last read, in milliseconds since the epoch: what their times count from,
-   * moving on with every read.
+   * What the lists' times count from, in milliseconds since the epoch: when they were last
+   * read or changed, moving on each minute while the tab is shown.
    */
   readonly readAt = this.read.asReadonly();
 
   constructor() {
-    // Polling skips a tab no one is looking at, and a read still under way.
-    const timer = setInterval(() => {
-      if (this.session.signedIn() && !this.document.hidden && this.pending === null) {
-        void this.refresh();
-      }
-    }, REFRESH_MS);
     inject(DestroyRef).onDestroy(() => {
-      clearInterval(timer);
+      this.stop.abort();
     });
+    // Signed out, it lets go of the watch; following again starts it anew.
+    effect(() => {
+      if (!this.session.signedIn()) {
+        void this.feed?.then((feed) => {
+          feed.letGo();
+        });
+      }
+    });
+  }
+
+  /** Reads the lists, then follows them live while the tab is shown, as signed in now. */
+  follow(): void {
+    // The first page needs only the first read; what follows the lists, which reads them
+    // again whenever it watches them anew, joins it.
+    void this.refresh();
+    this.feed ??= import('./lists-feed').then(({ followLists }) =>
+      followLists(this.host, this.stop.signal),
+    );
+    void this.feed.then(
+      (feed) => {
+        feed.again();
+      },
+      () => {
+        // It could not load: the next follow tries again.
+        this.feed = null;
+      },
+    );
   }
 
   /** Reads the projects and their threads again, or joins the read under way. */
@@ -121,7 +160,7 @@ export class ProjectsService {
         projects.map(async (project): Promise<ProjectWithThreads> => {
           const { threads } = await this.session.call('thread/list', {
             project: project.id,
-            limit: 30,
+            limit: LIMIT,
           });
           const message = said.get(project.id);
           return message === undefined ? { project, threads } : { project, threads, gone: message };
