@@ -1,4 +1,4 @@
-import { pageFromUrl, threadFromUrl, threadMark, threadTitle } from './threads';
+import { pageFromUrl, threadFromUrl, threadTitle } from './threads';
 
 describe('threads', () => {
   it('reads the thread from a URL', () => {
@@ -13,20 +13,6 @@ describe('threads', () => {
     expect(pageFromUrl('/settings#a')).toBe('settings');
     expect(pageFromUrl('/tasksforce')).toBeNull();
     expect(pageFromUrl('/t/abc')).toBeNull();
-  });
-
-  it('marks running and waiting threads', () => {
-    expect(threadMark({ status: 'running' })).toEqual({
-      text: 'running',
-      tone: 'neutral',
-      variant: 'plain',
-    });
-    expect(threadMark({ status: 'waiting' })).toEqual({
-      text: 'needs you',
-      tone: 'accent',
-      variant: 'dot',
-    });
-    expect(threadMark({ status: 'idle' })).toBeNull();
   });
 
   it('titles a thread, or calls it new', () => {

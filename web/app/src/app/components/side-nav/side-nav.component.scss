@@ -73,6 +73,12 @@
   overflow-y: auto;
 }
 
+// How many tasks are going, quiet at the end of Tasks.
+.going {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-xs);
+}
+
 .foot {
   display: flex;
   flex: none;

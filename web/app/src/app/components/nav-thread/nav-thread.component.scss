@@ -5,6 +5,20 @@
   gap: var(--glz-space-half);
 }
 
+// Running or waiting: a ring or a small mark as large as the title, in its ink, never a colour.
+.status {
+  --glz-icon-size: 1em;
+
+  color: var(--glz-color-text);
+}
+
+// When it was last active, small and muted, its digits all one width.
+.since {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
 // Indented to the thread's title, on a thin line from it: the line under the title's start,
 // the rows past it.
 .children {

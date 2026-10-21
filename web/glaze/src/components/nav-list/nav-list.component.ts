@@ -25,7 +25,7 @@ const PARTS = { toggle: 'toggle', caret: 'caret', end: 'end', items: 'items' } a
  * the list is closed. Actions for the group, such as "New thread here", go beside the heading
  * (`[glzNavListActions]`); they and the caret show while the pointer or focus is on the
  * heading, and always on a touch screen, the caret faintly. A mark goes at the heading's end
- * (`[glzNavListEnd]`), such as a dot for what waits in a closed list; it describes the toggle.
+ * (`[glzNavListEnd]`), such as an icon for what waits in a closed list; it describes the toggle.
  *
  * A list inside another list is a group, such as a project: its heading is quieter than the
  * outer list's, and the groups sit further apart than the items in each.
@@ -39,7 +39,7 @@ const PARTS = { toggle: 'toggle', caret: 'caret', end: 'end', items: 'items' } a
  *   <button glzNavListActions glzIconButton size="sm" label="New project">…</button>
  *   <glz-nav-list heading="Atlas" collapsible [(expanded)]="open">
  *     <button glzNavListActions glzIconButton size="sm" label="New item in Atlas">…</button>
- *     <glz-badge glzNavListEnd tone="accent" variant="dot">needs you</glz-badge>
+ *     <glz-icon glzNavListEnd label="needs you" [icon]="hand" />
  *     …
  *   </glz-nav-list>
  * </glz-nav-list>

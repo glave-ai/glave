@@ -38,11 +38,16 @@
               [actions]="actions"
             />
             @if (earlierClosed()) {
-              <glz-badge glzNavListEnd tone="accent" variant="dot">{{ copy.needsYou }}</glz-badge>
+              <glz-icon glzNavListEnd [icon]="icons.waiting" [label]="copy.needsYou" />
             }
             <a glzNavItem [href]="values.link" [icon]="icons.thread">
               {{ copy.notes }}
-              <glz-badge glzNavItemEnd>{{ copy.running }}</glz-badge>
+              <glz-icon
+                glzNavItemEnd
+                class="glz-spin"
+                [icon]="icons.running"
+                [label]="copy.running"
+              />
             </a>
           </glz-nav-list>
         </nav>

@@ -126,18 +126,19 @@ describe('ProjectsNavComponent', () => {
     // Garden has no threads, and counts from when it was made, before glave's latest.
     expect(texts(root, 'nav-project-toggle')).toEqual(['glave', 'Garden']);
     // What waits keeps its place in its list too.
-    expect(texts(root, 'nav-thread')).toEqual([
+    expect(texts(root, 'nav-thread-title')).toEqual([
       'Plan the launch',
       'Check the parser',
       'Audit the dependencies',
-      'New chat needs you',
-      'Trip to Lisbon running',
+      'New chat',
+      'Trip to Lisbon',
     ]);
     const threads = Array.from(root.querySelectorAll<HTMLElement>('[data-testid="nav-thread"]'));
     expect(threads[0]?.getAttribute('aria-current')).toBe('page');
-    // Quiet marks: a dot for what needs the person, the word alone for running.
-    expect(threads[3]?.querySelector('glz-badge')?.classList).toContain('glz-badge--dot');
-    expect(threads[4]?.querySelector('glz-badge')?.classList).toContain('glz-badge--plain');
+    // Where the time sits, a small mark for what needs the person, a ring for what runs.
+    expect(threads[3]?.querySelector('[data-testid="nav-thread-waiting"]')).not.toBeNull();
+    expect(threads[4]?.querySelector('[data-testid="nav-thread-running"]')).not.toBeNull();
+    expect(threads[2]?.querySelector('[data-testid="nav-thread-since"]')).not.toBeNull();
     // No folder beside a project's name, and an empty project shows no filler.
     expect(find(root, 'nav-project-toggle').querySelectorAll('glz-icon')).toHaveLength(1);
     expect(root.textContent).not.toContain('No threads');
@@ -163,7 +164,7 @@ describe('ProjectsNavComponent', () => {
   it('puts a thread another started under it, on its own line', async () => {
     const { root } = await render();
     const children = find(root, 'nav-children');
-    expect(texts(children, 'nav-thread')).toEqual(['Check the parser']);
+    expect(texts(children, 'nav-thread-title')).toEqual(['Check the parser']);
     expect(children.previousElementSibling?.textContent).toContain('Plan the launch');
   });
 
@@ -178,7 +179,7 @@ describe('ProjectsNavComponent', () => {
     expect([...lists.collapsed()]).toEqual(['p1']);
     // Closed, glave still says something in it needs the person.
     const end = root.ownerDocument.getElementById(toggle.getAttribute('aria-describedby') ?? '');
-    expect(end?.textContent.trim()).toBe('needs you');
+    expect(end?.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('needs you');
     await expectAccessible(root);
     toggle.click();
     find<HTMLButtonElement>(root, 'nav-projects-toggle').click();
@@ -231,14 +232,14 @@ describe('ProjectsNavComponent', () => {
 
   it('keeps the threads whose title matches the search, and says when none do', async () => {
     const { root, fixture } = await render('launch');
-    expect(texts(root, 'nav-thread')).toEqual(['Plan the launch']);
+    expect(texts(root, 'nav-thread-title')).toEqual(['Plan the launch']);
     // What waits is not found, so Needs you is gone.
     expect(root.querySelector('[data-testid="needs-you"]')).toBeNull();
     expect(root.querySelector('[data-testid="nav-chats"]')).toBeNull();
     expect(root.querySelectorAll('[data-testid="nav-project"]')).toHaveLength(1);
     fixture.componentRef.setInput('query', 'zebra');
     await fixture.whenStable();
-    expect(texts(root, 'nav-thread')).toEqual([]);
+    expect(texts(root, 'nav-thread-title')).toEqual([]);
     expect(root.querySelector('[data-testid="nav-no-match"]')?.textContent).toBe(
       'No threads match',
     );
@@ -291,7 +292,9 @@ describe('ProjectsNavComponent', () => {
       each.textContent.includes('Garden'),
     );
     expect(garden?.querySelector('[data-testid="nav-gone"]')).not.toBeNull();
-    expect(garden?.querySelector('[data-testid="nav-project-end"]')?.textContent).toContain(gone);
+    const mark = garden?.querySelector('[data-testid="nav-project-end"] [role="img"]');
+    expect(mark?.getAttribute('aria-label')).toBe(gone);
+    expect(mark?.classList).toContain('warning');
     await expectAccessible(root);
   });
 

@@ -5,9 +5,33 @@
   [current]="thread().current"
   (click)="followed()"
 >
-  {{ thread().title }}
-  @if (thread().mark; as mark) {
-    <glz-badge glzNavItemEnd [tone]="mark.tone" [variant]="mark.variant">{{ mark.text }}</glz-badge>
+  <span data-testid="nav-thread-title">{{ thread().title }}</span>
+  @if (thread().running) {
+    <glz-icon
+      glzNavItemEnd
+      class="status glz-spin"
+      data-testid="nav-thread-running"
+      [icon]="running.icon"
+      [label]="running.label"
+    />
+  } @else if (thread().waiting) {
+    <glz-icon
+      glzNavItemEnd
+      class="status"
+      data-testid="nav-thread-waiting"
+      [icon]="needsYou.icon"
+      [label]="needsYou.label"
+    />
+  } @else {
+    <time
+      glzNavItemEnd
+      class="since"
+      data-testid="nav-thread-since"
+      [attr.datetime]="thread().since.at"
+    >
+      <span aria-hidden="true">{{ thread().since.short }}</span>
+      <span class="glz-visually-hidden">{{ thread().since.long }}</span>
+    </time>
   }
 </a>
 @if (thread().hasChildren) {

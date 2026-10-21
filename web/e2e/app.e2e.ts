@@ -242,7 +242,7 @@ test('New chat starts its thread in Chats, not in the project listed first', asy
   const start = api.requests.find((request) => request.method === 'thread/start');
   expect(start?.params['project']).toBe(PERSONAL.id);
   const chats = byTestId(page, 'nav-chats');
-  await expect(chats.getByTestId('nav-thread').first()).toHaveText('New chat');
+  await expect(chats.getByTestId('nav-thread-title').first()).toHaveText('New chat');
   const project = byTestId(page, 'nav-project').filter({ hasText: 'glave' });
   await expect(project.getByTestId('nav-thread')).toHaveCount(4);
 });
