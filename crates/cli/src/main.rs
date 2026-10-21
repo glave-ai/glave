@@ -44,6 +44,7 @@ mod session;
 mod setup;
 mod skills;
 mod socket;
+mod starter;
 mod system;
 mod tasks;
 mod telemetry;

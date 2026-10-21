@@ -41,6 +41,14 @@ const SUBCOMMANDS: [(&str, Subcommand); 10] = [
 ];
 
 pub(crate) fn main() -> ExitCode {
+    // Watched for as long as glave runs, whatever it runs as.
+    let _starter = match crate::starter::watch() {
+        Ok(watching) => watching,
+        Err(message) => {
+            eprintln!("glave: {message}");
+            return ExitCode::FAILURE;
+        }
+    };
     let words: Vec<String> = std::env::args().skip(1).collect();
     if let Some((first, rest)) = words.split_first()
         && let Some((_, subcommand)) = SUBCOMMANDS.iter().find(|(name, _)| name == first)
