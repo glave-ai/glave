@@ -80,13 +80,21 @@ struct Helper {
     pipe: PipeWriter,
     /// Its number among the helpers glave started.
     launch: u64,
-    /// True once it said it is ready; closed, still false, if it did not.
-    ready: watch::Receiver<bool>,
+    /// Whether it said it is ready: none yet, then true or false; closed with none if the
+    /// program that started it was given up first.
+    ready: watch::Receiver<Option<bool>>,
 }
 
 /// Why a program started as the helper is not one: no ready line, or another.
 const NOT_READY: &str =
     "it did not say it was ready: the program there is of another version, or damaged";
+
+/// Why a program waited for helpers it never heard from: each was started for another program
+/// whose start was given up before the helper answered.
+const GIVEN_UP: &str = "it was started for other programs that were stopped before it answered";
+
+/// How many helpers one program waits for when those it waited for were given up unanswered.
+const WAITS: usize = 3;
 
 impl Lifeline {
     /// Starts the helper `program` (glave itself) and waits until it says it reads the pipe, so
@@ -124,6 +132,18 @@ impl Lifeline {
             lifeline: Arc::clone(self),
             leader,
         };
+        for _ in 0..WAITS {
+            if self.hold(leader).await? {
+                return Ok(tie);
+            }
+        }
+        Err(self.failed(std::io::Error::other(GIVEN_UP)))
+    }
+
+    /// Tells the helper that glave holds `leader`, starting one if it is gone, and waits until
+    /// the helper said it is ready: false when the one waited for was started by another
+    /// program whose start was given up before it answered, which leaves no helper.
+    async fn hold(self: &Arc<Self>, leader: i32) -> Result<bool, ProcessError> {
         let (launched, pending) = {
             let mut state = self.lock();
             state.live.insert(leader);
@@ -133,7 +153,7 @@ impl Lifeline {
                     .helper
                     .as_ref()
                     .map(|helper| helper.ready.clone())
-                    .filter(|ready| !*ready.borrow());
+                    .filter(|ready| *ready.borrow() != Some(true));
                 (None, pending)
             } else {
                 (Some(self.launch(&mut state)), None)
@@ -145,12 +165,14 @@ impl Lifeline {
                 .ready()
                 .await?;
         }
-        if let Some(mut pending) = pending
-            && pending.wait_for(|ready| *ready).await.is_err()
-        {
-            return Err(self.failed(std::io::Error::other(NOT_READY)));
+        let Some(mut pending) = pending else {
+            return Ok(true);
+        };
+        match pending.wait_for(Option::is_some).await.as_deref() {
+            Ok(Some(true)) => Ok(true),
+            Ok(_) => Err(self.failed(std::io::Error::other(NOT_READY))),
+            Err(_) => Ok(false),
         }
-        Ok(tie)
     }
 
     /// glave lets go of the group `leader` leads. A helper that is gone hears it from the next
@@ -193,7 +215,7 @@ impl Lifeline {
         }
         pipe.write_all(told.as_bytes())?;
         state.launches += 1;
-        let (ready, waited) = watch::channel(false);
+        let (ready, waited) = watch::channel(None);
         state.helper = Some(Helper {
             process,
             pipe,
@@ -204,7 +226,8 @@ impl Lifeline {
             lifeline: self,
             launch: state.launches,
             said,
-            ready: Some(ready),
+            ready,
+            answered: false,
         })
     }
 
@@ -239,15 +262,18 @@ impl State {
 
 /// A helper just started, until it says it is ready. Dropped before then (it did not, or
 /// the start of the program waiting for it was given up), the helper is stopped and
-/// forgotten, so the next program glave starts tries again rather than tell it anything, and
-/// every program waiting for it is refused.
+/// forgotten, so the next program glave starts tries again rather than tell it anything.
+/// Programs waiting for it are refused if it did not say it is ready, and start another if
+/// they were left unanswered.
 struct Launched<'a> {
     lifeline: &'a Lifeline,
     /// Its number among the helpers glave started.
     launch: u64,
     said: ChildStdout,
-    /// Sends true once it said it is ready; dropped unsent if it did not.
-    ready: Option<watch::Sender<bool>>,
+    /// Whether it said it is ready, for the programs waiting for it.
+    ready: watch::Sender<Option<bool>>,
+    /// It said it is ready.
+    answered: bool,
 }
 
 impl Launched<'_> {
@@ -262,13 +288,11 @@ impl Launched<'_> {
             std::io::Result::Ok(())
         })
         .await;
+        let answered = matches!(read, Ok(Ok(()))) && heard == READY;
+        self.answered = answered;
+        self.ready.send_replace(Some(answered));
         match read {
-            Ok(Ok(())) if heard == READY => {
-                if let Some(ready) = self.ready.take() {
-                    ready.send_replace(true);
-                }
-                Ok(())
-            }
+            _ if answered => Ok(()),
             Ok(Err(error)) => Err(self.lifeline.failed(error)),
             _ => Err(self.lifeline.failed(std::io::Error::other(NOT_READY))),
         }
@@ -277,7 +301,7 @@ impl Launched<'_> {
 
 impl Drop for Launched<'_> {
     fn drop(&mut self) {
-        if self.ready.is_none() {
+        if self.answered {
             return;
         }
         let mut state = self.lifeline.lock();
