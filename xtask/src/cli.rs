@@ -33,6 +33,9 @@ commands:
 
 /// Parses the process arguments, runs the command, and maps the result to an exit code.
 pub(crate) fn main() -> ExitCode {
+    if let Some(code) = crate::cmd::helper() {
+        return code;
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     match run(&args) {
         Ok(()) => ExitCode::SUCCESS,

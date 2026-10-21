@@ -98,20 +98,7 @@ fn parse(text: &str) -> Option<(u32, u32, u32)> {
 }
 
 fn npm(dir: &Path, args: &[&str], env: &[(&str, String)]) -> Result<(), String> {
-    let mut command = Command::new("npm");
-    command.args(args).current_dir(dir);
-    command.envs(env.iter().map(|(name, value)| (*name, value)));
-    let status = command
-        .status()
-        .map_err(|err| format!("could not start npm: {err}"))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!(
-            "`npm {}` in web/ failed ({status})",
-            args.join(" ")
-        ))
-    }
+    crate::cmd::run_in(dir, "npm", args, env).map_err(|err| format!("in web/: {err}"))
 }
 
 #[cfg(test)]

@@ -4,7 +4,6 @@
 //! Each is run first thing in `main`, before glave starts a thread.
 
 use std::ffi::OsString;
-use std::path::PathBuf;
 use std::process::ExitCode;
 
 use glave_computer::LocalComputers;
@@ -22,20 +21,10 @@ pub(crate) fn run() -> Option<ExitCode> {
     Some(ExitCode::from(126))
 }
 
-/// This program, to start again as a helper. On Linux the file the system runs glave from,
-/// which still starts after an upgrade replaced or removed the one at glave's path.
-pub(crate) fn this_program() -> std::io::Result<PathBuf> {
-    if cfg!(target_os = "linux") {
-        Ok(PathBuf::from("/proc/self/exe"))
-    } else {
-        std::env::current_exe()
-    }
-}
-
 /// `computers` with this program as the sandbox's helper, which Linux needs where
 /// bubblewrap cannot start.
 pub(crate) fn with_sandbox_helper(computers: LocalComputers) -> LocalComputers {
-    match this_program() {
+    match glave_process::this_program() {
         Ok(program) => computers.with_sandbox_helper(program),
         Err(_) => computers,
     }

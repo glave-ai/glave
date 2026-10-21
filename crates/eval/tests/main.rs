@@ -3,4 +3,5 @@
 #![cfg(test)]
 
 mod attempt;
+mod lifeline;
 mod oracle;

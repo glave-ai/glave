@@ -22,7 +22,7 @@ pub(crate) fn folder() -> anyhow::Result<PathBuf> {
 /// at once if glave is killed outright.
 pub(crate) async fn reaped() -> anyhow::Result<Processes> {
     let helper =
-        crate::helpers::this_program().context("could not find this glave to start its helper")?;
+        glave_process::this_program().context("could not find this glave to start its helper")?;
     let recorded = Processes::recorded(folder()?.join("run"));
     // The helper starts while what a glave that ended left is stopped.
     let (tied, reaped) = tokio::join!(recorded.clone().with_lifeline(helper), recorded.reap());

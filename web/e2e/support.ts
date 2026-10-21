@@ -207,16 +207,67 @@ export async function expectDialogShown(
   }
 }
 
-/** Collects what the page says went wrong: errors on the console, and CSP violations. */
-export function watchForProblems(page: Page): () => readonly string[] {
+/** What a page says went wrong, as `watchForProblems` collects it. */
+export interface Problems {
+  /** Each thing it said, in its own words. */
+  (): readonly string[];
+  /**
+   * Leaves the page for `url`, as `page.goto` does. Once a page is being left, WebKit refuses a
+   * fetch it starts and says so, in words it uses for an access-control failure (Chromium lets
+   * it through): the app cannot tell it is being left until it is gone. That line, for the
+   * session API, said while this leaves the page, is not counted; anything else said then is.
+   */
+  leave(url: string): Promise<void>;
+}
+
+/**
+ * What a page error says, whole. Playwright hands over an error split at its first colon, the
+ * character after it dropped: WebKit's `Fetch API cannot load http://…` arrives as the name
+ * `Fetch API cannot load http` and the message `/…`. A stack that begins with the name begins
+ * with the text whole, frames after it, in both engines; without one, it is the name and the
+ * message.
+ */
+function whole(error: Error): string {
+  const [head = ''] = (error.stack ?? '').split('\n    at ');
+  if (head !== '' && head.startsWith(error.name)) {
+    return head.trimEnd();
+  }
+  return error.name === '' ? error.message : `${error.name}: ${error.message}`;
+}
+
+/**
+ * Collects what the page says went wrong: errors on the console, uncaught errors and CSP
+ * violations.
+ */
+export function watchForProblems(page: Page): Problems {
   const problems: string[] = [];
+  const webkit = page.context().browser()?.browserType().name() === 'webkit';
+  // What WebKit says of a fetch of the session API it refuses while this leaves the page.
+  let refused: string | null = null;
   page.on('console', (message) => {
     if (message.type() === 'error') {
       problems.push(message.text());
     }
   });
-  page.on('pageerror', (error) => problems.push(error.message));
-  return () => problems;
+  page.on('pageerror', (error) => {
+    const said = whole(error);
+    if (said !== refused) {
+      problems.push(said);
+    }
+  });
+  const leave = async (url: string): Promise<void> => {
+    // The address the app's session API is called at (session.service.ts).
+    const api = new URL('/', page.url()).href;
+    refused = webkit ? `Fetch API cannot load ${api} due to access control checks.` : null;
+    try {
+      // The page is being left until the next one is committed: nothing of it runs after.
+      await page.goto(url, { waitUntil: 'commit' });
+    } finally {
+      refused = null;
+    }
+    await page.waitForLoadState();
+  };
+  return Object.assign(() => problems, { leave });
 }
 
 /** The rules axe holds the pages to: WCAG 2.2, levels A and AA. */
