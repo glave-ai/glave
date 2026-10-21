@@ -129,7 +129,9 @@ jobs:
           sh install/server.sh --docker --origin https://glave.test --binary target/debug/glave |
             tee "$RUNNER_TEMP/installed.txt"
           grep -q 'https://glave.test/#setup=' "$RUNNER_TEMP/installed.txt"
-          sudo test "$(sudo stat -c %a /opt/glave/.env)" = 600
+          kept="$(sudo stat -c '%a %U' /opt/glave/.env)"
+          echo "the tunnel's token is kept $kept"
+          [ "$kept" = "600 root" ]
       - name: Sign in from elsewhere with the link, then with the passkey it made
         env:
           GLAVE_TEST_INSTALLED: ${{ runner.temp }}/installed.txt
