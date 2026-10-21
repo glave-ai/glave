@@ -1,7 +1,7 @@
 # Rust build output
 /target/
 
-# Written by release builds (.github/build-setup.yml)
+# Written by release builds and CI (.github/third-party-notices.sh)
 /THIRD-PARTY-NOTICES
 
 # Secrets stay local. A template with no real values may be committed.
