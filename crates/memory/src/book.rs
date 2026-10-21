@@ -115,6 +115,8 @@ pub(crate) struct Book {
 #[derive(Debug, Clone, Copy)]
 struct Folded {
     into: MemoryId,
+    /// The version of `into` that took in its text: the merge's edit, which a restore may undo.
+    edit: Option<EventId>,
     /// Where it was saved.
     source: Option<MemorySource>,
     /// The forget that merged it, which a restore names to undo it.
@@ -170,11 +172,18 @@ impl Book {
             let Some(into) = forgotten.into else {
                 return;
             };
+            // The merge's edit of `into` comes first, so it is the version in force now.
+            let edit = self
+                .entries
+                .get(&into)
+                .and_then(Entry::current)
+                .map(|(_, version)| version.event);
             let source = forgotten.source;
             self.folded.insert(
                 forgotten.memory,
                 Folded {
                     into,
+                    edit,
                     source,
                     event,
                 },
@@ -212,17 +221,36 @@ impl Book {
         found
     }
 
-    /// The memories merged into `memory` that still wait to be erased.
+    /// The memories merged into `memory` that still wait to be erased, through merges whose
+    /// edits are still in force: one whose merged text was undone no longer lives on in it.
     pub(crate) fn merged_into(&self, memory: MemoryId) -> Vec<MemoryId> {
-        self.folded_into(memory)
-            .into_iter()
-            .map(|(merged, _)| merged)
-            .filter(|merged| {
-                self.entries
-                    .get(merged)
-                    .is_some_and(|entry| entry.forgot.is_some())
-            })
-            .collect()
+        let mut found = Vec::new();
+        let mut next = vec![memory];
+        while let Some(into) = next.pop() {
+            for (merged, merge) in &self.folded {
+                if merge.into != into || found.contains(merged) || !self.holds(merge) {
+                    continue;
+                }
+                found.push(*merged);
+                next.push(*merged);
+            }
+        }
+        found.retain(|merged| {
+            self.entries
+                .get(merged)
+                .is_some_and(|entry| entry.forgot.is_some())
+        });
+        found
+    }
+
+    /// Whether the memory `merge` went into still has the merge's text, not undone.
+    fn holds(&self, merge: &Folded) -> bool {
+        self.entries.get(&merge.into).is_some_and(|entry| {
+            entry
+                .versions
+                .iter()
+                .any(|version| Some(version.event) == merge.edit && !version.undone)
+        })
     }
 
     /// The memories glave forgot that still wait to be erased, with their scopes.
@@ -309,6 +337,7 @@ impl Book {
             .is_some_and(|merge| merge.event == restored.undone)
         {
             self.folded.remove(&restored.memory);
+            self.gone.remove(&restored.memory);
         }
         if let Some(entry) = self.entries.get_mut(&restored.memory) {
             if entry

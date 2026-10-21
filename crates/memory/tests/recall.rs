@@ -495,3 +495,46 @@ fn once_the_merged_away_memory_is_erased_forgetting_the_merge_still_hides_its_tu
         assert!(after.is_empty(), "{after:?}");
     });
 }
+
+#[test]
+fn a_merge_undone_then_forgotten_leaves_what_went_in_restorable() {
+    block_on!(async {
+        let kit = Kit::new();
+        let saved = merged(&kit).await;
+        let [kept, folded] = saved.as_slice() else {
+            panic!("{saved:?}");
+        };
+        let memories = kit.memories(rules(), 4);
+        let undone = memories.restore(&persons_writer(), *kept).await.unwrap();
+        assert_eq!(
+            undone.text, "Atlas deploys to Railway",
+            "the merge's edit undone"
+        );
+        memories.forget(&persons_writer(), *kept).await.unwrap();
+        let hits = kit
+            .memories(rules(), 5)
+            .recall(&on(shared(), thread(9)), MERGED_QUERY, 10)
+            .await
+            .unwrap();
+        let same = memories
+            .recall(&on(shared(), thread(9)), MERGED_QUERY, 10)
+            .await
+            .unwrap();
+        assert_eq!(
+            hits, same,
+            "a view read afresh hides what the live one does"
+        );
+        let back = memories.restore(&persons_writer(), *folded).await.unwrap();
+        assert_eq!(back.text, "Merging to main ships atlas to Railway");
+        let after = kit
+            .memories(rules(), 6)
+            .recall(&on(shared(), thread(9)), MERGED_QUERY, 10)
+            .await
+            .unwrap();
+        assert_eq!(
+            persons(&after),
+            ["Merging to main ships atlas."],
+            "restored, its turn is back; the forgotten one's stays hidden"
+        );
+    });
+}

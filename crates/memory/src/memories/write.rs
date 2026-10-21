@@ -197,8 +197,7 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
         if entry.forgot.is_some() && by_glave(&who.by) {
             return Ok(());
         }
-        self.forget_in(ledger, memory, &who.by, Erasure::Now)
-            .await?;
+        // Those merged into it first, so a forget stopped halfway can be asked for again.
         let merged = self
             .with_book(ledger, |book| book.merged_into(memory))
             .await?;
@@ -206,7 +205,7 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
             self.forget_in(ledger, merged, &who.by, Erasure::Now)
                 .await?;
         }
-        Ok(())
+        self.forget_in(ledger, memory, &who.by, Erasure::Now).await
     }
 
     /// Records the forget in `ledger`, erased as `erasure` says.
