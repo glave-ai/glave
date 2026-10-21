@@ -8,11 +8,18 @@ import {
   input,
   model,
 } from '@angular/core';
-import { ChevronDown } from 'lucide';
 
+import type { GlzIconData } from '../../lib/icons';
 import { testIds } from '../../lib/test-ids';
 import { injectId } from '../../tokens/ids';
 import { GlzIconComponent } from '../icon/icon.component';
+
+/**
+ * The caret, Lucide's `chevron-down` (ISC) drawn here: a side nav is in an app's first load, and
+ * through `lucide`'s index, whose named re-exports the build follows, every icon a later page
+ * draws would load with it.
+ */
+const CARET: GlzIconData = [['path', { d: 'm6 9 6 6 6-6' }]];
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
 const PARTS = { toggle: 'toggle', caret: 'caret', end: 'end', items: 'items' } as const;
@@ -70,7 +77,7 @@ export class GlzNavListComponent {
   /** Whether a collapsible list shows its items. */
   readonly expanded = model(true);
 
-  protected readonly icons = { caret: ChevronDown };
+  protected readonly icons = { caret: CARET };
   protected readonly headingId = injectId('glz-nav-list');
   protected readonly itemsId = injectId('glz-nav-list-items');
   protected readonly endId = injectId('glz-nav-list-end');

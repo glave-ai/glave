@@ -28,13 +28,16 @@
     <p class="problem" role="alert" [attr.data-testid]="ids().problem">{{ problem }}</p>
   }
 </div>
-<!-- Loaded the first time they open: the folder browser stays out of the app's first load. -->
+<!-- Loaded the first time they open: the folder browser stays out of the app's first load. If their
+     code cannot load, opening one says so. -->
 @defer (when picking(); prefetch on idle) {
   <glz-dialog [testId]="ids().picking" [heading]="copy.findHeading" [(open)]="picking">
     @if (picking()) {
       <app-folder-picker (picked)="picked($event)" />
     }
   </glz-dialog>
+} @error {
+  <p class="problem" role="alert">{{ copy.unloaded }}</p>
 }
 @defer (when confirming(); prefetch on idle) {
   <glz-confirm-dialog
@@ -46,4 +49,6 @@
     [(open)]="confirming"
     (decided)="decided($event)"
   />
+} @error {
+  <p class="problem" role="alert">{{ copy.unloaded }}</p>
 }

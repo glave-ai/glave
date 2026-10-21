@@ -6,7 +6,7 @@ Glaze (`@glave/glaze`) is an Angular 22 component library: standalone, zoneless,
 
 - Global styles, once: `@glave/glaze/styles/glaze.css` (tokens, page base, layout primitives and prose flow, native-control styles, CDK overlay styles), plus the fonts (`@fontsource/atkinson-hyperlegible-next`, `-mono`).
 - Import each component or directive where it is used: `imports: [GlzButtonComponent, GlzFormFieldComponent, GlzInputDirective]`. There are no modules.
-- Icons are Lucide (ISC): `import { Send } from 'lucide'` and `<glz-icon [icon]="send" />`. Only imported icons are bundled.
+- Icons are Lucide (ISC): `import { Send } from 'lucide'` and `<glz-icon [icon]="send" />`. Only imported icons are bundled. A module of an app's first load imports each of its icons from the icon's own module instead (`import Send from 'lucide/dist/esm/icons/send.mjs'`, which Lucide ships untyped: the app declares `lucide/dist/esm/icons/*.mjs` once, as an `IconNode`): through `lucide`'s index, whose named re-exports the build follows, every icon a later page draws would load with the first page.
 
 ## Theming
 

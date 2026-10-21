@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, signal } f
 import { GlzButtonComponent, GlzConfirmDialogComponent, GlzDialogComponent } from '@glave/glaze';
 
 import { projectProblem } from '../../lib/projects';
+import { unloaded } from '../../lib/text';
 import { SessionService } from '../../services/session.service';
 import { ProjectsService } from '../../services/projects.service';
 import { FolderPickerComponent } from '../folder-picker/folder-picker.component';
@@ -40,6 +41,7 @@ export class FolderGoneComponent {
     removeHeading: $localize`:@@folderGone.removeHeading:Remove the project?`,
     removeMessage: $localize`:@@folderGone.removeMessage:Its threads go to the archive, with their history.`,
     removeConfirm: $localize`:@@folderGone.removeConfirm:Remove`,
+    unloaded: unloaded(),
   } as const;
   private readonly projects = inject(ProjectsService);
   /** Whether the person here may act: only they reach this computer's folders. */
