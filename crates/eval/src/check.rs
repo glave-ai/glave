@@ -444,9 +444,7 @@ mod tests {
         let memory = MemoryReport {
             live: vec!["We deploy with Render".into(), "Tabs in Python".into()],
             personal: vec!["Tabs in Python".into()],
-            forgotten: vec![],
-            readable_forgotten: vec![],
-            ledger: String::new(),
+            ..MemoryReport::default()
         };
         let judge = |check: Check| {
             check.judge(&Context {
@@ -533,37 +531,46 @@ mod tests {
         );
     }
 
-    /// The memory-recall task's checks: the fact from this project's past thread, found by
-    /// `recall`, passes; the other project's, or an answer without recall, fails.
+    /// The recall tasks' checks: the fact from this project's past thread, found by `recall`,
+    /// passes; the other project's, or an answer without recall, fails.
     #[test]
     fn the_recall_checks_need_the_fact_found_by_recall_and_nothing_from_elsewhere() {
-        let task = crate::task::load(Path::new("../../evals/tasks/memory-recall")).unwrap();
-        let judge = |answer: &str, events: &str| {
-            let trace = answering(answer);
-            let memory = MemoryReport::default();
-            let cx = Context {
-                trace: &trace,
-                last: &trace,
-                events,
-                workspace: Path::new("/nonexistent"),
-                original: Path::new("/nonexistent"),
-                model: "m",
-                memory: &memory,
-                requested: &[],
+        let tasks = [
+            ("memory-recall", "kestrel-42", "heron-9"),
+            (
+                "memory-recall-paraphrase",
+                "Render, gannet-12",
+                "Netlify, heron-9",
+            ),
+        ];
+        for (name, fact, elsewhere) in tasks {
+            let task = crate::task::load(&Path::new("../../evals/tasks").join(name)).unwrap();
+            let judge = |answer: &str, events: &str| {
+                let trace = answering(answer);
+                let memory = MemoryReport::default();
+                let cx = Context {
+                    trace: &trace,
+                    last: &trace,
+                    events,
+                    workspace: Path::new("/nonexistent"),
+                    original: Path::new("/nonexistent"),
+                    model: "m",
+                    memory: &memory,
+                    requested: &[],
+                };
+                task.checks
+                    .iter()
+                    .filter_map(|check| check.judge(&cx).err())
+                    .count()
             };
-            task.checks
-                .iter()
-                .filter_map(|check| check.judge(&cx).err())
-                .count()
-        };
-        let recalled = r#"{"type":"tool.call.requested","data":{"tool":"mcp__memory__recall"}}"#;
-        assert_eq!(judge("kestrel-42", recalled), 0);
-        assert!(judge("kestrel-42", "") > 0, "not found by recall");
-        assert!(
-            judge("kestrel-42 or heron-9", recalled) > 0,
-            "another project's fact"
-        );
-        assert!(judge("I don't know", recalled) > 0);
+            let recalled =
+                r#"{"type":"tool.call.requested","data":{"tool":"mcp__memory__recall"}}"#;
+            assert_eq!(judge(fact, recalled), 0, "{name}");
+            assert!(judge(fact, "") > 0, "{name}: not found by recall");
+            let both = format!("{fact} or {elsewhere}");
+            assert!(judge(&both, recalled) > 0, "{name}: another project's fact");
+            assert!(judge("I don't know", recalled) > 0, "{name}");
+        }
     }
 
     #[test]

@@ -18,7 +18,7 @@ use crate::similar::near;
 /// The longest memory, in characters.
 pub(super) const MOST_CHARS: usize = 500;
 /// About how many tokens each scope's memories may take, all loaded.
-pub(super) const BUDGET_TOKENS: usize = 1_000;
+pub const BUDGET_TOKENS: usize = 1_000;
 /// Characters each memory's line adds beside its text: its id, scope and dates.
 const LINE_CHARS: usize = 60;
 /// How long glave's own changes can be undone, and its forgets wait before erasing.
@@ -73,8 +73,9 @@ pub(crate) fn checked(text: &str) -> Result<String, MemoryError> {
     Ok(text)
 }
 
-/// About how many tokens a memory takes in view.
-pub(crate) fn tokens(text: &str) -> usize {
+/// About how many tokens a memory takes in view, as the budget counts it: its text and its
+/// line's id, scope and dates.
+pub fn tokens(text: &str) -> usize {
     text.chars().count().saturating_add(LINE_CHARS).div_ceil(4)
 }
 
