@@ -656,4 +656,30 @@ describe('ThreadService', () => {
       { thread: 'thread-1', after: 1 },
     ]);
   });
+
+  it('takes a turn’s end read after the server said it runs, coming back', async () => {
+    vi.useFakeTimers();
+    try {
+      const cut = new FakeTurn();
+      let read = 0;
+      const fake = new FakeSession()
+        .answer('thread/events', () => {
+          read += 1;
+          return read === 1
+            ? { events: [event(1, 'turn.started', {})] }
+            : { events: [event(2, 'turn.ended', { outcome: 'completed' })] };
+        })
+        .answer('thread/get', { thread: thread('thread-1', null, { status: 'running' }) })
+        .watch(cut);
+      const service = make(fake);
+      await service.open('thread-1');
+      expect(service.busy()).toBe(true);
+      // The turn ended while the server was asked: what was recorded after says so.
+      cut.end({ ended: 'unwatched' });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(service.busy()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

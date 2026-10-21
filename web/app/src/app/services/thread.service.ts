@@ -506,16 +506,16 @@ export class ThreadService {
       return;
     }
     const summary = await this.readAsk(thread, true);
-    if (summary === null || this.id() !== thread) {
+    if (summary === null || this.following() > 0 || this.id() !== thread) {
       return;
     }
+    // The server's word first; a turn's start or end read after it says more.
+    this.running.set(runs(summary, this.events()));
     await this.readAll(thread, this.events().at(-1)?.seq, true);
     if (this.following() > 0 || this.id() !== thread) {
       return;
     }
-    const running = runs(summary, this.events());
-    this.running.set(running);
-    const unread = running ? [] : stranded();
+    const unread = this.running() ? [] : stranded();
     if (unread.length > 0) {
       this.waiting.update((waiting) => waiting.filter((message) => message.id === null));
       this.composer.update((draft) => together([...unread, draft].filter(Boolean)));
@@ -657,9 +657,11 @@ export class ThreadService {
           return;
         }
         this.events.update((events) => mergeEvents(events, page.events));
-        const ends = turnRuns(page.events);
-        if (ends || page.events.some((event) => event.type === 'turn.ended')) {
-          this.running.set(ends);
+        const turns = page.events.some(
+          (event) => event.type === 'turn.started' || event.type === 'turn.ended',
+        );
+        if (turns) {
+          this.running.set(turnRuns(this.events()));
         }
         if (page.next === undefined || page.next === null) {
           return;
