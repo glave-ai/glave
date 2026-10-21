@@ -110,14 +110,8 @@ pub(crate) async fn run(
     let path = socket_path()?;
     // Only the lock's holder removes a socket a server before it left.
     let listener = crate::socket::listen(&path).await?;
-    let interrupted = server.recover_tasks().await?;
-    if interrupted > 0 {
-        eprintln!(
-            "glave: {interrupted} tasks a glave before this one left running were interrupted"
-        );
-    }
-    // Turns a glave before this one left open, and later those whose lease had not lapsed yet.
-    let mut left_open = repair(server).await;
+    // What a glave before this one left running, and later what its leases still held.
+    let mut left_open = recover(server).await;
     eprintln!("glave: serving you on {}", path.display());
     let mut terminate = signal(SignalKind::terminate())?;
     let mut interrupt = signal(SignalKind::interrupt())?;
@@ -151,7 +145,7 @@ pub(crate) async fn run(
             _ = tick.tick() => {
                 while clients.try_join_next().is_some() {}
                 if left_open > 0 {
-                    left_open = repair(server).await;
+                    left_open = recover(server).await;
                 }
                 if let Some(log) = &log
                     && let Err(error) = log::keep_capped(log.clone()).await
@@ -180,27 +174,33 @@ pub(crate) async fn run(
     outcome
 }
 
-/// Closes the turns a glave before this one left open, `interrupted`, and answers how many
-/// another server's lease still holds, to look at again once it may have lapsed.
-async fn repair(server: &Glave) -> usize {
-    match server.repair_left_open().await {
-        Ok(repaired) => {
-            if repaired.closed > 0 {
-                eprintln!(
-                    "glave: {} turns a glave before this one left open were interrupted",
-                    repaired.closed
-                );
+/// Records the tasks and turns a glave before this one left running as interrupted, and
+/// answers how many another server's lease still holds, to look at again once it may have
+/// lapsed.
+async fn recover(server: &Glave) -> usize {
+    let tasks = server.recover_tasks().await;
+    let turns = server.repair_left_open().await;
+    [("tasks", tasks), ("turns", turns)]
+        .into_iter()
+        .map(|(what, recovered)| match recovered {
+            Ok(recovered) => {
+                if recovered.closed > 0 {
+                    eprintln!(
+                        "glave: {} {what} a glave before this one left running were interrupted",
+                        recovered.closed
+                    );
+                }
+                recovered.held
             }
-            repaired.held
-        }
-        Err(error) => {
-            eprintln!(
-                "glave: could not close the turns left open: {}",
-                error.message
-            );
-            0
-        }
-    }
+            Err(error) => {
+                eprintln!(
+                    "glave: could not look at the {what} left running: {}",
+                    error.message
+                );
+                0
+            }
+        })
+        .sum()
 }
 
 /// Serves `server` to the client at the other end of `stream`, one of `clients`.

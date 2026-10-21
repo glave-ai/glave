@@ -28,7 +28,7 @@ Tests are named by file and function. A conformance suite is a function in `crat
    - *Holds* at the store, for writers racing on every store: the shared suite starts them together, so a store whose check and write are not one step fails it.
    - *Proved by:* `conformance::event_log` (conflict, gap, all or nothing, and racing writers: exactly one takes the place, every other is told of the conflict), run by the in-memory log, SQLite and Postgres.
 3. **One harness at a time per thread, under a lease**; another server is refused (`-32011`).
-   - *Holds* for work on a thread: a turn, a compaction or a change to the thread runs under the thread's lease (`glave_ports::Leases`), renewed while it runs; another server asking to work on it is refused. Tasks' recovery and the scheduler come under leases with #410.
+   - *Holds* for work on a thread: a turn, a compaction or a change to the thread runs under the thread's lease (`glave_ports::Leases`), renewed while it runs; another server asking to work on it is refused. Tasks are recovered, and schedules fired, under leases too (13).
    - *Proved by:* `crates/session/tests/leases.rs` `a_second_server_reads_a_thread_another_runs_without_writing_and_is_refused_its_turn`, `a_turn_left_open_is_closed_as_the_server_starts_once_no_live_lease_holds_it`; for the leases themselves, `conformance::leases` (one holder at a time, renewing and letting go only by the holder, a lapsed lease anyone's, racing holders leaving it with one), run by `crates/ports/src/in_memory/leases.rs` `in_memory_leases_pass_the_leases_suite`, `crates/store-sqlite/src/tests.rs` `the_leases_pass_the_leases_conformance_suite` and `crates/store-postgres/tests/postgres.rs` `the_leases_pass_the_leases_conformance_suite`; across processes, `crates/store-sqlite/src/tests.rs` `processes_on_one_file_share_its_leases` and `crates/store-postgres/tests/postgres.rs` `servers_on_one_database_racing_for_a_lease_leave_it_with_one`.
 4. **No side effect runs twice without the person**: an interrupted call is closed, never redone, and a retry with the same key never starts a second turn.
    - *Partly.* It holds in one process, where each person's keys are kept in a pool of their own, so no one's flood of keys pushes out another's, and across servers for turns left open, which only the holder of a thread's lease closes. Keys kept in memory still let a retry reaching another server start a second turn (#410).
@@ -58,8 +58,8 @@ Tests are named by file and function. A conformance suite is a function in `crat
     - *Not yet:* a turn waiting for the person is interrupted at a stop (PR 5 of `one-server.md`, #294).
     - *Proved by:* no test yet; PR 5 adds them to the conformance suite.
 13. **One firer per schedule and one recoverer per task.**
-    - *Partly:* only per `GLAVE_HOME`, by `server.lock`. Two servers on one store both fire every schedule, and each interrupts the other's running tasks (#410).
-    - *Proved by:* `crates/session/tests/tasks.rs` `recovering_tasks_covers_every_project` (one process).
+    - *Holds* across servers on one store: schedules fire only from the holder of the organization's scheduler lease, and a task is recorded interrupted only under its thread's lease, which its running turn holds wherever it runs. On one computer `server.lock` still keeps one person's server per glave folder.
+    - *Proved by:* `crates/session/tests/schedules.rs` `schedules_fire_from_one_server_at_a_time`; `crates/session/tests/tasks.rs` `recovering_tasks_covers_every_project` (two servers on one store: the second waits for the first's leases to lapse).
 14. **Every spawned task and process has an owner** that awaits or stops it.
     - *Holds* for every `tokio::spawn` read in the pass, and for every process, which starts only through glave-process.
     - *Proved by:* `cargo xtask spawns` for processes; nothing checks tasks.

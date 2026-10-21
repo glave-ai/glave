@@ -7,20 +7,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use glave_event::{Body, Outcome, RawEvent, ThreadId, decode};
-use glave_ports::testing::ManualClock;
 use glave_ports::{EventLog as _, Holder, InMemoryLeases, Leased, Leases};
 use glave_session::protocol::{Notification, Reply, Request, code};
 use glave_session::{Answering, Repaired, TurnItem, TurnStream};
 use tokio::sync::Notify;
 
 use crate::support::*;
-
-/// Leases two servers share, on a clock the test moves.
-fn shared_leases() -> (ManualClock, Arc<InMemoryLeases>) {
-    let clock = ManualClock::at_millis(1_791_001_000_000);
-    let leases = Arc::new(InMemoryLeases::new(Arc::new(clock.clone())));
-    (clock, leases)
-}
 
 /// A server on `log` and `leases` answering `answers`, waiting at `gate` when one is given;
 /// with `beside`, the same person on the same projects as that server, as a second process

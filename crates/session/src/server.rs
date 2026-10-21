@@ -18,8 +18,8 @@ use glave_ports::host::PublicOrigin;
 use glave_ports::memories::Memory;
 use glave_ports::settings::Hooks;
 use glave_ports::{
-    BlobStore, Caller, Clock, Entropy, EventLog, Holder, InMemoryLeases, Leases, ModelProvider,
-    OrgId, OsEntropy, ProjectId, Projects, Scope, SystemClock, ToolSource,
+    BlobStore, Caller, Clock, Entropy, EventLog, Holder, InMemoryLeases, Lease, Leases,
+    ModelProvider, OrgId, OsEntropy, ProjectId, Projects, Scope, SystemClock, ToolSource,
 };
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -231,6 +231,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) leases: Arc<dyn Leases>,
     /// Who holds this server's leases, made the first time it takes one.
     pub(crate) holder: OnceLock<Holder>,
+    /// The organization's scheduler lease, while this server holds it (`schedule.rs`).
+    pub(crate) scheduling: Mutex<Option<Lease>>,
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -305,6 +307,7 @@ where
                 stopping: AtomicBool::new(false),
                 leases,
                 holder: OnceLock::new(),
+                scheduling: Mutex::new(None),
             }),
         }
     }
