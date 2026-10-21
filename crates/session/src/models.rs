@@ -10,6 +10,7 @@ use glave_ports::{BlobStore, EventLog, ModelProvider};
 
 use crate::protocol::{ApiError, ModelInfo, Reply, code};
 use crate::server::Server;
+use crate::words::Sentence;
 
 /// The type of the event that records a thread's choice.
 const CHOSEN: &str = "model.chosen";
@@ -94,18 +95,15 @@ where
             return Ok(());
         }
         if models.is_empty() {
-            return Err(ApiError::new(
-                code::NO_MODEL,
-                "no model is set up here yet: connect a model account first",
-            ));
+            return Err(ApiError::new(code::NO_MODEL, Sentence::NoModelYet));
         }
         let offered: Vec<&str> = models.iter().map(|known| known.id.as_str()).collect();
         Err(ApiError::new(
             code::NO_MODEL,
-            format!(
-                "glave does not run the model {model:?} here; it runs {}",
-                offered.join(", ")
-            ),
+            Sentence::ModelNotRun {
+                model: model.escape_debug().to_string(),
+                models: offered.join(", "),
+            },
         ))
     }
 
@@ -124,15 +122,17 @@ where
         if levels.iter().any(|level| level == effort) {
             return Ok(());
         }
-        let message = if levels.is_empty() {
-            format!("{model} offers no choice of how much it reasons: start without a level")
+        let model = model.to_owned();
+        let sentence = if levels.is_empty() {
+            Sentence::NoEffortChoice { model }
         } else {
-            format!(
-                "{model} does not offer the reasoning level {effort:?}: choose one of {}",
-                levels.join(", ")
-            )
+            Sentence::NoSuchEffort {
+                model,
+                effort: effort.escape_debug().to_string(),
+                efforts: levels.join(", "),
+            }
         };
-        Err(ApiError::new(code::INVALID_PARAMS, message))
+        Err(ApiError::new(code::INVALID_PARAMS, sentence))
     }
 
     /// The model `thread`'s next turn goes to, once the host's settings are read again:

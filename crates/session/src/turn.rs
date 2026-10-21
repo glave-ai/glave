@@ -18,6 +18,7 @@ use crate::protocol::{ApiError, IdempotencyKey, Notification, TurnResult, Update
 use crate::server::{Ended, Inner, Server};
 use crate::steer::{Message, Queue, Sent};
 use crate::watch::{Watch, Watched};
+use crate::words::Sentence;
 
 /// One thing a running turn sends.
 #[derive(Debug, Clone)]
@@ -113,7 +114,7 @@ impl TurnStream {
                 return ended;
             }
         }
-        Err(ApiError::new(code::INTERNAL, "the turn already ended"))
+        Err(ApiError::new(code::INTERNAL, Sentence::TurnEnded))
     }
 }
 
@@ -136,17 +137,13 @@ pub(crate) fn publish(hub: &Hub, thread: ThreadId, live: Live) {
 async fn ending(done: &mut Done) -> Result<TurnResult, ApiError> {
     loop {
         let Some(ended) = finished(done).await else {
-            return Err(ApiError::new(code::INTERNAL, "the turn stopped"));
+            return Err(ApiError::new(code::INTERNAL, Sentence::TurnStopped));
         };
         match ended.as_ref() {
             Ok(summary) => return Ok(TurnResult::from(summary.clone())),
             Err(HarnessError::Waits(_)) => {
                 if done.changed().await.is_err() {
-                    return Err(ApiError::new(
-                        code::NOT_AVAILABLE,
-                        "the turn waits for an answer, and this server stopped following it: \
-                         answer it, and follow the thread to see it go on",
-                    ));
+                    return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::TurnUnfollowed));
                 }
             }
             Err(error) => return Err(ApiError::from(error)),

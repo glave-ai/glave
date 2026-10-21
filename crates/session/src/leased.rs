@@ -21,6 +21,7 @@ use glave_ports::{
 use crate::held::Slot;
 use crate::protocol::{ApiError, code};
 use crate::server::Server;
+use crate::words::Sentence;
 
 /// How long a lease lasts unless it is renewed: a server that stops without letting go keeps
 /// its threads from others this long at most.
@@ -47,10 +48,9 @@ pub struct Repaired {
 pub(crate) fn elsewhere(thread: ThreadId) -> ApiError {
     ApiError::new(
         code::RUNNING_ELSEWHERE,
-        format!(
-            "thread {thread} is working on another glave server right now: try again once it \
-             is done there"
-        ),
+        Sentence::RunningElsewhere {
+            thread: thread.to_string(),
+        },
     )
 }
 

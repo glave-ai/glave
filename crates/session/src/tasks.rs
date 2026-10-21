@@ -26,6 +26,7 @@ use crate::protocol::{
 use crate::server::Server;
 use crate::steer::{Message, Sent};
 use crate::turn::{TurnItem, TurnStream};
+use crate::words::Sentence;
 
 /// What a person may run at once and keep scheduled (`[tasks]` in `policy.toml`): no limit
 /// when `None`.
@@ -64,21 +65,12 @@ pub(crate) type Tasks = HashMap<ThreadId, Running>;
 
 /// Refused: a task asked for in the folder itself.
 pub(crate) fn in_place() -> ApiError {
-    ApiError::new(
-        code::INVALID_PARAMS,
-        "a task always works on a copy of its project's folder, never in the folder itself: \
-         leave the worktree choice out, or turn it on",
-    )
+    ApiError::new(code::INVALID_PARAMS, Sentence::TaskInPlace)
 }
 
 /// Refused: no copy of the project's folder could be made for a task to work on.
 pub(crate) fn no_copy() -> ApiError {
-    ApiError::new(
-        code::WORKSPACE,
-        "a task works on a copy of its project's folder made with git, and this project's \
-         folder is not a git repository with a commit yet: make it one, with a first commit, \
-         to run tasks and schedules in it",
-    )
+    ApiError::new(code::WORKSPACE, Sentence::TaskNoCopy)
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -94,8 +86,7 @@ where
         if self.in_its_folder(&scope, thread).await? {
             return Err(ApiError::new(
                 code::INVALID_PARAMS,
-                "this thread works in its project's folder itself, and a task always works on \
-                 a copy: start the task in a new thread, which gets a copy of its own",
+                Sentence::TaskThreadInFolder,
             ));
         }
         if let Some(max) = self.inner.limits.max_running {
@@ -103,10 +94,7 @@ where
             if running >= max {
                 return Err(ApiError::new(
                     code::LIMIT,
-                    format!(
-                        "{running} tasks are running, the most policy allows ([tasks] \
-                         max_running = {max}); stop one first"
-                    ),
+                    Sentence::TooManyTasks { running, most: max },
                 ));
             }
         }
@@ -114,10 +102,7 @@ where
         // answers.
         let busy = matches!(self.lock().get(&thread), Some(Slot::Busy { .. }));
         if busy || self.tasks().contains_key(&thread) {
-            return Err(ApiError::new(
-                code::TURN_RUNNING,
-                format!("a turn is already running in thread {thread}"),
-            ));
+            return Err(crate::held::busy(thread));
         }
         Ok(scope)
     }
@@ -218,7 +203,7 @@ where
                 // A watcher this far behind is rare; the turn's own totals settle it at the end.
                 Some(TurnItem::Missed(_)) => {}
                 Some(TurnItem::Ended(ended)) => break ended,
-                None => break Err(ApiError::new(code::INTERNAL, "the task stopped")),
+                None => break Err(ApiError::new(code::INTERNAL, Sentence::TaskStopped)),
             }
         };
         self.inner.approvals.attend(thread);
@@ -288,7 +273,9 @@ where
             let Some(running) = tasks.get_mut(&thread) else {
                 return Err(ApiError::new(
                     code::NO_TURN,
-                    format!("no task is running in thread {thread} in this server"),
+                    Sentence::NoTask {
+                        thread: thread.to_string(),
+                    },
                 ));
             };
             running.stopped = true;

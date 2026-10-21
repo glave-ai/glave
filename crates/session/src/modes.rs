@@ -10,6 +10,7 @@ use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope};
 
 use crate::protocol::{ApiError, ApprovalMode, code};
 use crate::server::{Glave, Server};
+use crate::words::Sentence;
 
 /// The type of the event that records a thread's approval mode.
 const CHOSEN: &str = "approval.mode.chosen";
@@ -74,11 +75,10 @@ where
         let left: Vec<&str> = modes.iter().map(|mode| mode.name()).collect();
         Err(ApiError::new(
             code::NOT_ALLOWED,
-            format!(
-                "approval mode {} is not allowed here: the policy leaves {}",
-                mode.name(),
-                left.join(" and ")
-            ),
+            Sentence::ModeNotAllowed {
+                mode: mode.name().to_owned(),
+                left: left.join(" and "),
+            },
         ))
     }
 

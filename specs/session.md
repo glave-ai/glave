@@ -244,6 +244,15 @@ Standard codes, `-32700` to `-32603`, for malformed messages; a method the serve
 - `-32020`, the model provider failed: `data` has `failure`, its kind (`Failure` in `glave-ports`), so a client can say what to fix; the CLI turns it into a fix for the person's own endpoint.
 - `-32011`: the thread is working on another server, which holds its lease ("Turns that outlive a server"); try again once it is done there.
 
+## Languages
+
+The server writes its own sentences (why a request was refused, the folder-gone notice) in the caller's language, as the web app writes its own words in the reader's.
+
+- **Which language.** The one the caller chose (`language/set`, a BCP 47 tag; `null` to follow their client again), kept in their settings ledger as `language.set` (`events.md`), so every server on one store reads the same choice; else the first language their client asks for that the server writes in (`Accept-Language`, by weight), by its whole tag or its language alone (`en-GB` reads English); else English. A local program's client asks for none, so the person's choice or English.
+- **Where.** A sentence is written in English where it is made, so what is logged, kept in the log or read by the model reads the same everywhere, and written again in the caller's language where a transport answers: stdio, a Unix socket, HTTP. In process (the CLI, the harness) it stays English. The caller's choice is read only for an answer that holds a sentence of the server's own, and once as a stream starts over HTTP, for the answer it ends with.
+- **The catalog** is Fluent, the message format made for translators: each sentence has an id, the values it is written with, and its English beside them in the session crate's one table; a translation will give each id its own words, with the same values, once a speaker has read it. Until then, two pseudo-locales prove the plumbing, made from English as it is written and offered to no one, as the web app's are: `en-XA` (accented, a third longer, bracketed) and `ar-XB` (right to left). A test fails on a sentence whose English is not one Fluent message naming exactly its values, and on a sentence the server writes outside the table.
+- **What stays English.** Errors about the message itself (`-32700` to `-32602`, and the `Glave-Method` header), which are for whoever writes a client; and, until each moves to the table, the words other crates give the server to pass on (a provider's failure, a command's refusal, sign-in errors, a project's trust items, approval cautions).
+
 ## Transports
 
 | Transport | Framing | Who uses it | Authentication |
@@ -302,6 +311,7 @@ Version 1: in-process (`glave-session`, used by the CLI), over stdio (`glave ser
 - **Commands in the background** (issue #321), not yet: credentials for a command in the background (its git asks no one); telling the model at a turn's start which of its commands ended meanwhile (it learns on its next read); `glave threads archive` stopping them, since a command in another glave process is out of its reach (the idle hour stops them).
 - **Projects** (issue #64), not yet: promoting a one-off chat into a project (`storage.md`), managing members over the API, and the organization's policy in the check.
 - **Projects' folders** (#294), not yet: more than one folder per project and changing a project's folder while it is still there (project settings, #267); moving a thread's worktree with a folder that moved; an archive of removed projects; checking a project out again on another computer, or after one is reset, from its source; a project's own skills and commands, which the folder the server started in still gives every thread; and telling a client, rather than the log and the terminal, which of a project's settings were set aside.
+- **Languages** (#374): the server's own sentences in the caller's language, with the pseudo-locales alone besides English. Not yet: a real language, the web app reading the person's choice for its own words, and the words other crates give the server to pass on.
 - Still to come from "Over the network" (issue #64): SAML and glave session tokens, idempotency keys in the log (#410), and WebSocket.
 
 ## Later

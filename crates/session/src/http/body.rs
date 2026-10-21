@@ -18,6 +18,7 @@ use tokio::time::{Instant, Sleep, sleep};
 use crate::protocol::Notification;
 use crate::rpc::{Id, notify, respond};
 use crate::streamed::{Item, Streamed};
+use crate::words::{Language, translate};
 
 /// How long a stream may say nothing before it sends a comment.
 const KEEP_ALIVE: Duration = Duration::from_secs(15);
@@ -37,6 +38,8 @@ pub(crate) enum Answer {
         watched: Option<ThreadId>,
         /// When the stream has been quiet long enough for a comment.
         quiet: Pin<Box<Sleep>>,
+        /// The language the server's own sentences in its response are written in.
+        language: Language,
     },
 }
 
@@ -53,13 +56,15 @@ impl Answer {
         Self::Once(None)
     }
 
-    /// `streamed` as events, ending with the response to request `id`.
-    pub(crate) fn stream(streamed: Streamed, id: Option<Id>) -> Self {
+    /// `streamed` as events, ending with the response to request `id`, its own sentences in
+    /// `language`.
+    pub(crate) fn stream(streamed: Streamed, id: Option<Id>, language: Language) -> Self {
         Self::Stream {
             watched: streamed.watched(),
             next: Some(following(streamed)),
             id,
             quiet: Box::pin(sleep(KEEP_ALIVE)),
+            language,
         }
     }
 }
@@ -105,6 +110,7 @@ impl Body for Answer {
                 id,
                 watched,
                 quiet,
+                language,
             } => {
                 let Some(pending) = next.as_mut() else {
                     return Poll::Ready(None);
@@ -122,8 +128,9 @@ impl Body for Answer {
                         *next = Some(following(streamed));
                         Poll::Ready(Some(Ok(note(&sent, *watched))))
                     }
-                    Some(Item::Last(last)) => {
+                    Some(Item::Last(mut last)) => {
                         *next = None;
+                        translate(&mut last, *language);
                         let message = respond(id.as_ref(), last.as_ref().as_ref());
                         Poll::Ready(Some(Ok(event(None, &message))))
                     }

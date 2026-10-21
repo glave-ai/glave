@@ -15,6 +15,7 @@ use glave_ports::{ProjectId, Standing, ThreadCursor};
 use uuid::Uuid;
 
 use crate::protocol::{ApiError, code};
+use crate::words::Sentence;
 
 /// The layout's version, its first byte.
 const VERSION: u8 = 1;
@@ -41,12 +42,7 @@ pub(crate) fn read(
     project: ProjectId,
     standing: Standing,
 ) -> Result<ThreadCursor, ApiError> {
-    let refused = || {
-        ApiError::new(
-            code::INVALID_PARAMS,
-            "that page of threads can't be found anymore; ask for the first page again",
-        )
-    };
+    let refused = || ApiError::new(code::INVALID_PARAMS, Sentence::PageGone);
     let bytes = URL_SAFE_NO_PAD.decode(text).map_err(|_| refused())?;
     let bytes: &[u8; LENGTH] = bytes.as_slice().try_into().map_err(|_| refused())?;
     let [version, rest @ ..] = bytes;
