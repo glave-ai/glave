@@ -6,8 +6,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use glave_event::{
-    At, Body, EventId, MemoryId, MemoryScope, MemorySource, Principal, PrincipalKind, RawEvent,
-    decode,
+    At, Body, EventId, MemoryForgotten, MemoryId, MemoryRestored, MemoryScope, MemorySource,
+    Principal, PrincipalKind, RawEvent, decode,
 };
 use glave_ports::memories::Remembered;
 
@@ -102,8 +102,25 @@ pub(crate) struct Book {
     pub(crate) questions: Vec<[MemoryId; 2]>,
     /// When tidy-up last ran over this ledger.
     pub(crate) tidied: Option<At>,
-    /// Where each forgotten memory was saved: `recall` never returns that turn again.
+    /// Where each memory the person (or the model for them) forgot was saved, and each memory
+    /// tidy-up had merged into one of those: `recall` never returns those turns again.
     pub(crate) hidden: BTreeMap<MemoryId, MemorySource>,
+    /// Memories tidy-up merged into another, until a restore undoes it.
+    folded: BTreeMap<MemoryId, Folded>,
+    /// Memories forgotten at once: by the person, or the model for them.
+    gone: BTreeSet<MemoryId>,
+}
+
+/// A memory tidy-up merged into another.
+#[derive(Debug, Clone, Copy)]
+struct Folded {
+    into: MemoryId,
+    /// The version of `into` that took in its text: the merge's edit, which a restore may undo.
+    edit: Option<EventId>,
+    /// Where it was saved.
+    source: Option<MemorySource>,
+    /// The forget that merged it, which a restore names to undo it.
+    event: EventId,
 }
 
 impl Book {
@@ -143,6 +160,106 @@ impl Book {
     /// A change to `memory` answers any question about it.
     fn answered(&mut self, memory: MemoryId) {
         self.questions.retain(|pair| !pair.contains(&memory));
+    }
+
+    /// The turns `forgotten` (the event `event`, at `at`) takes out of `recall`. Glave's own
+    /// forgets wait to be erased and take none: a memory merged away lives on in the one it went
+    /// into, and one a later memory replaced, or past retention, is still history. A forget
+    /// erased at once (the person's, or the model's for them) takes the turn the memory was saved
+    /// in, and those of every memory merged into it, however many merges ago.
+    fn hide(&mut self, forgotten: &MemoryForgotten, event: EventId, at: At) {
+        if forgotten.erase_at > at {
+            let Some(into) = forgotten.into else {
+                return;
+            };
+            // The merge's edit of `into` comes first, so it is the version in force now.
+            let edit = self
+                .entries
+                .get(&into)
+                .and_then(Entry::current)
+                .map(|(_, version)| version.event);
+            let source = forgotten.source;
+            self.folded.insert(
+                forgotten.memory,
+                Folded {
+                    into,
+                    edit,
+                    source,
+                    event,
+                },
+            );
+            // Merged into a memory the person forgot meanwhile: hidden with it.
+            if !self.gone.contains(&into) {
+                return;
+            }
+        }
+        self.gone.insert(forgotten.memory);
+        if let Some(source) = forgotten.source {
+            self.hidden.insert(forgotten.memory, source);
+        }
+        for (memory, source) in self.folded_into(forgotten.memory) {
+            if let Some(source) = source {
+                self.hidden.insert(memory, source);
+            }
+        }
+    }
+
+    /// The memories tidy-up merged into `memory`, however many merges ago, with where each was
+    /// saved.
+    fn folded_into(&self, memory: MemoryId) -> Vec<(MemoryId, Option<MemorySource>)> {
+        let mut found = Vec::new();
+        let mut seen = BTreeSet::from([memory]);
+        let mut next = vec![memory];
+        while let Some(into) = next.pop() {
+            for (folded, merge) in &self.folded {
+                if merge.into == into && seen.insert(*folded) {
+                    found.push((*folded, merge.source));
+                    next.push(*folded);
+                }
+            }
+        }
+        found
+    }
+
+    /// The memories merged into `memory` that still wait to be erased, through merges whose
+    /// edits are still in force: one whose merged text was undone no longer lives on in it.
+    pub(crate) fn merged_into(&self, memory: MemoryId) -> Vec<MemoryId> {
+        let mut found = Vec::new();
+        let mut next = vec![memory];
+        while let Some(into) = next.pop() {
+            for (merged, merge) in &self.folded {
+                if merge.into != into || found.contains(merged) || !self.holds(merge) {
+                    continue;
+                }
+                found.push(*merged);
+                next.push(*merged);
+            }
+        }
+        found.retain(|merged| {
+            self.entries
+                .get(merged)
+                .is_some_and(|entry| entry.forgot.is_some())
+        });
+        found
+    }
+
+    /// Whether the memory `merge` went into still has the merge's text, not undone.
+    fn holds(&self, merge: &Folded) -> bool {
+        self.entries.get(&merge.into).is_some_and(|entry| {
+            entry
+                .versions
+                .iter()
+                .any(|version| Some(version.event) == merge.edit && !version.undone)
+        })
+    }
+
+    /// The memories glave forgot that still wait to be erased, with their scopes.
+    pub(crate) fn waiting(&self) -> Vec<(MemoryId, MemoryScope)> {
+        self.entries
+            .values()
+            .filter(|entry| entry.forgot.is_some())
+            .map(|entry| (entry.memory, entry.scope))
+            .collect()
     }
 
     /// Takes in the event at the next `seq`; any other is already in, or not yet.
@@ -191,9 +308,7 @@ impl Book {
             }
             Body::MemoryForgotten(forgotten) => {
                 self.answered(forgotten.memory);
-                if let Some(source) = forgotten.source {
-                    self.hidden.insert(forgotten.memory, source);
-                }
+                self.hide(&forgotten, id, at);
                 // Erased at once: the text leaves this view now, as it leaves the store.
                 if forgotten.erase_at <= at {
                     if self.entries.remove(&forgotten.memory).is_some() {
@@ -207,26 +322,37 @@ impl Book {
                     });
                 }
             }
-            Body::MemoryRestored(restored) => {
-                self.answered(restored.memory);
-                if let Some(entry) = self.entries.get_mut(&restored.memory) {
-                    if entry
-                        .forgot
-                        .as_ref()
-                        .is_some_and(|forgot| forgot.event == restored.undone)
-                    {
-                        entry.forgot = None;
-                        self.hidden.remove(&restored.memory);
-                    }
-                    for version in entry.versions.iter_mut().skip(1) {
-                        if version.event == restored.undone {
-                            version.undone = true;
-                        }
-                    }
-                }
-            }
+            Body::MemoryRestored(restored) => self.restore(&restored),
             Body::MemoryTidied(tidied) => self.tidied_at(at, tidied.questions),
             _ => {}
+        }
+    }
+
+    /// Undoes the change of glave's that `restored` names: a forget, a merge, or an edit.
+    fn restore(&mut self, restored: &MemoryRestored) {
+        self.answered(restored.memory);
+        if self
+            .folded
+            .get(&restored.memory)
+            .is_some_and(|merge| merge.event == restored.undone)
+        {
+            self.folded.remove(&restored.memory);
+            self.gone.remove(&restored.memory);
+        }
+        if let Some(entry) = self.entries.get_mut(&restored.memory) {
+            if entry
+                .forgot
+                .as_ref()
+                .is_some_and(|forgot| forgot.event == restored.undone)
+            {
+                entry.forgot = None;
+                self.hidden.remove(&restored.memory);
+            }
+            for version in entry.versions.iter_mut().skip(1) {
+                if version.event == restored.undone {
+                    version.undone = true;
+                }
+            }
         }
     }
 }
@@ -234,4 +360,75 @@ impl Book {
 /// Whether `by` is glave itself: its changes can be undone within 30 days.
 pub(crate) fn by_glave(by: &Principal) -> bool {
     by.kind == PrincipalKind::Glave
+}
+
+#[cfg(test)]
+mod tests {
+    use glave_event::{PrincipalId, Seq, ThreadId};
+    use uuid::Uuid;
+
+    use super::*;
+
+    fn id(n: u128) -> Uuid {
+        Uuid::from_u128(0x0192_f5c0_0000_7000_8000_0000_0000_0000 | n)
+    }
+
+    fn memory(n: u128) -> MemoryId {
+        MemoryId::try_from(id(n)).unwrap()
+    }
+
+    fn day(n: u8) -> At {
+        At::try_from(format!("2026-10-{n:02}T10:00:00Z")).unwrap()
+    }
+
+    /// Memory `n`, saved at `seq` `n` of one thread, forgotten on day 1: by glave (erased in
+    /// 30 days, `into` another when merged), or by the person (erased at once).
+    fn forget(book: &mut Book, n: u128, into: Option<u128>, by_person: bool) {
+        let by = if by_person {
+            Principal::person(PrincipalId::try_from(id(50)).unwrap())
+        } else {
+            Principal::glave()
+        };
+        let forgotten = MemoryForgotten {
+            memory: memory(n),
+            erase_at: if by_person { day(1) } else { day(31) },
+            source: Some(MemorySource {
+                thread: ThreadId::try_from(id(500)).unwrap(),
+                seq: Seq::new(u64::try_from(n).unwrap()).unwrap(),
+            }),
+            into: into.map(memory),
+            by,
+        };
+        let event = EventId::try_from(id(900 + n)).unwrap();
+        book.hide(&forgotten, event, day(1));
+    }
+
+    fn hidden(book: &Book) -> Vec<MemoryId> {
+        book.hidden.keys().copied().collect()
+    }
+
+    #[test]
+    fn only_a_forget_erased_at_once_hides_turns_and_it_takes_every_merge_before_it() {
+        let mut book = Book::default();
+        forget(&mut book, 1, Some(2), false);
+        forget(&mut book, 2, Some(3), false);
+        forget(&mut book, 4, None, false);
+        assert_eq!(
+            hidden(&book),
+            [],
+            "glave's merges, contradictions and retention hide nothing"
+        );
+        forget(&mut book, 3, None, true);
+        assert_eq!(
+            hidden(&book),
+            [memory(1), memory(2), memory(3)],
+            "the memory forgotten, and the two merged into it one after the other"
+        );
+        forget(&mut book, 5, Some(3), false);
+        assert_eq!(
+            hidden(&book),
+            [memory(1), memory(2), memory(3), memory(5)],
+            "merged into it after the person forgot it, in a tidy-up already under way"
+        );
+    }
 }
