@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import AxeBuilder from '@axe-core/playwright';
 import { type Locator, type Page, expect } from '@playwright/test';
+import type { Result } from 'axe-core';
 
 /**
  * A glave the tests are served by (playwright.config.ts), known by the variables that hold the
@@ -203,6 +204,17 @@ export function watchForProblems(page: Page): () => readonly string[] {
   return () => problems;
 }
 
+/** The rules axe holds the pages to: WCAG 2.2, levels A and AA. */
+export const WCAG: readonly string[] = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
+
+/** Each violation axe found, as a line: its rule, what it asks and where it failed. */
+export function described(violations: readonly Result[]): readonly string[] {
+  return violations.map(
+    (violation) =>
+      `${violation.id}: ${violation.help} (${violation.nodes.map((node) => node.target.join(' ')).join(', ')})`,
+  );
+}
+
 /**
  * Fails on any WCAG 2.2 A or AA violation axe finds, colour contrast included. Colours are
  * measured once they stop changing: a button fades to its new background after a switch to
@@ -217,12 +229,6 @@ export async function expectAccessible(page: Page): Promise<void> {
         .map((transition) => transition.finished.catch(() => undefined)),
     ),
   );
-  const results = await new AxeBuilder({ page })
-    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
-    .analyze();
-  const found = results.violations.map(
-    (violation) =>
-      `${violation.id}: ${violation.help} (${violation.nodes.map((node) => node.target.join(' ')).join(', ')})`,
-  );
-  expect(found).toEqual([]);
+  const results = await new AxeBuilder({ page }).withTags([...WCAG]).analyze();
+  expect(described(results.violations)).toEqual([]);
 }

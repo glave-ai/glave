@@ -7,6 +7,7 @@ import {
 } from '@angular/core';
 
 import type { GlzIconData } from '../../lib/icons';
+import { INERT_UNTIL_BOUND } from '../../lib/inert-until-bound';
 import { GlzIconComponent } from '../icon/icon.component';
 
 /**
@@ -25,7 +26,7 @@ import { GlzIconComponent } from '../icon/icon.component';
   templateUrl: './nav-item.component.html',
   styleUrl: './nav-item.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { '[attr.aria-current]': 'ariaCurrent()' },
+  host: { ...INERT_UNTIL_BOUND, '[attr.aria-current]': 'ariaCurrent()' },
 })
 export class GlzNavItemComponent {
   readonly icon = input<GlzIconData | undefined>(undefined);

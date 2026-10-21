@@ -79,6 +79,7 @@ Checked against Baseline (web-features 3.42, October 2026). "Newly" means newly 
 | Textarea growing                    | CSS `field-sizing: content`; without it the box keeps its rows                     | Newly (Jun 2026)                                  |
 | Light and dark                      | `color-scheme`, `light-dark()`                                                     | Widely; `light-dark()` newly (2024)               |
 | Content behind a drawer             | `inert`                                                                            | Widely (2025)                                     |
+| A button or menu not yet bound      | `inert` from its first render to the change detection that names it                | Widely (2025)                                     |
 | Invalid styling                     | `aria-invalid` once touched (`:user-invalid` is widely available, for plain forms) | Widely (2023)                                     |
 | Keyboard models                     | CDK `ActiveDescendantKeyManager` (picker), `FocusKeyManager` (tabs), CDK Menu      | The platform has none                             |
 | Announcements                       | CDK `LiveAnnouncer`                                                                | The platform has none                             |
