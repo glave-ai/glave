@@ -4,6 +4,7 @@ import {
   type ElementRef,
   afterRenderEffect,
   computed,
+  effect,
   input,
   model,
   viewChild,
@@ -60,15 +61,24 @@ export class GlzDialogComponent {
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
 
   /**
-   * Opens and closes the native dialog as `open` says, once the page is rendered: a dialog made
-   * open then opens with its controls bound, and the browser moves focus to the first of them,
-   * named (`INERT_UNTIL_BOUND` keeps them out of reach until then).
+   * Opens the native dialog once the page is rendered: a dialog made open then opens with its
+   * controls bound, and the browser moves focus to the first of them, named
+   * (`INERT_UNTIL_BOUND` keeps them out of reach until then).
    */
-  protected readonly shown = afterRenderEffect(() => {
+  protected readonly opening = afterRenderEffect(() => {
     const dialog = this.dialog().nativeElement;
     if (this.open() && !dialog.open) {
       dialog.showModal();
-    } else if (!this.open() && dialog.open) {
+    }
+  });
+
+  /**
+   * Closes it as soon as `open` turns false, so the focus the browser gives back lands before
+   * what the page renders next moves it on (a new project's composer).
+   */
+  protected readonly closing = effect(() => {
+    const dialog = this.dialog().nativeElement;
+    if (!this.open() && dialog.open) {
       dialog.close();
     }
   });

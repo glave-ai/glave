@@ -128,7 +128,7 @@ export function builtChunk(holds: (code: string) => boolean): string {
     (file) => file.endsWith('.js') && holds(readFileSync(new URL(file, built), 'utf8')),
   );
   if (found === undefined) {
-    throw new Error('no file of the app’s build holds what the test looks for');
+    throw new Error('no file of the app’s build holds what the test looks for: npm run build');
   }
   return found;
 }

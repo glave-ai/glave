@@ -93,6 +93,8 @@ test('Remove the project puts its threads in the archive, once the person confir
   const confirm = byTestId(page, 'nav-gone-confirm');
   await expect(confirm).toContainText('Remove the project?');
   await expect(confirm).toContainText('Its threads go to the archive, with their history.');
+  // Made as it opens, its code loaded late: focus still lands on its close button, named.
+  await expect(byTestId(page, 'nav-gone-confirm-close')).toBeFocused();
   await expectAccessible(page);
   await byTestId(page, 'nav-gone-confirm-cancel').click();
   expect(api.calls).not.toContain('project/remove');
