@@ -12,6 +12,7 @@ mod passkeys;
 mod projects;
 mod providers;
 mod reply;
+mod said;
 mod tasks;
 mod trust;
 
@@ -34,6 +35,7 @@ pub use passkeys::{PasskeySummary, SignInWay};
 pub use projects::{GoneFolder, NewFolder, ProjectFolder};
 pub use providers::{ProviderInfo, hint};
 pub use reply::{AwakeInfo, QueuedMessage, Reply, ServerInfo, Status, ThreadSummary, TurnResult};
+pub use said::Said;
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 pub use trust::{TrustAsk, TrustChoice, TrustItem};
 
@@ -85,6 +87,15 @@ methods! {
     /// Chooses whether the person's own computer is kept awake while glave works, from the
     /// next work on. Only the person on this computer, and only where it is theirs to choose.
     "awake/set" => AwakeSet { on: bool } -> [Awake],
+    /// The language the caller chose to read glave's own sentences in, if they chose one.
+    "language/get" => LanguageGet {} -> [Language],
+    /// Chooses the language glave's own sentences are written in for the caller, as a BCP 47
+    /// tag (`en`, `en-GB`); with none, their client's (`Accept-Language`) again. Refused for a
+    /// language glave does not write in.
+    "language/set" => LanguageSet {
+        #[serde(default)]
+        language: Option<String>,
+    } -> [Language],
     /// A one-time code for a link that signs a browser on this computer in: good once, for
     /// five minutes. Only glave on this computer: a local transport, or the local token.
     "signin/link" => SigninLink {} -> [Link],

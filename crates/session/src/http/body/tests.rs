@@ -35,7 +35,11 @@ fn a_watchs_events_carry_their_seq_and_a_quiet_stream_a_comment_every_15_seconds
         let watched = thread(1);
         let read: Reader = Arc::new(|_, _| Box::pin(async { Ok(Vec::new()) }));
         let watch = Watch::new(watched, read, hub.watch(watched), None);
-        let mut body = Answer::stream(Streamed::Watch(watch), Some(Id::Number(7)));
+        let mut body = Answer::stream(
+            Streamed::Watch(watch),
+            Some(Id::Number(7)),
+            Language::English,
+        );
         assert_eq!(ready(&mut body), None, "nothing to say yet");
         tokio::time::advance(KEEP_ALIVE.checked_sub(Duration::from_millis(1)).unwrap()).await;
         assert_eq!(ready(&mut body), None, "not quiet for long enough");

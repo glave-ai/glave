@@ -14,6 +14,7 @@ use crate::leased::renewing;
 use crate::protocol::{ApiError, code};
 use crate::server::{Inner, Server, no_thread};
 use crate::turn::publish;
+use crate::words::Sentence;
 
 /// Threads kept in memory while idle, the least recently used let go first; more are rebuilt
 /// from the log when asked for.
@@ -423,9 +424,9 @@ pub(crate) enum Use {
 pub(crate) fn waiting(thread: ThreadId) -> ApiError {
     ApiError::new(
         code::TURN_RUNNING,
-        format!(
-            "a turn in thread {thread} waits for an answer: answer it, or stop the turn, first"
-        ),
+        Sentence::TurnWaits {
+            thread: thread.to_string(),
+        },
     )
 }
 
@@ -433,7 +434,9 @@ pub(crate) fn waiting(thread: ThreadId) -> ApiError {
 pub(crate) fn busy(thread: ThreadId) -> ApiError {
     ApiError::new(
         code::TURN_RUNNING,
-        format!("a turn is already running in thread {thread}"),
+        Sentence::TurnRunning {
+            thread: thread.to_string(),
+        },
     )
 }
 

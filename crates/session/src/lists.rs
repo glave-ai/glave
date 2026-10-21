@@ -25,6 +25,7 @@ use crate::hub::Changed;
 use crate::protocol::{ApiError, Notification, Status, ThreadSummary, WatchEnd, code};
 use crate::server::Server;
 use crate::watch::Watched;
+use crate::words::Sentence;
 
 /// Views read from the store at a time while a watch catches up.
 const PAGE: usize = 256;
@@ -72,7 +73,7 @@ impl ListWatch {
                 return ended;
             }
         }
-        Err(ApiError::new(code::INTERNAL, "the watch already ended"))
+        Err(ApiError::new(code::INTERNAL, Sentence::WatchEnded))
     }
 }
 
@@ -203,7 +204,7 @@ where
                 // Not while the watch holds the server, whose hub tells it; kept so a hub that
                 // went ends the watch rather than spinning.
                 Err(RecvError::Closed) => {
-                    return Err(ApiError::new(code::INTERNAL, "the server stopped"));
+                    return Err(ApiError::new(code::INTERNAL, Sentence::ServerStopped));
                 }
             };
             if behind {

@@ -14,6 +14,7 @@ use tokio::task::JoinHandle;
 use crate::held::Slot;
 use crate::protocol::{ApiError, code};
 use crate::server::Server;
+use crate::words::Sentence;
 
 impl<P, L, B> Server<P, L, B> {
     /// Stops the server: from now on it starts no new work; what runs has up to `grace` to
@@ -93,8 +94,5 @@ async fn ended(running: &[(Cancel, watch::Receiver<bool>)]) {
 
 /// What work asked for while the server stops is refused with.
 pub(crate) fn stopping() -> ApiError {
-    ApiError::new(
-        code::NOT_AVAILABLE,
-        "glave is stopping, so it starts nothing new; try again once it runs again",
-    )
+    ApiError::new(code::NOT_AVAILABLE, Sentence::Stopping)
 }

@@ -13,6 +13,7 @@ use glave_ports::{
 
 use crate::protocol::{ApiError, AttachedFile, FileInfo, Reply, code};
 use crate::server::Server;
+use crate::words::Sentence;
 
 /// The largest file that is not an image, in bytes: in base64, it fits the 16 MiB a message
 /// may be on every transport.
@@ -45,27 +46,21 @@ where
         if name.is_empty() || name.chars().count() > MAX_NAME {
             return Err(ApiError::new(
                 code::INVALID_PARAMS,
-                format!("a file's name is 1 to {MAX_NAME} characters"),
+                Sentence::FileName { most: MAX_NAME },
             ));
         }
         let media_type = media_type.trim().to_ascii_lowercase();
         if media_type.starts_with("video/") {
-            return Err(ApiError::new(
-                code::INVALID_PARAMS,
-                "glave can't use videos yet: add a screenshot or a few images instead",
-            ));
+            return Err(ApiError::new(code::INVALID_PARAMS, Sentence::NoVideos));
         }
         let limit = if is_image(&media_type) {
             MAX_IMAGE
         } else {
             MAX_FILE
         };
-        let bytes = STANDARD.decode(data).map_err(|_| {
-            ApiError::new(
-                code::INVALID_PARAMS,
-                "the file's content could not be read: add it again",
-            )
-        })?;
+        let bytes = STANDARD
+            .decode(data)
+            .map_err(|_| ApiError::new(code::INVALID_PARAMS, Sentence::FileUnreadable))?;
         let put = self
             .inner
             .harness
@@ -105,7 +100,7 @@ where
         if files.len() > MAX_FILES {
             return Err(ApiError::new(
                 code::LIMIT,
-                format!("a message holds at most {MAX_FILES} files"),
+                Sentence::TooManyFiles { most: MAX_FILES },
             ));
         }
         let blobs = self.inner.harness.blobs();
@@ -125,10 +120,7 @@ where
             .iter()
             .any(|part| matches!(part, Part::File { blob, .. } if is_image(&blob.media_type)));
         if images && !self.reads_images(model) {
-            return Err(ApiError::new(
-                code::NO_IMAGES,
-                "this model can't read images: choose one that can, or remove the image",
-            ));
+            return Err(ApiError::new(code::NO_IMAGES, Sentence::NoImages));
         }
         for (file, part) in files.iter().zip(&parts) {
             let Part::File { blob, .. } = part else {
@@ -147,22 +139,22 @@ where
 fn gone(name: &str) -> ApiError {
     ApiError::new(
         code::NO_FILE,
-        format!("{name:?} is no longer here: add it to the message again"),
+        Sentence::FileGone {
+            name: name.to_owned(),
+        },
     )
 }
 
 /// An image or a file over its size.
 fn too_large(media_type: &str) -> ApiError {
-    let message = if is_image(media_type) {
-        format!(
-            "this image is larger than {} MB: make it smaller, or add a screenshot of part of it",
-            MAX_IMAGE / (1024 * 1024)
-        )
+    let sentence = if is_image(media_type) {
+        Sentence::ImageTooLarge {
+            megabytes: MAX_IMAGE / (1024 * 1024),
+        }
     } else {
-        format!(
-            "this file is larger than {} MB: add a smaller one, or the part that matters",
-            MAX_FILE / (1024 * 1024)
-        )
+        Sentence::FileTooLarge {
+            megabytes: MAX_FILE / (1024 * 1024),
+        }
     };
-    ApiError::new(code::LIMIT, message)
+    ApiError::new(code::LIMIT, sentence)
 }

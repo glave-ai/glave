@@ -17,6 +17,7 @@ export type Answer = "allow_once" | "allow_for_thread" | "deny";
 export type ApiError = {
   readonly code: number;
   readonly data?: ErrorData | null;
+  /** What a person is told, in their language where it is the server's own sentence. */
   readonly message: string;
 };
 
@@ -869,6 +870,22 @@ export type GoalStopParams = {
 
 export type GoalStopResult = Readonly<Record<string, never>>;
 
+export type LanguageGetParams = Readonly<Record<string, never>>;
+
+/** The language the caller chose, as a BCP 47 tag; `null` while their client's counts. */
+export type LanguageGetResult = {
+  readonly language?: string | null;
+};
+
+export type LanguageSetParams = {
+  readonly language?: string | null;
+};
+
+/** The language the caller chose, as a BCP 47 tag; `null` while their client's counts. */
+export type LanguageSetResult = {
+  readonly language?: string | null;
+};
+
 export type MemoryEditParams = {
   readonly memory: MemoryId;
   /** The project whose memory, beside the person's own: the caller's Chats when absent. */
@@ -1464,6 +1481,8 @@ export interface Methods {
   readonly "goal/get": { readonly params: GoalGetParams; readonly result: GoalGetResult };
   readonly "goal/start": { readonly params: GoalStartParams; readonly result: GoalStartResult };
   readonly "goal/stop": { readonly params: GoalStopParams; readonly result: GoalStopResult };
+  readonly "language/get": { readonly params: LanguageGetParams; readonly result: LanguageGetResult };
+  readonly "language/set": { readonly params: LanguageSetParams; readonly result: LanguageSetResult };
   readonly "memory/edit": { readonly params: MemoryEditParams; readonly result: MemoryEditResult };
   readonly "memory/forget": { readonly params: MemoryForgetParams; readonly result: MemoryForgetResult };
   readonly "memory/list": { readonly params: MemoryListParams; readonly result: MemoryListResult };

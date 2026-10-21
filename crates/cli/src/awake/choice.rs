@@ -7,7 +7,7 @@ use anyhow::Context as _;
 use glave_event::{
     At, AwakeSet, Body, EventId, Header, PrincipalId, RawEvent, Seq, decode, encode,
 };
-use glave_ports::stream::{Reserved, append_retrying};
+use glave_ports::stream::{Reserved, SETTINGS, append_retrying};
 use glave_ports::{Clock as _, EventLog as _, Scope, SystemClock};
 
 use crate::accounts::random;
@@ -38,8 +38,8 @@ impl Choice {
         Ok(self.read().await?.is_none_or(|(on, _)| on))
     }
 
-    /// Keeps `on` as the person's choice: appended after the ledger's last event, read again
-    /// and tried again when another process wrote first.
+    /// Keeps `on` as the person's choice: appended after the ledger's last event, whatever
+    /// it chose, read again and tried again when another process wrote first.
     pub(crate) async fn keep(&self, on: bool) -> anyhow::Result<()> {
         let this = self;
         append_retrying(
@@ -47,13 +47,23 @@ impl Choice {
             &self.scope,
             Reserved::Settings.id(),
             move || async move {
-                let next = this.read().await?.map_or(1, |(_, last)| last + 1);
+                let next = this.last().await?.map_or(1, |last| last + 1);
                 anyhow::Ok(Some((vec![event(AwakeSet { on }, next)?], ())))
             },
         )
         .await
         .context("could not keep whether this computer stays awake")?;
         Ok(())
+    }
+
+    /// The `seq` of the ledger's last event, if it has one.
+    async fn last(&self) -> anyhow::Result<Option<u64>> {
+        let latest = self
+            .log
+            .latest_of(&self.scope, Reserved::Settings.id(), &SETTINGS)
+            .await
+            .context("could not read the person's settings")?;
+        Ok(latest.map(|raw| raw.seq.get()))
     }
 
     /// The latest choice and the `seq` it was kept at, if any was.

@@ -5,6 +5,8 @@ use glave_event::{Checkout, FolderSource};
 use glave_ports::ProjectId;
 use serde::{Deserialize, Serialize};
 
+use super::Said;
+
 /// A new project's folder, on the computer glave runs on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -23,7 +25,7 @@ pub enum NewFolder {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GoneFolder {
     pub project: ProjectId,
-    pub message: String,
+    pub message: Said,
 }
 
 /// A project's folder: where its files come from, and where they are checked out.

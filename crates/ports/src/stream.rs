@@ -5,7 +5,7 @@
 
 use std::future::Future;
 
-use glave_event::{RawEvent, Seq, ThreadId};
+use glave_event::{AwakeSet, LanguageSet, Payload, RawEvent, Seq, ThreadId};
 use thiserror::Error;
 
 use crate::log::{EventLog, LogError};
@@ -45,8 +45,9 @@ pub enum Reserved {
     /// `…0007`: what the person's own server serves HTTPS with (`acme.registered`,
     /// `certificate.issued`), in their personal project.
     Certificates,
-    /// `…0008`: the person's own settings, today whether their computer is kept awake while
-    /// glave works on it (`awake.set`), in their personal project.
+    /// `…0008`: the person's own settings ([`SETTINGS`]): whether their computer is kept awake
+    /// while glave works on it (`awake.set`) and the language they read glave in
+    /// (`language.set`), in their personal project.
     Settings,
 }
 
@@ -85,6 +86,10 @@ impl Reserved {
         Self::ALL.into_iter().find(|ledger| ledger.id() == thread)
     }
 }
+
+/// The settings ledger's events, each one a choice of the person's whose latest counts. A
+/// writer numbers its event after the latest of any of them.
+pub const SETTINGS: [&str; 2] = [AwakeSet::TYPE, LanguageSet::TYPE];
 
 /// Why a stream could not be read or written.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
