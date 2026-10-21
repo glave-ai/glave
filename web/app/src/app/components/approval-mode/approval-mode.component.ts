@@ -10,31 +10,6 @@ import { Hand, ShieldCheck } from 'lucide';
 
 import { ServerService } from '../../services/server.service';
 
-const COPY = {
-  label: 'Approvals',
-  prefix: 'Approvals:',
-  only: 'The only mode this server’s policy allows.',
-} as const;
-
-/** How each mode is shown. */
-const MODES: Readonly<
-  Record<
-    ApprovalMode,
-    { readonly text: string; readonly about: string; readonly icon: GlzIconData }
-  >
-> = {
-  auto: {
-    text: 'Auto',
-    about: 'Acts for you; asks only before risky actions',
-    icon: ShieldCheck,
-  },
-  ask: {
-    text: 'Ask',
-    about: 'Asks before every change and command',
-    icon: Hand,
-  },
-};
-
 /**
  * The approval mode of the composer's next turn, quiet in its status line: its icon and its
  * word, the shape and the word saying it, never a colour. The person's pick, else the thread's
@@ -56,7 +31,28 @@ export class ApprovalModeComponent {
   /** The person's pick, or `null` for none. */
   readonly value = model<ApprovalMode | null>(null);
 
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    label: $localize`:@@approvalMode.label:Approvals`,
+    prefix: $localize`:@@approvalMode.prefix:Approvals:`,
+  } as const;
+  /** How each mode is shown. */
+  private readonly modes: Readonly<
+    Record<
+      ApprovalMode,
+      { readonly text: string; readonly about: string; readonly icon: GlzIconData }
+    >
+  > = {
+    auto: {
+      text: $localize`:@@approvalMode.auto:Auto`,
+      about: $localize`:@@approvalMode.autoAbout:Acts for you; asks only before risky actions`,
+      icon: ShieldCheck,
+    },
+    ask: {
+      text: $localize`:@@approvalMode.ask:Ask`,
+      about: $localize`:@@approvalMode.askAbout:Asks before every change and command`,
+      icon: Hand,
+    },
+  };
   private readonly server = inject(ServerService);
   /** The mode the next turn runs in. */
   private readonly shownMode = computed(
@@ -67,9 +63,9 @@ export class ApprovalModeComponent {
   protected readonly options = computed<readonly GlzMenuOption[]>(() =>
     this.server.approvals().map((mode) => ({
       value: mode,
-      label: MODES[mode].text,
-      hint: MODES[mode].about,
-      icon: MODES[mode].icon,
+      label: this.modes[mode].text,
+      hint: this.modes[mode].about,
+      icon: this.modes[mode].icon,
     })),
   );
   /** The mode shown read-only, when there is no choice to make. */
@@ -78,8 +74,11 @@ export class ApprovalModeComponent {
     if (mode === null || this.choosable()) {
       return null;
     }
-    const shown = MODES[mode];
-    return { ...shown, title: `${shown.about}. ${COPY.only}` };
+    const shown = this.modes[mode];
+    return {
+      ...shown,
+      title: $localize`:@@approvalMode.onlyMode:${shown.about}:ABOUT:. The only mode this server’s policy allows.`,
+    };
   });
 
   constructor() {

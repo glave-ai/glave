@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  LOCALE_ID,
   computed,
   inject,
   input,
@@ -15,15 +16,6 @@ import { ListChecks, PenLine, Search } from 'lucide';
 import { TasksService } from '../../services/tasks.service';
 import { PersonComponent } from '../person/person.component';
 import { ProjectsNavComponent } from '../projects-nav/projects-nav.component';
-
-const COPY = {
-  name: 'glave',
-  newChat: 'New chat',
-  search: 'Search threads',
-  searchPlaceholder: 'Search',
-  tasks: 'Tasks',
-  going: 'going',
-} as const;
 
 /**
  * The side nav: glave's name with New chat beside it, and the search; what needs the person, the
@@ -52,14 +44,29 @@ export class SideNavComponent {
   /** Emitted when the person follows a link, so a drawer can close. */
   readonly navigated = output();
 
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    name: 'glave',
+    newChat: $localize`:@@sideNav.newChat:New chat`,
+    search: $localize`:@@sideNav.search:Search threads`,
+    searchPlaceholder: $localize`:@@sideNav.searchPlaceholder:Search`,
+    tasks: $localize`:@@sideNav.tasks:Tasks`,
+  } as const;
   protected readonly icons = { newChat: PenLine, search: Search, tasks: ListChecks };
   protected readonly tasksLink = '/tasks';
   /** What the person searches the thread titles for. */
   protected readonly query = signal('');
   private readonly tasks = inject(TasksService);
   protected readonly tasksLive = this.tasks.live;
-  protected readonly tasksGoing = this.tasks.going;
+  private readonly locale = inject(LOCALE_ID);
+  /**
+   * How many tasks are going, as the reader writes numbers: shown alone, and read to screen
+   * readers in words.
+   */
+  protected readonly tasksGoing = computed(() => {
+    const going = this.tasks.going();
+    const count = new Intl.NumberFormat(this.locale).format(going);
+    return going === 0 ? null : { count, words: $localize`:@@sideNav.going:${count}:COUNT: going` };
+  });
   protected readonly tasksCurrent = computed(() => this.page() === 'tasks');
 
   constructor() {

@@ -103,6 +103,18 @@ async function codeFrom(site: Site, method: string): Promise<string> {
   return code;
 }
 
+/**
+ * Makes the browser of `page` ask for `language` alone, as one set to it does. A context's
+ * `locale` says so in Chromium, but WebKit, as Safari, takes only the languages the system
+ * knows (`en-XA` reads `en-US` there), so the pages are told before any script of theirs runs.
+ */
+export async function readIn(page: Page, language: string): Promise<void> {
+  await page.addInitScript((tag) => {
+    Object.defineProperty(navigator, 'language', { get: () => tag });
+    Object.defineProperty(navigator, 'languages', { get: () => [tag] });
+  }, language);
+}
+
 /** Elements end-to-end tests use, by their `data-testid` (AGENTS.md, "Test hooks"). */
 export function byTestId(page: Page, testId: string): ReturnType<Page['getByTestId']> {
   return page.getByTestId(testId);

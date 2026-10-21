@@ -36,16 +36,23 @@ export function shown(mediaType: string): boolean {
   return SHOWN.has(mediaType);
 }
 
-/** `bytes` as a person reads a size: `512 B`, `214 KB`, `3.4 MB`. */
-export function sizeOf(bytes: number): string {
+/** `bytes` as a person in `locale` reads a size: `512 bytes`, `214 kB`, `3.4 MB`. */
+export function sizeOf(bytes: number, locale: string): string {
+  const unit = (value: number, name: string, digits: number): string =>
+    new Intl.NumberFormat(locale, {
+      style: 'unit',
+      unit: name,
+      unitDisplay: name === 'byte' ? 'long' : 'short',
+      maximumFractionDigits: digits,
+    }).format(value);
   if (bytes < 1024) {
-    return `${String(bytes)} B`;
+    return unit(bytes, 'byte', 0);
   }
   if (bytes < 1024 * 1024) {
-    return `${String(Math.round(bytes / 1024))} KB`;
+    return unit(Math.round(bytes / 1024), 'kilobyte', 0);
   }
   const megabytes = bytes / (1024 * 1024);
-  return `${megabytes.toFixed(megabytes < 10 ? 1 : 0)} MB`;
+  return unit(megabytes, 'megabyte', megabytes < 10 ? 1 : 0);
 }
 
 /** `bytes` in base64, as `file/upload` takes them. */

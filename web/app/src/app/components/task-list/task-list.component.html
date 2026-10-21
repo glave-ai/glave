@@ -1,5 +1,5 @@
-@if (service.error(); as error) {
-  <p class="error" role="alert">{{ copy.failed }} {{ error }}</p>
+@if (problem(); as problem) {
+  <p class="error" role="alert">{{ problem }}</p>
 }
 <div class="list">
   @for (task of rows(); track task.thread) {

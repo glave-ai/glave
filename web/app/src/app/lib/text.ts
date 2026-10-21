@@ -1,14 +1,29 @@
 /** What a failure the server did not explain is told as. */
-export const SOMETHING_WRONG = 'Something went wrong. Try again in a moment.';
+export function somethingWrong(): string {
+  return $localize`:@@text.somethingWrong:Something went wrong. Try again in a moment.`;
+}
 
-/** `text` as a sentence: a capital first, a full stop last; the plain failure when empty. */
+/** What a failure to reach the server is told as. */
+export function unreached(): string {
+  return $localize`:@@text.unreached:glave could not be reached. Try again.`;
+}
+
+/** What a failure to remove an account is told as, a model account or a connected one. */
+export function removeFailed(): string {
+  return $localize`:@@text.removeFailed:glave could not remove that account. Try again in a moment.`;
+}
+
+/**
+ * `text` as a sentence: a capital first (in a script that has them), and a full stop last
+ * unless it ends as a sentence does in any language; the plain failure when empty.
+ */
 export function sentence(text: string): string {
   const trimmed = text.trim();
   if (trimmed === '') {
-    return SOMETHING_WRONG;
+    return somethingWrong();
   }
   const capital = `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
-  return /[.!?]$/u.test(capital) ? capital : `${capital}.`;
+  return /\p{Sentence_Terminal}$/u.test(capital) ? capital : `${capital}.`;
 }
 
 /** Whether `text` is longer than `chars` characters or `lines` lines, so it may fold away. */

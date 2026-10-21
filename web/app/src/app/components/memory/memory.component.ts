@@ -17,29 +17,6 @@ import { Brain } from 'lucide';
 import { MemoryService } from '../../services/memory.service';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 
-const COPY = {
-  heading: 'Memory',
-  intro:
-    'What glave keeps between threads: about you, and about this project. Edit or forget any of it.',
-  personal: 'about you',
-  project: 'this project',
-  edit: 'Edit',
-  forget: 'Forget',
-  editHeading: 'Edit the memory',
-  text: 'What to remember',
-  textMissing: 'Write something, or forget the memory instead.',
-  cancel: 'Cancel',
-  save: 'Save',
-  forgetHeading: 'Forget this memory?',
-  forgetMessage: 'Its key is destroyed at once; it cannot be brought back.',
-  emptyHeading: 'Nothing remembered yet',
-  emptyText: 'When you ask glave to remember something, it shows up here.',
-  offHeading: 'Memory is off',
-  offText: 'Turn it on with memory = "on" in config.toml (glave policy explain shows it).',
-  failed: 'Something went wrong:',
-  untrusted: 'saved after reading untrusted content',
-} as const;
-
 /** The memory page: each memory, with Edit and Forget. */
 @Component({
   selector: 'app-memory',
@@ -61,7 +38,26 @@ const COPY = {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MemoryComponent {
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    heading: $localize`:@@memory.heading:Memory`,
+    intro: $localize`:@@memory.intro:What glave keeps between threads: about you, and about this project. Edit or forget any of it.`,
+    personal: $localize`:@@memory.personal:about you`,
+    project: $localize`:@@memory.project:this project`,
+    edit: $localize`:@@memory.edit:Edit`,
+    forget: $localize`:@@memory.forget:Forget`,
+    editHeading: $localize`:@@memory.editHeading:Edit the memory`,
+    text: $localize`:@@memory.text:What to remember`,
+    textMissing: $localize`:@@memory.textMissing:Write something, or forget the memory instead.`,
+    cancel: $localize`:@@memory.cancel:Cancel`,
+    save: $localize`:@@memory.save:Save`,
+    forgetHeading: $localize`:@@memory.forgetHeading:Forget this memory?`,
+    forgetMessage: $localize`:@@memory.forgetMessage:Its key is destroyed at once; it cannot be brought back.`,
+    emptyHeading: $localize`:@@memory.emptyHeading:Nothing remembered yet`,
+    emptyText: $localize`:@@memory.emptyText:When you ask glave to remember something, it shows up here.`,
+    offHeading: $localize`:@@memory.offHeading:Memory is off`,
+    offText: $localize`:@@memory.offText:Turn it on with memory = "on" in config.toml (glave policy explain shows it).`,
+    untrusted: $localize`:@@memory.untrusted:saved after reading untrusted content`,
+  } as const;
   protected readonly icon = Brain;
   protected readonly textRows = 3;
   protected readonly service = inject(MemoryService);
@@ -83,12 +79,19 @@ export class MemoryComponent {
       memory,
       id: memory.memory,
       text: memory.text,
-      scope: memory.scope === 'personal' ? COPY.personal : COPY.project,
+      scope: memory.scope === 'personal' ? this.copy.personal : this.copy.project,
       untrusted: memory.untrusted_read === true,
-      editLabel: `${COPY.edit}: ${memory.text}`,
-      forgetLabel: `${COPY.forget}: ${memory.text}`,
+      editLabel: $localize`:@@memory.editLabel:Edit: ${memory.text}:MEMORY:`,
+      forgetLabel: $localize`:@@memory.forgetLabel:Forget: ${memory.text}:MEMORY:`,
     })),
   );
+  /** What went wrong last, in the server's words. */
+  protected readonly problem = computed(() => {
+    const error = this.service.error();
+    return error === null
+      ? null
+      : $localize`:@@memory.failed:Something went wrong: ${error}:ERROR:`;
+  });
   protected readonly off = computed(() => this.service.state() === 'off');
   protected readonly ready = computed(() => this.service.state() === 'ready');
 

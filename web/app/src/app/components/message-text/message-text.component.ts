@@ -3,11 +3,6 @@ import { GlzMarkdownComponent, injectId } from '@glave/glaze';
 
 import { isLong } from '../../lib/text';
 
-const COPY = {
-  more: 'Show more',
-  less: 'Show less',
-} as const;
-
 /** Past either limit a message folds to its first lines (`--app-folded-lines`, in the styles). */
 const FOLD_AFTER_CHARS = 700;
 const FOLD_AFTER_LINES = 12;
@@ -36,7 +31,13 @@ export class MessageTextComponent {
     () => !this.markdown() && isLong(this.text(), FOLD_AFTER_CHARS, FOLD_AFTER_LINES),
   );
   protected readonly folded = computed(() => this.long() && !this.expanded());
-  protected readonly toggleText = computed(() => (this.expanded() ? COPY.less : COPY.more));
+  private readonly copy = {
+    more: $localize`:@@messageText.more:Show more`,
+    less: $localize`:@@messageText.less:Show less`,
+  } as const;
+  protected readonly toggleText = computed(() =>
+    this.expanded() ? this.copy.less : this.copy.more,
+  );
 
   protected toggle(): void {
     this.expanded.update((expanded) => !expanded);

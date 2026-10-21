@@ -51,8 +51,8 @@
         <div class="latest" data-testid="thread-latest" [class.shown]="awayFromBottom()">
           <button glzButton size="sm" pill (click)="jumpToLatest()">{{ copy.latest }}</button>
         </div>
-        @if (service.error(); as error) {
-          <p class="error" role="alert" data-testid="thread-error">{{ copy.failed }} {{ error }}</p>
+        @if (problem(); as problem) {
+          <p class="error" role="alert" data-testid="thread-error">{{ problem }}</p>
         }
       </div>
       @if (gone(); as gone) {

@@ -16,6 +16,7 @@ import { GlzCheckboxComponent } from '../checkbox/checkbox.component';
 import { GlzRadioComponent } from '../radio/radio.component';
 import { GlzRadioGroupComponent } from '../radio-group/radio-group.component';
 import { testIds } from '../../lib/test-ids';
+import { glzText } from '../../lib/words';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
 const PARTS = { choice: 'choice', own: 'own', submit: 'submit', answer: 'answer' } as const;
@@ -68,6 +69,11 @@ export class GlzQuestionCardComponent {
   /** The test hook for this component; its parts get `<testId>-<part>`. */
   readonly testId = input<string | null>(null);
   protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+  private readonly words = glzText('questionCard', {
+    label: 'Needs you',
+    ownWordsLabel: 'In your own words',
+    submitLabel: 'Answer',
+  });
 
   readonly questions = input.required<readonly GlzQuestion[]>();
   /** The answers given, once there are some. */
@@ -75,9 +81,9 @@ export class GlzQuestionCardComponent {
   /** Whether the answers are being sent, so the button waits. */
   readonly busy = input(false, { transform: booleanAttribute });
   /** The label over a card that waits. */
-  readonly label = input('Needs you');
-  readonly ownWordsLabel = input('In your own words');
-  readonly submitLabel = input('Answer');
+  readonly label = input(this.words.label);
+  readonly ownWordsLabel = input(this.words.ownWordsLabel);
+  readonly submitLabel = input(this.words.submitLabel);
   /** One answer for each question, in order. */
   readonly answer = output<readonly string[]>();
 

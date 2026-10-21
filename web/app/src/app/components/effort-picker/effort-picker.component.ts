@@ -4,10 +4,6 @@ import { GlzMenuSelectComponent } from '@glave/glaze';
 import { defaultEffort, effortOptions } from '../../lib/effort';
 import { ModelsService } from '../../services/models.service';
 
-const COPY = {
-  label: 'Reasoning',
-} as const;
-
 /**
  * How much the next turn's model reasons, quiet in the composer's status line beside the model:
  * shown only when that model offers a choice, with exactly the levels its provider lists, in
@@ -31,7 +27,9 @@ export class EffortPickerComponent {
   /** The person's pick, or `null` for none. */
   readonly value = model<string | null>(null);
 
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    label: $localize`:@@effortPicker.label:Reasoning`,
+  } as const;
   private readonly models = inject(ModelsService);
   private readonly info = computed(() => {
     const id = this.model() ?? this.models.default();

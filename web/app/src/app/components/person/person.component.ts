@@ -10,12 +10,6 @@ import { LogOut, Settings } from 'lucide';
 
 import { SessionService } from '../../services/session.service';
 
-const COPY = {
-  you: 'You',
-  settings: 'Settings',
-  signOut: 'Sign out',
-} as const;
-
 /**
  * The person signed in, at the foot of the side nav: opened, their Settings and Sign out. The
  * session API does not say who someone is yet, so it says "You".
@@ -37,7 +31,11 @@ export class PersonComponent {
   /** Emitted when the person goes to a page, so a drawer can close. */
   readonly navigated = output();
 
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    you: $localize`:@@person.you:You`,
+    settings: $localize`:@@person.settings:Settings`,
+    signOut: $localize`:@@person.signOut:Sign out`,
+  } as const;
   protected readonly icons = { settings: Settings, signOut: LogOut };
   protected readonly settingsLink = '/settings';
   private readonly session = inject(SessionService);

@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  LOCALE_ID,
   computed,
   inject,
   input,
@@ -27,22 +28,8 @@ import { NeedsYouComponent } from '../needs-you/needs-you.component';
 import { NewProjectComponent } from '../new-project/new-project.component';
 import { RenameDialogComponent } from '../rename-dialog/rename-dialog.component';
 
-const COPY = {
-  threads: 'Threads',
-  chats: 'Chats',
-  projects: 'Projects',
-  newProject: 'New project',
-  newChat: 'New chat',
-  startProject: 'Start a project',
-  noMatch: 'No threads match',
-  newIn: 'New thread in',
-  optionsFor: 'Options for',
-  renameFailed: 'Could not rename the project:',
-} as const;
-
 /** What a project's menu does. */
 const RENAME = 'rename';
-const PROJECT_ACTIONS: readonly GlzOption[] = [{ value: RENAME, label: 'Rename' }];
 
 /**
  * The person's threads in the side nav: Needs you pinned first while something waits for them,
@@ -84,13 +71,25 @@ export class ProjectsNavComponent {
   /** Emitted when the person follows a link, so a drawer can close. */
   readonly navigated = output();
 
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    threads: $localize`:@@projectsNav.threads:Threads`,
+    chats: $localize`:@@projectsNav.chats:Chats`,
+    projects: $localize`:@@projectsNav.projects:Projects`,
+    newProject: $localize`:@@projectsNav.newProject:New project`,
+    newChat: $localize`:@@projectsNav.newChat:New chat`,
+    startProject: $localize`:@@projectsNav.startProject:Start a project`,
+    noMatch: $localize`:@@projectsNav.noMatch:No threads match`,
+  } as const;
   protected readonly icons = { add: Plus, more: Ellipsis, start: FolderPlus };
   protected readonly newLink = '/';
   protected readonly lists = { projects: PROJECTS_LIST, chats: CHATS_LIST } as const;
-  protected readonly projectActions = PROJECT_ACTIONS;
+  protected readonly projectActions: readonly GlzOption[] = [
+    { value: RENAME, label: $localize`:@@projectsNav.rename:Rename` },
+  ];
   private readonly service = inject(ProjectsService);
   private readonly navLists = inject(NavListsService);
+  /** The reader's locale, which the threads' times are written in and searched by. */
+  private readonly locale = inject(LOCALE_ID);
 
   private readonly sections = computed(() =>
     navSections(this.service.projects(), {
@@ -98,6 +97,7 @@ export class ProjectsNavComponent {
       current: this.current(),
       collapsed: this.navLists.collapsed(),
       now: this.service.readAt(),
+      reader: { locale: this.locale },
     }),
   );
   protected readonly needsYou = computed(() => this.sections().needsYou);
@@ -105,9 +105,9 @@ export class ProjectsNavComponent {
   protected readonly projectList = computed(() =>
     this.projects().list.map((project) => ({
       ...project,
-      newLabel: `${COPY.newIn} ${project.name}`,
+      newLabel: $localize`:@@projectsNav.newIn:New thread in ${project.name}:PROJECT:`,
       newQuery: { project: project.id },
-      optionsLabel: `${COPY.optionsFor} ${project.name}`,
+      optionsLabel: $localize`:@@projectsNav.optionsFor:Options for ${project.name}:PROJECT:`,
     })),
   );
   protected readonly hasProjects = computed(() => this.projectList().length > 0);
@@ -130,8 +130,14 @@ export class ProjectsNavComponent {
   private readonly renaming = signal<Pick<NavProject, 'id' | 'name'> | null>(null);
   protected readonly renamingName = computed(() => this.renaming()?.name ?? '');
   protected readonly renameOpen = signal(false);
-  /** Why the last rename failed, until the next one. */
-  protected readonly renameError = signal<string | null>(null);
+  /** Why the last rename failed, as the server says, until the next one. */
+  private readonly renameError = signal<string | null>(null);
+  protected readonly renameProblem = computed(() => {
+    const error = this.renameError();
+    return error === null
+      ? null
+      : $localize`:@@projectsNav.renameFailed:Could not rename the project: ${error}:ERROR:`;
+  });
 
   protected setExpanded(list: string, expanded: boolean): void {
     this.navLists.setExpanded(list, expanded);

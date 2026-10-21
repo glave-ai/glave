@@ -38,45 +38,6 @@ import { SessionService } from '../../services/session.service';
 import { ProjectsService } from '../../services/projects.service';
 import { FolderPickerComponent } from '../folder-picker/folder-picker.component';
 
-const COPY = {
-  heading: 'New project',
-  name: 'Name',
-  start: 'Start from',
-  folder: 'Folder',
-  change: 'Change',
-  address: 'Repository address',
-  addressExample: 'https://github.com/owner/repository',
-  privateConnected: 'Private repositories use the git host you connected.',
-  privateNeeds: 'Private repositories need a connected git host:',
-  connect: 'connect one in Settings',
-  cloning: 'Cloning the repository. A large one can take a few minutes.',
-  created: 'Created the project',
-  noFolder: 'Its threads start in an empty folder for now; a computer for it comes later.',
-  cancel: 'Cancel',
-  create: 'Create',
-  creating: 'Creating…',
-  cloningButton: 'Cloning…',
-} as const;
-
-/** The three places a project can start from, as the person picks one. */
-const STARTS: readonly {
-  readonly value: ProjectStart;
-  readonly label: string;
-  readonly hint: string;
-}[] = [
-  {
-    value: 'folder',
-    label: 'A folder on this computer',
-    hint: 'Work on files you already have.',
-  },
-  {
-    value: 'repository',
-    label: 'A repository',
-    hint: 'Clone one from GitHub or another git host.',
-  },
-  { value: 'empty', label: 'Empty', hint: 'glave makes a new folder for it.' },
-];
-
 /**
  * New project: a name, and for the person on the computer glave runs on, where its files come
  * from: a folder there (picked from the folders the server lists), a repository it clones
@@ -112,8 +73,46 @@ export class NewProjectComponent {
   /** Emitted when the person follows a link from it, so a drawer can close. */
   readonly navigated = output();
 
-  protected readonly copy = COPY;
-  protected readonly starts = STARTS;
+  protected readonly copy = {
+    heading: $localize`:@@newProject.heading:New project`,
+    name: $localize`:@@newProject.name:Name`,
+    start: $localize`:@@newProject.start:Start from`,
+    folder: $localize`:@@newProject.folder:Folder`,
+    change: $localize`:@@newProject.change:Change`,
+    address: $localize`:@@newProject.address:Repository address`,
+    addressExample: 'https://github.com/owner/repository',
+    privateConnected: $localize`:@@newProject.privateConnected:Private repositories use the git host you connected.`,
+    privateNeeds: $localize`:@@newProject.privateNeeds:Private repositories need a connected git host:`,
+    connect: $localize`:@@newProject.connect:connect one in Settings`,
+    cloning: $localize`:@@newProject.cloning:Cloning the repository. A large one can take a few minutes.`,
+    noFolder: $localize`:@@newProject.noFolder:Its threads start in an empty folder for now; a computer for it comes later.`,
+    cancel: $localize`:@@newProject.cancel:Cancel`,
+    create: $localize`:@@newProject.create:Create`,
+    creating: $localize`:@@newProject.creating:Creating…`,
+    cloningButton: $localize`:@@newProject.cloningButton:Cloning…`,
+  } as const;
+  /** The three places a project can start from, as the person picks one. */
+  protected readonly starts: readonly {
+    readonly value: ProjectStart;
+    readonly label: string;
+    readonly hint: string;
+  }[] = [
+    {
+      value: 'folder',
+      label: $localize`:@@newProject.startFolder:A folder on this computer`,
+      hint: $localize`:@@newProject.startFolderHint:Work on files you already have.`,
+    },
+    {
+      value: 'repository',
+      label: $localize`:@@newProject.startRepository:A repository`,
+      hint: $localize`:@@newProject.startRepositoryHint:Clone one from GitHub or another git host.`,
+    },
+    {
+      value: 'empty',
+      label: $localize`:@@newProject.startEmpty:Empty`,
+      hint: $localize`:@@newProject.startEmptyHint:glave makes a new folder for it.`,
+    },
+  ];
   protected readonly limit = NAME_LIMIT;
   protected readonly icons = { folder: Folder };
   protected readonly settingsLink = '/settings';
@@ -161,9 +160,9 @@ export class NewProjectComponent {
   protected readonly createBusy = computed(() => (this.creating() ? 'true' : null));
   protected readonly createLabel = computed(() => {
     if (this.cloning()) {
-      return COPY.cloningButton;
+      return this.copy.cloningButton;
     }
-    return this.creating() ? COPY.creating : COPY.create;
+    return this.creating() ? this.copy.creating : this.copy.create;
   });
 
   constructor() {
@@ -235,12 +234,14 @@ export class NewProjectComponent {
     this.creating.set(true);
     this.problem.set(null);
     if (this.cloning()) {
-      void this.announcer.announce(COPY.cloning);
+      void this.announcer.announce(this.copy.cloning);
     }
     try {
       const project = await this.projects.create(params);
       this.keep = false;
-      void this.announcer.announce(`${COPY.created} ${project.name}`);
+      void this.announcer.announce(
+        $localize`:@@newProject.created:Created the project ${project.name}:PROJECT:`,
+      );
       if (this.open()) {
         // A drawer closes first, so the composer can take focus once the page is shown.
         this.open.set(false);

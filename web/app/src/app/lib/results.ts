@@ -2,6 +2,7 @@ import { type GlzRunStatus, formatDuration, formatMoney } from '@glave/glaze';
 
 import type { ApprovalItem, Draft, MessageItem, QuestionItem, ThreadItem } from './conversation';
 import type { ChangedFile } from './files';
+import { plural } from './plural';
 import type { Turn, TurnOutcome } from './turns';
 
 /** What waits for the person in a turn: an approval not yet decided, a question not answered. */
@@ -91,12 +92,8 @@ function statusOf(turn: Turn, waiting: readonly Waiting[], running: boolean): Gl
   return running || going ? 'running' : 'done';
 }
 
-function count(n: number): string {
-  return `${String(n)} ${n === 1 ? 'step' : 'steps'}`;
-}
-
 /** How many commands the person let run outside the sandbox, in words, when any were. */
-function outsideSandbox(items: readonly ThreadItem[]): readonly string[] {
+function outsideSandbox(items: readonly ThreadItem[], locale: string): readonly string[] {
   const ran = items.filter(
     (item) =>
       item.kind === 'approval' &&
@@ -105,15 +102,25 @@ function outsideSandbox(items: readonly ThreadItem[]): readonly string[] {
   ).length;
   return ran === 0
     ? []
-    : [`${String(ran)} ${ran === 1 ? 'command' : 'commands'} outside the sandbox`];
+    : [
+        plural(
+          $localize`:@@results.outsideSandbox:{${ran}:COUNT:, plural, one {# command} other {# commands}} outside the sandbox`,
+          locale,
+        ),
+      ];
 }
 
 /**
- * `turn` results first. `live` is the reply being written, for the turn that runs now
- * (`running`); it takes the reply's place, and what was the reply goes back among what was
- * said along the way.
+ * `turn` results first, its facts written for `locale`. `live` is the reply being written, for
+ * the turn that runs now (`running`); it takes the reply's place, and what was the reply goes
+ * back among what was said along the way.
  */
-export function turnResults(turn: Turn, live: Draft | null, running: boolean): TurnResults {
+export function turnResults(
+  turn: Turn,
+  live: Draft | null,
+  running: boolean,
+  locale: string,
+): TurnResults {
   const [first, ...after] = turn.items;
   const asked = first?.kind === 'message' && first.from === 'person';
   const prompt = asked ? first : null;
@@ -124,11 +131,12 @@ export function turnResults(turn: Turn, live: Draft | null, running: boolean): T
   const along = others.filter((item) => item !== reply);
   const calls = rest.filter(isCall).length;
   const worked = calls > 0;
+  const routes = new Intl.ListFormat(locale, { style: 'short', type: 'unit' }).format(turn.routes);
   const facts = [
-    ...(turn.took === null || turn.took === 0 ? [] : [formatDuration(turn.took)]),
-    ...(turn.cost === null ? [] : [formatMoney(turn.cost)]),
-    ...(turn.routes.length === 0 ? [] : [`via ${turn.routes.join(', ')}`]),
-    ...outsideSandbox(rest),
+    ...(turn.took === null || turn.took === 0 ? [] : [formatDuration(turn.took, locale)]),
+    ...(turn.cost === null ? [] : [formatMoney(turn.cost, locale)]),
+    ...(turn.routes.length === 0 ? [] : [$localize`:@@results.via:via ${routes}:ROUTES:`]),
+    ...outsideSandbox(rest, locale),
   ];
   return {
     key: turn.key,
@@ -140,7 +148,14 @@ export function turnResults(turn: Turn, live: Draft | null, running: boolean): T
     files: turn.files,
     steps: worked ? along : [],
     receipt: worked
-      ? { status: statusOf(turn, waiting, running), facts, steps: count(calls) }
+      ? {
+          status: statusOf(turn, waiting, running),
+          facts,
+          steps: plural(
+            $localize`:@@results.steps:{${calls}:COUNT:, plural, one {# step} other {# steps}}`,
+            locale,
+          ),
+        }
       : null,
     waiting,
   };

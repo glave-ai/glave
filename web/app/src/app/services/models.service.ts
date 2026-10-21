@@ -1,7 +1,6 @@
 import { Service, computed, inject, signal } from '@angular/core';
 import type { ModelInfo } from '@glave/client';
 
-import { defaultModel, modelOptions } from '../lib/models';
 import { SessionService } from './session.service';
 
 /**
@@ -16,8 +15,12 @@ export class ModelsService {
 
   readonly models = this.list.asReadonly();
   /** The model a thread that chose none runs on, or `null` until the list is read. */
-  readonly default = computed(() => defaultModel(this.list()));
-  readonly options = computed(() => modelOptions(this.list()));
+  readonly default = computed(() => {
+    // The one the server marks, else its first. Here rather than with the models' names
+    // (lib/models.ts), which only the picker needs: the first page loads none of them.
+    const models = this.list();
+    return (models.find((model) => model.default) ?? models.at(0))?.id ?? null;
+  });
   /** Whether there is a choice to make: more than one model. */
   readonly choosable = computed(() => this.list().length > 1);
 

@@ -4,7 +4,6 @@ import { event } from '../testing/fixtures';
 import {
   chosenModel,
   companyName,
-  defaultModel,
   displayName,
   contextText,
   modelHint,
@@ -34,12 +33,6 @@ describe('models', () => {
       ]),
     ).toBe('hope-12b');
     expect(chosenModel([event(1, 'model.chosen', { model: '' })])).toBeNull();
-  });
-
-  it('finds the default, or the first, or none', () => {
-    expect(defaultModel(MODELS)).toBe('gpt-6-luna');
-    expect(defaultModel([{ id: 'only', default: false }])).toBe('only');
-    expect(defaultModel([])).toBeNull();
   });
 
   it('names models Company · Model, from the name or the id, never as a slug', () => {
@@ -79,7 +72,7 @@ describe('models', () => {
   });
 
   it('offers each model by its display name, marking the default, Hope as any other', () => {
-    expect(modelOptions(MODELS)).toEqual([
+    expect(modelOptions(MODELS, 'en-US')).toEqual([
       { value: 'gpt-6-luna', label: 'GPT-6 Luna', short: 'GPT-6 Luna', hint: 'Default' },
       { value: 'hope-12b', label: 'Hope', short: 'Hope' },
       { value: 'hope-lookalike', label: 'Hope Lookalike', short: 'Hope Lookalike' },
@@ -96,24 +89,26 @@ describe('models', () => {
       context: 1_000_000,
       price: { input: 100_000, output: 500_000 },
     };
-    expect(modelHint(haiku)).toBe('OpenRouter · 1M context · $0.10 in, $0.50 out per 1M tokens');
-    expect(modelOptions([haiku])[0]).toEqual({
+    expect(modelHint(haiku, 'en-US')).toBe(
+      'OpenRouter · 1M context · $0.10 in, $0.50 out per 1M tokens',
+    );
+    expect(modelOptions([haiku], 'en-US')[0]).toEqual({
       value: 'anthropic/claude-haiku-5.5',
       label: 'Anthropic · Claude Haiku 5.5',
       short: 'Claude Haiku 5.5',
       hint: 'OpenRouter · 1M context · $0.10 in, $0.50 out per 1M tokens',
     });
-    expect(contextText(200_000)).toBe('200K context');
-    expect(contextText(1_048_576)).toBe('1M context');
-    expect(contextText(131_072)).toBe('131K context');
-    expect(priceText({ input: 3_000_000, output: 15_000_000 })).toBe(
+    expect(contextText(200_000, 'en-US')).toBe('200K context');
+    expect(contextText(1_048_576, 'en-US')).toBe('1M context');
+    expect(contextText(131_072, 'en-US')).toBe('131K context');
+    expect(priceText({ input: 3_000_000, output: 15_000_000 }, 'en-US')).toBe(
       '$3.00 in, $15.00 out per 1M tokens',
     );
-    expect(priceText({ input: 37_500, output: 150_000 })).toBe(
+    expect(priceText({ input: 37_500, output: 150_000 }, 'en-US')).toBe(
       '$0.038 in, $0.15 out per 1M tokens',
     );
-    expect(priceText({ input: 0, output: 0 })).toBe('Free');
-    expect(modelHint({ id: 'm', default: true })).toBe('Default');
+    expect(priceText({ input: 0, output: 0 }, 'en-US')).toBe('Free');
+    expect(modelHint({ id: 'm', default: true }, 'en-US')).toBe('Default');
   });
 
   it('reads back the recent models’ ids only, at most five', () => {

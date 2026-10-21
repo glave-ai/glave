@@ -22,9 +22,11 @@ export function placeOf(events: readonly RawEvent[], here: Here): string | null 
       : undefined;
   if (kind === 'local') {
     if (!here.local) {
-      return 'on the server';
+      return $localize`:@@place.server:on the server`;
     }
-    return here.mac ? 'on your Mac' : 'on this computer';
+    return here.mac
+      ? $localize`:@@place.mac:on your Mac`
+      : $localize`:@@place.computer:on this computer`;
   }
-  return kind === 'worker' ? 'on another computer' : null;
+  return kind === 'worker' ? $localize`:@@place.worker:on another computer` : null;
 }

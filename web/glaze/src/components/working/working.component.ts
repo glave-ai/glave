@@ -9,6 +9,7 @@ import {
 } from '@angular/core';
 
 import { testIds } from '../../lib/test-ids';
+import { glzText } from '../../lib/words';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
 const PARTS = { label: 'label' } as const;
@@ -35,9 +36,12 @@ export class GlzWorkingComponent {
   /** The test hook for this component; its parts get `<testId>-<part>`. */
   readonly testId = input<string | null>(null);
   protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+  private readonly words = glzText('working', {
+    label: 'Working…',
+  });
 
   /** What is being done, in a few words. */
-  readonly label = input('Working…');
+  readonly label = input(this.words.label);
 
   constructor() {
     const announcer = inject(LiveAnnouncer);

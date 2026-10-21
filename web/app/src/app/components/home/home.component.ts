@@ -33,16 +33,6 @@ import { EffortPickerComponent } from '../effort-picker/effort-picker.component'
 import { ModelPickerComponent } from '../model-picker/model-picker.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 
-const COPY = {
-  heading: 'What should we work on?',
-  attach: 'Add files or photos',
-  placeholder: 'Ask anything, or describe a task',
-  failed: 'Could not start a thread:',
-  where: 'Where',
-  chat: 'A chat',
-  private: 'Private on this computer. Only the model you pick sees what you send.',
-} as const;
-
 /** The navigation state that carries a new thread's first prompt and its files (never the URL). */
 export interface FirstPrompt {
   readonly prompt: string;
@@ -81,11 +71,25 @@ export class HomeComponent {
    */
   readonly project = input<string | undefined>(undefined);
 
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    heading: $localize`:@@home.heading:What should we work on?`,
+    attach: $localize`:@@home.attach:Add files or photos`,
+    placeholder: $localize`:@@home.placeholder:Ask anything, or describe a task`,
+    where: $localize`:@@home.where:Where`,
+    chat: $localize`:@@home.chat:A chat`,
+    private: $localize`:@@home.private:Private on this computer. Only the model you pick sees what you send.`,
+  } as const;
   protected readonly lock = Lock;
   protected readonly draft = signal('');
   protected readonly starting = signal(false);
+  /** Why the thread could not start, as the server says, until the next try. */
   protected readonly error = signal<string | null>(null);
+  protected readonly problem = computed(() => {
+    const error = this.error();
+    return error === null
+      ? null
+      : $localize`:@@home.failed:Could not start a thread: ${error}:ERROR:`;
+  });
   /** The model the person picked, or `null` for the server's default. */
   protected readonly picked = signal<string | null>(null);
   /** The approval mode the person picked, or `null` for the server's. */
@@ -105,7 +109,8 @@ export class HomeComponent {
   /** The places a thread can start: a chat, or each project. */
   protected readonly places = computed<readonly GlzMenuOption[]>(() => {
     const home = this.projects.home();
-    const chat = home === undefined ? [] : [{ value: home, label: COPY.chat, icon: MessageCircle }];
+    const chat =
+      home === undefined ? [] : [{ value: home, label: this.copy.chat, icon: MessageCircle }];
     const projects = this.projects
       .projects()
       .filter(({ project }) => project.kind === 'project')

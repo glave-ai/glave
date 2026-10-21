@@ -29,23 +29,30 @@ export function formatTokens(tokens: number, locale?: string): string {
 }
 
 /**
- * A duration in milliseconds, short, as a clock reads in a line of facts: `850ms`, `12s`,
- * `4m 02s`, `2h 05m`.
+ * A duration in milliseconds, short, as a clock reads in a line of facts, in `locale`'s units
+ * (the browser's by default): `850ms`, `12s`, `4m 02s`, `2h 05m`.
  */
-export function formatDuration(ms: number): string {
+export function formatDuration(ms: number, locale?: string): string {
+  const unit = (value: number, name: string, digits = 1): string =>
+    new Intl.NumberFormat(locale, {
+      style: 'unit',
+      unit: name,
+      unitDisplay: 'narrow',
+      minimumIntegerDigits: digits,
+    }).format(value);
   if (ms < 1000) {
-    return `${String(Math.round(ms))}ms`;
+    return unit(Math.round(ms), 'millisecond');
   }
   const seconds = Math.round(ms / 1000);
   if (seconds < 60) {
-    return `${String(seconds)}s`;
+    return unit(seconds, 'second');
   }
-  const two = (n: number): string => String(n).padStart(2, '0');
   const minutes = Math.floor(seconds / 60);
+  const both = new Intl.ListFormat(locale, { style: 'narrow', type: 'unit' });
   if (minutes < 60) {
-    return `${String(minutes)}m ${two(seconds % 60)}s`;
+    return both.format([unit(minutes, 'minute'), unit(seconds % 60, 'second', 2)]);
   }
-  return `${String(Math.floor(minutes / 60))}h ${two(minutes % 60)}m`;
+  return both.format([unit(Math.floor(minutes / 60), 'hour'), unit(minutes % 60, 'minute', 2)]);
 }
 
 /** The initials of a name, at most two: `Ada Lovelace` is `AL`, `hope` is `H`. */

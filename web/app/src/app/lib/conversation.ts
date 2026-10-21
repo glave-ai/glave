@@ -1,8 +1,6 @@
 import type { RawEvent, Update } from '@glave/client';
 import type { GlzDecision, GlzQuestion, GlzReceiptStatus } from '@glave/glaze';
 
-import { sizeOf } from './attachments';
-
 /** What every item of a thread has: its key, and the `seq` of the event that put it there. */
 interface Placed {
   readonly key: string;
@@ -21,10 +19,10 @@ export interface MessageItem extends Placed {
   readonly files: readonly SentFile[];
 }
 
-/** A file a message was sent with: its name, and its size as a person reads it. */
+/** A file a message was sent with: its name, and its size in bytes. */
 export interface SentFile {
   readonly name: string;
-  readonly size: string;
+  readonly bytes: number;
 }
 
 /** A tool call: what it did and what came of it. */
@@ -103,7 +101,7 @@ export function filesOf(parts: unknown): readonly SentFile[] {
     .map((part) => {
       const blob = isRecord(part['blob']) ? part['blob'] : {};
       const bytes = typeof blob['bytes'] === 'number' ? blob['bytes'] : 0;
-      return { name: text(part['name']) || 'file', size: sizeOf(bytes) };
+      return { name: text(part['name']) || $localize`:@@conversation.file:file`, bytes };
     });
 }
 

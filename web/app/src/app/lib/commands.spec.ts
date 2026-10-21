@@ -2,7 +2,7 @@ import { ApiError, ErrorCode } from '@glave/client';
 
 import { event } from '../testing/fixtures';
 import { alreadyEnded, commandProblem, lastCommandChange, runningFor } from './commands';
-import { SOMETHING_WRONG } from './text';
+import { somethingWrong } from './text';
 
 describe('lastCommandChange', () => {
   it('is the latest start or end of a command in the background', () => {
@@ -52,6 +52,6 @@ describe('commandProblem', () => {
         new ApiError({ code: ErrorCode.INTERNAL, message: 'the command could not be stopped' }),
       ),
     ).toBe('The command could not be stopped.');
-    expect(commandProblem(new TypeError('Failed to fetch'))).toBe(SOMETHING_WRONG);
+    expect(commandProblem(new TypeError('Failed to fetch'))).toBe(somethingWrong());
   });
 });

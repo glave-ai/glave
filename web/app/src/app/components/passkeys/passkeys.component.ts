@@ -1,20 +1,14 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  LOCALE_ID,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { GlzButtonComponent, GlzCardComponent, GlzConfirmDialogComponent } from '@glave/glaze';
 
 import { PasskeysService } from '../../services/passkeys.service';
-
-const COPY = {
-  heading: 'Passkeys',
-  lead: 'These sign you in to glave from your devices: your face, your fingerprint or a screen lock, never a password.',
-  none: 'No passkeys yet.',
-  add: 'Add a passkey on this device',
-  adding: 'Waiting for your device…',
-  remove: 'Remove',
-  removeHeading: 'Remove this passkey?',
-  removeText: 'It signs you in no more, and the browsers it signed in are signed out.',
-  added: 'Added',
-  used: 'last used',
-} as const;
 
 /** A passkey as the card shows it: its name, and when it was added and last used. */
 interface Shown {
@@ -36,8 +30,17 @@ interface Shown {
 })
 export class PasskeysComponent {
   private readonly keys = inject(PasskeysService);
-  private readonly dates = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
-  protected readonly copy = COPY;
+  private readonly dates = new Intl.DateTimeFormat(inject(LOCALE_ID), { dateStyle: 'medium' });
+  protected readonly copy = {
+    heading: $localize`:@@passkeys.heading:Passkeys`,
+    lead: $localize`:@@passkeys.lead:These sign you in to glave from your devices: your face, your fingerprint or a screen lock, never a password.`,
+    none: $localize`:@@passkeys.none:No passkeys yet.`,
+    add: $localize`:@@passkeys.add:Add a passkey on this device`,
+    adding: $localize`:@@passkeys.adding:Waiting for your device…`,
+    remove: $localize`:@@passkeys.remove:Remove`,
+    removeHeading: $localize`:@@passkeys.removeHeading:Remove this passkey?`,
+    removeText: $localize`:@@passkeys.removeText:It signs you in no more, and the browsers it signed in are signed out.`,
+  } as const;
   protected readonly busy = signal(false);
   protected readonly problem = signal<string | null>(null);
   protected readonly confirming = signal(false);
@@ -45,13 +48,17 @@ export class PasskeysComponent {
 
   protected readonly shown = computed<readonly Shown[]>(() =>
     this.keys.passkeys().map((passkey) => {
-      const added = `${COPY.added} ${this.dates.format(new Date(passkey.added))}`;
+      const added = this.dates.format(new Date(passkey.added));
       const last = passkey.used ?? null;
-      const used = last === null ? '' : `, ${COPY.used} ${this.dates.format(new Date(last))}`;
-      return { id: passkey.id, name: passkey.name, detail: `${added}${used}` };
+      const used = last === null ? null : this.dates.format(new Date(last));
+      const detail =
+        used === null
+          ? $localize`:@@passkeys.added:Added ${added}:ADDED:`
+          : $localize`:@@passkeys.addedUsed:Added ${added}:ADDED:, last used ${used}:USED:`;
+      return { id: passkey.id, name: passkey.name, detail };
     }),
   );
-  protected readonly addLabel = computed(() => (this.busy() ? COPY.adding : COPY.add));
+  protected readonly addLabel = computed(() => (this.busy() ? this.copy.adding : this.copy.add));
 
   constructor() {
     void this.keys.load().then((problem) => {

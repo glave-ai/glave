@@ -4,6 +4,7 @@ import { Ban, Check, LoaderCircle, TriangleAlert } from 'lucide';
 import type { GlzIconData } from '../../lib/icons';
 import { GlzIconComponent } from '../icon/icon.component';
 import { testIds } from '../../lib/test-ids';
+import { glzText } from '../../lib/words';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
 const PARTS = { summary: 'summary', evidence: 'evidence' } as const;
@@ -16,13 +17,6 @@ const ICONS: Readonly<Record<GlzReceiptStatus, GlzIconData>> = {
   done: Check,
   failed: TriangleAlert,
   declined: Ban,
-};
-
-const STATUS_WORDS: Readonly<Record<GlzReceiptStatus, string>> = {
-  running: 'Running',
-  done: 'Done',
-  failed: 'Failed',
-  declined: 'Declined',
 };
 
 /**
@@ -64,7 +58,10 @@ export class GlzReceiptComponent {
   readonly open = model(false);
 
   protected readonly statusIcon = computed(() => ICONS[this.status()]);
-  protected readonly statusWord = computed(() => STATUS_WORDS[this.status()]);
+  private readonly words = glzText('receipt', {
+    statusLabels: { running: 'Running', done: 'Done', failed: 'Failed', declined: 'Declined' },
+  });
+  protected readonly statusWord = computed(() => this.words.statusLabels[this.status()]);
   protected readonly statusClass = computed(() => `status-${this.status()}`);
 
   protected toggled(event: Event): void {

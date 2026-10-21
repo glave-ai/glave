@@ -17,6 +17,7 @@ import { GlzSplitterDirective } from '../../directives/splitter.directive';
 import { GlzTooltipDirective } from '../../directives/tooltip.directive';
 import { testIds } from '../../lib/test-ids';
 import { injectId } from '../../tokens/ids';
+import { glzText } from '../../lib/words';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
 const PARTS = { scrim: 'scrim', panel: 'panel', handle: 'handle' } as const;
@@ -59,15 +60,19 @@ export class GlzPanelLayoutComponent {
   /** The test hook for this component; its parts get `<testId>-<part>`. */
   readonly testId = input<string | null>(null);
   protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+  private readonly words = glzText('panelLayout', {
+    label: 'Panel',
+    resizeLabel: 'Resize the panel',
+  });
 
   /** Whether the panel shows. */
   readonly open = model(false);
   /** The panel's width in pixels; `null` for `--glz-panel-width`. */
   readonly width = model<number | null>(null);
   /** Names the panel's region for screen readers. */
-  readonly label = input('Panel');
+  readonly label = input(this.words.label);
   /** Names the edge. */
-  readonly resizeLabel = input('Resize the panel');
+  readonly resizeLabel = input(this.words.resizeLabel);
   /** A hint shown beside the edge on hover and focus, such as the keys that work on it. */
   readonly resizeHint = input('');
   /** The page's shortcut that shows or hides the panel, in ARIA's form (`Meta+.`), if any. */

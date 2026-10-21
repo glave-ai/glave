@@ -3,6 +3,7 @@ import {
   Component,
   ElementRef,
   Injector,
+  LOCALE_ID,
   afterNextRender,
   computed,
   effect,
@@ -22,13 +23,8 @@ import {
 } from '@glave/glaze';
 
 import { ACCOUNTS_SECTION } from '../../lib/credentials';
-import {
-  REMOVE_FAILED,
-  accountName,
-  changeQuery,
-  keyHint,
-  refreshProblem,
-} from '../../lib/providers';
+import { accountName, changeQuery, keyHint, refreshProblem } from '../../lib/providers';
+import { removeFailed } from '../../lib/text';
 import { ModelsService } from '../../services/models.service';
 import { ProvidersService } from '../../services/providers.service';
 
@@ -39,34 +35,6 @@ import { AccountsComponent } from '../accounts/accounts.component';
 import { AwakeComponent } from '../awake/awake.component';
 import { PasskeysComponent } from '../passkeys/passkeys.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
-
-const COPY = {
-  heading: 'Settings',
-  appearance: 'Appearance',
-  theme: 'Theme',
-  system: 'System',
-  light: 'Light',
-  dark: 'Dark',
-  models: 'Models',
-  noAccounts: 'No model accounts yet.',
-  add: 'Add a model account',
-  refresh: 'Refresh models',
-  refreshing: 'Refreshing…',
-  refreshed: 'The models are up to date.',
-  change: 'Change key',
-  remove: 'Remove',
-  removeHeading: 'Remove this model account?',
-  removeText: 'glave forgets its key, and its models are no longer offered.',
-  memory: 'Memory',
-  memoryText: 'What glave keeps between threads, about you and about each project.',
-  memoryOpen: 'Open memory',
-  server: 'This server',
-  serverUnknown: 'Reading…',
-  signOut: 'Sign out of this tab',
-  signOutOthers: 'Sign out other browsers',
-  signedOutOthers: 'Every other browser is signed out. This tab stays signed in.',
-  signOutOthersFailed: 'Other browsers could not be signed out. Try again.',
-} as const;
 
 /**
  * Settings: the theme, the model accounts (add, change, remove), the connected accounts git
@@ -95,11 +63,37 @@ const COPY = {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SettingsComponent {
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    heading: $localize`:@@settings.heading:Settings`,
+    appearance: $localize`:@@settings.appearance:Appearance`,
+    theme: $localize`:@@settings.theme:Theme`,
+    system: $localize`:@@settings.system:System`,
+    light: $localize`:@@settings.light:Light`,
+    dark: $localize`:@@settings.dark:Dark`,
+    models: $localize`:@@settings.models:Models`,
+    noAccounts: $localize`:@@settings.noAccounts:No model accounts yet.`,
+    add: $localize`:@@settings.add:Add a model account`,
+    refresh: $localize`:@@settings.refresh:Refresh models`,
+    refreshing: $localize`:@@settings.refreshing:Refreshing…`,
+    refreshed: $localize`:@@settings.refreshed:The models are up to date.`,
+    change: $localize`:@@settings.change:Change key`,
+    remove: $localize`:@@settings.remove:Remove`,
+    removeHeading: $localize`:@@settings.removeHeading:Remove this model account?`,
+    removeText: $localize`:@@settings.removeText:glave forgets its key, and its models are no longer offered.`,
+    memory: $localize`:@@settings.memory:Memory`,
+    memoryText: $localize`:@@settings.memoryText:What glave keeps between threads, about you and about each project.`,
+    memoryOpen: $localize`:@@settings.memoryOpen:Open memory`,
+    server: $localize`:@@settings.server:This server`,
+    serverUnknown: $localize`:@@settings.serverUnknown:Reading…`,
+    signOut: $localize`:@@settings.signOut:Sign out of this tab`,
+    signOutOthers: $localize`:@@settings.signOutOthers:Sign out other browsers`,
+    signedOutOthers: $localize`:@@settings.signedOutOthers:Every other browser is signed out. This tab stays signed in.`,
+    signOutOthersFailed: $localize`:@@settings.signOutOthersFailed:Other browsers could not be signed out. Try again.`,
+  } as const;
   protected readonly themes = [
-    { value: 'system', label: COPY.system },
-    { value: 'light', label: COPY.light },
-    { value: 'dark', label: COPY.dark },
+    { value: 'system', label: this.copy.system },
+    { value: 'light', label: this.copy.light },
+    { value: 'dark', label: this.copy.dark },
   ] as const;
   private readonly theme = inject(ThemeService);
   private readonly session = inject(SessionService);
@@ -107,6 +101,7 @@ export class SettingsComponent {
   private readonly info = inject(ServerService).info;
   private readonly providers = inject(ProvidersService);
   private readonly models = inject(ModelsService);
+  private readonly locale = inject(LOCALE_ID);
   protected readonly connectLink = '/connect';
   protected readonly memoryLink = '/memory';
   protected readonly accountsSection = ACCOUNTS_SECTION;
@@ -119,7 +114,7 @@ export class SettingsComponent {
     this.providers.accounts().map((account) => ({
       id: account.id,
       name: accountName(account),
-      hint: keyHint(account),
+      hint: keyHint(account, this.locale),
       query: changeQuery(account),
     })),
   );
@@ -130,7 +125,7 @@ export class SettingsComponent {
   /** What refreshing the models came to, once asked. */
   protected readonly refreshed = signal<string | null>(null);
   protected readonly refreshLabel = computed(() =>
-    this.refreshing() ? COPY.refreshing : COPY.refresh,
+    this.refreshing() ? this.copy.refreshing : this.copy.refresh,
   );
   protected readonly hasAccounts = computed(() => this.accounts().length > 0);
   /** Whether passkeys sign the person in: glave is reached from elsewhere. */
@@ -142,9 +137,11 @@ export class SettingsComponent {
   protected readonly choice = this.theme.choice;
   protected readonly server = computed(() => {
     const info = this.info();
-    return info === null
-      ? COPY.serverUnknown
-      : `${info.name} ${info.version} · protocol ${info.protocols.join(', ')} · approvals: ${info.approval}`;
+    if (info === null) {
+      return this.copy.serverUnknown;
+    }
+    const protocols = info.protocols.join(', ');
+    return $localize`:@@settings.serverInfo:${info.name}:NAME: ${info.version}:VERSION: · protocol ${protocols}:PROTOCOLS: · approvals: ${info.approval}:APPROVALS:`;
   });
 
   constructor() {
@@ -179,7 +176,7 @@ export class SettingsComponent {
     try {
       await this.providers.remove(id);
     } catch {
-      this.problem.set(REMOVE_FAILED);
+      this.problem.set(removeFailed());
       return;
     }
     // With no model left, the person adds one before anything else.
@@ -194,7 +191,7 @@ export class SettingsComponent {
     this.problem.set(null);
     try {
       await this.providers.refresh();
-      this.refreshed.set(COPY.refreshed);
+      this.refreshed.set(this.copy.refreshed);
     } catch (error: unknown) {
       this.problem.set(refreshProblem(error));
     } finally {
@@ -217,9 +214,9 @@ export class SettingsComponent {
     this.others.set(null);
     try {
       await this.session.signOutOthers();
-      this.others.set(COPY.signedOutOthers);
+      this.others.set(this.copy.signedOutOthers);
     } catch {
-      this.others.set(COPY.signOutOthersFailed);
+      this.others.set(this.copy.signOutOthersFailed);
     }
   }
 }

@@ -91,6 +91,7 @@ describe('results', () => {
       }),
       null,
       false,
+      'en-US',
     );
     expect(shown.prompt).toBe(ask);
     expect(shown.reply?.text).toBe('Fixed');
@@ -112,15 +113,21 @@ describe('results', () => {
       }),
       null,
       false,
+      'en-US',
     );
     expect(shown.receipt?.facts).toEqual(['2s', '1 command outside the sandbox']);
-    const none = turnResults(turn([ask, call(2), outside(3, 'deny')]), null, false);
+    const none = turnResults(turn([ask, call(2), outside(3, 'deny')]), null, false, 'en-US');
     expect(none.receipt?.facts).toEqual([]);
   });
 
   it('shows what waits for the person last, never folded', () => {
     const waiting = approval(4, false);
-    const shown = turnResults(turn([ask, call(2), say(3, 'Ready to push'), waiting]), null, true);
+    const shown = turnResults(
+      turn([ask, call(2), say(3, 'Ready to push'), waiting]),
+      null,
+      true,
+      'en-US',
+    );
     expect(shown.reply?.text).toBe('Ready to push');
     expect(shown.waiting).toEqual([waiting]);
     expect(shown.receipt?.status).toBe('waiting');
@@ -128,7 +135,12 @@ describe('results', () => {
   });
 
   it('shows a turn that did no work as what it said, in order, with no receipt', () => {
-    const shown = turnResults(turn([ask, say(2, '', 'thinking'), say(3, 'Hello')]), null, false);
+    const shown = turnResults(
+      turn([ask, say(2, '', 'thinking'), say(3, 'Hello')]),
+      null,
+      false,
+      'en-US',
+    );
     expect(shown.reply?.text).toBe('Hello');
     expect(shown.before.map((item) => item.key)).toEqual(['m2']);
     expect(shown.steps).toEqual([]);
@@ -140,7 +152,7 @@ describe('results', () => {
       more: Partial<Turn>,
       running = false,
       items: readonly ThreadItem[] = [ask, call(2)],
-    ): unknown => turnResults(turn(items, more), null, running).receipt?.status;
+    ): unknown => turnResults(turn(items, more), null, running, 'en-US').receipt?.status;
     expect(status({ outcome: 'failed' })).toBe('failed');
     expect(status({ outcome: 'cancelled' })).toBe('stopped');
     expect(status({ outcome: 'limit_reached' })).toBe('stopped');
@@ -148,12 +160,12 @@ describe('results', () => {
     expect(status({}, false, [ask, call(2, 'running')])).toBe('running');
     expect(status({}, false, [ask, question(2)])).toBe('waiting');
     expect(status({})).toBe('done');
-    expect(turnResults(turn([ask, call(2)]), null, false).receipt?.steps).toBe('1 step');
+    expect(turnResults(turn([ask, call(2)]), null, false, 'en-US').receipt?.steps).toBe('1 step');
   });
 
   it('puts the reply being written in the reply’s place, and the last one back with the work', () => {
     const live = { text: 'Writ', reasoning: '' };
-    const shown = turnResults(turn([ask, call(2), say(3, 'Earlier')]), live, true);
+    const shown = turnResults(turn([ask, call(2), say(3, 'Earlier')]), live, true, 'en-US');
     expect(shown.live).toBe(live);
     expect(shown.reply).toBeNull();
     expect(shown.steps.map((item) => item.key)).toEqual(['c2', 'm3']);
@@ -161,7 +173,7 @@ describe('results', () => {
 
   it('is working while the turn runs and waits on its model with nothing to show', () => {
     const working = (items: readonly ThreadItem[], more: Partial<Turn> = {}): boolean =>
-      turnResults(turn(items, more), null, true).working;
+      turnResults(turn(items, more), null, true, 'en-US').working;
     // Just asked, and between a call's end and the model's next words.
     expect(working([ask])).toBe(true);
     expect(working([ask, say(2, ''), call(3)])).toBe(true);
@@ -171,8 +183,10 @@ describe('results', () => {
     expect(working([ask, call(2), say(3, 'Done.')])).toBe(false);
     // Not once it ended, nor in a turn that is not running.
     expect(working([ask], { outcome: 'failed' })).toBe(false);
-    expect(turnResults(turn([ask]), null, false).working).toBe(false);
+    expect(turnResults(turn([ask]), null, false, 'en-US').working).toBe(false);
     // Not while reasoning or a reply streams: they show instead.
-    expect(turnResults(turn([ask]), { text: '', reasoning: 'Hm' }, true).working).toBe(false);
+    expect(turnResults(turn([ask]), { text: '', reasoning: 'Hm' }, true, 'en-US').working).toBe(
+      false,
+    );
   });
 });

@@ -11,6 +11,7 @@ import {
 import { type GlzButtonVariant, GlzButtonComponent } from '../button/button.component';
 import { GlzDialogComponent } from '../dialog/dialog.component';
 import { testIds } from '../../lib/test-ids';
+import { glzText } from '../../lib/words';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
 const PARTS = { cancel: 'cancel', ok: 'ok' } as const;
@@ -37,13 +38,17 @@ export class GlzConfirmDialogComponent {
   /** The test hook for this component; its parts get `<testId>-<part>`. */
   readonly testId = input<string | null>(null);
   protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+  private readonly words = glzText('confirmDialog', {
+    confirmLabel: 'Continue',
+    cancelLabel: 'Cancel',
+  });
 
   readonly open = model(false);
   readonly heading = input.required<string>();
   /** What will happen, in a sentence or two. */
   readonly message = input('');
-  readonly confirmLabel = input('Continue');
-  readonly cancelLabel = input('Cancel');
+  readonly confirmLabel = input(this.words.confirmLabel);
+  readonly cancelLabel = input(this.words.cancelLabel);
   /** Whether going ahead destroys something, so the action says so in red. */
   readonly danger = input(false, { transform: booleanAttribute });
   /** The person's choice: `true` to go ahead. */

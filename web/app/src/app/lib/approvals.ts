@@ -5,16 +5,23 @@ export interface Ask {
   readonly detail: string;
 }
 
-/** The sentence for each of the harness's own tools; any other tool's is `OTHER`. */
-const SENTENCES: Readonly<Record<string, string>> = {
-  bash: 'Run this command?',
-  edit: 'Edit this file?',
-  write: 'Write this file?',
-  read: 'Read this file?',
-  web_fetch: 'Open this page?',
-};
-
-const OTHER = 'Allow this?';
+/** The sentence for each of the harness's own tools, and for any other tool. */
+function sentenceFor(tool: string): string {
+  switch (tool) {
+    case 'bash':
+      return $localize`:@@approvals.bash:Run this command?`;
+    case 'edit':
+      return $localize`:@@approvals.edit:Edit this file?`;
+    case 'write':
+      return $localize`:@@approvals.write:Write this file?`;
+    case 'read':
+      return $localize`:@@approvals.read:Read this file?`;
+    case 'web_fetch':
+      return $localize`:@@approvals.webFetch:Open this page?`;
+    default:
+      return $localize`:@@approvals.other:Allow this?`;
+  }
+}
 
 /**
  * What an approval for `tool` asks, from the summary the harness wrote for it (`bash: cargo
@@ -26,7 +33,7 @@ export function askOf(tool: string, summary: string): Ask {
   const prefixes = [`${tool}: `, `${tool} `];
   const prefix = prefixes.find((each) => tool !== '' && summary.startsWith(each));
   return {
-    sentence: SENTENCES[tool] ?? OTHER,
+    sentence: sentenceFor(tool),
     detail: prefix === undefined ? summary : summary.slice(prefix.length),
   };
 }

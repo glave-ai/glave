@@ -54,3 +54,4 @@ export * from './lib/options';
 export * from './lib/questions';
 export * from './lib/shortcuts';
 export * from './tokens/ids';
+export * from './tokens/text';

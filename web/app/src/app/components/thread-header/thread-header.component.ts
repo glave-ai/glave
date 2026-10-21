@@ -1,4 +1,12 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  LOCALE_ID,
+  computed,
+  inject,
+  input,
+  output,
+} from '@angular/core';
 import {
   GlzButtonComponent,
   GlzIconButtonComponent,
@@ -7,16 +15,9 @@ import {
 } from '@glave/glaze';
 import { FileDiff, Folder, Menu, PanelRight } from 'lucide';
 
+import { plural } from '../../lib/plural';
 import { NavService } from '../../services/nav.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
-
-const COPY = {
-  menu: 'Show or hide the side bar',
-  rename: 'Rename the thread',
-  changes: 'Changes',
-  tools: 'Tools',
-  between: ' · ',
-} as const;
 
 /**
  * A thread's bar across its top, ruled off from the conversation: its title, which renames it
@@ -44,10 +45,17 @@ export class ThreadHeaderComponent {
   /** Emitted when the person asks to rename the thread. */
   readonly rename = output();
 
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    menu: $localize`:@@threadHeader.menu:Show or hide the side bar`,
+    rename: $localize`:@@threadHeader.rename:Rename the thread`,
+    changes: $localize`:@@threadHeader.changes:Changes`,
+    tools: $localize`:@@threadHeader.tools:Tools`,
+    between: ' · ',
+  } as const;
   protected readonly icons = { menu: Menu, folder: Folder, tools: PanelRight };
   private readonly nav = inject(NavService);
   private readonly panel = inject(ToolsPanelService);
+  private readonly locale = inject(LOCALE_ID);
   /** A phone: the side bar is a drawer, opened from this bar. */
   protected readonly phone = this.nav.narrow;
   protected readonly navOpen = this.nav.open;
@@ -56,24 +64,30 @@ export class ThreadHeaderComponent {
   protected readonly changesShown = this.panel.changesShown;
   protected readonly panelShortcut = this.panel.ariaShortcut;
   protected readonly changed = computed(() => this.changes() > 0);
-  protected readonly count = computed(() => String(this.changes()));
+  protected readonly count = computed(() =>
+    new Intl.NumberFormat(this.locale).format(this.changes()),
+  );
   /** Beside a wide page with nothing changed, a button opens the tools only where no edge can. */
   protected readonly toolsButton = computed(
     () => !this.phone() && !this.changed() && this.panel.narrow(),
   );
   /** The line under the title: the project and where it runs, as far as they are known. */
   protected readonly meta = computed(() =>
-    [this.project(), this.place()].filter((part) => part !== null).join(COPY.between),
-  );
-  private readonly files = computed(
-    () => `${String(this.changes())} ${this.changes() === 1 ? 'file' : 'files'}`,
+    [this.project(), this.place()].filter((part) => part !== null).join(this.copy.between),
   );
   /** On a phone, the button at the end: the changes when there are some, else the tools. */
-  protected readonly phoneButton = computed(() =>
-    this.changed()
-      ? { icon: FileDiff, label: `${COPY.changes}, ${this.files()}` }
-      : { icon: PanelRight, label: COPY.tools },
-  );
+  protected readonly phoneButton = computed(() => {
+    const count = this.changes();
+    return this.changed()
+      ? {
+          icon: FileDiff,
+          label: plural(
+            $localize`:@@threadHeader.changesFiles:Changes, {${count}:COUNT:, plural, one {# file} other {# files}}`,
+            this.locale,
+          ),
+        }
+      : { icon: PanelRight, label: this.copy.tools };
+  });
 
   protected startRename(): void {
     this.rename.emit();

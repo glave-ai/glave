@@ -44,7 +44,8 @@
       {{ copy.tasks }}
       @if (tasksGoing(); as going) {
         <span glzNavItemEnd class="going"
-          >{{ going }} <span class="glz-visually-hidden">{{ copy.going }}</span></span
+          ><span aria-hidden="true">{{ going.count }}</span
+          ><span class="glz-visually-hidden">{{ going.words }}</span></span
         >
       }
     </a>

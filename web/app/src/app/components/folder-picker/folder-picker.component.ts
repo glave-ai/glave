@@ -4,6 +4,7 @@ import {
   Component,
   ElementRef,
   Injector,
+  LOCALE_ID,
   afterNextRender,
   computed,
   effect,
@@ -27,14 +28,6 @@ import { ChevronRight, Folder, HardDrive } from 'lucide';
 import { crumbs, folderCount, folderName, joinPath, projectProblem } from '../../lib/projects';
 import { SessionService } from '../../services/session.service';
 
-const COPY = {
-  path: 'Where you are',
-  top: 'This computer',
-  foldersIn: 'Folders in',
-  none: 'No folders in here.',
-  use: 'Use this folder',
-} as const;
-
 /**
  * Picks a folder on the computer glave runs on, through `folder/list`. It opens at `start`, or
  * the home folder; shows where it is as the folders above it, each a button to go up to; and
@@ -54,9 +47,15 @@ export class FolderPickerComponent {
   /** Emits the folder picked, by its full path. */
   readonly picked = output<string>();
 
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    path: $localize`:@@folderPicker.path:Where you are`,
+    top: $localize`:@@folderPicker.top:This computer`,
+    none: $localize`:@@folderPicker.none:No folders in here.`,
+    use: $localize`:@@folderPicker.use:Use this folder`,
+  } as const;
   protected readonly icons = { top: HardDrive, folder: Folder, go: ChevronRight };
   private readonly session = inject(SessionService);
+  private readonly locale = inject(LOCALE_ID);
   private readonly announcer = inject(LiveAnnouncer);
   private readonly injector = inject(Injector);
   private readonly folderButtons = viewChildren('folderButton', { read: ElementRef });
@@ -86,9 +85,10 @@ export class FolderPickerComponent {
       path: joinPath(listing?.path ?? '', name),
     }));
   });
-  protected readonly listLabel = computed(
-    () => `${COPY.foldersIn} ${this.shownName(this.listing()?.path ?? '')}`,
-  );
+  protected readonly listLabel = computed(() => {
+    const folder = this.shownName(this.listing()?.path ?? '');
+    return $localize`:@@folderPicker.foldersIn:Folders in ${folder}:FOLDER:`;
+  });
   protected readonly cannotUse = computed(() => this.listing() === null || this.busy());
 
   constructor() {
@@ -135,8 +135,10 @@ export class FolderPickerComponent {
       this.listing.set(listing);
       this.problem.set(null);
       if (moving) {
+        const folder = this.shownName(listing.path);
+        const count = folderCount(listing.folders.length, this.locale);
         void this.announcer.announce(
-          `${this.shownName(listing.path)}, ${folderCount(listing.folders.length)}`,
+          $localize`:@@folderPicker.moved:${folder}:FOLDER:, ${count}:FOLDERS:`,
         );
       }
       if (focusIn) {
@@ -163,6 +165,6 @@ export class FolderPickerComponent {
   /** A folder's name as the picker says it: the top of the computer has none of its own. */
   private shownName(path: string): string {
     const name = folderName(path);
-    return name === '' ? COPY.top : name;
+    return name === '' ? this.copy.top : name;
   }
 }

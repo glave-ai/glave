@@ -1,8 +1,10 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  LOCALE_ID,
   computed,
   effect,
+  inject,
   input,
   model,
   output,
@@ -16,22 +18,13 @@ import {
   GlzInputDirective,
 } from '@glave/glaze';
 
+import { plural } from '../../lib/plural';
+
 /** The longest title `thread/rename` takes, and the longest name a project is given. */
 const TITLE_LIMIT = 200;
 
 /** What is renamed: a thread, by its title, or a project, by its name. */
 export type Renamed = 'thread' | 'project';
-
-const COPY = {
-  hint: `Up to ${String(TITLE_LIMIT)} characters`,
-  cancel: 'Cancel',
-  save: 'Save',
-} as const;
-
-const NAMING: Readonly<Record<Renamed, { readonly heading: string; readonly label: string }>> = {
-  thread: { heading: 'Rename the thread', label: 'Title' },
-  project: { heading: 'Rename the project', label: 'Name' },
-};
 
 /** A dialog to give a thread a new title, or a project a new name; `renamed` emits it, trimmed. */
 @Component({
@@ -50,8 +43,27 @@ export class RenameDialogComponent {
   readonly open = model(false);
   readonly renamed = output<string>();
 
-  protected readonly copy = COPY;
-  protected readonly naming = computed(() => NAMING[this.kind()]);
+  protected readonly copy = {
+    hint: plural(
+      $localize`:@@renameDialog.hint:{${TITLE_LIMIT}:LIMIT:, plural, one {Up to # character} other {Up to # characters}}`,
+      inject(LOCALE_ID),
+    ),
+    cancel: $localize`:@@renameDialog.cancel:Cancel`,
+    save: $localize`:@@renameDialog.save:Save`,
+  } as const;
+  private readonly namings: Readonly<
+    Record<Renamed, { readonly heading: string; readonly label: string }>
+  > = {
+    thread: {
+      heading: $localize`:@@renameDialog.threadHeading:Rename the thread`,
+      label: $localize`:@@renameDialog.threadLabel:Title`,
+    },
+    project: {
+      heading: $localize`:@@renameDialog.projectHeading:Rename the project`,
+      label: $localize`:@@renameDialog.projectLabel:Name`,
+    },
+  };
+  protected readonly naming = computed(() => this.namings[this.kind()]);
   protected readonly limit = TITLE_LIMIT;
   protected readonly draft = signal('');
   private readonly trimmed = computed(() => this.draft().trim());

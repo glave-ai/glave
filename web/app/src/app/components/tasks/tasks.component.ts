@@ -5,12 +5,6 @@ import { TasksService } from '../../services/tasks.service';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 import { TaskListComponent } from '../task-list/task-list.component';
 
-const COPY = {
-  heading: 'Tasks',
-  intro: 'Work running with no one attached: started in the background, or by a schedule.',
-  refresh: 'Refresh',
-} as const;
-
 /** The Tasks page: the background tasks, as the thread's tools panel shows them too. */
 @Component({
   selector: 'app-tasks',
@@ -20,7 +14,11 @@ const COPY = {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class TasksComponent {
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    heading: $localize`:@@tasks.heading:Tasks`,
+    intro: $localize`:@@tasks.intro:Work running with no one attached: started in the background, or by a schedule.`,
+    refresh: $localize`:@@tasks.refresh:Refresh`,
+  } as const;
   private readonly service = inject(TasksService);
 
   protected refresh(): void {

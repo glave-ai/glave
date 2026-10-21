@@ -8,6 +8,7 @@ import {
 } from '@angular/core';
 
 import { injectId } from '../../tokens/ids';
+import { glzText } from '../../lib/words';
 import { GlzButtonComponent } from '../button/button.component';
 import { testIds } from '../../lib/test-ids';
 
@@ -30,12 +31,6 @@ export interface GlzDecisionLabels {
   readonly allow_for_thread: string;
   readonly deny: string;
 }
-
-const DECIDED: GlzDecisionLabels = {
-  allow_once: 'Allowed once',
-  allow_for_thread: 'Allowed for this thread',
-  deny: 'Denied',
-};
 
 /**
  * An action waiting for the person's yes, as a card that needs them: a small label with a dot
@@ -73,6 +68,18 @@ export class GlzApprovalCardComponent {
   /** The test hook for this component; its parts get `<testId>-<part>`. */
   readonly testId = input<string | null>(null);
   protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+  private readonly words = glzText('approvalCard', {
+    label: 'Needs you',
+    reasonLabel: 'The model says',
+    allowOnceLabel: 'Allow once',
+    allowForThreadLabel: 'Allow for this thread',
+    denyLabel: 'Deny',
+    decidedLabels: {
+      allow_once: 'Allowed once',
+      allow_for_thread: 'Allowed for this thread',
+      deny: 'Denied',
+    },
+  });
 
   /** What it asks, in one plain sentence. */
   readonly summary = input.required<string>();
@@ -83,7 +90,7 @@ export class GlzApprovalCardComponent {
   /** The agent's own words for why it wants this, quoted as its words. */
   readonly reason = input('');
   /** Who the reason's words are, before the quote. */
-  readonly reasonLabel = input('The model says');
+  readonly reasonLabel = input(this.words.reasonLabel);
   /** Whether it can only be allowed once: no "for this thread", since each one asks. */
   readonly onlyOnce = input(false, { transform: booleanAttribute });
   /** The answer given, once there is one. */
@@ -91,11 +98,11 @@ export class GlzApprovalCardComponent {
   /** Whether the answer is being sent, so the buttons wait. */
   readonly busy = input(false, { transform: booleanAttribute });
   /** The label over a card that waits. */
-  readonly label = input('Needs you');
-  readonly allowOnceLabel = input('Allow once');
-  readonly allowForThreadLabel = input('Allow for this thread');
-  readonly denyLabel = input('Deny');
-  readonly decidedLabels = input<GlzDecisionLabels>(DECIDED);
+  readonly label = input(this.words.label);
+  readonly allowOnceLabel = input(this.words.allowOnceLabel);
+  readonly allowForThreadLabel = input(this.words.allowForThreadLabel);
+  readonly denyLabel = input(this.words.denyLabel);
+  readonly decidedLabels = input<GlzDecisionLabels>(this.words.decidedLabels);
   /** The person's answer. */
   readonly decide = output<GlzDecision>();
 

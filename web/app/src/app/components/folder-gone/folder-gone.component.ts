@@ -6,15 +6,6 @@ import { SessionService } from '../../services/session.service';
 import { ProjectsService } from '../../services/projects.service';
 import { FolderPickerComponent } from '../folder-picker/folder-picker.component';
 
-const COPY = {
-  find: 'Find it',
-  remove: 'Remove the project',
-  findHeading: 'Where is the project’s folder now?',
-  removeHeading: 'Remove the project?',
-  removeMessage: 'Its threads go to the archive, with their history.',
-  removeConfirm: 'Remove',
-} as const;
-
 /**
  * A project whose folder isn't there anymore, in the server's words, and what the person on
  * this computer can do about it: Find it picks the folder's new place with the folder browser,
@@ -42,7 +33,14 @@ export class FolderGoneComponent {
   /** What the server says of it. */
   readonly message = input.required<string>();
 
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    find: $localize`:@@folderGone.find:Find it`,
+    remove: $localize`:@@folderGone.remove:Remove the project`,
+    findHeading: $localize`:@@folderGone.findHeading:Where is the project’s folder now?`,
+    removeHeading: $localize`:@@folderGone.removeHeading:Remove the project?`,
+    removeMessage: $localize`:@@folderGone.removeMessage:Its threads go to the archive, with their history.`,
+    removeConfirm: $localize`:@@folderGone.removeConfirm:Remove`,
+  } as const;
   private readonly projects = inject(ProjectsService);
   /** Whether the person here may act: only they reach this computer's folders. */
   protected readonly local = inject(SessionService).local;

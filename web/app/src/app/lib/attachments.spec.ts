@@ -16,10 +16,13 @@ function attachment(more: Partial<Attachment>): Attachment {
 
 describe('attachments', () => {
   it('sizes files as a person reads them', () => {
-    expect(sizeOf(512)).toBe('512 B');
-    expect(sizeOf(214 * 1024)).toBe('214 KB');
-    expect(sizeOf(3.4 * 1024 * 1024)).toBe('3.4 MB');
-    expect(sizeOf(12 * 1024 * 1024)).toBe('12 MB');
+    expect(sizeOf(512, 'en-US')).toBe('512 bytes');
+    expect(sizeOf(214 * 1024, 'en-US')).toBe('214 kB');
+    expect(sizeOf(3.4 * 1024 * 1024, 'en-US')).toBe('3.4 MB');
+    expect(sizeOf(12 * 1024 * 1024, 'en-US')).toBe('12 MB');
+    expect(sizeOf(3.4 * 1024 * 1024, 'fr')).toBe(
+      new Intl.NumberFormat('fr', { style: 'unit', unit: 'megabyte' }).format(3.4),
+    );
   });
 
   it('writes bytes in base64, past one chunk too', () => {

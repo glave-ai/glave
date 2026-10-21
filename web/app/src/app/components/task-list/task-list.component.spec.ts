@@ -24,6 +24,7 @@ describe('TaskListComponent', () => {
         task('t1', 'Nightly build'),
         task('t2', 'Docs', { status: 'finished', outcome: 'completed', cost: null }),
         task('t3', 'Elsewhere', { status: 'elsewhere' }),
+        task('t4', 'Audit', { status: 'finished', outcome: 'limit_reached' }),
       ],
     });
     const fixture = make(fake);
@@ -31,12 +32,13 @@ describe('TaskListComponent', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     const tasks = root.querySelectorAll('[data-testid="task"]');
-    expect(tasks).toHaveLength(3);
+    expect(tasks).toHaveLength(4);
     expect(tasks[0]?.textContent).toContain('hope · 1.5K tokens · $0.0042 · 2m 05s');
     expect(tasks[0]?.querySelector('a')?.getAttribute('href')).toBe('/t/t1');
     expect(tasks[1]?.textContent).toContain('completed');
     expect(tasks[1]?.textContent).toContain('cost not reported');
     expect(tasks[2]?.textContent).toContain('running elsewhere');
+    expect(tasks[3]?.textContent).toContain('stopped at its limit');
     expect(root.querySelectorAll('[data-testid="task-stop"]')).toHaveLength(1);
     await expectAccessible(root);
     root.querySelector<HTMLButtonElement>('[data-testid="task-stop"]')?.click();

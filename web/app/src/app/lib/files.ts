@@ -1,5 +1,7 @@
 import type { RawEvent } from '@glave/client';
 
+import { plural } from './plural';
+
 /** One line of a change: kept, taken out or put in. */
 interface DiffLine {
   readonly kind: 'same' | 'removed' | 'added';
@@ -24,6 +26,26 @@ export interface ChangedFile {
   readonly changes: readonly FileChange[];
   readonly added: number;
   readonly removed: number;
+}
+
+/** Lines added and removed, as a change shows them (`+12`, `−3`) and as screen readers read them. */
+export interface LineCounts {
+  readonly added: string;
+  readonly removed: string;
+  readonly label: string;
+}
+
+/** `added` and `removed` lines written for `locale`: the marks a change shows, and in words. */
+export function lineCounts(added: number, removed: number, locale: string): LineCounts {
+  const numbers = new Intl.NumberFormat(locale);
+  return {
+    added: `+${numbers.format(added)}`,
+    removed: `−${numbers.format(removed)}`,
+    label: plural(
+      $localize`:@@files.lines:{${added}:ADDED:, plural, one {# line added} other {# lines added}}, {${removed}:REMOVED:, plural, other {# removed}}`,
+      locale,
+    ),
+  };
 }
 
 type Data = Readonly<Record<string, unknown>>;

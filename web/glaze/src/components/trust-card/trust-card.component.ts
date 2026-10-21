@@ -8,6 +8,7 @@ import {
 } from '@angular/core';
 
 import { injectId } from '../../tokens/ids';
+import { glzText } from '../../lib/words';
 import { GlzButtonComponent } from '../button/button.component';
 import { testIds } from '../../lib/test-ids';
 
@@ -34,11 +35,6 @@ export interface GlzTrustAnswerLabels {
   readonly trust: string;
   readonly not_now: string;
 }
-
-const ANSWERED: GlzTrustAnswerLabels = {
-  trust: 'Trusted',
-  not_now: 'Kept off for now',
-};
 
 /**
  * Something that waits for the person's trust, as a card that needs them, as
@@ -71,6 +67,12 @@ export class GlzTrustCardComponent {
   /** The test hook for this component; its parts get `<testId>-<part>`. */
   readonly testId = input<string | null>(null);
   protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+  private readonly words = glzText('trustCard', {
+    label: 'Needs you',
+    trustLabel: 'Trust this project',
+    notNowLabel: 'Not now',
+    answeredLabels: { trust: 'Trusted', not_now: 'Kept off for now' },
+  });
 
   /** What it asks, in one plain sentence. */
   readonly summary = input.required<string>();
@@ -81,10 +83,10 @@ export class GlzTrustCardComponent {
   /** Whether the answer is being sent, so the buttons wait. */
   readonly busy = input(false, { transform: booleanAttribute });
   /** The label over a card that waits. */
-  readonly label = input('Needs you');
-  readonly trustLabel = input('Trust this project');
-  readonly notNowLabel = input('Not now');
-  readonly answeredLabels = input<GlzTrustAnswerLabels>(ANSWERED);
+  readonly label = input(this.words.label);
+  readonly trustLabel = input(this.words.trustLabel);
+  readonly notNowLabel = input(this.words.notNowLabel);
+  readonly answeredLabels = input<GlzTrustAnswerLabels>(this.words.answeredLabels);
   /** The person's answer. */
   readonly answer = output<GlzTrustAnswer>();
 

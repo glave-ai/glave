@@ -251,7 +251,7 @@ test('tasks, settings and memory open from the side nav', async ({ page }) => {
   await fakeApi(page);
   await page.goto(`/${SIGNED_IN}`);
   // A task is going, so Tasks shows, with how many.
-  await expect(byTestId(page, 'nav-tasks')).toHaveText('Tasks 1 going');
+  await expect(byTestId(page, 'nav-tasks')).toHaveAccessibleName('Tasks 1 going');
   await byTestId(page, 'nav-tasks').click();
   await expect(page.getByRole('heading', { name: 'Tasks' })).toBeVisible();
   await expectAccessible(page);

@@ -1,6 +1,7 @@
 import { ApiError, ErrorCode, type ProviderInfo, type ProviderKind } from '@glave/client';
 
-import { SOMETHING_WRONG, sentence } from './text';
+import { plural } from './plural';
+import { sentence, somethingWrong } from './text';
 
 /** A service a person can connect a model account with, by its plain name. */
 export interface Service {
@@ -14,45 +15,55 @@ export interface Service {
  * The services offered, in order: OpenRouter first, one key for every major model, then any
  * service that speaks OpenAI's API, which is how glave talks with models.
  */
-export const SERVICES: readonly Service[] = [
-  {
-    kind: 'openrouter',
-    name: 'OpenRouter',
-    hint: 'One key for every major model, each priced as you use it.',
-  },
-  { kind: 'openai', name: 'OpenAI', hint: 'GPT models, with a key from OpenAI.' },
-  {
-    kind: 'compatible',
-    name: 'Another server',
-    hint: 'Any server that speaks OpenAI’s API, such as Ollama, LM Studio or vLLM.',
-  },
-];
+const OFFERED: readonly ProviderKind[] = ['openrouter', 'openai', 'compatible'];
 
-/** A service glave still keeps accounts with, but no longer offers to add. */
-const ANTHROPIC: Service = {
-  kind: 'anthropic',
-  name: 'Anthropic',
-  hint: 'Claude models, with a key from Anthropic.',
-};
-
-/** Every service glave keeps accounts with. */
-const KNOWN: readonly Service[] = [...SERVICES, ANTHROPIC];
+/** Every service glave keeps accounts with: those offered, and one no longer offered. */
+const KNOWN: readonly ProviderKind[] = [...OFFERED, 'anthropic'];
 
 /** Whether `value` names a service glave keeps accounts with. */
 export function isServiceKind(value: unknown): value is ProviderKind {
-  return KNOWN.some((service) => service.kind === value);
+  return KNOWN.some((kind) => kind === value);
 }
 
-/** The service of `kind`. */
+/** The service of `kind`, by its plain name, with what it is. */
 export function serviceOf(kind: ProviderKind): Service {
-  return KNOWN.find((service) => service.kind === kind) ?? { kind, name: kind, hint: '' };
+  switch (kind) {
+    case 'openrouter':
+      return {
+        kind,
+        name: 'OpenRouter',
+        hint: $localize`:@@providers.openrouter:One key for every major model, each priced as you use it.`,
+      };
+    case 'openai':
+      return {
+        kind,
+        name: 'OpenAI',
+        hint: $localize`:@@providers.openai:GPT models, with a key from OpenAI.`,
+      };
+    case 'compatible':
+      return {
+        kind,
+        name: $localize`:@@providers.compatible.name:Another server`,
+        hint: $localize`:@@providers.compatible:Any server that speaks OpenAI’s API, such as Ollama, LM Studio or vLLM.`,
+      };
+    case 'anthropic':
+      return {
+        kind,
+        name: 'Anthropic',
+        hint: $localize`:@@providers.anthropic:Claude models, with a key from Anthropic.`,
+      };
+  }
+}
+
+/** The services offered, in order. */
+export function offeredServices(): readonly Service[] {
+  return OFFERED.map(serviceOf);
 }
 
 /** The services to choose from: those offered, and `kind` too when a link picks another. */
 export function servicesFor(kind: ProviderKind): readonly Service[] {
-  return SERVICES.some((service) => service.kind === kind)
-    ? SERVICES
-    : [...SERVICES, serviceOf(kind)];
+  const offered = OFFERED.includes(kind) ? OFFERED : [...OFFERED, kind];
+  return offered.map(serviceOf);
 }
 
 /** Whether connecting at `kind` needs the server's address. */
@@ -66,34 +77,38 @@ export function changeQuery(account: ProviderInfo): Readonly<Record<string, stri
   return url === '' ? { kind: account.kind } : { kind: account.kind, url };
 }
 
-/** What to tell the person when removing an account failed. */
-export const REMOVE_FAILED = 'glave could not remove that account. Try again in a moment.';
-
 /** How an account shows in a list: its service, or the address of another server. */
 export function accountName(account: ProviderInfo): string {
   const url = account.url ?? '';
   return account.kind === 'compatible' && url !== '' ? url : serviceOf(account.kind).name;
 }
 
-/** The end of an account's key, to tell keys apart, and how many models it offers. */
-export function keyHint(account: ProviderInfo): string {
+/**
+ * The end of an account's key, to tell keys apart, and how many models it offers, written for
+ * `locale`.
+ */
+export function keyHint(account: ProviderInfo, locale: string): string {
   const hint = account.hint ?? '';
   const count = account.models.length;
-  const models = count === 1 ? '1 model' : `${String(count)} models`;
-  return hint === '' ? models : `Key ending ${hint} · ${models}`;
+  return plural(
+    hint === ''
+      ? $localize`:@@providers.models:{${count}:COUNT:, plural, one {# model} other {# models}}`
+      : $localize`:@@providers.keyModels:Key ending ${hint}:HINT: · {${count}:COUNT:, plural, one {# model} other {# models}}`,
+    locale,
+  );
 }
 
 /** What to tell the person when refreshing the models failed. */
 export function refreshProblem(error: unknown): string {
   return error instanceof ApiError && error.code === ErrorCode.PROVIDER
     ? sentence(error.message)
-    : SOMETHING_WRONG;
+    : somethingWrong();
 }
 
 /** What to tell the person when connecting failed, in a sentence they can act on. */
 export function connectProblem(error: unknown): string {
   if (!(error instanceof ApiError)) {
-    return SOMETHING_WRONG;
+    return somethingWrong();
   }
   switch (error.code) {
     case ErrorCode.PROVIDER:
@@ -101,8 +116,8 @@ export function connectProblem(error: unknown): string {
     case ErrorCode.NOT_ALLOWED:
       return sentence(error.message);
     case ErrorCode.NOT_AVAILABLE:
-      return 'Models are added on the computer glave runs on.';
+      return $localize`:@@providers.notHere:Models are added on the computer glave runs on.`;
     default:
-      return SOMETHING_WRONG;
+      return somethingWrong();
   }
 }

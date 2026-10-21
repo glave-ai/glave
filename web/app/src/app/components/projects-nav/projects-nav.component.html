@@ -12,8 +12,8 @@
       {{ copy.startProject }}
     </button>
   }
-  @if (renameError(); as error) {
-    <p class="error" role="alert" data-testid="nav-error">{{ copy.renameFailed }} {{ error }}</p>
+  @if (renameProblem(); as problem) {
+    <p class="error" role="alert" data-testid="nav-error">{{ problem }}</p>
   }
   @if (hasProjects()) {
     <glz-nav-list

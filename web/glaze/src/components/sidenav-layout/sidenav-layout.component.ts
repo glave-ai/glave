@@ -19,6 +19,7 @@ import { GlzSplitterDirective } from '../../directives/splitter.directive';
 import { GlzTooltipDirective } from '../../directives/tooltip.directive';
 import { testIds } from '../../lib/test-ids';
 import { injectId } from '../../tokens/ids';
+import { glzText } from '../../lib/words';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
 const PARTS = { scrim: 'scrim', nav: 'nav', handle: 'handle' } as const;
@@ -61,15 +62,19 @@ export class GlzSidenavLayoutComponent {
   /** The test hook for this component; its parts get `<testId>-<part>`. */
   readonly testId = input<string | null>(null);
   protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+  private readonly words = glzText('sidenavLayout', {
+    label: 'Navigation',
+    resizeLabel: 'Resize the navigation',
+  });
 
   /** Whether the side nav shows. */
   readonly open = model(true);
   /** The side nav's width in pixels; `null` for `--glz-sidenav-width`. */
   readonly width = model<number | null>(null);
   /** Names the side nav's region for screen readers. */
-  readonly label = input('Navigation');
+  readonly label = input(this.words.label);
   /** Names the edge. */
-  readonly resizeLabel = input('Resize the navigation');
+  readonly resizeLabel = input(this.words.resizeLabel);
   /** A hint shown beside the edge on hover and focus, such as the keys that work on it. */
   readonly resizeHint = input('');
   /** The page's shortcut that shows or hides the side nav, in ARIA's form (`Meta+B`), if any. */

@@ -22,6 +22,7 @@ import { testIds } from '../../lib/test-ids';
 import { injectId } from '../../tokens/ids';
 import type { GlzMenuOption } from '../menu-select/menu-select.component';
 import { GlzIconComponent } from '../icon/icon.component';
+import { glzText } from '../../lib/words';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
 const PARTS = {
@@ -71,6 +72,11 @@ export class GlzPickerComponent {
   /** The test hook for this component; its parts get `<testId>-<part>`. */
   readonly testId = input<string | null>(null);
   protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+  private readonly words = glzText('picker', {
+    placeholder: 'Choose',
+    searchLabel: 'Search',
+    emptyText: 'No matches',
+  });
 
   /** The chosen option's value, or `null` for none. */
   readonly value = model<string | null>(null);
@@ -78,11 +84,11 @@ export class GlzPickerComponent {
   /** What is being chosen, such as "Model": names the button, the popover and the list. */
   readonly label = input.required<string>();
   /** Shown on the button while nothing is chosen. */
-  readonly placeholder = input('Choose');
+  readonly placeholder = input(this.words.placeholder);
   /** Names the search box, and is its placeholder. */
-  readonly searchLabel = input('Search');
+  readonly searchLabel = input(this.words.searchLabel);
   /** Shown in the list when nothing matches. */
-  readonly emptyText = input('No matches');
+  readonly emptyText = input(this.words.emptyText);
   readonly disabled = input(false, { transform: booleanAttribute });
   /** Whether the button is small, muted text, as in a status line. */
   readonly quiet = input(false, { transform: booleanAttribute });

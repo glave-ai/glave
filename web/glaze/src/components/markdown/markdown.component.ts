@@ -22,6 +22,7 @@ import { loadHighlighter } from '../../lib/highlight';
 import { type GlzMarkdown, renderMarkdown } from '../../lib/markdown';
 import { GLZ_MARKDOWN_LABELS, type GlzHighlight } from '../../lib/markdown-html';
 import { testIds } from '../../lib/test-ids';
+import { glzText } from '../../lib/words';
 import { GlzCopyButtonComponent } from '../copy-button/copy-button.component';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
@@ -58,6 +59,7 @@ export class GlzMarkdownComponent {
   /** The test hook for this element; its code blocks' copy buttons get `<testId>-copy`. */
   readonly testId = input<string | null>(null);
   private readonly ids = computed(() => testIds(this.testId(), PARTS));
+  private readonly words = glzText('markdown', GLZ_MARKDOWN_LABELS);
 
   private readonly highlight = signal<GlzHighlight | null>(null);
   private readonly rendered = linkedSignal<
@@ -70,7 +72,7 @@ export class GlzMarkdownComponent {
       highlight: this.highlight(),
     }),
     computation: ({ text, ...options }, previous) =>
-      renderMarkdown(text, { ...options, labels: GLZ_MARKDOWN_LABELS }, previous?.value ?? null),
+      renderMarkdown(text, { ...options, labels: this.words }, previous?.value ?? null),
   });
   protected readonly blocks = computed(() => this.rendered().blocks);
 
@@ -136,7 +138,7 @@ export class GlzMarkdownComponent {
         hostElement: element,
       });
       button.setInput('text', code);
-      button.setInput('label', GLZ_MARKDOWN_LABELS.copyCode);
+      button.setInput('label', this.words.copyCode);
       button.setInput('testId', this.ids().copy);
       // Checked with the page; destroying it detaches it again.
       this.app.attachView(button.hostView);

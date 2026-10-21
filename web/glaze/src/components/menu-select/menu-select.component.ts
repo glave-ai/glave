@@ -14,6 +14,7 @@ import type { GlzIconData } from '../../lib/icons';
 import type { GlzOption } from '../../lib/options';
 import { testIds } from '../../lib/test-ids';
 import { GlzIconComponent } from '../icon/icon.component';
+import { glzText } from '../../lib/words';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
 const PARTS = { trigger: 'trigger', option: 'option' } as const;
@@ -76,6 +77,9 @@ export class GlzMenuSelectComponent {
   /** The test hook for this component; its parts get `<testId>-<part>`. */
   readonly testId = input<string | null>(null);
   protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+  private readonly words = glzText('menuSelect', {
+    placeholder: 'Choose',
+  });
 
   /** The chosen option's value, or `null` for none. */
   readonly value = model<string | null>(null);
@@ -83,7 +87,7 @@ export class GlzMenuSelectComponent {
   /** What is being chosen, such as "Model": names the button with the choice. */
   readonly label = input.required<string>();
   /** Shown on the button while nothing is chosen. */
-  readonly placeholder = input('Choose');
+  readonly placeholder = input(this.words.placeholder);
   readonly disabled = input(false, { transform: booleanAttribute });
   /** Whether the button is a chip with a line round it. */
   readonly outlined = input(false, { transform: booleanAttribute });

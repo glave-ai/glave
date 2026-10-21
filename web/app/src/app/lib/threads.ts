@@ -15,5 +15,5 @@ export function pageFromUrl(url: string): string | null {
 /** A thread's title, or a stand-in until it has one. */
 export function threadTitle(thread: Pick<ThreadSummary, 'title'>): string {
   const title = thread.title?.trim() ?? '';
-  return title === '' ? 'New chat' : title;
+  return title === '' ? $localize`:@@threads.untitled:New chat` : title;
 }

@@ -520,6 +520,6 @@ describe('ThreadComponent with files', () => {
     expect(root.querySelector('[data-testid="thread-composer-file"]')).toBeNull();
     const sent = root.querySelector('[data-testid="thread-message-file"]');
     expect(sent?.textContent).toContain('cat.png');
-    expect(sent?.textContent).toContain('3 B');
+    expect(sent?.textContent).toContain('3 bytes');
   });
 });

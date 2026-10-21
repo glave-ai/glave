@@ -17,6 +17,7 @@ import { isApple } from '../../lib/shortcuts';
 import { GlzIconComponent } from '../icon/icon.component';
 import { GlzIconButtonComponent } from '../icon-button/icon-button.component';
 import { testIds } from '../../lib/test-ids';
+import { glzText } from '../../lib/words';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
 const PARTS = {
@@ -80,6 +81,14 @@ export class GlzComposerComponent {
   /** The test hook for this component; its parts get `<testId>-<part>`. */
   readonly testId = input<string | null>(null);
   protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+  private readonly words = glzText('composer', {
+    placeholder: 'Write a message',
+    label: 'Message',
+    sendLabel: 'Send',
+    stopLabel: 'Stop',
+    optionsLabel: 'Options',
+    hint: 'Enter to send, Shift+Enter for a new line',
+  });
 
   /** The draft. */
   readonly value = model('');
@@ -87,13 +96,13 @@ export class GlzComposerComponent {
   readonly busy = input(false, { transform: booleanAttribute });
   readonly disabled = input(false, { transform: booleanAttribute });
   readonly size = input<GlzComposerSize>('md');
-  readonly placeholder = input('Write a message');
-  readonly label = input('Message');
-  readonly sendLabel = input('Send');
-  readonly stopLabel = input('Stop');
+  readonly placeholder = input(this.words.placeholder);
+  readonly label = input(this.words.label);
+  readonly sendLabel = input(this.words.sendLabel);
+  readonly stopLabel = input(this.words.stopLabel);
   /** Names the button that opens the status line on a phone, and the line itself. */
-  readonly optionsLabel = input('Options');
-  readonly hint = input('Enter to send, Shift+Enter for a new line');
+  readonly optionsLabel = input(this.words.optionsLabel);
+  readonly hint = input(this.words.hint);
   /**
    * Names the button at the box's start that adds files; with it, files pasted into the box
    * or dropped on the composer are added too (`attach`). With none, files are not taken.

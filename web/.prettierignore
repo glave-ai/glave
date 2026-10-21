@@ -6,4 +6,6 @@ test-results/
 coverage/
 playwright-report/
 client/src/generated/
+# Written by npm run i18n (tools/i18n.mjs).
+app/src/locale/
 package-lock.json

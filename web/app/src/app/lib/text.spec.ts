@@ -1,10 +1,10 @@
-import { SOMETHING_WRONG, isLong, sentence } from './text';
+import { isLong, sentence, somethingWrong } from './text';
 
 describe('sentence', () => {
   it('starts with a capital and ends with a stop', () => {
     expect(sentence('glave could not reach it')).toBe('Glave could not reach it.');
     expect(sentence('Done!')).toBe('Done!');
-    expect(sentence('  ')).toBe(SOMETHING_WRONG);
+    expect(sentence('  ')).toBe(somethingWrong());
   });
 });
 
