@@ -2,7 +2,8 @@
 //! These transports are local, so every request comes from the local person.
 //! Requests run concurrently, so a client can cancel a turn or answer an approval while another
 //! request is still streaming. A connection watches each thread once, at most 64 at a time,
-//! each until `thread/unwatch` or its input ends (`watches.rs`).
+//! each until `thread/unwatch` or its input ends, and writes each thread's notifications once,
+//! a turn's in a thread it watches by that watch (`watches.rs`).
 //! When the client's input ends, its turns are cancelled over stdio (`serve`), where it was the
 //! only client; a long-running server's connections (`serve_connection`, as on a Unix socket)
 //! stop nothing when they end.
@@ -20,11 +21,12 @@ use tokio::io::{
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
-use self::watches::{Claim, Watches};
+use self::watches::{Claim, Turn, Watches};
 use crate::dispatch::Answered;
 use crate::protocol::{ApiError, Notification, Reply, Request, WatchEnd, code};
 use crate::server::Server;
-use crate::streamed::{Item, Streamed};
+use crate::turn::{TurnItem, TurnStream};
+use crate::watch::{Watch, Watched};
 
 /// The longest message accepted, in bytes. A longer line ends the connection.
 const MAX_LINE: u64 = 16 * 1024 * 1024;
@@ -142,16 +144,30 @@ where
         // What the connection watches changes in the order its lines come, before requests run
         // side by side: an unwatch ends the watch sent before it, and frees the thread for one
         // sent after it.
-        let claim = match &parsed {
-            Ok((_, Request::ThreadWatch { thread, .. })) => Some(watches.claim(*thread)),
-            Ok((_, Request::ThreadUnwatch { thread })) => {
-                watches.end(*thread);
-                None
+        let (mut claim, mut turn) = (None, None);
+        match &parsed {
+            Ok((_, Request::ThreadWatch { thread, after })) => {
+                claim = Some(watches.claim(*thread, *after));
             }
-            _ => None,
-        };
+            Ok((_, Request::ThreadUnwatch { thread })) => watches.end(*thread),
+            Ok((
+                _,
+                Request::TurnStart {
+                    thread,
+                    background: false,
+                    ..
+                }
+                | Request::GoalStart {
+                    thread,
+                    background: false,
+                    ..
+                },
+            )) => turn = Some(watches.turn(*thread)),
+            _ => {}
+        }
         let (server, lines) = (server.clone(), lines.clone());
-        requests.spawn(async move { handle(&server, parsed, claim, &lines).await });
+        let held = Held { claim, turn };
+        requests.spawn(async move { handle(&server, parsed, held, &lines).await });
         while requests.try_join_next().is_some() {}
     };
     // The client is gone: its watches end, its turns stop when it was the only one, what is in
@@ -166,12 +182,18 @@ where
     read.and(written)
 }
 
-/// Answers one message, streaming a turn's or a watch's notifications before its response; a
-/// watch held as `claim` until the connection ends it.
+/// What the connection holds for one request while it runs: the watch it asks for, or the
+/// turn it starts.
+struct Held {
+    claim: Option<Result<Claim, ApiError>>,
+    turn: Option<Turn>,
+}
+
+/// Answers one message, streaming a turn's or a watch's notifications before its response.
 async fn handle<P, L, B>(
     server: &Server<P, L, B>,
     parsed: Parsed,
-    claim: Option<Result<Claim, ApiError>>,
+    held: Held,
     lines: &mpsc::Sender<String>,
 ) where
     P: ModelProvider + 'static,
@@ -185,6 +207,7 @@ async fn handle<P, L, B>(
             return;
         }
     };
+    let Held { claim, mut turn } = held;
     let claim = match claim.transpose() {
         Ok(claim) => claim,
         Err(refused) => {
@@ -194,40 +217,91 @@ async fn handle<P, L, B>(
             return;
         }
     };
+    // A turn the connection's watch of its thread writes starts once that watch follows it.
+    if let Some(turn) = &mut turn {
+        turn.wait_for_watch().await;
+    }
     // Local transports act as the local person.
     let answered = match server.call(&Caller::default(), request).await {
         Answered::Reply(reply) => reply,
-        Answered::Stream(turn) => follow(Streamed::Turn(turn), lines).await,
-        Answered::Watch(watch) => {
-            let ended = async {
-                match &claim {
-                    Some(claim) => claim.ended().await,
-                    None => std::future::pending().await,
+        Answered::Stream(stream) => follow_turn(stream, lines, turn.as_mut()).await,
+        Answered::Watch(watch) => match &claim {
+            Some(claim) => {
+                claim.following();
+                tokio::select! {
+                    last = follow_watch(watch, lines, claim) => last,
+                    () = claim.ended() => Ok(Reply::Watched { ended: WatchEnd::Unwatched }),
                 }
-            };
-            tokio::select! {
-                last = follow(Streamed::Watch(watch), lines) => last,
-                () = ended => Ok(Reply::Watched { ended: WatchEnd::Unwatched }),
             }
-        }
+            None => Err(ApiError::new(
+                code::INTERNAL,
+                "a watch the connection does not hold",
+            )),
+        },
     };
-    drop(claim);
+    drop((claim, turn));
     // A request without an id is a notification, which is never answered.
     if let Some(id) = id {
         let _ = lines.send(respond(Some(&id), answered.as_ref())).await;
     }
 }
 
-/// Writes each of `streamed`'s notifications to the connection: its answer once it has none
-/// left.
-async fn follow(mut streamed: Streamed, lines: &mpsc::Sender<String>) -> Result<Reply, ApiError> {
+/// Writes each of a watch's notifications to the connection, noting how far it has written
+/// its thread: its answer once it ends.
+async fn follow_watch(
+    mut watch: Watch,
+    lines: &mpsc::Sender<String>,
+    claim: &Claim,
+) -> Result<Reply, ApiError> {
+    let thread = watch.thread();
     loop {
-        match streamed.next().await {
-            Some(Item::Note(note)) => {
+        match watch.next().await {
+            Some(Watched::Note(note)) => {
                 let _ = lines.send(notify(&note)).await;
+                if let Notification::Event { thread: of, event } = note.as_ref()
+                    && *of == thread
+                {
+                    claim.sent(event.seq);
+                }
             }
-            Some(Item::Last(last)) => return *last,
-            None => return Err(ApiError::new(code::INTERNAL, "the stream stopped")),
+            Some(Watched::Ended(ended)) => return ended.map(|ended| Reply::Watched { ended }),
+            None => return Err(ApiError::new(code::INTERNAL, "the watch stopped")),
+        }
+    }
+}
+
+/// Writes each of a turn's notifications to the connection, unless the connection watches its
+/// thread, whose watch writes them: then its answer waits until the watch has written the last
+/// event the turn saw recorded.
+async fn follow_turn(
+    mut stream: TurnStream,
+    lines: &mpsc::Sender<String>,
+    mut turn: Option<&mut Turn>,
+) -> Result<Reply, ApiError> {
+    let thread = stream.thread();
+    let quiet = turn.as_ref().is_some_and(|turn| turn.quiet());
+    let mut last = None;
+    loop {
+        match stream.next().await {
+            Some(TurnItem::Note(note)) => {
+                if let Notification::Event { thread: of, event } = note.as_ref()
+                    && *of == thread
+                {
+                    last = Some(event.seq);
+                }
+                if !quiet {
+                    let _ = lines.send(notify(&note)).await;
+                }
+            }
+            // Only a client of a server elsewhere misses any.
+            Some(TurnItem::Missed(_)) => {}
+            Some(TurnItem::Ended(ended)) => {
+                if let (Some(turn), Some(last)) = (turn.as_mut(), last) {
+                    turn.written(last).await;
+                }
+                return ended.map(|turn| Reply::Turn { turn });
+            }
+            None => return Err(ApiError::new(code::INTERNAL, "the turn stopped")),
         }
     }
 }

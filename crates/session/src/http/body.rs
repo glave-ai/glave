@@ -1,6 +1,6 @@
 //! What an HTTP answer sends: one JSON message, or a stream as server-sent events, each
-//! notification as it comes and the response last. A watch's events carry their `seq` as
-//! their id, so a client knows where to reconnect from, and a stream quiet for 15 seconds gets a
+//! notification as it comes and the response last. The followed thread's events carry their
+//! `seq` as their id, so a client knows where to reconnect from, and a stream quiet for 15 seconds gets a
 //! comment, so proxies keep it open. A client that stops reading stops only its stream: a turn
 //! goes on in the server.
 
@@ -33,8 +33,8 @@ pub(crate) enum Answer {
     Stream {
         next: Option<Next>,
         id: Option<Id>,
-        /// The thread a watch watches, whose events' ids are their `seq`s.
-        watched: Option<ThreadId>,
+        /// The thread followed, whose events' ids are their `seq`s.
+        watched: ThreadId,
         /// When the stream has been quiet long enough for a comment.
         quiet: Pin<Box<Sleep>>,
     },
@@ -78,9 +78,9 @@ fn event(id: Option<u64>, message: &str) -> Frame<Bytes> {
 }
 
 /// `note` as an event: an event of the thread `watched` with its `seq` as its id.
-fn note(note: &Arc<Notification>, watched: Option<ThreadId>) -> Frame<Bytes> {
+fn note(note: &Arc<Notification>, watched: ThreadId) -> Frame<Bytes> {
     let id = match note.as_ref() {
-        Notification::Event { thread, event } if Some(*thread) == watched => Some(event.seq.get()),
+        Notification::Event { thread, event } if *thread == watched => Some(event.seq.get()),
         _ => None,
     };
     event(id, &notify(note))

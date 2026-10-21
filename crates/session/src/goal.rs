@@ -31,7 +31,7 @@ where
         goal: Option<Goal>,
         unattended: bool,
     ) -> Result<TurnStream, ApiError> {
-        self.authorize(caller, thread).await?;
+        let scope = self.authorize(caller, thread).await?;
         // A model the thread chose before must still be one this server runs.
         let model = self.model_of(thread, None).await?;
         // So must the approval mode it chose before be one the policy leaves.
@@ -40,7 +40,7 @@ where
             return Err(no_goal(thread));
         }
         let (finish, done) = watch::channel(None);
-        let notes = self.inner.hub.watch(thread).0;
+        let watch = self.watch_from_now(scope, thread).await?;
         let caller = caller.clone();
         let work = move |inner: Arc<crate::server::Inner<P, L, B>>, mut held, cancel| async move {
             let _no_one = unattended.then(|| inner.approvals.unattended_while(thread));
@@ -64,7 +64,7 @@ where
             (held, ran)
         };
         self.occupy_for(thread, finish, Use::Steered, work).await?;
-        Ok(TurnStream::new(model, Some(notes), done))
+        Ok(TurnStream::new(model, thread, Some(watch), done))
     }
 
     /// Stops `thread`'s active goal for `caller`: cancels its running turn, if any, and

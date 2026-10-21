@@ -29,7 +29,7 @@ impl Streamed {
             Self::Turn(turn) => loop {
                 match turn.next().await? {
                     TurnItem::Note(note) => return Some(Item::Note(note)),
-                    // Missed notifications are in the log; the client reads them by `seq`.
+                    // Only a client of a server elsewhere misses any.
                     TurnItem::Missed(_) => {}
                     TurnItem::Ended(ended) => {
                         let last = ended.map(|turn| Reply::Turn { turn });
@@ -46,11 +46,11 @@ impl Streamed {
         }
     }
 
-    /// The thread a watch watches, whose events' `seq`s mark the client's place in it.
-    pub(crate) fn watched(&self) -> Option<ThreadId> {
+    /// The thread followed, whose events' `seq`s mark the client's place in it.
+    pub(crate) fn watched(&self) -> ThreadId {
         match self {
-            Self::Turn(_) => None,
-            Self::Watch(watch) => Some(watch.thread()),
+            Self::Turn(turn) => turn.thread(),
+            Self::Watch(watch) => watch.thread(),
         }
     }
 }
