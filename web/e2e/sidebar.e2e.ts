@@ -184,7 +184,14 @@ test('where a thread’s time sits, a ring turns while it runs and a mark says i
     expect((line?.x ?? 0) + (line?.width ?? 0) - ((box?.x ?? 0) + (box?.width ?? 0))).toBeLessThan(
       20,
     );
-    expect(box?.height ?? 0).toBeLessThanOrEqual(20);
+    const size = await row(title)
+      .getByTestId('nav-thread-title')
+      .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
+    // Its own height: a turning ring's box on the page grows as it turns.
+    const height = await status.evaluate((element) =>
+      Number.parseFloat(getComputedStyle(element).height),
+    );
+    expect(Math.abs(height - size)).toBeLessThan(1);
   }
   expect(await turning(ring)).not.toBe('none');
   await expectAccessible(page);
