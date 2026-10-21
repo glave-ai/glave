@@ -242,7 +242,7 @@ fn the_persons_chats_are_one_ledger_searched_once() {
 /// `memory-month`'s probe 9 (#555): a project's memories all name it, and a fact said once in
 /// passing, in a thread run earlier in the same store, holds every word of the query.
 #[test]
-fn a_turn_holding_every_word_outranks_memories_sharing_only_the_projects_name() {
+fn a_message_holding_every_word_outranks_memories_sharing_only_the_projects_name() {
     block_on!(async {
         let kit = Kit::new();
         let memory = kit.memory(rules(), 2).await;
