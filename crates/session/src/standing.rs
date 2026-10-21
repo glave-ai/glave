@@ -250,7 +250,7 @@ where
         Ok(ThreadSummary {
             id: view.thread,
             project: scope.project(),
-            status: self.status(view.thread),
+            status: self.status_of(&scope, &view).await,
             standing: view.standing,
             title,
             approval: self.approval_now(&scope, view.thread, protections).await?,

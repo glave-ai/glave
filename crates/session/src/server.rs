@@ -24,6 +24,7 @@ use glave_ports::{
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
+use crate::answers::Followed;
 use crate::approvals::{Answering, Approvals};
 use crate::credentials::GitHosts;
 use crate::held::{Slot, finished};
@@ -233,6 +234,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) holder: OnceLock<Holder>,
     /// The organization's scheduler lease, while this server holds it (`schedule.rs`).
     pub(crate) scheduling: Mutex<Option<Lease>>,
+    /// Where each waiting turn sends how it ends, for whoever follows it (`answers.rs`).
+    pub(crate) followed: Followed,
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -308,6 +311,7 @@ where
                 leases,
                 holder: OnceLock::new(),
                 scheduling: Mutex::new(None),
+                followed: Followed::default(),
             }),
         }
     }
@@ -487,7 +491,7 @@ where
     }
 
     pub(crate) async fn cancel(&self, thread: ThreadId) -> Result<Reply, ApiError> {
-        let mut finished = {
+        let running = {
             let threads = self
                 .inner
                 .threads
@@ -498,15 +502,14 @@ where
                     cancel, finished, ..
                 }) => {
                     cancel.cancel();
-                    finished.clone()
+                    Some(finished.clone())
                 }
-                _ => {
-                    return Err(ApiError::new(
-                        code::NO_TURN,
-                        format!("no turn is running in thread {thread}"),
-                    ));
-                }
+                _ => None,
             }
+        };
+        let Some(mut finished) = running else {
+            // A turn waiting for an answer holds nothing here: it goes on, stopped.
+            return self.stop_waiting(thread).await;
         };
         let _ = finished.wait_for(|done| *done).await;
         Ok(Reply::Done {})

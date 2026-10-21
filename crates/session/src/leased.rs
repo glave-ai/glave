@@ -102,7 +102,9 @@ where
             // Glave's own: recovery, which no one asks for.
             let scope = Scope::glaves_own(self.inner.org, project);
             for view in self.open_turns(&scope).await? {
-                self.repair(scope, view.thread, &mut repaired).await?;
+                // A subagent's turn runs, and goes on, under its parent's lease.
+                let root = view.parent.unwrap_or(view.thread);
+                self.repair(scope, view.thread, root, &mut repaired).await?;
             }
         }
         Ok(repaired)
@@ -134,18 +136,19 @@ where
         Ok(open)
     }
 
-    /// Closes the turn left open in `thread`, unless work on it runs here or another server
-    /// holds its lease.
+    /// Closes the turn left open in `thread`, whose turn runs under `root`'s lease, unless work
+    /// on `root` runs here or another server holds its lease. One that waits stays waiting.
     async fn repair(
         &self,
         scope: Scope,
         thread: ThreadId,
+        root: ThreadId,
         repaired: &mut Repaired,
     ) -> Result<(), ApiError> {
-        if matches!(self.lock().get(&thread), Some(Slot::Busy { .. })) {
+        if matches!(self.lock().get(&root), Some(Slot::Busy { .. })) {
             return Ok(());
         }
-        let Some(lease) = self.take(thread).await? else {
+        let Some(lease) = self.take(root).await? else {
             repaired.held = repaired.held.saturating_add(1);
             return Ok(());
         };

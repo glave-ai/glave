@@ -5,7 +5,7 @@
 //! it, never in between.
 
 use glave_event::{EventId, Part, ThreadId};
-use glave_harness::{NotQueued, Queued};
+use glave_harness::{Inbox, NotQueued, Queued, Said};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 use tokio::sync::watch;
 
@@ -64,7 +64,18 @@ where
         files: &[Part],
         choice: &Choice,
     ) -> Result<Queue, ApiError> {
+        let said = Said {
+            text: prompt,
+            files,
+        };
         let threads = self.lock();
+        // A turn that waits for an answer takes messages too, for when it goes on: kept in
+        // memory, as a running turn's are.
+        if let Some(Slot::Idle { thread: held, .. }) = threads.get(&thread)
+            && held.waits()
+        {
+            return self.queue_to(held.inbox(), None, caller, said, choice);
+        }
         let Some(Slot::Busy {
             cancel,
             finished,
@@ -81,6 +92,19 @@ where
         if cancel.is_cancelled() {
             return Ok(Queue::Ending(finished.clone()));
         }
+        self.queue_to(inbox, Some(finished), caller, said, choice)
+    }
+
+    /// Queues what `caller` `said` to `inbox`, the inbox of a turn that runs (whose end
+    /// `finished` tells) or waits.
+    fn queue_to(
+        &self,
+        inbox: &Inbox,
+        finished: Option<&watch::Receiver<bool>>,
+        caller: &Caller,
+        said: Said<'_>,
+        choice: &Choice,
+    ) -> Result<Queue, ApiError> {
         if choice != &Choice::default() {
             return Err(ApiError::new(
                 code::INVALID_PARAMS,
@@ -93,14 +117,17 @@ where
         let id = EventId::new(harness.clock().now(), harness.entropy().bytes()?)?;
         let queued = Queued {
             id,
-            text: prompt.to_owned(),
-            files: files.to_vec(),
+            text: said.text.to_owned(),
+            files: said.files.to_vec(),
             caller: caller.clone(),
         };
-        match inbox.push(queued) {
-            Ok(()) => Ok(Queue::Queued(id)),
-            Err(NotQueued::Ending) => Ok(Queue::Ending(finished.clone())),
-            Err(full @ NotQueued::Full) => Err(ApiError::new(code::QUEUE_FULL, full.to_string())),
+        match (inbox.push(queued), finished) {
+            (Ok(()), _) => Ok(Queue::Queued(id)),
+            (Err(NotQueued::Ending), Some(finished)) => Ok(Queue::Ending(finished.clone())),
+            (Err(NotQueued::Ending), None) => Ok(Queue::Idle),
+            (Err(full @ NotQueued::Full), _) => {
+                Err(ApiError::new(code::QUEUE_FULL, full.to_string()))
+            }
         }
     }
 }

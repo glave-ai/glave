@@ -28,6 +28,7 @@ use crate::repeats::Repeats;
 use crate::sandbox::{Recorded, recorded};
 use crate::telemetry;
 use crate::toolset::ToolSet;
+use crate::waits::{Answered, Opened};
 use tracing::Instrument as _;
 
 pub use summary::TurnSummary;
@@ -158,6 +159,9 @@ pub(crate) struct Step {
     pub(crate) toolset: ToolSet,
     pub(crate) repeats: Repeats,
     pub(crate) summary: TurnSummary,
+    /// The approval a turn going on from the log stopped at, with its answer once one came:
+    /// for its call, the first the turn runs (`going_on.rs`).
+    pub(crate) answered: Option<Answered>,
 }
 
 /// The version of the turn configuration blob.
@@ -304,11 +308,33 @@ where
         self.reopen_removed(thread).await?;
         self.pass_hooks(thread, prompt, cancel).await?;
         self.begin(thread, prompt, &toolset).await?;
-        let mut step = Step {
+        let step = Step {
             toolset,
             repeats: Repeats::default(),
             summary: TurnSummary::started(),
+            answered: None,
         };
+        self.steps(thread, step, &[], cancel, live).await
+    }
+
+    /// A turn's steps: first `pending`, the rest of a response's calls when the turn goes on
+    /// from its log at them (`going_on.rs`), then a model call and its tools' calls after
+    /// another until the turn ends, which it records. One that stops at a wait records
+    /// nothing more (`HarnessError::Waits`).
+    pub(crate) async fn steps(
+        &self,
+        thread: &mut Thread,
+        mut step: Step,
+        pending: &[ToolCall],
+        cancel: &Cancel,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Result<TurnSummary, HarnessError> {
+        if !pending.is_empty() {
+            let ran = self
+                .run_calls(thread, pending, &mut step, cancel, live)
+                .await;
+            waits_if(thread, ran)?;
+        }
         // Whether this step was refused as too long once already.
         let mut squeezed = false;
         step.summary.outcome = loop {
@@ -367,8 +393,10 @@ where
             if calls.is_empty() {
                 break outcome_of(completion.stop);
             }
-            self.run_calls(thread, &calls, &mut step, cancel, live)
-                .await?;
+            let ran = self
+                .run_calls(thread, &calls, &mut step, cancel, live)
+                .await;
+            waits_if(thread, ran)?;
         };
         // Stopped from outside: by the person (cancelled), or by glave stopping (interrupted).
         let stopped = cancel.is_cancelled() && step.summary.outcome == cancel.outcome();
@@ -629,7 +657,10 @@ where
         let mut events = Vec::new();
         self.stage_commands(thread, &mut events)?;
         self.stage(thread, &mut events, &TurnEnded { outcome })?;
-        self.commit(thread, events).await
+        self.commit(thread, events).await?;
+        // Nothing is open any more, whatever was when the thread was read.
+        thread.opened = None;
+        Ok(())
     }
 
     /// Records a finished model response: its message, its tool calls, then its usage.
@@ -677,6 +708,15 @@ where
         });
         Ok(calls)
     }
+}
+
+/// `ran`, a turn's calls: one that stopped at a wait leaves the thread waiting, as its log
+/// has it.
+fn waits_if(thread: &mut Thread, ran: Result<(), HarnessError>) -> Result<(), HarnessError> {
+    if matches!(ran, Err(HarnessError::Waits(_))) {
+        thread.opened = Some(Opened::Waits);
+    }
+    ran
 }
 
 /// How a turn ends when the model stops without calling a tool.

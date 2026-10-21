@@ -17,7 +17,7 @@ use glave_ports::memories::Memory;
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
 use glave_ports::{
     Completion, EventLog, InMemoryBlobs, InMemoryLeases, InMemoryLog, InMemoryProjects, Leases,
-    Located, LogError, OrgId, Project, ProjectId, ProjectKind, Projects, Scope,
+    Located, LogError, OrgId, Project, ProjectId, ProjectKind, Projects, Scope, ToolSource,
 };
 use glave_session::protocol::ModelInfo;
 use glave_session::signin::Browsers;
@@ -96,6 +96,10 @@ pub(crate) struct Setup {
     pub home: Scope,
     /// The leases another server keeps, to share its store; its own in memory when none.
     pub leases: Option<Arc<dyn Leases>>,
+    /// The model it asks, in place of one answering `answers` in turn.
+    pub model: Option<ScriptedModel>,
+    /// Tools beside the built-in ones.
+    pub tools: Vec<Arc<dyn ToolSource>>,
 }
 
 impl Setup {
@@ -124,6 +128,8 @@ impl Setup {
             origin: None,
             home: scope(),
             leases: None,
+            model: None,
+            tools: Vec::new(),
         }
     }
 
@@ -162,7 +168,9 @@ impl Setup {
         dir: &Path,
         log: L,
     ) -> (Tested<L>, Seen) {
-        let provider = ScriptedModel::new(self.answers);
+        let provider = self
+            .model
+            .unwrap_or_else(|| ScriptedModel::new(self.answers));
         let provider = match self.gate {
             Some(gate) => provider.gated(gate),
             None => provider,
@@ -205,6 +213,7 @@ impl Setup {
             browsers: self.browsers,
             origin: self.origin,
             leases: self.leases,
+            tools: self.tools,
             ..Wiring::new(provider, log, InMemoryBlobs::new(), workspace, projects)
         };
         let server = Server::new(wiring, self.settings, home.org(), self.answering);
