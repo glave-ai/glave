@@ -2,16 +2,13 @@
 //! A turn started with an idempotency key can be followed again by a retry with the same key.
 //! While one runs, a message is queued to it instead (`steer.rs`).
 
-use std::future::{pending, poll_fn};
-use std::pin::pin;
+use std::future::pending;
 use std::sync::Arc;
-use std::task::Poll;
 
 use glave_event::{Part, ThreadId};
 use glave_harness::{Cancel, Live, Said, Thread};
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
-use tokio::sync::broadcast::error::RecvError;
-use tokio::sync::{broadcast, watch};
+use tokio::sync::watch;
 
 use crate::held::{Use, busy, finished};
 use crate::hub::Hub;
@@ -20,40 +17,56 @@ use crate::modes::Choice;
 use crate::protocol::{ApiError, IdempotencyKey, Notification, TurnResult, Update, code};
 use crate::server::{Ended, Inner, Server};
 use crate::steer::{Message, Queue, Sent};
+use crate::watch::{Watch, Watched};
 
 /// One thing a running turn sends.
 #[derive(Debug, Clone)]
 pub enum TurnItem {
     Note(Arc<Notification>),
-    /// The follower fell behind and missed this many notifications. The stored events are
-    /// still in the log: read them with `thread/events` after the last `seq` seen.
+    /// A client of a server elsewhere fell behind what the server sent it, and missed this many
+    /// notifications its own buffer could not hold. The stored events are still in the log:
+    /// read them with `thread/events` after the last `seq` seen. A turn followed in the
+    /// server's own process never misses one: what its watch misses, it reads from the log.
     Missed(u64),
     /// How the turn ended. Always the last item.
     Ended(Result<TurnResult, ApiError>),
 }
 
-/// A turn's notifications, then its ending.
+/// A turn's notifications, then its ending: a watch of its thread from where the turn began
+/// (what it records, its live updates and its subagents'), which ends with how the turn ended.
 pub struct TurnStream {
     /// The model the turn, or the goal's first turn, goes to.
     pub(crate) model: String,
+    thread: ThreadId,
     /// `None` when the turn had already ended before anyone followed it.
-    notes: Option<broadcast::Receiver<Arc<Notification>>>,
+    watch: Option<Box<Watch>>,
     done: Done,
+    /// How the turn ended, once it has, while what it sent before is still to come.
+    ending: Option<Result<TurnResult, ApiError>>,
     ended: bool,
 }
 
+/// What came first while a turn ran: something its watch sent, or how it ended.
+enum Came {
+    Watched(Option<Watched>),
+    Ending(Result<TurnResult, ApiError>),
+}
+
 impl TurnStream {
-    pub(crate) fn new(
-        model: String,
-        notes: Option<broadcast::Receiver<Arc<Notification>>>,
-        done: Done,
-    ) -> Self {
+    pub(crate) fn new(model: String, thread: ThreadId, watch: Option<Watch>, done: Done) -> Self {
         Self {
             model,
-            notes,
+            thread,
+            watch: watch.map(Box::new),
             done,
+            ending: None,
             ended: false,
         }
+    }
+
+    /// The thread the turn runs in.
+    pub fn thread(&self) -> ThreadId {
+        self.thread
     }
 
     /// The next item, or `None` after the ending.
@@ -61,30 +74,36 @@ impl TurnStream {
         if self.ended {
             return None;
         }
-        let Self { notes, done, .. } = self;
-        let note = async {
-            match notes {
-                Some(notes) => notes.recv().await,
-                None => pending().await,
-            }
-        };
-        let mut note = pin!(note);
-        let mut ending = pin!(ending(done));
-        let item = poll_fn(|cx| {
-            // Everything sent before the turn ended is in the channel by then, so notes are
-            // always taken first and the ending comes last.
-            match note.as_mut().poll(cx) {
-                Poll::Ready(Ok(note)) => return Poll::Ready(TurnItem::Note(note)),
-                Poll::Ready(Err(RecvError::Lagged(missed))) => {
-                    return Poll::Ready(TurnItem::Missed(missed));
+        while self.ending.is_none() {
+            let Self { watch, done, .. } = self;
+            let watched = async {
+                match watch {
+                    Some(watch) => watch.next().await,
+                    None => pending().await,
                 }
-                Poll::Ready(Err(RecvError::Closed)) | Poll::Pending => {}
+            };
+            // What the watch has is taken before the ending.
+            let came = tokio::select! {
+                biased;
+                item = watched => Came::Watched(item),
+                ended = ending(done) => Came::Ending(ended),
+            };
+            match came {
+                Came::Watched(Some(Watched::Note(note))) => return Some(TurnItem::Note(note)),
+                // The thread was deleted, or its log could not be read: the ending still comes.
+                Came::Watched(_) => self.watch = None,
+                Came::Ending(ended) => self.ending = Some(ended),
             }
-            ending.as_mut().poll(cx).map(TurnItem::Ended)
-        })
-        .await;
-        self.ended = matches!(item, TurnItem::Ended(_));
-        Some(item)
+        }
+        // Everything the turn sent before it ended comes before how it ended.
+        if let Some(watch) = &mut self.watch {
+            match watch.rest().await {
+                Some(Watched::Note(note)) => return Some(TurnItem::Note(note)),
+                Some(Watched::Ended(_)) | None => self.watch = None,
+            }
+        }
+        self.ended = true;
+        self.ending.take().map(TurnItem::Ended)
     }
 
     /// Follows the turn to its end, ignoring its notifications.
@@ -161,11 +180,15 @@ where
         if let Some(key) = key
             && let Some(started) = self.inner.keyed.claim(caller.person, thread, key, &done)
         {
-            let notes = started
-                .borrow()
-                .is_none()
-                .then(|| self.inner.hub.watch(thread).0);
-            return Ok(Sent::Started(TurnStream::new(model, notes, started)));
+            let running = started.borrow().is_none();
+            let watch = if running {
+                Some(self.watch_from_now(scope, thread).await?)
+            } else {
+                None
+            };
+            return Ok(Sent::Started(TurnStream::new(
+                model, thread, watch, started,
+            )));
         }
         let sent = loop {
             if queue {
@@ -180,13 +203,19 @@ where
                     Err(refused) => break Err(refused),
                 }
             }
-            let notes = self.inner.hub.watch(thread).0;
+            let watch = match self.watch_from_now(scope, thread).await {
+                Ok(watch) => watch,
+                Err(failed) => break Err(failed),
+            };
             let work = turn(thread, prompt, &files, caller, &choice, unattended);
             let started = self
                 .occupy_for(thread, finish.clone(), Use::Steered, work)
                 .await;
             match started {
-                Ok(()) => break Ok(Sent::Started(TurnStream::new(model, Some(notes), done))),
+                Ok(()) => {
+                    let stream = TurnStream::new(model, thread, Some(watch), done);
+                    break Ok(Sent::Started(stream));
+                }
                 // Started by someone else meanwhile: queued to it instead.
                 Err(running) if queue && running.code == code::TURN_RUNNING => {}
                 Err(failed) => break Err(failed),

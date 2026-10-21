@@ -13,7 +13,7 @@ use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider, Scope};
 use tokio::sync::broadcast::{self, error::RecvError, error::TryRecvError};
 
 use crate::protocol::{ApiError, Notification, WatchEnd, code};
-use crate::server::Server;
+use crate::server::{Server, no_thread};
 
 /// Events read from the log at a time while a watch catches up.
 const PAGE: usize = 256;
@@ -43,7 +43,9 @@ pub enum Watched {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Why {
     /// The watched thread's first reading: the `seq` of its latest event the hub had published
-    /// before the watch began, when it knew one. Copies come of what was published after.
+    /// before the watch began, when it knew one. Copies come of what was published after; with
+    /// none known (nothing published since the server started, or the thread long forgotten),
+    /// none is taken to come.
     Begun(Option<Seq>),
     /// An event came ahead of what was sent, at this `seq`: copies come of what is read past it.
     Ahead(Seq),
@@ -56,7 +58,7 @@ impl Why {
     /// no copy of what was read is still to come.
     fn stale_until(self, read: Seq) -> Option<Seq> {
         let waits = match self {
-            Self::Begun(published) => published.is_none_or(|published| published < read),
+            Self::Begun(published) => published.is_some_and(|published| published < read),
             Self::Ahead(came) => came < read,
             Self::Behind => true,
         };
@@ -131,6 +133,24 @@ impl Watch {
         watch
     }
 
+    /// A watch of `thread` from its event `last` on that takes only what `notes` brings, as a
+    /// turn's stream follows what the turn records: nothing is read from the log unless the
+    /// watch falls behind, or an event comes ahead of what was sent. Live updates wait for an
+    /// event past `last` unless the hub had `published` it before.
+    pub(crate) fn from(
+        thread: ThreadId,
+        read: Reader,
+        (notes, published): (broadcast::Receiver<Arc<Notification>>, Option<Seq>),
+        last: Seq,
+    ) -> Self {
+        let mut watch = Self::new(thread, read, (notes, published), Some(last));
+        watch.behind.clear();
+        if let Some(until) = Why::Begun(published).stale_until(last) {
+            watch.stale.insert(thread, until);
+        }
+        watch
+    }
+
     /// The thread watched.
     pub fn thread(&self) -> ThreadId {
         self.thread
@@ -150,6 +170,12 @@ impl Watch {
         let item = self.step(wait).await;
         self.ended = matches!(item, Some(Watched::Ended(_)));
         item
+    }
+
+    /// What is still to be sent now, without waiting for more to be recorded: what a turn's
+    /// stream sends once the turn has ended. `None` once there is nothing more.
+    pub(crate) async fn rest(&mut self) -> Option<Watched> {
+        self.item(false).await
     }
 
     /// Follows the watch to its end, passing its notifications over: how it ended.
@@ -336,6 +362,23 @@ where
         // Subscribed before anything is read, so nothing recorded meanwhile falls between.
         let notes = self.inner.hub.watch(thread);
         Ok(Watch::new(thread, self.reader(scope), notes, after))
+    }
+
+    /// A watch of `thread` from its latest event on, for a turn or a goal about to start there:
+    /// what is recorded from now, and the live updates.
+    pub(crate) async fn watch_from_now(
+        &self,
+        scope: Scope,
+        thread: ThreadId,
+    ) -> Result<Watch, ApiError> {
+        // Subscribed before the latest event is read, so nothing recorded meanwhile falls
+        // between.
+        let notes = self.inner.hub.watch(thread);
+        let view = self.inner.harness.log().thread_view(&scope, thread).await?;
+        let last = view
+            .map(|view| view.last_seq)
+            .ok_or_else(|| no_thread(thread))?;
+        Ok(Watch::from(thread, self.reader(scope), notes, last))
     }
 
     /// What reads a page of a thread's events in `scope`, as a watch catches up.

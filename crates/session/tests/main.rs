@@ -40,5 +40,6 @@ mod tasks;
 mod titles;
 mod tracing;
 mod trust;
+mod turn_streams;
 mod watching;
 mod worktrees;

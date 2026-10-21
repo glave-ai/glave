@@ -1,6 +1,7 @@
 //! What the session tests share: scripted answers, a server built from a `Setup`, the requests
 //! most tests make, a fake identity provider, and a client of the HTTP transport.
 
+pub(crate) mod following;
 mod git;
 pub(crate) mod issuer;
 mod requests;
