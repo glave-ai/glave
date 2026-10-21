@@ -88,7 +88,7 @@ impl Processes {
         let mut child = Child::new(inner);
         let pid = child.id().and_then(|pid| i32::try_from(pid).ok());
         if let (Some(lifeline), Some(pid)) = (&self.lifeline, pid) {
-            match lifeline.tie(pid) {
+            match lifeline.tie(pid).await {
                 Ok(tie) => child = child.tied(tie),
                 Err(error) => {
                     child.stop().await;

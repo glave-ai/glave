@@ -3,7 +3,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use glave_ports::testing::{HUNG, TempDir};
-use rustix::process::{Pid, Signal, kill_process};
+use rustix::process::{Pid, Signal, kill_process, test_kill_process};
 
 use super::*;
 use crate::testing::Orphan;
@@ -20,10 +20,48 @@ fn fake_helper(folder: &Path) -> PathBuf {
     script
 }
 
+/// A program at glave's path that is no helper (another version): it says something else, then
+/// reads what it is given, keeping its number in `imposter` beside itself.
+fn imposter(folder: &Path) {
+    let text = "#!/bin/sh\necho $$ > \"${0%/*}/imposter\"\nprintf 'glave-lifeline 2\\n'\n\
+                exec cat > /dev/null\n";
+    std::fs::write(folder.join("helper"), text).unwrap();
+}
+
+/// A stand-in helper that says it is ready only once a file `go` is beside it.
+fn gated_helper(folder: &Path) {
+    let ready = String::from_utf8(READY.to_vec()).unwrap();
+    let text = format!(
+        "#!/bin/sh\nwhile [ ! -e \"${{0%/*}}/go\" ]; do sleep 0.01; done\nprintf '{ready}'\n\
+         exec cat > \"${{0%/*}}/told-$$\"\n"
+    );
+    std::fs::write(folder.join("helper"), text).unwrap();
+}
+
 /// The helper running now.
 fn helper_pid(lifeline: &Lifeline) -> u32 {
     let mut state = lifeline.lock();
     state.helper.as_mut().unwrap().process.id().unwrap()
+}
+
+/// Kills the helper `pid`, and returns once glave would find it gone.
+async fn killed(lifeline: &Lifeline, pid: u32) {
+    let leader = Pid::from_raw(i32::try_from(pid).unwrap()).unwrap();
+    kill_process(leader, Signal::KILL).unwrap();
+    let deadline = Instant::now() + HUNG;
+    while lifeline
+        .lock()
+        .helper
+        .as_mut()
+        .unwrap()
+        .process
+        .try_wait()
+        .unwrap()
+        .is_none()
+    {
+        assert!(Instant::now() < deadline, "the helper did not end");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 }
 
 /// What the helper `pid` read, once it has read `wanted` (or the guard against a hang ran out).
@@ -59,36 +97,111 @@ fn glave_tells_its_helper_what_it_holds_and_a_new_helper_all_it_still_holds() {
     glave_ports::block_on!(async {
         let lifeline = Arc::new(Lifeline::start(fake_helper(&folder)).await.unwrap());
         let first = helper_pid(&lifeline);
-        let (one, two) = (lifeline.tie(101).unwrap(), lifeline.tie(102).unwrap());
+        let (one, two) = (
+            lifeline.tie(101).await.unwrap(),
+            lifeline.tie(102).await.unwrap(),
+        );
         drop(one);
         let said = "+101\n+102\n-101\n";
         assert_eq!(told(&folder, first, said).await, said);
 
         // The helper goes; the next program glave starts finds it gone, starts another and
         // tells it everything glave still holds.
-        let pid = Pid::from_raw(i32::try_from(first).unwrap()).unwrap();
-        kill_process(pid, Signal::KILL).unwrap();
-        let deadline = Instant::now() + HUNG;
-        while lifeline
-            .lock()
-            .helper
-            .as_mut()
-            .unwrap()
-            .process
-            .try_wait()
-            .unwrap()
-            .is_none()
-        {
-            assert!(Instant::now() < deadline, "the helper did not end");
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        let three = lifeline.tie(103).unwrap();
+        killed(&lifeline, first).await;
+        let three = lifeline.tie(103).await.unwrap();
         let second = helper_pid(&lifeline);
         assert_ne!(second, first);
         drop(two);
         let said = "+102\n+103\n-102\n";
         assert_eq!(told(&folder, second, said).await, said);
         drop(three);
+    });
+}
+
+#[test]
+fn a_helper_started_again_that_does_not_say_it_is_ready_is_refused_until_one_does() {
+    let folder = TempDir::new("lifeline-again").unwrap();
+    glave_ports::block_on!(async {
+        let lifeline = Arc::new(Lifeline::start(fake_helper(&folder)).await.unwrap());
+        let first = helper_pid(&lifeline);
+        let held = lifeline.tie(101).await.unwrap();
+
+        // What is at glave's path is no helper now (a rebuild or an upgrade put another version
+        // there), and the helper goes. Two programs start together: the first starts what is
+        // there, the second tells it and waits for it too. Both are refused, not left untied.
+        imposter(&folder);
+        killed(&lifeline, first).await;
+        let other = tokio::spawn({
+            let lifeline = Arc::clone(&lifeline);
+            async move { lifeline.tie(103).await.err() }
+        });
+        let refused = [lifeline.tie(102).await.err(), other.await.unwrap()];
+        for refused in refused {
+            assert!(
+                matches!(refused, Some(ProcessError::Lifeline { .. })),
+                "{refused:?}"
+            );
+        }
+        assert!(
+            lifeline.lock().helper.is_none(),
+            "it is not kept as the helper"
+        );
+        assert_eq!(
+            lifeline.lock().live,
+            BTreeSet::from([101]),
+            "102 and 103 are let go"
+        );
+        let pid = std::fs::read_to_string(folder.join("imposter")).unwrap();
+        let pid = Pid::from_raw(pid.trim().parse().unwrap()).unwrap();
+        let deadline = Instant::now() + HUNG;
+        while test_kill_process(pid).is_ok() {
+            assert!(Instant::now() < deadline, "what is not a helper is stopped");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        // A helper at glave's path again: the next program starts it, telling it all glave holds.
+        fake_helper(&folder);
+        let again = lifeline.tie(104).await.unwrap();
+        let second = helper_pid(&lifeline);
+        let said = "+101\n+104\n";
+        assert_eq!(told(&folder, second, said).await, said);
+        drop((held, again));
+    });
+}
+
+#[test]
+fn a_program_left_waiting_by_a_start_given_up_starts_the_helper_itself() {
+    let folder = TempDir::new("lifeline-given-up").unwrap();
+    glave_ports::block_on!(async {
+        let lifeline = Arc::new(Lifeline::start(fake_helper(&folder)).await.unwrap());
+        let first = helper_pid(&lifeline);
+        let held = lifeline.tie(101).await.unwrap();
+
+        // The helper goes; the one at glave's path now answers only once let. One program
+        // starts it and waits; another tells it and waits too.
+        gated_helper(&folder);
+        killed(&lifeline, first).await;
+        let starting = tokio::spawn({
+            let lifeline = Arc::clone(&lifeline);
+            async move { lifeline.tie(102).await.map(drop) }
+        });
+        tokio::task::yield_now().await;
+        let waiting = tokio::spawn({
+            let lifeline = Arc::clone(&lifeline);
+            async move { lifeline.tie(103).await }
+        });
+        tokio::task::yield_now().await;
+
+        // The first program's start is given up before its helper answers: the helper is
+        // stopped, and the program left waiting starts another rather than be refused.
+        starting.abort();
+        std::fs::write(folder.join("go"), "").unwrap();
+        let again = waiting.await.unwrap().unwrap();
+        assert!(starting.await.unwrap_err().is_cancelled());
+        let second = helper_pid(&lifeline);
+        let said = "+101\n+103\n";
+        assert_eq!(told(&folder, second, said).await, said);
+        drop((held, again));
     });
 }
 
