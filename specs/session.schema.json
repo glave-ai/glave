@@ -97,6 +97,58 @@
       ],
       "type": "object"
     },
+    "AwakeInfo": {
+      "description": "Whether this server keeps its computer from sleeping on its own while a turn, task or\nschedule runs (`specs/one-server.md`, owner decision 10).",
+      "oneOf": [
+        {
+          "description": "Never: a server, which does not sleep. There is nothing to choose.",
+          "properties": {
+            "kind": {
+              "const": "never",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "On a person's own computer, as they choose: kept awake while glave works when `on`, the\nscreen still free to sleep and closing the lid still sleeping it.",
+          "properties": {
+            "kind": {
+              "const": "chosen",
+              "type": "string"
+            },
+            "on": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "on"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "On a person's own computer that glave has nothing to keep awake with: why, in a\nsentence.",
+          "properties": {
+            "kind": {
+              "const": "cannot",
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "CallId": {
       "description": "Links a tool call to its result: 1 to 128 printable ASCII characters.",
       "type": "string"
@@ -2326,6 +2378,50 @@
         "type": "object"
       },
       "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "awake/get": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "Whether the computer is kept awake while glave works.",
+        "properties": {
+          "awake": {
+            "$ref": "#/$defs/AwakeInfo"
+          }
+        },
+        "required": [
+          "awake"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "awake/set": {
+      "params": {
+        "properties": {
+          "on": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "on"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "Whether the computer is kept awake while glave works.",
+        "properties": {
+          "awake": {
+            "$ref": "#/$defs/AwakeInfo"
+          }
+        },
+        "required": [
+          "awake"
+        ],
         "type": "object"
       },
       "streams": false

@@ -160,6 +160,9 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
     let cron = json!({"cron": "0 9 * * *"});
     vec![
         ("server/discover", vec![json!({})]),
+        // Whether the server's own computer stays awake: no one's id to name.
+        ("awake/get", vec![json!({})]),
+        ("awake/set", vec![json!({"on": false})]),
         ("signin/link", vec![json!({})]),
         ("signin/redeem", vec![json!({"code": "@code"})]),
         ("signin/end", vec![json!({"@caller": "@session"})]),

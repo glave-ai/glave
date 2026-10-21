@@ -33,7 +33,7 @@ pub use models::ModelInfo;
 pub use passkeys::{PasskeySummary, SignInWay};
 pub use projects::{GoneFolder, NewFolder, ProjectFolder};
 pub use providers::{ProviderInfo, hint};
-pub use reply::{QueuedMessage, Reply, ServerInfo, Status, ThreadSummary, TurnResult};
+pub use reply::{AwakeInfo, QueuedMessage, Reply, ServerInfo, Status, ThreadSummary, TurnResult};
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 pub use trust::{TrustAsk, TrustChoice, TrustItem};
 
@@ -79,6 +79,12 @@ methods! {
     /// What the server is. Over HTTP it needs no sign-in, so a browser learns which server it
     /// reached before it presents a session.
     "server/discover" => Discover {} -> [Server],
+    /// Whether this server keeps its computer awake while it works: on a person's own computer,
+    /// as they choose.
+    "awake/get" => AwakeGet {} -> [Awake],
+    /// Chooses whether the person's own computer is kept awake while glave works, from the
+    /// next work on. Only the person on this computer, and only where it is theirs to choose.
+    "awake/set" => AwakeSet { on: bool } -> [Awake],
     /// A one-time code for a link that signs a browser on this computer in: good once, for
     /// five minutes. Only glave on this computer: a local transport, or the local token.
     "signin/link" => SigninLink {} -> [Link],

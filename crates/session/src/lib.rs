@@ -4,6 +4,7 @@
 
 mod accounts;
 mod approvals;
+mod awake;
 mod background;
 mod browsers;
 pub mod client;
@@ -46,6 +47,7 @@ mod watch;
 
 pub use accounts::{AccountLedger, Accounts, AccountsError};
 pub use approvals::Answering;
+pub use awake::KeepAwake;
 pub use credentials::{GitHosts, NewCredential};
 pub use dispatch::Answered;
 pub use glave_identity::signin;

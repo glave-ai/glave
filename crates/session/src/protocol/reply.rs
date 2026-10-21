@@ -39,6 +39,21 @@ pub struct ServerInfo {
     pub signin: Vec<SignInWay>,
 }
 
+/// Whether this server keeps its computer from sleeping on its own while a turn, task or
+/// schedule runs (`specs/one-server.md`, owner decision 10).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AwakeInfo {
+    /// Never: a server, which does not sleep. There is nothing to choose.
+    Never,
+    /// On a person's own computer, as they choose: kept awake while glave works when `on`, the
+    /// screen still free to sleep and closing the lid still sleeping it.
+    Chosen { on: bool },
+    /// On a person's own computer that glave has nothing to keep awake with: why, in a
+    /// sentence.
+    Cannot { reason: String },
+}
+
 /// A thread, as a list shows it: from the threads view, with what it is doing now.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ThreadSummary {
@@ -260,6 +275,9 @@ pub enum Reply {
     /// The thread's latest goal, or `null`.
     #[schemars(title = "Goal")]
     Goal { goal: Option<GoalProgress> },
+    /// Whether the computer is kept awake while glave works.
+    #[schemars(title = "Awake")]
+    Awake { awake: AwakeInfo },
     #[schemars(title = "Done")]
     Done {},
 }

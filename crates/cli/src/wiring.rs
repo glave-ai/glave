@@ -114,7 +114,6 @@ pub(crate) async fn wire(
     let (workspace, hosts) = with_hosts(args, &store, identity.person, choices, workspace).await?;
     let opening = opening(workspace.root()).await?;
     let mut settings = settings_for(args, choices, &lined, identity, opening)?;
-    let model = settings.model.clone();
     let root = workspace.root().to_owned();
     settings.commands = crate::commands::find(&root).await?;
     let servers = mcp_servers(&setup, remote.as_ref(), &processes).await?;
@@ -125,7 +124,7 @@ pub(crate) async fn wire(
     let projects = projects_for(&setup, &servers, &lined.switch, memory.as_ref(), asked)?;
     let set_aside = projects.set_aside(&folder).await;
     (told.iter().chain(&set_aside)).for_each(|line| eprintln!("glave: {line}"));
-    tidy(memory.as_ref(), &lined.switch, model);
+    tidy(memory.as_ref(), &lined.switch, settings.model.clone());
     let rereads = rereading(args, &folder, choices, &lined, &servers, &projects).await?;
     let wiring = Wiring {
         models: lined.built.models.offered,
@@ -147,6 +146,7 @@ pub(crate) async fn wire(
         browsers: crate::serving::browsers(args, choices, &store, identity.person).await?,
         origin: choices.origin.as_ref().map(|origin| origin.value.clone()),
         leases: Some(store.leases()),
+        awake: crate::awake::for_server(args, choices, &processes, &store, identity.person).await?,
         ..Wiring::new(
             lined.switch,
             store.log(),

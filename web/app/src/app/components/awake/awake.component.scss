@@ -1,0 +1,6 @@
+@use '../page';
+
+// Its card alone takes a place in the page's column, so on a server it takes none.
+:host {
+  display: contents;
+}

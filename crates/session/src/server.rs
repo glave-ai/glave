@@ -25,6 +25,7 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::approvals::{Answering, Approvals};
+use crate::awake::{Awake, KeepAwake};
 use crate::credentials::GitHosts;
 use crate::held::{Slot, finished};
 use crate::hub::{Hub, Observed};
@@ -106,6 +107,9 @@ pub struct Wiring<P, L, B> {
     /// one store never run one thread at once; none keeps them in this server's memory, for a
     /// server alone on its store.
     pub leases: Option<Arc<dyn Leases>>,
+    /// What keeps the computer from sleeping on its own while work runs: only on a person's
+    /// own computer, never on a server, which does not sleep.
+    pub awake: Option<Arc<dyn KeepAwake>>,
 }
 
 impl<P, L, B> Wiring<P, L, B> {
@@ -115,7 +119,7 @@ impl<P, L, B> Wiring<P, L, B> {
     /// `web_fetch`, other tools, hooks, workers, memory, model accounts, git hosts, rereading,
     /// project folders, trust or browsers; no limit on tasks; only the settings' own model and
     /// mode; threads in their project's folder rather than a worktree; reached only on its own
-    /// computer; leases in its own memory. An embedder names only
+    /// computer, which it does not keep awake; leases in its own memory. An embedder names only
     /// what it changes: `Wiring { hooks, ..Wiring::new(...) }`.
     pub fn new(
         provider: P,
@@ -150,6 +154,7 @@ impl<P, L, B> Wiring<P, L, B> {
             browsers: None,
             origin: None,
             leases: None,
+            awake: None,
         }
     }
 }
@@ -233,6 +238,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) holder: OnceLock<Holder>,
     /// The organization's scheduler lease, while this server holds it (`schedule.rs`).
     pub(crate) scheduling: Mutex<Option<Lease>>,
+    /// The computer held awake while work runs, where it is.
+    pub(crate) awake: Option<Awake>,
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -308,6 +315,7 @@ where
                 leases,
                 holder: OnceLock::new(),
                 scheduling: Mutex::new(None),
+                awake: wiring.awake.map(Awake::new),
             }),
         }
     }
