@@ -104,7 +104,9 @@ impl Lifeline {
         match ready {
             Ok(Ok(())) if heard == READY => Ok(lifeline),
             Ok(Err(error)) => Err(lifeline.failed(error)),
-            _ => Err(lifeline.failed(std::io::Error::other("it did not say it was ready"))),
+            _ => Err(lifeline.failed(std::io::Error::other(
+                "it did not say it was ready: the program there is of another version, or damaged",
+            ))),
         }
     }
 

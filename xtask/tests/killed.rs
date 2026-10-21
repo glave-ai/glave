@@ -28,15 +28,17 @@ fn alive(pid: u32) -> bool {
         .success()
 }
 
-/// The stand-in, killed when the test ends however it ends: one the test failed to see stopped
-/// would sleep on for five minutes.
-struct Stopped(u32);
+/// The stand-in, killed when the test ends however it ends, unless the test saw it end: one
+/// the test failed to see stopped would sleep on for five minutes.
+struct Stopped(Option<u32>);
 
 impl Drop for Stopped {
     fn drop(&mut self) {
-        if alive(self.0) {
+        if let Some(pid) = self.0
+            && alive(pid)
+        {
             let _ = Command::new("kill")
-                .args(["-KILL", &self.0.to_string()])
+                .args(["-KILL", &pid.to_string()])
                 .status();
         }
     }
@@ -78,7 +80,7 @@ fn what_xtask_runs_ends_when_xtask_is_killed_outright() {
         .trim()
         .parse()
         .unwrap();
-    let _stopped = Stopped(pid);
+    let mut stopped = Stopped(Some(pid));
 
     xtask.kill().unwrap();
     xtask.wait().unwrap();
@@ -86,4 +88,6 @@ fn what_xtask_runs_ends_when_xtask_is_killed_outright() {
         until(HUNG, || !alive(pid)),
         "what xtask ran outlives it: {pid}"
     );
+    // Gone: its number may be another process's from now on.
+    stopped.0 = None;
 }

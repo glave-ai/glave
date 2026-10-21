@@ -33,7 +33,7 @@ pub(crate) async fn reaped() -> anyhow::Result<Processes> {
         }
         Err(error) => eprintln!("glave: {error}"),
     }
-    tied.context("reinstalling glave mends a damaged install")
+    Ok(tied?)
 }
 
 /// The person's home folder, where their own MCP servers start: `$HOME`, else glave's folder.
