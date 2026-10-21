@@ -1,4 +1,4 @@
-import type { WritableSignal } from '@angular/core';
+import type { Signal, WritableSignal } from '@angular/core';
 import type { Notification } from '@glave/client';
 
 import { newestUpdate, withSummary } from '../lib/lists';
@@ -19,40 +19,59 @@ export interface ListsHost {
   readonly lists: WritableSignal<readonly ProjectWithThreads[]>;
   /** What the lists' times count from, moved on with each change and each minute. */
   readonly read: WritableSignal<number>;
+  /** Why the last read failed, if it did. */
+  readonly error: Signal<string | null>;
   /** How many of each project's threads the lists hold. */
   readonly limit: number;
   /** Reads the lists again, or joins the read under way. */
   refresh(): Promise<void>;
+  /** Reads the lists again after the read under way, which began before what calls for it. */
+  reread(): Promise<void>;
   /** The read under way, if any. */
   reading(): Promise<void> | null;
+}
+
+/** Following the lists, once started. */
+export interface Following {
+  /** Follows them again, the lists just read, as when the tab signs in again. */
+  again(): void;
+  /** Lets go of the watch, as when the tab signs out. */
+  letGo(): void;
 }
 
 /**
  * Follows the lists while the tab is shown, until `stop` aborts: watched from the newest update
  * they hold. A hidden tab lets go of its watch, as a thread's does, and reads the lists again and
- * watches them once shown; their times move on each minute it is shown. Answers what starts
- * following them again, the lists just read, as when the tab signs in again.
+ * watches them once shown; their times move on each minute it is shown.
  */
-export function followLists(host: ListsHost, stop: AbortSignal): () => void {
+export function followLists(host: ListsHost, stop: AbortSignal): Following {
   const { document } = host;
   const hidden = (): boolean => document.visibilityState === 'hidden';
+  // The projects a summary named that the lists lacked, read again for once each.
+  const lacked = new Set<string>();
   let watching: AbortController | null = null;
+  const letGo = (): void => {
+    watching?.abort();
+    watching = null;
+  };
   const watch = (read: boolean): void => {
     if (watching !== null || stop.aborted || hidden()) {
       return;
     }
     const controller = new AbortController();
     watching = controller;
-    void follow(host, controller.signal, read).finally(() => {
+    void watchLists(host, controller.signal, read, lacked).finally(() => {
       if (watching === controller) {
         watching = null;
       }
     });
   };
+  if (stop.aborted) {
+    return { again: letGo, letGo };
+  }
   const shown = (): void => {
     if (hidden()) {
-      watching?.abort();
-      watching = null;
+      letGo();
     } else {
       watch(false);
     }
@@ -68,34 +87,49 @@ export function followLists(host: ListsHost, stop: AbortSignal): () => void {
     () => {
       document.removeEventListener('visibilitychange', shown);
       clearInterval(clock);
-      watching?.abort();
+      letGo();
     },
     { once: true },
   );
-  return () => {
-    watch(true);
+  return {
+    again: () => {
+      watch(true);
+    },
+    letGo,
   };
 }
 
 /**
  * Watches the lists from the newest update they hold, once read (`read` says they just were):
- * each thread's summary as the server says it changes. Cut off, it reads them again and comes
- * back from there, waiting longer each time; it ends once `signal` aborts or the tab is signed
- * out.
+ * each thread's summary as the server says it changes. With nothing listed, from when they were
+ * read. Cut off, it reads them again and comes back from there, waiting longer each time; it
+ * ends once `signal` aborts or the tab is signed out.
  */
-async function follow(host: ListsHost, signal: AbortSignal, read: boolean): Promise<void> {
+async function watchLists(
+  host: ListsHost,
+  signal: AbortSignal,
+  read: boolean,
+  lacked: Set<string>,
+): Promise<void> {
   const stopped = (): boolean => signal.aborted;
-  let [wait, fresh] = [FIRST_RETRY_MS, read];
+  let wait = FIRST_RETRY_MS;
+  let fresh = read;
   while (!stopped() && host.session.signedIn()) {
-    await (fresh ? host.reading() : host.refresh());
+    const readAt = new Date().toISOString();
+    if (fresh) {
+      await host.reading();
+    }
+    // A first read that failed is tried again, as any other.
+    if (!fresh || host.error() !== null) {
+      await host.refresh();
+    }
     fresh = false;
     const began = Date.now();
-    const after = newestUpdate(host.lists());
+    const after = newestUpdate(host.lists()) ?? readAt;
     try {
-      const params = after === undefined ? {} : { after };
-      const watch = host.session.stream('thread/list/watch', params, signal);
+      const watch = host.session.stream('thread/list/watch', { after }, signal);
       for (let next = await watch.next(); !next.done; next = await watch.next()) {
-        take(host, next.value);
+        take(host, next.value, lacked);
         wait = FIRST_RETRY_MS;
       }
     } catch (error: unknown) {
@@ -115,9 +149,9 @@ async function follow(host: ListsHost, signal: AbortSignal, read: boolean): Prom
 /**
  * Takes a thread's summary as the server says it is now, into the lists, and again once a read
  * under way has read them, since that read began before it. A new thread in a project the lists
- * lack, as one made elsewhere, reads them again.
+ * lack, as one made elsewhere, reads them again, once for each such project.
  */
-function take(host: ListsHost, note: Notification): void {
+function take(host: ListsHost, note: Notification, lacked: Set<string>): void {
   if (note.method !== 'thread/changed') {
     return;
   }
@@ -131,6 +165,9 @@ function take(host: ListsHost, note: Notification): void {
     return lists !== null;
   };
   const listed = apply();
-  const reading = !listed && summary.standing === 'active' ? host.refresh() : host.reading();
-  void reading?.then(apply);
+  const unknown = !listed && summary.standing === 'active' && !lacked.has(summary.project);
+  if (unknown) {
+    lacked.add(summary.project);
+  }
+  void (unknown ? host.reread() : host.reading())?.then(apply);
 }

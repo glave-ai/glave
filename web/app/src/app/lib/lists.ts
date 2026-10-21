@@ -5,7 +5,8 @@ import type { ProjectWithThreads } from './nav';
 /**
  * `lists` with `summary` in its place, as the server says its thread is now: in its project's
  * list, newest first among the newest `limit`, or gone from it once it is not active (archived
- * or deleted). `null` when none of the lists is its project's.
+ * or deleted), the list one shorter until it is read again. `null` when none of the lists is its
+ * project's.
  */
 export function withSummary(
   lists: readonly ProjectWithThreads[],

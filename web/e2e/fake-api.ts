@@ -764,7 +764,7 @@ export async function fakeApi(
       return;
     }
     if (message.method === 'thread/list/watch') {
-      lists.hold(route, message.id);
+      await lists.hold(route, message.id);
       return;
     }
     const turnStart = message.method === 'turn/start';

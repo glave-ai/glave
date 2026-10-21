@@ -11,30 +11,45 @@ interface Listed {
 /**
  * The watch of the lists the app holds open (`thread/list/watch`), which the fake answers only
  * once it has something to say, as the server tells a thread's change the moment it happens:
- * then it sends the thread's summary as the lists now show it, and ends the watch, which the
- * app comes back to after reading the lists again, as it does after any watch is cut off.
+ * then it sends each changed thread's summary as the lists now show it, and ends the watch, which
+ * the app comes back to after reading the lists again, as it does after any watch is cut off. A
+ * change told while no watch is open waits for the next.
  */
 export class FakeLists {
   private waiting: { readonly route: Route; readonly id: number } | null = null;
+  private readonly told: string[] = [];
 
   /** Lists as `read` answers the fake's calls. */
   constructor(private readonly read: Read) {}
 
-  /** Keeps the watch the app asked for with request `id` open. */
-  hold(route: Route, id: number): void {
+  /** Keeps the watch the app asked for with request `id` open, or answers what waits. */
+  async hold(route: Route, id: number): Promise<void> {
     this.waiting = { route, id };
+    await this.send();
   }
 
-  /** Tells the watch, if one is open, what the lists show now of `thread`. */
+  /** Tells the watch what the lists show now of `thread`. */
   async tell(thread: string): Promise<void> {
+    this.told.push(thread);
+    await this.send();
+  }
+
+  private async send(): Promise<void> {
     const waiting = this.waiting;
-    const summary = this.listed(thread);
-    if (waiting === null || summary === undefined) {
+    const summaries = this.told
+      .map((thread) => this.listed(thread))
+      .filter((summary) => summary !== undefined);
+    if (waiting === null || summaries.length === 0) {
       return;
     }
     this.waiting = null;
+    this.told.length = 0;
     const messages = [
-      { jsonrpc: '2.0', method: 'thread/changed', params: { thread, summary } },
+      ...summaries.map((summary) => ({
+        jsonrpc: '2.0',
+        method: 'thread/changed',
+        params: { thread: summary.id, summary },
+      })),
       { jsonrpc: '2.0', id: waiting.id, result: { ended: 'unwatched' } },
     ];
     await waiting.route.fulfill({

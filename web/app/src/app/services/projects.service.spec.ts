@@ -11,6 +11,7 @@ import { FakeSession, FakeTurn, provideFakeSession } from '../testing/fake-sessi
 import { record, thread } from '../testing/fixtures';
 import { CLOCK_MS } from './lists-feed';
 import { ProjectsService } from './projects.service';
+import { SessionService } from './session.service';
 
 /** What the server sends when `summary`'s thread changes. */
 function changed(summary: ThreadSummary): Notification {
@@ -323,10 +324,34 @@ describe('ProjectsService', () => {
       shown('visible');
       await settled();
       expect(fake.paramsOf('project/list')).toHaveLength(3);
-      expect(fake.paramsOf('thread/list/watch')).toEqual([{}, {}]);
+      // With nothing listed, from when the lists were read.
+      const from = { after: expect.stringMatching(/Z$/u) as unknown };
+      expect(fake.paramsOf('thread/list/watch')).toEqual([from, from]);
     } finally {
       Reflect.deleteProperty(document, 'visibilityState');
     }
+  });
+
+  it('lets go of its watch once the tab signs out', async () => {
+    const watch = new FakeTurn();
+    const fake = new FakeSession()
+      .answer('project/list', { projects: [record('project-1', 'glave')] })
+      .answer('thread/list', { threads: [thread('t1', 'Plan')] })
+      .listWatch(watch);
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const projects = TestBed.inject(ProjectsService);
+    await following(projects);
+    await TestBed.inject(SessionService).signOut();
+    TestBed.tick();
+    await settled();
+    // What the watch let go of would say is never taken.
+    watch.send(changed(thread('t1', 'Plan', { status: 'running' })));
+    await settled();
+    expect(projects.thread('t1')?.status).toBe('idle');
+    // Signed out, following again watches nothing.
+    projects.follow();
+    await settled();
+    expect(fake.paramsOf('thread/list/watch')).toHaveLength(1);
   });
 
   it('moves its times on each minute while it follows the lists', async () => {

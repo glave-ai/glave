@@ -1,5 +1,5 @@
 import { DOCUMENT } from '@angular/common';
-import { DestroyRef, Service, computed, inject, signal } from '@angular/core';
+import { DestroyRef, Service, computed, effect, inject, signal } from '@angular/core';
 import type {
   Project,
   ProjectCreateParams,
@@ -9,7 +9,7 @@ import type {
 } from '@glave/client';
 
 import type { ProjectWithThreads } from '../lib/nav';
-import type { ListsHost } from './lists-feed';
+import type { Following, ListsHost } from './lists-feed';
 import { SessionService } from './session.service';
 
 /** How many of each project's threads the lists hold: the newest. */
@@ -27,8 +27,8 @@ export class ProjectsService {
   private readonly document = inject(DOCUMENT);
   /** The read under way, which a second asks join rather than start another. */
   private pending: Promise<void> | null = null;
-  /** What follows the lists, once loaded: what starts it again; and what stops it for good. */
-  private feed: Promise<() => void> | null = null;
+  /** What follows the lists, once loaded; and what stops it for good. */
+  private feed: Promise<Following> | null = null;
   private readonly stop = new AbortController();
   private readonly lists = signal<readonly ProjectWithThreads[]>([]);
   private readonly failed = signal<string | null>(null);
@@ -40,8 +40,10 @@ export class ProjectsService {
     document: this.document,
     lists: this.lists,
     read: this.read,
+    error: this.failed,
     limit: LIMIT,
     refresh: () => this.refresh(),
+    reread: () => this.reread(),
     reading: () => this.pending,
   };
 
@@ -61,6 +63,14 @@ export class ProjectsService {
     inject(DestroyRef).onDestroy(() => {
       this.stop.abort();
     });
+    // Signed out, it lets go of the watch; following again starts it anew.
+    effect(() => {
+      if (!this.session.signedIn()) {
+        void this.feed?.then((feed) => {
+          feed.letGo();
+        });
+      }
+    });
   }
 
   /** Reads the lists, then follows them live while the tab is shown, as signed in now. */
@@ -71,9 +81,15 @@ export class ProjectsService {
     this.feed ??= import('./lists-feed').then(({ followLists }) =>
       followLists(this.host, this.stop.signal),
     );
-    void this.feed.then((again) => {
-      again();
-    });
+    void this.feed.then(
+      (feed) => {
+        feed.again();
+      },
+      () => {
+        // It could not load: the next follow tries again.
+        this.feed = null;
+      },
+    );
   }
 
   /** Reads the projects and their threads again, or joins the read under way. */
