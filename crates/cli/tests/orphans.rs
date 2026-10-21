@@ -3,8 +3,6 @@
 //! recorded, and the next glave to start stops every one.
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
 
 use glave_ports::testing::HUNG;
 use glave_provider_openai::fake::{FakeServer, Reply};
@@ -38,27 +36,6 @@ fn recorded(home: &Path) -> Vec<(u32, String)> {
             (pid, entry["owner"]["kind"].as_str().unwrap().to_owned())
         })
         .collect()
-}
-
-fn alive(pid: u32) -> bool {
-    Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .stderr(Stdio::null())
-        .status()
-        .unwrap()
-        .success()
-}
-
-/// Waits up to `limit` for `done`.
-fn until(limit: Duration, mut done: impl FnMut() -> bool) -> bool {
-    let deadline = Instant::now() + limit;
-    while !done() {
-        if Instant::now() > deadline {
-            return false;
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    true
 }
 
 #[test]

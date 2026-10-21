@@ -46,7 +46,7 @@ export const PASSKEYS: Site = {
 export const LIVE: Site = { address: 'GLAVE_E2E_LIVE_URL', home: 'GLAVE_E2E_LIVE_HOME' };
 /** The variable that holds the address of that glave's fake model service. */
 export const LIVE_MODEL_URL = 'GLAVE_E2E_LIVE_MODEL_URL';
-/** The variable that holds the run's lifeline, the pipe each glave it starts ends with. */
+/** The variable that holds the run's lifeline, the socket each glave it starts ends with. */
 export const LIFELINE = 'GLAVE_E2E_LIFELINE';
 /**
  * The public origin the passkeys glave's settings name, which the tests route to it as a

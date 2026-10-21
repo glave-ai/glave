@@ -43,22 +43,73 @@ pub(crate) fn place(name: &str) -> Place {
 #[derive(Clone)]
 pub(crate) struct Lifeline {
     pub path: PathBuf,
-    _held: Arc<std::os::unix::net::UnixListener>,
+    _held: Arc<Listening>,
+}
+
+/// The listener, and its socket's file, removed when it goes.
+struct Listening {
+    _listener: std::os::unix::net::UnixListener,
+    path: PathBuf,
+}
+
+impl Drop for Listening {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
 }
 
 impl Lifeline {
     /// The variable that hands it to glave.
     pub(crate) const VARIABLE: &str = "GLAVE_LIFELINE";
 
-    /// A new one in `folder`, listening.
+    /// A new one for `folder`, listening.
     pub(crate) fn new(folder: &Path) -> Self {
-        let path = folder.join("lifeline");
-        let held = std::os::unix::net::UnixListener::bind(&path).unwrap();
+        let path = socket_path(folder, "lifeline");
+        let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
         Self {
-            path,
-            _held: Arc::new(held),
+            path: path.clone(),
+            _held: Arc::new(Listening {
+                _listener: listener,
+                path,
+            }),
         }
     }
+}
+
+/// Where a socket named `name` for `folder` goes: in it, or, where that path would be too long
+/// for a socket's (a deep system temp folder), in `/tmp`, named after the folder.
+pub(crate) fn socket_path(folder: &Path, name: &str) -> PathBuf {
+    let path = folder.join(name);
+    match folder.file_name() {
+        Some(folder) if path.as_os_str().len() > 100 => {
+            let mut short = folder.to_os_string();
+            short.push(format!(".{name}"));
+            Path::new("/tmp").join(short)
+        }
+        _ => path,
+    }
+}
+
+/// Whether the process `pid` still runs (or waits to be reaped).
+pub(crate) fn alive(pid: u32) -> bool {
+    Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stderr(Stdio::null())
+        .status()
+        .unwrap()
+        .success()
+}
+
+/// Waits up to `limit` for `done`, looking every 50 ms.
+pub(crate) fn until(limit: std::time::Duration, mut done: impl FnMut() -> bool) -> bool {
+    let deadline = std::time::Instant::now() + limit;
+    while !done() {
+        if std::time::Instant::now() > deadline {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    true
 }
 
 /// Sets `key = value` in `place`'s own settings (`config.toml` in its home), as the person
