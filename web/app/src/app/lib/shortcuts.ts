@@ -26,9 +26,9 @@ export function shortcutLabel(keys: string, apple: boolean): string {
     return `${marks.join('')}${keyName(shortcut)}`;
   }
   const parts = [
-    shortcut.mod ? 'Ctrl' : '',
-    shortcut.alt ? 'Alt' : '',
-    shortcut.shift ? 'Shift' : '',
+    shortcut.mod ? $localize`:@@shortcuts.ctrl:Ctrl` : '',
+    shortcut.alt ? $localize`:@@shortcuts.alt:Alt` : '',
+    shortcut.shift ? $localize`:@@shortcuts.shift:Shift` : '',
   ];
   return [...parts.filter((part) => part !== ''), keyName(shortcut)].join('+');
 }

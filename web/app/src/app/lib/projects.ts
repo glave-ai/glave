@@ -1,6 +1,7 @@
 import { ApiError, ErrorCode, type ProjectCreateParams } from '@glave/client';
 
-import { SOMETHING_WRONG, sentence } from './text';
+import { plural } from './plural';
+import { sentence, somethingWrong } from './text';
 
 /**
  * Where a new project's files come from: a folder already on this computer, a repository
@@ -150,12 +151,12 @@ export function joinPath(path: string, name: string): string {
   return path.endsWith(separator) ? `${path}${name}` : `${path}${separator}${name}`;
 }
 
-/** How many folders a folder holds, in words. */
-export function folderCount(count: number): string {
-  if (count === 0) {
-    return 'no folders';
-  }
-  return count === 1 ? '1 folder' : `${String(count)} folders`;
+/** How many folders a folder holds, in words, for `locale`. */
+export function folderCount(count: number, locale: string): string {
+  return plural(
+    $localize`:@@projects.folders:{${count}:COUNT:, plural, =0 {no folders} one {# folder} other {# folders}}`,
+    locale,
+  );
 }
 
 /** Whether the server refused because the project's folder isn't there anymore. */
@@ -170,7 +171,7 @@ export function folderGone(error: unknown): boolean {
  */
 export function projectProblem(error: unknown): string {
   if (!(error instanceof ApiError)) {
-    return SOMETHING_WRONG;
+    return somethingWrong();
   }
   switch (error.code) {
     case ErrorCode.HOST:
@@ -180,6 +181,6 @@ export function projectProblem(error: unknown): string {
     case ErrorCode.TURN_RUNNING:
       return sentence(error.message);
     default:
-      return SOMETHING_WRONG;
+      return somethingWrong();
   }
 }

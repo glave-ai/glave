@@ -7,7 +7,7 @@
           ><span class="plus">{{ file.added }}</span
           ><span class="minus">{{ file.removed }}</span></span
         >
-        <span class="glz-visually-hidden">{{ file.countsLabel }}</span>
+        <span class="glz-visually-hidden">{{ file.label }}</span>
       </summary>
       @for (change of file.changes; track change.key) {
         <div class="change" data-testid="file-change">

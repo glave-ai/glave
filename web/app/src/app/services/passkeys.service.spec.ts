@@ -1,13 +1,9 @@
 import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode } from '@glave/client';
 
+import { unreached } from '../lib/text';
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
-import {
-  AUTHENTICATOR,
-  PASSKEYS_UNREACHED,
-  PASSKEY_REFUSED,
-  PasskeysService,
-} from './passkeys.service';
+import { AUTHENTICATOR, passkeyRefused, PasskeysService } from './passkeys.service';
 
 const PHONE = { id: 'p1', name: 'Phone', added: '2026-10-20T09:00:00.000Z' };
 
@@ -49,13 +45,13 @@ describe('PasskeysService', () => {
       options: { publicKey: { challenge: 'AQID', user: { id: 'AQID' } } },
     });
     const keys = service(fake);
-    expect(await keys.add()).toBe(PASSKEY_REFUSED);
+    expect(await keys.add()).toBe(passkeyRefused());
     expect(fake.paramsOf('passkey/add')).toEqual([]);
     fake.answer('passkey/list', new ApiError({ code: ErrorCode.NOT_ALLOWED, message: 'no' }));
     expect(await keys.load()).toBe('no');
     fake.answer('passkey/list', () => {
       throw new TypeError('offline');
     });
-    expect(await keys.load()).toBe(PASSKEYS_UNREACHED);
+    expect(await keys.load()).toBe(unreached());
   });
 });

@@ -8,7 +8,7 @@ import {
   type NavThread,
   type NavView,
   PROJECTS_LIST,
-  NEEDS_YOU,
+  needsYou,
   type ProjectWithThreads,
   matchesQuery,
   navSections,
@@ -173,7 +173,7 @@ describe('nav', () => {
     const collapsed = new Set(['p1', 'p2', PROJECTS_LIST, CHATS_LIST]);
     const { projects, chats } = navSections(lists, { ...VIEW, collapsed });
     expect(projects.expanded).toBe(false);
-    expect(projects.mark).toEqual({ ...NEEDS_YOU, warning: false });
+    expect(projects.mark).toEqual({ ...needsYou(), warning: false });
     expect(projects.list.map((each) => [each.name, each.expanded, each.mark?.label])).toEqual([
       ['Garden', false, undefined],
       ['glave', false, 'needs you'],

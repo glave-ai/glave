@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.json",
-  "compilerOptions": { "noEmit": true, "types": ["vitest/globals", "node"] },
+  "compilerOptions": { "noEmit": true, "types": ["vitest/globals", "node", "@angular/localize"] },
   "include": ["glaze/**/*.ts", "app/src/**/*.ts", "e2e/**/*.ts", "client/src/**/*.ts"]
 }

@@ -56,7 +56,7 @@ describe('AttachmentsService', () => {
     ]);
     const [cat] = attachments.attachments();
     expect(cat?.preview).toBe(urls.made[0]);
-    expect(attachments.detailOf(cat!)).toBe('3 B');
+    expect(attachments.detailOf(cat!)).toBe('3 bytes');
     expect(attachments.attached()).toEqual([{ sha256: SHA, name: 'cat.png' }]);
     attachments.remove(cat!.key);
     expect(urls.revoked).toEqual(urls.made);

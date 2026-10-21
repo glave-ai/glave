@@ -1,4 +1,4 @@
-import { DestroyRef, Service, computed, inject, signal } from '@angular/core';
+import { DestroyRef, LOCALE_ID, Service, computed, inject, signal } from '@angular/core';
 
 import {
   type Attachment,
@@ -10,12 +10,6 @@ import {
   sizeOf,
 } from '../lib/attachments';
 import { SessionService } from './session.service';
-
-const COPY = {
-  sending: 'Adding',
-  remove: 'Remove',
-  tooLarge: `Too large to add: files up to ${sizeOf(MAX_SENT)}`,
-} as const;
 
 /** A file as its chip shows it. */
 export interface Chip {
@@ -46,6 +40,7 @@ interface Held {
 @Service({ autoProvided: false })
 export class AttachmentsService {
   private readonly session = inject(SessionService);
+  private readonly locale = inject(LOCALE_ID);
   private readonly held = signal<readonly Held[]>([]);
   /** The project files are kept in; `null` for the person's Chats. */
   private project: string | null = null;
@@ -62,7 +57,7 @@ export class AttachmentsService {
       preview: attachment.preview,
       busy: attachment.state === 'sending',
       failed: attachment.state === 'refused',
-      removeLabel: `${COPY.remove} ${attachment.name}`,
+      removeLabel: $localize`:@@attachments.remove:Remove ${attachment.name}:FILE:`,
     })),
   );
   /** How many files are kept, ready to go with the message. */
@@ -131,17 +126,21 @@ export class AttachmentsService {
   detailOf(attachment: Attachment): string {
     switch (attachment.state) {
       case 'sending':
-        return COPY.sending;
+        return $localize`:@@attachments.sending:Adding`;
       case 'refused':
         return attachment.reason ?? '';
       case 'kept':
-        return sizeOf(attachment.bytes);
+        return sizeOf(attachment.bytes, this.locale);
     }
   }
 
   private async keep(key: string, file: File, project: string | null): Promise<void> {
     if (file.size > MAX_SENT) {
-      this.set(key, { state: 'refused', reason: COPY.tooLarge });
+      const most = sizeOf(MAX_SENT, this.locale);
+      this.set(key, {
+        state: 'refused',
+        reason: $localize`:@@attachments.tooLarge:Too large to add: files up to ${most}:SIZE:`,
+      });
       return;
     }
     try {

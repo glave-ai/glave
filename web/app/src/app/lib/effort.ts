@@ -1,23 +1,29 @@
 import type { ModelInfo, RawEvent } from '@glave/client';
 import type { GlzMenuOption } from '@glave/glaze';
 
-/** What marks the level a model uses when none is chosen. */
-const DEFAULT_HINT = 'Default';
-
-/** The levels providers name, as people read them; any other is its own word, capitalized. */
-const LEVELS: Readonly<Record<string, string>> = {
-  max: 'Max',
-  xhigh: 'Extra high',
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
-  minimal: 'Minimal',
-  none: 'Off',
-};
-
-/** A level as people read it: `xhigh` is `Extra high`, `none` is `Off`. */
+/**
+ * A level as people read it: `xhigh` is `Extra high`, `none` is `Off`; one providers name that
+ * the app does not know is its own word, capitalized.
+ */
 export function levelName(level: string): string {
-  return LEVELS[level] ?? `${level.charAt(0).toUpperCase()}${level.slice(1)}`;
+  switch (level) {
+    case 'max':
+      return $localize`:@@effort.max:Max`;
+    case 'xhigh':
+      return $localize`:@@effort.xhigh:Extra high`;
+    case 'high':
+      return $localize`:@@effort.high:High`;
+    case 'medium':
+      return $localize`:@@effort.medium:Medium`;
+    case 'low':
+      return $localize`:@@effort.low:Low`;
+    case 'minimal':
+      return $localize`:@@effort.minimal:Minimal`;
+    case 'none':
+      return $localize`:@@effort.none:Off`;
+    default:
+      return `${level.charAt(0).toUpperCase()}${level.slice(1)}`;
+  }
 }
 
 /**
@@ -28,10 +34,12 @@ export function effortOptions(model: ModelInfo | undefined): readonly GlzMenuOpt
   const reasoning = model?.reasoning ?? null;
   const efforts = reasoning?.efforts ?? [];
   const fallback = reasoning?.default ?? null;
+  // What marks the level a model uses when none is chosen.
+  const hint = $localize`:@@effort.default:Default`;
   return efforts.map((level) => ({
     value: level,
     label: levelName(level),
-    ...(level === fallback ? { hint: DEFAULT_HINT } : {}),
+    ...(level === fallback ? { hint } : {}),
   }));
 }
 

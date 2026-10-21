@@ -17,6 +17,7 @@
           "builder": "@angular/build:application",
           "options": {
             "browser": "app/src/main.ts",
+            "polyfills": ["@angular/localize/init"],
             "tsConfig": "app/tsconfig.app.json",
             "outputPath": "dist/app",
             "assets": [
@@ -80,6 +81,13 @@
             }
           },
           "defaultConfiguration": "development"
+        },
+        "extract-i18n": {
+          "builder": "@angular/build:extract-i18n",
+          "options": {
+            "buildTarget": "app:build",
+            "i18nDuplicateTranslation": "error"
+          }
         },
         "test": {
           "builder": "@angular/build:unit-test",

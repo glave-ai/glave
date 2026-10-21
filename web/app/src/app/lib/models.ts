@@ -1,51 +1,46 @@
 import type { ModelInfo, RawEvent, TokenPrice } from '@glave/client';
 import type { GlzMenuOption } from '@glave/glaze';
 
-/** What marks the server's default model in the picker. */
-const DEFAULT_HINT = 'Default';
-
 /** Between the parts of a model's line in the picker. */
 const DOT = ' · ';
 
-/** A price of nothing. */
-const FREE = 'Free';
-
-const DOLLARS = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 3,
-});
-
-/** A context window, in tokens, as people say it: `1M`, `200K`, `32K`. */
-export function contextText(tokens: number): string {
-  if (tokens >= 1_000_000) {
-    return `${String(Math.round(tokens / 100_000) / 10)}M context`;
-  }
-  return `${String(Math.round(tokens / 1000))}K context`;
-}
-
-/** What a model's tokens cost, in and out, per million: `$0.10 in, $0.50 out per 1M`. */
-export function priceText(price: TokenPrice): string {
-  if (price.input === 0 && price.output === 0) {
-    return FREE;
-  }
-  const dollars = (micros: number): string => DOLLARS.format(micros / 1_000_000);
-  return `${dollars(price.input)} in, ${dollars(price.output)} out per 1M tokens`;
+/** A context window, in tokens, as people in `locale` say it: `1M context`, `200K context`. */
+export function contextText(tokens: number, locale: string): string {
+  const size = new Intl.NumberFormat(locale, { notation: 'compact' }).format(tokens);
+  return $localize`:@@models.context:${size}:TOKENS: context`;
 }
 
 /**
- * The line under a model in the picker: whether it is the default, the service that runs it,
- * its context and its price, as far as the server says.
+ * What a model's tokens cost, in and out, per million, in dollars as `locale` writes them:
+ * `$0.10 in, $0.50 out per 1M tokens`.
  */
-export function modelHint(model: ModelInfo): string {
+export function priceText(price: TokenPrice, locale: string): string {
+  if (price.input === 0 && price.output === 0) {
+    return $localize`:@@models.free:Free`;
+  }
+  const dollars = new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 3,
+  });
+  const input = dollars.format(price.input / 1_000_000);
+  const output = dollars.format(price.output / 1_000_000);
+  return $localize`:@@models.price:${input}:INPUT: in, ${output}:OUTPUT: out per 1M tokens`;
+}
+
+/**
+ * The line under a model in the picker, for `locale`: whether it is the default, the service
+ * that runs it, its context and its price, as far as the server says.
+ */
+export function modelHint(model: ModelInfo, locale: string): string {
   const context = model.context ?? null;
   const price = model.price ?? null;
   const parts = [
-    model.default ? DEFAULT_HINT : '',
+    model.default ? $localize`:@@models.default:Default` : '',
     model.providers?.[0] ?? '',
-    context === null ? '' : contextText(context),
-    price === null ? '' : priceText(price),
+    context === null ? '' : contextText(context, locale),
+    price === null ? '' : priceText(price, locale),
   ];
   return parts.filter((part) => part !== '').join(DOT);
 }
@@ -172,19 +167,17 @@ export function chosenModel(events: readonly RawEvent[]): string | null {
   return typeof model === 'string' && model !== '' ? model : null;
 }
 
-/** The server's default model, from `model/list`, or `null` before it is read. */
-export function defaultModel(models: readonly ModelInfo[]): string | null {
-  return (models.find((model) => model.default) ?? models.at(0))?.id ?? null;
-}
-
 /**
  * The picker's options: each model by its display name, a line saying whether it is the
- * default, which service runs it, its context and its price, and its own name alone for the
- * button once chosen.
+ * default, which service runs it, its context and its price (written for `locale`), and its own
+ * name alone for the button once chosen.
  */
-export function modelOptions(models: readonly ModelInfo[]): readonly GlzMenuOption[] {
+export function modelOptions(
+  models: readonly ModelInfo[],
+  locale: string,
+): readonly GlzMenuOption[] {
   return models.map((model) => {
-    const hint = modelHint(model);
+    const hint = modelHint(model, locale);
     return {
       value: model.id,
       label: displayName(model),

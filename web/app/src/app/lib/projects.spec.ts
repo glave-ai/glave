@@ -13,7 +13,7 @@ import {
   projectProblem,
   repositoryName,
 } from './projects';
-import { SOMETHING_WRONG } from './text';
+import { somethingWrong } from './text';
 
 const DRAFT: ProjectDraft = { name: '', start: 'folder', folder: null, url: '' };
 
@@ -151,9 +151,9 @@ describe('joinPath', () => {
 
 describe('folderCount', () => {
   it('counts in words', () => {
-    expect(folderCount(0)).toBe('no folders');
-    expect(folderCount(1)).toBe('1 folder');
-    expect(folderCount(12)).toBe('12 folders');
+    expect(folderCount(0, 'en-US')).toBe('no folders');
+    expect(folderCount(1, 'en-US')).toBe('1 folder');
+    expect(folderCount(12, 'en-US')).toBe('12 folders');
   });
 });
 
@@ -205,7 +205,7 @@ describe('projectProblem', () => {
   it('says only that something went wrong otherwise', () => {
     expect(
       projectProblem(new ApiError({ code: ErrorCode.INTERNAL, message: 'store: disk full' })),
-    ).toBe(SOMETHING_WRONG);
-    expect(projectProblem(new Error('offline'))).toBe(SOMETHING_WRONG);
+    ).toBe(somethingWrong());
+    expect(projectProblem(new Error('offline'))).toBe(somethingWrong());
   });
 });

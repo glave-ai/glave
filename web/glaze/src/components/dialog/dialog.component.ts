@@ -11,6 +11,7 @@ import {
 import { X } from 'lucide';
 
 import { injectId } from '../../tokens/ids';
+import { glzText } from '../../lib/words';
 import { GlzIconComponent } from '../icon/icon.component';
 import { GlzIconButtonComponent } from '../icon-button/icon-button.component';
 import { testIds } from '../../lib/test-ids';
@@ -55,7 +56,7 @@ export class GlzDialogComponent {
 
   protected readonly headingId = injectId('glz-dialog-heading');
   protected readonly closeIcon = X;
-  protected readonly closeLabel = 'Close';
+  protected readonly closeLabel = glzText('dialog', { closeLabel: 'Close' }).closeLabel;
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
 
   constructor() {

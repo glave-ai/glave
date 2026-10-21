@@ -1,14 +1,7 @@
 import { ApiError, type CredentialInfo, ErrorCode } from '@glave/client';
 
-import {
-  ABILITIES_NONE,
-  ABILITIES_UNSAID,
-  accountAbilities,
-  accountDetail,
-  accountName,
-  connectProblem,
-} from './credentials';
-import { SOMETHING_WRONG } from './text';
+import { accountAbilities, accountDetail, accountName, connectProblem } from './credentials';
+import { somethingWrong } from './text';
 
 const GITHUB: CredentialInfo = {
   id: '01900000-0000-7000-8000-000000000401',
@@ -17,6 +10,10 @@ const GITHUB: CredentialInfo = {
   login: 'octocat',
   hint: 'c3d4',
 };
+
+/** What the list says when the host did not say what its token may do, or said nothing. */
+const UNSAID = 'What glave can do with it depends on the access you gave its token.';
+const NONE = 'Nothing with your repositories yet.';
 
 describe('accountName', () => {
   it('names GitHub plainly, and other hosts by their name and forge', () => {
@@ -54,14 +51,14 @@ describe('accountAbilities', () => {
       abilities: ['Open and comment on merge requests', 'Open and comment on issues'],
       note: null,
     });
-    expect(accountAbilities(GITHUB)).toEqual({ abilities: [], note: ABILITIES_UNSAID });
+    expect(accountAbilities(GITHUB)).toEqual({ abilities: [], note: UNSAID });
     expect(accountAbilities({ ...GITHUB, can: null })).toEqual({
       abilities: [],
-      note: ABILITIES_UNSAID,
+      note: UNSAID,
     });
     expect(accountAbilities({ ...GITHUB, can: [] })).toEqual({
       abilities: [],
-      note: ABILITIES_NONE,
+      note: NONE,
     });
   });
 });
@@ -78,9 +75,9 @@ describe('connectProblem', () => {
     );
     const elsewhere = new ApiError({ code: ErrorCode.NOT_AVAILABLE, message: 'x' });
     expect(connectProblem(elsewhere)).toBe('Accounts are connected on the computer glave runs on.');
-    expect(connectProblem(new Error('boom'))).toBe(SOMETHING_WRONG);
+    expect(connectProblem(new Error('boom'))).toBe(somethingWrong());
     expect(connectProblem(new ApiError({ code: ErrorCode.INTERNAL, message: 'x' }))).toBe(
-      SOMETHING_WRONG,
+      somethingWrong(),
     );
   });
 });

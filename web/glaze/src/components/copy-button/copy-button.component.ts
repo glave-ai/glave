@@ -13,6 +13,7 @@ import { Check, Copy } from 'lucide';
 import { GlzCopyDirective } from '../../directives/copy.directive';
 import { GlzIconButtonComponent } from '../icon-button/icon-button.component';
 import { GlzIconComponent } from '../icon/icon.component';
+import { glzText } from '../../lib/words';
 
 /** How long the button says it copied, in milliseconds. */
 const CONFIRM_MS = 2000;
@@ -34,12 +35,17 @@ const CONFIRM_MS = 2000;
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class GlzCopyButtonComponent {
+  private readonly words = glzText('copyButton', {
+    label: 'Copy',
+    copiedLabel: 'Copied',
+    failedLabel: 'Could not copy',
+  });
   /** The text it copies. */
   readonly text = input.required<string>();
   /** What it does, in words: names the button. */
-  readonly label = input('Copy');
-  readonly copiedLabel = input('Copied');
-  readonly failedLabel = input('Could not copy');
+  readonly label = input(this.words.label);
+  readonly copiedLabel = input(this.words.copiedLabel);
+  readonly failedLabel = input(this.words.failedLabel);
   /** The test hook for the button. */
   readonly testId = input<string | null>(null);
 

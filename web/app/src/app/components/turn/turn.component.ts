@@ -11,12 +11,6 @@ import type { TurnResults } from '../../lib/results';
 import { ThreadItemComponent } from '../thread-item/thread-item.component';
 import { TurnChangesComponent } from '../turn-changes/turn-changes.component';
 
-const COPY = {
-  reply: 'Reply',
-  thinking: 'Thinking…',
-  reasoning: 'Reasoning',
-} as const;
-
 /**
  * One turn, results first: the person's message; the reply (streaming in as markdown while it
  * is written); what changed; the receipt, a sunken line with how it went, how long it took and
@@ -45,7 +39,11 @@ const COPY = {
 export class TurnComponent {
   readonly turn = input.required<TurnResults>();
 
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    reply: $localize`:@@turn.reply:Reply`,
+    thinking: $localize`:@@turn.thinking:Thinking…`,
+    reasoning: $localize`:@@turn.reasoning:Reasoning`,
+  } as const;
   protected readonly changed = computed(() => this.turn().files.length > 0);
   /** Whether the model is still thinking: its reasoning streams, and no answer yet. */
   protected readonly thinking = computed(() => this.turn().live?.text === '');

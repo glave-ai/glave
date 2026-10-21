@@ -18,42 +18,13 @@ import {
 
 import {
   GITHUB,
-  REMOVE_FAILED,
   accountAbilities,
   accountDetail,
   accountName,
   connectProblem,
 } from '../../lib/credentials';
+import { removeFailed } from '../../lib/text';
 import { CredentialsService } from '../../services/credentials.service';
-
-const COPY = {
-  heading: 'Connected accounts',
-  lead: 'glave signs git in with these when a command needs it. Their tokens stay locked away on this computer, and are never shown.',
-  none: 'No accounts connected yet.',
-  can: 'With it, glave can:',
-  github: 'GitHub',
-  signIn: 'Connect GitHub',
-  starting: 'Starting…',
-  enter: 'Enter this code on GitHub, then approve glave there:',
-  open: 'Open GitHub',
-  waiting: 'Waiting for you to approve it on GitHub…',
-  cancel: 'Cancel',
-  repositories: 'Choose repositories',
-  githubToken: 'GitHub token',
-  githubTokenHint: 'A fine-grained personal access token, from your GitHub settings.',
-  other: 'Another git host',
-  address: 'Address',
-  addressHint: 'Such as https://gitlab.com, or your own server’s address.',
-  token: 'Token',
-  tokenHint: 'An access token from that host. It stays on this computer, locked away.',
-  connect: 'Connect',
-  checking: 'Checking the token…',
-  missingToken: 'Paste the token first.',
-  missingAddress: 'Give the host’s address first.',
-  remove: 'Remove',
-  removeHeading: 'Remove this account?',
-  removeText: 'glave forgets its token, and git no longer signs in to it from here.',
-} as const;
 
 /** What a form is doing. */
 type Busy = 'github' | 'host' | null;
@@ -77,7 +48,34 @@ type Busy = 'github' | 'host' | null;
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class AccountsComponent {
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    heading: $localize`:@@accounts.heading:Connected accounts`,
+    lead: $localize`:@@accounts.lead:glave signs git in with these when a command needs it. Their tokens stay locked away on this computer, and are never shown.`,
+    none: $localize`:@@accounts.none:No accounts connected yet.`,
+    can: $localize`:@@accounts.can:With it, glave can:`,
+    github: 'GitHub',
+    signIn: $localize`:@@accounts.signIn:Connect GitHub`,
+    starting: $localize`:@@accounts.starting:Starting…`,
+    enter: $localize`:@@accounts.enter:Enter this code on GitHub, then approve glave there:`,
+    open: $localize`:@@accounts.open:Open GitHub`,
+    waiting: $localize`:@@accounts.waiting:Waiting for you to approve it on GitHub…`,
+    cancel: $localize`:@@accounts.cancel:Cancel`,
+    repositories: $localize`:@@accounts.repositories:Choose repositories`,
+    githubToken: $localize`:@@accounts.githubToken:GitHub token`,
+    githubTokenHint: $localize`:@@accounts.githubTokenHint:A fine-grained personal access token, from your GitHub settings.`,
+    other: $localize`:@@accounts.other:Another git host`,
+    address: $localize`:@@accounts.address:Address`,
+    addressHint: $localize`:@@accounts.addressHint:Such as https://gitlab.com, or your own server’s address.`,
+    token: $localize`:@@accounts.token:Token`,
+    tokenHint: $localize`:@@accounts.tokenHint:An access token from that host. It stays on this computer, locked away.`,
+    connect: $localize`:@@accounts.connect:Connect`,
+    checking: $localize`:@@accounts.checking:Checking the token…`,
+    missingToken: $localize`:@@accounts.missingToken:Paste the token first.`,
+    missingAddress: $localize`:@@accounts.missingAddress:Give the host’s address first.`,
+    remove: $localize`:@@accounts.remove:Remove`,
+    removeHeading: $localize`:@@accounts.removeHeading:Remove this account?`,
+    removeText: $localize`:@@accounts.removeText:glave forgets its token, and git no longer signs in to it from here.`,
+  } as const;
   private readonly credentials = inject(CredentialsService);
   /** The accounts as the list shows them. */
   protected readonly accounts = computed(() =>
@@ -98,13 +96,13 @@ export class AccountsComponent {
   private readonly busy = signal<Busy>(null);
   protected readonly working = computed(() => this.busy() !== null);
   protected readonly signInLabel = computed(() =>
-    this.busy() === 'github' ? COPY.starting : COPY.signIn,
+    this.busy() === 'github' ? this.copy.starting : this.copy.signIn,
   );
   protected readonly githubLabel = computed(() =>
-    this.busy() === 'github' ? COPY.checking : COPY.connect,
+    this.busy() === 'github' ? this.copy.checking : this.copy.connect,
   );
   protected readonly hostLabel = computed(() =>
-    this.busy() === 'host' ? COPY.checking : COPY.connect,
+    this.busy() === 'host' ? this.copy.checking : this.copy.connect,
   );
   protected readonly githubProblem = signal<string | null>(null);
   protected readonly hostProblem = signal<string | null>(null);
@@ -170,7 +168,7 @@ export class AccountsComponent {
     event.preventDefault();
     const token = this.githubToken().trim();
     if (token === '') {
-      this.githubProblem.set(COPY.missingToken);
+      this.githubProblem.set(this.copy.missingToken);
       return;
     }
     if (await this.connected('github', GITHUB, token, this.githubProblem)) {
@@ -184,11 +182,11 @@ export class AccountsComponent {
     const address = this.address().trim();
     const token = this.token().trim();
     if (address === '') {
-      this.hostProblem.set(COPY.missingAddress);
+      this.hostProblem.set(this.copy.missingAddress);
       return;
     }
     if (token === '') {
-      this.hostProblem.set(COPY.missingToken);
+      this.hostProblem.set(this.copy.missingToken);
       return;
     }
     if (await this.connected('host', address, token, this.hostProblem)) {
@@ -235,7 +233,7 @@ export class AccountsComponent {
     try {
       await this.credentials.remove(id);
     } catch {
-      this.listProblem.set(REMOVE_FAILED);
+      this.listProblem.set(removeFailed());
     }
   }
 }

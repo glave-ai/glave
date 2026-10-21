@@ -1,27 +1,9 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, LOCALE_ID, computed, inject } from '@angular/core';
 import { GlzEmptyStateComponent } from '@glave/glaze';
 import { FileDiff } from 'lucide';
 
-import type { FileChange } from '../../lib/files';
+import { type FileChange, lineCounts } from '../../lib/files';
 import { ThreadService } from '../../services/thread.service';
-
-const COPY = {
-  emptyHeading: 'No files changed',
-  emptyText: 'Files this thread writes or edits show here, with what changed.',
-  commands: 'Changes made by commands, or by subagents, are not listed.',
-  wrote: 'Wrote the whole file',
-  edited: 'Edited',
-  editedAll: 'Edited every match',
-  added: 'added',
-  removed: 'removed',
-} as const;
-
-function noteOf(change: FileChange): string {
-  if (change.tool === 'write') {
-    return COPY.wrote;
-  }
-  return change.all ? COPY.editedAll : COPY.edited;
-}
 
 /**
  * The files this thread changed with its own `write` and `edit` calls, each with its diffs,
@@ -35,22 +17,35 @@ function noteOf(change: FileChange): string {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ThreadFilesComponent {
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    emptyHeading: $localize`:@@threadFiles.emptyHeading:No files changed`,
+    emptyText: $localize`:@@threadFiles.emptyText:Files this thread writes or edits show here, with what changed.`,
+    commands: $localize`:@@threadFiles.commands:Changes made by commands, or by subagents, are not listed.`,
+    wrote: $localize`:@@threadFiles.wrote:Wrote the whole file`,
+    edited: $localize`:@@threadFiles.edited:Edited`,
+    editedAll: $localize`:@@threadFiles.editedAll:Edited every match`,
+  } as const;
   protected readonly icon = FileDiff;
   private readonly thread = inject(ThreadService);
+  private readonly locale = inject(LOCALE_ID);
 
   protected readonly files = computed(() =>
     this.thread.files().map((file) => ({
       path: file.path,
-      added: `+${String(file.added)}`,
-      removed: `−${String(file.removed)}`,
-      countsLabel: `${String(file.added)} ${COPY.added}, ${String(file.removed)} ${COPY.removed}`,
+      ...lineCounts(file.added, file.removed, this.locale),
       changes: file.changes.map((change) => ({
         key: change.key,
-        note: noteOf(change),
+        note: this.noteOf(change),
         lines: change.lines,
       })),
     })),
   );
   protected readonly hasFiles = computed(() => this.files().length > 0);
+
+  private noteOf(change: FileChange): string {
+    if (change.tool === 'write') {
+      return this.copy.wrote;
+    }
+    return change.all ? this.copy.editedAll : this.copy.edited;
+  }
 }

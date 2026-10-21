@@ -56,6 +56,32 @@ export default tseslint.config(
     },
   },
   {
+    // A message is read where it is used, in a function or as a class is made, never as its
+    // module is read: a translation is loaded before the app starts, after main.ts's imports.
+    files: ['app/src/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "TaggedTemplateExpression[tag.name='$localize']:not(:function TaggedTemplateExpression, PropertyDefinition[static=false] TaggedTemplateExpression)",
+          message:
+            'Read a message where it is used, in a function or a class field: at a module’s top level it is read before a translation loads.',
+        },
+      ],
+    },
+  },
+  {
+    // Glaze stays app-independent: its words come from its inputs and GLZ_TEXT.
+    files: ['glaze/**/*.ts'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        { name: '$localize', message: 'Glaze takes its words from inputs and GLZ_TEXT.' },
+      ],
+    },
+  },
+  {
     // Components on native elements (`button[glzButton]`) keep the element's own semantics; the
     // selector rule cannot read element-and-attribute selectors. Markdown renders into any
     // element (`[glzMarkdown]`), the way a directive is used.

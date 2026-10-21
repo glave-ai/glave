@@ -3,10 +3,7 @@ import { RouterLink } from '@angular/router';
 import { GlzIconComponent, GlzNavItemComponent } from '@glave/glaze';
 import { LoaderCircle } from 'lucide';
 
-import { NEEDS_YOU, type NavThread } from '../../lib/nav';
-
-/** What says a thread runs: a ring that turns, and what screen readers hear. */
-const RUNNING = { icon: LoaderCircle, label: 'running' } as const;
+import { type NavThread, needsYou } from '../../lib/nav';
 
 /**
  * A thread's line in the side nav: its title on one line, cut short if need be, and at its end
@@ -28,8 +25,12 @@ export class NavThreadComponent {
   /** Emitted when the person follows the thread's link, or one under it, so a drawer can close. */
   readonly navigated = output();
 
-  protected readonly running = RUNNING;
-  protected readonly needsYou = NEEDS_YOU;
+  /** What says a thread runs: a ring that turns, and what screen readers hear. */
+  protected readonly running = {
+    icon: LoaderCircle,
+    label: $localize`:@@navThread.running:running`,
+  } as const;
+  protected readonly needsYou = needsYou();
 
   protected followed(): void {
     this.navigated.emit();

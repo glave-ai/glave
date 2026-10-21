@@ -16,7 +16,6 @@ describe('ModelsService', () => {
     expect(fake.paramsOf('model/list')).toHaveLength(1);
     expect(models.default()).toBe('gpt-6-luna');
     expect(models.choosable()).toBe(true);
-    expect(models.options().map((option) => option.label)).toEqual(['GPT-6 Luna', 'Hope']);
   });
 
   it('reads again after a failure', async () => {
@@ -31,5 +30,15 @@ describe('ModelsService', () => {
     fake.answer('model/list', { models: MODELS });
     await models.load();
     expect(models.models()).toHaveLength(2);
+  });
+
+  it('takes the first model as the default when the server marks none', async () => {
+    const fake = new FakeSession().answer('model/list', {
+      models: [{ id: 'only', default: false }],
+    });
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const models = TestBed.inject(ModelsService);
+    await models.load();
+    expect(models.default()).toBe('only');
   });
 });

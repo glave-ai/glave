@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, LOCALE_ID, computed, inject } from '@angular/core';
 import {
   GlzIconButtonComponent,
   GlzIconComponent,
@@ -14,18 +14,10 @@ import { CommandListComponent } from '../command-list/command-list.component';
 import { TaskListComponent } from '../task-list/task-list.component';
 import { ThreadFilesComponent } from '../thread-files/thread-files.component';
 
-const COPY = {
-  heading: 'Tools',
-  close: 'Close the tools',
-  tabs: 'Tools',
-  tasks: 'Tasks',
-  changes: 'Changes',
-  commands: 'Commands',
-} as const;
-
-/** A tab's label, with how many it holds when it holds any. */
-function counted(label: string, count: number): string {
-  return count === 0 ? label : `${label} (${String(count)})`;
+/** A tab's label, with how many it holds (written for `locale`) when it holds any. */
+function counted(label: string, count: number, locale: string): string {
+  const number = new Intl.NumberFormat(locale).format(count);
+  return count === 0 ? label : $localize`:@@toolsPanel.counted:${label}:TAB: (${number}:COUNT:)`;
 }
 
 /**
@@ -49,18 +41,28 @@ function counted(label: string, count: number): string {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ToolsPanelComponent {
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    heading: $localize`:@@toolsPanel.heading:Tools`,
+    close: $localize`:@@toolsPanel.close:Close the tools`,
+    tabs: $localize`:@@toolsPanel.tabs:Tools`,
+    tasks: $localize`:@@toolsPanel.tasks:Tasks`,
+    changes: $localize`:@@toolsPanel.changes:Changes`,
+    commands: $localize`:@@toolsPanel.commands:Commands`,
+  } as const;
   protected readonly closeIcon = X;
   private readonly panel = inject(ToolsPanelService);
   private readonly thread = inject(ThreadService);
   private readonly commands = inject(CommandsService);
+  private readonly locale = inject(LOCALE_ID);
   protected readonly tab = this.panel.tabIndex;
   /** Whether the panel is a sheet over the page, which has a close button of its own. */
   protected readonly narrow = this.panel.narrow;
   protected readonly changesLabel = computed(() =>
-    counted(COPY.changes, this.thread.files().length),
+    counted(this.copy.changes, this.thread.files().length, this.locale),
   );
-  protected readonly commandsLabel = computed(() => counted(COPY.commands, this.commands.count()));
+  protected readonly commandsLabel = computed(() =>
+    counted(this.copy.commands, this.commands.count(), this.locale),
+  );
 
   protected select(index: number): void {
     this.panel.showTab(index);

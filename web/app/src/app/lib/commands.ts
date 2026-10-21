@@ -1,6 +1,6 @@
 import { ApiError, ErrorCode, type RawEvent } from '@glave/client';
 
-import { SOMETHING_WRONG, sentence } from './text';
+import { sentence, somethingWrong } from './text';
 
 /** What a thread records as one of its commands in the background starts or ends. */
 const COMMAND_EVENTS: ReadonlySet<string> = new Set(['command.started', 'command.ended']);
@@ -39,5 +39,5 @@ export function alreadyEnded(error: unknown): boolean {
  * server's own words when it refused, else the plain failure.
  */
 export function commandProblem(error: unknown): string {
-  return error instanceof ApiError ? sentence(error.message) : SOMETHING_WRONG;
+  return error instanceof ApiError ? sentence(error.message) : somethingWrong();
 }

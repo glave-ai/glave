@@ -4,8 +4,6 @@ import { GlzNavItemComponent, GlzNavListComponent } from '@glave/glaze';
 
 import type { WaitingThread } from '../../lib/nav';
 
-const COPY = { label: 'Needs you' } as const;
-
 /**
  * Needs you, pinned at the top of the side nav while something waits for the person (an
  * approval, a question, a project's trust): each thread that waits, newest first, with its
@@ -25,7 +23,7 @@ export class NeedsYouComponent {
   /** Emitted when the person goes to a thread, so a drawer can close. */
   readonly navigated = output();
 
-  protected readonly copy = COPY;
+  protected readonly copy = { label: $localize`:@@needsYou.label:Needs you` } as const;
   protected readonly shown = computed(() => this.threads().length > 0);
 
   protected followed(): void {

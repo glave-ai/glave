@@ -4,8 +4,8 @@
     <h1>{{ copy.heading }}</h1>
   </div>
   <p class="intro">{{ copy.intro }}</p>
-  @if (service.error(); as error) {
-    <p class="error" role="alert">{{ copy.failed }} {{ error }}</p>
+  @if (problem(); as problem) {
+    <p class="error" role="alert">{{ problem }}</p>
   }
   @if (off()) {
     <glz-empty-state [heading]="copy.offHeading" [icon]="icon">{{ copy.offText }}</glz-empty-state>

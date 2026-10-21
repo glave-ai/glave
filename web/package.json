@@ -10,6 +10,7 @@
   "scripts": {
     "start": "ng serve app",
     "showcase": "ng serve showcase",
+    "prebuild": "node tools/i18n.mjs check",
     "build": "ng build app",
     "build:glaze": "ng build glaze",
     "build:showcase": "ng build showcase",
@@ -21,7 +22,9 @@
     "e2e": "PLAYWRIGHT_BROWSERS_PATH=0 playwright test -c e2e/playwright.config.ts",
     "e2e:install": "PLAYWRIGHT_BROWSERS_PATH=0 playwright install chromium webkit --only-shell",
     "e2e:twice": "PLAYWRIGHT_BROWSERS_PATH=0 node e2e/twice.mjs",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run licenses && npm run audit && npm test && npm run build:glaze && npm run build && npm run build:showcase && npm run e2e",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run licenses && npm run audit && npm run i18n:check && npm test && npm run build:glaze && npm run build && npm run build:showcase && npm run e2e",
+    "i18n": "node tools/i18n.mjs",
+    "i18n:check": "node tools/i18n.mjs fresh",
     "licenses": "node tools/licenses.mjs",
     "audit": "npm audit --omit=dev --audit-level=high"
   },
@@ -45,6 +48,7 @@
     "@angular/build": "22.2.2",
     "@angular/cli": "22.2.2",
     "@angular/compiler-cli": "22.2.2",
+    "@angular/localize": "22.2.2",
     "@axe-core/playwright": "4.13.0",
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.64.0",

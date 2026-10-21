@@ -1,7 +1,7 @@
 import { ApiError, ErrorCode, type ProviderInfo } from '@glave/client';
 
 import {
-  SERVICES,
+  offeredServices,
   accountName,
   changeQuery,
   connectProblem,
@@ -21,14 +21,14 @@ const OPENAI: ProviderInfo = {
 
 describe('providers', () => {
   it('offers OpenRouter first and another server last, by plain names', () => {
-    expect(SERVICES.map((service) => service.name)).toEqual([
+    expect(offeredServices().map((service) => service.name)).toEqual([
       'OpenRouter',
       'OpenAI',
       'Another server',
     ]);
     expect(serviceOf('openrouter').name).toBe('OpenRouter');
     expect(serviceOf('anthropic').name).toBe('Anthropic');
-    expect(servicesFor('openai')).toBe(SERVICES);
+    expect(servicesFor('openai')).toEqual(offeredServices());
     expect(servicesFor('anthropic').map((service) => service.kind)).toContain('anthropic');
     expect(needsAddress('compatible')).toBe(true);
     expect(needsAddress('anthropic')).toBe(false);
@@ -36,10 +36,10 @@ describe('providers', () => {
 
   it('names an account by its service, or another server by its address', () => {
     expect(accountName(OPENAI)).toBe('OpenAI');
-    expect(keyHint(OPENAI)).toBe('Key ending a1b2 · 1 model');
+    expect(keyHint(OPENAI, 'en-US')).toBe('Key ending a1b2 · 1 model');
     const local = { ...OPENAI, kind: 'compatible', url: 'http://localhost:11434/v1' } as const;
     expect(accountName(local)).toBe('http://localhost:11434/v1');
-    expect(keyHint({ ...OPENAI, hint: undefined, models: ['a', 'b'] })).toBe('2 models');
+    expect(keyHint({ ...OPENAI, hint: undefined, models: ['a', 'b'] }, 'en-US')).toBe('2 models');
     expect(changeQuery(OPENAI)).toEqual({ kind: 'openai' });
     expect(changeQuery(local)).toEqual({ kind: 'compatible', url: 'http://localhost:11434/v1' });
   });

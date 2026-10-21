@@ -8,6 +8,7 @@ import {
 } from '@angular/core';
 
 import { testIds } from '../../lib/test-ids';
+import { glzText } from '../../lib/words';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
 const PARTS = { summary: 'summary' } as const;
@@ -32,11 +33,15 @@ export class GlzReasoningComponent {
   /** The test hook for this component; its parts get `<testId>-<part>`. */
   readonly testId = input<string | null>(null);
   protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+  private readonly words = glzText('reasoning', {
+    label: 'Reasoning',
+    thinkingLabel: 'Thinking…',
+  });
 
   readonly open = model(false);
   readonly streaming = input(false, { transform: booleanAttribute });
-  readonly label = input('Reasoning');
-  readonly thinkingLabel = input('Thinking…');
+  readonly label = input(this.words.label);
+  readonly thinkingLabel = input(this.words.thinkingLabel);
 
   protected readonly summary = computed(() =>
     this.streaming() ? this.thinkingLabel() : this.label(),

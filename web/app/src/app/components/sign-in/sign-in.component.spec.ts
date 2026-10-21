@@ -5,7 +5,7 @@ import { expectAccessible } from '@glave/glaze/testing';
 
 import { FAKE_SERVER, FakeSession, provideFakeSession } from '../../testing/fake-session';
 import type { Authenticator } from '../../lib/passkeys';
-import { AUTHENTICATOR, PASSKEY_REFUSED } from '../../services/passkeys.service';
+import { AUTHENTICATOR, passkeyRefused } from '../../services/passkeys.service';
 import { SessionService } from '../../services/session.service';
 import { SignInComponent } from './sign-in.component';
 
@@ -139,7 +139,7 @@ describe('SignInComponent', () => {
     root.querySelector<HTMLButtonElement>('[data-testid="sign-in-passkey"]')?.click();
     await fixture.whenStable();
     const problem = root.querySelector('[data-testid="sign-in-problem"]');
-    expect(problem?.textContent).toContain(PASSKEY_REFUSED);
+    expect(problem?.textContent).toContain(passkeyRefused());
     expect(problem?.getAttribute('role')).toBe('alert');
     expect(navigate).not.toHaveBeenCalled();
     await expectAccessible(root);

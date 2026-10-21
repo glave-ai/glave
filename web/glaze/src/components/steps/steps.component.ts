@@ -3,6 +3,7 @@ import { Ban, Check, ChevronRight, Hand, LoaderCircle, TriangleAlert } from 'luc
 
 import type { GlzIconData } from '../../lib/icons';
 import { testIds } from '../../lib/test-ids';
+import { glzText } from '../../lib/words';
 import { GlzIconComponent } from '../icon/icon.component';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
@@ -13,14 +14,6 @@ export type GlzRunStatus = 'done' | 'failed' | 'stopped' | 'running' | 'waiting'
 
 /** The words for each status, read beside its icon. */
 export type GlzRunStatusLabels = Readonly<Record<GlzRunStatus, string>>;
-
-const LABELS: GlzRunStatusLabels = {
-  done: 'Done',
-  failed: 'failed',
-  stopped: 'stopped',
-  running: 'working',
-  waiting: 'waiting',
-};
 
 const ICONS: Readonly<Record<GlzRunStatus, GlzIconData>> = {
   done: Check,
@@ -60,13 +53,22 @@ export class GlzStepsComponent {
   /** The test hook for this component; its parts get `<testId>-<part>`. */
   readonly testId = input<string | null>(null);
   protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+  private readonly words = glzText('steps', {
+    statusLabels: {
+      done: 'Done',
+      failed: 'failed',
+      stopped: 'stopped',
+      running: 'working',
+      waiting: 'waiting',
+    },
+  });
 
   readonly status = input<GlzRunStatus>('done');
   /** What else to say about the run, in a few words each: the time it took, its cost. */
   readonly facts = input<readonly string[]>([]);
   /** How many steps, in words: "4 steps". */
   readonly steps = input.required<string>();
-  readonly statusLabels = input<GlzRunStatusLabels>(LABELS);
+  readonly statusLabels = input<GlzRunStatusLabels>(this.words.statusLabels);
   readonly open = model(false);
 
   protected readonly chevron = ChevronRight;

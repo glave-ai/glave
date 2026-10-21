@@ -3,7 +3,7 @@ import { ApiError, ErrorCode, type PasskeySummary } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import type { Authenticator } from '../../lib/passkeys';
-import { AUTHENTICATOR, PASSKEY_REFUSED } from '../../services/passkeys.service';
+import { AUTHENTICATOR, passkeyRefused } from '../../services/passkeys.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { PasskeysComponent } from './passkeys.component';
 
@@ -123,7 +123,7 @@ describe('PasskeysComponent', () => {
     await settle(fixture);
     const problem = (): string | null | undefined =>
       root.querySelector('[data-testid="passkeys-problem"]')?.textContent;
-    expect(problem()).toContain(PASSKEY_REFUSED);
+    expect(problem()).toContain(passkeyRefused());
     fake.answer(
       'passkey/add_options',
       new ApiError({ code: ErrorCode.NOT_ALLOWED, message: 'only the person may' }),

@@ -16,15 +16,6 @@ import { TasksService } from '../../services/tasks.service';
 import { PersonComponent } from '../person/person.component';
 import { ProjectsNavComponent } from '../projects-nav/projects-nav.component';
 
-const COPY = {
-  name: 'glave',
-  newChat: 'New chat',
-  search: 'Search threads',
-  searchPlaceholder: 'Search',
-  tasks: 'Tasks',
-  going: 'going',
-} as const;
-
 /**
  * The side nav: glave's name with New chat beside it, and the search; what needs the person, the
  * person's projects with their threads, then their chats; and at its foot Tasks (only while
@@ -52,7 +43,14 @@ export class SideNavComponent {
   /** Emitted when the person follows a link, so a drawer can close. */
   readonly navigated = output();
 
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    name: 'glave',
+    newChat: $localize`:@@sideNav.newChat:New chat`,
+    search: $localize`:@@sideNav.search:Search threads`,
+    searchPlaceholder: $localize`:@@sideNav.searchPlaceholder:Search`,
+    tasks: $localize`:@@sideNav.tasks:Tasks`,
+    going: $localize`:@@sideNav.going:going`,
+  } as const;
   protected readonly icons = { newChat: PenLine, search: Search, tasks: ListChecks };
   protected readonly tasksLink = '/tasks';
   /** What the person searches the thread titles for. */

@@ -10,16 +10,8 @@ import {
 import { ApiError, type AwakeInfo } from '@glave/client';
 import { GlzCardComponent, GlzCheckboxComponent, GlzFormFieldComponent } from '@glave/glaze';
 
-import { sentence } from '../../lib/text';
+import { sentence, unreached } from '../../lib/text';
 import { SessionService } from '../../services/session.service';
-
-const COPY = {
-  heading: 'This computer',
-  label: 'While glave works',
-  keep: 'Keep this computer awake',
-  hint: 'The screen may still turn off, and closing the lid still puts it to sleep.',
-  unreached: 'glave could not be reached. Try again.',
-} as const;
 
 /**
  * In Settings, on the person's own computer: whether glave keeps it from going to sleep on its
@@ -39,7 +31,12 @@ export class AwakeComponent {
   private readonly changes = inject(ChangeDetectorRef);
   /** What the server last said; none until it has. */
   private readonly awake = signal<AwakeInfo | null>(null);
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    heading: $localize`:@@awake.heading:This computer`,
+    label: $localize`:@@awake.label:While glave works`,
+    keep: $localize`:@@awake.keep:Keep this computer awake`,
+    hint: $localize`:@@awake.hint:The screen may still turn off, and closing the lid still puts it to sleep.`,
+  } as const;
   protected readonly shown = computed(() => {
     const awake = this.awake();
     return awake !== null && awake.kind !== 'never';
@@ -71,7 +68,7 @@ export class AwakeComponent {
       this.awake.set((await asked()).awake);
       this.problem.set(null);
     } catch (error: unknown) {
-      this.problem.set(error instanceof ApiError ? sentence(error.message) : COPY.unreached);
+      this.problem.set(error instanceof ApiError ? sentence(error.message) : unreached());
     }
     // The switch shows what the server said, whatever the click before it: the click's own
     // state reaches the page first, so that going back from it shows.

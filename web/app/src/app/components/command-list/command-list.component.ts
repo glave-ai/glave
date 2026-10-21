@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, LOCALE_ID, computed, inject } from '@angular/core';
 import type { CommandId } from '@glave/client';
 import {
   GlzButtonComponent,
@@ -11,14 +11,6 @@ import { SquareTerminal } from 'lucide';
 
 import { runningFor } from '../../lib/commands';
 import { CommandsService } from '../../services/commands.service';
-
-const COPY = {
-  stop: 'Stop',
-  stopping: 'Stopping…',
-  runningFor: 'Running for',
-  emptyHeading: 'Nothing running in the background',
-  emptyText: 'When the agent keeps a command running, such as a dev server, it shows here.',
-} as const;
 
 /**
  * The thread's commands running in the background: what each runs, in one line of monospace
@@ -33,9 +25,15 @@ const COPY = {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CommandListComponent {
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    stop: $localize`:@@commandList.stop:Stop`,
+    stopping: $localize`:@@commandList.stopping:Stopping…`,
+    emptyHeading: $localize`:@@commandList.emptyHeading:Nothing running in the background`,
+    emptyText: $localize`:@@commandList.emptyText:When the agent keeps a command running, such as a dev server, it shows here.`,
+  } as const;
   protected readonly icon = SquareTerminal;
   protected readonly service = inject(CommandsService);
+  private readonly locale = inject(LOCALE_ID);
 
   protected readonly rows = computed(() => {
     const now = this.service.now();
@@ -44,16 +42,20 @@ export class CommandListComponent {
     return this.service.commands().map((command) => {
       const ran = runningFor(command.started_at, now);
       const busy = stopping.has(command.id);
-      const action = busy ? COPY.stopping : COPY.stop;
+      const what = command.command;
+      const time = ran === null ? null : formatDuration(ran, this.locale);
       return {
         id: command.id,
-        command: command.command,
+        command: what,
         summary: command.summary,
-        time: ran === null ? null : `${COPY.runningFor} ${formatDuration(ran)}`,
+        time:
+          time === null ? null : $localize`:@@commandList.runningFor:Running for ${time}:DURATION:`,
         busy,
         ariaBusy: busy ? 'true' : null,
-        action,
-        actionLabel: `${action} ${command.command}`,
+        action: busy ? this.copy.stopping : this.copy.stop,
+        actionLabel: busy
+          ? $localize`:@@commandList.stoppingCommand:Stopping ${what}:COMMAND:…`
+          : $localize`:@@commandList.stopCommand:Stop ${what}:COMMAND:`,
         refusal: refusals.get(command.id) ?? null,
       };
     });

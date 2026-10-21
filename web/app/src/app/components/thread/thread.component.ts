@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  LOCALE_ID,
   computed,
   effect,
   inject,
@@ -42,20 +43,6 @@ import { RenameDialogComponent } from '../rename-dialog/rename-dialog.component'
 import { ThreadHeaderComponent } from '../thread-header/thread-header.component';
 import { ToolsPanelComponent } from '../tools-panel/tools-panel.component';
 import { TurnComponent } from '../turn/turn.component';
-
-const COPY = {
-  latest: 'Jump to latest',
-  attach: 'Add files or photos',
-  failed: 'Something went wrong:',
-  placeholder: 'Reply',
-  conversation: 'Conversation',
-  tools: 'Tools',
-  resize: 'Resize the tools',
-  hint: 'Drag or use the arrow keys to resize; Enter collapses. Show or hide:',
-  trust: 'This project brings its own tools and settings',
-  you: 'You',
-  queued: 'Waiting to be read',
-} as const;
 
 function isFirstPrompt(state: unknown): state is FirstPrompt {
   return (
@@ -107,11 +94,29 @@ export class ThreadComponent {
   /** The thread's id, from the route. */
   readonly thread = input.required<string>();
 
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    latest: $localize`:@@thread.latest:Jump to latest`,
+    attach: $localize`:@@thread.attach:Add files or photos`,
+    placeholder: $localize`:@@thread.placeholder:Reply`,
+    conversation: $localize`:@@thread.conversation:Conversation`,
+    tools: $localize`:@@thread.tools:Tools`,
+    resize: $localize`:@@thread.resize:Resize the tools`,
+    trust: $localize`:@@thread.trust:This project brings its own tools and settings`,
+    you: $localize`:@@thread.you:You`,
+    queued: $localize`:@@thread.queued:Waiting to be read`,
+  } as const;
   protected readonly service = inject(ThreadService);
   /** The files added to the message being written, kept in the thread's project. */
   protected readonly attachments = inject(AttachmentsService);
   private readonly projects = inject(ProjectsService);
+  private readonly locale = inject(LOCALE_ID);
+  /** What went wrong last, in the server's words. */
+  protected readonly problem = computed(() => {
+    const error = this.service.error();
+    return error === null
+      ? null
+      : $localize`:@@thread.failed:Something went wrong: ${error}:ERROR:`;
+  });
   private readonly panel = inject(ToolsPanelService);
   private readonly stick = viewChild.required(GlzStickToBottomDirective);
   /** The composer's draft, which a message the model never read comes back to. */
@@ -131,7 +136,7 @@ export class ThreadComponent {
   protected readonly panelOpen = this.panel.open;
   protected readonly panelWidth = this.panel.width;
   protected readonly panelShortcut = this.panel.ariaShortcut;
-  protected readonly panelHint = `${COPY.hint} ${this.panel.shortcut}`;
+  protected readonly panelHint = $localize`:@@thread.hint:Drag or use the arrow keys to resize; Enter collapses. Show or hide: ${this.panel.shortcut}:SHORTCUT:`;
   /**
    * The turns, results first; the reply being written goes to the last, which runs. A turn the
    * person just asked for shows at once, before the server records it.
@@ -143,7 +148,12 @@ export class ThreadComponent {
     const turns = starting === null ? recorded : [...recorded, startingTurn(starting)];
     const last = turns.length - 1;
     return turns.map((turn, index) =>
-      turnResults(turn, index === last ? live : null, index === last && this.service.busy()),
+      turnResults(
+        turn,
+        index === last ? live : null,
+        index === last && this.service.busy(),
+        this.locale,
+      ),
     );
   });
   protected readonly summary = computed(() => this.projects.thread(this.thread()));

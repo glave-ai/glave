@@ -1,15 +1,17 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, model } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  LOCALE_ID,
+  computed,
+  inject,
+  input,
+  model,
+} from '@angular/core';
 import { GlzPickerComponent } from '@glave/glaze';
 
-import { orderedOptions } from '../../lib/models';
+import { modelOptions, orderedOptions } from '../../lib/models';
 import { ModelsService } from '../../services/models.service';
 import { RecentModelsService } from '../../services/recent-models.service';
-
-const COPY = {
-  model: 'Model',
-  search: 'Search models',
-  empty: 'No models match',
-} as const;
 
 /**
  * The composer's model picker, quiet in its status line: the models this server runs, named
@@ -31,11 +33,21 @@ export class ModelPickerComponent {
   /** The person's pick, or `null` for none. */
   readonly value = model<string | null>(null);
 
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    model: $localize`:@@modelPicker.model:Model`,
+    search: $localize`:@@modelPicker.search:Search models`,
+    empty: $localize`:@@modelPicker.empty:No models match`,
+  } as const;
   private readonly models = inject(ModelsService);
   private readonly recent = inject(RecentModelsService);
+  private readonly locale = inject(LOCALE_ID);
+  /** Made here, with the picker, so the first page loads none of the models' names and lines. */
   protected readonly options = computed(() =>
-    orderedOptions(this.models.options(), this.models.default(), this.recent.recent()),
+    orderedOptions(
+      modelOptions(this.models.models(), this.locale),
+      this.models.default(),
+      this.recent.recent(),
+    ),
   );
   protected readonly hasModels = computed(() => this.options().length > 0);
   protected readonly shown = computed(

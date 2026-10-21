@@ -4,10 +4,6 @@ import { Menu } from 'lucide';
 
 import { NavService } from '../../services/nav.service';
 
-const COPY = {
-  menu: 'Show or hide the side bar',
-} as const;
-
 /**
  * The bar across the top of a page, floating over it: no border and no solid bar, but a fade
  * from the page's colour to transparent, so the page scrolls softly under it. It holds the
@@ -22,7 +18,9 @@ const COPY = {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PageHeaderComponent {
-  protected readonly copy = COPY;
+  protected readonly copy = {
+    menu: $localize`:@@pageHeader.menu:Show or hide the side bar`,
+  } as const;
   protected readonly icon = Menu;
   private readonly nav = inject(NavService);
   protected readonly open = this.nav.open;

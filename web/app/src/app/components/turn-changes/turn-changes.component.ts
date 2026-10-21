@@ -1,38 +1,19 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  LOCALE_ID,
+  computed,
+  inject,
+  input,
+} from '@angular/core';
 import { injectId } from '@glave/glaze';
 
-import type { ChangedFile } from '../../lib/files';
+import { type ChangedFile, lineCounts } from '../../lib/files';
+import { plural } from '../../lib/plural';
 import { ToolsPanelService } from '../../services/tools-panel.service';
-
-const COPY = {
-  heading: 'What changed',
-  added: 'added',
-  removed: 'removed',
-  lines: 'lines',
-} as const;
 
 /** How many rows a narrow card shows before it says how many more there are. */
 const NARROW_ROWS = 2;
-
-function files(n: number, what = ''): string {
-  return `${String(n)} ${what}${n === 1 ? 'file' : 'files'}`;
-}
-
-/** Lines added and removed, as the card shows them and as screen readers read them. */
-function counts(
-  added: number,
-  removed: number,
-): {
-  readonly added: string;
-  readonly removed: string;
-  readonly label: string;
-} {
-  return {
-    added: `+${String(added)}`,
-    removed: `−${String(removed)}`,
-    label: `${String(added)} ${COPY.lines} ${COPY.added}, ${String(removed)} ${COPY.removed}`,
-  };
-}
 
 /**
  * What a turn changed, after its reply: a card with how many files and lines added and removed
@@ -50,23 +31,39 @@ function counts(
 export class TurnChangesComponent {
   readonly files = input.required<readonly ChangedFile[]>();
 
-  protected readonly copy = COPY;
+  protected readonly copy = { heading: $localize`:@@turnChanges.heading:What changed` } as const;
   protected readonly headingId = injectId('app-turn-changes');
   private readonly panel = inject(ToolsPanelService);
-  protected readonly count = computed(() => files(this.files().length));
+  private readonly locale = inject(LOCALE_ID);
+  protected readonly count = computed(() => {
+    const count = this.files().length;
+    return plural(
+      $localize`:@@turnChanges.files:{${count}:COUNT:, plural, one {# file} other {# files}}`,
+      this.locale,
+    );
+  });
   protected readonly total = computed(() =>
-    counts(
+    lineCounts(
       this.files().reduce((sum, file) => sum + file.added, 0),
       this.files().reduce((sum, file) => sum + file.removed, 0),
+      this.locale,
     ),
   );
   protected readonly rows = computed(() =>
-    this.files().map((file) => ({ path: file.path, ...counts(file.added, file.removed) })),
+    this.files().map((file) => ({
+      path: file.path,
+      ...lineCounts(file.added, file.removed, this.locale),
+    })),
   );
   /** What the last row of a narrow card says: how many more files, if any. */
   protected readonly more = computed(() => {
     const hidden = this.files().length - NARROW_ROWS;
-    return hidden > 0 ? files(hidden, 'more ') : null;
+    return hidden > 0
+      ? plural(
+          $localize`:@@turnChanges.more:{${hidden}:COUNT:, plural, one {# more file} other {# more files}}`,
+          this.locale,
+        )
+      : null;
   });
 
   protected show(): void {

@@ -14,12 +14,12 @@ describe('format', () => {
   });
 
   it('shortens durations', () => {
-    expect(formatDuration(850)).toBe('850ms');
-    expect(formatDuration(12_000)).toBe('12s');
-    expect(formatDuration(242_000)).toBe('4m 02s');
-    expect(formatDuration(180_000)).toBe('3m 00s');
-    expect(formatDuration(7_500_000)).toBe('2h 05m');
-    expect(formatDuration(7_200_000)).toBe('2h 00m');
+    expect(formatDuration(850, 'en-US')).toBe('850ms');
+    expect(formatDuration(12_000, 'en-US')).toBe('12s');
+    expect(formatDuration(242_000, 'en-US')).toBe('4m 02s');
+    expect(formatDuration(180_000, 'en-US')).toBe('3m 00s');
+    expect(formatDuration(7_500_000, 'en-US')).toBe('2h 05m');
+    expect(formatDuration(7_200_000, 'en-US')).toBe('2h 00m');
   });
 
   it('takes initials from the first and last words', () => {

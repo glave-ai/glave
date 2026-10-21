@@ -5,9 +5,6 @@ import { Hand, TriangleAlert } from 'lucide';
 import { threadTitle } from './threads';
 import { type Reader, type Since, type Times, readerTimes } from './when';
 
-/** What the side nav calls the person's own chats (their personal projects' threads). */
-const CHATS = 'Chats';
-
 /** The side nav's own lists, whose state is kept beside each project's (its project's id). */
 export const PROJECTS_LIST = 'projects';
 export const CHATS_LIST = 'chats';
@@ -24,7 +21,9 @@ export interface ProjectWithThreads {
  * What says a thread or a closed list needs the person: a small, neutral mark, and what screen
  * readers hear.
  */
-export const NEEDS_YOU = { icon: Hand, label: 'needs you' } as const;
+export function needsYou(): { readonly icon: GlzIconData; readonly label: string } {
+  return { icon: Hand, label: $localize`:@@nav.needsYou:needs you` };
+}
 
 /** A thread's line in the side nav, with the threads it started under it. */
 export interface NavThread {
@@ -108,9 +107,6 @@ interface Dated<T> {
   readonly latest: string;
 }
 
-/** The mark of a closed list with something in it waiting for the person. */
-const WAITING_MARK: HeadingMark = { ...NEEDS_YOU, warning: false };
-
 /** The fewest characters a search needs before it looks at threads' days too. */
 const DAY_QUERY = 3;
 
@@ -177,9 +173,11 @@ function waitingThreads(
   found: (thread: ThreadSummary) => boolean,
 ): readonly WaitingThread[] {
   const hasProjects = lists.some(({ project }) => project.kind === 'project');
+  // What the side nav calls the person's own chats (their personal projects' threads).
+  const chats = $localize`:@@nav.chats:Chats`;
   return lists
     .flatMap(({ project, threads }) => {
-      const place = project.kind === 'project' ? project.name : CHATS;
+      const place = project.kind === 'project' ? project.name : chats;
       return threads
         .filter((thread) => thread.status === 'waiting' && found(thread))
         .map((thread) => ({
@@ -216,7 +214,7 @@ function searching(view: NavView): boolean {
 /** How the list `list` shows: open while searching, else as the person left it. */
 function heading(list: string, waiting: boolean, view: NavView): NavHeading {
   const expanded = searching(view) || !view.collapsed.has(list);
-  return { expanded, mark: !expanded && waiting ? WAITING_MARK : null };
+  return { expanded, mark: !expanded && waiting ? { ...needsYou(), warning: false } : null };
 }
 
 function datedProject(
