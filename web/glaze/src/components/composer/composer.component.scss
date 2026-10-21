@@ -70,10 +70,12 @@
 // Grows with its text (CSS field-sizing, Baseline 2026), up to --glz-composer-max-height,
 // then scrolls; one line of it is as tall as send, its text in the middle. A browser without
 // field-sizing keeps it at its rows, which still works.
+// Each line of the text takes the direction its own words have; an empty box, the page's.
 .input {
   --glz-composer-line: var(--glz-composer-send-size);
 
   grid-area: input;
+  unicode-bidi: plaintext;
   field-sizing: content;
   width: 100%;
   min-height: var(--glz-composer-line);

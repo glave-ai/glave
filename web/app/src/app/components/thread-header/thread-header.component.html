@@ -21,7 +21,7 @@
         [glzTooltip]="copy.rename"
         (click)="startRename()"
       >
-        {{ title() }}
+        <span dir="auto">{{ title() }}</span>
       </button>
     </h1>
     @if (meta()) {

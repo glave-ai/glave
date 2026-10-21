@@ -61,6 +61,6 @@ select.glz-input {
 /* Its arrow at the end of a right-to-left line, the same way round. */
 select.glz-input:dir(rtl) {
   background-position:
-    0.5rem 55%,
-    0.8rem 55%;
+    0.8rem 55%,
+    1.1rem 55%;
 }

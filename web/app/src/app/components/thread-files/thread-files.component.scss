@@ -29,9 +29,12 @@
   box-shadow: inset 0 0 0 2px var(--glz-color-focus);
 }
 
+// A path reads left to right in any page.
 .path {
   flex: 1;
   min-width: 0;
+  direction: ltr;
+  unicode-bidi: isolate;
   overflow-wrap: anywhere;
   color: var(--glz-color-text-secondary);
   font-family: var(--glz-font-mono);
