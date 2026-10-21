@@ -48,12 +48,18 @@ impl Drop for Removed {
     }
 }
 
-/// The processes that hold `lock`: the person's server holds its home's.
-fn holders(lock: &Path) -> Vec<u32> {
-    let listed = Command::new("lsof").arg("-t").arg(lock).output().unwrap();
+/// The glaves serving with `home` as their home: the person's server, started in the
+/// background, has it in its environment, as `ps` shows it.
+fn serving_with(home: &Path) -> Vec<u32> {
+    let home = format!("GLAVE_HOME={}", home.display());
+    let listed = Command::new("ps")
+        .args(["axeww", "-o", "pid=,command="])
+        .output()
+        .unwrap();
     String::from_utf8_lossy(&listed.stdout)
-        .split_whitespace()
-        .map(|pid| pid.parse().unwrap())
+        .lines()
+        .filter(|line| line.contains(" serve") && line.split_whitespace().any(|word| word == home))
+        .filter_map(|line| line.split_whitespace().next()?.parse().ok())
         .collect()
 }
 
@@ -72,7 +78,7 @@ fn a_glave_and_the_person_s_server_it_starts_end_with_what_started_them() {
     typed(&mut asked, "y\n");
     let said = asked.wait_with_output().unwrap();
     assert!(said.status.success(), "{}", text(&said));
-    let held = holders(&person.home.join("run/server.lock"));
+    let held = serving_with(&person.home);
     assert!(!held.is_empty(), "the person's server runs");
 
     holder.kill().unwrap();
