@@ -327,3 +327,126 @@ fn nothing_starts_once_the_cost_cap_is_reached() {
     );
     assert!(server.received().is_empty());
 }
+
+/// When each of the memory ledger's `memory.saved` events happened, in order.
+fn saved_at(ledger: &str) -> Vec<jiff::Timestamp> {
+    ledger
+        .lines()
+        .filter(|line| line.contains("\"type\":\"memory.saved\""))
+        .map(|line| {
+            let event: serde_json::Value = serde_json::from_str(line).unwrap();
+            event["at"].as_str().unwrap().parse().unwrap()
+        })
+        .collect()
+}
+
+#[test]
+fn a_month_runs_on_its_days_in_one_store_and_grades_its_probes() {
+    let dir = folder("month");
+    // Tidy-up runs as the server runs it, in glave's own background tidier (tested in
+    // glave-memory). Here nothing comes due, the only seeded memory being untrusted, so the fake
+    // model's replies keep their order.
+    let task = task(
+        &dir,
+        r#"memory = true
+            tidy = "due"
+            days_ago = 9
+            probe_share = 0.5
+            [[glave.memories]]
+            text = "Ada writes British English"
+            scope = "personal"
+            untrusted = true
+            days_ago = 10
+            [[glave.threads]]
+            project = "chats"
+            days_ago = 1
+            messages = ["Remember: I use Helix."]
+            [[glave.threads]]
+            messages = ["Which editor do I use?"]
+            probe = [{ answer_contains = "Helix" }]
+            [[glave.threads]]
+            project = "beacon"
+            messages = ["Which shell do I use?"]
+            probe = [{ answer_contains = "fish" }]"#,
+        "exit 0\n",
+    );
+    let remember = json!({"text": "Ada edits in Helix", "scope": "personal"});
+    let server = FakeServer::start(vec![
+        Reply::text("Hi."),
+        Reply::tool_call("call_1", "mcp__memory__remember", &remember),
+        Reply::text("Noted."),
+        Reply::tool_call("call_2", "mcp__memory__recall", &json!({"query": "editor"})),
+        Reply::text("Helix."),
+        Reply::text("Bash, I think."),
+    ])
+    .unwrap();
+    let run = dir.join("run");
+    let attempt = block_on!(attempt(&setup(&server), &task, "fake-model", 1, &run)).unwrap();
+    assert_eq!(
+        attempt.failures,
+        Vec::<String>::new(),
+        "half the probes pass"
+    );
+    let probes = attempt.probes.unwrap();
+    assert_eq!((probes.passed, probes.of), (1, 2));
+    assert_eq!(
+        probes.failed,
+        ["probe 2 (thread 4): the answer does not mention \"fish\""]
+    );
+    assert_eq!(probes.recalled, [1]);
+    let memory = attempt.memory.unwrap();
+    assert_eq!(memory.tidy_runs, 0);
+    assert_eq!(memory.tidied_away, Vec::<String>::new());
+    assert_eq!(memory.used.keys().collect::<Vec<_>>(), ["personal"]);
+    let shown = &memory.in_view;
+    assert_eq!(shown.len(), 4, "one for each thread: {shown:?}");
+    assert!(
+        shown[0] > 0 && shown[0] == shown[1] && shown[2] > shown[1] && shown[3] == shown[2],
+        "{shown:?}"
+    );
+    // Saved in Chats on day 1: nine days after the memory seeded ten days ago.
+    let ledger = std::fs::read_to_string(run.join("memory.jsonl")).unwrap();
+    let [seeded, helix] = saved_at(&ledger)[..] else {
+        panic!("two memories saved: {ledger}");
+    };
+    let days = helix.duration_since(seeded).as_hours() / 24;
+    assert_eq!(days, 9, "{ledger}");
+    let transcript = std::fs::read_to_string(run.join("transcript.txt")).unwrap();
+    assert!(
+        transcript.contains("[thread 2: chats, days_ago 1]"),
+        "{transcript}"
+    );
+}
+
+/// memory-recall-paraphrase measures what it says it does: recall with the question's own words
+/// finds nothing in this project, with the old thread's words it finds the fact, and an attempt
+/// that does both passes the task's checks.
+#[test]
+fn the_paraphrased_fact_is_found_only_with_other_words() {
+    let dir = folder("paraphrase");
+    let task = load(Path::new("../../evals/tasks/memory-recall-paraphrase")).unwrap();
+    let recall = |id: &str, query: &str| {
+        Reply::tool_call(id, "mcp__memory__recall", &json!({ "query": query }))
+    };
+    let server = FakeServer::start(vec![
+        recall("call_1", "ship staging box"),
+        recall("call_2", "deploy preview server"),
+        Reply::text("We deploy with Render, and the staging box is gannet-12."),
+    ])
+    .unwrap();
+    let run = dir.join("run");
+    let attempt = block_on!(attempt(&setup(&server), &task, "fake-model", 1, &run)).unwrap();
+    assert_eq!(attempt.failures, Vec::<String>::new());
+    let events = std::fs::read_to_string(run.join("events.jsonl")).unwrap();
+    let found: Vec<&str> = (events.lines())
+        .filter(|line| line.contains("\"type\":\"tool.call.completed\""))
+        .collect();
+    let [asked, reworded] = found[..] else {
+        panic!("two recalls: {events}");
+    };
+    assert!(
+        !asked.contains("gannet-12") && !asked.contains("heron-9"),
+        "the question's words find nothing here: {asked}"
+    );
+    assert!(reworded.contains("gannet-12"), "{reworded}");
+}

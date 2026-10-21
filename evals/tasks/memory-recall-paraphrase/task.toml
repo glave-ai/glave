@@ -1,0 +1,23 @@
+[task]
+name = "glave/memory-recall-paraphrase"
+description = "A fact stated in an old thread, never remembered, is asked for in other words; the agent finds it with recall, and another project's thread, in the question's own words, never comes back."
+
+[glave]
+memory = true
+# Recall matches words. The question's ("ship", "staging box") are in no thread of this project,
+# so searching with them finds nothing here: only the old thread's ("deploy", "preview server")
+# find the fact. The other project's thread uses the question's own words, and recall must never
+# return it.
+checks = [
+    { answer_contains = "gannet-12" },
+    { answer_contains = "Render" },
+    { answer_lacks = ["heron-9", "Netlify"] },
+    { sent = "mcp__memory__recall" },
+]
+
+[[glave.past]]
+messages = ["For the record: we deploy with Render, and the preview server is gannet-12. Nothing to do now."]
+
+[[glave.past]]
+project = "another-client"
+messages = ["For the record: this client ships with Netlify, and their staging box is heron-9. Nothing to do now."]
