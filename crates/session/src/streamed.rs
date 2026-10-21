@@ -1,10 +1,12 @@
 //! What a transport carries for a request that streams: a turn's notifications then its
-//! result, or a watch's then how it ended, as one stream of notifications and a last answer.
+//! result, or a watch's (of a thread, or of a list) then how it ended, as one stream of
+//! notifications and a last answer.
 
 use std::sync::Arc;
 
 use glave_event::ThreadId;
 
+use crate::lists::ListWatch;
 use crate::protocol::{ApiError, Notification, Reply};
 use crate::turn::{TurnItem, TurnStream};
 use crate::watch::{Watch, Watched};
@@ -13,6 +15,7 @@ use crate::watch::{Watch, Watched};
 pub(crate) enum Streamed {
     Turn(TurnStream),
     Watch(Watch),
+    List(ListWatch),
 }
 
 /// One thing a stream sends.
@@ -37,20 +40,26 @@ impl Streamed {
                     }
                 }
             },
-            Self::Watch(watch) => Some(match watch.next().await? {
-                Watched::Note(note) => Item::Note(note),
-                Watched::Ended(ended) => {
-                    Item::Last(Box::new(ended.map(|ended| Reply::Watched { ended })))
-                }
-            }),
+            Self::Watch(watch) => watch.next().await.map(watched),
+            Self::List(watch) => watch.next().await.map(watched),
         }
     }
 
-    /// The thread followed, whose events' `seq`s mark the client's place in it.
-    pub(crate) fn watched(&self) -> ThreadId {
+    /// The thread followed, whose events' `seq`s mark the client's place in it; none for a
+    /// list, where each summary's `updated_at` does.
+    pub(crate) fn watched(&self) -> Option<ThreadId> {
         match self {
-            Self::Turn(turn) => turn.thread(),
-            Self::Watch(watch) => watch.thread(),
+            Self::Turn(turn) => Some(turn.thread()),
+            Self::Watch(watch) => Some(watch.thread()),
+            Self::List(_) => None,
         }
+    }
+}
+
+/// One thing a watch sends, as a stream sends it.
+fn watched(item: Watched) -> Item {
+    match item {
+        Watched::Note(note) => Item::Note(note),
+        Watched::Ended(ended) => Item::Last(Box::new(ended.map(|ended| Reply::Watched { ended }))),
     }
 }

@@ -1,7 +1,7 @@
 //! What an HTTP answer sends: one JSON message, or a stream as server-sent events, each
 //! notification as it comes and the response last. The followed thread's events carry their
-//! `seq` as their id, so a client knows where to reconnect from, and a stream quiet for 15 seconds gets a
-//! comment, so proxies keep it open. A client that stops reading stops only its stream: a turn
+//! `seq` as their id, and a list's summaries their `updated_at`, so a client knows where to
+//! reconnect from, and a stream quiet for 15 seconds gets a comment, so proxies keep it open. A client that stops reading stops only its stream: a turn
 //! goes on in the server.
 
 use std::convert::Infallible;
@@ -33,8 +33,8 @@ pub(crate) enum Answer {
     Stream {
         next: Option<Next>,
         id: Option<Id>,
-        /// The thread followed, whose events' ids are their `seq`s.
-        watched: ThreadId,
+        /// The thread followed, whose events' ids are their `seq`s; none for a list.
+        watched: Option<ThreadId>,
         /// When the stream has been quiet long enough for a comment.
         quiet: Pin<Box<Sleep>>,
     },
@@ -72,15 +72,19 @@ fn following(mut streamed: Streamed) -> Next {
 }
 
 /// One server-sent event carrying `message`, with `id` when it has one.
-fn event(id: Option<u64>, message: &str) -> Frame<Bytes> {
+fn event(id: Option<String>, message: &str) -> Frame<Bytes> {
     let id = id.map(|id| format!("id: {id}\n")).unwrap_or_default();
     Frame::data(Bytes::from(format!("{id}data: {message}\n\n")))
 }
 
-/// `note` as an event: an event of the thread `watched` with its `seq` as its id.
-fn note(note: &Arc<Notification>, watched: ThreadId) -> Frame<Bytes> {
+/// `note` as an event: an event of the thread `watched` with its `seq` as its id, a list's
+/// summary with its `updated_at`.
+fn note(note: &Arc<Notification>, watched: Option<ThreadId>) -> Frame<Bytes> {
     let id = match note.as_ref() {
-        Notification::Event { thread, event } if *thread == watched => Some(event.seq.get()),
+        Notification::Event { thread, event } if Some(*thread) == watched => {
+            Some(event.seq.get().to_string())
+        }
+        Notification::Changed { summary, .. } => Some(summary.updated_at.to_string()),
         _ => None,
     };
     event(id, &notify(note))

@@ -232,6 +232,16 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
             ],
         ),
         ("thread/unwatch", on_thread()),
+        // A watch of every project the caller works in names no one's id, and never ends, so
+        // it is called by `lists.rs`'s own tests (`list_watching.rs`), not here.
+        (
+            "thread/list/watch",
+            vec![
+                json!({"project": "@project"}),
+                json!({"project": "@project", "after": "2026-10-01T00:00:00.000Z"}),
+            ],
+        ),
+        ("thread/list/unwatch", vec![json!({"project": "@project"})]),
         (
             "turn/start",
             vec![

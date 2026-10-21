@@ -151,8 +151,14 @@ where
         if !asks.shows(summary.id, &ask.ask, raising) {
             return summary;
         }
+        let raised = raising && !matches!(asks.said.get(&summary.id), Some(Said::Raised));
         if raising {
             asks.set(summary.id, Said::Raised);
+        }
+        drop(asks);
+        // It waits for the person from now: lists are told.
+        if raised {
+            self.inner.hub.changed(summary.project, summary.id);
         }
         summary.trust = Some(ask.clone());
         if summary.status == Status::Idle {
@@ -199,6 +205,8 @@ where
             }
             TrustChoice::NotNow => self.asks().set(thread, Said::NotNow(ask.to_owned())),
         }
+        // It waits no more: lists are told.
+        self.inner.hub.changed(scope.project(), thread);
         Ok(Reply::Thread {
             thread: self.summary(scope, thread).await?,
         })

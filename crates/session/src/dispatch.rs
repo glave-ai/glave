@@ -14,6 +14,7 @@ use crate::schedule::NewSchedule;
 use crate::server::Server;
 use crate::steer::{Message, Sent};
 use crate::tasks::Work;
+use crate::lists::ListWatch;
 use crate::turn::TurnStream;
 use crate::watch::Watch;
 
@@ -26,6 +27,9 @@ pub enum Answered {
     Stream(TurnStream),
     /// A thread watched (`thread/watch`): its notifications, until it ends.
     Watch(Watch),
+    /// A list watched (`thread/list/watch`): its threads' summaries as they change, until it
+    /// is dropped.
+    List(ListWatch),
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -50,6 +54,9 @@ where
             Answered::Watch(mut watch) => {
                 watch.finish().await.map(|ended| Reply::Watched { ended })
             }
+            Answered::List(mut watch) => {
+                watch.finish().await.map(|ended| Reply::Watched { ended })
+            }
         }
     }
 
@@ -69,9 +76,9 @@ where
         match self.call(caller, request).await {
             Answered::Stream(stream) => Ok(stream),
             Answered::Reply(Ok(Reply::Queued { .. })) => Err(ApiError::queued_elsewhere()),
-            Answered::Watch(_) => Err(ApiError::new(
+            Answered::Watch(_) | Answered::List(_) => Err(ApiError::new(
                 code::INVALID_PARAMS,
-                format!("{method} is followed with Server::watch"),
+                format!("{method} is followed with Server::watch or Server::watch_list"),
             )),
             Answered::Reply(reply) => Err(reply.err().unwrap_or_else(|| {
                 ApiError::new(
@@ -203,6 +210,17 @@ where
             // A watch belongs to the connection it was asked on, which ends it (`rpc.rs`); in
             // the server there is nothing to end.
             Request::ThreadUnwatch { .. } => Ok(Reply::Done {}),
+            Request::ThreadListWatch { project, after } => {
+                return match self.watch_list(caller, project, after).await {
+                    Ok(watch) => Answered::List(watch),
+                    Err(refused) => Answered::Reply(Err(refused)),
+                };
+            }
+            // Only for a project the caller works in, as watching it is.
+            Request::ThreadListUnwatch { project } => match project {
+                Some(project) => self.member_of(caller, project).await.map(|_| Reply::Done {}),
+                None => Ok(Reply::Done {}),
+            },
             Request::ThreadCompact { thread } => self.compact(thread).await,
             Request::TurnStart {
                 thread,

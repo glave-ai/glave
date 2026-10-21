@@ -2163,7 +2163,7 @@
       ]
     },
     "WatchEnd": {
-      "description": "Why a watch ended (`thread/watch`).",
+      "description": "Why a watch ended (`thread/watch`, `thread/list/watch`).",
       "oneOf": [
         {
           "const": "unwatched",
@@ -4161,6 +4161,69 @@
       },
       "streams": false
     },
+    "thread/list/unwatch": {
+      "params": {
+        "properties": {
+          "project": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ProjectId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "thread/list/watch": {
+      "params": {
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/At"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The latest `updated_at` the client has: the threads updated since are sent first,\nread from the threads view, oldest first. Only what changes from now when absent."
+          },
+          "project": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ProjectId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The project whose threads to follow: every project the caller works in when absent."
+          }
+        },
+        "type": "object"
+      },
+      "result": {
+        "description": "How a watch ended: its stream's last message.",
+        "properties": {
+          "ended": {
+            "$ref": "#/$defs/WatchEnd"
+          }
+        },
+        "required": [
+          "ended"
+        ],
+        "type": "object"
+      },
+      "streams": true
+    },
     "thread/rename": {
       "params": {
         "properties": {
@@ -4511,6 +4574,21 @@
       "required": [
         "thread",
         "task"
+      ],
+      "type": "object"
+    },
+    "thread/changed": {
+      "properties": {
+        "summary": {
+          "$ref": "#/$defs/ThreadSummary"
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "required": [
+        "thread",
+        "summary"
       ],
       "type": "object"
     },

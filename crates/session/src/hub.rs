@@ -1,14 +1,16 @@
 //! Where a thread's notifications go: one bounded broadcast per watched thread, fed by the log as
-//! events are appended and by running turns as they make progress. A follower that falls too
-//! far behind misses what was not held for it: a watch reads it again from the log by `seq`
-//! (`watch.rs`), so nothing is buffered without bound.
+//! events are appended and by running turns as they make progress; and one more saying which
+//! thread changed, for the watches of lists (`lists.rs`), fed by the same appends and by work on
+//! a thread beginning and ending. A follower that falls too far behind misses what was not held
+//! for it: a watch reads it again from the log by `seq` (`watch.rs`), a list's from the threads
+//! view (`lists.rs`), so nothing is buffered without bound.
 
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use glave_event::{Body, Event, RawEvent, Seq, ThreadId, decode};
-use glave_ports::{EventLog, Located, LogError, Scope};
+use glave_ports::{EventLog, Located, LogError, ProjectId, Scope};
 use tokio::sync::broadcast;
 
 use crate::protocol::Notification;
@@ -20,12 +22,31 @@ const BACKLOG: usize = 1_024;
 /// recently is forgotten.
 const MOST_PUBLISHED: usize = 4_096;
 
-/// The broadcasts of every watched thread.
-#[derive(Default)]
+/// The broadcasts of every watched thread, and of which threads changed.
 pub(crate) struct Hub {
     channels: Mutex<Channels>,
     /// Each running subagent's parent: its notifications go to the parent's watchers too.
     parents: Mutex<HashMap<ThreadId, ThreadId>>,
+    /// Each thread that changed, in its project, for the watches of lists.
+    changes: broadcast::Sender<Changed>,
+}
+
+impl Default for Hub {
+    fn default() -> Self {
+        Self {
+            channels: Mutex::default(),
+            parents: Mutex::default(),
+            changes: broadcast::channel(BACKLOG).0,
+        }
+    }
+}
+
+/// A thread whose summary may have changed: an event was recorded in it here, or work on it
+/// began or ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Changed {
+    pub(crate) project: ProjectId,
+    pub(crate) thread: ThreadId,
 }
 
 #[derive(Default)]
@@ -55,6 +76,20 @@ impl Hub {
             .subscribe();
         let published = channels.published.get(&thread).map(|(seq, _)| *seq);
         (notes, published)
+    }
+
+    /// Starts hearing which threads change, from now on.
+    pub(crate) fn changes(&self) -> broadcast::Receiver<Changed> {
+        self.changes.subscribe()
+    }
+
+    /// Tells the watches of lists that `thread`, in `project`, changed. Glave's own streams
+    /// beside threads are never listed, so never told.
+    pub(crate) fn changed(&self, project: ProjectId, thread: ThreadId) {
+        if glave_ports::stream::Reserved::of(thread).is_none() {
+            // Only fails when no list is watched, which is fine.
+            let _ = self.changes.send(Changed { project, thread });
+        }
     }
 
     fn channels(&self) -> MutexGuard<'_, Channels> {
@@ -192,6 +227,14 @@ impl<L: EventLog> EventLog for Observed<L> {
             self.hub.publish(event.thread, notification);
             if event.kind.as_str() == "turn.ended" {
                 self.hub.release(event.thread);
+            }
+        }
+        // Once each thread the batch wrote to, after its events.
+        let mut told: Vec<ThreadId> = Vec::new();
+        for event in events {
+            if !told.contains(&event.thread) {
+                told.push(event.thread);
+                self.hub.changed(scope.project(), event.thread);
             }
         }
         Ok(())

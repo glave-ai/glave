@@ -1,9 +1,10 @@
 //! JSON-RPC 2.0 over any stream of lines: one message per line, as on stdio and Unix sockets.
 //! These transports are local, so every request comes from the local person.
 //! Requests run concurrently, so a client can cancel a turn or answer an approval while another
-//! request is still streaming. A connection watches each thread once, at most 64 at a time,
-//! each until `thread/unwatch` or its input ends, and writes each thread's notifications once,
-//! a turn's in a thread it watches by that watch (`watches.rs`).
+//! request is still streaming. A connection watches each thread and each list once, at most 64
+//! at a time, each until `thread/unwatch` (`thread/list/unwatch`) or its input ends, and writes
+//! each thread's notifications once, a turn's in a thread it watches by that watch
+//! (`watches.rs`).
 //! When the client's input ends, its turns are cancelled over stdio (`serve`), where it was the
 //! only client; a long-running server's connections (`serve_connection`, as on a Unix socket)
 //! stop nothing when they end.
@@ -21,8 +22,9 @@ use tokio::io::{
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
-use self::watches::{Claim, Turn, Watches};
+use self::watches::{Claim, Key, Turn, Watches};
 use crate::dispatch::Answered;
+use crate::lists::ListWatch;
 use crate::protocol::{ApiError, Notification, Reply, Request, WatchEnd, code};
 use crate::server::Server;
 use crate::turn::{TurnItem, TurnStream};
@@ -147,9 +149,13 @@ where
         let (mut claim, mut turn) = (None, None);
         match &parsed {
             Ok((_, Request::ThreadWatch { thread, after })) => {
-                claim = Some(watches.claim(*thread, *after));
+                claim = Some(watches.claim(Key::Thread(*thread), *after));
             }
-            Ok((_, Request::ThreadUnwatch { thread })) => watches.end(*thread),
+            Ok((_, Request::ThreadUnwatch { thread })) => watches.end(Key::Thread(*thread)),
+            Ok((_, Request::ThreadListWatch { project, .. })) => {
+                claim = Some(watches.claim(Key::List(*project), None));
+            }
+            Ok((_, Request::ThreadListUnwatch { project })) => watches.end(Key::List(*project)),
             Ok((
                 _,
                 Request::TurnStart {
@@ -226,34 +232,65 @@ async fn handle<P, L, B>(
         Answered::Reply(reply) => reply,
         Answered::Stream(stream) => follow_turn(stream, lines, turn.as_mut()).await,
         Answered::Watch(mut watch) => match &claim {
-            Some(claim) => {
-                claim.following();
-                let ended = tokio::select! {
-                    last = follow_watch(&mut watch, lines, claim) => Some(last),
-                    () = claim.ended() => None,
-                };
-                if let Some(last) = ended {
-                    last
-                } else {
-                    // Ended by the connection: what it already has, it writes first.
-                    while let Some(Watched::Note(note)) = watch.rest().await {
-                        write(&note, &watch, lines, claim).await;
-                    }
-                    Ok(Reply::Watched {
-                        ended: WatchEnd::Unwatched,
-                    })
-                }
-            }
-            None => Err(ApiError::new(
-                code::INTERNAL,
-                "a watch the connection does not hold",
-            )),
+            Some(claim) => watch_thread(&mut watch, lines, claim).await,
+            None => Err(unheld()),
+        },
+        Answered::List(mut watch) => match &claim {
+            Some(claim) => tokio::select! {
+                last = follow_list(&mut watch, lines) => last,
+                () = claim.ended() => Ok(Reply::Watched {
+                    ended: WatchEnd::Unwatched,
+                }),
+            },
+            None => Err(unheld()),
         },
     };
     drop((claim, turn));
     // A request without an id is a notification, which is never answered.
     if let Some(id) = id {
         let _ = lines.send(respond(Some(&id), answered.as_ref())).await;
+    }
+}
+
+/// A watch the connection holds no claim for, which never happens: the claim comes first.
+fn unheld() -> ApiError {
+    ApiError::new(code::INTERNAL, "a watch the connection does not hold")
+}
+
+/// Follows a thread's watch until it ends or the connection ends it: its answer.
+async fn watch_thread(
+    watch: &mut Watch,
+    lines: &mpsc::Sender<String>,
+    claim: &Claim,
+) -> Result<Reply, ApiError> {
+    claim.following();
+    let ended = tokio::select! {
+        last = follow_watch(watch, lines, claim) => Some(last),
+        () = claim.ended() => None,
+    };
+    if let Some(last) = ended {
+        return last;
+    }
+    // Ended by the connection: what it already has, it writes first.
+    while let Some(Watched::Note(note)) = watch.rest().await {
+        write(&note, watch, lines, claim).await;
+    }
+    Ok(Reply::Watched {
+        ended: WatchEnd::Unwatched,
+    })
+}
+
+/// Writes each of a list's summaries to the connection as they come: its answer once it ends,
+/// which is only ever why it could not go on.
+async fn follow_list(watch: &mut ListWatch, lines: &mpsc::Sender<String>) -> Result<Reply, ApiError> {
+    loop {
+        match watch.next().await {
+            Some(Watched::Note(note)) => {
+                let _ = lines.send(notify(&note)).await;
+            }
+            Some(Watched::Ended(ended)) => return ended.map(|ended| Reply::Watched { ended }),
+            None => return Err(ApiError::new(code::INTERNAL, "the watch stopped")),
+        }
     }
 }
 
