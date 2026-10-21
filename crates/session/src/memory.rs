@@ -8,6 +8,7 @@ use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId};
 
 use crate::protocol::{ApiError, Reply, code};
 use crate::server::Server;
+use crate::words::Sentence;
 
 impl<P, L, B> Server<P, L, B>
 where
@@ -27,7 +28,7 @@ where
             .inner
             .harness
             .memory()
-            .ok_or_else(|| ApiError::new(code::MEMORY_OFF, "memory is off for this server"))?;
+            .ok_or_else(|| ApiError::new(code::MEMORY_OFF, Sentence::MemoryOff))?;
         let (_, scope) = self.project_for(caller, project).await?;
         let access = Access {
             person: caller.person,
@@ -49,9 +50,6 @@ pub(crate) fn forget(
     match (memory, all, scope) {
         (Some(memory), false, None) => Ok(Control::Forget { memory }),
         (None, true, Some(scope)) => Ok(Control::ForgetAll { scope }),
-        _ => Err(ApiError::new(
-            code::INVALID_PARAMS,
-            "memory/forget takes `memory`, or `all: true` with a `scope`",
-        )),
+        _ => Err(ApiError::new(code::INVALID_PARAMS, Sentence::ForgetWhat)),
     }
 }

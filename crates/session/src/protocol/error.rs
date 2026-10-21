@@ -3,13 +3,15 @@
 use glave_ports::Failure;
 use serde::{Deserialize, Serialize};
 
-use super::code;
+use super::{Told, code};
+use crate::words::Sentence;
 
 /// A request that failed, as JSON-RPC carries it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ApiError {
     pub code: i64,
-    pub message: String,
+    /// What a person is told, in their language where it is the server's own sentence.
+    pub message: Told,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<ErrorData>,
 }
@@ -21,7 +23,7 @@ pub struct ErrorData {
 }
 
 impl ApiError {
-    pub fn new(code: i64, message: impl Into<String>) -> Self {
+    pub fn new(code: i64, message: impl Into<Told>) -> Self {
         Self {
             code,
             message: message.into(),
@@ -32,11 +34,7 @@ impl ApiError {
     /// For a client that follows only turns it starts: its message was queued to a turn
     /// already running, which it cannot follow.
     pub fn queued_elsewhere() -> Self {
-        Self::new(
-            code::TURN_RUNNING,
-            "a turn was already running in this thread: your message was queued to it, and the \
-             model reads it at its next step",
-        )
+        Self::new(code::TURN_RUNNING, Sentence::QueuedElsewhere)
     }
 }
 

@@ -9,6 +9,7 @@ use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 use crate::protocol::{ApiError, CredentialInfo, DeviceCode, Reply, code};
 use crate::providers::local;
 use crate::server::Server;
+use crate::words::Sentence;
 
 /// A git host to connect, as `credential/connect` asks.
 #[derive(Debug, Clone)]
@@ -54,13 +55,13 @@ where
         let Some(hosts) = self.inner.git_hosts.as_deref() else {
             return Err(ApiError::new(
                 code::NOT_AVAILABLE,
-                "connecting accounts is set up by whoever runs this server, not from here",
+                Sentence::AccountsNotHere,
             ));
         };
         if !local(caller) {
             return Err(ApiError::new(
                 code::NOT_ALLOWED,
-                "accounts are connected on the computer glave runs on, by its person",
+                Sentence::AccountsOnItsComputer,
             ));
         }
         Ok(hosts)

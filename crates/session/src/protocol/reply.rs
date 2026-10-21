@@ -270,14 +270,21 @@ pub enum Reply {
     /// How a watch ended: its stream's last message.
     #[schemars(title = "Watched")]
     Watched { ended: WatchEnd },
+    // Its one field is always sent, and needed to read it, so no other reply reads as this one.
+    /// The language the caller chose, as a BCP 47 tag; `null` while their client's counts.
+    #[schemars(title = "Language")]
+    Language {
+        #[serde(deserialize_with = "Option::deserialize")]
+        language: Option<String>,
+    },
+    /// Whether the computer is kept awake while glave works.
+    #[schemars(title = "Awake")]
+    Awake { awake: AwakeInfo },
     // After every reply with a field of its own, since a missing `goal` reads as `null`;
     // before `Done`, which takes any object.
     /// The thread's latest goal, or `null`.
     #[schemars(title = "Goal")]
     Goal { goal: Option<GoalProgress> },
-    /// Whether the computer is kept awake while glave works.
-    #[schemars(title = "Awake")]
-    Awake { awake: AwakeInfo },
     #[schemars(title = "Done")]
     Done {},
 }

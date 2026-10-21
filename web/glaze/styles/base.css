@@ -59,10 +59,13 @@ a {
   text-underline-offset: 0.15em;
 }
 
+/* Code and commands read left to right in any page, kept apart from the text around them. */
 code,
 kbd,
 pre,
 samp {
+  direction: ltr;
+  unicode-bidi: isolate;
   font-family: var(--glz-font-mono);
   font-size: 0.9em;
 }
@@ -115,6 +118,14 @@ pre {
   to {
     transform: rotate(1turn);
   }
+}
+
+/*
+ * What points along the line (a chevron to what comes next) turns round right to left: by
+ * `scale`, which a turn of its own (`transform`) composes with.
+ */
+.glz-mirrored:dir(rtl) {
+  scale: -1 1;
 }
 
 /* The CDK's overlays (menus) sit above the page. */

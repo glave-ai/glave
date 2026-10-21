@@ -8,6 +8,7 @@ use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 
 use crate::protocol::{ApiError, ModelInfo, ProviderInfo, Reply, code};
 use crate::server::Server;
+use crate::words::Sentence;
 
 /// A model account to connect, as `provider/connect` asks.
 #[derive(Debug, Clone)]
@@ -77,15 +78,12 @@ where
     /// sets up its models itself.
     fn providers_for(&self, caller: &Caller) -> Result<&dyn Providers, ApiError> {
         let Some(providers) = self.inner.providers.as_deref() else {
-            return Err(ApiError::new(
-                code::NOT_AVAILABLE,
-                "this server's models are set up by whoever runs it, not from here",
-            ));
+            return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::ModelsNotHere));
         };
         if !local(caller) {
             return Err(ApiError::new(
                 code::NOT_ALLOWED,
-                "model accounts are connected on the computer glave runs on, by its person",
+                Sentence::ModelAccountsOnItsComputer,
             ));
         }
         Ok(providers)

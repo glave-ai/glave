@@ -22,6 +22,7 @@ use glave_ports::{
 use crate::protocol::{ApiError, NewFolder, ProjectFolder, Reply, code};
 use crate::providers::local;
 use crate::server::Server;
+use crate::words::Sentence;
 
 /// The longest name glave gives a new project's folder.
 const FOLDER_NAME: usize = 64;
@@ -38,8 +39,8 @@ pub(crate) struct ProjectLedger {
 }
 
 /// Refused: folders are on the computer glave runs on, so only the person there reaches them.
-pub(crate) fn only_here(message: &str) -> ApiError {
-    ApiError::new(code::NOT_ALLOWED, message)
+pub(crate) fn only_here(sentence: Sentence) -> ApiError {
+    ApiError::new(code::NOT_ALLOWED, sentence)
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -75,11 +76,7 @@ where
             return Ok(None);
         };
         if folder.checkout.computer != self.computer() {
-            return Err(ApiError::new(
-                code::WORKSPACE,
-                "this project's folder is on another computer, which glave cannot reach from \
-                 here yet",
-            ));
+            return Err(ApiError::new(code::WORKSPACE, Sentence::FolderElsewhere));
         }
         Ok(Some(folder.checkout.path))
     }
@@ -240,10 +237,7 @@ where
         folder: NewFolder,
     ) -> Result<Reply, ApiError> {
         if !local(caller) {
-            return Err(only_here(
-                "a project's folder is on the computer glave runs on, so only the person there \
-                 can give one",
-            ));
+            return Err(only_here(Sentence::NewFolderOnlyHere));
         }
         let person = Principal::person(self.person_of(caller)?);
         let (root, source) = self.make_folder(&new.name, folder).await?;
@@ -259,7 +253,7 @@ where
         if project.kind != ProjectKind::Project || !project.admits(&person) {
             return Err(ApiError::new(
                 code::NOT_ALLOWED,
-                format!("{root} belongs to a project you do not work in"),
+                Sentence::FolderNotYours { folder: root },
             ));
         }
         let folder = self
@@ -279,10 +273,7 @@ where
         path: &str,
     ) -> Result<Reply, ApiError> {
         if !local(caller) {
-            return Err(only_here(
-                "a project's folder is on the computer glave runs on, so only the person there \
-                 can look for one",
-            ));
+            return Err(only_here(Sentence::LookOnlyHere));
         }
         let person = Principal::person(self.person_of(caller)?);
         let looked = self
@@ -319,7 +310,9 @@ where
                 if !Path::new(&path).is_absolute() {
                     return Err(ApiError::new(
                         code::INVALID_PARAMS,
-                        format!("give the folder's full path, not {path:?}"),
+                        Sentence::TheFullPath {
+                            path: path.escape_debug().to_string(),
+                        },
                     ));
                 }
                 let looked = workspace
@@ -344,7 +337,9 @@ where
                     .map_err(|error| {
                         ApiError::new(
                             code::INTERNAL,
-                            format!("could not make the folder: {error}"),
+                            Sentence::FolderNotMade {
+                                reason: error.to_string(),
+                            },
                         )
                     })?;
                 Ok((root, FolderSource::Local))
@@ -359,9 +354,7 @@ where
         path: Option<String>,
     ) -> Result<Reply, ApiError> {
         if !local(caller) {
-            return Err(only_here(
-                "folders are shown only to the person on the computer glave runs on",
-            ));
+            return Err(only_here(Sentence::FoldersOnlyHere));
         }
         let workspace = self.inner.harness.workspace();
         let path = match path.or_else(|| workspace.info().home.clone()) {
@@ -369,14 +362,13 @@ where
             Some(path) => {
                 return Err(ApiError::new(
                     code::INVALID_PARAMS,
-                    format!("give a folder's full path, not {path:?}"),
+                    Sentence::AFullPath {
+                        path: path.escape_debug().to_string(),
+                    },
                 ));
             }
             None => {
-                return Err(ApiError::new(
-                    code::INVALID_PARAMS,
-                    "this computer has no home folder to start from; give a folder's full path",
-                ));
+                return Err(ApiError::new(code::INVALID_PARAMS, Sentence::NoHome));
             }
         };
         let inside = workspace
@@ -408,12 +400,17 @@ fn no_folder(path: &str, error: &ComputerError) -> ApiError {
     match error {
         ComputerError::NotFound(_) => ApiError::new(
             code::INVALID_PARAMS,
-            format!("there is no folder at {path}"),
+            Sentence::NoFolderAt {
+                path: path.to_owned(),
+            },
         ),
         ComputerError::Refused(message) => ApiError::new(code::INVALID_PARAMS, message.clone()),
         _ => ApiError::new(
             code::INTERNAL,
-            format!("could not open the folder at {path}: {}", error.message()),
+            Sentence::FolderNotOpened {
+                path: path.to_owned(),
+                reason: error.message().to_owned(),
+            },
         ),
     }
 }
@@ -422,11 +419,10 @@ fn no_folder(path: &str, error: &ComputerError) -> ApiError {
 fn not_cloned(url: &str, error: &ComputerError) -> ApiError {
     ApiError::new(
         code::HOST,
-        format!(
-            "could not clone {url}: {}. If the repository is private, connect its git host \
-             first",
-            error.message()
-        ),
+        Sentence::CloneFailed {
+            url: url.to_owned(),
+            reason: error.message().to_owned(),
+        },
     )
 }
 
@@ -438,10 +434,9 @@ fn repository(url: &str) -> Result<String, ApiError> {
     let refused = || {
         ApiError::new(
             code::INVALID_PARAMS,
-            format!(
-                "{url:?} is not a repository's address: give its https:// address, such as \
-                 https://github.com/acme/app, with no user name or token in it"
-            ),
+            Sentence::NotARepository {
+                url: url.escape_debug().to_string(),
+            },
         )
     };
     let (scheme, rest) = url.split_once("://").ok_or_else(refused)?;

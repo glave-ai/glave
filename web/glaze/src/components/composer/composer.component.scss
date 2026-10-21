@@ -17,7 +17,8 @@
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: end;
   gap: var(--glz-space-3);
-  padding: var(--glz-inset-composer);
+  padding: var(--glz-inset-composer-round);
+  padding-inline-start: var(--glz-inset-composer-start);
   border: var(--glz-border-width) solid var(--glz-color-border);
   border-radius: var(--glz-radius-composer);
   background: var(--glz-surface-card);
@@ -69,10 +70,12 @@
 // Grows with its text (CSS field-sizing, Baseline 2026), up to --glz-composer-max-height,
 // then scrolls; one line of it is as tall as send, its text in the middle. A browser without
 // field-sizing keeps it at its rows, which still works.
+// Each line of the text takes the direction its own words have; an empty box, the page's.
 .input {
   --glz-composer-line: var(--glz-composer-send-size);
 
   grid-area: input;
+  unicode-bidi: plaintext;
   field-sizing: content;
   width: 100%;
   min-height: var(--glz-composer-line);
@@ -155,7 +158,8 @@
     'input input'
     'start act';
   grid-template-columns: minmax(0, 1fr) auto;
-  padding: var(--glz-inset-composer-lg);
+  padding-block: var(--glz-inset-composer-lg-block);
+  padding-inline: var(--glz-inset-composer-lg-inline);
   border-radius: var(--glz-radius-composer-lg);
   box-shadow: var(--glz-elevation-composer);
 }

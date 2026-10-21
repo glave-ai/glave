@@ -21,6 +21,7 @@ use crate::held::{Finish, Slot, Use, finished};
 use crate::protocol::{Answer, ApiError, Reply, Status, code};
 use crate::server::{Inner, Server};
 use crate::turn::publish;
+use crate::words::Sentence;
 
 /// Waiting turns whose ending someone follows, kept at once; past this, a new one's follower
 /// learns how it ends from the thread's events alone.
@@ -151,7 +152,7 @@ where
         {
             Ok(()) => recorded
                 .await
-                .map_err(|_| ApiError::new(code::INTERNAL, "the answer was not recorded"))?
+                .map_err(|_| ApiError::new(code::INTERNAL, Sentence::AnswerNotRecorded))?
                 .map(|()| Reply::Done {})
                 .map_err(|error| ApiError::from(&error)),
             Err(refused) => {
@@ -221,7 +222,9 @@ where
         if !waits {
             return Err(ApiError::new(
                 code::NO_TURN,
-                format!("no turn is running in thread {thread}"),
+                Sentence::NoTurn {
+                    thread: thread.to_string(),
+                },
             ));
         }
         let finish = self.inner.followed.take(thread);

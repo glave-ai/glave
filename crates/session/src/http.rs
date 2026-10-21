@@ -168,6 +168,12 @@ where
         return refused;
     }
     let token = bearer(request.headers()).map(str::to_owned);
+    // The languages the client reads, for the server's own sentences when the caller chose none.
+    let asked = request
+        .headers()
+        .get(header::ACCEPT_LANGUAGE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
     let caller = match &token {
         Some(token) => match signin.verify_from(token, door).await {
             Ok(caller) => Some(caller),
@@ -194,7 +200,7 @@ where
             Err(refused) => return unauthorized(&refused),
         },
     };
-    dispatch(server, &caller, id, request).await
+    dispatch(server, &caller, id, request, asked.as_deref()).await
 }
 
 /// The JSON-RPC request `request` carries, of at most `most` bytes, or the error response
@@ -247,12 +253,13 @@ fn open(request: &Request, door: Door) -> Result<(), SignInError> {
     }
 }
 
-/// Runs a request for a signed-in caller.
+/// Runs a request for a signed-in caller, who reads the languages `asked` (`Accept-Language`).
 async fn dispatch<P, L, B>(
     server: &Server<P, L, B>,
     caller: &glave_ports::Caller,
     id: Option<Id>,
     request: Request,
+    asked: Option<&str>,
 ) -> Response<Answer>
 where
     P: ModelProvider + 'static,
@@ -261,7 +268,10 @@ where
 {
     let streamed = match server.call(caller, request).await {
         Answered::Reply(reply) => match id {
-            Some(id) => return json(StatusCode::OK, respond(Some(&id), reply.as_ref())),
+            Some(id) => {
+                let reply = server.in_language(caller, asked, reply).await;
+                return json(StatusCode::OK, respond(Some(&id), reply.as_ref()));
+            }
             None => return accepted(),
         },
         Answered::Stream(turn) => Streamed::Turn(turn),
@@ -269,7 +279,10 @@ where
         Answered::List(watch) => Streamed::List(watch),
     };
     match id {
-        Some(id) => events(Answer::stream(streamed, Some(id))),
+        Some(id) => {
+            let language = server.language_for(caller, asked).await;
+            events(Answer::stream(streamed, Some(id), language))
+        }
         // A notification is never answered: a turn goes on without anyone following, and a
         // watch ends.
         None => accepted(),

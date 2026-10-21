@@ -13,6 +13,7 @@ use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 use crate::protocol::{ApiError, PasskeySummary, Reply, SignInWay, code};
 use crate::providers::local;
 use crate::server::Server;
+use crate::words::Sentence;
 
 impl<P, L, B> Server<P, L, B>
 where
@@ -137,7 +138,7 @@ where
         if !local(caller) {
             return Err(ApiError::new(
                 code::NOT_ALLOWED,
-                "only the person this glave is for changes its passkeys",
+                Sentence::PasskeysOnlyTheirs,
             ));
         }
         Ok(browsers)
@@ -156,12 +157,8 @@ where
     /// Answers `signin/end`: ends the caller's own browser session.
     pub(crate) async fn end_session(&self, caller: &Caller) -> Result<Reply, ApiError> {
         let browsers = self.browsers()?;
-        let session = session_of(caller).ok_or_else(|| {
-            ApiError::new(
-                code::INVALID_PARAMS,
-                "this is not a browser's sign-in, so there is none to end",
-            )
-        })?;
+        let session = session_of(caller)
+            .ok_or_else(|| ApiError::new(code::INVALID_PARAMS, Sentence::NotABrowser))?;
         browsers.end(session).await?;
         Ok(Reply::Done {})
     }
@@ -171,22 +168,17 @@ where
     pub(crate) async fn end_others(&self, caller: &Caller) -> Result<Reply, ApiError> {
         let browsers = self.browsers()?;
         if !local(caller) {
-            return Err(ApiError::new(
-                code::NOT_ALLOWED,
-                "only the person on this computer signs its browsers out",
-            ));
+            return Err(ApiError::new(code::NOT_ALLOWED, Sentence::SignOutOnlyHere));
         }
         browsers.end_others(session_of(caller)).await?;
         Ok(Reply::Done {})
     }
 
     fn browsers(&self) -> Result<&Browsers, ApiError> {
-        self.inner.browsers.as_deref().ok_or_else(|| {
-            ApiError::new(
-                code::NOT_AVAILABLE,
-                "this server signs no browser in: open glave on its computer",
-            )
-        })
+        self.inner
+            .browsers
+            .as_deref()
+            .ok_or_else(|| ApiError::new(code::NOT_AVAILABLE, Sentence::NoBrowsers))
     }
 }
 
@@ -200,10 +192,7 @@ fn by_program(caller: &Caller) -> Result<(), ApiError> {
     if by_program {
         Ok(())
     } else {
-        Err(ApiError::new(
-            code::NOT_ALLOWED,
-            "only glave on this computer makes sign-in links",
-        ))
+        Err(ApiError::new(code::NOT_ALLOWED, Sentence::LinksOnlyHere))
     }
 }
 

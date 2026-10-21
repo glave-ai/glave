@@ -1,4 +1,9 @@
-/** Where a popover shows, relative to the element it belongs to. */
+import type { GlzDirection } from './resize';
+
+/**
+ * Where a popover shows, relative to the element it belongs to: above or below it, or at the
+ * start or end of its line, which in right-to-left text are its right and its left.
+ */
 export type GlzSide = 'above' | 'below' | 'start' | 'end';
 
 /** A box on screen, in CSS pixels. */
@@ -37,6 +42,11 @@ const OPPOSITE: Readonly<Record<GlzSide, GlzSide>> = {
   start: 'end',
   end: 'start',
 };
+
+/** Each side as measured on the screen, where `start` is the left: right to left, they swap. */
+export function screenSide(side: GlzSide, direction: GlzDirection): GlzSide {
+  return direction === 'rtl' && (side === 'start' || side === 'end') ? OPPOSITE[side] : side;
+}
 
 /** Where `panel` goes on `side` of `anchor`, `gap` away, without checking it fits. */
 function placed(anchor: GlzBox, panel: GlzViewport, side: GlzSide, gap: number): GlzBox {
@@ -100,7 +110,8 @@ function sideTaken(
 /**
  * Where to put a popover of `panel`'s size beside `anchor`: on `side` if it fits, else on the
  * opposite side (with `most-room`, the side with more room), kept inside the viewport either
- * way. For browsers without CSS anchor positioning, which is not yet Baseline.
+ * way, `start` the screen's left (`screenSide`). For browsers without CSS anchor positioning,
+ * which is not yet Baseline.
  */
 export function placePopover(
   anchor: GlzBox,
@@ -173,12 +184,14 @@ export function positionPopover(
   const rect = anchor.getBoundingClientRect();
   const box = { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
   const viewport = { width: view.innerWidth, height: view.innerHeight };
+  const direction = view.getComputedStyle(anchor).direction === 'rtl' ? 'rtl' : 'ltr';
+  const onScreen = screenSide(side, direction);
   if (fallback === 'most-room') {
     panel.style.removeProperty(ROOM);
-    const taken = sideTaken(box, size(panel), viewport, side, fallback, GAP);
+    const taken = sideTaken(box, size(panel), viewport, onScreen, fallback, GAP);
     panel.style.setProperty(ROOM, `${String(room(box, viewport, taken, GAP))}px`);
   }
-  const at = placePopover(box, size(panel), viewport, side, fallback);
+  const at = placePopover(box, size(panel), viewport, onScreen, fallback);
   panel.style.setProperty('inset', `${String(at.top)}px auto auto ${String(at.left)}px`);
 }
 

@@ -13,6 +13,7 @@ use crate::held::{Slot, Use, finished};
 use crate::protocol::{ApiError, Reply, code};
 use crate::server::Server;
 use crate::turn::{TurnStream, publish};
+use crate::words::Sentence;
 
 impl<P, L, B> Server<P, L, B>
 where
@@ -104,7 +105,7 @@ where
         .await?;
         let ended = finished(&mut done)
             .await
-            .ok_or_else(|| ApiError::new(code::INTERNAL, "stopping the goal stopped"))?;
+            .ok_or_else(|| ApiError::new(code::INTERNAL, Sentence::GoalStopped))?;
         ended.as_ref().as_ref().map_err(ApiError::from)?;
         Ok(Reply::Done {})
     }
@@ -121,5 +122,10 @@ where
 }
 
 fn no_goal(thread: ThreadId) -> ApiError {
-    ApiError::new(code::NO_GOAL, format!("thread {thread} has no active goal"))
+    ApiError::new(
+        code::NO_GOAL,
+        Sentence::NoGoal {
+            thread: thread.to_string(),
+        },
+    )
 }

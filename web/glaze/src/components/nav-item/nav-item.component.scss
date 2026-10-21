@@ -1,4 +1,4 @@
-// The marker beside the page shown now: a bar at the row's left edge.
+// The marker beside the page shown now: a bar at the row's start edge.
 $marker-width: 3px;
 
 :host {
@@ -14,7 +14,7 @@ $marker-width: 3px;
   color: var(--glz-color-text-secondary);
   font: inherit;
   line-height: var(--glz-leading-tight);
-  text-align: left;
+  text-align: start;
   text-decoration: none;
   cursor: pointer;
 }
@@ -29,7 +29,7 @@ $marker-width: 3px;
 }
 
 // The page shown now: a subtle fill and, since a fill alone is not enough, a bar inside the
-// row's left edge, its text moved just clear of it, at the weight of the rest.
+// row's start edge, its text moved just clear of it, at the weight of the rest.
 :host([aria-current='page']) {
   padding-inline-start: calc(var(--glz-space-3) + #{$marker-width});
   background: var(--glz-surface-selected);

@@ -1,6 +1,7 @@
 import type { Project, ThreadSummary } from '@glave/client';
 import type { GlzIconData } from '@glave/glaze';
-import { Hand, TriangleAlert } from 'lucide';
+import Hand from 'lucide/dist/esm/icons/hand.mjs';
+import TriangleAlert from 'lucide/dist/esm/icons/triangle-alert.mjs';
 
 import { threadTitle } from './threads';
 import { type Reader, type Since, type Times, readerTimes } from './when';

@@ -1,5 +1,10 @@
 import { LiveAnnouncer } from '@angular/cdk/a11y';
-import { type ComponentFixture, TestBed } from '@angular/core/testing';
+import {
+  type ComponentFixture,
+  DeferBlockBehavior,
+  DeferBlockState,
+  TestBed,
+} from '@angular/core/testing';
 import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
@@ -97,6 +102,18 @@ describe('FolderGoneComponent', () => {
     await settle(fixture);
     expect(byTestId(root, 'gone-problem')?.textContent.trim()).toBe(
       'Only its owner removes a project.',
+    );
+    await expectAccessible(root);
+  });
+
+  it('says so when the folder browser cannot load its code', async () => {
+    TestBed.configureTestingModule({ deferBlockBehavior: DeferBlockBehavior.Manual });
+    const { root, fixture } = await render(new FakeSession());
+    // Find it opened, as its code failed to load.
+    const [picking] = await fixture.getDeferBlocks();
+    await picking?.render(DeferBlockState.Error);
+    expect(root.querySelector('[role="alert"]')?.textContent.trim()).toBe(
+      'This part of glave could not load. Reload the page to try again.',
     );
     await expectAccessible(root);
   });

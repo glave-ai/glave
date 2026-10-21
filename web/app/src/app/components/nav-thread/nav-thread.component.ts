@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { GlzIconComponent, GlzNavItemComponent } from '@glave/glaze';
-import { LoaderCircle } from 'lucide';
+import LoaderCircle from 'lucide/dist/esm/icons/loader-circle.mjs';
 
 import { type NavThread, needsYou } from '../../lib/nav';
 

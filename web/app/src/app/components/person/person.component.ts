@@ -6,7 +6,8 @@ import {
   GlzPopoverComponent,
   GlzPopoverTriggerDirective,
 } from '@glave/glaze';
-import { LogOut, Settings } from 'lucide';
+import LogOut from 'lucide/dist/esm/icons/log-out.mjs';
+import Settings from 'lucide/dist/esm/icons/settings.mjs';
 
 import { SessionService } from '../../services/session.service';
 

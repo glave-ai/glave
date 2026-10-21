@@ -13,6 +13,7 @@ use tokio::task::JoinHandle;
 use crate::protocol::{ApiError, AwakeInfo, Reply, code};
 use crate::providers::local;
 use crate::server::Server;
+use crate::words::Sentence;
 
 /// How the host keeps its computer awake (a power assertion on macOS, an inhibitor on Linux),
 /// and where it keeps the person's choice of it.
@@ -152,16 +153,10 @@ where
     /// Answers `awake/set`, for the person on this computer, where it is theirs to choose.
     pub(crate) async fn set_awake(&self, caller: &Caller, on: bool) -> Result<Reply, ApiError> {
         let Some(awake) = &self.inner.awake else {
-            return Err(ApiError::new(
-                code::NOT_AVAILABLE,
-                "this glave is a server, which doesn't sleep: there is nothing to keep awake",
-            ));
+            return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::AwakeOnServer));
         };
         if !local(caller) {
-            return Err(ApiError::new(
-                code::NOT_ALLOWED,
-                "only the person on this computer chooses whether it stays awake",
-            ));
+            return Err(ApiError::new(code::NOT_ALLOWED, Sentence::AwakeOnlyHere));
         }
         Ok(Reply::Awake {
             awake: awake.choose(on).await?,
