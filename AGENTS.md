@@ -71,7 +71,7 @@ web/app/            the web app `glave serve --http` (and `glave` alone, at the 
 web/e2e/            end-to-end smoke tests (Playwright, axe) of the built app and Glaze's showcase, served with glave's Content Security Policy
 evals/tasks/        eval tasks in Harbor's layout: instruction, starting files, hidden grader, reference solution
 evals/judge/        judge cases: a request, an action, and whether it should run in auto mode (README.md)
-install/            the installer for a person's own server (`server.sh`): glave as a systemd service under its own account, reached through Tailscale or at a domain; run again, it updates glave (CI's install.yml runs it)
+install/            the installer for a person's own server (`server.sh`): glave as a systemd service under its own account, reached through Tailscale or at a domain, or in Docker Compose behind Cloudflare Tunnel; run again, it updates glave (CI's install.yml runs it each way)
 specs/              the model (`model.md`: organization to thread, server and computer), the deployments it serves (`deployments.md`), and the contracts: events, storage, config and policy, computers, the gateway, the sandbox, approvals, the session API; the invariants (`invariants.md`), each with its test; tool calls, verbs and scopes planned
 .github/workflows/  CI: `cargo xtask ci` on Linux (every push and PR) and macOS (main); workers on a `kind` cluster (Linux); the server installer on fresh runners (install.yml); releases on version tags (`v0.1.0`): release.yml, made by `cargo xtask release-workflow` (`dist generate` from dist-workspace.toml and .github/build-setup.yml, then only the job that publishes can write), never edited by hand
 ```

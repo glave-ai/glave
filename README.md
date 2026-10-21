@@ -37,7 +37,7 @@ On a Linux server of yours (a VPS, a box at home), one line installs glave as a 
 curl -fsSL https://raw.githubusercontent.com/glave-ai/glave/main/install/server.sh | sh -s -- --private
 ```
 
-`--private` reaches glave through Tailscale, with no port open on the server (it sets Tailscale up if need be). `--public glave.example.com` serves glave at your domain instead, with its HTTPS certificate from Let's Encrypt. To update glave, run the same line again. Like the lines above, it works once the first release is published.
+`--private` reaches glave through Tailscale, with no port open on the server (it sets Tailscale up if need be). `--public glave.example.com` serves glave at your domain instead, with its HTTPS certificate from Let's Encrypt. On a server that runs only containers, `--docker --origin https://glave.example.com` runs glave in Docker Compose behind a Cloudflare Tunnel of yours (its token in `TUNNEL_TOKEN`). To update glave, run the same line again. Like the lines above, it works once the first release is published.
 
 ### From source
 

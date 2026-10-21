@@ -8,10 +8,14 @@ name: install
 #   person with sudo, updates glave and keeps its passkeys.
 # - private: by a person with sudo, through a stand-in for Tailscale that serves the
 #   runner's tailnet name and forwards to glave's loopback listener, as Tailscale does.
+# - docker: by a person with sudo, glave in Docker Compose. Cloudflare Tunnel's connector
+#   cannot reach Cloudflare from here, so an override file leaves it off and publishes glave's
+#   port to this runner's loopback, where the test plays the tunnel; the same line again
+#   updates glave and keeps its passkeys.
 #
-# Either way the link the installer prints makes a passkey that signs in again, the sandbox
-# starts inside the service, and the command it names prints a new link. A runner, not a
-# container: the installer needs systemd, and the sandbox the kernel a server has.
+# Each way the link the installer prints makes a passkey that signs in again, the sandbox
+# starts where glave runs, and the command it names prints a new link. A runner, not a
+# container: the installer needs systemd or Docker, and the sandbox the kernel a server has.
 on:
   push:
     branches: [main]
@@ -35,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        way: [public, private]
+        way: [public, private, docker]
     steps:
       - uses: actions/checkout@v7
       - name: Lint the installer
@@ -108,17 +112,56 @@ jobs:
           sh install/server.sh --private --binary target/debug/glave | tee "$RUNNER_TEMP/installed.txt"
           grep -q 'https://runner.tail1234.ts.net/#setup=' "$RUNNER_TEMP/installed.txt"
           grep -qx 'serve --bg --https=443 http://127.0.0.1:4180' /tmp/tailscale-serve
+      - name: Install glave in Docker Compose
+        if: matrix.way == 'docker'
+        env:
+          TUNNEL_TOKEN: not-a-real-tunnel
+        run: |
+          sudo install -d -m 0755 /opt/glave
+          sudo tee /opt/glave/compose.override.yaml >/dev/null <<'EOF'
+          services:
+            glave:
+              ports:
+                - 127.0.0.1:4180:4180
+            tunnel:
+              profiles: [tunnel]
+          EOF
+          sh install/server.sh --docker --origin https://glave.test --binary target/debug/glave |
+            tee "$RUNNER_TEMP/installed.txt"
+          grep -q 'https://glave.test/#setup=' "$RUNNER_TEMP/installed.txt"
+          # This runner's /opt hands new files a default ACL that lets anyone write them.
+          kept="$(sudo stat -c '%a %U' /opt/glave/.env /opt/glave/compose.yaml | tr '\n' ' ')"
+          echo "the tunnel's token and the Compose file are kept: $kept"
+          [ "$kept" = "600 root 644 root " ]
       - name: Sign in from elsewhere with the link, then with the passkey it made
         env:
           GLAVE_TEST_INSTALLED: ${{ runner.temp }}/installed.txt
         run: cargo nextest run -p glave -E 'test(/^installed::/)'
       - name: The sandbox runs inside the service
+        if: matrix.way != 'docker'
         run: |
           systemctl is-active glave
           systemctl show glave -p User -p NoNewPrivileges -p AmbientCapabilities
           if sudo journalctl -u glave -o cat | grep -F "sandbox cannot run"; then exit 1; fi
       - name: The command it names prints a new link
+        if: matrix.way != 'docker'
         run: sudo -u glave -H glave server link | grep -q '/#setup='
+      - name: The sandbox runs inside the container, and the command it names prints a new link
+        if: matrix.way == 'docker'
+        working-directory: /opt/glave
+        run: |
+          sudo docker compose logs glave | tee "$RUNNER_TEMP/glave.log"
+          grep -q "serving you on" "$RUNNER_TEMP/glave.log"
+          if grep -F "sandbox cannot run" "$RUNNER_TEMP/glave.log"; then exit 1; fi
+          sudo docker compose exec -T glave glave server link | grep -q '/#setup='
+      - name: The same line again updates glave in Docker, keeping its settings and passkeys
+        if: matrix.way == 'docker'
+        run: |
+          sh install/server.sh --binary target/debug/glave | tee "$RUNNER_TEMP/updated.txt"
+          if grep -q '#setup=' "$RUNNER_TEMP/updated.txt"; then echo "an update prints no setup link"; exit 1; fi
+          curl -sf -H 'host: glave.test' -H 'origin: https://glave.test' \
+            -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"passkey/get_options"}' \
+            http://127.0.0.1:4180/ | grep -q '"ceremony"'
       - name: The same line again updates glave, keeping its settings and passkeys
         if: matrix.way == 'public'
         run: |
@@ -130,6 +173,12 @@ jobs:
             https://glave.test/ | grep -q '"ceremony"'
       - name: What glave and Pebble said
         if: failure()
+        env:
+          WAY: ${{ matrix.way }}
         run: |
-          sudo journalctl -u glave --no-pager -o cat | tail -100
-          if [ "${{ matrix.way }}" = public ]; then docker logs pebble 2>&1 | tail -50; fi
+          if [ "$WAY" = docker ]; then
+            (cd /opt/glave && sudo docker compose logs glave 2>&1 | tail -100)
+          else
+            sudo journalctl -u glave --no-pager -o cat | tail -100
+          fi
+          if [ "$WAY" = public ]; then docker logs pebble 2>&1 | tail -50; fi
