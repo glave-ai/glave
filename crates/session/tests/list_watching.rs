@@ -181,7 +181,9 @@ fn a_list_watcher_far_behind_still_hears_what_it_missed() {
             let mut watcher = over.watcher().await;
             let mut heard = Vec::new();
             // Reading nothing yet: in the server's process the watch holds one summary for the
-            // client and waits to hand over the next.
+            // client and waits to hand over the next, so it surely falls behind; elsewhere what
+            // the transport buffers may keep it from falling behind, and it must hear it all
+            // the same.
             watcher
                 .watch_list(&Caller::default(), None, Some(long_ago()))
                 .await;
@@ -227,18 +229,7 @@ fn nobody_hears_of_threads_in_a_project_they_do_not_work_in() {
                 trace: None,
             };
             if kind == Kind::InProcess {
-                let mut home = server
-                    .projects()
-                    .get(scope().org(), scope().project())
-                    .await
-                    .unwrap()
-                    .unwrap();
-                home.members.push(Principal::person(bea.person.unwrap()));
-                server
-                    .projects()
-                    .update(scope().org(), &home)
-                    .await
-                    .unwrap();
+                set_members(&server, vec![Principal::person(bea.person.unwrap())]).await;
             }
             let theirs = elsewhere(&server).await;
             let hidden = start_in(&server, theirs).await;
@@ -268,6 +259,74 @@ fn nobody_hears_of_threads_in_a_project_they_do_not_work_in() {
             over.close().await;
         }
     });
+}
+
+#[test]
+fn someone_taken_off_a_project_stops_hearing_of_it_within_a_minute() {
+    block_on!(async {
+        let dir = folder("list-left");
+        let mut setup = Setup::new(Vec::new());
+        let clock = ManualClock::ticking(1_791_001_000_000);
+        setup.clock = clock.clone();
+        let server = setup.build(&dir).await.0;
+        let bea = Caller {
+            person: Some(person("https://id.example.com", "bea").unwrap()),
+            auth: None,
+            trace: None,
+        };
+        let joined = Principal::person(bea.person.unwrap());
+        set_members(&server, vec![joined]).await;
+        let shared = start(&server, false).await;
+        let mut over = Over::new(Kind::InProcess, &server, "list-left").await;
+        let mut watcher = over.watcher().await;
+        let mut heard = Vec::new();
+        watcher.watch_list(&bea, None, Some(long_ago())).await;
+        hear(&mut watcher, shared, &mut heard, |_| true).await;
+        set_members(&server, Vec::new()).await;
+        clock.advance_seconds(61);
+        let rename = Request::ThreadRename {
+            thread: shared,
+            title: "Not yours now".into(),
+        };
+        server.request(rename).await.unwrap();
+        // Something of bea's own, told after the rename was.
+        let chat = Request::ThreadStart {
+            project: None,
+            background: false,
+            worktree: None,
+            computer: None,
+            model: None,
+            approval: None,
+            effort: None,
+        };
+        let Reply::Thread { thread: own } = server.request_as(&bea, chat).await.unwrap() else {
+            panic!("a thread")
+        };
+        hear(&mut watcher, own.id, &mut heard, |_| true).await;
+        assert!(
+            heard
+                .iter()
+                .all(|s| s.title.as_deref() != Some("Not yours now")),
+            "heard of a project they were taken off: {heard:?}"
+        );
+        over.close().await;
+    });
+}
+
+/// Sets who works in the server's own project beside its person.
+async fn set_members(server: &Tested, members: Vec<Principal>) {
+    let mut home = server
+        .projects()
+        .get(scope().org(), scope().project())
+        .await
+        .unwrap()
+        .unwrap();
+    home.members = members;
+    server
+        .projects()
+        .update(scope().org(), &home)
+        .await
+        .unwrap();
 }
 
 #[test]

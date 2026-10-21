@@ -35,8 +35,9 @@ const REMEMBERED: usize = 4_096;
 
 /// What a thread did with its project's ask.
 enum Said {
-    /// It was opened or started since the ask: it shows the ask until it is answered.
-    Raised,
+    /// It was opened or started since the ask, in its project: it shows the ask until it is
+    /// answered.
+    Raised(ProjectId),
     /// The person said not now to the ask of this name.
     NotNow(String),
 }
@@ -65,14 +66,25 @@ impl Asks {
     fn shows(&self, thread: ThreadId, ask: &str, raising: bool) -> bool {
         match self.said.get(&thread) {
             Some(Said::NotNow(said)) if said == ask => false,
-            Some(Said::Raised) => true,
+            Some(Said::Raised(_)) => true,
             _ => raising,
         }
     }
 
     /// Whether any of `threads` shows an ask, whatever it names.
     fn any_raised(&self, mut threads: impl Iterator<Item = ThreadId>) -> bool {
-        threads.any(|thread| matches!(self.said.get(&thread), Some(Said::Raised)))
+        threads.any(|thread| matches!(self.said.get(&thread), Some(Said::Raised(_))))
+    }
+
+    /// The threads of `project` that show its ask.
+    fn raised_in(&self, project: ProjectId) -> Vec<ThreadId> {
+        self.order
+            .iter()
+            .filter(
+                |thread| matches!(self.said.get(thread), Some(Said::Raised(of)) if *of == project),
+            )
+            .copied()
+            .collect()
     }
 }
 
@@ -151,9 +163,9 @@ where
         if !asks.shows(summary.id, &ask.ask, raising) {
             return summary;
         }
-        let raised = raising && !matches!(asks.said.get(&summary.id), Some(Said::Raised));
+        let raised = raising && !matches!(asks.said.get(&summary.id), Some(Said::Raised(_)));
         if raising {
-            asks.set(summary.id, Said::Raised);
+            asks.set(summary.id, Said::Raised(summary.project));
         }
         drop(asks);
         // It waits for the person from now: lists are told.
@@ -197,16 +209,24 @@ where
         if current.ask != ask {
             return Err(changed());
         }
-        match answer {
+        let project = scope.project();
+        let answered = match answer {
+            // Every thread of the project that showed the ask waits no more.
             TrustChoice::Trust => {
                 if !host.trust(folder, ask).await? {
                     return Err(changed());
                 }
+                self.asks().raised_in(project)
             }
-            TrustChoice::NotNow => self.asks().set(thread, Said::NotNow(ask.to_owned())),
-        }
+            TrustChoice::NotNow => {
+                self.asks().set(thread, Said::NotNow(ask.to_owned()));
+                Vec::new()
+            }
+        };
         // It waits no more: lists are told.
-        self.inner.hub.changed(scope.project(), thread);
+        for waited in answered.into_iter().chain(std::iter::once(thread)) {
+            self.inner.hub.changed(project, waited);
+        }
         Ok(Reply::Thread {
             thread: self.summary(scope, thread).await?,
         })
@@ -224,13 +244,17 @@ mod tests {
         ThreadId::new(jiff::Timestamp::UNIX_EPOCH, tail).unwrap()
     }
 
+    fn project(n: u128) -> ProjectId {
+        ProjectId::from_uuid(uuid::Uuid::from_u128(n))
+    }
+
     #[test]
     fn a_thread_shows_an_ask_once_raised_until_it_says_not_now_to_it() {
         let mut asks = Asks::default();
         let one = thread(1);
         assert!(!asks.shows(one, "a", false), "not opened since");
         assert!(asks.shows(one, "a", true), "opened now");
-        asks.set(one, Said::Raised);
+        asks.set(one, Said::Raised(project(1)));
         assert!(asks.shows(one, "a", false));
         asks.set(one, Said::NotNow("a".into()));
         assert!(
@@ -239,6 +263,16 @@ mod tests {
         );
         assert!(asks.shows(one, "b", true), "a changed project asks again");
         assert!(!asks.any_raised([one].into_iter()));
+    }
+
+    #[test]
+    fn the_threads_showing_a_projects_ask_are_found_by_project() {
+        let mut asks = Asks::default();
+        asks.set(thread(1), Said::Raised(project(1)));
+        asks.set(thread(2), Said::Raised(project(2)));
+        asks.set(thread(3), Said::Raised(project(1)));
+        asks.set(thread(4), Said::NotNow("a".into()));
+        assert_eq!(asks.raised_in(project(1)), [thread(1), thread(3)]);
     }
 
     #[test]

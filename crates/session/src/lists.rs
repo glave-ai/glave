@@ -2,12 +2,12 @@
 //! shows it to the caller, whenever it changes, in one project or in every project the caller
 //! works in. The watch subscribes before it reads. With `after`, the threads the threads view
 //! says were updated since come first, oldest first; a watcher that falls behind its backlog is
-//! caught up from the view the same way, from the latest update it was sent. An event's time is
-//! taken as it is made, a moment before it is recorded, so a catch-up reads from a minute
-//! earlier: a thread sent twice is harmless, one missed is not. Changes that come together are
-//! summarised once each, and a subagent's change is its parent's too, whose summary says when a
-//! child waits. A project is read only once the caller is found to work in it, checked as
-//! `thread/list` checks it, the first time the watch hears of it.
+//! caught up from the view the same way, from before the first change it may have missed. An
+//! event's time is taken as it is made, a moment before it is recorded, so a catch-up reads from
+//! a minute earlier: a thread sent twice is harmless, one missed is not. Changes that come
+//! together are summarised once each, and a subagent's change of status is its parent's too,
+//! whose summary says when a child waits. A project is read only once the caller is found to
+//! work in it, checked as `thread/list` checks it, and checked again a minute later.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
@@ -22,7 +22,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::hub::Changed;
-use crate::protocol::{ApiError, Notification, ThreadSummary, WatchEnd, code};
+use crate::protocol::{ApiError, Notification, Status, ThreadSummary, WatchEnd, code};
 use crate::server::Server;
 use crate::watch::Watched;
 
@@ -39,6 +39,13 @@ const MOST_CAUGHT_UP: usize = 5_000;
 
 /// The projects whose answer a watch remembers; past it, it forgets them and asks again.
 const MOST_PROJECTS: usize = 1_024;
+
+/// How long a watch keeps whether the caller works in a project before it asks again.
+const RECHECK: SignedDuration = SignedDuration::from_secs(60);
+
+/// The threads whose status a watch remembers, to tell their parents only when it changes;
+/// past it, it forgets them all.
+const MOST_STATUSES: usize = 4_096;
 
 /// How far up a subagent's change travels: its parent, and theirs.
 const MOST_GENERATIONS: u8 = 8;
@@ -80,15 +87,21 @@ struct Follower<P, L, B> {
     server: Server<P, L, B>,
     caller: Caller,
     /// The one project followed, when the watch names one.
-    only: Option<Scope>,
-    /// The projects heard of, with the caller's scope in each they work in.
-    scopes: BTreeMap<ProjectId, Option<Scope>>,
+    only: Option<ProjectId>,
+    /// The projects heard of, with the caller's scope in each they work in, and when that was
+    /// asked.
+    scopes: BTreeMap<ProjectId, (Option<Scope>, At)>,
+    /// The status each thread was last sent with.
+    statuses: BTreeMap<ThreadId, Status>,
     /// The threads to summarise next, in order, each with how many generations above it are
     /// still to be told.
     queue: VecDeque<(ProjectId, ThreadId, u8)>,
     queued: BTreeSet<ThreadId>,
-    /// The latest update the watch was sent, or where it began: where a catch-up starts.
+    /// The latest update the watch was sent, or where it began.
     seen: At,
+    /// When the watch had last taken every change told before then: anything it missed was
+    /// told after it.
+    tail: At,
     out: mpsc::Sender<Watched>,
 }
 
@@ -107,23 +120,31 @@ where
         project: Option<ProjectId>,
         after: Option<At>,
     ) -> Result<ListWatch, ApiError> {
-        let only = match project {
-            Some(project) => Some(self.authorized(caller, project).await?.1),
+        let now = At::from(self.inner.harness.clock().now());
+        let mut scopes = BTreeMap::new();
+        match project {
+            Some(project) => {
+                let (_, scope) = self.authorized(caller, project).await?;
+                scopes.insert(project, (Some(scope), now));
+            }
             // Whom the caller is, once, before anything is followed.
-            None => self.projects_of(caller).await.map(|_| None)?,
-        };
+            None => {
+                self.projects_of(caller).await?;
+            }
+        }
         // Subscribed before anything is read, so nothing recorded meanwhile falls between.
         let changes = self.inner.hub.changes();
-        let now = At::from(self.inner.harness.clock().now());
         let (out, items) = mpsc::channel(1);
         let follower = Follower {
             server: self.clone(),
             caller: caller.clone(),
-            only,
-            scopes: BTreeMap::new(),
+            only: project,
+            scopes,
+            statuses: BTreeMap::new(),
             queue: VecDeque::new(),
             queued: BTreeSet::new(),
             seen: after.unwrap_or(now),
+            tail: now,
             out,
         };
         let following = tokio::spawn(follower.run(changes, after));
@@ -162,7 +183,9 @@ where
                 };
                 self.seen = self.seen.max(summary.updated_at);
                 // A parent's summary says when a child of its waits.
-                if let (Some(parent), Some(above)) = (summary.parent, above.checked_sub(1)) {
+                if self.status_changed(thread, summary.status)
+                    && let (Some(parent), Some(above)) = (summary.parent, above.checked_sub(1))
+                {
                     self.push(project, parent, above);
                 }
                 let summary = Box::new(summary);
@@ -177,12 +200,16 @@ where
                     self.take_waiting(changes)
                 }
                 Err(RecvError::Lagged(_)) => true,
+                // Not while the watch holds the server, whose hub tells it; kept so a hub that
+                // went ends the watch rather than spinning.
                 Err(RecvError::Closed) => {
                     return Err(ApiError::new(code::INTERNAL, "the server stopped"));
                 }
             };
             if behind {
-                self.catch_up(self.seen).await?;
+                // What it missed was told after it last took everything, and recorded since
+                // its time, or since the latest update it sent, whichever is earlier.
+                self.catch_up(self.seen.min(self.tail)).await?;
             }
         }
     }
@@ -194,15 +221,29 @@ where
             match changes.try_recv() {
                 Ok(change) => self.take(change),
                 Err(TryRecvError::Lagged(_)) => return true,
-                Err(TryRecvError::Empty | TryRecvError::Closed) => return false,
+                Err(TryRecvError::Empty) => {
+                    self.tail = self.now();
+                    return false;
+                }
+                Err(TryRecvError::Closed) => return false,
             }
         }
     }
 
+    fn now(&self) -> At {
+        At::from(self.server.inner.harness.clock().now())
+    }
+
+    /// Notes `thread`'s status as sent: whether it changed since it was last sent.
+    fn status_changed(&mut self, thread: ThreadId, status: Status) -> bool {
+        if self.statuses.len() >= MOST_STATUSES {
+            self.statuses.clear();
+        }
+        self.statuses.insert(thread, status) != Some(status)
+    }
+
     fn take(&mut self, change: Changed) {
-        let followed = self
-            .only
-            .is_none_or(|only| only.project() == change.project);
+        let followed = self.only.is_none_or(|only| only == change.project);
         if followed {
             self.push(change.project, change.thread, MOST_GENERATIONS);
         }
@@ -275,11 +316,12 @@ where
 
     /// The scopes of the projects followed: the one named, or every one the caller works in.
     async fn followed(&mut self) -> Result<Vec<Scope>, ApiError> {
-        if let Some(only) = self.only {
-            return Ok(vec![only]);
-        }
+        let projects = match self.only {
+            Some(only) => vec![only],
+            None => self.server.projects_of(&self.caller).await?,
+        };
         let mut scopes = Vec::new();
-        for project in self.server.projects_of(&self.caller).await? {
+        for project in projects {
             if let Some(scope) = self.scope_of(project).await? {
                 scopes.push(scope);
             }
@@ -288,12 +330,17 @@ where
     }
 
     /// The caller's scope in `project`, when they work in it: asked the first time, then
-    /// remembered for the watch.
+    /// remembered for a minute, so someone added to a project or taken off it hears or stops
+    /// hearing of it within one.
     async fn scope_of(&mut self, project: ProjectId) -> Result<Option<Scope>, ApiError> {
-        if let Some(only) = self.only {
-            return Ok((only.project() == project).then_some(only));
+        if self.only.is_some_and(|only| only != project) {
+            return Ok(None);
         }
-        if let Some(known) = self.scopes.get(&project) {
+        let now = self.now();
+        let fresh = now.timestamp().checked_sub(RECHECK).map_or(now, At::from);
+        if let Some((known, asked)) = self.scopes.get(&project)
+            && *asked >= fresh
+        {
             return Ok(*known);
         }
         let scope = match self.server.authorized(&self.caller, project).await {
@@ -304,7 +351,7 @@ where
         if self.scopes.len() >= MOST_PROJECTS {
             self.scopes.clear();
         }
-        self.scopes.insert(project, scope);
+        self.scopes.insert(project, (scope, now));
         Ok(scope)
     }
 
