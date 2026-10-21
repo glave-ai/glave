@@ -166,7 +166,10 @@ function take(host: ListsHost, note: Notification, lacked: Set<string>): void {
   };
   const listed = apply();
   const unknown = !listed && summary.standing === 'active' && !lacked.has(summary.project);
-  if (unknown) {
+  if (listed) {
+    // Listed now, it may be lacked again later, as once removed and given back.
+    lacked.delete(summary.project);
+  } else if (unknown) {
     lacked.add(summary.project);
   }
   void (unknown ? host.reread() : host.reading())?.then(apply);

@@ -29,9 +29,11 @@ test('a link signs one tab in once, and it stays signed in after a reload', asyn
       loading.add(request);
     }
   });
-  for (const ended of ['requestfinished', 'requestfailed'] as const) {
-    page.on(ended, (request) => loading.delete(request));
-  }
+  const loaded = (request: Request): void => {
+    loading.delete(request);
+  };
+  page.on('requestfinished', loaded);
+  page.on('requestfailed', loaded);
   const followed = page.waitForRequest(
     (request) => request.headers()['glave-method'] === 'thread/list/watch',
   );
