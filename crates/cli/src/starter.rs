@@ -2,7 +2,7 @@
 //! (`specs/one-server.md`, "No orphaned processes"): `GLAVE_LIFELINE` names a Unix socket that
 //! what started glave listens on. glave connects to it and waits; the system closes the socket
 //! when its holder ends, killed outright included, and glave then sends itself SIGTERM, so it
-//! stops as it does on one, and its own lifeline stops what it started. A glave it starts in
+//! stops as it does on one, and SIGKILL if it still runs after the grace. A glave it starts in
 //! the background, such as the person's server, keeps the variable and connects too. Tests and
 //! the end-to-end runs hand one to every glave they start, so a run killed outright leaves none
 //! behind. A socket, not a pipe: on macOS a pipe's end reaches only one of the glaves reading
