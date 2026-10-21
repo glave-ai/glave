@@ -226,6 +226,7 @@ bwrap_profile() {
 	if [ -r "$restricted" ] && [ "$(cat "$restricted")" = 1 ] && [ ! -e /etc/apparmor.d/bwrap ]; then
 		printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile bwrap %s flags=(unconfined) {\n  userns,\n  include if exists <local/bwrap>\n}\n' \
 			"$1" | $SUDO tee /etc/apparmor.d/bwrap >/dev/null
+		$SUDO chmod 0644 /etc/apparmor.d/bwrap
 		$SUDO apparmor_parser -r /etc/apparmor.d/bwrap
 	fi
 }
@@ -291,7 +292,7 @@ origin = \"$ORIGIN\"" ;;
 	esac
 	# The inner shell expands its own arguments.
 	# shellcheck disable=SC2016
-	as_glave sh -c 'umask 077 && mkdir -p "$1" && cat >"$2"' sh "$FOLDER" "$CONFIG" <<EOF
+	as_glave sh -c 'umask 077 && mkdir -p "$1" && cat >"$2" && chmod 0600 "$2"' sh "$FOLDER" "$CONFIG" <<EOF
 # How people reach glave from elsewhere, as the installer set it up.
 $settings
 EOF
@@ -327,6 +328,7 @@ $capability
 [Install]
 WantedBy=multi-user.target
 EOF
+	$SUDO chmod 0644 "$UNIT"
 	$SUDO systemctl daemon-reload
 	$SUDO systemctl enable --quiet glave
 	$SUDO systemctl restart glave
@@ -388,7 +390,7 @@ tunnel_token() {
 	[ -n "$token" ] || fail "set TUNNEL_TOKEN to your Cloudflare Tunnel's token, then run this again"
 	# The inner shell expands its own argument.
 	# shellcheck disable=SC2016
-	printf 'TUNNEL_TOKEN=%s\n' "$token" | $SUDO sh -c 'umask 077 && cat >"$1"' sh "$COMPOSE/.env"
+	printf 'TUNNEL_TOKEN=%s\n' "$token" | $SUDO sh -c 'umask 077 && cat >"$1" && chmod 0600 "$1"' sh "$COMPOSE/.env"
 }
 
 # The image, glave and bubblewrap on Ubuntu as an account of its own, and the Compose file:
@@ -444,6 +446,8 @@ services:
 volumes:
   home:
 EOF
+	# Whatever the folder's default permissions, only root may change what root runs.
+	$SUDO chmod 0644 "$COMPOSE/.dockerignore" "$COMPOSE/Dockerfile" "$COMPOSE/compose.yaml"
 }
 
 # glave's settings, in its home in the volume: how people reach it.

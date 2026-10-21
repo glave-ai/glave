@@ -126,13 +126,13 @@ jobs:
             tunnel:
               profiles: [tunnel]
           EOF
-          sh -x install/server.sh --docker --origin https://glave.test --binary target/debug/glave |
+          sh install/server.sh --docker --origin https://glave.test --binary target/debug/glave |
             tee "$RUNNER_TEMP/installed.txt"
-          sudo ls -la /opt/glave
           grep -q 'https://glave.test/#setup=' "$RUNNER_TEMP/installed.txt"
-          kept="$(sudo stat -c '%a %U' /opt/glave/.env)"
-          echo "the tunnel's token is kept $kept"
-          [ "$kept" = "600 root" ]
+          # This runner's /opt hands new files a default ACL that lets anyone write them.
+          kept="$(sudo stat -c '%a %U' /opt/glave/.env /opt/glave/compose.yaml | tr '\n' ' ')"
+          echo "the tunnel's token and the Compose file are kept: $kept"
+          [ "$kept" = "600 root 644 root " ]
       - name: Sign in from elsewhere with the link, then with the passkey it made
         env:
           GLAVE_TEST_INSTALLED: ${{ runner.temp }}/installed.txt
