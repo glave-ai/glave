@@ -20,9 +20,10 @@ pub struct Child {
     group: Option<Pid>,
     /// Its ledger entry, when it has one; removed once the group is gone.
     entry: Option<Entry>,
-    /// Its tie to glave, when glave has a lifeline: held while the leader is glave's unreaped
-    /// child, so its number, and its group's, cannot be another's; let go once the leader is
-    /// reaped and the group is no longer stopped by glave, or once the group is gone.
+    /// Its tie to glave, when glave has a lifeline, held until the group is gone or glave
+    /// stopped it: while its leader is glave's unreaped child, so its number cannot be
+    /// another's, the helper would stop leader and group; once the leader is reaped, the group
+    /// alone, whose number stays its own while anything is in it.
     tie: Option<Tie>,
 }
 
@@ -53,12 +54,12 @@ impl Child {
     }
 
     /// Waits for it to exit, as tokio's does. Once it has, its number is free to be given to
-    /// another process, so the lifeline lets its group go, as the reaper leaves a group whose
-    /// leader ended: what it left running is stopped by whoever holds this
-    /// ([`Child::stop_left`], or dropping it).
+    /// another process, so the lifeline's helper is told to stop only its group, which what it
+    /// left running keeps, until whoever holds this stops that ([`Child::stop_left`], or
+    /// dropping it).
     pub async fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
         let status = self.inner.wait().await?;
-        self.tie = None;
+        self.reaped();
         Ok(status)
     }
 
@@ -66,9 +67,24 @@ impl Child {
     pub fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
         let status = self.inner.try_wait()?;
         if status.is_some() {
-            self.tie = None;
+            self.reaped();
         }
         Ok(status)
+    }
+
+    /// Kills the leader and waits for it, as tokio's does: what it started is left to
+    /// [`Child::stop_left`], or dropping this. [`Child::stop`] stops it all.
+    pub async fn kill(&mut self) -> std::io::Result<()> {
+        self.inner.kill().await?;
+        self.reaped();
+        Ok(())
+    }
+
+    /// The leader is reaped: its number may be another's from now on.
+    fn reaped(&self) {
+        if let Some(tie) = &self.tie {
+            tie.reaped();
+        }
     }
 
     /// Stops it and everything it started: SIGTERM to its group, then SIGKILL to whatever is
@@ -101,7 +117,9 @@ impl Child {
     /// process waiting to be reaped. glave's workers run with an init that reaps orphans
     /// (Docker's `Init`, the Pod's shared process namespace), as does any desktop.
     async fn gone(&mut self, group: Pid) {
-        let _ = self.inner.wait().await;
+        if self.inner.wait().await.is_ok() {
+            self.reaped();
+        }
         group::emptied(group).await;
     }
 }

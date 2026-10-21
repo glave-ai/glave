@@ -3,7 +3,7 @@
 //!
 //! A helper of glave's own (glave itself, started again as [`HELPER_ARG`]) runs beside it, in
 //! a process group of its own, reading a pipe only glave writes: a line as each process group
-//! starts, and one once glave lets go of it. When glave ends, the system closes glave's end of
+//! starts, one when glave reaps its leader, and one once glave lets go of it. When glave ends, the system closes glave's end of
 //! the pipe, whatever ended it; the helper reads the end and stops every group glave still
 //! held ([`helper`]). This is glave's end: the helper, started with the lifeline and started
 //! again (told what runs) if it is gone.
@@ -92,10 +92,9 @@ impl Lifeline {
         match ready {
             Ok(Ok(())) if heard == READY => Ok(lifeline),
             Ok(Err(error)) => Err(lifeline.failed(error)),
-            _ => Err(lifeline.failed(std::io::Error::other(format!(
-                "{} did not start as glave's helper",
-                lifeline.program.display()
-            )))),
+            _ => Err(lifeline.failed(std::io::Error::other(
+                "it did not say it was ready; reinstalling glave mends a damaged install",
+            ))),
         }
     }
 
@@ -191,6 +190,14 @@ impl State {
 pub(crate) struct Tie {
     lifeline: Arc<Lifeline>,
     leader: i32,
+}
+
+impl Tie {
+    /// glave reaped the group's leader, whose number may be another's from now on: the helper
+    /// is to stop the group alone.
+    pub(crate) fn reaped(&self) {
+        self.lifeline.lock().tell(&format!("~{}\n", self.leader));
+    }
 }
 
 impl Drop for Tie {

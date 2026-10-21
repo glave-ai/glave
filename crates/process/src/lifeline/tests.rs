@@ -93,7 +93,7 @@ fn glave_tells_its_helper_what_it_holds_and_a_new_helper_all_it_still_holds() {
 }
 
 #[test]
-fn a_group_is_let_go_once_glave_reaps_its_leader() {
+fn once_glave_reaps_a_leader_its_group_alone_is_held_until_let_go() {
     let folder = TempDir::new("lifeline-reaped").unwrap();
     glave_ports::block_on!(async {
         let processes = Processes::unrecorded()
@@ -104,9 +104,22 @@ fn a_group_is_let_go_once_glave_reaps_its_leader() {
         let mut child = processes.spawn(&mut Program::new("true")).await.unwrap();
         let leader = child.id().unwrap();
         child.wait().await.unwrap();
-        let said = format!("+{leader}\n-{leader}\n");
+        let said = format!("+{leader}\n~{leader}\n");
+        assert_eq!(told(&folder, helper, &said).await, said);
+        drop(child);
+        let said = format!("{said}-{leader}\n");
         assert_eq!(told(&folder, helper, &said).await, said);
     });
+}
+
+#[test]
+fn the_helper_stops_the_group_of_a_leader_glave_reaped() {
+    // What a reaped leader left runs on in its group: here, a process that leads a group, which
+    // the helper reaches through the group alone.
+    let left = Orphan::start();
+    let held = helper::Held::from([(left.pid, true)]);
+    helper::stop(&held);
+    assert!(left.ended(), "what the leader left in its group is stopped");
 }
 
 #[test]

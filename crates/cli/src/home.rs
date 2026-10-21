@@ -23,17 +23,17 @@ pub(crate) fn folder() -> anyhow::Result<PathBuf> {
 pub(crate) async fn reaped() -> anyhow::Result<Processes> {
     let helper =
         crate::helpers::this_program().context("could not find this glave to start its helper")?;
-    let processes = Processes::recorded(folder()?.join("run"))
-        .with_lifeline(helper)
-        .await?;
-    match processes.reap().await {
+    let recorded = Processes::recorded(folder()?.join("run"));
+    // The helper starts while what a glave that ended left is stopped.
+    let (tied, reaped) = tokio::join!(recorded.clone().with_lifeline(helper), recorded.reap());
+    match reaped {
         Ok(0) => {}
         Ok(stopped) => {
             eprintln!("glave: stopped {stopped} programs a glave that ended had left running");
         }
         Err(error) => eprintln!("glave: {error}"),
     }
-    Ok(processes)
+    Ok(tied?)
 }
 
 /// The person's home folder, where their own MCP servers start: `$HOME`, else glave's folder.
