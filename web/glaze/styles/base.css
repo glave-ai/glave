@@ -117,6 +117,14 @@ pre {
   }
 }
 
+/*
+ * What points along the line (a chevron to what comes next) turns round right to left: by
+ * `scale`, which a turn of its own (`transform`) composes with.
+ */
+.glz-mirrored:dir(rtl) {
+  scale: -1 1;
+}
+
 /* The CDK's overlays (menus) sit above the page. */
 .cdk-overlay-container {
   z-index: 1000;

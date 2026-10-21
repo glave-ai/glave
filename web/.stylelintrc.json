@@ -20,7 +20,26 @@
       }
     ],
     "scss/at-mixin-pattern": null,
-    "no-descending-specificity": null
+    "no-descending-specificity": null,
+    "property-disallowed-list": [
+      [
+        "left",
+        "right",
+        "/^(margin|padding|border|inset|scroll-margin|scroll-padding)-(left|right)/",
+        "/^border-(top|bottom)-(left|right)-radius$/"
+      ],
+      {
+        "message": "Write it for any direction: inline-start and inline-end, not left and right (web/README.md, \"Languages\")"
+      }
+    ],
+    "declaration-property-value-disallowed-list": [
+      {
+        "/^(text-align|float|clear)$/": ["left", "right"]
+      },
+      {
+        "message": "Write it for any direction: start and end, not left and right (web/README.md, \"Languages\")"
+      }
+    ]
   },
   "reportDescriptionlessDisables": true,
   "reportNeedlessDisables": true,

@@ -1,4 +1,4 @@
-import { hasAnchorPositioning, placePopover, positionPopover } from './popover';
+import { hasAnchorPositioning, placePopover, positionPopover, screenSide } from './popover';
 
 const VIEWPORT = { width: 800, height: 600 };
 const PANEL = { width: 100, height: 40 };
@@ -10,6 +10,13 @@ describe('placePopover', () => {
     expect(placePopover(anchor, PANEL, VIEWPORT, 'below')).toEqual({ top: 324, left: 350 });
     expect(placePopover(anchor, PANEL, VIEWPORT, 'end')).toEqual({ top: 290, left: 454 });
     expect(placePopover(anchor, PANEL, VIEWPORT, 'start')).toEqual({ top: 290, left: 246 });
+  });
+
+  it('puts the start of a right-to-left line on the screen’s right', () => {
+    expect(screenSide('start', 'rtl')).toBe('end');
+    expect(screenSide('end', 'rtl')).toBe('start');
+    expect(screenSide('below', 'rtl')).toBe('below');
+    expect(screenSide('start', 'ltr')).toBe('start');
   });
 
   it('flips to the other side when there is no room', () => {

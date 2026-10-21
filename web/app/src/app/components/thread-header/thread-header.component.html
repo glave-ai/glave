@@ -43,7 +43,7 @@
       [attr.aria-keyshortcuts]="panelShortcut"
       (click)="phoneTools()"
     >
-      <glz-icon [icon]="phoneButton().icon" />
+      <glz-icon [class.glz-mirrored]="phoneButton().mirrored" [icon]="phoneButton().icon" />
     </button>
   } @else if (changed()) {
     <button
@@ -67,7 +67,7 @@
       [attr.aria-keyshortcuts]="panelShortcut"
       (click)="togglePanel()"
     >
-      <glz-icon [icon]="icons.tools" />
+      <glz-icon class="glz-mirrored" [icon]="icons.tools" />
     </button>
   }
 </header>

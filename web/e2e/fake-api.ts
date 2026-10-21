@@ -663,6 +663,8 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
       return { models: MODELS };
     case 'tasks/list':
       return { tasks: TASKS };
+    case 'schedule/list':
+      return { schedules: [] };
     case 'memory/list':
       return { memories: MEMORIES };
     case 'provider/list':

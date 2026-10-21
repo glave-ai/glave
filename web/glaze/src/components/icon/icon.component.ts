@@ -13,11 +13,13 @@ import { type GlzIconData, iconSvg } from '../../lib/icons';
 /**
  * An SVG icon from Lucide (ISC licence). Only the icons imported are bundled: Lucide ships each
  * as its own ES module. Decorative unless given a `label`, for when the icon alone carries
- * meaning.
+ * meaning. One that points along the line (a chevron to what comes next, a panel at the end)
+ * takes `glz-mirrored`, which turns it round in right-to-left text.
  *
  * ```html
  * <glz-icon [icon]="sendIcon" />
  * <glz-icon [icon]="checkIcon" label="Done" />
+ * <glz-icon class="glz-mirrored" [icon]="chevronRight" />
  * ```
  */
 @Component({
