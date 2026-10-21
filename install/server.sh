@@ -9,6 +9,10 @@
 # glave under an account of its own, with its home and data in /var/lib/glave, and ends with
 # the link that makes the first passkey. Run it again to update glave: it keeps glave's
 # settings and data, and glave never updates itself.
+#
+# With --docker instead, glave runs in Docker Compose beside Cloudflare Tunnel's connector,
+# which serves it at the person's hostname (--origin) with the tunnel's token (TUNNEL_TOKEN,
+# or asked), from /opt/glave, its home and data in a volume.
 
 set -eu
 
@@ -21,6 +25,11 @@ CONFIG="$FOLDER/config.toml"
 UNIT=/etc/systemd/system/glave.service
 LISTEN=127.0.0.1:4180
 RECOVER="sudo -u $ACCOUNT -H glave server link"
+# With --docker: where the Compose project lives, and the images it starts from, pinned.
+COMPOSE=/opt/glave
+BASE="ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac"
+CLOUDFLARED="cloudflare/cloudflared:2026.10.0@sha256:9b49eed8f62806d5d45ddf59ecefb5710429598ea6d3fcccd2af938f621b2b07"
+RECOVER_DOCKER="cd $COMPOSE && sudo docker compose exec glave glave server link"
 
 USAGE="Installs glave on this Linux server as a service, or updates it.
 
@@ -33,6 +42,8 @@ USAGE="Installs glave on this Linux server as a service, or updates it.
   --binary <file>    install this glave program rather than downloading one
   --acme <url>       with --public, the ACME directory the certificate comes from, when it
                      is not Let's Encrypt's
+  --docker           with --origin, run glave in Docker Compose beside Cloudflare Tunnel's
+                     connector, which serves <url> with the token in TUNNEL_TOKEN (or asked)
 
 Run it again to update glave: it keeps glave's settings and data."
 
@@ -42,6 +53,7 @@ ORIGIN=""
 VERSION=""
 BINARY=""
 ACME=""
+DOCKER=""
 
 say() { printf 'glave: %s\n' "$*" >&2; }
 fail() {
@@ -74,6 +86,7 @@ parse() {
 	while [ $# -gt 0 ]; do
 		case "$1" in
 		--private) REACH=private ;;
+		--docker) DOCKER=yes ;;
 		--public)
 			[ $# -ge 2 ] || fail "--public needs your domain, such as glave.example.com"
 			REACH=public
@@ -113,12 +126,15 @@ parse() {
 	if [ -n "$ACME" ] && [ "$REACH" != public ]; then
 		fail "--acme is for --public: where its certificate comes from"
 	fi
+	case "$DOCKER$REACH" in
+	yesprivate | yespublic) fail "--docker goes with Cloudflare Tunnel: --origin and the address your tunnel serves, such as https://glave.example.com" ;;
+	esac
 }
 
-# What this server must have: Linux with systemd, on a processor glave is built for.
+# What this server must have: Linux, with systemd unless glave runs in Docker.
 check_system() {
 	[ "$(uname -s)" = Linux ] || fail "this installer is for Linux servers; on a Mac, install glave as the README says"
-	[ -d /run/systemd/system ] || fail "this server does not run systemd, which starts glave and keeps it running"
+	[ -n "$DOCKER" ] || [ -d /run/systemd/system ] || fail "this server does not run systemd, which starts glave and keeps it running"
 	command -v curl >/dev/null 2>&1 || fail "install curl, then run this again"
 }
 
@@ -200,10 +216,16 @@ fetch() {
 # profile that lets it make user namespaces (specs/sandbox.md, "Linux").
 sandbox() {
 	command -v bwrap >/dev/null 2>&1 || packages bubblewrap
+	bwrap_profile "$(command -v bwrap)"
+}
+
+# The AppArmor profile that lets bubblewrap at $1 make user namespaces, where the kernel lets
+# only programs AppArmor allows make them. It applies in containers too, to the same path.
+bwrap_profile() {
 	restricted=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
 	if [ -r "$restricted" ] && [ "$(cat "$restricted")" = 1 ] && [ ! -e /etc/apparmor.d/bwrap ]; then
 		printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile bwrap %s flags=(unconfined) {\n  userns,\n  include if exists <local/bwrap>\n}\n' \
-			"$(command -v bwrap)" | $SUDO tee /etc/apparmor.d/bwrap >/dev/null
+			"$1" | $SUDO tee /etc/apparmor.d/bwrap >/dev/null
 		$SUDO apparmor_parser -r /etc/apparmor.d/bwrap
 	fi
 }
@@ -337,9 +359,158 @@ started() {
 	say "glave has no certificate for $domain yet: check that $domain points at this server and that port 443 is open to it (journalctl -u glave says more)"
 }
 
+# Runs docker compose in glave's Compose project, which also reads an override file there.
+compose() {
+	(cd "$COMPOSE" && $SUDO docker compose "$@")
+}
+
+# Docker, with Compose, set up with Docker's own installer where it is missing.
+docker_engine() {
+	if ! command -v docker >/dev/null 2>&1; then
+		say "installing Docker, with its own installer (get.docker.com)"
+		curl -fsSL https://get.docker.com | $SUDO sh
+	fi
+	$SUDO docker compose version >/dev/null 2>&1 ||
+		fail "this server's Docker has no Compose: install its compose plugin, then run this again"
+}
+
+# The tunnel's token, from TUNNEL_TOKEN or asked at the terminal unseen, kept for Compose
+# readable by root alone; never an argument, so no process list shows it.
+tunnel_token() {
+	token="${TUNNEL_TOKEN:-}"
+	if [ -z "$token" ] && (exec </dev/tty) 2>/dev/null; then
+		printf "Your Cloudflare Tunnel's token (Zero Trust, Networks, Tunnels): " >/dev/tty
+		stty -echo </dev/tty
+		read -r token </dev/tty || true
+		stty echo </dev/tty
+		printf '\n' >/dev/tty
+	fi
+	[ -n "$token" ] || fail "set TUNNEL_TOKEN to your Cloudflare Tunnel's token, then run this again"
+	# The inner shell expands its own argument.
+	# shellcheck disable=SC2016
+	printf 'TUNNEL_TOKEN=%s\n' "$token" | $SUDO sh -c 'umask 077 && cat >"$1"' sh "$COMPOSE/.env"
+}
+
+# The image, glave and bubblewrap on Ubuntu as an account of its own, and the Compose file:
+# glave, and the tunnel's connector, which reaches it at glave:4180.
+docker_files() {
+	$SUDO install -d -m 0755 "$COMPOSE"
+	$SUDO install -m 0755 "$BINARY" "$COMPOSE/glave"
+	# The image is built from glave alone: the tunnel's token never reaches the build.
+	printf '*\n!glave\n' | $SUDO tee "$COMPOSE/.dockerignore" >/dev/null
+	$SUDO tee "$COMPOSE/Dockerfile" >/dev/null <<EOF
+# glave's image, built here from the program the installer fetched (install/server.sh).
+FROM $BASE
+RUN apt-get update -q \\
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends bubblewrap ca-certificates git \\
+ && rm -rf /var/lib/apt/lists/* \\
+ && useradd --create-home --shell /bin/bash $ACCOUNT
+COPY glave /usr/local/bin/glave
+USER $ACCOUNT
+WORKDIR /home/$ACCOUNT
+CMD ["glave", "serve", "--http", "0.0.0.0:4180"]
+EOF
+	$SUDO tee "$COMPOSE/compose.yaml" >/dev/null <<EOF
+# glave, and Cloudflare Tunnel's connector serving it at your hostname with no port open here
+# (install/server.sh --docker). Run the installer again to update glave.
+name: glave
+services:
+  glave:
+    build: .
+    image: glave-server
+    restart: unless-stopped
+    volumes:
+      - home:/home/$ACCOUNT
+    # The commands glave runs go in its sandbox, bubblewrap, which makes namespaces and mounts
+    # that Docker's defaults refuse: its seccomp filter refuses new namespaces, its AppArmor
+    # profile refuses mounts, and /proc's masked paths keep a new /proc from mounting. These
+    # let it, and the host's AppArmor profile for bubblewrap lets it make user namespaces where
+    # Ubuntu restricts them. glave holds no capability and gains no privilege. Without them
+    # glave says it cannot sandbox commands, and asks before each one.
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+      - systempaths=unconfined
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+  tunnel:
+    image: $CLOUDFLARED
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    env_file: .env
+    depends_on:
+      - glave
+volumes:
+  home:
+EOF
+}
+
+# glave's settings, in its home in the volume: how people reach it.
+docker_configure() {
+	# The inner shell expands its own $HOME.
+	# shellcheck disable=SC2016
+	compose run --rm --no-deps -T glave sh -c 'umask 077 && mkdir -p "$HOME/.glave" && cat >"$HOME/.glave/config.toml"' <<EOF
+# How people reach glave from elsewhere, as the installer set it up.
+[serve]
+origin = "$ORIGIN"
+EOF
+}
+
+# Waits until glave answers on its socket in the container; says why when it does not.
+docker_started() {
+	for _ in $(seq 1 60); do
+		if compose exec -T glave test -S "/home/$ACCOUNT/.glave/run/server.sock" 2>/dev/null; then
+			return 0
+		fi
+		sleep 1
+	done
+	compose logs --tail 20 glave >&2 || true
+	fail "glave did not start in a minute; what it said is above"
+}
+
+# glave in Docker Compose (--docker): set up, or updated when it is there already.
+in_docker() {
+	first=yes
+	if $SUDO test -e "$COMPOSE/compose.yaml"; then
+		first=no
+		kept="$(compose run --rm --no-deps -T glave cat "/home/$ACCOUNT/.glave/config.toml" 2>/dev/null |
+			sed -n 's/^origin = "\(.*\)"$/\1/p')"
+		[ -z "$ORIGIN" ] || [ "$ORIGIN" = "$kept" ] ||
+			fail "glave runs in Docker here already, reached at $kept; to change that, edit [serve] in its config.toml, in the volume"
+	fi
+	[ "$first" = no ] || [ -n "$ORIGIN" ] ||
+		fail "--docker needs --origin: the address your Cloudflare Tunnel serves, such as https://glave.example.com"
+	docker_engine
+	fetch
+	bwrap_profile /usr/bin/bwrap
+	docker_files
+	if [ "$first" = yes ]; then tunnel_token; fi
+	compose build --quiet
+	if [ "$first" = yes ]; then docker_configure; fi
+	compose up -d
+	docker_started
+	version="$(compose exec -T glave glave --version)"
+	if [ "$first" = no ]; then
+		say "$version runs in Docker on this server again, with its settings and data"
+		return 0
+	fi
+	say "$version runs in Docker on this server, beside Cloudflare Tunnel's connector"
+	printf '\n'
+	compose exec -T glave glave server link
+	printf '\nIn your tunnel, send %s to http://glave:4180.\nFor another device, or if you lose every one, run this on the server:\n  %s\nTo update glave, run this installer again.\n' "$ORIGIN" "$RECOVER_DOCKER"
+}
+
 main() {
 	parse "$@"
+	if $SUDO test -e "$COMPOSE/compose.yaml"; then DOCKER=yes; fi
 	check_system
+	if [ -n "$DOCKER" ]; then
+		$SUDO test ! -f "$CONFIG" || fail "glave runs here as a service already; --docker is for a server without it"
+		case "$REACH" in private | public) fail "glave runs in Docker here, reached through Cloudflare Tunnel; run this again without --$REACH to update it" ;; esac
+		in_docker
+		return 0
+	fi
 	first=yes
 	if $SUDO test -f "$CONFIG"; then
 		first=no
