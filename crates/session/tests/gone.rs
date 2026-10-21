@@ -165,10 +165,7 @@ fn a_project_whose_folder_is_gone_says_so_plainly_and_nothing_runs_or_is_made_th
         assert_eq!(gone, [said]);
         // A turn in the thread held since, and a new thread: refused in those words.
         let refused = turn(&server, thread, "again").await.unwrap_err();
-        assert_eq!(
-            (refused.code, refused.message.as_str()),
-            (code::NO_FOLDER, GONE)
-        );
+        assert_eq!((refused.code, &*refused.message), (code::NO_FOLDER, GONE));
         let refused = server
             .request(start_request(project, None))
             .await

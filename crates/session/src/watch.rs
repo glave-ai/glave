@@ -14,6 +14,7 @@ use tokio::sync::broadcast::{self, error::RecvError, error::TryRecvError};
 
 use crate::protocol::{ApiError, Notification, WatchEnd, code};
 use crate::server::{Server, no_thread};
+use crate::words::Sentence;
 
 /// Events read from the log at a time while a watch catches up.
 const PAGE: usize = 256;
@@ -185,7 +186,7 @@ impl Watch {
                 return ended;
             }
         }
-        Err(ApiError::new(code::INTERNAL, "the watch already ended"))
+        Err(ApiError::new(code::INTERNAL, Sentence::WatchEnded))
     }
 
     /// The next item: from the log while the watch catches up, else what comes, waiting for it
@@ -226,7 +227,7 @@ impl Watch {
                 Err(RecvError::Closed) => {
                     return Some(Watched::Ended(Err(ApiError::new(
                         code::INTERNAL,
-                        "the server stopped",
+                        Sentence::ServerStopped,
                     ))));
                 }
             }

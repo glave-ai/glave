@@ -14,6 +14,7 @@ use crate::modes::Choice;
 use crate::protocol::{ApiError, AttachedFile, code};
 use crate::server::Server;
 use crate::turn::TurnStream;
+use crate::words::Sentence;
 
 /// A message the person sends a thread with `turn/start`.
 pub(crate) struct Message<'a> {
@@ -108,9 +109,7 @@ where
         if choice != &Choice::default() {
             return Err(ApiError::new(
                 code::INVALID_PARAMS,
-                "a model, reasoning level or approval mode is chosen for a turn to start with: \
-                 while a turn runs, send the message without one, or choose once the turn has \
-                 ended",
+                Sentence::NoChoiceWhileRunning,
             ));
         }
         let harness = &self.inner.harness;

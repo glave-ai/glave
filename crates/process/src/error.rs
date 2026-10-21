@@ -14,6 +14,14 @@ pub enum ProcessError {
     /// The ledger already holds as many processes as it may.
     #[error("glave already runs {0} processes on this computer; stop some first")]
     Full(usize),
+    /// The helper that stops what glave started when glave ends could not be started.
+    #[error(
+        "could not start glave's helper that stops what glave starts when it ends ({helper}): {source}"
+    )]
+    Lifeline {
+        helper: PathBuf,
+        source: std::io::Error,
+    },
     /// The ledger could not be read or written.
     #[error("could not record a process glave started in {path}: {source}")]
     Ledger {

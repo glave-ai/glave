@@ -17,6 +17,7 @@ use glave_ports::{
 use crate::held::Slot;
 use crate::protocol::{ApiError, NewFolder, Reply, Request, code};
 use crate::server::{Server, no_thread};
+use crate::words::Sentence;
 
 /// Threads whose project a server remembers; past this, it forgets them all and asks again.
 const PLACES: usize = 4_096;
@@ -48,7 +49,12 @@ impl Places {
 const UPDATE_TRIES: usize = 3;
 
 pub(crate) fn no_project(project: ProjectId) -> ApiError {
-    ApiError::new(code::NO_PROJECT, format!("no project {project} here"))
+    ApiError::new(
+        code::NO_PROJECT,
+        Sentence::NoProject {
+            project: project.to_string(),
+        },
+    )
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -62,7 +68,7 @@ where
         caller
             .person
             .or_else(|| self.inner.harness.person())
-            .ok_or_else(|| ApiError::new(code::INTERNAL, "this server has no person"))
+            .ok_or_else(|| ApiError::new(code::INTERNAL, Sentence::NoPerson))
     }
 
     /// The project `project` of this server's organization.
@@ -283,7 +289,9 @@ where
             if found.owner != Principal::person(self.person_of(caller)?) {
                 return Err(ApiError::new(
                     code::NOT_ALLOWED,
-                    format!("only its owner renames project {project}"),
+                    Sentence::RenameOnlyOwner {
+                        project: project.to_string(),
+                    },
                 ));
             }
             found.name.clone_from(&name);

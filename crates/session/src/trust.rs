@@ -17,6 +17,7 @@ use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider, Project
 use crate::protocol::{ApiError, Reply, Status, ThreadSummary, TrustAsk, TrustChoice, code};
 use crate::providers::local;
 use crate::server::Server;
+use crate::words::Sentence;
 
 /// Where the host reads what a project asks to be trusted, and keeps the person's yes.
 pub trait ProjectTrust: Send + Sync {
@@ -90,18 +91,12 @@ impl Asks {
 
 /// Refused: nothing in the thread's project waits to be trusted.
 fn nothing_waits() -> ApiError {
-    ApiError::new(
-        code::NO_TRUST,
-        "nothing in this thread's project waits to be trusted",
-    )
+    ApiError::new(code::NO_TRUST, Sentence::NothingToTrust)
 }
 
 /// Refused: the project asks something else now than what the person was shown.
 fn changed() -> ApiError {
-    ApiError::new(
-        code::NO_TRUST,
-        "this project changed since you were asked: look again at what it brings now",
-    )
+    ApiError::new(code::NO_TRUST, Sentence::TrustChanged)
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -189,11 +184,7 @@ where
         answer: TrustChoice,
     ) -> Result<Reply, ApiError> {
         if !local(caller) {
-            return Err(ApiError::new(
-                code::NOT_ALLOWED,
-                "only the person on this computer can trust a project: what it brings runs \
-                 on this computer",
-            ));
+            return Err(ApiError::new(code::NOT_ALLOWED, Sentence::TrustOnlyHere));
         }
         if !self.inner.approvals.clients_answer() {
             return Err(nothing_waits());

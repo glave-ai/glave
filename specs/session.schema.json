@@ -52,6 +52,7 @@
           ]
         },
         "message": {
+          "description": "What a person is told, in their language where it is the server's own sentence.",
           "type": "string"
         }
       },
@@ -2818,6 +2819,51 @@
         "type": "object"
       },
       "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "language/get": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "The language the caller chose, as a BCP 47 tag; `null` while their client's counts.",
+        "properties": {
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "streams": false
+    },
+    "language/set": {
+      "params": {
+        "properties": {
+          "language": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "result": {
+        "description": "The language the caller chose, as a BCP 47 tag; `null` while their client's counts.",
+        "properties": {
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "streams": false

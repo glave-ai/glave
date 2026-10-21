@@ -29,6 +29,7 @@ use crate::protocol::{ApiError, Notification, Reply, Request, WatchEnd, code};
 use crate::server::Server;
 use crate::turn::{TurnItem, TurnStream};
 use crate::watch::{Watch, Watched};
+use crate::words::Sentence;
 
 /// The longest message accepted, in bytes. A longer line ends the connection.
 const MAX_LINE: u64 = 16 * 1024 * 1024;
@@ -213,12 +214,15 @@ async fn handle<P, L, B>(
             return;
         }
     };
+    // Local transports act as the local person.
+    let caller = Caller::default();
     let Held { claim, mut turn } = held;
     let claim = match claim.transpose() {
         Ok(claim) => claim,
         Err(refused) => {
             if let Some(id) = id {
-                let _ = lines.send(respond(Some(&id), Err(&refused))).await;
+                let refused = server.in_language(&caller, None, Err(refused)).await;
+                let _ = lines.send(respond(Some(&id), refused.as_ref())).await;
             }
             return;
         }
@@ -227,8 +231,7 @@ async fn handle<P, L, B>(
     if let Some(turn) = &mut turn {
         turn.wait_for_watch().await;
     }
-    // Local transports act as the local person.
-    let answered = match server.call(&Caller::default(), request).await {
+    let answered = match server.call(&caller, request).await {
         Answered::Reply(reply) => reply,
         Answered::Stream(stream) => follow_turn(stream, lines, turn.as_mut()).await,
         Answered::Watch(mut watch) => match &claim {
@@ -248,6 +251,7 @@ async fn handle<P, L, B>(
     drop((claim, turn));
     // A request without an id is a notification, which is never answered.
     if let Some(id) = id {
+        let answered = server.in_language(&caller, None, answered).await;
         let _ = lines.send(respond(Some(&id), answered.as_ref())).await;
     }
 }
@@ -292,7 +296,7 @@ async fn follow_list(
                 let _ = lines.send(notify(&note)).await;
             }
             Some(Watched::Ended(ended)) => return ended.map(|ended| Reply::Watched { ended }),
-            None => return Err(ApiError::new(code::INTERNAL, "the watch stopped")),
+            None => return Err(ApiError::new(code::INTERNAL, Sentence::WatchStopped)),
         }
     }
 }
@@ -308,7 +312,7 @@ async fn follow_watch(
         match watch.next().await {
             Some(Watched::Note(note)) => write(&note, watch, lines, claim).await,
             Some(Watched::Ended(ended)) => return ended.map(|ended| Reply::Watched { ended }),
-            None => return Err(ApiError::new(code::INTERNAL, "the watch stopped")),
+            None => return Err(ApiError::new(code::INTERNAL, Sentence::WatchStopped)),
         }
     }
 }
@@ -359,7 +363,7 @@ async fn follow_turn(
                 }
                 return ended.map(|turn| Reply::Turn { turn });
             }
-            None => return Err(ApiError::new(code::INTERNAL, "the turn stopped")),
+            None => return Err(ApiError::new(code::INTERNAL, Sentence::TurnStopped)),
         }
     }
 }

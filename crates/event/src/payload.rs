@@ -12,6 +12,7 @@ pub(crate) mod credential;
 pub(crate) mod gateway;
 pub(crate) mod goal;
 pub(crate) mod hook;
+pub(crate) mod language;
 pub(crate) mod memory;
 pub(crate) mod message;
 pub(crate) mod model;
@@ -39,6 +40,7 @@ pub use credential::{CredentialConnected, CredentialRemoved, Forge, Renewal};
 pub use gateway::GatewayToolCalled;
 pub use goal::{GoalEnded, GoalReason, GoalResumed, GoalSet};
 pub use hook::{HookPoint, HookRan, HookResult};
+pub use language::LanguageSet;
 pub use memory::{
     MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryScope, MemorySource,
     MemoryTidied, sealed_under_memory,

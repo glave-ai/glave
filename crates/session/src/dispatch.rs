@@ -17,6 +17,7 @@ use crate::steer::{Message, Sent};
 use crate::tasks::Work;
 use crate::turn::TurnStream;
 use crate::watch::Watch;
+use crate::words::Sentence;
 
 /// What a request is answered with.
 pub enum Answered {
@@ -120,6 +121,8 @@ where
             }
             Request::AwakeGet {} => Ok(self.awake()),
             Request::AwakeSet { on } => self.set_awake(caller, on).await,
+            Request::LanguageGet {} => self.language(caller).await,
+            Request::LanguageSet { language } => self.set_language(caller, language).await,
             Request::SigninLink {} => self.link(caller),
             Request::SigninSetup {} => self.setup(caller),
             Request::PasskeyCreateOptions { code } => self.create_options(&code),
@@ -156,10 +159,9 @@ where
                 ..
             } => Err(ApiError::new(
                 code::NOT_AVAILABLE,
-                format!(
-                    "threads on a computer of your own (computer {computer}) are not available \
-                     yet: start the thread without `computer`"
-                ),
+                Sentence::NoComputerYet {
+                    computer: computer.to_string(),
+                },
             )),
             Request::ThreadStart {
                 project,
@@ -275,8 +277,7 @@ where
                 if !files.is_empty() {
                     return Answered::Reply(Err(ApiError::new(
                         code::INVALID_PARAMS,
-                        "files are added to a message someone follows, not to a task: send it \
-                         without background",
+                        Sentence::FilesNotForTasks,
                     )));
                 }
                 let choice = Choice {
@@ -464,8 +465,5 @@ fn goal(objective: Option<String>, budget: Option<u64>) -> Option<Goal> {
 /// A turn's budget is enforced only for a turn that runs as a task: refused anywhere else
 /// rather than ignored.
 fn unenforced_budget() -> ApiError {
-    ApiError::new(
-        code::INVALID_PARAMS,
-        "turn/start takes a budget only with background: true; for a turn you follow, use a goal",
-    )
+    ApiError::new(code::INVALID_PARAMS, Sentence::BudgetOnlyInBackground)
 }

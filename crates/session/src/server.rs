@@ -39,6 +39,7 @@ use crate::providers::Providers;
 use crate::reread::Rereads;
 use crate::tasks::{TaskLimits, Tasks};
 use crate::trust::{Asks, ProjectTrust};
+use crate::words::Sentence;
 use glave_ports::stream::Reserved;
 
 /// The most events or threads one page returns.
@@ -418,8 +419,7 @@ where
             (None, Some(true), _) => {
                 return Err(ApiError::new(
                     code::WORKSPACE,
-                    "there is no project folder here to make a worktree of: threads here work \
-                     in a scratch folder of their own",
+                    Sentence::NoFolderForWorktree,
                 ));
             }
             (None, _, _) => Place::Scratch,
@@ -532,7 +532,7 @@ where
         .await?;
         let ended = finished(&mut done)
             .await
-            .ok_or_else(|| ApiError::new(code::INTERNAL, "the compaction stopped"))?;
+            .ok_or_else(|| ApiError::new(code::INTERNAL, Sentence::CompactionStopped))?;
         let compacted = ended.as_ref().as_ref().map_err(ApiError::from)?;
         Ok(Reply::Compacted {
             before_tokens: compacted.before_tokens,
@@ -544,7 +544,9 @@ where
 pub(crate) fn no_thread(thread: ThreadId) -> ApiError {
     ApiError::new(
         code::NO_THREAD,
-        format!("no thread {thread} in this project"),
+        Sentence::NoThread {
+            thread: thread.to_string(),
+        },
     )
 }
 

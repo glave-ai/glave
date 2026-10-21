@@ -76,7 +76,7 @@ reqwest.workspace = true
 # signal, and capabilities a service's unit grants kept from the programs it starts.
 rustix = { workspace = true, features = ["process", "stdio", "termios", "thread"] }
 serde_json.workspace = true
-tokio = { workspace = true, features = ["fs", "io-std", "io-util", "net", "rt", "signal", "sync", "time"] }
+tokio = { workspace = true, features = ["fs", "io-std", "io-util", "macros", "net", "rt", "signal", "sync", "time"] }
 tracing.workspace = true
 tracing-opentelemetry = { workspace = true, optional = true }
 tracing-subscriber.workspace = true
