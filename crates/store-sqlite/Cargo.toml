@@ -12,6 +12,8 @@ publish.workspace = true
 glave-event.workspace = true
 glave-keys.workspace = true
 glave-ports.workspace = true
+# When a lease lapses.
+jiff.workspace = true
 rusqlite.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

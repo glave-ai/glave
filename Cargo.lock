@@ -2119,6 +2119,7 @@ dependencies = [
  "glave-event",
  "glave-keys",
  "glave-ports",
+ "jiff",
  "rusqlite",
  "serde_json",
  "thiserror 2.0.21",

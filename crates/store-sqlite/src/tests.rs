@@ -306,3 +306,60 @@ fn views_rebuilt_from_the_log_equal_the_kept_ones() {
         assert_eq!(views(&path), kept, "opening fills the view from the log");
     });
 }
+
+#[test]
+fn the_leases_pass_the_leases_conformance_suite() {
+    let store = Store::open_in_memory(keys()).unwrap();
+    assert_eq!(block_on!(conformance::leases(&store.leases())), Ok(()));
+}
+
+/// Two processes on one file, as glave run in place beside the person's server: of two holders
+/// racing for a lease each through its own connection, one gets it, and the other sees it held
+/// until it is let go.
+#[test]
+fn processes_on_one_file_share_its_leases() {
+    use glave_ports::{Holder, Leased, Leases as _};
+    let (_dir, path) = temp_db("leases");
+    block_on!(async {
+        let first = Store::open(&path, file_keys(&path), objects())
+            .await
+            .unwrap();
+        let second = Store::open(&path, file_keys(&path), objects())
+            .await
+            .unwrap();
+        let org = glave_ports::OrgId::from_uuid(Uuid::from_u128(1));
+        let (one, two) = (
+            Holder::from_uuid(Uuid::from_u128(2)),
+            Holder::from_uuid(Uuid::from_u128(3)),
+        );
+        let hour = std::time::Duration::from_secs(3_600);
+        let (leases_one, leases_two) = (first.leases(), second.leases());
+        let racing = |leases: SqliteLeases, holder| {
+            tokio::spawn(async move { leases.acquire(org, Leased::Scheduler, holder, hour).await })
+        };
+        let (a, b) = (
+            racing(leases_one.clone(), one),
+            racing(leases_two.clone(), two),
+        );
+        let (a, b) = (a.await.unwrap().unwrap(), b.await.unwrap().unwrap());
+        assert!(a.is_some() != b.is_some(), "one of {a:?} and {b:?}");
+        let (won, lost, loser) = match (a, b) {
+            (Some(lease), None) => (lease, &leases_two, two),
+            (None, Some(lease)) => (lease, &leases_one, one),
+            _ => unreachable!(),
+        };
+        let again = lost.acquire(org, Leased::Scheduler, loser, hour).await;
+        assert_eq!(again, Ok(None), "held through the other connection");
+        let winner = if won.holder == one {
+            &leases_one
+        } else {
+            &leases_two
+        };
+        winner.release(&won).await.unwrap();
+        let after = lost.acquire(org, Leased::Scheduler, loser, hour).await;
+        assert!(
+            after.unwrap().is_some(),
+            "let go, it is the other's to take"
+        );
+    });
+}

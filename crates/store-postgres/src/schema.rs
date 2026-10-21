@@ -8,7 +8,7 @@ use crate::store::{StoreError, describe};
 
 /// The schema this build makes and reads. Bumped whenever [`SCHEMA`] changes. It starts past
 /// every version the migrations it replaced wrote, so a database one of them made is refused.
-pub(crate) const VERSION: i32 = 13;
+pub(crate) const VERSION: i32 = 14;
 
 /// Every table, made in one transaction in a new database.
 const SCHEMA: &str = "
@@ -135,6 +135,16 @@ const SCHEMA: &str = "
     CREATE TABLE glave_settings (
         key    text PRIMARY KEY,
         value  text NOT NULL
+    );
+
+    -- Work in flight (`glave_ports::Leases`): what each lease keeps (`Leased::key`), in an
+    -- organization, its holder, and when it lapses, in milliseconds on the database's clock.
+    CREATE TABLE leases (
+        org      uuid   NOT NULL,
+        key      text   NOT NULL,
+        holder   uuid   NOT NULL,
+        expires  bigint NOT NULL,
+        PRIMARY KEY (org, key)
     );
 
     -- Keyword search over conversations (`specs/memory.md`, \"Recall\"): the words of each

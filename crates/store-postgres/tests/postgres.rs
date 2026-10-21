@@ -112,6 +112,66 @@ fn the_log_passes_the_search_conformance_suite() {
 }
 
 #[test]
+fn the_leases_pass_the_leases_conformance_suite() {
+    block_on!(async {
+        let Some(scratch) = Scratch::new("leases").await else {
+            return;
+        };
+        let store = scratch.store().await.unwrap();
+        let verdict = conformance::leases(&store.leases()).await;
+        drop(store);
+        scratch.drop_schema().await;
+        assert_eq!(verdict, Ok(()));
+    });
+}
+
+/// Servers on one database, each through its own pool, racing for one lease: one gets it, the
+/// rest see it held until it is let go.
+#[test]
+fn servers_on_one_database_racing_for_a_lease_leave_it_with_one() {
+    use glave_ports::{Holder, Leased, Leases as _};
+    block_on!(async {
+        let Some(scratch) = Scratch::new("racing_leases").await else {
+            return;
+        };
+        let mut servers = Vec::new();
+        for _ in 0..4 {
+            servers.push(scratch.store().await.unwrap().leases());
+        }
+        let org = OrgId::from_uuid(Uuid::from_u128(1));
+        let hour = std::time::Duration::from_secs(3_600);
+        let racing: Vec<_> = servers
+            .iter()
+            .enumerate()
+            .map(|(n, leases)| {
+                let leases = leases.clone();
+                let holder = Holder::from_uuid(Uuid::from_u128(10 + n as u128));
+                tokio::spawn(
+                    async move { leases.acquire(org, Leased::Scheduler, holder, hour).await },
+                )
+            })
+            .collect();
+        let mut won = Vec::new();
+        for race in racing {
+            if let Some(lease) = race.await.unwrap().unwrap() {
+                won.push(lease);
+            }
+        }
+        let late = Holder::from_uuid(Uuid::from_u128(99));
+        let held = servers[0].acquire(org, Leased::Scheduler, late, hour).await;
+        if let Some(lease) = won.first() {
+            servers[1].release(lease).await.unwrap();
+        }
+        let after = servers[2].acquire(org, Leased::Scheduler, late, hour).await;
+        drop(servers);
+        scratch.drop_schema().await;
+        assert_eq!(won.len(), 1, "{won:?}");
+        assert_eq!(held, Ok(None));
+        assert!(after.unwrap().is_some(), "let go, it is anyone's");
+    });
+}
+
+#[test]
 fn the_blobs_pass_the_blob_store_conformance_suite() {
     block_on!(async {
         let Some(scratch) = Scratch::new("blobs").await else {

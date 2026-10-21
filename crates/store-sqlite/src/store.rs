@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use crate::blobs::SqliteBlobs;
 use crate::keys::SqliteKeys;
+use crate::leases::SqliteLeases;
 use crate::log::SqliteLog;
 use crate::projects::SqliteProjects;
 use crate::schema;
@@ -135,6 +136,11 @@ impl Store {
     /// The projects: their records, members, and the folders that lead to them.
     pub fn projects(&self) -> SqliteProjects {
         SqliteProjects::new(Arc::clone(&self.connection))
+    }
+
+    /// The leases work in flight runs under, on this file's clock.
+    pub fn leases(&self) -> SqliteLeases {
+        SqliteLeases::new(Arc::clone(&self.connection))
     }
 
     /// The one organization on this computer, made with the id `new` the first time.
