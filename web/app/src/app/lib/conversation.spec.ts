@@ -13,6 +13,7 @@ import {
   questionsOf,
   stepsAfter,
   threadItems,
+  trimBlankLines,
   withResults,
 } from './conversation';
 
@@ -46,6 +47,21 @@ describe('conversation', () => {
       ]),
     ).toEqual({ text: 'Hello\nthere', reasoning: 'thinking' });
     expect(partsText(undefined)).toEqual({ text: '', reasoning: '' });
+  });
+
+  it('leaves out the blank lines at the ends of text, which would draw as empty space', () => {
+    expect(trimBlankLines('\n \nThe lock\n\nis taken twice.\n\n')).toBe(
+      'The lock\n\nis taken twice.',
+    );
+    expect(trimBlankLines('\r\n    at parse (src/parse.rs)\n')).toBe('    at parse (src/parse.rs)');
+    expect(trimBlankLines(' \n\n')).toBe('');
+    expect(
+      partsText([
+        { type: 'reasoning', text: 'Weighing it.\n\n' },
+        { type: 'reasoning', text: '\n' },
+        { type: 'text', text: 'test result: ok\n\n' },
+      ]),
+    ).toEqual({ text: 'test result: ok', reasoning: 'Weighing it.' });
   });
 
   it("shows the person's own words, not what glave opened the thread with", () => {

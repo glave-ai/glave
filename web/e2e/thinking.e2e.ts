@@ -10,7 +10,7 @@ import {
   letThink,
   thinkingTurn,
 } from './fake-thinking';
-import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './support';
+import { SIGNED_IN, byTestId, expectAccessible, expectEven, watchForProblems } from './support';
 
 /** A smithy's word, which the working line says while the model thinks. */
 const SMITHY =
@@ -213,4 +213,41 @@ test('the working line moves again once the person no longer asks for less motio
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   // The mark breathes and the line shimmers.
   await expect.poll(animations).toBe(2);
+});
+
+test('opened, the thinking, the steps and a step’s output sit evenly in their blocks', async ({
+  page,
+}) => {
+  // Still, so each block is measured as it rests.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await fakeApi(page);
+  await thinkingTurn(page);
+  await ask(page);
+  await letThink(page, 'start');
+  await letThink(page, 'tool');
+
+  // The model's thinking ends in a blank line, which its rule does not run on beside, as it
+  // streams and once recorded.
+  await letThink(page, 'think');
+  const live = byTestId(page, 'thread-reply').getByTestId('thread-reasoning-text');
+  await expect(live).toHaveText(THINKING.join('').trim());
+  await expectEven(live);
+  await letThink(page, 'answer');
+  await expect(byTestId(page, 'thread-composer-stop')).toHaveCount(0);
+  const reply = byTestId(page, 'thread-message').last();
+  await reply.getByTestId('thread-reasoning-summary').click();
+  await expectEven(reply.getByTestId('thread-reasoning-text'));
+
+  // A step's output ends in a blank line too, which its box leaves out; the steps' rule runs
+  // from the first step's line to the end of the last one's output.
+  const steps = byTestId(page, 'thread-steps').last();
+  await steps.getByTestId('thread-steps-summary').click();
+  await steps.getByTestId('thread-receipt-summary').click();
+  const output = steps.getByTestId('thread-output');
+  await expect(output).toBeVisible();
+  await expectEven(output);
+  await expectEven(
+    steps.getByTestId('thread-steps-steps'),
+    steps.getByTestId('thread-receipt-summary').or(output),
+  );
 });

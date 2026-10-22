@@ -11,7 +11,7 @@ import { testIds } from '../../lib/test-ids';
 import { glzText } from '../../lib/words';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
-const PARTS = { summary: 'summary' } as const;
+const PARTS = { summary: 'summary', text: 'text' } as const;
 
 /**
  * The model's reasoning, collapsed under one line until the person opens it: a native

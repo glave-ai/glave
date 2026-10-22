@@ -25,6 +25,9 @@ describe('GlzReasoningComponent', () => {
     const summary = root.querySelector('[data-testid="reasoning-summary"]');
     expect(details?.open).toBe(false);
     expect(summary?.textContent).toBe('Thinking…');
+    expect(root.querySelector('[data-testid="reasoning-text"]')?.textContent).toBe(
+      'Weighing it up',
+    );
     fixture.componentInstance.streaming.set(false);
     await fixture.whenStable();
     expect(summary?.textContent).toBe('Reasoning');

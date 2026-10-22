@@ -16,6 +16,7 @@ import {
   formatDuration,
 } from '@glave/glaze';
 
+import { trimBlankLines } from '../../lib/conversation';
 import type { TurnResults } from '../../lib/results';
 import { runningFor } from '../../lib/when';
 import { clock } from '../../services/clock';
@@ -88,6 +89,8 @@ export class TurnComponent {
     const settles = this.settles();
     return this.changed() ? { settles } : null;
   });
+  /** The reasoning streaming in, without the blank lines at its ends. */
+  protected readonly reasoning = computed(() => trimBlankLines(this.turn().live?.reasoning ?? ''));
   /** Whether the model is still thinking: its reasoning streams, and no answer yet. */
   protected readonly thinking = computed(() => this.turn().live?.text === '');
   /** Open while the model thinks, folded once it answers; the person may change it meanwhile. */

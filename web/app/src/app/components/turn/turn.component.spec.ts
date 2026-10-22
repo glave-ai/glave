@@ -228,7 +228,7 @@ describe('TurnComponent', () => {
     const thinking = { ...RESULTS, reply: null, waiting: [] };
     fixture.componentRef.setInput('turn', {
       ...thinking,
-      live: { text: '', reasoning: 'The lock is taken twice.' },
+      live: { text: '', reasoning: '\nThe lock is taken twice.\n\n' },
     });
     await fixture.whenStable();
     const root = fixture.nativeElement as HTMLElement;
@@ -239,6 +239,10 @@ describe('TurnComponent', () => {
     expect(root.querySelector('[data-testid="thread-working"]')).toBeNull();
     expect(details()?.open).toBe(true);
     expect(summary()).toBe('Thinking…');
+    // Drawn as written, but for the blank lines at its ends.
+    expect(root.querySelector('[data-testid="thread-reasoning-text"]')?.textContent).toBe(
+      'The lock is taken twice.',
+    );
     await expectAccessible(root);
     fixture.componentRef.setInput('turn', {
       ...thinking,

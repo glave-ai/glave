@@ -79,14 +79,22 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-/** The text and reasoning of a list of content parts. */
+/**
+ * `text` without the blank lines at its start and its end, which text drawn as it was written
+ * would show as empty space in what holds it; the first line keeps its indent.
+ */
+export function trimBlankLines(text: string): string {
+  return text.replace(/^(?:[^\S\n]*\n)+/u, '').trimEnd();
+}
+
+/** The text and reasoning of a list of content parts, each without blank lines at its ends. */
 export function partsText(parts: unknown): { readonly text: string; readonly reasoning: string } {
   const list = Array.isArray(parts) ? (parts as readonly unknown[]) : [];
   const of = (type: string): string =>
     list
       .filter(isRecord)
       .filter((part) => part['type'] === type)
-      .map((part) => text(part['text']))
+      .map((part) => trimBlankLines(text(part['text'])))
       .filter((part) => part !== '')
       .join('\n');
   return { text: of('text'), reasoning: of('reasoning') };

@@ -149,6 +149,51 @@ export async function shownOpacity(locator: Locator): Promise<number> {
   });
 }
 
+/**
+ * How far apart the space above and below may be in `expectEven`: Chromium sets a line's letters
+ * up to about a pixel off the middle of the line, rounding the font's height.
+ */
+const EVEN = 1.5;
+
+/**
+ * Fails unless `box` holds what it shows evenly, so a rule beside it or a fill under it ends
+ * where what it holds does (#610): as much space inside it above the first line of its text as
+ * below the last (the letters themselves, blank lines and spaces at the text's ends drawing
+ * nothing), or, given `items`, above the first of them as below the last.
+ */
+export async function expectEven(box: Locator, items?: Locator): Promise<void> {
+  const outer = await box.evaluate((element) => {
+    const { top, bottom } = element.getBoundingClientRect();
+    return { top, bottom };
+  });
+  const held =
+    items === undefined
+      ? await box.evaluate((element) => {
+          const letters: DOMRect[] = [];
+          const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+          for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+            const text = node.textContent ?? '';
+            const start = text.search(/\S/u);
+            if (start >= 0 && node.parentElement?.checkVisibility() === true) {
+              const range = document.createRange();
+              range.setStart(node, start);
+              range.setEnd(node, text.trimEnd().length);
+              letters.push(...range.getClientRects());
+            }
+          }
+          return {
+            top: Math.min(...letters.map((line) => line.top)),
+            bottom: Math.max(...letters.map((line) => line.bottom)),
+          };
+        })
+      : {
+          top: await items.first().evaluate((item) => item.getBoundingClientRect().top),
+          bottom: await items.last().evaluate((item) => item.getBoundingClientRect().bottom),
+        };
+  const space = { above: held.top - outer.top, below: outer.bottom - held.bottom };
+  expect(Math.abs(space.above - space.below), JSON.stringify(space)).toBeLessThan(EVEN);
+}
+
 /** A box on the screen, as Playwright measures it. */
 interface Box {
   readonly x: number;

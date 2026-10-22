@@ -24,14 +24,14 @@
     data-testid="thread-reply"
     [author]="copy.reply"
   >
-    @if (live.reasoning) {
+    @if (reasoning()) {
       <glz-reasoning
         testId="thread-reasoning"
         [streaming]="thinking()"
         [label]="copy.reasoning"
         [thinkingLabel]="copy.thinking"
         [(open)]="reasoningOpen"
-        >{{ live.reasoning }}</glz-reasoning
+        >{{ reasoning() }}</glz-reasoning
       >
     }
     <div testId="thread-markdown" streaming [glzMarkdown]="live.text"></div>
