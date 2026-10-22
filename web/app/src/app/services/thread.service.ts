@@ -121,10 +121,7 @@ export class ThreadService {
     const thread = this.id();
     return thread === null ? null : this.firstTurns.of(thread);
   });
-  /**
-   * Whether a turn runs in the thread: one this view follows, one anyone else started, or the
-   * first one, on its way.
-   */
+  /** Whether a turn runs: one this view follows, anyone's, or the first one, on its way. */
   readonly busy = computed(
     () => this.following() > 0 || this.running() || this.firstTurn()?.failed === null,
   );
@@ -153,10 +150,7 @@ export class ThreadService {
     placeOf(this.events(), { local: this.session.local(), mac: this.mac }),
   );
 
-  /**
-   * A first turn the server refused, saying why: its message goes back in the box with the
-   * reason, as one sent here does, and if a turn seemed to run, whether one does is read again.
-   */
+  /** A first turn the server refused, saying why: back in the box, as one sent here goes. */
   protected readonly refused = effect(() => {
     const thread = this.id();
     const first = this.firstTurn();
@@ -370,7 +364,6 @@ export class ThreadService {
       }
     }
     try {
-      // Each send its own key, so whatever repeats the request, the server starts one turn.
       const keyed = { ...params, _meta: { idempotency_key: idempotencyKey() } };
       const turn = this.session.stream('turn/start', keyed, controller.signal);
       let next = await turn.next();
