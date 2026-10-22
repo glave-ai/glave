@@ -1,11 +1,14 @@
 name: budgets
 
-# The performance budgets in AGENTS.md, set in crates/cli/benches/budgets.rs and measured on the
-# release build of every pull request, in the merge queue, after every merge to main, weekly,
-# and on demand: the binary as it ships, with the web app inside (the `web` feature). The
-# release build is what costs (about 8 minutes, beside ci.yml's jobs); measuring takes seconds.
-# The numbers are wall-clock, but the budgets have room enough that a busy runner does not trip
-# them; a real regression does.
+# The performance budgets in AGENTS.md, set in crates/cli/benches/budgets.rs and measured on
+# every pull request, in the merge queue, after every merge to main, weekly, and on demand.
+# The binary's size and the answered command are measured on the build that ships: glave for
+# x86-64 Linux as the release builds it (dist-workspace.toml), static with musl, in the dist
+# profile, with the web app inside. The benchmark is built for musl too, so the thread it
+# resumes runs on musl's allocator, as a released glave's does. The optimized builds are what
+# cost (the release's, then the benchmark's, about 5 minutes each, which makes this the
+# slowest check); measuring takes seconds. The numbers are wall-clock, but the budgets have
+# room enough that a busy runner does not trip them; a real regression does.
 on:
   push:
     branches: [main]
@@ -25,17 +28,31 @@ concurrency:
 
 env:
   CARGO_INCREMENTAL: "0"
+  # What the release builds glave for on x86-64 Linux (dist-workspace.toml, `targets`).
+  TARGET: x86_64-unknown-linux-musl
 
 jobs:
   budgets:
-    runs-on: ubuntu-latest
+    # The runner the release builds x86-64 Linux on (dist's plan), so its C compiler and musl.
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
-      - name: Install the pinned toolchain (rust-toolchain.toml)
-        run: rustup toolchain install
-      # Saved from main only, as in ci.yml: per-PR copies would fill the repository's cache.
+      - name: Install the pinned toolchain (rust-toolchain.toml), with musl's standard library
+        run: |
+          rustup toolchain install
+          rustup target add "$TARGET"
+      # The C in glave's dependencies is compiled for musl with musl's own compiler wrapper, as
+      # the release build installs it.
+      - name: Install musl-gcc
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q musl-tools
+      # Saved from main only, as in ci.yml: per-PR copies would fill the repository's cache. Its
+      # key names the target: a cache saved under the old key, without these builds, would match
+      # exactly, and one that matches is never saved again.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
+          key: ${{ env.TARGET }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: actions/setup-node@v7
         with:
@@ -45,4 +62,14 @@ jobs:
       - name: Build the web app, which the binary carries
         run: npm ci && npm run build
         working-directory: web
-      - run: cargo xtask bench --bench budgets --features glave/web
+      # As dist builds it: the glave package alone (`precise-builds`), with its `web` feature
+      # (crates/cli/Cargo.toml, [package.metadata.dist]), in the dist profile, with the flags
+      # dist sets for a musl target (today's defaults, which dist keeps in case they change).
+      - name: Build glave as the release does
+        run: cargo build --profile dist --target "$TARGET" -p glave --features web
+        env:
+          RUSTFLAGS: -Ctarget-feature=+crt-static -Clink-self-contained=yes
+      - name: Measure it
+        run: cargo xtask bench --bench budgets --features glave/web --target "$TARGET"
+        env:
+          GLAVE_BUDGETS_BINARY: ${{ github.workspace }}/target/${{ env.TARGET }}/dist/glave
