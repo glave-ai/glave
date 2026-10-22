@@ -1,7 +1,7 @@
 //! Listing an account's models: when the person adds it, so a key that does not work is
 //! refused at once with what to do, and again whenever its catalog is refreshed. The models
 //! glave offers come from the answer, each as the listing describes it: newest first, only
-//! those it can talk with, at most a thousand.
+//! the language models it can talk with, at most a thousand.
 
 use std::cmp::Reverse;
 use std::time::Duration;
@@ -10,6 +10,7 @@ use glave_event::{CatalogModel, ProviderKind};
 use glave_ports::ProviderError;
 use serde_json::Value;
 
+use super::card::modalities;
 use crate::config::Endpoint;
 use crate::model::Model;
 
@@ -22,7 +23,13 @@ const MOST: usize = 1_000;
 /// The longest model id kept, in bytes, as the harness allows.
 const LONGEST_ID: usize = 255;
 
-/// Words in the ids of models that do not chat: speech, images, embeddings and the like.
+/// What a model mainly gives out when it is no language model, though it may give text too:
+/// an image, speech, a video or an embedding, as a listing's `output_modalities` name them.
+const NOT_LANGUAGE: &[&str] = &["audio", "embedding", "embeddings", "image", "video"];
+
+/// Words in the ids of models that do not chat: speech, images, embeddings and the like. Only
+/// for a listing that says nothing of what a model gives out, as OpenAI's own `/models` and
+/// Ollama's: where a listing says (`language`), it is surer than a name, which can mislead.
 const NOT_CHAT: &[&str] = &[
     "audio",
     "babbage",
@@ -95,11 +102,12 @@ pub(super) fn offered(kind: ProviderKind, listing: &Value) -> Vec<CatalogModel> 
     models
 }
 
-/// Whether glave can talk with `id` at `kind`, as far as the listing tells: OpenRouter says
-/// which models take tools; OpenAI lists speech, image and embedding models beside chat ones.
+/// Whether glave can talk with `id` at `kind`, as far as the listing tells: a language model
+/// (`language`), which at OpenRouter must say it takes tools, and at OpenAI is one of its chat
+/// models by its name's beginning.
 fn chats(kind: ProviderKind, id: &str, model: &Value) -> bool {
     let lower = id.to_ascii_lowercase();
-    if NOT_CHAT.iter().any(|word| lower.contains(word)) {
+    if !language(&lower, model) {
         return false;
     }
     match kind {
@@ -114,6 +122,20 @@ fn chats(kind: ProviderKind, id: &str, model: &Value) -> bool {
             .is_some_and(|parameters| parameters.iter().any(|p| p == "tools")),
         ProviderKind::Anthropic | ProviderKind::Compatible => true,
     }
+}
+
+/// Whether the model is a language model, by what the listing says it takes in and gives out:
+/// text in (images in too, which is how glave shows a model the screen), and text out with
+/// nothing an image, speech or embedding model mainly gives. A listing that says nothing of
+/// what it gives out leaves it to the model's lowercased id, `lower` (`NOT_CHAT`).
+fn language(lower: &str, model: &Value) -> bool {
+    let has = |modalities: &[Value], wanted: &str| modalities.iter().any(|m| m == wanted);
+    let takes_text = modalities(model, "input_modalities").is_none_or(|input| has(input, "text"));
+    let gives_text = match modalities(model, "output_modalities") {
+        Some(output) => has(output, "text") && !NOT_LANGUAGE.iter().any(|other| has(output, other)),
+        None => !NOT_CHAT.iter().any(|word| lower.contains(word)),
+    };
+    takes_text && gives_text
 }
 
 /// When the model was released, in seconds, as the listing says: `created` (OpenAI and
@@ -164,6 +186,44 @@ mod tests {
             {"id": "c/unknown", "created": 4},
         ]});
         assert_eq!(ids(ProviderKind::Openrouter, &listing), ["a/talks"]);
+    }
+
+    #[test]
+    fn openrouter_offers_language_models_by_what_each_takes_in_and_gives_out() {
+        // As OpenRouter's `/models` lists them, cut to what decides.
+        let model = |id: &str, input: &[&str], output: &[&str]| {
+            json!({
+                "id": id,
+                "created": 1,
+                "architecture": {"input_modalities": input, "output_modalities": output},
+                "supported_parameters": ["tools", "tool_choice", "max_tokens"],
+            })
+        };
+        let listing = json!({"data": [
+            // Makes images, though it gives text too and takes tools: left out, whatever its
+            // name says.
+            model("google/gemini-2.5-flash-image", &["image", "text"], &["image", "text"]),
+            model("acme/painter", &["text"], &["text", "image"]),
+            // Speaks, or gives embeddings: left out.
+            model("openai/gpt-4o-audio-preview", &["text", "audio"], &["text", "audio"]),
+            model("openai/text-embedding-3-small", &["text"], &["embeddings"]),
+            // Reads images and files and writes text: kept, as is one whose name the old rule
+            // refused.
+            model("anthropic/claude-sonnet-4.5", &["text", "image", "file"], &["text"]),
+            model("acme/image-describer", &["image", "text"], &["text"]),
+            // Takes no text in.
+            model("acme/listener", &["audio"], &["text"]),
+        ]});
+        assert_eq!(
+            ids(ProviderKind::Openrouter, &listing),
+            ["anthropic/claude-sonnet-4.5", "acme/image-describer"]
+        );
+        // A listing that says nothing of what a model gives out leaves it to the name.
+        let unsaid = json!({"data": [
+            {"id": "a/embed-small", "supported_parameters": ["tools"]},
+            {"id": "a/chat", "supported_parameters": ["tools"]},
+        ]});
+        assert_eq!(ids(ProviderKind::Openrouter, &unsaid), ["a/chat"]);
     }
 
     #[test]
