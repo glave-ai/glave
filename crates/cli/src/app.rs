@@ -2,8 +2,8 @@
 //! `jupyter lab` open theirs (`specs/one-server.md`, "The CLI as a client"). It opens the
 //! person's server, started in the background first when it is not running and someone is at
 //! the terminal, at this folder's project (asking once when the folder is new), at the
-//! person's Chats in the home folder, or with `--continue` at the newest thread there. With no
-//! model set up yet, the app adds one first.
+//! person's Chats in the home folder or when they would not make the folder a project, or with
+//! `--continue` at the newest thread there. With no model set up yet, the app adds one first.
 //!
 //! The browser is sent to a sign-in link, whose one-time code the server gives glave over its
 //! socket, through a page in glave's folder, readable only by you, as Jupyter does, so the
@@ -72,8 +72,9 @@ pub(crate) fn redirect(link: &str) -> String {
 }
 
 /// `glave` alone, or `glave -c` alone: opens the person's server in the browser at this
-/// folder's project, or the newest thread there, starting the server first when it is not
-/// running and someone is at the terminal.
+/// folder's project (the person's Chats when they would not make it one), or the newest
+/// thread there, starting the server first when it is not running and someone is at the
+/// terminal.
 pub(crate) async fn open(args: &Args) -> anyhow::Result<ExitCode> {
     let Some(server) = crate::server::connect_or_start().await? else {
         bail!("glave opens in your browser when you run it from a terminal: run glave in one");
@@ -82,11 +83,16 @@ pub(crate) async fn open(args: &Args) -> anyhow::Result<ExitCode> {
     let folder = std::env::current_dir()?;
     let input = Input::start();
     let terminal = crate::server::at_terminal();
-    let page = match crate::turns::here(session, &folder, terminal, &input).await? {
-        Here::Declined => return Ok(ExitCode::SUCCESS),
-        Here::Project(project) => page(session, Some(project), args.resume).await?,
-        Here::Chats => page(session, None, args.resume).await?,
+    let project = match crate::turns::here(session, &folder, terminal, &input).await? {
+        Here::Project(project) => Some(project),
+        Here::Chats => None,
+        // The person wanted glave open, if not this folder as a project.
+        Here::Declined => {
+            eprintln!("glave: opening your Chats; this folder stays as it is");
+            None
+        }
     };
+    let page = page(session, project, args.resume).await?;
     let Reply::Link { code } = server.request(Request::SigninLink {}).await? else {
         bail!("glave answered signin/link with something else");
     };

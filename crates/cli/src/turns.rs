@@ -25,7 +25,7 @@ pub(crate) enum Here {
     Project(ProjectId),
     /// The person's Chats: the home folder, the folders above it, the temporary folder.
     Chats,
-    /// The person said not to make the folder a project: nothing runs.
+    /// The person said not to make the folder a project: it stays as it is.
     Declined,
 }
 
@@ -42,7 +42,11 @@ pub(crate) async fn run(
     let project = match here(session, &folder, terminal, &input).await? {
         Here::Project(project) => Some(project),
         Here::Chats => None,
-        Here::Declined => return Ok(ExitCode::SUCCESS),
+        // The turn was asked for in this folder, and has nowhere else to work.
+        Here::Declined => {
+            eprintln!("glave: nothing was made, and nothing ran");
+            return Ok(ExitCode::SUCCESS);
+        }
     };
     let summary = thread(session, project, args).await?;
     if terminal && let Some(ask) = &summary.trust {
@@ -109,7 +113,6 @@ pub(crate) async fn here(
         eprint!("Make {} a glave project? [y/N] ", shown(&root));
         crate::terminal::flush();
         if !yes(input.line().await) {
-            eprintln!("glave: nothing was made, and nothing ran");
             return Ok(Here::Declined);
         }
     }
