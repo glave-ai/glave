@@ -28,7 +28,6 @@ import { askedTurns } from '../../lib/turns';
 import { AttachmentsService } from '../../services/attachments.service';
 import { effortToSend } from '../../lib/effort';
 import { CommandsService } from '../../services/commands.service';
-import { FirstTurnService } from '../../services/first-turn.service';
 import { ModelsService } from '../../services/models.service';
 import { ProjectsService } from '../../services/projects.service';
 import { ThreadService } from '../../services/thread.service';
@@ -109,7 +108,6 @@ export class ThreadComponent {
       ? null
       : $localize`:@@thread.failed:Something went wrong: ${error}:ERROR:`;
   });
-  private readonly firstTurns = inject(FirstTurnService);
   /** Whether the thread's first message, sent from the new chat, got no answer: it may go again. */
   protected readonly lost = computed(() => this.service.firstTurn()?.failed === 'lost');
   private readonly panel = inject(ToolsPanelService);
@@ -211,11 +209,6 @@ export class ThreadComponent {
     const effort = effortToSend(this.pickedEffort(), this.service.chosenEffort(), info);
     void this.service.send(text, model, mode, this.attachments.attached(), effort);
     this.attachments.clear();
-  }
-
-  /** Sends the first message again, with its key: the server starts its turn once. */
-  protected sendAgain(): void {
-    this.firstTurns.again(this.thread());
   }
 
   protected stop(): void {

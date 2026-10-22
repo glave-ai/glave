@@ -155,7 +155,7 @@ export class ThreadService {
 
   /**
    * A first turn the server refused, saying why: its message goes back in the box with the
-   * reason, as one sent here does, and the thread is read again, as the server may have held it.
+   * reason, as one sent here does, and if a turn seemed to run, whether one does is read again.
    */
   protected readonly refused = effect(() => {
     const thread = this.id();
@@ -166,6 +166,7 @@ export class ThreadService {
     }
     untracked(() => {
       this.firstTurns.forget(thread);
+      this.afters.update((afters) => afters.filter((after) => after !== 0));
       this.failed.set(failed.said);
       this.composer.update((draft) => together([first.params.prompt, draft].filter(Boolean)));
       void this.resync(thread);
@@ -203,7 +204,8 @@ export class ThreadService {
     this.forgetLive();
     this.waiting.set([]);
     this.asking.set(null);
-    this.afters.set([]);
+    // A first turn the new chat sent is asked for from the thread's start, keyed so from then on.
+    this.afters.set(this.firstTurns.of(thread) === null ? [] : [0]);
     this.givenBack = [];
     this.stopped = false;
     this.stoppedAt = null;
@@ -266,6 +268,8 @@ export class ThreadService {
     if (thread === null) {
       return;
     }
+    // A first message that got no answer goes first, so it is neither lost nor sent twice.
+    this.sendAgain();
     if (this.busy()) {
       this.sentWhileRunning += 1;
       const key = `queued-${String(this.sentWhileRunning)}`;
@@ -282,6 +286,14 @@ export class ThreadService {
       ...(effort === null ? {} : { effort }),
     };
     await this.follow(thread, params, null);
+  }
+
+  /** Sends the thread's first message again, with its key, when it got no answer. */
+  sendAgain(): void {
+    const thread = this.id();
+    if (thread !== null && this.firstTurn()?.failed === 'lost') {
+      this.firstTurns.again(thread);
+    }
   }
 
   /** Stops the running turn; what the person sent meanwhile and the model never read is sent next. */

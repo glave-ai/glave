@@ -1,5 +1,5 @@
 import { Service, inject, signal } from '@angular/core';
-import { ApiError, type ThreadId, type TurnStartParams } from '@glave/client';
+import { ApiError, ErrorCode, type ThreadId, type TurnStartParams } from '@glave/client';
 
 import { idempotencyKey } from '../lib/idempotency';
 import { SessionService } from './session.service';
@@ -59,7 +59,14 @@ export class FirstTurnService {
     try {
       await this.session.stream('turn/start', params, controller.signal).next();
     } catch (error: unknown) {
-      keep({ ...turn, failed: error instanceof ApiError ? { said: error.message } : 'lost' });
+      // Refused only when the server said why; a stream cut short may have reached it.
+      const said =
+        error instanceof ApiError &&
+        error.code !== ErrorCode.INTERNAL &&
+        error.code !== ErrorCode.PARSE;
+      if (this.turns().has(turn.params.thread)) {
+        keep({ ...turn, failed: said ? { said: error.message } : 'lost' });
+      }
     } finally {
       // The turn goes on in the server, and the thread's page follows it there.
       controller.abort();

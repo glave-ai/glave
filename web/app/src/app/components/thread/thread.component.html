@@ -57,7 +57,12 @@
         @if (lost()) {
           <div class="error glz-row glz-gap-3" role="alert" data-testid="thread-lost">
             {{ copy.lost }}
-            <button glzButton size="sm" data-testid="thread-send-again" (click)="sendAgain()">
+            <button
+              glzButton
+              size="sm"
+              data-testid="thread-send-again"
+              (click)="service.sendAgain()"
+            >
               {{ copy.again }}
             </button>
           </div>

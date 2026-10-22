@@ -115,6 +115,43 @@ describe('ThreadService', () => {
     ]);
   });
 
+  it('shows the first turn the new chat sent until its record arrives, a message waiting behind it', async () => {
+    const watch = new FakeTurn();
+    const fake = new FakeSession()
+      .answer('thread/events', { events: [] })
+      .turn(new FakeTurn())
+      .turn({ queued: { id: 'event-9' } })
+      .watch(watch);
+    TestBed.configureTestingModule({ providers: [...provideFakeSession(fake), ThreadService] });
+    const firstTurns = TestBed.inject(FirstTurnService);
+    firstTurns.start({ thread: 'thread-1', prompt: 'Plan' });
+    const service = TestBed.inject(ThreadService);
+    await service.open('thread-1');
+    expect([service.starting(), service.busy()]).toEqual(['Plan', true]);
+    // Sent while the first turn is prepared, it waits for the model rather than coming back.
+    await service.send('and the tests');
+    expect(service.queued().map((message) => message.text)).toEqual(['and the tests']);
+    expect(service.composer()).toBe('');
+    watch.send(said(1, 'Plan'));
+    await settled();
+    expect([service.starting(), firstTurns.of('thread-1')]).toEqual([null, null]);
+  });
+
+  it('lets go of a first turn whose record is there as the thread opens', async () => {
+    const asked = event(1, 'message.added', {
+      role: 'user',
+      parts: [{ type: 'text', text: 'Plan' }],
+    });
+    const fake = new FakeSession()
+      .answer('thread/events', { events: [asked] })
+      .turn(new FakeTurn());
+    TestBed.configureTestingModule({ providers: [...provideFakeSession(fake), ThreadService] });
+    const firstTurns = TestBed.inject(FirstTurnService);
+    firstTurns.start({ thread: 'thread-1', prompt: 'Plan' });
+    await TestBed.inject(ThreadService).open('thread-1');
+    expect(firstTurns.of('thread-1')).toBeNull();
+  });
+
   it('puts a first turn the server refused back in the box, saying why', async () => {
     const full = new ApiError({ code: ErrorCode.QUEUE_FULL, message: 'Too many are waiting' });
     const fake = new FakeSession().answer('thread/events', { events: [] }).turn(full);
