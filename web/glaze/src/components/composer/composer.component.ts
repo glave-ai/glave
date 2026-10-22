@@ -46,10 +46,10 @@ export type GlzComposerSize = 'md' | 'lg';
  * line at that width.
  *
  * Enter sends and Shift+Enter starts a new line (Cmd or Ctrl with Enter sends too), and `send`
- * emits the draft, trimmed, and empties the box, unless `keepSent` leaves it for the app. While
- * the model is answering (`busy`), Stop takes Send's place, and Escape stops it; the person can
- * go on writing, and sends with Enter, or with Send, which comes back beside Stop once there is
- * something to send, for the app to give the model while it works. A `lg` composer starts a thread: two lines to write in, in larger type, more room
+ * emits the draft, trimmed. While the model is answering (`busy`), Stop takes Send's place,
+ * and Escape stops it; the person can go on writing, and sends with Enter, or with Send, which
+ * comes back beside Stop once there is something to send, for the app to give the model while
+ * it works. A `lg` composer starts a thread: two lines to write in, in larger type, more room
  * round them, rounder corners, and a shadow under it.
  *
  * With an `attachLabel`, a + at the box's start opens the system's file picker, and files
@@ -113,11 +113,6 @@ export class GlzComposerComponent {
   readonly attached = input(0);
   /** Whether a file is still on its way: Send waits for it. */
   readonly waiting = input(false, { transform: booleanAttribute });
-  /**
-   * Leaves what was sent in the box, for an app that holds it there (`disabled`) until it has
-   * gone, then leaves the page or empties the box itself.
-   */
-  readonly keepSent = input(false, { transform: booleanAttribute });
   readonly send = output<string>();
   readonly stop = output();
   /** Files the person added, by the button, pasting or dropping them. */
@@ -151,15 +146,13 @@ export class GlzComposerComponent {
     this.textarea().nativeElement.focus();
   }
 
-  /** Sends the draft, if there is one, and clears it unless told to keep it. */
+  /** Sends the draft, if there is one, and clears it. */
   submit(): void {
     if (!this.canSend()) {
       return;
     }
     this.send.emit(this.value().trim());
-    if (!this.keepSent()) {
-      this.value.set('');
-    }
+    this.value.set('');
   }
 
   protected typed(event: Event): void {

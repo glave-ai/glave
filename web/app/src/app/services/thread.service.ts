@@ -25,7 +25,7 @@ import {
   type Results,
 } from '../lib/conversation';
 import { changedFiles } from '../lib/files';
-import { type Unsent, answerLost, idempotencyKey, sameSend } from '../lib/idempotency';
+import { idempotencyKey } from '../lib/idempotency';
 import { chosenEffort } from '../lib/effort';
 import { chosenModel } from '../lib/models';
 import { placeOf } from '../lib/place';
@@ -34,6 +34,7 @@ import { type Waiting, named, notRead, together } from '../lib/queued';
 import { onApple } from '../lib/shortcuts';
 import { threadTurns, turnRuns } from '../lib/turns';
 import { FIRST_RETRY_MS, LAST_RETRY_MS, cutOff, pause } from '../lib/watching';
+import { FirstTurnService } from './first-turn.service';
 import { SessionService } from './session.service';
 import { ProjectsService } from './projects.service';
 
@@ -48,6 +49,7 @@ import { ProjectsService } from './projects.service';
 export class ThreadService {
   private readonly session = inject(SessionService);
   private readonly projects = inject(ProjectsService);
+  private readonly firstTurns = inject(FirstTurnService);
   private readonly id = signal<ThreadId | null>(null);
   private readonly events = signal<readonly RawEvent[]>([]);
   /** What memory calls' results read to the person, as the server shows them. */
@@ -79,12 +81,6 @@ export class ThreadService {
    */
   private readonly streaming = signal(0);
   private sentWhileRunning = 0;
-  /**
-   * The person's last send, until the server has it or says why not: given back when its answer
-   * was lost, and sent again as it was, it is the same send, with the same key, so the server
-   * starts its turn once.
-   */
-  private unsent: Unsent | null = null;
   private readonly failed = signal<string | null>(null);
   private readonly deciding = signal(false);
   private readonly asked = signal<TrustAsk | null>(null);
@@ -111,13 +107,29 @@ export class ThreadService {
   readonly reply = this.draft.asReadonly();
   /** The step the running turn takes now, in the server's words, while one runs and it said so. */
   readonly step = computed(() => this.doing().at(-1) ?? null);
-  /** Whether a turn runs in the thread: one this view follows, or one anyone else started. */
-  readonly busy = computed(() => this.following() > 0 || this.running());
+  /**
+   * The thread's first turn as the new chat sent it, until the thread holds a message of the
+   * person's: the server's record of it, which is what stays.
+   */
+  readonly firstTurn = computed(() => {
+    const thread = this.id();
+    const first = thread === null ? null : this.firstTurns.of(thread);
+    const recorded = (event: RawEvent): boolean =>
+      event.type === 'message.added' && event.data['role'] === 'user';
+    return first !== null && !this.events().some(recorded) ? first : null;
+  });
+  /**
+   * Whether a turn runs in the thread: one this view follows, one anyone else started, or the
+   * first one, on its way.
+   */
+  readonly busy = computed(
+    () => this.following() > 0 || this.running() || this.firstTurn()?.failed === null,
+  );
   /**
    * What the person sent to start a turn, shown at once as theirs while the server starts the
    * turn, until it records their message; `null` when nothing is on its way.
    */
-  readonly starting = this.asking.asReadonly();
+  readonly starting = computed(() => this.asking() ?? this.firstTurn()?.params.prompt ?? null);
   /** What the composer holds: the person's next message. */
   readonly composer = signal('');
   /** What the person sent while the turn ran that the model has not read yet, oldest first. */
@@ -171,7 +183,6 @@ export class ThreadService {
     this.asking.set(null);
     this.afters.set([]);
     this.givenBack = [];
-    this.unsent = null;
     this.stopped = false;
     this.stoppedAt = null;
     this.running.set(false);
@@ -220,8 +231,7 @@ export class ThreadService {
    * `model`, the turn and the thread's turns after it go to that model; with `approval`, they
    * run in that approval mode; with `effort`, their model reasons that much. While a turn runs,
    * the message goes to it instead, for the model to read at its next step, and waits in the
-   * thread until it has; the model, mode and level go with the next turn. It carries a key made
-   * now, or `unsent`'s when the same text is sent again.
+   * thread until it has; the model, mode and level go with the next turn.
    */
   async send(
     prompt: string,
@@ -234,13 +244,11 @@ export class ThreadService {
     if (thread === null) {
       return;
     }
-    const sendKey = sameSend(prompt, this.unsent)?.key ?? idempotencyKey();
-    this.unsent = { prompt, key: sendKey };
     if (this.busy()) {
       this.sentWhileRunning += 1;
       const key = `queued-${String(this.sentWhileRunning)}`;
       this.waiting.update((waiting) => [...waiting, { key, text: prompt, id: null }]);
-      await this.follow(thread, { thread, prompt, ...withFiles(files) }, key, sendKey);
+      await this.follow(thread, { thread, prompt, ...withFiles(files) }, key);
       return;
     }
     const params: TurnStartParams = {
@@ -251,7 +259,7 @@ export class ThreadService {
       ...(approval === null ? {} : { approval }),
       ...(effort === null ? {} : { effort }),
     };
-    await this.follow(thread, params, null, sendKey);
+    await this.follow(thread, params, null);
   }
 
   /** Stops the running turn; what the person sent meanwhile and the model never read is sent next. */
@@ -303,15 +311,14 @@ export class ThreadService {
   }
 
   /**
-   * Sends `params` with the idempotency key `sendKey` and follows what comes back: a turn of its
-   * own, streamed, or for `queued`, a message the server queued to the turn already running,
-   * answered at once with the id it will be recorded under.
+   * Sends `params` and follows what comes back: a turn of its own, streamed, or for `queued`,
+   * a message the server queued to the turn already running, answered at once with the id it
+   * will be recorded under.
    */
   private async follow(
     thread: ThreadId,
     params: TurnStartParams,
     queued: string | null,
-    sendKey = idempotencyKey(),
   ): Promise<void> {
     const controller = new AbortController();
     this.controllers.add(controller);
@@ -329,13 +336,10 @@ export class ThreadService {
       }
     }
     try {
-      const keyed = { ...params, _meta: { idempotency_key: sendKey } };
+      // Each send its own key, so whatever repeats the request, the server starts one turn.
+      const keyed = { ...params, _meta: { idempotency_key: idempotencyKey() } };
       const turn = this.session.stream('turn/start', keyed, controller.signal);
       let next = await turn.next();
-      // The server has it: the same text sent after this is a send of its own.
-      if (this.unsent?.key === sendKey) {
-        this.unsent = null;
-      }
       if (!next.done) {
         if (!own) {
           own = true;
@@ -354,10 +358,6 @@ export class ThreadService {
         this.keepWaiting(queued, params.prompt, result.queued.id);
       }
     } catch (error: unknown) {
-      // An answer that says why ends the send: the same text sent after it is a new one.
-      if (!answerLost(error) && this.unsent?.key === sendKey) {
-        this.unsent = null;
-      }
       if (folderGone(error)) {
         // The project's folder went since the lists were read: they say so in its place.
         void this.projects.refresh();

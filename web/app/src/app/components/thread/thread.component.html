@@ -54,6 +54,14 @@
         @if (problem(); as problem) {
           <p class="error" role="alert" data-testid="thread-error">{{ problem }}</p>
         }
+        @if (unsent(); as unsent) {
+          <div class="error glz-row glz-gap-3" role="alert" data-testid="thread-unsent">
+            {{ unsent }}
+            <button glzButton size="sm" data-testid="thread-send-again" (click)="sendAgain()">
+              {{ copy.again }}
+            </button>
+          </div>
+        }
       </div>
       @if (gone(); as gone) {
         <app-folder-gone testId="thread-gone" [project]="gone.project" [message]="gone.message" />

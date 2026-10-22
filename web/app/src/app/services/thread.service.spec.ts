@@ -1,13 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 
-import {
-  ApiError,
-  ErrorCode,
-  type Notification,
-  type RawEvent,
-  type TurnStartParams,
-  type Update,
-} from '@glave/client';
+import { ApiError, ErrorCode, type Notification, type RawEvent, type Update } from '@glave/client';
 
 import { FakeSession, FakeTurn, provideFakeSession } from '../testing/fake-session';
 import { event, thread } from '../testing/fixtures';
@@ -114,7 +107,11 @@ describe('ThreadService', () => {
         { from: 'model', text: 'Hello' },
       ],
     ]);
-    expect(fake.paramsOf('turn/start')).toMatchObject([{ thread: 'thread-1', prompt: 'hi' }]);
+    // With a key of its own, so whatever repeats the request, the server starts one turn.
+    const key = expect.stringMatching(/^[0-9a-f]{32}$/u) as unknown;
+    expect(fake.paramsOf('turn/start')).toEqual([
+      { thread: 'thread-1', prompt: 'hi', _meta: { idempotency_key: key } },
+    ]);
   });
 
   it('decides, answers and stops, then catches up on what was recorded', async () => {
@@ -289,33 +286,6 @@ describe('ThreadService', () => {
     expect(service.starting()).toBeNull();
     expect(service.composer()).toBe('go\n\nand then');
     expect(service.error()).toContain('The server is stopping');
-  });
-
-  it('sends each message with a key, the same for a send whose answer was lost, sent again', async () => {
-    const lost = new ApiError({ code: ErrorCode.INTERNAL, message: 'the stream ended' });
-    const refused = new ApiError({ code: ErrorCode.QUEUE_FULL, message: 'The server is stopping' });
-    const fake = new FakeSession()
-      .answer('thread/events', { events: [] })
-      .turn(lost)
-      .turn({ turn: {} })
-      .turn(refused);
-    const service = make(fake);
-    await service.open('thread-1');
-    await service.send('go');
-    expect(service.composer()).toBe('go');
-    // Sent again as it was: the same send, so the server starts its turn once.
-    await service.send('go');
-    // The server had it: the same words now are a message of their own; refused, with a reason,
-    // the same words after it are one of their own too.
-    await service.send('go');
-    await service.send('go');
-    const keys = fake
-      .paramsOf('turn/start')
-      .map((params) => (params as TurnStartParams)._meta?.idempotency_key);
-    expect(keys).toHaveLength(4);
-    expect(keys[0]).toMatch(/^[0-9a-f]{32}$/u);
-    expect(keys[1]).toBe(keys[0]);
-    expect(new Set(keys.slice(1)).size).toBe(3);
   });
 
   it('puts a message the server refused back in the box at once, saying why', async () => {

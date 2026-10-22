@@ -1,10 +1,12 @@
 import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { BreakpointObserver } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { type Navigation, Router, provideRouter } from '@angular/router';
+import type { TurnStartParams } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 import { of } from 'rxjs';
 
+import { FirstTurnService } from '../../services/first-turn.service';
 import { ProjectsService } from '../../services/projects.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
 import { FakeSession, FakeTurn, provideFakeSession } from '../../testing/fake-session';
@@ -47,9 +49,36 @@ async function settle(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve));
 }
 
+/**
+ * The navigation that opened the thread, made by `trigger`, with a prompt in its state, as the
+ * Chats once opened a new thread: after the tab's first page when `after`, else as the tab's
+ * first page (a reload).
+ */
+function arriving(router: Router, trigger: Navigation['trigger'], after: boolean): Navigation {
+  const url = router.parseUrl('/t/thread-1');
+  const first: Navigation = {
+    id: 1,
+    initialUrl: url,
+    extractedUrl: url,
+    trigger: 'imperative',
+    extras: {},
+    previousNavigation: null,
+    abort: () => undefined,
+  };
+  return {
+    ...first,
+    id: 2,
+    trigger,
+    extras: { state: { prompt: 'Plan the launch' } },
+    previousNavigation: after ? first : null,
+  };
+}
+
 async function open(
   fake: FakeSession,
   narrow = false,
+  arrival?: (router: Router) => Navigation,
+  first?: TurnStartParams,
 ): Promise<{
   readonly root: HTMLElement;
   readonly fixture: ReturnType<typeof TestBed.createComponent<ThreadComponent>>;
@@ -62,7 +91,14 @@ async function open(
       { provide: BreakpointObserver, useValue: breakpoints },
     ],
   });
+  if (arrival !== undefined) {
+    const router = TestBed.inject(Router);
+    vi.spyOn(router, 'currentNavigation').mockReturnValue(arrival(router));
+  }
   await TestBed.inject(ProjectsService).refresh();
+  if (first !== undefined) {
+    TestBed.inject(FirstTurnService).start(first);
+  }
   const fixture = TestBed.createComponent(ThreadComponent);
   fixture.componentRef.setInput('thread', 'thread-1');
   await fixture.whenStable();
@@ -273,12 +309,32 @@ describe('ThreadComponent', () => {
     expect(root.textContent).toContain('Done.');
   });
 
-  it('never sends as it opens: it shows what the server has', async () => {
-    const fake = session(ANSWERED).streams([]);
-    const { root } = await open(fake);
+  it('never sends as it opens, whatever the navigation that opened it carries', async () => {
+    const fake = session([]).streams([]);
+    await open(fake, false, (router) => arriving(router, 'imperative', true));
     await settle();
     expect(fake.paramsOf('turn/start')).toEqual([]);
-    expect(root.querySelector('[data-testid="thread-message"]')?.textContent).toContain('Hi');
+  });
+
+  it('shows the first message the new chat sent, why it did not go, and sends it again', async () => {
+    const lost = new FakeTurn();
+    lost.fail(new TypeError('Failed to fetch'));
+    const fake = session([]).turn(lost).streams([]);
+    const { root, fixture } = await open(fake, false, undefined, {
+      thread: 'thread-1',
+      prompt: 'Plan',
+    });
+    expect(root.querySelector('[data-testid="thread-message"]')?.textContent).toContain('Plan');
+    expect(root.querySelector('[data-testid="thread-unsent"]')?.textContent).toContain(
+      'No answer came back.',
+    );
+    await expectAccessible(root);
+    root.querySelector<HTMLButtonElement>('[data-testid="thread-send-again"]')?.click();
+    await settle();
+    await fixture.whenStable();
+    const [first, again] = fake.paramsOf('turn/start');
+    expect(again).toEqual(first);
+    expect(root.querySelector('[data-testid="thread-unsent"]')).toBeNull();
   });
 
   it('takes a message while a turn runs: waiting to be read, then read where the model saw it', async () => {

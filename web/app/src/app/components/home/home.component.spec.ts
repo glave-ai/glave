@@ -1,17 +1,14 @@
 import { BreakpointObserver } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
-import { ApiError, ErrorCode, type TurnStartParams } from '@glave/client';
+import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 import { of } from 'rxjs';
 
 import { ProjectsService } from '../../services/projects.service';
-import { ELSEWHERE, FakeSession, FakeTurn, provideFakeSession } from '../../testing/fake-session';
-import { MODELS, SERVER, event, record, thread } from '../../testing/fixtures';
+import { ELSEWHERE, FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { MODELS, SERVER, record, thread } from '../../testing/fixtures';
 import { HomeComponent } from './home.component';
-
-/** Any idempotency key, as the app makes one. */
-const KEY = expect.stringMatching(/^[0-9a-f]{32}$/u) as unknown;
 
 async function send(root: HTMLElement, text: string): Promise<void> {
   const input = root.querySelector<HTMLTextAreaElement>('[data-testid="home-composer-input"]');
@@ -68,7 +65,7 @@ describe('HomeComponent', () => {
     document.body.click();
   });
 
-  it('starts a thread in the personal project, then its first turn, then opens it', async () => {
+  it('starts a thread in the personal project, sends its first turn and opens it at once', async () => {
     const fake = session();
     const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
     const root = await render(fake);
@@ -97,19 +94,16 @@ describe('HomeComponent', () => {
     await expectAccessible(root);
     await send(root, 'Plan the launch');
     await new Promise((resolve) => setTimeout(resolve));
-    expect(
-      fake.calls.map(({ method }) => method).filter((method) => method.endsWith('/start')),
-    ).toEqual(['thread/start', 'turn/start']);
     expect(fake.paramsOf('thread/start')).toEqual([{ project: 'me' }]);
-    expect(fake.paramsOf('turn/start')).toEqual([
-      { thread: 't9', prompt: 'Plan the launch', _meta: { idempotency_key: KEY } },
+    expect(fake.paramsOf('turn/start')).toMatchObject([
+      { thread: 't9', prompt: 'Plan the launch' },
     ]);
-    // Nothing is carried to the thread's page: it shows what the server has.
+    // Nothing is carried to the thread's page in the history, to send again on a return.
     expect(navigate).toHaveBeenCalledWith(['/t', 't9']);
     navigate.mockRestore();
   });
 
-  it('starts in the project the link names, its first turn on the model and in the mode picked', async () => {
+  it('starts in the project the link names, on the model and in the mode picked', async () => {
     const fake = session();
     const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
     const root = await render(fake, 'p2');
@@ -126,9 +120,8 @@ describe('HomeComponent', () => {
     document.querySelectorAll<HTMLElement>('[data-testid="approval-mode-option"]')[0]?.click();
     await send(root, 'Plant tomatoes');
     await new Promise((resolve) => setTimeout(resolve));
-    expect(fake.paramsOf('thread/start')).toEqual([{ project: 'p2' }]);
-    expect(fake.paramsOf('turn/start')).toMatchObject([
-      { thread: 't9', prompt: 'Plant tomatoes', model: 'hope-12b', approval: 'ask' },
+    expect(fake.paramsOf('thread/start')).toEqual([
+      { project: 'p2', model: 'hope-12b', approval: 'ask' },
     ]);
     navigate.mockRestore();
   });
@@ -182,82 +175,6 @@ describe('HomeComponent', () => {
     ).toBeNull();
   });
 
-  it('holds the first message in the box until the server has it, then opens the thread', async () => {
-    const turn = new FakeTurn();
-    const fake = session().turn(turn);
-    const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
-    const root = await render(fake);
-    await send(root, 'Plan the launch');
-    const input = root.querySelector<HTMLTextAreaElement>('[data-testid="home-composer-input"]');
-    // A second press, before the box shows it held, sends nothing more.
-    input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }));
-    await vi.waitFor(() => {
-      expect([input?.value, input?.disabled]).toEqual(['Plan the launch', true]);
-    });
-    expect(navigate).not.toHaveBeenCalled();
-    expect(
-      [fake.paramsOf('thread/start'), fake.paramsOf('turn/start')].map((each) => each.length),
-    ).toEqual([1, 1]);
-    const started = event(1, 'turn.started', {});
-    turn.send({ jsonrpc: '2.0', method: 'thread/event', params: { thread: 't9', event: started } });
-    await vi.waitFor(() => {
-      expect(navigate).toHaveBeenCalledWith(['/t', 't9']);
-    });
-    navigate.mockRestore();
-  });
-
-  it('sends a first message whose answer was lost again as the same send', async () => {
-    const fake = session().turn(new ApiError({ code: ErrorCode.INTERNAL, message: 'cut off' }));
-    const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
-    const root = await render(fake);
-    await send(root, 'Plan the launch');
-    await new Promise((resolve) => setTimeout(resolve));
-    expect(root.querySelector('[data-testid="home-error"]')?.textContent).toContain(
-      'No answer came back. Send it again: it will not start twice.',
-    );
-    expect(navigate).not.toHaveBeenCalled();
-    // Back in the box and sent as it was: to the thread made for it, with the same key, so the
-    // server starts its turn once, though the first try's answer was lost.
-    await send(root, 'Plan the launch');
-    await new Promise((resolve) => setTimeout(resolve));
-    expect(fake.paramsOf('thread/start')).toHaveLength(1);
-    const [first, again] = fake.paramsOf('turn/start');
-    expect(again).toEqual(first);
-    expect(navigate).toHaveBeenCalledWith(['/t', 't9']);
-    navigate.mockRestore();
-  });
-
-  it('sends a first message the server refused, saying why, again as a new send, to its thread', async () => {
-    const full = new ApiError({ code: ErrorCode.QUEUE_FULL, message: 'The server is stopping' });
-    const fake = session().turn(full);
-    const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
-    const root = await render(fake);
-    await send(root, 'Plan the launch');
-    await new Promise((resolve) => setTimeout(resolve));
-    expect(root.querySelector('[data-testid="home-error"]')?.textContent).toContain('stopping');
-    await send(root, 'Plan the launch');
-    await new Promise((resolve) => setTimeout(resolve));
-    // The thread made for it, still empty, takes it: none is left behind.
-    expect(fake.paramsOf('thread/start')).toHaveLength(1);
-    const keys = fake.paramsOf('turn/start').map((params) => (params as TurnStartParams)._meta);
-    expect(new Set(keys.map((meta) => meta?.idempotency_key)).size).toBe(2);
-    navigate.mockRestore();
-  });
-
-  it('sends a changed first message as a new send', async () => {
-    const fake = session().turn(new ApiError({ code: ErrorCode.INTERNAL, message: 'cut off' }));
-    const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
-    const root = await render(fake);
-    await send(root, 'Plan the launch');
-    await new Promise((resolve) => setTimeout(resolve));
-    await send(root, 'Plan the launch party');
-    await new Promise((resolve) => setTimeout(resolve));
-    expect(fake.paramsOf('thread/start')).toHaveLength(1);
-    const keys = fake.paramsOf('turn/start').map((params) => (params as TurnStartParams)._meta);
-    expect(new Set(keys.map((meta) => meta?.idempotency_key)).size).toBe(2);
-    navigate.mockRestore();
-  });
-
   it('keeps the draft and says why when the thread cannot start', async () => {
     const fake = session().answer(
       'thread/start',
@@ -276,7 +193,7 @@ describe('HomeComponent', () => {
 });
 
 describe('HomeComponent with files', () => {
-  it('keeps a file where the thread starts and sends it with the first message', async () => {
+  it('keeps a file where the thread starts and sends it with the first turn', async () => {
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: () => 'blob:1' });
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: () => undefined });
     const sha = 'b'.repeat(64);
@@ -301,13 +218,8 @@ describe('HomeComponent with files', () => {
     await expectAccessible(root);
     await send(root, 'Summarize this');
     await new Promise((resolve) => setTimeout(resolve));
-    expect(fake.paramsOf('turn/start')).toEqual([
-      {
-        thread: 't9',
-        prompt: 'Summarize this',
-        files: [{ sha256: sha, name: 'notes.txt' }],
-        _meta: { idempotency_key: KEY },
-      },
+    expect(fake.paramsOf('turn/start')).toMatchObject([
+      { thread: 't9', prompt: 'Summarize this', files: [{ sha256: sha, name: 'notes.txt' }] },
     ]);
     expect(navigate).toHaveBeenCalledWith(['/t', 't9']);
     navigate.mockRestore();

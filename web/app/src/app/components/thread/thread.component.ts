@@ -28,6 +28,7 @@ import { askedTurns } from '../../lib/turns';
 import { AttachmentsService } from '../../services/attachments.service';
 import { effortToSend } from '../../lib/effort';
 import { CommandsService } from '../../services/commands.service';
+import { FirstTurnService } from '../../services/first-turn.service';
 import { ModelsService } from '../../services/models.service';
 import { ProjectsService } from '../../services/projects.service';
 import { ThreadService } from '../../services/thread.service';
@@ -93,6 +94,7 @@ export class ThreadComponent {
     trust: $localize`:@@thread.trust:This project brings its own tools and settings`,
     you: $localize`:@@thread.you:You`,
     queued: $localize`:@@thread.queued:Waiting to be read`,
+    again: $localize`:@@thread.again:Send again`,
   } as const;
   protected readonly service = inject(ThreadService);
   /** The files added to the message being written, kept in the thread's project. */
@@ -105,6 +107,17 @@ export class ThreadComponent {
     return error === null
       ? null
       : $localize`:@@thread.failed:Something went wrong: ${error}:ERROR:`;
+  });
+  private readonly firstTurns = inject(FirstTurnService);
+  /** Why the thread's first message, sent from the new chat, did not go, while it can go again. */
+  protected readonly unsent = computed(() => {
+    const failed = this.service.firstTurn()?.failed ?? null;
+    if (failed === null) {
+      return null;
+    }
+    return failed === 'lost'
+      ? $localize`:@@thread.lost:No answer came back.`
+      : $localize`:@@thread.unsent:Not sent: ${failed.said}:REASON:`;
   });
   private readonly panel = inject(ToolsPanelService);
   private readonly stick = viewChild.required(GlzStickToBottomDirective);
@@ -205,6 +218,11 @@ export class ThreadComponent {
     const effort = effortToSend(this.pickedEffort(), this.service.chosenEffort(), info);
     void this.service.send(text, model, mode, this.attachments.attached(), effort);
     this.attachments.clear();
+  }
+
+  /** Sends the first message again, with its key: the server starts its turn once. */
+  protected sendAgain(): void {
+    this.firstTurns.again(this.thread());
   }
 
   protected stop(): void {

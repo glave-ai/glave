@@ -1,72 +1,55 @@
-import { type Page, type Request, expect, test } from '@playwright/test';
+import { type Page, type Route, expect, test } from '@playwright/test';
 
 import { HELLO } from './fake-model';
 import { LIVE, byTestId, served, signInCode } from './support';
 
-/** A `turn/start` the page sent: its thread and the idempotency key it carried. */
-interface TurnStart {
-  readonly thread: string;
-  readonly key: string | undefined;
+/** Whether `route` is a `turn/start`. */
+function turnStart(route: Route): boolean {
+  return route.request().headers()['glave-method'] === 'turn/start';
 }
 
-/** What `request` asked, when it is a `turn/start`. */
-function turnStart(request: Request): TurnStart | null {
-  if (request.headers()['glave-method'] !== 'turn/start') {
-    return null;
-  }
-  const { params } = request.postDataJSON() as {
-    params: { thread: string; _meta?: { idempotency_key?: string } };
-  };
-  return { thread: params.thread, key: params._meta?.idempotency_key };
-}
-
-/** Every `turn/start` `page` sends from now on, in order. */
-function turnStarts(page: Page): readonly TurnStart[] {
-  const sent: TurnStart[] = [];
+/** The idempotency key of every `turn/start` `page` sends from now on. */
+function keysSent(page: Page): readonly string[] {
+  const keys: string[] = [];
   page.on('request', (request) => {
-    const start = turnStart(request);
-    if (start !== null) {
-      sent.push(start);
+    if (request.headers()['glave-method'] === 'turn/start') {
+      const { params } = request.postDataJSON() as {
+        params: { _meta: { idempotency_key: string } };
+      };
+      keys.push(params._meta.idempotency_key);
     }
   });
-  return sent;
+  return keys;
 }
 
-/** Opens a new chat on the live glave, signed in, and writes `prompt` in its composer. */
-async function write(page: Page, prompt: string): Promise<void> {
+/** Writes `prompt` in a new chat on the live glave, signed in, as this browser's own. */
+async function write(page: Page, prompt: string, browserName: string): Promise<string> {
+  const own = `${prompt} from ${browserName} at ${String(Date.now())}`;
   await page.goto(`${served(LIVE)}/#code=${await signInCode(LIVE)}`);
-  await byTestId(page, 'home-composer-input').fill(prompt);
+  await byTestId(page, 'home-composer-input').fill(own);
+  return own;
 }
 
-/** Waits until the thread page shows `prompt`'s turn, answered, and says how often it shows it. */
+/** Waits until the thread shows its turn answered, and says how often it shows `prompt`. */
 async function asked(page: Page, prompt: string): Promise<number> {
-  await expect(page).toHaveURL(/\/t\/[0-9a-f-]+$/u);
   await expect(byTestId(page, 'thread-message').last()).toContainText(HELLO);
   return byTestId(page, 'thread-message').filter({ hasText: prompt }).count();
 }
 
-/** A prompt of this test's own: the browsers run side by side on the one live glave. */
-function promptFor(test: string, browserName: string): string {
-  return `${test} from ${browserName} at ${String(Date.now())}`;
-}
-
 /**
- * A real glave, its model the fake service of fake-model.ts: the first message is sent as the
- * person sends it, from the new chat, which opens the thread once the server has the message;
- * the thread's page only shows and follows what the server has, so coming back to it never
- * sends again.
+ * A real glave, its model the fake of fake-model.ts: the new chat sends the first turn as the
+ * person sends it and opens the thread at once; the thread's page only follows the server, so
+ * coming back to it never sends again, and one click starts one turn.
  */
 test('Back, forward and a reload after a first message start no second turn', async ({
   page,
   browserName,
 }) => {
-  const sent = turnStarts(page);
-  const prompt = promptFor('Back', browserName);
-  await write(page, prompt);
+  const keys = keysSent(page);
+  const prompt = await write(page, 'Back', browserName);
   await byTestId(page, 'home-composer-input').press('Enter');
   expect(await asked(page, prompt)).toBe(1);
   const thread = page.url();
-
   await page.goBack();
   await expect(byTestId(page, 'home-composer-input')).toBeVisible();
   await page.goForward();
@@ -74,44 +57,59 @@ test('Back, forward and a reload after a first message start no second turn', as
   expect(await asked(page, prompt)).toBe(1);
   await page.reload();
   expect(await asked(page, prompt)).toBe(1);
-  expect(sent).toHaveLength(1);
+  expect(keys).toHaveLength(1);
 });
 
 test('a double click on Send starts one turn', async ({ page, browserName }) => {
-  const sent = turnStarts(page);
-  const prompt = promptFor('Twice', browserName);
-  await write(page, prompt);
+  const keys = keysSent(page);
+  const prompt = await write(page, 'Twice', browserName);
   await byTestId(page, 'home-composer-send').dblclick();
   expect(await asked(page, prompt)).toBe(1);
-  expect(sent).toHaveLength(1);
+  expect(keys).toHaveLength(1);
 });
 
-test('a first message whose answer is lost, sent again, starts one turn', async ({
+test('the thread opens with the message before the server has its turn', async ({
   page,
   browserName,
 }) => {
-  const sent = turnStarts(page);
-  // The first `turn/start` reaches glave, which starts the turn, but its answer never arrives.
+  let letGo = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    letGo = resolve;
+  });
+  await page.route(`${served(LIVE)}/`, async (route) => {
+    if (turnStart(route)) {
+      await held;
+    }
+    await route.fallback();
+  });
+  const prompt = await write(page, 'Early', browserName);
+  await byTestId(page, 'home-composer-input').press('Enter');
+  await expect(byTestId(page, 'thread-message').filter({ hasText: prompt })).toHaveCount(1);
+  await expect(byTestId(page, 'thread-working')).toBeVisible();
+  letGo();
+  expect(await asked(page, prompt)).toBe(1);
+});
+
+test('a first message whose answer is lost is sent again with its key, as one turn', async ({
+  page,
+  browserName,
+}) => {
+  const keys = keysSent(page);
   let lose = true;
   await page.route(`${served(LIVE)}/`, async (route) => {
-    if (lose && turnStart(route.request()) !== null) {
+    if (lose && turnStart(route)) {
       lose = false;
-      await route.fetch();
       await route.abort('connectionreset');
       return;
     }
     await route.fallback();
   });
-  const prompt = promptFor('Lost', browserName);
-  await write(page, prompt);
-  const composer = byTestId(page, 'home-composer-input');
-  await composer.press('Enter');
-  await expect(byTestId(page, 'home-error')).toBeVisible();
-  // Back in the box, sent again as it was: the same send.
-  await expect(composer).toHaveValue(prompt);
-  await composer.press('Enter');
+  const prompt = await write(page, 'Lost', browserName);
+  await byTestId(page, 'home-composer-input').press('Enter');
+  await expect(byTestId(page, 'thread-unsent')).toContainText('No answer came back.');
+  await byTestId(page, 'thread-send-again').click();
   expect(await asked(page, prompt)).toBe(1);
-  expect(sent).toHaveLength(2);
-  expect(sent[1]).toEqual(sent[0]);
-  expect(sent[0]?.key).toMatch(/^[0-9a-f]{32}$/u);
+  await expect(byTestId(page, 'thread-unsent')).toHaveCount(0);
+  expect(keys).toHaveLength(2);
+  expect(keys[1]).toBe(keys[0]);
 });
