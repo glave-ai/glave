@@ -1,11 +1,12 @@
 import { Directive, ElementRef, inject } from '@angular/core';
 
 /**
- * Focuses its button as it is pressed, in every browser, as Chromium does: the button of a menu
- * that closes once focus leaves it and its button, as the CDK's menus do. Safari, and Firefox
- * on a Mac, focus no button on a press and take focus from what had it, so pressing the button
- * of an open menu closed the menu before the click, and the click opened it again. With focus
- * on the button the press is the menu's own, and the click closes it.
+ * Focuses the button of an open menu as it is pressed, in every browser, as Chromium does: the
+ * button of a menu that closes once focus leaves it and its button, as the CDK's menus do.
+ * Safari, and Firefox on a Mac, focus no button on a press and take focus from what had it, so
+ * pressing the button of an open menu closed the menu before the click, and the click opened
+ * it again. With focus on the button the press is the menu's own, and the click closes it. A
+ * press on the button of a closed menu is left to the browser.
  *
  * ```html
  * <button glzFocusOnPress [cdkMenuTriggerFor]="menu">Model</button>
@@ -19,11 +20,11 @@ export class GlzFocusOnPressDirective {
   private readonly host = inject<ElementRef<HTMLButtonElement>>(ElementRef).nativeElement;
 
   /**
-   * Takes focus to the button, with no ring, as a press gives it, and keeps the browser from
-   * taking it elsewhere after.
+   * While its menu is open (`aria-expanded`), takes focus to the button, with no ring, as a
+   * press gives it, and keeps the browser from taking it elsewhere after.
    */
   protected pressed(event: MouseEvent): void {
-    if (event.button !== 0) {
+    if (event.button !== 0 || this.host.getAttribute('aria-expanded') !== 'true') {
       return;
     }
     event.preventDefault();

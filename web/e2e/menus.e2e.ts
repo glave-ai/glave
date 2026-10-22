@@ -37,6 +37,9 @@ test.beforeEach(async ({ page }) => {
 for (const name of Object.keys(MENUS) as readonly Name[]) {
   test(`the ${name} menu's own button opens it and closes it`, async ({ page }) => {
     const { trigger, shown } = menu(page, name);
+    // Typed in first: a press after the keys still leaves no focus ring.
+    await byTestId(page, 'thread-composer-input').click();
+    await page.keyboard.type('Hi');
     await trigger.click();
     await expect(shown).toBeVisible();
     await expect(trigger).toHaveAttribute('aria-expanded', 'true');
@@ -85,4 +88,21 @@ test('a click outside an open menu closes it and still does what it does', async
   await expect(input).toBeFocused();
   await page.keyboard.type('Go on');
   await expect(input).toHaveValue('Go on');
+});
+
+test('on a phone, a menu in the options sheet closes on its own button, the sheet open', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const sheet = byTestId(page, 'thread-composer-status');
+  await byTestId(page, 'thread-composer-options').click();
+  await expect(sheet).toBeVisible();
+  for (const name of ['model', 'reasoning'] as const) {
+    const { trigger, shown } = menu(page, name);
+    await trigger.click();
+    await expect(shown).toBeVisible();
+    await trigger.click();
+    await expect(shown).toBeHidden();
+    await expect(sheet).toBeVisible();
+  }
 });

@@ -21,10 +21,10 @@ class HostComponent {
   readonly options = MODELS;
   readonly value = signal<string | null>('gpt-6-luna');
   /** How many times the button outside the menu was clicked. */
-  clicks = 0;
+  readonly clicks = signal(0);
 
   elsewhere(): void {
-    this.clicks += 1;
+    this.clicks.update((count) => count + 1);
   }
 }
 
@@ -138,7 +138,7 @@ describe('GlzMenuSelectComponent', () => {
     await clickAsSafari(elsewhere ?? root);
     await fixture.whenStable();
     expect(document.querySelector('[role="menu"]')).toBeNull();
-    expect(fixture.componentInstance.clicks).toBe(1);
+    expect(fixture.componentInstance.clicks()).toBe(1);
   });
 
   it('closes on Escape and gives focus back to its button', async () => {

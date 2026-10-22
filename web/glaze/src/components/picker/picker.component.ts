@@ -171,7 +171,7 @@ export class GlzPickerComponent {
    * click outside that closes the list for this click to open it again. The click is handled
    * here rather than by the browser, so the list opens placed, with the search box focused.
    */
-  protected toggle(event: Event): void {
+  protected pressed(event: Event): void {
     event.preventDefault();
     if (this.open()) {
       this.close();

@@ -32,10 +32,10 @@ class HostComponent {
   readonly options = signal(MODELS);
   readonly value = signal<string | null>('anthropic/claude-haiku-5.5');
   /** How many times the button outside the picker was clicked. */
-  clicks = 0;
+  readonly clicks = signal(0);
 
   elsewhere(): void {
-    this.clicks += 1;
+    this.clicks.update((count) => count + 1);
   }
 }
 
@@ -191,7 +191,7 @@ describe('GlzPickerComponent', () => {
     await stable();
     expect(popoverOpen(root.querySelector('[popover]'))).toBe(false);
     expect(part(root, 'trigger').getAttribute('aria-expanded')).toBe('false');
-    expect(host.clicks).toBe(1);
+    expect(host.clicks()).toBe(1);
     expect(host.value()).toBe('anthropic/claude-haiku-5.5');
   });
 

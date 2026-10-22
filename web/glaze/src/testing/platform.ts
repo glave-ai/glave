@@ -1,7 +1,7 @@
 // Unit tests run in jsdom, which lacks the modal dialog and popover APIs Glaze builds on. These
-// stand-ins do what the tests observe (the `open` state, `close` and `toggle` events, a press
-// outside a popover closing it); the real behaviour (top layer, focus) is checked in a browser,
-// end to end.
+// stand-ins do what the tests observe (the `open` state, `close` and `toggle` events, and,
+// roughly, a press outside a popover closing it); the real behaviour (top layer, focus, light
+// dismiss as browsers do it) is checked in a browser, end to end.
 
 const popovers = new WeakSet<HTMLElement>();
 

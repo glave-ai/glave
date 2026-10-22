@@ -8,7 +8,7 @@
   [attr.aria-controls]="popoverId"
   [attr.popovertarget]="popoverId"
   [disabled]="disabled()"
-  (click)="toggle($event)"
+  (click)="pressed($event)"
 >
   <span class="glz-visually-hidden">{{ prefix() }}</span>
   <span class="text">{{ shownLabel() }}</span>
