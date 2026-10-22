@@ -52,7 +52,7 @@ describe('GlzMessageComponent', () => {
     expect(root.querySelector('[data-testid="note"] .author')?.textContent).toBe('Atlas');
   });
 
-  it('shows its actions for keyboard focus in the message, not for a press’s', async () => {
+  it('shows its actions for keyboard focus in the message, not a press’s', async () => {
     const fixture = TestBed.createComponent(HostComponent);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;

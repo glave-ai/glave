@@ -144,12 +144,13 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(thought).toBeVisible();
     await expect(working).toHaveCount(0);
     // The click leaves focus on the reasoning, but no ring, so the reply's copy button goes with
-    // the pointer; a key pressed there gives focus its ring, and shows the button again (Tab goes
-    // on to it, or in WebKit on a Mac, which Tabs only to fields and links, stays put).
+    // the pointer; a key pressed there (Enter, which folds it again) gives focus its ring, and
+    // shows the button again.
     const copy = reply.getByTestId('message-copy');
     await page.mouse.move(0, 0);
     await expect.poll(() => shownOpacity(copy)).toBe(0);
-    await page.keyboard.press('Tab');
+    await summary.press('Enter');
+    await expect(thought).toBeHidden();
     await expect.poll(() => shownOpacity(copy)).toBe(1);
 
     // The steps slide open in their fold, and slide shut before they close.

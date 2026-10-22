@@ -66,7 +66,7 @@ describe('GlzNavListComponent', () => {
     const shown = (): readonly string[] =>
       [caret, actions].map((element) => getComputedStyle(element).opacity);
     expect(shown()).toEqual(['0', '0']);
-    // On an action the app put there, too.
+    // Focus on an action the app put beside the heading counts as on the heading.
     focusBy(add, 'pointer');
     expect(shown()).toEqual(['0', '0']);
     focusBy(add, 'keyboard');

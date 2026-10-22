@@ -1,9 +1,8 @@
 /**
- * Focuses `target` as the person would: from the keyboard (Tab, from wherever focus was), or
- * with the pointer (a press on it, then the pointer moving off it). jsdom, as browsers do, rings
- * keyboard focus (`:focus-visible`) and not a press's, and takes the pointer to be over what the
- * last mouse event was on (`:hover`), each judged by the input that came last in the page, maybe
- * another test's; so tests say which.
+ * Moves focus to `target` as a key or a press would. jsdom judges `:focus-visible` and `:hover`
+ * by the last key or mouse event in the window, which may be another test's, so each call brings
+ * its own: focus first leaves whatever had it; then a Tab gives the new focus its ring, or a
+ * press gives it none and the pointer moves off, so nothing is hovered.
  */
 export function focusBy(target: HTMLElement, how: 'keyboard' | 'pointer'): void {
   if (document.activeElement instanceof HTMLElement) {
