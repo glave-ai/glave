@@ -65,10 +65,11 @@ jobs:
           df -h /
       - uses: actions/checkout@v7
       # Every shell script the repository tracks: each `.sh`, and each file whose first line runs
-      # sh, bash, dash or ksh.
+      # sh, bash, dash or ksh. Not the files an eval task starts from (evals/tasks/*/environment),
+      # which the model is given as they are, flaws and all.
       - name: Shellcheck every shell script
         run: |
-          git ls-files -z | xargs -0 awk 'FNR == 1 { if (FILENAME ~ /\.sh$/ || $0 ~ /^#!.*[\/ ](ba|da|k)?sh( |$)/) print FILENAME; nextfile }' >"$RUNNER_TEMP/scripts"
+          git ls-files -z | xargs -0 awk 'FNR == 1 { if ((FILENAME ~ /\.sh$/ || $0 ~ /^#!.*[\/ ](ba|da|k)?sh( |$)/) && FILENAME !~ /^evals\/tasks\/[^\/]+\/environment\//) print FILENAME; nextfile }' >"$RUNNER_TEMP/scripts"
           echo "$(wc -l <"$RUNNER_TEMP/scripts") shell scripts"
           xargs -d '\n' shellcheck <"$RUNNER_TEMP/scripts"
       # SeaweedFS (Apache-2.0) as an S3-compatible bucket, pinned by digest. A service container

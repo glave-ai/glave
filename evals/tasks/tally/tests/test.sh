@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # tally, run on files the agent never saw, against README.md line by line.
 set -uo pipefail
-here="$(cd "$(dirname "$0")" && pwd)"
 cargo build --quiet || { echo "cargo build failed"; exit 1; }
 tally="${CARGO_TARGET_DIR:-$PWD/target}/debug/tally"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-cd "$work"
+cd "$work" || exit 1
 printf 'one two\nthree\n' > a.txt
 printf '  spaced\tout   words \n\n\nlast line without end' > b.txt
 : > empty.txt

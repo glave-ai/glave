@@ -11,6 +11,8 @@ pub fn dollars(cents: u64) -> String {
     format!("${}.{:02}", cents / 100, cents % 100)
 }
 EOF
+# The backticks and $ are the README's Markdown, not this shell's.
+# shellcheck disable=SC2016
 printf '\nFormatting: `format::dollars(1250)` is `$12.50`.\n' >> README.md
 printf '# Changes\n\n- Format amounts as dollars.\n- Faster rounding.\n' > CHANGELOG.md
 git add -A
