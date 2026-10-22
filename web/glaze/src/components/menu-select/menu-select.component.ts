@@ -10,6 +10,7 @@ import {
 } from '@angular/core';
 import { Check, ChevronDown } from 'lucide';
 
+import { GlzFocusOnPressDirective } from '../../directives/focus-on-press.directive';
 import type { GlzIconData } from '../../lib/icons';
 import { INERT_UNTIL_BOUND } from '../../lib/inert-until-bound';
 import type { GlzOption } from '../../lib/options';
@@ -64,7 +65,14 @@ const POSITIONS: readonly ConnectedPosition[] = [
  */
 @Component({
   selector: 'glz-menu-select',
-  imports: [CdkMenu, CdkMenuGroup, CdkMenuItemRadio, CdkMenuTrigger, GlzIconComponent],
+  imports: [
+    CdkMenu,
+    CdkMenuGroup,
+    CdkMenuItemRadio,
+    CdkMenuTrigger,
+    GlzFocusOnPressDirective,
+    GlzIconComponent,
+  ],
   templateUrl: './menu-select.component.html',
   styleUrl: './menu-select.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

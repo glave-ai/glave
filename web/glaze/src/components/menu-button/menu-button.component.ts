@@ -3,6 +3,7 @@ import type { ConnectedPosition } from '@angular/cdk/overlay';
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { Ellipsis } from 'lucide';
 
+import { GlzFocusOnPressDirective } from '../../directives/focus-on-press.directive';
 import type { GlzOption } from '../../lib/options';
 import { testIds } from '../../lib/test-ids';
 import { GlzIconButtonComponent } from '../icon-button/icon-button.component';
@@ -35,7 +36,14 @@ const POSITIONS: readonly ConnectedPosition[] = [
  */
 @Component({
   selector: 'glz-menu-button',
-  imports: [CdkMenu, CdkMenuItem, CdkMenuTrigger, GlzIconButtonComponent, GlzIconComponent],
+  imports: [
+    CdkMenu,
+    CdkMenuItem,
+    CdkMenuTrigger,
+    GlzFocusOnPressDirective,
+    GlzIconButtonComponent,
+    GlzIconComponent,
+  ],
   templateUrl: './menu-button.component.html',
   styleUrl: './menu-button.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

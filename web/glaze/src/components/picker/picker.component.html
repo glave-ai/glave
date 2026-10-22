@@ -6,8 +6,9 @@
   [attr.data-testid]="ids().trigger"
   [attr.aria-expanded]="expanded()"
   [attr.aria-controls]="popoverId"
+  [attr.popovertarget]="popoverId"
   [disabled]="disabled()"
-  (click)="show()"
+  (click)="pressed($event)"
 >
   <span class="glz-visually-hidden">{{ prefix() }}</span>
   <span class="text">{{ shownLabel() }}</span>

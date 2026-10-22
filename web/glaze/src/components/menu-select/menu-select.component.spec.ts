@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { Folder, MessageCircle } from 'lucide';
 
 import { expectAccessible } from '../../testing/axe';
+import { clickAsSafari } from '../../testing/press';
 import { type GlzMenuOption, GlzMenuSelectComponent } from './menu-select.component';
 
 const MODELS: readonly GlzMenuOption[] = [
@@ -13,16 +14,18 @@ const MODELS: readonly GlzMenuOption[] = [
 @Component({
   imports: [GlzMenuSelectComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<glz-menu-select
-    testId="model"
-    label="Model"
-    [options]="options"
-    [(value)]="value"
-  />`,
+  template: `<glz-menu-select testId="model" label="Model" [options]="options" [(value)]="value" />
+    <button type="button" data-testid="elsewhere" (click)="elsewhere()">Elsewhere</button>`,
 })
 class HostComponent {
   readonly options = MODELS;
   readonly value = signal<string | null>('gpt-6-luna');
+  /** How many times the button outside the menu was clicked. */
+  readonly clicks = signal(0);
+
+  elsewhere(): void {
+    this.clicks.update((count) => count + 1);
+  }
 }
 
 @Component({
@@ -101,6 +104,55 @@ describe('GlzMenuSelectComponent', () => {
     expect(fixture.componentInstance.value()).toBe('hope-12b');
     expect(document.querySelector('[role="menu"]')).toBeNull();
     expect(trigger(fixture.nativeElement as HTMLElement).textContent).toContain('Hope');
+  });
+
+  it('closes on its own button, pressed as Safari presses it, and stays closed', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const button = trigger(root);
+    await clickAsSafari(button);
+    await fixture.whenStable();
+    expect(document.querySelector('[role="menu"]')).not.toBeNull();
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    await clickAsSafari(button);
+    await fixture.whenStable();
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    // The press took focus to the button, so focus never left the menu and its button: in a
+    // browser the menu, which closes once it does, stays open until the click closes it (jsdom
+    // renders no CDK overlay, so focus can't be in the menu here; end to end it is).
+    expect(document.activeElement).toBe(button);
+    await expectAccessible(root);
+  });
+
+  it('closes on a click outside, and that click still does what it does', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    await clickAsSafari(trigger(root));
+    await fixture.whenStable();
+    expect(document.querySelector('[role="menu"]')).not.toBeNull();
+    const elsewhere = root.querySelector<HTMLElement>('[data-testid="elsewhere"]');
+    expect(elsewhere).not.toBeNull();
+    await clickAsSafari(elsewhere ?? root);
+    await fixture.whenStable();
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(fixture.componentInstance.clicks()).toBe(1);
+  });
+
+  it('closes on Escape and gives focus back to its button', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    await fixture.whenStable();
+    const button = trigger(fixture.nativeElement as HTMLElement);
+    button.click();
+    await fixture.whenStable();
+    document
+      .querySelector('[role="menu"]')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+    await fixture.whenStable();
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(document.activeElement).toBe(button);
   });
 
   it('as an outlined chip, shows the choice with its icon, as the menu does', async () => {
