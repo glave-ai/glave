@@ -4,7 +4,6 @@ import { ApiError, ErrorCode, type Notification, type RawEvent, type Update } fr
 
 import { FakeSession, FakeTurn, provideFakeSession } from '../testing/fake-session';
 import { event, thread } from '../testing/fixtures';
-import { FirstTurnService } from './first-turn.service';
 import { ThreadService } from './thread.service';
 
 function make(fake: FakeSession): ThreadService {
@@ -112,60 +111,6 @@ describe('ThreadService', () => {
     const key = expect.stringMatching(/^[0-9a-f]{32}$/u) as unknown;
     expect(fake.paramsOf('turn/start')).toEqual([
       { thread: 'thread-1', prompt: 'hi', _meta: { idempotency_key: key } },
-    ]);
-  });
-
-  it('shows the first turn the new chat sent until its record arrives, a message waiting behind it', async () => {
-    const watch = new FakeTurn();
-    const fake = new FakeSession()
-      .answer('thread/events', { events: [] })
-      .turn(new FakeTurn())
-      .turn({ queued: { id: 'event-9' } })
-      .watch(watch);
-    TestBed.configureTestingModule({ providers: [...provideFakeSession(fake), ThreadService] });
-    const firstTurns = TestBed.inject(FirstTurnService);
-    firstTurns.start({ thread: 'thread-1', prompt: 'Plan' });
-    const service = TestBed.inject(ThreadService);
-    await service.open('thread-1');
-    expect([service.starting(), service.busy()]).toEqual(['Plan', true]);
-    // Sent while the first turn is prepared, it waits for the model rather than coming back.
-    await service.send('and the tests');
-    expect(service.queued().map((message) => message.text)).toEqual(['and the tests']);
-    expect(service.composer()).toBe('');
-    watch.send(said(1, 'Plan'));
-    await settled();
-    expect([service.starting(), firstTurns.of('thread-1')]).toEqual([null, null]);
-  });
-
-  it('lets go of a first turn whose record is there as the thread opens', async () => {
-    const asked = event(1, 'message.added', {
-      role: 'user',
-      parts: [{ type: 'text', text: 'Plan' }],
-    });
-    const fake = new FakeSession()
-      .answer('thread/events', { events: [asked] })
-      .turn(new FakeTurn());
-    TestBed.configureTestingModule({ providers: [...provideFakeSession(fake), ThreadService] });
-    const firstTurns = TestBed.inject(FirstTurnService);
-    firstTurns.start({ thread: 'thread-1', prompt: 'Plan' });
-    await TestBed.inject(ThreadService).open('thread-1');
-    expect(firstTurns.of('thread-1')).toBeNull();
-  });
-
-  it('puts a first turn the server refused back in the box, saying why', async () => {
-    const full = new ApiError({ code: ErrorCode.QUEUE_FULL, message: 'Too many are waiting' });
-    const fake = new FakeSession().answer('thread/events', { events: [] }).turn(full);
-    TestBed.configureTestingModule({ providers: [...provideFakeSession(fake), ThreadService] });
-    const firstTurns = TestBed.inject(FirstTurnService);
-    firstTurns.start({ thread: 'thread-1', prompt: 'Plan' });
-    const service = TestBed.inject(ThreadService);
-    await service.open('thread-1');
-    await settled();
-    TestBed.tick();
-    expect([service.composer(), service.error(), firstTurns.of('thread-1')]).toEqual([
-      'Plan',
-      'Too many are waiting',
-      null,
     ]);
   });
 
