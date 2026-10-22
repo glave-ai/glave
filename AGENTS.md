@@ -16,7 +16,8 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 6. **One job each.** Every piece owns its data; anything else that needs that data asks through its port.
 7. **Standards first.** OpenAI-compatible API (models: the one default seam; a native format is an exception that must justify itself, `specs/gateway.md`), MCP (tools), A2A (agents), OIDC/SAML/SCIM (identity), S3/Postgres (storage), AGENTS.md (instructions). Define our own only where none exists and the protocol is part of the product: the event log format, receipts, the session API, computer lifecycle, eval reports. Storage has none of its own: SQLite and Postgres, S3-compatible buckets for blobs (a KMS later), and clients reach data through the server (`specs/storage.md`, "Which stores").
 8. **Subtract before adding.** Nothing optional is on by default unless it is invisible and harmless.
-9. **Measure, don't guess.** Design and performance decisions are settled by evals and benchmarks.
+9. **Simplest thing that works.** Of two designs that meet the need, take the one with fewer parts, and prove it with a test. Cleverness has to earn its place.
+10. **Measure, don't guess.** Design and performance decisions are settled by evals and benchmarks.
 
 ## Concepts
 
@@ -112,7 +113,7 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - **Nothing before its second user.** A trait needs two real implementations, and a config key two values that both work today. Anything `pub` needs a caller outside its crate. Code whose last caller goes is deleted with it.
 - **Specs hold decisions and invariants,** never method tables, field lists or crate descriptions; the generated schema is the reference. A PR that changes a type rereads the spec section that describes it. A spec's Status is a list, one line per piece built or pull request, so a change edits only the line it owns, never a paragraph another pull request is also rewriting.
 - **Invariants keep their tests.** A change that touches one of `specs/invariants.md` says so in its pull request and keeps the test that proves it; one that closes a gap updates the entry.
-- **Reviewed before merge.** Every feature PR gets an independent review (not its author) before it merges, beyond CI.
+- **Reviewed before merge.** Every feature PR gets an independent review (not its author) before it merges, beyond CI. The review asks first whether a simpler design meets the same need, and says which.
 
 **Keeping principle 4.** A person on their own computer runs exactly what an organization runs. What differs is what sits behind the seams, never what the person sees:
 - **Five deployments, one program.** `specs/deployments.md` is the matrix of who glave serves: a laptop, a person's own server, Glave Cloud's personal and enterprise plans, and an enterprise's own servers. Every design is checked against all five columns in its spec or pull request description, and a gap is named, not skipped. A capability exists because the server's configuration provides it, never because a client or a deployment-type setting says so.
