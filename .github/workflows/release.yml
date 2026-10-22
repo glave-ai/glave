@@ -222,6 +222,8 @@ jobs:
           echo "EOF" >> "$GITHUB_OUTPUT"
 
           cp dist-manifest.json "$BUILD_MANIFEST_NAME"
+      - name: "The install script checks every archive it downloads"
+        run: "sh .github/install-script-checksums.sh target/distrib/glave-installer.sh"
       - name: "Upload artifacts"
         uses: actions/upload-artifact@v7
         with:
