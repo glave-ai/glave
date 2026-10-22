@@ -3,7 +3,8 @@
 //! store's own full-text index (`EventLog::search`). Both are scoped exactly as memory is: the
 //! person's and this project's in a shared project, this project's only in an isolated one, nothing
 //! when memory is off, never another organization's. Hits are ranked together by how many of the
-//! query's words they share. A hit from untrusted tool output says so.
+//! query's words they share. A hit from untrusted tool output says so. A thread keeps what
+//! recall found by reference (`reply.rs`), and `reread.rs` reads its texts again.
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
@@ -29,9 +30,10 @@ const BEFORE_CHARS: usize = 120;
 /// Where a hit came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source {
-    /// A memory in force.
+    /// A memory in force, at the version found.
     Memory {
         memory: MemoryId,
+        version: u32,
         scope: MemoryScope,
         /// Saved in a thread that had read untrusted content.
         untrusted_read: bool,
@@ -76,28 +78,20 @@ impl<L: EventLog + 'static> Memories<L> {
             ));
         }
         let readable = self.rules().readable(on.person, on.scope);
-        let mut memories = Vec::new();
-        // Where forgotten memories were saved: those turns are never returned.
-        let mut hidden = Vec::new();
+        let mut ranked = Vec::new();
         for (kind, ledger) in &readable {
-            let (found, sources) = self
-                .with_book(*ledger, |book| {
-                    let sources: Vec<MemorySource> = book.hidden.values().copied().collect();
-                    (matching(book, *kind, &wanted), sources)
-                })
+            let found = self
+                .with_book(*ledger, |book| matching(book, *kind, &wanted))
                 .await?;
-            memories.extend(found);
-            hidden.extend(sources);
+            ranked.extend(found);
         }
-        memories.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.at.cmp(&a.1.at)));
-        let mut hidden = Hidden::new(hidden);
-        let mut ranked = memories;
+        ranked.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.at.cmp(&a.1.at)));
+        // Where forgotten memories were saved: those turns are never returned.
+        let mut hidden = self.hidden(&readable).await?;
         // This project's conversations, then the person's own (one ledger in their Chats), each
         // searched whatever memories matched: memories sharing one word (often the project's
         // name) must not crowd out the message that holds them all.
-        let mut ledgers: Vec<Scope> = readable.iter().rev().map(|(_, ledger)| *ledger).collect();
-        ledgers.dedup();
-        for ledger in ledgers {
+        for ledger in ledgers(&readable) {
             let found = self
                 .conversations(ledger, on.thread, (query, &wanted), limit, &mut hidden)
                 .await?;
@@ -106,6 +100,23 @@ impl<L: EventLog + 'static> Memories<L> {
         // Stable: among equals, the order above.
         ranked.sort_by_key(|(shared, _)| Reverse(*shared));
         Ok(ranked.into_iter().take(limit).map(|(_, hit)| hit).collect())
+    }
+
+    /// The turns forgotten memories were saved in, as the ledgers `readable` names record them.
+    pub(super) async fn hidden(
+        &self,
+        readable: &[(MemoryScope, Scope)],
+    ) -> Result<Hidden, MemoryError> {
+        let mut sources = Vec::new();
+        for (_, ledger) in readable {
+            let here = self
+                .with_book(*ledger, |book| {
+                    book.hidden.values().copied().collect::<Vec<MemorySource>>()
+                })
+                .await?;
+            sources.extend(here);
+        }
+        Ok(Hidden::new(sources))
     }
 
     /// The hits among the index's best few for `limit` in `ledger`'s conversations, best match
@@ -130,52 +141,78 @@ impl<L: EventLog + 'static> Memories<L> {
         for found in found {
             if found.thread == asking
                 || found.thread == Reserved::Memory.id()
-                || hidden.hides(&self.inner.log, ledger, found).await
+                || hidden.hides(log, ledger, found).await
             {
                 continue;
             }
-            let after = Seq::new(found.seq.get().saturating_sub(1)).ok();
-            // An event whose key was destroyed (an erased month) no longer opens: skipped.
-            let Ok(events) = log.read(&ledger, found.thread, after, 1).await else {
+            let Some(said) = self.said_at(ledger, found).await else {
                 continue;
-            };
-            let Some(raw) = events.into_iter().next().filter(|raw| raw.seq == found.seq) else {
-                continue;
-            };
-            let at = raw.at;
-            let Ok(event) = decode(raw) else {
-                continue;
-            };
-            let Some(text) = searchable_body(&event.body) else {
-                continue;
-            };
-            let (said_by, untrusted) = match &event.body {
-                Body::MessageAdded(message) => match message.role {
-                    Role::User => ("person", false),
-                    Role::Assistant => ("assistant", false),
-                },
-                Body::ToolCallCompleted(done) => ("tool output", done.untrusted),
-                _ => continue,
             };
             let hit = Recalled {
                 source: Source::Thread {
                     thread: found.thread,
                     seq: found.seq,
-                    said_by,
+                    said_by: said.by,
                 },
-                at,
-                text: snippet(&text, wanted),
-                untrusted,
+                at: said.at,
+                text: snippet(&said.text, wanted),
+                untrusted: said.untrusted,
             };
-            hits.push((shared(&text, wanted), hit));
+            hits.push((shared(&said.text, wanted), hit));
         }
         Ok(hits)
     }
+
+    /// The event at `found` in `ledger`, as recall shows it; `None` when there is none there
+    /// with text, or it no longer opens (an event whose key was destroyed, an erased month).
+    pub(super) async fn said_at(&self, ledger: Scope, found: Found) -> Option<Said> {
+        let after = Seq::new(found.seq.get().saturating_sub(1)).ok();
+        let events = (self.inner.log.read(&ledger, found.thread, after, 1).await).ok()?;
+        let raw = events
+            .into_iter()
+            .next()
+            .filter(|raw| raw.seq == found.seq)?;
+        let at = raw.at;
+        let event = decode(raw).ok()?;
+        let text = searchable_body(&event.body)?;
+        let (by, untrusted) = match &event.body {
+            Body::MessageAdded(message) => match message.role {
+                Role::User => ("person", false),
+                Role::Assistant => ("assistant", false),
+            },
+            Body::ToolCallCompleted(done) => ("tool output", done.untrusted),
+            _ => return None,
+        };
+        Some(Said {
+            text,
+            by,
+            untrusted,
+            at,
+        })
+    }
+}
+
+/// One event of a past conversation, as recall shows it.
+pub(super) struct Said {
+    pub(super) text: String,
+    /// `person`, `assistant` or `tool output`.
+    by: &'static str,
+    /// Output from outside that no one vouches for.
+    untrusted: bool,
+    at: At,
+}
+
+/// The ledgers whose conversations a thread reading `readable` searches: this project's, then
+/// the person's own (one ledger in their Chats).
+pub(super) fn ledgers(readable: &[(MemoryScope, Scope)]) -> Vec<Scope> {
+    let mut ledgers: Vec<Scope> = readable.iter().rev().map(|(_, ledger)| *ledger).collect();
+    ledgers.dedup();
+    ledgers
 }
 
 /// The turns where forgotten memories were saved: a forget takes the turn that gave the memory
 /// out of `recall` too, though the conversation itself stays as it was.
-struct Hidden {
+pub(super) struct Hidden {
     sources: Vec<MemorySource>,
     /// Each source's turn as `seq` bounds, once read.
     turns: BTreeMap<(ThreadId, Seq), (u64, u64)>,
@@ -191,7 +228,12 @@ impl Hidden {
 
     /// Whether `found` is in the turn a forgotten memory was saved in. A thread that cannot be
     /// read hides the whole of it, so a failure never shows what was forgotten.
-    async fn hides<L: EventLog>(&mut self, log: &L, ledger: Scope, found: Found) -> bool {
+    pub(super) async fn hides<L: EventLog>(
+        &mut self,
+        log: &L,
+        ledger: Scope,
+        found: Found,
+    ) -> bool {
         let sources: Vec<MemorySource> = self
             .sources
             .iter()
@@ -261,6 +303,7 @@ fn matching(book: &Book, kind: MemoryScope, wanted: &BTreeSet<String>) -> Vec<(u
                 let hit = Recalled {
                     source: Source::Memory {
                         memory: memory.memory,
+                        version: memory.version,
                         scope: memory.scope,
                         untrusted_read: memory.untrusted_read,
                     },

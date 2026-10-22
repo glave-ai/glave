@@ -4,12 +4,12 @@
 //! thread left out, untrusted output marked so and counted as untrusted content read.
 
 use glave_event::{
-    At, CallId, EventId, Header, MemoryScope, MessageAdded, Part, Principal, RawEvent, Role, Seq,
-    ThreadId, ToolCallCompleted, encode,
+    Arguments, At, CallId, EventId, Header, MemoryScope, MessageAdded, Part, Principal, RawEvent,
+    Role, Seq, ThreadId, ToolCallCompleted, encode,
 };
 use glave_harness::{AllowAll, Cancel};
 use glave_memory::{MOST_HITS, Recalled, Source, Writer};
-use glave_ports::memories::{MemoryContext, RECALL, REMEMBER};
+use glave_ports::memories::{Memory, MemoryContext, RECALL, REMEMBER};
 use glave_ports::{EventLog, Scope};
 use serde_json::json;
 
@@ -423,6 +423,11 @@ fn a_forgotten_memory_is_never_found_again_through_an_earlier_recall() {
             )
             .await
             .unwrap();
+        let saved = kit.results(shared(), saving.id).await;
+        assert!(
+            saved.len() == 1 && saved.iter().all(|kept| !kept.contains("marigold")),
+            "the save's own result is kept without the text"
+        );
         let mut recalling = harness.start_thread(shared()).await.unwrap();
         harness
             .run_turn(
@@ -433,10 +438,32 @@ fn a_forgotten_memory_is_never_found_again_through_an_earlier_recall() {
             )
             .await
             .unwrap();
-        let read = format!("{:?}", seen.lock().unwrap().last().unwrap().messages);
+        let live = seen.lock().unwrap().last().unwrap().messages.clone();
+        let result = format!("{:?}", live.last());
         assert!(
-            read.contains("The favourite flower is marigold"),
+            result.contains("The favourite flower is marigold")
+                && result.contains("Remember: my favourite flower is marigold."),
             "the model reads what recall found"
+        );
+        // Read again by another process, the thread reads as it did.
+        let (again, seen_again) = kit
+            .harness(
+                &dir,
+                vec![said("Yes.")],
+                AllowAll,
+                Some(kit.memory(rules(), 6).await),
+                settings(),
+            )
+            .await;
+        let mut resumed = again.resume_thread(shared(), recalling.id).await.unwrap();
+        again
+            .run_turn(&mut resumed, "Still sure?", &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+        let rebuilt = seen_again.lock().unwrap()[0].messages.clone();
+        assert!(
+            rebuilt.get(..live.len()) == Some(live.as_slice()),
+            "resumed, the model reads what it read"
         );
 
         let memories = kit.memories(rules(), 3);
@@ -481,7 +508,7 @@ fn a_forgotten_memory_is_never_found_again_through_an_earlier_recall() {
             "the recalling thread's log keeps no copy of it"
         );
 
-        // Read again by another process, the recalling thread no longer shows it to the model.
+        // Read again after the forget, the recalling thread no longer shows it to the model.
         let (again, seen_again) = kit
             .harness(
                 &dir,
@@ -491,16 +518,70 @@ fn a_forgotten_memory_is_never_found_again_through_an_earlier_recall() {
                 settings(),
             )
             .await;
-        let mut resumed = again
-            .resume_thread(shared(), recalling.id)
-            .await
-            .unwrap();
+        let mut resumed = again.resume_thread(shared(), recalling.id).await.unwrap();
         again
             .run_turn(&mut resumed, "And now?", &Cancel::new(), &mut |_| {})
             .await
             .unwrap();
         let sent = format!("{:?}", seen_again.lock().unwrap()[0].messages);
-        assert!(!sent.contains("marigold"), "resumed, the model reads none of it");
+        assert!(
+            !sent.contains("marigold"),
+            "resumed, the model reads none of it"
+        );
+    });
+}
+
+/// A recall's result kept by reference names past conversations by place, which a later
+/// process reads back from the log: read again, it shows only what the thread reading it may.
+#[test]
+fn a_kept_recall_reads_again_only_what_its_reader_may_read() {
+    block_on!(async {
+        let kit = Kit::new();
+        world(&kit).await;
+        let memory = kit.memory(rules(), 2).await;
+        let mut query = serde_json::Map::new();
+        query.insert("query".to_owned(), json!("orca"));
+        let found = (memory.call(&on(shared(), thread(9)), RECALL, &Arguments::Json(query))).await;
+        let shown = [found.kept.unwrap().shown];
+        let read = async |reader: MemoryContext| -> String {
+            let again = memory.reread(&reader, &shown).await.unwrap();
+            again.into_iter().flatten().collect()
+        };
+        let here = read(on(shared(), thread(9))).await;
+        assert!(
+            ["host orca", "orca-7", "being retired", "laptop"]
+                .iter()
+                .all(|text| here.contains(text)),
+            "where it was found, it reads as found"
+        );
+        let stranger = MemoryContext {
+            person: Some(glave_event::PrincipalId::try_from(uuid(52)).unwrap()),
+            ..on(shared(), thread(9))
+        };
+        let project = ["host orca", "orca-7", "being retired"];
+        for (who, reader, theirs) in [
+            (
+                "from another project",
+                on(scope(1, 5), thread(9)),
+                &project[..],
+            ),
+            (
+                "from another organization",
+                on(scope(9, 6), thread(9)),
+                &project[..],
+            ),
+            ("by someone else", stranger, &["laptop"][..]),
+        ] {
+            let again = read(reader).await;
+            assert!(
+                theirs.iter().all(|text| !again.contains(text)),
+                "read again {who}, it shows only what they may read"
+            );
+        }
+        assert!(
+            !read(on(scope(9, 6), thread(9))).await.contains("laptop"),
+            "nor the person's own from another organization"
+        );
     });
 }
 
@@ -538,17 +619,45 @@ fn the_model_recalls_through_the_server_and_untrusted_hits_mark_the_thread() {
         let completed = events
             .iter()
             .find(|event| event.kind.as_str() == "tool.call.completed")
-            .unwrap()
-            .data
-            .get()
-            .to_owned();
-        assert!(completed.contains("\"untrusted\":true"), "{completed}");
-        assert!(completed.contains("[memory "), "{completed}");
-        assert!(completed.contains("tool output, untrusted"), "{completed}");
+            .unwrap();
+        let data = completed.data.get().to_owned();
+        assert!(data.contains("\"untrusted\":true"), "{data}");
+        assert!(data.contains("[memory "), "{data}");
+        assert!(data.contains("tool output, untrusted"), "{data}");
         assert!(
-            completed.contains(&format!("[thread {} #2]", super::recall::thread(2))),
-            "{completed}"
+            data.contains(&format!("[thread {} #2]", super::recall::thread(2))),
+            "{data}"
         );
-        assert!(!completed.contains("BLUEHERON"));
+        assert!(!data.contains("BLUEHERON"));
+        assert!(
+            (kit.results(shared(), thread.id).await.iter())
+                .all(|kept| !kept.contains("host orca") && !kept.contains("being retired")),
+            "the log keeps the result without the texts it showed"
+        );
+        let live = seen.lock().unwrap()[1].messages.clone();
+        let read = format!("{:?}", live.last());
+        assert!(
+            read.contains("on host orca") && read.contains("<untrusted>"),
+            "the model reads them, labelled as the kept result is"
+        );
+        let (again, seen_again) = kit
+            .harness(
+                &dir,
+                vec![said("again")],
+                AllowAll,
+                Some(kit.memory(rules(), 3).await),
+                settings(),
+            )
+            .await;
+        let mut resumed = again.resume_thread(shared(), thread.id).await.unwrap();
+        again
+            .run_turn(&mut resumed, "and?", &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+        let rebuilt = seen_again.lock().unwrap()[0].messages.clone();
+        assert!(
+            rebuilt.get(..live.len()) == Some(live.as_slice()),
+            "resumed, the model reads the result as it did, labelled the same"
+        );
     });
 }

@@ -9,7 +9,7 @@ use glave_event::{MemoryScope, Principal};
 use glave_harness::{AllowAll, Cancel};
 use glave_memory::{Remembering, Writer};
 use glave_ports::Message;
-use glave_ports::memories::REMEMBER;
+use glave_ports::memories::{EDIT_MEMORY, REMEMBER};
 use serde_json::json;
 
 use crate::support::*;
@@ -172,6 +172,21 @@ fn returning_after_changes_gets_a_note_and_resuming_rebuilds_the_same_requests()
             .await
             .unwrap();
         let rebuilt = seen_again.lock().unwrap()[0].clone();
+        let result = |messages: &[Message]| {
+            messages
+                .iter()
+                .find(|message| matches!(message, Message::Tool { .. }))
+                .cloned()
+        };
+        let saved = result(&requests[1].messages);
+        assert!(
+            format!("{saved:?}").contains("Use tabs in Python"),
+            "the model reads what it saved"
+        );
+        assert!(
+            result(&rebuilt.messages) == saved,
+            "resumed, the save's result reads as it did"
+        );
         let start = user_texts(&rebuilt.messages[0]);
         assert!(
             !start.iter().any(|t| t.contains("make db")),
@@ -191,6 +206,71 @@ fn returning_after_changes_gets_a_note_and_resuming_rebuilds_the_same_requests()
         assert!(
             !user_texts(rebuilt.messages.last().unwrap())[0].starts_with("[Memory updates"),
             "nothing changed since: no new note"
+        );
+    });
+}
+
+/// #578: a near duplicate's and an edit's results show the model the memories' text, and the
+/// log keeps them without it; resumed, they read as they did.
+#[test]
+fn a_near_duplicate_s_and_an_edit_s_results_keep_no_text_and_read_the_same_resumed() {
+    block_on!(async {
+        let kit = Kit::new();
+        let kept = seed(&kit, "Tests need make db first", MemoryScope::Project).await;
+        let memory = kit.memory(rules(), 1).await;
+        let dir = folder("kept-results");
+        let twice = json!({"text": "The tests need make db first", "scope": "project"});
+        let edit = json!({"memory": kept, "text": "Tests need make db and make seed first"});
+        let answers = vec![
+            answer(None, vec![(REMEMBER, twice), (EDIT_MEMORY, edit)]),
+            said("done"),
+        ];
+        let (harness, seen) = kit
+            .harness(&dir, answers, AllowAll, Some(memory), settings())
+            .await;
+        let mut thread = harness.start_thread(shared()).await.unwrap();
+        harness
+            .run_turn(&mut thread, "tidy the notes", &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+        let results = |messages: &[Message]| -> Vec<Message> {
+            (messages.iter())
+                .filter(|message| matches!(message, Message::Tool { .. }))
+                .cloned()
+                .collect()
+        };
+        let live = results(&seen.lock().unwrap()[1].messages);
+        let read = format!("{live:?}");
+        assert!(
+            live.len() == 2
+                && read.contains("similar memory exists:\\n- [")
+                && read.contains("Tests need make db first")
+                && read.contains("make seed first"),
+            "the model reads the memories' text"
+        );
+        let stored = kit.results(shared(), thread.id).await;
+        assert!(
+            stored.len() == 2 && stored.iter().all(|kept| !kept.contains("make db")),
+            "the log keeps both results without it"
+        );
+
+        let (again, seen_again) = kit
+            .harness(
+                &dir,
+                vec![said("back")],
+                AllowAll,
+                Some(kit.memory(rules(), 2).await),
+                settings(),
+            )
+            .await;
+        let mut resumed = again.resume_thread(shared(), thread.id).await.unwrap();
+        again
+            .run_turn(&mut resumed, "and now?", &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+        assert!(
+            results(&seen_again.lock().unwrap()[0].messages) == live,
+            "resumed, both read as they did, each memory at the version it showed"
         );
     });
 }

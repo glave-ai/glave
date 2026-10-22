@@ -19,10 +19,16 @@ use rmcp::service::{RequestContext, RoleServer};
 use rmcp::{ErrorData, ServerHandler};
 use serde_json::json;
 
-use crate::memories::{DEFAULT_HITS, Memories, Recalled, Remembering, Source, Writer};
+use crate::memories::{DEFAULT_HITS, Memories, Remembering, Writer};
+use crate::reply::{Hit, Mentioned, Of, Reply, Texts, words};
 
 /// The `_meta` key that carries who and where a request is for.
 const CONTEXT: &str = "glave/context";
+/// The field of a result's structured content that holds what it showed, by reference.
+pub(crate) const REPLY: &str = "reply";
+/// A result whose reference could not be written down, in place of its words: whatever it did
+/// stands, and no text is shown without the reference that keeps it.
+pub(crate) const UNSHOWN: &str = "Done, but its result cannot be shown.";
 /// The resource listing the caller's memories.
 pub(crate) const RESOURCE: &str = "glave://memory";
 
@@ -202,55 +208,6 @@ fn memory_of(request: &CallToolRequestParams, name: &str) -> Result<Option<Memor
     })
 }
 
-fn line(memory: &Remembered) -> String {
-    format!(
-        "[{}] ({}) {}",
-        memory.memory,
-        memory.scope.as_str(),
-        memory.text
-    )
-}
-
-fn day(at: glave_event::At) -> String {
-    at.to_string().chars().take(10).collect()
-}
-
-/// One result as the model reads it: its source, then what it says.
-fn found(hit: &Recalled) -> String {
-    match hit.source {
-        Source::Memory {
-            memory,
-            scope,
-            untrusted_read,
-        } => {
-            let caution = if untrusted_read {
-                ", saved after reading untrusted content"
-            } else {
-                ""
-            };
-            format!(
-                "- [memory {memory}] ({}, {}{caution}) {}",
-                scope.as_str(),
-                day(hit.at),
-                hit.text
-            )
-        }
-        Source::Thread {
-            thread,
-            seq,
-            said_by,
-        } => {
-            let caution = if hit.untrusted { ", untrusted" } else { "" };
-            format!(
-                "- [thread {thread} #{}] ({said_by}{caution}, {}) {}",
-                seq.get(),
-                day(hit.at),
-                hit.text
-            )
-        }
-    }
-}
-
 fn failed(text: impl Into<String>) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(text.into())])
 }
@@ -259,6 +216,25 @@ fn done(text: String, structured: serde_json::Value) -> CallToolResult {
     let mut result = CallToolResult::success(vec![ContentBlock::text(text)]);
     result.structured_content = Some(structured);
     result
+}
+
+/// A result showing `texts`: its words with them, for the model, and the reply beside what
+/// `structured` says, so the client keeps it by reference (`reply.rs`). A reply that cannot be
+/// written down shows no text at all: the text is never handed on without its reference.
+fn replied(reply: &Reply, texts: &Texts, mut structured: serde_json::Value) -> CallToolResult {
+    let (Some(fields), Ok(kept)) = (structured.as_object_mut(), serde_json::to_value(reply)) else {
+        return done(UNSHOWN.to_owned(), structured);
+    };
+    fields.insert(REPLY.to_owned(), kept);
+    done(words(reply, Some(texts)), structured)
+}
+
+/// The texts of `memories`, by memory and version.
+fn texts_of<'a>(memories: impl IntoIterator<Item = &'a Remembered>) -> Texts {
+    memories
+        .into_iter()
+        .map(|memory| (Of::Memory(memory.shown()), memory.text.clone()))
+        .collect()
 }
 
 impl<L: EventLog + 'static> MemoryServer<L> {
@@ -286,19 +262,22 @@ impl<L: EventLog + 'static> MemoryServer<L> {
             .await
         {
             Ok(Remembering::Saved { memory, replaced }) => {
-                let also = replaced.map_or(String::new(), |old| format!(", replacing [{old}]"));
-                done(
-                    format!("Remembered {}{also}.", line(&memory)),
+                let reply = Reply::Remembered {
+                    memory: Mentioned::of(&memory),
+                    replaced,
+                };
+                let texts = texts_of([&memory]);
+                replied(
+                    &reply,
+                    &texts,
                     json!({"memory": memory, "replaced": replaced}),
                 )
             }
             Ok(Remembering::Similar(similar)) => {
-                let lines: Vec<String> = similar.iter().map(|m| format!("- {}", line(m))).collect();
-                CallToolResult::success(vec![ContentBlock::text(format!(
-                    "Not saved: a similar memory exists:\n{}\nReplace it (`replaces`), merge \
-                     them with edit, or save anyway with `force: true`.",
-                    lines.join("\n")
-                ))])
+                let reply = Reply::Similar {
+                    similar: similar.iter().map(Mentioned::of).collect(),
+                };
+                replied(&reply, &texts_of(&similar), json!({}))
             }
             Err(error) => failed(error.to_string()),
         }
@@ -311,10 +290,12 @@ impl<L: EventLog + 'static> MemoryServer<L> {
             _ => return failed("edit needs `memory` and `text`."),
         };
         match self.memories.edit(&writer(on), memory, &text).await {
-            Ok(memory) => done(
-                format!("Edited {}.", line(&memory)),
-                json!({"memory": memory}),
-            ),
+            Ok(memory) => {
+                let reply = Reply::Edited {
+                    memory: Mentioned::of(&memory),
+                };
+                replied(&reply, &texts_of([&memory]), json!({"memory": memory}))
+            }
             Err(error) => failed(error.to_string()),
         }
     }
@@ -340,15 +321,16 @@ impl<L: EventLog + 'static> MemoryServer<L> {
             .and_then(|limit| usize::try_from(limit).ok())
             .unwrap_or(DEFAULT_HITS);
         match self.memories.recall(on, &query, limit).await {
-            Ok(hits) if hits.is_empty() => done(
-                format!("Nothing found for {query:?}."),
-                json!({"recalled": 0, "untrusted": false}),
-            ),
             Ok(hits) => {
                 let untrusted = hits.iter().any(|hit| hit.untrusted);
-                let lines: Vec<String> = hits.iter().map(found).collect();
-                done(
-                    format!("Found for {query:?}:\n{}", lines.join("\n")),
+                let found: Vec<Hit> = hits.iter().map(Hit::of).collect();
+                let texts: Texts = (found.iter().zip(&hits))
+                    .map(|(hit, recalled)| (hit.shows(), recalled.text.clone()))
+                    .collect();
+                let reply = Reply::Recalled { hits: found, query };
+                replied(
+                    &reply,
+                    &texts,
                     json!({"recalled": hits.len(), "untrusted": untrusted}),
                 )
             }
