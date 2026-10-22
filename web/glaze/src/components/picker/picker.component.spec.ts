@@ -2,6 +2,8 @@ import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 
 import { expectAccessible } from '../../testing/axe';
+import { popoverOpen } from '../../testing/platform';
+import { clickAsSafari } from '../../testing/press';
 import type { GlzMenuOption } from '../menu-select/menu-select.component';
 import { GlzPickerComponent } from './picker.component';
 
@@ -23,11 +25,18 @@ const MODELS: readonly GlzMenuOption[] = [
       [options]="options()"
       [(value)]="value"
     />
+    <button type="button" data-testid="model-elsewhere" (click)="elsewhere()">Elsewhere</button>
   `,
 })
 class HostComponent {
   readonly options = signal(MODELS);
   readonly value = signal<string | null>('anthropic/claude-haiku-5.5');
+  /** How many times the button outside the picker was clicked. */
+  clicks = 0;
+
+  elsewhere(): void {
+    this.clicks += 1;
+  }
 }
 
 @Component({
@@ -149,6 +158,41 @@ describe('GlzPickerComponent', () => {
     expect(host.value()).toBe('deepseek/deepseek-v4.1-flash');
     expect(document.activeElement).toBe(part(root, 'trigger'));
     expect(part(root, 'trigger').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('closes on its own button, which opens it, and stays closed', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const trigger = part(root, 'trigger');
+    const popover = root.querySelector('[popover]');
+    // The popover's invoker: the browser counts a press on it as inside, not a click outside.
+    expect(trigger.getAttribute('popovertarget')).toBe(popover?.id);
+    await clickAsSafari(trigger);
+    await fixture.whenStable();
+    expect(popoverOpen(popover)).toBe(true);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    await clickAsSafari(trigger);
+    await fixture.whenStable();
+    expect(popoverOpen(popover)).toBe(false);
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(trigger);
+    await expectAccessible(root);
+    // Its click is the picker's, so the browser's own toggle never undoes it.
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+    trigger.dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(true);
+    expect(popoverOpen(popover)).toBe(true);
+  });
+
+  it('closes on a click outside, and that click still does what it does', async () => {
+    const { root, host, stable } = await opened();
+    await clickAsSafari(part(root, 'elsewhere'));
+    await stable();
+    expect(popoverOpen(root.querySelector('[popover]'))).toBe(false);
+    expect(part(root, 'trigger').getAttribute('aria-expanded')).toBe('false');
+    expect(host.clicks).toBe(1);
+    expect(host.value()).toBe('anthropic/claude-haiku-5.5');
   });
 
   it('picks with a click', async () => {

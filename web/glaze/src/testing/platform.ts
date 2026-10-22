@@ -1,6 +1,7 @@
 // Unit tests run in jsdom, which lacks the modal dialog and popover APIs Glaze builds on. These
-// stand-ins do what the tests observe (the `open` state, `close` and `toggle` events); the real
-// behaviour (top layer, focus, light dismiss) is checked in a browser, end to end.
+// stand-ins do what the tests observe (the `open` state, `close` and `toggle` events, a press
+// outside a popover closing it); the real behaviour (top layer, focus) is checked in a browser,
+// end to end.
 
 const popovers = new WeakSet<HTMLElement>();
 
@@ -63,6 +64,28 @@ if (typeof HTMLElement.prototype.showPopover !== 'function') {
       return true;
     },
   });
+  // Light dismiss: a press outside an open popover that is not `manual` hides it, unless the
+  // press is on a button that opens it (`popovertarget`, `popoverTargetElement`), which the
+  // platform counts as inside.
+  const opens = (button: HTMLButtonElement | null, popover: HTMLElement): boolean =>
+    button !== null &&
+    (button.popoverTargetElement === popover ||
+      (popover.id !== '' && button.getAttribute('popovertarget') === popover.id));
+  document.addEventListener(
+    'pointerdown',
+    (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const button = target?.closest('button') ?? null;
+      for (const popover of Array.from(document.querySelectorAll<HTMLElement>('[popover]'))) {
+        const outside = target === null || !popover.contains(target);
+        const dismissed = popover.getAttribute('popover') !== 'manual' && popovers.has(popover);
+        if (dismissed && outside && !opens(button, popover)) {
+          popover.hidePopover();
+        }
+      }
+    },
+    true,
+  );
 }
 
 // jsdom runs no animations: nothing is ever moving.

@@ -165,8 +165,23 @@ export class GlzPickerComponent {
     });
   }
 
+  /**
+   * Opens the list, or closes it while it is open. The button is the popover's invoker
+   * (`popovertarget`), so the browser counts a press on it as inside the popover, never as a
+   * click outside that closes the list for this click to open it again. The click is handled
+   * here rather than by the browser, so the list opens placed, with the search box focused.
+   */
+  protected toggle(event: Event): void {
+    event.preventDefault();
+    if (this.open()) {
+      this.close();
+    } else {
+      this.show();
+    }
+  }
+
   /** Opens the list with the search box focused and the current option highlighted. */
-  protected show(): void {
+  private show(): void {
     const popover = this.popover().nativeElement;
     this.query.set('');
     this.open.set(true);
