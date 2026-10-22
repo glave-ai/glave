@@ -12,7 +12,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import type { ApprovalMode, AttachedFile, ThreadStartParams } from '@glave/client';
+import type { ApprovalMode, ThreadId, ThreadStartParams, TurnStartParams } from '@glave/client';
 import {
   GlzAttachmentComponent,
   GlzComposerComponent,
@@ -24,6 +24,7 @@ import { Folder, Lock, MessageCircle } from 'lucide';
 
 import { AttachmentsService } from '../../services/attachments.service';
 import { effortToSend } from '../../lib/effort';
+import { idempotencyKey } from '../../lib/idempotency';
 import { ModelsService } from '../../services/models.service';
 import { NavService } from '../../services/nav.service';
 import { SessionService } from '../../services/session.service';
@@ -33,19 +34,22 @@ import { EffortPickerComponent } from '../effort-picker/effort-picker.component'
 import { ModelPickerComponent } from '../model-picker/model-picker.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 
-/** The navigation state that carries a new thread's first prompt and its files (never the URL). */
-export interface FirstPrompt {
+/** A first message the server may not have had, and what it was sent with. */
+interface Unsent {
   readonly prompt: string;
-  readonly files?: readonly AttachedFile[];
+  /** The thread made for it. */
+  readonly thread: ThreadId;
+  /** The idempotency key its turn was asked for with. */
+  readonly key: string;
 }
 
 /**
  * A new chat: the question, then the composer that starts a thread, with where it goes (a
  * chat, or a project) in its box, and the approval mode and the model in the quiet line under
- * it. Sending starts the thread there,
- * on the model and in the approval mode picked, and opens it. When glave runs on this
- * computer, a line under it says what stays private. Opened for a project, the composer takes
- * focus, and the page has Back.
+ * it. Sending starts the thread there, on the model and in the approval mode picked, and its
+ * first turn, and opens the thread once the server has the message: the thread's page only
+ * shows what the server has. When glave runs on this computer, a line under it says what stays
+ * private. Opened for a project, the composer takes focus, and the page has Back.
  */
 @Component({
   selector: 'app-home',
@@ -132,48 +136,83 @@ export class HomeComponent {
   private readonly composer = viewChild.required(GlzComposerComponent);
   /** The files added to the first message, kept where the thread will start. */
   protected readonly attachments = inject(AttachmentsService);
+  /**
+   * The first message last sent, until the server has it: sent again as it was (after a
+   * failure gave it back), it is the same send, to the thread made for it with the same key, so
+   * the server starts its turn once. Its thread was made with the picks of the first try: a
+   * place, model or mode the server refuses is refused before there is a thread at all.
+   */
+  private unsent: Unsent | null = null;
 
-  constructor() {
-    effect(() => {
-      const where = this.where();
-      untracked(() => {
-        this.attachments.keepIn(where);
-      });
+  /** Files added go where the thread will start. */
+  protected readonly keeping = effect(() => {
+    const where = this.where();
+    untracked(() => {
+      this.attachments.keepIn(where);
     });
-    // A link that names a project (a project just made, a project's +) is there to start a
-    // thread in it: the cursor goes to the composer.
-    afterRenderEffect(() => {
-      if (this.project() !== undefined) {
-        this.composer().focus();
-      }
-    });
-  }
+  });
+  /**
+   * A link that names a project (a project just made, a project's +) is there to start a thread
+   * in it: the cursor goes to the composer.
+   */
+  protected readonly focusing = afterRenderEffect(() => {
+    if (this.project() !== undefined) {
+      this.composer().focus();
+    }
+  });
 
   protected async send(prompt: string): Promise<void> {
     this.starting.set(true);
     this.error.set(null);
+    const again = this.unsent?.prompt === prompt ? this.unsent : null;
     try {
-      const project = this.where();
-      const model = this.picked();
-      const approval = this.pickedMode();
-      const next = model ?? this.models.default();
-      const info = this.models.models().find((each) => each.id === next);
-      const effort = effortToSend(this.pickedEffort(), null, info);
-      const params: ThreadStartParams = {
-        ...(project === null ? {} : { project }),
-        ...(model === null ? {} : { model }),
-        ...(approval === null ? {} : { approval }),
-        ...(effort === null ? {} : { effort }),
-      };
-      const { thread } = await this.session.call('thread/start', params);
+      const thread = again?.thread ?? (await this.startThread(this.where()));
+      const key = again?.key ?? idempotencyKey();
+      this.unsent = { prompt, thread, key };
       const files = this.attachments.attached();
-      const state: FirstPrompt = files.length === 0 ? { prompt } : { prompt, files };
-      await this.router.navigate(['/t', thread.id], { state });
+      await this.startTurn({
+        thread,
+        prompt,
+        ...(files.length === 0 ? {} : { files }),
+        _meta: { idempotency_key: key },
+      });
+      this.unsent = null;
+      await this.router.navigate(['/t', thread]);
     } catch (error: unknown) {
       this.draft.set(prompt);
       this.error.set(error instanceof Error ? error.message : String(error));
     } finally {
       this.starting.set(false);
+    }
+  }
+
+  /** Starts a thread in `project`, on the model, mode and level the person picked. */
+  private async startThread(project: string | null): Promise<ThreadId> {
+    const model = this.picked();
+    const approval = this.pickedMode();
+    const next = model ?? this.models.default();
+    const info = this.models.models().find((each) => each.id === next);
+    const effort = effortToSend(this.pickedEffort(), null, info);
+    const params: ThreadStartParams = {
+      ...(project === null ? {} : { project }),
+      ...(model === null ? {} : { model }),
+      ...(approval === null ? {} : { approval }),
+      ...(effort === null ? {} : { effort }),
+    };
+    const { thread } = await this.session.call('thread/start', params);
+    return thread.id;
+  }
+
+  /**
+   * Starts the thread's first turn, and waits only for the server's first word back, which says
+   * it has the message: the turn goes on in the server, and the thread's page follows it.
+   */
+  private async startTurn(params: TurnStartParams): Promise<void> {
+    const controller = new AbortController();
+    try {
+      await this.session.stream('turn/start', params, controller.signal).next();
+    } finally {
+      controller.abort();
     }
   }
 }

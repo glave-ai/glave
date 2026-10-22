@@ -355,33 +355,44 @@ export interface Request {
 /** A JSON-RPC message the fake sends. */
 type Note = Readonly<Record<string, unknown>>;
 
+/** A turn's messages in `target`, recorded after its first `after` events: `prompt`, `reply`. */
+function turnMessages(
+  target: string,
+  prompt: string,
+  reply: string,
+  after: number,
+): readonly [RawEvent, RawEvent] {
+  const added = (seq: number, role: string, text: string): RawEvent =>
+    event(seq, 'message.added', { role, parts: [{ type: 'text', text }] }, target);
+  return [added(after + 1, 'user', prompt), added(after + 2, 'assistant', reply)];
+}
+
 /**
  * What a turn streams: the person's message, the reply growing piece by piece, then the reply
- * itself and the turn's result (answering call `id`).
+ * itself and the turn's result (answering call `id`), recorded after the thread's first `after`
+ * events.
  */
 function turnNotes(
   target: string,
   prompt: string,
   pieces: readonly string[],
   id: number,
+  after = HISTORIES[target]?.length ?? 0,
 ): readonly Note[] {
-  const after = HISTORIES[target]?.length ?? 0;
-  const added = (seq: number, role: string, text: string): Note => ({
+  const [asked, answered] = turnMessages(target, prompt, pieces.join(''), after);
+  const recorded = (stored: RawEvent): Note => ({
     jsonrpc: '2.0',
     method: 'thread/event',
-    params: {
-      thread: target,
-      event: event(seq, 'message.added', { role, parts: [{ type: 'text', text }] }, target),
-    },
+    params: { thread: target, event: stored },
   });
   return [
-    added(after + 1, 'user', prompt),
+    recorded(asked),
     ...pieces.map((text) => ({
       jsonrpc: '2.0',
       method: 'turn/live',
       params: { thread: target, update: { kind: 'text', text } },
     })),
-    added(after + 2, 'assistant', pieces.join('')),
+    recorded(answered),
     {
       jsonrpc: '2.0',
       id,
@@ -390,13 +401,21 @@ function turnNotes(
   ];
 }
 
-function turn(message: { id: number; params: Record<string, unknown> }): string {
-  const notes = turnNotes(
-    String(message.params['thread']),
-    String(message.params['prompt']),
-    ['Glad to ', 'help.'],
-    message.id,
-  );
+/**
+ * Answers `turn/start` with a turn that says "Glad to help.", and keeps its messages in
+ * `recorded`, after what the thread had, so the thread read again shows them, as glave's log does.
+ */
+function turn(
+  message: { id: number; params: Record<string, unknown> },
+  recorded: Map<string, readonly RawEvent[]>,
+): string {
+  const target = String(message.params['thread']);
+  const prompt = String(message.params['prompt']);
+  const pieces = ['Glad to ', 'help.'];
+  const kept = recorded.get(target) ?? [];
+  const after = (HISTORIES[target]?.length ?? 0) + kept.length;
+  recorded.set(target, [...kept, ...turnMessages(target, prompt, pieces.join(''), after)]);
+  const notes = turnNotes(target, prompt, pieces, message.id, after);
   return notes.map((note) => `data: ${JSON.stringify(note)}\n\n`).join('');
 }
 
@@ -484,6 +503,8 @@ interface Known {
   readonly credentials: readonly CredentialInfo[];
   /** The threads given a message, which are then the latest. */
   readonly touched: Set<string>;
+  /** What each thread recorded of the turns started in it, after its history. */
+  readonly recorded: Map<string, readonly RawEvent[]>;
   /** Playground, whose folder is gone, when the test has it. */
   readonly gone: Gone | null;
   readonly awake: Awake;
@@ -529,8 +550,10 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
     }
     case 'thread/get':
       return { thread: thread(String(params['thread']), 'Make the tests pass') };
-    case 'thread/events':
-      return { events: HISTORIES[String(params['thread'])] ?? [] };
+    case 'thread/events': {
+      const target = String(params['thread']);
+      return { events: [...(HISTORIES[target] ?? []), ...(known.recorded.get(target) ?? [])] };
+    }
     case 'thread/start': {
       const inProject = params['project'] === PERSONAL.id ? PERSONAL : PROJECT;
       const fresh = thread(NEW_THREAD, '', 'idle', inProject);
@@ -623,6 +646,7 @@ export async function fakeApi(
     commands: commands ? docsRunning() : null,
     credentials: account ? [GITHUB] : [],
     touched: new Set(),
+    recorded: new Map(),
     gone: gone ? folderGone() : null,
     awake: { on: true },
   };
@@ -652,7 +676,10 @@ export async function fakeApi(
     const refused = turnStart ? refusedTurn(message.params, known.gone) : undefined;
     if (turnStart && refused === undefined) {
       known.touched.add(String(message.params['thread']));
-      await route.fulfill({ contentType: 'text/event-stream', body: turn(message) });
+      await route.fulfill({
+        contentType: 'text/event-stream',
+        body: turn(message, known.recorded),
+      });
       await lists.tell(String(message.params['thread']));
       return;
     }

@@ -48,8 +48,9 @@ async function settle(): Promise<void> {
 }
 
 /**
- * The navigation that opened the thread, made by `trigger`, with a first prompt in its state:
- * after the tab's first page when `after`, else as the tab's first page (a reload).
+ * The navigation that opened the thread, made by `trigger`, with a prompt in its state, as the
+ * Chats once opened a new thread: after the tab's first page when `after`, else as the tab's
+ * first page (a reload).
  */
 function arriving(router: Router, trigger: Navigation['trigger'], after: boolean): Navigation {
   const url = router.parseUrl('/t/thread-1');
@@ -298,30 +299,16 @@ describe('ThreadComponent', () => {
     ]);
     const { root } = await open(fake);
     await type(root, 'Go');
-    expect(fake.paramsOf('turn/start')).toEqual([{ thread: 'thread-1', prompt: 'Go' }]);
+    expect(fake.paramsOf('turn/start')).toMatchObject([{ thread: 'thread-1', prompt: 'Go' }]);
     expect(root.textContent).toContain('Done.');
   });
 
-  it('sends the first prompt the Chats opened it with', async () => {
+  it('never sends as it opens, whatever the navigation that opened it carries', async () => {
     const fake = session([]).streams([]);
     await open(fake, false, (router) => arriving(router, 'imperative', true));
     await settle();
-    expect(fake.paramsOf('turn/start')).toEqual([
-      { thread: 'thread-1', prompt: 'Plan the launch' },
-    ]);
+    expect(fake.paramsOf('turn/start')).toEqual([]);
   });
-
-  for (const [how, trigger, after] of [
-    ['with Back', 'popstate', true],
-    ['by a reload', 'imperative', false],
-  ] as const) {
-    it(`never sends the first prompt again when returned to ${how}`, async () => {
-      const fake = session([]).streams([]);
-      await open(fake, false, (router) => arriving(router, trigger, after));
-      await settle();
-      expect(fake.paramsOf('turn/start')).toEqual([]);
-    });
-  }
 
   it('takes a message while a turn runs: waiting to be read, then read where the model saw it', async () => {
     const turn = new FakeTurn();
@@ -443,7 +430,7 @@ describe('ThreadComponent', () => {
     document.querySelectorAll<HTMLElement>('[data-testid="model-picker-option"]')[0]?.click();
     await settle();
     await type(root, 'Again');
-    expect(fake.paramsOf('turn/start')).toEqual([
+    expect(fake.paramsOf('turn/start')).toMatchObject([
       { thread: 'thread-1', prompt: 'Go', model: 'hope-12b' },
       { thread: 'thread-1', prompt: 'Again' },
     ]);
@@ -469,7 +456,7 @@ describe('ThreadComponent', () => {
     await type(root, 'Careful now');
     await mode(1);
     await type(root, 'Go ahead');
-    expect(fake.paramsOf('turn/start')).toEqual([
+    expect(fake.paramsOf('turn/start')).toMatchObject([
       { thread: 'thread-1', prompt: 'Careful now', approval: 'ask' },
       { thread: 'thread-1', prompt: 'Go ahead' },
     ]);
@@ -603,7 +590,7 @@ describe('ThreadComponent with files', () => {
     expect(chip?.querySelector('img')?.getAttribute('src')).toBe('blob:test/1');
     await expectAccessible(root);
     await type(root, 'What is this?');
-    expect(fake.paramsOf('turn/start')).toEqual([
+    expect(fake.paramsOf('turn/start')).toMatchObject([
       { thread: 'thread-1', prompt: 'What is this?', files: [{ sha256: sha, name: 'cat.png' }] },
     ]);
     await fixture.whenStable();

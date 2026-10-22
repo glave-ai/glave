@@ -1,6 +1,13 @@
 import { TestBed } from '@angular/core/testing';
 
-import { ApiError, ErrorCode, type Notification, type RawEvent, type Update } from '@glave/client';
+import {
+  ApiError,
+  ErrorCode,
+  type Notification,
+  type RawEvent,
+  type TurnStartParams,
+  type Update,
+} from '@glave/client';
 
 import { FakeSession, FakeTurn, provideFakeSession } from '../testing/fake-session';
 import { event, thread } from '../testing/fixtures';
@@ -107,7 +114,7 @@ describe('ThreadService', () => {
         { from: 'model', text: 'Hello' },
       ],
     ]);
-    expect(fake.paramsOf('turn/start')).toEqual([{ thread: 'thread-1', prompt: 'hi' }]);
+    expect(fake.paramsOf('turn/start')).toMatchObject([{ thread: 'thread-1', prompt: 'hi' }]);
   });
 
   it('decides, answers and stops, then catches up on what was recorded', async () => {
@@ -165,7 +172,7 @@ describe('ThreadService', () => {
     await settled();
     await service.send('actually, 4000', 'hope-12b', 'ask');
     // The model and mode wait for the next turn: a message to a running turn chooses neither.
-    expect(fake.paramsOf('turn/start')).toEqual([
+    expect(fake.paramsOf('turn/start')).toMatchObject([
       { thread: 'thread-1', prompt: 'set the port to 3000' },
       { thread: 'thread-1', prompt: 'actually, 4000' },
     ]);
@@ -284,6 +291,26 @@ describe('ThreadService', () => {
     expect(service.error()).toContain('The server is stopping');
   });
 
+  it('sends each message with a key, the same for a send tried again until the server has it', async () => {
+    const lost = new ApiError({ code: ErrorCode.INTERNAL, message: 'the stream ended' });
+    const fake = new FakeSession().answer('thread/events', { events: [] }).turn(lost);
+    const service = make(fake);
+    await service.open('thread-1');
+    await service.send('go');
+    expect(service.composer()).toBe('go');
+    // Sent again as it was: the same send, so the server starts its turn once.
+    await service.send('go');
+    // The server had it: the same words now are a message of their own.
+    await service.send('go');
+    const keys = fake
+      .paramsOf('turn/start')
+      .map((params) => (params as TurnStartParams)._meta?.idempotency_key);
+    expect(keys[0]).toMatch(/^[0-9a-f]{32}$/u);
+    expect(keys[1]).toBe(keys[0]);
+    expect(keys[2]).toMatch(/^[0-9a-f]{32}$/u);
+    expect(keys[2]).not.toBe(keys[0]);
+  });
+
   it('puts a message the server refused back in the box at once, saying why', async () => {
     const first = new FakeTurn();
     const full = new ApiError({
@@ -341,7 +368,7 @@ describe('ThreadService', () => {
     await sending;
     await settled();
     expect(fake.paramsOf('turn/cancel')).toEqual([{ thread: 'thread-1' }]);
-    expect(fake.paramsOf('turn/start').at(-1)).toEqual({
+    expect(fake.paramsOf('turn/start').at(-1)).toMatchObject({
       thread: 'thread-1',
       prompt: 'and this\n\nand that',
     });
@@ -454,7 +481,7 @@ describe('ThreadService', () => {
     await service.open('thread-1');
     expect(service.chosen()).toBe('gpt-6-luna');
     await service.send('hi', 'hope-12b');
-    expect(fake.paramsOf('turn/start')).toEqual([
+    expect(fake.paramsOf('turn/start')).toMatchObject([
       { thread: 'thread-1', prompt: 'hi', model: 'hope-12b' },
     ]);
     expect(service.chosen()).toBe('hope-12b');

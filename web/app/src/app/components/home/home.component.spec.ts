@@ -1,7 +1,7 @@
 import { BreakpointObserver } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
-import { ApiError, ErrorCode } from '@glave/client';
+import { ApiError, ErrorCode, type TurnStartParams } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 import { of } from 'rxjs';
 
@@ -9,6 +9,9 @@ import { ProjectsService } from '../../services/projects.service';
 import { ELSEWHERE, FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { MODELS, SERVER, record, thread } from '../../testing/fixtures';
 import { HomeComponent } from './home.component';
+
+/** Any idempotency key, as the app makes one. */
+const KEY = expect.stringMatching(/^[0-9a-f]{32}$/u) as unknown;
 
 async function send(root: HTMLElement, text: string): Promise<void> {
   const input = root.querySelector<HTMLTextAreaElement>('[data-testid="home-composer-input"]');
@@ -65,7 +68,7 @@ describe('HomeComponent', () => {
     document.body.click();
   });
 
-  it('starts a thread in the personal project and opens it with the prompt in navigation state', async () => {
+  it('starts a thread in the personal project, then its first turn, then opens it', async () => {
     const fake = session();
     const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
     const root = await render(fake);
@@ -94,8 +97,15 @@ describe('HomeComponent', () => {
     await expectAccessible(root);
     await send(root, 'Plan the launch');
     await new Promise((resolve) => setTimeout(resolve));
+    expect(
+      fake.calls.map(({ method }) => method).filter((method) => method.endsWith('/start')),
+    ).toEqual(['thread/start', 'turn/start']);
     expect(fake.paramsOf('thread/start')).toEqual([{ project: 'me' }]);
-    expect(navigate).toHaveBeenCalledWith(['/t', 't9'], { state: { prompt: 'Plan the launch' } });
+    expect(fake.paramsOf('turn/start')).toEqual([
+      { thread: 't9', prompt: 'Plan the launch', _meta: { idempotency_key: KEY } },
+    ]);
+    // Nothing is carried to the thread's page: it shows what the server has.
+    expect(navigate).toHaveBeenCalledWith(['/t', 't9']);
     navigate.mockRestore();
   });
 
@@ -171,6 +181,39 @@ describe('HomeComponent', () => {
     ).toBeNull();
   });
 
+  it('sends a first message again, after its turn could not start, as the same send', async () => {
+    const fake = session().turn(new ApiError({ code: ErrorCode.INTERNAL, message: 'cut off' }));
+    const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+    const root = await render(fake);
+    await send(root, 'Plan the launch');
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(root.querySelector('[data-testid="home-error"]')?.textContent).toContain('cut off');
+    expect(navigate).not.toHaveBeenCalled();
+    // Back in the box and sent as it was: to the thread made for it, with the same key, so the
+    // server starts its turn once, though the first try's answer was lost.
+    await send(root, 'Plan the launch');
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(fake.paramsOf('thread/start')).toHaveLength(1);
+    const [first, again] = fake.paramsOf('turn/start');
+    expect(again).toEqual(first);
+    expect(navigate).toHaveBeenCalledWith(['/t', 't9']);
+    navigate.mockRestore();
+  });
+
+  it('sends a changed first message as a new send, in a thread of its own', async () => {
+    const fake = session().turn(new ApiError({ code: ErrorCode.INTERNAL, message: 'cut off' }));
+    const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+    const root = await render(fake);
+    await send(root, 'Plan the launch');
+    await new Promise((resolve) => setTimeout(resolve));
+    await send(root, 'Plan the launch party');
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(fake.paramsOf('thread/start')).toHaveLength(2);
+    const keys = fake.paramsOf('turn/start').map((params) => (params as TurnStartParams)._meta);
+    expect(new Set(keys.map((meta) => meta?.idempotency_key)).size).toBe(2);
+    navigate.mockRestore();
+  });
+
   it('keeps the draft and says why when the thread cannot start', async () => {
     const fake = session().answer(
       'thread/start',
@@ -189,7 +232,7 @@ describe('HomeComponent', () => {
 });
 
 describe('HomeComponent with files', () => {
-  it('keeps a file where the thread starts and opens the thread with it', async () => {
+  it('keeps a file where the thread starts and sends it with the first message', async () => {
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: () => 'blob:1' });
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: () => undefined });
     const sha = 'b'.repeat(64);
@@ -214,9 +257,15 @@ describe('HomeComponent with files', () => {
     await expectAccessible(root);
     await send(root, 'Summarize this');
     await new Promise((resolve) => setTimeout(resolve));
-    expect(navigate).toHaveBeenCalledWith(['/t', 't9'], {
-      state: { prompt: 'Summarize this', files: [{ sha256: sha, name: 'notes.txt' }] },
-    });
+    expect(fake.paramsOf('turn/start')).toEqual([
+      {
+        thread: 't9',
+        prompt: 'Summarize this',
+        files: [{ sha256: sha, name: 'notes.txt' }],
+        _meta: { idempotency_key: KEY },
+      },
+    ]);
+    expect(navigate).toHaveBeenCalledWith(['/t', 't9']);
     navigate.mockRestore();
   });
 });
