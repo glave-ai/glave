@@ -31,7 +31,8 @@ test('a project made from a folder picked on this computer, then its first threa
   await page.goto(`/${SIGNED_IN}`);
   const add = byTestId(page, 'nav-new-project');
   await expect(add).toHaveAccessibleName('New project');
-  // Like a project's own +, it shows while the pointer or focus is on the Projects heading.
+  // Like a project's own +, it shows while the pointer or keyboard focus is on the Projects
+  // heading.
   await page.mouse.move(0, 0);
   await expect.poll(() => shownOpacity(add)).toBe(0);
   await add.focus();

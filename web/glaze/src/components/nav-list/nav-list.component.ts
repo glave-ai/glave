@@ -30,8 +30,8 @@ const PARTS = { toggle: 'toggle', caret: 'caret', end: 'end', items: 'items' } a
  * links or buttons. A `collapsible` list's heading is a disclosure button that shows or hides
  * its items (`expanded`, bound two ways), with a caret just after its name that turns while
  * the list is closed. Actions for the group, such as "New thread here", go beside the heading
- * (`[glzNavListActions]`); they and the caret show while the pointer or focus is on the
- * heading, and always on a touch screen, the caret faintly. A mark goes at the heading's end
+ * (`[glzNavListActions]`); they and the caret show while the pointer or keyboard focus is on
+ * the heading, and always on a touch screen, the caret faintly. A mark goes at the heading's end
  * (`[glzNavListEnd]`), such as an icon for what waits in a closed list; it describes the toggle.
  *
  * A list inside another list is a group, such as a project: its heading is quieter than the

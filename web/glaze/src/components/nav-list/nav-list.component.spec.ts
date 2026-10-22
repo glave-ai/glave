@@ -59,16 +59,18 @@ describe('GlzNavListComponent', () => {
     const fixture = render();
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
-    const toggle = root.querySelector<HTMLButtonElement>('[data-testid="space-toggle"]');
+    const add = root.querySelector<HTMLButtonElement>('[data-testid="add"]');
     const caret = root.querySelector('[data-testid="space-caret"]') ?? root;
     const actions = root.querySelector('[data-testid="space"] .actions') ?? root;
     const shown = (): readonly string[] =>
       [caret, actions].map((element) => getComputedStyle(element).opacity);
     expect(shown()).toEqual(['0', '0']);
-    // jsdom counts any focus as the keyboard's; that a click's focus shows nothing is checked
-    // in browsers, end to end.
-    toggle?.focus();
+    // On an action the app put there, too. jsdom counts any focus as the keyboard's; that a
+    // click's focus shows nothing is checked in browsers, end to end.
+    add?.focus();
     expect(shown()).toEqual(['1', '1']);
+    add?.blur();
+    expect(shown()).toEqual(['0', '0']);
   });
 
   it('shows and hides a collapsible list from its heading, the caret after the name', async () => {

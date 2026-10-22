@@ -60,7 +60,7 @@
 // takes no more room than its text and the conversation keeps one rhythm: at the reply's start
 // or the bubble's end, an icon button's own padding pulled back so its icon lines up with the
 // text. With a pointer they show on hover and while keyboard focus is inside the message, so the
-// keyboard finds them and a click inside (which leaves focus there, but no ring) pins nothing;
+// keyboard finds them and a click inside (which may leave focus there, but no ring) pins nothing;
 // on touch, where nothing hovers, they always show.
 .actions {
   position: absolute;

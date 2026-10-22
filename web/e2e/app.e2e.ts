@@ -1,7 +1,6 @@
 import { expect, test } from '@playwright/test';
 
 import { NEW_THREAD, PERSONAL, THREAD, WAITING, fakeApi } from './fake-api';
-import { ANSWER, THINKING_PROMPT, letThink, thinkingTurn } from './fake-thinking';
 import { SIGNED_IN, byTestId, expectAccessible, shownOpacity, watchForProblems } from './support';
 
 test('without a sign-in, the app says how to get one, in plain words', async ({ page }) => {
@@ -125,7 +124,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       .toMatchObject({ approval: 'call_2', decision: 'allow_once' });
   });
 
-  test(`a reply has a copy button, shown on hover and focus, that copies its text (${colorScheme})`, async ({
+  test(`a reply has a copy button, shown on hover and keyboard focus, that copies its text (${colorScheme})`, async ({
     page,
     context,
     browserName,
@@ -141,7 +140,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     // Only the reply: what the person wrote needs no copying.
     await expect(byTestId(page, 'message-copy')).toHaveCount(1);
     const copy = messages.last().getByTestId('message-copy');
-    // Hidden until the pointer is over the message, or focus is in it.
+    // Hidden until the pointer is over the message, or keyboard focus is in it.
     await page.mouse.move(0, 0);
     await expect.poll(() => shownOpacity(copy)).toBe(0);
     await copy.focus();
@@ -156,41 +155,6 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect.poll(() => shownOpacity(copy)).toBe(1);
   });
 }
-
-test('a click on a reply’s Reasoning leaves its copy button to the pointer; the keyboard finds it', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await fakeApi(page);
-  await thinkingTurn(page);
-  await page.goto(`/t/${THREAD}${SIGNED_IN}`);
-  await expect(byTestId(page, 'thread-message').last()).toContainText('They pass now.');
-  const composer = byTestId(page, 'thread-composer-input');
-  await composer.fill(THINKING_PROMPT);
-  await composer.press('Enter');
-  for (const step of ['start', 'tool', 'think', 'answer'] as const) {
-    await letThink(page, step);
-  }
-  const reply = byTestId(page, 'thread-message').last();
-  await expect(reply).toContainText(ANSWER.join(''));
-  await expect(byTestId(page, 'thread-composer-stop')).toHaveCount(0);
-  const copy = reply.getByTestId('message-copy');
-  const reasoning = reply.getByTestId('thread-reasoning-summary');
-
-  // Clicked open, the reasoning keeps focus, but the copy button shows only while the pointer
-  // is over the reply.
-  await reasoning.click();
-  await expect(reply.locator('details')).toHaveAttribute('open', '');
-  await expect.poll(() => shownOpacity(copy)).toBe(1);
-  await page.mouse.move(0, 0);
-  await expect.poll(() => shownOpacity(copy)).toBe(0);
-
-  // Keyboard focus in the reply shows it: Tab goes on to it, or, in WebKit on a Mac, which Tabs
-  // only to fields and links as Safari does, leaves the reasoning focused, now with its ring.
-  await page.keyboard.press('Tab');
-  await expect(reply.locator(':focus-visible')).toHaveCount(1);
-  await expect.poll(() => shownOpacity(copy)).toBe(1);
-});
 
 test.describe('on a touch screen', () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });

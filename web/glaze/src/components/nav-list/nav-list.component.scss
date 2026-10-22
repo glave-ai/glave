@@ -68,7 +68,7 @@
 }
 
 // The caret and the heading's actions show while the pointer or keyboard focus is on its header
-// (a click leaves focus there, but no ring, so it pins nothing), and always on touch, the caret
+// (a click may leave focus there, but no ring, so it pins nothing), and always on touch, the caret
 // faintly; every list's actions line up at the same end.
 .caret,
 .actions {
