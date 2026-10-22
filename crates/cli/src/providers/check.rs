@@ -23,10 +23,6 @@ const MOST: usize = 1_000;
 /// The longest model id kept, in bytes, as the harness allows.
 const LONGEST_ID: usize = 255;
 
-/// What a model mainly gives out when it is no language model, though it may give text too:
-/// an image, speech, a video or an embedding, as a listing's `output_modalities` name them.
-const NOT_LANGUAGE: &[&str] = &["audio", "embedding", "embeddings", "image", "video"];
-
 /// Words in the ids of models that do not chat: speech, images, embeddings and the like. Only
 /// for a listing that says nothing of what a model gives out, as OpenAI's own `/models` and
 /// Ollama's: where a listing says (`language`), it is surer than a name, which can mislead.
@@ -125,14 +121,14 @@ fn chats(kind: ProviderKind, id: &str, model: &Value) -> bool {
 }
 
 /// Whether the model is a language model, by what the listing says it takes in and gives out:
-/// text in (images in too, which is how glave shows a model the screen), and text out with
-/// nothing an image, speech or embedding model mainly gives. A listing that says nothing of
-/// what it gives out leaves it to the model's lowercased id, `lower` (`NOT_CHAT`).
+/// text in (images in too, which is how glave shows a model the screen), and text out and
+/// nothing else, no image, speech or embedding beside it. A listing that says nothing of what
+/// it gives out leaves it to the model's lowercased id, `lower` (`NOT_CHAT`).
 fn language(lower: &str, model: &Value) -> bool {
-    let has = |modalities: &[Value], wanted: &str| modalities.iter().any(|m| m == wanted);
-    let takes_text = modalities(model, "input_modalities").is_none_or(|input| has(input, "text"));
+    let takes_text = modalities(model, "input_modalities")
+        .is_none_or(|input| input.iter().any(|modality| modality == "text"));
     let gives_text = match modalities(model, "output_modalities") {
-        Some(output) => has(output, "text") && !NOT_LANGUAGE.iter().any(|other| has(output, other)),
+        Some(output) => output.iter().all(|modality| modality == "text"),
         None => !NOT_CHAT.iter().any(|word| lower.contains(word)),
     };
     takes_text && gives_text
@@ -190,7 +186,7 @@ mod tests {
 
     #[test]
     fn openrouter_offers_language_models_by_what_each_takes_in_and_gives_out() {
-        // As OpenRouter's `/models` lists them, cut to what decides.
+        // Listed as OpenRouter's `/models` lists models, cut to what decides.
         let model = |id: &str, input: &[&str], output: &[&str]| {
             json!({
                 "id": id,
@@ -207,8 +203,7 @@ mod tests {
             // Speaks, or gives embeddings: left out.
             model("openai/gpt-4o-audio-preview", &["text", "audio"], &["text", "audio"]),
             model("openai/text-embedding-3-small", &["text"], &["embeddings"]),
-            // Reads images and files and writes text: kept, as is one whose name the old rule
-            // refused.
+            // Reads images and files and writes text: kept, even when its name says image.
             model("anthropic/claude-sonnet-4.5", &["text", "image", "file"], &["text"]),
             model("acme/image-describer", &["image", "text"], &["text"]),
             // Takes no text in.
@@ -218,12 +213,18 @@ mod tests {
             ids(ProviderKind::Openrouter, &listing),
             ["anthropic/claude-sonnet-4.5", "acme/image-describer"]
         );
-        // A listing that says nothing of what a model gives out leaves it to the name.
+        // A listing that says nothing of what a model gives out, or says it with an empty
+        // list, leaves it to the name; what it says it takes in still counts.
         let unsaid = json!({"data": [
             {"id": "a/embed-small", "supported_parameters": ["tools"]},
             {"id": "a/chat", "supported_parameters": ["tools"]},
+            {"id": "a/blank", "architecture": {"output_modalities": []}, "supported_parameters": ["tools"]},
+            {"id": "a/hears", "architecture": {"input_modalities": ["audio"]}, "supported_parameters": ["tools"]},
         ]});
-        assert_eq!(ids(ProviderKind::Openrouter, &unsaid), ["a/chat"]);
+        assert_eq!(
+            ids(ProviderKind::Openrouter, &unsaid),
+            ["a/chat", "a/blank"]
+        );
     }
 
     #[test]
