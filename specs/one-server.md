@@ -142,9 +142,9 @@ Every command is a client of the person's server over its socket, or of a server
 
 | Command | What it asks the server |
 | --- | --- |
-| `glave` | the project this folder leads to, asking once when there is none (below); then a sign-in link to it, opened in the browser, or printed where there is no screen. With no one at the terminal and no server running, it says to run it from a terminal |
+| `glave` | the project this folder leads to, asking once when there is none (below); then a sign-in link to it (to the person's Chats when they say no), opened in the browser, or printed where there is no screen. With no one at the terminal and no server running, it says to run it from a terminal |
 | `glave "…"` | the project, as above; `thread/start` in it and `turn/start`, followed; approvals, questions and the project's trust ask answered in place with `approval/decide`, `question/answer` and `trust/answer` |
-| `glave -c "…"` | the project's newest thread (`thread/list`), then `turn/start`; `glave -c` alone opens that thread in the browser |
+| `glave -c "…"` | the project's newest thread (`thread/list`), then `turn/start`; `glave -c` alone opens that thread in the browser (the newest of the person's Chats when they say no to making the folder a project, as in the home folder) |
 | `glave --goal …` | `thread/start`, then `goal/start`, followed |
 | `glave -b "…"` | `thread/start` and `turn/start` (or `goal/start`) with `background`; prints the task and exits. Refused, saying why, where no server runs and no one is at the terminal: a task needs the person's server |
 | `glave tasks [stop <id>]` | `tasks/list` across every project the person works in; `tasks/stop` |
@@ -167,7 +167,7 @@ Every command is a client of the person's server over its socket, or of a server
 ### A folder's project
 
 - **Found by the server**: the project whose folder is this folder; else, inside a git repository, the project of the repository's top folder or of its `origin` (`storage.md`, "Projects"); else none. A subfolder of a repository opens its project and never moves the project's folder; a folder that is its own repository is never taken for a project above it.
-- **A new folder asks once** (decided), in the terminal: "Make ~/code/app a glave project?" Yes makes it, as the app's New project does (`project/create` with the folder); No runs nothing and keeps nothing, so it asks again next time, as trust's "Not now" does. The lookup that asks first makes nothing; it is new. With no one at the terminal the folder becomes a project without asking, as today: a script that runs glave in a folder has chosen it, and nothing a project brings runs until it is trusted.
+- **A new folder asks once** (decided), in the terminal: "Make ~/code/app a glave project?" Yes makes it, as the app's New project does (`project/create` with the folder); No keeps nothing, so it asks again next time, as trust's "Not now" does: `glave` alone opens the person's Chats instead, saying so in one line ("Opening your Chats; this folder stays as it is"), since the person wanted glave open (#595), and `glave "…"` runs nothing, having nowhere to work. The lookup that asks first makes nothing; it is new. With no one at the terminal the folder becomes a project without asking, as today: a script that runs glave in a folder has chosen it, and nothing a project brings runs until it is trusted.
 - **Never a project**: the home folder, the folders above it, and the temporary folder. `glave` there opens Chats, and `glave "…"` starts a chat in a scratch folder of its own (`computers.md`).
 - **No server's own project.** A request that names no project acts in the caller's Chats, whatever folder the server started in.
 
