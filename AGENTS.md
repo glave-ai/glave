@@ -206,7 +206,7 @@ The bar is code a careful reader admires: every line earns its place, and each i
 | Session resume, 10k events | < 100 ms |
 | Knowledge search, 16 queries batched | < 100 ms |
 
-Two owner decisions: the release binary was raised from 30 to 40 MB on 2026-10-19, since splitting builds costs more than a few MB; and "a command answered by a running server" (`glave tasks` against the person's server, about 5 ms on an M3) replaced "cold start to prompt" when `glave` alone came to open the browser and left no prompt to time (`specs/one-server.md`, decision 9). The budgets are set in one place, `crates/cli/benches/budgets.rs`, and CI measures them on the build that ships: x86-64 Linux, static with musl, as the release builds it (`budgets.yml`).
+Two owner decisions: the release binary was raised from 30 to 40 MB on 2026-10-19, since splitting builds costs more than a few MB; and "a command answered by a running server" (`glave tasks` against the person's server, about 5 ms on an M3) replaced "cold start to prompt" when `glave` alone came to open the browser and left no prompt to time (`specs/one-server.md`, decision 9). The budgets are set in one place, `crates/cli/benches/budgets.rs`. CI measures the binary's size and the answered command on the build that ships (x86-64 Linux, static with musl, as the release builds it), and the resume in the benchmark built for the same target (`budgets.yml`).
 
 - Hot paths get microbenchmarks (event append and replay, stream parsing, gateway overhead, cache lookups).
 - Benchmarks run only through `cargo xtask bench`. It takes a machine-wide exclusive lock that test runs share, so benchmarks never run beside tests or each other.
