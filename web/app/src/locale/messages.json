@@ -213,6 +213,7 @@
     "newProject.startFolderHint": "Work on files you already have.",
     "newProject.startRepository": "A repository",
     "newProject.startRepositoryHint": "Clone one from GitHub or another git host.",
+    "pageHeader.back": "Back",
     "pageHeader.menu": "Show or hide the side bar",
     "passkeys.add": "Add a passkey on this device",
     "passkeys.added": "Added {$ADDED}",

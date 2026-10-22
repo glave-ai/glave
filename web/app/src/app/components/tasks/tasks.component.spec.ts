@@ -21,7 +21,7 @@ describe('TasksComponent', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelector('h1')?.textContent).toBe('Tasks');
-    expect(root.querySelector('app-page-header')).not.toBeNull();
+    expect(root.querySelector('[data-testid="page-back"]')).not.toBeNull();
     expect(root.querySelectorAll('[data-testid="task"]')).toHaveLength(1);
     await expectAccessible(root);
     const before = fake.paramsOf('tasks/list').length;

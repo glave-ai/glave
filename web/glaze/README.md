@@ -11,7 +11,7 @@ Only what an app uses today: a piece no app uses leaves Glaze.
 - **Styles** (`styles/glaze.css`): the tokens, the layout primitives (`glz-stack`, `glz-row`, `glz-grid`, `glz-gap-*`), the prose flow (`glz-flow`), and what moves: `glz-spin`, which turns a ring while work goes on, `glz-rise` and `glz-settle`, in the motion tokens alone.
 - **Actions and display**: `glzButton`, `glzIconButton`, `glz-icon`, `glz-badge`, `glz-avatar`, `glz-card`, `glz-empty-state`.
 - **Forms**: `glz-form-field`, `glz-error`, `glzInput`, `glz-checkbox`, `glz-radio-group`, `glz-radio`.
-- **Layout**: `glz-sidenav-layout`, `glz-panel-layout`, `glz-top-bar`, `glz-nav-list`, `glzNavItem`, `glz-tabs`, `glz-tab`.
+- **Layout**: `glz-sidenav-layout`, `glz-panel-layout`, `glz-top-bar`, `glz-page-header`, `glz-nav-list`, `glzNavItem`, `glz-tabs`, `glz-tab`.
 - **Overlays**: `glz-dialog`, `glz-confirm-dialog`, `glz-menu-button`, `glz-menu-select`, `glz-picker`, `glz-popover` with `glzPopoverTrigger`, `glzTooltip`.
 - **Conversation**: `glz-composer`, `glz-message`, `glz-reasoning`, `glz-receipt`, `glz-steps`, `glz-approval-card`, `glz-question-card`, `glzStickToBottom`, `glzCopy`.
 

@@ -38,6 +38,7 @@ describe('SettingsComponent', () => {
     );
     expect(root.textContent).not.toMatch(/config|policy|toml|--/u);
     expect(root.querySelector('[data-testid="settings-no-accounts"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="page-back"]')).not.toBeNull();
     // Memory lives in Settings, on its own page.
     expect(root.querySelector('[data-testid="settings-memory"]')?.getAttribute('href')).toBe(
       '/memory',

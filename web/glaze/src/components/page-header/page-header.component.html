@@ -1,0 +1,20 @@
+<header>
+  <glz-top-bar>
+    <div glzTopBarStart class="start">
+      <ng-content select="[glzPageHeaderStart]" />
+      @if (backLabel(); as label) {
+        <button
+          glzButton
+          variant="ghost"
+          type="button"
+          class="back"
+          [attr.data-testid]="ids().back"
+          (click)="wentBack()"
+        >
+          <glz-icon class="glz-mirrored" [icon]="arrow" />
+          {{ label }}
+        </button>
+      }
+    </div>
+  </glz-top-bar>
+</header>

@@ -26,6 +26,7 @@ export * from './components/menu-select/menu-select.component';
 export * from './components/message/message.component';
 export * from './components/nav-item/nav-item.component';
 export * from './components/nav-list/nav-list.component';
+export * from './components/page-header/page-header.component';
 export * from './components/panel-layout/panel-layout.component';
 export * from './components/picker/picker.component';
 export * from './components/popover/popover.component';

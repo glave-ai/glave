@@ -81,6 +81,8 @@ describe('HomeComponent', () => {
     expect(document.activeElement).not.toBe(
       root.querySelector('[data-testid="home-composer-input"]'),
     );
+    // The Chats is where Back leads, so it has none.
+    expect(root.querySelector('[data-testid="page-back"]')).toBeNull();
     // Where it goes in the box; the approval mode and the model in the quiet line under it.
     const box = root.querySelector('[data-testid="home-composer"] .box');
     const status = root.querySelector('[data-testid="home-composer-status"]');
@@ -104,6 +106,8 @@ describe('HomeComponent', () => {
     expect(where(root)).toBe('Where: Garden');
     // Opened for a project, the cursor is in the composer, to write the first message.
     expect(document.activeElement).toBe(root.querySelector('[data-testid="home-composer-input"]'));
+    // A project's page has a way back.
+    expect(root.querySelector('[data-testid="page-back"]')?.textContent.trim()).toBe('Back');
     root.querySelector<HTMLButtonElement>('[data-testid="model-picker-trigger"]')?.click();
     await new Promise((resolve) => setTimeout(resolve));
     document.querySelectorAll<HTMLElement>('[data-testid="model-picker-option"]')[1]?.click();
@@ -123,6 +127,7 @@ describe('HomeComponent', () => {
     const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
     const root = await render(fake, 'me');
     expect(where(root)).toBe('Where: A chat');
+    expect(root.querySelector('[data-testid="page-back"]')).toBeNull();
     root.querySelector<HTMLButtonElement>('[data-testid="home-where-trigger"]')?.click();
     await new Promise((resolve) => setTimeout(resolve));
     const places = Array.from(
