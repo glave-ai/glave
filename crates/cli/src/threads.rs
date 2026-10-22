@@ -1,7 +1,8 @@
 //! `glave threads`: the threads in this folder, and archiving, unarchiving and deleting them,
 //! through the person's server when it runs (or a terminal starts it). Where none runs and no
 //! one is at the terminal, a change is made straight in the log; a glave holding the thread
-//! takes it in before its next event, so the two never fight.
+//! takes it in before its next event, so the two never fight. A folder that is no project has
+//! none, and is never made one.
 
 use std::process::ExitCode;
 
@@ -14,6 +15,7 @@ use glave_session::protocol::{Reply, Request, Show};
 use uuid::Uuid;
 
 use crate::reach::Reached;
+use crate::turns::{Here, NO_PROJECT};
 use crate::worktrees;
 
 pub(crate) const USAGE: &str = "\
@@ -109,8 +111,17 @@ async fn through(server: &mut Reached, command: Command) -> anyhow::Result<()> {
                 Standing::Archived => Show::Archived,
                 Standing::Deleted => Show::Deleted,
             };
+            let folder = std::env::current_dir()?;
+            let project = match crate::turns::found(server.session(), &folder).await? {
+                Here::Project(project) => Some(project),
+                Here::Chats => None,
+                Here::NoProject => {
+                    eprintln!("glave: {NO_PROJECT}");
+                    return Ok(());
+                }
+            };
             let listed = Request::ThreadList {
-                project: Some(server.project(&std::env::current_dir()?).await?),
+                project,
                 limit: Some(MOST_LISTED),
                 show: Some(show),
                 cursor: None,
@@ -167,7 +178,14 @@ async fn released(thread: ThreadId) -> anyhow::Result<Vec<String>> {
 async fn in_the_log(command: Command) -> anyhow::Result<()> {
     let store = crate::data::Data::here().await?;
     let person = crate::identity::load_or_make(&store).await?.person;
-    let scope = crate::projects::here(&store, &std::env::current_dir()?, person).await?;
+    let folder = std::env::current_dir()?;
+    let Some(scope) = crate::projects::found(&store, &folder, person).await? else {
+        if matches!(command, Command::List(_)) {
+            eprintln!("glave: {NO_PROJECT}");
+            return Ok(());
+        }
+        anyhow::bail!("{NO_PROJECT}, so it has no threads to change");
+    };
     let log = store.log();
     match command {
         Command::List(standing) => {

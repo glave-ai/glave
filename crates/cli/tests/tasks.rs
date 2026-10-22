@@ -4,6 +4,7 @@
 //! adds, lists and removes a schedule; and the folder's task host is gone.
 
 use glave_provider_openai::fake::{FakeServer, Reply};
+use glave_session::protocol::{NewFolder, Request};
 
 use crate::http::{only_the_server_answers, serve_http};
 use crate::support::*;
@@ -22,6 +23,21 @@ fn committed(place: &Place) {
         .status()
         .unwrap();
     assert!(ran.success());
+}
+
+/// Makes `place`'s folder a project in the person's server, as the app's New project does.
+fn made_a_project(place: &Place) {
+    let path = std::fs::canonicalize(&place.project).unwrap();
+    let created = Request::ProjectCreate {
+        name: "project".into(),
+        members: Vec::new(),
+        folder: Some(NewFolder::Path {
+            path: path.to_string_lossy().into_owned(),
+        }),
+    };
+    glave_ports::block_on!(async {
+        crate::turns::api(place).request(&created).await.unwrap();
+    });
 }
 
 #[test]
@@ -46,6 +62,12 @@ fn a_background_turn_runs_in_the_person_s_server_after_the_command_returns() {
     let place = place("background");
     let model = FakeServer::start(vec![Reply::text("Tidied.")]).unwrap();
     let (_served, _) = serve_http(&place, &model, &["--model", "m"]);
+    // A folder that is no project is made one only after a yes at a terminal.
+    let refused = glave(&place, &model, &["-b", "tidy the notes"], "");
+    assert!(!refused.status.success());
+    let said = text(&refused);
+    assert!(said.contains("isn't a glave project"), "{said}");
+    made_a_project(&place);
     // A task works on a copy, which a folder that is no repository cannot give.
     let refused = glave(&place, &model, &["-b", "tidy the notes"], "");
     assert!(!refused.status.success());
@@ -98,6 +120,7 @@ fn schedules_are_added_listed_and_removed_in_the_person_s_server() {
     let model = FakeServer::start(Vec::new()).unwrap();
     let (_served, _) = serve_http(&place, &model, &["--model", "m"]);
     only_the_server_answers(&place);
+    made_a_project(&place);
     let added = glave(
         &place,
         &model,
@@ -133,7 +156,7 @@ fn schedules_are_added_listed_and_removed_in_the_person_s_server() {
 #[test]
 fn with_no_server_and_no_one_at_the_terminal_a_schedule_is_kept_by_glave_here() {
     let place = place("schedule-here");
-    let model = FakeServer::start(Vec::new()).unwrap();
+    let model = FakeServer::start(vec![Reply::text("Hi.")]).unwrap();
     let args = [
         "schedule",
         "add",
@@ -143,6 +166,17 @@ fn with_no_server_and_no_one_at_the_terminal_a_schedule_is_kept_by_glave_here() 
         "the",
         "year",
     ];
+    // No one is asked to make the folder a project, so none is made.
+    let refused = glave(&place, &model, &args, "");
+    assert!(!refused.status.success());
+    assert!(
+        text(&refused).contains("no one at the terminal"),
+        "{}",
+        text(&refused)
+    );
+    // A turn a script runs in the folder has chosen it, and makes it one.
+    let turn = glave(&place, &model, &["--model", "m", "hello"], "");
+    assert!(turn.status.success(), "{}", text(&turn));
     let added = glave(&place, &model, &args, "");
     assert!(added.status.success(), "{}", text(&added));
     let listed = text(&glave(&place, &model, &["schedule", "list"], ""));

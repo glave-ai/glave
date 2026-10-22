@@ -117,7 +117,7 @@ pub(crate) async fn wire(
     let root = workspace.root().to_owned();
     settings.commands = crate::commands::find(&root).await?;
     let servers = mcp_servers(&setup, remote.as_ref(), &processes).await?;
-    let scope = scope_here(args, choices, &store, &root, identity.person).await?;
+    let scope = scope_here(args, choices, &store, &folder, &root, identity.person).await?;
     let (on_workers, workers) =
         crate::cloud::workers(choices, &setup.loaded.constraints, &folder, scope.project()).await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
@@ -157,7 +157,7 @@ pub(crate) async fn wire(
     };
     let server = Server::new(wiring, settings, scope.org(), answering);
     let reach = crate::serving::reach(args, choices, &store, identity.person).await?;
-    if start_folder(args, &setup.choices) {
+    if start_folder(args, &setup.choices, &folder) {
         keep_here(&server, scope.project(), &root).await?;
     }
     Ok(Wired {
@@ -178,28 +178,36 @@ pub(crate) async fn wire(
     })
 }
 
-/// The scope glave's own work here keeps to: the project of `root`, the folder it starts in,
-/// when that is a project of its own ([`start_folder`]); else `person`'s Chats.
+/// The scope glave's own work here keeps to: the project of `root`, the workspace of `folder`,
+/// the folder it starts in, when that is a project of its own ([`start_folder`]); else
+/// `person`'s Chats.
 async fn scope_here(
     args: &Args,
     choices: &Choices,
     store: &Data,
+    folder: &Path,
     root: &Path,
     person: glave_event::PrincipalId,
 ) -> anyhow::Result<glave_ports::Scope> {
-    if start_folder(args, choices) {
+    if start_folder(args, choices, folder) {
         crate::projects::here(store, root, person).await
     } else {
         crate::projects::personal(store, person).await
     }
 }
 
-/// Whether the folder glave starts in is a project of its own: for a command run in it, or a
-/// program's own server; for the person's server, which has no folder of its own
+/// Whether `folder`, the folder glave starts in, is a project of its own: for a turn run in
+/// it, or a program's own server; for the person's server, which has no folder of its own
 /// (`specs/one-server.md`), only where its threads go to workers, which clone that folder's
-/// repository.
-fn start_folder(args: &Args, choices: &Choices) -> bool {
-    !args.person_s_server() || choices.on.value == policy::On::Cloud
+/// repository; never for a server that only answers a command's requests ([`here`]), and
+/// never where the folder is never a project.
+fn start_folder(args: &Args, choices: &Choices, folder: &Path) -> bool {
+    let own = if args.person_s_server() {
+        choices.on.value == policy::On::Cloud
+    } else {
+        args.stdio || args.turn()
+    };
+    own && !crate::projects::never_a_project(folder)
 }
 
 /// Keeps `root`, the folder glave runs in, as the folder of its project, `project`: where its

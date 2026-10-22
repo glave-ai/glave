@@ -100,7 +100,7 @@ pub(crate) fn main() -> ExitCode {
 }
 
 async fn run(args: Args) -> anyhow::Result<ExitCode> {
-    let turn = !args.prompt.is_empty() || args.goal.is_some();
+    let turn = args.turn();
     if let Some(url) = crate::remote::chosen(&args).await? {
         if !turn {
             anyhow::bail!(

@@ -87,7 +87,7 @@ pub(crate) async fn open(args: &Args) -> anyhow::Result<ExitCode> {
         Here::Project(project) => Some(project),
         Here::Chats => None,
         // The person wanted glave open, if not this folder as a project.
-        Here::Declined => {
+        Here::NoProject => {
             eprintln!("glave: opening your Chats; this folder stays as it is");
             None
         }

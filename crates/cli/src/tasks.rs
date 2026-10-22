@@ -15,7 +15,10 @@ use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::args::Args;
+use crate::client::Session;
+use crate::input::Input;
 use crate::reach::{self, Reached};
+use crate::turns::{Here, NO_PROJECT};
 
 pub(crate) const TASKS_USAGE: &str = "\
 glave tasks: what runs here with no one attached
@@ -141,20 +144,41 @@ async fn stop_task(server: &mut Reached, thread: ThreadId) -> anyhow::Result<()>
     Ok(())
 }
 
+/// The project this folder's new task or schedule goes in, `None` for the person's Chats: for a
+/// folder that is no project yet, one made once the person says yes at the terminal, and none
+/// with no one there to ask.
+async fn project_here(session: Session<'_>) -> anyhow::Result<Option<ProjectId>> {
+    let folder = std::env::current_dir()?;
+    let terminal = crate::server::at_terminal();
+    let here = if terminal {
+        crate::turns::here(session, &folder, true, &Input::start()).await?
+    } else {
+        crate::turns::found(session, &folder).await?
+    };
+    match here {
+        Here::Project(project) => Ok(Some(project)),
+        Here::Chats => Ok(None),
+        Here::NoProject if terminal => bail!("nothing was made; this folder stays as it is"),
+        Here::NoProject => bail!(
+            "{NO_PROJECT}, and with no one at the terminal to ask whether to make it one, \
+             nothing was made: run this in a terminal"
+        ),
+    }
+}
+
 /// Starts `prompt` (or `args.goal`) as a task in a new thread of this folder's project, for
 /// `glave --background`: only in the person's server, since a task outlives this command.
 pub(crate) async fn background(args: &Args) -> anyhow::Result<ExitCode> {
-    let folder = std::env::current_dir()?;
     let Some(server) = crate::server::connect_or_start().await? else {
         bail!(
             "a task runs in glave running for you in the background, which is not running, and \
              only a command run in a terminal starts it: run this in one, or run glave serve"
         );
     };
-    let mut server = Reached::Server(server);
-    let project = server.project(&folder).await?;
+    let server = Reached::Server(server);
+    let project = project_here(server.session()).await?;
     let started = Request::ThreadStart {
-        project: Some(project),
+        project,
         worktree: None,
         background: true,
         computer: None,
@@ -198,7 +222,7 @@ pub(crate) async fn background(args: &Args) -> anyhow::Result<ExitCode> {
 /// Adds the schedule `request` asks for in this folder's project.
 async fn add_schedule(server: &mut Reached, mut request: Request) -> anyhow::Result<()> {
     if let Request::ScheduleCreate { project, .. } = &mut request {
-        *project = Some(server.project(&std::env::current_dir()?).await?);
+        *project = project_here(server.session()).await?;
     }
     let Reply::Schedule { schedule } = server.request(request).await? else {
         bail!("glave answered schedule/create with something else");
