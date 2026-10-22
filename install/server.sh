@@ -45,6 +45,9 @@ USAGE="Installs glave on this Linux server as a service, or updates it.
   --docker           with --origin, run glave in Docker Compose beside Cloudflare Tunnel's
                      connector, which serves <url> with the token in TUNNEL_TOKEN (or asked)
 
+With GLAVE_DOWNLOAD_URL set to an https:// address that holds a release's files, it downloads
+glave from there rather than from GitHub, as glave's other installer does.
+
 Run it again to update glave: it keeps glave's settings and data."
 
 REACH=""
@@ -175,8 +178,8 @@ packages() {
 	fi
 }
 
-# glave's program: the one --binary names, else the release for this processor, checked
-# against its checksum.
+# glave's program: the one --binary names, else the release for this processor, from GitHub
+# or GLAVE_DOWNLOAD_URL, checked against its checksum.
 fetch() {
 	if [ -n "$BINARY" ]; then
 		[ -f "$BINARY" ] || fail "$BINARY is not a file"
@@ -190,7 +193,9 @@ fetch() {
 	if ! command -v xz >/dev/null 2>&1; then
 		if command -v apt-get >/dev/null 2>&1; then packages xz-utils; else packages xz; fi
 	fi
-	if [ -n "$VERSION" ]; then
+	if [ -n "${GLAVE_DOWNLOAD_URL:-}" ]; then
+		from="${GLAVE_DOWNLOAD_URL%/}"
+	elif [ -n "$VERSION" ]; then
 		from="$REPOSITORY/releases/download/$VERSION"
 	else
 		from="$REPOSITORY/releases/latest/download"

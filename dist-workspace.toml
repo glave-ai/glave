@@ -1,11 +1,14 @@
 [workspace]
 members = ["cargo:."]
 
-# Releases, with dist (https://axodotdev.github.io/cargo-dist/): pushing a version tag (`v0.1.0`)
-# builds glave for each target, with the web app inside, and publishes the archives, their
-# checksums, GitHub's build provenance, an install script and a Homebrew formula. The workflow it
-# runs, .github/workflows/release.yml, is generated from this file: after changing it, run
-# `cargo xtask release-workflow`, with dist installed at the version below.
+# Releases, with dist (https://axodotdev.github.io/cargo-dist/), run by hand: the Release
+# workflow, run from GitHub's Actions tab with a version's tag (`v0.1.0`), builds glave for each
+# target, with the web app inside, tries the installers on what it built, then publishes the
+# archives, their checksums, GitHub's build provenance, an install script and a Homebrew
+# formula, and makes the tag on the commit it ran on. Run with its default, `dry-run`, it does
+# all of that but publish. The workflow, .github/workflows/release.yml, is generated from this
+# file: after changing it, run `cargo xtask release-workflow`, with dist installed at the
+# version below.
 [dist]
 cargo-dist-version = "0.33.0"
 # dist gives the whole workflow a token that can change releases and tags, and has no setting to
@@ -41,7 +44,13 @@ publish-jobs = ["homebrew"]
 github-attestations = true
 github-attestations-phase = "host"
 github-release = "host"
+# Run by hand, with the tag to release or `dry-run` (above), rather than by pushing a tag, so
+# that the same workflow makes a dry run, on any branch.
+dispatch-releases = true
+# The installers, tried on what the run built before anything is published, and in a dry run
+# (.github/workflows/release-installers.yml): the release waits for them.
+global-artifacts-jobs = ["./release-installers"]
 # Pull requests check the plan, not the builds: building every target takes about 25 minutes,
-# two of them on macOS, which ci.yml keeps off pull requests. Set "upload" in a pull request to
-# have it build and keep every target, as a release would.
+# two of them on macOS, which ci.yml keeps off pull requests. A dry run (above) builds every
+# target, as a release would.
 pr-run-mode = "plan"
