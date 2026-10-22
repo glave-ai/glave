@@ -1,20 +1,15 @@
-<header>
-  <glz-top-bar>
-    @if (narrow()) {
-      <button
-        glzTopBarStart
-        glzIconButton
-        class="action"
-        data-testid="page-menu"
-        [label]="copy.menu"
-        [attr.aria-expanded]="open()"
-        [attr.aria-keyshortcuts]="shortcut"
-        (click)="toggle()"
-      >
-        <glz-icon [icon]="icon" />
-      </button>
-    }
-    <ng-content />
-    <div glzTopBarEnd class="end"><ng-content select="[appPageHeaderEnd]" /></div>
-  </glz-top-bar>
-</header>
+<glz-page-header testId="page" [backLabel]="backLabel()" (back)="goBack()">
+  @if (narrow()) {
+    <button
+      glzPageHeaderStart
+      glzIconButton
+      data-testid="page-menu"
+      [label]="copy.menu"
+      [attr.aria-expanded]="open()"
+      [attr.aria-keyshortcuts]="shortcut"
+      (click)="toggle()"
+    >
+      <glz-icon [icon]="icon" />
+    </button>
+  }
+</glz-page-header>

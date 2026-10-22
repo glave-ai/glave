@@ -18,14 +18,3 @@
   background: linear-gradient(to bottom, var(--glz-surface-page) 60%, transparent);
   pointer-events: none;
 }
-
-.action,
-.end {
-  pointer-events: auto;
-}
-
-.end {
-  display: flex;
-  align-items: center;
-  gap: var(--glz-space-1);
-}

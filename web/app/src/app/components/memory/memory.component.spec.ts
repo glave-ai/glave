@@ -32,6 +32,7 @@ describe('MemoryComponent', () => {
     expect(root.querySelector('[data-testid="memory"]')?.textContent).toContain(
       'Prefers short answers',
     );
+    expect(root.querySelector('[data-testid="page-back"]')).not.toBeNull();
     await expectAccessible(root);
 
     click(root, 'memory-edit');

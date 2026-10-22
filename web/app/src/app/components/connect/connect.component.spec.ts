@@ -1,8 +1,10 @@
+import { Location } from '@angular/common';
 import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { ApiError, ErrorCode, type ProviderInfo } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
+import { NAVIGATION } from '../../services/back.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { MODELS } from '../../testing/fixtures';
 import { ConnectComponent } from './connect.component';
@@ -109,6 +111,34 @@ describe('ConnectComponent', () => {
       { kind: 'compatible', key: 'local-key', url: 'http://localhost:11434/v1' },
     ]);
     expect(TestBed.inject(Router).navigateByUrl).toHaveBeenCalledWith('/');
+  });
+
+  it('goes back where the person came from when adding an account: on Back, and once kept', async () => {
+    const fake = new FakeSession()
+      .answer('model/list', { models: MODELS })
+      .answer('provider/connect', { provider: { ...ACCOUNT, kind: 'openrouter', url: undefined } })
+      .answer('provider/list', { providers: [] });
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        ...provideFakeSession(fake),
+        { provide: NAVIGATION, useValue: { canGoBack: true } },
+      ],
+    });
+    const back = vi.spyOn(TestBed.inject(Location), 'back').mockReturnValue(undefined);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+    const fixture = TestBed.createComponent(ConnectComponent);
+    await new Promise((resolve) => setTimeout(resolve));
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    find<HTMLButtonElement>(root, 'connect-back').click();
+    await fixture.whenStable();
+    expect(back).toHaveBeenCalledOnce();
+    type(root, 'connect-key', 'router-key');
+    await submit(fixture);
+    expect(fake.paramsOf('provider/connect')).toEqual([{ kind: 'openrouter', key: 'router-key' }]);
+    expect(back).toHaveBeenCalledTimes(2);
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it("starts from another server's address when it changes that server's key", async () => {

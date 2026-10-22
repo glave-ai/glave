@@ -1,7 +1,7 @@
 import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { BreakpointObserver } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { type Navigation, Router, provideRouter } from '@angular/router';
 import { expectAccessible } from '@glave/glaze/testing';
 import { of } from 'rxjs';
 
@@ -47,9 +47,34 @@ async function settle(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve));
 }
 
+/**
+ * The navigation that opened the thread, made by `trigger`, with a first prompt in its state:
+ * after the tab's first page when `after`, else as the tab's first page (a reload).
+ */
+function arriving(router: Router, trigger: Navigation['trigger'], after: boolean): Navigation {
+  const url = router.parseUrl('/t/thread-1');
+  const first: Navigation = {
+    id: 1,
+    initialUrl: url,
+    extractedUrl: url,
+    trigger: 'imperative',
+    extras: {},
+    previousNavigation: null,
+    abort: () => undefined,
+  };
+  return {
+    ...first,
+    id: 2,
+    trigger,
+    extras: { state: { prompt: 'Plan the launch' } },
+    previousNavigation: after ? first : null,
+  };
+}
+
 async function open(
   fake: FakeSession,
   narrow = false,
+  arrival?: (router: Router) => Navigation,
 ): Promise<{
   readonly root: HTMLElement;
   readonly fixture: ReturnType<typeof TestBed.createComponent<ThreadComponent>>;
@@ -62,6 +87,10 @@ async function open(
       { provide: BreakpointObserver, useValue: breakpoints },
     ],
   });
+  if (arrival !== undefined) {
+    const router = TestBed.inject(Router);
+    vi.spyOn(router, 'currentNavigation').mockReturnValue(arrival(router));
+  }
   await TestBed.inject(ProjectsService).refresh();
   const fixture = TestBed.createComponent(ThreadComponent);
   fixture.componentRef.setInput('thread', 'thread-1');
@@ -272,6 +301,27 @@ describe('ThreadComponent', () => {
     expect(fake.paramsOf('turn/start')).toEqual([{ thread: 'thread-1', prompt: 'Go' }]);
     expect(root.textContent).toContain('Done.');
   });
+
+  it('sends the first prompt the Chats opened it with', async () => {
+    const fake = session([]).streams([]);
+    await open(fake, false, (router) => arriving(router, 'imperative', true));
+    await settle();
+    expect(fake.paramsOf('turn/start')).toEqual([
+      { thread: 'thread-1', prompt: 'Plan the launch' },
+    ]);
+  });
+
+  for (const [how, trigger, after] of [
+    ['with Back', 'popstate', true],
+    ['by a reload', 'imperative', false],
+  ] as const) {
+    it(`never sends the first prompt again when returned to ${how}`, async () => {
+      const fake = session([]).streams([]);
+      await open(fake, false, (router) => arriving(router, trigger, after));
+      await settle();
+      expect(fake.paramsOf('turn/start')).toEqual([]);
+    });
+  }
 
   it('takes a message while a turn runs: waiting to be read, then read where the model saw it', async () => {
     const turn = new FakeTurn();
