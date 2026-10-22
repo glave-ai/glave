@@ -9,6 +9,7 @@ use glave_ports::{Erasable, EventLog, Scope};
 use jiff::SignedDuration;
 
 use super::Memories;
+use super::write::Erasure;
 
 /// How long glave's own forgets wait before their keys are destroyed, so they can be undone.
 const ERASE_AFTER_DAYS: i64 = 30;
@@ -61,7 +62,7 @@ impl<L: EventLog + 'static> Memories<L> {
                     .await?;
                 let erase_at = days_after(now, ERASE_AFTER_DAYS);
                 for memory in stale {
-                    self.forget_in(*scope, memory, &Principal::glave(), Some(erase_at))
+                    self.forget_in(*scope, memory, &Principal::glave(), Erasure::At(erase_at))
                         .await?;
                     done.forgotten = done.forgotten.saturating_add(1);
                 }

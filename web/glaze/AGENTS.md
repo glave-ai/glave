@@ -61,6 +61,7 @@ Glaze (`@glave/glaze`) is an Angular 22 component library: standalone, zoneless,
 - A selected state never relies on a fill alone: a bar for vertical lists, an underline for tabs, a checkmark for picked options, in `--glz-selected-marker`.
 - Do not: add inline styles, `!important` overrides of Glaze classes, or state to Glaze (app state lives in the app's services); do not use colour alone to say something.
 - Prefer the platform: native elements keep their keyboard, autofill and screen-reader behaviour.
+- Glaze's buttons, nav items, menu selects and pickers are `inert` from their first render until the change detection that names them, so one added late (a deferred block, a route's page) is never reached unnamed. Move focus to one after render (`afterRenderEffect`, `afterNextRender`), never from an effect's first run, and put an `inert` of your own on what holds it, not on it.
 
 ## Platform choices and their support
 
@@ -79,6 +80,7 @@ Checked against Baseline (web-features 3.42, October 2026). "Newly" means newly 
 | Textarea growing                    | CSS `field-sizing: content`; without it the box keeps its rows                     | Newly (Jun 2026)                                  |
 | Light and dark                      | `color-scheme`, `light-dark()`                                                     | Widely; `light-dark()` newly (2024)               |
 | Content behind a drawer             | `inert`                                                                            | Widely (2025)                                     |
+| A button or menu not yet bound      | `inert` from its first render to the change detection that names it                | Widely (2025)                                     |
 | Invalid styling                     | `aria-invalid` once touched (`:user-invalid` is widely available, for plain forms) | Widely (2023)                                     |
 | Keyboard models                     | CDK `ActiveDescendantKeyManager` (picker), `FocusKeyManager` (tabs), CDK Menu      | The platform has none                             |
 | Announcements                       | CDK `LiveAnnouncer`                                                                | The platform has none                             |

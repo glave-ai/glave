@@ -1,8 +1,9 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import AxeBuilder from '@axe-core/playwright';
 import { type Locator, type Page, expect } from '@playwright/test';
+import type { Result } from 'axe-core';
 
 /**
  * A glave the tests are served by (playwright.config.ts), known by the variables that hold the
@@ -115,6 +116,21 @@ export async function readIn(page: Page, language: string): Promise<void> {
     Object.defineProperty(navigator, 'language', { get: () => tag });
     Object.defineProperty(navigator, 'languages', { get: () => [tag] });
   }, language);
+}
+
+/**
+ * The file of the app's build, as glave serves it, whose code `holds` picks out, such as the
+ * chunk with a part the app loads late, for a test to hold on its way. Fails when none does.
+ */
+export function builtChunk(holds: (code: string) => boolean): string {
+  const built = new URL('../dist/app/browser/', import.meta.url);
+  const found = readdirSync(built).find(
+    (file) => file.endsWith('.js') && holds(readFileSync(new URL(file, built), 'utf8')),
+  );
+  if (found === undefined) {
+    throw new Error('no file of the app’s build holds what the test looks for: npm run build');
+  }
+  return found;
 }
 
 /** Elements end-to-end tests use, by their `data-testid` (AGENTS.md, "Test hooks"). */
@@ -254,6 +270,17 @@ export function watchForProblems(page: Page): Problems {
   return Object.assign(() => problems, { leave });
 }
 
+/** The rules axe holds the pages to: WCAG 2.2, levels A and AA. */
+export const WCAG: readonly string[] = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
+
+/** Each violation axe found, as a line: its rule, what it asks and where it failed. */
+export function described(violations: readonly Result[]): readonly string[] {
+  return violations.map(
+    (violation) =>
+      `${violation.id}: ${violation.help} (${violation.nodes.map((node) => node.target.join(' ')).join(', ')})`,
+  );
+}
+
 /**
  * Fails on any WCAG 2.2 A or AA violation axe finds, colour contrast included. Colours are
  * measured once they stop changing: a button fades to its new background after a switch to
@@ -268,12 +295,6 @@ export async function expectAccessible(page: Page): Promise<void> {
         .map((transition) => transition.finished.catch(() => undefined)),
     ),
   );
-  const results = await new AxeBuilder({ page })
-    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
-    .analyze();
-  const found = results.violations.map(
-    (violation) =>
-      `${violation.id}: ${violation.help} (${violation.nodes.map((node) => node.target.join(' ')).join(', ')})`,
-  );
-  expect(found).toEqual([]);
+  const results = await new AxeBuilder({ page }).withTags([...WCAG]).analyze();
+  expect(described(results.violations)).toEqual([]);
 }

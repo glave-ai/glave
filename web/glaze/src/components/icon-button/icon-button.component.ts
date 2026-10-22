@@ -6,6 +6,7 @@ import {
   input,
 } from '@angular/core';
 
+import { INERT_UNTIL_BOUND } from '../../lib/inert-until-bound';
 import {
   type GlzButtonSize,
   type GlzButtonVariant,
@@ -26,6 +27,7 @@ import {
   styleUrl: './icon-button.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
+    ...INERT_UNTIL_BOUND,
     '[class]': 'classes()',
     '[attr.aria-label]': 'label()',
     '[attr.title]': 'title()',

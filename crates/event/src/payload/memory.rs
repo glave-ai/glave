@@ -101,9 +101,13 @@ pub struct MemoryForgotten {
     /// When its key is destroyed: at once when the person forgets, 30 days on when glave does.
     pub erase_at: At,
     /// Where it was saved, kept here because the saved event's text (and its source with it)
-    /// is erased: `recall` never returns that turn of the conversation again.
+    /// is erased: once the person forgets it, `recall` never returns that turn again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<MemorySource>,
+    /// The memory a merge by tidy-up folded it into: its turn stays in `recall` until the
+    /// person forgets that one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub into: Option<MemoryId>,
     /// Who forgot it.
     pub by: Principal,
 }

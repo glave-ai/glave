@@ -86,7 +86,7 @@ impl<L: EventLog + 'static> Memories<L> {
             ranked.extend(found);
         }
         ranked.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.at.cmp(&a.1.at)));
-        // Where forgotten memories were saved: those turns are never returned.
+        // Where memories the person forgot were saved: those turns are never returned.
         let mut hidden = self.hidden(&readable).await?;
         // This project's conversations, then the person's own (one ledger in their Chats), each
         // searched whatever memories matched: memories sharing one word (often the project's
@@ -102,7 +102,8 @@ impl<L: EventLog + 'static> Memories<L> {
         Ok(ranked.into_iter().take(limit).map(|(_, hit)| hit).collect())
     }
 
-    /// The turns forgotten memories were saved in, as the ledgers `readable` names record them.
+    /// The turns where memories the person forgot were saved, as the ledgers `readable` names
+    /// record them.
     pub(super) async fn hidden(
         &self,
         readable: &[(MemoryScope, Scope)],
@@ -210,8 +211,8 @@ pub(super) fn ledgers(readable: &[(MemoryScope, Scope)]) -> Vec<Scope> {
     ledgers
 }
 
-/// The turns where forgotten memories were saved: a forget takes the turn that gave the memory
-/// out of `recall` too, though the conversation itself stays as it was.
+/// The turns where memories the person forgot were saved (`Book::hidden`): their forget takes
+/// the turn that gave the memory out of `recall` too, though the conversation stays as it was.
 pub(super) struct Hidden {
     sources: Vec<MemorySource>,
     /// Each source's turn as `seq` bounds, once read.
@@ -226,7 +227,7 @@ impl Hidden {
         }
     }
 
-    /// Whether `found` is in the turn a forgotten memory was saved in. A thread that cannot be
+    /// Whether `found` is in a turn the person's forgets hide. A thread that cannot be
     /// read hides the whole of it, so a failure never shows what was forgotten.
     pub(super) async fn hides<L: EventLog>(
         &mut self,

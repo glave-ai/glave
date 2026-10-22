@@ -11,6 +11,7 @@ import {
 import { Check, ChevronDown } from 'lucide';
 
 import type { GlzIconData } from '../../lib/icons';
+import { INERT_UNTIL_BOUND } from '../../lib/inert-until-bound';
 import type { GlzOption } from '../../lib/options';
 import { testIds } from '../../lib/test-ids';
 import { GlzIconComponent } from '../icon/icon.component';
@@ -68,6 +69,7 @@ const POSITIONS: readonly ConnectedPosition[] = [
   styleUrl: './menu-select.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
+    ...INERT_UNTIL_BOUND,
     '[attr.data-testid]': 'testId()',
     '[class.glz-menu-select--outlined]': 'outlined()',
     '[class.glz-menu-select--quiet]': 'quiet()',
