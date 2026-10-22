@@ -1,6 +1,7 @@
 # cargo-about (https://github.com/EmbarkStudios/cargo-about): the licences of the Rust crates the
 # released glave is built from, for THIRD-PARTY-NOTICES in every release archive. The release
-# build writes it for each archive's own target (.github/build-setup.yml).
+# build writes it for each archive's own target, and CI for every target, both through
+# .github/third-party-notices.sh.
 
 # Every licence deny.toml allows ([licenses] allow), and only those. Where a crate offers a
 # choice, the first one here that it offers is the one taken: glave's own licence first.
