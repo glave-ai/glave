@@ -1,0 +1,19 @@
+:host {
+  display: block;
+}
+
+// What is at the start takes the pointer even when the app lets it through the rest of the
+// header, as one that floats over its page does (`pointer-events: none`).
+.start {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-1);
+  pointer-events: auto;
+}
+
+// On a phone, Back is a finger's size.
+@media (width <= 48rem) {
+  .back {
+    min-height: var(--glz-control-height-touch);
+  }
+}

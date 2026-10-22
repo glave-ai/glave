@@ -10,7 +10,7 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
-import { Router } from '@angular/router';
+import { type Navigation, Router } from '@angular/router';
 import type { ApprovalMode } from '@glave/client';
 import {
   GlzAttachmentComponent,
@@ -51,6 +51,19 @@ function isFirstPrompt(state: unknown): state is FirstPrompt {
     'prompt' in state &&
     typeof state.prompt === 'string'
   );
+}
+
+/**
+ * The first prompt the Chats opened a new thread with, carried by the navigation that opened
+ * it. The history keeps that state, so a page returned to (Back, a reload) brings it again:
+ * only a navigation the app made after its first page carries a prompt to send.
+ */
+function firstPrompt(navigation: Navigation | null): FirstPrompt | null {
+  if (navigation?.trigger !== 'imperative' || navigation.previousNavigation === null) {
+    return null;
+  }
+  const state: unknown = navigation.extras.state;
+  return isFirstPrompt(state) ? state : null;
 }
 
 /**
@@ -183,9 +196,7 @@ export class ThreadComponent {
   protected readonly folderGone = computed(() => this.gone() !== null);
 
   constructor() {
-    const navigation = inject(Router).currentNavigation();
-    const state: unknown = navigation?.extras.state;
-    let first = isFirstPrompt(state) ? state : null;
+    let first = firstPrompt(inject(Router).currentNavigation());
     effect(() => {
       const thread = this.thread();
       untracked(() => {

@@ -45,7 +45,7 @@ export interface FirstPrompt {
  * it. Sending starts the thread there,
  * on the model and in the approval mode picked, and opens it. When glave runs on this
  * computer, a line under it says what stays private. Opened for a project, the composer takes
- * focus.
+ * focus, and the page has Back.
  */
 @Component({
   selector: 'app-home',
@@ -100,6 +100,11 @@ export class HomeComponent {
   private readonly session = inject(SessionService);
   private readonly projects = inject(ProjectsService);
   private readonly router = inject(Router);
+  /** Whether this is a project's page, which has a way back, rather than the Chats. */
+  protected readonly inProject = computed(() => {
+    const project = this.project();
+    return project !== undefined && project !== this.projects.home();
+  });
   /** Whether glave runs on this computer, so what is sent stays here but for the model. */
   protected readonly local = this.session.local;
   /** Where the thread starts: the project the link names, else a chat; the person may pick. */

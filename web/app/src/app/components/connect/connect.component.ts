@@ -19,6 +19,7 @@ import {
 } from '@glave/glaze';
 
 import { connectProblem, isServiceKind, needsAddress, servicesFor } from '../../lib/providers';
+import { BackService } from '../../services/back.service';
 import { ModelsService } from '../../services/models.service';
 import { ProvidersService } from '../../services/providers.service';
 
@@ -83,6 +84,7 @@ export class ConnectComponent {
   private readonly providers = inject(ProvidersService);
   private readonly models = inject(ModelsService);
   private readonly router = inject(Router);
+  private readonly backs = inject(BackService);
   /** Whether a model was set up already, so the page leads back to settings. */
   protected readonly adding = computed(() => this.models.models().length > 0);
 
@@ -125,7 +127,7 @@ export class ConnectComponent {
       return;
     }
     const kind = this.picked();
-    const back = this.adding() ? '/settings' : '/';
+    const adding = this.adding();
     this.busy.set(true);
     this.problem.set(null);
     try {
@@ -133,7 +135,11 @@ export class ConnectComponent {
         needsAddress(kind) ? { kind, key, url: address } : { kind, key },
       );
       this.key.set('');
-      await this.router.navigateByUrl(back);
+      if (adding) {
+        await this.back();
+      } else {
+        await this.router.navigateByUrl('/');
+      }
     } catch (error: unknown) {
       this.problem.set(connectProblem(error));
     } finally {
@@ -141,7 +147,8 @@ export class ConnectComponent {
     }
   }
 
+  /** Back where the person came from, as the browser's Back would: Settings, mostly. */
   protected async back(): Promise<void> {
-    await this.router.navigateByUrl('/settings');
+    await this.backs.back('/settings');
   }
 }
