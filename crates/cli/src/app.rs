@@ -3,7 +3,8 @@
 //! person's server, started in the background first when it is not running and someone is at
 //! the terminal, at this folder's project (asking once when the folder is new), at the
 //! person's Chats in the home folder, when they would not make the folder a project or no one
-//! is at the terminal to ask, or with `--continue` at the newest thread there. With no model set up yet, the app adds one first.
+//! is at the terminal to ask, or with `--continue` at the newest thread there. With no model
+//! set up yet, the app adds one first.
 //!
 //! The browser is sent to a sign-in link, whose one-time code the server gives glave over its
 //! socket, through a page in glave's folder, readable only by you, as Jupyter does, so the
