@@ -1,9 +1,15 @@
 //! `cargo xtask release-workflow`: writes `.github/workflows/release.yml`, the workflow dist
-//! generates from `dist-workspace.toml` and `.github/build-setup.yml`, with the one change dist
-//! has no setting for. dist gives the whole workflow `contents: write`, so every job's token, the
-//! builds' too, could change the repository's releases and tags. Here the workflow's token only
-//! reads, and the job that publishes keeps the write access it asks for itself. `cargo xtask ci`
-//! checks that nothing else can write.
+//! generates from `dist-workspace.toml` and `.github/build-setup.yml`, with the two changes dist
+//! has no setting for:
+//!
+//! - dist gives the whole workflow `contents: write`, so every job's token, the builds' too,
+//!   could change the repository's releases and tags. Here the workflow's token only reads, and
+//!   the job that publishes keeps the write access it asks for itself.
+//! - dist's install script installs an archive unchecked where `sha256sum` is missing, as on
+//!   macOS before 15. Here the job that writes it runs `.github/install-script-checksums.sh` on
+//!   it before uploading it, so it checks every archive, with `shasum` where it must.
+//!
+//! `cargo xtask ci` checks both.
 
 use std::path::Path;
 
@@ -22,8 +28,16 @@ const DIST_PERMISSIONS: &str = "\npermissions:\n  \"contents\": \"write\"\n";
 const READ_ONLY: &str = "\npermissions:\n  \"contents\": \"read\"\n";
 /// The job that publishes the release and attests to it: the only one that may write.
 const PUBLISHER: &str = "host";
+/// The upload of the job that writes the install script, which the step below goes before.
+const GLOBAL_UPLOAD: &str = "      - name: \"Upload artifacts\"\n";
+/// What names that job's upload, after [`GLOBAL_UPLOAD`].
+const GLOBAL_ARTIFACTS: &str = "          name: artifacts-build-global\n";
+/// The step that makes the install script check every archive it downloads.
+const CHECKSUMS: &str = "      - name: \"The install script checks every archive it downloads\"
+        run: \"sh .github/install-script-checksums.sh target/distrib/glave-installer.sh\"
+";
 
-/// Has dist write the workflow, then makes its token read-only.
+/// Has dist write the workflow, then makes the two changes.
 pub(crate) fn run(args: &[String]) -> Result<(), String> {
     if !args.is_empty() {
         return Err("usage: cargo xtask release-workflow".to_owned());
@@ -44,27 +58,83 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
     write(&config_path, &config)?;
     generated.map_err(|err| format!("{err} (is dist, the version {CONFIG} names, installed?)"))?;
     let workflow_path = root.join(WORKFLOW);
-    let workflow = narrow(&read(&workflow_path)?)?;
+    let workflow = ship(&read(&workflow_path)?)?;
     write(&workflow_path, &workflow)?;
     println!("xtask: wrote {WORKFLOW}");
     Ok(())
 }
 
-/// Fails unless only the publishing job of the checked-in workflow can write.
+/// Fails unless the checked-in workflow has both changes.
 pub(crate) fn check() -> Result<(), String> {
     let workflow = read(&workspace::root()?.join(WORKFLOW))?;
-    only_publisher_writes(&workflow)
+    as_shipped(&workflow)
         .map_err(|err| format!("{WORKFLOW}: {err}: run `cargo xtask release-workflow`"))?;
-    println!("xtask: in {WORKFLOW}, only the `{PUBLISHER}` job can write");
+    println!(
+        "xtask: in {WORKFLOW}, only the `{PUBLISHER}` job can write, and the install script \
+         checks every archive"
+    );
     Ok(())
 }
 
-/// dist's workflow with its own permissions read-only.
-fn narrow(workflow: &str) -> Result<String, String> {
+/// dist's workflow with both changes: its own permissions read-only, and the step that makes
+/// the install script check every archive.
+fn ship(workflow: &str) -> Result<String, String> {
     let narrowed = workflow.replacen(DIST_PERMISSIONS, READ_ONLY, 1);
-    only_publisher_writes(&narrowed)
+    let shipped = with_checksums(&narrowed)
+        .and_then(|shipped| as_shipped(&shipped).map(|()| shipped))
         .map_err(|err| format!("dist's workflow has changed: {err}"))?;
-    Ok(narrowed)
+    Ok(shipped)
+}
+
+/// Fails unless the workflow has both changes.
+fn as_shipped(workflow: &str) -> Result<(), String> {
+    only_publisher_writes(workflow)?;
+    let upload = global_upload(workflow)?;
+    let checked = workflow
+        .get(..upload)
+        .is_some_and(|before| before.ends_with(CHECKSUMS));
+    if !checked || workflow.matches(CHECKSUMS).count() != 1 {
+        return Err(
+            "the job that writes the install script doesn't make it check every archive, \
+             just before uploading it"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
+/// The workflow with [`CHECKSUMS`] just before the upload of the job that writes the install
+/// script, unless it is there already.
+fn with_checksums(workflow: &str) -> Result<String, String> {
+    let upload = global_upload(workflow)?;
+    let (before, after) = workflow
+        .split_at_checked(upload)
+        .ok_or_else(|| "the install script's upload is not where it was found".to_owned())?;
+    if before.ends_with(CHECKSUMS) {
+        return Ok(workflow.to_owned());
+    }
+    Ok(format!("{before}{CHECKSUMS}{after}"))
+}
+
+/// Where the step starts that uploads what `build-global-artifacts` built, the install script
+/// among it: the last [`GLOBAL_UPLOAD`] before [`GLOBAL_ARTIFACTS`], with no other step between.
+fn global_upload(workflow: &str) -> Result<usize, String> {
+    let missing = || "no step uploads what build-global-artifacts builds".to_owned();
+    if workflow.matches(GLOBAL_ARTIFACTS).count() != 1 {
+        return Err(missing());
+    }
+    let artifacts = workflow.find(GLOBAL_ARTIFACTS).ok_or_else(missing)?;
+    let upload = workflow
+        .get(..artifacts)
+        .and_then(|before| before.rfind(GLOBAL_UPLOAD))
+        .ok_or_else(missing)?;
+    let between = workflow
+        .get(upload + GLOBAL_UPLOAD.len()..artifacts)
+        .ok_or_else(missing)?;
+    if between.lines().any(|line| line.starts_with("      - ")) {
+        return Err(missing());
+    }
+    Ok(upload)
 }
 
 /// Fails unless the workflow's own permissions are read-only and only the publishing job is
@@ -114,8 +184,9 @@ fn write(path: &Path, text: &str) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    /// The shape of dist's workflow: its own permissions, triggers indented as jobs are, and
-    /// the publishing job asking for write access itself.
+    /// The shape of dist's workflow: its own permissions, triggers indented as jobs are, both
+    /// build jobs uploading what they built, and the publishing job asking for write access
+    /// itself.
     const DIST_WORKFLOW: &str = r#"name: Release
 permissions:
   "contents": "write"
@@ -132,6 +203,20 @@ jobs:
       - run: dist plan
   build-local-artifacts:
     runs-on: ${{ matrix.runner }}
+    steps:
+      - name: "Upload artifacts"
+        uses: actions/upload-artifact@v7
+        with:
+          name: artifacts-build-local-${{ join(matrix.targets, '_') }}
+  build-global-artifacts:
+    runs-on: "ubuntu-22.04"
+    steps:
+      - id: cargo-dist
+        run: dist build --artifacts=global
+      - name: "Upload artifacts"
+        uses: actions/upload-artifact@v7
+        with:
+          name: artifacts-build-global
   host:
     permissions:
       "attestations": "write"
@@ -143,14 +228,44 @@ jobs:
 
     #[test]
     fn the_workflow_token_reads_and_the_publisher_still_writes() {
-        let narrowed = narrow(DIST_WORKFLOW).unwrap();
-        assert!(narrowed.starts_with("name: Release\npermissions:\n  \"contents\": \"read\"\n"));
-        assert!(narrowed.contains("      \"contents\": \"write\"\n      \"id-token\": \"write\""));
+        let shipped = ship(DIST_WORKFLOW).unwrap();
+        assert!(shipped.starts_with("name: Release\npermissions:\n  \"contents\": \"read\"\n"));
+        assert!(shipped.contains("      \"contents\": \"write\"\n      \"id-token\": \"write\""));
         assert_eq!(
-            narrow(&narrowed),
-            Ok(narrowed.clone()),
-            "narrowing twice changes nothing"
+            ship(&shipped),
+            Ok(shipped.clone()),
+            "shipping twice changes nothing"
         );
+    }
+
+    #[test]
+    fn the_install_script_is_made_to_check_before_its_job_uploads_it() {
+        let shipped = ship(DIST_WORKFLOW).unwrap();
+        let global = format!(
+            "        run: dist build --artifacts=global\n{CHECKSUMS}{GLOBAL_UPLOAD}        uses:"
+        );
+        assert!(shipped.contains(&global), "{shipped}");
+        assert_eq!(
+            shipped.matches(CHECKSUMS).count(),
+            1,
+            "not in the local builds"
+        );
+        assert_eq!(as_shipped(&shipped), Ok(()));
+        let err = as_shipped(&shipped.replace(CHECKSUMS, "")).unwrap_err();
+        assert!(err.contains("check every archive"), "{err}");
+    }
+
+    #[test]
+    fn a_workflow_whose_install_script_upload_moved_fails() {
+        let unnamed = DIST_WORKFLOW.replace(GLOBAL_ARTIFACTS, "          name: elsewhere\n");
+        let err = ship(&unnamed).unwrap_err();
+        assert!(err.contains("no step uploads"), "{err}");
+        let other_step = DIST_WORKFLOW.replace(
+            "        with:\n          name: artifacts-build-global",
+            "      - run: true\n        with:\n          name: artifacts-build-global",
+        );
+        let err = ship(&other_step).unwrap_err();
+        assert!(err.contains("no step uploads"), "{err}");
     }
 
     #[test]
@@ -159,7 +274,7 @@ jobs:
             "    runs-on: ${{ matrix.runner }}\n",
             "    runs-on: ${{ matrix.runner }}\n    permissions:\n      \"contents\": \"write\"\n",
         );
-        let err = narrow(&build_writes).unwrap_err();
+        let err = ship(&build_writes).unwrap_err();
         assert!(
             err.contains("`build-local-artifacts` job can write"),
             "{err}"
@@ -169,13 +284,13 @@ jobs:
     #[test]
     fn the_workflow_must_set_its_own_permissions() {
         let unset = DIST_WORKFLOW.replace("permissions:\n  \"contents\": \"write\"\n\n", "");
-        let err = narrow(&unset).unwrap_err();
+        let err = ship(&unset).unwrap_err();
         assert!(err.contains("not `contents: read`"), "{err}");
         let more = DIST_WORKFLOW.replace(
             "  \"contents\": \"write\"\n\n",
             "  \"contents\": \"write\"\n  \"id-token\": \"write\"\n\n",
         );
-        let err = narrow(&more).unwrap_err();
+        let err = ship(&more).unwrap_err();
         assert!(
             err.contains("the workflow's own permissions write"),
             "{err}"

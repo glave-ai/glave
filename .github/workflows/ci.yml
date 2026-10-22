@@ -64,6 +64,14 @@ jobs:
           sudo docker image prune --all --force >/dev/null
           df -h /
       - uses: actions/checkout@v7
+      # Every shell script the repository tracks: each `.sh`, and each file whose first line runs
+      # sh, bash, dash or ksh. Not the files an eval task starts from (evals/tasks/*/environment),
+      # which the model is given as they are, flaws and all.
+      - name: Shellcheck every shell script
+        run: |
+          git ls-files -z | xargs -0 awk 'FNR == 1 { if ((FILENAME ~ /\.sh$/ || $0 ~ /^#!.*[\/ ](ba|da|k)?sh( |$)/) && FILENAME !~ /^evals\/tasks\/[^\/]+\/environment\//) print FILENAME; nextfile }' >"$RUNNER_TEMP/scripts"
+          echo "$(wc -l <"$RUNNER_TEMP/scripts") shell scripts"
+          xargs -d '\n' shellcheck <"$RUNNER_TEMP/scripts"
       # SeaweedFS (Apache-2.0) as an S3-compatible bucket, pinned by digest. A service container
       # cannot be given its command (`server -s3`), so a step starts it, and makes the tests'
       # bucket once it answers. It keeps no keys, so the tests send their requests unsigned.
@@ -176,9 +184,7 @@ jobs:
       # a crate whose licence cargo-about can't find or about.toml doesn't accept, or an npm
       # package that ships no licence text, fails here rather than in a release.
       - name: Every release archive's third-party notices
-        run: |
-          shellcheck .github/third-party-notices.sh
-          sh .github/third-party-notices.sh
+        run: sh .github/third-party-notices.sh
         working-directory: .
       - run: npm run build:showcase
       - name: Build glave with the app inside, and test that it serves it
@@ -258,9 +264,11 @@ jobs:
           test "$CHECKS" = success
           test "$E2E" = success
 
-  # The release workflow is dist's, with every job's token read-only but the publishing job's
-  # (`cargo xtask release-workflow`). dist doesn't check a workflow its config says is edited by
-  # hand, so this job does: what the xtask writes from today's config is what's checked in.
+  # The release workflow is dist's with two changes (`cargo xtask release-workflow`): every job's
+  # token read-only but the publishing job's, and the install script made to check every
+  # archive. dist doesn't check a workflow its config says is edited by hand, so this job does:
+  # what the xtask writes from today's config is what's checked in, and the change to the
+  # install script still applies to the one dist writes today.
   release-workflow:
     runs-on: ubuntu-latest
     steps:
@@ -275,6 +283,12 @@ jobs:
       - run: cargo xtask release-workflow
       - name: release.yml is what the xtask writes
         run: git diff --exit-code
+      # With no archives built, the script dist writes carries no checksums, but its check is
+      # the same.
+      - name: The install script dist writes takes the change that makes it check every archive
+        run: |
+          dist build --artifacts=global --output-format=json >/dev/null
+          sh .github/install-script-checksums.sh target/distrib/glave-installer.sh
 
   # Workers on Kubernetes: a kind cluster on the runner, and the Kubernetes backend's tests
   # against it (a stub in glave's place, then the glave this job builds in real workers, over
@@ -397,6 +411,11 @@ jobs:
       GLAVE_REQUIRE_SANDBOX: "1"
     steps:
       - uses: actions/checkout@v7
+      # macOS's /bin/sh is bash 3.2, which reads some scripts otherwise than dash and shellcheck
+      # do: a heredoc inside $(…) whose text holds a `)` ends early there, and what follows runs
+      # as commands. The scripts in .github run on macOS in a release, or by a maintainer's hand.
+      - name: The scripts in .github parse under macOS's /bin/sh
+        run: for script in .github/*.sh; do /bin/sh -n "$script"; done
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2

@@ -45,6 +45,9 @@ USAGE="Installs glave on this Linux server as a service, or updates it.
   --docker           with --origin, run glave in Docker Compose beside Cloudflare Tunnel's
                      connector, which serves <url> with the token in TUNNEL_TOKEN (or asked)
 
+With GLAVE_DOWNLOAD_URL set to an https:// address that holds a release's files, it downloads
+glave from there rather than from GitHub, as glave's install script for a laptop does.
+
 Run it again to update glave: it keeps glave's settings and data."
 
 REACH=""
@@ -129,6 +132,13 @@ parse() {
 	case "$DOCKER$REACH" in
 	yesprivate | yespublic) fail "--docker goes with Cloudflare Tunnel: --origin and the address your tunnel serves, such as https://glave.example.com" ;;
 	esac
+	case "${GLAVE_DOWNLOAD_URL:-}" in
+	"" | https://*) ;;
+	*) fail "GLAVE_DOWNLOAD_URL is $GLAVE_DOWNLOAD_URL, but glave is downloaded only over HTTPS: give an https:// address" ;;
+	esac
+	if [ -n "${GLAVE_DOWNLOAD_URL:-}" ] && [ -n "$VERSION" ]; then
+		fail "--version picks a release on GitHub, and GLAVE_DOWNLOAD_URL says where a release's files are: use one or the other"
+	fi
 }
 
 # What this server must have: Linux, with systemd unless glave runs in Docker.
@@ -175,8 +185,8 @@ packages() {
 	fi
 }
 
-# glave's program: the one --binary names, else the release for this processor, checked
-# against its checksum.
+# glave's program: the one --binary names, else the release for this processor, from GitHub
+# or GLAVE_DOWNLOAD_URL, checked against its checksum.
 fetch() {
 	if [ -n "$BINARY" ]; then
 		[ -f "$BINARY" ] || fail "$BINARY is not a file"
@@ -190,7 +200,9 @@ fetch() {
 	if ! command -v xz >/dev/null 2>&1; then
 		if command -v apt-get >/dev/null 2>&1; then packages xz-utils; else packages xz; fi
 	fi
-	if [ -n "$VERSION" ]; then
+	if [ -n "${GLAVE_DOWNLOAD_URL:-}" ]; then
+		from="${GLAVE_DOWNLOAD_URL%/}"
+	elif [ -n "$VERSION" ]; then
 		from="$REPOSITORY/releases/download/$VERSION"
 	else
 		from="$REPOSITORY/releases/latest/download"
