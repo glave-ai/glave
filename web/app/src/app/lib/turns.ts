@@ -134,7 +134,7 @@ function turnOf(events: readonly RawEvent[], items: readonly ThreadItem[]): Turn
       ? null
       : Math.max(0, Date.parse(until.at) - Date.parse(started.at));
   return {
-    key: `turn-${String((started ?? events[0])?.seq ?? 0)}`,
+    key: `turn-${String(events[0]?.seq ?? 0)}`,
     items,
     files: changedFiles(events),
     took: Number.isNaN(took) ? null : took,
@@ -176,12 +176,11 @@ export function threadTurns(events: readonly RawEvent[]): readonly Turn[] {
 
 /**
  * The turn the person just asked for, before the server records it: their message alone, so
- * it shows at once, with glave working under it. Its key is the one the turn takes once
- * recorded when the server records its start as `next`, so what shows of it carries on.
+ * it shows at once, with glave working under it, keyed `key`.
  */
-export function startingTurn(prompt: string, next: number): Turn {
+function startingTurn(prompt: string, key: string): Turn {
   return {
-    key: `turn-${String(next)}`,
+    key,
     items: [
       {
         kind: 'message',
@@ -215,4 +214,39 @@ export function turnRuns(events: readonly RawEvent[]): boolean {
     }
   }
   return false;
+}
+
+/** The key of a turn a view asked for after the event `seq` `after`, from asking on. */
+function askedKey(after: number): string {
+  return `turn-asked-${String(after)}`;
+}
+
+/**
+ * `turns` as the view that asked for some of them shows them: each turn it asked for, the first
+ * recorded after each `seq` in `asked` (the last event it had read as it asked), keyed by that
+ * asking from the moment it asked, so what shows of the turn carries on as the server records it
+ * a piece at a time; and `prompt`, asked last and not recorded yet, as that turn starting.
+ */
+export function askedTurns(
+  turns: readonly Turn[],
+  asked: readonly number[],
+  prompt: string | null,
+): readonly Turn[] {
+  const keyed = [...turns];
+  let from = 0;
+  let waiting: number | null = null;
+  for (const after of asked) {
+    const at = turns.findIndex((turn, index) => index >= from && (turn.items[0]?.seq ?? 0) > after);
+    const found = turns[at];
+    if (found === undefined) {
+      waiting = after;
+      continue;
+    }
+    keyed[at] = { ...found, key: askedKey(after) };
+    from = at + 1;
+  }
+  if (prompt === null) {
+    return keyed;
+  }
+  return [...keyed, startingTurn(prompt, waiting === null ? 'turn-starting' : askedKey(waiting))];
 }

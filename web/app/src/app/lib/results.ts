@@ -12,8 +12,8 @@ export type Waiting = ApprovalItem | QuestionItem;
 export interface Receipt {
   readonly status: GlzRunStatus;
   /**
-   * The time it took (so far, while it has not ended) and what it cost, as far as known, and
-   * how many commands ran outside the sandbox, when any did.
+   * The time it took (so far, while it has not ended, unless the working line counts it) and
+   * what it cost, as far as known, and how many commands ran outside the sandbox, when any did.
    */
   readonly facts: readonly string[];
   /** How many steps, in words: "4 steps". */
@@ -158,10 +158,11 @@ export function turnResults(
   const calls = rest.filter(isCall).length;
   const worked = calls > 0;
   const routes = new Intl.ListFormat(locale, { style: 'short', type: 'unit' }).format(turn.routes);
-  // While it runs, the working line counts its time; the receipt says it once it has ended.
-  const runs = running && turn.outcome === null;
+  const working = workingOn(turn, live, step, running, waiting.length);
+  // While the working line counts the turn's time, the receipt leaves it to it.
+  const timed = turn.took !== null && turn.took !== 0 && working === null;
   const facts = [
-    ...(turn.took === null || turn.took === 0 || runs ? [] : [formatDuration(turn.took, locale)]),
+    ...(timed ? [formatDuration(turn.took, locale)] : []),
     ...(turn.cost === null ? [] : [formatMoney(turn.cost, locale)]),
     ...(turn.routes.length === 0 ? [] : [$localize`:@@results.via:via ${routes}:ROUTES:`]),
     ...outsideSandbox(rest, locale),
@@ -172,7 +173,7 @@ export function turnResults(
     before: worked ? [] : along,
     reply,
     live,
-    working: workingOn(turn, live, step, running, waiting.length),
+    working,
     files: turn.files,
     steps: worked ? along : [],
     receipt: worked

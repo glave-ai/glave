@@ -212,11 +212,17 @@ describe('results', () => {
     });
   });
 
-  it('says how long it took once it has ended, the working line counting while it runs', () => {
-    const facts = (running: boolean, more: Partial<Turn> = {}): unknown =>
-      turnResults(turn([ask, call(2)], { took: 3_000, ...more }), null, null, running, 'en-US')
-        .receipt?.facts;
+  it('says how long it took, but for while the working line counts it', () => {
+    const facts = (
+      running: boolean,
+      more: Partial<Turn> = {},
+      items: readonly ThreadItem[] = [ask, call(2)],
+    ): unknown =>
+      turnResults(turn(items, { took: 3_000, ...more }), null, null, running, 'en-US').receipt
+        ?.facts;
     expect(facts(true)).toEqual([]);
+    // Waiting for the person, no line counts: the time so far.
+    expect(facts(true, {}, [ask, call(2), approval(3, false)])).toEqual(['3s']);
     expect(facts(true, { outcome: 'completed' })).toEqual(['3s']);
     expect(facts(false)).toEqual(['3s']);
   });

@@ -47,6 +47,8 @@ export class ThreadService {
   private readonly waiting = signal<readonly Waiting[]>([]);
   /** What the person sent to start a turn, until the server records it. */
   private readonly asking = signal<string | null>(null);
+  /** Where each turn this view asked for begins: after the last event it had read as it asked. */
+  private readonly afters = signal<readonly number[]>([]);
   /** Messages the model will not read, given back once the turn has ended. */
   private givenBack: string[] = [];
   /** Whether the person stopped the turn, so what waited is sent next. */
@@ -78,8 +80,11 @@ export class ThreadService {
   readonly thread = this.id.asReadonly();
   /** The thread's turns, each with its items, the files it changed, its time and cost. */
   readonly turns = computed(() => threadTurns(this.events()));
-  /** The `seq` the thread's next event takes, as far as this view has read it. */
-  readonly next = computed(() => (this.events().at(-1)?.seq ?? 0) + 1);
+  /**
+   * The turns this view asked for, each by the `seq` of the last event it had read as it asked:
+   * the turn is the first recorded after it.
+   */
+  readonly askedAfter = this.afters.asReadonly();
   /** The files the thread changed with its own `write` and `edit` calls. */
   readonly files = computed(() => changedFiles(this.events()));
   /** The `seq` of the latest start or end of a command in the background it recorded, if any. */
@@ -144,6 +149,7 @@ export class ThreadService {
     this.forgetLive();
     this.waiting.set([]);
     this.asking.set(null);
+    this.afters.set([]);
     this.givenBack = [];
     this.stopped = false;
     this.stoppedAt = null;
@@ -291,6 +297,7 @@ export class ThreadService {
     let own = queued === null;
     if (own) {
       this.asking.set(params.prompt);
+      this.afters.update((afters) => [...afters, this.events().at(-1)?.seq ?? 0]);
       this.streaming.update((streams) => streams + 1);
       if (!this.running()) {
         this.stopWatching();
@@ -552,6 +559,7 @@ export class ThreadService {
       return;
     }
     this.asking.set(null);
+    this.afters.update((afters) => afters.slice(0, -1));
     this.composer.update((draft) => together([prompt, draft].filter(Boolean)));
   }
 

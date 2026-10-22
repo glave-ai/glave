@@ -25,7 +25,7 @@ import {
 
 import { type TurnResults, turnResults } from '../../lib/results';
 import { threadTitle } from '../../lib/threads';
-import { startingTurn } from '../../lib/turns';
+import { askedTurns } from '../../lib/turns';
 import { AttachmentsService } from '../../services/attachments.service';
 import { effortToSend } from '../../lib/effort';
 import { CommandsService } from '../../services/commands.service';
@@ -145,10 +145,11 @@ export class ThreadComponent {
   protected readonly turns = computed<readonly TurnResults[]>(() => {
     const live = this.service.hasReply() ? this.service.reply() : null;
     const step = this.service.step();
-    const recorded = this.service.turns();
-    const starting = this.service.starting();
-    const turns =
-      starting === null ? recorded : [...recorded, startingTurn(starting, this.service.next())];
+    const turns = askedTurns(
+      this.service.turns(),
+      this.service.askedAfter(),
+      this.service.starting(),
+    );
     const last = turns.length - 1;
     return turns.map((turn, index) =>
       turnResults(
