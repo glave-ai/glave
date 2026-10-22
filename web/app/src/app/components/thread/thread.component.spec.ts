@@ -1,3 +1,4 @@
+import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { BreakpointObserver } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
@@ -338,6 +339,45 @@ describe('ThreadComponent', () => {
     await settle();
     await fixture.whenStable();
     expect(root.querySelector('[data-testid="thread-composer-stop"]')).toBeNull();
+  });
+
+  it('keeps glave working under the person’s message as the server records the turn a piece at a time', async () => {
+    const turn = new FakeTurn();
+    const announce = vi.fn<(said: string, politeness: string) => Promise<void>>(() =>
+      Promise.resolve(),
+    );
+    TestBed.configureTestingModule({
+      providers: [{ provide: LiveAnnouncer, useValue: { announce } }],
+    });
+    const { root, fixture } = await open(session(ANSWERED).turn(turn));
+    await type(root, 'Tidy up');
+    await fixture.whenStable();
+    const working = root.querySelector('[data-testid="thread-working"]');
+    expect(working).not.toBeNull();
+    // A choice recorded first, then the start, then the message, each on its own.
+    for (const each of [
+      event(4, 'model.chosen', { model: 'hope-12b' }),
+      event(5, 'turn.started', {}),
+      event(6, 'message.added', { role: 'user', parts: [{ type: 'text', text: 'Tidy up' }] }),
+    ]) {
+      turn.send({
+        jsonrpc: '2.0',
+        method: 'thread/event',
+        params: { thread: 'thread-1', event: each },
+      });
+      await settle();
+      await fixture.whenStable();
+      expect(root.querySelector('[data-testid="thread-working"]')).toBe(working);
+    }
+    expect(announce.mock.calls.filter(([said]) => said === 'Thinking…')).toHaveLength(1);
+    turn.send({
+      jsonrpc: '2.0',
+      method: 'thread/event',
+      params: { thread: 'thread-1', event: event(7, 'turn.ended', { outcome: 'completed' }) },
+    });
+    turn.end();
+    await settle();
+    await fixture.whenStable();
   });
 
   it('sends the model picked with the next turn, and only when it changes', async () => {

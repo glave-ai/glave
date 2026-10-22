@@ -22,7 +22,7 @@
     inset-inline-start: calc(var(--glz-space-1) - 1px);
     width: 2px;
     background: transparent;
-    transition: background var(--glz-duration-fast) var(--glz-easing);
+    transition: background var(--glz-duration-quick) var(--glz-ease-out);
   }
 
   .handle:hover::after,

@@ -29,7 +29,7 @@
   border-radius: var(--glz-radius-mark);
   cursor: pointer;
   list-style: none;
-  transition: background-color var(--glz-duration-fast) var(--glz-easing);
+  transition: background-color var(--glz-duration-quick) var(--glz-ease-out);
 }
 
 .line::-webkit-details-marker {
@@ -73,10 +73,6 @@
   color: var(--glz-receipt-status);
 }
 
-:host(.status-running) .status {
-  animation: glz-receipt-spin 1s linear infinite;
-}
-
 // The evidence hangs under the line, behind a rule, as reasoning does.
 .evidence {
   /* stylelint-disable declaration-property-value-allowed-list -- the content of a <details> takes no gap (::details-content is not Baseline) */
@@ -86,16 +82,4 @@
   padding-inline-start: var(--glz-space-3);
   overflow-x: auto;
   border-inline-start: 2px solid var(--glz-color-border);
-}
-
-@keyframes glz-receipt-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :host(.status-running) .status {
-    animation: none;
-  }
 }

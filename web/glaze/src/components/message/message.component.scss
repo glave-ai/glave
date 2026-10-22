@@ -69,7 +69,7 @@
   display: flex;
   gap: var(--glz-space-1);
   opacity: 0;
-  transition: opacity var(--glz-duration-fast) var(--glz-easing);
+  transition: opacity var(--glz-duration-quick) var(--glz-ease-out);
 }
 
 .actions:empty {
@@ -96,7 +96,7 @@
   width: 0.5em;
   height: 1em;
   background: var(--glz-accent);
-  animation: glz-blink 1s steps(1) infinite;
+  animation: glz-blink var(--glz-duration-blink) var(--glz-ease-blink) infinite;
 }
 
 @keyframes glz-blink {

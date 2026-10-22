@@ -9,7 +9,7 @@ import {
 } from '@glave/glaze';
 import { SquareTerminal } from 'lucide';
 
-import { runningFor } from '../../lib/commands';
+import { runningFor } from '../../lib/when';
 import { CommandsService } from '../../services/commands.service';
 
 /**

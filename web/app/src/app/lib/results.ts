@@ -12,12 +12,23 @@ export type Waiting = ApprovalItem | QuestionItem;
 export interface Receipt {
   readonly status: GlzRunStatus;
   /**
-   * The time it took (so far, while it has not ended) and what it cost, as far as known, and
-   * how many commands ran outside the sandbox, when any did.
+   * The time it took (so far, while it has not ended, unless the working line counts it) and
+   * what it cost, as far as known, and how many commands ran outside the sandbox, when any did.
    */
   readonly facts: readonly string[];
   /** How many steps, in words: "4 steps". */
   readonly steps: string;
+}
+
+/** What a turn shows while it works with nothing of its own to show yet. */
+export interface Working {
+  /**
+   * The step it takes now, in the server's words, while a tool runs and the server said which;
+   * `null` while its model thinks.
+   */
+  readonly step: string | null;
+  /** When it started, as the server recorded it; `null` until it has. */
+  readonly since: string | null;
 }
 
 /**
@@ -37,11 +48,11 @@ export interface TurnResults {
   /** The reply being written, in the turn that runs. */
   readonly live: Draft | null;
   /**
-   * Whether the turn runs and waits on its model with nothing to show yet: no reply or
-   * reasoning streaming, no call running, nothing waiting for the person, and not just after
-   * the model's last words.
+   * While it runs with nothing of its own to show yet (no reply or reasoning streaming, nothing
+   * waiting for the person, and not just after the model's last words), what shows instead: the
+   * step it takes, when a tool runs, and since when it has worked; else `null`.
    */
-  readonly working: boolean;
+  readonly working: Working | null;
   readonly files: readonly ChangedFile[];
   /** The work folded behind the receipt, in order. */
   readonly steps: readonly ThreadItem[];
@@ -67,12 +78,26 @@ function said(item: ThreadItem): item is MessageItem {
   return item.kind === 'message' && item.from === 'model' && item.text.trim() !== '';
 }
 
-/** Whether `turn`, running, waits on its model with nothing of it to show yet. */
-function workingOn(turn: Turn, live: Draft | null, running: boolean, waiting: number): boolean {
+/** Whether a call of `turn`'s runs now. */
+function calling(turn: Turn): boolean {
+  return turn.items.some((item) => item.kind === 'call' && item.status === 'running');
+}
+
+/**
+ * What `turn`, running, shows while it has nothing of its own to show yet: the `step` the server
+ * said it takes, while a call runs, and since when it has worked; `null` when it has something.
+ */
+function workingOn(
+  turn: Turn,
+  live: Draft | null,
+  step: string | null,
+  running: boolean,
+  waiting: number,
+): Working | null {
   const last = turn.items.at(-1);
   const answered = last?.kind === 'message' && last.from === 'model';
-  const going = turn.items.some((item) => item.kind === 'call' && item.status === 'running');
-  return running && turn.outcome === null && live === null && waiting === 0 && !going && !answered;
+  const idle = !running || turn.outcome !== null || live !== null || waiting > 0 || answered;
+  return idle ? null : { step: calling(turn) ? step : null, since: turn.started };
 }
 
 function statusOf(turn: Turn, waiting: readonly Waiting[], running: boolean): GlzRunStatus {
@@ -88,8 +113,7 @@ function statusOf(turn: Turn, waiting: readonly Waiting[], running: boolean): Gl
   if (waiting.length > 0) {
     return 'waiting';
   }
-  const going = turn.items.some((item) => item.kind === 'call' && item.status === 'running');
-  return running || going ? 'running' : 'done';
+  return running || calling(turn) ? 'running' : 'done';
 }
 
 /** How many commands the person let run outside the sandbox, in words, when any were. */
@@ -113,11 +137,13 @@ function outsideSandbox(items: readonly ThreadItem[], locale: string): readonly 
 /**
  * `turn` results first, its facts written for `locale`. `live` is the reply being written, for
  * the turn that runs now (`running`); it takes the reply's place, and what was the reply goes
- * back among what was said along the way.
+ * back among what was said along the way. `step` is the step that turn takes now, in the
+ * server's words, as it said while a tool runs.
  */
 export function turnResults(
   turn: Turn,
   live: Draft | null,
+  step: string | null,
   running: boolean,
   locale: string,
 ): TurnResults {
@@ -132,8 +158,11 @@ export function turnResults(
   const calls = rest.filter(isCall).length;
   const worked = calls > 0;
   const routes = new Intl.ListFormat(locale, { style: 'short', type: 'unit' }).format(turn.routes);
+  const working = workingOn(turn, live, step, running, waiting.length);
+  // While the working line counts the turn's time, the receipt leaves it to it.
+  const timed = turn.took !== null && turn.took !== 0 && working === null;
   const facts = [
-    ...(turn.took === null || turn.took === 0 ? [] : [formatDuration(turn.took, locale)]),
+    ...(timed ? [formatDuration(turn.took, locale)] : []),
     ...(turn.cost === null ? [] : [formatMoney(turn.cost, locale)]),
     ...(turn.routes.length === 0 ? [] : [$localize`:@@results.via:via ${routes}:ROUTES:`]),
     ...outsideSandbox(rest, locale),
@@ -144,7 +173,7 @@ export function turnResults(
     before: worked ? [] : along,
     reply,
     live,
-    working: workingOn(turn, live, running, waiting.length),
+    working,
     files: turn.files,
     steps: worked ? along : [],
     receipt: worked

@@ -11,6 +11,7 @@ import {
   partsText,
   promptOf,
   questionsOf,
+  stepsAfter,
   threadItems,
   withResults,
 } from './conversation';
@@ -227,6 +228,39 @@ describe('conversation', () => {
     draft = applyUpdate(draft, { kind: 'reasoning', text: 'why' });
     draft = applyUpdate(draft, { kind: 'waiting' });
     expect(draft).toEqual({ text: 'Hello', reasoning: 'why' });
+  });
+
+  it('keeps the steps running now in the server’s words, from their start to their end', () => {
+    let steps = stepsAfter([], { kind: 'tool_started', summary: 'bash: cargo test' });
+    steps = stepsAfter(steps, { kind: 'tool_started', summary: 'read src/lock.rs' });
+    steps = stepsAfter(steps, { kind: 'text', text: 'Looking.' });
+    expect(steps).toEqual(['bash: cargo test', 'read src/lock.rs']);
+    steps = stepsAfter(steps, {
+      kind: 'tool_finished',
+      summary: 'read src/lock.rs',
+      is_error: false,
+    });
+    expect(steps).toEqual(['bash: cargo test']);
+    // One that never started, as one the person declined, takes nothing away.
+    steps = stepsAfter(steps, {
+      kind: 'tool_declined',
+      summary: 'bash: git push',
+      no_one_there: false,
+    });
+    expect(steps).toEqual(['bash: cargo test']);
+    steps = stepsAfter(steps, {
+      kind: 'tool_finished',
+      summary: 'bash: cargo test',
+      is_error: true,
+    });
+    expect(steps).toEqual([]);
+  });
+
+  it('ends one step of two alike at a time', () => {
+    const twice = ['read a.rs', 'read a.rs'];
+    expect(
+      stepsAfter(twice, { kind: 'tool_finished', summary: 'read a.rs', is_error: false }),
+    ).toEqual(['read a.rs']);
   });
 
   it('merges events by seq, in order, once each', () => {

@@ -2,7 +2,8 @@ import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
-import { COMMANDS_TICK_MS, CommandsService } from '../../services/commands.service';
+import { TICK_MS } from '../../services/clock';
+import { CommandsService } from '../../services/commands.service';
 import { ThreadService } from '../../services/thread.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
@@ -75,7 +76,7 @@ describe('CommandListComponent', () => {
     expect(all(root, 'command-time').map((each) => each.textContent)).toEqual([
       'Running for 2m 05s',
     ]);
-    vi.advanceTimersByTime(COMMANDS_TICK_MS);
+    vi.advanceTimersByTime(TICK_MS);
     await settle();
     expect(all(root, 'command-time')[0]?.textContent).toBe('Running for 2m 06s');
     await expectAccessible(root);

@@ -1,4 +1,4 @@
-import { type Reader, readerTimes } from './when';
+import { type Reader, readerTimes, runningFor } from './when';
 
 const READER: Reader = { locale: 'en-US', timeZone: 'UTC' };
 const NOW = Date.parse('2026-10-14T12:00:00.000Z');
@@ -53,5 +53,23 @@ describe('when', () => {
 
   it('has no day for a time it cannot read', () => {
     expect(readerTimes(NOW, READER).day('soon')).toEqual([]);
+  });
+});
+
+describe('runningFor', () => {
+  const start = '2026-10-11T10:00:00.000Z';
+  const at = (offset: number): number => Date.parse(start) + offset;
+
+  it('is how long it has run, in whole seconds, and at least one', () => {
+    expect(runningFor(start, at(125_400))).toBe(125_000);
+    expect(runningFor(start, at(999))).toBe(1000);
+    // A clock behind the server's still reads a second.
+    expect(runningFor(start, at(-5000))).toBe(1000);
+  });
+
+  it('is unknown until the start is recorded, or when it does not parse', () => {
+    expect(runningFor(null, at(0))).toBeNull();
+    expect(runningFor(undefined, at(0))).toBeNull();
+    expect(runningFor('soon', at(0))).toBeNull();
   });
 });

@@ -1,7 +1,7 @@
 import type { RawEvent } from '@glave/client';
 
 import { event } from '../testing/fixtures';
-import { startingTurn, threadTurns, turnRuns } from './turns';
+import { askedTurns, threadTurns, turnRuns } from './turns';
 
 function at(seq: number, type: string, data: Record<string, unknown>, time: string): RawEvent {
   return { ...event(seq, type, data), at: time };
@@ -43,12 +43,19 @@ describe('turns', () => {
     const [first, second] = turns;
     expect(first).toMatchObject({
       took: 242_000,
+      started: '2026-10-11T10:00:00.000Z',
       outcome: 'completed',
       cost: { micros: 1500, currency: 'USD' },
     });
     expect(first?.files.map((file) => [file.path, file.added])).toEqual([['a.rs', 2]]);
     // Still going: no end, its time so far, no cost said.
-    expect(second).toMatchObject({ took: 12_000, outcome: null, cost: null, files: [] });
+    expect(second).toMatchObject({
+      took: 12_000,
+      started: '2026-10-11T10:05:00.000Z',
+      outcome: null,
+      cost: null,
+      files: [],
+    });
   });
 
   it('keeps a turn whole when its start was recorded after the person’s message', () => {
@@ -95,12 +102,35 @@ describe('turns', () => {
     expect(threadTurns([event(1, 'thread.started', {}), event(2, 'model.chosen', {})])).toEqual([]);
   });
 
-  it('starts a turn the person just asked for with their message alone, not yet ended', () => {
-    const starting = startingTurn('Fix the flaky test');
-    expect(starting.items).toEqual([
+  it('keys a turn the view asked for by its asking, from before it is recorded until after', () => {
+    const before = threadTurns([ASK(1, 'Hi'), SAY(2, 'Hello')]);
+    // Asked after event 2: the person's message alone, with glave working under it.
+    const asking = askedTurns(before, [2], 'Fix the flaky test');
+    expect(asking.map((turn) => turn.key)).toEqual(['turn-1', 'turn-asked-2']);
+    expect(asking.at(-1)?.items).toEqual([
       expect.objectContaining({ kind: 'message', from: 'person', text: 'Fix the flaky test' }),
     ]);
-    expect(starting.outcome).toBeNull();
+    expect(asking.at(-1)?.outcome).toBeNull();
+    // A choice and the turn's start recorded, not yet the message: still the turn asked for.
+    const started = [
+      ...[ASK(1, 'Hi'), SAY(2, 'Hello')],
+      event(3, 'model.chosen', { model: 'hope-12b' }),
+      event(4, 'turn.started', {}),
+    ];
+    const keys = (events: readonly RawEvent[], prompt: string | null): readonly string[] =>
+      askedTurns(threadTurns(events), [2], prompt).map((turn) => turn.key);
+    expect(keys(started, 'Fix the flaky test')).toEqual(['turn-1', 'turn-asked-2']);
+    // Recorded, and on after it: the same key.
+    const recorded = [...started, ASK(5, 'Fix the flaky test'), SAY(6, 'Fixed')];
+    expect(keys(recorded, null)).toEqual(['turn-1', 'turn-asked-2']);
+    // Asked for again: each keeps its own.
+    expect(
+      askedTurns(threadTurns([...recorded, ASK(7, 'Thanks')]), [2, 6], null).map(
+        (turn) => turn.key,
+      ),
+    ).toEqual(['turn-1', 'turn-asked-2', 'turn-asked-6']);
+    // A turn the view did not ask for keeps the key its events give it.
+    expect(keys([ASK(1, 'Hi')], null)).toEqual(['turn-1']);
   });
 
   it('says a turn runs from its start until it ends', () => {

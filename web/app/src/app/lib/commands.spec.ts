@@ -1,7 +1,7 @@
 import { ApiError, ErrorCode } from '@glave/client';
 
 import { event } from '../testing/fixtures';
-import { alreadyEnded, commandProblem, lastCommandChange, runningFor } from './commands';
+import { alreadyEnded, commandProblem, lastCommandChange } from './commands';
 import { somethingWrong } from './text';
 
 describe('lastCommandChange', () => {
@@ -16,24 +16,6 @@ describe('lastCommandChange', () => {
         event(4, 'message.added', {}),
       ]),
     ).toBe(3);
-  });
-});
-
-describe('runningFor', () => {
-  const start = '2026-10-11T10:00:00.000Z';
-  const at = (offset: number): number => Date.parse(start) + offset;
-
-  it('is how long it has run, in whole seconds, and at least one', () => {
-    expect(runningFor(start, at(125_400))).toBe(125_000);
-    expect(runningFor(start, at(999))).toBe(1000);
-    // A clock behind the server's still reads a second.
-    expect(runningFor(start, at(-5000))).toBe(1000);
-  });
-
-  it('is unknown until the start is recorded, or when it does not parse', () => {
-    expect(runningFor(null, at(0))).toBeNull();
-    expect(runningFor(undefined, at(0))).toBeNull();
-    expect(runningFor('soon', at(0))).toBeNull();
   });
 });
 

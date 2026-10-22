@@ -1,13 +1,11 @@
-import { Service, computed, effect, inject, linkedSignal, signal, untracked } from '@angular/core';
+import { Service, computed, effect, inject, linkedSignal, untracked } from '@angular/core';
 import type { CommandId, RunningCommand, ThreadId } from '@glave/client';
 
 import { alreadyEnded, commandProblem } from '../lib/commands';
+import { clock } from './clock';
 import { SessionService } from './session.service';
 import { ThreadService } from './thread.service';
 import { ToolsPanelService } from './tools-panel.service';
-
-/** How often the time each command has run moves on while they show, in milliseconds. */
-export const COMMANDS_TICK_MS = 1_000;
 
 /** What is known of the open thread's commands in the background. */
 interface State {
@@ -52,7 +50,6 @@ export class CommandsService {
     source: this.thread.thread,
     computation: () => NOTHING_YET,
   });
-  private readonly clock = signal(Date.now());
   /** Counts the reads and stops begun, so an answer that a later one overtook is dropped. */
   private latest = 0;
 
@@ -62,12 +59,12 @@ export class CommandsService {
   readonly stopping = computed(() => this.state().stopping);
   readonly refusals = computed(() => this.state().refusals);
   readonly count = computed(() => this.commands().length);
-  /** Now, in milliseconds since the epoch, moving on each second while the commands show. */
-  readonly now = this.clock.asReadonly();
   /** Whether a command shows how long it has run, which only a recorded start says. */
   private readonly timed = computed(() =>
     this.commands().some((command) => typeof command.started_at === 'string'),
   );
+  /** Now, in milliseconds since the epoch, moving on each second while the commands show. */
+  readonly now = clock(() => this.panel.commandsShown() && this.timed());
 
   constructor() {
     // The thread's history says when a command started or ended, live while a turn streams in.
@@ -83,18 +80,6 @@ export class CommandsService {
       if (thread !== null && this.panel.commandsShown()) {
         untracked(() => void this.refresh());
       }
-    });
-    effect((onCleanup) => {
-      if (!this.panel.commandsShown() || !this.timed()) {
-        return;
-      }
-      this.clock.set(Date.now());
-      const timer = setInterval(() => {
-        this.clock.set(Date.now());
-      }, COMMANDS_TICK_MS);
-      onCleanup(() => {
-        clearInterval(timer);
-      });
     });
   }
 

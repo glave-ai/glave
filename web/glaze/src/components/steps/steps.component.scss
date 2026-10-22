@@ -51,10 +51,6 @@
   color: var(--glz-steps-status);
 }
 
-:host(.status-running) .icon {
-  animation: glz-steps-spin 1s linear infinite;
-}
-
 .state {
   color: var(--glz-steps-status);
 }
@@ -83,7 +79,7 @@
   margin-inline-start: auto;
   padding-block: var(--glz-space-1);
   color: var(--glz-color-text-muted);
-  transition: color var(--glz-duration-fast) var(--glz-easing);
+  transition: color var(--glz-duration-quick) var(--glz-ease-out);
 }
 
 .line:hover .count {
@@ -91,7 +87,7 @@
 }
 
 .chevron {
-  transition: transform var(--glz-duration-fast) var(--glz-easing);
+  transition: transform var(--glz-duration-quick) var(--glz-ease-out);
 }
 
 .details[open] > .line .chevron {
@@ -113,6 +109,45 @@
   color: var(--glz-color-text-muted);
 }
 
+// The steps slide open and shut in the fold's one grid row: it grows from nothing as the
+// details open, clipped until it has, and shrinks back to nothing before they close (`shutting`,
+// while the details still show it), so they hide what they hold only once it has. Its one column
+// is as wide as the steps' column, however long a line in it. Open, nothing is clipped, so focus
+// rings and a message's actions show whole. Instant when the person asks for less motion.
+.fold {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.details[open] .fold {
+  animation: glz-unfold var(--glz-duration-standard) var(--glz-ease-out);
+}
+
+.details.shutting .fold {
+  grid-template-rows: minmax(0, 0fr);
+  overflow: clip;
+  animation: none;
+  transition: grid-template-rows var(--glz-duration-standard) var(--glz-ease-out);
+}
+
+@keyframes glz-unfold {
+  from {
+    grid-template-rows: minmax(0, 0fr);
+    overflow: clip;
+  }
+
+  to {
+    overflow: clip;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .details[open] .fold {
+    animation: none;
+  }
+}
+
 // A phone's line: smaller type, closer together, so it keeps to one line.
 @container (width <= 30rem) {
   .line,
@@ -122,17 +157,5 @@
 
   .line {
     font-size: var(--glz-text-xs);
-  }
-}
-
-@keyframes glz-steps-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :host(.status-running) .icon {
-    animation: none;
   }
 }

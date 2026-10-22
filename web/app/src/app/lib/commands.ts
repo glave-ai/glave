@@ -16,19 +16,6 @@ export function lastCommandChange(events: readonly RawEvent[]): number | null {
   );
 }
 
-/**
- * How long a command started at `startedAt` has run at `now` (milliseconds since the epoch), in
- * whole seconds, as milliseconds: at least a second, so a clock never reads less. `null` when
- * its start is not recorded yet or does not parse.
- */
-export function runningFor(startedAt: string | null | undefined, now: number): number | null {
-  const start = typeof startedAt === 'string' ? Date.parse(startedAt) : Number.NaN;
-  if (Number.isNaN(start)) {
-    return null;
-  }
-  return Math.max(1, Math.floor((now - start) / 1000)) * 1000;
-}
-
 /** Whether `error` says the command is not running: it ended before `command/stop` reached it. */
 export function alreadyEnded(error: unknown): boolean {
   return error instanceof ApiError && error.code === ErrorCode.NO_COMMAND;

@@ -73,6 +73,7 @@ function turn(items: readonly ThreadItem[], more: Partial<Turn> = {}): Turn {
     items,
     files: [],
     took: null,
+    started: null,
     outcome: null,
     cost: null,
     routes: [],
@@ -89,6 +90,7 @@ describe('results', () => {
         cost: { micros: 42_000, currency: 'USD' },
         routes: ['OpenRouter (Anthropic)'],
       }),
+      null,
       null,
       false,
       'en-US',
@@ -112,11 +114,12 @@ describe('results', () => {
         outcome: 'completed',
       }),
       null,
+      null,
       false,
       'en-US',
     );
     expect(shown.receipt?.facts).toEqual(['2s', '1 command outside the sandbox']);
-    const none = turnResults(turn([ask, call(2), outside(3, 'deny')]), null, false, 'en-US');
+    const none = turnResults(turn([ask, call(2), outside(3, 'deny')]), null, null, false, 'en-US');
     expect(none.receipt?.facts).toEqual([]);
   });
 
@@ -124,6 +127,7 @@ describe('results', () => {
     const waiting = approval(4, false);
     const shown = turnResults(
       turn([ask, call(2), say(3, 'Ready to push'), waiting]),
+      null,
       null,
       true,
       'en-US',
@@ -137,6 +141,7 @@ describe('results', () => {
   it('shows a turn that did no work as what it said, in order, with no receipt', () => {
     const shown = turnResults(
       turn([ask, say(2, '', 'thinking'), say(3, 'Hello')]),
+      null,
       null,
       false,
       'en-US',
@@ -152,7 +157,7 @@ describe('results', () => {
       more: Partial<Turn>,
       running = false,
       items: readonly ThreadItem[] = [ask, call(2)],
-    ): unknown => turnResults(turn(items, more), null, running, 'en-US').receipt?.status;
+    ): unknown => turnResults(turn(items, more), null, null, running, 'en-US').receipt?.status;
     expect(status({ outcome: 'failed' })).toBe('failed');
     expect(status({ outcome: 'cancelled' })).toBe('stopped');
     expect(status({ outcome: 'limit_reached' })).toBe('stopped');
@@ -160,33 +165,65 @@ describe('results', () => {
     expect(status({}, false, [ask, call(2, 'running')])).toBe('running');
     expect(status({}, false, [ask, question(2)])).toBe('waiting');
     expect(status({})).toBe('done');
-    expect(turnResults(turn([ask, call(2)]), null, false, 'en-US').receipt?.steps).toBe('1 step');
+    expect(turnResults(turn([ask, call(2)]), null, null, false, 'en-US').receipt?.steps).toBe(
+      '1 step',
+    );
   });
 
   it('puts the reply being written in the reply’s place, and the last one back with the work', () => {
     const live = { text: 'Writ', reasoning: '' };
-    const shown = turnResults(turn([ask, call(2), say(3, 'Earlier')]), live, true, 'en-US');
+    const shown = turnResults(turn([ask, call(2), say(3, 'Earlier')]), live, null, true, 'en-US');
     expect(shown.live).toBe(live);
     expect(shown.reply).toBeNull();
     expect(shown.steps.map((item) => item.key)).toEqual(['c2', 'm3']);
   });
 
-  it('is working while the turn runs and waits on its model with nothing to show', () => {
+  it('is working while the turn runs with nothing of its own to show', () => {
     const working = (items: readonly ThreadItem[], more: Partial<Turn> = {}): boolean =>
-      turnResults(turn(items, more), null, true, 'en-US').working;
-    // Just asked, and between a call's end and the model's next words.
+      turnResults(turn(items, more), null, null, true, 'en-US').working !== null;
+    // Just asked, while a call runs, and between a call's end and the model's next words.
     expect(working([ask])).toBe(true);
+    expect(working([ask, call(2, 'running')])).toBe(true);
     expect(working([ask, say(2, ''), call(3)])).toBe(true);
-    // Not while a call runs, something waits for the person, or after the model's last words.
-    expect(working([ask, call(2, 'running')])).toBe(false);
+    // Not while something waits for the person, or after the model's last words.
     expect(working([ask, approval(2, false)])).toBe(false);
     expect(working([ask, call(2), say(3, 'Done.')])).toBe(false);
     // Not once it ended, nor in a turn that is not running.
     expect(working([ask], { outcome: 'failed' })).toBe(false);
-    expect(turnResults(turn([ask]), null, false, 'en-US').working).toBe(false);
+    expect(turnResults(turn([ask]), null, null, false, 'en-US').working).toBeNull();
     // Not while reasoning or a reply streams: they show instead.
-    expect(turnResults(turn([ask]), { text: '', reasoning: 'Hm' }, true, 'en-US').working).toBe(
-      false,
-    );
+    expect(
+      turnResults(turn([ask]), { text: '', reasoning: 'Hm' }, null, true, 'en-US').working,
+    ).toBeNull();
+  });
+
+  it('shows the step a running call takes in the server’s words, and since when it has worked', () => {
+    const started = '2026-10-11T10:00:00.000Z';
+    const step = 'bash: cargo test';
+    const shown = (items: readonly ThreadItem[]): unknown =>
+      turnResults(turn(items, { started }), null, step, true, 'en-US').working;
+    expect(shown([ask, call(2, 'running')])).toEqual({ step, since: started });
+    // Once no call runs, its model thinks: whatever the server last said, there is no step.
+    expect(shown([ask, call(2)])).toEqual({ step: null, since: started });
+    // Until the server records the turn's start, there is no time to count from.
+    expect(turnResults(turn([ask]), null, null, true, 'en-US').working).toEqual({
+      step: null,
+      since: null,
+    });
+  });
+
+  it('says how long it took, but for while the working line counts it', () => {
+    const facts = (
+      running: boolean,
+      more: Partial<Turn> = {},
+      items: readonly ThreadItem[] = [ask, call(2)],
+    ): unknown =>
+      turnResults(turn(items, { took: 3_000, ...more }), null, null, running, 'en-US').receipt
+        ?.facts;
+    expect(facts(true)).toEqual([]);
+    // Waiting for the person, no line counts: the time so far.
+    expect(facts(true, {}, [ask, call(2), approval(3, false)])).toEqual(['3s']);
+    expect(facts(true, { outcome: 'completed' })).toEqual(['3s']);
+    expect(facts(false)).toEqual(['3s']);
   });
 });

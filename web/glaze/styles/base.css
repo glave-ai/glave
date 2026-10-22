@@ -100,27 +100,6 @@ pre {
 }
 
 /*
- * What turns while work goes on, such as a ring icon in a status's place: once each
- * --glz-duration-ambient, and still, the familiar mark of work in progress, when the person
- * asks for less motion.
- */
-.glz-spin {
-  animation: glz-spin var(--glz-duration-ambient) linear infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .glz-spin {
-    animation: none;
-  }
-}
-
-@keyframes glz-spin {
-  to {
-    transform: rotate(1turn);
-  }
-}
-
-/*
  * What points along the line (a chevron to what comes next) turns round right to left: by
  * `scale`, which a turn of its own (`transform`) composes with.
  */

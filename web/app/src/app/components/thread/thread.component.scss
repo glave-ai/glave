@@ -95,8 +95,8 @@
   opacity: 0;
   visibility: hidden;
   transition:
-    opacity var(--glz-duration-normal) var(--glz-easing),
-    visibility var(--glz-duration-normal);
+    opacity var(--glz-duration-standard) var(--glz-ease-out),
+    visibility var(--glz-duration-standard);
 
   // Over the conversation, the button needs a surface of its own.
   > button {

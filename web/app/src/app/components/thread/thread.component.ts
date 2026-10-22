@@ -25,7 +25,7 @@ import {
 
 import { type TurnResults, turnResults } from '../../lib/results';
 import { threadTitle } from '../../lib/threads';
-import { startingTurn } from '../../lib/turns';
+import { askedTurns } from '../../lib/turns';
 import { AttachmentsService } from '../../services/attachments.service';
 import { effortToSend } from '../../lib/effort';
 import { CommandsService } from '../../services/commands.service';
@@ -138,19 +138,24 @@ export class ThreadComponent {
   protected readonly panelShortcut = this.panel.ariaShortcut;
   protected readonly panelHint = $localize`:@@thread.hint:Drag or use the arrow keys to resize; Enter collapses. Show or hide: ${this.panel.shortcut}:SHORTCUT:`;
   /**
-   * The turns, results first; the reply being written goes to the last, which runs. A turn the
-   * person just asked for shows at once, before the server records it.
+   * The turns, results first; the reply being written and the step taken now go to the last,
+   * which runs. A turn the person just asked for shows at once, before the server records it,
+   * and carries on as the turn it records.
    */
   protected readonly turns = computed<readonly TurnResults[]>(() => {
     const live = this.service.hasReply() ? this.service.reply() : null;
-    const recorded = this.service.turns();
-    const starting = this.service.starting();
-    const turns = starting === null ? recorded : [...recorded, startingTurn(starting)];
+    const step = this.service.step();
+    const turns = askedTurns(
+      this.service.turns(),
+      this.service.askedAfter(),
+      this.service.starting(),
+    );
     const last = turns.length - 1;
     return turns.map((turn, index) =>
       turnResults(
         turn,
         index === last ? live : null,
+        index === last ? step : null,
         index === last && this.service.busy(),
         this.locale,
       ),

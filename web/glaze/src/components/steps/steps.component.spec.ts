@@ -64,7 +64,47 @@ describe('GlzStepsComponent', () => {
       await fixture.whenStable();
       expect(words(root)[0]).toBe(word);
       expect(root.querySelector('glz-steps')?.classList).toContain(`status-${status}`);
+      // Only a running run's ring turns.
+      const turning = root.querySelector('.icon')?.classList.contains('glz-spin');
+      expect(turning).toBe(status === 'running');
     }
+  });
+
+  it('slides its steps shut before it closes, and closes at once when nothing moves', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    fixture.componentInstance.open.set(true);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const details = root.querySelector('details');
+    const fold = root.querySelector<HTMLElement>('[data-testid="steps-fold"]');
+    const summary = root.querySelector<HTMLElement>('[data-testid="steps-summary"]');
+    let slid: () => void = () => undefined;
+    const sliding = new Promise<void>((resolve) => {
+      slid = resolve;
+    });
+    const spy = vi
+      .spyOn(fold!, 'getAnimations')
+      .mockReturnValueOnce([{ finished: sliding } as unknown as Animation]);
+    summary?.click();
+    // Still open, the fold sliding shut; clicked again meanwhile, it slides on.
+    expect(details?.open).toBe(true);
+    expect(details?.classList).toContain('shutting');
+    summary?.click();
+    expect(details?.open).toBe(true);
+    slid();
+    await sliding;
+    await fixture.whenStable();
+    expect(details?.open).toBe(false);
+    expect(details?.classList).not.toContain('shutting');
+    details?.dispatchEvent(new Event('toggle'));
+    await fixture.whenStable();
+    expect(fixture.componentInstance.open()).toBe(false);
+    // Under reduced motion nothing slides: it closes as it is clicked.
+    spy.mockRestore();
+    fixture.componentInstance.open.set(true);
+    await fixture.whenStable();
+    summary?.click();
+    expect(details?.open).toBe(false);
   });
 
   it('opens when its parent opens it', async () => {
