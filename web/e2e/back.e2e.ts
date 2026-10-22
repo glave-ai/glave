@@ -45,6 +45,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await expectAccessible(page);
       await back.click();
       await expect(page).toHaveURL(/\/settings$/u);
+      await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
       // From the keyboard too.
       await byTestId(page, 'page-back').press('Enter');
       await expect(page).toHaveURL(new RegExp(`/t/${THREAD}$`, 'u'));
@@ -66,6 +67,21 @@ for (const colorScheme of ['light', 'dark'] as const) {
     });
   }
 }
+
+test('Back from adding a model account, then from Settings, leads back to the chat', async ({
+  page,
+}) => {
+  await fakeApi(page);
+  await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+  await expect(byTestId(page, 'thread-message').first()).toBeVisible();
+  await openSettings(page, false);
+  await byTestId(page, 'settings-add-account').click();
+  await expect(page).toHaveURL(/\/connect$/u);
+  await byTestId(page, 'connect-back').click();
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+  await byTestId(page, 'page-back').click();
+  await expect(page).toHaveURL(new RegExp(`/t/${THREAD}$`, 'u'));
+});
 
 test('a project’s page, opened as glave opens it, leads back to the Chats', async ({ page }) => {
   await fakeApi(page);

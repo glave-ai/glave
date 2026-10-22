@@ -1,27 +1,16 @@
-import { DOCUMENT, Location } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
-  InjectionToken,
   booleanAttribute,
   computed,
   inject,
   input,
 } from '@angular/core';
-import { Router } from '@angular/router';
 import { GlzIconButtonComponent, GlzIconComponent, GlzPageHeaderComponent } from '@glave/glaze';
 import { Menu } from 'lucide';
 
+import { BackService } from '../../services/back.service';
 import { NavService } from '../../services/nav.service';
-
-/**
- * The tab's history as the browser's Navigation API keeps it, where the browser has the API:
- * it lists only the pages of glave's own origin that led here, so going back stays in glave.
- */
-export const NAVIGATION = new InjectionToken<Pick<Navigation, 'canGoBack'> | null>('NAVIGATION', {
-  providedIn: 'root',
-  factory: () => inject(DOCUMENT).defaultView?.navigation ?? null,
-});
 
 /** Where Back goes when the person arrived at the page directly: their Chats. */
 const CHATS = '/';
@@ -50,24 +39,17 @@ export class PageHeaderComponent {
   } as const;
   protected readonly icon = Menu;
   private readonly nav = inject(NavService);
+  private readonly backs = inject(BackService);
   protected readonly open = this.nav.open;
   protected readonly narrow = this.nav.narrow;
   protected readonly shortcut = this.nav.ariaShortcut;
   protected readonly backLabel = computed(() => (this.back() ? this.copy.back : null));
-  private readonly navigation = inject(NAVIGATION);
-  private readonly location = inject(Location);
-  private readonly router = inject(Router);
 
   protected toggle(): void {
     this.nav.toggle();
   }
 
-  /** Back to the page before this one when it is glave's, else to the Chats. */
   protected async goBack(): Promise<void> {
-    if (this.navigation?.canGoBack === true) {
-      this.location.back();
-      return;
-    }
-    await this.router.navigateByUrl(CHATS);
+    await this.backs.back(CHATS);
   }
 }

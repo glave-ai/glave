@@ -10,11 +10,10 @@ import { GlzTopBarComponent } from '../top-bar/top-bar.component';
 const PARTS = { back: 'back' } as const;
 
 /**
- * The header of a page that is not the app's main one (its settings, a list): a top bar with,
- * at its start, what the app puts there (`[glzPageHeaderStart]`, such as the button that opens
- * a side nav) and then, given a `backLabel`, a Back control, an arrow and the label, that
- * emits `back`. Where Back goes is the app's to decide. The arrow turns round in right-to-left
- * text.
+ * A page's header: a top bar with, at its start, what the app puts there
+ * (`[glzPageHeaderStart]`, such as the button that opens a side nav) and then, given a
+ * `backLabel`, a Back control, an arrow and the label, that emits `back`. Where Back goes is
+ * the app's to decide. The arrow turns round in right-to-left text.
  *
  * ```html
  * <glz-page-header testId="page" backLabel="Back" (back)="goBack()" />

@@ -50,7 +50,7 @@ describe('GlzPageHeaderComponent', () => {
     await expectAccessible(root);
   });
 
-  it('emits back when Back is pressed, from the keyboard as from the pointer', async () => {
+  it('is reached from the keyboard, and emits back when Back is pressed', async () => {
     const { root, host } = await render();
     const back = root.querySelector<HTMLButtonElement>('[data-testid="page-back"]');
     back?.focus();
