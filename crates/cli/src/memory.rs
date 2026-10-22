@@ -19,7 +19,7 @@ use crate::data::{Data, DataLog};
 use crate::identity;
 use crate::reach::Reached;
 use crate::setup::Setup;
-use crate::turns::{Here, NO_PROJECT};
+use crate::turns::{Here, no_project};
 use glave_config::policy::MemorySettings;
 
 pub(crate) const USAGE: &str = "\
@@ -218,7 +218,7 @@ async fn through(server: &mut Reached, command: &Command) -> anyhow::Result<()> 
     let project = match crate::turns::found(server.session(), &std::env::current_dir()?).await? {
         Here::Project(project) => Some(project),
         Here::Chats => None,
-        Here::NoProject => return no_project(command),
+        Here::NoProject => return no_project(*command == Command::List),
     };
     let Command::Run(controls) = command else {
         let memories = changed(
@@ -244,15 +244,6 @@ async fn through(server: &mut Reached, command: &Command) -> anyhow::Result<()> 
         }
     }
     Ok(())
-}
-
-/// `command` in a folder that is no project: nothing listed, nothing changed, and said.
-fn no_project(command: &Command) -> anyhow::Result<()> {
-    if *command == Command::List {
-        eprintln!("glave: {NO_PROJECT}");
-        return Ok(());
-    }
-    anyhow::bail!("{NO_PROJECT}, so nothing was changed");
 }
 
 /// The memories a `memory/*` request answered with.
@@ -310,7 +301,7 @@ async fn in_the_store(command: Command) -> anyhow::Result<()> {
     let store = Data::chosen(&setup.choices).await?;
     let person = identity::load_or_make(&store).await?.person;
     let Some(scope) = crate::projects::found(&store, &folder, person).await? else {
-        return no_project(&command);
+        return no_project(command == Command::List);
     };
     let on = MemorySettings {
         on: true,

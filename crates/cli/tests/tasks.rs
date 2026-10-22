@@ -66,7 +66,7 @@ fn a_background_turn_runs_in_the_person_s_server_after_the_command_returns() {
     let refused = glave(&place, &model, &["-b", "tidy the notes"], "");
     assert!(!refused.status.success());
     let said = text(&refused);
-    assert!(said.contains("isn't a glave project"), "{said}");
+    assert!(said.contains(crate::folders::NO_PROJECT), "{said}");
     made_a_project(&place);
     // A task works on a copy, which a folder that is no repository cannot give.
     let refused = glave(&place, &model, &["-b", "tidy the notes"], "");

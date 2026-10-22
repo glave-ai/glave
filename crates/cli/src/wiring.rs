@@ -38,7 +38,8 @@ pub(crate) struct Wired {
     pub(crate) servers: Arc<Servers>,
     /// The default model's endpoint; none while no model is set up.
     pub(crate) endpoint: Option<Endpoint>,
-    /// The project of the folder glave runs in, where the terminal's threads are.
+    /// The project of the folder glave runs in, where the terminal's threads are: the person's
+    /// Chats where that folder is no project of its own ([`start_folder`]).
     pub(crate) project: ProjectId,
     pub(crate) root: PathBuf,
     /// The settings in use, for the banner and receipts.
@@ -414,7 +415,8 @@ async fn store(setup: &Setup) -> anyhow::Result<Data> {
 }
 
 /// A server in this process for a command's requests, where none runs for the person and no
-/// one is at the terminal: answered by no one, asking nothing.
+/// one is at the terminal: answered by no one, asking nothing. Asked for no turn, it makes no
+/// project of the folder it starts in ([`start_folder`]), as the person's server makes none.
 pub(crate) async fn here() -> anyhow::Result<Wired> {
     wire(&Args::default(), Answering::NoOne, Asking::NoOne).await
 }

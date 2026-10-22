@@ -15,7 +15,7 @@ use glave_session::protocol::{Reply, Request, Show};
 use uuid::Uuid;
 
 use crate::reach::Reached;
-use crate::turns::{Here, NO_PROJECT};
+use crate::turns::{Here, no_project};
 use crate::worktrees;
 
 pub(crate) const USAGE: &str = "\
@@ -115,10 +115,7 @@ async fn through(server: &mut Reached, command: Command) -> anyhow::Result<()> {
             let project = match crate::turns::found(server.session(), &folder).await? {
                 Here::Project(project) => Some(project),
                 Here::Chats => None,
-                Here::NoProject => {
-                    eprintln!("glave: {NO_PROJECT}");
-                    return Ok(());
-                }
+                Here::NoProject => return no_project(true),
             };
             let listed = Request::ThreadList {
                 project,
@@ -180,11 +177,7 @@ async fn in_the_log(command: Command) -> anyhow::Result<()> {
     let person = crate::identity::load_or_make(&store).await?.person;
     let folder = std::env::current_dir()?;
     let Some(scope) = crate::projects::found(&store, &folder, person).await? else {
-        if matches!(command, Command::List(_)) {
-            eprintln!("glave: {NO_PROJECT}");
-            return Ok(());
-        }
-        anyhow::bail!("{NO_PROJECT}, so it has no threads to change");
+        return no_project(matches!(command, Command::List(_)));
     };
     let log = store.log();
     match command {

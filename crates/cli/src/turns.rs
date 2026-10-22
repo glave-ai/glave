@@ -2,9 +2,10 @@
 //! (`specs/one-server.md`, "The CLI as a client"): the folder's project, asked about once when
 //! it is new; the thread; what its project asks to be trusted; then the turn, followed with the
 //! code that follows a server elsewhere. With no one at the terminal, nothing is asked: the
-//! folder becomes a project, and the turn is answered by no one. `glave` alone finds the
-//! folder's project the same way (`app.rs`), and so do tasks and schedules, which with no one at
-//! the terminal make none (`tasks.rs`); the commands that list find it, making nothing.
+//! folder becomes a project, since a script that runs a turn in it has chosen it, and the turn
+//! is answered by no one. `glave` alone (`app.rs`), tasks and schedules (`tasks.rs`) find the
+//! folder's project the same way, though with no one at the terminal they make none; the
+//! commands that list find it, making nothing.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -22,6 +23,9 @@ use crate::terminal::Printer;
 
 /// What a command that finds no project for its folder says.
 pub(crate) const NO_PROJECT: &str = "this folder isn't a glave project";
+
+/// What a command that starts work says when the person would not make its folder a project.
+pub(crate) const DECLINED: &str = "nothing was made, and nothing ran";
 
 /// Where the folder's threads go.
 pub(crate) enum Here {
@@ -47,9 +51,11 @@ pub(crate) async fn run(
     let project = match here(session, &folder, terminal, &input).await? {
         Here::Project(project) => Some(project),
         Here::Chats => None,
+        // A script that runs a turn in the folder has chosen it.
+        Here::NoProject if !terminal => Some(made(session, &root(&folder)?).await?),
         // The turn was asked for in this folder, and has nowhere else to work.
         Here::NoProject => {
-            eprintln!("glave: nothing was made, and nothing ran");
+            eprintln!("glave: {DECLINED}");
             return Ok(ExitCode::SUCCESS);
         }
     };
@@ -92,14 +98,28 @@ pub(crate) async fn run(
     Ok(code)
 }
 
-/// Where `folder`'s threads go, making nothing: the person's Chats where the folder is never a
-/// project ([`crate::projects::never_a_project`]); else its project, as the server finds it;
-/// else `Here::NoProject`.
+/// What a command does in a folder that is no project: one that lists lists nothing, and says
+/// so; one that changes something changes nothing, and is refused.
+pub(crate) fn no_project(listing: bool) -> anyhow::Result<()> {
+    if listing {
+        eprintln!("glave: {NO_PROJECT}");
+        return Ok(());
+    }
+    bail!(
+        "{NO_PROJECT}, so nothing was changed: run this in one of your projects' folders, or \
+         in your home folder for your Chats"
+    )
+}
+
+/// Where `folder`'s threads go, making nothing: the person's Chats where the folder its
+/// project would have ([`root`]) is never a project ([`crate::projects::never_a_project`]);
+/// else its project, as the server finds it; else `Here::NoProject`.
 pub(crate) async fn found(session: Session<'_>, folder: &Path) -> anyhow::Result<Here> {
-    if crate::projects::never_a_project(folder) {
+    let root = root(folder)?;
+    if crate::projects::never_a_project(&root) {
         return Ok(Here::Chats);
     }
-    let path = root(folder)?.to_string_lossy().into_owned();
+    let path = root.to_string_lossy().into_owned();
     let found = session.request(Request::ProjectFind { path }).await?;
     if let Reply::Projects { projects, .. } = found
         && let Some(project) = projects.first()
@@ -110,8 +130,8 @@ pub(crate) async fn found(session: Session<'_>, folder: &Path) -> anyhow::Result
 }
 
 /// Where `folder`'s threads go, as [`found`] finds it; for a folder that leads to no project, a
-/// project made now, after asking once when someone is at the terminal, or `Here::NoProject`
-/// when they say no, with nothing printed: the caller says what follows.
+/// project made once the person says yes at the terminal. `Here::NoProject` when they say no,
+/// or no one is at the terminal to ask, with nothing printed: the caller says what follows.
 pub(crate) async fn here(
     session: Session<'_>,
     folder: &Path,
@@ -119,17 +139,20 @@ pub(crate) async fn here(
     input: &Input,
 ) -> anyhow::Result<Here> {
     let found = found(session, folder).await?;
-    if !matches!(found, Here::NoProject) {
+    if !matches!(found, Here::NoProject) || !terminal {
         return Ok(found);
     }
     let root = root(folder)?;
-    if terminal {
-        eprint!("Make {} a glave project? [y/N] ", shown(&root));
-        crate::terminal::flush();
-        if !yes(input.line().await) {
-            return Ok(Here::NoProject);
-        }
+    eprint!("Make {} a glave project? [y/N] ", shown(&root));
+    crate::terminal::flush();
+    if !yes(input.line().await) {
+        return Ok(Here::NoProject);
     }
+    made(session, &root).await.map(Here::Project)
+}
+
+/// The project whose folder is `root`, made now.
+async fn made(session: Session<'_>, root: &Path) -> anyhow::Result<ProjectId> {
     let path = root.to_string_lossy().into_owned();
     let name = root
         .file_name()
@@ -140,7 +163,7 @@ pub(crate) async fn here(
         folder: Some(NewFolder::Path { path }),
     };
     match session.request(created).await? {
-        Reply::Project { project, .. } => Ok(Here::Project(project.id)),
+        Reply::Project { project, .. } => Ok(project.id),
         other => bail!("glave answered project/create with {other:?}"),
     }
 }

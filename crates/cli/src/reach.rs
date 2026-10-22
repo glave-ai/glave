@@ -38,8 +38,7 @@ impl Reached {
         })
     }
 
-    /// The session API of the server reached, as a turn's requests use it: for the folder's
-    /// project, found as `glave` finds it (`turns.rs`).
+    /// The server reached, as a turn's requests reach it.
     pub(crate) fn session(&self) -> Session<'_> {
         match self {
             Self::Server(server) => Session::Elsewhere(server.remote()),

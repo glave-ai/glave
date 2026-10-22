@@ -1,8 +1,8 @@
 //! A folder's project, the real binary in a fresh home (`specs/one-server.md`, "A folder's
-//! project"): the home folder is never one, so a turn there is a chat; the commands that list
-//! make none, in the home folder or a new one, with no server running or through the person's;
-//! and a task or a schedule in a new folder asks first at a terminal, and with no one there to
-//! ask makes none.
+//! project"): the home folder is never one, even as a repository, so a turn there is a chat;
+//! the commands that list make none, in the home folder or a new one, with no server running or
+//! through the person's; and a task, a schedule or `glave` alone in a new folder asks first at
+//! a terminal, and with no one there to ask makes none.
 
 use glave_ports::ProjectKind;
 use glave_provider_openai::fake::{FakeServer, Reply};
@@ -16,7 +16,7 @@ use crate::turns::{api, asking};
 const LISTING: [&[&str]; 4] = [&["threads"], &["memory"], &["tasks"], &["schedule", "list"]];
 
 /// What a command that finds no project for its folder says.
-const NO_PROJECT: &str = "this folder isn't a glave project";
+pub(crate) const NO_PROJECT: &str = "this folder isn't a glave project";
 
 /// How many projects the person's server in `place` has that are not the person's Chats.
 fn made(place: &Place) -> usize {
@@ -73,11 +73,20 @@ fn listing_makes_no_project_in_the_home_folder_or_a_new_one_and_a_turn_at_home_i
     let (_served, _) = serve_http(&home, &model, &[]);
     only_the_server_answers(&home);
     list_everything(&home, &new, &model);
+    // A home folder that is itself a repository is no project either: in a folder in it,
+    // the commands mean the person's Chats.
+    std::fs::create_dir_all(home.project.join(".git")).unwrap();
+    let threads = start_with(&new, &model, &["threads"], &[("HOME", &folder)]);
+    let output = threads.wait_with_output().unwrap();
+    let shown = text(&output);
+    assert!(output.status.success(), "{shown}");
+    assert!(!shown.contains(NO_PROJECT), "{shown}");
+    assert_eq!(shown.lines().count(), 1, "the chat: {shown}");
     assert_eq!(made(&home), 0, "only the person's Chats");
 }
 
 #[test]
-fn a_task_or_a_schedule_in_a_new_folder_asks_first_and_with_no_one_to_ask_makes_none() {
+fn a_task_a_schedule_or_glave_alone_in_a_new_folder_asks_first_and_none_is_made_unasked() {
     let place = asking("fa");
     let _stopped = Stopped(&place);
     let model = FakeServer::start(Vec::new()).unwrap();
@@ -88,7 +97,12 @@ fn a_task_or_a_schedule_in_a_new_folder_asks_first_and_with_no_one_to_ask_makes_
     assert!(shown.contains("nothing was made"), "{shown}");
     assert_eq!(made(&place), 0);
     // The person's server the terminal started still runs; with no one at the terminal, no
-    // one is asked, and nothing is made.
+    // one is asked, and nothing is made: `glave` alone opens the person's Chats (no screen
+    // here, so no browser opens).
+    let alone = start_with(&place, &model, &[], &[("SSH_CONNECTION", "test")]);
+    let shown = text(&alone.wait_with_output().unwrap());
+    assert!(shown.contains("opening your Chats"), "{shown}");
+    assert!(!shown.contains("a glave project?"), "{shown}");
     let schedule = ["schedule", "add", "0 9 * * *", "check", "the", "build"];
     let refused = glave(&place, &model, &schedule, "");
     let shown = text(&refused);

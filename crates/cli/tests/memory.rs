@@ -113,7 +113,7 @@ fn through_the_person_s_server_memory_is_the_folder_s_project_s() {
     // The folder the server started in is no project, and listing makes it none.
     let elsewhere = memory_cli(&place, &[]);
     assert!(
-        elsewhere.contains("this folder isn't a glave project"),
+        elsewhere.contains(crate::folders::NO_PROJECT),
         "{elsewhere}"
     );
     let id = listed.split_whitespace().next().unwrap().to_owned();
