@@ -3,6 +3,11 @@
 //! 10,000-event thread from SQLite.
 //! Fails when any measurement is over its budget. Run it through `cargo xtask bench`, alone
 //! on an idle machine, since these are wall-clock numbers.
+//!
+//! The size and the answered command are measured on the program [`BINARY`] names when it is
+//! set: in CI, glave as the release builds it for x86-64 Linux (`budgets.yml`). Otherwise they
+//! are measured on the glave this benchmark's own build made, with what the tests' features
+//! add to it, so close to what ships but not it.
 
 #![expect(clippy::print_stdout, reason = "a benchmark: its table is its output")]
 
@@ -31,6 +36,8 @@ const RESUMES: usize = 10;
 /// The release binary's budget in MB (AGENTS.md), the one place it is set: pull requests,
 /// the merge queue and `main` all run this benchmark (`budgets.yml`).
 const BINARY_MB: f64 = 40.0;
+/// The variable naming the glave program to measure, as it ships.
+const BINARY: &str = "GLAVE_BUDGETS_BINARY";
 
 fn main() -> anyhow::Result<()> {
     let dir = std::env::temp_dir().join(format!("glave-budgets-{}", std::process::id()));
@@ -41,8 +48,12 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn measure(dir: &Path) -> anyhow::Result<()> {
-    let binary = PathBuf::from(env!("CARGO_BIN_EXE_glave"));
-    let size = std::fs::metadata(&binary)?.len();
+    let binary = std::env::var_os(BINARY)
+        .map_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_glave")), PathBuf::from);
+    println!("measuring {}", binary.display());
+    let size = std::fs::metadata(&binary)
+        .with_context(|| format!("no glave program at {}", binary.display()))?
+        .len();
     let answer = median(answered(&binary, dir)?);
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
