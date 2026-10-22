@@ -1,45 +1,43 @@
-// The box, and the quiet status line under it, its first word under the box's text.
+// The box, and the quiet status line under it, whose ends line up with what the box holds.
 :host {
-  --glz-composer-text-start: var(--glz-inset-composer-start);
+  --glz-composer-inset: var(--glz-inset-composer);
 
   display: flex;
   flex-direction: column;
   gap: var(--glz-space-2);
 }
 
-// A reply's box is one row: the text, what sets where it goes, and send at the end, which
-// stays by the last line as the text grows.
+// The box's inset, the same all round, is the only space about what it holds, which flex lays
+// out with gaps: the files that go with the message on a row of their own when there are some,
+// then a reply's one row (the +, the text, where it goes and send), its buttons by the text's
+// last line as it grows.
 .box {
-  display: grid;
-  grid-template-areas:
-    'files files files'
-    'input start act';
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
   gap: var(--glz-space-3);
-  padding: var(--glz-inset-composer-round);
-  padding-inline-start: var(--glz-inset-composer-start);
+  padding: var(--glz-composer-inset);
   border: var(--glz-border-width) solid var(--glz-color-border);
   border-radius: var(--glz-radius-composer);
   background: var(--glz-surface-card);
 }
 
+// Focused, its border and the ring round it are one line in the focus colour.
 :host(:has(.input:focus-visible)) .box {
   border-color: var(--glz-color-focus);
-  box-shadow: var(--glz-focus-ring);
+  box-shadow: var(--glz-focus-ring-edge);
 }
 
 .options {
   display: none;
-  grid-area: options;
 }
 
 // The files that go with the message, above its text; a row of their own only when there are
 // some.
 .files {
   display: flex;
+  flex: 1 0 100%;
   flex-wrap: wrap;
-  grid-area: files;
   gap: var(--glz-space-2);
 }
 
@@ -49,17 +47,10 @@
 
 // Adds files, at the box's start; while files are dragged over it, the box says it takes them.
 .attach {
-  grid-area: attach;
+  flex: none;
   width: var(--glz-composer-send-size);
   min-height: var(--glz-composer-send-size);
   color: var(--glz-color-text-muted);
-}
-
-:host(.glz-composer--attach) .box {
-  grid-template-areas:
-    'files files files files'
-    'attach input start act';
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
 }
 
 :host(.glz-composer--dragging) .box {
@@ -74,10 +65,10 @@
 .input {
   --glz-composer-line: var(--glz-composer-send-size);
 
-  grid-area: input;
+  flex: 1 1 0;
   unicode-bidi: plaintext;
   field-sizing: content;
-  width: 100%;
+  min-width: 0;
   min-height: var(--glz-composer-line);
   max-height: var(--glz-composer-max-height, 14lh);
   padding: calc((var(--glz-composer-line) - 1lh) / 2) 0;
@@ -94,13 +85,18 @@
   outline: none;
 }
 
+// The placeholder keeps to one line, cut short where the box is narrow, rather than
+// overflowing a box as tall as one line.
 .input::placeholder {
+  overflow: hidden;
   color: var(--glz-color-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .start {
   display: flex;
-  grid-area: start;
+  flex: 0 1 auto;
   align-items: center;
   gap: var(--glz-space-2);
   min-width: 0;
@@ -114,8 +110,9 @@
 // send: Stop stays at the end, where Send was.
 .acts {
   display: flex;
-  grid-area: act;
-  align-items: end;
+  flex: none;
+  justify-content: flex-end;
+  align-items: flex-end;
   gap: var(--glz-space-2);
 }
 
@@ -124,18 +121,20 @@
   min-height: var(--glz-composer-send-size);
 }
 
-// The status line: small, muted, with no box, its first word under the text above it. Closed,
-// it is a popover the browser would hide; beside a wide page it is a plain line instead.
+// The status line: small, muted, with no box, its first item at its start and its last at its
+// end, each lined up with the box's own. Closed, it is a popover the browser would hide; beside
+// a wide page it is a plain line instead.
 .status {
   position: static;
   display: flex;
   flex-wrap: wrap;
+  justify-content: space-between;
   align-items: center;
   gap: var(--glz-space-1);
   width: auto;
   height: auto;
   margin: 0;
-  padding: 0 calc(var(--glz-composer-text-start) - var(--glz-space-2));
+  padding: 0 calc(var(--glz-composer-inset) + var(--glz-border-width));
   overflow: visible;
   border: 0;
   background: none;
@@ -147,35 +146,36 @@
 }
 
 // The composer that starts a thread: two lines to write in, larger type, more room, rounder
-// corners, and a shadow under it; where it goes and send on a row of their own under the text.
+// corners, and a shadow under it; the +, where it goes and send on a row of their own under
+// the text, send at the end.
 :host(.glz-composer--lg) {
-  --glz-composer-text-start: var(--glz-inset-composer-lg-start);
+  --glz-composer-inset: var(--glz-inset-composer-lg);
 }
 
 :host(.glz-composer--lg) .box {
-  grid-template-areas:
-    'files files'
-    'input input'
-    'start act';
-  grid-template-columns: minmax(0, 1fr) auto;
-  padding-block: var(--glz-inset-composer-lg-block);
-  padding-inline: var(--glz-inset-composer-lg-inline);
   border-radius: var(--glz-radius-composer-lg);
   box-shadow: var(--glz-elevation-composer);
 }
 
-:host(.glz-composer--lg.glz-composer--attach) .box {
-  grid-template-areas:
-    'files files files'
-    'input input input'
-    'attach start act';
-  grid-template-columns: auto minmax(0, 1fr) auto;
+:host(.glz-composer--lg:has(.input:focus-visible)) .box {
+  box-shadow: var(--glz-focus-ring-edge), var(--glz-elevation-composer);
 }
 
 :host(.glz-composer--lg) .input {
+  flex-basis: 100%;
   min-height: calc(2lh + 2 * var(--glz-space-1));
   padding: var(--glz-space-1) 0;
   font-size: var(--glz-text-xl);
+}
+
+:host(.glz-composer--lg) .attach,
+:host(.glz-composer--lg) .start,
+:host(.glz-composer--lg) .acts {
+  order: 1;
+}
+
+:host(.glz-composer--lg) .acts {
+  flex-grow: 1;
 }
 
 :host(.glz-composer--lg) .act {
@@ -184,30 +184,41 @@
   border-radius: var(--glz-radius-strip);
 }
 
-// A phone: one row (options, the text, send), each button a finger's size, and the status
-// line a sheet from the foot of the screen that the options button opens.
+// A phone: one row (options, the +, the text, send), each button a finger's size, and the
+// status line a sheet from the foot of the screen that the options button opens.
 @media (width <= 48rem) {
-  .box,
+  :host(.glz-composer--lg) {
+    --glz-composer-inset: var(--glz-inset-composer);
+  }
+
   :host(.glz-composer--lg) .box {
-    grid-template-areas:
-      'files files files'
-      'options input act';
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    padding: var(--glz-inset-composer-round);
     border-radius: var(--glz-radius-composer);
   }
 
-  // On a phone the + is how files are added at all: it stays, beside the options.
-  :host(.glz-composer--attach) .box,
-  :host(.glz-composer--lg.glz-composer--attach) .box {
-    grid-template-areas:
-      'files files files files'
-      'options attach input act';
-    grid-template-columns: auto auto minmax(0, 1fr) auto;
+  // One line of text is as tall as the buttons beside it, its text in their middle.
+  .input {
+    --glz-composer-line: var(--glz-control-height-touch);
+  }
+
+  :host(.glz-composer--lg) .input {
+    flex-basis: 0;
+    min-height: var(--glz-composer-line);
+    padding: calc((var(--glz-composer-line) - 1lh) / 2) 0;
+    font-size: var(--glz-text-input);
+  }
+
+  :host(.glz-composer--lg) .attach,
+  :host(.glz-composer--lg) .acts {
+    order: 0;
+  }
+
+  :host(.glz-composer--lg) .acts {
+    flex-grow: 0;
   }
 
   .options {
     display: inline-flex;
+    flex: none;
   }
 
   :host(:has(.status:empty)) .options,
@@ -224,23 +235,6 @@
     border-radius: var(--glz-radius-strip);
   }
 
-  .input,
-  :host(.glz-composer--lg.glz-composer--attach) .box {
-    grid-template-areas:
-      'files files files'
-      'input input input'
-      'attach start act';
-    grid-template-columns: auto minmax(0, 1fr) auto;
-  }
-
-  :host(.glz-composer--lg) .input {
-    --glz-composer-line: var(--glz-control-height-touch);
-
-    min-height: var(--glz-composer-line);
-    padding: calc((var(--glz-composer-line) - 1lh) / 2) 0;
-    font-size: var(--glz-text-input);
-  }
-
   .status:not(:popover-open) {
     display: none;
   }
@@ -249,6 +243,7 @@
     position: fixed;
     inset: auto 0 0;
     flex-direction: column;
+    justify-content: flex-start;
     align-items: flex-start;
     gap: var(--glz-space-2);
     padding: var(--glz-inset-dialog);

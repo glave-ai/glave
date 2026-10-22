@@ -2,3 +2,8 @@
   display: inline-flex;
   min-width: 0;
 }
+
+// With no levels to choose it shows nothing, and takes no room in the status line either.
+:host(:empty) {
+  display: none;
+}
