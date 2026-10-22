@@ -88,7 +88,8 @@ pub(crate) async fn run(
 }
 
 /// Where `folder`'s threads go: its project, found by the server; for a folder that leads to
-/// none, a project made now, after asking once when someone is at the terminal.
+/// none, a project made now, after asking once when someone is at the terminal, or
+/// `Here::Declined` when they say no, with nothing printed: the caller says what follows.
 pub(crate) async fn here(
     session: Session<'_>,
     folder: &Path,

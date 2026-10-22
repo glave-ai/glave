@@ -142,9 +142,9 @@ Every command is a client of the person's server over its socket, or of a server
 
 | Command | What it asks the server |
 | --- | --- |
-| `glave` | the project this folder leads to, asking once when there is none (below); then a sign-in link to it, opened in the browser, or printed where there is no screen. With no one at the terminal and no server running, it says to run it from a terminal |
+| `glave` | the project this folder leads to, asking once when there is none (below); then a sign-in link to it (to the person's Chats when they say no), opened in the browser, or printed where there is no screen. With no one at the terminal and no server running, it says to run it from a terminal |
 | `glave "…"` | the project, as above; `thread/start` in it and `turn/start`, followed; approvals, questions and the project's trust ask answered in place with `approval/decide`, `question/answer` and `trust/answer` |
-| `glave -c "…"` | the project's newest thread (`thread/list`), then `turn/start`; `glave -c` alone opens that thread in the browser |
+| `glave -c "…"` | the project's newest thread (`thread/list`), then `turn/start`; `glave -c` alone opens that thread in the browser (the newest of the person's Chats when they say no to making the folder a project, as in the home folder) |
 | `glave --goal …` | `thread/start`, then `goal/start`, followed |
 | `glave -b "…"` | `thread/start` and `turn/start` (or `goal/start`) with `background`; prints the task and exits. Refused, saying why, where no server runs and no one is at the terminal: a task needs the person's server |
 | `glave tasks [stop <id>]` | `tasks/list` across every project the person works in; `tasks/stop` |
