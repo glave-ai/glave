@@ -31,7 +31,7 @@
         [label]="copy.reasoning"
         [thinkingLabel]="copy.thinking"
         [(open)]="reasoningOpen"
-        >{{ live.reasoning }}</glz-reasoning
+        >{{ reasoning() }}</glz-reasoning
       >
     }
     <div testId="thread-markdown" streaming [glzMarkdown]="live.text"></div>
