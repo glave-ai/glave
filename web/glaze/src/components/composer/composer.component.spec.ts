@@ -14,6 +14,7 @@ import { GlzComposerComponent, type GlzComposerSize } from './composer.component
       [(value)]="draft"
       [busy]="busy()"
       [size]="size()"
+      [keepSent]="keep()"
       (send)="sent.push($event)"
       (stop)="stops.set(stops() + 1)"
     >
@@ -26,6 +27,7 @@ class HostComponent {
   readonly draft = signal('');
   readonly busy = signal(false);
   readonly size = signal<GlzComposerSize>('md');
+  readonly keep = signal(false);
   readonly stops = signal(0);
   readonly sent: string[] = [];
 }
@@ -73,6 +75,20 @@ describe('GlzComposerComponent', () => {
     expect(fixture.componentInstance.sent).toEqual(['Plan the launch']);
     expect(fixture.componentInstance.draft()).toBe('');
     expect(input.value).toBe('');
+  });
+
+  it('leaves what was sent in the box when told to keep it', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    fixture.componentInstance.keep.set(true);
+    await fixture.whenStable();
+    const input = find<HTMLTextAreaElement>(fixture.nativeElement, 'composer-input');
+    type(input, 'Plan the launch');
+    await fixture.whenStable();
+    enter(input);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.sent).toEqual(['Plan the launch']);
+    expect(fixture.componentInstance.draft()).toBe('Plan the launch');
+    expect(input.value).toBe('Plan the launch');
   });
 
   it('does not send while composing text with an input method', async () => {

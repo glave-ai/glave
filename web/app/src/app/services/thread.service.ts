@@ -25,7 +25,7 @@ import {
   type Results,
 } from '../lib/conversation';
 import { changedFiles } from '../lib/files';
-import { idempotencyKey } from '../lib/idempotency';
+import { type Unsent, answerLost, idempotencyKey, sameSend } from '../lib/idempotency';
 import { chosenEffort } from '../lib/effort';
 import { chosenModel } from '../lib/models';
 import { placeOf } from '../lib/place';
@@ -80,11 +80,11 @@ export class ThreadService {
   private readonly streaming = signal(0);
   private sentWhileRunning = 0;
   /**
-   * The person's last send until the server has it, and the idempotency key it went with: sent
-   * again as it was (given back by a failure, or a second press), it is the same send, with the
-   * same key, so the server starts its turn once.
+   * The person's last send, until the server has it or says why not: given back when its answer
+   * was lost, and sent again as it was, it is the same send, with the same key, so the server
+   * starts its turn once.
    */
-  private unsent: { readonly prompt: string; readonly key: string } | null = null;
+  private unsent: Unsent | null = null;
   private readonly failed = signal<string | null>(null);
   private readonly deciding = signal(false);
   private readonly asked = signal<TrustAsk | null>(null);
@@ -171,6 +171,7 @@ export class ThreadService {
     this.asking.set(null);
     this.afters.set([]);
     this.givenBack = [];
+    this.unsent = null;
     this.stopped = false;
     this.stoppedAt = null;
     this.running.set(false);
@@ -233,7 +234,7 @@ export class ThreadService {
     if (thread === null) {
       return;
     }
-    const sendKey = this.unsent?.prompt === prompt ? this.unsent.key : idempotencyKey();
+    const sendKey = sameSend(prompt, this.unsent)?.key ?? idempotencyKey();
     this.unsent = { prompt, key: sendKey };
     if (this.busy()) {
       this.sentWhileRunning += 1;
@@ -353,6 +354,10 @@ export class ThreadService {
         this.keepWaiting(queued, params.prompt, result.queued.id);
       }
     } catch (error: unknown) {
+      // An answer that says why ends the send: the same text sent after it is a new one.
+      if (!answerLost(error) && this.unsent?.key === sendKey) {
+        this.unsent = null;
+      }
       if (folderGone(error)) {
         // The project's folder went since the lists were read: they say so in its place.
         void this.projects.refresh();

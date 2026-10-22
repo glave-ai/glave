@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   afterRenderEffect,
   computed,
   effect,
@@ -24,7 +25,7 @@ import { Folder, Lock, MessageCircle } from 'lucide';
 
 import { AttachmentsService } from '../../services/attachments.service';
 import { effortToSend } from '../../lib/effort';
-import { idempotencyKey } from '../../lib/idempotency';
+import { type Unsent, answerLost, idempotencyKey, sameSend } from '../../lib/idempotency';
 import { ModelsService } from '../../services/models.service';
 import { NavService } from '../../services/nav.service';
 import { SessionService } from '../../services/session.service';
@@ -34,22 +35,14 @@ import { EffortPickerComponent } from '../effort-picker/effort-picker.component'
 import { ModelPickerComponent } from '../model-picker/model-picker.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 
-/** A first message the server may not have had, and what it was sent with. */
-interface Unsent {
-  readonly prompt: string;
-  /** The thread made for it. */
-  readonly thread: ThreadId;
-  /** The idempotency key its turn was asked for with. */
-  readonly key: string;
-}
-
 /**
  * A new chat: the question, then the composer that starts a thread, with where it goes (a
  * chat, or a project) in its box, and the approval mode and the model in the quiet line under
  * it. Sending starts the thread there, on the model and in the approval mode picked, and its
- * first turn, and opens the thread once the server has the message: the thread's page only
- * shows what the server has. When glave runs on this computer, a line under it says what stays
- * private. Opened for a project, the composer takes focus, and the page has Back.
+ * first turn, and opens the thread once the server has the message, held in the box until then:
+ * the thread's page only shows what the server has. When glave runs on this computer, a line
+ * under it says what stays private. Opened for a project, the composer takes focus, and the page
+ * has Back.
  */
 @Component({
   selector: 'app-home',
@@ -137,12 +130,12 @@ export class HomeComponent {
   /** The files added to the first message, kept where the thread will start. */
   protected readonly attachments = inject(AttachmentsService);
   /**
-   * The first message last sent, until the server has it: sent again as it was (after a
-   * failure gave it back), it is the same send, to the thread made for it with the same key, so
-   * the server starts its turn once. Its thread was made with the picks of the first try: a
-   * place, model or mode the server refuses is refused before there is a thread at all.
+   * The first message last sent, while its answer was lost: the server may have it, so sent
+   * again as it was, it is the same send, to the thread made for it with the same key, and the
+   * server starts its turn once, whatever the person picked meanwhile.
    */
-  private unsent: Unsent | null = null;
+  private unsent: (Unsent & { readonly thread: ThreadId }) | null = null;
+  private readonly destroyed = inject(DestroyRef);
 
   /** Files added go where the thread will start. */
   protected readonly keeping = effect(() => {
@@ -162,27 +155,33 @@ export class HomeComponent {
   });
 
   protected async send(prompt: string): Promise<void> {
+    // The message stays in the box, held, until the server has it: a second press meanwhile,
+    // before the box shows it held, sends nothing more.
+    if (this.starting()) {
+      return;
+    }
     this.starting.set(true);
     this.error.set(null);
-    const again = this.unsent?.prompt === prompt ? this.unsent : null;
+    const again = sameSend(prompt, this.unsent);
+    let thread: ThreadId;
     try {
-      const thread = again?.thread ?? (await this.startThread(this.where()));
+      thread = again?.thread ?? (await this.startThread(this.where()));
       const key = again?.key ?? idempotencyKey();
       this.unsent = { prompt, thread, key };
-      const files = this.attachments.attached();
-      await this.startTurn({
-        thread,
-        prompt,
-        ...(files.length === 0 ? {} : { files }),
-        _meta: { idempotency_key: key },
-      });
+      await this.startTurn(thread, prompt, key);
       this.unsent = null;
-      await this.router.navigate(['/t', thread]);
     } catch (error: unknown) {
-      this.draft.set(prompt);
+      // An answer that says why ends the send; one lost leaves it to be sent again as it was.
+      if (!answerLost(error)) {
+        this.unsent = null;
+      }
       this.error.set(error instanceof Error ? error.message : String(error));
-    } finally {
       this.starting.set(false);
+      return;
+    }
+    // The thread's page shows it from here, unless the person went elsewhere meanwhile.
+    if (!this.destroyed.destroyed) {
+      await this.router.navigate(['/t', thread]);
     }
   }
 
@@ -204,10 +203,18 @@ export class HomeComponent {
   }
 
   /**
-   * Starts the thread's first turn, and waits only for the server's first word back, which says
-   * it has the message: the turn goes on in the server, and the thread's page follows it.
+   * Starts the thread's first turn with `prompt` and the files added, and waits only for the
+   * server's first word back, which says it has the message: the turn goes on in the server,
+   * and the thread's page follows it.
    */
-  private async startTurn(params: TurnStartParams): Promise<void> {
+  private async startTurn(thread: ThreadId, prompt: string, key: string): Promise<void> {
+    const files = this.attachments.attached();
+    const params: TurnStartParams = {
+      thread,
+      prompt,
+      ...(files.length === 0 ? {} : { files }),
+      _meta: { idempotency_key: key },
+    };
     const controller = new AbortController();
     try {
       await this.session.stream('turn/start', params, controller.signal).next();
