@@ -2,13 +2,13 @@
 members = ["cargo:."]
 
 # Releases, with dist (https://axodotdev.github.io/cargo-dist/), run by hand: the Release
-# workflow, run from GitHub's Actions tab with a version's tag (`v0.1.0`), builds glave for each
-# target, with the web app inside, tries the installers on what it built, then publishes the
-# archives, their checksums, GitHub's build provenance, an install script and a Homebrew
-# formula, and makes the tag on the commit it ran on. Run with its default, `dry-run`, it does
-# all of that but publish. The workflow, .github/workflows/release.yml, is generated from this
-# file: after changing it, run `cargo xtask release-workflow`, with dist installed at the
-# version below.
+# workflow, run from GitHub's Actions tab with the tag of the version Cargo.toml names (`v0.1.0`
+# for 0.1.0), builds glave for each target, with the web app inside, tries the installers on
+# what it built, then publishes the archives, their checksums, GitHub's build provenance, an
+# install script and a Homebrew formula, and makes the tag on the commit it ran on. Run with its
+# default, `dry-run`, it does all of that but publish. The workflow,
+# .github/workflows/release.yml, is generated from this file: after changing it, run
+# `cargo xtask release-workflow`, with dist installed at the version below.
 [dist]
 cargo-dist-version = "0.33.0"
 # dist gives the whole workflow a token that can change releases and tags, and has no setting to

@@ -75,7 +75,7 @@ jobs:
           name: installer-script
           path: release/
       # Over HTTPS on Linux, under a certificate made here, since the server installer fetches
-      # nothing else; dist's script takes plain HTTP too, which is all macOS is given.
+      # only over HTTPS; dist's script takes plain HTTP too, which is all macOS is given.
       - name: Serve them from this runner
         run: |
           ls -l release
@@ -110,8 +110,13 @@ jobs:
           echo "GLAVE_DOWNLOAD_URL=$url" >>"$GITHUB_ENV"
       - name: curl … | sh installs glave, checked against its checksum
         run: |
+          sum="$(cut -d ' ' -f 1 release/glave-*.tar.xz.sha256)"
+          if ! grep -qF "_checksum_value=\"$sum\"" release/glave-installer.sh; then
+            echo "the install script does not carry this archive's checksum"
+            exit 1
+          fi
           curl -fsSL "$GLAVE_DOWNLOAD_URL/glave-installer.sh" | sh 2>&1 | tee "$RUNNER_TEMP/installed.txt"
-          if grep -q "no checksums to verify" "$RUNNER_TEMP/installed.txt"; then
+          if grep -E "no checksums to verify|skipping .*checksum" "$RUNNER_TEMP/installed.txt"; then
             echo "the install script checked no checksum"
             exit 1
           fi
