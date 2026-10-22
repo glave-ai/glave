@@ -124,7 +124,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       .toMatchObject({ approval: 'call_2', decision: 'allow_once' });
   });
 
-  test(`a reply has a copy button, shown on hover and focus, that copies its text (${colorScheme})`, async ({
+  test(`a reply has a copy button, shown on hover and keyboard focus, that copies its text (${colorScheme})`, async ({
     page,
     context,
     browserName,
@@ -140,7 +140,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     // Only the reply: what the person wrote needs no copying.
     await expect(byTestId(page, 'message-copy')).toHaveCount(1);
     const copy = messages.last().getByTestId('message-copy');
-    // Hidden until the pointer is over the message, or focus is in it.
+    // Hidden until the pointer is over the message, or keyboard focus is in it.
     await page.mouse.move(0, 0);
     await expect.poll(() => shownOpacity(copy)).toBe(0);
     await copy.focus();

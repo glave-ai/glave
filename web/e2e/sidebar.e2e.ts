@@ -234,6 +234,9 @@ test('a heading opens and closes by click and by keyboard, remembered', async ({
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(shown(page)).toHaveText(['Dinner ideas for Saturday']);
+  // A click leaves the caret to the pointer: gone with it, though the toggle may keep focus.
+  await page.mouse.move(0, 0);
+  await expect.poll(() => shownOpacity(caret)).toBe(0);
   // Closed, glave still says a thread in it needs the person, with the same small mark.
   await expect(byTestId(page, 'nav-project-end')).toBeVisible();
   await expect(toggle).toHaveAccessibleDescription('needs you');

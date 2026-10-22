@@ -37,15 +37,15 @@ const RENAME = 'rename';
 /**
  * The person's threads in the side nav: Needs you pinned first while something waits for them,
  * then each project with its threads, then their chats, each list newest first in one order,
- * whatever waits or runs. Each heading opens and closes its list; beside it, on hover and focus,
- * its + starts a project, a thread in the project or a chat, and a project's ⋯ renames it. A
- * closed list still shows, with the small mark a waiting thread has, that something in it needs
- * the person. A thread another started sits under it. A project whose folder isn't there
- * anymore says so, in the server's words: a mark on its heading in the warning tone, and above
- * its threads, what can be done about it. How the person left the lists is kept in this
- * browser. A search keeps the threads it finds by title or by day. A list with nothing in it
- * does not show: with no projects yet, one quiet row offers to start one, as the + beside
- * Projects does once there are some.
+ * whatever waits or runs. Each heading opens and closes its list; beside it, on hover and
+ * keyboard focus, its + starts a project, a thread in the project or a chat, and a project's ⋯
+ * renames it. A closed list still shows, with the small mark a waiting thread has, that
+ * something in it needs the person. A thread another started sits under it. A project whose
+ * folder isn't there anymore says so, in the server's words: a mark on its heading in the
+ * warning tone, and above its threads, what can be done about it. How the person left the lists
+ * is kept in this browser. A search keeps the threads it finds by title or by day. A list with
+ * nothing in it does not show: with no projects yet, one quiet row offers to start one, as the
+ * + beside Projects does once there are some.
  */
 @Component({
   selector: 'app-projects-nav',

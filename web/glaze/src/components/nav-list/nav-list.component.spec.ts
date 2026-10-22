@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 
 import { expectAccessible } from '../../testing/axe';
+import { focusBy } from '../../testing/focus';
 import { Hand } from 'lucide';
 
 import { GlzIconComponent } from '../icon/icon.component';
@@ -53,6 +54,23 @@ describe('GlzNavListComponent', () => {
       false,
     );
     await expectAccessible(root);
+  });
+
+  it('shows the caret and actions for keyboard focus on the heading, not a press’s', async () => {
+    const fixture = render();
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const add = root.querySelector<HTMLButtonElement>('[data-testid="add"]') ?? root;
+    const caret = root.querySelector('[data-testid="space-caret"]') ?? root;
+    const actions = root.querySelector('[data-testid="space"] .actions') ?? root;
+    const shown = (): readonly string[] =>
+      [caret, actions].map((element) => getComputedStyle(element).opacity);
+    expect(shown()).toEqual(['0', '0']);
+    // Focus on an action the app put beside the heading counts as on the heading.
+    focusBy(add, 'pointer');
+    expect(shown()).toEqual(['0', '0']);
+    focusBy(add, 'keyboard');
+    expect(shown()).toEqual(['1', '1']);
   });
 
   it('shows and hides a collapsible list from its heading, the caret after the name', async () => {
