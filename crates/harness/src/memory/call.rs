@@ -5,11 +5,10 @@
 //! with no one there nothing is saved. Memory never changes an approval or what the judge sees.
 
 use glave_ports::memories::{
-    EDIT_MEMORY, FORGET, MemoryChange as Change, MemoryContext, RECALL, REMEMBER,
+    EDIT_MEMORY, FORGET, MemoryChange as Change, MemoryContext, MemoryOutput, RECALL, REMEMBER,
 };
 use glave_ports::{BlobStore, Effect, EventLog, ModelProvider, ToolCall, ToolOutput};
 
-use super::state::structured;
 use crate::approval::{ApprovalRequest, Approver};
 use crate::calls::{Judged, NOT_RUN};
 use crate::cancel::Cancel;
@@ -99,19 +98,24 @@ where
             seq: Some(thread.next_seq),
             ..on
         };
-        let done = memory.call(&on, name, &call.arguments).await;
-        if let Some(change) = &done.change {
+        let MemoryOutput {
+            output,
+            kept,
+            change,
+        } = memory.call(&on, name, &call.arguments).await;
+        if let Some(change) = &change {
             thread.memory.apply(change);
-            thread.memory.structured = Some(structured(change));
         }
         live(Live::ToolFinished {
             summary,
-            is_error: done.output.is_error,
+            is_error: output.is_error,
         });
-        if let Some(change) = &done.change {
+        if let Some(change) = &change {
             live(shown(change));
         }
-        self.after_tool(thread, &hooked, done.output, cancel).await
+        let output = self.after_tool(thread, &hooked, output, cancel).await?;
+        thread.memory.called(change.as_ref(), kept);
+        Ok(output)
     }
 }
 

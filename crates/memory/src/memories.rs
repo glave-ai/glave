@@ -4,6 +4,7 @@
 
 mod housekeep;
 mod recall;
+mod reread;
 mod tidy;
 mod write;
 

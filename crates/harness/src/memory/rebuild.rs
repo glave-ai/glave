@@ -1,13 +1,16 @@
 //! Rebuilding what a resumed thread's model was shown of memory, from its events alone: each
 //! turn's configuration names the memories it knew, at their versions; the thread's own memory
-//! calls record what they changed; a compaction restarts the start. The text comes from the
-//! memories at those versions, so the start reads exactly as before, except that a forgotten
-//! memory, which can no longer be opened, drops out.
+//! calls record what they changed, and what their results showed; a compaction restarts the
+//! start. The text comes from the memories at those versions, and the past conversations as
+//! they read now, so the start and every result read exactly as before, except that a forgotten
+//! memory, which can no longer be opened, drops out, as does a turn `recall` hides now.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use glave_event::{Body, CallId, Event, MemoryId, Sha256};
-use glave_ports::memories::{EDIT_MEMORY, FORGET, REMEMBER, Remembered, Shown};
+use glave_event::{Body, CallId, Event, MemoryId, Part, Sha256};
+use glave_ports::memories::{
+    EDIT_MEMORY, FORGET, Memory, MemoryContext, RECALL, REMEMBER, Remembered, SHOWN, Shown,
+};
 use glave_ports::{BlobStore, EventLog, Message, ModelProvider, read_all};
 use serde::Deserialize;
 
@@ -17,6 +20,7 @@ use crate::approval::Approver;
 use crate::conversation::follow;
 use crate::harness::{Harness, Thread};
 use crate::turn::CONFIG_LIMIT;
+use crate::untrusted::labelled;
 
 /// What a turn's configuration says about memory.
 #[derive(Deserialize)]
@@ -46,6 +50,17 @@ struct Trace {
     known: BTreeMap<MemoryId, u32>,
     /// The contradictions known now.
     questions: Vec<[MemoryId; 2]>,
+    /// The memory calls in the conversation whose results were kept by reference.
+    results: Vec<KeptResult>,
+}
+
+/// A memory call's result the log keeps by reference.
+struct KeptResult {
+    call_id: CallId,
+    /// What it showed, as its `structured` records it.
+    shown: serde_json::Value,
+    /// Its output is labelled untrusted.
+    untrusted: bool,
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -103,12 +118,15 @@ where
                 })
             })
             .collect();
+        let results = Self::reread(memory.as_ref(), &on, trace.results).await;
         thread.memory = MemoryState {
             start: render::start(&start, &among(&trace.asked, &start)),
             notes: notes.collect(),
             questions: among(&trace.questions, &known),
             known: known.into_iter().map(|m| (m.memory, m)).collect(),
             structured: None,
+            kept: None,
+            results,
         };
     }
 
@@ -132,7 +150,7 @@ where
                 }
                 Body::ToolCallRequested(requested) => {
                     let tool = requested.tool.trim().to_ascii_lowercase();
-                    if [REMEMBER, EDIT_MEMORY, FORGET].contains(&tool.as_str()) {
+                    if [REMEMBER, EDIT_MEMORY, FORGET, RECALL].contains(&tool.as_str()) {
                         memory_calls.insert(requested.call_id.clone());
                     }
                 }
@@ -141,9 +159,17 @@ where
                 {
                     if let Some(structured) = &done.structured {
                         trace.own(structured);
+                        if let Some(shown) = structured.get(SHOWN) {
+                            trace.results.push(KeptResult {
+                                call_id: done.call_id.clone(),
+                                shown: shown.clone(),
+                                untrusted: done.untrusted,
+                            });
+                        }
                     }
                 }
                 Body::ThreadCompacted(_) => {
+                    trace.results.clear();
                     trace.start = trace
                         .known
                         .iter()
@@ -160,6 +186,29 @@ where
             follow(&mut messages, event);
         }
         trace
+    }
+
+    /// What the model reads in place of each of `kept`'s first parts: its words read again, as
+    /// `MemoryState::results` holds them. One that cannot be read again reads as the log keeps
+    /// it.
+    async fn reread(
+        memory: &dyn Memory,
+        on: &MemoryContext,
+        kept: Vec<KeptResult>,
+    ) -> BTreeMap<CallId, Part> {
+        if kept.is_empty() {
+            return BTreeMap::new();
+        }
+        let shown: Vec<serde_json::Value> = kept.iter().map(|kept| kept.shown.clone()).collect();
+        let read = memory.reread(on, &shown).await.unwrap_or_default();
+        kept.into_iter()
+            .zip(read)
+            .filter_map(|(kept, text)| {
+                let read = Part::Text { text: text? };
+                let read = if kept.untrusted { labelled(read) } else { read };
+                Some((kept.call_id, read))
+            })
+            .collect()
     }
 
     /// What the configuration stored under `sha` says about memory; `None` when it says

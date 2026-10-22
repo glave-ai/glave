@@ -9,6 +9,7 @@
 mod book;
 mod client;
 mod memories;
+mod reply;
 mod rules;
 mod server;
 mod similar;
