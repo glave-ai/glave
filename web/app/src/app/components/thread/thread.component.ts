@@ -95,6 +95,7 @@ export class ThreadComponent {
     you: $localize`:@@thread.you:You`,
     queued: $localize`:@@thread.queued:Waiting to be read`,
     again: $localize`:@@thread.again:Send again`,
+    lost: $localize`:@@thread.lost:This message may not have reached glave.`,
   } as const;
   protected readonly service = inject(ThreadService);
   /** The files added to the message being written, kept in the thread's project. */
@@ -109,16 +110,8 @@ export class ThreadComponent {
       : $localize`:@@thread.failed:Something went wrong: ${error}:ERROR:`;
   });
   private readonly firstTurns = inject(FirstTurnService);
-  /** Why the thread's first message, sent from the new chat, did not go, while it can go again. */
-  protected readonly unsent = computed(() => {
-    const failed = this.service.firstTurn()?.failed ?? null;
-    if (failed === null) {
-      return null;
-    }
-    return failed === 'lost'
-      ? $localize`:@@thread.lost:No answer came back.`
-      : $localize`:@@thread.unsent:Not sent: ${failed.said}:REASON:`;
-  });
+  /** Whether the thread's first message, sent from the new chat, got no answer: it may go again. */
+  protected readonly lost = computed(() => this.service.firstTurn()?.failed === 'lost');
   private readonly panel = inject(ToolsPanelService);
   private readonly stick = viewChild.required(GlzStickToBottomDirective);
   /** The composer's draft, which a message the model never read comes back to. */

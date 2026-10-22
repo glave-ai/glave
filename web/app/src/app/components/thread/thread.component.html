@@ -54,9 +54,9 @@
         @if (problem(); as problem) {
           <p class="error" role="alert" data-testid="thread-error">{{ problem }}</p>
         }
-        @if (unsent(); as unsent) {
-          <div class="error glz-row glz-gap-3" role="alert" data-testid="thread-unsent">
-            {{ unsent }}
+        @if (lost()) {
+          <div class="error glz-row glz-gap-3" role="alert" data-testid="thread-lost">
+            {{ copy.lost }}
             <button glzButton size="sm" data-testid="thread-send-again" (click)="sendAgain()">
               {{ copy.again }}
             </button>

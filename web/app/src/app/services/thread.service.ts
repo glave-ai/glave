@@ -1,4 +1,13 @@
-import { DOCUMENT, DestroyRef, Service, computed, inject, signal } from '@angular/core';
+import {
+  DOCUMENT,
+  DestroyRef,
+  Service,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+} from '@angular/core';
 import {
   type ApprovalMode,
   type AttachedFile,
@@ -107,16 +116,10 @@ export class ThreadService {
   readonly reply = this.draft.asReadonly();
   /** The step the running turn takes now, in the server's words, while one runs and it said so. */
   readonly step = computed(() => this.doing().at(-1) ?? null);
-  /**
-   * The thread's first turn as the new chat sent it, until the thread holds a message of the
-   * person's: the server's record of it, which is what stays.
-   */
+  /** The thread's first turn as the new chat sent it, until the server's record of it shows. */
   readonly firstTurn = computed(() => {
     const thread = this.id();
-    const first = thread === null ? null : this.firstTurns.of(thread);
-    const recorded = (event: RawEvent): boolean =>
-      event.type === 'message.added' && event.data['role'] === 'user';
-    return first !== null && !this.events().some(recorded) ? first : null;
+    return thread === null ? null : this.firstTurns.of(thread);
   });
   /**
    * Whether a turn runs in the thread: one this view follows, one anyone else started, or the
@@ -149,6 +152,25 @@ export class ThreadService {
   readonly place = computed(() =>
     placeOf(this.events(), { local: this.session.local(), mac: this.mac }),
   );
+
+  /**
+   * A first turn the server refused, saying why: its message goes back in the box with the
+   * reason, as one sent here does, and the thread is read again, as the server may have held it.
+   */
+  protected readonly refused = effect(() => {
+    const thread = this.id();
+    const first = this.firstTurn();
+    const failed = first?.failed ?? null;
+    if (thread === null || first === null || failed === null || failed === 'lost') {
+      return;
+    }
+    untracked(() => {
+      this.firstTurns.forget(thread);
+      this.failed.set(failed.said);
+      this.composer.update((draft) => together([first.params.prompt, draft].filter(Boolean)));
+      void this.resync(thread);
+    });
+  });
 
   constructor() {
     // A hidden tab lets go of its watch, so tabs in the background hold no connection, and
@@ -379,7 +401,7 @@ export class ThreadService {
           this.streaming.update((streams) => streams - 1);
         }
         // A message queued to a turn another tab follows waits for that turn, as its draft does.
-        if (this.following() === 0 && !this.running()) {
+        if (this.following() === 0 && !this.busy()) {
           this.settle(thread);
         }
         if (this.streaming() === 0 && this.watching === null) {
@@ -682,8 +704,9 @@ export class ThreadService {
       }
     } else if (event.type === 'turn.ended') {
       this.running.set(false);
-    } else if (event.type === 'message.added' && event.data['role'] === 'user') {
+    } else if (byPerson(event)) {
       this.asking.set(null);
+      this.firstTurns.forget(event.thread);
     }
     return true;
   }
@@ -717,6 +740,9 @@ export class ThreadService {
           return;
         }
         this.events.update((events) => mergeEvents(events, page.events));
+        if (page.events.some(byPerson)) {
+          this.firstTurns.forget(thread);
+        }
         this.memoryResults.update((known) => withResults(known, page.results));
         const turns = page.events.some(
           (event) => event.type === 'turn.started' || event.type === 'turn.ended',
@@ -743,6 +769,11 @@ export class ThreadService {
  */
 function runs(summary: ThreadSummary, events: readonly RawEvent[]): boolean {
   return summary.status === 'running' || (summary.status === 'waiting' && turnRuns(events));
+}
+
+/** Whether `event` records a message of the person's. */
+function byPerson(event: RawEvent): boolean {
+  return event.type === 'message.added' && event.data['role'] === 'user';
 }
 
 /** The `seq` of the latest turn's start, if a turn ever started. */

@@ -106,10 +106,10 @@ test('a first message whose answer is lost is sent again with its key, as one tu
   });
   const prompt = await write(page, 'Lost', browserName);
   await byTestId(page, 'home-composer-input').press('Enter');
-  await expect(byTestId(page, 'thread-unsent')).toContainText('No answer came back.');
+  await expect(byTestId(page, 'thread-lost')).toContainText('may not have reached glave');
   await byTestId(page, 'thread-send-again').click();
   expect(await asked(page, prompt)).toBe(1);
-  await expect(byTestId(page, 'thread-unsent')).toHaveCount(0);
+  await expect(byTestId(page, 'thread-lost')).toHaveCount(0);
   expect(keys).toHaveLength(2);
   expect(keys[1]).toBe(keys[0]);
 });

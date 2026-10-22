@@ -15,9 +15,9 @@ export interface FirstTurn {
 /**
  * The first turn of each thread the new chat starts, sent as the person sends it, so the thread
  * opens at once. Kept in this tab's memory only, never in the page's history, so nothing is sent
- * again when a page is returned to. The thread's page shows it until the server's record of the
- * message arrives, and, when it did not go, why; sent again, it keeps its idempotency key, so
- * the server starts the turn once.
+ * again when a page is returned to, and only until the thread's page sees the server's record
+ * of the message. When no answer came, the page offers to send it again, with its idempotency
+ * key, so the server starts the turn once.
  */
 @Service()
 export class FirstTurnService {
@@ -28,9 +28,8 @@ export class FirstTurnService {
     return this.turns().get(thread) ?? null;
   }
 
-  /** Sends `params` with a new key, letting go of the first turns the server had. */
+  /** Sends `params` with a key made now. */
   start(params: TurnStartParams): void {
-    this.turns.update((turns) => new Map([...turns].filter(([, turn]) => turn.failed !== null)));
     void this.send({ params, key: idempotencyKey(), failed: null });
   }
 
@@ -39,6 +38,13 @@ export class FirstTurnService {
     const turn = this.of(thread);
     if (turn !== null && turn.failed !== null) {
       void this.send({ ...turn, failed: null });
+    }
+  }
+
+  /** Lets go of `thread`'s first turn: the thread shows the server's record of it now. */
+  forget(thread: ThreadId): void {
+    if (this.turns().has(thread)) {
+      this.turns.update((turns) => new Map([...turns].filter(([each]) => each !== thread)));
     }
   }
 

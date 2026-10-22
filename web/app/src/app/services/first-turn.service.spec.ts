@@ -10,7 +10,10 @@ function settled(): Promise<void> {
 
 describe('FirstTurnService', () => {
   it('sends a first turn with a key, says why it did not go, and sends it again with that key', async () => {
-    const refused = new ApiError({ code: ErrorCode.QUEUE_FULL, message: 'The server is stopping' });
+    const refused = new ApiError({
+      code: ErrorCode.QUEUE_FULL,
+      message: 'Too many messages are waiting',
+    });
     const cut = new FakeTurn();
     cut.fail(new TypeError('Failed to fetch'));
     const fake = new FakeSession().turn(cut).turn(refused);
@@ -21,19 +24,18 @@ describe('FirstTurnService', () => {
     await settled();
     expect([service.of('t1')?.failed, service.of('t2')?.failed]).toEqual([
       'lost',
-      { said: 'The server is stopping' },
+      { said: 'Too many messages are waiting' },
     ]);
     service.again('t1');
     await settled();
     expect(service.of('t1')?.failed).toBeNull();
-    // The one the server had is let go of once another starts; the one that did not go stays.
-    service.start({ thread: 't3', prompt: 'Ship' });
+    service.forget('t1');
     expect([service.of('t1'), service.of('t2')?.params.prompt]).toEqual([null, 'Tidy']);
     const keys = fake
       .paramsOf('turn/start')
       .map((params) => (params as TurnStartParams)._meta?.idempotency_key);
     expect(keys[0]).toMatch(/^[0-9a-f]{32}$/u);
     expect(keys[2]).toBe(keys[0]);
-    expect(new Set(keys).size).toBe(3);
+    expect(new Set(keys).size).toBe(2);
   });
 });

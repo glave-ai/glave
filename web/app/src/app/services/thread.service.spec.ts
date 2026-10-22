@@ -4,6 +4,7 @@ import { ApiError, ErrorCode, type Notification, type RawEvent, type Update } fr
 
 import { FakeSession, FakeTurn, provideFakeSession } from '../testing/fake-session';
 import { event, thread } from '../testing/fixtures';
+import { FirstTurnService } from './first-turn.service';
 import { ThreadService } from './thread.service';
 
 function make(fake: FakeSession): ThreadService {
@@ -111,6 +112,23 @@ describe('ThreadService', () => {
     const key = expect.stringMatching(/^[0-9a-f]{32}$/u) as unknown;
     expect(fake.paramsOf('turn/start')).toEqual([
       { thread: 'thread-1', prompt: 'hi', _meta: { idempotency_key: key } },
+    ]);
+  });
+
+  it('puts a first turn the server refused back in the box, saying why', async () => {
+    const full = new ApiError({ code: ErrorCode.QUEUE_FULL, message: 'Too many are waiting' });
+    const fake = new FakeSession().answer('thread/events', { events: [] }).turn(full);
+    TestBed.configureTestingModule({ providers: [...provideFakeSession(fake), ThreadService] });
+    const firstTurns = TestBed.inject(FirstTurnService);
+    firstTurns.start({ thread: 'thread-1', prompt: 'Plan' });
+    const service = TestBed.inject(ThreadService);
+    await service.open('thread-1');
+    await settled();
+    TestBed.tick();
+    expect([service.composer(), service.error(), firstTurns.of('thread-1')]).toEqual([
+      'Plan',
+      'Too many are waiting',
+      null,
     ]);
   });
 
