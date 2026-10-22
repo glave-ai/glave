@@ -7,11 +7,23 @@
 @if (turn().reply; as reply) {
   <app-thread-item [item]="reply" />
 }
-@if (turn().working) {
-  <glz-working testId="thread-working" [label]="copy.thinking" />
+@if (turn().working; as working) {
+  <glz-working
+    testId="thread-working"
+    [label]="copy.thinking"
+    [words]="copy.words"
+    [step]="working.step"
+    [elapsed]="elapsed()"
+  />
 }
 @if (turn().live; as live) {
-  <glz-message from="model" streaming data-testid="thread-reply" [author]="copy.reply">
+  <glz-message
+    class="glz-rise"
+    from="model"
+    streaming
+    data-testid="thread-reply"
+    [author]="copy.reply"
+  >
     @if (live.reasoning) {
       <glz-reasoning
         testId="thread-reasoning"
@@ -26,7 +38,7 @@
   </glz-message>
 }
 @if (changed()) {
-  <app-turn-changes [files]="turn().files" />
+  <app-turn-changes [class.glz-settle]="turn().runs" [files]="turn().files" />
 }
 @if (turn().receipt; as receipt) {
   <glz-steps

@@ -1,4 +1,4 @@
-import { TestBed } from '@angular/core/testing';
+import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { expectAccessible } from '@glave/glaze/testing';
 
@@ -31,7 +31,8 @@ const RESULTS: TurnResults = {
     steered: false,
   },
   live: null,
-  working: false,
+  runs: false,
+  working: null,
   files: [{ path: 'src/lock.rs', changes: [], added: 16, removed: 0 }],
   steps: [
     {
@@ -61,14 +62,38 @@ const RESULTS: TurnResults = {
   ],
 };
 
-async function render(results: TurnResults): Promise<HTMLElement> {
+/** A turn that has just started work, with nothing of its own to show yet. */
+const WORKING: TurnResults = {
+  ...RESULTS,
+  reply: null,
+  runs: true,
+  working: { step: null, since: null },
+  files: [],
+  steps: [],
+  receipt: null,
+  waiting: [],
+};
+
+async function mount(results: TurnResults): Promise<ComponentFixture<TurnComponent>> {
   TestBed.configureTestingModule({
     providers: [provideRouter([]), ...provideFakeSession(new FakeSession()), ThreadService],
   });
   const fixture = TestBed.createComponent(TurnComponent);
   fixture.componentRef.setInput('turn', results);
   await fixture.whenStable();
+  return fixture;
+}
+
+async function render(results: TurnResults): Promise<HTMLElement> {
+  const fixture = await mount(results);
   return fixture.nativeElement as HTMLElement;
+}
+
+/** The working line's text, and the time beside it. */
+function line(root: HTMLElement): readonly (string | undefined)[] {
+  return ['thread-working-label', 'thread-working-elapsed'].map(
+    (testId) => root.querySelector(`[data-testid="${testId}"]`)?.textContent,
+  );
 }
 
 /** The test hooks of the blocks the turn shows, in order. */
@@ -111,21 +136,81 @@ describe('TurnComponent', () => {
     expect(live?.textContent).toContain('Writing');
   });
 
-  it('says it is thinking in the reply’s place while the model has nothing to show', async () => {
-    const root = await render({
+  describe('while it works with nothing of its own to show', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+      vi.setSystemTime(Date.parse('2026-10-11T10:00:12.400Z'));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('says a smithy’s word in the reply’s place, the next every couple of seconds', async () => {
+      const fixture = await mount(WORKING);
+      const root = fixture.nativeElement as HTMLElement;
+      expect(blocks(root)).toEqual(['thread-message', 'thread-working']);
+      // No time until the server records the turn's start.
+      expect(line(root)).toEqual(['Forging…', undefined]);
+      vi.advanceTimersByTime(2000);
+      await fixture.whenStable();
+      expect(line(root)).toEqual(['Honing…', undefined]);
+      await expectAccessible(root);
+    });
+
+    it('shows the step a tool takes in the server’s words, and how long the turn has worked', async () => {
+      const since = '2026-10-11T10:00:00.000Z';
+      const fixture = await mount({
+        ...WORKING,
+        working: { step: 'bash: cargo test', since },
+      });
+      const root = fixture.nativeElement as HTMLElement;
+      expect(line(root)).toEqual(['bash: cargo test', '12s']);
+      vi.advanceTimersByTime(1000);
+      await fixture.whenStable();
+      expect(line(root)).toEqual(['bash: cargo test', '13s']);
+      vi.advanceTimersByTime(60_000);
+      await fixture.whenStable();
+      expect(line(root)).toEqual(['bash: cargo test', '1m 13s']);
+      // The step ends and the model thinks again: its words, the time going on.
+      fixture.componentRef.setInput('turn', { ...WORKING, working: { step: null, since } });
+      await fixture.whenStable();
+      expect(line(root)).toEqual(['Forging…', '1m 13s']);
+      await expectAccessible(root);
+    });
+
+    it('leaves no timer behind once the line goes, or the turn does', async () => {
+      const since = '2026-10-11T10:00:00.000Z';
+      const fixture = await mount({ ...WORKING, working: { step: null, since } });
+      // The clock, and the words turning.
+      expect(vi.getTimerCount()).toBe(2);
+      fixture.componentRef.setInput('turn', { ...RESULTS, runs: true });
+      await fixture.whenStable();
+      const root = fixture.nativeElement as HTMLElement;
+      expect(root.querySelector('[data-testid="thread-working"]')).toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
+      fixture.componentRef.setInput('turn', { ...WORKING, working: { step: null, since } });
+      await fixture.whenStable();
+      expect(vi.getTimerCount()).toBe(2);
+      fixture.destroy();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+  });
+
+  it('lets a reply rise into place as it begins, and what changed settle in while the turn runs', async () => {
+    const running = await render({
       ...RESULTS,
       reply: null,
-      working: true,
-      files: [],
-      steps: [],
-      receipt: null,
+      runs: true,
+      live: { text: 'Writing', reasoning: '' },
       waiting: [],
     });
-    expect(blocks(root)).toEqual(['thread-message', 'thread-working']);
-    expect(root.querySelector('[data-testid="thread-working-label"]')?.textContent).toBe(
-      'Thinking…',
-    );
-    await expectAccessible(root);
+    expect(running.querySelector('[data-testid="thread-reply"]')?.classList).toContain('glz-rise');
+    expect(running.querySelector('app-turn-changes')?.classList).toContain('glz-settle');
+    TestBed.resetTestingModule();
+    // A turn read back from the log moves nothing.
+    const read = await render(RESULTS);
+    expect(read.querySelector('app-turn-changes')?.classList).not.toContain('glz-settle');
   });
 
   it('shows reasoning open as it streams, and folds it once the answer begins', async () => {

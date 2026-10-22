@@ -33,7 +33,7 @@
   border: var(--glz-border-width) solid var(--glz-color-border-strong);
   border-radius: var(--glz-radius-strip);
   background: var(--glz-surface-card);
-  transition: border-color var(--glz-duration-fast) var(--glz-easing);
+  transition: border-color var(--glz-duration-quick) var(--glz-ease-out);
 }
 
 .card:hover:not(:has(.native:disabled)) {

@@ -138,11 +138,12 @@ export class ThreadComponent {
   protected readonly panelShortcut = this.panel.ariaShortcut;
   protected readonly panelHint = $localize`:@@thread.hint:Drag or use the arrow keys to resize; Enter collapses. Show or hide: ${this.panel.shortcut}:SHORTCUT:`;
   /**
-   * The turns, results first; the reply being written goes to the last, which runs. A turn the
-   * person just asked for shows at once, before the server records it.
+   * The turns, results first; the reply being written and the step taken now go to the last,
+   * which runs. A turn the person just asked for shows at once, before the server records it.
    */
   protected readonly turns = computed<readonly TurnResults[]>(() => {
     const live = this.service.hasReply() ? this.service.reply() : null;
+    const step = this.service.step();
     const recorded = this.service.turns();
     const starting = this.service.starting();
     const turns = starting === null ? recorded : [...recorded, startingTurn(starting)];
@@ -151,6 +152,7 @@ export class ThreadComponent {
       turnResults(
         turn,
         index === last ? live : null,
+        index === last ? step : null,
         index === last && this.service.busy(),
         this.locale,
       ),

@@ -63,6 +63,8 @@ export class GlzReceiptComponent {
   });
   protected readonly statusWord = computed(() => this.words.statusLabels[this.status()]);
   protected readonly statusClass = computed(() => `status-${this.status()}`);
+  /** A running call's ring turns (`glz-spin`), and holds still when the person asks for less motion. */
+  protected readonly running = computed(() => this.status() === 'running');
 
   protected toggled(event: Event): void {
     if (event.target instanceof HTMLDetailsElement) {

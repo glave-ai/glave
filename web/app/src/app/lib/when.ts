@@ -23,6 +23,19 @@ export interface Times {
   day(at: string): readonly string[];
 }
 
+/**
+ * How long something that started at `startedAt`, as the server recorded it, has gone on at
+ * `now` (milliseconds since the epoch), in whole seconds, as milliseconds: at least a second, so
+ * a clock never reads less. `null` when its start is not recorded yet or does not parse.
+ */
+export function runningFor(startedAt: string | null | undefined, now: number): number | null {
+  const start = typeof startedAt === 'string' ? Date.parse(startedAt) : Number.NaN;
+  if (Number.isNaN(start)) {
+    return null;
+  }
+  return Math.max(1, Math.floor((now - start) / 1000)) * 1000;
+}
+
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;

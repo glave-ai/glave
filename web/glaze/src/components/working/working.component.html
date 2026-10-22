@@ -1,4 +1,7 @@
 <span class="mark" aria-hidden="true">
   <ng-content select="[glzWorkingMark]"><span class="dot"></span></ng-content>
 </span>
-<span class="label" [attr.data-testid]="ids().label">{{ label() }}</span>
+<span class="label" dir="auto" [attr.data-testid]="ids().label">{{ shown() }}</span>
+@if (elapsed(); as elapsed) {
+  <span class="elapsed" [attr.data-testid]="ids().elapsed">{{ elapsed }}</span>
+}

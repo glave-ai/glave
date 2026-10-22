@@ -300,6 +300,25 @@ export function applyUpdate(draft: Draft, update: Update): Draft {
   }
 }
 
+/**
+ * The steps a running turn takes now, in the server's words, oldest first, after a live
+ * update: a tool's step from when the server says it began until it says it finished or did
+ * not run; anything else leaves them.
+ */
+export function stepsAfter(steps: readonly string[], update: Update): readonly string[] {
+  switch (update.kind) {
+    case 'tool_started':
+      return [...steps, update.summary];
+    case 'tool_finished':
+    case 'tool_declined': {
+      const at = steps.indexOf(update.summary);
+      return at === -1 ? steps : steps.filter((_, index) => index !== at);
+    }
+    default:
+      return steps;
+  }
+}
+
 /** `events` with `more` added, each `seq` once, in `seq` order. */
 export function mergeEvents(
   events: readonly RawEvent[],

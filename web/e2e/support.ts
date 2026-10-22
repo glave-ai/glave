@@ -284,15 +284,16 @@ export function described(violations: readonly Result[]): readonly string[] {
 /**
  * Fails on any WCAG 2.2 A or AA violation axe finds, colour contrast included. Colours are
  * measured once they stop changing: a button fades to its new background after a switch to
- * dark, and halfway through the fade its text would fail.
+ * dark, and a reply fades in as it arrives, and halfway through either its text would fail.
+ * What loops while work goes on (a shimmer, a turning ring) never stops, so it runs on.
  */
 export async function expectAccessible(page: Page): Promise<void> {
   await page.evaluate(() =>
     Promise.all(
       document
         .getAnimations()
-        .filter((animation) => animation instanceof CSSTransition)
-        .map((transition) => transition.finished.catch(() => undefined)),
+        .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+        .map((animation) => animation.finished.catch(() => undefined)),
     ),
   );
   const results = await new AxeBuilder({ page }).withTags([...WCAG]).analyze();

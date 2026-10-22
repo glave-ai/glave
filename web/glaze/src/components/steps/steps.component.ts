@@ -77,6 +77,8 @@ export class GlzStepsComponent {
   /** A check says done on its own; any other status says itself in words too. */
   protected readonly quiet = computed(() => this.status() === 'done');
   protected readonly statusClass = computed(() => `status-${this.status()}`);
+  /** A running run's ring turns (`glz-spin`), and holds still when the person asks for less motion. */
+  protected readonly running = computed(() => this.status() === 'running');
 
   protected toggled(event: Event): void {
     if (event.target instanceof HTMLDetailsElement) {

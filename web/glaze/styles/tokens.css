@@ -228,16 +228,25 @@
   --glz-message-gap: 20%;
   --glz-message-person-surface: var(--glz-surface-bubble);
 
-  /* Motion: none at all when the person asks for less. */
-  --glz-duration-fast: 120ms;
-  --glz-duration-normal: 200ms;
-  --glz-easing: cubic-bezier(0.2, 0, 0, 1);
+  /*
+   * Motion, one calm set: the only durations and easing anything moves by. Quick for what
+   * answers the pointer (hover, press), standard for what appears or folds, slow for a large
+   * panel; each eases out. All of it is instant when the person asks for less motion.
+   */
+  --glz-duration-quick: 120ms;
+  --glz-duration-standard: 200ms;
+  --glz-duration-slow: 320ms;
+  --glz-ease-out: cubic-bezier(0.2, 0, 0, 1);
 
   /*
-   * A quiet loop while work goes on (the working state's mark and shimmer, `glz-spin`'s turn);
-   * still when the person asks for less.
+   * A quiet loop while work goes on (the working state's mark and shimmer, `glz-spin`'s turn),
+   * what turns or sweeps at an even pace; and a caret's blink, on then off. Still when the
+   * person asks for less.
    */
   --glz-duration-ambient: 2s;
+  --glz-ease-even: linear;
+  --glz-duration-blink: 1s;
+  --glz-ease-blink: steps(1);
 }
 
 :root[data-theme='light'] {
@@ -250,7 +259,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   :root {
-    --glz-duration-fast: 0ms;
-    --glz-duration-normal: 0ms;
+    --glz-duration-quick: 0ms;
+    --glz-duration-standard: 0ms;
+    --glz-duration-slow: 0ms;
   }
 }

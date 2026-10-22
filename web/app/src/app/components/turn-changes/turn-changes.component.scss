@@ -69,7 +69,7 @@
   font: inherit;
   text-align: start;
   cursor: pointer;
-  transition: background-color var(--glz-duration-fast) var(--glz-easing);
+  transition: background-color var(--glz-duration-quick) var(--glz-ease-out);
 }
 
 .row:hover,

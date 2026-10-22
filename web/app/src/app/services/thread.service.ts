@@ -13,7 +13,7 @@ import {
 import type { GlzDecision } from '@glave/glaze';
 
 import { lastCommandChange } from '../lib/commands';
-import { NO_DRAFT, applyUpdate, mergeEvents, type Draft } from '../lib/conversation';
+import { NO_DRAFT, applyUpdate, mergeEvents, stepsAfter, type Draft } from '../lib/conversation';
 import { changedFiles } from '../lib/files';
 import { chosenEffort } from '../lib/effort';
 import { chosenModel } from '../lib/models';
@@ -40,6 +40,8 @@ export class ThreadService {
   private readonly id = signal<ThreadId | null>(null);
   private readonly events = signal<readonly RawEvent[]>([]);
   private readonly draft = signal<Draft>(NO_DRAFT);
+  /** The steps the running turn takes now, in the server's words, as its live updates say. */
+  private readonly doing = signal<readonly string[]>([]);
   /** The turn streams followed now: the turn, and any message sent to it meanwhile. */
   private readonly following = signal(0);
   private readonly waiting = signal<readonly Waiting[]>([]);
@@ -81,6 +83,8 @@ export class ThreadService {
   /** The `seq` of the latest start or end of a command in the background it recorded, if any. */
   readonly commandChange = computed(() => lastCommandChange(this.events()));
   readonly reply = this.draft.asReadonly();
+  /** The step the running turn takes now, in the server's words, while one runs and it said so. */
+  readonly step = computed(() => this.doing().at(-1) ?? null);
   /** Whether a turn runs in the thread: one this view follows, or one anyone else started. */
   readonly busy = computed(() => this.following() > 0 || this.running());
   /**
@@ -135,7 +139,7 @@ export class ThreadService {
     this.abortAll();
     this.id.set(thread);
     this.events.set([]);
-    this.draft.set(NO_DRAFT);
+    this.forgetLive();
     this.waiting.set([]);
     this.asking.set(null);
     this.givenBack = [];
@@ -377,7 +381,7 @@ export class ThreadService {
       }
       const added = this.add(event);
       if (drawn && event.type === 'message.added') {
-        this.draft.set(NO_DRAFT);
+        this.forgetLive();
       }
       if (added && event.type === 'turn.ended' && this.streaming() === 0) {
         this.endedElsewhere();
@@ -392,13 +396,20 @@ export class ThreadService {
         }
       } else {
         this.draft.update((draft) => applyUpdate(draft, update));
+        this.doing.update((steps) => stepsAfter(steps, update));
       }
     }
   }
 
   /** A turn this view did not follow ended: its draft goes. */
   private endedElsewhere(): void {
+    this.forgetLive();
+  }
+
+  /** What a turn showed live goes, the reply being written and the steps it took: never kept. */
+  private forgetLive(): void {
     this.draft.set(NO_DRAFT);
+    this.doing.set([]);
   }
 
   /**
@@ -433,7 +444,7 @@ export class ThreadService {
     let [wait, fresh] = [FIRST_RETRY_MS, read];
     while (!stopped()) {
       // Live updates start afresh with each watch: a reply's text missed meanwhile is gone.
-      this.draft.set(NO_DRAFT);
+      this.forgetLive();
       // Just read, the thread needs no second look.
       if (!fresh) {
         await this.resync(thread);
@@ -547,7 +558,7 @@ export class ThreadService {
    * stopped the turn, as Claude Code and Codex do; otherwise it goes back in the box.
    */
   private settle(thread: ThreadId): void {
-    this.draft.set(NO_DRAFT);
+    this.forgetLive();
     const unread = [...this.givenBack, ...this.queued().map((message) => message.text)];
     this.givenBack = [];
     this.waiting.set([]);

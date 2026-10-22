@@ -1,6 +1,7 @@
 @use '../../styles/working';
 
-// One quiet line where a reply will be: the mark, then what is being done.
+// One quiet line where a reply will be: the mark, what is being done, then how long it has
+// gone on.
 :host {
   display: flex;
   align-items: center;
@@ -23,7 +24,7 @@
   height: 0.5em;
   border-radius: 50%;
   background: var(--glz-accent);
-  animation: glz-breathe var(--glz-duration-ambient) var(--glz-easing) infinite;
+  animation: glz-breathe var(--glz-duration-ambient) var(--glz-ease-out) infinite;
 
   @media (prefers-reduced-motion: reduce) {
     animation: none;
@@ -34,8 +35,21 @@
   }
 }
 
+// One line, however long the step: what does not fit ends in an ellipsis.
 .label {
   @include working.shimmer;
+
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+// The time, quieter, its figures one width so the line holds still as it counts.
+.elapsed {
+  flex: none;
+  color: var(--glz-color-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 @keyframes glz-breathe {

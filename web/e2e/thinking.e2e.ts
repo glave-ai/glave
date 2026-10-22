@@ -1,44 +1,106 @@
-import { type Locator, expect, test } from '@playwright/test';
+import { type Locator, type Page, expect, test } from '@playwright/test';
 
 import { THREAD, fakeApi } from './fake-api';
-import { ANSWER, THINKING, THINKING_PROMPT, letThink, thinkingTurn } from './fake-thinking';
+import {
+  ANSWER,
+  STARTED,
+  STEP,
+  THINKING,
+  THINKING_PROMPT,
+  letThink,
+  thinkingTurn,
+} from './fake-thinking';
 import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './support';
+
+/** A smithy's word, which the working line says while the model thinks. */
+const SMITHY =
+  /^(Forging|Honing|Tempering|Whetting|Hammering it out|Sharpening|Quenching|Polishing)…$/u;
+
+/** The page's clock, held seven seconds after the turn started. */
+const NOW = new Date(Date.parse(STARTED) + 7_000);
 
 /** Whether a reasoning block's disclosure is open. */
 async function isOpen(reasoning: Locator): Promise<boolean> {
   return reasoning.locator('details').evaluate((details) => (details as HTMLDetailsElement).open);
 }
 
+/** The motion tokens as the page reads them, in milliseconds: quick, standard and slow. */
+async function durations(page: Page): Promise<readonly number[]> {
+  return page.evaluate(() => {
+    const root = getComputedStyle(document.documentElement);
+    return ['quick', 'standard', 'slow'].map((name) => {
+      // The build writes a time its shortest way: 120ms as .12s.
+      const time = root.getPropertyValue(`--glz-duration-${name}`).trim();
+      return Math.round(parseFloat(time) * (time.endsWith('ms') ? 1 : 1000));
+    });
+  });
+}
+
+/** How many animations run anywhere in the page. */
+async function moving(page: Page): Promise<number> {
+  return page.evaluate(() => document.getAnimations().length);
+}
+
+/** The animation an element runs, as its computed style names it. */
+async function animationOf(locator: Locator): Promise<string> {
+  return locator.evaluate((element) => getComputedStyle(element).animationName);
+}
+
+/** Sends the thinking turn's prompt from the thread's composer. */
+async function ask(page: Page): Promise<void> {
+  await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+  await expect(byTestId(page, 'thread-message').last()).toContainText('They pass now.');
+  const composer = byTestId(page, 'thread-composer-input');
+  await composer.fill(THINKING_PROMPT);
+  await composer.press('Enter');
+}
+
 for (const colorScheme of ['light', 'dark'] as const) {
-  test(`glave shows it is working at once, then the model's thinking, then the reply (${colorScheme})`, async ({
+  test(`glave says what it does as it works, then the model's thinking, then the reply (${colorScheme})`, async ({
     page,
   }) => {
     const problems = watchForProblems(page);
     await page.emulateMedia({ colorScheme });
     await page.setViewportSize({ width: 1440, height: 900 });
+    await page.clock.setFixedTime(NOW);
     await fakeApi(page);
     await thinkingTurn(page);
-    await page.goto(`/t/${THREAD}${SIGNED_IN}`);
-    await expect(byTestId(page, 'thread-message').last()).toContainText('They pass now.');
-    const composer = byTestId(page, 'thread-composer-input');
-    await composer.fill(THINKING_PROMPT);
-    await composer.press('Enter');
+    await ask(page);
+    expect(await durations(page)).toEqual([120, 200, 320]);
 
-    // Before the server has recorded anything: the message, and glave working under it.
+    // Before the server has recorded anything: the message, and a smithy's word under it, the
+    // next every couple of seconds; no time yet to count from.
     const working = byTestId(page, 'thread-working');
+    const label = byTestId(page, 'thread-working-label');
+    const elapsed = byTestId(page, 'thread-working-elapsed');
     await expect(byTestId(page, 'thread-message').last()).toContainText(THINKING_PROMPT);
-    await expect(working).toBeVisible();
-    await expect(byTestId(page, 'thread-working-label')).toHaveText('Thinking…');
+    await expect(label).toHaveText(SMITHY);
+    await expect(elapsed).toHaveCount(0);
+    const first = (await label.textContent()) ?? '';
+    await expect(label).not.toHaveText(first);
+    await expect(label).toHaveText(SMITHY);
     await expectAccessible(page);
-    await letThink(page, 'start');
-    await expect(byTestId(page, 'thread-message').last()).toContainText(THINKING_PROMPT);
-    await expect(working).toBeVisible();
 
-    // The model's reasoning streams in, open, in the working state's place.
+    // Recorded: how long the turn has worked, from the server's start.
+    await letThink(page, 'start');
+    await expect(elapsed).toHaveText('7s');
+    await expect(label).toHaveText(SMITHY);
+
+    // A tool runs: the step in the server's own words.
+    await letThink(page, 'tool');
+    await expect(label).toHaveText(STEP);
+    await expect(elapsed).toHaveText('7s');
+    await expectAccessible(page);
+
+    // The model's reasoning streams in, open, in the working line's place, rising into it; what
+    // the tool changed settles in.
     await letThink(page, 'think');
-    const reasoning = byTestId(page, 'thread-reply').getByTestId('thread-reasoning');
+    const live = byTestId(page, 'thread-reply');
+    const reasoning = live.getByTestId('thread-reasoning');
     await expect(reasoning.getByText(THINKING.join(''))).toBeVisible();
     await expect(working).toHaveCount(0);
+    expect(await animationOf(live)).toContain('glz-rise');
+    expect(await animationOf(page.locator('app-turn-changes').last())).toContain('glz-settle');
     await expect(reasoning.getByTestId('thread-reasoning-summary')).toHaveText('Thinking…');
     expect(await isOpen(reasoning)).toBe(true);
     await expectAccessible(page);
@@ -57,31 +119,76 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await summary.click();
     await expect(thought).toBeVisible();
     await expect(working).toHaveCount(0);
+
+    // The steps slide open in their fold.
+    const steps = byTestId(page, 'thread-steps').last();
+    await steps.getByTestId('thread-steps-summary').click();
+    await expect(steps.getByTestId('thread-receipt')).toBeVisible();
+    expect(await animationOf(steps.locator('.fold'))).toContain('glz-unfold');
     await expectAccessible(page);
     expect(problems()).toEqual([]);
   });
 }
 
-test('the working state is still when the person asks for less motion', async ({ page }) => {
+test('nothing moves when the person asks for less motion, though the words still change', async ({
+  page,
+}) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await fakeApi(page);
   await thinkingTurn(page);
-  await page.goto(`/t/${THREAD}${SIGNED_IN}`);
-  const composer = byTestId(page, 'thread-composer-input');
-  await composer.fill(THINKING_PROMPT);
-  await composer.press('Enter');
+  await ask(page);
   const label = byTestId(page, 'thread-working-label');
-  await expect(label).toBeVisible();
-  const moving = await byTestId(page, 'thread-working').evaluate(
-    (working) => working.getAnimations({ subtree: true }).length,
+  await expect(label).toHaveText(SMITHY);
+  expect(await durations(page)).toEqual([0, 0, 0]);
+  expect(await moving(page)).toBe(0);
+  // The words are not motion: they change all the same.
+  const first = (await label.textContent()) ?? '';
+  await expect(label).not.toHaveText(first);
+  await letThink(page, 'start');
+  await letThink(page, 'tool');
+  await expect(label).toHaveText(STEP);
+  expect(await moving(page)).toBe(0);
+
+  // The reply and what changed arrive in place, still.
+  await letThink(page, 'think');
+  const live = byTestId(page, 'thread-reply');
+  await expect(live.getByTestId('thread-reasoning')).toBeVisible();
+  expect(await animationOf(live)).toBe('none');
+  expect(await animationOf(page.locator('app-turn-changes').last())).toBe('none');
+  expect(await moving(page)).toBe(0);
+  await letThink(page, 'answer');
+  await expect(byTestId(page, 'thread-message').last()).toContainText(ANSWER.join(''));
+
+  // The steps open and shut at once.
+  const steps = byTestId(page, 'thread-steps').last();
+  const summary = steps.getByTestId('thread-steps-summary');
+  const fold = steps.locator('.fold');
+  await summary.click();
+  await expect(steps.getByTestId('thread-receipt')).toBeVisible();
+  expect(await animationOf(fold)).toBe('none');
+  expect(await moving(page)).toBe(0);
+  await summary.click();
+  await expect(steps.getByTestId('thread-receipt')).toBeHidden();
+  // It folds by its rows and is hidden at the end of them, both at once.
+  expect(await fold.evaluate((element) => getComputedStyle(element).transitionDuration)).toBe(
+    '0s, 0s',
   );
-  expect(moving).toBe(0);
+  expect(await moving(page)).toBe(0);
+});
+
+test('the working line moves again once the person no longer asks for less motion', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await fakeApi(page);
+  await thinkingTurn(page);
+  await ask(page);
+  const working = byTestId(page, 'thread-working');
+  await expect(byTestId(page, 'thread-working-label')).toHaveText(SMITHY);
+  const animations = (): Promise<number> =>
+    working.evaluate((line) => line.getAnimations({ subtree: true }).length);
+  expect(await animations()).toBe(0);
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await expect
-    .poll(() =>
-      byTestId(page, 'thread-working').evaluate(
-        (working) => working.getAnimations({ subtree: true }).length,
-      ),
-    )
-    .toBe(2);
+  // The mark breathes and the line shimmers.
+  await expect.poll(animations).toBe(2);
 });

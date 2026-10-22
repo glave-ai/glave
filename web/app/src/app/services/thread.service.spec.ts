@@ -127,6 +127,31 @@ describe('ThreadService', () => {
     expect(fake.paramsOf('thread/events').length).toBeGreaterThan(1);
   });
 
+  it('says the step a running turn takes in the server’s words, from its start to its end', async () => {
+    const turn = new FakeTurn();
+    const fake = new FakeSession().answer('thread/events', { events: [] }).turn(turn);
+    const service = make(fake);
+    await service.open('thread-1');
+    const sending = service.send('run the tests');
+    turn.send(recorded(event(1, 'turn.started', {})), said(2, 'run the tests'));
+    await settled();
+    expect(service.step()).toBeNull();
+    turn.send(live({ kind: 'tool_started', summary: 'bash: cargo test' }));
+    await settled();
+    expect(service.step()).toBe('bash: cargo test');
+    turn.send(live({ kind: 'tool_finished', summary: 'bash: cargo test', is_error: false }));
+    await settled();
+    expect(service.step()).toBeNull();
+    // A turn that ends takes what it showed live with it.
+    turn.send(live({ kind: 'tool_started', summary: 'bash: cargo build' }));
+    await settled();
+    expect(service.step()).toBe('bash: cargo build');
+    turn.send(recorded(event(3, 'turn.ended', { outcome: 'cancelled' })));
+    turn.end();
+    await sending;
+    expect(service.step()).toBeNull();
+  });
+
   it('queues what is sent while a turn runs, until the model reads it', async () => {
     const first = new FakeTurn();
     const fake = new FakeSession()

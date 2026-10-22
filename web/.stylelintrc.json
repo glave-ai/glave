@@ -32,15 +32,30 @@
         "message": "Write it for any direction: inline-start and inline-end, not left and right (web/README.md, \"Languages\")"
       }
     ],
+    "unit-disallowed-list": [
+      ["s", "ms"],
+      {
+        "message": "Move by Glaze's motion tokens alone: a duration is a --glz-duration-* (glaze/styles/tokens.css)"
+      }
+    ],
+    "function-disallowed-list": [
+      ["cubic-bezier", "steps", "linear"],
+      {
+        "message": "Move by Glaze's motion tokens alone: an easing is a --glz-ease-* (glaze/styles/tokens.css)"
+      }
+    ],
     "declaration-property-value-disallowed-list": [
       {
+        "/^(transition|animation)(-timing-function)?$/": [
+          "/(?<![\\w-])(ease|ease-in|ease-out|ease-in-out|linear|step-start|step-end)(?![\\w-])/"
+        ],
         "/^(text-align|float|clear)$/": ["left", "right"],
         "/^(margin|padding|inset|scroll-margin|scroll-padding)$/": [
           "/^\\s*(?:[^\\s()]|\\((?:[^()]|\\([^()]*\\))*\\))+\\s+(?:[^\\s()]|\\((?:[^()]|\\([^()]*\\))*\\))+\\s+(?:[^\\s()]|\\((?:[^()]|\\([^()]*\\))*\\))+\\s+(?:[^\\s()]|\\((?:[^()]|\\([^()]*\\))*\\))+\\s*$/"
         ]
       },
       {
-        "message": "Write it for any direction: start and end, or -block and -inline, never left and right (web/README.md, \"Languages\")"
+        "message": "Not this value: write it for any direction, start and end or -block and -inline, never left and right (web/README.md, \"Languages\"); and ease by Glaze's motion tokens alone, a --glz-ease-* (glaze/styles/tokens.css)"
       }
     ]
   },
@@ -59,6 +74,13 @@
             "message": "Parents own spacing: put a gap on the parent (or a glz-stack, glz-row or glz-grid), not a margin on the child (AGENTS.md)"
           }
         ]
+      }
+    },
+    {
+      "files": ["glaze/styles/tokens.css"],
+      "rules": {
+        "unit-disallowed-list": null,
+        "function-disallowed-list": null
       }
     },
     {

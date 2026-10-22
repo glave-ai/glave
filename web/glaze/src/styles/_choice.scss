@@ -29,7 +29,7 @@
     margin-top: 0.19em;
     border: 2px solid var(--glz-color-border-strong);
     background: var(--glz-surface-card);
-    transition: background-color var(--glz-duration-fast) var(--glz-easing);
+    transition: background-color var(--glz-duration-quick) var(--glz-ease-out);
   }
 
   .native:focus-visible + .mark {

@@ -27,6 +27,8 @@ export interface Turn {
    * for the person) to the latest thing it recorded. `null` with no start recorded.
    */
   readonly took: number | null;
+  /** When it started, as the server recorded it (`turn.started`); `null` with no start recorded. */
+  readonly started: string | null;
   readonly outcome: TurnOutcome | null;
   /** What its model calls cost, when every one of them said, in one currency. */
   readonly cost: GlzMoney | null;
@@ -136,6 +138,7 @@ function turnOf(events: readonly RawEvent[], items: readonly ThreadItem[]): Turn
     items,
     files: changedFiles(events),
     took: Number.isNaN(took) ? null : took,
+    started: started?.at ?? null,
     outcome: isOutcome(outcome) ? outcome : null,
     cost: costOf(events),
     routes: routesOf(events),
@@ -192,6 +195,7 @@ export function startingTurn(prompt: string): Turn {
     ],
     files: [],
     took: null,
+    started: null,
     outcome: null,
     cost: null,
     routes: [],

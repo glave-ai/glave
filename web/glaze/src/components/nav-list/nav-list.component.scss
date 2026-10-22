@@ -59,8 +59,8 @@
 .caret {
   flex: none;
   transition:
-    opacity var(--glz-duration-fast) var(--glz-easing),
-    transform var(--glz-duration-fast) var(--glz-easing);
+    opacity var(--glz-duration-quick) var(--glz-ease-out),
+    transform var(--glz-duration-quick) var(--glz-ease-out);
 }
 
 .toggle[aria-expanded='false'] .caret {
