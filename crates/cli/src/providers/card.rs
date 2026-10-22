@@ -31,12 +31,21 @@ pub(super) fn described(id: &str, model: &Value) -> CatalogModel {
             .or_else(|| number(&["max_model_len"]))
             .filter(|tokens| *tokens > 0),
         max_output: number(&["top_provider", "max_completion_tokens"]).filter(|t| *t > 0),
-        images: path_in(model, &["architecture", "input_modalities"])
-            .and_then(Value::as_array)
-            .map(|modalities| modalities.iter().any(|m| m == "image")),
+        images: modalities(model, "input_modalities")
+            .map(|input| input.iter().any(|modality| modality == "image")),
         price: price(model.get("pricing")),
         reasoning: reasoning(model.get("reasoning")),
     }
+}
+
+/// What the listing says the model takes in (`input_modalities`) or gives out
+/// (`output_modalities`): `text`, `image`, `audio` and the like, as OpenRouter's `architecture`
+/// says; none when it does not say, or says an empty list.
+pub(super) fn modalities<'a>(model: &'a Value, key: &str) -> Option<&'a [Value]> {
+    path_in(model, &["architecture", key])
+        .and_then(Value::as_array)
+        .filter(|listed| !listed.is_empty())
+        .map(Vec::as_slice)
 }
 
 /// The value at `path` in `value`.
