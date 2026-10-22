@@ -10,7 +10,7 @@ export const STARTED = '2026-10-11T10:10:00.000Z';
 /** The step its tool takes, in the server's words: it writes the file the turn changes. */
 export const STEP = 'write src/lock.rs (2 lines)';
 /** What the model thinks, in the pieces it streams, ending in a blank line as a model's may. */
-export const THINKING = ['The lock is taken ', 'twice on the same thread.', '\n\n'];
+export const THINKING = ['The lock is taken ', 'twice on the same thread.\n\n'];
 /** What it answers, in the pieces it streams. */
 export const ANSWER = ['The lock ', 'is taken twice.'];
 

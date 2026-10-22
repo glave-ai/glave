@@ -230,7 +230,7 @@ test('opened, the thinking, the steps and a step’s output sit evenly in their 
   // streams and once recorded.
   await letThink(page, 'think');
   const live = byTestId(page, 'thread-reply').getByTestId('thread-reasoning-text');
-  await expect(live).toHaveText(THINKING.join('').trim());
+  await expect(live).toHaveText(THINKING.join(''));
   await expectEven(live);
   await letThink(page, 'answer');
   await expect(byTestId(page, 'thread-composer-stop')).toHaveCount(0);

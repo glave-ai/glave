@@ -84,19 +84,21 @@ function text(value: unknown): string {
  * would show as empty space in what holds it; the first line keeps its indent.
  */
 export function trimBlankLines(text: string): string {
-  return text.replace(/^(?:[^\S\n]*\n)+/u, '').trimEnd();
+  return text.replace(/^\s*\n/u, '').trimEnd();
 }
 
-/** The text and reasoning of a list of content parts, each without blank lines at its ends. */
+/** The text and reasoning of a list of content parts, without blank lines at their ends. */
 export function partsText(parts: unknown): { readonly text: string; readonly reasoning: string } {
   const list = Array.isArray(parts) ? (parts as readonly unknown[]) : [];
   const of = (type: string): string =>
-    list
-      .filter(isRecord)
-      .filter((part) => part['type'] === type)
-      .map((part) => trimBlankLines(text(part['text'])))
-      .filter((part) => part !== '')
-      .join('\n');
+    trimBlankLines(
+      list
+        .filter(isRecord)
+        .filter((part) => part['type'] === type)
+        .map((part) => text(part['text']))
+        .filter((part) => part !== '')
+        .join('\n'),
+    );
   return { text: of('text'), reasoning: of('reasoning') };
 }
 
@@ -202,7 +204,7 @@ function resultText(output: unknown, read: string | undefined): string {
     return partsText(output).text;
   }
   const after = Array.isArray(output) ? partsText(output.slice(1)).text : '';
-  return after === '' ? read : `${read}\n${after}`;
+  return trimBlankLines(after === '' ? read : `${read}\n${after}`);
 }
 
 /**

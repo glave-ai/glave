@@ -24,7 +24,7 @@
     data-testid="thread-reply"
     [author]="copy.reply"
   >
-    @if (reasoning()) {
+    @if (live.reasoning) {
       <glz-reasoning
         testId="thread-reasoning"
         [streaming]="thinking()"
