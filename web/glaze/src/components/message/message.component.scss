@@ -59,8 +59,9 @@
 // The message's actions hang just under it, in the space before what follows, so a message
 // takes no more room than its text and the conversation keeps one rhythm: at the reply's start
 // or the bubble's end, an icon button's own padding pulled back so its icon lines up with the
-// text. With a pointer they show on hover and whenever focus is inside the message, so the
-// keyboard finds them; on touch, where nothing hovers, they always show.
+// text. With a pointer they show on hover and while keyboard focus is inside the message, so the
+// keyboard finds them and a click inside (which may leave focus there, but no ring) pins nothing;
+// on touch, where nothing hovers, they always show.
 .actions {
   position: absolute;
   inset-block-start: calc(100% - var(--glz-space-1));
@@ -81,7 +82,7 @@
 }
 
 :host(:hover) .actions,
-:host(:focus-within) .actions {
+:host(:has(:focus-visible)) .actions {
   opacity: 1;
 }
 

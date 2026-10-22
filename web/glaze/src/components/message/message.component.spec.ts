@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 
 import { expectAccessible } from '../../testing/axe';
+import { focusBy } from '../../testing/focus';
 import { GlzMessageComponent } from './message.component';
 
 @Component({
@@ -49,6 +50,19 @@ describe('GlzMessageComponent', () => {
     expect(root.querySelector('[data-testid="reply"] .author')).toBeNull();
     expect(root.querySelector('[data-testid="mine"] .author')).toBeNull();
     expect(root.querySelector('[data-testid="note"] .author')?.textContent).toBe('Atlas');
+  });
+
+  it('shows its actions for keyboard focus in the message, not a press’s', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const copy = root.querySelector<HTMLElement>('[data-testid="copy"]') ?? root;
+    const actions = copy.parentElement ?? root;
+    expect(getComputedStyle(actions).opacity).toBe('0');
+    focusBy(copy, 'pointer');
+    expect(getComputedStyle(actions).opacity).toBe('0');
+    focusBy(copy, 'keyboard');
+    expect(getComputedStyle(actions).opacity).toBe('1');
   });
 
   it('puts its actions under the body, outside the bubble', async () => {
