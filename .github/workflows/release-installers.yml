@@ -143,7 +143,7 @@ jobs:
             fi
             cat "$RUNNER_TEMP/spoiled.txt"
           }
-          refused sh -c 'curl -fsSL "$GLAVE_DOWNLOAD_URL/glave-installer.sh" | sh'
+          refused bash -o pipefail -c 'curl -fsSL "$GLAVE_DOWNLOAD_URL/glave-installer.sh" | sh'
           grep -q "checksum mismatch" "$RUNNER_TEMP/spoiled.txt"
           if [ "$RUNNER_OS" = Linux ]; then
             refused sh install/server.sh

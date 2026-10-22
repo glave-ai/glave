@@ -5,20 +5,21 @@
 # refuse to install when it has neither. dist has no setting for it (0.33.0 and 0.33.1, and
 # its main branch, all skip), so the release runs this on the script dist writes, before it is
 # uploaded (`cargo xtask release-workflow` puts the step in release.yml), and so does the test
-# of the installers (release-installers.yml). It fails unless the script holds, once, exactly
-# the lines it replaces.
+# of the installers (release-installers.yml); CI runs it on what dist writes today (ci.yml). It
+# fails unless the script holds, once, exactly the lines it replaces.
 #
 #   sh .github/install-script-checksums.sh <glave-installer.sh>
 
 set -eu
 
-[ $# -eq 1 ] && [ -f "$1" ] || {
+if [ $# -ne 1 ] || [ ! -f "$1" ]; then
 	echo "usage: sh .github/install-script-checksums.sh <glave-installer.sh>" >&2
 	exit 2
-}
+fi
 
-# The lines dist 0.33 writes, and the lines that take their place.
-OLD=$(
+# The lines dist 0.33 writes, and the lines that take their place: text, printed by functions so
+# that no shell reads them as commands.
+old() {
 	cat <<'EOF'
         sha256)
             if ! check_cmd sha256sum; then
@@ -28,8 +29,8 @@ OLD=$(
             _calculated_checksum="$(sha256sum -b "$_file" | awk '{printf $1}')"
             ;;
 EOF
-)
-NEW=$(
+}
+new() {
 	cat <<'EOF'
         sha256)
             if check_cmd sha256sum; then
@@ -41,11 +42,11 @@ NEW=$(
             fi
             ;;
 EOF
-)
+}
 
 patched="$(mktemp)"
 trap 'rm -f "$patched"' EXIT
-OLD="$OLD" NEW="$NEW" awk '
+OLD="$(old)" NEW="$(new)" awk '
 	{ all = all $0 "\n" }
 	END {
 		old = ENVIRON["OLD"] "\n"

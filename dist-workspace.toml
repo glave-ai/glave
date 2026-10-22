@@ -12,10 +12,10 @@ members = ["cargo:."]
 [dist]
 cargo-dist-version = "0.33.0"
 # dist has no setting for two things the release needs, so `cargo xtask release-workflow` runs
-# `dist generate` and changes what it writes: the token is read-only for every job but the one
-# that publishes, where dist gives every job one that can change releases and tags; and the
-# install script checks every archive, with shasum where sha256sum is missing, where dist's
-# installs it unchecked (.github/install-script-checksums.sh). This line keeps dist from
+# `dist generate` and changes what it writes. The token is read-only for every job but the one
+# that publishes, whereas dist gives every job one that can change releases and tags. And the
+# install script checks every archive, with shasum when sha256sum is missing, whereas dist's
+# then installs it unchecked (.github/install-script-checksums.sh). This line keeps dist from
 # failing on those changes; CI checks that release.yml is still what the xtask writes.
 allow-dirty = ["ci"]
 ci = "github"

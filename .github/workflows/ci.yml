@@ -258,9 +258,11 @@ jobs:
           test "$CHECKS" = success
           test "$E2E" = success
 
-  # The release workflow is dist's, with every job's token read-only but the publishing job's
-  # (`cargo xtask release-workflow`). dist doesn't check a workflow its config says is edited by
-  # hand, so this job does: what the xtask writes from today's config is what's checked in.
+  # The release workflow is dist's with two changes (`cargo xtask release-workflow`): every job's
+  # token read-only but the publishing job's, and the install script made to check every
+  # archive. dist doesn't check a workflow its config says is edited by hand, so this job does:
+  # what the xtask writes from today's config is what's checked in, and the change to the
+  # install script still applies to the one dist writes today.
   release-workflow:
     runs-on: ubuntu-latest
     steps:
@@ -275,6 +277,13 @@ jobs:
       - run: cargo xtask release-workflow
       - name: release.yml is what the xtask writes
         run: git diff --exit-code
+      # With no archives built, the script dist writes carries no checksums, but its check is
+      # the same.
+      - name: The install script dist writes takes the change that makes it check every archive
+        run: |
+          shellcheck .github/install-script-checksums.sh
+          dist build --artifacts=global --output-format=json >/dev/null
+          sh .github/install-script-checksums.sh target/distrib/glave-installer.sh
 
   # Workers on Kubernetes: a kind cluster on the runner, and the Kubernetes backend's tests
   # against it (a stub in glave's place, then the glave this job builds in real workers, over
