@@ -2,5 +2,5 @@
   <summary class="summary" [attr.data-testid]="ids().summary">
     <span [class.thinking]="streaming()">{{ summary() }}</span>
   </summary>
-  <div class="text"><ng-content /></div>
+  <div class="text" [attr.data-testid]="ids().text"><ng-content /></div>
 </details>

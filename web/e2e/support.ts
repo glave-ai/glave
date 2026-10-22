@@ -149,6 +149,80 @@ export async function shownOpacity(locator: Locator): Promise<number> {
   });
 }
 
+/**
+ * How far apart the space above and below may be in `expectEven`: Chromium rounds the space
+ * above a line's letters down to a whole pixel and adds what it took to the space below, so the
+ * two differ by up to two pixels in a line that is even.
+ */
+const EVEN = 2;
+
+/** The top and bottom of something on the screen. */
+interface Edges {
+  readonly top: number;
+  readonly bottom: number;
+}
+
+/** The edges of the box `locator` finds. */
+async function edgesOf(locator: Locator): Promise<Edges> {
+  return locator.evaluate((element) => {
+    const { top, bottom } = element.getBoundingClientRect();
+    return { top, bottom };
+  });
+}
+
+/**
+ * The edges of `box` and of the letters of the text it shows (blank lines and spaces at a
+ * text's ends draw nothing), measured at once; `held` is null when it shows no text.
+ */
+async function lettersIn(box: Locator): Promise<{ outer: Edges; held: Edges | null }> {
+  return box.evaluate((element) => {
+    const letters: DOMRect[] = [];
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      const text = node.textContent ?? '';
+      const start = text.search(/\S/u);
+      if (start >= 0 && node.parentElement?.checkVisibility() === true) {
+        const range = document.createRange();
+        range.setStart(node, start);
+        range.setEnd(node, text.trimEnd().length);
+        letters.push(...range.getClientRects());
+      }
+    }
+    const { top, bottom } = element.getBoundingClientRect();
+    const held =
+      letters.length === 0
+        ? null
+        : {
+            top: Math.min(...letters.map((line) => line.top)),
+            bottom: Math.max(...letters.map((line) => line.bottom)),
+          };
+    return { outer: { top, bottom }, held };
+  });
+}
+
+/**
+ * Fails unless `box` holds what it shows evenly, so a rule beside it or a fill under it ends
+ * where what it holds does (#610): as much space inside it above the first line of its text as
+ * below the last, or, given `items`, above the first of them as below the last.
+ */
+export async function expectEven(box: Locator, items?: Locator): Promise<void> {
+  const { outer, held } =
+    items === undefined
+      ? await lettersIn(box)
+      : {
+          outer: await edgesOf(box),
+          held: {
+            top: (await edgesOf(items.first())).top,
+            bottom: (await edgesOf(items.last())).bottom,
+          },
+        };
+  if (held === null) {
+    throw new Error('the box measured for evenness shows no text');
+  }
+  const space = { above: held.top - outer.top, below: outer.bottom - held.bottom };
+  expect(Math.abs(space.above - space.below), JSON.stringify(space)).toBeLessThan(EVEN);
+}
+
 /** A box on the screen, as Playwright measures it. */
 interface Box {
   readonly x: number;

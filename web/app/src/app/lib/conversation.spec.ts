@@ -13,6 +13,7 @@ import {
   questionsOf,
   stepsAfter,
   threadItems,
+  trimBlankLines,
   withResults,
 } from './conversation';
 
@@ -46,6 +47,22 @@ describe('conversation', () => {
       ]),
     ).toEqual({ text: 'Hello\nthere', reasoning: 'thinking' });
     expect(partsText(undefined)).toEqual({ text: '', reasoning: '' });
+  });
+
+  it('leaves out the blank lines at the ends of text, which would draw as empty space', () => {
+    expect(trimBlankLines('\n \nThe lock\n\nis taken twice.\n\n')).toBe(
+      'The lock\n\nis taken twice.',
+    );
+    expect(trimBlankLines('\r\n    at parse (src/parse.rs)\n')).toBe('    at parse (src/parse.rs)');
+    expect(trimBlankLines(' \n\n')).toBe('');
+    expect(
+      partsText([
+        { type: 'reasoning', text: 'Weighing it.\n\n' },
+        { type: 'reasoning', text: '\n' },
+        { type: 'text', text: 'One.\n\n' },
+        { type: 'text', text: 'Two.\n\n' },
+      ]),
+    ).toEqual({ text: 'One.\n\n\nTwo.', reasoning: 'Weighing it.' });
   });
 
   it("shows the person's own words, not what glave opened the thread with", () => {
@@ -303,6 +320,10 @@ describe('conversation', () => {
     const results = withResults(NO_RESULTS, { c1: 'Remembered [m1] (personal) Ada prefers tea.' });
     expect(call(new Map(results)).output).toBe(
       'Remembered [m1] (personal) Ada prefers tea.\n[A hook says: ok]',
+    );
+    // A blank line at the start of the server's words draws nothing either.
+    expect(call(new Map(withResults(NO_RESULTS, { c1: '\nRemembered.' }))).output).toBe(
+      'Remembered.\n[A hook says: ok]',
     );
     expect(withResults(results, undefined)).toBe(results);
     expect(withResults(results, { c1: 'Remembered [m1] (personal).' }).get('c1')).toBe(

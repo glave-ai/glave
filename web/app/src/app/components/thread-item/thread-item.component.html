@@ -27,7 +27,7 @@
       [summary]="item.summary"
       [status]="item.status"
     >
-      <pre class="output">{{ item.output }}</pre>
+      <pre class="output" data-testid="thread-output">{{ item.output }}</pre>
     </glz-receipt>
   }
   @case ('approval') {
