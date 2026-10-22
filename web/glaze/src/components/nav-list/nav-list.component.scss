@@ -67,17 +67,18 @@
   transform: rotate(-90deg);
 }
 
-// The caret and the heading's actions show while the pointer or focus is on its header, and
-// always on touch, the caret faintly; every list's actions line up at the same end.
+// The caret and the heading's actions show while the pointer or keyboard focus is on its header
+// (a click leaves focus there, but no ring, so it pins nothing), and always on touch, the caret
+// faintly; every list's actions line up at the same end.
 .caret,
 .actions {
   opacity: 0;
 }
 
 .header:hover .caret,
-.header:focus-within .caret,
+.header:has(:focus-visible) .caret,
 .header:hover .actions,
-.header:focus-within .actions {
+.header:has(:focus-visible) .actions {
   opacity: 1;
 }
 

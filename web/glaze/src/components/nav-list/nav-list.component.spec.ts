@@ -55,6 +55,22 @@ describe('GlzNavListComponent', () => {
     await expectAccessible(root);
   });
 
+  it('hides the caret and actions until keyboard focus is on the heading', async () => {
+    const fixture = render();
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const toggle = root.querySelector<HTMLButtonElement>('[data-testid="space-toggle"]');
+    const caret = root.querySelector('[data-testid="space-caret"]') ?? root;
+    const actions = root.querySelector('[data-testid="space"] .actions') ?? root;
+    const shown = (): readonly string[] =>
+      [caret, actions].map((element) => getComputedStyle(element).opacity);
+    expect(shown()).toEqual(['0', '0']);
+    // jsdom counts any focus as the keyboard's; that a click's focus shows nothing is checked
+    // in browsers, end to end.
+    toggle?.focus();
+    expect(shown()).toEqual(['1', '1']);
+  });
+
   it('shows and hides a collapsible list from its heading, the caret after the name', async () => {
     const fixture = render();
     await fixture.whenStable();
