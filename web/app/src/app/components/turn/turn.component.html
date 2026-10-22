@@ -37,8 +37,8 @@
     <div testId="thread-markdown" streaming [glzMarkdown]="live.text"></div>
   </glz-message>
 }
-@if (changed()) {
-  <app-turn-changes [class.glz-settle]="turn().runs" [files]="turn().files" />
+@if (changes(); as changes) {
+  <app-turn-changes [class.glz-settle]="changes.settles" [files]="turn().files" />
 }
 @if (turn().receipt; as receipt) {
   <glz-steps

@@ -78,6 +78,8 @@ export class ThreadService {
   readonly thread = this.id.asReadonly();
   /** The thread's turns, each with its items, the files it changed, its time and cost. */
   readonly turns = computed(() => threadTurns(this.events()));
+  /** The `seq` the thread's next event takes, as far as this view has read it. */
+  readonly next = computed(() => (this.events().at(-1)?.seq ?? 0) + 1);
   /** The files the thread changed with its own `write` and `edit` calls. */
   readonly files = computed(() => changedFiles(this.events()));
   /** The `seq` of the latest start or end of a command in the background it recorded, if any. */

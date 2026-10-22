@@ -134,7 +134,7 @@ function turnOf(events: readonly RawEvent[], items: readonly ThreadItem[]): Turn
       ? null
       : Math.max(0, Date.parse(until.at) - Date.parse(started.at));
   return {
-    key: `turn-${String(events[0]?.seq ?? 0)}`,
+    key: `turn-${String((started ?? events[0])?.seq ?? 0)}`,
     items,
     files: changedFiles(events),
     took: Number.isNaN(took) ? null : took,
@@ -176,11 +176,12 @@ export function threadTurns(events: readonly RawEvent[]): readonly Turn[] {
 
 /**
  * The turn the person just asked for, before the server records it: their message alone, so
- * it shows at once, with glave working under it.
+ * it shows at once, with glave working under it. Its key is the one the turn takes once
+ * recorded when the server records its start as `next`, so what shows of it carries on.
  */
-export function startingTurn(prompt: string): Turn {
+export function startingTurn(prompt: string, next: number): Turn {
   return {
-    key: 'turn-starting',
+    key: `turn-${String(next)}`,
     items: [
       {
         kind: 'message',

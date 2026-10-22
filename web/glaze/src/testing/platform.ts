@@ -65,6 +65,15 @@ if (typeof HTMLElement.prototype.showPopover !== 'function') {
   });
 }
 
+// jsdom runs no animations: nothing is ever moving.
+if (typeof Element.prototype.getAnimations !== 'function') {
+  Object.assign(Element.prototype, {
+    getAnimations(): Animation[] {
+      return [];
+    },
+  });
+}
+
 // jsdom does no layout, so it scrolls nothing into view.
 if (typeof Element.prototype.scrollIntoView !== 'function') {
   Object.assign(Element.prototype, {

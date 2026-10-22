@@ -3,7 +3,8 @@ import { ApiError, ErrorCode, type Notification, type RawEvent } from '@glave/cl
 
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
 import { command, event } from '../testing/fixtures';
-import { COMMANDS_TICK_MS, CommandsService } from './commands.service';
+import { TICK_MS } from './clock';
+import { CommandsService } from './commands.service';
 import { ThreadService } from './thread.service';
 import { ToolsPanelService } from './tools-panel.service';
 
@@ -201,12 +202,12 @@ describe('CommandsService', () => {
       await settle();
       const shown = commands.now();
       expect(shown).toBe(Date.parse('2026-10-11T10:02:05.000Z'));
-      vi.advanceTimersByTime(COMMANDS_TICK_MS * 2);
-      expect(commands.now()).toBe(shown + COMMANDS_TICK_MS * 2);
+      vi.advanceTimersByTime(TICK_MS * 2);
+      expect(commands.now()).toBe(shown + TICK_MS * 2);
       panel.open.set(false);
       TestBed.tick();
-      vi.advanceTimersByTime(COMMANDS_TICK_MS * 5);
-      expect(commands.now()).toBe(shown + COMMANDS_TICK_MS * 2);
+      vi.advanceTimersByTime(TICK_MS * 5);
+      expect(commands.now()).toBe(shown + TICK_MS * 2);
     } finally {
       vi.useRealTimers();
     }

@@ -46,6 +46,30 @@ async function animationOf(locator: Locator): Promise<string> {
   return locator.evaluate((element) => getComputedStyle(element).animationName);
 }
 
+/** The animation the card of what changed runs as it appears, on the element that holds it. */
+async function settling(page: Page): Promise<string> {
+  return byTestId(page, 'turn-changes')
+    .last()
+    .evaluate((card) => getComputedStyle(card.parentElement ?? card).animationName);
+}
+
+/**
+ * Shuts `steps` by a click on their line, and says at that moment what slides in their fold
+ * (each transition's property) and whether they are still open.
+ */
+async function shut(steps: Locator): Promise<{ sliding: readonly string[]; open: boolean }> {
+  return steps.evaluate((host) => {
+    const fold = host.querySelector('[data-testid="thread-steps-fold"]');
+    host.querySelector<HTMLElement>('[data-testid="thread-steps-summary"]')?.click();
+    return {
+      sliding: (fold?.getAnimations() ?? []).map((each) =>
+        each instanceof CSSTransition ? each.transitionProperty : each.id,
+      ),
+      open: host.querySelector('details')?.open ?? false,
+    };
+  });
+}
+
 /** Sends the thinking turn's prompt from the thread's composer. */
 async function ask(page: Page): Promise<void> {
   await page.goto(`/t/${THREAD}${SIGNED_IN}`);
@@ -100,7 +124,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(reasoning.getByText(THINKING.join(''))).toBeVisible();
     await expect(working).toHaveCount(0);
     expect(await animationOf(live)).toContain('glz-rise');
-    expect(await animationOf(page.locator('app-turn-changes').last())).toContain('glz-settle');
+    expect(await settling(page)).toBe('glz-settle');
     await expect(reasoning.getByTestId('thread-reasoning-summary')).toHaveText('Thinking…');
     expect(await isOpen(reasoning)).toBe(true);
     await expectAccessible(page);
@@ -120,12 +144,15 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(thought).toBeVisible();
     await expect(working).toHaveCount(0);
 
-    // The steps slide open in their fold.
+    // The steps slide open in their fold, and slide shut before they close.
     const steps = byTestId(page, 'thread-steps').last();
+    const receipt = steps.getByTestId('thread-receipt');
     await steps.getByTestId('thread-steps-summary').click();
-    await expect(steps.getByTestId('thread-receipt')).toBeVisible();
-    expect(await animationOf(steps.locator('.fold'))).toContain('glz-unfold');
+    await expect(receipt).toBeVisible();
+    expect(await animationOf(steps.getByTestId('thread-steps-fold'))).toContain('glz-unfold');
     await expectAccessible(page);
+    expect(await shut(steps)).toEqual({ sliding: ['grid-template-rows'], open: true });
+    await expect(receipt).toBeHidden();
     expect(problems()).toEqual([]);
   });
 }
@@ -154,25 +181,20 @@ test('nothing moves when the person asks for less motion, though the words still
   const live = byTestId(page, 'thread-reply');
   await expect(live.getByTestId('thread-reasoning')).toBeVisible();
   expect(await animationOf(live)).toBe('none');
-  expect(await animationOf(page.locator('app-turn-changes').last())).toBe('none');
+  expect(await settling(page)).toBe('none');
   expect(await moving(page)).toBe(0);
   await letThink(page, 'answer');
   await expect(byTestId(page, 'thread-message').last()).toContainText(ANSWER.join(''));
 
   // The steps open and shut at once.
   const steps = byTestId(page, 'thread-steps').last();
-  const summary = steps.getByTestId('thread-steps-summary');
-  const fold = steps.locator('.fold');
-  await summary.click();
-  await expect(steps.getByTestId('thread-receipt')).toBeVisible();
-  expect(await animationOf(fold)).toBe('none');
+  const receipt = steps.getByTestId('thread-receipt');
+  await steps.getByTestId('thread-steps-summary').click();
+  await expect(receipt).toBeVisible();
+  expect(await animationOf(steps.getByTestId('thread-steps-fold'))).toBe('none');
   expect(await moving(page)).toBe(0);
-  await summary.click();
-  await expect(steps.getByTestId('thread-receipt')).toBeHidden();
-  // It folds by its rows and is hidden at the end of them, both at once.
-  expect(await fold.evaluate((element) => getComputedStyle(element).transitionDuration)).toBe(
-    '0s, 0s',
-  );
+  expect(await shut(steps)).toEqual({ sliding: [], open: false });
+  await expect(receipt).toBeHidden();
   expect(await moving(page)).toBe(0);
 });
 

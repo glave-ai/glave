@@ -85,7 +85,8 @@ export class GlzWorkingComponent {
 
   /** Tells screen readers, politely: the label as the line appears, then each step it takes. */
   protected readonly telling = effect(() => {
-    const step = this.step();
+    // A step's first line: a command can run to many.
+    const step = this.step()?.split('\n')[0] ?? null;
     const said = step ?? (this.told ? null : this.label());
     this.told = true;
     if (said !== null) {

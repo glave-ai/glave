@@ -4,7 +4,7 @@ Glaze (`@glave/glaze`) is an Angular 22 component library: standalone, zoneless,
 
 ## Set up
 
-- Global styles, once: `@glave/glaze/styles/glaze.css` (tokens, page base, layout primitives and prose flow, native-control styles, CDK overlay styles), plus the fonts (`@fontsource/atkinson-hyperlegible-next`, `-mono`).
+- Global styles, once: `@glave/glaze/styles/glaze.css` (tokens, page base, what moves, layout primitives and prose flow, native-control styles, CDK overlay styles), plus the fonts (`@fontsource/atkinson-hyperlegible-next`, `-mono`).
 - Import each component or directive where it is used: `imports: [GlzButtonComponent, GlzFormFieldComponent, GlzInputDirective]`. There are no modules.
 - Icons are Lucide (ISC): `import { Send } from 'lucide'` and `<glz-icon [icon]="send" />`. Only imported icons are bundled. A module of an app's first load imports each of its icons from the icon's own module instead (`import Send from 'lucide/dist/esm/icons/send.mjs'`, which Lucide ships untyped: the app declares `lucide/dist/esm/icons/*.mjs` once, as an `IconNode`): through `lucide`'s index, whose named re-exports the build follows, every icon a later page draws would load with the first page.
 
@@ -26,9 +26,9 @@ Glaze (`@glave/glaze`) is an Angular 22 component library: standalone, zoneless,
 
 ## Motion
 
-- One calm set, in the tokens alone: `--glz-duration-quick` (120ms: hover, press), `-standard` (200ms: what appears or folds), `-slow` (320ms: a large panel), each easing `--glz-ease-out`; and for what loops while work goes on, `--glz-duration-ambient` at `--glz-ease-even`. Movement shows where something went or what changed, never decoration. Stylelint fails on a duration or an easing written anywhere but `styles/tokens.css`.
+- One calm set, in the tokens alone: `--glz-duration-quick` (120ms: hover, press), `-standard` (200ms: what appears or folds), `-slow` (320ms: a large panel), each easing `--glz-ease-out`; for what loops while work goes on, `--glz-duration-ambient` (what turns or sweeps does so at `--glz-ease-even`); and for a caret's blink, `--glz-duration-blink` at `--glz-ease-blink`. Movement shows where something went or what changed, never decoration. Stylelint fails on a duration or an easing written anywhere but `styles/tokens.css`.
 - What appears takes a class: `glz-rise` rises into place (a fade, from 8px below), such as a reply as it begins; `glz-settle` settles in (a fade, from 0.97 scale), such as a card of results. Give it only to what appears as the person watches, never to what a page shows as it opens.
-- When the person asks for less motion, every duration is 0 and nothing moves at all: no rise, settle, fold, shimmer or breathing, and a ring holds still.
+- When the person asks for less motion, nothing moves at all: the quick, standard and slow durations are 0, and no rise, settle, fold, shimmer, breath or blink runs; a ring holds still.
 
 ## Forms
 
@@ -83,7 +83,7 @@ Checked against Baseline (web-features 3.42, October 2026). "Newly" means newly 
 | Placing popovers                    | CSS anchor positioning where present, else measured (`lib/popover.ts`)             | `anchor-positioning`: no                          |
 | `popover="hint"`, interest invokers | Not used                                                                           | No                                                |
 | Reasoning, receipts, steps          | `<details>` / `<summary>`                                                          | Widely (2020); `name` for accordions newly (2024) |
-| Steps that slide open and shut      | A fold's grid row; `::details-content` kept shown while it shuts, else at once     | `details-content`: newly (Sep 2025)               |
+| Steps that slide open and shut      | A fold's grid row: an animation as they open, a transition awaited before closing  | Widely: grid tracks animate, `getAnimations()`    |
 | Textarea growing                    | CSS `field-sizing: content`; without it the box keeps its rows                     | Newly (Jun 2026)                                  |
 | Light and dark                      | `color-scheme`, `light-dark()`                                                     | Widely; `light-dark()` newly (2024)               |
 | Content behind a drawer             | `inert`                                                                            | Widely (2025)                                     |

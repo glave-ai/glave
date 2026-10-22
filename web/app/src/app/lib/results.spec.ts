@@ -212,11 +212,12 @@ describe('results', () => {
     });
   });
 
-  it('runs only while it has not ended, in the turn that runs', () => {
-    const runs = (running: boolean, more: Partial<Turn> = {}): boolean =>
-      turnResults(turn([ask, call(2)], more), null, null, running, 'en-US').runs;
-    expect(runs(true)).toBe(true);
-    expect(runs(false)).toBe(false);
-    expect(runs(true, { outcome: 'completed' })).toBe(false);
+  it('says how long it took once it has ended, the working line counting while it runs', () => {
+    const facts = (running: boolean, more: Partial<Turn> = {}): unknown =>
+      turnResults(turn([ask, call(2)], { took: 3_000, ...more }), null, null, running, 'en-US')
+        .receipt?.facts;
+    expect(facts(true)).toEqual([]);
+    expect(facts(true, { outcome: 'completed' })).toEqual(['3s']);
+    expect(facts(false)).toEqual(['3s']);
   });
 });

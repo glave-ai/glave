@@ -1,5 +1,5 @@
-<details class="details" [open]="open()" (toggle)="toggled($event)">
-  <summary class="line" [attr.data-testid]="ids().summary">
+<details #details class="details" [open]="open()" (toggle)="toggled($event)">
+  <summary class="line" [attr.data-testid]="ids().summary" (click)="shut($event)">
     <glz-icon class="icon" [class.glz-spin]="running()" [icon]="icon()" />
     <span class="fact state" [class.glz-visually-hidden]="quiet()">{{ label() }}</span>
     @for (fact of facts(); track $index) {
@@ -10,7 +10,7 @@
       }}<glz-icon class="chevron glz-mirrored" [attr.data-testid]="ids().chevron" [icon]="chevron"
     /></span>
   </summary>
-  <div class="fold">
+  <div #fold class="fold" [attr.data-testid]="ids().fold">
     <div class="steps" [attr.data-testid]="ids().steps"><ng-content /></div>
   </div>
 </details>

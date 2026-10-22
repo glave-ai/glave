@@ -47,8 +47,6 @@ export interface TurnResults {
   readonly reply: MessageItem | null;
   /** The reply being written, in the turn that runs. */
   readonly live: Draft | null;
-  /** Whether it runs now, so what appears in it moves into place. */
-  readonly runs: boolean;
   /**
    * While it runs with nothing of its own to show yet (no reply or reasoning streaming, nothing
    * waiting for the person, and not just after the model's last words), what shows instead: the
@@ -160,8 +158,10 @@ export function turnResults(
   const calls = rest.filter(isCall).length;
   const worked = calls > 0;
   const routes = new Intl.ListFormat(locale, { style: 'short', type: 'unit' }).format(turn.routes);
+  // While it runs, the working line counts its time; the receipt says it once it has ended.
+  const runs = running && turn.outcome === null;
   const facts = [
-    ...(turn.took === null || turn.took === 0 ? [] : [formatDuration(turn.took, locale)]),
+    ...(turn.took === null || turn.took === 0 || runs ? [] : [formatDuration(turn.took, locale)]),
     ...(turn.cost === null ? [] : [formatMoney(turn.cost, locale)]),
     ...(turn.routes.length === 0 ? [] : [$localize`:@@results.via:via ${routes}:ROUTES:`]),
     ...outsideSandbox(rest, locale),
@@ -172,7 +172,6 @@ export function turnResults(
     before: worked ? [] : along,
     reply,
     live,
-    runs: running && turn.outcome === null,
     working: workingOn(turn, live, step, running, waiting.length),
     files: turn.files,
     steps: worked ? along : [],

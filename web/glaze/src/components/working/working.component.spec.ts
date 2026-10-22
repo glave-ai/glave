@@ -135,10 +135,14 @@ describe('GlzWorkingComponent', () => {
     expect(line(fixture)).toBe('Honing…');
     await wait(fixture, WORD_MS);
     expect(line(fixture)).toBe('Tempering…');
+    // A step of many lines, such as a script, is heard by its first.
+    fixture.componentInstance.step.set("bash: cat <<'EOF' > notes.md\n# Notes\nEOF");
+    await fixture.whenStable();
     expect(announce.mock.calls).toEqual([
       ['Thinking…', 'polite'],
       ['bash: cargo test', 'polite'],
       ['read src/lock.rs', 'polite'],
+      ["bash: cat <<'EOF' > notes.md", 'polite'],
     ]);
     await expectAccessible(fixture.nativeElement);
   });

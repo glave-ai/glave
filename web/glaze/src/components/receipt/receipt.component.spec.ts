@@ -36,12 +36,15 @@ describe('GlzReceiptComponent', () => {
     expect(line?.querySelector('.tool')?.textContent).toBe('bash');
     expect(line?.querySelector('.what')?.textContent).toBe('cargo test');
     expect(line?.querySelector('.status')?.getAttribute('aria-label')).toBe('Running');
+    // Its ring turns while it runs, as every ring does (still under reduced motion).
+    expect(line?.querySelector('.status')?.classList).toContain('glz-spin');
     // The tool's icon goes first and is decorative: its name says what it is.
     expect(line?.firstElementChild?.classList).toContain('kind');
     expect(line?.querySelector('.kind')?.getAttribute('aria-hidden')).toBe('true');
     fixture.componentInstance.status.set('failed');
     await fixture.whenStable();
     expect(line?.querySelector('.status')?.getAttribute('aria-label')).toBe('Failed');
+    expect(line?.querySelector('.status')?.classList).not.toContain('glz-spin');
     expect(root.querySelector('glz-receipt')?.classList).toContain('status-failed');
     await expectAccessible(root);
   });

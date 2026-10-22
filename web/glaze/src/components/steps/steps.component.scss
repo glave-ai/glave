@@ -110,31 +110,25 @@
 }
 
 // The steps slide open and shut in the fold's one grid row: it grows from nothing as the
-// details open, clipped until it has, and shrinks back as they shut, hidden once it has. The
-// fold hides them itself, so the details show what they hold throughout (where
-// `::details-content` is missing, the details hide it at once as they shut). Open, nothing is
-// clipped, so focus rings and a message's actions show whole. Instant when the person asks for
-// less motion.
+// details open, clipped until it has, and shrinks back to nothing before they close (`shutting`,
+// while the details still show it), so they hide what they hold only once it has. Its one column
+// is as wide as the steps' column, however long a line in it. Open, nothing is clipped, so focus
+// rings and a message's actions show whole. Instant when the person asks for less motion.
 .fold {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .details[open] .fold {
   animation: glz-unfold var(--glz-duration-standard) var(--glz-ease-out);
 }
 
-.details:not([open]) .fold {
+.details.shutting .fold {
   grid-template-rows: minmax(0, 0fr);
   overflow: clip;
-  visibility: hidden;
-  transition:
-    grid-template-rows var(--glz-duration-standard) var(--glz-ease-out),
-    visibility var(--glz-duration-standard);
-}
-
-.details::details-content {
-  content-visibility: visible;
+  animation: none;
+  transition: grid-template-rows var(--glz-duration-standard) var(--glz-ease-out);
 }
 
 @keyframes glz-unfold {

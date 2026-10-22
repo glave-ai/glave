@@ -40,6 +40,8 @@ describe('turns', () => {
       ['message', 'call', 'message'],
       ['message', 'message'],
     ]);
+    // Each keyed by its start, as the turn the person asked for was before it was recorded.
+    expect(turns.map((turn) => turn.key)).toEqual(['turn-2', 'turn-9']);
     const [first, second] = turns;
     expect(first).toMatchObject({
       took: 242_000,
@@ -103,7 +105,9 @@ describe('turns', () => {
   });
 
   it('starts a turn the person just asked for with their message alone, not yet ended', () => {
-    const starting = startingTurn('Fix the flaky test');
+    const starting = startingTurn('Fix the flaky test', 4);
+    // Keyed as the turn will be once the server records its start next.
+    expect(starting.key).toBe('turn-4');
     expect(starting.items).toEqual([
       expect.objectContaining({ kind: 'message', from: 'person', text: 'Fix the flaky test' }),
     ]);

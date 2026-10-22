@@ -31,7 +31,6 @@ const RESULTS: TurnResults = {
     steered: false,
   },
   live: null,
-  runs: false,
   working: null,
   files: [{ path: 'src/lock.rs', changes: [], added: 16, removed: 0 }],
   steps: [
@@ -66,7 +65,6 @@ const RESULTS: TurnResults = {
 const WORKING: TurnResults = {
   ...RESULTS,
   reply: null,
-  runs: true,
   working: { step: null, since: null },
   files: [],
   steps: [],
@@ -184,7 +182,7 @@ describe('TurnComponent', () => {
       const fixture = await mount({ ...WORKING, working: { step: null, since } });
       // The clock, and the words turning.
       expect(vi.getTimerCount()).toBe(2);
-      fixture.componentRef.setInput('turn', { ...RESULTS, runs: true });
+      fixture.componentRef.setInput('turn', RESULTS);
       await fixture.whenStable();
       const root = fixture.nativeElement as HTMLElement;
       expect(root.querySelector('[data-testid="thread-working"]')).toBeNull();
@@ -197,18 +195,27 @@ describe('TurnComponent', () => {
     });
   });
 
-  it('lets a reply rise into place as it begins, and what changed settle in while the turn runs', async () => {
-    const running = await render({
+  it('lets a reply rise into place as it begins, and what changed settle in as it appears', async () => {
+    const fixture = await mount({ ...RESULTS, reply: null, files: [], waiting: [] });
+    const root = fixture.nativeElement as HTMLElement;
+    fixture.componentRef.setInput('turn', {
       ...RESULTS,
       reply: null,
-      runs: true,
       live: { text: 'Writing', reasoning: '' },
       waiting: [],
     });
-    expect(running.querySelector('[data-testid="thread-reply"]')?.classList).toContain('glz-rise');
-    expect(running.querySelector('app-turn-changes')?.classList).toContain('glz-settle');
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="thread-reply"]')?.classList).toContain('glz-rise');
+    expect(root.querySelector('app-turn-changes')?.classList).toContain('glz-settle');
+    // More files change: it stays as it settled, never settling again.
+    fixture.componentRef.setInput('turn', {
+      ...RESULTS,
+      files: [...RESULTS.files, { path: 'src/main.rs', changes: [], added: 1, removed: 0 }],
+    });
+    await fixture.whenStable();
+    expect(root.querySelector('app-turn-changes')?.classList).toContain('glz-settle');
     TestBed.resetTestingModule();
-    // A turn read back from the log moves nothing.
+    // A turn that shows with its changes, as one read back from the log, moves nothing.
     const read = await render(RESULTS);
     expect(read.querySelector('app-turn-changes')?.classList).not.toContain('glz-settle');
   });
