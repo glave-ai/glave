@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 
 import { expectAccessible } from '../../testing/axe';
+import { focusBy } from '../../testing/focus';
 import { GlzMessageComponent } from './message.component';
 
 @Component({
@@ -51,19 +52,17 @@ describe('GlzMessageComponent', () => {
     expect(root.querySelector('[data-testid="note"] .author')?.textContent).toBe('Atlas');
   });
 
-  it('hides its actions until keyboard focus is in the message', async () => {
+  it('shows its actions for keyboard focus in the message, not for a press’s', async () => {
     const fixture = TestBed.createComponent(HostComponent);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
-    const copy = root.querySelector<HTMLElement>('[data-testid="copy"]');
-    const actions = copy?.parentElement ?? root;
+    const copy = root.querySelector<HTMLElement>('[data-testid="copy"]') ?? root;
+    const actions = copy.parentElement ?? root;
     expect(getComputedStyle(actions).opacity).toBe('0');
-    // jsdom counts any focus as the keyboard's; that a click's focus shows nothing is checked
-    // in browsers, end to end.
-    copy?.focus();
+    focusBy(copy, 'pointer');
+    expect(getComputedStyle(actions).opacity).toBe('0');
+    focusBy(copy, 'keyboard');
     expect(getComputedStyle(actions).opacity).toBe('1');
-    copy?.blur();
-    expect(getComputedStyle(actions).opacity).toBe('0');
   });
 
   it('puts its actions under the body, outside the bubble', async () => {
