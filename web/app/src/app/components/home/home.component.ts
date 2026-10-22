@@ -1,7 +1,6 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  DestroyRef,
   afterRenderEffect,
   computed,
   effect,
@@ -13,7 +12,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import type { ApprovalMode, ThreadId, ThreadStartParams, TurnStartParams } from '@glave/client';
+import type { ApprovalMode, ThreadId, TurnStartParams } from '@glave/client';
 import {
   GlzAttachmentComponent,
   GlzComposerComponent,
@@ -38,8 +37,8 @@ import { PageHeaderComponent } from '../page-header/page-header.component';
 /**
  * A new chat: the question, then the composer that starts a thread, with where it goes (a
  * chat, or a project) in its box, and the approval mode and the model in the quiet line under
- * it. Sending starts the thread there, on the model and in the approval mode picked, and its
- * first turn, and opens the thread once the server has the message, held in the box until then:
+ * it. Sending starts the thread there and its first turn, on the model and in the approval mode
+ * picked, and opens the thread once the server has the message, held in the box until then:
  * the thread's page only shows what the server has. When glave runs on this computer, a line
  * under it says what stays private. Opened for a project, the composer takes focus, and the page
  * has Back.
@@ -79,13 +78,19 @@ export class HomeComponent {
   protected readonly lock = Lock;
   protected readonly draft = signal('');
   protected readonly starting = signal(false);
-  /** Why the thread could not start, as the server says, until the next try. */
-  protected readonly error = signal<string | null>(null);
+  /**
+   * Why the thread could not start, until the next try: the server's words, or `lost` when its
+   * answer never came.
+   */
+  protected readonly error = signal<{ readonly said: string } | 'lost' | null>(null);
   protected readonly problem = computed(() => {
     const error = this.error();
+    if (error === 'lost') {
+      return $localize`:@@home.lost:No answer came back. Send it again: it will not start twice.`;
+    }
     return error === null
       ? null
-      : $localize`:@@home.failed:Could not start a thread: ${error}:ERROR:`;
+      : $localize`:@@home.failed:Could not start a thread: ${error.said}:ERROR:`;
   });
   /** The model the person picked, or `null` for the server's default. */
   protected readonly picked = signal<string | null>(null);
@@ -130,12 +135,17 @@ export class HomeComponent {
   /** The files added to the first message, kept where the thread will start. */
   protected readonly attachments = inject(AttachmentsService);
   /**
-   * The first message last sent, while its answer was lost: the server may have it, so sent
-   * again as it was, it is the same send, to the thread made for it with the same key, and the
-   * server starts its turn once, whatever the person picked meanwhile.
+   * The thread made for the first message, until the server has its turn: tried again in the
+   * same place after the server said why not, the message goes there, so no empty thread is
+   * left behind. With it, the last send to it, until the server has that or says why not: sent
+   * again as it was after its answer was lost, it is the same send, with the same key, to that
+   * thread wherever the person picks meanwhile, since the server may have it there.
    */
-  private unsent: (Unsent & { readonly thread: ThreadId }) | null = null;
-  private readonly destroyed = inject(DestroyRef);
+  private made: {
+    readonly where: string | null;
+    readonly thread: ThreadId;
+    readonly unsent: Unsent | null;
+  } | null = null;
 
   /** Files added go where the thread will start. */
   protected readonly keeping = effect(() => {
@@ -162,57 +172,63 @@ export class HomeComponent {
     }
     this.starting.set(true);
     this.error.set(null);
-    const again = sameSend(prompt, this.unsent);
+    const where = this.where();
+    const from = this.router.url;
+    const again = sameSend(prompt, this.made?.unsent ?? null);
+    const made = again !== null || this.made?.where === where ? this.made : null;
     let thread: ThreadId;
     try {
-      thread = again?.thread ?? (await this.startThread(this.where()));
+      thread = made?.thread ?? (await this.startThread(where));
       const key = again?.key ?? idempotencyKey();
-      this.unsent = { prompt, thread, key };
+      this.made = { where: made?.where ?? where, thread, unsent: { prompt, key } };
       await this.startTurn(thread, prompt, key);
-      this.unsent = null;
+      this.made = null;
     } catch (error: unknown) {
       // An answer that says why ends the send; one lost leaves it to be sent again as it was.
-      if (!answerLost(error)) {
-        this.unsent = null;
+      const lost = answerLost(error);
+      if (!lost && this.made !== null) {
+        this.made = { ...this.made, unsent: null };
       }
-      this.error.set(error instanceof Error ? error.message : String(error));
+      this.error.set(
+        lost ? 'lost' : { said: error instanceof Error ? error.message : String(error) },
+      );
       this.starting.set(false);
       return;
     }
-    // The thread's page shows it from here, unless the person went elsewhere meanwhile.
-    if (!this.destroyed.destroyed) {
+    if (this.router.url === from) {
       await this.router.navigate(['/t', thread]);
+    } else {
+      // The person went elsewhere meanwhile: it is sent, and the box is theirs again.
+      this.draft.set('');
+      this.starting.set(false);
     }
   }
 
-  /** Starts a thread in `project`, on the model, mode and level the person picked. */
+  /** Starts a thread in `project`. */
   private async startThread(project: string | null): Promise<ThreadId> {
+    const { thread } = await this.session.call('thread/start', project === null ? {} : { project });
+    return thread.id;
+  }
+
+  /**
+   * Starts the thread's first turn with `prompt`, the files added and the model, mode and level
+   * the person picked, and waits only for the server's first word back, which says it has the
+   * message: the turn goes on in the server, and the thread's page follows it.
+   */
+  private async startTurn(thread: ThreadId, prompt: string, key: string): Promise<void> {
+    const files = this.attachments.attached();
     const model = this.picked();
     const approval = this.pickedMode();
     const next = model ?? this.models.default();
     const info = this.models.models().find((each) => each.id === next);
     const effort = effortToSend(this.pickedEffort(), null, info);
-    const params: ThreadStartParams = {
-      ...(project === null ? {} : { project }),
-      ...(model === null ? {} : { model }),
-      ...(approval === null ? {} : { approval }),
-      ...(effort === null ? {} : { effort }),
-    };
-    const { thread } = await this.session.call('thread/start', params);
-    return thread.id;
-  }
-
-  /**
-   * Starts the thread's first turn with `prompt` and the files added, and waits only for the
-   * server's first word back, which says it has the message: the turn goes on in the server,
-   * and the thread's page follows it.
-   */
-  private async startTurn(thread: ThreadId, prompt: string, key: string): Promise<void> {
-    const files = this.attachments.attached();
     const params: TurnStartParams = {
       thread,
       prompt,
       ...(files.length === 0 ? {} : { files }),
+      ...(model === null ? {} : { model }),
+      ...(approval === null ? {} : { approval }),
+      ...(effort === null ? {} : { effort }),
       _meta: { idempotency_key: key },
     };
     const controller = new AbortController();

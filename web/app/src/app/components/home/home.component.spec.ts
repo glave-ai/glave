@@ -109,7 +109,7 @@ describe('HomeComponent', () => {
     navigate.mockRestore();
   });
 
-  it('starts in the project the link names, on the model and in the mode picked', async () => {
+  it('starts in the project the link names, its first turn on the model and in the mode picked', async () => {
     const fake = session();
     const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
     const root = await render(fake, 'p2');
@@ -126,8 +126,9 @@ describe('HomeComponent', () => {
     document.querySelectorAll<HTMLElement>('[data-testid="approval-mode-option"]')[0]?.click();
     await send(root, 'Plant tomatoes');
     await new Promise((resolve) => setTimeout(resolve));
-    expect(fake.paramsOf('thread/start')).toEqual([
-      { project: 'p2', model: 'hope-12b', approval: 'ask' },
+    expect(fake.paramsOf('thread/start')).toEqual([{ project: 'p2' }]);
+    expect(fake.paramsOf('turn/start')).toMatchObject([
+      { thread: 't9', prompt: 'Plant tomatoes', model: 'hope-12b', approval: 'ask' },
     ]);
     navigate.mockRestore();
   });
@@ -211,7 +212,9 @@ describe('HomeComponent', () => {
     const root = await render(fake);
     await send(root, 'Plan the launch');
     await new Promise((resolve) => setTimeout(resolve));
-    expect(root.querySelector('[data-testid="home-error"]')?.textContent).toContain('cut off');
+    expect(root.querySelector('[data-testid="home-error"]')?.textContent).toContain(
+      'No answer came back. Send it again: it will not start twice.',
+    );
     expect(navigate).not.toHaveBeenCalled();
     // Back in the box and sent as it was: to the thread made for it, with the same key, so the
     // server starts its turn once, though the first try's answer was lost.
@@ -224,7 +227,7 @@ describe('HomeComponent', () => {
     navigate.mockRestore();
   });
 
-  it('sends a first message the server refused, saying why, again as a new send', async () => {
+  it('sends a first message the server refused, saying why, again as a new send, to its thread', async () => {
     const full = new ApiError({ code: ErrorCode.QUEUE_FULL, message: 'The server is stopping' });
     const fake = session().turn(full);
     const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
@@ -234,13 +237,14 @@ describe('HomeComponent', () => {
     expect(root.querySelector('[data-testid="home-error"]')?.textContent).toContain('stopping');
     await send(root, 'Plan the launch');
     await new Promise((resolve) => setTimeout(resolve));
-    expect(fake.paramsOf('thread/start')).toHaveLength(2);
+    // The thread made for it, still empty, takes it: none is left behind.
+    expect(fake.paramsOf('thread/start')).toHaveLength(1);
     const keys = fake.paramsOf('turn/start').map((params) => (params as TurnStartParams)._meta);
     expect(new Set(keys.map((meta) => meta?.idempotency_key)).size).toBe(2);
     navigate.mockRestore();
   });
 
-  it('sends a changed first message as a new send, in a thread of its own', async () => {
+  it('sends a changed first message as a new send', async () => {
     const fake = session().turn(new ApiError({ code: ErrorCode.INTERNAL, message: 'cut off' }));
     const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
     const root = await render(fake);
@@ -248,7 +252,7 @@ describe('HomeComponent', () => {
     await new Promise((resolve) => setTimeout(resolve));
     await send(root, 'Plan the launch party');
     await new Promise((resolve) => setTimeout(resolve));
-    expect(fake.paramsOf('thread/start')).toHaveLength(2);
+    expect(fake.paramsOf('thread/start')).toHaveLength(1);
     const keys = fake.paramsOf('turn/start').map((params) => (params as TurnStartParams)._meta);
     expect(new Set(keys.map((meta) => meta?.idempotency_key)).size).toBe(2);
     navigate.mockRestore();

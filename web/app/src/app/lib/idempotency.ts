@@ -25,9 +25,10 @@ export function sameSend<T extends Unsent>(prompt: string, unsent: T | null): T 
 }
 
 /**
- * Whether `error` leaves it unknown whether the server had the send: the connection failed, or
- * its answer never came whole. An answer that says why the send was refused is no such error,
- * and the next send is a new one.
+ * Whether `error` leaves it unknown whether the server had the send: the connection failed, its
+ * answer never came whole, or the server failed of itself. Sending it again with its key is safe
+ * then, as the server forgets the key of a turn that never started. An answer that says why the
+ * send was refused is no such error, and the next send is a new one.
  */
 export function answerLost(error: unknown): boolean {
   return (

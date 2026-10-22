@@ -154,6 +154,7 @@
     "home.chat": "A chat",
     "home.failed": "Could not start a thread: {$ERROR}",
     "home.heading": "What should we work on?",
+    "home.lost": "No answer came back. Send it again: it will not start twice.",
     "home.placeholder": "Ask anything, or describe a task",
     "home.private": "Private on this computer. Only the model you pick sees what you send.",
     "home.where": "Where",

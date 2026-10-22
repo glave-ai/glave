@@ -154,6 +154,7 @@
     "home.chat": "[Å çĥåţ one]",
     "home.failed": "[Çöûļð ñöţ šţåŕţ å ţĥŕéåð: {$ERROR} one two]",
     "home.heading": "[Ŵĥåţ šĥöûļð ŵé ŵöŕķ öñ? one two]",
+    "home.lost": "[Ñö åñšŵéŕ çåɱé ƀåçķ. Šéñð îţ åĝåîñ: îţ ŵîļļ ñöţ šţåŕţ ţŵîçé. one two three four]",
     "home.placeholder": "[Åšķ åñýţĥîñĝ, öŕ ðéšçŕîƀé å ţåšķ one two three]",
     "home.private": "[Þŕîṽåţé öñ ţĥîš çöɱþûţéŕ. Öñļý ţĥé ɱöðéļ ýöû þîçķ šééš ŵĥåţ ýöû šéñð. one two three four]",
     "home.where": "[Ŵĥéŕé one]",

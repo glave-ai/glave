@@ -83,7 +83,7 @@ test('a double click on Send starts one turn', async ({ page, browserName }) => 
   await write(page, prompt);
   await byTestId(page, 'home-composer-send').dblclick();
   expect(await asked(page, prompt)).toBe(1);
-  expect(new Set(sent.map(({ key }) => key)).size).toBe(1);
+  expect(sent).toHaveLength(1);
 });
 
 test('a first message whose answer is lost, sent again, starts one turn', async ({

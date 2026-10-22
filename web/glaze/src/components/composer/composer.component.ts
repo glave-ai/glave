@@ -46,10 +46,10 @@ export type GlzComposerSize = 'md' | 'lg';
  * line at that width.
  *
  * Enter sends and Shift+Enter starts a new line (Cmd or Ctrl with Enter sends too), and `send`
- * emits the draft, trimmed, and empties the box, unless `keepSent` leaves it for the app. While the model is answering (`busy`), Stop takes Send's place,
- * and Escape stops it; the person can go on writing, and sends with Enter, or with Send, which
- * comes back beside Stop once there is something to send, for the app to give the model while
- * it works. A `lg` composer starts a thread: two lines to write in, in larger type, more room
+ * emits the draft, trimmed, and empties the box, unless `keepSent` leaves it for the app. While
+ * the model is answering (`busy`), Stop takes Send's place, and Escape stops it; the person can
+ * go on writing, and sends with Enter, or with Send, which comes back beside Stop once there is
+ * something to send, for the app to give the model while it works. A `lg` composer starts a thread: two lines to write in, in larger type, more room
  * round them, rounder corners, and a shadow under it.
  *
  * With an `attachLabel`, a + at the box's start opens the system's file picker, and files
