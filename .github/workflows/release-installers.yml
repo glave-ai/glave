@@ -46,12 +46,16 @@ jobs:
           TAG: ${{ fromJson(inputs.plan).announcement_tag }}
         run: |
           dist build --tag="$TAG" --artifacts=global --output-format=json >/dev/null
+          cp target/distrib/glave-installer.sh target/distrib/glave-installer.dist.sh
           sh .github/install-script-checksums.sh target/distrib/glave-installer.sh
-      # Not named artifacts-*, which the release publishes.
+      # Not named artifacts-*, which the release publishes. The script as dist wrote it too, so
+      # each platform makes the change again itself.
       - uses: actions/upload-artifact@v7
         with:
           name: installer-script
-          path: target/distrib/glave-installer.sh
+          path: |
+            target/distrib/glave-installer.sh
+            target/distrib/glave-installer.dist.sh
 
   # On the runners the release builds on, one platform each (dist's matrix).
   install:
@@ -78,6 +82,17 @@ jobs:
         with:
           name: installer-script
           path: release/
+      # Under this runner's /bin/sh, bash 3.2 on macOS, with nothing on PATH but the four
+      # commands it uses, so text it misread could run nothing: the change makes the same script.
+      - name: The change to the install script reads the same under this runner's /bin/sh
+        run: |
+          /bin/sh -n .github/install-script-checksums.sh
+          tools="$RUNNER_TEMP/tools"
+          mkdir "$tools"
+          for tool in awk cat mktemp rm; do ln -s "$(command -v "$tool")" "$tools/$tool"; done
+          cp release/glave-installer.dist.sh "$RUNNER_TEMP/changed-here.sh"
+          PATH="$tools" /bin/sh .github/install-script-checksums.sh "$RUNNER_TEMP/changed-here.sh"
+          cmp "$RUNNER_TEMP/changed-here.sh" release/glave-installer.sh
       # Over HTTPS on Linux, under a certificate made here, since the server installer fetches
       # only over HTTPS; dist's script takes plain HTTP too, which is all macOS is given.
       - name: Serve them from this runner
