@@ -1,0 +1,92 @@
+import { type Page, expect, test } from '@playwright/test';
+
+import { THREAD, fakeApi } from './fake-api';
+import { SIGNED_IN, byTestId } from './support';
+
+/** How far what a composer's box holds sits from each inner edge of the box, in CSS pixels. */
+interface Insets {
+  readonly top: number;
+  readonly end: number;
+  readonly bottom: number;
+  readonly start: number;
+}
+
+/** The space between the box of `composer` and what it shows, on each side. */
+async function insets(page: Page, composer: string): Promise<Insets> {
+  return byTestId(page, `${composer}-box`).evaluate((box) => {
+    const style = getComputedStyle(box);
+    const outer = box.getBoundingClientRect();
+    const top = outer.top + parseFloat(style.borderTopWidth);
+    const left = outer.left + parseFloat(style.borderLeftWidth);
+    const right = outer.right - parseFloat(style.borderRightWidth);
+    const bottom = outer.bottom - parseFloat(style.borderBottomWidth);
+    const shown = Array.from(box.children, (child) => child.getBoundingClientRect()).filter(
+      (rect) => rect.width > 0 && rect.height > 0,
+    );
+    const round = (value: number): number => Math.round(value * 10) / 10;
+    const fromLeft = round(Math.min(...shown.map((rect) => rect.left)) - left);
+    const fromRight = round(right - Math.max(...shown.map((rect) => rect.right)));
+    const rtl = style.direction === 'rtl';
+    return {
+      top: round(Math.min(...shown.map((rect) => rect.top)) - top),
+      end: rtl ? fromLeft : fromRight,
+      bottom: round(bottom - Math.max(...shown.map((rect) => rect.bottom))),
+      start: rtl ? fromRight : fromLeft,
+    };
+  });
+}
+
+/** Expects the four distances equal, and more than nothing. */
+async function expectEven(page: Page, composer: string): Promise<void> {
+  const found = await insets(page, composer);
+  expect(found.top).toBeGreaterThan(0);
+  expect(found).toEqual({ top: found.top, end: found.top, bottom: found.top, start: found.top });
+}
+
+/** The left and right of the element with `testId`. */
+async function edges(page: Page, testId: string): Promise<readonly [number, number]> {
+  const box = await byTestId(page, testId).boundingBox();
+  return [Math.round(box?.x ?? 0), Math.round((box?.x ?? 0) + (box?.width ?? 0))];
+}
+
+for (const width of [1440, 390]) {
+  test(`a composer's box is as far from what it holds on every side (${String(width)} wide)`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await fakeApi(page);
+    await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+    await expect(byTestId(page, 'thread-composer-input')).toBeVisible();
+    await expectEven(page, 'thread-composer');
+    // Right to left, mirrored, the same.
+    await page.evaluate(() => {
+      document.documentElement.dir = 'rtl';
+    });
+    await expectEven(page, 'thread-composer');
+    await page.goto(`/${SIGNED_IN}`);
+    await expect(byTestId(page, 'home-composer-input')).toBeVisible();
+    await expectEven(page, 'home-composer');
+  });
+}
+
+test('the status line keeps the approval mode at its start and the model at its end', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await fakeApi(page);
+  await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+  await byTestId(page, 'model-picker-trigger').click();
+  await byTestId(page, 'model-picker-option').filter({ hasText: 'Hope' }).click();
+  await expect(byTestId(page, 'effort-picker-trigger')).toBeVisible();
+  // Each end lines up with what the box holds above it: the + and send.
+  const [start] = await edges(page, 'thread-composer-attach');
+  const [, end] = await edges(page, 'thread-composer-send');
+  const [approval] = await edges(page, 'approval-mode-trigger');
+  const [model, picked] = await edges(page, 'model-picker-trigger');
+  const [effort, effortEnd] = await edges(page, 'effort-picker-trigger');
+  expect(approval).toBe(start);
+  expect(effortEnd).toBe(end);
+  // The model and how much it reasons stay together, apart from the approval mode.
+  expect(effort - picked).toBeLessThan(16);
+  expect(model - approval).toBeGreaterThan(600);
+});

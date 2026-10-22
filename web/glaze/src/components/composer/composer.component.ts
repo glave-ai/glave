@@ -21,6 +21,7 @@ import { glzText } from '../../lib/words';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
 const PARTS = {
+  box: 'box',
   attach: 'attach',
   picker: 'picker',
   input: 'input',
@@ -38,7 +39,8 @@ export type GlzComposerSize = 'md' | 'lg';
  * which grows with what they write (CSS `field-sizing`, up to a limit), what sets where it
  * goes (`[glzComposerStart]`, such as a project chip), and send. Under the box, a quiet status
  * line (`[glzComposerStatus]`) holds what shapes the turn: the approval mode and the model,
- * small and muted, with no box of their own. On a phone (`GLZ_NARROW`) the composer is one row
+ * small and muted, with no box of their own, the first at the line's start and the last at its
+ * end (what goes together shares one element). On a phone (`GLZ_NARROW`) the composer is one row
  * (an options button, the text, send), and the options button opens the status line as a
  * sheet; what sits in the box's start slot is hidden there, so an app moves it to the status
  * line at that width.
@@ -70,7 +72,6 @@ export type GlzComposerSize = 'md' | 'lg';
   host: {
     '[attr.data-testid]': 'testId()',
     '[class.glz-composer--lg]': 'large()',
-    '[class.glz-composer--attach]': 'attachable()',
     '[class.glz-composer--dragging]': 'dragging()',
     '(dragover)': 'dragover($event)',
     '(dragleave)': 'dragleave()',

@@ -1,5 +1,15 @@
-<div class="box">
+<div class="box" [attr.data-testid]="ids().box">
   <div class="files"><ng-content select="[glzComposerAttachments]" /></div>
+  <button
+    glzIconButton
+    type="button"
+    class="options"
+    [attr.data-testid]="ids().options"
+    [attr.popovertarget]="statusId"
+    [label]="optionsLabel()"
+  >
+    <glz-icon [icon]="icons.options" />
+  </button>
   @if (attachLabel(); as label) {
     <button
       glzIconButton
@@ -21,16 +31,6 @@
       (change)="picked($event)"
     />
   }
-  <button
-    glzIconButton
-    type="button"
-    class="options"
-    [attr.data-testid]="ids().options"
-    [attr.popovertarget]="statusId"
-    [label]="optionsLabel()"
-  >
-    <glz-icon [icon]="icons.options" />
-  </button>
   <textarea
     #textarea
     class="input"
