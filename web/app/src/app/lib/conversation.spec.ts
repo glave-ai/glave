@@ -1,15 +1,18 @@
 import type { RawEvent } from '@glave/client';
 
 import {
+  NO_RESULTS,
   NO_DRAFT,
   answersFrom,
   applyUpdate,
   argumentsSummary,
+  keptByReference,
   mergeEvents,
   partsText,
   promptOf,
   questionsOf,
   threadItems,
+  withResults,
 } from './conversation';
 
 let next = 1;
@@ -231,5 +234,45 @@ describe('conversation', () => {
     const two = event('b', {}, 2);
     const three = event('c', {}, 3);
     expect(mergeEvents([one, three], [two, three]).map((e) => e.seq)).toEqual([1, 2, 3]);
+  });
+
+  it('shows a memory call’s result as the server reads it, else as the log keeps it', () => {
+    const saved = event('tool.call.completed', {
+      call_id: 'c1',
+      is_error: false,
+      output: [
+        { type: 'text', text: 'Remembered [m1] (personal).' },
+        { type: 'text', text: '[A hook says: ok]' },
+      ],
+      structured: { memory: 'm1', version: 1, shown: { reply: 'remembered' } },
+    });
+    const events = [
+      event('tool.call.requested', {
+        call_id: 'c1',
+        tool: 'mcp__memory__remember',
+        arguments: { json: { text: 'Ada prefers tea', scope: 'personal' } },
+      }),
+      saved,
+    ];
+    expect(keptByReference(saved)).toBe(true);
+    expect(keptByReference(event('tool.call.completed', { call_id: 'c2', output: [] }))).toBe(
+      false,
+    );
+    const call = (results?: Map<string, string>): { summary: string; output: string } => {
+      const item = threadItems(events, results).at(-1);
+      return item?.kind === 'call' ? item : { summary: 'none', output: 'none' };
+    };
+    expect(call()).toMatchObject({
+      summary: '',
+      output: 'Remembered [m1] (personal).\n[A hook says: ok]',
+    });
+    const results = withResults(NO_RESULTS, { c1: 'Remembered [m1] (personal) Ada prefers tea.' });
+    expect(call(new Map(results)).output).toBe(
+      'Remembered [m1] (personal) Ada prefers tea.\n[A hook says: ok]',
+    );
+    expect(withResults(results, undefined)).toBe(results);
+    expect(withResults(results, { c1: 'Remembered [m1] (personal).' }).get('c1')).toBe(
+      'Remembered [m1] (personal).',
+    );
   });
 });

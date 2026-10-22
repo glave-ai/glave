@@ -147,10 +147,14 @@ impl MemoryOutput {
     }
 }
 
-/// A memory tool's result as a thread's log keeps it (`specs/memory.md`, "Forgetting really
-/// forgets"): in words that hold no memory's text and no past conversation's, so neither the
+/// The field of a memory call's `tool.call.completed` `structured` that holds what its result
+/// showed, by reference ([`Kept::shown`]).
+pub const SHOWN: &str = "shown";
+
+/// A memory tool's result as a thread's log keeps it (`specs/memory.md`, "Seeing, editing and
+/// forgetting"): in words that hold no memory's text and no past conversation's, so neither the
 /// log nor its search index ever holds a copy a forget cannot reach, and what it showed by
-/// reference, which [`Memory::reread`] reads again whenever the thread is rebuilt.
+/// reference, which [`Memory::reread`] reads again whenever the thread is rebuilt or shown.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Kept {
     /// The result's words as the log keeps them, in place of the output's first part.

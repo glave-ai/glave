@@ -1275,8 +1275,17 @@ export type ThreadEventsParams = {
 };
 
 export type ThreadEventsResult = {
+  /** The events exactly as stored. */
   readonly events: readonly (RawEvent)[];
   readonly next?: Seq | null;
+  /**
+   * By call, the words of each memory call's result among `events` that the log keeps by
+   * reference, read again as the caller may read memory now: with the text of each
+   * memory at the version it showed and of each past conversation, except what is
+   * forgotten since or not theirs to read (`specs/memory.md`, "Seeing, editing and
+   * forgetting"). A client shows these in place of the first part of the stored output.
+   */
+  readonly results?: { readonly [key: string]: string };
 };
 
 export type ThreadGetParams = {

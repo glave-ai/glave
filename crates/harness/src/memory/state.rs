@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use glave_event::{CallId, MemoryId, Part, ToolCallCompleted};
 use glave_ports::memories::{
-    Kept, Memory, MemoryChange as Change, MemoryContext, Remembered, Shown,
+    Kept, Memory, MemoryChange as Change, MemoryContext, Remembered, SHOWN, Shown,
 };
 use glave_ports::{BlobStore, EventLog, Message, ModelProvider};
 use serde::{Deserialize, Serialize};
@@ -20,9 +20,6 @@ use super::render::{self, Line, changes};
 use crate::approval::Approver;
 use crate::harness::{Harness, Thread};
 use crate::untrusted::labelled;
-
-/// The field of a memory call's recorded `structured` that holds what its result showed.
-pub(crate) const SHOWN: &str = "shown";
 
 /// What a turn's configuration records about memory: the memories the model knew at its start,
 /// at their versions. Never their text.
