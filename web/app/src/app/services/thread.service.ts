@@ -13,7 +13,17 @@ import {
 import type { GlzDecision } from '@glave/glaze';
 
 import { lastCommandChange } from '../lib/commands';
-import { NO_DRAFT, applyUpdate, mergeEvents, stepsAfter, type Draft } from '../lib/conversation';
+import {
+  NO_RESULTS,
+  NO_DRAFT,
+  applyUpdate,
+  keptByReference,
+  mergeEvents,
+  stepsAfter,
+  withResults,
+  type Draft,
+  type Results,
+} from '../lib/conversation';
 import { changedFiles } from '../lib/files';
 import { chosenEffort } from '../lib/effort';
 import { chosenModel } from '../lib/models';
@@ -39,6 +49,8 @@ export class ThreadService {
   private readonly projects = inject(ProjectsService);
   private readonly id = signal<ThreadId | null>(null);
   private readonly events = signal<readonly RawEvent[]>([]);
+  /** What memory calls' results read to the person, as the server shows them. */
+  private readonly memoryResults = signal<Results>(NO_RESULTS);
   private readonly draft = signal<Draft>(NO_DRAFT);
   /** The steps the running turn takes now, in the server's words, as its live updates say. */
   private readonly doing = signal<readonly string[]>([]);
@@ -79,7 +91,7 @@ export class ThreadService {
 
   readonly thread = this.id.asReadonly();
   /** The thread's turns, each with its items, the files it changed, its time and cost. */
-  readonly turns = computed(() => threadTurns(this.events()));
+  readonly turns = computed(() => threadTurns(this.events(), this.memoryResults()));
   /**
    * The turns this view asked for, each by the `seq` of the last event it had read as it asked:
    * the turn is the first recorded after it.
@@ -146,6 +158,7 @@ export class ThreadService {
     this.abortAll();
     this.id.set(thread);
     this.events.set([]);
+    this.memoryResults.set(NO_RESULTS);
     this.forgetLive();
     this.waiting.set([]);
     this.asking.set(null);
@@ -389,6 +402,9 @@ export class ThreadService {
         void this.readAll(thread, newest, true);
       }
       const added = this.add(event);
+      if (added && keptByReference(event)) {
+        void this.readResult(thread, event.seq);
+      }
       if (drawn && event.type === 'message.added') {
         this.forgetLive();
       }
@@ -651,6 +667,22 @@ export class ThreadService {
     return true;
   }
 
+  /**
+   * Reads again the event at `seq` of `thread`, a memory call's result that came as it was
+   * recorded, for the words the server shows the person in place of what the log keeps. One
+   * that cannot be read shows what the log keeps.
+   */
+  private async readResult(thread: ThreadId, seq: number): Promise<void> {
+    try {
+      const page = await this.session.call('thread/events', { thread, after: seq - 1, limit: 1 });
+      if (this.id() === thread) {
+        this.memoryResults.update((known) => withResults(known, page.results));
+      }
+    } catch {
+      // What the log keeps stands.
+    }
+  }
+
   /** Reads `thread`'s events after `from`, saying why it could not unless `quiet`. */
   private async readAll(thread: ThreadId, from?: number, quiet = false): Promise<void> {
     try {
@@ -664,6 +696,7 @@ export class ThreadService {
           return;
         }
         this.events.update((events) => mergeEvents(events, page.events));
+        this.memoryResults.update((known) => withResults(known, page.results));
         const turns = page.events.some(
           (event) => event.type === 'turn.started' || event.type === 'turn.ended',
         );

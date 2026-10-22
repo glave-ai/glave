@@ -187,6 +187,52 @@ describe('ThreadService', () => {
     expect(service.composer()).toBe('');
   });
 
+  it('shows a memory call’s result as the server reads it for the person, live too', async () => {
+    const turn = new FakeTurn();
+    const words = 'Remembered [m1] (personal) Ada prefers tea.';
+    const kept = event(4, 'tool.call.completed', {
+      call_id: 'call_1',
+      is_error: false,
+      output: [{ type: 'text', text: 'Remembered [m1] (personal).' }],
+      structured: { memory: 'm1', version: 1, shown: { reply: 'remembered' } },
+    });
+    const fake = new FakeSession()
+      .answer('thread/events', (params) =>
+        (params as { after?: number }).after === 3
+          ? { events: [kept], results: { call_1: words } }
+          : { events: [] },
+      )
+      .turn(turn);
+    const service = make(fake);
+    await service.open('thread-1');
+    const sending = service.send('remember that I like tea');
+    turn.send(
+      recorded(event(1, 'turn.started', {})),
+      said(2, 'remember that I like tea'),
+      recorded(
+        event(3, 'tool.call.requested', {
+          call_id: 'call_1',
+          tool: 'mcp__memory__remember',
+          arguments: { json: { text: 'Ada prefers tea', scope: 'personal' } },
+        }),
+      ),
+      recorded(kept),
+    );
+    await settled();
+    const call = service
+      .turns()
+      .flatMap((one) => one.items)
+      .find((item) => item.kind === 'call');
+    expect(call).toMatchObject({ output: words });
+    expect(fake.paramsOf('thread/events')).toContainEqual({
+      thread: 'thread-1',
+      after: 3,
+      limit: 1,
+    });
+    turn.end();
+    await sending;
+  });
+
   it('puts a message a hook stopped back in the box, saying why', async () => {
     const first = new FakeTurn();
     const fake = new FakeSession()

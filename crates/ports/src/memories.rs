@@ -128,7 +128,11 @@ pub enum MemoryChange {
 /// A memory tool's result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryOutput {
+    /// What the model reads now.
     pub output: ToolOutput,
+    /// What the thread's log keeps instead, when the output shows the text of a memory or of a
+    /// past conversation.
+    pub kept: Option<Kept>,
     pub change: Option<MemoryChange>,
 }
 
@@ -137,9 +141,26 @@ impl MemoryOutput {
     pub fn failed(text: impl Into<String>) -> Self {
         Self {
             output: ToolOutput::text(true, text),
+            kept: None,
             change: None,
         }
     }
+}
+
+/// The field of a memory call's `tool.call.completed` `structured` that holds what its result
+/// showed, by reference ([`Kept::shown`]).
+pub const SHOWN: &str = "shown";
+
+/// A memory tool's result as a thread's log keeps it (`specs/memory.md`, "Seeing, editing and
+/// forgetting"): in words that hold no memory's text and no past conversation's, so neither the
+/// log nor its search index ever holds a copy a forget cannot reach, and what it showed by
+/// reference, which [`Memory::reread`] reads again whenever the thread is rebuilt or shown.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Kept {
+    /// The result's words as the log keeps them, in place of the output's first part.
+    pub text: String,
+    /// What it showed, by reference (ids, versions and places), in the memory's own form.
+    pub shown: serde_json::Value,
 }
 
 /// Why a memory request was refused or failed.
@@ -247,6 +268,16 @@ pub trait Memory: Send + Sync {
         on: &'a MemoryContext,
         wanted: &'a [Shown],
     ) -> BoxFuture<'a, Result<Vec<Remembered>, MemoryError>>;
+
+    /// The words memory calls' results showed the model, read again from what each one's
+    /// [`Kept`] recorded (`shown`) for a thread of `on` being rebuilt, in order: each text as it
+    /// reads now, so a memory forgotten since, or a past conversation `recall` hides now, is
+    /// left out. `None` for a result that cannot be read again.
+    fn reread<'a>(
+        &'a self,
+        on: &'a MemoryContext,
+        shown: &'a [serde_json::Value],
+    ) -> BoxFuture<'a, Result<Vec<Option<String>>, MemoryError>>;
 
     /// Pairs of the memories a thread of `on` reads that tidy-up could not reconcile: both are
     /// kept until the person says which holds. None by default.

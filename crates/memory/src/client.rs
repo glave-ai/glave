@@ -1,7 +1,9 @@
 //! glave's side of its own memory server: an MCP client over an in-process connection, as the
 //! memory port ([`Memory`]). The model's tools and the current memories go through MCP, each
 //! request carrying who and where in its `_meta`; the person's own controls (listing, moving,
-//! restoring) are their actions, not the model's, and go to the store directly.
+//! restoring) are their actions, not the model's, and go to the store directly. A result that
+//! showed the text of a memory or a past conversation is kept by reference (`reply.rs`), and
+//! read again from the store when its thread is rebuilt.
 //!
 //! With a tidier ([`GlaveMemory::tidy_with`]), tidy-up runs in the background on a task this
 //! owns: asked after each save or edit, and by the host when it starts, it tidies each ledger
@@ -9,12 +11,12 @@
 
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use glave_event::{Arguments, MemoryId, Principal};
+use glave_event::{Arguments, MemoryId, Part, Principal};
 use glave_mcp::{Limits, McpServer, tool_output};
 use glave_ports::memories::ProjectMemory;
 use glave_ports::memories::{
-    Access, Control, MEMORY_SERVER, Memory, MemoryChange, MemoryContext, MemoryError, MemoryOutput,
-    Remembered, Shown,
+    Access, Control, Kept, MEMORY_SERVER, Memory, MemoryChange, MemoryContext, MemoryError,
+    MemoryOutput, Remembered, Shown,
 };
 use glave_ports::{
     BoxFuture, EventLog, ModelProvider, NeverCancelled, Scope, ToolError, ToolInfo, ToolSource,
@@ -26,7 +28,8 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::memories::{Memories, Remembering, Tidier, Writer};
-use crate::server::{MemoryServer, RESOURCE, meta};
+use crate::reply::{Reply, words};
+use crate::server::{MemoryServer, REPLY, RESOURCE, UNSHOWN, meta};
 
 /// Bytes the in-process connection buffers each way.
 const BUFFER: usize = 64 * 1024;
@@ -190,6 +193,7 @@ impl<L: EventLog + 'static> GlaveMemory<L> {
                 .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false);
         let change = structured.and_then(|structured| change(&tool, structured));
+        let kept = structured.and_then(kept_by_reference);
         if matches!(
             change,
             Some(MemoryChange::Saved { .. } | MemoryChange::Edited(_))
@@ -203,7 +207,36 @@ impl<L: EventLog + 'static> GlaveMemory<L> {
                 .collect();
             self.tidy_soon(&ledgers);
         }
-        MemoryOutput { output, change }
+        // Only `forget` shows no text: any other result that comes without what it showed, by
+        // reference, shows none either rather than be kept with the text. What it did stands.
+        if kept.is_none() && !output.is_error && tool != "forget" {
+            output.parts = vec![Part::Text {
+                text: UNSHOWN.to_owned(),
+            }];
+        }
+        MemoryOutput {
+            output,
+            kept,
+            change,
+        }
+    }
+
+    /// The words of the results `shown` keeps by reference, with their texts as they read now;
+    /// `None` for one that is not a result glave keeps.
+    async fn reread_now(
+        &self,
+        on: &MemoryContext,
+        shown: &[serde_json::Value],
+    ) -> Result<Vec<Option<String>>, MemoryError> {
+        let replies: Vec<Option<Reply>> = (shown.iter())
+            .map(|shown| Reply::deserialize(shown).ok())
+            .collect();
+        let known: Vec<&Reply> = replies.iter().flatten().collect();
+        let mut texts = self.memories.texts(on, &known).await?.into_iter();
+        Ok(replies
+            .iter()
+            .map(|reply| Some(words(reply.as_ref()?, Some(&texts.next()?))))
+            .collect())
     }
 
     async fn controlled(
@@ -257,6 +290,17 @@ impl<L: EventLog + 'static> Drop for GlaveMemory<L> {
 /// `mutex`'s value, also after a panic elsewhere: what it guards is only ever replaced whole.
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// What a thread's log keeps of a result that showed texts: its words without them, and what
+/// it showed, by reference.
+fn kept_by_reference(structured: &serde_json::Value) -> Option<Kept> {
+    let shown = structured.get(REPLY)?;
+    let reply = Reply::deserialize(shown).ok()?;
+    Some(Kept {
+        text: words(&reply, None),
+        shown: shown.clone(),
+    })
 }
 
 /// What a tool's structured result says it changed.
@@ -329,6 +373,14 @@ impl<L: EventLog + 'static> Memory for GlaveMemory<L> {
             }
             Ok(found)
         })
+    }
+
+    fn reread<'a>(
+        &'a self,
+        on: &'a MemoryContext,
+        shown: &'a [serde_json::Value],
+    ) -> BoxFuture<'a, Result<Vec<Option<String>>, MemoryError>> {
+        Box::pin(self.reread_now(on, shown))
     }
 
     fn questions<'a>(
