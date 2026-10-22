@@ -85,8 +85,13 @@
   outline: none;
 }
 
+// The placeholder keeps to one line, cut short where the box is narrow, rather than
+// overflowing a box as tall as one line.
 .input::placeholder {
+  overflow: hidden;
   color: var(--glz-color-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .start {
@@ -190,9 +195,12 @@
     border-radius: var(--glz-radius-composer);
   }
 
-  :host(.glz-composer--lg) .input {
+  // One line of text is as tall as the buttons beside it, its text in their middle.
+  .input {
     --glz-composer-line: var(--glz-control-height-touch);
+  }
 
+  :host(.glz-composer--lg) .input {
     flex-basis: 0;
     min-height: var(--glz-composer-line);
     padding: calc((var(--glz-composer-line) - 1lh) / 2) 0;

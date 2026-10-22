@@ -46,6 +46,7 @@ async function expectEven(page: Page, composer: string): Promise<void> {
 /** The left and right of the element with `testId`. */
 async function edges(page: Page, testId: string): Promise<readonly [number, number]> {
   const box = await byTestId(page, testId).boundingBox();
+  expect(box, testId).not.toBeNull();
   return [Math.round(box?.x ?? 0), Math.round((box?.x ?? 0) + (box?.width ?? 0))];
 }
 
@@ -57,6 +58,12 @@ for (const width of [1440, 390]) {
     await fakeApi(page);
     await page.goto(`/t/${THREAD}${SIGNED_IN}`);
     await expect(byTestId(page, 'thread-composer-input')).toBeVisible();
+    await expectEven(page, 'thread-composer');
+    // With a file to send, on a row of its own above the text, the same.
+    await byTestId(page, 'thread-composer-picker').setInputFiles([
+      { name: 'notes.md', mimeType: 'text/markdown', buffer: Buffer.from('- [ ] ship it') },
+    ]);
+    await expect(byTestId(page, 'thread-composer-file')).toHaveCount(1);
     await expectEven(page, 'thread-composer');
     // Right to left, mirrored, the same.
     await page.evaluate(() => {
@@ -75,18 +82,23 @@ test('the status line keeps the approval mode at its start and the model at its 
   await page.setViewportSize({ width: 1440, height: 900 });
   await fakeApi(page);
   await page.goto(`/t/${THREAD}${SIGNED_IN}`);
-  await byTestId(page, 'model-picker-trigger').click();
-  await byTestId(page, 'model-picker-option').filter({ hasText: 'Hope' }).click();
-  await expect(byTestId(page, 'effort-picker-trigger')).toBeVisible();
+  await expect(byTestId(page, 'model-picker-trigger')).toBeVisible();
   // Each end lines up with what the box holds above it: the + and send.
   const [start] = await edges(page, 'thread-composer-attach');
   const [, end] = await edges(page, 'thread-composer-send');
   const [approval] = await edges(page, 'approval-mode-trigger');
-  const [model, picked] = await edges(page, 'model-picker-trigger');
-  const [effort, effortEnd] = await edges(page, 'effort-picker-trigger');
   expect(approval).toBe(start);
+  // The default model reasons its own way: it alone is at the end.
+  const [model, modelEnd] = await edges(page, 'model-picker-trigger');
+  expect(modelEnd).toBe(end);
+  expect(model).toBeGreaterThan((start + end) / 2);
+  // A model with levels to choose: the level comes after it, the two together at the end.
+  await byTestId(page, 'model-picker-trigger').click();
+  await byTestId(page, 'model-picker-option').filter({ hasText: 'Hope' }).click();
+  await expect(byTestId(page, 'effort-picker-trigger')).toBeVisible();
+  const [hope, picked] = await edges(page, 'model-picker-trigger');
+  const [effort, effortEnd] = await edges(page, 'effort-picker-trigger');
   expect(effortEnd).toBe(end);
-  // The model and how much it reasons stay together, apart from the approval mode.
   expect(effort - picked).toBeLessThan(16);
-  expect(model - approval).toBeGreaterThan(600);
+  expect(hope).toBeGreaterThan((start + end) / 2);
 });
