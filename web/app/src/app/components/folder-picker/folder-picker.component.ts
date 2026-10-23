@@ -31,8 +31,10 @@ import { SessionService } from '../../services/session.service';
 /**
  * Picks a folder on the computer glave runs on, through `folder/list`. It opens at `start`, or
  * the home folder; shows where it is as the folders above it, each a button to go up to; and
- * lists the folders inside, each a button to go into. Use this folder picks the one shown. It
- * shows folders' names alone, as the server gives them.
+ * lists the folders inside, each a button to go into. Use this folder picks the one shown,
+ * unless the server says it is no project's folder (the home folder, one above it, the
+ * temporary folder), and why, in its words; the folders inside may still be picked. It shows
+ * folders' names alone, as the server gives them.
  */
 @Component({
   selector: 'app-folder-picker',
@@ -89,7 +91,11 @@ export class FolderPickerComponent {
     const folder = this.shownName(this.listing()?.path ?? '');
     return $localize`:@@folderPicker.foldersIn:Folders in ${folder}:FOLDER:`;
   });
-  protected readonly cannotUse = computed(() => this.listing() === null || this.busy());
+  /** Why the folder shown is no project's folder, when the server says it is none. */
+  protected readonly refused = computed(() => this.listing()?.refused ?? null);
+  protected readonly cannotUse = computed(
+    () => this.listing() === null || this.busy() || this.refused() !== null,
+  );
 
   constructor() {
     effect(() => {

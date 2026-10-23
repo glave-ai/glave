@@ -62,3 +62,8 @@
 .problem {
   color: var(--glz-color-danger);
 }
+
+// Why the folder shown is no project's: a quiet note, not an error.
+.refused {
+  color: var(--glz-color-text-muted);
+}

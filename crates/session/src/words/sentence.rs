@@ -171,6 +171,12 @@ sentences! {
     NoHome = "no-home"
         "this computer has no home folder to start from; give a folder's full path",
     NoFolderAt { path: String } = "no-folder-at" "there is no folder at { $path }",
+    HomeHoldsChats = "home-holds-chats"
+        "your home folder holds your Chats, so it is no project's folder: pick a folder inside it",
+    AboveHome = "above-home"
+        "this folder holds your home folder, so it is no project's folder: pick a folder inside your home folder",
+    TemporaryFolder = "temporary-folder"
+        "this is the computer's temporary folder, which it empties, so it is no project's folder: pick another folder",
     FolderNotMade { reason: String } = "folder-not-made" "could not make the folder: { $reason }",
     FolderNotOpened { path: String, reason: String } = "folder-not-opened"
         "could not open the folder at { $path }: { $reason }",

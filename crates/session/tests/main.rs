@@ -28,6 +28,7 @@ mod many_projects;
 mod memory;
 mod models;
 mod modes;
+mod never_projects;
 mod outside;
 mod passkeys;
 mod placement;

@@ -61,6 +61,9 @@
 @if (problem(); as problem) {
   <p class="problem" role="alert" data-testid="folder-picker-problem">{{ problem }}</p>
 }
+@if (refused(); as refused) {
+  <p class="refused" data-testid="folder-picker-refused">{{ refused }}</p>
+}
 <div class="glz-row glz-gap-2">
   <button
     #useButton

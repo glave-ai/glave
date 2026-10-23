@@ -104,6 +104,8 @@ pub(crate) struct Setup {
     pub model: Option<ScriptedModel>,
     /// Tools beside the built-in ones.
     pub tools: Vec<Arc<dyn ToolSource>>,
+    /// Variables its computer gives in place of this process's, such as its `HOME`.
+    pub variables: Vec<(String, PathBuf)>,
 }
 
 impl Setup {
@@ -135,6 +137,7 @@ impl Setup {
             leases: None,
             model: None,
             tools: Vec::new(),
+            variables: Vec::new(),
         }
     }
 
@@ -181,8 +184,16 @@ impl Setup {
             None => provider,
         };
         let seen = provider.seen();
-        let computers = LocalComputers::for_here(std::env::vars_os())
-            .with_scratch(dir.with_extension("scratch"));
+        let given = self.variables;
+        let environment = std::env::vars_os()
+            .filter(|(name, _)| !given.iter().any(|(set, _)| name == set.as_str()))
+            .chain(
+                given
+                    .iter()
+                    .map(|(name, value)| (name.into(), value.into())),
+            );
+        let computers =
+            LocalComputers::for_here(environment).with_scratch(dir.with_extension("scratch"));
         let computers = match &self.worktrees {
             Some(base) => computers.with_worktrees(base),
             None => computers,

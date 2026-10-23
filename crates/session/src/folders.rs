@@ -19,6 +19,7 @@ use glave_ports::{
     BlobStore, Caller, EventLog, FolderKey, ModelProvider, Project, ProjectId, ProjectKind, Scope,
 };
 
+use crate::never::{NeverAProject, never_a_project};
 use crate::protocol::{ApiError, NewFolder, ProjectFolder, Reply, code};
 use crate::providers::local;
 use crate::server::Server;
@@ -319,6 +320,9 @@ where
                     .look(&path)
                     .await
                     .map_err(|error| no_folder(&path, &error))?;
+                if let Some(never) = self.never_here(&looked.root).await {
+                    return Err(ApiError::new(code::INVALID_PARAMS, never));
+                }
                 let source = source_of(&looked);
                 Ok((looked.root, source))
             }
@@ -378,10 +382,42 @@ where
         let parent = Path::new(&inside.root)
             .parent()
             .map(|parent| parent.to_string_lossy().into_owned());
+        let refused = self.never_here(&inside.root).await.map(Into::into);
         Ok(Reply::Folders {
             path: inside.root,
             parent,
             folders: inside.folders,
+            refused,
+        })
+    }
+
+    /// Why the folder at `root` on this server's computer, links followed, is never a project,
+    /// if it is not one: its home folder, a folder above it, or its temporary folder
+    /// ([`never_a_project`]), each as that computer resolves it.
+    async fn never_here(&self, root: &str) -> Option<Sentence> {
+        let workspace = self.inner.harness.workspace();
+        let info = workspace.info();
+        let resolved = async |path: &str| {
+            workspace
+                .look(path)
+                .await
+                .map_or_else(|_| path.to_owned(), |looked| looked.root)
+        };
+        let home = match &info.home {
+            Some(home) => Some(resolved(home).await),
+            None => None,
+        };
+        // The temporary folder a program there is given when the computer names none.
+        let temporary = resolved(info.temp.as_deref().unwrap_or("/tmp")).await;
+        let never = never_a_project(
+            Path::new(root),
+            home.as_deref().map(Path::new),
+            Path::new(&temporary),
+        )?;
+        Some(match never {
+            NeverAProject::Home => Sentence::HomeHoldsChats,
+            NeverAProject::AboveHome => Sentence::AboveHome,
+            NeverAProject::Temporary => Sentence::TemporaryFolder,
         })
     }
 }

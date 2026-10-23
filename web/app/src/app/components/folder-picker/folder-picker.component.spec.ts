@@ -33,7 +33,15 @@ function listed(params: unknown): unknown {
     });
   }
   const parent = path === '/' ? null : path.slice(0, path.lastIndexOf('/')) || '/';
-  return { path, parent, folders };
+  return { path, parent, folders, ...refusing(path) };
+}
+
+/** What the server says of a folder that is never a project's: the home folder and above. */
+function refusing(path: string): { readonly refused?: string } {
+  if (path === '/Users/ana') {
+    return { refused: 'Your home folder holds your Chats: pick a folder inside it.' };
+  }
+  return '/Users/ana'.startsWith(path) ? { refused: 'This folder holds your home folder.' } : {};
 }
 
 /** The folders on a fake Windows computer, by path, under its drive C:. */
@@ -137,8 +145,26 @@ describe('FolderPickerComponent', () => {
 
   it('picks the folder shown', async () => {
     const { root, fixture, picked } = await render('/Users/ana/code');
+    expect(root.querySelector('[data-testid="folder-picker-refused"]')).toBeNull();
     root.querySelector<HTMLButtonElement>('[data-testid="folder-picker-use"]')?.click();
     await settle(fixture);
+    expect(picked).toEqual(['/Users/ana/code']);
+  });
+
+  it('cannot pick a folder the server says is none, says why, and goes into it', async () => {
+    const { root, fixture, picked } = await render();
+    const use = root.querySelector<HTMLButtonElement>('[data-testid="folder-picker-use"]');
+    expect(use?.disabled).toBe(true);
+    expect(root.querySelector('[data-testid="folder-picker-refused"]')?.textContent).toBe(
+      'Your home folder holds your Chats: pick a folder inside it.',
+    );
+    await expectAccessible(root);
+    use?.click();
+    all(root, 'folder-picker-folder')[0]?.click();
+    await settle(fixture);
+    expect(use?.disabled).toBe(false);
+    expect(root.querySelector('[data-testid="folder-picker-refused"]')).toBeNull();
+    use?.click();
     expect(picked).toEqual(['/Users/ana/code']);
   });
 
