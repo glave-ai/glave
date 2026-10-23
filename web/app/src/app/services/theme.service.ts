@@ -24,7 +24,7 @@ export function isChoice(value: unknown): value is ThemeChoice {
 @Service()
 export class ThemeService {
   private readonly document = inject(DOCUMENT);
-  private readonly storage = storageOf(this.document, 'localStorage');
+  private readonly storage = storageOf(this.document);
   private readonly chosen = signal<ThemeChoice>(this.read());
 
   readonly choice = this.chosen.asReadonly();

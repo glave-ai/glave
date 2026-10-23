@@ -2,7 +2,11 @@ import { codeFromFragment } from '@glave/client';
 
 import { type Store, readStored, writeStored } from './storage';
 
-/** Where this tab keeps its browser session: never in a URL, a cookie or a log. */
+/**
+ * Where this browser keeps its session, for every tab of this origin alone: never in a URL, a
+ * cookie or a log. A cookie would go to every port of this computer's loopback; this origin's
+ * storage is read by its own pages alone.
+ */
 export const TOKEN_KEY = 'glave-session';
 
 /** A browser session, and the id of the server that made it: it is presented to no other. */
@@ -43,13 +47,13 @@ export function takeCode(place: LinkPlace, link: 'code' | 'setup'): string | nul
   return code;
 }
 
-/** The session this tab kept, if it kept one. */
+/** The session this browser kept, if it kept one. */
 export function readSession(storage: Store): BrowserSession | null {
   const kept = readStored(storage, TOKEN_KEY);
   return isSession(kept) ? kept : null;
 }
 
-/** Keeps `session` for this tab; without storage it lasts for this page. */
+/** Keeps `session` for this browser; without storage it lasts for this page. */
 export function keepSession(storage: Store, session: BrowserSession): void {
   writeStored(storage, TOKEN_KEY, session);
 }

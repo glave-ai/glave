@@ -13,7 +13,7 @@ const KEY = 'glave-recent-models';
  */
 @Service()
 export class RecentModelsService {
-  private readonly storage = storageOf(inject(DOCUMENT), 'localStorage');
+  private readonly storage = storageOf(inject(DOCUMENT));
   private readonly ids = signal<readonly string[]>(toRecent(readStored(this.storage, KEY)));
 
   /** The recent models' ids, at most `RECENT_MODELS`. */

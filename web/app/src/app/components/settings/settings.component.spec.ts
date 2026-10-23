@@ -57,7 +57,7 @@ describe('SettingsComponent', () => {
     await fixture.whenStable();
     expect(fake.paramsOf('signin/end_others')).toEqual([{}]);
     expect(root.querySelector('[data-testid="settings-signed-out-others"]')?.textContent).toContain(
-      'This tab stays signed in.',
+      'This one stays signed in.',
     );
     expect(TestBed.inject(SessionService).signedIn()).toBe(true);
     await expectAccessible(root);

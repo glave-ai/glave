@@ -12,7 +12,7 @@ const KEY = 'glave-nav-lists';
  */
 @Service()
 export class NavListsService {
-  private readonly storage = storageOf(inject(DOCUMENT), 'localStorage');
+  private readonly storage = storageOf(inject(DOCUMENT));
   private readonly lists = signal(toNavLists(readStored(this.storage, KEY)));
 
   /** The lists closed, by key (`PROJECTS_LIST`, `CHATS_LIST` or a project's id). */

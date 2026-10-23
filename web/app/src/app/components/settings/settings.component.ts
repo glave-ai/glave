@@ -40,7 +40,7 @@ import { PageHeaderComponent } from '../page-header/page-header.component';
  * Settings: the theme, the model accounts (add, change, remove), the connected accounts git
  * signs in with, memory (its own page), the passkeys that sign the person in where glave is
  * reached from elsewhere, whether their own computer stays awake while glave works, the
- * server, signing this tab or every other browser out. A link to `#accounts` scrolls to the
+ * server, signing this browser or every other out. A link to `#accounts` scrolls to the
  * connected accounts.
  */
 @Component({
@@ -85,9 +85,9 @@ export class SettingsComponent {
     memoryOpen: $localize`:@@settings.memoryOpen:Open memory`,
     server: $localize`:@@settings.server:This server`,
     serverUnknown: $localize`:@@settings.serverUnknown:Reading…`,
-    signOut: $localize`:@@settings.signOut:Sign out of this tab`,
+    signOut: $localize`:@@settings.signOut:Sign out of this browser`,
     signOutOthers: $localize`:@@settings.signOutOthers:Sign out other browsers`,
-    signedOutOthers: $localize`:@@settings.signedOutOthers:Every other browser is signed out. This tab stays signed in.`,
+    signedOutOthers: $localize`:@@settings.signedOutOthers:Every other browser is signed out. This one stays signed in.`,
     signOutOthersFailed: $localize`:@@settings.signOutOthersFailed:Other browsers could not be signed out. Try again.`,
   } as const;
   protected readonly themes = [

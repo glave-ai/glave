@@ -19,8 +19,8 @@ export function passkeyRefused(): string {
 
 /**
  * Passkeys, where glave is reached from elsewhere: making the first with a setup link and
- * signing in with one, which begin the tab's session; then the person's passkeys, adding one
- * on this device, and removing one, which signs out the browsers it signed in. Each says
+ * signing in with one, which begin the browser's session; then the person's passkeys, adding
+ * one on this device, and removing one, which signs out the browsers it signed in. Each says
  * `null` when it did, else why not, in a sentence: the server's when it refused.
  */
 @Service()
@@ -32,7 +32,7 @@ export class PasskeysService {
   /** The person's passkeys, oldest first, as the server last listed them. */
   readonly passkeys = this.listed.asReadonly();
 
-  /** Makes a passkey on this device with the tab's setup link, and signs the tab in with it. */
+  /** Makes a passkey on this device with the tab's setup link, and signs the browser in. */
   async make(): Promise<string | null> {
     const code = this.session.setupCode();
     if (code === null) {
@@ -49,7 +49,7 @@ export class PasskeysService {
     });
   }
 
-  /** Signs the tab in with a passkey on this device. */
+  /** Signs the browser in with a passkey on this device. */
   async signIn(): Promise<string | null> {
     return this.asking(async () => {
       const asked = await this.session.call('passkey/get_options', {});
