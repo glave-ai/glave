@@ -222,7 +222,7 @@ fn a_server_reached_only_here_offers_links_alone() {
 }
 
 /// A browser on this computer, on a page at `http://localhost:<port>`, its requests reaching
-/// the listener at [::1] beside 127.0.0.1's, as a browser trying that address first does.
+/// the listener at ::1 beside 127.0.0.1's, as a browser trying that address first does.
 fn browser_here(served: &Served, token: Option<String>) -> Web {
     let port = served.address.port();
     Web::new(served, token)

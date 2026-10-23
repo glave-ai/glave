@@ -49,7 +49,7 @@ static BUILT_IN: Option<Files> = include!(concat!(env!("OUT_DIR"), "/app.rs"));
 /// The HTTP listener, bound, with its address and token written for programs here to find,
 /// and the listener for HTTPS of glave's own beside it, with what it serves HTTPS with.
 pub(crate) struct Http {
-    /// One address, or 127.0.0.1 and [::1] at one port.
+    /// One address, or 127.0.0.1 and ::1 at one port.
     listeners: Vec<TcpListener>,
     secure: Option<(TcpListener, Arc<glave_acme::Https<crate::data::DataLog>>)>,
     signin: SignIn,
@@ -295,7 +295,7 @@ pub(crate) fn keep(path: &Path, contents: &str) -> anyhow::Result<()> {
         .with_context(|| format!("could not write {}", path.display()))
 }
 
-/// A listener at [::1] beside one `bound` at 127.0.0.1, at the same port, so `localhost`, which
+/// A listener at ::1 beside one `bound` at 127.0.0.1, at the same port, so `localhost`, which
 /// stands for both, reaches this server alone; none for any other, or when that is taken.
 async fn beside(bound: SocketAddr) -> Option<TcpListener> {
     if bound.ip() != IpAddr::V4(Ipv4Addr::LOCALHOST) {

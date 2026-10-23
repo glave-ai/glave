@@ -95,7 +95,7 @@ pub(crate) fn loopback() -> SocketAddr {
     SocketAddr::from((Ipv4Addr::LOCALHOST, port))
 }
 
-/// `port` (any free one for 0) when it is free at 127.0.0.1 and at [::1], or this computer has
+/// `port` (any free one for 0) when it is free at 127.0.0.1 and at ::1, or this computer has
 /// no IPv6 loopback.
 fn free_here(port: u16) -> Option<u16> {
     let v4 = TcpListener::bind((Ipv4Addr::LOCALHOST, port)).ok()?;

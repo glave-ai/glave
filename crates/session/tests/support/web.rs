@@ -151,7 +151,7 @@ impl Web {
         self
     }
 
-    /// This client's requests go to `url`, such as the listener at [::1] beside 127.0.0.1's.
+    /// This client's requests go to `url`, such as the listener at ::1 beside 127.0.0.1's.
     pub(crate) fn via(mut self, url: &str) -> Self {
         url.clone_into(&mut self.url);
         self
