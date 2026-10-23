@@ -2,8 +2,10 @@
 //! (`specs/one-server.md`, "The CLI as a client"): the folder's project, asked about once when
 //! it is new; the thread; what its project asks to be trusted; then the turn, followed with the
 //! code that follows a server elsewhere. With no one at the terminal, nothing is asked: the
-//! folder becomes a project, and the turn is answered by no one. `glave` alone finds the
-//! folder's project the same way (`app.rs`).
+//! folder becomes a project, since a script that runs a turn in it has chosen it, and the turn
+//! is answered by no one. `glave` alone (`app.rs`), tasks and schedules (`tasks.rs`) find the
+//! folder's project the same way, though with no one at the terminal they make none; the
+//! commands that list find it, making nothing.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -19,14 +21,21 @@ use crate::input::Input;
 use crate::socket::Connection;
 use crate::terminal::Printer;
 
+/// What a command that finds no project for its folder says.
+pub(crate) const NO_PROJECT: &str = "this folder isn't a glave project";
+
+/// What a command that starts work says when the person would not make its folder a project.
+pub(crate) const DECLINED: &str = "nothing was made, and nothing ran";
+
 /// Where the folder's threads go.
 pub(crate) enum Here {
     /// Its project.
     Project(ProjectId),
     /// The person's Chats: the home folder, the folders above it, the temporary folder.
     Chats,
-    /// The person said not to make the folder a project: it stays as it is.
-    Declined,
+    /// No project: the folder leads to none, and none was made, as the person said, or as no
+    /// one was asked.
+    NoProject,
 }
 
 /// Runs the turn or goal `args` ask for through the person's server at `server`; `terminal`
@@ -42,9 +51,11 @@ pub(crate) async fn run(
     let project = match here(session, &folder, terminal, &input).await? {
         Here::Project(project) => Some(project),
         Here::Chats => None,
+        // A script that runs a turn in the folder has chosen it.
+        Here::NoProject if !terminal => Some(made(session, &root(&folder)?).await?),
         // The turn was asked for in this folder, and has nowhere else to work.
-        Here::Declined => {
-            eprintln!("glave: nothing was made, and nothing ran");
+        Here::NoProject => {
+            eprintln!("glave: {DECLINED}");
             return Ok(ExitCode::SUCCESS);
         }
     };
@@ -87,36 +98,62 @@ pub(crate) async fn run(
     Ok(code)
 }
 
-/// Where `folder`'s threads go: its project, found by the server; for a folder that leads to
-/// none, a project made now, after asking once when someone is at the terminal, or
-/// `Here::Declined` when they say no, with nothing printed: the caller says what follows.
+/// What a command does in a folder that is no project: one that lists lists nothing, and says
+/// so; one that changes something changes nothing, and is refused.
+pub(crate) fn no_project(listing: bool) -> anyhow::Result<()> {
+    if listing {
+        eprintln!("glave: {NO_PROJECT}");
+        return Ok(());
+    }
+    bail!(
+        "{NO_PROJECT}, so nothing was changed: run this in one of your projects' folders, or \
+         in your home folder for your Chats"
+    )
+}
+
+/// Where `folder`'s threads go, making nothing: the person's Chats where the folder its
+/// project would have ([`root`]) is never a project ([`crate::projects::never_a_project`]);
+/// else its project, as the server finds it; else `Here::NoProject`.
+pub(crate) async fn found(session: Session<'_>, folder: &Path) -> anyhow::Result<Here> {
+    let root = root(folder)?;
+    if crate::projects::never_a_project(&root) {
+        return Ok(Here::Chats);
+    }
+    let path = root.to_string_lossy().into_owned();
+    let found = session.request(Request::ProjectFind { path }).await?;
+    if let Reply::Projects { projects, .. } = found
+        && let Some(project) = projects.first()
+    {
+        return Ok(Here::Project(project.id));
+    }
+    Ok(Here::NoProject)
+}
+
+/// Where `folder`'s threads go, as [`found`] finds it; for a folder that leads to no project, a
+/// project made once the person says yes at the terminal. `Here::NoProject` when they say no,
+/// or no one is at the terminal to ask, with nothing printed: the caller says what follows.
 pub(crate) async fn here(
     session: Session<'_>,
     folder: &Path,
     terminal: bool,
     input: &Input,
 ) -> anyhow::Result<Here> {
-    let folder = std::fs::canonicalize(folder).unwrap_or_else(|_| folder.to_owned());
-    if never_a_project(&folder) {
-        return Ok(Here::Chats);
+    let found = found(session, folder).await?;
+    if !matches!(found, Here::NoProject) || !terminal {
+        return Ok(found);
     }
-    let root = glave_config::policy::Locations::here(&crate::home::folder()?, &folder).root;
+    let root = root(folder)?;
+    eprint!("Make {} a glave project? [y/N] ", shown(&root));
+    crate::terminal::flush();
+    if !yes(input.line().await) {
+        return Ok(Here::NoProject);
+    }
+    made(session, &root).await.map(Here::Project)
+}
+
+/// The project whose folder is `root`, made now.
+async fn made(session: Session<'_>, root: &Path) -> anyhow::Result<ProjectId> {
     let path = root.to_string_lossy().into_owned();
-    let found = session
-        .request(Request::ProjectFind { path: path.clone() })
-        .await?;
-    if let Reply::Projects { projects, .. } = found
-        && let Some(project) = projects.first()
-    {
-        return Ok(Here::Project(project.id));
-    }
-    if terminal {
-        eprint!("Make {} a glave project? [y/N] ", shown(&root));
-        crate::terminal::flush();
-        if !yes(input.line().await) {
-            return Ok(Here::Declined);
-        }
-    }
     let name = root
         .file_name()
         .map_or_else(|| path.clone(), |name| name.to_string_lossy().into_owned());
@@ -126,18 +163,15 @@ pub(crate) async fn here(
         folder: Some(NewFolder::Path { path }),
     };
     match session.request(created).await? {
-        Reply::Project { project, .. } => Ok(Here::Project(project.id)),
+        Reply::Project { project, .. } => Ok(project.id),
         other => bail!("glave answered project/create with {other:?}"),
     }
 }
 
-/// Whether `folder` is never a project, and its threads chats: the home folder, a folder above
-/// it, or the temporary folder.
-fn never_a_project(folder: &Path) -> bool {
-    let canonical = |path: PathBuf| std::fs::canonicalize(&path).unwrap_or(path);
-    let home = std::env::var_os("HOME").map(|home| canonical(PathBuf::from(home)));
-    let temporary = canonical(std::env::temp_dir());
-    home.is_some_and(|home| home.starts_with(folder)) || folder == temporary
+/// The folder `folder`'s project has: the repository around it, or `folder` itself.
+fn root(folder: &Path) -> anyhow::Result<PathBuf> {
+    let folder = std::fs::canonicalize(folder).unwrap_or_else(|_| folder.to_owned());
+    Ok(glave_config::policy::Locations::here(&crate::home::folder()?, &folder).root)
 }
 
 /// `folder` with the home folder as `~`, as the person knows it.
@@ -247,18 +281,5 @@ mod tests {
     fn only_a_clear_yes_says_yes() {
         assert!(yes(Some("y".into())) && yes(Some(" Yes ".into())));
         assert!(!yes(Some(String::new())) && !yes(Some("no".into())) && !yes(None));
-    }
-
-    #[test]
-    fn the_root_and_the_temporary_folder_are_never_projects() {
-        assert!(never_a_project(Path::new("/")));
-        let temporary = std::fs::canonicalize(std::env::temp_dir()).unwrap();
-        assert!(never_a_project(&temporary));
-        let inside = glave_ports::testing::TempDir::new("never-a-project").unwrap();
-        let inside = std::fs::canonicalize(&*inside).unwrap();
-        assert!(
-            !never_a_project(&inside),
-            "a folder in the temporary folder may be one"
-        );
     }
 }

@@ -21,7 +21,7 @@ use crate::support::*;
 
 /// `place` where the person's settings answer with the model `m`, ask before commands run,
 /// and title no threads (a title call would take one of the model's replies).
-fn asking(name: &str) -> Place {
+pub(crate) fn asking(name: &str) -> Place {
     let place = place(name);
     choose(&place, "model", "\"m\"");
     choose(&place, "approval", "\"ask\"");
@@ -47,7 +47,7 @@ fn with_log(place: &Place, shown: &str) -> String {
 }
 
 /// The person's server in `place`, as a program on this computer reaches it.
-fn api(place: &Place) -> Remote {
+pub(crate) fn api(place: &Place) -> Remote {
     let url = std::fs::read_to_string(place.home.join("serve.url")).unwrap();
     let token = std::fs::read_to_string(place.home.join("serve.token")).unwrap();
     Remote::new(url.trim(), token.trim().to_owned()).unwrap()
