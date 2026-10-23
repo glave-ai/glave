@@ -36,12 +36,16 @@ function listed(params: unknown): unknown {
   return { path, parent, folders, ...refusing(path) };
 }
 
+/** What the server says of the home folder, in its own words. */
+const HOME_REFUSED =
+  "your home folder holds your Chats, so it is no project's folder: pick a folder inside it";
+
 /** What the server says of a folder that is never a project's: the home folder and above. */
 function refusing(path: string): { readonly refused?: string } {
   if (path === '/Users/ana') {
-    return { refused: 'Your home folder holds your Chats: pick a folder inside it.' };
+    return { refused: HOME_REFUSED };
   }
-  return '/Users/ana'.startsWith(path) ? { refused: 'This folder holds your home folder.' } : {};
+  return '/Users/ana'.startsWith(path) ? { refused: 'this folder holds your home folder' } : {};
 }
 
 /** The folders on a fake Windows computer, by path, under its drive C:. */
@@ -140,7 +144,9 @@ describe('FolderPickerComponent', () => {
     expect(fake.paramsOf('folder/list').at(-1)).toEqual({ path: '/' });
     expect(texts(root, 'folder-picker-crumb')).toEqual([]);
     expect(texts(root, 'folder-picker-folder')).toEqual(['Users']);
-    expect(announce).toHaveBeenLastCalledWith('This computer, 1 folder');
+    expect(announce).toHaveBeenLastCalledWith(
+      'This computer, 1 folder. This folder holds your home folder.',
+    );
   });
 
   it('picks the folder shown', async () => {
@@ -155,14 +161,17 @@ describe('FolderPickerComponent', () => {
     const { root, fixture, picked } = await render();
     const use = root.querySelector<HTMLButtonElement>('[data-testid="folder-picker-use"]');
     expect(use?.disabled).toBe(true);
-    expect(root.querySelector('[data-testid="folder-picker-refused"]')?.textContent).toBe(
-      'Your home folder holds your Chats: pick a folder inside it.',
+    const refused = root.querySelector('[data-testid="folder-picker-refused"]');
+    expect(refused?.textContent.trim()).toBe(
+      "Your home folder holds your Chats, so it is no project's folder: pick a folder inside it.",
     );
+    expect(use?.getAttribute('aria-describedby')).toBe(refused?.id);
     await expectAccessible(root);
     use?.click();
     all(root, 'folder-picker-folder')[0]?.click();
     await settle(fixture);
     expect(use?.disabled).toBe(false);
+    expect(use?.hasAttribute('aria-describedby')).toBe(false);
     expect(root.querySelector('[data-testid="folder-picker-refused"]')).toBeNull();
     use?.click();
     expect(picked).toEqual(['/Users/ana/code']);

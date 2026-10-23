@@ -248,7 +248,7 @@ Standard codes, `-32700` to `-32603`, for malformed messages; a method the serve
 
 ## Languages
 
-The server writes its own sentences (why a request was refused, the folder-gone notice) in the caller's language, as the web app writes its own words in the reader's.
+The server writes its own sentences (why a request was refused, the folder-gone notice, why a folder is no project's) in the caller's language, as the web app writes its own words in the reader's.
 
 - **Which language.** The one the caller chose (`language/set`, a BCP 47 tag; `null` to follow their client again), kept in their settings ledger as `language.set` (`events.md`), so every server on one store reads the same choice; else the first language their client asks for that the server writes in (`Accept-Language`, by weight), by its whole tag or its language alone (`en-GB` reads English); else English. A local program's client asks for none, so the person's choice or English.
 - **Where.** A sentence is written in English where it is made, so what is logged, kept in the log or read by the model reads the same everywhere, and written again in the caller's language where a transport answers: stdio, a Unix socket, HTTP. In process (the CLI, the harness) it stays English. The caller's choice is read only for an answer that holds a sentence of the server's own, and once as a stream starts over HTTP, for the answer it ends with.

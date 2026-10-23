@@ -26,6 +26,7 @@ import {
 import { ChevronRight, Folder, HardDrive } from 'lucide';
 
 import { crumbs, folderCount, folderName, joinPath, projectProblem } from '../../lib/projects';
+import { sentence } from '../../lib/text';
 import { SessionService } from '../../services/session.service';
 
 /**
@@ -92,7 +93,14 @@ export class FolderPickerComponent {
     return $localize`:@@folderPicker.foldersIn:Folders in ${folder}:FOLDER:`;
   });
   /** Why the folder shown is no project's folder, when the server says it is none. */
-  protected readonly refused = computed(() => this.listing()?.refused ?? null);
+  protected readonly refused = computed(() => {
+    const refused = this.listing()?.refused;
+    return refused === undefined || refused === null ? null : sentence(refused);
+  });
+  /** What says why Use this folder can't be used, for those who hear it. */
+  protected readonly describedBy = computed(() =>
+    this.refused() === null ? null : 'folder-picker-refused',
+  );
   protected readonly cannotUse = computed(
     () => this.listing() === null || this.busy() || this.refused() !== null,
   );
@@ -143,9 +151,9 @@ export class FolderPickerComponent {
       if (moving) {
         const folder = this.shownName(listing.path);
         const count = folderCount(listing.folders.length, this.locale);
-        void this.announcer.announce(
-          $localize`:@@folderPicker.moved:${folder}:FOLDER:, ${count}:FOLDERS:`,
-        );
+        const moved = $localize`:@@folderPicker.moved:${folder}:FOLDER:, ${count}:FOLDERS:`;
+        const refused = this.refused();
+        void this.announcer.announce(refused === null ? moved : `${moved}. ${refused}`);
       }
       if (focusIn) {
         afterNextRender(() => this.focusIn(), { injector: this.injector });

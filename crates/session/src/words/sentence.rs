@@ -174,7 +174,7 @@ sentences! {
     HomeHoldsChats = "home-holds-chats"
         "your home folder holds your Chats, so it is no project's folder: pick a folder inside it",
     AboveHome = "above-home"
-        "this folder holds your home folder, so it is no project's folder: pick a folder inside your home folder",
+        "this folder holds your home folder, so it is no project's folder: pick a folder inside your home folder, or another",
     TemporaryFolder = "temporary-folder"
         "this is the computer's temporary folder, which it empties, so it is no project's folder: pick another folder",
     FolderNotMade { reason: String } = "folder-not-made" "could not make the folder: { $reason }",

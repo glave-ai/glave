@@ -12,9 +12,13 @@ const FOLDERS: Readonly<Record<string, readonly string[]>> = {
   [`${HOME}/Documents`]: [],
 };
 
-/** What the server says of the home folder, which is never a project's. */
+/** What the server says of the home folder, which is never a project's, in its own words. */
+const HOME_SAID =
+  "your home folder holds your Chats, so it is no project's folder: pick a folder inside it";
+
+/** How the app writes it. */
 export const HOME_REFUSED =
-  'Your home folder holds your Chats, so it is no project’s folder: pick a folder inside it.';
+  "Your home folder holds your Chats, so it is no project's folder: pick a folder inside it.";
 
 /**
  * The folders inside `path`, as `folder/list` answers: the home folder and those above it say
@@ -28,9 +32,9 @@ export function listFolders(path: string): unknown {
   const parent = path === '/' ? null : path.slice(0, path.lastIndexOf('/')) || '/';
   const refused =
     path === HOME
-      ? HOME_REFUSED
+      ? HOME_SAID
       : HOME.startsWith(path)
-        ? 'This folder holds your home folder, so it is no project’s folder.'
+        ? "this folder holds your home folder, so it is no project's folder"
         : null;
   return { path, parent, folders, ...(refused === null ? {} : { refused }) };
 }

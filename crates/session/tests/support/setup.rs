@@ -1,6 +1,7 @@
 //! A session server for a test, built from a `Setup` over a real temporary folder, and a log
 //! two servers can share.
 
+use std::ffi::OsString;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -184,16 +185,8 @@ impl Setup {
             None => provider,
         };
         let seen = provider.seen();
-        let given = self.variables;
-        let environment = std::env::vars_os()
-            .filter(|(name, _)| !given.iter().any(|(set, _)| name == set.as_str()))
-            .chain(
-                given
-                    .iter()
-                    .map(|(name, value)| (name.into(), value.into())),
-            );
-        let computers =
-            LocalComputers::for_here(environment).with_scratch(dir.with_extension("scratch"));
+        let computers = LocalComputers::for_here(environment(&self.variables))
+            .with_scratch(dir.with_extension("scratch"));
         let computers = match &self.worktrees {
             Some(base) => computers.with_worktrees(base),
             None => computers,
@@ -286,6 +279,18 @@ async fn keep_folder<L: EventLog>(log: &L, home: Scope, info: &WorkspaceInfo) {
         by: None,
     };
     let _ = log.append(&home, &[encode(header, &set).unwrap()]).await;
+}
+
+/// This process's variables, with `given` in place of its own of the same names.
+fn environment(given: &[(String, PathBuf)]) -> Vec<(OsString, OsString)> {
+    std::env::vars_os()
+        .filter(|(name, _)| !given.iter().any(|(set, _)| name == set.as_str()))
+        .chain(
+            given
+                .iter()
+                .map(|(name, value)| (name.into(), value.into())),
+        )
+        .collect()
 }
 
 /// The server of `Setup::asking`.
