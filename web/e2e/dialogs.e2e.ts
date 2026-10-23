@@ -61,7 +61,7 @@ const DIALOGS: readonly Dialog[] = [
     from: '/memory',
     opener: 'memory-forget',
     dialog: 'memory-forget-confirm',
-    shows: ['memory-forget-confirm-cancel', 'memory-forget-confirm-ok'],
+    shows: ['memory-forget-chat', 'memory-forget-confirm-cancel', 'memory-forget-confirm-ok'],
   },
 ];
 

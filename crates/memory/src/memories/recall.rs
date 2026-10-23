@@ -16,7 +16,7 @@ use glave_event::{
 use glave_ports::memories::{MemoryContext, MemoryError};
 use glave_ports::search::{Found, query_terms, searchable_body, terms};
 use glave_ports::stream::Reserved;
-use glave_ports::{EventLog, Scope};
+use glave_ports::{EventLog, Scope, Standing};
 
 use super::{Memories, storage};
 use crate::book::Book;
@@ -113,13 +113,17 @@ impl<L: EventLog + 'static> Memories<L> {
         matches!(deleted, Ok(None))
     }
 
-    /// Whether `thread` is a chat a thread of `on` may read, and not deleted.
-    pub(crate) async fn chat_kept(&self, on: &MemoryContext, thread: ThreadId) -> bool {
+    /// Whether `thread` is a chat started for the person a thread of `on` works for, in a
+    /// project `on` reads, and not deleted: the only chat a forget's result tells of.
+    pub(crate) async fn own_chat(&self, on: &MemoryContext, thread: ThreadId) -> bool {
+        let Some(person) = on.person else {
+            return false;
+        };
         let readable = self.rules().readable(on.person, on.scope);
         for ledger in ledgers(&readable) {
-            let read = self.inner.log.read(&ledger, thread, None, 1).await;
-            if read.is_ok_and(|events| !events.is_empty()) {
-                return self.kept(ledger, thread).await;
+            if let Ok(Some(view)) = self.inner.log.thread_view(&ledger, thread).await {
+                let whose = view.for_.and_then(|whose| whose.id);
+                return view.standing != Standing::Deleted && whose == Some(person);
             }
         }
         false

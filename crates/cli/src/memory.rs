@@ -249,7 +249,7 @@ async fn through(server: &mut Reached, command: &Command) -> anyhow::Result<()> 
 /// The memories a `memory/*` request answered with.
 fn changed(reply: Reply) -> anyhow::Result<Vec<Remembered>> {
     match reply {
-        Reply::Memories { memories } => Ok(memories),
+        Reply::Memories { memories, .. } => Ok(memories),
         _ => anyhow::bail!("glave answered memory/* with something else"),
     }
 }

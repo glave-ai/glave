@@ -2903,13 +2903,20 @@
         "type": "object"
       },
       "result": {
-        "description": "Memories listed, or the ones a change touched.",
+        "description": "Memories listed, or the ones a change touched. A memory's `source` names the chat it\nwas saved in only when that chat was started for the caller and is still there.",
         "properties": {
           "memories": {
             "items": {
               "$ref": "#/$defs/Remembered"
             },
             "type": "array"
+          },
+          "thread_kept": {
+            "description": "Why `memory/forget` deleted no chat with the memory, though asked to: the server's\nsentence. Only a chat of the caller's own goes with its memory.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -2964,13 +2971,20 @@
         "type": "object"
       },
       "result": {
-        "description": "Memories listed, or the ones a change touched.",
+        "description": "Memories listed, or the ones a change touched. A memory's `source` names the chat it\nwas saved in only when that chat was started for the caller and is still there.",
         "properties": {
           "memories": {
             "items": {
               "$ref": "#/$defs/Remembered"
             },
             "type": "array"
+          },
+          "thread_kept": {
+            "description": "Why `memory/forget` deleted no chat with the memory, though asked to: the server's\nsentence. Only a chat of the caller's own goes with its memory.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -3008,13 +3022,20 @@
         "type": "object"
       },
       "result": {
-        "description": "Memories listed, or the ones a change touched.",
+        "description": "Memories listed, or the ones a change touched. A memory's `source` names the chat it\nwas saved in only when that chat was started for the caller and is still there.",
         "properties": {
           "memories": {
             "items": {
               "$ref": "#/$defs/Remembered"
             },
             "type": "array"
+          },
+          "thread_kept": {
+            "description": "Why `memory/forget` deleted no chat with the memory, though asked to: the server's\nsentence. Only a chat of the caller's own goes with its memory.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -3052,13 +3073,20 @@
         "type": "object"
       },
       "result": {
-        "description": "Memories listed, or the ones a change touched.",
+        "description": "Memories listed, or the ones a change touched. A memory's `source` names the chat it\nwas saved in only when that chat was started for the caller and is still there.",
         "properties": {
           "memories": {
             "items": {
               "$ref": "#/$defs/Remembered"
             },
             "type": "array"
+          },
+          "thread_kept": {
+            "description": "Why `memory/forget` deleted no chat with the memory, though asked to: the server's\nsentence. Only a chat of the caller's own goes with its memory.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -3092,13 +3120,20 @@
         "type": "object"
       },
       "result": {
-        "description": "Memories listed, or the ones a change touched.",
+        "description": "Memories listed, or the ones a change touched. A memory's `source` names the chat it\nwas saved in only when that chat was started for the caller and is still there.",
         "properties": {
           "memories": {
             "items": {
               "$ref": "#/$defs/Remembered"
             },
             "type": "array"
+          },
+          "thread_kept": {
+            "description": "Why `memory/forget` deleted no chat with the memory, though asked to: the server's\nsentence. Only a chat of the caller's own goes with its memory.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -3136,13 +3171,20 @@
         "type": "object"
       },
       "result": {
-        "description": "Memories listed, or the ones a change touched.",
+        "description": "Memories listed, or the ones a change touched. A memory's `source` names the chat it\nwas saved in only when that chat was started for the caller and is still there.",
         "properties": {
           "memories": {
             "items": {
               "$ref": "#/$defs/Remembered"
             },
             "type": "array"
+          },
+          "thread_kept": {
+            "description": "Why `memory/forget` deleted no chat with the memory, though asked to: the server's\nsentence. Only a chat of the caller's own goes with its memory.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [

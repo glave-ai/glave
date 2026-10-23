@@ -79,7 +79,7 @@ export class MemoryComponent {
   protected readonly forgetChat = signal(false);
   protected readonly textMissing = signal(false);
   /** Whether the memory being forgotten was saved in a chat, which can go with it. */
-  protected readonly hasChat = computed(() => this.forgetting()?.source !== undefined);
+  protected readonly hasChat = computed(() => (this.forgetting()?.source ?? null) !== null);
 
   protected readonly rows = computed(() =>
     this.service.memories().map((memory) => ({
@@ -99,6 +99,7 @@ export class MemoryComponent {
       ? null
       : $localize`:@@memory.failed:Something went wrong: ${error}:ERROR:`;
   });
+  protected readonly notice = this.service.notice;
   protected readonly off = computed(() => this.service.state() === 'off');
   protected readonly ready = computed(() => this.service.state() === 'ready');
 

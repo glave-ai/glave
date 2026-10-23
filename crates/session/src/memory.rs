@@ -1,17 +1,19 @@
 //! The person's controls over memory (`specs/memory.md`, "Seeing, editing and forgetting"):
-//! `memory/list`, `save`, `edit`, `move`, `forget` (and, if asked, the thread a memory was saved
-//! in) and `restore`, in the project a request names or the caller's Chats when it names none. The caller decides what may be seen and changed: a project's members may
-//! change its memory, and only the person their own. And what a memory call's result kept by
-//! reference shows the caller, read again as they may read memory.
+//! `memory/list`, `save`, `edit`, `move`, `forget` (with the chat a memory was saved in, when
+//! it is the caller's own and asked for) and `restore`, in the project a request names or the
+//! caller's Chats when it names none. The caller decides what may be seen and changed: a
+//! project's members may change its memory, and only the person their own; a memory names the
+//! chat it was saved in only to the person it was started for. And what a memory call's result
+//! kept by reference shows the caller, read again as they may read memory.
 
 use std::collections::BTreeMap;
 
 use glave_event::{Body, CallId, RawEvent, ThreadId, decode};
 use glave_harness::Change;
-use glave_ports::memories::{Access, Control, MemoryContext, SHOWN};
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope};
+use glave_ports::memories::{Access, Control, MemoryContext, Remembered, SHOWN};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope, Standing};
 
-use crate::protocol::{ApiError, Reply, code};
+use crate::protocol::{ApiError, Reply, Told, code};
 use crate::server::Server;
 use crate::words::Sentence;
 
@@ -22,7 +24,7 @@ where
     B: BlobStore + 'static,
 {
     /// Answers a `memory/*` request for `caller`: `control` on the memory of `project` (their
-    /// Chats when it names none) and the caller's own.
+    /// Chats when it names none) and the caller's own, each memory as they are shown it.
     pub(crate) async fn remember(
         &self,
         caller: &Caller,
@@ -39,15 +41,43 @@ where
             person: caller.person,
             scope,
         };
-        match memory.control(&access, control).await {
-            Ok(memories) => Ok(Reply::Memories { memories }),
-            Err(error) => Err(error.into()),
+        let memories = memory.control(&access, control).await?;
+        let mut shown = Vec::with_capacity(memories.len());
+        for mut memory in memories {
+            if let Some(source) = memory.source
+                && !self.theirs(caller, source.thread).await
+            {
+                memory.source = None;
+            }
+            shown.push(memory);
         }
+        Ok(Reply::Memories {
+            memories: shown,
+            thread_kept: None,
+        })
+    }
+
+    /// Whether `thread` is a chat started for `caller`, in a project they work in, and not
+    /// deleted: the only chat a memory names to them, and the only one that goes with it.
+    async fn theirs(&self, caller: &Caller, thread: ThreadId) -> bool {
+        let (Ok(person), Ok(scope)) =
+            (self.person_of(caller), self.authorize(caller, thread).await)
+        else {
+            return false;
+        };
+        let Ok(Some(view)) = self.inner.harness.log().thread_view(&scope, thread).await else {
+            return false;
+        };
+        let whose = view
+            .for_
+            .and_then(|whose| whose.id)
+            .or_else(|| self.person());
+        view.standing != Standing::Deleted && whose == Some(person)
     }
 
     /// Answers `memory/forget` for `caller`, as [`Server::remember`] does, then, with
-    /// `delete_thread`, deletes the thread the memory was saved in as `thread/delete` does, in
-    /// a project the caller works in; one no longer there is left as it is.
+    /// `delete_thread`, deletes the chat the memory was saved in as `thread/delete` does, when
+    /// it is the caller's own; any other is left as it is, and the answer says so.
     pub(crate) async fn forget(
         &self,
         caller: &Caller,
@@ -56,25 +86,27 @@ where
         delete_thread: bool,
     ) -> Result<Reply, ApiError> {
         let reply = self.remember(caller, project, control).await?;
-        let Reply::Memories { memories } = &reply else {
+        let Reply::Memories { memories, .. } = reply else {
             return Ok(reply);
         };
-        let saved_in = memories.iter().filter_map(|memory| memory.source);
-        for thread in saved_in
-            .filter(|_| delete_thread)
-            .map(|source| source.thread)
-        {
-            let deleted = match self.authorize(caller, thread).await {
-                Ok(_) => self.change(caller, thread, Change::Delete).await,
-                Err(refused) => Err(refused),
-            };
-            if let Err(refused) = deleted
-                && refused.code != code::NO_THREAD
-            {
-                return Err(refused);
+        if !delete_thread {
+            return Ok(Reply::Memories {
+                memories,
+                thread_kept: None,
+            });
+        }
+        let mut deleted = false;
+        for thread in memories.iter().filter_map(saved_in) {
+            match self.change(caller, thread, Change::Delete).await {
+                Ok(_) => deleted = true,
+                Err(gone) if gone.code == code::NO_THREAD => {}
+                Err(refused) => return Err(refused),
             }
         }
-        Ok(reply)
+        Ok(Reply::Memories {
+            memories,
+            thread_kept: (!deleted).then(|| Told::from(Sentence::ThreadKept)),
+        })
     }
 
     /// By call, the words each memory call's result among `events` of `thread` in `scope`
@@ -120,6 +152,11 @@ where
             .filter_map(|(call, words)| Some((call, words?)))
             .collect()
     }
+}
+
+/// The chat `memory` was saved in, as its caller is shown it.
+fn saved_in(memory: &Remembered) -> Option<ThreadId> {
+    memory.source.map(|source| source.thread)
 }
 
 /// What `memory/forget` forgets: one memory, or with `all`, every memory of a scope. Only one

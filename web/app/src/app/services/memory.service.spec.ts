@@ -30,6 +30,19 @@ describe('MemoryService', () => {
     ]);
   });
 
+  it('keeps what the server says of a chat it left as it is', async () => {
+    const said = 'the memory is forgotten, but no chat was deleted';
+    const fake = new FakeSession()
+      .answer('memory/list', { memories: [MEMORY] })
+      .answer('memory/forget', { memories: [MEMORY], thread_kept: said });
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const memory = TestBed.inject(MemoryService);
+    await memory.forget('m1', true);
+    expect(memory.notice()).toBe(said);
+    await memory.refresh();
+    expect(memory.notice()).toBeNull();
+  });
+
   it('says when memory is off for the server', async () => {
     const fake = new FakeSession().answer(
       'memory/list',

@@ -4,12 +4,14 @@
 //! thread and deleted chats left out, untrusted output marked so and counted as untrusted
 //! content read.
 
+use std::sync::Arc;
+
 use glave_event::{
-    Arguments, At, CallId, EventId, Header, MemoryScope, MemorySource, MessageAdded, Part,
-    Principal, RawEvent, Role, Seq, ThreadId, ToolCallCompleted, encode,
+    Arguments, At, CallId, EventId, Header, MemoryScope, MessageAdded, Part, Principal, RawEvent,
+    Role, Seq, ThreadId, ToolCallCompleted, encode,
 };
 use glave_harness::{AllowAll, Cancel, Change, change_standing};
-use glave_memory::{MOST_HITS, Recalled, Remembering, Source, Writer};
+use glave_memory::{MOST_HITS, Recalled, Source, Writer};
 use glave_ports::memories::{FORGET, Memory as _, MemoryContext, RECALL, REMEMBER};
 use glave_ports::{Clock as _, EventLog, Scope};
 use serde_json::json;
@@ -390,52 +392,62 @@ fn a_forgotten_memory_s_chat_is_history_until_it_is_deleted_too() {
 }
 
 /// When the model forgets a memory for the person, its result says the chat the memory was
-/// saved in still mentions it and can be deleted, so the model can tell them; it says nothing of
-/// a chat deleted already.
+/// saved in still mentions it and can be deleted, so the model can tell them. It says nothing of
+/// a chat deleted already, nor of another person's chat.
 #[test]
-fn the_model_s_forget_says_when_the_chat_it_was_saved_in_still_mentions_it() {
+fn the_model_s_forget_tells_of_the_person_s_own_chat_that_still_mentions_it() {
     block_on!(async {
         let kit = Kit::new();
-        let chats = [
-            (thread(1), "my favourite flower is marigold"),
-            (thread(2), "my favourite tree is the oak"),
-        ];
-        let memories = kit.memories(rules(), 1);
-        let mut saved = Vec::new();
-        for (chat, said) in chats {
-            past(&kit, shared(), chat, said, ("ok", false)).await;
-            let writer = Writer {
-                person: Some(person()),
-                scope: shared(),
-                by: Principal::person(person()),
-                source: Some(MemorySource {
-                    thread: chat,
-                    seq: Seq::new(1).unwrap(),
-                }),
-                untrusted_read: false,
-            };
-            let remembered = memories.remember(&writer, said, MemoryScope::Personal, None, true);
-            let Remembering::Saved { memory, .. } = remembered.await.unwrap() else {
-                panic!("forced");
-            };
-            saved.push(memory.memory);
+        let memory = kit.memory(rules(), 2).await;
+        let dir = folder("recall-forget-says");
+        let save = |text: &str| {
+            let args = json!({"text": text, "scope": "project", "force": true});
+            vec![answer(None, vec![(REMEMBER, args)]), said("Saved.")]
+        };
+        let mut someone = settings();
+        someone.person = Some(glave_event::PrincipalId::try_from(uuid(52)).unwrap());
+        let mut chats = Vec::new();
+        for (text, settings) in [
+            ("The favourite flower is marigold", settings()),
+            ("The favourite tree is the oak", settings()),
+            ("The favourite bird is the wren", someone),
+        ] {
+            let (harness, _) = (kit.harness(
+                &dir,
+                save(text),
+                AllowAll,
+                Some(Arc::clone(&memory)),
+                settings,
+            ))
+            .await;
+            let mut chat = harness.start_thread(shared()).await.unwrap();
+            harness
+                .run_turn(&mut chat, text, &Cancel::new(), &mut |_| {})
+                .await
+                .unwrap();
+            chats.push(chat.id);
         }
         let (log, now) = (kit.store.log(), kit.clock.now());
-        change_standing(&log, &shared(), thread(2), now, [7; 10], Change::Delete)
+        change_standing(&log, &shared(), chats[1], now, [7; 10], Change::Delete)
             .await
             .unwrap();
-        let memory = kit.memory(rules(), 2).await;
+        let asking = on(shared(), thread(9));
+        let saved = memory.list(&asking).await.unwrap();
         let mut said = Vec::new();
-        for forgotten in saved {
+        for forgotten in &saved {
             let mut arguments = serde_json::Map::new();
-            arguments.insert("memory".to_owned(), json!(forgotten.to_string()));
-            let (asking, arguments) = (on(shared(), thread(9)), Arguments::Json(arguments));
+            arguments.insert("memory".to_owned(), json!(forgotten.memory.to_string()));
+            let arguments = Arguments::Json(arguments);
             let out = memory.call(&asking, FORGET, &arguments).await;
             said.push(format!("{:?}", out.output.parts));
         }
         let mentions = "The chat it was saved in still mentions it";
-        assert!(said[0].contains(mentions), "{said:?}");
-        assert!(!said[1].contains(mentions), "deleted already: {said:?}");
+        let told: Vec<bool> = said.iter().map(|said| said.contains(mentions)).collect();
+        assert_eq!(
+            told,
+            [true, false, false],
+            "own, deleted, another's: {said:?}"
+        );
     });
 }
 

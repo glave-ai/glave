@@ -899,9 +899,17 @@ export type MemoryEditParams = {
   readonly text: string;
 };
 
-/** Memories listed, or the ones a change touched. */
+/**
+ * Memories listed, or the ones a change touched. A memory's `source` names the chat it
+ * was saved in only when that chat was started for the caller and is still there.
+ */
 export type MemoryEditResult = {
   readonly memories: readonly (Remembered)[];
+  /**
+   * Why `memory/forget` deleted no chat with the memory, though asked to: the server's
+   * sentence. Only a chat of the caller's own goes with its memory.
+   */
+  readonly thread_kept?: string | null;
 };
 
 export type MemoryForgetParams = {
@@ -917,9 +925,17 @@ export type MemoryForgetParams = {
   readonly scope?: MemoryScope | null;
 };
 
-/** Memories listed, or the ones a change touched. */
+/**
+ * Memories listed, or the ones a change touched. A memory's `source` names the chat it
+ * was saved in only when that chat was started for the caller and is still there.
+ */
 export type MemoryForgetResult = {
   readonly memories: readonly (Remembered)[];
+  /**
+   * Why `memory/forget` deleted no chat with the memory, though asked to: the server's
+   * sentence. Only a chat of the caller's own goes with its memory.
+   */
+  readonly thread_kept?: string | null;
 };
 
 export type MemoryListParams = {
@@ -928,9 +944,17 @@ export type MemoryListParams = {
   readonly scope?: MemoryScope | null;
 };
 
-/** Memories listed, or the ones a change touched. */
+/**
+ * Memories listed, or the ones a change touched. A memory's `source` names the chat it
+ * was saved in only when that chat was started for the caller and is still there.
+ */
 export type MemoryListResult = {
   readonly memories: readonly (Remembered)[];
+  /**
+   * Why `memory/forget` deleted no chat with the memory, though asked to: the server's
+   * sentence. Only a chat of the caller's own goes with its memory.
+   */
+  readonly thread_kept?: string | null;
 };
 
 export type MemoryMoveParams = {
@@ -940,9 +964,17 @@ export type MemoryMoveParams = {
   readonly scope: MemoryScope;
 };
 
-/** Memories listed, or the ones a change touched. */
+/**
+ * Memories listed, or the ones a change touched. A memory's `source` names the chat it
+ * was saved in only when that chat was started for the caller and is still there.
+ */
 export type MemoryMoveResult = {
   readonly memories: readonly (Remembered)[];
+  /**
+   * Why `memory/forget` deleted no chat with the memory, though asked to: the server's
+   * sentence. Only a chat of the caller's own goes with its memory.
+   */
+  readonly thread_kept?: string | null;
 };
 
 export type MemoryRestoreParams = {
@@ -951,9 +983,17 @@ export type MemoryRestoreParams = {
   readonly project?: ProjectId | null;
 };
 
-/** Memories listed, or the ones a change touched. */
+/**
+ * Memories listed, or the ones a change touched. A memory's `source` names the chat it
+ * was saved in only when that chat was started for the caller and is still there.
+ */
 export type MemoryRestoreResult = {
   readonly memories: readonly (Remembered)[];
+  /**
+   * Why `memory/forget` deleted no chat with the memory, though asked to: the server's
+   * sentence. Only a chat of the caller's own goes with its memory.
+   */
+  readonly thread_kept?: string | null;
 };
 
 export type MemorySaveParams = {
@@ -963,9 +1003,17 @@ export type MemorySaveParams = {
   readonly text: string;
 };
 
-/** Memories listed, or the ones a change touched. */
+/**
+ * Memories listed, or the ones a change touched. A memory's `source` names the chat it
+ * was saved in only when that chat was started for the caller and is still there.
+ */
 export type MemorySaveResult = {
   readonly memories: readonly (Remembered)[];
+  /**
+   * Why `memory/forget` deleted no chat with the memory, though asked to: the server's
+   * sentence. Only a chat of the caller's own goes with its memory.
+   */
+  readonly thread_kept?: string | null;
 };
 
 export type ModelListParams = Readonly<Record<string, never>>;

@@ -98,7 +98,8 @@ const FORGET: &str = "Forget a memory, by its id (listed with each memory under 
      nothing replaces it. It is erased for good. Only memories can be forgotten: when nothing \
      listed matches, say there is nothing saved to forget.";
 
-/// What the forget's result adds when the chat the memory was saved in is still there.
+/// What the forget's result adds when the memory was saved in a chat of the same person's that is
+/// still there.
 const CHAT_KEPT: &str = "The chat it was saved in still mentions it; the person can delete \
      that chat to remove it there too.";
 
@@ -315,7 +316,7 @@ impl<L: EventLog + 'static> MemoryServer<L> {
         };
         let mut words = format!("Forgot [{memory}].");
         if let Some(source) = forgotten.and_then(|forgotten| forgotten.source)
-            && self.memories.chat_kept(on, source.thread).await
+            && self.memories.own_chat(on, source.thread).await
         {
             words = format!("{words} {CHAT_KEPT}");
         }
