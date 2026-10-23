@@ -56,3 +56,9 @@ global-artifacts-jobs = ["./release-installers"]
 # two of them on macOS, which ci.yml keeps off pull requests. A dry run (above) builds every
 # target, as a release would.
 pr-run-mode = "plan"
+
+# Actions in dist's workflow whose dist default lags the major the other workflows use, each
+# written after the `@` as given. Bumped here by hand (.github/dependabot.yml says why); an
+# entry goes once a dist upgrade's own default reaches it.
+[dist.github-action-commits]
+"actions/checkout" = "v7"
