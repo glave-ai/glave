@@ -3,6 +3,7 @@ import { InjectionToken, Service, inject, signal } from '@angular/core';
 import { ApiError, type PasskeySummary } from '@glave/client';
 
 import { type Authenticator, made, used } from '../lib/passkeys';
+import { type PlatformAuthenticator, platformAuthenticator } from '../lib/platform';
 import { unreached } from '../lib/text';
 import { SessionService } from './session.service';
 
@@ -12,16 +13,46 @@ export const AUTHENTICATOR = new InjectionToken<Authenticator | null>('AUTHENTIC
   factory: () => inject(DOCUMENT).defaultView?.navigator.credentials ?? null,
 });
 
+/** The system the browser runs on, as it names it: its client hints', else `navigator.platform`. */
+export const PLATFORM = new InjectionToken<string>('PLATFORM', {
+  providedIn: 'root',
+  factory: () => {
+    const navigator = inject(DOCUMENT).defaultView?.navigator;
+    const hinted = (navigator as { userAgentData?: { platform?: string } } | undefined)
+      ?.userAgentData?.platform;
+    return hinted ?? navigator?.platform ?? '';
+  },
+});
+
+/** Whether this computer has an authenticator of its own that checks who is there. */
+export const PLATFORM_AUTHENTICATOR = new InjectionToken<() => Promise<boolean>>(
+  'PLATFORM_AUTHENTICATOR',
+  {
+    providedIn: 'root',
+    factory: () => {
+      const credential = inject(DOCUMENT).defaultView?.PublicKeyCredential;
+      return async () => {
+        try {
+          return (await credential?.isUserVerifyingPlatformAuthenticatorAvailable()) ?? false;
+        } catch {
+          return false;
+        }
+      };
+    },
+  },
+);
+
 /** What the person is told when their device makes or uses no passkey: the app's own words. */
 export function passkeyRefused(): string {
   return $localize`:@@passkeys.refused:Your device made or used no passkey. Try again, and allow it when your device asks.`;
 }
 
 /**
- * Passkeys, where glave is reached from elsewhere: making the first with a setup link and
- * signing in with one, which begin the browser's session; then the person's passkeys, adding
- * one on this device, and removing one, which signs out the browsers it signed in. Each says
- * `null` when it did, else why not, in a sentence: the server's when it refused.
+ * Passkeys, where glave is reached from elsewhere or makes them on this computer: making the
+ * first with a setup link and signing in with one, which begin the browser's session; then
+ * the person's passkeys, adding one on this device, and removing one, which signs out the
+ * browsers it signed in. Each says `null` when it did, else why not, in a sentence: the
+ * server's when it refused.
  */
 @Service()
 export class PasskeysService {
@@ -31,6 +62,8 @@ export class PasskeysService {
 
   /** The person's passkeys, oldest first, as the server last listed them. */
   readonly passkeys = this.listed.asReadonly();
+  /** This computer's own authenticator, as its system names it, where glave knows it. */
+  readonly platform: PlatformAuthenticator = platformAuthenticator(inject(PLATFORM));
 
   /** Makes a passkey on this device with the tab's setup link, and signs the browser in. */
   async make(): Promise<string | null> {
@@ -80,6 +113,7 @@ export class PasskeysService {
         return passkeyRefused();
       }
       await this.session.call('passkey/add', { ceremony: asked.ceremony, credential });
+      this.session.madePasskey();
       return this.load();
     });
   }

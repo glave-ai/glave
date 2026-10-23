@@ -6,8 +6,8 @@
     @if (setup()) {
       <p>{{ copy.setupText }}</p>
     } @else if (withPasskey()) {
-      <p>{{ copy.passkeyText }}</p>
-      <p class="hint">{{ copy.passkeyHint }}</p>
+      <p>{{ passkeyText() }}</p>
+      <p class="hint">{{ passkeyHint() }}</p>
     } @else {
       <p>{{ copy.text }}</p>
     }

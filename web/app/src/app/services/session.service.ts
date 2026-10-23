@@ -71,12 +71,27 @@ export class SessionService {
   private readonly session = signal<BrowserSession | null>(inject(INITIAL_SESSION));
   /** How the server signs browsers in, and its id, as it said when the app started. */
   private readonly ways = signal<readonly SignInWay[]>([]);
+  /** Whether people reach the server from elsewhere, at its public origin. */
+  private readonly reachedElsewhere = signal(false);
+  /** Where browsers on this computer make passkeys for it, when it makes them here. */
+  private readonly here = signal<string | null>(null);
   private server: string | undefined;
   private readonly setupLink = signal<string | null>(null);
 
   readonly signedIn = computed(() => this.session() !== null);
-  /** Whether a browser signs in to the server with a passkey: it is reached from elsewhere. */
-  readonly passkeys = computed(() => this.ways().includes('passkey'));
+  /** Whether glave makes passkeys for browsers on this computer, at this page's origin. */
+  readonly passkeysHere = computed(() => this.here() === this.document.location.origin);
+  /**
+   * Whether this page makes passkeys and signs in with them: at the server's public origin, or
+   * on this computer where glave makes them here.
+   */
+  readonly passkeys = computed(
+    () => (this.reachedElsewhere() && this.ways().includes('passkey')) || this.passkeysHere(),
+  );
+  /** Whether a passkey signs this page in now: one exists, or a setup link makes the first. */
+  readonly passkeySignIn = computed(() => this.passkeys() && this.ways().includes('passkey'));
+  /** Whether a passkey for this glave exists, where glave makes them on this computer. */
+  readonly passkeyMade = computed(() => this.ways().includes('passkey'));
   /** The code of the setup link the tab was opened with, until the tab signs in. */
   readonly setupCode = this.setupLink.asReadonly();
   /** Whether the session is with a glave on this computer: a browser session. */
@@ -105,6 +120,8 @@ export class SessionService {
       const discovered = await this.client.call('server/discover', {});
       this.server = discovered.id ?? undefined;
       this.ways.set(discovered.signin ?? []);
+      this.reachedElsewhere.set(typeof discovered.origin === 'string');
+      this.here.set(discovered.here ?? null);
     } catch {
       return;
     }
@@ -165,6 +182,13 @@ export class SessionService {
       }
     }
     this.forget(presented);
+  }
+
+  /** Takes in that this browser made a passkey, which signs browsers in from now on. */
+  madePasskey(): void {
+    if (!this.ways().includes('passkey')) {
+      this.ways.update((ways) => [...ways, 'passkey']);
+    }
   }
 
   /** Signs every other browser out; this one stays signed in. */
