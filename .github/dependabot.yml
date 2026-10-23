@@ -16,6 +16,13 @@ updates:
     open-pull-requests-limit: 2
   - package-ecosystem: github-actions
     directory: /
+    # release.yml is generated (`cargo xtask release-workflow`), so a version update there fails
+    # CI's check of it. dist writes its actions at dist's own defaults unless dist-workspace.toml
+    # pins one ([dist.github-action-commits]), and glave's own steps come from
+    # .github/build-setup.yml. Dependabot reads neither file: both are bumped by hand, security
+    # updates included.
+    exclude-paths:
+      - .github/workflows/release.yml
     schedule:
       interval: weekly
     commit-message:
