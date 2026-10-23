@@ -12,7 +12,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import type { ApprovalMode, AttachedFile, ThreadStartParams } from '@glave/client';
+import type { ApprovalMode, ThreadStartParams } from '@glave/client';
 import {
   GlzAttachmentComponent,
   GlzComposerComponent,
@@ -23,6 +23,7 @@ import {
 import { Folder, Lock, MessageCircle } from 'lucide';
 
 import { AttachmentsService } from '../../services/attachments.service';
+import { FirstTurnService } from '../../services/first-turn.service';
 import { effortToSend } from '../../lib/effort';
 import { ModelsService } from '../../services/models.service';
 import { NavService } from '../../services/nav.service';
@@ -33,17 +34,11 @@ import { EffortPickerComponent } from '../effort-picker/effort-picker.component'
 import { ModelPickerComponent } from '../model-picker/model-picker.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 
-/** The navigation state that carries a new thread's first prompt and its files (never the URL). */
-export interface FirstPrompt {
-  readonly prompt: string;
-  readonly files?: readonly AttachedFile[];
-}
-
 /**
  * A new chat: the question, then the composer that starts a thread, with where it goes (a
  * chat, or a project) in its box, and the approval mode and the model in the quiet line under
- * it. Sending starts the thread there,
- * on the model and in the approval mode picked, and opens it. When glave runs on this
+ * it. Sending starts the thread there, on the model and in the approval mode picked, and its
+ * first turn, and opens the thread at once. When glave runs on this
  * computer, a line under it says what stays private. Opened for a project, the composer takes
  * focus, and the page has Back.
  */
@@ -100,6 +95,7 @@ export class HomeComponent {
   private readonly session = inject(SessionService);
   private readonly projects = inject(ProjectsService);
   private readonly router = inject(Router);
+  private readonly firstTurns = inject(FirstTurnService);
   /** Whether this is a project's page, which has a way back, rather than the Chats. */
   protected readonly inProject = computed(() => {
     const project = this.project();
@@ -167,8 +163,12 @@ export class HomeComponent {
       };
       const { thread } = await this.session.call('thread/start', params);
       const files = this.attachments.attached();
-      const state: FirstPrompt = files.length === 0 ? { prompt } : { prompt, files };
-      await this.router.navigate(['/t', thread.id], { state });
+      this.firstTurns.start({
+        thread: thread.id,
+        prompt,
+        ...(files.length === 0 ? {} : { files }),
+      });
+      await this.router.navigate(['/t', thread.id]);
     } catch (error: unknown) {
       this.draft.set(prompt);
       this.error.set(error instanceof Error ? error.message : String(error));

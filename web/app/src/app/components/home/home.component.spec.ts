@@ -65,7 +65,7 @@ describe('HomeComponent', () => {
     document.body.click();
   });
 
-  it('starts a thread in the personal project and opens it with the prompt in navigation state', async () => {
+  it('starts a thread in the personal project, sends its first turn and opens it at once', async () => {
     const fake = session();
     const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
     const root = await render(fake);
@@ -95,7 +95,11 @@ describe('HomeComponent', () => {
     await send(root, 'Plan the launch');
     await new Promise((resolve) => setTimeout(resolve));
     expect(fake.paramsOf('thread/start')).toEqual([{ project: 'me' }]);
-    expect(navigate).toHaveBeenCalledWith(['/t', 't9'], { state: { prompt: 'Plan the launch' } });
+    expect(fake.paramsOf('turn/start')).toMatchObject([
+      { thread: 't9', prompt: 'Plan the launch' },
+    ]);
+    // Nothing is carried to the thread's page in the history, to send again on a return.
+    expect(navigate).toHaveBeenCalledWith(['/t', 't9']);
     navigate.mockRestore();
   });
 
@@ -189,7 +193,7 @@ describe('HomeComponent', () => {
 });
 
 describe('HomeComponent with files', () => {
-  it('keeps a file where the thread starts and opens the thread with it', async () => {
+  it('keeps a file where the thread starts and sends it with the first turn', async () => {
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: () => 'blob:1' });
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: () => undefined });
     const sha = 'b'.repeat(64);
@@ -214,9 +218,10 @@ describe('HomeComponent with files', () => {
     await expectAccessible(root);
     await send(root, 'Summarize this');
     await new Promise((resolve) => setTimeout(resolve));
-    expect(navigate).toHaveBeenCalledWith(['/t', 't9'], {
-      state: { prompt: 'Summarize this', files: [{ sha256: sha, name: 'notes.txt' }] },
-    });
+    expect(fake.paramsOf('turn/start')).toMatchObject([
+      { thread: 't9', prompt: 'Summarize this', files: [{ sha256: sha, name: 'notes.txt' }] },
+    ]);
+    expect(navigate).toHaveBeenCalledWith(['/t', 't9']);
     navigate.mockRestore();
   });
 });
