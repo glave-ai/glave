@@ -56,19 +56,14 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<ToolOutput, HarnessError> {
-        let waited = step.waited(&call.call_id);
         let Some((memory, on)) = self.memory_for(thread) else {
-            // What it waited for is settled still: a cancel is recorded.
-            if let Some(answered) = waited {
-                self.answered(thread, answered, cancel, live).await?;
-            }
             return Ok(ToolOutput::text(true, "Memory is off here."));
         };
         let name = canonical(&call.tool);
         let summary = glave_ports::describe_call(name, &call.arguments);
         let hooked = ToolHook::of(call, name);
         let writes = name == REMEMBER || name == EDIT_MEMORY;
-        let refused = if let Some(answered) = waited {
+        let refused = if let Some(answered) = step.waited(&call.call_id) {
             // Its hooks ran and it asked before the turn stopped: its answer decides, as it
             // would have the moment it came.
             self.answered(thread, answered, cancel, live).await?

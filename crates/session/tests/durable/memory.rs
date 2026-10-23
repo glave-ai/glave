@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use glave_event::ThreadId;
+use glave_event::{Body, RawEvent, ThreadId, Verdict, decode};
 use glave_memory::{GlaveMemory, Memories, Rules};
 use glave_ports::memories::{Memory, REMEMBER};
 use glave_ports::testing::{CountingEntropy, ManualClock, ScriptedModel};
@@ -88,25 +88,32 @@ async fn waiting_save(dir: &Path, database: &Path) -> ThreadId {
     thread
 }
 
-/// The types of `thread`'s events and how many memories `database` keeps, once `server` is done.
+/// `thread`'s events and how many memories `database` keeps, once `server` is done.
 async fn after(
     server: Tested<SqliteLog>,
     thread: ThreadId,
     database: &Path,
-) -> (Vec<String>, usize) {
+) -> (Vec<RawEvent>, usize) {
     server.stop(Duration::from_secs(3_600)).await;
-    let kinds = (events(&server, thread).await.into_iter())
-        .map(|event| event.kind.as_str().to_owned())
-        .collect();
+    let events = events(&server, thread).await;
     let saved = (memory(database, 3).await.memories())
         .list_as(Some(person()), scope(), None)
         .await
         .unwrap();
-    (kinds, saved.len())
+    (events, saved.len())
 }
 
-fn count(kinds: &[String], kind: &str) -> usize {
-    kinds.iter().filter(|each| *each == kind).count()
+fn count(events: &[RawEvent], kind: &str) -> usize {
+    events
+        .iter()
+        .filter(|each| each.kind.as_str() == kind)
+        .count()
+}
+
+fn ended(events: &[RawEvent]) -> bool {
+    events
+        .last()
+        .is_some_and(|event| event.kind.as_str() == "turn.ended")
 }
 
 /// #584: going on from the log, the save is settled by the answer it waited for, never asked
@@ -120,9 +127,9 @@ fn a_save_after_untrusted_content_waits_and_saves_once_when_allowed_on_another_s
         let second = served(&dir, &database, 2).await;
         let (at, pending) = waiting(&second, thread).await.expect("the save waits");
         second.request(answering(at, pending, false)).await.unwrap();
-        let (kinds, saved) = after(second, thread, &database).await;
-        assert_eq!(count(&kinds, "approval.requested"), 1, "asked once");
-        assert_eq!(kinds.last().map(String::as_str), Some("turn.ended"));
+        let (events, saved) = after(second, thread, &database).await;
+        assert_eq!(count(&events, "approval.requested"), 1, "asked once");
+        assert!(ended(&events), "the turn went on to its end");
         assert_eq!(saved, 1, "saved once");
     });
 }
@@ -139,10 +146,16 @@ fn a_waiting_save_cancelled_on_another_server_is_decided_and_never_runs() {
             .request(Request::TurnCancel { thread })
             .await
             .unwrap();
-        let (kinds, saved) = after(second, thread, &database).await;
-        assert_eq!(count(&kinds, "approval.requested"), 1, "asked once");
-        assert_eq!(count(&kinds, "approval.decided"), 1, "and decided");
-        assert_eq!(kinds.last().map(String::as_str), Some("turn.ended"));
+        let (events, saved) = after(second, thread, &database).await;
+        let decided: Vec<Verdict> = (events.iter())
+            .filter_map(|raw| match decode(raw.clone()).ok()?.body {
+                Body::ApprovalDecided(decided) => Some(decided.decision),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(count(&events, "approval.requested"), 1, "asked once");
+        assert_eq!(decided, [Verdict::Cancelled], "decided cancelled");
+        assert!(ended(&events), "the turn ended");
         assert_eq!(saved, 0, "nothing saved");
     });
 }
