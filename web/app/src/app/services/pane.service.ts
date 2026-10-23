@@ -27,7 +27,7 @@ interface PaneOptions<S extends PaneState> {
  */
 export abstract class PaneService<S extends PaneState> {
   private readonly document = inject(DOCUMENT);
-  private readonly storage = storageOf(this.document, 'localStorage');
+  private readonly storage = storageOf(this.document);
   private readonly apple = onApple(this.document);
 
   /** How the person left it, or the default for someone new. */

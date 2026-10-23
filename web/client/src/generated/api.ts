@@ -1007,7 +1007,10 @@ export type PasskeyCreateParams = {
 export type PasskeyCreateResult = {
   /** The id of the server it is for: the browser presents it to no other. */
   readonly server: string;
-  /** The bearer token the browser signs in with, kept in the tab. */
+  /**
+   * The bearer token the browser signs in with, kept in its origin's storage for every
+   * tab, never in a cookie.
+   */
   readonly session: Secret;
 };
 
@@ -1033,7 +1036,10 @@ export type PasskeyGetParams = {
 export type PasskeyGetResult = {
   /** The id of the server it is for: the browser presents it to no other. */
   readonly server: string;
-  /** The bearer token the browser signs in with, kept in the tab. */
+  /**
+   * The bearer token the browser signs in with, kept in its origin's storage for every
+   * tab, never in a cookie.
+   */
   readonly session: Secret;
 };
 
@@ -1228,7 +1234,10 @@ export type SigninRedeemParams = {
 export type SigninRedeemResult = {
   /** The id of the server it is for: the browser presents it to no other. */
   readonly server: string;
-  /** The bearer token the browser signs in with, kept in the tab. */
+  /**
+   * The bearer token the browser signs in with, kept in its origin's storage for every
+   * tab, never in a cookie.
+   */
   readonly session: Secret;
 };
 

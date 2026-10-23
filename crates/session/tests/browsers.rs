@@ -1,8 +1,8 @@
 //! Signing browsers in on the person's own computer (`specs/one-server.md`, "Finding it"): a
 //! link's code works once, for a session that outlives a restart, is the local person, ends
 //! when the browser signs out, and is this server's and this computer's alone; a foreign
-//! `Host` or `Origin` is refused; and nobody an identity provider signs in gets a session, so their sign-in ends
-//! when the provider stops renewing it (#365).
+//! `Host` or `Origin` is refused, a session's bearer or not; and nobody an identity provider
+//! signs in gets a session, so their sign-in ends when the provider stops renewing it (#365).
 
 use std::path::Path;
 use std::sync::Arc;
@@ -180,19 +180,23 @@ fn a_session_is_one_servers_and_this_computers_alone() {
 }
 
 #[test]
-fn a_foreign_host_or_origin_is_refused() {
+fn a_foreign_host_or_origin_is_refused_even_with_a_session() {
     block_on!(async {
         let dir = folder("browsers-hosts");
         let token = LocalToken::new([7; 32]);
         let served = serve(&dir, browsers(&dir, &fixed_clock()).await, &token).await;
+        let code = link(&served, &token).await;
+        let redeemed = Web::new(&served, None).call(&redeem(&code)).await;
+        let session = redeemed["result"]["session"].as_str().unwrap().to_owned();
         let http = reqwest::Client::new();
-        let discover = json!({"jsonrpc": "2.0", "id": 1, "method": "server/discover"});
+        let listing = json!({"jsonrpc": "2.0", "id": 1, "method": "project/list", "params": {}});
         let port = served.address.port();
         let status = |host: String, origin: Option<String>| {
             let mut request = http
                 .post(&served.url)
                 .header("Host", host)
-                .body(discover.to_string());
+                .bearer_auth(&session)
+                .body(listing.to_string());
             if let Some(origin) = origin {
                 request = request.header("Origin", origin);
             }
@@ -204,9 +208,17 @@ fn a_foreign_host_or_origin_is_refused() {
             status(own.clone(), Some(format!("http://{own}"))).await,
             200
         );
+        // A name rebound to 127.0.0.1; a page of another site, of another port or name of
+        // this computer, or of none.
         assert_eq!(status(format!("rebound.example:{port}"), None).await, 403);
-        let foreign = Some("https://evil.example".to_owned());
-        assert_eq!(status(own.clone(), foreign).await, 403);
+        for page in [
+            "https://evil.example".to_owned(),
+            format!("http://127.0.0.1:{}", port.wrapping_add(1)),
+            format!("http://localhost:{port}"),
+            "null".to_owned(),
+        ] {
+            assert_eq!(status(own.clone(), Some(page.clone())).await, 403, "{page}");
+        }
         let page = http
             .get(&served.url)
             .header("Host", format!("rebound.example:{port}"))

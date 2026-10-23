@@ -224,11 +224,13 @@ function oneDevice(context: BrowserContext, browserName: string): () => Promise<
 /**
  * Signing in from elsewhere with passkeys against a real glave reached at a public origin
  * (`specs/session.md`, "Signing in"): the setup link glave on its computer makes opens a page
- * that makes a passkey on this device and signs the tab in, the link working once; then the
- * passkey signs a new tab in, and Settings lists it.
+ * that makes a passkey on this device and signs the browser in, the link working once; a new
+ * tab is signed in with it, and once signed out the passkey signs it in again, and Settings
+ * lists it.
  */
 test('a setup link makes a passkey here, and the passkey signs the browser in again', async ({
   context,
+  browser,
   browserName,
 }) => {
   await tunnel(context);
@@ -248,12 +250,14 @@ test('a setup link makes a passkey here, and the passkey signs the browser in ag
   await byTestId(page, 'sign-in-passkey').click();
   await expect(byTestId(page, 'home-composer-input')).toBeVisible();
 
-  // A new tab keeps no session: it signs in with the passkey, and Settings lists it (Chromium's
-  // run and WebKit's each add one to the same glave).
+  // A new tab of the browser is signed in. Signed out, it signs in again with the passkey, and
+  // Settings lists it (Chromium's run and WebKit's each add one to the same glave).
   const again = await tab();
   const problemsAgain = watchForProblems(again);
-  await again.goto(`${PASSKEYS_ORIGIN}/`);
+  await again.goto(`${PASSKEYS_ORIGIN}/settings`);
+  await byTestId(again, 'settings-sign-out').click();
   await expect(byTestId(again, 'sign-in')).toContainText('Sign in to glave');
+  await expect(byTestId(page, 'sign-in')).toBeVisible();
   await expectAccessible(again);
   await byTestId(again, 'sign-in-passkey').click();
   await expect(byTestId(again, 'home-composer-input')).toBeVisible();
@@ -262,11 +266,14 @@ test('a setup link makes a passkey here, and the passkey signs the browser in ag
   await expect(byTestId(again, 'passkeys-passkey').first()).toBeVisible();
   await expectAccessible(again);
 
-  // The setup link is spent.
-  const spent = await tab();
+  // The setup link is spent, for another browser too.
+  const another = await browser.newContext();
+  await tunnel(another);
+  const spent = await oneDevice(another, browserName)();
   const problemsSpent = watchForProblems(spent);
   await spent.goto(`${PASSKEYS_ORIGIN}/#setup=${code}`);
   await byTestId(spent, 'sign-in-passkey').click();
   await expect(byTestId(spent, 'sign-in-problem')).toBeVisible();
   expect([...problems(), ...problemsAgain(), ...problemsSpent()]).toEqual([]);
+  await another.close();
 });

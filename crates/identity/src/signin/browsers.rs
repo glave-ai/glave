@@ -1,7 +1,8 @@
 //! Browser sessions on the person's own server (`specs/one-server.md`, "Finding it"). A
 //! program on this computer signed in as the local person asks for a link; its code, good once
-//! and for five minutes, is traded for a browser session: a bearer token the tab keeps and
-//! sends as a header, never a cookie, good for 30 days from its last use. A server reached
+//! and for five minutes, is traded for a browser session: a bearer token the browser keeps in
+//! its origin's storage, for every tab, and sends as a header, never a cookie, good for 30
+//! days from its last use. A server reached
 //! from elsewhere at a public origin signs browsers there in with passkeys instead
 //! (`passkeys`). Codes are kept in memory, as their SHA-256 alone. Sessions and passkeys are
 //! kept in the store, in the browsers ledger of the person's personal project (glave's own

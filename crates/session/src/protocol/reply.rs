@@ -277,7 +277,8 @@ pub enum Reply {
     /// A browser session, sent once.
     #[schemars(title = "Browser")]
     Browser {
-        /// The bearer token the browser signs in with, kept in the tab.
+        /// The bearer token the browser signs in with, kept in its origin's storage for every
+        /// tab, never in a cookie.
         #[serde(serialize_with = "glave_event::serialize_exposed")]
         session: Secret,
         /// The id of the server it is for: the browser presents it to no other.

@@ -11,12 +11,14 @@ import {
 
 /**
  * Signing in by link against a real glave (`specs/one-server.md`, "Finding it"): the link's
- * code signs one tab in, leaves the address bar, and works once; the tab stays signed in after
- * a reload, with the session it keeps.
+ * code signs one browser in, leaves the address bar, and works once; the browser stays signed
+ * in after a reload, in a new tab and once every tab is closed, with the session it keeps in its
+ * origin's storage, never a cookie; signing out signs every tab out.
  */
-test('a link signs one tab in once, and it stays signed in after a reload', async ({
+test('a link signs one browser in once, and it stays signed in until it signs out', async ({
   page,
   context,
+  browser,
 }) => {
   const problems = watchForProblems(page);
   const glave = served(ACCOUNTS);
@@ -65,9 +67,30 @@ test('a link signs one tab in once, and it stays signed in after a reload', asyn
   }
   expect(problems()).toEqual([]);
 
-  // The code is spent: the same link signs no other tab in.
-  const other = await context.newPage();
-  await other.goto(`${glave}/#code=${code}`);
-  await expect(byTestId(other, 'sign-in')).toBeVisible();
-  await expect(byTestId(page, 'home-composer-input')).toBeVisible();
+  // Nothing of it is a cookie, which every port of this computer's loopback would be sent.
+  expect(await context.cookies()).toEqual([]);
+
+  // The code is spent: the same link signs no other browser in.
+  const another = await browser.newContext();
+  const elsewhere = await another.newPage();
+  await elsewhere.goto(`${glave}/#code=${code}`);
+  await expect(byTestId(elsewhere, 'sign-in')).toBeVisible();
+  await another.close();
+
+  // A new tab of this browser is signed in, and so is one opened after every tab closed.
+  const tab = await context.newPage();
+  await tab.goto(`${glave}/settings`);
+  await expect(byTestId(tab, 'settings-sign-out')).toBeVisible();
+  await page.close();
+  await tab.close();
+  const reopened = await context.newPage();
+  await reopened.goto(`${glave}/`);
+  await expect(byTestId(reopened, 'home-composer-input')).toBeVisible();
+
+  // Signing out in one tab signs every tab out.
+  const settings = await context.newPage();
+  await settings.goto(`${glave}/settings`);
+  await byTestId(settings, 'settings-sign-out').click();
+  await expect(byTestId(settings, 'sign-in')).toBeVisible();
+  await expect(byTestId(reopened, 'sign-in')).toBeVisible();
 });
