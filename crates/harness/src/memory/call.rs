@@ -56,18 +56,27 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<ToolOutput, HarnessError> {
+        let waited = step.waited(&call.call_id);
         let Some((memory, on)) = self.memory_for(thread) else {
+            // What it waited for is settled still: a cancel is recorded.
+            if let Some(answered) = waited {
+                self.answered(thread, answered, cancel, live).await?;
+            }
             return Ok(ToolOutput::text(true, "Memory is off here."));
         };
         let name = canonical(&call.tool);
         let summary = glave_ports::describe_call(name, &call.arguments);
         let hooked = ToolHook::of(call, name);
-        let hook = self.stopped_by_hook(thread, &hooked, &summary, cancel, live);
-        if let Some(stopped) = hook.await? {
-            return Ok(stopped);
-        }
         let writes = name == REMEMBER || name == EDIT_MEMORY;
-        if writes && on.untrusted_read {
+        let refused = if let Some(answered) = waited {
+            // Its hooks ran and it asked before the turn stopped: its answer decides, as it
+            // would have the moment it came.
+            self.answered(thread, answered, cancel, live).await?
+        } else if let Some(stopped) =
+            (self.stopped_by_hook(thread, &hooked, &summary, cancel, live)).await?
+        {
+            Some(stopped)
+        } else if writes && on.untrusted_read {
             let request = ApprovalRequest {
                 thread: thread.id,
                 call_id: call.call_id.clone(),
@@ -78,18 +87,17 @@ where
                 caution: Some(REMEMBER_CAUTION.to_owned()),
                 outside_sandbox: None,
             };
-            match self
-                .judged(thread, &request, &mut step.summary, cancel)
-                .await?
-            {
-                Judged::Cleared => {}
-                Judged::Cancelled => return Ok(ToolOutput::text(true, NOT_RUN)),
-                Judged::Ask => {
-                    if let Some(refused) = self.ask(thread, &request, cancel, live).await? {
-                        return Ok(refused);
-                    }
-                }
+            let turn = &mut step.summary;
+            match self.judged(thread, &request, turn, cancel).await? {
+                Judged::Cleared => None,
+                Judged::Cancelled => Some(ToolOutput::text(true, NOT_RUN)),
+                Judged::Ask => self.ask(thread, &request, cancel, live).await?,
             }
+        } else {
+            None
+        };
+        if let Some(refused) = refused {
+            return Ok(refused);
         }
         live(Live::ToolStarted {
             summary: summary.clone(),

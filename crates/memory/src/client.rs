@@ -244,19 +244,17 @@ impl<L: EventLog + 'static> GlaveMemory<L> {
         by: &Access,
         control: Control,
     ) -> Result<Vec<Remembered>, MemoryError> {
-        let person = by
-            .person
-            .or_else(|| self.memories.rules().personal.map(|p| p.person));
+        let person = Some(by.person);
         let who = Writer {
-            person: by.person,
+            person,
             scope: by.scope,
-            by: person.map_or_else(Principal::glave, Principal::person),
+            by: Principal::person(by.person),
             source: None,
             untrusted_read: false,
         };
         let memories = &self.memories;
         match control {
-            Control::List { scope } => memories.list_as(by.person, by.scope, scope).await,
+            Control::List { scope } => memories.list_as(person, by.scope, scope).await,
             Control::Save { text, scope } => {
                 match memories.remember(&who, &text, scope, None, true).await? {
                     Remembering::Saved { memory, .. } => Ok(vec![memory]),
@@ -268,7 +266,7 @@ impl<L: EventLog + 'static> GlaveMemory<L> {
                 Ok(vec![memories.move_to(&who, memory, scope).await?])
             }
             Control::Forget { memory } => {
-                let (_, entry) = memories.locate(by.person, by.scope, memory).await?;
+                let (_, entry) = memories.locate(person, by.scope, memory).await?;
                 memories.forget(&who, memory).await?;
                 Ok(entry.live().into_iter().collect())
             }

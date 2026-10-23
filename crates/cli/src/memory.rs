@@ -308,10 +308,7 @@ async fn in_the_store(command: Command) -> anyhow::Result<()> {
             "glave: memory is off for new threads (memory = \"on\" in config.toml turns it on)"
         );
     }
-    let access = Access {
-        person: Some(person),
-        scope,
-    };
+    let access = Access { person, scope };
     match command {
         Command::List => {
             let memories = running
