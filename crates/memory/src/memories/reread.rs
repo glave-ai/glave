@@ -25,9 +25,8 @@ impl<L: EventLog + 'static> Memories<L> {
             .into_iter()
             .map(|memory| (memory.shown(), memory.text))
             .collect();
-        let readable = self.rules().readable(on.person, on.scope);
-        let mut hidden = self.hidden(&readable).await?;
-        let ledgers = ledgers(&readable);
+        let mut hidden = self.hidden(on).await?;
+        let ledgers = ledgers(&self.rules().readable(on.person, on.scope));
         let mut all = Vec::with_capacity(replies.len());
         for reply in replies {
             let mut texts: Texts = (reply.memories().into_iter())

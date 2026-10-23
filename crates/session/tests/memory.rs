@@ -46,6 +46,7 @@ async fn served_with(
         personal: Some(Personal {
             scope: personal(),
             person: person(),
+            on: true,
         }),
         ..Rules::default()
     };

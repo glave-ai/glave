@@ -90,9 +90,10 @@ pub(crate) async fn start(
     }
     let personal = crate::projects::personal(store, person).await?;
     let rules = Rules {
-        personal: settings.personal.then_some(Personal {
+        personal: Some(Personal {
             scope: personal,
             person,
+            on: settings.personal,
         }),
         default: settings.project,
         retention_days: settings.retention_days,

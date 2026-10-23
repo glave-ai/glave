@@ -44,7 +44,7 @@ pub struct Writer {
     pub scope: Scope,
     /// Who is recorded as changing it.
     pub by: Principal,
-    /// The thread and `seq` a save is made in.
+    /// The thread and `seq` a save or an edit is made in.
     pub source: Option<MemorySource>,
     /// The thread had read untrusted content or a secrets file.
     pub untrusted_read: bool,
@@ -179,6 +179,7 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
         let edited = MemoryEdited {
             memory,
             text,
+            source: who.source,
             by: who.by.clone(),
         };
         self.append(ledger, &edited).await?;
@@ -222,15 +223,18 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
             Erasure::At(at) => (at, None),
             Erasure::Merged(at, into) => (at, Some(into)),
         };
-        let source = self
+        let (source, edited_in) = self
             .with_book(ledger, |book| {
-                book.entries.get(&memory).and_then(|entry| entry.source)
+                (book.entries.get(&memory)).map_or((None, Vec::new()), |entry| {
+                    (entry.source, entry.edited_in.clone())
+                })
             })
             .await?;
         let forgotten = MemoryForgotten {
             memory,
             erase_at,
             source,
+            edited_in,
             into,
             by: by.clone(),
         };

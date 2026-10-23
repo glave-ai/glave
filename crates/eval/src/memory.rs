@@ -127,6 +127,7 @@ impl Remembering {
             personal: Some(Personal {
                 scope: personal(),
                 person,
+                on: true,
             }),
             ..Rules::default()
         };

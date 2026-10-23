@@ -14,12 +14,15 @@ use glave_ports::{ProjectId, Scope};
 pub struct Personal {
     pub scope: Scope,
     pub person: PrincipalId,
+    /// Whether it is read and written. Off (by choice or policy), it still holds its forgets,
+    /// which keep hiding the turns they hid.
+    pub on: bool,
 }
 
 /// The rules one deployment's memory runs by.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Rules {
-    /// The person's memory; `None` when personal memory is off (by choice or by policy).
+    /// The person's memory; `None` where the host keeps none.
     pub personal: Option<Personal>,
     /// Each project's setting, where it differs from `default`.
     pub projects: BTreeMap<ProjectId, ProjectMemory>,
@@ -35,11 +38,25 @@ impl Rules {
     }
 
     /// The person's memory, when `person` may use it from `scope`: never across organizations,
-    /// never another person's. `None` stands for the local person.
+    /// never another person's, never while it is off.
     fn personal_for(&self, person: Option<PrincipalId>, scope: Scope) -> Option<Scope> {
+        self.theirs(person, scope)
+            .filter(|_| self.personal.is_some_and(|personal| personal.on))
+    }
+
+    /// The ledger of `person`'s own memory, when it is theirs and in `scope`'s organization, on
+    /// or off. `None` stands for the local person.
+    fn theirs(&self, person: Option<PrincipalId>, scope: Scope) -> Option<Scope> {
         let personal = self.personal?;
         let theirs = person.is_none_or(|person| person == personal.person);
         (theirs && personal.scope.org() == scope.org()).then_some(personal.scope)
+    }
+
+    /// The ledgers whose forgets hide turns from `recall` in `scope`: the project's, and the
+    /// person's own whatever they read now, since a memory saved in this project may be theirs.
+    pub(crate) fn hiding(&self, person: Option<PrincipalId>, scope: Scope) -> Vec<Scope> {
+        let own = self.theirs(person, scope).filter(|own| *own != scope);
+        [scope].into_iter().chain(own).collect()
     }
 
     /// The memories a thread in `scope` reads, each with the ledger that holds it: the
@@ -117,6 +134,7 @@ mod tests {
             personal: Some(Personal {
                 scope: scope(1, 100),
                 person: person(1),
+                on: true,
             }),
             ..Rules::default()
         };
@@ -177,5 +195,32 @@ mod tests {
             [(MemoryScope::Project, scope(1, 2))],
             "another person never reads it"
         );
+    }
+
+    #[test]
+    fn the_persons_own_forgets_hide_turns_wherever_they_work_whatever_they_read() {
+        let mut rules = rules();
+        assert_eq!(
+            rules.hiding(Some(person(1)), scope(1, 3)),
+            [scope(1, 3), scope(1, 100)],
+            "an isolated project reads only its own, but hides what they forgot"
+        );
+        assert_eq!(
+            rules.hiding(None, scope(1, 100)),
+            [scope(1, 100)],
+            "their Chats, one ledger"
+        );
+        rules.personal = rules.personal.map(|personal| Personal {
+            on: false,
+            ..personal
+        });
+        assert_eq!(rules.readable(Some(person(1)), scope(1, 2)).len(), 1);
+        assert_eq!(
+            rules.hiding(Some(person(1)), scope(1, 2)),
+            [scope(1, 2), scope(1, 100)],
+            "with their own memory off too"
+        );
+        assert_eq!(rules.hiding(Some(person(2)), scope(1, 2)), [scope(1, 2)]);
+        assert_eq!(rules.hiding(Some(person(1)), scope(2, 2)), [scope(2, 2)]);
     }
 }

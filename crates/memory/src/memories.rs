@@ -94,9 +94,9 @@ impl<L: EventLog + 'static> Memories<L> {
         }
     }
 
-    /// Runs by what the person's settings choose now, from the next read or write: whether
-    /// their own memory is read (`personal`), every project's setting where its project chooses
-    /// none (`default`), and how long memories are kept.
+    /// Runs by what the person's settings choose now, from the next read or write: where their
+    /// own memory is and whether it is read (`personal`), every project's setting where its
+    /// project chooses none (`default`), and how long memories are kept.
     pub fn set_person(
         &self,
         personal: Option<Personal>,

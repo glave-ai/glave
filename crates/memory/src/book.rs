@@ -37,6 +37,8 @@ pub(crate) struct Entry {
     pub(crate) scope: MemoryScope,
     pub(crate) versions: Vec<Version>,
     pub(crate) source: Option<MemorySource>,
+    /// Where it was edited, in threads.
+    pub(crate) edited_in: Vec<MemorySource>,
     pub(crate) untrusted_read: bool,
     pub(crate) forgot: Option<Forgot>,
 }
@@ -102,9 +104,10 @@ pub(crate) struct Book {
     pub(crate) questions: Vec<[MemoryId; 2]>,
     /// When tidy-up last ran over this ledger.
     pub(crate) tidied: Option<At>,
-    /// Where each memory the person (or the model for them) forgot was saved, and each memory
-    /// tidy-up had merged into one of those: `recall` never returns those turns again.
-    pub(crate) hidden: BTreeMap<MemoryId, MemorySource>,
+    /// Where each memory the person (or the model for them) forgot was saved and edited, and
+    /// each memory tidy-up had merged into one of those: `recall` never returns those turns
+    /// again.
+    pub(crate) hidden: BTreeMap<MemoryId, Vec<MemorySource>>,
     /// Memories tidy-up merged into another, until a restore undoes it.
     folded: BTreeMap<MemoryId, Folded>,
     /// Memories forgotten at once: by the person, or the model for them.
@@ -112,13 +115,13 @@ pub(crate) struct Book {
 }
 
 /// A memory tidy-up merged into another.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct Folded {
     into: MemoryId,
     /// The version of `into` that took in its text: the merge's edit, which a restore may undo.
     edit: Option<EventId>,
-    /// Where it was saved.
-    source: Option<MemorySource>,
+    /// Where it was saved and edited.
+    turns: Vec<MemorySource>,
     /// The forget that merged it, which a restore names to undo it.
     event: EventId,
 }
@@ -165,8 +168,8 @@ impl Book {
     /// The turns `forgotten` (the event `event`, at `at`) takes out of `recall`. Glave's own
     /// forgets wait to be erased and take none: a memory merged away lives on in the one it went
     /// into, and one a later memory replaced, or past retention, is still history. A forget
-    /// erased at once (the person's, or the model's for them) takes the turn the memory was saved
-    /// in, and those of every memory merged into it, however many merges ago.
+    /// erased at once (the person's, or the model's for them) takes the turns the memory was saved
+    /// and edited in, and those of every memory merged into it, however many merges ago.
     fn hide(&mut self, forgotten: &MemoryForgotten, event: EventId, at: At) {
         if forgotten.erase_at > at {
             let Some(into) = forgotten.into else {
@@ -178,13 +181,12 @@ impl Book {
                 .get(&into)
                 .and_then(Entry::current)
                 .map(|(_, version)| version.event);
-            let source = forgotten.source;
             self.folded.insert(
                 forgotten.memory,
                 Folded {
                     into,
                     edit,
-                    source,
+                    turns: turns(forgotten),
                     event,
                 },
             );
@@ -194,26 +196,27 @@ impl Book {
             }
         }
         self.gone.insert(forgotten.memory);
-        if let Some(source) = forgotten.source {
-            self.hidden.insert(forgotten.memory, source);
-        }
-        for (memory, source) in self.folded_into(forgotten.memory) {
-            if let Some(source) = source {
-                self.hidden.insert(memory, source);
+        let folded = self.folded_into(forgotten.memory);
+        for (memory, turns) in [(forgotten.memory, turns(forgotten))]
+            .into_iter()
+            .chain(folded)
+        {
+            if !turns.is_empty() {
+                self.hidden.insert(memory, turns);
             }
         }
     }
 
     /// The memories tidy-up merged into `memory`, however many merges ago, with where each was
-    /// saved.
-    fn folded_into(&self, memory: MemoryId) -> Vec<(MemoryId, Option<MemorySource>)> {
+    /// saved and edited.
+    fn folded_into(&self, memory: MemoryId) -> Vec<(MemoryId, Vec<MemorySource>)> {
         let mut found = Vec::new();
         let mut seen = BTreeSet::from([memory]);
         let mut next = vec![memory];
         while let Some(into) = next.pop() {
             for (folded, merge) in &self.folded {
                 if merge.into == into && seen.insert(*folded) {
-                    found.push((*folded, merge.source));
+                    found.push((*folded, merge.turns.clone()));
                     next.push(*folded);
                 }
             }
@@ -289,6 +292,7 @@ impl Book {
                         scope: saved.scope,
                         versions: vec![version],
                         source: saved.source,
+                        edited_in: Vec::new(),
                         untrusted_read: saved.untrusted_read,
                         forgot: None,
                     },
@@ -297,6 +301,7 @@ impl Book {
             Body::MemoryEdited(edited) => {
                 self.answered(edited.memory);
                 if let Some(entry) = self.entries.get_mut(&edited.memory) {
+                    entry.edited_in.extend(edited.source);
                     entry.versions.push(Version {
                         text: edited.text,
                         at,
@@ -357,6 +362,12 @@ impl Book {
     }
 }
 
+/// The turns `forgotten` was saved and edited in.
+fn turns(forgotten: &MemoryForgotten) -> Vec<MemorySource> {
+    let edited = forgotten.edited_in.iter().copied();
+    forgotten.source.into_iter().chain(edited).collect()
+}
+
 /// Whether `by` is glave itself: its changes can be undone within 30 days.
 pub(crate) fn by_glave(by: &Principal) -> bool {
     by.kind == PrincipalKind::Glave
@@ -381,8 +392,9 @@ mod tests {
         At::try_from(format!("2026-10-{n:02}T10:00:00Z")).unwrap()
     }
 
-    /// Memory `n`, saved at `seq` `n` of one thread, forgotten on day 1: by glave (erased in
-    /// 30 days, `into` another when merged), or by the person (erased at once).
+    /// Memory `n`, saved at `seq` `n` of one thread and edited at `seq` `n` of another,
+    /// forgotten on day 1: by glave (erased in 30 days, `into` another when merged), or by the
+    /// person (erased at once).
     fn forget(book: &mut Book, n: u128, into: Option<u128>, by_person: bool) {
         let by = if by_person {
             Principal::person(PrincipalId::try_from(id(50)).unwrap())
@@ -396,6 +408,10 @@ mod tests {
                 thread: ThreadId::try_from(id(500)).unwrap(),
                 seq: Seq::new(u64::try_from(n).unwrap()).unwrap(),
             }),
+            edited_in: vec![MemorySource {
+                thread: ThreadId::try_from(id(501)).unwrap(),
+                seq: Seq::new(u64::try_from(n).unwrap()).unwrap(),
+            }],
             into: into.map(memory),
             by,
         };
@@ -423,6 +439,10 @@ mod tests {
             hidden(&book),
             [memory(1), memory(2), memory(3)],
             "the memory forgotten, and the two merged into it one after the other"
+        );
+        assert!(
+            book.hidden.values().all(|turns| turns.len() == 2),
+            "each with the turn it was saved in and the one it was edited in"
         );
         forget(&mut book, 5, Some(3), false);
         assert_eq!(

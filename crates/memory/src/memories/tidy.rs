@@ -191,6 +191,7 @@ impl<L: EventLog + 'static> Memories<L> {
                 let edited = MemoryEdited {
                     memory: *keep,
                     text,
+                    source: None,
                     by: glave.clone(),
                 };
                 self.append(ledger, &edited).await?;

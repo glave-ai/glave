@@ -32,7 +32,7 @@ fn header(thread: ThreadId, seq: u64) -> Header {
 }
 
 /// A past thread in `scope`: the person says `said`, then a tool returns `output`.
-async fn past(kit: &Kit, scope: Scope, id: ThreadId, said: &str, output: (&str, bool)) {
+pub(crate) async fn past(kit: &Kit, scope: Scope, id: ThreadId, said: &str, output: (&str, bool)) {
     let message = MessageAdded {
         role: Role::User,
         parts: vec![Part::Text { text: said.into() }],
@@ -471,7 +471,7 @@ fn the_model_recalls_through_the_server_and_untrusted_hits_mark_the_thread() {
 }
 
 /// What the person said, among `hits`.
-fn persons(hits: &[Recalled]) -> Vec<String> {
+pub(crate) fn persons(hits: &[Recalled]) -> Vec<String> {
     let mut said: Vec<String> = hits
         .iter()
         .filter(|hit| {
@@ -552,7 +552,7 @@ async fn merged(kit: &Kit) -> Vec<MemoryId> {
     saved
 }
 
-fn persons_writer() -> Writer {
+pub(crate) fn persons_writer() -> Writer {
     Writer {
         person: Some(person()),
         scope: shared(),

@@ -61,6 +61,7 @@ pub(crate) fn rules() -> Rules {
         personal: Some(Personal {
             scope: inbox(),
             person: person(),
+            on: true,
         }),
         ..Rules::default()
     };

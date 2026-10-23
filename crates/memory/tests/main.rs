@@ -6,6 +6,7 @@
 mod support;
 
 mod conformance;
+mod hidden;
 mod kept;
 mod loading;
 mod recall;

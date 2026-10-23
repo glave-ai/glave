@@ -196,8 +196,7 @@ impl ProjectFolders {
     }
 
     /// Runs memory, when it runs, by the person's `choices` within `loaded`'s constraints.
-    /// Memory that was off when glave started stays off until it restarts, and so does the
-    /// person's own.
+    /// Memory that was off when glave started stays off until it restarts.
     fn remember(&self, loaded: &Loaded, choices: &Choices) {
         let settings = match memory_settings(choices, &loaded.constraints) {
             Ok(settings) => settings,
@@ -218,7 +217,10 @@ impl ProjectFolders {
         } else {
             ProjectMemory::Off
         };
-        let personal = self.personal.filter(|_| on && settings.personal);
+        let personal = self.personal.map(|personal| Personal {
+            on: on && settings.personal,
+            ..personal
+        });
         let memories = memory.memories();
         memories.set_person(personal, default, settings.retention_days);
     }

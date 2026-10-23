@@ -86,8 +86,8 @@ impl<L: EventLog + 'static> Memories<L> {
             ranked.extend(found);
         }
         ranked.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.at.cmp(&a.1.at)));
-        // Where memories the person forgot were saved: those turns are never returned.
-        let mut hidden = self.hidden(&readable).await?;
+        // Where memories the person forgot were saved and edited: those turns never return.
+        let mut hidden = self.hidden(on).await?;
         // This project's conversations, then the person's own (one ledger in their Chats), each
         // searched whatever memories matched: memories sharing one word (often the project's
         // name) must not crowd out the message that holds them all.
@@ -102,17 +102,18 @@ impl<L: EventLog + 'static> Memories<L> {
         Ok(ranked.into_iter().take(limit).map(|(_, hit)| hit).collect())
     }
 
-    /// The turns where memories the person forgot were saved, as the ledgers `readable` names
-    /// record them.
-    pub(super) async fn hidden(
-        &self,
-        readable: &[(MemoryScope, Scope)],
-    ) -> Result<Hidden, MemoryError> {
+    /// The turns where memories the person forgot were saved and edited, as the ledgers whose
+    /// forgets hide turns from a thread of `on` record them, whatever it reads now.
+    pub(super) async fn hidden(&self, on: &MemoryContext) -> Result<Hidden, MemoryError> {
         let mut sources = Vec::new();
-        for (_, ledger) in readable {
+        for ledger in self.rules().hiding(on.person, on.scope) {
             let here = self
-                .with_book(*ledger, |book| {
-                    book.hidden.values().copied().collect::<Vec<MemorySource>>()
+                .with_book(ledger, |book| {
+                    book.hidden
+                        .values()
+                        .flatten()
+                        .copied()
+                        .collect::<Vec<MemorySource>>()
                 })
                 .await?;
             sources.extend(here);
@@ -211,8 +212,9 @@ pub(super) fn ledgers(readable: &[(MemoryScope, Scope)]) -> Vec<Scope> {
     ledgers
 }
 
-/// The turns where memories the person forgot were saved (`Book::hidden`): their forget takes
-/// the turn that gave the memory out of `recall` too, though the conversation stays as it was.
+/// The turns where memories the person forgot were saved and edited (`Book::hidden`): their
+/// forget takes the turns that stated the memory out of `recall` too, though the conversation
+/// stays as it was.
 pub(super) struct Hidden {
     sources: Vec<MemorySource>,
     /// Each source's turn as `seq` bounds, once read.

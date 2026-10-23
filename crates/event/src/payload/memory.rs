@@ -89,6 +89,9 @@ pub struct MemorySaved {
 pub struct MemoryEdited {
     pub memory: MemoryId,
     pub text: String,
+    /// The thread and `seq` it was edited in, when it was edited in a thread.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<MemorySource>,
     /// Who changed it.
     pub by: Principal,
 }
@@ -104,6 +107,9 @@ pub struct MemoryForgotten {
     /// is erased: once the person forgets it, `recall` never returns that turn again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<MemorySource>,
+    /// Where it was edited in threads, kept for the same reason: those turns state it too.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edited_in: Vec<MemorySource>,
     /// The memory a merge by tidy-up folded it into: its turn stays in `recall` until the
     /// person forgets that one.
     #[serde(default, skip_serializing_if = "Option::is_none")]

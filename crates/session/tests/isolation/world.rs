@@ -103,6 +103,7 @@ async fn serve<L: EventLog + Clone + 'static>(n: u128, parts: &Parts<L>, dir: &P
         personal: Some(Personal {
             scope: personal,
             person: local,
+            on: true,
         }),
         ..Rules::default()
     };
