@@ -1,6 +1,7 @@
 import { type Page, expect, test } from '@playwright/test';
 
 import { MISSING_REPOSITORY, type Request, fakeApi } from './fake-api';
+import { HOME_REFUSED } from './fake-folders';
 import { SIGNED_IN_ELSEWHERE } from './fake-signin';
 import { SIGNED_IN, byTestId, expectAccessible, shownOpacity, watchForProblems } from './support';
 
@@ -42,9 +43,11 @@ test('a project made from a folder picked on this computer, then its first threa
   const dialog = byTestId(page, 'new-project');
   await expect(dialog).toBeVisible();
   await expect(page.getByRole('radio', { name: 'A folder on this computer' })).toBeChecked();
-  // The picker opens at the home folder.
+  // The picker opens at the home folder, which is no project's: it says so and can't be used.
   await expect(byTestId(page, 'folder-picker-crumb')).toHaveText(['Users', 'ana']);
   await expect(byTestId(page, 'folder-picker-folder')).toHaveText(['code', 'Documents']);
+  await expect(byTestId(page, 'folder-picker-refused')).toHaveText(HOME_REFUSED);
+  await expect(byTestId(page, 'folder-picker-use')).toBeDisabled();
   await expect(byTestId(page, 'new-project-create')).toBeDisabled();
   await accessibleInBoth(page);
   expect(await dialog.innerText()).not.toMatch(NOT_SAID);
@@ -227,8 +230,10 @@ test.describe('on a touch screen', () => {
     await page.goto(`/${SIGNED_IN}`);
     await byTestId(page, 'page-menu').click();
     await byTestId(page, 'nav-new-project').click();
+    await byTestId(page, 'folder-picker-folder').filter({ hasText: 'code' }).click();
+    await expect(byTestId(page, 'folder-picker-crumb')).toHaveText(['Users', 'ana', 'code']);
     await byTestId(page, 'folder-picker-use').click();
-    await expect(byTestId(page, 'new-project-name')).toHaveValue('ana');
+    await expect(byTestId(page, 'new-project-name')).toHaveValue('code');
     await byTestId(page, 'new-project-create').click();
     await expect(byTestId(page, 'new-project')).toBeHidden();
     await expect(byTestId(page, 'workspace-nav')).toBeHidden();

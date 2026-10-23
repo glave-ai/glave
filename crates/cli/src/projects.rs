@@ -35,13 +35,16 @@ fn new_project(kind: ProjectKind, name: String, owner: Principal) -> anyhow::Res
 
 /// Whether `folder` is never a project, and what is done there the person's Chats: the home
 /// folder, a folder above it, or the temporary folder (`specs/one-server.md`, "A folder's
-/// project"). Every command asks this one rule.
+/// project"). Every command asks this one rule, which the server asks too.
 pub(crate) fn never_a_project(folder: &Path) -> bool {
     let canonical = |path: PathBuf| std::fs::canonicalize(&path).unwrap_or(path);
-    let folder = canonical(folder.to_owned());
     let home = std::env::var_os("HOME").map(|home| canonical(PathBuf::from(home)));
-    let temporary = canonical(std::env::temp_dir());
-    home.is_some_and(|home| home.starts_with(&folder)) || folder == temporary
+    glave_session::never_a_project(
+        &canonical(folder.to_owned()),
+        home.as_deref(),
+        &canonical(std::env::temp_dir()),
+    )
+    .is_some()
 }
 
 /// The scope of the project `folder` leads to, for `person`, making nothing: the person's

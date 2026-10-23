@@ -26,13 +26,16 @@ import {
 import { ChevronRight, Folder, HardDrive } from 'lucide';
 
 import { crumbs, folderCount, folderName, joinPath, projectProblem } from '../../lib/projects';
+import { sentence } from '../../lib/text';
 import { SessionService } from '../../services/session.service';
 
 /**
  * Picks a folder on the computer glave runs on, through `folder/list`. It opens at `start`, or
  * the home folder; shows where it is as the folders above it, each a button to go up to; and
- * lists the folders inside, each a button to go into. Use this folder picks the one shown. It
- * shows folders' names alone, as the server gives them.
+ * lists the folders inside, each a button to go into. Use this folder picks the one shown,
+ * unless the server says it is no project's folder (the home folder, one above it, the
+ * temporary folder), and why, in its words; the folders inside may still be picked. It shows
+ * folders' names alone, as the server gives them.
  */
 @Component({
   selector: 'app-folder-picker',
@@ -89,7 +92,18 @@ export class FolderPickerComponent {
     const folder = this.shownName(this.listing()?.path ?? '');
     return $localize`:@@folderPicker.foldersIn:Folders in ${folder}:FOLDER:`;
   });
-  protected readonly cannotUse = computed(() => this.listing() === null || this.busy());
+  /** Why the folder shown is no project's folder, when the server says it is none. */
+  protected readonly refused = computed(() => {
+    const refused = this.listing()?.refused;
+    return refused === undefined || refused === null ? null : sentence(refused);
+  });
+  /** What says why Use this folder can't be used, for those who hear it. */
+  protected readonly describedBy = computed(() =>
+    this.refused() === null ? null : 'folder-picker-refused',
+  );
+  protected readonly cannotUse = computed(
+    () => this.listing() === null || this.busy() || this.refused() !== null,
+  );
 
   constructor() {
     effect(() => {
@@ -137,9 +151,9 @@ export class FolderPickerComponent {
       if (moving) {
         const folder = this.shownName(listing.path);
         const count = folderCount(listing.folders.length, this.locale);
-        void this.announcer.announce(
-          $localize`:@@folderPicker.moved:${folder}:FOLDER:, ${count}:FOLDERS:`,
-        );
+        const moved = $localize`:@@folderPicker.moved:${folder}:FOLDER:, ${count}:FOLDERS:`;
+        const refused = this.refused();
+        void this.announcer.announce(refused === null ? moved : `${moved}. ${refused}`);
       }
       if (focusIn) {
         afterNextRender(() => this.focusIn(), { injector: this.injector });
