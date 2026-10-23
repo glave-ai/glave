@@ -3,7 +3,7 @@
 //! calls record what they changed, and what their results showed; a compaction restarts the
 //! start. The text comes from the memories at those versions, and the past conversations as
 //! they read now, so the start and every result read exactly as before, except that a forgotten
-//! memory, which can no longer be opened, drops out, as does a turn `recall` hides now.
+//! memory, which can no longer be opened, drops out, as does a past chat deleted since.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 

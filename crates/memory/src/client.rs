@@ -268,9 +268,7 @@ impl<L: EventLog + 'static> GlaveMemory<L> {
                 Ok(vec![memories.move_to(&who, memory, scope).await?])
             }
             Control::Forget { memory } => {
-                let (_, entry) = memories.locate(by.person, by.scope, memory).await?;
-                memories.forget(&who, memory).await?;
-                Ok(entry.live().into_iter().collect())
+                Ok(memories.forget(&who, memory).await?.into_iter().collect())
             }
             Control::ForgetAll { scope } => memories.forget_all(&who, scope).await,
             Control::Restore { memory } => Ok(vec![memories.restore(&who, memory).await?]),

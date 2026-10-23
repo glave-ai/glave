@@ -211,7 +211,8 @@ sentences! {
 
     // Memory.
     MemoryOff = "memory-off" "memory is off for this server",
-    ForgetWhat = "forget-what" "memory/forget takes `memory`, or `all: true` with a `scope`",
+    ForgetWhat = "forget-what"
+        "memory/forget takes `memory` (with `delete_thread` if wanted), or `all: true` with a `scope`",
 
     // Accounts, sign-in and the person's own settings.
     ModelsNotHere = "models-not-here"

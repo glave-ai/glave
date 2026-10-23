@@ -900,6 +900,11 @@ export type MemoryEditResult = {
 
 export type MemoryForgetParams = {
   readonly all?: boolean;
+  /**
+   * With `memory`: also deletes the thread it was saved in, as `thread/delete` does,
+   * when it has one that is still there.
+   */
+  readonly delete_thread?: boolean;
   readonly memory?: MemoryId | null;
   /** The project whose memory, beside the person's own: the caller's Chats when absent. */
   readonly project?: ProjectId | null;

@@ -75,4 +75,10 @@
   [confirmLabel]="copy.forget"
   [(open)]="forgetOpen"
   (decided)="decided($event)"
-/>
+>
+  @if (hasChat()) {
+    <glz-checkbox testId="memory-forget-chat" [(checked)]="forgetChat">{{
+      copy.forgetChat
+    }}</glz-checkbox>
+  }
+</glz-confirm-dialog>

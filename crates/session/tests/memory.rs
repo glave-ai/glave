@@ -121,6 +121,7 @@ fn the_person_lists_saves_edits_moves_and_forgets_their_memory() {
                 memory: Some(moved[0].memory),
                 all: false,
                 scope: None,
+                delete_thread: false,
                 project: None,
             })
             .await;
@@ -286,6 +287,7 @@ fn a_saves_result_shows_the_person_its_text_until_they_forget_it() {
             memory: saved.first().map(|memory| memory.memory),
             all: false,
             scope: None,
+            delete_thread: false,
             project: None,
         };
         server.request(forgot).await.unwrap();
@@ -295,6 +297,96 @@ fn a_saves_result_shows_the_person_its_text_until_they_forget_it() {
                 && (after.values())
                     .all(|words| words.starts_with("Remembered [") && !words.contains("short")),
             "once forgotten, it is named alone"
+        );
+    });
+}
+
+/// #630: forgetting a memory leaves the thread it was saved in, which is history, unless the
+/// person asks to delete that thread too: it is then deleted as `thread/delete` deletes it, and
+/// one deleted already is left as it is.
+#[test]
+fn forgetting_deletes_the_thread_a_memory_was_saved_in_only_when_asked() {
+    block_on!(async {
+        let save = |text: &str| {
+            Some((
+                REMEMBER,
+                serde_json::json!({"text": text, "scope": "personal"}),
+            ))
+        };
+        let answers = vec![
+            answer(None, save("Ada's favourite flower is marigold")),
+            answer(Some("Saved."), None),
+            answer(None, save("Ada's favourite tree is the oak")),
+            answer(Some("Saved."), None),
+        ];
+        let (server, _store, _dir) = served_with("memory-forget-thread", answers).await;
+        let kept = start(&server, false).await;
+        turn(&server, kept, "Remember my favourite flower.")
+            .await
+            .unwrap();
+        let deleted = start(&server, false).await;
+        turn(&server, deleted, "Remember my favourite tree.")
+            .await
+            .unwrap();
+        let list = Request::MemoryList {
+            scope: None,
+            project: None,
+        };
+        let saved = listed(server.request(list).await.unwrap());
+        let forget = |memory, delete_thread| Request::MemoryForget {
+            memory: Some(memory),
+            all: false,
+            scope: None,
+            delete_thread,
+            project: None,
+        };
+        for memory in &saved {
+            let thread = memory.source.map(|source| source.thread);
+            let forgot = server.request(forget(memory.memory, thread == Some(deleted)));
+            assert_eq!(listed(forgot.await.unwrap()).len(), 1);
+        }
+        let get = |thread| Request::ThreadGet { thread };
+        assert!(server.request(get(kept)).await.is_ok(), "kept as history");
+        let gone = server.request(get(deleted)).await.unwrap_err();
+        assert_eq!(gone.code, code::NO_THREAD, "deleted with its memory");
+
+        let again =
+            serde_json::json!({"text": "Ada's favourite colour is teal", "scope": "personal"});
+        let answers = vec![
+            answer(None, Some((REMEMBER, again))),
+            answer(Some("Saved."), None),
+        ];
+        let (server, _store, _dir) = served_with("memory-forget-gone", answers).await;
+        let thread = start(&server, false).await;
+        turn(&server, thread, "Remember my favourite colour.")
+            .await
+            .unwrap();
+        server
+            .request(Request::ThreadDelete { thread })
+            .await
+            .unwrap();
+        let list = Request::MemoryList {
+            scope: None,
+            project: None,
+        };
+        let saved = listed(server.request(list).await.unwrap());
+        let forgot = server.request(forget(saved[0].memory, true)).await;
+        assert!(
+            forgot.is_ok(),
+            "a thread deleted already is no reason to refuse: {forgot:?}"
+        );
+        let every = Request::MemoryForget {
+            memory: None,
+            all: true,
+            scope: Some(MemoryScope::Personal),
+            delete_thread: true,
+            project: None,
+        };
+        let refused = server.request(every).await.unwrap_err();
+        assert_eq!(
+            refused.code,
+            code::INVALID_PARAMS,
+            "only one memory's thread"
         );
     });
 }

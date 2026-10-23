@@ -168,6 +168,55 @@ fn duplicates_merge_the_newer_wins_and_untrusted_memories_are_never_touched() {
     });
 }
 
+const DEPLOYS: &str = "Atlas deploys to Railway";
+const SHIPS: &str = "Merging to main ships atlas to Railway";
+
+/// Two memories tidy-up merged: the one that took the merged text, then the one folded into it,
+/// each with the text it was saved with.
+async fn merged(kit: &Kit) -> [(MemoryId, &'static str); 2] {
+    let deploys = seed(kit, DEPLOYS, false).await;
+    let ships = seed(kit, SHIPS, false).await;
+    let script = scripted(
+        r#"{"merge": [{"memories": [1, 2], "text": "Atlas deploys to Railway: merging to main ships it"}]}"#,
+    );
+    let tidied = kit.memories(rules(), 1).tidy(shared(), &script).await;
+    assert_eq!(tidied.unwrap().merged, 1);
+    let kept = live(kit).await.first().map(|(memory, ..)| *memory);
+    if kept == Some(deploys) {
+        [(deploys, DEPLOYS), (ships, SHIPS)]
+    } else {
+        [(ships, SHIPS), (deploys, DEPLOYS)]
+    }
+}
+
+#[test]
+fn forgetting_what_a_merge_made_erases_what_went_in() {
+    block_on!(async {
+        let kit = Kit::new();
+        let [(kept, _), (folded, _)] = merged(&kit).await;
+        let memories = kit.memories(rules(), 4);
+        memories.forget(&writer(false), kept).await.unwrap();
+        assert!(
+            memories.restore(&writer(false), folded).await.is_err(),
+            "what went into the forgotten memory is erased with it, not waiting to be restored"
+        );
+    });
+}
+
+#[test]
+fn a_merge_undone_then_forgotten_leaves_what_went_in_restorable() {
+    block_on!(async {
+        let kit = Kit::new();
+        let [(kept, said), (folded, folded_said)] = merged(&kit).await;
+        let memories = kit.memories(rules(), 4);
+        let undone = memories.restore(&writer(false), kept).await.unwrap();
+        assert_eq!(undone.text, said, "the merge's edit undone");
+        memories.forget(&writer(false), kept).await.unwrap();
+        let back = memories.restore(&writer(false), folded).await.unwrap();
+        assert_eq!(back.text, folded_said);
+    });
+}
+
 #[test]
 fn an_unclear_contradiction_keeps_both_and_asks_until_one_changes() {
     block_on!(async {

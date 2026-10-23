@@ -22,8 +22,12 @@ describe('MemoryService', () => {
     expect(memory.memories()).toEqual([MEMORY]);
     await memory.edit('m1', 'Prefers brief answers');
     await memory.forget('m1');
+    await memory.forget('m2', true);
     expect(fake.paramsOf('memory/edit')).toEqual([{ memory: 'm1', text: 'Prefers brief answers' }]);
-    expect(fake.paramsOf('memory/forget')).toEqual([{ memory: 'm1' }]);
+    expect(fake.paramsOf('memory/forget')).toEqual([
+      { memory: 'm1' },
+      { memory: 'm2', delete_thread: true },
+    ]);
   });
 
   it('says when memory is off for the server', async () => {

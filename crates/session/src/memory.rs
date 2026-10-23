@@ -1,12 +1,13 @@
 //! The person's controls over memory (`specs/memory.md`, "Seeing, editing and forgetting"):
-//! `memory/list`, `save`, `edit`, `move`, `forget` and `restore`, in the project a request names
-//! or the caller's Chats when it names none. The caller decides what may be seen and changed: a project's members may
+//! `memory/list`, `save`, `edit`, `move`, `forget` (and, if asked, the thread a memory was saved
+//! in) and `restore`, in the project a request names or the caller's Chats when it names none. The caller decides what may be seen and changed: a project's members may
 //! change its memory, and only the person their own. And what a memory call's result kept by
 //! reference shows the caller, read again as they may read memory.
 
 use std::collections::BTreeMap;
 
 use glave_event::{Body, CallId, RawEvent, ThreadId, decode};
+use glave_harness::Change;
 use glave_ports::memories::{Access, Control, MemoryContext, SHOWN};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope};
 
@@ -42,6 +43,38 @@ where
             Ok(memories) => Ok(Reply::Memories { memories }),
             Err(error) => Err(error.into()),
         }
+    }
+
+    /// Answers `memory/forget` for `caller`, as [`Server::remember`] does, then, with
+    /// `delete_thread`, deletes the thread the memory was saved in as `thread/delete` does, in
+    /// a project the caller works in; one no longer there is left as it is.
+    pub(crate) async fn forget(
+        &self,
+        caller: &Caller,
+        project: Option<ProjectId>,
+        control: Control,
+        delete_thread: bool,
+    ) -> Result<Reply, ApiError> {
+        let reply = self.remember(caller, project, control).await?;
+        let Reply::Memories { memories } = &reply else {
+            return Ok(reply);
+        };
+        let saved_in = memories.iter().filter_map(|memory| memory.source);
+        for thread in saved_in
+            .filter(|_| delete_thread)
+            .map(|source| source.thread)
+        {
+            let deleted = match self.authorize(caller, thread).await {
+                Ok(_) => self.change(caller, thread, Change::Delete).await,
+                Err(refused) => Err(refused),
+            };
+            if let Err(refused) = deleted
+                && refused.code != code::NO_THREAD
+            {
+                return Err(refused);
+            }
+        }
+        Ok(reply)
     }
 
     /// By call, the words each memory call's result among `events` of `thread` in `scope`
@@ -89,15 +122,17 @@ where
     }
 }
 
-/// What `memory/forget` forgets: one memory, or with `all`, every memory of a scope.
+/// What `memory/forget` forgets: one memory, or with `all`, every memory of a scope. Only one
+/// memory's thread is deleted with it.
 pub(crate) fn forget(
     memory: Option<glave_event::MemoryId>,
     all: bool,
     scope: Option<glave_event::MemoryScope>,
+    delete_thread: bool,
 ) -> Result<Control, ApiError> {
-    match (memory, all, scope) {
-        (Some(memory), false, None) => Ok(Control::Forget { memory }),
-        (None, true, Some(scope)) => Ok(Control::ForgetAll { scope }),
+    match (memory, all, scope, delete_thread) {
+        (Some(memory), false, None, _) => Ok(Control::Forget { memory }),
+        (None, true, Some(scope), false) => Ok(Control::ForgetAll { scope }),
         _ => Err(ApiError::new(code::INVALID_PARAMS, Sentence::ForgetWhat)),
     }
 }

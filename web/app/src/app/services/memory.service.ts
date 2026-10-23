@@ -33,9 +33,10 @@ export class MemoryService {
     });
   }
 
-  async forget(memory: MemoryId): Promise<void> {
+  /** Forgets `memory`, and with `deleteChat` the chat it was saved in. */
+  async forget(memory: MemoryId, deleteChat = false): Promise<void> {
     await this.run(async () => {
-      await this.session.call('memory/forget', { memory });
+      await this.session.call('memory/forget', deleteChat ? { memory, delete_thread: true } : { memory });
       await this.refresh();
     });
   }
