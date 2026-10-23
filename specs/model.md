@@ -1,6 +1,6 @@
 # The model
 
-What glave is made of, from an organization down to a thread, and where each part runs. The other specs hold the detail; this one holds the shape they agree on. Decided with Chris on 2026-10-16 (issue #294).
+What glave is made of, from an organization down to a thread, and where each part runs. The other specs hold the detail; this one holds the shape they agree on. Decided with the owner on 2026-10-16 (issue #294); projects, words and powers, and connected apps on 2026-10-23 (#633).
 
 ## Status
 
@@ -10,16 +10,17 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 
 | Level | Is | Holds |
 | --- | --- | --- |
-| Organization | The tenant: one on a laptop (never shown), one in a company, many on Glave Cloud | Model providers and their catalogs, the connections catalog, environments, policy, the theme, the budget |
-| Team | A flat group of people, mirrored from the identity provider's groups where there are some | What it is granted: models, connections, budgets |
-| Person | Someone who signs in | Their Chats, their computer, their own sign-ins (git hosts, MCP servers), their own choices |
-| Project | A named place for work. It belongs to the organization, is managed by a person or a team, and is private to its manager, shared with people or teams, or open to everyone in the organization | Folders, instructions, variables, secrets, members |
-| Thread | A conversation or task, in a project or in the person's Chats | Its events, and a worktree of the project's folders |
+| Organization | The tenant: one on a laptop (never shown), one in a company, many on Glave Cloud | Model providers and their catalogs, its list of approved apps (`policy.md`, "Connected apps"), its directives and skills, environments, policy, the theme, the budget |
+| Team | A flat group of people, mirrored from the identity provider's groups where there are some | What it is granted: models, apps, budgets, and whether its people may add their own apps |
+| Person | Someone who signs in | Their Chats, their computer, their own sign-ins (git hosts, apps), their own instructions, skills and choices |
+| Project | A named place for work: one folder. It belongs to the organization, is managed by a person or a team, and is private to its manager, shared with people or teams, or open to everyone in the organization | Its folder, whose files are its words; the apps, tool servers, hooks, settings and secrets accepted into it; its members, each one's chats in it their own (#631) |
+| Thread | A conversation or task, in a project or in the person's Chats | Its events, and the project's folder or a worktree of it |
 
 - **One rule at every level** (`policy.md`): choices, the nearest wins; constraints, they only narrow. A level grants only what it was given.
+- **A project is one folder, and its files are its words:** the project's AGENTS.md and skills are that folder's ("Words and powers"). A thread may be given other folders to read or write ("Two roles", below; `sandbox.md`, #307), but they are access only: they bring no instructions, tools or settings. So what a thread reads and runs has one source, and nothing needs a rule for merging two folders' words; projects of several folders were dropped. A project with no folder works in scratch folders, as a chat does, with the organization's and the person's words alone.
 - **No project needs a team.** Anyone can make one, private to them at first. The organization always owns its data, so when a person leaves, the projects they managed pass to an admin, and nothing is lost or orphaned.
 - **Words:** people see Chats and projects, and the code says the same: Chats is the person's project of kind `personal` (`storage.md`). Spaces became projects on 2026-10-19 (#435); only stored names that sealed content depends on keep the old word.
-- **A laptop is an organization of one:** no teams, one person. The organization's screens are that person's Settings, and the word "organization" never appears there (AGENTS.md, "Keeping principle 4").
+- **Organization-first: a person on their own is an organization of one,** on a laptop, their own server or Glave Cloud's personal plan: no teams, one person. The organization's screens are that person's Settings, and the word "organization" never appears there (AGENTS.md, "Keeping principle 4"). glave's own defaults, its list of apps and its skills, reach that person the way an organization's reach its people, so there is one mechanism and one code path (`deployments.md`), and only the defaults differ.
 
 ## Two roles: the server and the computer
 
@@ -35,7 +36,7 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 - **The agent's reach is drawn by the machine's own sandbox,** the operating system's (Seatbelt on macOS; bubblewrap, Landlock and seccomp on Linux), never by asking the model (`sandbox.md`). Three zones:
   - **Hidden:** secrets (keys, cloud and git sign-ins, browser profiles, keychains, shell history, `.env` files) and glave's own data.
   - **Read, never written:** the rest of the machine, and the machinery inside a project that runs code later (git hooks and config, `.glave/`, `.mcp.json`).
-  - **Read and written:** the project folder or the chat's scratch folder, temp folders, and any folder the person grants for a thread ("Allow writing to ~/Downloads?").
+  - **Read and written:** the project folder or the chat's scratch folder, temp folders, and any folder the person grants for a thread ("Allow writing to ~/Downloads?"), for access only (above).
 
   Approvals sit on top: a risky action asks even inside the writable zone. The zones bind the agent, never the person.
 - **The machine's files live on a disk that's the person's;** the running machine is replaceable. It can be reset or moved without losing their files, and history is never on it.
@@ -46,9 +47,18 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 - **Untrusted travels with work:** a thread an assistant starts after reading untrusted content inherits that label, so its risky actions need approval.
 - **A person's files on a machine are personal data:** sealed under their key where the store keeps them, erased with it, and exportable.
 
-## Settings are data
+## Words and powers
 
-- **Everything an organization, team, person or project sets lives in the data store** with its owner, and is changed through the session API: model providers and accounts, connections, policy, budgets, the theme, the assistant's name and instructions.
+What shapes the agent comes in two kinds, kept two ways.
+
+- **Words are files:** instructions (AGENTS.md) and skills, kept with what they belong to and read where they are:
+  - a project's, in its folder, read in place (`session.md`, "What a thread opens with");
+  - the person's, in `~/.glave`;
+  - the organization's: a few directives and skills for everyone, delivered read-only to every machine and named after the organization (`acme:…`), so no project's or person's can shadow them (#223).
+
+  A project's words travel with its work in git, and the tools people already use read AGENTS.md and skills as files (principle 7). Words are text the model reads, so on their own they grant nothing.
+- **Powers live in glave:** connected apps, tool servers, hooks, settings (the model, approvals) and secrets, and with them model providers and accounts, policy, budgets, the theme and the assistant's name. Each has an owner (an organization, team, person or project), a permission and a record in the data store, and changes through the session API. A power runs commands or reaches data, so who may add it, who did and when are glave's to keep, never a file's.
+- **A repository's powers are suggestions.** Its `.mcp.json`, its hooks and its settings (`.glave/config.toml`) are never read live: someone allowed to add each accepts it into the project, where it becomes a power with that record (`policy.md`, "A repository's suggestions"). Opening a clone adds nothing, and every power has someone on record who said yes.
 - **Files and environment variables remain** for bootstrapping (the store's address, the identity provider, the key service) and for applying settings kept in git (`glave admin apply`).
 - **A setting is managed by a file or in the app, never both.** A file-managed setting shows read-only in the app.
 
@@ -61,9 +71,10 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 
 ## Admin
 
+- **Admins govern powers:** the list of approved apps and who may add their own (`policy.md`, "Connected apps"), models, budgets and policy; of words, only the organization's own directives and skills ("Words and powers").
 - **The screens:** `/admin` in the same web app, reached from the person's menu and shown only when `server/discover` says the caller is an admin.
 - **The methods:** admin methods are part of the session API, checked against the caller's role on every call. The same methods serve `glave admin` and an admin MCP server.
-- **The log is the single place to see everything:** usage, spend, activity and a thread's trace are views over it.
+- **The log is the single place to see everything:** usage, spend, activity, every tool call and a thread's trace are views over it.
   - Admins see activity and cost, not content.
   - Reading content needs an organization policy that says so, and each read is recorded.
   - Still to decide: whether the person is told, and legal holds.
@@ -86,3 +97,5 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 8. **There is no theme.** Theming arrives (#283).
 9. **A person on a server or cloud machine reaching it from a phone needs a sign-in that isn't a company identity provider.** Tasks already work on the person's one machine, with workers as the upgrade (`computers.md`, "Placement defaults").
 10. **The web app works out a thread's items itself,** and finds an approval's sentence by parsing the summary the harness wrote, with the reason it asks folded into the same string, so that reason shows as if it were part of the command. The CLI words approvals its own way. Thread items come from the server as typed fields (#311).
+11. **A repository's tool servers, hooks and settings are read live** from its folder (`.mcp.json`, `.glave/config.toml`) once the person on this computer trusts the project, and the person's own from their files (`policy.md`, "Project trust"). They become powers in glave, a repository's as suggestions someone accepts ("Words and powers"), in a follow-up issue.
+12. **Apps are a policy file's list:** `[mcp] catalog`, and `[mcp] own`, one answer for everyone the policy covers, since there are no groups to grant it to (item 6). glave ships no list or skills of its own for an organization of one; people add tool servers by editing `mcp.json`, not on a Connect page signed in as themselves (#42); knowledge bases are not apps yet (#144); and there are no organization directives or skills (#223).
