@@ -21,6 +21,15 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
+    /// Where a browser on this computer makes and uses passkeys, when the server makes them
+    /// here.
+    pub(crate) fn passkeys_here(&self) -> Option<String> {
+        self.inner
+            .browsers
+            .as_ref()
+            .and_then(|browsers| browsers.passkeys_here())
+    }
+
     /// The server's id, where it signs browsers in.
     pub(crate) fn server_id(&self) -> Option<String> {
         self.inner
@@ -35,7 +44,7 @@ where
             return Vec::new();
         };
         let mut ways = vec![SignInWay::Link];
-        if browsers.offers_passkeys() {
+        if browsers.signs_in_with_passkeys() {
             ways.push(SignInWay::Passkey);
         }
         ways

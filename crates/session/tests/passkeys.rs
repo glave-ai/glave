@@ -17,7 +17,7 @@ use glave_session::signin::{Browsers, LocalToken, SignIn};
 use serde_json::{Value, json};
 
 use crate::support::issuer::fixed_clock;
-use crate::support::web::{Served, Web, serve_with};
+use crate::support::web::{Served, Web, serve_here, serve_with};
 use crate::support::*;
 
 /// Where people reach the server from elsewhere.
@@ -217,6 +217,76 @@ fn a_server_reached_only_here_offers_links_alone() {
         assert_eq!(discovered.get("origin"), None);
         let options = asked(&mut anyone, &Request::PasskeyGetOptions {}).await;
         assert_eq!(options, json!(code::NOT_AVAILABLE));
+        served.close().await;
+    });
+}
+
+/// A browser on this computer signed in with `mac`'s passkey: what signing in answered.
+async fn sign_in_here(served: &Served, mac: &mut Authenticator) -> Value {
+    let mut anyone = Web::new(served, None);
+    let options = asked(&mut anyone, &Request::PasskeyGetOptions {}).await;
+    let credential = mac.get(&options["options"]).unwrap();
+    let ceremony = options["ceremony"].as_str().unwrap().to_owned();
+    asked(
+        &mut anyone,
+        &Request::PasskeyGet {
+            ceremony,
+            credential,
+        },
+    )
+    .await
+}
+
+#[test]
+fn a_server_here_makes_a_passkey_at_localhost_that_signs_another_browser_in() {
+    block_on!(async {
+        let dir = folder("passkeys-localhost");
+        let token = LocalToken::new([9; 32]);
+        let mut setup = Setup::asking(Vec::new(), Answering::Clients);
+        setup.browsers = Some(browsers(&dir, &fixed_clock(), false).await);
+        let (server, _) = setup.build(&dir).await;
+        let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
+        let served = serve_here(server, signin).await;
+        let here = format!("http://localhost:{}", served.address.port());
+        let mut anyone = Web::new(&served, None);
+        let discovered = asked(&mut anyone, &Request::Discover {}).await;
+        assert_eq!(discovered["here"], json!(here));
+        assert_eq!(
+            discovered["signin"],
+            json!(["link"]),
+            "no passkey to sign in with yet"
+        );
+
+        // Signed in by glave's link, a browser here makes one.
+        let mut linked = Web::new(&served, Some(token.reveal().to_owned()));
+        let code = asked(&mut linked, &Request::SigninLink {}).await["code"].clone();
+        let code = glave_event::Secret::new(code.as_str().unwrap());
+        let session = asked(&mut anyone, &Request::SigninRedeem { code }).await;
+        let mut first = Web::new(&served, session["session"].as_str().map(str::to_owned));
+        let options = asked(&mut first, &Request::PasskeyAddOptions {}).await;
+        assert_eq!(options["options"]["publicKey"]["rp"]["id"], "localhost");
+        let mut mac = Authenticator::new(&here).unwrap();
+        let added = Request::PasskeyAdd {
+            ceremony: options["ceremony"].as_str().unwrap().to_owned(),
+            credential: mac.create(&options["options"]).unwrap(),
+            name: Some("Mac".into()),
+        };
+        assert_eq!(asked(&mut first, &added).await["passkey"]["name"], "Mac");
+        let discovered = asked(&mut anyone, &Request::Discover {}).await;
+        assert_eq!(discovered["signin"], json!(["link", "passkey"]));
+
+        // Another browser here signs in with it at once.
+        let signed_in = sign_in_here(&served, &mut mac).await;
+        let mut second = Web::new(&served, signed_in["session"].as_str().map(str::to_owned));
+        let listed = asked(&mut second, &Request::ProjectList { limit: None }).await;
+        assert!(listed["projects"].is_array(), "{listed}");
+        // A page another program serves at another port here gets nothing for the same passkey.
+        mac.on_page(&format!(
+            "http://localhost:{}",
+            served.address.port().wrapping_add(1)
+        ));
+        let relayed = sign_in_here(&served, &mut mac).await;
+        assert_eq!(relayed, json!(code::NO_SIGN_IN), "{relayed}");
         served.close().await;
     });
 }

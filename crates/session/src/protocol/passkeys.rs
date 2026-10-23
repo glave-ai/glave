@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 pub enum SignInWay {
     /// A link glave on the server's own computer makes, good once, for a browser there.
     Link,
-    /// A passkey, at the server's public origin; a setup link from glave on its computer makes
-    /// the first.
+    /// A passkey: at the server's public origin, where a setup link from glave on its computer
+    /// makes the first; or on this computer, once a browser signed in by glave's link made one.
     Passkey,
 }
 

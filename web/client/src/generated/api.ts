@@ -473,6 +473,11 @@ export type ServerInfo = {
    */
   readonly approvals: readonly (ApprovalMode)[];
   /**
+   * Where a browser on this computer makes and signs in with passkeys, when the server
+   * makes them here rather than at a public origin: `http://localhost:<port>`.
+   */
+  readonly here?: string | null;
+  /**
    * The server's id, where it signs browsers in: the same across restarts, and the one a
    * browser's session must name before the browser presents it.
    */
@@ -482,7 +487,10 @@ export type ServerInfo = {
   readonly origin?: string | null;
   /** The protocol versions spoken. */
   readonly protocols: readonly (string)[];
-  /** How a browser signs in to it; none where no browser does, as over stdio. */
+  /**
+   * How a browser signs in to it; none where no browser does, as over stdio. A passkey: at a
+   * public origin always, a setup link making the first; on this computer once one is made.
+   */
   readonly signin?: readonly (SignInWay)[];
   readonly version: string;
 };

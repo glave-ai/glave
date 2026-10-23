@@ -230,7 +230,7 @@ fn setup_codes_and_requests_expire_and_codes_that_are_not_one_are_limited() {
 }
 
 #[test]
-fn only_a_server_reached_from_elsewhere_makes_passkeys_and_only_once_one_exists_signs_in() {
+fn a_server_reached_nowhere_makes_no_passkeys_and_only_once_one_exists_signs_in() {
     block_on!(async {
         let clock = ManualClock::at_second(START);
         let here = Browsers::open(
@@ -249,5 +249,71 @@ fn only_a_server_reached_from_elsewhere_makes_passkeys_and_only_once_one_exists_
             reached.get_options(),
             Err(BrowserError::NoPasskey)
         ));
+    });
+}
+
+#[test]
+fn on_this_computer_passkeys_are_made_at_localhost_once_the_server_listens_there() {
+    block_on!(async {
+        let clock = ManualClock::at_second(START);
+        let here = Browsers::open(
+            store().log(),
+            scope(),
+            SERVER.into(),
+            None,
+            Box::new(clock.clone()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(here.passkeys_here(), None);
+        here.reached_here(4180).unwrap();
+        here.reached_here(4181).unwrap();
+        assert_eq!(
+            here.passkeys_here().as_deref(),
+            Some("http://localhost:4180"),
+            "the first port it listens at"
+        );
+        assert!(!here.signs_in_with_passkeys(), "none made yet");
+        assert!(matches!(here.get_options(), Err(BrowserError::NoPasskey)));
+
+        // A browser here signed in by glave's link makes one.
+        let mut mac = Authenticator::new("http://localhost:4180").unwrap();
+        let asked = here.create_options(Proof::SignedIn).unwrap();
+        assert_eq!(asked.options["publicKey"]["rp"]["id"], "localhost");
+        let answer = mac.create(&asked.options).unwrap();
+        here.add(&asked.id, &answer, Some("Mac")).await.unwrap();
+        assert!(here.signs_in_with_passkeys());
+
+        // Any browser here signs in with it; a page at another port of this computer, or at its
+        // address rather than its name, asking for the same passkey, never does.
+        let session = sign_in(&here, &mut mac).await.unwrap();
+        assert!(here.verify(session.token.expose(), true).await.is_ok());
+        for page in ["http://localhost:5173", "http://127.0.0.1:4180"] {
+            mac.on_page(page);
+            assert!(
+                matches!(
+                    sign_in(&here, &mut mac).await,
+                    Err(BrowserError::Passkey(_))
+                ),
+                "{page}"
+            );
+        }
+    });
+}
+
+#[test]
+fn a_server_reached_from_elsewhere_keeps_its_public_origin_as_its_relying_party() {
+    block_on!(async {
+        let clock = ManualClock::at_second(START);
+        let reached = open(store().log(), &clock).await;
+        reached.reached_here(4180).unwrap();
+        assert_eq!(reached.passkeys_here(), None);
+        assert!(
+            reached.signs_in_with_passkeys(),
+            "a setup link makes the first"
+        );
+        let code = reached.setup().unwrap();
+        let asked = reached.create_options(Proof::Code(code.expose())).unwrap();
+        assert_eq!(asked.options["publicKey"]["rp"]["id"], "glave.test");
     });
 }

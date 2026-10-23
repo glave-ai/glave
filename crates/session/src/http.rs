@@ -38,7 +38,7 @@ use tokio::task::JoinSet;
 
 use self::body::Answer;
 use self::hosts::door;
-use self::listen::connected;
+use self::listen::{accept, connected};
 use crate::dispatch::Answered;
 use crate::protocol::{ApiError, Request, code};
 use crate::rpc::{Id, parse, respond};
@@ -84,7 +84,15 @@ where
         None => signin,
     });
     let site = Arc::new(site);
-    let (clear, secured) = listeners.listening(server.inner.origin.as_ref())?;
+    // Browsers on this computer make and use passkeys at `localhost`, where only this server
+    // answers, unless the server is reached at a public origin, its relying party then.
+    if server.inner.origin.is_none()
+        && let (Some(browsers), Some(port)) = (&server.inner.browsers, listeners.localhost())
+        && let Err(error) = browsers.reached_here(port)
+    {
+        tracing::warn!(%error, "browsers here cannot sign in with passkeys");
+    }
+    let all = listeners.listening(server.inner.origin.as_ref())?;
     let mut connections = JoinSet::new();
     let mut stop = pin!(stop);
     loop {
@@ -98,7 +106,7 @@ where
         } else {
             tokio::select! {
                 () = &mut stop => break,
-                accepted = clear.accept(secured.as_ref()) => accepted,
+                accepted = accept(&all) => accepted,
             }
         };
         // A connection that failed to open is that client's problem, not the server's.

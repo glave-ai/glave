@@ -1,11 +1,13 @@
-//! Where the session API listens: plain HTTP, and beside it HTTPS of the server's own, each
-//! listener with the names it answers to (`hosts`). A connection to HTTPS is served once its
-//! handshake completes, within the time a client has to send its headers; one whose handshake
-//! fails, as every one does before a certificate is in hand, is closed.
+//! Where the session API listens: plain HTTP (on this computer, both its loopback addresses at
+//! one port, so `localhost` reaches this server alone), and beside it HTTPS of the server's
+//! own, each listener with the names it answers to (`hosts`). A connection to HTTPS is served
+//! once its handshake completes, within the time a client has to send its headers; one whose
+//! handshake fails, as every one does before a certificate is in hand, is closed.
 
-use std::future::pending;
+use std::future::poll_fn;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::task::Poll;
 
 use glave_ports::host::PublicOrigin;
 use rustls::ServerConfig;
@@ -16,17 +18,18 @@ use tokio_rustls::TlsAcceptor;
 use super::HEADER_TIMEOUT;
 use super::hosts::ListenerNames;
 
-/// Where a server listens over HTTP: one listener in the clear, and one for HTTPS beside it,
-/// with what its handshakes are answered with.
+/// Where a server listens over HTTP: in the clear (one address, or both of this computer's
+/// loopback addresses at one port), and for HTTPS beside it, with what its handshakes are
+/// answered with.
 pub struct Listeners {
-    pub plain: TcpListener,
+    pub plain: Vec<TcpListener>,
     pub secure: Option<(TcpListener, Arc<ServerConfig>)>,
 }
 
 impl From<TcpListener> for Listeners {
     fn from(plain: TcpListener) -> Self {
         Self {
-            plain,
+            plain: vec![plain],
             secure: None,
         }
     }
@@ -45,50 +48,68 @@ pub(crate) trait Stream: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> Stream for T {}
 
 impl Listeners {
+    /// The port browsers on this computer reach the server at as `localhost`: one it listens
+    /// on in the clear at both loopback addresses, so no one else answers that name there.
+    pub(crate) fn localhost(&self) -> Option<u16> {
+        let bound: Vec<SocketAddr> = self
+            .plain
+            .iter()
+            .filter_map(|listener| listener.local_addr().ok())
+            .filter(|address| address.ip().is_loopback())
+            .collect();
+        let at = |v6: bool| {
+            bound
+                .iter()
+                .filter(move |address| address.is_ipv6() == v6)
+                .map(SocketAddr::port)
+        };
+        at(false).find(|port| at(true).any(|other| other == *port))
+    }
+
     /// Each listener with the names it answers to, the server reached from elsewhere at
-    /// `origin` if anywhere.
+    /// `origin` if anywhere: those in the clear first.
     pub(crate) fn listening(
         self,
         origin: Option<&PublicOrigin>,
-    ) -> std::io::Result<(Listening, Option<Listening>)> {
+    ) -> std::io::Result<Vec<Listening>> {
         let names = |listener: &TcpListener| {
             Ok::<_, std::io::Error>(Arc::new(ListenerNames::of(listener.local_addr()?, origin)))
         };
-        let plain = Listening {
-            names: names(&self.plain)?,
-            listener: self.plain,
-            tls: None,
-        };
-        let secure = match self.secure {
-            Some((listener, config)) => Some(Listening {
+        let mut all = Vec::with_capacity(self.plain.len() + 1);
+        for listener in self.plain {
+            all.push(Listening {
+                names: names(&listener)?,
+                listener,
+                tls: None,
+            });
+        }
+        if let Some((listener, config)) = self.secure {
+            all.push(Listening {
                 names: names(&listener)?,
                 listener,
                 tls: Some(TlsAcceptor::from(config)),
-            }),
-            None => None,
-        };
-        Ok((plain, secure))
+            });
+        }
+        Ok(all)
     }
 }
 
-impl Listening {
-    /// The next connection to this listener, or to `other`'s, with the listener it came to.
-    pub(crate) async fn accept<'a>(
-        &'a self,
-        other: Option<&'a Self>,
-    ) -> (std::io::Result<(TcpStream, SocketAddr)>, &'a Self) {
-        let others = async {
-            match other {
-                Some(other) => (other.listener.accept().await, other),
-                None => pending().await,
+/// The next connection to any of `all`, with the listener it came to.
+pub(crate) async fn accept(
+    all: &[Listening],
+) -> (std::io::Result<(TcpStream, SocketAddr)>, &Listening) {
+    poll_fn(|context| {
+        for listening in all {
+            if let Poll::Ready(accepted) = listening.listener.poll_accept(context) {
+                return Poll::Ready((accepted, listening));
             }
-        };
-        tokio::select! {
-            accepted = self.listener.accept() => (accepted, self),
-            accepted = others => accepted,
         }
-    }
+        Poll::Pending
+    })
+    .await
+}
 
+impl Listening {
     /// What a connection to this listener is opened with: its handshakes, for HTTPS.
     pub(crate) fn handshakes(&self) -> Option<TlsAcceptor> {
         self.tls.clone()

@@ -1,8 +1,10 @@
-//! Passkeys for the person on their own server (`specs/session.md`, "Signing in"), where it is
-//! reached from elsewhere at a public origin, WebAuthn's relying party. No password and no
-//! email: glave on its computer makes a setup code, good once and for ten minutes, which a
-//! browser elsewhere trades for a passkey it makes there and a session with it; after that, a
-//! passkey signs a browser in, and someone signed in may make another. Each request to make or
+//! Passkeys for the person (`specs/session.md`, "Signing in"): on their own server reached from
+//! elsewhere, at its public origin, WebAuthn's relying party; on their own computer, at
+//! `http://localhost` and the port the server listens on there alone. No password and no
+//! email: elsewhere, glave on its computer makes a setup code, good once and for ten minutes,
+//! which a browser there trades for a passkey it makes and a session with it; on this
+//! computer, a browser signed in by glave's link makes one. After that, a passkey signs a
+//! browser in, and someone signed in may make another. Each request to make or
 //! use one is answered within five minutes, on the server that began it, and kept in memory
 //! meanwhile, at most 16 of each. Setup codes that are not one are counted, and past 10 in a
 //! minute none is taken until it passes. Removing a passkey ends the sessions it began.
@@ -69,17 +71,31 @@ pub struct PasskeyInfo {
     pub used: Option<Timestamp>,
 }
 
-/// The relying party passkeys are made for: the public origin, and the person they sign in.
+/// The relying party passkeys are made for, and the person they sign in.
 pub(super) struct Relying {
     webauthn: Webauthn,
     person: Uuid,
+    /// The origin a page makes and uses them at.
+    origin: String,
+    /// Whether that is the public origin; else this computer's own.
+    public: bool,
 }
 
 impl Relying {
-    /// The relying party at `origin`, for the server whose id is `server`.
-    pub(super) fn new(origin: &PublicOrigin, server: &str) -> Result<Self, BrowserError> {
+    /// The relying party at the public origin `origin`, for the server whose id is `server`.
+    pub(super) fn public(origin: &PublicOrigin, server: &str) -> Result<Self, BrowserError> {
+        Self::at(origin.as_str(), server, true)
+    }
+
+    /// The relying party for browsers on this computer: `localhost`, at `port` alone, so a page
+    /// another program serves at another port here is never one.
+    fn here(port: u16, server: &str) -> Result<Self, BrowserError> {
+        Self::at(&format!("http://localhost:{port}"), server, false)
+    }
+
+    fn at(origin: &str, server: &str, public: bool) -> Result<Self, BrowserError> {
         let refused = |error: &dyn std::fmt::Display| BrowserError::Passkey(error.to_string());
-        let url = Url::parse(origin.as_str()).map_err(|e| refused(&e))?;
+        let url = Url::parse(origin).map_err(|e| refused(&e))?;
         let name = url.host_str().ok_or(BrowserError::NoPasskeys)?.to_owned();
         let webauthn = WebauthnBuilder::new(&name, &url)
             .and_then(|builder| builder.rp_name("glave").build())
@@ -87,6 +103,8 @@ impl Relying {
         Ok(Self {
             webauthn,
             person: Uuid::parse_str(server).unwrap_or_default(),
+            origin: origin.to_owned(),
+            public,
         })
     }
 }
@@ -108,10 +126,35 @@ struct Making {
 }
 
 impl Browsers {
-    /// Whether this server makes passkeys and signs browsers in with them: it is reached from
-    /// elsewhere.
-    pub fn offers_passkeys(&self) -> bool {
-        self.relying.is_some()
+    /// Makes and uses passkeys for browsers on this computer, which reach the server as
+    /// `http://localhost:<port>`, once it listens there on every address that name stands for:
+    /// the relying party `localhost`, at that port alone. A server reached at a public origin
+    /// keeps that one.
+    pub fn reached_here(&self, port: u16) -> Result<(), BrowserError> {
+        if self.relying.get().is_none() {
+            // Set once: a second call, as of another listener, keeps the first.
+            let _ = self.relying.set(Relying::here(port, &self.server)?);
+        }
+        Ok(())
+    }
+
+    /// Whether a browser signs in with a passkey now: at the public origin always, since a
+    /// setup link makes the first; on this computer once one is made.
+    pub fn signs_in_with_passkeys(&self) -> bool {
+        match self.relying.get() {
+            Some(relying) if relying.public => true,
+            Some(_) => !self.state().passkeys.is_empty(),
+            None => false,
+        }
+    }
+
+    /// Where a browser on this computer makes and uses passkeys, when the server makes them
+    /// here rather than at a public origin: `http://localhost:<port>`.
+    pub fn passkeys_here(&self) -> Option<String> {
+        self.relying
+            .get()
+            .filter(|relying| !relying.public)
+            .map(|relying| relying.origin.clone())
     }
 
     /// A new setup code, for a link that makes a passkey elsewhere: good once, for ten minutes.
@@ -361,7 +404,7 @@ impl Browsers {
     }
 
     fn relying(&self) -> Result<&Relying, BrowserError> {
-        self.relying.as_ref().ok_or(BrowserError::NoPasskeys)
+        self.relying.get().ok_or(BrowserError::NoPasskeys)
     }
 
     fn ceremonies(&self) -> MutexGuard<'_, Ceremonies> {

@@ -49,7 +49,8 @@ static BUILT_IN: Option<Files> = include!(concat!(env!("OUT_DIR"), "/app.rs"));
 /// The HTTP listener, bound, with its address and token written for programs here to find,
 /// and the listener for HTTPS of glave's own beside it, with what it serves HTTPS with.
 pub(crate) struct Http {
-    listener: TcpListener,
+    /// One address, or 127.0.0.1 and [::1] at one port.
+    listeners: Vec<TcpListener>,
     secure: Option<(TcpListener, Arc<glave_acme::Https<crate::data::DataLog>>)>,
     signin: SignIn,
     site: Option<Site>,
@@ -91,12 +92,15 @@ pub(crate) async fn open(args: &Args, address: SocketAddr, reach: &Reach) -> any
         Err(error) => return Err(error).with_context(|| format!("could not listen on {address}")),
     };
     let bound = listener.local_addr()?;
+    let beside = beside(bound).await;
     let folder = crate::home::private().await?;
     keep(&folder.join(TOKEN_FILE), token.reveal())?;
-    keep(
-        &folder.join(crate::app::URL_FILE),
-        &format!("http://{}", here(bound)),
-    )?;
+    // `localhost`, where passkeys work and this server alone answers; else its address.
+    let reached = match beside {
+        Some(_) => format!("http://localhost:{}", bound.port()),
+        None => format!("http://{}", here(bound)),
+    };
+    keep(&folder.join(crate::app::URL_FILE), &reached)?;
     eprintln!("glave: serving the session API on http://{bound}");
     if let Some(origin) = reach.behind() {
         eprintln!(
@@ -126,7 +130,7 @@ pub(crate) async fn open(args: &Args, address: SocketAddr, reach: &Reach) -> any
         );
     }
     Ok(Http {
-        listener,
+        listeners: std::iter::once(listener).chain(beside).collect(),
         secure,
         signin,
         site,
@@ -163,7 +167,7 @@ impl Http {
             eprintln!("glave: run glave on this computer to open glave in a browser");
         }
         let listeners = Listeners {
-            plain: self.listener,
+            plain: self.listeners,
             secure: self.secure.map(|(listener, https)| (listener, https.tls())),
         };
         let ended =
@@ -290,6 +294,20 @@ pub(crate) fn keep(path: &Path, contents: &str) -> anyhow::Result<()> {
         .with_context(|| format!("could not write {}", path.display()))
 }
 
+/// A listener at [::1] beside one `bound` at 127.0.0.1, at the same port, so `localhost`, which
+/// stands for both, reaches this server alone; none for any other, or when that is taken.
+async fn beside(bound: SocketAddr) -> Option<TcpListener> {
+    if bound.ip() != IpAddr::V4(Ipv4Addr::LOCALHOST) {
+        return None;
+    }
+    TcpListener::bind(SocketAddr::new(
+        IpAddr::V6(Ipv6Addr::LOCALHOST),
+        bound.port(),
+    ))
+    .await
+    .ok()
+}
+
 /// The address a browser on this computer reaches `bound` at: itself, or loopback for a
 /// listener on every address.
 fn here(bound: SocketAddr) -> SocketAddr {
@@ -306,6 +324,19 @@ mod tests {
     use glave_ports::Clock as _;
 
     use super::*;
+
+    #[test]
+    fn a_loopback_listener_holds_its_port_at_both_addresses_so_localhost_is_this_server() {
+        glave_ports::block_on!(async {
+            let v4 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let bound = v4.local_addr().unwrap();
+            let v6 = beside(bound).await.unwrap();
+            let expected = SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), bound.port());
+            assert_eq!(v6.local_addr().unwrap(), expected);
+            assert!(beside(bound).await.is_none(), "taken there: no localhost");
+            assert!(beside("0.0.0.0:4180".parse().unwrap()).await.is_none());
+        });
+    }
 
     #[test]
     fn the_server_and_its_sessions_are_kept_in_the_store_across_opens() {

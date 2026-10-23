@@ -116,6 +116,7 @@ where
                     approvals: self.modes(),
                     id: self.server_id(),
                     origin: self.inner.origin.as_ref().map(ToString::to_string),
+                    here: self.passkeys_here(),
                     signin: self.signin_ways(),
                 }))
             }

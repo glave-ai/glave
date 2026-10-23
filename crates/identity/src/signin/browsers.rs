@@ -16,7 +16,7 @@ mod state;
 
 pub use self::passkeys::{Ceremony, PasskeyInfo, Proof};
 
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
 
 use glave_event::{RawEvent, Secret, Seq};
 use glave_ports::host::PublicOrigin;
@@ -69,9 +69,9 @@ pub enum BrowserError {
     Ended,
     #[error("this browser was signed in on the computer glave runs on, and signs in only there")]
     Elsewhere,
-    #[error("this glave is reached only on its own computer, so it signs no one in with passkeys")]
+    #[error("this glave makes no passkeys for this page: open glave on its computer to sign in")]
     NoPasskeys,
-    #[error("no passkey signs in to this glave yet: open the link glave gave you to make one")]
+    #[error("no passkey signs in to this glave yet: open a link glave gives you, and make one")]
     NoPasskey,
     #[error("that passkey request has expired: try again")]
     Ceremony,
@@ -104,16 +104,18 @@ pub struct Browsers {
     server: String,
     clock: Box<dyn Clock>,
     state: Mutex<State>,
-    /// Passkeys' relying party, where the server is reached from elsewhere.
-    relying: Option<Relying>,
+    /// Passkeys' relying party: the public origin, where the server is reached from
+    /// elsewhere; else this computer's `localhost`, once the server listens there.
+    relying: OnceLock<Relying>,
     /// The passkey requests begun and not yet answered.
     ceremonies: Mutex<Ceremonies>,
 }
 
 impl Browsers {
     /// The sessions and passkeys the browsers ledger in `scope` of `log` holds, for the server
-    /// whose id is `server`, reached from elsewhere at `origin` if anywhere: only there does it
-    /// make passkeys and sign browsers in with them.
+    /// whose id is `server`, reached from elsewhere at `origin` if anywhere: there it makes
+    /// passkeys and signs browsers in with them; with none, on this computer once it listens
+    /// here ([`Browsers::reached_here`]).
     pub async fn open<L: EventLog + 'static>(
         log: L,
         scope: Scope,
@@ -122,9 +124,10 @@ impl Browsers {
         clock: Box<dyn Clock>,
     ) -> Result<Self, BrowserError> {
         let thread = Reserved::Browsers.id();
-        let relying = origin
-            .map(|origin| Relying::new(origin, &server))
-            .transpose()?;
+        let relying = match origin {
+            Some(origin) => OnceLock::from(Relying::public(origin, &server)?),
+            None => OnceLock::new(),
+        };
         let browsers = Self {
             ledger: Box::new(Stream { log, scope, thread }),
             server,
