@@ -843,6 +843,12 @@ export type FolderListResult = {
   readonly parent?: string | null;
   /** The folder listed, as this computer names it, links followed. */
   readonly path: string;
+  /**
+   * Why the folder listed is no project's folder, when it is none: the server's
+   * sentence. The home folder, a folder above it and the temporary folder never are
+   * (`project/create` refuses them), though the folders inside may be.
+   */
+  readonly refused?: string | null;
 };
 
 export type GoalGetParams = {

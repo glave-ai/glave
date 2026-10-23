@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     ApprovalMode, CredentialInfo, DeviceCode, FileInfo, GoneFolder, ModelInfo, PasskeySummary,
-    ProjectFolder, ProviderInfo, ScheduleInfo, SignInWay, TaskInfo, TrustAsk, WatchEnd,
+    ProjectFolder, ProviderInfo, ScheduleInfo, SignInWay, TaskInfo, Told, TrustAsk, WatchEnd,
 };
 
 /// What the server is.
@@ -224,6 +224,11 @@ pub enum Reply {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parent: Option<String>,
         folders: Vec<String>,
+        /// Why the folder listed is no project's folder, when it is none: the server's
+        /// sentence. The home folder, a folder above it and the temporary folder never are
+        /// (`project/create` refuses them), though the folders inside may be.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        refused: Option<Told>,
     },
     /// Memories listed, or the ones a change touched.
     #[schemars(title = "Memories")]

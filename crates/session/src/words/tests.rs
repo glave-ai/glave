@@ -179,3 +179,31 @@ fn second_argument(call: &str) -> &str {
     }
     ""
 }
+
+#[test]
+fn why_a_folder_is_no_project_s_is_written_again_in_its_listing() {
+    let mut listed: Result<Reply, ApiError> = Ok(Reply::Folders {
+        path: "/home/ada".into(),
+        parent: Some("/home".into()),
+        folders: Vec::new(),
+        refused: Some(Sentence::HomeHoldsChats.into()),
+    });
+    assert!(says(&listed));
+    translate(&mut listed, Language::Accented);
+    let Ok(Reply::Folders {
+        refused: Some(refused),
+        ..
+    }) = listed
+    else {
+        panic!("a listing")
+    };
+    let english = say(Language::English, &Sentence::HomeHoldsChats);
+    assert!(refused.starts_with('[') && *refused != english, "{refused}");
+    let plain: Result<Reply, ApiError> = Ok(Reply::Folders {
+        path: "/home/ada/code".into(),
+        parent: None,
+        folders: Vec::new(),
+        refused: None,
+    });
+    assert!(!says(&plain));
+}

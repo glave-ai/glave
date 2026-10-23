@@ -12,7 +12,7 @@ pub(crate) use self::language::Language;
 pub(crate) use self::say::say;
 pub(crate) use self::sentence::Sentence;
 
-use crate::protocol::{ApiError, Reply};
+use crate::protocol::{ApiError, Reply, Told};
 
 /// Whether `answered` holds a sentence of the server's own, which a transport writes in the
 /// caller's language.
@@ -20,6 +20,7 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
     match answered {
         Err(error) => error.message.translatable(),
         Ok(Reply::Projects { gone, .. }) => gone.iter().any(|gone| gone.message.translatable()),
+        Ok(Reply::Folders { refused, .. }) => refused.as_ref().is_some_and(Told::translatable),
         Ok(_) => false,
     }
 }
@@ -33,6 +34,10 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
                 each.message.translate(language);
             }
         }
+        Ok(Reply::Folders {
+            refused: Some(refused),
+            ..
+        }) => refused.translate(language),
         Ok(_) => {}
     }
 }

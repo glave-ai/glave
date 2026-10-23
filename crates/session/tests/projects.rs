@@ -394,6 +394,7 @@ fn the_person_here_sees_the_folders_in_a_folder_by_name() {
             path,
             parent,
             folders,
+            refused,
         } = listed
         else {
             panic!("folders, not {listed:?}")
@@ -410,6 +411,7 @@ fn the_person_here_sees_the_folders_in_a_folder_by_name() {
             .to_string_lossy()
             .into_owned();
         assert_eq!(parent, Some(up));
+        assert_eq!(refused, None, "it may be a project's folder");
         let relative = server
             .request(Request::FolderList {
                 path: Some("code".into()),

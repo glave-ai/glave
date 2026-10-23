@@ -2709,6 +2709,13 @@
           "path": {
             "description": "The folder listed, as this computer names it, links followed.",
             "type": "string"
+          },
+          "refused": {
+            "description": "Why the folder listed is no project's folder, when it is none: the server's\nsentence. The home folder, a folder above it and the temporary folder never are\n(`project/create` refuses them), though the folders inside may be.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
