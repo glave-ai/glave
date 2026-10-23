@@ -100,8 +100,7 @@ methods! {
     /// five minutes. Only glave on this computer: a local transport, or the local token.
     "signin/link" => SigninLink {} -> [Link],
     /// Trades a link's code for a browser session with this server, from this computer: a
-    /// token, good for 30 days from its last use, half of it over HTTP in a cookie the page's
-    /// scripts cannot read. Over HTTP it needs no sign-in.
+    /// bearer token, good for 30 days from its last use. Over HTTP it needs no sign-in.
     "signin/redeem" => SigninRedeem {
         #[serde(serialize_with = "glave_event::serialize_exposed")]
         code: Secret,

@@ -91,7 +91,7 @@ describe('SignInComponent', () => {
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelector('header glz-top-bar')?.textContent).toContain('glave');
     const said = root.querySelector('main')?.textContent ?? '';
-    expect(said).toContain('Run glave on this computer to sign this browser in');
+    expect(said).toContain('Open glave on this computer to sign this browser in');
     expect(said).not.toMatch(/serve|--|config|terminal/u);
     expect(root.querySelector('[data-testid="sign-in-passkey"]')).toBeNull();
     await expectAccessible(root);

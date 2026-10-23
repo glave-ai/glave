@@ -59,12 +59,10 @@ export const SESSION_CLIENT_FACTORY = new InjectionToken<(token: () => string) =
 
 /**
  * The person's session with the glave that served the app: a browser session (traded for the
- * link's one-time code, or begun with a passkey, kept for every tab of this browser, and
- * presented only to the server that made it) and the client every call goes through. The
- * server hands it over in two halves: the app keeps one in its origin's storage and presents
- * it with each call; the browser keeps the other in a cookie no script can read. A call the
- * server refuses for want of a sign-in signs the app out, and a tab that signs in or out takes
- * every other tab of this browser with it.
+ * link's one-time code, or begun with a passkey, kept in this origin's storage for every tab
+ * of this browser, and presented only to the server that made it) and the client every call
+ * goes through. A call the server refuses for want of a sign-in signs the app out, and a tab
+ * that signs in or out takes every other tab of this browser with it.
  */
 @Service()
 export class SessionService {
@@ -127,10 +125,11 @@ export class SessionService {
     params: Methods[M]['params'],
     signal?: AbortSignal,
   ): Promise<Methods[M]['result']> {
+    const presented = this.session()?.token;
     try {
       return await this.client.call(method, params, signal);
     } catch (error: unknown) {
-      this.noticeSignOut(error);
+      this.noticeSignOut(error, presented);
       throw error;
     }
   }
@@ -141,27 +140,29 @@ export class SessionService {
     params: Methods[M]['params'],
     signal?: AbortSignal,
   ): AsyncGenerator<Notification, Methods[M]['result'], void> {
+    const presented = this.session()?.token;
     try {
       return yield* this.client.stream(method, params, signal);
     } catch (error: unknown) {
-      this.noticeSignOut(error);
+      this.noticeSignOut(error, presented);
       throw error;
     }
   }
 
   /** Signs this browser out: its session ends with the server, and every tab forgets it. */
   async signOut(): Promise<void> {
-    if (this.session() !== null) {
+    const presented = this.session()?.token;
+    if (presented !== undefined) {
       try {
         await this.client.call('signin/end', {});
       } catch {
-        // Ended already, or the server is away: the tab forgets it all the same.
+        // Ended already, or the server is away: the browser forgets it all the same.
       }
     }
-    this.forget();
+    this.forget(presented);
   }
 
-  /** Signs every other browser out; this tab stays signed in. */
+  /** Signs every other browser out; this one stays signed in. */
   async signOutOthers(): Promise<void> {
     await this.call('signin/end_others', {});
   }
@@ -191,14 +192,21 @@ export class SessionService {
     }
   }
 
-  private forget(): void {
-    this.session.set(null);
-    forget(this.storage, TOKEN_KEY);
+  /**
+   * Forgets the session `ended`: this tab's, and this browser's while it still keeps that one.
+   * A newer one another tab began meanwhile stays, and this tab takes it.
+   */
+  private forget(ended: string | undefined): void {
+    if (readSession(this.storage)?.token === ended) {
+      forget(this.storage, TOKEN_KEY);
+    }
+    this.session.set(sessionFor(readSession(this.storage), this.server));
   }
 
-  private noticeSignOut(error: unknown): void {
+  /** Forgets the session `presented` when `error` says it signs no one in. */
+  private noticeSignOut(error: unknown, presented: string | undefined): void {
     if (error instanceof ApiError && error.signedOut) {
-      this.forget();
+      this.forget(presented);
     }
   }
 }

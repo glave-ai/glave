@@ -1002,9 +1002,8 @@ export type PasskeyCreateResult = {
   /** The id of the server it is for: the browser presents it to no other. */
   readonly server: string;
   /**
-   * The token the browser signs in with, which the app keeps: over HTTP its second half
-   * alone, presented as the bearer, the first set in a cookie the page's scripts cannot
-   * read.
+   * The bearer token the browser signs in with, kept in its origin's storage for every
+   * tab, never in a cookie.
    */
   readonly session: Secret;
 };
@@ -1032,9 +1031,8 @@ export type PasskeyGetResult = {
   /** The id of the server it is for: the browser presents it to no other. */
   readonly server: string;
   /**
-   * The token the browser signs in with, which the app keeps: over HTTP its second half
-   * alone, presented as the bearer, the first set in a cookie the page's scripts cannot
-   * read.
+   * The bearer token the browser signs in with, kept in its origin's storage for every
+   * tab, never in a cookie.
    */
   readonly session: Secret;
 };
@@ -1231,9 +1229,8 @@ export type SigninRedeemResult = {
   /** The id of the server it is for: the browser presents it to no other. */
   readonly server: string;
   /**
-   * The token the browser signs in with, which the app keeps: over HTTP its second half
-   * alone, presented as the bearer, the first set in a cookie the page's scripts cannot
-   * read.
+   * The bearer token the browser signs in with, kept in its origin's storage for every
+   * tab, never in a cookie.
    */
   readonly session: Secret;
 };

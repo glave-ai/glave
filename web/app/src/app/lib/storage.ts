@@ -1,8 +1,7 @@
 /**
  * This browser's storage, kept for small per-person conveniences (a panel's width, the theme)
- * and its half of the sign-in. It may be missing or refuse every call, as in some private
- * windows, so every helper here answers `null` or does nothing then, and the app works the same
- * without it.
+ * and its sign-in. It may be missing or refuse every call, as in some private windows, so every
+ * helper here answers `null` or does nothing then, and the app works the same without it.
  */
 export type Store = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | null;
 

@@ -107,6 +107,23 @@ describe('SessionService', () => {
     expect(session.signedIn()).toBe(false);
   });
 
+  it('a session refused in one tab never forgets a newer one another tab began', async () => {
+    localStorage.setItem(TOKEN_KEY, JSON.stringify(SIGNED_IN));
+    const fake = new FakeSession()
+      .answer('server/discover', DISCOVERED)
+      .answer('project/list', new ApiError({ code: ErrorCode.NO_SIGN_IN, message: 'ended' }));
+    const sent = startingOut(fake);
+    const session = TestBed.inject(SessionService);
+    await session.start();
+    const newer = { token: 'glave_session_newer', server: FAKE_SERVER };
+    // Another tab signed in again before this tab heard of it.
+    localStorage.setItem(TOKEN_KEY, JSON.stringify(newer));
+    await expect(session.call('project/list', {})).rejects.toBeInstanceOf(ApiError);
+    expect(JSON.parse(localStorage.getItem(TOKEN_KEY) ?? 'null')).toEqual(newer);
+    expect(session.signedIn()).toBe(true);
+    expect(sent.token()).toBe(newer.token);
+  });
+
   it('stays signed in after a reload, or in a new tab, with the session this browser kept', async () => {
     localStorage.setItem(TOKEN_KEY, JSON.stringify(SIGNED_IN));
     const fake = new FakeSession().answer('server/discover', DISCOVERED);

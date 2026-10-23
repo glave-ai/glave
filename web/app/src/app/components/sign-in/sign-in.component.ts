@@ -19,7 +19,7 @@ type Offer = 'setup' | 'passkey' | 'link';
 /**
  * The page for someone not signed in. Where glave is reached from elsewhere, a passkey signs
  * them in, and a setup link makes the first; on the computer it runs on, glave opens the
- * browser signed in and gives a link for any other, so the page says to run it.
+ * browser signed in and gives a link for any other, so the page says to open it.
  */
 @Component({
   selector: 'app-sign-in',
@@ -33,8 +33,8 @@ export class SignInComponent {
   private readonly passkeys = inject(PasskeysService);
   protected readonly copy = {
     name: 'glave',
-    heading: $localize`:@@signIn.heading:Run glave on this computer to sign this browser in`,
-    text: $localize`:@@signIn.text:When you run it, glave opens your browser signed in, and gives you a link that signs in any other browser on this computer. A browser stays signed in once it is.`,
+    heading: $localize`:@@signIn.heading:Open glave on this computer to sign this browser in`,
+    text: $localize`:@@signIn.text:Opening glave signs your browser in, and gives you a link that signs in any other browser on this computer. Once signed in, a browser stays signed in.`,
     passkeyHeading: $localize`:@@signIn.passkeyHeading:Sign in to glave`,
     passkeyText: $localize`:@@signIn.passkeyText:Sign in with the passkey you made for this glave: your device asks for your face, your fingerprint or its screen lock.`,
     passkeyHint: $localize`:@@signIn.passkeyHint:No passkey on this device yet? On the computer glave runs on, ask glave for a sign-in link, and open it here.`,

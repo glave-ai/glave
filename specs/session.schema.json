@@ -3248,7 +3248,7 @@
           },
           "session": {
             "$ref": "#/$defs/Secret",
-            "description": "The token the browser signs in with, which the app keeps: over HTTP its second half\nalone, presented as the bearer, the first set in a cookie the page's scripts cannot\nread."
+            "description": "The bearer token the browser signs in with, kept in its origin's storage for every\ntab, never in a cookie."
           }
         },
         "required": [
@@ -3310,7 +3310,7 @@
           },
           "session": {
             "$ref": "#/$defs/Secret",
-            "description": "The token the browser signs in with, which the app keeps: over HTTP its second half\nalone, presented as the bearer, the first set in a cookie the page's scripts cannot\nread."
+            "description": "The bearer token the browser signs in with, kept in its origin's storage for every\ntab, never in a cookie."
           }
         },
         "required": [
@@ -3917,7 +3917,7 @@
           },
           "session": {
             "$ref": "#/$defs/Secret",
-            "description": "The token the browser signs in with, which the app keeps: over HTTP its second half\nalone, presented as the bearer, the first set in a cookie the page's scripts cannot\nread."
+            "description": "The bearer token the browser signs in with, kept in its origin's storage for every\ntab, never in a cookie."
           }
         },
         "required": [

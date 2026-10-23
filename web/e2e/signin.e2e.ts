@@ -12,8 +12,8 @@ import {
 /**
  * Signing in by link against a real glave (`specs/one-server.md`, "Finding it"): the link's
  * code signs one browser in, leaves the address bar, and works once; the browser stays signed
- * in after a reload, in a new tab and once every tab is closed, with the session it keeps, half
- * in a cookie no script reads; signing out signs every tab out.
+ * in after a reload, in a new tab and once every tab is closed, with the session it keeps in its
+ * origin's storage, never a cookie; signing out signs every tab out.
  */
 test('a link signs one browser in once, and it stays signed in until it signs out', async ({
   page,
@@ -67,11 +67,8 @@ test('a link signs one browser in once, and it stays signed in until it signs ou
   }
   expect(problems()).toEqual([]);
 
-  // The cookie's half is out of every script's reach.
-  const cookies = await context.cookies(glave);
-  expect(cookies).toHaveLength(1);
-  expect(cookies[0]).toMatchObject({ httpOnly: true, sameSite: 'Strict', secure: false });
-  expect(await page.evaluate(() => document.cookie)).toBe('');
+  // Nothing of it is a cookie, which every port of this computer's loopback would be sent.
+  expect(await context.cookies()).toEqual([]);
 
   // The code is spent: the same link signs no other browser in.
   const another = await browser.newContext();
@@ -96,5 +93,4 @@ test('a link signs one browser in once, and it stays signed in until it signs ou
   await byTestId(settings, 'settings-sign-out').click();
   await expect(byTestId(settings, 'sign-in')).toBeVisible();
   await expect(byTestId(reopened, 'sign-in')).toBeVisible();
-  expect(await context.cookies(glave)).toEqual([]);
 });

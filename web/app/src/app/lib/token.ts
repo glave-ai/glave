@@ -3,15 +3,13 @@ import { codeFromFragment } from '@glave/client';
 import { type Store, readStored, writeStored } from './storage';
 
 /**
- * Where this browser keeps its half of a session, for every tab of this origin alone: never in
- * a URL or a log. The server keeps the other half in a cookie no script reads.
+ * Where this browser keeps its session, for every tab of this origin alone: never in a URL, a
+ * cookie or a log. A cookie would go to every port of this computer's loopback; this origin's
+ * storage is read by its own pages alone.
  */
 export const TOKEN_KEY = 'glave-session';
 
-/**
- * A browser session (the half the app presents), and the id of the server that made it: it is
- * presented to no other.
- */
+/** A browser session, and the id of the server that made it: it is presented to no other. */
 export interface BrowserSession {
   readonly token: string;
   readonly server: string;

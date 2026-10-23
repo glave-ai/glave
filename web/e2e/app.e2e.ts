@@ -8,7 +8,7 @@ test('without a sign-in, the app says how to get one, in plain words', async ({ 
   await page.goto('/');
   await expect(page).toHaveURL(/\/sign-in$/u);
   await expect(byTestId(page, 'sign-in')).toContainText(
-    'Run glave on this computer to sign this browser in',
+    'Open glave on this computer to sign this browser in',
   );
   await expect(byTestId(page, 'sign-in')).not.toContainText('serve');
   await expectAccessible(page);

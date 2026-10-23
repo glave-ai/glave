@@ -109,8 +109,9 @@ pub(crate) async fn open(args: &Args) -> anyhow::Result<ExitCode> {
     match shown {
         Ok(()) => {
             eprintln!("glave: opened glave in your browser");
-            if to_person {
-                eprintln!("{}", another_browser(&url, &link(&server).await?));
+            // The browser is open: a second link that cannot be had is no failure.
+            if to_person && let Ok(other) = link(&server).await {
+                eprintln!("{}", another_browser(&url, &other));
             }
         }
         Err(error) => {
