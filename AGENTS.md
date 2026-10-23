@@ -24,11 +24,11 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 | Term | Meaning |
 | --- | --- |
 | Organization | The tenant: one on a laptop (never shown), one in a company, many on Glave Cloud. Holds providers, catalogs, policy, the theme, the budget (`specs/model.md`) |
-| Team | A flat group of people, granted models, connections and budgets |
+| Team | A flat group of people, granted models, apps and budgets |
 | Person | Someone who signs in: their Chats, their computer, their own sign-ins and choices |
-| Project | The scope boundary: a project (folders, instructions, members), or a person's Chats, their project of kind `personal`. Holds memory, history, files, members, policy, budget, default environment |
+| Project | The scope boundary: a project (one folder, whose files are its words, and members), or a person's Chats, their project of kind `personal`. Holds the powers accepted into it, memory (each member's own), history, files, members, policy, budget, default environment |
 | Thread | A conversation or task in a project. Workers fork from a parent with permissions and budget ⊆ the parent's |
-| Environment | A reusable template for where work runs: computer type, image, setup, network, credentials, limits |
+| Environment | A reusable template for where work runs: computer type, image, setup, network, the credentials it names (their values kept in glave), limits |
 | Computer | A person's one machine (laptop, server or cloud machine) where the agent works, its reach drawn by the operating system's sandbox: secrets hidden, the machine readable, the project writable. Fresh per-task workers are an upgrade |
 | Harness | The agent loop: context, tool calls, approvals, receipts, threads, scheduling |
 | Gateway | The single door out for models and remote tools: routing, keys, policy, budgets, metering |

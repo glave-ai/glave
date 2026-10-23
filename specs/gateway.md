@@ -107,7 +107,7 @@ The same model can be reached at several services (Claude Haiku from Anthropic o
 
 ## Remote tools: the catalog
 
-- Personally, the gateway's remote tools are the person's own MCP servers (`mcp.json`), as today: nothing new to set up.
+- Personally, a person's remote tools are the apps they add, from glave's own list or any other, since an organization of one lets anyone add (`policy.md`, "Connected apps"); today they are their own MCP servers in `mcp.json`, with nothing new to set up.
 - In an organization, the gateway serves its **catalog** over MCP (Streamable HTTP, stateless) at `/mcp`: the servers its policy's `[mcp] catalog` names, from the gateway's own `mcp.json` (every one there when the policy names none), each with credentials only the gateway holds (`${VAR}` filled from the gateway's environment). Every harness pointed at the gateway gets those tools, with no keys on people's machines.
 - A catalog tool is named `<server>__<tool>`: the double underscore glave, Claude Code and Codex already put between a server and its tools, and within what every model API accepts in a name (letters, digits, `_`, `-`), so tools never collide across servers. glave shows each to the model as `mcp__<server>__<tool>`, exactly as if the server were the person's own.
 - Everything else about a tool passes through as its server lists it: its description, schema and annotations (`readOnlyHint`, `openWorldHint`, …), which the harness uses to decide when to ask.
