@@ -1,8 +1,8 @@
 //! Signing browsers in on the person's own computer (`specs/one-server.md`, "Finding it"): a
 //! link's code works once, for a session that outlives a restart, is the local person, ends
 //! when the browser signs out, and is this server's and this computer's alone; a foreign
-//! `Host` or `Origin` is refused, a session's bearer or not; and nobody an identity provider signs in gets a session, so their sign-in ends
-//! when the provider stops renewing it (#365).
+//! `Host` or `Origin` is refused, a session's bearer or not; and nobody an identity provider
+//! signs in gets a session, so their sign-in ends when the provider stops renewing it (#365).
 
 use std::path::Path;
 use std::sync::Arc;

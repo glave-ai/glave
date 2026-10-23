@@ -151,6 +151,11 @@ export class SessionService {
 
   /** Signs this browser out: its session ends with the server, and every tab forgets it. */
   async signOut(): Promise<void> {
+    // The session this browser keeps now, though this tab missed another's signing in.
+    const kept = sessionFor(readSession(this.storage), this.server);
+    if (kept !== null) {
+      this.session.set(kept);
+    }
     const presented = this.session()?.token;
     if (presented !== undefined) {
       try {
