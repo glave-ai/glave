@@ -4,6 +4,7 @@
 
 use std::collections::VecDeque;
 use std::net::SocketAddr;
+use std::sync::Mutex;
 
 use glave_ports::{EventLog, SseDecoder};
 use glave_session::http::Site;
@@ -88,11 +89,14 @@ impl Served {
     }
 }
 
-/// A client of one served session API, signed in with one token.
+/// A client of one served session API, signed in with one token, keeping the cookies the
+/// server sets as a browser does.
 pub(crate) struct Web {
     http: reqwest::Client,
     url: String,
     pub token: Option<String>,
+    /// Each cookie the server set and has not cleared, by name.
+    cookies: Mutex<Vec<(String, String)>>,
     /// The origin whose name its requests come to, as a tunnel on this computer forwards a
     /// browser's there; the listener's own address when none.
     reaching: Option<String>,
@@ -106,6 +110,8 @@ pub(crate) struct Answered {
     pub status: u16,
     pub content_type: String,
     pub www_authenticate: Option<String>,
+    /// Each `Set-Cookie` the answer carries.
+    pub set_cookies: Vec<String>,
     /// The JSON answer, or each server-sent event.
     pub messages: Vec<Value>,
 }
@@ -116,8 +122,32 @@ impl Web {
             http: reqwest::Client::new(),
             url: served.url.clone(),
             token,
+            cookies: Mutex::new(Vec::new()),
             reaching: None,
             reading: None,
+            next_id: 0,
+        }
+    }
+
+    /// Another tab of the same browser: the same session, the same cookies.
+    pub(crate) fn tab(&self) -> Self {
+        self.at_url(&self.url)
+    }
+
+    /// The same browser at `served`, which a browser sends the cookies of every port of its
+    /// host, as it would to a server on this computer started again at another port.
+    pub(crate) fn at(&self, served: &Served) -> Self {
+        self.at_url(&served.url)
+    }
+
+    fn at_url(&self, url: &str) -> Self {
+        Self {
+            http: reqwest::Client::new(),
+            url: url.to_owned(),
+            token: self.token.clone(),
+            cookies: Mutex::new(self.cookies.lock().unwrap().clone()),
+            reaching: self.reaching.clone(),
+            reading: self.reading.clone(),
             next_id: 0,
         }
     }
@@ -147,6 +177,10 @@ impl Web {
         if let Some(token) = &self.token {
             post = post.bearer_auth(token);
         }
+        let cookies = self.cookie();
+        if !cookies.is_empty() {
+            post = post.header("cookie", cookies);
+        }
         if let Some(method) = method {
             post = post.header("Glave-Method", method);
         }
@@ -160,10 +194,35 @@ impl Web {
         post.send().await.unwrap()
     }
 
+    /// The `Cookie` header this client sends: every cookie it keeps.
+    pub(crate) fn cookie(&self) -> String {
+        let kept = self.cookies.lock().unwrap();
+        let pairs: Vec<String> = kept
+            .iter()
+            .map(|(name, value)| format!("{name}={value}"))
+            .collect();
+        pairs.join("; ")
+    }
+
+    /// Keeps the cookies `response` sets, and forgets those it clears.
+    fn keep(&self, response: &reqwest::Response) {
+        let mut kept = self.cookies.lock().unwrap();
+        for set in response.headers().get_all("set-cookie") {
+            let set = set.to_str().unwrap();
+            let (pair, attributes) = set.split_once(';').unwrap_or((set, ""));
+            let (name, value) = pair.split_once('=').unwrap();
+            kept.retain(|(kept, _)| kept != name);
+            if !attributes.contains("Max-Age=0") {
+                kept.push((name.to_owned(), value.to_owned()));
+            }
+        }
+    }
+
     /// Posts `message` and reads the whole answer.
     pub(crate) async fn post(&self, message: &Value) -> Answered {
         let method = message["method"].as_str().map(str::to_owned);
         let response = self.open(message, method.as_deref()).await;
+        self.keep(&response);
         let header = |name: &str| {
             response
                 .headers()
@@ -173,6 +232,12 @@ impl Web {
         let status = response.status().as_u16();
         let content_type = header("content-type").unwrap_or_default();
         let www_authenticate = header("www-authenticate");
+        let set_cookies = response
+            .headers()
+            .get_all("set-cookie")
+            .iter()
+            .map(|value| value.to_str().unwrap().to_owned())
+            .collect();
         let mut events = Events::new(response);
         let mut messages = Vec::new();
         if content_type == "text/event-stream" {
@@ -189,6 +254,7 @@ impl Web {
             status,
             content_type,
             www_authenticate,
+            set_cookies,
             messages,
         }
     }

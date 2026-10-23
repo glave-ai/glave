@@ -19,14 +19,13 @@ describe('storage', () => {
   });
 
   it('finds the page’s storage, or none', () => {
-    expect(storageOf(document, 'localStorage')).toBe(localStorage);
-    expect(storageOf(document, 'sessionStorage')).toBe(sessionStorage);
+    expect(storageOf(document)).toBe(localStorage);
     const throwing = {
       get defaultView(): Window {
         throw new Error('denied');
       },
     } as unknown as Document;
-    expect(storageOf(throwing, 'localStorage')).toBeNull();
+    expect(storageOf(throwing)).toBeNull();
   });
 
   it('stores, reads and forgets JSON', () => {

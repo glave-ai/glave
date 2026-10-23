@@ -1,8 +1,10 @@
 //! Signing browsers in on the person's own computer (`specs/one-server.md`, "Finding it"): a
-//! link's code works once, for a session that outlives a restart, is the local person, ends
-//! when the browser signs out, and is this server's and this computer's alone; a foreign
-//! `Host` or `Origin` is refused; and nobody an identity provider signs in gets a session, so their sign-in ends
-//! when the provider stops renewing it (#365).
+//! link's code works once, for a session that outlives a restart and is shared by the
+//! browser's tabs, is the local person, ends when the browser signs out, and is this server's
+//! and this computer's alone; it is handed over in two halves, a cookie the page's scripts
+//! cannot read and the answer's, and neither alone signs in; a foreign `Host` or `Origin` is
+//! refused, cookie or not; and nobody an identity provider signs in gets a session, so their
+//! sign-in ends when the provider stops renewing it (#365).
 
 use std::path::Path;
 use std::sync::Arc;
@@ -11,7 +13,9 @@ use glave_ports::testing::ManualClock;
 use glave_session::Answering;
 use glave_session::client::Remote;
 use glave_session::protocol::{Reply, Request, code};
-use glave_session::signin::{Browsers, Door, LocalToken, SignIn, SignInError, Trust};
+use glave_session::signin::{
+    Browsers, Door, LocalToken, SESSION_PREFIX, SignIn, SignInError, Trust,
+};
 use serde_json::{Value, json};
 
 use crate::support::issuer::{AUDIENCE, Issuer, NOW, Signer, fixed_clock};
@@ -50,8 +54,38 @@ fn redeem(code: &str) -> Request {
     }
 }
 
+/// A browser signed in with a link from `token`'s program, as the app is: the answer's half of
+/// its session as its bearer, the cookie's half kept as a browser keeps cookies; and the
+/// answer's `Set-Cookie`.
+async fn signed_in(served: &Served, token: &LocalToken) -> (Web, String) {
+    let code = link(served, token).await;
+    let mut browser = Web::new(served, None);
+    let (message, _) = browser.message(&redeem(&code));
+    let answered = browser.post(&message).await;
+    let redeemed = answered.messages.first().unwrap();
+    browser.token = redeemed["result"]["session"].as_str().map(str::to_owned);
+    assert!(browser.token.is_some(), "{redeemed}");
+    (browser, answered.set_cookies.concat())
+}
+
+/// The whole session `browser` holds, its two halves joined, as the server joins them.
+fn whole(browser: &Web) -> String {
+    let second = browser.token.as_deref().unwrap();
+    let cookie = browser.cookie();
+    let first = cookie.split_once('=').unwrap().1;
+    format!(
+        "{SESSION_PREFIX}{first}{}",
+        second.strip_prefix(SESSION_PREFIX).unwrap()
+    )
+}
+
 fn projects() -> Request {
     Request::ProjectList { limit: None }
+}
+
+/// The code a browser's call of `request` is answered with: none when it is answered.
+async fn refused(browser: &mut Web, request: &Request) -> Value {
+    browser.call(request).await["error"]["code"].clone()
 }
 
 #[test]
@@ -67,49 +101,114 @@ fn a_link_signs_one_browser_in_once_for_a_session_that_outlives_a_restart() {
         assert!(id.is_string(), "discover needs no sign-in: {discovered}");
 
         let code = link(&served, &token).await;
-        let redeemed = anyone.call(&redeem(&code)).await;
+        let mut browser = Web::new(&served, None);
+        let redeemed = browser.call(&redeem(&code)).await;
         assert_eq!(redeemed["result"]["server"], id, "{redeemed}");
-        let session = redeemed["result"]["session"].as_str().unwrap().to_owned();
+        browser.token = redeemed["result"]["session"].as_str().map(str::to_owned);
         let again = anyone.call(&redeem(&code)).await;
         assert_eq!(again["error"]["code"], json!(code::NO_SIGN_IN), "once");
         assert_eq!(
-            anyone.call(&projects()).await["error"]["code"],
+            refused(&mut anyone, &projects()).await,
             json!(code::NO_SIGN_IN),
             "nothing else without a sign-in"
         );
 
-        let mut browser = Web::new(&served, Some(session.clone()));
         let listed = browser.call(&projects()).await;
         assert!(listed["result"]["projects"].is_array(), "{listed}");
-        let refused = browser.call(&Request::SigninLink {}).await;
         assert_eq!(
-            refused["error"]["code"],
+            refused(&mut browser, &Request::SigninLink {}).await,
             json!(code::NOT_ALLOWED),
             "a browser makes no links"
         );
         served.close().await;
 
-        // A restart: a new token, the same folder, the same server and session.
+        // A restart: a new token, the same folder, the same server and session, in every tab.
         let token = LocalToken::new([4; 32]);
         let served = serve(&dir, browsers(&dir, &clock).await, &token).await;
         let rediscovered = Web::new(&served, None).call(&Request::Discover {}).await;
         assert_eq!(rediscovered["result"]["id"], id);
-        let mut browser = Web::new(&served, Some(session.clone()));
+        let mut browser = browser.at(&served);
+        let mut tab = browser.tab();
         assert!(browser.call(&projects()).await["result"].is_object());
+        assert!(
+            tab.call(&projects()).await["result"].is_object(),
+            "a new tab"
+        );
+        let session = whole(&browser);
+        let second = browser.token.clone().unwrap();
+        let cookie = browser.cookie();
+        let first = cookie.split_once('=').unwrap().1.to_owned();
         let ended = browser.call(&Request::SigninEnd {}).await;
         assert_eq!(ended["result"], json!({}), "{ended}");
-        let after = browser.call(&projects()).await;
+        assert_eq!(browser.cookie(), "", "signing out clears the cookie");
         assert_eq!(
-            after["error"]["code"],
+            refused(&mut tab, &projects()).await,
             json!(code::NO_SIGN_IN),
-            "signed out"
+            "signed out in every tab"
         );
         let kept = std::fs::read(dir.join("browsers.db")).unwrap();
+        for kept_not in [&session, &first, &second] {
+            assert!(
+                !kept
+                    .windows(kept_not.len())
+                    .any(|window| window == kept_not.as_bytes()),
+                "only its hash is kept"
+            );
+        }
+        served.close().await;
+    });
+}
+
+#[test]
+fn a_session_comes_in_halves_neither_of_which_signs_in_alone() {
+    block_on!(async {
+        let dir = folder("browsers-halves");
+        let token = LocalToken::new([8; 32]);
+        let served = serve(&dir, browsers(&dir, &fixed_clock()).await, &token).await;
+        let (mut browser, set) = signed_in(&served, &token).await;
+        let id = Web::new(&served, None).call(&Request::Discover {}).await["result"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
         assert!(
-            !kept
-                .windows(session.len())
-                .any(|window| window == session.as_bytes()),
-            "only its hash is kept"
+            set.starts_with(&format!("glave-{id}=")),
+            "named after its server: {set}"
+        );
+        assert!(
+            set.ends_with("; Path=/; Max-Age=2592000; HttpOnly; SameSite=Strict"),
+            "no script reads it, no other site sends it, and over plain HTTP: {set}"
+        );
+        let second = browser.token.clone().unwrap();
+        assert!(!second.contains(set.split_once(';').unwrap().0.split_once('=').unwrap().1));
+
+        // The answer's half alone, as a page of this origin's could take away.
+        let mut page_only = Web::new(&served, Some(second.clone()));
+        assert_eq!(
+            refused(&mut page_only, &projects()).await,
+            json!(code::NO_SIGN_IN)
+        );
+        // The cookie alone, as every page on this computer's loopback is sent.
+        let mut cookie_only = browser.tab();
+        cookie_only.token = None;
+        assert_eq!(
+            refused(&mut cookie_only, &projects()).await,
+            json!(code::NO_SIGN_IN)
+        );
+        // The whole token in one piece, as nothing over HTTP is ever handed.
+        let mut whole_bearer = Web::new(&served, Some(whole(&browser)));
+        assert_eq!(
+            refused(&mut whole_bearer, &projects()).await,
+            json!(code::NO_SIGN_IN)
+        );
+
+        // Both, as the app's own page presents them; each answer renews the cookie.
+        let (message, _) = browser.message(&projects());
+        let answered = browser.post(&message).await;
+        assert!(answered.messages[0]["result"].is_object());
+        assert_eq!(
+            answered.set_cookies.concat(),
+            set,
+            "the cookie lasts 30 more days"
         );
         served.close().await;
     });
@@ -121,19 +220,13 @@ fn signing_other_browsers_out_keeps_this_one() {
         let dir = folder("browsers-others");
         let token = LocalToken::new([5; 32]);
         let served = serve(&dir, browsers(&dir, &fixed_clock()).await, &token).await;
-        let mut sessions = Vec::new();
-        for _ in 0..2 {
-            let code = link(&served, &token).await;
-            let redeemed = Web::new(&served, None).call(&redeem(&code)).await;
-            sessions.push(redeemed["result"]["session"].as_str().unwrap().to_owned());
-        }
-        let mut this = Web::new(&served, Some(sessions[0].clone()));
-        let mut other = Web::new(&served, Some(sessions[1].clone()));
+        let (mut this, _) = signed_in(&served, &token).await;
+        let (mut other, _) = signed_in(&served, &token).await;
         let done = this.call(&Request::SigninEndOthers {}).await;
         assert_eq!(done["result"], json!({}), "{done}");
         assert!(this.call(&projects()).await["result"].is_object());
         assert_eq!(
-            other.call(&projects()).await["error"]["code"],
+            refused(&mut other, &projects()).await,
             json!(code::NO_SIGN_IN)
         );
         served.close().await;
@@ -147,11 +240,7 @@ fn a_session_is_one_servers_and_this_computers_alone() {
         let (ours, theirs) = (folder("browsers-ours"), folder("browsers-theirs"));
         let served = serve(&ours, browsers(&ours, &fixed_clock()).await, &token).await;
         let other = serve(&theirs, browsers(&theirs, &fixed_clock()).await, &token).await;
-        let code = link(&served, &token).await;
-        let session = Web::new(&served, None).call(&redeem(&code)).await["result"]["session"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+        let (browser, _) = signed_in(&served, &token).await;
         let ours_id =
             Web::new(&served, None).call(&Request::Discover {}).await["result"]["id"].clone();
         let theirs_id =
@@ -160,11 +249,14 @@ fn a_session_is_one_servers_and_this_computers_alone() {
             ours_id, theirs_id,
             "each glave folder is a server of its own"
         );
-        let elsewhere = Web::new(&other, Some(session.clone()))
-            .call(&projects())
-            .await;
-        assert_eq!(elsewhere["error"]["code"], json!(code::NO_SIGN_IN));
+        // Another glave on this computer is sent the same cookie, which it does not read.
+        let mut elsewhere = browser.at(&other);
+        assert_eq!(
+            refused(&mut elsewhere, &projects()).await,
+            json!(code::NO_SIGN_IN)
+        );
 
+        let session = whole(&browser);
         let browsers = browsers(&ours, &fixed_clock()).await;
         let signin = SignIn::local(token.clone(), Box::new(fixed_clock())).with_browsers(browsers);
         for there in [Door::Public, Door::Elsewhere] {
@@ -180,19 +272,24 @@ fn a_session_is_one_servers_and_this_computers_alone() {
 }
 
 #[test]
-fn a_foreign_host_or_origin_is_refused() {
+fn a_foreign_host_or_origin_is_refused_cookie_or_not() {
     block_on!(async {
         let dir = folder("browsers-hosts");
         let token = LocalToken::new([7; 32]);
         let served = serve(&dir, browsers(&dir, &fixed_clock()).await, &token).await;
+        let (browser, _) = signed_in(&served, &token).await;
         let http = reqwest::Client::new();
-        let discover = json!({"jsonrpc": "2.0", "id": 1, "method": "server/discover"});
+        let listing = json!({"jsonrpc": "2.0", "id": 1, "method": "project/list", "params": {}});
         let port = served.address.port();
+        let bearer = format!("Bearer {}", browser.token.as_deref().unwrap());
+        let cookie = browser.cookie();
         let status = |host: String, origin: Option<String>| {
             let mut request = http
                 .post(&served.url)
                 .header("Host", host)
-                .body(discover.to_string());
+                .header("Authorization", &bearer)
+                .header("Cookie", &cookie)
+                .body(listing.to_string());
             if let Some(origin) = origin {
                 request = request.header("Origin", origin);
             }
@@ -204,9 +301,17 @@ fn a_foreign_host_or_origin_is_refused() {
             status(own.clone(), Some(format!("http://{own}"))).await,
             200
         );
+        // A name rebound to 127.0.0.1, and a page of another site, a page of another port of
+        // this computer (which the browser sends the cookie) and one at another name of it.
         assert_eq!(status(format!("rebound.example:{port}"), None).await, 403);
-        let foreign = Some("https://evil.example".to_owned());
-        assert_eq!(status(own.clone(), foreign).await, 403);
+        for page in [
+            "https://evil.example".to_owned(),
+            format!("http://127.0.0.1:{}", port.wrapping_add(1)),
+            format!("http://localhost:{port}"),
+            "null".to_owned(),
+        ] {
+            assert_eq!(status(own.clone(), Some(page.clone())).await, 403, "{page}");
+        }
         let page = http
             .get(&served.url)
             .header("Host", format!("rebound.example:{port}"))

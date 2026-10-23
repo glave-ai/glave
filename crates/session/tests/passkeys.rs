@@ -64,8 +64,9 @@ async fn asked(web: &mut Web, request: &Request) -> Value {
     }
 }
 
-/// A passkey made on `phone` through a setup link glave here made, and its session.
-async fn set_up(served: &Served, token: &LocalToken, phone: &mut Authenticator) -> String {
+/// A browser elsewhere signed in with a passkey made on `phone` through a setup link glave
+/// here made.
+async fn set_up(served: &Served, token: &LocalToken, phone: &mut Authenticator) -> Web {
     let mut here = Web::new(served, Some(token.reveal().to_owned()));
     let setup = asked(&mut here, &Request::SigninSetup {}).await;
     let code = glave_event::Secret::new(setup["code"].as_str().unwrap());
@@ -78,23 +79,26 @@ async fn set_up(served: &Served, token: &LocalToken, phone: &mut Authenticator) 
         name: Some("Phone".into()),
     };
     let signed_in = asked(&mut anyone, &created).await;
-    signed_in["session"].as_str().unwrap().to_owned()
+    anyone.token = signed_in["session"].as_str().map(str::to_owned);
+    anyone
 }
 
-/// A browser elsewhere signed in with `phone`'s passkey: its session.
-async fn sign_in(served: &Served, phone: &mut Authenticator) -> Value {
+/// A browser elsewhere signed in with `phone`'s passkey, and what signing in answered.
+async fn sign_in(served: &Served, phone: &mut Authenticator) -> (Web, Value) {
     let mut anyone = elsewhere(served, None);
     let options = asked(&mut anyone, &Request::PasskeyGetOptions {}).await;
     let credential = phone.get(&options["options"]).unwrap();
     let ceremony = options["ceremony"].as_str().unwrap().to_owned();
-    asked(
+    let signed_in = asked(
         &mut anyone,
         &Request::PasskeyGet {
             ceremony,
             credential,
         },
     )
-    .await
+    .await;
+    anyone.token = signed_in["session"].as_str().map(str::to_owned);
+    (anyone, signed_in)
 }
 
 #[test]
@@ -108,15 +112,20 @@ fn a_setup_link_makes_a_passkey_that_signs_browsers_in_from_elsewhere() {
         assert_eq!(discovered["signin"], json!(["link", "passkey"]));
 
         let mut phone = Authenticator::new(ORIGIN).unwrap();
-        let first = set_up(&served, &token, &mut phone).await;
-        let mut person = elsewhere(&served, Some(first));
+        let mut person = set_up(&served, &token, &mut phone).await;
         let listed = asked(&mut person, &Request::PasskeyList {}).await;
         assert_eq!(listed["passkeys"][0]["name"], "Phone", "{listed}");
 
-        let again = sign_in(&served, &mut phone).await;
+        let (mut later, again) = sign_in(&served, &mut phone).await;
         assert_eq!(again["server"], discovered["id"]);
-        let mut later = elsewhere(&served, Some(again["session"].as_str().unwrap().into()));
         assert!(asked(&mut later, &Request::PasskeyList {}).await["passkeys"].is_array());
+        // Through the public origin, which is HTTPS, the cookie travels only over HTTPS.
+        let (message, _) = later.message(&Request::PasskeyList {});
+        let renewed = later.post(&message).await.set_cookies.concat();
+        assert!(
+            renewed.ends_with("; HttpOnly; SameSite=Strict; Secure"),
+            "{renewed}"
+        );
         served.close().await;
     });
 }
@@ -142,9 +151,10 @@ fn only_a_passkey_signs_in_through_the_public_origin() {
             asked(&mut elsewhere(&served, None), &redeem).await,
             no_sign_in
         );
-        let session = asked(&mut Web::new(&served, None), &redeem).await;
-        let by_link = session["session"].as_str().unwrap().to_owned();
-        let mut linked = elsewhere(&served, Some(by_link));
+        let mut browser = Web::new(&served, None);
+        let session = asked(&mut browser, &redeem).await;
+        browser.token = session["session"].as_str().map(str::to_owned);
+        let mut linked = browser.tab().reaching(ORIGIN);
         assert_eq!(
             asked(&mut linked, &Request::PasskeyList {}).await,
             no_sign_in
@@ -155,8 +165,7 @@ fn only_a_passkey_signs_in_through_the_public_origin() {
             assert_eq!(asked(&mut anyone, &signed_in_only).await, no_sign_in);
         }
         let mut phone = Authenticator::new(ORIGIN).unwrap();
-        let by_passkey = set_up(&served, &token, &mut phone).await;
-        let mut person = elsewhere(&served, Some(by_passkey));
+        let mut person = set_up(&served, &token, &mut phone).await;
         let setup = asked(&mut person, &Request::SigninSetup {}).await;
         assert_eq!(
             setup,
@@ -174,8 +183,7 @@ fn the_person_adds_and_removes_passkeys_and_removing_one_signs_its_browsers_out(
         let token = LocalToken::new([7; 32]);
         let served = serve(&dir, true, &token).await;
         let mut phone = Authenticator::new(ORIGIN).unwrap();
-        let session = set_up(&served, &token, &mut phone).await;
-        let mut person = elsewhere(&served, Some(session));
+        let mut person = set_up(&served, &token, &mut phone).await;
         let options = asked(&mut person, &Request::PasskeyAddOptions {}).await;
         let mut laptop = Authenticator::new(ORIGIN).unwrap();
         let added = Request::PasskeyAdd {
@@ -188,9 +196,7 @@ fn the_person_adds_and_removes_passkeys_and_removing_one_signs_its_browsers_out(
         assert_eq!(listed["passkeys"].as_array().unwrap().len(), 2);
 
         let phone_s = listed["passkeys"][0]["id"].as_str().unwrap().to_owned();
-        let mut on_laptop = elsewhere(&served, None);
-        let laptop_session = sign_in(&served, &mut laptop).await["session"].clone();
-        on_laptop.token = laptop_session.as_str().map(str::to_owned);
+        let (mut on_laptop, _) = sign_in(&served, &mut laptop).await;
         let removed = Request::PasskeyRemove { passkey: phone_s };
         assert_eq!(asked(&mut on_laptop, &removed).await, json!({}));
         let gone = asked(&mut person, &Request::PasskeyList {}).await;

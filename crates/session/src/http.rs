@@ -1,6 +1,7 @@
 //! The session API over HTTP (`specs/session.md`, "Transports"). A client `POST`s one JSON-RPC
-//! request to `/` with an OIDC access token, or from this computer with the server's local
-//! token. The answer is JSON, or for `turn/start`, `goal/start`, `thread/watch` and
+//! request to `/` with an OIDC access token, from this computer with the server's local token,
+//! or as a browser the server signed in, with its session in two halves (`cookie`). The answer
+//! is JSON, or for `turn/start`, `goal/start`, `thread/watch` and
 //! `thread/list/watch` a `text/event-stream` of notifications ending with the response (`body`):
 //! a watch's events carry their `seq` as their id, a list's summaries their `updated_at`, and a
 //! comment keeps a quiet stream open. The method may
@@ -14,6 +15,7 @@
 //! refused (`hosts`). Beside plain HTTP, the server may serve HTTPS of its own (`listen`).
 
 mod body;
+mod cookie;
 mod hosts;
 mod listen;
 mod site;
@@ -27,6 +29,7 @@ use std::pin::{Pin, pin};
 use std::sync::Arc;
 use std::time::Duration;
 
+use glave_event::AuthMethod;
 use glave_ports::{BlobStore, EventLog, ModelProvider};
 use hyper::body::{Body as _, Incoming};
 use hyper::header::{self, HeaderMap, HeaderValue};
@@ -37,6 +40,7 @@ use hyper_util::rt::{TokioIo, TokioTimer};
 use tokio::task::JoinSet;
 
 use self::body::Answer;
+use self::cookie::{Jar, Keeping};
 use self::hosts::door;
 use self::listen::connected;
 use crate::dispatch::Answered;
@@ -108,6 +112,7 @@ where
         let peer = peer.ip();
         let (server, signin, site) = (server.clone(), Arc::clone(&signin), Arc::clone(&site));
         let (hosts, tls) = (Arc::clone(&listening.names), listening.handshakes());
+        let encrypted = tls.is_some();
         connections.spawn(async move {
             let service = service_fn(move |request: HttpRequest<Incoming>| {
                 let (server, signin, site) =
@@ -115,6 +120,8 @@ where
                 let names = hosts.as_ref().as_ref();
                 let foreign = names.is_some_and(|hosts| !hosts.allow(request.headers()));
                 let door = door(names, request.headers(), peer);
+                // The public origin is HTTPS, wherever what serves it forwards from.
+                let secure = encrypted || door == Door::Public;
                 async move {
                     if foreign {
                         return Ok::<_, Infallible>(plain(StatusCode::FORBIDDEN));
@@ -123,7 +130,7 @@ where
                         Some(site) if is_read(request.method()) => {
                             site.answer(request.uri().path()).await
                         }
-                        _ => answer(&server, &signin, door, request).await,
+                        _ => answer(&server, &signin, door, secure, request).await,
                     };
                     Ok::<_, Infallible>(answered)
                 }
@@ -145,11 +152,12 @@ where
     Ok(())
 }
 
-/// Answers one HTTP request, which came in at `door`.
+/// Answers one HTTP request, which came in at `door`, over HTTPS when `secure` says so.
 async fn answer<P, L, B>(
     server: &Server<P, L, B>,
     signin: &SignIn,
     door: Door,
+    secure: bool,
     request: HttpRequest<Incoming>,
 ) -> Response<Answer>
 where
@@ -167,7 +175,16 @@ where
             .insert(header::ALLOW, HeaderValue::from_static("POST"));
         return refused;
     }
-    let token = bearer(request.headers()).map(str::to_owned);
+    let jar = server
+        .server_id()
+        .map(|id| Jar::new(&id, secure, request.headers()));
+    let token = match (bearer(request.headers()), &jar) {
+        (Some(bearer), Some(jar)) => match jar.token(bearer) {
+            Ok(token) => Some(token),
+            Err(refused) => return unauthorized(&refused),
+        },
+        (bearer, _) => bearer.map(str::to_owned),
+    };
     // The languages the client reads, for the server's own sentences when the caller chose none.
     let asked = request
         .headers()
@@ -200,7 +217,23 @@ where
             Err(refused) => return unauthorized(&refused),
         },
     };
-    dispatch(server, &caller, id, request, asked.as_deref()).await
+    let keeping = keeping(&caller, &request);
+    let cookies = jar.as_ref().map(|jar| (jar, keeping));
+    dispatch(server, &caller, id, request, asked.as_deref(), cookies).await
+}
+
+/// What `request`'s answer does with a browser's cookie: clears it when `caller`'s browser
+/// signs out, sets it again when they signed in with it.
+fn keeping(caller: &glave_ports::Caller, request: &Request) -> Keeping {
+    let browser = caller
+        .auth
+        .as_ref()
+        .is_some_and(|auth| auth.method == AuthMethod::Local && auth.session.is_some());
+    match request {
+        _ if !browser => Keeping::Nothing,
+        Request::SigninEnd {} => Keeping::Clear,
+        _ => Keeping::Renew,
+    }
 }
 
 /// The JSON-RPC request `request` carries, of at most `most` bytes, or the error response
@@ -253,13 +286,15 @@ fn open(request: &Request, door: Door) -> Result<(), SignInError> {
     }
 }
 
-/// Runs a request for a signed-in caller, who reads the languages `asked` (`Accept-Language`).
+/// Runs a request for a signed-in caller, who reads the languages `asked` (`Accept-Language`),
+/// keeping their browser's cookie as `cookies` say.
 async fn dispatch<P, L, B>(
     server: &Server<P, L, B>,
     caller: &glave_ports::Caller,
     id: Option<Id>,
     request: Request,
     asked: Option<&str>,
+    cookies: Option<(&Jar, Keeping)>,
 ) -> Response<Answer>
 where
     P: ModelProvider + 'static,
@@ -270,7 +305,12 @@ where
         Answered::Reply(reply) => match id {
             Some(id) => {
                 let reply = server.in_language(caller, asked, reply).await;
-                return json(StatusCode::OK, respond(Some(&id), reply.as_ref()));
+                let (reply, cookie) = match cookies {
+                    Some((jar, keeping)) => jar.hand(reply, keeping),
+                    None => (reply, None),
+                };
+                let answered = json(StatusCode::OK, respond(Some(&id), reply.as_ref()));
+                return with_cookie(answered, cookie);
             }
             None => return accepted(),
         },
@@ -281,12 +321,21 @@ where
     match id {
         Some(id) => {
             let language = server.language_for(caller, asked).await;
-            events(Answer::stream(streamed, Some(id), language))
+            let cookie = cookies.and_then(|(jar, keeping)| jar.renewed(keeping));
+            with_cookie(events(Answer::stream(streamed, Some(id), language)), cookie)
         }
         // A notification is never answered: a turn goes on without anyone following, and a
         // watch ends.
         None => accepted(),
     }
+}
+
+/// `response`, setting `cookie` if there is one.
+fn with_cookie(mut response: Response<Answer>, cookie: Option<HeaderValue>) -> Response<Answer> {
+    if let Some(cookie) = cookie {
+        response.headers_mut().append(header::SET_COOKIE, cookie);
+    }
+    response
 }
 
 /// Whether `method` reads a page rather than calling the API.

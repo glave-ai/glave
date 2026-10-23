@@ -33,7 +33,7 @@ const DISCOVERED = { name: 'glave', id: FAKE_SERVER };
 
 describe('SessionService', () => {
   afterEach(() => {
-    sessionStorage.clear();
+    localStorage.clear();
     history.replaceState(null, '', '/');
   });
 
@@ -55,7 +55,7 @@ describe('SessionService', () => {
     const session = TestBed.inject(SessionService);
     await expect(session.call('project/list', {})).rejects.toBeInstanceOf(ApiError);
     expect(session.signedIn()).toBe(false);
-    expect(sessionStorage.getItem(TOKEN_KEY)).toBeNull();
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
   });
 
   it('streams a turn and returns its result', async () => {
@@ -84,14 +84,31 @@ describe('SessionService', () => {
     expect(fake.paramsOf('signin/redeem')).toEqual([{ code: 'abc' }]);
     expect(session.signedIn()).toBe(true);
     expect(sent.token()).toBe('glave_session_new');
-    expect(JSON.parse(sessionStorage.getItem(TOKEN_KEY) ?? 'null')).toEqual({
+    expect(JSON.parse(localStorage.getItem(TOKEN_KEY) ?? 'null')).toEqual({
       token: 'glave_session_new',
       server: FAKE_SERVER,
     });
   });
 
-  it('stays signed in after a reload with the session the tab kept', async () => {
-    sessionStorage.setItem(TOKEN_KEY, JSON.stringify(SIGNED_IN));
+  it('follows the session another tab of this browser keeps or forgets', async () => {
+    const fake = new FakeSession().answer('server/discover', DISCOVERED);
+    const sent = startingOut(fake);
+    const session = TestBed.inject(SessionService);
+    await session.start();
+    expect(session.signedIn()).toBe(false);
+    localStorage.setItem(TOKEN_KEY, JSON.stringify(SIGNED_IN));
+    window.dispatchEvent(new StorageEvent('storage', { key: TOKEN_KEY }));
+    expect(session.signedIn()).toBe(true);
+    expect(sent.token()).toBe(SIGNED_IN.token);
+    window.dispatchEvent(new StorageEvent('storage', { key: 'glave-theme' }));
+    expect(session.signedIn()).toBe(true);
+    localStorage.removeItem(TOKEN_KEY);
+    window.dispatchEvent(new StorageEvent('storage', { key: TOKEN_KEY }));
+    expect(session.signedIn()).toBe(false);
+  });
+
+  it('stays signed in after a reload, or in a new tab, with the session this browser kept', async () => {
+    localStorage.setItem(TOKEN_KEY, JSON.stringify(SIGNED_IN));
     const fake = new FakeSession().answer('server/discover', DISCOVERED);
     const sent = startingOut(fake);
     const session = TestBed.inject(SessionService);
@@ -103,7 +120,7 @@ describe('SessionService', () => {
   it('never presents a session to a server with another id, or none', async () => {
     for (const discovered of [{ name: 'glave', id: 'another-server' }, { name: 'glave' }]) {
       TestBed.resetTestingModule();
-      sessionStorage.setItem(TOKEN_KEY, JSON.stringify(SIGNED_IN));
+      localStorage.setItem(TOKEN_KEY, JSON.stringify(SIGNED_IN));
       const fake = new FakeSession().answer('server/discover', discovered);
       const sent = startingOut(fake);
       const session = TestBed.inject(SessionService);

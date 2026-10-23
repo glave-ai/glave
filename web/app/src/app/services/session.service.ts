@@ -59,14 +59,17 @@ export const SESSION_CLIENT_FACTORY = new InjectionToken<(token: () => string) =
 
 /**
  * The person's session with the glave that served the app: a browser session (traded for the
- * link's one-time code, kept for this tab, and presented only to the server that made it) and
- * the client every call goes through. A call the server refuses for want of a sign-in signs
- * the app out.
+ * link's one-time code, or begun with a passkey, kept for every tab of this browser, and
+ * presented only to the server that made it) and the client every call goes through. The
+ * server hands it over in two halves: the app keeps one in its origin's storage and presents
+ * it with each call; the browser keeps the other in a cookie no script can read. A call the
+ * server refuses for want of a sign-in signs the app out, and a tab that signs in or out takes
+ * every other tab of this browser with it.
  */
 @Service()
 export class SessionService {
   private readonly document = inject(DOCUMENT);
-  private readonly storage = storageOf(this.document, 'sessionStorage');
+  private readonly storage = storageOf(this.document);
   private readonly session = signal<BrowserSession | null>(inject(INITIAL_SESSION));
   /** How the server signs browsers in, and its id, as it said when the app started. */
   private readonly ways = signal<readonly SignInWay[]>([]);
@@ -87,9 +90,10 @@ export class SessionService {
 
   /**
    * Signs the tab in, before the app starts: with the link's code when it carries one, else
-   * with the session the tab kept, and either only for the server that served the app, as
-   * its `server/discover` names itself. A server it cannot reach, or another, leaves the tab
-   * signed out, its session unsent.
+   * with the session this browser kept, and either only for the server that served the app,
+   * as its `server/discover` names itself. A server it cannot reach, or another, leaves the
+   * tab signed out, its session unsent. From then on the tab follows the session another tab
+   * keeps or forgets.
    */
   async start(): Promise<void> {
     const view = this.document.defaultView;
@@ -106,6 +110,11 @@ export class SessionService {
     } catch {
       return;
     }
+    view.addEventListener('storage', (event) => {
+      if (event.key === TOKEN_KEY || event.key === null) {
+        this.session.set(sessionFor(readSession(this.storage), this.server));
+      }
+    });
     if (code !== null && (await this.redeem(code))) {
       return;
     }
@@ -140,7 +149,7 @@ export class SessionService {
     }
   }
 
-  /** Signs this tab out: its session ends with the server, and the tab forgets it. */
+  /** Signs this browser out: its session ends with the server, and every tab forgets it. */
   async signOut(): Promise<void> {
     if (this.session() !== null) {
       try {
@@ -158,8 +167,8 @@ export class SessionService {
   }
 
   /**
-   * Keeps for this tab the session a server began, as a link's code or a passkey began it:
-   * whether the server that served the app began it, the only one it is presented to.
+   * Keeps for this browser the session a server began, as a link's code or a passkey began
+   * it: whether the server that served the app began it, the only one it is presented to.
    */
   begin(began: { readonly session: string; readonly server: string }): boolean {
     if (this.server === undefined || began.server !== this.server) {
