@@ -2,13 +2,14 @@
 //! program on this computer signed in as the local person asks for a link; its code, good once
 //! and for five minutes, is traded for a browser session: a bearer token the browser keeps in
 //! its origin's storage, for every tab, and sends as a header, never a cookie, good for 30
-//! days from its last use. A server reached
-//! from elsewhere at a public origin signs browsers there in with passkeys instead
-//! (`passkeys`). Codes are kept in memory, as their SHA-256 alone. Sessions and passkeys are
-//! kept in the store, in the browsers ledger of the person's personal project (glave's own
-//! stream under a reserved id), each session as the SHA-256 of its token alone, so nothing
-//! kept signs anyone in; every server on one store signs in the same browsers. The server's
-//! id, which a browser checks before it presents its session, is the caller's to keep.
+//! days from its last use. Passkeys sign browsers in too (`passkeys`): at the server's public
+//! origin where it is reached from elsewhere, else on this computer at `localhost`, each with
+//! the relying party it was made for alone. Codes are kept in memory, as their SHA-256 alone.
+//! Sessions and passkeys are kept in the store, in the browsers ledger of the person's
+//! personal project (glave's own stream under a reserved id), each session as the SHA-256 of
+//! its token alone, so nothing kept signs anyone in; every server on one store signs in the
+//! same browsers. The server's id, which a browser checks before it presents its session, is
+//! the caller's to keep.
 
 mod ledger;
 mod passkeys;
@@ -220,9 +221,10 @@ impl Browsers {
             self.catch_up().await?;
             found = self.find(&presented);
         }
-        let (id, used, passkey) = found.ok_or(BrowserError::Ended)?;
-        // Checked before it is renewed, so a link's session is never renewed from elsewhere.
-        if !here && !passkey {
+        let (id, used, public) = found.ok_or(BrowserError::Ended)?;
+        // Checked before it is renewed, so a session begun on this computer, by a link or a
+        // passkey made here, is never renewed from elsewhere.
+        if !here && !public {
             return Err(BrowserError::Elsewhere);
         }
         if self.clock.now().duration_since(used) >= RECORD_USE {
@@ -264,14 +266,21 @@ impl Browsers {
     }
 
     /// The live session whose token's hash is `presented`: its id, when it was last used,
-    /// and whether a passkey signed it in.
+    /// and whether a passkey made at a public origin signed it in, so it signs in through
+    /// that origin too.
     fn find(&self, presented: &str) -> Option<(Uuid, Timestamp, bool)> {
         let now = self.clock.now();
         let state = self.state();
-        state
+        let session = state
             .live(now)
-            .find(|session| same(session.hash.as_bytes(), presented.as_bytes()))
-            .map(|session| (session.id, session.used, session.passkey.is_some()))
+            .find(|session| same(session.hash.as_bytes(), presented.as_bytes()))?;
+        let public = session.passkey.is_some_and(|passkey| {
+            state
+                .passkeys
+                .iter()
+                .any(|kept| kept.id == passkey && kept.public())
+        });
+        Some((session.id, session.used, public))
     }
 
     fn state(&self) -> MutexGuard<'_, State> {

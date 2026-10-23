@@ -14,7 +14,7 @@ const DECLINED_KEY = 'glave-passkey-offer';
  * authenticator ("Sign in with Touch ID next time?"): after a browser here is signed in by
  * glave's link, where no passkey exists yet and the computer has an authenticator of its own.
  * With one, any browser here signs in at the touch of a finger. Not now is remembered in this
- * browser, and asked again nowhere.
+ * browser, which asks no more.
  */
 @Component({
   selector: 'app-passkey-offer',
@@ -91,13 +91,9 @@ export class PasskeyOfferComponent {
     }
   }
 
-  /** Opens the offer when glave makes passkeys here, none exists, and none was declined. */
+  /** Opens the offer when the session offers it, this browser declined none, and it can. */
   private async consider(): Promise<void> {
-    const offered =
-      this.session.local() &&
-      this.session.passkeysHere() &&
-      !this.session.passkeyMade() &&
-      readStored(this.storage, DECLINED_KEY) === null;
+    const offered = this.session.offersPasskey() && readStored(this.storage, DECLINED_KEY) === null;
     if (offered && (await this.platformAvailable())) {
       this.open.set(true);
     }

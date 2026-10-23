@@ -218,7 +218,8 @@ fn site(args: &Args) -> anyhow::Result<Option<Site>> {
 
 /// The browsers a server signs in, when it serves over HTTP: kept in the store, in the
 /// browsers ledger of `person`'s personal project, so a browser's session outlives a restart;
-/// with passkeys where `choices` say it is reached from elsewhere.
+/// with passkeys at the public origin where `choices` say it is reached from elsewhere, else
+/// at `localhost` once it listens there.
 pub(crate) async fn browsers(
     args: &Args,
     choices: &Choices,

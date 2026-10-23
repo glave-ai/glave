@@ -90,8 +90,6 @@ export class SessionService {
   );
   /** Whether a passkey signs this page in now: one exists, or a setup link makes the first. */
   readonly passkeySignIn = computed(() => this.passkeys() && this.ways().includes('passkey'));
-  /** Whether a passkey for this glave exists, where glave makes them on this computer. */
-  readonly passkeyMade = computed(() => this.ways().includes('passkey'));
   /** The code of the setup link the tab was opened with, until the tab signs in. */
   readonly setupCode = this.setupLink.asReadonly();
   /** Whether the session is with a glave on this computer: a browser session. */
@@ -99,6 +97,13 @@ export class SessionService {
     const session = this.session();
     return session !== null && isLocalToken(session.token);
   });
+  /**
+   * Whether to offer making a passkey here: a browser on this computer signed in by glave's
+   * link, where glave makes passkeys at this page and none exists yet.
+   */
+  readonly offersPasskey = computed(
+    () => this.local() && this.passkeysHere() && !this.ways().includes('passkey'),
+  );
   private readonly client = inject(SESSION_CLIENT_FACTORY)(() => this.session()?.token ?? '');
 
   /**
@@ -117,11 +122,7 @@ export class SessionService {
     const code = takeCode(place, 'code');
     this.setupLink.set(takeCode(place, 'setup'));
     try {
-      const discovered = await this.client.call('server/discover', {});
-      this.server = discovered.id ?? undefined;
-      this.ways.set(discovered.signin ?? []);
-      this.reachedElsewhere.set(typeof discovered.origin === 'string');
-      this.here.set(discovered.here ?? null);
+      this.take(await this.client.call('server/discover', {}));
     } catch {
       return;
     }
@@ -184,11 +185,21 @@ export class SessionService {
     this.forget(presented);
   }
 
-  /** Takes in that this browser made a passkey, which signs browsers in from now on. */
-  madePasskey(): void {
-    if (!this.ways().includes('passkey')) {
-      this.ways.update((ways) => [...ways, 'passkey']);
+  /** Asks the server again how it signs browsers in, as once a passkey is made or removed. */
+  async rediscover(): Promise<void> {
+    try {
+      this.take(await this.client.call('server/discover', {}));
+    } catch {
+      // Away: what it said before stands.
     }
+  }
+
+  /** Takes in what the server says it is and how it signs browsers in. */
+  private take(discovered: Methods['server/discover']['result']): void {
+    this.server = discovered.id ?? undefined;
+    this.ways.set(discovered.signin ?? []);
+    this.reachedElsewhere.set(typeof discovered.origin === 'string');
+    this.here.set(discovered.here ?? null);
   }
 
   /** Signs every other browser out; this one stays signed in. */

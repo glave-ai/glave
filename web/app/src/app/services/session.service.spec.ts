@@ -108,9 +108,25 @@ describe('SessionService', () => {
       expect(session.passkeySignIn(), said).toBe(signIn);
       expect(session.passkeysHere(), said).toBe(here);
     }
+  });
+
+  it('offers a passkey here until the server says one is made, and asks it again', async () => {
+    let made = false;
+    localStorage.setItem(TOKEN_KEY, JSON.stringify(SIGNED_IN));
+    const here = { ...DISCOVERED, here: window.location.origin };
+    startingOut(
+      new FakeSession().answer('server/discover', () => ({
+        ...here,
+        signin: made ? ['link', 'passkey'] : ['link'],
+      })),
+    );
     const session = TestBed.inject(SessionService);
-    session.madePasskey();
-    expect(session.passkeyMade()).toBe(true);
+    await session.start();
+    expect(session.offersPasskey()).toBe(true);
+    made = true;
+    await session.rediscover();
+    expect(session.offersPasskey()).toBe(false);
+    expect(session.passkeySignIn()).toBe(true);
   });
 
   it('follows the session another tab of this browser keeps or forgets', async () => {

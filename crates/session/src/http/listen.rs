@@ -5,7 +5,7 @@
 //! handshake fails, as every one does before a certificate is in hand, is closed.
 
 use std::future::poll_fn;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::task::Poll;
 
@@ -55,15 +55,15 @@ impl Listeners {
             .plain
             .iter()
             .filter_map(|listener| listener.local_addr().ok())
-            .filter(|address| address.ip().is_loopback())
             .collect();
-        let at = |v6: bool| {
+        let at = |ip: IpAddr| {
             bound
                 .iter()
-                .filter(move |address| address.is_ipv6() == v6)
+                .filter(move |address| address.ip() == ip)
                 .map(SocketAddr::port)
         };
-        at(false).find(|port| at(true).any(|other| other == *port))
+        at(IpAddr::V4(Ipv4Addr::LOCALHOST))
+            .find(|port| at(IpAddr::V6(Ipv6Addr::LOCALHOST)).any(|other| other == *port))
     }
 
     /// Each listener with the names it answers to, the server reached from elsewhere at

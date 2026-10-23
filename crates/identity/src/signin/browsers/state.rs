@@ -11,6 +11,7 @@ use jiff::Timestamp;
 use uuid::Uuid;
 use webauthn_rs::prelude::Passkey;
 
+use super::passkeys::HERE;
 use super::{BrowserError, SESSION_LIFETIME, new_id};
 
 /// What is known: the codes waiting, and the sessions and passkeys as the ledger has them so
@@ -47,6 +48,21 @@ pub(super) struct KeptPasskey {
     pub(super) added: Timestamp,
     pub(super) used: Option<Timestamp>,
     pub(super) credential: Passkey,
+    /// The relying party it was made for, by its id; none for a public origin's of before.
+    pub(super) party: Option<String>,
+}
+
+impl KeptPasskey {
+    /// Whether it signs browsers in with the relying party whose id is `party`, a public
+    /// origin's when `public`: only with the one it was made for.
+    pub(super) fn made_for(&self, party: &str, public: bool) -> bool {
+        self.party.as_deref().map_or(public, |made| made == party)
+    }
+
+    /// Whether it was made at a public origin, so its sessions sign in through it too.
+    pub(super) fn public(&self) -> bool {
+        self.party.as_deref() != Some(HERE)
+    }
 }
 
 impl State {
@@ -97,6 +113,7 @@ impl State {
                         added: at,
                         used: None,
                         credential,
+                        party: added.party,
                     });
                 }
             }
@@ -135,8 +152,9 @@ pub(super) enum Change {
     SignedIn(Uuid, String, Option<Uuid>),
     Used(Uuid),
     SignedOut(Vec<Uuid>),
-    /// A passkey was made: its id, its name, and its credential as JSON.
-    PasskeyAdded(Uuid, String, String),
+    /// A passkey was made: its id, its name, its credential as JSON, and the relying party it
+    /// was made for.
+    PasskeyAdded(Uuid, String, String, String),
     /// A passkey signed a browser in, and its credential as JSON when that changed.
     PasskeyUsed(Uuid, Option<String>),
     PasskeyRemoved(Uuid),
@@ -163,12 +181,13 @@ impl Change {
             ),
             Self::Used(session) => encode(header, &BrowserUsed { session }),
             Self::SignedOut(sessions) => encode(header, &BrowserSignedOut { sessions }),
-            Self::PasskeyAdded(passkey, name, credential) => encode(
+            Self::PasskeyAdded(passkey, name, credential, party) => encode(
                 header,
                 &PasskeyAdded {
                     passkey,
                     name,
                     credential,
+                    party: Some(party),
                 },
             ),
             Self::PasskeyUsed(passkey, credential) => encode(

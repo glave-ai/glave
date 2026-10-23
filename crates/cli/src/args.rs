@@ -37,8 +37,8 @@ Usage:
                                 run glave for you in the foreground, as a service or a
                                 container does: one per GLAVE_HOME (a second one exits),
                                 on the Unix socket GLAVE_HOME/run/server.sock and over
-                                HTTP, on 127.0.0.1:4180 (any free port when that is taken)
-                                unless --http says where. A browser on this computer signs
+                                HTTP, on 127.0.0.1:4180 and [::1]:4180 (another port free at
+                                both when that is taken) unless --http says where. A browser on this computer signs
                                 in by a link glave prints or opens, good once for five
                                 minutes, and stays signed in; programs here use the token
                                 in GLAVE_HOME/serve.token, made at every start. Reached

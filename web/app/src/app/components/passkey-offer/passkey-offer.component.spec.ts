@@ -63,10 +63,17 @@ async function render(setting: Setting = {}): Promise<{
   readonly root: HTMLElement;
   readonly settle: () => Promise<void>;
 }> {
+  let made = false;
+  const discovered = setting.discovered ?? here();
   const fake = new FakeSession()
-    .answer('server/discover', setting.discovered ?? here())
+    .answer('server/discover', () =>
+      made ? { ...discovered, signin: ['link', 'passkey'] } : discovered,
+    )
     .answer('passkey/add_options', OPTIONS)
-    .answer('passkey/add', { passkey: { id: 'p1', name: 'Mac', added: '2026-10-22T00:00:00Z' } })
+    .answer('passkey/add', () => {
+      made = true;
+      return { passkey: { id: 'p1', name: 'Mac', added: '2026-10-22T00:00:00Z' } };
+    })
     .answer('passkey/list', { passkeys: [] });
   const authenticator: Authenticator = {
     create: () =>
@@ -123,7 +130,8 @@ describe('PasskeyOfferComponent', () => {
       expect.objectContaining({ ceremony: 'c1' }) as unknown,
     ]);
     expect(dialog(root)?.open).toBe(false);
-    expect(TestBed.inject(SessionService).passkeyMade()).toBe(true);
+    expect(TestBed.inject(SessionService).offersPasskey()).toBe(false);
+    expect(TestBed.inject(SessionService).passkeySignIn()).toBe(true);
   });
 
   it('says why when the device made none, and lets the person try again', async () => {

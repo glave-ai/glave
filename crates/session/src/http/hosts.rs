@@ -221,5 +221,17 @@ mod tests {
     fn ipv6_loopback_has_its_names_too() {
         let ipv6 = ListenerNames::of("[::1]:4180".parse().unwrap(), None).unwrap();
         assert!(ipv6.allow(&headers(Some("[::1]:4180"), Some("http://[::1]:4180"))));
+        // A browser at localhost that reaches this address first.
+        assert!(ipv6.allow(&headers(
+            Some("localhost:4180"),
+            Some("http://localhost:4180")
+        )));
+        for (host, page) in [
+            (Some("localhost:4180"), Some("http://localhost:4181")),
+            (Some("localhost:4181"), None),
+            (Some("[::1]:4180"), Some("http://localhost:4180")),
+        ] {
+            assert!(!ipv6.allow(&headers(host, page)), "{host:?} {page:?}");
+        }
     }
 }

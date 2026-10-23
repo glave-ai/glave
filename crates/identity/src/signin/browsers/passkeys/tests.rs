@@ -284,10 +284,15 @@ fn on_this_computer_passkeys_are_made_at_localhost_once_the_server_listens_there
         here.add(&asked.id, &answer, Some("Mac")).await.unwrap();
         assert!(here.signs_in_with_passkeys());
 
-        // Any browser here signs in with it; a page at another port of this computer, or at its
-        // address rather than its name, asking for the same passkey, never does.
+        // Any browser here signs in with it, its session from this computer alone; a page at
+        // another port of this computer, or at its address rather than its name, asking for the
+        // same passkey, never does.
         let session = sign_in(&here, &mut mac).await.unwrap();
         assert!(here.verify(session.token.expose(), true).await.is_ok());
+        assert!(matches!(
+            here.verify(session.token.expose(), false).await,
+            Err(BrowserError::Elsewhere)
+        ));
         for page in ["http://localhost:5173", "http://127.0.0.1:4180"] {
             mac.on_page(page);
             assert!(
@@ -298,6 +303,59 @@ fn on_this_computer_passkeys_are_made_at_localhost_once_the_server_listens_there
                 "{page}"
             );
         }
+        mac.on_page("http://localhost:4180");
+        assert!(
+            sign_in(&here, &mut mac).await.is_ok(),
+            "it was the page's origin that was refused"
+        );
+    });
+}
+
+/// The browsers of the server on `log` reached here alone, at port 4180.
+async fn here_on(log: SqliteLog, clock: &ManualClock) -> Browsers {
+    let here = Browsers::open(log, scope(), SERVER.into(), None, Box::new(clock.clone()))
+        .await
+        .unwrap();
+    here.reached_here(4180).unwrap();
+    here
+}
+
+#[test]
+fn a_passkey_signs_in_only_with_the_relying_party_it_was_made_for() {
+    block_on!(async {
+        let clock = ManualClock::at_second(START);
+        // Made on this computer, then the server given a public origin on the same store.
+        let kept = store();
+        let here = here_on(kept.log(), &clock).await;
+        let mut mac = Authenticator::new("http://localhost:4180").unwrap();
+        let asked = here.create_options(Proof::SignedIn).unwrap();
+        let answer = mac.create(&asked.options).unwrap();
+        here.add(&asked.id, &answer, None).await.unwrap();
+        let session = sign_in(&here, &mut mac).await.unwrap();
+        let reached = open(kept.log(), &clock).await;
+        assert!(matches!(
+            reached.get_options(),
+            Err(BrowserError::NoPasskey)
+        ));
+        assert!(
+            matches!(
+                reached.verify(session.token.expose(), false).await,
+                Err(BrowserError::Elsewhere)
+            ),
+            "its session signs in from this computer alone"
+        );
+
+        // Made at the public origin, then the server reached here alone on the same store.
+        let kept = store();
+        let reached = open(kept.log(), &clock).await;
+        let mut phone = Authenticator::new(ORIGIN).unwrap();
+        set_up(&reached, &mut phone).await;
+        let here = here_on(kept.log(), &clock).await;
+        assert!(
+            !here.signs_in_with_passkeys(),
+            "none made for this computer"
+        );
+        assert!(matches!(here.get_options(), Err(BrowserError::NoPasskey)));
     });
 }
 

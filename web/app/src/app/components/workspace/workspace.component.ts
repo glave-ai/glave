@@ -54,13 +54,8 @@ export class WorkspaceComponent {
     ),
     { initialValue: this.router.url },
   );
-  /**
-   * Whether the offer to make a passkey here may show: a browser here signed in by glave's
-   * link, where glave makes passkeys at this page and none exists yet. Loaded only then.
-   */
-  protected readonly offering = computed(
-    () => this.session.local() && this.session.passkeysHere() && !this.session.passkeyMade(),
-  );
+  /** Whether the offer to make a passkey here may show, which is loaded only then. */
+  protected readonly offering = this.session.offersPasskey;
   protected readonly currentThread = computed(() => threadFromUrl(this.url()));
   protected readonly currentPage = computed(() => pageFromUrl(this.url()));
 

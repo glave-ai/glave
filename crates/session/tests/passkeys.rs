@@ -221,9 +221,18 @@ fn a_server_reached_only_here_offers_links_alone() {
     });
 }
 
+/// A browser on this computer, on a page at `http://localhost:<port>`, its requests reaching
+/// the listener at [::1] beside 127.0.0.1's, as a browser trying that address first does.
+fn browser_here(served: &Served, token: Option<String>) -> Web {
+    let port = served.address.port();
+    Web::new(served, token)
+        .via(&format!("http://[::1]:{port}/"))
+        .reaching(&format!("http://localhost:{port}"))
+}
+
 /// A browser on this computer signed in with `mac`'s passkey: what signing in answered.
 async fn sign_in_here(served: &Served, mac: &mut Authenticator) -> Value {
-    let mut anyone = Web::new(served, None);
+    let mut anyone = browser_here(served, None);
     let options = asked(&mut anyone, &Request::PasskeyGetOptions {}).await;
     let credential = mac.get(&options["options"]).unwrap();
     let ceremony = options["ceremony"].as_str().unwrap().to_owned();
@@ -244,9 +253,9 @@ fn a_server_here_makes_a_passkey_at_localhost_that_signs_another_browser_in() {
         let token = LocalToken::new([9; 32]);
         let mut setup = Setup::asking(Vec::new(), Answering::Clients);
         setup.browsers = Some(browsers(&dir, &fixed_clock(), false).await);
-        let (server, _) = setup.build(&dir).await;
+        let (built, _) = setup.build(&dir).await;
         let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
-        let served = serve_here(server, signin).await;
+        let served = serve_here(built, signin).await;
         let here = format!("http://localhost:{}", served.address.port());
         let mut anyone = Web::new(&served, None);
         let discovered = asked(&mut anyone, &Request::Discover {}).await;
@@ -277,7 +286,7 @@ fn a_server_here_makes_a_passkey_at_localhost_that_signs_another_browser_in() {
 
         // Another browser here signs in with it at once.
         let signed_in = sign_in_here(&served, &mut mac).await;
-        let mut second = Web::new(&served, signed_in["session"].as_str().map(str::to_owned));
+        let mut second = browser_here(&served, signed_in["session"].as_str().map(str::to_owned));
         let listed = asked(&mut second, &Request::ProjectList { limit: None }).await;
         assert!(listed["projects"].is_array(), "{listed}");
         // A page another program serves at another port here gets nothing for the same passkey.
@@ -287,6 +296,12 @@ fn a_server_here_makes_a_passkey_at_localhost_that_signs_another_browser_in() {
         ));
         let relayed = sign_in_here(&served, &mut mac).await;
         assert_eq!(relayed, json!(code::NO_SIGN_IN), "{relayed}");
+        mac.on_page(&here);
+        let again = sign_in_here(&served, &mut mac).await;
+        assert!(
+            again["session"].is_string(),
+            "the page's origin was refused: {again}"
+        );
         served.close().await;
     });
 }

@@ -113,7 +113,7 @@ export class PasskeysService {
         return passkeyRefused();
       }
       await this.session.call('passkey/add', { ceremony: asked.ceremony, credential });
-      this.session.madePasskey();
+      await this.session.rediscover();
       return this.load();
     });
   }
@@ -122,6 +122,7 @@ export class PasskeysService {
   async remove(id: string): Promise<string | null> {
     return this.asking(async () => {
       await this.session.call('passkey/remove', { passkey: id });
+      await this.session.rediscover();
       return this.load();
     });
   }
