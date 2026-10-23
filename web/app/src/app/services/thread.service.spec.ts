@@ -107,7 +107,11 @@ describe('ThreadService', () => {
         { from: 'model', text: 'Hello' },
       ],
     ]);
-    expect(fake.paramsOf('turn/start')).toEqual([{ thread: 'thread-1', prompt: 'hi' }]);
+    // With a key of its own, so whatever repeats the request, the server starts one turn.
+    const key = expect.stringMatching(/^[0-9a-f]{32}$/u) as unknown;
+    expect(fake.paramsOf('turn/start')).toEqual([
+      { thread: 'thread-1', prompt: 'hi', _meta: { idempotency_key: key } },
+    ]);
   });
 
   it('decides, answers and stops, then catches up on what was recorded', async () => {
@@ -165,7 +169,7 @@ describe('ThreadService', () => {
     await settled();
     await service.send('actually, 4000', 'hope-12b', 'ask');
     // The model and mode wait for the next turn: a message to a running turn chooses neither.
-    expect(fake.paramsOf('turn/start')).toEqual([
+    expect(fake.paramsOf('turn/start')).toMatchObject([
       { thread: 'thread-1', prompt: 'set the port to 3000' },
       { thread: 'thread-1', prompt: 'actually, 4000' },
     ]);
@@ -341,7 +345,7 @@ describe('ThreadService', () => {
     await sending;
     await settled();
     expect(fake.paramsOf('turn/cancel')).toEqual([{ thread: 'thread-1' }]);
-    expect(fake.paramsOf('turn/start').at(-1)).toEqual({
+    expect(fake.paramsOf('turn/start').at(-1)).toMatchObject({
       thread: 'thread-1',
       prompt: 'and this\n\nand that',
     });
@@ -454,7 +458,7 @@ describe('ThreadService', () => {
     await service.open('thread-1');
     expect(service.chosen()).toBe('gpt-6-luna');
     await service.send('hi', 'hope-12b');
-    expect(fake.paramsOf('turn/start')).toEqual([
+    expect(fake.paramsOf('turn/start')).toMatchObject([
       { thread: 'thread-1', prompt: 'hi', model: 'hope-12b' },
     ]);
     expect(service.chosen()).toBe('hope-12b');

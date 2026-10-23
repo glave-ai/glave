@@ -10,7 +10,6 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
-import { type Navigation, Router } from '@angular/router';
 import type { ApprovalMode } from '@glave/client';
 import {
   GlzAttachmentComponent,
@@ -35,7 +34,6 @@ import { ThreadService } from '../../services/thread.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
 import { ApprovalModeComponent } from '../approval-mode/approval-mode.component';
 import { FolderGoneComponent } from '../folder-gone/folder-gone.component';
-import type { FirstPrompt } from '../home/home.component';
 import { MessageTextComponent } from '../message-text/message-text.component';
 import { EffortPickerComponent } from '../effort-picker/effort-picker.component';
 import { ModelPickerComponent } from '../model-picker/model-picker.component';
@@ -43,28 +41,6 @@ import { RenameDialogComponent } from '../rename-dialog/rename-dialog.component'
 import { ThreadHeaderComponent } from '../thread-header/thread-header.component';
 import { ToolsPanelComponent } from '../tools-panel/tools-panel.component';
 import { TurnComponent } from '../turn/turn.component';
-
-function isFirstPrompt(state: unknown): state is FirstPrompt {
-  return (
-    typeof state === 'object' &&
-    state !== null &&
-    'prompt' in state &&
-    typeof state.prompt === 'string'
-  );
-}
-
-/**
- * The first prompt the Chats opened a new thread with, carried by the navigation that opened
- * it. The history keeps that state, so a page returned to (Back, a reload) brings it again:
- * only a navigation the app made after its first page carries a prompt to send.
- */
-function firstPrompt(navigation: Navigation | null): FirstPrompt | null {
-  if (navigation?.trigger !== 'imperative' || navigation.previousNavigation === null) {
-    return null;
-  }
-  const state: unknown = navigation.extras.state;
-  return isFirstPrompt(state) ? state : null;
-}
 
 /**
  * One thread: its bar across the top (title, project and where it runs, its changes); its
@@ -117,6 +93,8 @@ export class ThreadComponent {
     trust: $localize`:@@thread.trust:This project brings its own tools and settings`,
     you: $localize`:@@thread.you:You`,
     queued: $localize`:@@thread.queued:Waiting to be read`,
+    again: $localize`:@@thread.again:Send again`,
+    lost: $localize`:@@thread.lost:This message may not have reached glave.`,
   } as const;
   protected readonly service = inject(ThreadService);
   /** The files added to the message being written, kept in the thread's project. */
@@ -130,6 +108,8 @@ export class ThreadComponent {
       ? null
       : $localize`:@@thread.failed:Something went wrong: ${error}:ERROR:`;
   });
+  /** Whether the thread's first message, sent from the new chat, got no answer: it may go again. */
+  protected readonly lost = computed(() => this.service.firstTurn()?.failed === 'lost');
   private readonly panel = inject(ToolsPanelService);
   private readonly stick = viewChild.required(GlzStickToBottomDirective);
   /** The composer's draft, which a message the model never read comes back to. */
@@ -195,33 +175,28 @@ export class ThreadComponent {
   });
   protected readonly folderGone = computed(() => this.gone() !== null);
 
-  constructor() {
-    let first = firstPrompt(inject(Router).currentNavigation());
-    effect(() => {
-      const thread = this.thread();
-      untracked(() => {
-        const prompt = first;
-        first = null;
-        this.picked.set(null);
-        this.pickedMode.set(null);
-        this.attachments.clear();
-        this.pickedEffort.set(null);
-        void this.service
-          .open(thread)
-          .then(() =>
-            prompt === null
-              ? undefined
-              : this.service.send(prompt.prompt, null, null, prompt.files ?? []),
-          );
-      });
+  /**
+   * Opens the thread the route names as the server has it, nothing picked for its next turn
+   * and no files added: it only reads and follows the thread, and never sends. Opening another
+   * lets go of what the last one followed.
+   */
+  protected readonly opening = effect(() => {
+    const thread = this.thread();
+    untracked(() => {
+      this.picked.set(null);
+      this.pickedMode.set(null);
+      this.attachments.clear();
+      this.pickedEffort.set(null);
+      void this.service.open(thread);
     });
-    effect(() => {
-      const project = this.projects.projectOf(this.thread())?.id ?? null;
-      untracked(() => {
-        this.attachments.keepIn(project);
-      });
+  });
+  /** Files added go to the thread's project. */
+  protected readonly keeping = effect(() => {
+    const project = this.projects.projectOf(this.thread())?.id ?? null;
+    untracked(() => {
+      this.attachments.keepIn(project);
     });
-  }
+  });
 
   protected send(text: string): void {
     // A pick goes with the turn only when it changes the thread's model or mode.

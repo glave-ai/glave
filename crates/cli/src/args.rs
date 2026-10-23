@@ -263,6 +263,11 @@ impl Args {
     pub(crate) fn person_s_server(&self) -> bool {
         self.action == Action::Serve && !self.stdio
     }
+
+    /// Whether a turn or a goal was asked for.
+    pub(crate) fn turn(&self) -> bool {
+        !self.prompt.is_empty() || self.goal.is_some()
+    }
 }
 
 pub(crate) fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String> {

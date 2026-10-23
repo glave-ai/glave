@@ -1,10 +1,12 @@
 import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { BreakpointObserver } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
-import { type Navigation, Router, provideRouter } from '@angular/router';
+import { provideRouter } from '@angular/router';
+import type { TurnStartParams } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 import { of } from 'rxjs';
 
+import { FirstTurnService } from '../../services/first-turn.service';
 import { ProjectsService } from '../../services/projects.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
 import { FakeSession, FakeTurn, provideFakeSession } from '../../testing/fake-session';
@@ -47,34 +49,11 @@ async function settle(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve));
 }
 
-/**
- * The navigation that opened the thread, made by `trigger`, with a first prompt in its state:
- * after the tab's first page when `after`, else as the tab's first page (a reload).
- */
-function arriving(router: Router, trigger: Navigation['trigger'], after: boolean): Navigation {
-  const url = router.parseUrl('/t/thread-1');
-  const first: Navigation = {
-    id: 1,
-    initialUrl: url,
-    extractedUrl: url,
-    trigger: 'imperative',
-    extras: {},
-    previousNavigation: null,
-    abort: () => undefined,
-  };
-  return {
-    ...first,
-    id: 2,
-    trigger,
-    extras: { state: { prompt: 'Plan the launch' } },
-    previousNavigation: after ? first : null,
-  };
-}
-
+/** Opens thread-1, on a phone when `narrow`, after the new chat sent it `first`, if given. */
 async function open(
   fake: FakeSession,
   narrow = false,
-  arrival?: (router: Router) => Navigation,
+  first?: TurnStartParams,
 ): Promise<{
   readonly root: HTMLElement;
   readonly fixture: ReturnType<typeof TestBed.createComponent<ThreadComponent>>;
@@ -87,11 +66,10 @@ async function open(
       { provide: BreakpointObserver, useValue: breakpoints },
     ],
   });
-  if (arrival !== undefined) {
-    const router = TestBed.inject(Router);
-    vi.spyOn(router, 'currentNavigation').mockReturnValue(arrival(router));
-  }
   await TestBed.inject(ProjectsService).refresh();
+  if (first !== undefined) {
+    TestBed.inject(FirstTurnService).start(first);
+  }
   const fixture = TestBed.createComponent(ThreadComponent);
   fixture.componentRef.setInput('thread', 'thread-1');
   await fixture.whenStable();
@@ -298,30 +276,27 @@ describe('ThreadComponent', () => {
     ]);
     const { root } = await open(fake);
     await type(root, 'Go');
-    expect(fake.paramsOf('turn/start')).toEqual([{ thread: 'thread-1', prompt: 'Go' }]);
+    expect(fake.paramsOf('turn/start')).toMatchObject([{ thread: 'thread-1', prompt: 'Go' }]);
     expect(root.textContent).toContain('Done.');
   });
 
-  it('sends the first prompt the Chats opened it with', async () => {
-    const fake = session([]).streams([]);
-    await open(fake, false, (router) => arriving(router, 'imperative', true));
+  it('shows the first message the new chat sent, and sends it again when no answer came', async () => {
+    const lost = new FakeTurn();
+    lost.fail(new TypeError('Failed to fetch'));
+    const fake = session([]).turn(lost).streams([]);
+    const { root, fixture } = await open(fake, false, { thread: 'thread-1', prompt: 'Plan' });
+    expect(root.querySelector('[data-testid="thread-message"]')?.textContent).toContain('Plan');
+    expect(root.querySelector('[data-testid="thread-lost"]')?.textContent).toContain(
+      'This message may not have reached glave.',
+    );
+    await expectAccessible(root);
+    root.querySelector<HTMLButtonElement>('[data-testid="thread-send-again"]')?.click();
     await settle();
-    expect(fake.paramsOf('turn/start')).toEqual([
-      { thread: 'thread-1', prompt: 'Plan the launch' },
-    ]);
+    await fixture.whenStable();
+    const [first, again] = fake.paramsOf('turn/start');
+    expect(again).toEqual(first);
+    expect(root.querySelector('[data-testid="thread-lost"]')).toBeNull();
   });
-
-  for (const [how, trigger, after] of [
-    ['with Back', 'popstate', true],
-    ['by a reload', 'imperative', false],
-  ] as const) {
-    it(`never sends the first prompt again when returned to ${how}`, async () => {
-      const fake = session([]).streams([]);
-      await open(fake, false, (router) => arriving(router, trigger, after));
-      await settle();
-      expect(fake.paramsOf('turn/start')).toEqual([]);
-    });
-  }
 
   it('takes a message while a turn runs: waiting to be read, then read where the model saw it', async () => {
     const turn = new FakeTurn();
@@ -443,7 +418,7 @@ describe('ThreadComponent', () => {
     document.querySelectorAll<HTMLElement>('[data-testid="model-picker-option"]')[0]?.click();
     await settle();
     await type(root, 'Again');
-    expect(fake.paramsOf('turn/start')).toEqual([
+    expect(fake.paramsOf('turn/start')).toMatchObject([
       { thread: 'thread-1', prompt: 'Go', model: 'hope-12b' },
       { thread: 'thread-1', prompt: 'Again' },
     ]);
@@ -469,7 +444,7 @@ describe('ThreadComponent', () => {
     await type(root, 'Careful now');
     await mode(1);
     await type(root, 'Go ahead');
-    expect(fake.paramsOf('turn/start')).toEqual([
+    expect(fake.paramsOf('turn/start')).toMatchObject([
       { thread: 'thread-1', prompt: 'Careful now', approval: 'ask' },
       { thread: 'thread-1', prompt: 'Go ahead' },
     ]);
@@ -603,7 +578,7 @@ describe('ThreadComponent with files', () => {
     expect(chip?.querySelector('img')?.getAttribute('src')).toBe('blob:test/1');
     await expectAccessible(root);
     await type(root, 'What is this?');
-    expect(fake.paramsOf('turn/start')).toEqual([
+    expect(fake.paramsOf('turn/start')).toMatchObject([
       { thread: 'thread-1', prompt: 'What is this?', files: [{ sha256: sha, name: 'cat.png' }] },
     ]);
     await fixture.whenStable();

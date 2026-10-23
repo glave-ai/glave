@@ -21,6 +21,7 @@ mod config;
 mod connections;
 mod credentials;
 mod e2e;
+mod folders;
 mod gateway;
 mod https;
 mod installed;

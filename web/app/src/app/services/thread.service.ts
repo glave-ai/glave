@@ -1,4 +1,13 @@
-import { DOCUMENT, DestroyRef, Service, computed, inject, signal } from '@angular/core';
+import {
+  DOCUMENT,
+  DestroyRef,
+  Service,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+} from '@angular/core';
 import {
   type ApprovalMode,
   type AttachedFile,
@@ -25,6 +34,7 @@ import {
   type Results,
 } from '../lib/conversation';
 import { changedFiles } from '../lib/files';
+import { idempotencyKey } from '../lib/idempotency';
 import { chosenEffort } from '../lib/effort';
 import { chosenModel } from '../lib/models';
 import { placeOf } from '../lib/place';
@@ -33,6 +43,7 @@ import { type Waiting, named, notRead, together } from '../lib/queued';
 import { onApple } from '../lib/shortcuts';
 import { threadTurns, turnRuns } from '../lib/turns';
 import { FIRST_RETRY_MS, LAST_RETRY_MS, cutOff, pause } from '../lib/watching';
+import { FirstTurnService } from './first-turn.service';
 import { SessionService } from './session.service';
 import { ProjectsService } from './projects.service';
 
@@ -47,6 +58,7 @@ import { ProjectsService } from './projects.service';
 export class ThreadService {
   private readonly session = inject(SessionService);
   private readonly projects = inject(ProjectsService);
+  private readonly firstTurns = inject(FirstTurnService);
   private readonly id = signal<ThreadId | null>(null);
   private readonly events = signal<readonly RawEvent[]>([]);
   /** What memory calls' results read to the person, as the server shows them. */
@@ -104,13 +116,20 @@ export class ThreadService {
   readonly reply = this.draft.asReadonly();
   /** The step the running turn takes now, in the server's words, while one runs and it said so. */
   readonly step = computed(() => this.doing().at(-1) ?? null);
-  /** Whether a turn runs in the thread: one this view follows, or one anyone else started. */
-  readonly busy = computed(() => this.following() > 0 || this.running());
+  /** The thread's first turn as the new chat sent it, until the server's record of it shows. */
+  readonly firstTurn = computed(() => {
+    const thread = this.id();
+    return thread === null ? null : this.firstTurns.of(thread);
+  });
+  /** Whether a turn runs: one this view follows, anyone's, or the first one, on its way. */
+  readonly busy = computed(
+    () => this.following() > 0 || this.running() || this.firstTurn()?.failed === null,
+  );
   /**
    * What the person sent to start a turn, shown at once as theirs while the server starts the
    * turn, until it records their message; `null` when nothing is on its way.
    */
-  readonly starting = this.asking.asReadonly();
+  readonly starting = computed(() => this.asking() ?? this.firstTurn()?.params.prompt ?? null);
   /** What the composer holds: the person's next message. */
   readonly composer = signal('');
   /** What the person sent while the turn ran that the model has not read yet, oldest first. */
@@ -130,6 +149,23 @@ export class ThreadService {
   readonly place = computed(() =>
     placeOf(this.events(), { local: this.session.local(), mac: this.mac }),
   );
+
+  /** A first turn the server refused, saying why: back in the box, as one sent here goes. */
+  protected readonly refused = effect(() => {
+    const thread = this.id();
+    const first = this.firstTurn();
+    const failed = first?.failed ?? null;
+    if (thread === null || first === null || failed === null || failed === 'lost') {
+      return;
+    }
+    untracked(() => {
+      this.firstTurns.forget(thread);
+      this.afters.update((afters) => afters.filter((after) => after !== 0));
+      this.failed.set(failed.said);
+      this.composer.update((draft) => together([first.params.prompt, draft].filter(Boolean)));
+      void this.resync(thread);
+    });
+  });
 
   constructor() {
     // A hidden tab lets go of its watch, so tabs in the background hold no connection, and
@@ -162,7 +198,8 @@ export class ThreadService {
     this.forgetLive();
     this.waiting.set([]);
     this.asking.set(null);
-    this.afters.set([]);
+    // A first turn the new chat sent is asked for from the thread's start, keyed so from then on.
+    this.afters.set(this.firstTurns.of(thread) === null ? [] : [0]);
     this.givenBack = [];
     this.stopped = false;
     this.stoppedAt = null;
@@ -225,6 +262,8 @@ export class ThreadService {
     if (thread === null) {
       return;
     }
+    // A first message that got no answer goes first, so it is neither lost nor sent twice.
+    this.sendAgain();
     if (this.busy()) {
       this.sentWhileRunning += 1;
       const key = `queued-${String(this.sentWhileRunning)}`;
@@ -241,6 +280,14 @@ export class ThreadService {
       ...(effort === null ? {} : { effort }),
     };
     await this.follow(thread, params, null);
+  }
+
+  /** Sends the thread's first message again, with its key, when it got no answer. */
+  sendAgain(): void {
+    const thread = this.id();
+    if (thread !== null && this.firstTurn()?.failed === 'lost') {
+      this.firstTurns.again(thread);
+    }
   }
 
   /** Stops the running turn; what the person sent meanwhile and the model never read is sent next. */
@@ -317,7 +364,8 @@ export class ThreadService {
       }
     }
     try {
-      const turn = this.session.stream('turn/start', params, controller.signal);
+      const keyed = { ...params, _meta: { idempotency_key: idempotencyKey() } };
+      const turn = this.session.stream('turn/start', keyed, controller.signal);
       let next = await turn.next();
       if (!next.done) {
         if (!own) {
@@ -358,7 +406,7 @@ export class ThreadService {
           this.streaming.update((streams) => streams - 1);
         }
         // A message queued to a turn another tab follows waits for that turn, as its draft does.
-        if (this.following() === 0 && !this.running()) {
+        if (this.following() === 0 && !this.busy()) {
           this.settle(thread);
         }
         if (this.streaming() === 0 && this.watching === null) {
@@ -661,8 +709,9 @@ export class ThreadService {
       }
     } else if (event.type === 'turn.ended') {
       this.running.set(false);
-    } else if (event.type === 'message.added' && event.data['role'] === 'user') {
+    } else if (byPerson(event)) {
       this.asking.set(null);
+      this.firstTurns.forget(event.thread);
     }
     return true;
   }
@@ -696,6 +745,9 @@ export class ThreadService {
           return;
         }
         this.events.update((events) => mergeEvents(events, page.events));
+        if (page.events.some(byPerson)) {
+          this.firstTurns.forget(thread);
+        }
         this.memoryResults.update((known) => withResults(known, page.results));
         const turns = page.events.some(
           (event) => event.type === 'turn.started' || event.type === 'turn.ended',
@@ -722,6 +774,11 @@ export class ThreadService {
  */
 function runs(summary: ThreadSummary, events: readonly RawEvent[]): boolean {
   return summary.status === 'running' || (summary.status === 'waiting' && turnRuns(events));
+}
+
+/** Whether `event` records a message of the person's. */
+function byPerson(event: RawEvent): boolean {
+  return event.type === 'message.added' && event.data['role'] === 'user';
 }
 
 /** The `seq` of the latest turn's start, if a turn ever started. */
