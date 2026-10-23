@@ -65,7 +65,7 @@ A "requirement" (the sandbox must be on) is a constraint that allows one value. 
 
 1. command-line flags;
 2. environment variables (`GLAVE_MODEL`, `GLAVE_JUDGE_MODEL`, …);
-3. the project's settings: those accepted into it, and its repository's that only take power away ("A repository's suggestions"; today its `.glave/config.toml`, its loosening parts once the project is trusted);
+3. the project's settings: those accepted into it, and its repository's that add no power ("A repository's suggestions"; today its `.glave/config.toml`, its loosening parts once the project is trusted);
 4. the person's (today their `~/.glave/config.toml`);
 5. glave's built-in defaults.
 
@@ -249,7 +249,7 @@ An app is a tool server reached over MCP, started on the person's computer or re
 
 A repository's `.mcp.json`, its hooks and its settings that add power only suggest powers, never set them (`model.md`, "Words and powers"). Decided on 2026-10-23 (#633), not built: today they run once the person trusts the project ("Project trust", below), and changing that is a follow-up issue.
 
-- **Each item is a suggestion:** each server of its `.mcp.json`, each hook, and each setting of its `.glave/config.toml` that adds power, shown in plain words. A setting that only takes power away (the network off, a stricter approval mode, a narrower sandbox) still applies straight from the repository, as narrowing does today.
+- **Each item is a suggestion:** each server of its `.mcp.json`, each hook, and each setting of its `.glave/config.toml` that adds power, shown in plain words. Only a setting that adds power is a suggestion, the model among them (it spends money and policy governs it); every other setting, one that takes power away (the network off, a stricter approval mode, a narrower sandbox) or a neutral one (`worktree`, `titles`), applies straight from the repository, as today.
 - **The project's owner accepts a suggestion for the project,** within the organization's list and their own "may add their own" ("Connected apps"); `[hooks] own = false` refuses every hook. Anyone may add the same for themselves alone, within the same limits: that is adding a power of their own.
 - **Accepted, it reaches every member's threads in the project,** each member signing in as themselves: the setup a shared project shares (#631).
 - **Accepted as it was shown.** A suggestion is accepted by its exact definition, as trust is today, and kept in glave with who accepted it and when; the file is not read again for it. A file that changes or adds an item makes a new suggestion and leaves what was accepted as it was.
