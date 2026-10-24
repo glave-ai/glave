@@ -1,16 +1,37 @@
-//! The root that wraps this computer's keys, so the database is sealed at rest.
+//! The root that wraps this computer's keys, so the database is sealed at rest, and what it
+//! derives that must outlive the database: the person's passkey handle.
 
 use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context as _;
 use glave_keys::{KeyFileRoot, KeySettings, KeychainRoot, Root};
+use uuid::Uuid;
+
+use crate::data::Data;
 
 /// The keychain item that holds the root: the service and account names.
 const KEYCHAIN: (&str, &str) = ("glave", "root key");
 
 /// The key file's name in glave's folder.
 const KEY_FILE: &str = "root.key";
+
+/// What the root derives the person's passkey handle for.
+const PASSKEY_HANDLE: &str = "passkey user handle";
+
+/// The person's passkey handle, which every passkey made for them keeps (WebAuthn's user
+/// handle): derived from the root, so it is random, says nothing of them, and lasts as long as
+/// the root does, through a fresh start of the store; a passkey made again on a device then
+/// replaces the one made there before (`specs/session.md`, "Signing in").
+pub(crate) async fn passkey_handle(store: &Data) -> anyhow::Result<Uuid> {
+    let derived = store.derived(PASSKEY_HANDLE).await?;
+    let bytes = derived
+        .bytes()
+        .first_chunk::<16>()
+        .copied()
+        .context("the root derived too few bytes for a passkey handle")?;
+    Ok(uuid::Builder::from_custom_bytes(bytes).into_uuid())
+}
 
 /// Keys for the database in `home`, glave's folder. The root lives in the OS keychain for the
 /// default folder. A key file in the folder is used instead when the folder was moved with

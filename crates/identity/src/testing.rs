@@ -1,7 +1,9 @@
 //! A passkey authenticator in software, for tests: it answers the options glave hands a browser
 //! as a platform authenticator would, with a P-256 key of its own, attestation `none`, the
-//! person verified, and a counter that goes up at each use. The browser's part (the client
-//! data, with the page's origin) it plays too. Its JSON is WebAuthn's, buffers in base64url.
+//! person verified, and a counter that goes up at each use, keeping the user handle it was
+//! made for and answering with it, as a passkey manager does. The browser's part (the client
+//! data, with the page's origin) it plays too, though it answers with its own passkey whatever
+//! passkeys a request names. Its JSON is WebAuthn's, buffers in base64url.
 
 use aws_lc_rs::digest::{SHA256, digest};
 use aws_lc_rs::error::Unspecified;
@@ -22,6 +24,8 @@ pub struct Authenticator {
     origin: String,
     key: EcdsaKeyPair,
     id: [u8; 16],
+    /// The user handle of the passkey it made, in base64url: none until it made one.
+    handle: Option<String>,
     counter: u32,
     random: SystemRandom,
 }
@@ -42,9 +46,20 @@ impl Authenticator {
             origin: origin.to_owned(),
             key,
             id,
+            handle: None,
             counter: 0,
             random,
         })
+    }
+
+    /// The credential id of its passkey, in base64url.
+    pub fn credential(&self) -> String {
+        URL_SAFE_NO_PAD.encode(self.id)
+    }
+
+    /// The user handle its passkey was made for, in base64url, once it made one.
+    pub fn handle(&self) -> Option<&str> {
+        self.handle.as_deref()
     }
 
     /// Its answers come from the page at `origin` from now on, as when another page asks it
@@ -57,6 +72,10 @@ impl Authenticator {
     /// credential, as `navigator.credentials.create` gives it.
     pub fn create(&mut self, options: &Value) -> Result<Value, Unspecified> {
         let options = options.get("publicKey").unwrap_or(&Value::Null);
+        self.handle = options
+            .pointer("/user/id")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
         let client = self.client("webauthn.create", options);
         let public = self.key.public_key().as_ref();
         let x = public.get(1..33).ok_or(Unspecified)?;
@@ -109,6 +128,7 @@ impl Authenticator {
                 "authenticatorData": URL_SAFE_NO_PAD.encode(data),
                 "clientDataJSON": URL_SAFE_NO_PAD.encode(client),
                 "signature": URL_SAFE_NO_PAD.encode(signature.as_ref()),
+                "userHandle": self.handle,
             },
             "extensions": {},
         }))

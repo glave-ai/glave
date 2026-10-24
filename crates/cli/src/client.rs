@@ -17,7 +17,9 @@ use glave_harness::{ApprovalMode, Cancel, Goal, Question};
 use glave_ports::Caller;
 use glave_session::client::{Remote, RemoteTurn};
 use glave_session::protocol::Meta;
-use glave_session::protocol::{Answer, ApiError, Notification, Reply, Request, Update};
+use glave_session::protocol::{
+    Answer, ApiError, ErrorData, Notification, Reply, Request, Update,
+};
 use glave_session::{Server, TurnItem, TurnStream};
 
 use crate::asking;
@@ -371,9 +373,9 @@ impl Client<'_> {
     /// Shows what failed and, when the person can fix it, what to change.
     fn show_error(&self, printer: &mut Printer, error: &ApiError) {
         printer.error(&error.message);
-        if let Some(data) = &error.data
+        if let Some(ErrorData::Failed { failure }) = &error.data
             && let Some(endpoint) = self.endpoint
-            && let Some(fix) = config::fix(data.failure, endpoint)
+            && let Some(fix) = config::fix(*failure, endpoint)
         {
             printer.fix(&fix);
         }

@@ -1,11 +1,13 @@
 //! Roots: what wraps each organization's key. A person's root lives in the OS keychain (see
-//! `KeychainRoot`), a headless machine's in a key file; an organization's will be a KMS.
+//! `KeychainRoot`), a headless machine's in a key file; an organization's will be a KMS. A
+//! root also derives values for a purpose, which last as long as it does.
 
 use std::fs::OpenOptions;
 use std::io::{ErrorKind, Read as _, Write as _};
 use std::path::{Path, PathBuf};
 
 use glave_ports::{BoxFuture, OrgId};
+use hmac::{Hmac, KeyInit as _, Mac as _};
 
 use crate::error::KeyError;
 use crate::material::KeyMaterial;
@@ -27,6 +29,12 @@ pub trait Root: Send + Sync {
         org: OrgId,
         wrapped: &'a [u8],
     ) -> BoxFuture<'a, Result<KeyMaterial, KeyError>>;
+
+    /// A value this root alone makes for `purpose`, the same each time it is asked: HMAC-SHA-256
+    /// under the root key of a label of its own and `purpose` (a KMS's own MAC, for a KMS
+    /// root). It says nothing of the root, and lasts as long as the root does, wherever that is
+    /// kept: for what must outlive glave's data, as the person's passkey handle does.
+    fn derive<'a>(&'a self, purpose: &'a str) -> BoxFuture<'a, Result<KeyMaterial, KeyError>>;
 }
 
 /// A root held as one 256-bit key in this process: wrapping is sealing under it, bound to the
@@ -58,6 +66,14 @@ impl LocalRoot {
         )?);
         KeyMaterial::from_bytes(&bytes)
     }
+
+    pub(crate) fn derive(&self, purpose: &str) -> Result<KeyMaterial, KeyError> {
+        let mut mac = Hmac::<sha2::Sha256>::new_from_slice(self.key.bytes())
+            .map_err(|e| KeyError::Corrupt(e.to_string()))?;
+        mac.update(&associated(&[b"glave/derived/v1", purpose.as_bytes()]));
+        let derived = zeroize::Zeroizing::new(<[u8; 32]>::from(mac.finalize().into_bytes()));
+        KeyMaterial::from_bytes(derived.as_slice())
+    }
 }
 
 /// Implements [`Root`] for a type that holds a [`LocalRoot`] in a field named `local`.
@@ -81,6 +97,16 @@ macro_rules! local_root {
                 Result<$crate::material::KeyMaterial, $crate::error::KeyError>,
             > {
                 Box::pin(std::future::ready(self.local.unwrap(org, wrapped)))
+            }
+
+            fn derive<'a>(
+                &'a self,
+                purpose: &'a str,
+            ) -> glave_ports::BoxFuture<
+                'a,
+                Result<$crate::material::KeyMaterial, $crate::error::KeyError>,
+            > {
+                Box::pin(std::future::ready(self.local.derive(purpose)))
             }
         }
     };
@@ -215,6 +241,37 @@ mod tests {
             let mode = std::fs::metadata(&path).unwrap().permissions().mode();
             assert_eq!(mode & 0o777, 0o600);
         }
+    }
+
+    #[test]
+    fn a_root_derives_the_same_value_for_a_purpose_across_opens_and_another_root_another() {
+        let dir = folder("derive");
+        let path = dir.join("root.key");
+        let first = KeyFileRoot::open_or_create(&path).unwrap();
+        let derived = block_on!(first.derive("passkey user")).unwrap();
+        let again = KeyFileRoot::open_or_create(&path).unwrap();
+        assert_eq!(
+            block_on!(again.derive("passkey user")).unwrap().bytes(),
+            derived.bytes()
+        );
+        assert_ne!(
+            block_on!(again.derive("something else")).unwrap().bytes(),
+            derived.bytes(),
+            "each purpose its own"
+        );
+        let planted = std::fs::read(&path).unwrap();
+        assert_ne!(derived.bytes().as_slice(), planted.as_slice(), "not the root");
+        let other = folder("derive-other");
+        let another = KeyFileRoot::open_or_create(other.join("root.key")).unwrap();
+        assert_ne!(
+            block_on!(another.derive("passkey user")).unwrap().bytes(),
+            derived.bytes()
+        );
+        let memory = InMemoryRoot::new().unwrap();
+        assert_ne!(
+            block_on!(memory.derive("passkey user")).unwrap().bytes(),
+            derived.bytes()
+        );
     }
 
     #[cfg(unix)]

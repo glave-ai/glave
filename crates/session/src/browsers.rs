@@ -11,7 +11,7 @@ use glave_event::{At, AuthMethod, Secret};
 use glave_identity::signin::{Browsers, Ceremony, PasskeyInfo, Proof, Session};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
-use crate::protocol::{ApiError, PasskeySummary, Reply, SignInWay, code};
+use crate::protocol::{AcceptedPasskeys, ApiError, PasskeySummary, Reply, SignInWay, code};
 use crate::providers::local;
 use crate::server::Server;
 use crate::words::Sentence;
@@ -158,10 +158,7 @@ where
     pub(crate) async fn redeem(&self, code: &str) -> Result<Reply, ApiError> {
         let browsers = self.browsers()?;
         let session = browsers.redeem(code).await?;
-        Ok(Reply::Browser {
-            session: session.token,
-            server: browsers.server(),
-        })
+        Ok(signed_in(session, browsers))
     }
 
     /// Answers `signin/end`: ends the caller's own browser session.
@@ -214,11 +211,17 @@ fn options(ceremony: Ceremony) -> Reply {
     }
 }
 
-/// `session`, begun with this server of `browsers`.
+/// `session`, begun with this server of `browsers`, and the passkeys that sign the person in,
+/// for the browser's passkey manager.
 fn signed_in(session: Session, browsers: &Browsers) -> Reply {
     Reply::Browser {
         session: session.token,
         server: browsers.server(),
+        accepted: session.accepted.map(|accepted| AcceptedPasskeys {
+            party: accepted.party,
+            user: accepted.user,
+            credentials: accepted.credentials,
+        }),
     }
 }
 

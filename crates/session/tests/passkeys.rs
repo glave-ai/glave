@@ -15,6 +15,7 @@ use glave_session::Answering;
 use glave_session::protocol::{Request, code};
 use glave_session::signin::{Browsers, LocalToken, SignIn};
 use serde_json::{Value, json};
+use uuid::Uuid;
 
 use crate::support::issuer::fixed_clock;
 use crate::support::web::{Served, Web, serve_here, serve_with};
@@ -22,6 +23,9 @@ use crate::support::*;
 
 /// Where people reach the server from elsewhere.
 const ORIGIN: &str = "https://glave.test";
+
+/// The person's passkey handle.
+const HANDLE: Uuid = Uuid::from_u128(0x691);
 
 /// The browsers of the glave in `dir`, reached from elsewhere at [`ORIGIN`] if `reached`.
 async fn browsers(dir: &Path, clock: &ManualClock, reached: bool) -> Arc<Browsers> {
@@ -33,6 +37,7 @@ async fn browsers(dir: &Path, clock: &ManualClock, reached: bool) -> Arc<Browser
         store.log(),
         scope(),
         server,
+        HANDLE,
         origin,
         Box::new(clock.clone()),
     );
@@ -201,6 +206,50 @@ fn the_person_adds_and_removes_passkeys_and_removing_one_signs_its_browsers_out(
         );
         let left = asked(&mut on_laptop, &Request::PasskeyList {}).await;
         assert_eq!(left["passkeys"][0]["id"], laptop_s);
+        served.close().await;
+    });
+}
+
+#[test]
+fn a_sign_in_names_every_passkey_that_signs_in_and_a_refusal_the_one_the_server_does_not_know() {
+    block_on!(async {
+        let (dir, again) = (folder("passkeys-signals"), folder("passkeys-signals-fresh"));
+        let token = LocalToken::new([10; 32]);
+        let served = serve(&dir, true, &token).await;
+        let mut phone = Authenticator::new(ORIGIN).unwrap();
+        set_up(&served, &token, &mut phone).await;
+        let signed_in = sign_in(&served, &mut phone).await;
+        assert!(phone.handle().is_some_and(|user| !user.is_empty()));
+        assert_eq!(
+            signed_in["accepted"],
+            json!({
+                "party": "glave.test",
+                "user": phone.handle(),
+                "credentials": [phone.credential()],
+            })
+        );
+
+        // Glave's data started over, the person's handle kept: the phone's passkey is no
+        // longer one this glave knows.
+        let fresh = serve(&again, true, &token).await;
+        let mut laptop = Authenticator::new(ORIGIN).unwrap();
+        set_up(&fresh, &token, &mut laptop).await;
+        let mut anyone = elsewhere(&fresh, None);
+        let options = asked(&mut anyone, &Request::PasskeyGetOptions {}).await;
+        let credential = phone.get(&options["options"]).unwrap();
+        let ceremony = options["ceremony"].as_str().unwrap().to_owned();
+        let get = Request::PasskeyGet {
+            ceremony,
+            credential,
+        };
+        let refused = anyone.call(&get).await["error"].clone();
+        assert_eq!(refused["code"], json!(code::NO_SIGN_IN));
+        assert_eq!(
+            refused["data"],
+            json!({"unknown_passkey": {"party": "glave.test", "credential": phone.credential()}})
+        );
+        assert!(refused["message"].as_str().unwrap().contains("another"));
+        fresh.close().await;
         served.close().await;
     });
 }

@@ -8,14 +8,14 @@
 //! Sessions and passkeys are kept in the store, in the browsers ledger of the person's
 //! personal project (glave's own stream under a reserved id), each session as the SHA-256 of
 //! its token alone, so nothing kept signs anyone in; every server on one store signs in the
-//! same browsers. The server's id, which a browser checks before it presents its session, is
-//! the caller's to keep.
+//! same browsers. The server's id, which a browser checks before it presents its session, and
+//! the person's passkey handle, which must outlive the store, are the caller's to keep.
 
 mod ledger;
 mod passkeys;
 mod state;
 
-pub use self::passkeys::{Ceremony, PasskeyInfo, Proof};
+pub use self::passkeys::{Accepted, Ceremony, PasskeyInfo, Proof};
 
 use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
 
@@ -76,6 +76,14 @@ pub enum BrowserError {
     NoPasskey,
     #[error("that passkey request has expired: try again")]
     Ceremony,
+    /// A passkey with the person's handle that this server does not know, removed or never
+    /// made here: the relying party's id, and its credential id in base64url, for the browser
+    /// to tell its passkey manager.
+    #[error(
+        "that passkey no longer signs in to this glave: sign in with another, or open a link \
+         glave gives you to make a new one"
+    )]
+    Unknown { party: String, credential: String },
     #[error("the passkey was not accepted: {0}")]
     Passkey(String),
     #[error("could not keep this computer's browser sign-ins: {0}")]
@@ -90,12 +98,14 @@ impl From<StreamError> for BrowserError {
     }
 }
 
-/// A session just begun: the token the browser keeps, and the id that names the session in
-/// records and when it is ended.
+/// A session just begun: the token the browser keeps, the id that names the session in
+/// records and when it is ended, and the passkeys that sign the person in, for the browser's
+/// passkey manager, where the server makes passkeys for that browser's page.
 #[derive(Debug)]
 pub struct Session {
     pub token: Secret,
     pub id: String,
+    pub accepted: Option<Accepted>,
 }
 
 /// The codes, browser sessions and passkeys of one server, the sessions and passkeys kept in
@@ -103,6 +113,8 @@ pub struct Session {
 pub struct Browsers {
     ledger: Box<dyn Ledger>,
     server: String,
+    /// The person's user handle, which every passkey made for them keeps.
+    handle: Uuid,
     clock: Box<dyn Clock>,
     state: Mutex<State>,
     /// Passkeys' relying party: the public origin, where the server is reached from
@@ -116,22 +128,24 @@ impl Browsers {
     /// The sessions and passkeys the browsers ledger in `scope` of `log` holds, for the server
     /// whose id is `server`, reached from elsewhere at `origin` if anywhere: there it makes
     /// passkeys and signs browsers in with them; with none, on this computer once it listens
-    /// here ([`Browsers::reached_here`]).
+    /// here ([`Browsers::reached_here`]). Every passkey it makes keeps `handle`, the person's.
     pub async fn open<L: EventLog + 'static>(
         log: L,
         scope: Scope,
         server: String,
+        handle: Uuid,
         origin: Option<&PublicOrigin>,
         clock: Box<dyn Clock>,
     ) -> Result<Self, BrowserError> {
         let thread = Reserved::Browsers.id();
         let relying = match origin {
-            Some(origin) => OnceLock::from(Relying::public(origin, &server)?),
+            Some(origin) => OnceLock::from(Relying::public(origin, handle)?),
             None => OnceLock::new(),
         };
         let browsers = Self {
             ledger: Box::new(Stream { log, scope, thread }),
             server,
+            handle,
             clock,
             state: Mutex::new(State {
                 next: 1,
@@ -208,6 +222,7 @@ impl Browsers {
         Ok(Session {
             token: Secret::new(token),
             id: id.to_string(),
+            accepted: self.accepted(passkey.is_some()),
         })
     }
 

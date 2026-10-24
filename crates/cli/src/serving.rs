@@ -236,16 +236,18 @@ pub(crate) async fn browsers(
 }
 
 /// The browsers of `person` in `store`, signed in by the server whose id the store keeps,
-/// reached from elsewhere at `origin` if anywhere.
+/// reached from elsewhere at `origin` if anywhere, their passkeys keeping the person's handle,
+/// which the root derives.
 async fn open_browsers(
     store: &Data,
     person: PrincipalId,
     origin: Option<&PublicOrigin>,
 ) -> anyhow::Result<Browsers> {
     let server = store.server(random_uuid()?).await?.to_string();
+    let handle = crate::keys::passkey_handle(store).await?;
     let scope = crate::projects::personal(store, person).await?;
     let clock = Box::new(SystemClock);
-    Ok(Browsers::open(store.log(), scope, server, origin, clock).await?)
+    Ok(Browsers::open(store.log(), scope, server, handle, origin, clock).await?)
 }
 
 /// A new one-time code for a sign-in link, from `server`.
@@ -352,6 +354,30 @@ mod tests {
             let again = open_browsers(&store, person, None).await.unwrap();
             assert_eq!(again.server(), first.server());
             assert!(again.verify(session.token.expose(), true).await.is_ok());
+        });
+    }
+
+    #[test]
+    fn the_person_s_passkey_handle_outlives_a_fresh_store_and_is_each_root_s_own() {
+        glave_ports::block_on!(async {
+            let origin = PublicOrigin::parse("https://glave.example.com").unwrap();
+            let person = PrincipalId::new(SystemClock.now(), [1; 10]).unwrap();
+            let handle = async |root: &Arc<dyn glave_keys::Root>| {
+                let keys = glave_keys::KeySettings::new(Arc::clone(root));
+                let store = Data::Sqlite(glave_store_sqlite::Store::open_in_memory(keys).unwrap());
+                let browsers = open_browsers(&store, person, Some(&origin)).await.unwrap();
+                let code = browsers.setup().unwrap();
+                let proof = glave_identity::signin::Proof::Code(code.expose());
+                let asked = browsers.create_options(proof).unwrap();
+                asked.options["publicKey"]["user"]["id"].clone()
+            };
+            let root: Arc<dyn glave_keys::Root> = Arc::new(glave_keys::InMemoryRoot::new().unwrap());
+            let first = handle(&root).await;
+            assert!(first.is_string(), "{first}");
+            assert_eq!(handle(&root).await, first, "a fresh store, the same root");
+            let theirs: Arc<dyn glave_keys::Root> =
+                Arc::new(glave_keys::InMemoryRoot::new().unwrap());
+            assert_ne!(handle(&theirs).await, first, "another person's root");
         });
     }
 

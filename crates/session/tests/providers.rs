@@ -60,7 +60,7 @@ impl Providers for Accounts {
                 return Err(ApiError {
                     code: code::PROVIDER,
                     message: "the service did not accept the key".into(),
-                    data: Some(ErrorData {
+                    data: Some(ErrorData::Failed {
                         failure: Failure::Refused,
                     }),
                 });
@@ -196,7 +196,10 @@ async fn first_run(client: &mut impl Client) {
         .await
         .unwrap_err();
     assert_eq!(bad.code, code::PROVIDER);
-    assert_eq!(bad.data.map(|data| data.failure), Some(Failure::Refused));
+    let refused = ErrorData::Failed {
+        failure: Failure::Refused,
+    };
+    assert_eq!(bad.data, Some(refused));
     let listed = client.call(Request::ProviderList {}).await.unwrap();
     assert_eq!(
         listed["providers"],

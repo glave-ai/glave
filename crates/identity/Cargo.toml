@@ -11,13 +11,14 @@ publish.workspace = true
 [features]
 # A passkey authenticator in software (`testing`), for the tests of crates that sign in through
 # this one.
-fake-authenticator = ["dep:aws-lc-rs", "dep:base64"]
+fake-authenticator = ["dep:aws-lc-rs"]
 
 [dependencies]
 # The fake authenticator's key and signatures, on the crypto rustls already uses.
 aws-lc-rs = { workspace = true, optional = true }
-# The fake authenticator's buffers, in base64url as WebAuthn's JSON has them.
-base64 = { workspace = true, optional = true }
+# Credential ids and the person's passkey handle in base64url, as WebAuthn's JSON and its
+# Signal API take them (and the fake authenticator's buffers).
+base64.workspace = true
 glave-event.workspace = true
 # The clock tokens' lifetimes are checked against.
 glave-ports.workspace = true

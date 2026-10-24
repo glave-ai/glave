@@ -7,7 +7,15 @@
 //! browser in, and someone signed in may make another. Each request to make or
 //! use one is answered within five minutes, on the server that began it, and kept in memory
 //! meanwhile, at most 16 of each. Setup codes that are not one are counted, and past 10 in a
-//! minute none is taken until it passes. Removing a passkey ends the sessions it began.
+//! minute none is taken until it passes. Removing a passkey ends the sessions it began. Every
+//! passkey carries the person's handle, which the caller gives, so a passkey made again on a
+//! device replaces the one made there before; and the browser is told which of the person's
+//! passkeys still sign in, and of one that does not, so its passkey manager forgets the rest
+//! (`signals`).
+
+mod signals;
+
+pub use self::signals::Accepted;
 
 use std::sync::{MutexGuard, PoisonError};
 
@@ -16,8 +24,8 @@ use glave_ports::host::PublicOrigin;
 use jiff::{SignedDuration, Timestamp};
 use uuid::Uuid;
 use webauthn_rs::prelude::{
-    PasskeyAuthentication, PasskeyRegistration, PublicKeyCredential, RegisterPublicKeyCredential,
-    Url, Webauthn, WebauthnBuilder,
+    Passkey, PasskeyAuthentication, PasskeyRegistration, PublicKeyCredential,
+    RegisterPublicKeyCredential, Url, Webauthn, WebauthnBuilder,
 };
 
 use super::state::{Change, KeptPasskey, State};
@@ -77,7 +85,8 @@ pub(super) const HERE: &str = "localhost";
 /// The relying party passkeys are made for, and the person they sign in.
 pub(super) struct Relying {
     webauthn: Webauthn,
-    person: Uuid,
+    /// The person's user handle, which each of their passkeys keeps.
+    handle: Uuid,
     /// Its id: the public origin's name, or [`HERE`].
     id: String,
     party: Party,
@@ -92,19 +101,20 @@ enum Party {
 }
 
 impl Relying {
-    /// The relying party at the public origin `origin`, for the server whose id is `server`.
-    pub(super) fn public(origin: &PublicOrigin, server: &str) -> Result<Self, BrowserError> {
-        Self::at(origin.as_str(), server, Party::Public)
+    /// The relying party at the public origin `origin`, for the person whose handle is
+    /// `handle`.
+    pub(super) fn public(origin: &PublicOrigin, handle: Uuid) -> Result<Self, BrowserError> {
+        Self::at(origin.as_str(), handle, Party::Public)
     }
 
     /// The relying party for browsers on this computer: [`HERE`], at `port` alone, so a page
     /// another program serves at another port here is never one.
-    fn here(port: u16, server: &str) -> Result<Self, BrowserError> {
+    fn here(port: u16, handle: Uuid) -> Result<Self, BrowserError> {
         let origin = format!("http://{HERE}:{port}");
-        Self::at(&origin, server, Party::Here(origin.clone()))
+        Self::at(&origin, handle, Party::Here(origin.clone()))
     }
 
-    fn at(origin: &str, server: &str, party: Party) -> Result<Self, BrowserError> {
+    fn at(origin: &str, handle: Uuid, party: Party) -> Result<Self, BrowserError> {
         let refused = |error: &dyn std::fmt::Display| BrowserError::Passkey(error.to_string());
         let url = Url::parse(origin).map_err(|e| refused(&e))?;
         let id = url.host_str().ok_or(BrowserError::NoPasskeys)?.to_owned();
@@ -113,7 +123,7 @@ impl Relying {
             .map_err(|e| refused(&e))?;
         Ok(Self {
             webauthn,
-            person: Uuid::parse_str(server).unwrap_or_default(),
+            handle,
             id,
             party,
         })
@@ -149,7 +159,7 @@ impl Browsers {
     pub fn reached_here(&self, port: u16) -> Result<(), BrowserError> {
         if self.relying.get().is_none() {
             // Set once: a second call, as of another listener, keeps the first.
-            let _ = self.relying.set(Relying::here(port, &self.server)?);
+            let _ = self.relying.set(Relying::here(port, self.handle)?);
         }
         Ok(())
     }
@@ -217,7 +227,7 @@ impl Browsers {
         };
         let (options, registration) = relying
             .webauthn
-            .start_passkey_registration(relying.person, "glave", "glave", Some(exclude))
+            .start_passkey_registration(relying.handle, "glave", "glave", Some(exclude))
             .map_err(|error| BrowserError::Passkey(error.to_string()))?;
         let id = new_id(now)?;
         let mut ceremonies = self.ceremonies();
@@ -344,7 +354,9 @@ impl Browsers {
         ceremony(id, &options)
     }
 
-    /// Signs a browser in with the passkey `credential` answers the request `ceremony` with.
+    /// Signs a browser in with the passkey `credential` answers the request `ceremony` with:
+    /// one of the person's in the store as it is now, else [`BrowserError::Unknown`] when it
+    /// carries the person's handle, so the browser can tell its passkey manager.
     pub async fn get(
         &self,
         ceremony: &str,
@@ -366,27 +378,35 @@ impl Browsers {
         }
         let answer: PublicKeyCredential = serde_json::from_value(credential.clone())
             .map_err(|error| BrowserError::Passkey(error.to_string()))?;
+        // Removed, or added, on another server on this store since this one last looked.
+        self.catch_up().await?;
+        let (id, mut kept) = self.kept(relying, &answer)?;
         let result = relying
             .webauthn
             .finish_passkey_authentication(&answer, &authentication)
             .map_err(|error| BrowserError::Passkey(error.to_string()))?;
-        let (id, changed) = {
-            let state = self.state();
-            let kept = state
-                .passkeys
-                .iter()
-                .filter(|kept| relying.made(kept))
-                .find(|kept| kept.credential.cred_id() == result.cred_id())
-                .ok_or(BrowserError::NoPasskey)?;
-            let mut credential = kept.credential.clone();
-            let changed = credential.update_credential(&result) == Some(true);
-            (kept.id, changed.then(|| serde_json::to_string(&credential)))
-        };
-        let changed = changed
+        let changed = (kept.update_credential(&result) == Some(true))
+            .then(|| serde_json::to_string(&kept))
             .transpose()
             .map_err(|error| BrowserError::Keep(error.to_string()))?;
         self.begin(Some(id), vec![Change::PasskeyUsed(id, changed)])
             .await
+    }
+
+    /// The passkey `answer` signs in with, of those made for `relying`: its id and credential.
+    fn kept(
+        &self,
+        relying: &Relying,
+        answer: &PublicKeyCredential,
+    ) -> Result<(Uuid, Passkey), BrowserError> {
+        let presented = answer.get_credential_id();
+        self.state()
+            .passkeys
+            .iter()
+            .filter(|kept| relying.made(kept))
+            .find(|kept| kept.credential.cred_id().as_slice() == presented)
+            .map(|kept| (kept.id, kept.credential.clone()))
+            .ok_or_else(|| relying.unknown(answer))
     }
 
     /// The person's passkeys, oldest first.

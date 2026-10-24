@@ -10,6 +10,20 @@ export const PROTOCOL = "2026-10";
  */
 export type Ability = "read" | "push" | "pull_requests" | "issues";
 
+/**
+ * Every passkey that signs the person in with a relying party, after a sign-in, for the
+ * browser to tell its passkey manager (`PublicKeyCredential.signalAllAcceptedCredentials`),
+ * which then hides or deletes the person's others there.
+ */
+export type AcceptedPasskeys = {
+  /** Each passkey's credential id (`allAcceptedCredentialIds`), in base64url. */
+  readonly credentials: readonly (string)[];
+  /** The relying party's id (`rpId`): the public origin's name, or `localhost`. */
+  readonly party: string;
+  /** The person's user handle (`userId`), in base64url. */
+  readonly user: string;
+};
+
 /** The person's answer to an approval. */
 export type Answer = "allow_once" | "allow_for_thread" | "deny";
 
@@ -137,9 +151,11 @@ export type DeviceCode = {
   readonly url: string;
 };
 
-/** Why a model call failed, for a client to say what to fix. */
+/** What a failure says beyond its sentence, for a client to act on. */
 export type ErrorData = {
   readonly failure: Failure;
+} | {
+  readonly unknown_passkey: UnknownPasskey;
 };
 
 /** Identifies one event, unique everywhere. */
@@ -684,6 +700,18 @@ export type TurnResult = {
  */
 export type TypeName = string;
 
+/**
+ * A passkey a browser signed in with that the server does not know, removed or never made
+ * for it, for the browser to tell its passkey manager
+ * (`PublicKeyCredential.signalUnknownCredential`), which then deletes it.
+ */
+export type UnknownPasskey = {
+  /** Its credential id (`credentialId`), in base64url. */
+  readonly credential: string;
+  /** The relying party's id (`rpId`). */
+  readonly party: string;
+};
+
 /** Progress while a turn runs: the live side of `Live`, in a form any transport carries. */
 export type Update = {
   readonly kind: "text";
@@ -1115,6 +1143,12 @@ export type PasskeyCreateParams = {
 
 /** A browser session, sent once. */
 export type PasskeyCreateResult = {
+  /**
+   * Every passkey that signs the person in, for the browser's passkey manager; none
+   * where the server makes no passkeys for the page signed in, as after a link on a
+   * server whose passkeys are made at its public origin.
+   */
+  readonly accepted?: AcceptedPasskeys | null;
   /** The id of the server it is for: the browser presents it to no other. */
   readonly server: string;
   /**
@@ -1144,6 +1178,12 @@ export type PasskeyGetParams = {
 
 /** A browser session, sent once. */
 export type PasskeyGetResult = {
+  /**
+   * Every passkey that signs the person in, for the browser's passkey manager; none
+   * where the server makes no passkeys for the page signed in, as after a link on a
+   * server whose passkeys are made at its public origin.
+   */
+  readonly accepted?: AcceptedPasskeys | null;
   /** The id of the server it is for: the browser presents it to no other. */
   readonly server: string;
   /**
@@ -1341,6 +1381,12 @@ export type SigninRedeemParams = {
 
 /** A browser session, sent once. */
 export type SigninRedeemResult = {
+  /**
+   * Every passkey that signs the person in, for the browser's passkey manager; none
+   * where the server makes no passkeys for the page signed in, as after a link on a
+   * server whose passkeys are made at its public origin.
+   */
+  readonly accepted?: AcceptedPasskeys | null;
   /** The id of the server it is for: the browser presents it to no other. */
   readonly server: string;
   /**
