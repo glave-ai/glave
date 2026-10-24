@@ -8,12 +8,10 @@ name: budgets
 # x86-64 Linux as the release builds it (dist-workspace.toml), static with musl, in the dist
 # profile, with the web app inside. The benchmark is built for musl too, so the thread it
 # resumes runs on musl's allocator, as a released glave's does. The two optimized builds are
-# what cost, about 5 minutes each, nearly all of it LTO on one core, and on one runner they slow
-# each other down: so each builds on a runner of its own, at the same time, and a third runs
-# the benchmark, which takes seconds. The numbers are wall-clock, and the runner GitHub gives
-# the job decides much of them: the same build resumes in about 50, 75 or 95 ms by the
-# machine it lands on (#638), so a resume near its budget on the slowest is the norm there,
-# not noise.
+# what cost, about 5 minutes each, nearly all of it LTO, and on one runner they slow each other
+# down: so each has a runner of its own, at the same time, and a third measures, in seconds.
+# The numbers are wall-clock, and depend on the kind of machine the measuring job is given,
+# which it names.
 on:
   push:
     branches: [main]
