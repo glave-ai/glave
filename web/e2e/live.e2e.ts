@@ -1,4 +1,4 @@
-import { type Page, type Request, expect, test } from '@playwright/test';
+import { type Page, expect, test } from '@playwright/test';
 
 import { HELLO, LEFT_ALONE, TOUCH, holding, letGo } from './fake-model';
 import {
@@ -21,46 +21,6 @@ function callsOf(page: Page): readonly string[] {
     }
   });
   return called;
-}
-
-/** Diagnostic for #695: every request of `page`, as it starts, answers and ends. */
-function track(page: Page, name: string, log: string[], t0: number): Set<Request> {
-  const open = new Set<Request>();
-  const label = (request: Request): string =>
-    request.headers()['glave-method'] ?? new URL(request.url()).pathname;
-  const at = (): string => String(Date.now() - t0).padStart(6);
-  page.on('request', (request) => {
-    open.add(request);
-    log.push(`${at()} ${name} > ${request.method()} ${label(request)}`);
-  });
-  page.on('response', (response) => {
-    log.push(`${at()} ${name} < ${String(response.status())} ${label(response.request())}`);
-  });
-  page.on('requestfinished', (request) => {
-    open.delete(request);
-    log.push(`${at()} ${name} . done ${label(request)}`);
-  });
-  page.on('requestfailed', (request) => {
-    open.delete(request);
-    log.push(`${at()} ${name} x fail ${label(request)} ${request.failure()?.errorText ?? ''}`);
-  });
-  page.on('console', (message) => {
-    log.push(`${at()} ${name} console ${message.type()} ${message.text()}`);
-  });
-  page.on('load', () => log.push(`${at()} ${name} LOAD`));
-  page.on('domcontentloaded', () => log.push(`${at()} ${name} DOMCONTENTLOADED`));
-  return open;
-}
-
-/** Diagnostic for #695: what each document sees of its visibility. */
-async function seeVisibility(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    console.log(`diag visibility at start ${document.visibilityState}`);
-    document.addEventListener('visibilitychange', () => {
-      console.log(`diag visibility now ${document.visibilityState}`);
-    });
-    addEventListener('pagehide', () => console.log('diag pagehide'));
-  });
 }
 
 /**
@@ -125,59 +85,17 @@ test('the side nav shows a turn another tab starts running, then needing the per
 }) => {
   const context = await browser.newContext();
   const [watching, working] = [await context.newPage(), await context.newPage()];
-  const t0 = Date.now();
-  const log: string[] = [];
-  const openA = track(watching, 'A', log, t0);
-  const openB = track(working, 'B', log, t0);
-  // Diagnostic run 3: no init scripts, as the test itself has none.
-  void seeVisibility;
-  const names = (open: Set<Request>): string =>
-    [...open].map((r) => r.headers()['glave-method'] ?? new URL(r.url()).pathname).join(',');
   const problems = [watchForProblems(watching), watchForProblems(working)];
   const called = callsOf(watching);
   const live = served(LIVE);
   // A prompt of its own in each browser, which run side by side on the one glave.
-  const held = `${browserName}-${String(Date.now())}-${String(test.info().repeatEachIndex)}`;
+  const held = `${browserName}-${String(Date.now())}`;
   const prompt = `${holding(held)}, then touch a file`;
 
   await watching.goto(`${live}/#code=${await signInCode(LIVE)}`);
   await expect.poll(() => called.includes('thread/list/watch')).toBe(true);
   const read = called.length;
-  log.push(`${String(Date.now() - t0).padStart(6)} -- B goto; A holds [${names(openA)}]`);
-  try {
-    await working.goto(`${live}/#code=${await signInCode(LIVE)}`, { timeout: 30_000 });
-  } catch (error) {
-    const state = await working
-      .evaluate(() => ({
-        ready: document.readyState,
-        url: location.href,
-        visible: document.visibilityState,
-        resources: performance
-          .getEntriesByType('resource')
-          .map((entry) => `${entry.name} ${String(Math.round(entry.duration))}`),
-      }))
-      .catch((failed: unknown) => String(failed));
-    const stateA = await watching
-      .evaluate(() => ({ ready: document.readyState, visible: document.visibilityState }))
-      .catch((failed: unknown) => String(failed));
-    console.log(`DIAG ${test.info().title} repeat ${String(test.info().repeatEachIndex)}`);
-    console.log(log.join('\n'));
-    console.log(`DIAG OPEN A: [${names(openA)}]`);
-    console.log(`DIAG OPEN B: [${names(openB)}]`);
-    console.log(`DIAG B state: ${JSON.stringify(state, null, 1)}`);
-    console.log(`DIAG A state: ${JSON.stringify(stateA)}`);
-    console.log(
-      `DIAG B page url: ${working.url()} frames: ${working
-        .frames()
-        .map((f) => f.url())
-        .join(',')}`,
-    );
-    throw error;
-  }
-  log.push(
-    `${String(Date.now() - t0).padStart(6)} -- B loaded; A [${names(openA)}] B [${names(openB)}]`,
-  );
-  console.log(`DIAG pass: ${log.filter((line) => line.includes(' -- ')).join(' | ')}`);
+  await working.goto(`${live}/#code=${await signInCode(LIVE)}`);
   const composer = byTestId(working, 'home-composer-input');
   await composer.fill(prompt);
   await composer.press('Enter');
