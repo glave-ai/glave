@@ -9,10 +9,7 @@ use glave_ports::computer::{CredentialAsk, CredentialHost, GitCredential, GitCre
 use glave_ports::{BoxFuture, Clock as _, SystemClock};
 
 use super::Hosts;
-use super::renewing::Renewing;
-
-/// How long before it expires a token is renewed, in seconds.
-const RENEW_BEFORE: i64 = 5 * 60;
+use super::renewing::{HostRenewal, RENEW_BEFORE, Renewing};
 
 impl GitCredentials for Hosts {
     fn hosts(&self) -> BoxFuture<'_, Vec<CredentialHost>> {
@@ -65,7 +62,7 @@ impl Hosts {
         &self,
         current: &CredentialConnected,
         fresh: Option<CredentialConnected>,
-    ) -> Option<Renewing> {
+    ) -> Option<Renewing<HostRenewal>> {
         let github = self
             .github
             .as_ref()
@@ -77,13 +74,13 @@ impl Hosts {
             );
             return None;
         };
-        Some(Renewing {
+        let job = HostRenewal {
             ledger: self.ledger.clone(),
             http: self.http.clone(),
             github: github.clone(),
             current: current.clone(),
-            fresh,
-        })
+        };
+        Some(Renewing { job, fresh })
     }
 }
 
