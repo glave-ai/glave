@@ -299,6 +299,66 @@ fn a_saves_result_shows_the_person_its_text_until_they_forget_it() {
     });
 }
 
+/// What the model answers to save `text` to the person's memory, then say so.
+fn saving(text: &str) -> Vec<glave_ports::Completion> {
+    let save = serde_json::json!({"text": text, "scope": "personal"});
+    vec![
+        answer(None, Some((REMEMBER, save))),
+        answer(Some("Saved."), None),
+    ]
+}
+
+/// #630: forgetting a memory leaves the chat it was saved in, which is history; the person
+/// deletes that chat with `thread/delete` when they want it gone too. A memory names its chat
+/// only while that chat is still there.
+#[test]
+fn forgetting_leaves_the_chat_a_memory_was_saved_in_named_while_it_is_there() {
+    block_on!(async {
+        let answers = [
+            saving("Ada's favourite flower is marigold"),
+            saving("Ada's favourite tree is the oak"),
+        ];
+        let (server, _store, _dir) = served_with("memory-forget-chat", answers.concat()).await;
+        let mut chats = Vec::new();
+        for said in ["my flower", "my tree"] {
+            let chat = start(&server, false).await;
+            turn(&server, chat, said).await.unwrap();
+            chats.push(chat);
+        }
+        let [kept, gone] = chats[..] else {
+            panic!("two chats");
+        };
+        server
+            .request(Request::ThreadDelete { thread: gone })
+            .await
+            .unwrap();
+        let list = Request::MemoryList {
+            scope: None,
+            project: None,
+        };
+        let saved = listed(server.request(list).await.unwrap());
+        let sources: Vec<_> = (saved.iter())
+            .map(|memory| memory.source.map(|source| source.thread))
+            .collect();
+        assert_eq!(sources, [Some(kept), None], "never a deleted chat");
+        for memory in &saved {
+            let forget = Request::MemoryForget {
+                memory: Some(memory.memory),
+                all: false,
+                scope: None,
+                project: None,
+            };
+            let answered = listed(server.request(forget).await.unwrap());
+            assert_eq!(answered.len(), 1, "the memory as it was");
+        }
+        let get = Request::ThreadGet { thread: kept };
+        assert!(
+            server.request(get).await.is_ok(),
+            "its chat kept as history"
+        );
+    });
+}
+
 #[test]
 fn a_server_without_memory_says_so() {
     block_on!(async {

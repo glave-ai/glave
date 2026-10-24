@@ -26,6 +26,32 @@ describe('MemoryService', () => {
     expect(fake.paramsOf('memory/forget')).toEqual([{ memory: 'm1' }]);
   });
 
+  it('deletes the chat a memory was saved in once it is forgotten, when the server names one', async () => {
+    const saved: Remembered = { ...MEMORY, source: { thread: 't1', seq: 3 } };
+    const fake = new FakeSession()
+      .answer('memory/list', { memories: [saved] })
+      .answer('memory/forget', { memories: [saved] });
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const memory = TestBed.inject(MemoryService);
+    await memory.forget('m1', true);
+    expect(fake.paramsOf('memory/forget')).toEqual([{ memory: 'm1' }]);
+    expect(fake.paramsOf('thread/delete')).toEqual([{ thread: 't1' }]);
+  });
+
+  it("forgets all the same when the chat cannot go, and says why in the server's words", async () => {
+    const saved: Remembered = { ...MEMORY, source: { thread: 't1', seq: 3 } };
+    const running = new ApiError({ code: ErrorCode.TURN_RUNNING, message: 'a turn is running' });
+    const fake = new FakeSession()
+      .answer('memory/list', { memories: [] })
+      .answer('memory/forget', { memories: [saved] })
+      .answer('thread/delete', running);
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const memory = TestBed.inject(MemoryService);
+    await memory.forget('m1', true);
+    expect(memory.memories()).toEqual([]);
+    expect(memory.error()).toBe('a turn is running');
+  });
+
   it('says when memory is off for the server', async () => {
     const fake = new FakeSession().answer(
       'memory/list',

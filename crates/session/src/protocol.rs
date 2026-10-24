@@ -439,7 +439,8 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         project: Option<ProjectId>,
     } -> [Memories],
-    /// Forgets one memory, or with `all`, every memory of `scope`.
+    /// Forgets one memory, or with `all`, every memory of `scope`. Chats keep what was said in
+    /// them: the one a memory was saved in goes only by `thread/delete`.
     "memory/forget" => MemoryForget {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         memory: Option<MemoryId>,

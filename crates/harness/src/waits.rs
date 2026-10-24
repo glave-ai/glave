@@ -372,7 +372,7 @@ where
 
 /// Who answered, as a decision records them: absent for the person the thread is for.
 fn by(view: &ThreadView, person: Option<PrincipalId>) -> Option<Principal> {
-    let theirs = view.for_.as_ref().and_then(|whose| whose.id);
+    let theirs = view.whose();
     person
         .filter(|person| Some(*person) != theirs)
         .map(Principal::person)

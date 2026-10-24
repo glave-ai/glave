@@ -2,18 +2,19 @@
 //! Memories are matched here, from the view the ledger already gives; conversations through the
 //! store's own full-text index (`EventLog::search`). Both are scoped exactly as memory is: the
 //! person's and this project's in a shared project, this project's only in an isolated one, nothing
-//! when memory is off, never another organization's. Hits are ranked together by how many of the
-//! query's words they share. A hit from untrusted tool output says so. A thread keeps what
-//! recall found by reference (`reply.rs`), and `reread.rs` reads its texts again.
+//! when memory is off, never another organization's, and never a deleted chat. Hits are ranked
+//! together by how many of the query's words they share. A hit from untrusted tool output says
+//! so. A thread keeps what recall found by reference (`reply.rs`), and `reread.rs` reads its
+//! texts again.
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
-use glave_event::{At, Body, MemoryId, MemoryScope, MemorySource, Role, Seq, ThreadId, decode};
+use glave_event::{At, Body, MemoryId, MemoryScope, Role, Seq, ThreadId, decode};
 use glave_ports::memories::{MemoryContext, MemoryError};
 use glave_ports::search::{Found, query_terms, searchable_body, terms};
 use glave_ports::stream::Reserved;
-use glave_ports::{EventLog, Scope};
+use glave_ports::{EventLog, Scope, Standing};
 
 use super::{Memories, storage};
 use crate::book::Book;
@@ -62,8 +63,8 @@ pub struct Recalled {
 impl<L: EventLog + 'static> Memories<L> {
     /// What `query` finds for a thread of `on`, at most `limit` (at most [`MOST_HITS`]): those
     /// sharing the most of its words first; among equals, memories (newest first), then this
-    /// project's conversations, then the person's (best match first). The thread asking is left
-    /// out.
+    /// project's conversations, then the person's (best match first). The thread asking, and
+    /// every deleted chat, is left out.
     pub async fn recall(
         &self,
         on: &MemoryContext,
@@ -86,14 +87,12 @@ impl<L: EventLog + 'static> Memories<L> {
             ranked.extend(found);
         }
         ranked.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.at.cmp(&a.1.at)));
-        // Where memories the person forgot were saved: those turns are never returned.
-        let mut hidden = self.hidden(&readable).await?;
         // This project's conversations, then the person's own (one ledger in their Chats), each
         // searched whatever memories matched: memories sharing one word (often the project's
         // name) must not crowd out the message that holds them all.
         for ledger in ledgers(&readable) {
             let found = self
-                .conversations(ledger, on.thread, (query, &wanted), limit, &mut hidden)
+                .conversations(ledger, on.thread, (query, &wanted), limit)
                 .await?;
             ranked.extend(found);
         }
@@ -102,34 +101,52 @@ impl<L: EventLog + 'static> Memories<L> {
         Ok(ranked.into_iter().take(limit).map(|(_, hit)| hit).collect())
     }
 
-    /// The turns where memories the person forgot were saved, as the ledgers `readable` names
-    /// record them.
-    pub(super) async fn hidden(
+    /// Whether `thread`, found in `ledger`, is not a deleted chat: a deleted chat is hidden
+    /// everywhere, for good (`specs/storage.md`, "Archive and delete"), recall and what it
+    /// found before included. Each thread is looked up once in `seen`. A view that cannot be
+    /// read counts as deleted, so a failure never shows one; a past conversation with no view
+    /// (one glave did not start) is never deleted.
+    pub(super) async fn kept(
         &self,
-        readable: &[(MemoryScope, Scope)],
-    ) -> Result<Hidden, MemoryError> {
-        let mut sources = Vec::new();
-        for (_, ledger) in readable {
-            let here = self
-                .with_book(*ledger, |book| {
-                    book.hidden.values().copied().collect::<Vec<MemorySource>>()
-                })
-                .await?;
-            sources.extend(here);
+        ledger: Scope,
+        thread: ThreadId,
+        seen: &mut BTreeMap<ThreadId, bool>,
+    ) -> bool {
+        if let Some(kept) = seen.get(&thread) {
+            return *kept;
         }
-        Ok(Hidden::new(sources))
+        let kept = match self.inner.log.thread_view(&ledger, thread).await {
+            Ok(view) => view.is_none_or(|view| view.standing != Standing::Deleted),
+            Err(_) => false,
+        };
+        seen.insert(thread, kept);
+        kept
+    }
+
+    /// Whether `thread` is a chat started for the person a thread of `on` works for, in a
+    /// project `on` reads, and not deleted: the only chat a forget's result tells of.
+    pub(crate) async fn own_chat(&self, on: &MemoryContext, thread: ThreadId) -> bool {
+        let Some(person) = on.person else {
+            return false;
+        };
+        let readable = self.rules().readable(on.person, on.scope);
+        for ledger in ledgers(&readable) {
+            if let Ok(Some(view)) = self.inner.log.thread_view(&ledger, thread).await {
+                return view.standing != Standing::Deleted && view.whose() == Some(person);
+            }
+        }
+        false
     }
 
     /// The hits among the index's best few for `limit` in `ledger`'s conversations, best match
-    /// first, each with how many of `wanted` it shares, leaving out the thread `asking` and the
-    /// turns `hidden` names.
+    /// first, each with how many of `wanted` it shares, leaving out the thread `asking` and
+    /// deleted chats.
     async fn conversations(
         &self,
         ledger: Scope,
         asking: ThreadId,
         (query, wanted): (&str, &BTreeSet<String>),
         limit: usize,
-        hidden: &mut Hidden,
     ) -> Result<Vec<(usize, Recalled)>, MemoryError> {
         let log = &self.inner.log;
         // A few more than needed, since the asking thread's own events are skipped and a hit
@@ -138,11 +155,11 @@ impl<L: EventLog + 'static> Memories<L> {
             .search(&ledger, query, limit.saturating_mul(2).saturating_add(4))
             .await
             .map_err(storage)?;
-        let mut hits = Vec::new();
+        let (mut hits, mut seen) = (Vec::new(), BTreeMap::new());
         for found in found {
             if found.thread == asking
                 || found.thread == Reserved::Memory.id()
-                || hidden.hides(log, ledger, found).await
+                || !self.kept(ledger, found.thread, &mut seen).await
             {
                 continue;
             }
@@ -209,88 +226,6 @@ pub(super) fn ledgers(readable: &[(MemoryScope, Scope)]) -> Vec<Scope> {
     let mut ledgers: Vec<Scope> = readable.iter().rev().map(|(_, ledger)| *ledger).collect();
     ledgers.dedup();
     ledgers
-}
-
-/// The turns where memories the person forgot were saved (`Book::hidden`): their forget takes
-/// the turn that gave the memory out of `recall` too, though the conversation stays as it was.
-pub(super) struct Hidden {
-    sources: Vec<MemorySource>,
-    /// Each source's turn as `seq` bounds, once read.
-    turns: BTreeMap<(ThreadId, Seq), (u64, u64)>,
-}
-
-impl Hidden {
-    fn new(sources: Vec<MemorySource>) -> Self {
-        Self {
-            sources,
-            turns: BTreeMap::new(),
-        }
-    }
-
-    /// Whether `found` is in a turn the person's forgets hide. A thread that cannot be
-    /// read hides the whole of it, so a failure never shows what was forgotten.
-    pub(super) async fn hides<L: EventLog>(
-        &mut self,
-        log: &L,
-        ledger: Scope,
-        found: Found,
-    ) -> bool {
-        let sources: Vec<MemorySource> = self
-            .sources
-            .iter()
-            .filter(|source| source.thread == found.thread)
-            .copied()
-            .collect();
-        for source in sources {
-            let key = (source.thread, source.seq);
-            let (first, last) = if let Some(turn) = self.turns.get(&key) {
-                *turn
-            } else {
-                let turn = turn_of(log, ledger, source).await.unwrap_or((1, u64::MAX));
-                self.turns.insert(key, turn);
-                turn
-            };
-            if (first..=last).contains(&found.seq.get()) {
-                return true;
-            }
-        }
-        false
-    }
-}
-
-/// Events read at a time when finding a turn's bounds.
-const TURN_PAGE: usize = 500;
-
-/// The bounds of the turn holding `source`: from its `turn.started` (or the thread's start) to
-/// its `turn.ended` (or the thread's end).
-async fn turn_of<L: EventLog>(
-    log: &L,
-    ledger: Scope,
-    source: MemorySource,
-) -> Result<(u64, u64), MemoryError> {
-    let at = source.seq.get();
-    let (mut first, mut last) = (1, u64::MAX);
-    let mut after = None;
-    loop {
-        let page = log
-            .read(&ledger, source.thread, after, TURN_PAGE)
-            .await
-            .map_err(storage)?;
-        let full = page.len() == TURN_PAGE;
-        for event in &page {
-            let seq = event.seq.get();
-            match event.kind.as_str() {
-                "turn.started" if seq <= at => first = seq,
-                "turn.ended" if seq >= at => return Ok((first, seq)),
-                _ => {}
-            }
-            last = seq;
-        }
-        after = page.last().map(|event| event.seq);
-        if !full {
-            return Ok((first, last.max(at)));
-        }
-    }
 }
 
 /// The memories of `kind` in `book` that share a word with `wanted`, with how many they share.

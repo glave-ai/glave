@@ -3,8 +3,8 @@
 //! with the text of each memory and past conversation shown; a thread's log keeps them without
 //! it (and without the query, the model's own words), and the reply in the result's
 //! `structured`, versioned with its event, from which the text is read again whenever the
-//! thread is. So neither the log nor its search index ever holds a copy of a memory's text, or
-//! of a turn `recall` hides, that a forget cannot reach.
+//! thread is. So neither the log nor its search index ever holds a copy of a memory's text that
+//! a forget cannot reach, nor of a past conversation's that deleting it cannot.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;

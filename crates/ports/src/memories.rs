@@ -272,8 +272,8 @@ pub trait Memory: Send + Sync {
 
     /// The words memory calls' results showed the model, read again from what each one's
     /// [`Kept`] recorded (`shown`) for a thread of `on` being rebuilt, in order: each text as it
-    /// reads now, so a memory forgotten since, or a past conversation `recall` hides now, is
-    /// left out. `None` for a result that cannot be read again.
+    /// reads now, so a memory forgotten since, or a past chat deleted since, is left out.
+    /// `None` for a result that cannot be read again.
     fn reread<'a>(
         &'a self,
         on: &'a MemoryContext,

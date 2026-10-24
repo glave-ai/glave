@@ -230,7 +230,8 @@ pub enum Reply {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         refused: Option<Told>,
     },
-    /// Memories listed, or the ones a change touched.
+    /// Memories listed, or the ones a change touched. A memory's `source` names the chat it
+    /// was saved in only when that chat was started for the caller and is still there.
     #[schemars(title = "Memories")]
     Memories { memories: Vec<Remembered> },
     /// The models a thread may be sent to, the default first.

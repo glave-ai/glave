@@ -295,6 +295,7 @@ const MEMORIES: readonly Remembered[] = [
     text: 'Prefers short answers',
     saved_at: '2026-10-11T10:00:00.000Z',
     version: 1,
+    source: { thread: THREAD, seq: 3 },
   },
 ];
 

@@ -1,12 +1,13 @@
 //! Memory tools' results kept by reference (#578, `specs/memory.md`, "Seeing, editing and
 //! forgetting"): a forgotten memory's text stays nowhere a tool showed it, neither in a thread's
-//! log nor in the search index, and a kept result read again shows only what its reader may.
+//! log nor in the search index, a past chat deleted since is read again as nothing, and a kept
+//! result read again shows only what its reader may.
 
 use glave_event::{Arguments, Principal};
-use glave_harness::{AllowAll, Cancel};
-use glave_memory::Writer;
-use glave_ports::EventLog;
+use glave_harness::{AllowAll, Cancel, Change, change_standing};
+use glave_memory::{Source, Writer};
 use glave_ports::memories::{Memory, MemoryContext, RECALL, REMEMBER};
+use glave_ports::{Clock as _, EventLog};
 use serde_json::json;
 
 use crate::recall::{on, thread, world};
@@ -14,7 +15,8 @@ use crate::support::*;
 
 /// #578: a memory's text that came back to the model through a tool, here `recall`'s result,
 /// stays nowhere a forget cannot reach: not in the thread's log, so not in the search index
-/// either, and a thread read again after the forget no longer shows it to the model.
+/// either. Once the person also deletes the chat it was saved in (#630), a thread read again no
+/// longer shows the model any of it.
 #[test]
 #[expect(clippy::too_many_lines, reason = "one scenario, end to end")]
 fn a_forgotten_memory_is_never_found_again_through_an_earlier_recall() {
@@ -101,19 +103,29 @@ fn a_forgotten_memory_is_never_found_again_through_an_earlier_recall() {
             untrusted_read: false,
         };
         memories.forget(&writer, saved).await.unwrap();
-
-        let fresh = kit.memories(rules(), 4);
-        let after = fresh
-            .recall(&on(shared(), thread(9)), "favourite flower marigold", 10)
+        let asking = on(shared(), thread(9));
+        let query = "favourite flower marigold";
+        let said_there = |hit: &glave_memory::Recalled| matches!(hit.source, Source::Thread { thread, .. } if thread == saving.id);
+        let after = kit.memories(rules(), 4).recall(&asking, query, 10).await;
+        let after = after.unwrap();
+        assert!(
+            after.iter().any(said_there)
+                && (after.iter()).all(|hit| !hit.text.contains("marigold") || said_there(hit)),
+            "a later recall finds nothing of the forgotten memory's text but the chat it was \
+             saved in, which is history: {after:?}"
+        );
+        // The person deletes that chat too.
+        let (log, now) = (kit.store.log(), kit.clock.now());
+        change_standing(&log, &shared(), saving.id, now, [7; 10], Change::Delete)
             .await
             .unwrap();
+        let after = kit.memories(rules(), 7).recall(&asking, query, 10).await;
         assert!(
-            after.iter().all(|hit| !hit.text.contains("marigold")),
-            "a later recall finds nothing of the forgotten memory's text: {} hits hold it",
             after
+                .unwrap()
                 .iter()
-                .filter(|hit| hit.text.contains("marigold"))
-                .count()
+                .all(|hit| !hit.text.contains("marigold")),
+            "a later recall finds nothing of it"
         );
         let kept = kit
             .store

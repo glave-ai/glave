@@ -5,6 +5,7 @@ import {
   GlzBadgeComponent,
   GlzButtonComponent,
   GlzCardComponent,
+  GlzCheckboxComponent,
   GlzConfirmDialogComponent,
   GlzDialogComponent,
   GlzEmptyStateComponent,
@@ -26,6 +27,7 @@ import { PageHeaderComponent } from '../page-header/page-header.component';
     GlzBadgeComponent,
     GlzButtonComponent,
     GlzCardComponent,
+    GlzCheckboxComponent,
     GlzConfirmDialogComponent,
     GlzDialogComponent,
     GlzEmptyStateComponent,
@@ -51,7 +53,8 @@ export class MemoryComponent {
     cancel: $localize`:@@memory.cancel:Cancel`,
     save: $localize`:@@memory.save:Save`,
     forgetHeading: $localize`:@@memory.forgetHeading:Forget this memory?`,
-    forgetMessage: $localize`:@@memory.forgetMessage:Its key is destroyed at once; it cannot be brought back.`,
+    forgetMessage: $localize`:@@memory.forgetMessage:It is erased at once and cannot be brought back. Your chats keep what was said in them.`,
+    forgetChat: $localize`:@@memory.forgetChat:Also delete the chat it was saved in`,
     emptyHeading: $localize`:@@memory.emptyHeading:Nothing remembered yet`,
     emptyText: $localize`:@@memory.emptyText:When you ask glave to remember something, it shows up here.`,
     offHeading: $localize`:@@memory.offHeading:Memory is off`,
@@ -72,7 +75,11 @@ export class MemoryComponent {
   protected readonly forgetting = signal<Remembered | null>(null);
   protected readonly editOpen = signal(false);
   protected readonly forgetOpen = signal(false);
+  /** Whether the chat the memory being forgotten was saved in goes too. */
+  protected readonly forgetChat = signal(false);
   protected readonly textMissing = signal(false);
+  /** Whether the memory being forgotten was saved in a chat, which can go with it. */
+  protected readonly hasChat = computed(() => (this.forgetting()?.source ?? null) !== null);
 
   protected readonly rows = computed(() =>
     this.service.memories().map((memory) => ({
@@ -123,13 +130,14 @@ export class MemoryComponent {
 
   protected forget(memory: Remembered): void {
     this.forgetting.set(memory);
+    this.forgetChat.set(false);
     this.forgetOpen.set(true);
   }
 
   protected async decided(yes: boolean): Promise<void> {
     const memory = this.forgetting();
     if (yes && memory !== null) {
-      await this.service.forget(memory.memory);
+      await this.service.forget(memory.memory, this.hasChat() && this.forgetChat());
     }
   }
 }

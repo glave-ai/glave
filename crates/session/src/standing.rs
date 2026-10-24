@@ -229,7 +229,7 @@ where
         view: ThreadView,
         protections: Protections,
     ) -> Result<ThreadSummary, ApiError> {
-        let theirs = view.for_.as_ref().and_then(|whose| whose.id);
+        let theirs = view.whose();
         let protections = if theirs.is_none_or(|person| Some(person) == self.person()) {
             protections
         } else {

@@ -905,7 +905,10 @@ export type MemoryEditParams = {
   readonly text: string;
 };
 
-/** Memories listed, or the ones a change touched. */
+/**
+ * Memories listed, or the ones a change touched. A memory's `source` names the chat it
+ * was saved in only when that chat was started for the caller and is still there.
+ */
 export type MemoryEditResult = {
   readonly memories: readonly (Remembered)[];
 };
@@ -918,7 +921,10 @@ export type MemoryForgetParams = {
   readonly scope?: MemoryScope | null;
 };
 
-/** Memories listed, or the ones a change touched. */
+/**
+ * Memories listed, or the ones a change touched. A memory's `source` names the chat it
+ * was saved in only when that chat was started for the caller and is still there.
+ */
 export type MemoryForgetResult = {
   readonly memories: readonly (Remembered)[];
 };
@@ -929,7 +935,10 @@ export type MemoryListParams = {
   readonly scope?: MemoryScope | null;
 };
 
-/** Memories listed, or the ones a change touched. */
+/**
+ * Memories listed, or the ones a change touched. A memory's `source` names the chat it
+ * was saved in only when that chat was started for the caller and is still there.
+ */
 export type MemoryListResult = {
   readonly memories: readonly (Remembered)[];
 };
@@ -941,7 +950,10 @@ export type MemoryMoveParams = {
   readonly scope: MemoryScope;
 };
 
-/** Memories listed, or the ones a change touched. */
+/**
+ * Memories listed, or the ones a change touched. A memory's `source` names the chat it
+ * was saved in only when that chat was started for the caller and is still there.
+ */
 export type MemoryMoveResult = {
   readonly memories: readonly (Remembered)[];
 };
@@ -952,7 +964,10 @@ export type MemoryRestoreParams = {
   readonly project?: ProjectId | null;
 };
 
-/** Memories listed, or the ones a change touched. */
+/**
+ * Memories listed, or the ones a change touched. A memory's `source` names the chat it
+ * was saved in only when that chat was started for the caller and is still there.
+ */
 export type MemoryRestoreResult = {
   readonly memories: readonly (Remembered)[];
 };
@@ -964,7 +979,10 @@ export type MemorySaveParams = {
   readonly text: string;
 };
 
-/** Memories listed, or the ones a change touched. */
+/**
+ * Memories listed, or the ones a change touched. A memory's `source` names the chat it
+ * was saved in only when that chat was started for the caller and is still there.
+ */
 export type MemorySaveResult = {
   readonly memories: readonly (Remembered)[];
 };
