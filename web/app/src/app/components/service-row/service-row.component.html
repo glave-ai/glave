@@ -1,0 +1,6 @@
+<span class="tile" aria-hidden="true">{{ letters() }}</span>
+<div class="text">
+  <span class="name" dir="auto">{{ name() }}</span>
+  <ng-content />
+</div>
+<ng-content select="[appServiceAction]" />

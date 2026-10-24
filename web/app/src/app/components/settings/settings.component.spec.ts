@@ -39,9 +39,12 @@ describe('SettingsComponent', () => {
     expect(root.textContent).not.toMatch(/config|policy|toml|--/u);
     expect(root.querySelector('[data-testid="settings-no-accounts"]')).not.toBeNull();
     expect(root.querySelector('[data-testid="page-back"]')).not.toBeNull();
-    // Memory lives in Settings, on its own page.
+    // Memory and connections live in Settings, each on its own page.
     expect(root.querySelector('[data-testid="settings-memory"]')?.getAttribute('href')).toBe(
       '/memory',
+    );
+    expect(root.querySelector('[data-testid="settings-connections"]')?.getAttribute('href')).toBe(
+      '/settings/connections',
     );
     const themes = Array.from(root.querySelectorAll('glz-radio'), (radio) =>
       radio.textContent.trim(),

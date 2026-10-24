@@ -38,10 +38,10 @@ import { PageHeaderComponent } from '../page-header/page-header.component';
 
 /**
  * Settings: the theme, the model accounts (add, change, remove), the connected accounts git
- * signs in with, memory (its own page), the passkeys that sign the person in where glave is
- * reached from elsewhere, whether their own computer stays awake while glave works, the
- * server, signing this browser or every other out. A link to `#accounts` scrolls to the
- * connected accounts.
+ * signs in with, connections and memory (each its own page), the passkeys that sign the person
+ * in where glave is reached from elsewhere, whether their own computer stays awake while glave
+ * works, the server, signing this browser or every other out. A link to `#accounts` scrolls to
+ * the connected accounts.
  */
 @Component({
   selector: 'app-settings',
@@ -80,6 +80,9 @@ export class SettingsComponent {
     remove: $localize`:@@settings.remove:Remove`,
     removeHeading: $localize`:@@settings.removeHeading:Remove this model account?`,
     removeText: $localize`:@@settings.removeText:glave forgets its key, and its models are no longer offered.`,
+    connections: $localize`:@@settings.connections:Connections`,
+    connectionsText: $localize`:@@settings.connectionsText:Services glave can use for you, each signed in to as you.`,
+    connectionsOpen: $localize`:@@settings.connectionsOpen:Open connections`,
     memory: $localize`:@@settings.memory:Memory`,
     memoryText: $localize`:@@settings.memoryText:What glave keeps between threads, about you and about each project.`,
     memoryOpen: $localize`:@@settings.memoryOpen:Open memory`,
@@ -104,6 +107,7 @@ export class SettingsComponent {
   private readonly locale = inject(LOCALE_ID);
   protected readonly connectLink = '/connect';
   protected readonly memoryLink = '/memory';
+  protected readonly connectionsLink = '/settings/connections';
   protected readonly accountsSection = ACCOUNTS_SECTION;
   private readonly accountsCard = viewChild.required<AccountsComponent, ElementRef<HTMLElement>>(
     AccountsComponent,

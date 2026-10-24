@@ -1,0 +1,84 @@
+<app-page-header back />
+<div class="page">
+  <div class="heading">
+    <h1>{{ copy.heading }}</h1>
+  </div>
+  <p class="intro">{{ copy.intro }}</p>
+  @if (problem(); as problem) {
+    <p class="error" role="alert" data-testid="connections-problem">{{ problem }}</p>
+  }
+  @if (loading()) {
+    <p class="details" role="status" data-testid="connections-loading">{{ copy.loading }}</p>
+  }
+  @for (section of sections(); track section.id) {
+    <section class="card" [attr.data-testid]="section.testId" [attr.aria-labelledby]="section.id">
+      <h2 class="head" [id]="section.id">{{ section.heading }}</h2>
+      <div class="rows" role="list">
+        @for (row of section.rows; track row.url) {
+          <app-service-row data-testid="connection" [name]="row.name">
+            @if (row.problem; as problem) {
+              <span class="detail problem" role="alert" data-testid="connection-problem">{{
+                problem
+              }}</span>
+            } @else if (row.waiting) {
+              <span class="waiting" role="status" data-testid="connection-waiting">
+                <span class="detail">
+                  <glz-icon class="glz-spin" [icon]="icons.waiting" />
+                  {{ row.detail }}
+                </span>
+                @if (row.link; as link) {
+                  <a
+                    class="again"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="connection-open"
+                    [href]="link"
+                  >
+                    {{ copy.openAgain }}
+                    <glz-icon class="glz-mirrored" [icon]="icons.open" [label]="copy.newTab" />
+                  </a>
+                }
+              </span>
+            } @else {
+              <span class="detail" data-testid="connection-detail">
+                @if (row.ready) {
+                  <span class="dot" aria-hidden="true"></span>
+                }
+                <span dir="auto">{{ row.detail }}</span>
+              </span>
+            }
+            <button
+              glzButton
+              appServiceAction
+              class="action"
+              size="sm"
+              data-testid="connection-action"
+              [variant]="row.variant"
+              [attr.aria-label]="row.actionLabel"
+              (click)="act(row)"
+            >
+              {{ row.action }}
+            </button>
+          </app-service-row>
+        }
+      </div>
+    </section>
+  }
+  @if (empty()) {
+    <glz-empty-state
+      data-testid="connections-empty"
+      [heading]="copy.emptyHeading"
+      [icon]="icons.empty"
+      >{{ copy.emptyText }}</glz-empty-state
+    >
+  }
+</div>
+<glz-confirm-dialog
+  testId="connections-disconnect"
+  danger
+  [heading]="disconnectHeading()"
+  [message]="copy.disconnectText"
+  [confirmLabel]="copy.disconnect"
+  [(open)]="confirming"
+  (decided)="decided($event)"
+/>

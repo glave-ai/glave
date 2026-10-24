@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 import AxeBuilder from '@axe-core/playwright';
 import { type Locator, type Page, expect } from '@playwright/test';
@@ -54,6 +54,26 @@ export const PASSKEYS: Site = {
  * following a thread from two tabs (live.e2e.ts).
  */
 export const LIVE: Site = { address: 'GLAVE_E2E_LIVE_URL', home: 'GLAVE_E2E_LIVE_HOME' };
+/**
+ * Glaves whose person has a service of their own to sign in to, one for each engine, since each
+ * connects it and disconnects it (connections.e2e.ts).
+ */
+export const CONNECTIONS: Site = {
+  address: 'GLAVE_E2E_CONNECTIONS_URL',
+  home: 'GLAVE_E2E_CONNECTIONS_HOME',
+};
+export const CONNECTIONS_WEBKIT: Site = {
+  address: 'GLAVE_E2E_CONNECTIONS_WEBKIT_URL',
+  home: 'GLAVE_E2E_CONNECTIONS_WEBKIT_HOME',
+};
+/** The glave binary that serves the app: GLAVE_BIN, else the workspace's debug build. */
+export const GLAVE_BIN =
+  process.env['GLAVE_BIN'] ?? resolve(import.meta.dirname, '../../target/debug/glave');
+/**
+ * The MCP test server glave's own tests run, built beside glave (glave-mcp's `test-server`): a
+ * service that asks for a sign-in, at a fake authorization server of its own.
+ */
+export const TEST_SERVER = join(dirname(GLAVE_BIN), 'glave-mcp-test-server');
 /** The variable that holds the address of that glave's fake model service. */
 export const LIVE_MODEL_URL = 'GLAVE_E2E_LIVE_MODEL_URL';
 /** The variable that holds the run's lifeline, the socket each glave it starts ends with. */
@@ -67,6 +87,11 @@ export const PASSKEYS_ORIGIN = 'https://glave.test';
 /** Where `site` serves, such as `http://127.0.0.1:52114`. */
 export function served(site: Site): string {
   return kept(site.address);
+}
+
+/** The home of the glave of `site`, which holds the person's settings. */
+export function homeOf(site: Site): string {
+  return kept(site.home);
 }
 
 /** The value the run keeps in `variable`; fails when it keeps none, outside a run. */
@@ -101,7 +126,7 @@ export async function setupCode(site: Site): Promise<string> {
 
 /** The code `method` answers from the real glave of `site`. */
 async function codeFrom(site: Site, method: string): Promise<string> {
-  const token = readFileSync(join(kept(site.home), 'serve.token'), 'utf8').trim();
+  const token = readFileSync(join(homeOf(site), 'serve.token'), 'utf8').trim();
   const response = await fetch(`${served(site)}/`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
