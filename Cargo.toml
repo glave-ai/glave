@@ -132,8 +132,8 @@ keyring = { version = "4.2", default-features = false, features = ["v1"] }
 kube = { version = "4.2", default-features = false, features = ["client", "rustls-tls", "aws-lc-rs", "ws"] }
 # The memory allocator of glave's static Linux builds (crates/cli/src/allocator.rs): musl's own
 # is slow at the many small allocations glave makes. Microsoft's, MIT, one C file built with cc.
-# `no_thp`: it asks for no transparent huge pages, whose zeroing cost every start half a
-# millisecond and resuming nothing (#682); the system's own setting still applies.
+# `no_thp`: it asks for no transparent huge pages; zeroing one cost every start about half a
+# millisecond and made nothing faster (#682). The system's own setting still applies.
 mimalloc = { version = "0.1.52", features = ["no_thp"] }
 # Blobs' bytes in a folder or a bucket (specs/storage.md, "Which stores"): Apache Arrow's one
 # interface for a local folder and every object store, so one code path serves them all. `aws`

@@ -1,150 +1,149 @@
 name: budgets
 
-# A measurement for #682, reverted before review: the musl build before and after mimalloc
-# (no_thp), and glibc, each built as budgets.yml builds it, then measured side by side on one
-# runner.
+# The performance budgets in AGENTS.md, set in crates/cli/benches/budgets.rs and measured in
+# the merge queue, after every merge to main, weekly, and on demand. A pull request is not
+# measured: `budgets`, the check the `main` ruleset requires, passes on it at once, and the
+# merge queue measures the change before it merges, on top of the ones ahead of it.
+# The binary's size and the answered command are measured on the build that ships: glave for
+# x86-64 Linux as the release builds it (dist-workspace.toml), static with musl, in the dist
+# profile, with the web app inside. The benchmark is built for musl too, so the thread it
+# resumes runs on the allocator a released glave's does (crates/cli/src/allocator.rs). The two
+# optimized builds are what cost, about 5 minutes each, nearly all of it LTO, and on one runner
+# they slow each other down: so each has a runner of its own, at the same time, and a third
+# measures, in seconds.
+# The numbers are wall-clock, and depend on the kind of machine the measuring job is given,
+# which it names.
 on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+  schedule:
+    - cron: "0 6 * * 1"
   workflow_dispatch:
-    inputs:
-      arm:
-        description: Also build and measure aarch64 musl
-        type: boolean
-        default: false
 
 permissions:
   contents: read
 
+# A new push to a pull request cancels its run still going; pushes to main always finish.
+concurrency:
+  group: budgets-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_INCREMENTAL: "0"
-  # The commit this branch starts from: the build before the change.
-  BASE: d7ac9c76ceda6e6b51aae897c26ada63684125a5
+  # What the release builds glave for on x86-64 Linux (dist-workspace.toml, `targets`).
+  TARGET: x86_64-unknown-linux-musl
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: x86-glave-base, at: base, kind: release, target: x86_64-unknown-linux-musl }
-          - { name: x86-glave-head, at: head, kind: release, target: x86_64-unknown-linux-musl }
-          - { name: x86-bench-musl-base, at: base, kind: bench, target: x86_64-unknown-linux-musl }
-          - { name: x86-bench-musl-head, at: head, kind: bench, target: x86_64-unknown-linux-musl }
-          - { name: x86-bench-gnu-base, at: base, kind: bench, target: x86_64-unknown-linux-gnu }
+  release:
+    if: github.event_name != 'pull_request'
+    # The runner the release builds x86-64 Linux on (dist's plan), so its C compiler and musl.
     runs-on: ubuntu-22.04
-    steps: &build
+    steps:
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ matrix.at == 'base' && env.BASE || github.sha }}
-      - name: Toolchain
+      - name: Install the pinned toolchain (rust-toolchain.toml), with musl's standard library
         run: |
           rustup toolchain install
-          rustup target add "${{ matrix.target }}"
-      - name: musl-gcc
-        if: contains(matrix.target, 'musl')
+          rustup target add "$TARGET"
+      # The C in glave's dependencies is compiled for musl with musl's own compiler wrapper, as
+      # the release build installs it.
+      - name: Install musl-gcc
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q musl-tools
+      # Saved from main only, as in ci.yml: per-PR copies would fill the repository's cache. Its
+      # key names the target, and the job's name keeps this build's apart from the benchmark's.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: ${{ env.TARGET }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: actions/setup-node@v7
-        if: matrix.kind == 'release'
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - name: Web app
-        if: matrix.kind == 'release'
+      - name: Build the web app, which the binary carries
         run: npm ci && npm run build
         working-directory: web
+      # As dist builds it: the glave package alone (`precise-builds`), with its `web` feature
+      # (crates/cli/Cargo.toml, [package.metadata.dist]), in the dist profile, with the flags
+      # dist sets for a musl target (today's defaults, which dist keeps in case they change).
       - name: Build glave as the release does
-        if: matrix.kind == 'release'
-        run: |
-          cargo build --locked --profile dist --target "${{ matrix.target }}" -p glave --features web
-          mkdir out && cp "target/${{ matrix.target }}/dist/glave" out/glave
+        run: cargo build --profile dist --target "$TARGET" -p glave --features web
         env:
           RUSTFLAGS: -Ctarget-feature=+crt-static -Clink-self-contained=yes
-      - name: Build the benchmark as budgets.yml does
-        if: matrix.kind == 'bench'
-        run: |
-          cargo xtask bench --bench budgets --target "${{ matrix.target }}" --no-run \
-            --message-format=json-render-diagnostics > built.json
-          mkdir out
-          cp "$(jq -r 'select(.target.name == "budgets" and .executable) | .executable' built.json)" out/budgets
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.name }}
-          path: out
+          name: glave
+          path: target/${{ env.TARGET }}/dist/glave
           if-no-files-found: error
-          retention-days: 3
+          retention-days: 1
 
-  build-arm:
-    if: inputs.arm
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: arm-glave-base, at: base, kind: release, target: aarch64-unknown-linux-musl }
-          - { name: arm-glave-head, at: head, kind: release, target: aarch64-unknown-linux-musl }
-          - { name: arm-bench-musl-base, at: base, kind: bench, target: aarch64-unknown-linux-musl }
-          - { name: arm-bench-musl-head, at: head, kind: bench, target: aarch64-unknown-linux-musl }
-    runs-on: ubuntu-22.04-arm
-    steps: *build
-
-  measure:
-    needs: build
+  benchmark:
+    if: github.event_name != 'pull_request'
+    # As the release's, so the same C compiler and musl.
     runs-on: ubuntu-22.04
-    steps: &measure
-      - uses: actions/download-artifact@v8
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the pinned toolchain (rust-toolchain.toml), with musl's standard library
+        run: |
+          rustup toolchain install
+          rustup target add "$TARGET"
+      - name: Install musl-gcc
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q musl-tools
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          pattern: ${{ runner.arch == 'ARM64' && 'arm' || 'x86' }}-*
-          path: in
-      - name: Machine
+          key: ${{ env.TARGET }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Built, not run, through `cargo xtask bench`, and without the web app: what it measures
+      # in-process is the same either way, and the glave this build makes beside it, which the
+      # feature would change, is not the one measured.
+      - name: Build the benchmark
         run: |
-          cd in && for d in *-*; do mv "$d" "${d#*-}"; done && chmod +x */*
-          echo "measured on $(nproc) cores of $(lscpu | sed -n 's/^Model name: *//p') ($(uname -m))"
-          echo "THP enabled: $(cat /sys/kernel/mm/transparent_hugepage/enabled)"
-      - name: Size and linking
-        working-directory: in
-        run: |
-          for v in base head; do
-            echo "glave $v: $(stat -c %s glave-$v/glave) bytes"
-            file glave-$v/glave
-            glave-$v/glave --version
-          done
-      - name: Startup (a loop, glave --version, 300 runs each, interleaved)
-        working-directory: in
-        run: |
-          for round in 1 2 3; do
-            for v in base head; do
-              start=$(date +%s%N)
-              for i in $(seq 300); do glave-$v/glave --version >/dev/null; done
-              end=$(date +%s%N)
-              echo "round $round glave $v: $(( (end - start) / 300000 )) us per launch"
-            done
-          done
-      - name: Startup (perf stat, glave --version, 300 runs each, interleaved)
-        continue-on-error: true
-        working-directory: in
-        run: |
-          sudo sysctl -q -w kernel.perf_event_paranoid=-1
-          for round in 1 2 3; do
-            for v in base head; do
-              echo "== round $round $v"
-              perf stat -r 300 -e task-clock,page-faults glave-$v/glave --version 2>&1 >/dev/null | grep -E 'task-clock|page-faults|elapsed'
-            done
-          done
-      - name: The budgets benchmark, interleaved
-        working-directory: in
-        run: |
-          for round in 1 2 3 4 5; do
-            for v in musl-base musl-head gnu-base; do
-              [ -x bench-$v/budgets ] || continue
-              case $v in *head) glave=glave-head/glave ;; *) glave=glave-base/glave ;; esac
-              echo "== round $round $v (with $glave)"
-              GLAVE_BUDGETS_BINARY=$glave bench-$v/budgets | grep -E 'release binary|answered|resume|record' || true
-            done
-          done
+          cargo xtask bench --bench budgets --target "$TARGET" --no-run \
+            --message-format=json-render-diagnostics > built.json
+          mkdir benchmark
+          cp "$(jq -r 'select(.target.name == "budgets" and .executable) | .executable' built.json)" benchmark/budgets
+      - uses: actions/upload-artifact@v7
+        with:
+          name: benchmark
+          path: benchmark/budgets
+          if-no-files-found: error
+          retention-days: 1
 
-  measure-arm:
-    if: inputs.arm
-    needs: build-arm
-    runs-on: ubuntu-22.04-arm
-    steps: *measure
+  # On a runner nothing else uses, which is what `cargo xtask bench`'s lock is for elsewhere.
+  measure:
+    needs: [release, benchmark]
+    runs-on: ubuntu-22.04
+    steps:
+      # Each into a folder of its own name; the files lose their mode on the way.
+      - uses: actions/download-artifact@v8
+      - name: Measure it
+        run: |
+          chmod +x glave/glave benchmark/budgets
+          echo "measured on $(nproc) cores of $(lscpu | sed -n 's/^Model name: *//p')"
+          benchmark/budgets
+        env:
+          GLAVE_BUDGETS_BINARY: glave/glave
+
+  # The check the ruleset requires: on a pull request it passes at once, and everywhere else
+  # only when `measure` did.
+  budgets:
+    if: always()
+    needs: measure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Within budget
+        env:
+          EVENT: ${{ github.event_name }}
+          MEASURE: ${{ needs.measure.result }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            echo "Not measured on a pull request: budgets are measured in the merge queue, before the change merges, then after the merge to main and weekly."
+            exit 0
+          fi
+          echo "measured: $MEASURE"
+          test "$MEASURE" = success
