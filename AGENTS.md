@@ -129,7 +129,7 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - **One project shows no projects.** With only the person's Chats, the UI shows no project grouping, members or moving between projects.
 - **Plain words.** No user-visible text names a file, flag, command or error code unless the person typed it. Every error a client can show has a message a person can act on.
 - **The consumer journey test** (`web/e2e/consumer.e2e.ts`, planned in #251) runs against a real server with a fresh home: add a model, chat, approve a command, connect GitHub. It fails if an admin word appears (policy, organization, member, group, admin, SSO, `config.toml`).
-- **Startup and size are measured** on every pull request, in the merge queue and after every merge to `main` (`budgets.yml`). A cloud or server dependency moves behind a Cargo feature only for a real reason (a security or licence problem, or a size that hurts people), not to meet a number: one build serves every deployment.
+- **Startup and size are measured** in the merge queue before every merge, after every merge to `main`, and weekly (`budgets.yml`), not on a pull request's own pushes. A cloud or server dependency moves behind a Cargo feature only for a real reason (a security or licence problem, or a size that hurts people), not to meet a number: one build serves every deployment.
 
 ## Rust
 
