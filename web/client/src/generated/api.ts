@@ -916,7 +916,7 @@ export type MemoryForgetParams = {
   readonly all?: boolean;
   /**
    * With `memory`: also deletes the thread it was saved in, as `thread/delete` does,
-   * when it has one that is still there.
+   * when it was started for the caller and is still there.
    */
   readonly delete_thread?: boolean;
   readonly memory?: MemoryId | null;

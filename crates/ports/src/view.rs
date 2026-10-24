@@ -4,8 +4,8 @@
 //! sealed like every other payload, so erasing the content erases the title too.
 
 use glave_event::{
-    At, Body, CallId, Money, Origin, Outcome, ParentCall, Part, Principal, RawEvent, Role, Seq,
-    ThreadId, TokenCounts, decode,
+    At, Body, CallId, Money, Origin, Outcome, ParentCall, Part, Principal, PrincipalId, RawEvent,
+    Role, Seq, ThreadId, TokenCounts, decode,
 };
 use serde::{Deserialize, Serialize};
 
@@ -96,6 +96,11 @@ pub struct ThreadView {
 }
 
 impl ThreadView {
+    /// The person whose work it is, when its `for` was recorded: the person it was started for.
+    pub fn whose(&self) -> Option<PrincipalId> {
+        self.for_.as_ref().and_then(|whose| whose.id)
+    }
+
     /// The view after `events`, from `before` (`None` for a thread with no view yet). Events
     /// already folded (at or before `last_seq`) are skipped, so folding is idempotent. `None`
     /// when the events do not start a thread: its first event is not `thread.started` at

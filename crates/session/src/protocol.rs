@@ -454,7 +454,7 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scope: Option<MemoryScope>,
         /// With `memory`: also deletes the thread it was saved in, as `thread/delete` does,
-        /// when it has one that is still there.
+        /// when it was started for the caller and is still there.
         #[serde(default, skip_serializing_if = "is_false")]
         delete_thread: bool,
         /// The project whose memory, beside the person's own: the caller's Chats when absent.

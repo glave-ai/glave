@@ -37,14 +37,16 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
                 each.message.translate(language);
             }
         }
-        Ok(Reply::Folders {
-            refused: Some(refused),
-            ..
-        })
-        | Ok(Reply::Memories {
-            thread_kept: Some(refused),
-            ..
-        }) => refused.translate(language),
+        Ok(
+            Reply::Folders {
+                refused: Some(told),
+                ..
+            }
+            | Reply::Memories {
+                thread_kept: Some(told),
+                ..
+            },
+        ) => told.translate(language),
         Ok(_) => {}
     }
 }

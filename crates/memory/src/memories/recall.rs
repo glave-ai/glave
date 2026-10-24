@@ -8,11 +8,9 @@
 //! texts again.
 
 use std::cmp::Reverse;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use glave_event::{
-    At, Body, MemoryId, MemoryScope, Payload as _, Role, Seq, ThreadDeleted, ThreadId, decode,
-};
+use glave_event::{At, Body, MemoryId, MemoryScope, Role, Seq, ThreadId, decode};
 use glave_ports::memories::{MemoryContext, MemoryError};
 use glave_ports::search::{Found, query_terms, searchable_body, terms};
 use glave_ports::stream::Reserved;
@@ -105,12 +103,24 @@ impl<L: EventLog + 'static> Memories<L> {
 
     /// Whether `thread`, found in `ledger`, is not a deleted chat: a deleted chat is hidden
     /// everywhere, for good (`specs/storage.md`, "Archive and delete"), recall and what it
-    /// found before included. A log that cannot be read counts as deleted, so a failure never
-    /// shows one.
-    pub(super) async fn kept(&self, ledger: Scope, thread: ThreadId) -> bool {
-        let log = &self.inner.log;
-        let deleted = log.latest_of(&ledger, thread, &[ThreadDeleted::TYPE]).await;
-        matches!(deleted, Ok(None))
+    /// found before included. Each thread is looked up once in `seen`. A view that cannot be
+    /// read counts as deleted, so a failure never shows one; a past conversation with no view
+    /// (one glave did not start) is never deleted.
+    pub(super) async fn kept(
+        &self,
+        ledger: Scope,
+        thread: ThreadId,
+        seen: &mut BTreeMap<ThreadId, bool>,
+    ) -> bool {
+        if let Some(kept) = seen.get(&thread) {
+            return *kept;
+        }
+        let kept = match self.inner.log.thread_view(&ledger, thread).await {
+            Ok(view) => view.is_none_or(|view| view.standing != Standing::Deleted),
+            Err(_) => false,
+        };
+        seen.insert(thread, kept);
+        kept
     }
 
     /// Whether `thread` is a chat started for the person a thread of `on` works for, in a
@@ -122,8 +132,7 @@ impl<L: EventLog + 'static> Memories<L> {
         let readable = self.rules().readable(on.person, on.scope);
         for ledger in ledgers(&readable) {
             if let Ok(Some(view)) = self.inner.log.thread_view(&ledger, thread).await {
-                let whose = view.for_.and_then(|whose| whose.id);
-                return view.standing != Standing::Deleted && whose == Some(person);
+                return view.standing != Standing::Deleted && view.whose() == Some(person);
             }
         }
         false
@@ -146,11 +155,11 @@ impl<L: EventLog + 'static> Memories<L> {
             .search(&ledger, query, limit.saturating_mul(2).saturating_add(4))
             .await
             .map_err(storage)?;
-        let mut hits = Vec::new();
+        let (mut hits, mut seen) = (Vec::new(), BTreeMap::new());
         for found in found {
             if found.thread == asking
                 || found.thread == Reserved::Memory.id()
-                || !self.kept(ledger, found.thread).await
+                || !self.kept(ledger, found.thread, &mut seen).await
             {
                 continue;
             }

@@ -86,6 +86,22 @@ describe('MemoryComponent', () => {
     expect(fake.paramsOf('memory/forget')).toEqual([{ memory: 'm2', delete_thread: true }]);
   });
 
+  it('shows what the server says when no chat went with the memory', async () => {
+    const said = 'the memory is forgotten, but no chat was deleted';
+    const fake = new FakeSession()
+      .answer('memory/list', { memories: [MEMORY] })
+      .answer('memory/forget', { memories: [MEMORY], thread_kept: said });
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const fixture = TestBed.createComponent(MemoryComponent);
+    await settle(fixture);
+    const root: HTMLElement = fixture.nativeElement;
+    click(root, 'memory-forget');
+    await settle(fixture);
+    click(root, 'memory-forget-confirm-ok');
+    await settle(fixture);
+    expect(root.querySelector('[data-testid="memory-notice"]')?.textContent).toContain(said);
+  });
+
   it('will not save an empty memory', async () => {
     const fake = new FakeSession().answer('memory/list', { memories: [MEMORY] });
     TestBed.configureTestingModule({ providers: provideFakeSession(fake) });

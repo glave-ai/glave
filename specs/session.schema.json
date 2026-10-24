@@ -2933,7 +2933,7 @@
             "type": "boolean"
           },
           "delete_thread": {
-            "description": "With `memory`: also deletes the thread it was saved in, as `thread/delete` does,\nwhen it has one that is still there.",
+            "description": "With `memory`: also deletes the thread it was saved in, as `thread/delete` does,\nwhen it was started for the caller and is still there.",
             "type": "boolean"
           },
           "memory": {

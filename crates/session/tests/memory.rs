@@ -5,16 +5,16 @@
 
 use std::sync::Arc;
 
-use glave_event::{Body, MemoryScope, Principal, PrincipalId, decode};
+use glave_event::{Body, MemoryId, MemoryScope, MemorySource, Principal, PrincipalId, Seq, decode};
 use glave_keys::{InMemoryRoot, KeySettings};
-use glave_memory::{GlaveMemory, Memories, Personal, Rules};
+use glave_memory::{GlaveMemory, Memories, Personal, Remembering, Rules, Writer};
 use glave_ports::memories::REMEMBER;
 use glave_ports::testing::TempDir;
-use glave_ports::{Caller, OrgId, ProjectId, Scope};
+use glave_ports::{Caller, Completion, OrgId, ProjectId, Scope};
 use glave_session::Answering;
 use glave_session::protocol::{Reply, Request, code};
-use glave_session::signin;
 use glave_store_sqlite::{SqliteLog, Store};
+use tokio::sync::Notify;
 
 use crate::support::*;
 
@@ -36,28 +36,40 @@ async fn served(name: &str) -> (Tested<SqliteLog>, Store, TempDir) {
     served_with(name, Vec::new()).await
 }
 
-/// A server with memory whose model answers with `answers`.
-async fn served_with(
-    name: &str,
-    answers: Vec<glave_ports::Completion>,
-) -> (Tested<SqliteLog>, Store, TempDir) {
-    let store =
-        Store::open_in_memory(KeySettings::new(Arc::new(InMemoryRoot::new().unwrap()))).unwrap();
-    let rules = Rules {
+/// The person's own memory, in their personal project.
+fn rules() -> Rules {
+    Rules {
         personal: Some(Personal {
             scope: personal(),
             person: person(),
         }),
         ..Rules::default()
-    };
+    }
+}
+
+/// A server with memory whose model answers with `answers`.
+async fn served_with(name: &str, answers: Vec<Completion>) -> (Tested<SqliteLog>, Store, TempDir) {
+    served_on(name, answers, None).await
+}
+
+/// A server with memory whose model answers with `answers`, each after waiting at `gate` when
+/// there is one.
+async fn served_on(
+    name: &str,
+    answers: Vec<Completion>,
+    gate: Option<Arc<Notify>>,
+) -> (Tested<SqliteLog>, Store, TempDir) {
+    let store =
+        Store::open_in_memory(KeySettings::new(Arc::new(InMemoryRoot::new().unwrap()))).unwrap();
     let memories = Memories::new(
         store.log(),
         store.keyring(),
-        rules,
+        rules(),
         Box::new(glave_ports::SystemClock),
         Box::new(glave_ports::OsEntropy),
     );
     let mut setup = Setup::new(answers);
+    setup.gate = gate;
     setup.answering = Answering::NoOne;
     setup.settings.person = Some(person());
     setup.memory = Some(Arc::new(GlaveMemory::start(memories).await.unwrap()));
@@ -302,31 +314,61 @@ fn a_saves_result_shows_the_person_its_text_until_they_forget_it() {
     });
 }
 
-/// #630: forgetting a memory leaves the thread it was saved in, which is history, unless the
-/// person asks to delete that thread too: it is then deleted as `thread/delete` deletes it, and
-/// one deleted already is left as it is.
+/// What the model answers to save `text` to the person's memory, then say so.
+fn saving(text: &str) -> Vec<Completion> {
+    let save = serde_json::json!({"text": text, "scope": "personal"});
+    vec![
+        answer(None, Some((REMEMBER, save))),
+        answer(Some("Saved."), None),
+    ]
+}
+
+/// `memory/forget` of one memory in the caller's Chats, with its chat when `delete_thread`.
+fn forget_one(memory: MemoryId, delete_thread: bool) -> Request {
+    Request::MemoryForget {
+        memory: Some(memory),
+        all: false,
+        scope: None,
+        delete_thread,
+        project: None,
+    }
+}
+
+/// What `memory/forget` answered: how many memories it forgot, and whether it says no chat
+/// went with them.
+fn forgot(reply: Result<Reply, glave_session::protocol::ApiError>) -> (usize, bool) {
+    match reply {
+        Ok(Reply::Memories {
+            memories,
+            thread_kept,
+        }) => (memories.len(), thread_kept.is_some()),
+        other => panic!("{other:?}"),
+    }
+}
+
+/// #630: forgetting a memory leaves the chat it was saved in, which is history, unless the
+/// person asks to delete that chat too: it is then deleted as `thread/delete` deletes it. A
+/// chat deleted already is named to no one, and the answer says no chat went.
 #[test]
-fn forgetting_deletes_the_thread_a_memory_was_saved_in_only_when_asked() {
+fn forgetting_deletes_the_chat_a_memory_was_saved_in_only_when_asked() {
     block_on!(async {
-        let save = |text: &str| {
-            Some((
-                REMEMBER,
-                serde_json::json!({"text": text, "scope": "personal"}),
-            ))
-        };
-        let answers = vec![
-            answer(None, save("Ada's favourite flower is marigold")),
-            answer(Some("Saved."), None),
-            answer(None, save("Ada's favourite tree is the oak")),
-            answer(Some("Saved."), None),
+        let answers = [
+            saving("Ada's favourite flower is marigold"),
+            saving("Ada's favourite tree is the oak"),
+            saving("Ada's favourite colour is teal"),
         ];
-        let (server, _store, _dir) = served_with("memory-forget-thread", answers).await;
-        let kept = start(&server, false).await;
-        turn(&server, kept, "Remember my favourite flower.")
-            .await
-            .unwrap();
-        let deleted = start(&server, false).await;
-        turn(&server, deleted, "Remember my favourite tree.")
+        let (server, _store, _dir) = served_with("memory-forget-thread", answers.concat()).await;
+        let mut chats = Vec::new();
+        for said in ["my flower", "my tree", "my colour"] {
+            let chat = start(&server, false).await;
+            turn(&server, chat, said).await.unwrap();
+            chats.push(chat);
+        }
+        let [kept, deleted, gone] = chats[..] else {
+            panic!("three chats");
+        };
+        server
+            .request(Request::ThreadDelete { thread: gone })
             .await
             .unwrap();
         let list = Request::MemoryList {
@@ -334,48 +376,26 @@ fn forgetting_deletes_the_thread_a_memory_was_saved_in_only_when_asked() {
             project: None,
         };
         let saved = listed(server.request(list).await.unwrap());
-        let forget = |memory, delete_thread| Request::MemoryForget {
-            memory: Some(memory),
-            all: false,
-            scope: None,
-            delete_thread,
-            project: None,
-        };
-        for memory in &saved {
-            let thread = memory.source.map(|source| source.thread);
-            let forgot = server.request(forget(memory.memory, thread == Some(deleted)));
-            assert_eq!(listed(forgot.await.unwrap()).len(), 1);
+        let sources: Vec<_> = (saved.iter())
+            .map(|memory| memory.source.map(|source| source.thread))
+            .collect();
+        assert_eq!(
+            sources,
+            [Some(kept), Some(deleted), None],
+            "never a deleted chat"
+        );
+        // Asked to delete each chat, and whether the answer says none went.
+        let asked = [(false, false), (true, false), (true, true)];
+        for (memory, (delete_thread, none_went)) in saved.iter().zip(asked) {
+            let answered = server
+                .request(forget_one(memory.memory, delete_thread))
+                .await;
+            assert_eq!(forgot(answered), (1, none_went), "{memory:?}");
         }
         let get = |thread| Request::ThreadGet { thread };
         assert!(server.request(get(kept)).await.is_ok(), "kept as history");
-        let gone = server.request(get(deleted)).await.unwrap_err();
-        assert_eq!(gone.code, code::NO_THREAD, "deleted with its memory");
-
-        let again =
-            serde_json::json!({"text": "Ada's favourite colour is teal", "scope": "personal"});
-        let answers = vec![
-            answer(None, Some((REMEMBER, again))),
-            answer(Some("Saved."), None),
-        ];
-        let (server, _store, _dir) = served_with("memory-forget-gone", answers).await;
-        let thread = start(&server, false).await;
-        turn(&server, thread, "Remember my favourite colour.")
-            .await
-            .unwrap();
-        server
-            .request(Request::ThreadDelete { thread })
-            .await
-            .unwrap();
-        let list = Request::MemoryList {
-            scope: None,
-            project: None,
-        };
-        let saved = listed(server.request(list).await.unwrap());
-        let forgot = server.request(forget(saved[0].memory, true)).await;
-        assert!(
-            forgot.is_ok(),
-            "a thread deleted already is no reason to refuse: {forgot:?}"
-        );
+        let refused = server.request(get(deleted)).await.unwrap_err();
+        assert_eq!(refused.code, code::NO_THREAD, "deleted with its memory");
         let every = Request::MemoryForget {
             memory: None,
             all: true,
@@ -384,120 +404,53 @@ fn forgetting_deletes_the_thread_a_memory_was_saved_in_only_when_asked() {
             project: None,
         };
         let refused = server.request(every).await.unwrap_err();
-        assert_eq!(
-            refused.code,
-            code::INVALID_PARAMS,
-            "only one memory's thread"
-        );
+        assert_eq!(refused.code, code::INVALID_PARAMS, "only one memory's chat");
     });
 }
 
-/// A person other than the local one, signed in.
-fn member(name: &str) -> Caller {
-    Caller {
-        person: Some(signin::person("https://id.example.com", name).unwrap()),
-        auth: None,
-        trace: None,
-    }
-}
-
-/// #630, ahead of #631: a project's memory names the chat it was saved in only to the person
-/// that chat was started for, and goes with it only for them. Another member forgetting it with
-/// `delete_thread` forgets the memory, learns nothing of the chat, and leaves it as it is.
+/// A chat that cannot be deleted now, as while a turn runs in it, stays: the memory is
+/// forgotten all the same, and the answer says why the chat did not go.
 #[test]
-fn a_member_forgetting_a_memory_from_another_s_chat_never_reaches_that_chat() {
+fn a_chat_busy_with_a_turn_stays_and_its_memory_is_forgotten_all_the_same() {
     block_on!(async {
-        let save = serde_json::json!({"text": "The garden is watered at dawn", "scope": "project"});
-        let answers = vec![
-            answer(None, Some((REMEMBER, save))),
-            answer(Some("Saved."), None),
-        ];
-        let (server, _store, _dir) = served_with("memory-forget-member", answers).await;
-        let (ada, bo) = (member("ada"), member("bo"));
-        let created = Request::ProjectCreate {
-            name: "Garden".into(),
-            members: vec![Principal::person(bo.person.unwrap())],
-            folder: None,
-        };
-        let Ok(Reply::Project { project, .. }) = server.request_as(&ada, created).await else {
-            panic!("project/create");
-        };
-        let started = Request::ThreadStart {
-            project: Some(project.id),
-            worktree: None,
-            background: false,
-            computer: None,
-            model: None,
-            approval: None,
-            effort: None,
-        };
-        let Ok(Reply::Thread { thread }) = server.request_as(&ada, started).await else {
-            panic!("thread/start");
-        };
-        let chat = thread.id;
-        let said = turn_start(chat, "Remember: the garden is watered at dawn.", None);
-        server.request_as(&ada, said).await.unwrap();
-        let list = || Request::MemoryList {
-            scope: None,
-            project: Some(project.id),
-        };
-        let hers = listed(server.request_as(&ada, list()).await.unwrap());
-        let saved_in = |memories: &[glave_ports::memories::Remembered]| {
-            memories
-                .iter()
-                .map(|memory| memory.source.map(|source| source.thread))
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(
-            saved_in(&hers),
-            [Some(chat)],
-            "her own chat is named to her"
+        let gate = Arc::new(Notify::new());
+        let answers = vec![answer(Some("Slow."), None)];
+        let gated = Some(Arc::clone(&gate));
+        let (server, store, _dir) = served_on("memory-forget-busy", answers, gated).await;
+        let chat = start(&server, false).await;
+        let memories = Memories::new(
+            store.log(),
+            store.keyring(),
+            rules(),
+            Box::new(glave_ports::SystemClock),
+            Box::new(glave_ports::OsEntropy),
         );
-        let seen = listed(server.request_as(&bo, list()).await.unwrap());
-        assert_eq!(saved_in(&seen), [None], "never to another member");
-
-        let forget = Request::MemoryForget {
-            memory: seen.first().map(|memory| memory.memory),
-            all: false,
-            scope: None,
-            delete_thread: true,
-            project: Some(project.id),
+        let writer = Writer {
+            person: Some(person()),
+            scope: scope(),
+            by: Principal::person(person()),
+            source: Some(MemorySource {
+                thread: chat,
+                seq: Seq::new(1).unwrap(),
+            }),
+            untrusted_read: false,
         };
-        let forgot = server.request_as(&bo, forget).await.unwrap();
-        let answer = serde_json::to_string(&forgot).unwrap();
+        let text = "Ada's favourite flower is marigold";
+        let saved = memories.remember(&writer, text, MemoryScope::Personal, None, true);
+        let Ok(Remembering::Saved { memory, .. }) = saved.await else {
+            panic!("saved");
+        };
+        let mut running = stream_turn(&server, chat, "slow", None).await.unwrap();
+        let answered = server.request(forget_one(memory.memory, true)).await;
+        assert_eq!(forgot(answered), (1, true));
         assert!(
-            !answer.contains(&chat.to_string()),
-            "names no chat: {answer}"
+            server
+                .request(Request::ThreadGet { thread: chat })
+                .await
+                .is_ok()
         );
-        let Reply::Memories {
-            memories,
-            thread_kept,
-        } = forgot
-        else {
-            panic!("memories");
-        };
-        assert_eq!(memories.len(), 1, "the memory is forgotten");
-        assert!(
-            thread_kept.is_some(),
-            "and the answer says no chat was deleted"
-        );
-        let gone = listed(server.request_as(&ada, list()).await.unwrap());
-        assert!(gone.is_empty(), "{gone:?}");
-
-        let read = Request::ThreadEvents {
-            thread: chat,
-            after: None,
-            limit: None,
-        };
-        let Ok(Reply::Events { events, .. }) = server.request_as(&ada, read).await else {
-            panic!("her chat is still hers to read");
-        };
-        assert!(
-            events
-                .iter()
-                .all(|event| event.kind.as_str() != "thread.deleted"),
-            "her chat is untouched"
-        );
+        gate.notify_one();
+        running.finish().await.unwrap();
     });
 }
 

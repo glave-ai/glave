@@ -43,6 +43,7 @@ impl<L: EventLog + 'static> Memories<L> {
     /// `query`'s words, from the first of `ledgers` that holds it, unless its chat is deleted.
     async fn turns(&self, ledgers: &[Scope], (query, hits): (&str, &[Hit]), texts: &mut Texts) {
         let wanted: BTreeSet<String> = query_terms(query).into_iter().collect();
+        let mut seen = BTreeMap::new();
         for hit in hits {
             let &Hit::Thread { thread, seq, .. } = hit else {
                 continue;
@@ -52,7 +53,7 @@ impl<L: EventLog + 'static> Memories<L> {
                 let Some(said) = self.said_at(*ledger, found).await else {
                     continue;
                 };
-                if self.kept(*ledger, thread).await {
+                if self.kept(*ledger, thread, &mut seen).await {
                     texts.insert(Of::Turn(thread, seq), snippet(&said.text, &wanted));
                 }
                 break;

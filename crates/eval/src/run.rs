@@ -9,8 +9,8 @@ use std::time::Instant;
 
 use glave_computer::LocalComputers;
 use glave_harness::{
-    ApprovalMode, Cancel, DEFAULT_BUDGET, Goal, Harness, Live, NoOneToAsk, Parts, Settings, Skills,
-    Todo, Workspace, agents_md, find_skills, skill_folders,
+    ApprovalMode, Cancel, Change, DEFAULT_BUDGET, Goal, Harness, Live, NoOneToAsk, Parts, Settings,
+    Skills, Todo, Workspace, agents_md, change_standing, find_skills, skill_folders,
 };
 use glave_memory::Tidier;
 use glave_ports::computer::Sandbox;
@@ -334,10 +334,12 @@ struct Conversed {
     memory: MemoryReport,
 }
 
-/// One thread to run: in which project, how many days ago, and its messages.
+/// One thread to run: in which project, how many days ago, the earlier threads deleted before
+/// it, and its messages.
 struct Planned {
     project: Option<String>,
     days_ago: u32,
+    delete: Vec<usize>,
     turns: Vec<String>,
 }
 
@@ -348,11 +350,13 @@ fn planned(task: &Task, web: Option<&str>) -> Vec<Planned> {
     let first = Planned {
         project: None,
         days_ago: task.days_ago,
+        delete: Vec::new(),
         turns: task.turns.iter().map(fill).collect(),
     };
     let later = task.threads.iter().map(|thread| Planned {
         project: thread.project.clone(),
         days_ago: thread.days_ago,
+        delete: thread.delete.clone(),
         turns: thread.messages.iter().map(fill).collect(),
     });
     std::iter::once(first).chain(later).collect()
@@ -389,7 +393,7 @@ async fn converse(
         transcript: String::new(),
         failures: Vec::new(),
     };
-    let (mut threads, mut in_view) = (Vec::new(), Vec::new());
+    let (mut threads, mut in_view, mut ran) = (Vec::new(), Vec::new(), Vec::new());
     for (index, plan) in planned(task, web).iter().enumerate() {
         let scope = crate::memory::project(plan.project.as_deref());
         calendar.set_days_ago(plan.days_ago);
@@ -402,6 +406,7 @@ async fn converse(
                 plan.days_ago
             );
         }
+        conversation.delete(&ran, &plan.delete).await?;
         // As a session does when it starts; saves and edits ask again while the thread runs.
         remembering.tidy_soon(scope);
         in_view.extend(remembering.in_view(scope).await?);
@@ -411,6 +416,7 @@ async fn converse(
             break;
         };
         threads.push(events_of(&harness, scope, thread).await?);
+        ran.push((scope, thread));
         if !conversation.failures.is_empty() {
             break;
         }
@@ -468,6 +474,30 @@ impl Talk<'_> {
                 .try_for_each(|run| writeln!(self.transcript, "[tidy] {run}")),
             Err(err) => writeln!(self.transcript, "[tidy failed] {err}"),
         };
+    }
+
+    /// Deletes the threads of `ran` that `numbers` names (1 the first), as the person deletes a
+    /// chat.
+    async fn delete(
+        &mut self,
+        ran: &[(Scope, glave_event::ThreadId)],
+        numbers: &[usize],
+    ) -> Result<(), EvalError> {
+        let fail = |err: &dyn std::fmt::Display| EvalError::Setup(err.to_string());
+        let harness = self.harness;
+        for number in numbers {
+            let Some((scope, thread)) = number.checked_sub(1).and_then(|index| ran.get(index))
+            else {
+                continue;
+            };
+            let random = harness.entropy().bytes().map_err(|err| fail(&err))?;
+            let now = harness.clock().now();
+            change_standing(harness.log(), scope, *thread, now, random, Change::Delete)
+                .await
+                .map_err(|err| fail(&err))?;
+            let _ = writeln!(self.transcript, "\n[the person deletes thread {number}]");
+        }
+        Ok(())
     }
 
     /// Runs `turns` in a new thread in `scope`, the first as `goal` when there is one, with

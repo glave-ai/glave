@@ -24,13 +24,27 @@ where
     B: BlobStore + 'static,
 {
     /// Answers a `memory/*` request for `caller`: `control` on the memory of `project` (their
-    /// Chats when it names none) and the caller's own, each memory as they are shown it.
+    /// Chats when it names none) and the caller's own.
     pub(crate) async fn remember(
         &self,
         caller: &Caller,
         project: Option<ProjectId>,
         control: Control,
     ) -> Result<Reply, ApiError> {
+        Ok(Reply::Memories {
+            memories: self.controlled(caller, project, control).await?,
+            thread_kept: None,
+        })
+    }
+
+    /// The memories `control` lists or changed, each as `caller` is shown it: its `source`
+    /// names only a chat started for them that is still there, so no one learns of another's.
+    async fn controlled(
+        &self,
+        caller: &Caller,
+        project: Option<ProjectId>,
+        control: Control,
+    ) -> Result<Vec<Remembered>, ApiError> {
         let memory = self
             .inner
             .harness
@@ -41,20 +55,24 @@ where
             person: caller.person,
             scope,
         };
-        let memories = memory.control(&access, control).await?;
-        let mut shown = Vec::with_capacity(memories.len());
-        for mut memory in memories {
-            if let Some(source) = memory.source
-                && !self.theirs(caller, source.thread).await
-            {
+        let mut memories = memory.control(&access, control).await?;
+        let mut theirs = BTreeMap::new();
+        for memory in &mut memories {
+            let Some(thread) = memory.source.map(|source| source.thread) else {
+                continue;
+            };
+            let shown = if let Some(known) = theirs.get(&thread).copied() {
+                known
+            } else {
+                let known = self.theirs(caller, thread).await;
+                theirs.insert(thread, known);
+                known
+            };
+            if !shown {
                 memory.source = None;
             }
-            shown.push(memory);
         }
-        Ok(Reply::Memories {
-            memories: shown,
-            thread_kept: None,
-        })
+        Ok(memories)
     }
 
     /// Whether `thread` is a chat started for `caller`, in a project they work in, and not
@@ -68,16 +86,14 @@ where
         let Ok(Some(view)) = self.inner.harness.log().thread_view(&scope, thread).await else {
             return false;
         };
-        let whose = view
-            .for_
-            .and_then(|whose| whose.id)
-            .or_else(|| self.person());
+        let whose = view.whose().or_else(|| self.person());
         view.standing != Standing::Deleted && whose == Some(person)
     }
 
-    /// Answers `memory/forget` for `caller`, as [`Server::remember`] does, then, with
+    /// Answers `memory/forget` for `caller` as [`Server::remember`] does, then, with
     /// `delete_thread`, deletes the chat the memory was saved in as `thread/delete` does, when
-    /// it is the caller's own; any other is left as it is, and the answer says so.
+    /// it is the caller's own. When no chat goes, the memory is still forgotten, and the answer
+    /// says why in a sentence.
     pub(crate) async fn forget(
         &self,
         caller: &Caller,
@@ -85,27 +101,23 @@ where
         control: Control,
         delete_thread: bool,
     ) -> Result<Reply, ApiError> {
-        let reply = self.remember(caller, project, control).await?;
-        let Reply::Memories { memories, .. } = reply else {
-            return Ok(reply);
-        };
-        if !delete_thread {
-            return Ok(Reply::Memories {
-                memories,
-                thread_kept: None,
-            });
-        }
-        let mut deleted = false;
-        for thread in memories.iter().filter_map(saved_in) {
-            match self.change(caller, thread, Change::Delete).await {
-                Ok(_) => deleted = true,
-                Err(gone) if gone.code == code::NO_THREAD => {}
-                Err(refused) => return Err(refused),
-            }
+        let memories = self.controlled(caller, project, control).await?;
+        let saved_in = memories.iter().filter_map(|memory| memory.source);
+        let mut kept = delete_thread.then(|| Told::from(Sentence::ThreadKept));
+        for thread in saved_in
+            .filter(|_| delete_thread)
+            .map(|source| source.thread)
+        {
+            kept = match self.change(caller, thread, Change::Delete).await {
+                Ok(_) => None,
+                Err(gone) if gone.code == code::NO_THREAD => kept,
+                // Refused, such as while a turn runs there: the memory is forgotten all the same.
+                Err(refused) => Some(refused.message),
+            };
         }
         Ok(Reply::Memories {
             memories,
-            thread_kept: (!deleted).then(|| Told::from(Sentence::ThreadKept)),
+            thread_kept: kept,
         })
     }
 
@@ -154,14 +166,9 @@ where
     }
 }
 
-/// The chat `memory` was saved in, as its caller is shown it.
-fn saved_in(memory: &Remembered) -> Option<ThreadId> {
-    memory.source.map(|source| source.thread)
-}
-
 /// What `memory/forget` forgets: one memory, or with `all`, every memory of a scope. Only one
 /// memory's thread is deleted with it.
-pub(crate) fn forget(
+pub(crate) fn forget_control(
     memory: Option<glave_event::MemoryId>,
     all: bool,
     scope: Option<glave_event::MemoryScope>,
