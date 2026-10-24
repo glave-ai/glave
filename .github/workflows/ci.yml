@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        run: [1, 2, 3, 4]
+        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
     defaults:
       run:
         working-directory: web
@@ -51,21 +51,13 @@ jobs:
         working-directory: .
       - name: The image's browsers, where the scripts look for them
         run: ln -s /ms-playwright node_modules/playwright-core/.local-browsers
-      - name: probe the connection limit
-        run: >-
-          docker run --rm --init --ipc=host -e CI -e GLAVE_BIN
-          -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE"
-          npm run e2e -- e2e/zz-probe-limits.e2e.ts --workers=1 --output=test-results/limits || true
-      - name: webkit shard 1, as CI runs it
-        run: >-
-          docker run --rm --init --ipc=host -e CI -e GLAVE_BIN
-          -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE"
-          npm run e2e -- --project=webkit --shard=1/2 --grep-invert=probe --output=test-results/shard || true
-      - name: the live tests, repeated
-        run: >-
-          docker run --rm --init --ipc=host -e CI -e GLAVE_BIN
-          -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE"
-          npm run e2e -- --project=webkit e2e/live.e2e.ts --repeat-each=12 --workers=2 --output=test-results/live || true
+      - name: webkit shard 1, as CI runs it, three times
+        run: |
+          for i in 1 2 3; do
+            docker run --rm --init --ipc=host -e CI -e GLAVE_BIN \
+              -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE" \
+              npm run e2e -- --project=webkit --shard=1/2 --grep-invert=probe --output=test-results/shard-$i || true
+          done
       - uses: actions/upload-artifact@v7
         if: always()
         with:
