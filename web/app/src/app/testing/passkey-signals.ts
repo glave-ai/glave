@@ -1,4 +1,4 @@
-import type { Mock } from 'vitest';
+import { type Mock, vi } from 'vitest';
 
 /** A stand-in for the browser's `PublicKeyCredential` with the Signal API. */
 export interface StubPasskeySignals {
