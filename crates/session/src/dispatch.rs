@@ -416,10 +416,9 @@ where
                 memory,
                 all,
                 scope,
-                delete_thread,
                 project,
-            } => match crate::memory::forget_control(memory, all, scope, delete_thread) {
-                Ok(control) => self.forget(caller, project, control, delete_thread).await,
+            } => match crate::memory::forget(memory, all, scope) {
+                Ok(control) => self.remember(caller, project, control).await,
                 Err(refused) => Err(refused),
             },
             Request::MemoryRestore { memory, project } => {

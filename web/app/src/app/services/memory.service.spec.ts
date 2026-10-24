@@ -22,25 +22,34 @@ describe('MemoryService', () => {
     expect(memory.memories()).toEqual([MEMORY]);
     await memory.edit('m1', 'Prefers brief answers');
     await memory.forget('m1');
-    await memory.forget('m2', true);
     expect(fake.paramsOf('memory/edit')).toEqual([{ memory: 'm1', text: 'Prefers brief answers' }]);
-    expect(fake.paramsOf('memory/forget')).toEqual([
-      { memory: 'm1' },
-      { memory: 'm2', delete_thread: true },
-    ]);
+    expect(fake.paramsOf('memory/forget')).toEqual([{ memory: 'm1' }]);
   });
 
-  it('keeps what the server says of a chat it left as it is', async () => {
-    const said = 'the memory is forgotten, but no chat was deleted';
+  it('deletes the chat a memory was saved in once it is forgotten, when the server names one', async () => {
+    const saved: Remembered = { ...MEMORY, source: { thread: 't1', seq: 3 } };
     const fake = new FakeSession()
-      .answer('memory/list', { memories: [MEMORY] })
-      .answer('memory/forget', { memories: [MEMORY], thread_kept: said });
+      .answer('memory/list', { memories: [saved] })
+      .answer('memory/forget', { memories: [saved] });
     TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
     const memory = TestBed.inject(MemoryService);
     await memory.forget('m1', true);
-    expect(memory.notice()).toBe(said);
-    await memory.refresh();
-    expect(memory.notice()).toBeNull();
+    expect(fake.paramsOf('memory/forget')).toEqual([{ memory: 'm1' }]);
+    expect(fake.paramsOf('thread/delete')).toEqual([{ thread: 't1' }]);
+  });
+
+  it("forgets all the same when the chat cannot go, and says why in the server's words", async () => {
+    const saved: Remembered = { ...MEMORY, source: { thread: 't1', seq: 3 } };
+    const running = new ApiError({ code: ErrorCode.TURN_RUNNING, message: 'a turn is running' });
+    const fake = new FakeSession()
+      .answer('memory/list', { memories: [] })
+      .answer('memory/forget', { memories: [saved] })
+      .answer('thread/delete', running);
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const memory = TestBed.inject(MemoryService);
+    await memory.forget('m1', true);
+    expect(memory.memories()).toEqual([]);
+    expect(memory.error()).toBe('a turn is running');
   });
 
   it('says when memory is off for the server', async () => {

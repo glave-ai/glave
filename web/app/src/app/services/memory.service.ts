@@ -13,13 +13,10 @@ export class MemoryService {
   private readonly list = signal<readonly Remembered[]>([]);
   private readonly status = signal<MemoryState>('loading');
   private readonly failed = signal<string | null>(null);
-  private readonly told = signal<string | null>(null);
 
   readonly memories = this.list.asReadonly();
   readonly state = this.status.asReadonly();
   readonly error = this.failed.asReadonly();
-  /** What the server said of the last forget beyond doing it, such as a chat it left. */
-  readonly notice = this.told.asReadonly();
 
   async refresh(): Promise<void> {
     await this.run(async () => {
@@ -36,18 +33,23 @@ export class MemoryService {
     });
   }
 
-  /** Forgets `memory`, and with `deleteChat` the chat it was saved in. */
+  /**
+   * Forgets `memory`, then, with `deleteChat`, deletes the chat the server says it was saved in:
+   * two of the person's own actions, each answered by the server. A chat that cannot go now, such
+   * as one with a turn running, is said so in the server's words; the memory is forgotten anyway.
+   */
   async forget(memory: MemoryId, deleteChat = false): Promise<void> {
     await this.run(async () => {
-      const params = deleteChat ? { memory, delete_thread: true } : { memory };
-      const { thread_kept: kept } = await this.session.call('memory/forget', params);
+      const { memories } = await this.session.call('memory/forget', { memory });
       await this.refresh();
-      this.told.set(kept ?? null);
+      const chat = deleteChat ? memories[0]?.source?.thread : undefined;
+      if (chat !== undefined) {
+        await this.session.call('thread/delete', { thread: chat });
+      }
     });
   }
 
   private async run(work: () => Promise<void>): Promise<void> {
-    this.told.set(null);
     try {
       await work();
       this.failed.set(null);

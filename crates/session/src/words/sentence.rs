@@ -217,10 +217,7 @@ sentences! {
 
     // Memory.
     MemoryOff = "memory-off" "memory is off for this server",
-    ForgetWhat = "forget-what"
-        "memory/forget takes `memory` (with `delete_thread` if wanted), or `all: true` with a `scope`",
-    ThreadKept = "thread-kept"
-        "the memory is forgotten, but no chat was deleted: only a chat of your own that is still there goes with its memory",
+    ForgetWhat = "forget-what" "memory/forget takes `memory`, or `all: true` with a `scope`",
 
     // Accounts, sign-in and the person's own settings.
     ModelsNotHere = "models-not-here"

@@ -7,9 +7,6 @@
   @if (problem(); as problem) {
     <p class="error" role="alert">{{ problem }}</p>
   }
-  @if (notice(); as notice) {
-    <p role="status" data-testid="memory-notice">{{ notice }}</p>
-  }
   @if (off()) {
     <glz-empty-state [heading]="copy.offHeading" [icon]="icon">{{ copy.offText }}</glz-empty-state>
   }

@@ -21,9 +21,6 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
         Err(error) => error.message.translatable(),
         Ok(Reply::Projects { gone, .. }) => gone.iter().any(|gone| gone.message.translatable()),
         Ok(Reply::Folders { refused, .. }) => refused.as_ref().is_some_and(Told::translatable),
-        Ok(Reply::Memories { thread_kept, .. }) => {
-            thread_kept.as_ref().is_some_and(Told::translatable)
-        }
         Ok(_) => false,
     }
 }
@@ -37,16 +34,10 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
                 each.message.translate(language);
             }
         }
-        Ok(
-            Reply::Folders {
-                refused: Some(told),
-                ..
-            }
-            | Reply::Memories {
-                thread_kept: Some(told),
-                ..
-            },
-        ) => told.translate(language),
+        Ok(Reply::Folders {
+            refused: Some(refused),
+            ..
+        }) => refused.translate(language),
         Ok(_) => {}
     }
 }

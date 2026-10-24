@@ -61,7 +61,9 @@ describe('MemoryComponent', () => {
       text: 'Likes marigolds',
       source: { thread: 't1', seq: 3 },
     };
-    const fake = new FakeSession().answer('memory/list', { memories: [MEMORY, saved] });
+    const fake = new FakeSession()
+      .answer('memory/list', { memories: [MEMORY, saved] })
+      .answer('memory/forget', { memories: [saved] });
     TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
     const fixture = TestBed.createComponent(MemoryComponent);
     await settle(fixture);
@@ -83,23 +85,8 @@ describe('MemoryComponent', () => {
     await settle(fixture);
     click(root, 'memory-forget-confirm-ok');
     await settle(fixture);
-    expect(fake.paramsOf('memory/forget')).toEqual([{ memory: 'm2', delete_thread: true }]);
-  });
-
-  it('shows what the server says when no chat went with the memory', async () => {
-    const said = 'the memory is forgotten, but no chat was deleted';
-    const fake = new FakeSession()
-      .answer('memory/list', { memories: [MEMORY] })
-      .answer('memory/forget', { memories: [MEMORY], thread_kept: said });
-    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
-    const fixture = TestBed.createComponent(MemoryComponent);
-    await settle(fixture);
-    const root: HTMLElement = fixture.nativeElement;
-    click(root, 'memory-forget');
-    await settle(fixture);
-    click(root, 'memory-forget-confirm-ok');
-    await settle(fixture);
-    expect(root.querySelector('[data-testid="memory-notice"]')?.textContent).toContain(said);
+    expect(fake.paramsOf('memory/forget')).toEqual([{ memory: 'm2' }]);
+    expect(fake.paramsOf('thread/delete')).toEqual([{ thread: 't1' }]);
   });
 
   it('will not save an empty memory', async () => {

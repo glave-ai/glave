@@ -905,20 +905,10 @@ export type MemoryEditParams = {
  */
 export type MemoryEditResult = {
   readonly memories: readonly (Remembered)[];
-  /**
-   * Why `memory/forget` deleted no chat with the memory, though asked to: the server's
-   * sentence. Only a chat of the caller's own goes with its memory.
-   */
-  readonly thread_kept?: string | null;
 };
 
 export type MemoryForgetParams = {
   readonly all?: boolean;
-  /**
-   * With `memory`: also deletes the thread it was saved in, as `thread/delete` does,
-   * when it was started for the caller and is still there.
-   */
-  readonly delete_thread?: boolean;
   readonly memory?: MemoryId | null;
   /** The project whose memory, beside the person's own: the caller's Chats when absent. */
   readonly project?: ProjectId | null;
@@ -931,11 +921,6 @@ export type MemoryForgetParams = {
  */
 export type MemoryForgetResult = {
   readonly memories: readonly (Remembered)[];
-  /**
-   * Why `memory/forget` deleted no chat with the memory, though asked to: the server's
-   * sentence. Only a chat of the caller's own goes with its memory.
-   */
-  readonly thread_kept?: string | null;
 };
 
 export type MemoryListParams = {
@@ -950,11 +935,6 @@ export type MemoryListParams = {
  */
 export type MemoryListResult = {
   readonly memories: readonly (Remembered)[];
-  /**
-   * Why `memory/forget` deleted no chat with the memory, though asked to: the server's
-   * sentence. Only a chat of the caller's own goes with its memory.
-   */
-  readonly thread_kept?: string | null;
 };
 
 export type MemoryMoveParams = {
@@ -970,11 +950,6 @@ export type MemoryMoveParams = {
  */
 export type MemoryMoveResult = {
   readonly memories: readonly (Remembered)[];
-  /**
-   * Why `memory/forget` deleted no chat with the memory, though asked to: the server's
-   * sentence. Only a chat of the caller's own goes with its memory.
-   */
-  readonly thread_kept?: string | null;
 };
 
 export type MemoryRestoreParams = {
@@ -989,11 +964,6 @@ export type MemoryRestoreParams = {
  */
 export type MemoryRestoreResult = {
   readonly memories: readonly (Remembered)[];
-  /**
-   * Why `memory/forget` deleted no chat with the memory, though asked to: the server's
-   * sentence. Only a chat of the caller's own goes with its memory.
-   */
-  readonly thread_kept?: string | null;
 };
 
 export type MemorySaveParams = {
@@ -1009,11 +979,6 @@ export type MemorySaveParams = {
  */
 export type MemorySaveResult = {
   readonly memories: readonly (Remembered)[];
-  /**
-   * Why `memory/forget` deleted no chat with the memory, though asked to: the server's
-   * sentence. Only a chat of the caller's own goes with its memory.
-   */
-  readonly thread_kept?: string | null;
 };
 
 export type ModelListParams = Readonly<Record<string, never>>;

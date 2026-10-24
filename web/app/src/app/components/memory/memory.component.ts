@@ -99,7 +99,6 @@ export class MemoryComponent {
       ? null
       : $localize`:@@memory.failed:Something went wrong: ${error}:ERROR:`;
   });
-  protected readonly notice = this.service.notice;
   protected readonly off = computed(() => this.service.state() === 'off');
   protected readonly ready = computed(() => this.service.state() === 'ready');
 

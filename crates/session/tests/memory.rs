@@ -5,16 +5,15 @@
 
 use std::sync::Arc;
 
-use glave_event::{Body, MemoryId, MemoryScope, MemorySource, Principal, PrincipalId, Seq, decode};
+use glave_event::{Body, MemoryScope, PrincipalId, decode};
 use glave_keys::{InMemoryRoot, KeySettings};
-use glave_memory::{GlaveMemory, Memories, Personal, Remembering, Rules, Writer};
+use glave_memory::{GlaveMemory, Memories, Personal, Rules};
 use glave_ports::memories::REMEMBER;
 use glave_ports::testing::TempDir;
-use glave_ports::{Caller, Completion, OrgId, ProjectId, Scope};
+use glave_ports::{Caller, OrgId, ProjectId, Scope};
 use glave_session::Answering;
 use glave_session::protocol::{Reply, Request, code};
 use glave_store_sqlite::{SqliteLog, Store};
-use tokio::sync::Notify;
 
 use crate::support::*;
 
@@ -36,40 +35,28 @@ async fn served(name: &str) -> (Tested<SqliteLog>, Store, TempDir) {
     served_with(name, Vec::new()).await
 }
 
-/// The person's own memory, in their personal project.
-fn rules() -> Rules {
-    Rules {
+/// A server with memory whose model answers with `answers`.
+async fn served_with(
+    name: &str,
+    answers: Vec<glave_ports::Completion>,
+) -> (Tested<SqliteLog>, Store, TempDir) {
+    let store =
+        Store::open_in_memory(KeySettings::new(Arc::new(InMemoryRoot::new().unwrap()))).unwrap();
+    let rules = Rules {
         personal: Some(Personal {
             scope: personal(),
             person: person(),
         }),
         ..Rules::default()
-    }
-}
-
-/// A server with memory whose model answers with `answers`.
-async fn served_with(name: &str, answers: Vec<Completion>) -> (Tested<SqliteLog>, Store, TempDir) {
-    served_on(name, answers, None).await
-}
-
-/// A server with memory whose model answers with `answers`, each after waiting at `gate` when
-/// there is one.
-async fn served_on(
-    name: &str,
-    answers: Vec<Completion>,
-    gate: Option<Arc<Notify>>,
-) -> (Tested<SqliteLog>, Store, TempDir) {
-    let store =
-        Store::open_in_memory(KeySettings::new(Arc::new(InMemoryRoot::new().unwrap()))).unwrap();
+    };
     let memories = Memories::new(
         store.log(),
         store.keyring(),
-        rules(),
+        rules,
         Box::new(glave_ports::SystemClock),
         Box::new(glave_ports::OsEntropy),
     );
     let mut setup = Setup::new(answers);
-    setup.gate = gate;
     setup.answering = Answering::NoOne;
     setup.settings.person = Some(person());
     setup.memory = Some(Arc::new(GlaveMemory::start(memories).await.unwrap()));
@@ -80,7 +67,7 @@ async fn served_on(
 
 fn listed(reply: Reply) -> Vec<glave_ports::memories::Remembered> {
     match reply {
-        Reply::Memories { memories, .. } => memories,
+        Reply::Memories { memories } => memories,
         other => panic!("{other:?}"),
     }
 }
@@ -134,7 +121,6 @@ fn the_person_lists_saves_edits_moves_and_forgets_their_memory() {
                 memory: Some(moved[0].memory),
                 all: false,
                 scope: None,
-                delete_thread: false,
                 project: None,
             })
             .await;
@@ -300,7 +286,6 @@ fn a_saves_result_shows_the_person_its_text_until_they_forget_it() {
             memory: saved.first().map(|memory| memory.memory),
             all: false,
             scope: None,
-            delete_thread: false,
             project: None,
         };
         server.request(forgot).await.unwrap();
@@ -315,7 +300,7 @@ fn a_saves_result_shows_the_person_its_text_until_they_forget_it() {
 }
 
 /// What the model answers to save `text` to the person's memory, then say so.
-fn saving(text: &str) -> Vec<Completion> {
+fn saving(text: &str) -> Vec<glave_ports::Completion> {
     let save = serde_json::json!({"text": text, "scope": "personal"});
     vec![
         answer(None, Some((REMEMBER, save))),
@@ -323,49 +308,25 @@ fn saving(text: &str) -> Vec<Completion> {
     ]
 }
 
-/// `memory/forget` of one memory in the caller's Chats, with its chat when `delete_thread`.
-fn forget_one(memory: MemoryId, delete_thread: bool) -> Request {
-    Request::MemoryForget {
-        memory: Some(memory),
-        all: false,
-        scope: None,
-        delete_thread,
-        project: None,
-    }
-}
-
-/// What `memory/forget` answered: how many memories it forgot, and whether it says no chat
-/// went with them.
-fn forgot(reply: Result<Reply, glave_session::protocol::ApiError>) -> (usize, bool) {
-    match reply {
-        Ok(Reply::Memories {
-            memories,
-            thread_kept,
-        }) => (memories.len(), thread_kept.is_some()),
-        other => panic!("{other:?}"),
-    }
-}
-
-/// #630: forgetting a memory leaves the chat it was saved in, which is history, unless the
-/// person asks to delete that chat too: it is then deleted as `thread/delete` deletes it. A
-/// chat deleted already is named to no one, and the answer says no chat went.
+/// #630: forgetting a memory leaves the chat it was saved in, which is history; the person
+/// deletes that chat with `thread/delete` when they want it gone too. A memory names its chat
+/// only while that chat is still there.
 #[test]
-fn forgetting_deletes_the_chat_a_memory_was_saved_in_only_when_asked() {
+fn forgetting_leaves_the_chat_a_memory_was_saved_in_named_while_it_is_there() {
     block_on!(async {
         let answers = [
             saving("Ada's favourite flower is marigold"),
             saving("Ada's favourite tree is the oak"),
-            saving("Ada's favourite colour is teal"),
         ];
-        let (server, _store, _dir) = served_with("memory-forget-thread", answers.concat()).await;
+        let (server, _store, _dir) = served_with("memory-forget-chat", answers.concat()).await;
         let mut chats = Vec::new();
-        for said in ["my flower", "my tree", "my colour"] {
+        for said in ["my flower", "my tree"] {
             let chat = start(&server, false).await;
             turn(&server, chat, said).await.unwrap();
             chats.push(chat);
         }
-        let [kept, deleted, gone] = chats[..] else {
-            panic!("three chats");
+        let [kept, gone] = chats[..] else {
+            panic!("two chats");
         };
         server
             .request(Request::ThreadDelete { thread: gone })
@@ -379,78 +340,22 @@ fn forgetting_deletes_the_chat_a_memory_was_saved_in_only_when_asked() {
         let sources: Vec<_> = (saved.iter())
             .map(|memory| memory.source.map(|source| source.thread))
             .collect();
-        assert_eq!(
-            sources,
-            [Some(kept), Some(deleted), None],
-            "never a deleted chat"
-        );
-        // Asked to delete each chat, and whether the answer says none went.
-        let asked = [(false, false), (true, false), (true, true)];
-        for (memory, (delete_thread, none_went)) in saved.iter().zip(asked) {
-            let answered = server
-                .request(forget_one(memory.memory, delete_thread))
-                .await;
-            assert_eq!(forgot(answered), (1, none_went), "{memory:?}");
+        assert_eq!(sources, [Some(kept), None], "never a deleted chat");
+        for memory in &saved {
+            let forget = Request::MemoryForget {
+                memory: Some(memory.memory),
+                all: false,
+                scope: None,
+                project: None,
+            };
+            let answered = listed(server.request(forget).await.unwrap());
+            assert_eq!(answered.len(), 1, "the memory as it was");
         }
-        let get = |thread| Request::ThreadGet { thread };
-        assert!(server.request(get(kept)).await.is_ok(), "kept as history");
-        let refused = server.request(get(deleted)).await.unwrap_err();
-        assert_eq!(refused.code, code::NO_THREAD, "deleted with its memory");
-        let every = Request::MemoryForget {
-            memory: None,
-            all: true,
-            scope: Some(MemoryScope::Personal),
-            delete_thread: true,
-            project: None,
-        };
-        let refused = server.request(every).await.unwrap_err();
-        assert_eq!(refused.code, code::INVALID_PARAMS, "only one memory's chat");
-    });
-}
-
-/// A chat that cannot be deleted now, as while a turn runs in it, stays: the memory is
-/// forgotten all the same, and the answer says why the chat did not go.
-#[test]
-fn a_chat_busy_with_a_turn_stays_and_its_memory_is_forgotten_all_the_same() {
-    block_on!(async {
-        let gate = Arc::new(Notify::new());
-        let answers = vec![answer(Some("Slow."), None)];
-        let gated = Some(Arc::clone(&gate));
-        let (server, store, _dir) = served_on("memory-forget-busy", answers, gated).await;
-        let chat = start(&server, false).await;
-        let memories = Memories::new(
-            store.log(),
-            store.keyring(),
-            rules(),
-            Box::new(glave_ports::SystemClock),
-            Box::new(glave_ports::OsEntropy),
-        );
-        let writer = Writer {
-            person: Some(person()),
-            scope: scope(),
-            by: Principal::person(person()),
-            source: Some(MemorySource {
-                thread: chat,
-                seq: Seq::new(1).unwrap(),
-            }),
-            untrusted_read: false,
-        };
-        let text = "Ada's favourite flower is marigold";
-        let saved = memories.remember(&writer, text, MemoryScope::Personal, None, true);
-        let Ok(Remembering::Saved { memory, .. }) = saved.await else {
-            panic!("saved");
-        };
-        let mut running = stream_turn(&server, chat, "slow", None).await.unwrap();
-        let answered = server.request(forget_one(memory.memory, true)).await;
-        assert_eq!(forgot(answered), (1, true));
+        let get = Request::ThreadGet { thread: kept };
         assert!(
-            server
-                .request(Request::ThreadGet { thread: chat })
-                .await
-                .is_ok()
+            server.request(get).await.is_ok(),
+            "its chat kept as history"
         );
-        gate.notify_one();
-        running.finish().await.unwrap();
     });
 }
 

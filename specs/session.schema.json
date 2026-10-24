@@ -2910,13 +2910,6 @@
               "$ref": "#/$defs/Remembered"
             },
             "type": "array"
-          },
-          "thread_kept": {
-            "description": "Why `memory/forget` deleted no chat with the memory, though asked to: the server's\nsentence. Only a chat of the caller's own goes with its memory.",
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
         "required": [
@@ -2930,10 +2923,6 @@
       "params": {
         "properties": {
           "all": {
-            "type": "boolean"
-          },
-          "delete_thread": {
-            "description": "With `memory`: also deletes the thread it was saved in, as `thread/delete` does,\nwhen it was started for the caller and is still there.",
             "type": "boolean"
           },
           "memory": {
@@ -2978,13 +2967,6 @@
               "$ref": "#/$defs/Remembered"
             },
             "type": "array"
-          },
-          "thread_kept": {
-            "description": "Why `memory/forget` deleted no chat with the memory, though asked to: the server's\nsentence. Only a chat of the caller's own goes with its memory.",
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
         "required": [
@@ -3029,13 +3011,6 @@
               "$ref": "#/$defs/Remembered"
             },
             "type": "array"
-          },
-          "thread_kept": {
-            "description": "Why `memory/forget` deleted no chat with the memory, though asked to: the server's\nsentence. Only a chat of the caller's own goes with its memory.",
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
         "required": [
@@ -3080,13 +3055,6 @@
               "$ref": "#/$defs/Remembered"
             },
             "type": "array"
-          },
-          "thread_kept": {
-            "description": "Why `memory/forget` deleted no chat with the memory, though asked to: the server's\nsentence. Only a chat of the caller's own goes with its memory.",
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
         "required": [
@@ -3127,13 +3095,6 @@
               "$ref": "#/$defs/Remembered"
             },
             "type": "array"
-          },
-          "thread_kept": {
-            "description": "Why `memory/forget` deleted no chat with the memory, though asked to: the server's\nsentence. Only a chat of the caller's own goes with its memory.",
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
         "required": [
@@ -3178,13 +3139,6 @@
               "$ref": "#/$defs/Remembered"
             },
             "type": "array"
-          },
-          "thread_kept": {
-            "description": "Why `memory/forget` deleted no chat with the memory, though asked to: the server's\nsentence. Only a chat of the caller's own goes with its memory.",
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
         "required": [
