@@ -9,8 +9,7 @@ use std::collections::HashMap;
 
 use glave_event::{At, Principal, PrincipalId, ThreadId};
 use glave_ports::{
-    BlobStore, Caller, EventLog, ModelProvider, Project, ProjectError, ProjectId, ProjectKind,
-    Scope,
+    BlobStore, Caller, EventLog, ModelProvider, Project, ProjectId, ProjectKind, Scope,
 };
 
 use crate::held::Slot;
@@ -43,9 +42,6 @@ impl Places {
         self.0.insert(thread, project);
     }
 }
-
-/// How many times a change to a project is made again when another came first.
-const UPDATE_TRIES: usize = 3;
 
 pub(crate) fn no_project(project: ProjectId) -> ApiError {
     ApiError::new(
@@ -117,7 +113,6 @@ where
             owner: Principal::person(self.person_of(caller)?),
             created_at: At::from(now),
             updated_at: At::from(now),
-            revision: 0,
         };
         let kept = self.inner.projects.personal(self.inner.org, &new).await?;
         let person = self.person_of(caller)?;
@@ -248,7 +243,6 @@ where
             owner: Principal::person(self.person_of(caller)?),
             created_at: At::from(now),
             updated_at: At::from(now),
-            revision: 0,
         };
         if let Some(folder) = folder {
             return self.create_with_folder(caller, project, folder).await;
@@ -271,25 +265,20 @@ where
         Ok(Reply::Project { project, folder })
     }
 
-    /// Answers `project/rename`.
+    /// Answers `project/rename`: the last rename wins.
     pub(crate) async fn rename_project(
         &self,
         caller: &Caller,
         project: ProjectId,
         name: String,
     ) -> Result<Reply, ApiError> {
-        let mut tries = 0;
-        let renamed = loop {
-            let mut found = self.owned(caller, project).await?;
-            found.name.clone_from(&name);
-            found.updated_at = At::from(self.inner.harness.clock().now());
-            tries += 1;
-            // Changed by someone else since it was read: the name goes on what they left.
-            match self.inner.projects.update(self.inner.org, &found).await {
-                Err(ProjectError::Changed(_)) if tries < UPDATE_TRIES => {}
-                updated => break updated?,
-            }
-        };
+        self.owned(caller, project).await?;
+        let at = At::from(self.inner.harness.clock().now());
+        let renamed = self
+            .inner
+            .projects
+            .rename(self.inner.org, project, &name, at)
+            .await?;
         let folder = self.folder_of(project).await?;
         Ok(Reply::Project {
             project: renamed,

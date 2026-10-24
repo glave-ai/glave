@@ -1,7 +1,8 @@
 //! What every [`Projects`] must do: keep whole records apart by organization, refuse a taken id
 //! or a second personal project, keep each owner's project names apart, list a person's projects
-//! in id order, change only what may change and never lose an update to another, and lead every
-//! folder key to one project, found without making one; and all of it with writers racing each other.
+//! in id order, rename a project and change nothing else of it, the last rename winning, and lead
+//! every folder key to one project, found without making one; and all of it with writers racing
+//! each other.
 
 use glave_event::{At, Principal, PrincipalId};
 
@@ -30,7 +31,6 @@ pub(super) fn record(n: u64, kind: ProjectKind, owner: &Principal) -> Result<Pro
         owner: owner.clone(),
         created_at: created,
         updated_at: created,
-        revision: 0,
     })
 }
 
@@ -86,7 +86,7 @@ pub async fn projects(store: &dyn Projects) -> Verdict {
         "another organization must not see the project",
     )?;
     listing(store, org, other_org, &project, [&ada, &grace]).await?;
-    updating(store, org, &project, &linus).await?;
+    renaming(store, org, other_org, &project).await?;
     personal(store, org, other_org, &ada).await?;
     folders(store, org, other_org, &ada).await?;
     names(store, org, [&ada, &grace]).await?;
@@ -137,20 +137,20 @@ async fn names(store: &dyn Projects, org: OrgId, [ada, grace]: [&Principal; 2]) 
         theirs.name == "web",
         "another owner's project may have the same name",
     )?;
-    let mut taken = again.clone();
-    taken.name = "WEB".into();
+    let later = at("2026-10-13T09:00:00.000Z")?;
     ensure(
         matches!(
-            store.update(org, &taken).await,
+            store.rename(org, again.id, "WEB", later).await,
             Err(ProjectError::Conflict(_))
         ),
         "renaming a project to a name its owner has taken must be refused",
     )?;
-    let mut own = again.clone();
-    own.name = "web 2".into();
-    let kept = store.update(org, &own).await.map_err(failed)?;
+    let kept = store
+        .rename(org, again.id, "web 2", later)
+        .await
+        .map_err(failed)?;
     ensure(
-        kept.name == own.name && store.get(org, again.id).await.map_err(failed)? == Some(kept),
+        kept.name == "web 2" && store.get(org, again.id).await.map_err(failed)? == Some(kept),
         "a project may take its own name in another case",
     )
 }
@@ -187,48 +187,57 @@ async fn listing(
     )
 }
 
-async fn updating(
+/// A rename changes the name and `updated_at` and nothing else, and the last one wins.
+async fn renaming(
     store: &dyn Projects,
     org: OrgId,
+    other_org: OrgId,
     project: &Project,
-    linus: &Principal,
 ) -> Verdict {
-    let mut changed = project.clone();
-    changed.name = "renamed".into();
-    changed.updated_at = at("2026-10-12T09:00:00.000Z")?;
-    let mut tampered = changed.clone();
-    tampered.kind = ProjectKind::Personal;
-    tampered.owner = linus.clone();
-    tampered.created_at = changed.updated_at;
-    let kept = store.update(org, &tampered).await.map_err(failed)?;
-    changed.revision = 1;
+    let first = at("2026-10-12T09:00:00.000Z")?;
+    let kept = store
+        .rename(org, project.id, "renamed", first)
+        .await
+        .map_err(failed)?;
+    let mut renamed = project.clone();
+    renamed.name = "renamed".into();
+    renamed.updated_at = first;
     ensure(
-        kept == changed && store.get(org, project.id).await.map_err(failed)? == Some(kept),
-        "an update must change the name and updated_at, count a revision, and nothing else",
+        kept == renamed && store.get(org, project.id).await.map_err(failed)? == Some(kept),
+        "a rename must change the name and updated_at, and nothing else",
+    )?;
+    let then = at("2026-10-12T10:00:00.000Z")?;
+    let kept = store
+        .rename(org, project.id, "renamed again", then)
+        .await
+        .map_err(failed)?;
+    ensure(
+        kept.name == "renamed again"
+            && kept.updated_at == then
+            && store.get(org, project.id).await.map_err(failed)? == Some(kept),
+        "a later rename must replace an earlier one",
     )?;
     ensure(
         matches!(
-            store.update(org, &tampered).await,
-            Err(ProjectError::Changed(_))
+            store.rename(org, project.id, "  ", then).await,
+            Err(ProjectError::Invalid(_))
         ),
-        "an update naming a revision another update came after must be refused",
+        "a rename to a name of only spaces must be refused",
     )?;
-    ensure(
-        store
-            .list(org, linus, 10)
-            .await
-            .map_err(failed)?
-            .iter()
-            .all(|listed| listed.id != project.id),
-        "an update must not hand the project to another owner",
-    )?;
-    let missing = record(9, ProjectKind::Project, linus)?;
     ensure(
         matches!(
-            store.update(org, &missing).await,
+            store.rename(other_org, project.id, "theirs", then).await,
             Err(ProjectError::NotFound(_))
         ),
-        "updating a project never kept must be refused",
+        "a rename must not reach another organization's project",
+    )?;
+    let missing = record(9, ProjectKind::Project, &project.owner)?;
+    ensure(
+        matches!(
+            store.rename(org, missing.id, "nowhere", then).await,
+            Err(ProjectError::NotFound(_))
+        ),
+        "renaming a project never kept must be refused",
     )
 }
 
