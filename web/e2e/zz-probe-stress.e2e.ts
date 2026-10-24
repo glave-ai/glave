@@ -1,6 +1,6 @@
 import { type BrowserContext, type Page, test } from '@playwright/test';
 
-import { HERE_WEBKIT, LIVE, type Site, served, signInCode } from './support';
+import { LIVE, type Site, served, signInCode } from './support';
 
 /** How many times each probe tries. */
 const TRIES = 100;
@@ -27,12 +27,14 @@ async function first(context: BrowserContext, site: Site): Promise<[Load, Page]>
     await watched;
     return ['ok', page];
   } catch {
+    // Waited for no longer: what it says once the context closes is no matter.
+    watched.catch(() => undefined);
     return [stuck(page), page];
   }
 }
 
 /** How the second tab is opened. */
-type Way = 'new page' | 'from the first' | 'first only';
+type Way = 'new page' | 'from the first';
 
 /** Opens the second tab `way`, beside `opener`, and waits for its load. */
 async function second(opener: Page, site: Site, way: Way): Promise<Load> {
@@ -43,11 +45,12 @@ async function second(opener: Page, site: Site, way: Way): Promise<Load> {
       page = await opener.context().newPage();
       await page.goto(url, { timeout: HUNG });
     } else {
-      const popup = opener.waitForEvent('popup', { timeout: HUNG });
-      await opener.evaluate((address) => {
-        window.open(address);
-      }, url);
-      page = await popup;
+      [page] = await Promise.all([
+        opener.waitForEvent('popup', { timeout: HUNG }),
+        opener.evaluate((address) => {
+          window.open(address);
+        }, url),
+      ]);
       await page.waitForLoadState('load', { timeout: HUNG });
     }
     return 'ok';
@@ -59,8 +62,6 @@ async function second(opener: Page, site: Site, way: Way): Promise<Load> {
 for (const [name, site, way] of [
   ['with COOP, a second tab as a new page', LIVE, 'new page'],
   ['with COOP, a second tab opened from the first', LIVE, 'from the first'],
-  ['without COOP, a second tab as a new page', HERE_WEBKIT, 'new page'],
-  ['with COOP, the first tab alone', LIVE, 'first only'],
 ] as const satisfies readonly (readonly [string, Site, Way])[]) {
   test(`probe stress: ${name}`, async ({ browser }) => {
     test.setTimeout(1_500_000);
@@ -70,7 +71,7 @@ for (const [name, site, way] of [
       const [loaded, opener] = await first(context, site);
       if (loaded !== 'ok') {
         counts.first[loaded] += 1;
-      } else if (way !== 'first only') {
+      } else {
         const then = await second(opener, site, way);
         if (then !== 'ok') {
           counts.second[then] += 1;
