@@ -1,5 +1,8 @@
 //! Renewals against a fake GitHub and a ledger in memory: one at a time, a refresh token spent
-//! once, and nothing renewed that is no longer kept.
+//! once, and nothing renewed that is no longer kept; and each sign-in's apart from another's.
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use glave_config::policy::GithubFile;
 use glave_event::{At, Forge, Principal, Renewal, Secret};
@@ -49,14 +52,14 @@ fn renewal_answer() -> (String, String) {
 }
 
 /// What renewing `current` through `fake` needs.
-fn job(ledger: &Ledger, fake: &FakeHttp, current: &CredentialConnected) -> Renewing {
-    Renewing {
+fn job(ledger: &Ledger, fake: &FakeHttp, current: &CredentialConnected) -> Renewing<HostRenewal> {
+    let job = HostRenewal {
         ledger: ledger.clone(),
         http: Http::new().unwrap(),
         github: github(&fake.url),
         current: current.clone(),
-        fresh: None,
-    }
+    };
+    Renewing { job, fresh: None }
 }
 
 fn block_on<T>(future: impl Future<Output = T>) -> T {
@@ -77,7 +80,7 @@ fn asks_beside_each_other_share_one_renewal_and_a_renewed_token_is_not_renewed_a
         "refresh_token={}",
         first.renewal.as_ref().unwrap().refresh.expose()
     );
-    let renewals = Renewals::default();
+    let renewals = Renewals::<CredentialConnected>::default();
     block_on(async {
         ledger.keep_credential(&first).await.unwrap();
         let id = first.credential;
@@ -113,7 +116,7 @@ fn a_renewal_github_refused_is_tried_again_only_after_a_while() {
     let fake = FakeHttp::start(vec![(200, refused.to_string())]).unwrap();
     let ledger = block_on(crate::accounts::in_memory()).unwrap();
     let first = signed_in(&fake.url);
-    let renewals = Renewals::default();
+    let renewals = Renewals::<CredentialConnected>::default();
     block_on(async {
         ledger.keep_credential(&first).await.unwrap();
         let id = first.credential;
@@ -134,7 +137,7 @@ fn a_host_removed_before_its_renewal_is_not_renewed() {
     let fake = FakeHttp::start(vec![(200, renewed)]).unwrap();
     let ledger = block_on(crate::accounts::in_memory()).unwrap();
     let first = signed_in(&fake.url);
-    let renewals = Renewals::default();
+    let renewals = Renewals::<CredentialConnected>::default();
     block_on(async {
         ledger.keep_credential(&first).await.unwrap();
         assert!(ledger.remove_credential(first.credential).await.unwrap());
@@ -148,4 +151,122 @@ fn a_host_removed_before_its_renewal_is_not_renewed() {
     let asked = fake.received();
     assert_eq!(asked.len(), 1);
     assert_eq!(asked[0].path, "/probe", "the refresh token was never spent");
+}
+
+/// A renewal of one sign-in that renews it as `fresh`, counting how often it spent its
+/// refresh token, and that can keep it when `keeps`.
+struct Counted {
+    fresh: String,
+    spent: Arc<AtomicUsize>,
+    keeps: bool,
+}
+
+impl Renew for Counted {
+    type Kept = String;
+
+    fn url(&self) -> &str {
+        &self.fresh
+    }
+
+    fn renewed(&self) -> impl Future<Output = Result<String, Ended<String>>> + Send {
+        self.spent.fetch_add(1, Ordering::SeqCst);
+        std::future::ready(Ok(self.fresh.clone()))
+    }
+
+    fn keep(&self, _fresh: &String) -> impl Future<Output = Result<bool, AccountsError>> + Send {
+        let kept = if self.keeps {
+            Ok(true)
+        } else {
+            Err(AccountsError::Event("the store is away".into()))
+        };
+        std::future::ready(kept)
+    }
+}
+
+#[test]
+fn each_sign_in_gets_only_its_own_renewal_and_an_unkept_one_is_kept_not_renewed_again() {
+    let (one, two) = (
+        super::super::new_id().unwrap(),
+        super::super::new_id().unwrap(),
+    );
+    let spent = [Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0))];
+    let job = |which: usize, keeps: bool| Counted {
+        fresh: format!("renewed {which}"),
+        spent: Arc::clone(&spent[which]),
+        keeps,
+    };
+    let renewals = Renewals::<String>::default();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .start_paused(true)
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let unkept = renewals.wait(one, |fresh| {
+            Some(Renewing {
+                job: job(0, false),
+                fresh,
+            })
+        });
+        assert_eq!(
+            unkept.await.as_deref(),
+            Some("renewed 0"),
+            "served from memory"
+        );
+        let other = renewals.wait(two, |fresh| {
+            assert!(fresh.is_none(), "another's renewal is never handed over");
+            Some(Renewing {
+                job: job(1, true),
+                fresh,
+            })
+        });
+        assert_eq!(other.await, None, "its own, kept");
+        let taken_up = std::sync::atomic::AtomicBool::new(false);
+        let again = renewals.wait(one, |fresh| {
+            assert_eq!(fresh.as_deref(), Some("renewed 0"));
+            taken_up.store(true, Ordering::SeqCst);
+            Some(Renewing {
+                job: job(0, true),
+                fresh,
+            })
+        });
+        assert_eq!(again.await, None, "kept at last");
+        assert!(
+            taken_up.load(Ordering::SeqCst),
+            "the renewal not kept is kept, not lost"
+        );
+    });
+    let spent = spent.map(|spent| spent.load(Ordering::SeqCst));
+    assert_eq!(spent, [1, 1], "each refresh token spent once");
+}
+
+#[test]
+fn a_sign_in_renewed_waits_a_while_under_its_new_id_too() {
+    let renewed = [
+        super::super::new_id().unwrap(),
+        super::super::new_id().unwrap(),
+    ];
+    let spent = Arc::new(AtomicUsize::new(0));
+    let renewals = Renewals::<String>::default();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .start_paused(true)
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        // Its first renewal kept under the second id, whose token lasts as little.
+        for signed_in in renewed {
+            let asked = renewals.wait(signed_in, |fresh| {
+                let job = Counted {
+                    fresh: "https://mcp.example.com/mcp".into(),
+                    spent: Arc::clone(&spent),
+                    keeps: true,
+                };
+                Some(Renewing { job, fresh })
+            });
+            assert_eq!(asked.await, None);
+        }
+    });
+    let spent = spent.load(Ordering::SeqCst);
+    assert_eq!(spent, 1, "renewed at most once a while, at one address");
 }

@@ -7,7 +7,7 @@ mod abilities;
 mod asked;
 mod check;
 mod device;
-mod renewing;
+pub(crate) mod renewing;
 
 use std::fmt::Write as _;
 use std::sync::{Arc, PoisonError, RwLock};
@@ -37,7 +37,7 @@ pub(crate) struct Hosts {
     flows: Flows,
     /// The hosts commands may ask about, as the ledger last held them.
     offered: RwLock<Vec<CredentialHost>>,
-    renewals: Renewals,
+    renewals: Renewals<CredentialConnected>,
 }
 
 impl Hosts {
@@ -217,14 +217,7 @@ impl GitHosts for Hosts {
     fn start_device(&self) -> BoxFuture<'_, Result<DeviceCode, ApiError>> {
         Box::pin(async move {
             let github = self.github.as_ref().ok_or_else(no_device)?;
-            let flow = random()
-                .map(|bytes| {
-                    bytes.iter().fold(String::new(), |mut flow, byte| {
-                        let _ = write!(flow, "{byte:02x}");
-                        flow
-                    })
-                })
-                .map_err(|e| ApiError::internal(&e))?;
+            let flow = new_flow().map_err(|e| ApiError::internal(&e))?;
             github.start(&self.http, &self.flows, flow).await
         })
     }
@@ -248,9 +241,17 @@ pub(crate) fn origin(url: &str) -> Option<String> {
     CredentialHost::named(&format!("{scheme}://{host}"), Forge::Other).map(|named| named.url)
 }
 
-/// A new credential's id.
-fn new_id() -> anyhow::Result<CredentialId> {
+/// A new sign-in's id: a git host's, or a connection's.
+pub(crate) fn new_id() -> anyhow::Result<CredentialId> {
     Ok(CredentialId::new(SystemClock.now(), random()?)?)
+}
+
+/// A new id for a sign-in waiting in the browser, which clients name it by: random, in hex.
+pub(crate) fn new_flow() -> anyhow::Result<String> {
+    Ok(random()?.iter().fold(String::new(), |mut flow, byte| {
+        let _ = write!(flow, "{byte:02x}");
+        flow
+    }))
 }
 
 /// `text` without the spaces around it, when it is one line of visible characters.
