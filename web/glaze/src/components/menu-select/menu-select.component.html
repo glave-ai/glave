@@ -5,7 +5,7 @@
   [attr.data-testid]="ids().trigger"
   [disabled]="disabled()"
   [cdkMenuTriggerFor]="menu"
-  [cdkMenuPosition]="positions"
+  [cdkMenuPosition]="positions()"
 >
   @if (shownIcon(); as icon) {
     <glz-icon [icon]="icon" />
