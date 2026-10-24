@@ -114,6 +114,12 @@ impl Listening {
     pub(crate) fn handshakes(&self) -> Option<TlsAcceptor> {
         self.tls.clone()
     }
+
+    /// Its address, when it listens in the clear on this computer's loopback alone.
+    pub(crate) fn loopback(&self) -> Option<SocketAddr> {
+        let at = self.listener.local_addr().ok()?;
+        (self.tls.is_none() && glave_ports::host::is_loopback(at.ip())).then_some(at)
+    }
 }
 
 /// `stream`, ready to read requests from: itself in the clear, or once its TLS handshake with

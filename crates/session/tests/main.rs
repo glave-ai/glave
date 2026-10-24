@@ -12,6 +12,7 @@ mod browsers;
 mod choices;
 mod commands;
 mod conformance;
+mod connections;
 mod credentials;
 mod durable;
 mod files;

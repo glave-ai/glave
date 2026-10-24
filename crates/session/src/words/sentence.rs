@@ -224,6 +224,14 @@ sentences! {
         "connecting accounts is set up by whoever runs this server, not from here",
     AccountsOnItsComputer = "accounts-on-its-computer"
         "accounts are connected on the computer glave runs on, by its person",
+    ConnectionsNotHere = "connections-not-here"
+        "signing in to connections is set up by whoever runs this server, not from here",
+    ConnectionsOnItsComputer = "connections-on-its-computer"
+        "connections are signed in to on the computer glave runs on, by its person",
+    SignInNeedsServer = "sign-in-needs-server"
+        "signing in to a connection needs glave running in the background, for your browser to come back to: open glave, then try again",
+    SignInNoWayBack = "sign-in-no-way-back"
+        "this glave has no address your browser can come back to after signing in: whoever runs it gives it the address people reach it at, then try again",
     BrowserNotKept = "browser-not-kept" "glave could not keep this browser's sign-in: try again",
     PasskeysOnlyTheirs = "passkeys-only-theirs"
         "only the person this glave is for changes its passkeys",

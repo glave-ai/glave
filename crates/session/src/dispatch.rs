@@ -448,6 +448,10 @@ where
             }
             Request::CredentialDeviceStart {} => self.start_device(caller).await,
             Request::CredentialDevicePoll { flow } => self.poll_device(caller, flow).await,
+            Request::ConnectionStart { server } => self.start_connection(caller, server).await,
+            Request::ConnectionPoll { flow } => self.poll_connection(caller, flow).await,
+            Request::ConnectionList {} => self.list_connections(caller).await,
+            Request::ConnectionRemove { server } => self.remove_connection(caller, server).await,
         })
     }
 }

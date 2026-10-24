@@ -3,6 +3,7 @@
 //! they are passed as they are, elsewhere as JSON-RPC 2.0.
 
 pub mod code;
+mod connections;
 mod credentials;
 mod error;
 mod files;
@@ -24,6 +25,7 @@ use glave_ports::ProjectId;
 use glave_ports::computer::{CommandId, ComputerId};
 use serde::{Deserialize, Serialize};
 
+pub use connections::{ConnectionInfo, ConnectionStatus, SignInLink};
 pub use credentials::{Ability, CredentialInfo, DeviceCode};
 pub use error::{ApiError, ErrorData};
 pub use files::{AttachedFile, FileInfo};
@@ -506,6 +508,23 @@ methods! {
     /// Waits a little for the sign-in `flow`: the host, connected, once the person approved
     /// it on GitHub; else the flow again, to ask again.
     "credential/device/poll" => CredentialDevicePoll { flow: String } -> [Credential, Waiting],
+    /// Starts signing in to a connection, a remote MCP server of the person's settings, as
+    /// MCP's authorization says: the page the person opens in the browser, which comes back to this
+    /// server. Only the person on this computer.
+    "connection/start" => ConnectionStart {
+        /// What the person's `mcp.json` calls the server, or its address.
+        server: String,
+    } -> [SignIn],
+    /// Waits a little for the sign-in `flow`: the connection, signed in to, once the person approved
+    /// glave in the browser; else the flow again, to ask again.
+    "connection/poll" => ConnectionPoll { flow: String } -> [Connection, Waiting],
+    /// The connections signed in to here.
+    "connection/list" => ConnectionList {} -> [Connections],
+    /// Removes a connection's sign-in, destroying its tokens.
+    "connection/remove" => ConnectionRemove {
+        /// What the person's `mcp.json` calls the server, or its address.
+        server: String,
+    } -> [Done],
 }
 
 #[expect(

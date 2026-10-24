@@ -81,7 +81,22 @@ export type CommandId = string;
 /** Identifies a computer, unique everywhere (UUID v7, minted by the adapter that made it). */
 export type ComputerId = string;
 
-/** Identifies one git host a person connected (`credential.connected`). */
+/** A connection's sign-in to its remote MCP server. */
+export type ConnectionInfo = {
+  /** What the person's settings call the server at that address, when they name one. */
+  readonly name?: string | null;
+  readonly status: ConnectionStatus;
+  /** The MCP server's address: `https://mcp.example.com/mcp`. */
+  readonly url: string;
+};
+
+/** Whether a sign-in still works. */
+export type ConnectionStatus = "signed_in" | "expired";
+
+/**
+ * Identifies one sign-in a person keeps, sealed under a key of its own: a git host
+ * (`credential.connected`) or a connection (`connection.connected`).
+ */
 export type CredentialId = string;
 
 /** A git host the person connected. */
@@ -502,6 +517,17 @@ export type ServerInfo = {
 /** Which threads `thread/list` shows. */
 export type Show = "archived" | "active" | "deleted";
 
+/**
+ * Signing in to a remote server in the browser: the person opens `url`, its authorization server's
+ * page, then the client waits on `flow` with `connection/poll`.
+ */
+export type SignInLink = {
+  /** Names this sign-in to `connection/poll`. */
+  readonly flow: string;
+  /** The page where the person signs in and approves glave. */
+  readonly url: string;
+};
+
 /** A way a browser signs in to the server, as `server/discover` says. */
 export type SignInWay = "link" | "passkey";
 
@@ -764,6 +790,39 @@ export type CommandStopParams = {
 };
 
 export type CommandStopResult = Readonly<Record<string, never>>;
+
+export type ConnectionListParams = Readonly<Record<string, never>>;
+
+export type ConnectionListResult = {
+  readonly connections: readonly (ConnectionInfo)[];
+};
+
+export type ConnectionPollParams = {
+  readonly flow: string;
+};
+
+export type ConnectionPollResult = {
+  readonly connection: ConnectionInfo;
+} | {
+  readonly flow: string;
+};
+
+export type ConnectionRemoveParams = {
+  /** What the person's `mcp.json` calls the server, or its address. */
+  readonly server: string;
+};
+
+export type ConnectionRemoveResult = Readonly<Record<string, never>>;
+
+export type ConnectionStartParams = {
+  /** What the person's `mcp.json` calls the server, or its address. */
+  readonly server: string;
+};
+
+/** Where the person signs in to a remote server. */
+export type ConnectionStartResult = {
+  readonly sign_in: SignInLink;
+};
 
 export type CredentialConnectParams = {
   /** The token, sent once and never answered back. */
@@ -1540,6 +1599,10 @@ export interface Methods {
   readonly "awake/set": { readonly params: AwakeSetParams; readonly result: AwakeSetResult };
   readonly "command/list": { readonly params: CommandListParams; readonly result: CommandListResult };
   readonly "command/stop": { readonly params: CommandStopParams; readonly result: CommandStopResult };
+  readonly "connection/list": { readonly params: ConnectionListParams; readonly result: ConnectionListResult };
+  readonly "connection/poll": { readonly params: ConnectionPollParams; readonly result: ConnectionPollResult };
+  readonly "connection/remove": { readonly params: ConnectionRemoveParams; readonly result: ConnectionRemoveResult };
+  readonly "connection/start": { readonly params: ConnectionStartParams; readonly result: ConnectionStartResult };
   readonly "credential/connect": { readonly params: CredentialConnectParams; readonly result: CredentialConnectResult };
   readonly "credential/device/poll": { readonly params: CredentialDevicePollParams; readonly result: CredentialDevicePollResult };
   readonly "credential/device/start": { readonly params: CredentialDeviceStartParams; readonly result: CredentialDeviceStartResult };
@@ -1650,7 +1713,7 @@ export const ErrorCode = {
   ARCHIVED: -32014,
   /** The operation was cancelled */
   CANCELLED: -32005,
-  /** The git host refused, or could not be reached */
+  /** The git host, or a connection's server or its sign-in, refused or could not be reached */
   HOST: -32025,
   /** The server failed */
   INTERNAL: -32603,
@@ -1670,7 +1733,7 @@ export const ErrorCode = {
   NO_APPROVAL: -32004,
   /** No such command is running in the background in this thread */
   NO_COMMAND: -32027,
-  /** No such git host, or sign-in, here */
+  /** No such git host, connection or sign-in here */
   NO_CREDENTIAL: -32024,
   /** No such file here: never kept in this project, or no message used it within a day */
   NO_FILE: -32030,
@@ -1694,6 +1757,8 @@ export const ErrorCode = {
   NO_QUESTION: -32006,
   /** No such schedule */
   NO_SCHEDULE: -32016,
+  /** No remote server of the person's settings goes by that name or address */
+  NO_SERVER: -32032,
   /** No valid sign-in (network transports) */
   NO_SIGN_IN: -32013,
   /** No such thread */

@@ -340,7 +340,8 @@ impl std::str::FromStr for ProviderId {
     }
 }
 
-/// Identifies one git host a person connected (`credential.connected`).
+/// Identifies one sign-in a person keeps, sealed under a key of its own: a git host
+/// (`credential.connected`) or a connection (`connection.connected`).
 #[derive(
     Debug,
     Clone,
