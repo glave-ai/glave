@@ -1,0 +1,15 @@
+// The side nav's own lines where its threads would be, padded as a row is and small: why
+// something failed, in the danger tone, and that a search found nothing, muted.
+.error,
+.empty {
+  padding: var(--glz-inset-row);
+  font-size: var(--glz-text-sm);
+}
+
+.error {
+  color: var(--glz-color-danger);
+}
+
+.empty {
+  color: var(--glz-color-text-muted);
+}

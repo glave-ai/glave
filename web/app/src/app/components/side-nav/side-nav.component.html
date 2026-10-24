@@ -34,8 +34,8 @@
   }
 } @error {}
 <!-- The threads by what each is doing load the first time they show, fetched once the page is
-     idle: most people never leave the grouping by project. If their code cannot load, the side
-     nav says so in their place. -->
+     idle: most people never leave the grouping by project. While they load, their place is
+     kept; if their code cannot load, the side nav says so in their place. -->
 @defer (when byStatus(); prefetch on idle) {
   @if (byStatus()) {
     <app-status-nav
@@ -45,8 +45,14 @@
       (navigated)="followed()"
     />
   }
+} @loading {
+  @if (byStatus()) {
+    <div class="threads"></div>
+  }
 } @error {
-  <p class="error threads" role="alert">{{ copy.unloaded }}</p>
+  @if (byStatus()) {
+    <p class="error threads" role="alert" data-testid="nav-unloaded">{{ copy.unloaded }}</p>
+  }
 }
 @if (byProject()) {
   <app-projects-nav

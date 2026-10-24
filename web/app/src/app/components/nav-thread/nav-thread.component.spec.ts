@@ -13,7 +13,6 @@ function line(id: string, title: string, more: Partial<NavThread> = {}): NavThre
     link: ['/t', id],
     title,
     running: false,
-    waiting: false,
     line: null,
     since: SINCE,
     current: false,
@@ -72,7 +71,7 @@ describe('NavThreadComponent', () => {
 
   it('says under its title that it waits for the person, bold, its time still at its end', async () => {
     const waits = { text: 'Waiting on you', needsYou: true };
-    const { root } = await render(line('t1', 'Fix the build', { waiting: true, line: waits }));
+    const { root } = await render(line('t1', 'Fix the build', { line: waits }));
     const said = find(root, 'nav-thread-line');
     expect(text(said)).toBe('Waiting on you');
     expect(said?.classList).toContain('needs-you');

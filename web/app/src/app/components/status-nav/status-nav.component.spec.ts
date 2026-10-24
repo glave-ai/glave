@@ -83,7 +83,10 @@ describe('StatusNavComponent', () => {
       'Working',
       'Idle',
     ]);
-    expect(texts(root, 'nav-needs-you-count')).toEqual(['2']);
+    // The count shows alone; screen readers hear it in words.
+    const count = find(root, 'nav-needs-you-count');
+    expect(count.querySelector('[aria-hidden="true"]')?.textContent).toBe('2');
+    expect(count.querySelector('.glz-visually-hidden')?.textContent).toBe('2 waiting');
     // Each newest first, each thread once, with its project or Chats under its title.
     expect(texts(find(root, 'nav-needs-you'), 'nav-thread-title')).toEqual([
       'Trip to Lisbon',
@@ -110,7 +113,7 @@ describe('StatusNavComponent', () => {
     const { root, fixture } = await render('lisbon');
     expect(root.querySelectorAll('nav > glz-nav-list')).toHaveLength(1);
     expect(texts(root, 'nav-thread-title')).toEqual(['Trip to Lisbon']);
-    expect(texts(root, 'nav-needs-you-count')).toEqual(['1']);
+    expect(texts(root, 'nav-needs-you-count')).toEqual(['11 waiting']);
     fixture.componentRef.setInput('query', 'zebra');
     await fixture.whenStable();
     expect(root.querySelectorAll('glz-nav-list')).toHaveLength(0);

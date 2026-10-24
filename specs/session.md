@@ -132,8 +132,6 @@ A client that only shows the conversation needs `thread/event` alone. Rebuilding
 - **What another server records.** A change another glave records on the store (a replica running a turn, an answer that goes on with a turn there, worktree cleanup) reaches a watcher only when it next reads from the view: when it falls behind, or when the client comes back with `after`. Tailing the store comes later, as for `thread/watch`.
 - **Over a connection of lines** a list is watched once, within the connection's 64 watches (a second watch of the same list is `-32602`), and `thread/list/unwatch` with the same `project` ends it; over HTTP each summary's event carries its `updated_at` as its `id`, and closing the stream ends the watch.
 
-**How a person's threads are grouped** is theirs to choose and the server's to keep: `grouping/set` (`project`, the default, or `status`) records `grouping.set` in their settings ledger (`events.md`), as their language is kept, so it follows them to every browser and every server on one store, and `grouping/get` reads it. The server keeps the choice and never groups: what each thread is doing, and so what needs the person, is the summary's `status`, and a client groups by it.
-
 ## Approvals
 
 A tool call that needs the person records `approval.requested` (`approval`, `call_id`, `tool`, `summary`, `secret`, `caution` when a caution asks, apart from the summary, and `outside_sandbox` with the model's reason when the command would run outside the sandbox: `approvals.md`, "Recording") and the turn pauses; the thread's status becomes `waiting`. Once the approval is pending, the turn sends `turn/live` with `approval_pending` (`approval`, the call's id), and a client that asks the person asks then, never on the request alone: an action the judge lets run is recorded as `approval.requested` and `approval.decided` at once and is never pending (`approvals.md`, "The judge"). Any client may answer with `approval/decide`, now or much later, from any transport. The answer is recorded as `approval.decided` (`approval`, `decision`), and the turn continues from the log in whichever server receives the answer ("Turns that outlive a server").
@@ -248,6 +246,14 @@ Standard codes, `-32700` to `-32603`, for malformed messages; a method the serve
 - `-32020`, the model provider failed: `data` has `failure`, its kind (`Failure` in `glave-ports`), so a client can say what to fix; the CLI turns it into a fix for the person's own endpoint.
 - `-32011`: the thread is working on another server, which holds its lease ("Turns that outlive a server"); try again once it is done there.
 
+## How threads are grouped
+
+How a person's clients group their threads is theirs to choose and the server's to keep, as their language is.
+
+- **Kept.** `grouping/set` (`project`, the default, or `status`) records `grouping.set` in their settings ledger (`events.md`), so the choice follows them to every browser and every server on one store, and `grouping/get` reads it. It is theirs alone, in every deployment: it lives in their personal project.
+- **Never grouped by the server.** What each thread is doing, and so what needs the person, is the summary's `status`; a client groups by it and writes no sentence of its own about the work.
+- **Read, not pushed.** A client reads the choice as it opens; another of the person's clients already open sees a new one at its next read.
+
 ## Languages
 
 The server writes its own sentences (why a request was refused, the folder-gone notice, why a folder is no project's) in the caller's language, as the web app writes its own words in the reader's.
@@ -316,7 +322,7 @@ Version 1: in-process (`glave-session`, used by the CLI), over stdio (`glave ser
 - **Commands in the background** (issue #321), not yet: credentials for a command in the background (its git asks no one); telling the model at a turn's start which of its commands ended meanwhile (it learns on its next read); `glave threads archive` stopping them, since a command in another glave process is out of its reach (the idle hour stops them).
 - **Projects** (issue #64), not yet: promoting a one-off chat into a project (`storage.md`), and the organization's policy in the check.
 - **Projects' folders** (#294), not yet: changing a project's one folder while it is still there (project settings, #267); moving a thread's worktree with a folder that moved; an archive of removed projects; checking a project out again on another computer, or after one is reset, from its source; a project's own skills and commands, which the folder the server started in still gives every thread; and telling a client, rather than the log and the terminal, which of a project's settings were set aside.
-- **Grouping** (#665): `grouping/get` and `grouping/set`, which the web app's side nav reads and keeps.
+- **Grouping** (#665): the web app's side nav reads and keeps the choice. Not yet: telling the person's other open clients of a new choice, and the facts the side nav would need to say a thread is blocked or has news the person has not read.
 - **Languages** (#374): the server's own sentences in the caller's language, with the pseudo-locales alone besides English. Not yet: a real language, the web app reading the person's choice for its own words, and the words other crates give the server to pass on.
 - Still to come from "Over the network" (issue #64): SAML and glave session tokens, idempotency keys in the log (#410), and WebSocket.
 

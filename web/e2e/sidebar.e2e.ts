@@ -141,9 +141,17 @@ async function listed(page: Page, testId: string): Promise<readonly string[]> {
   ].map((text) => text.trim());
 }
 
-test('by project, as it starts, a thread that needs the person says so in its place, listed once', async ({
-  page,
-}) => {
+for (const colorScheme of ['light', 'dark'] as const) {
+  test(`by project, as it starts, a thread that needs the person says so in its place, listed once (${colorScheme})`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme });
+    await byProject(page);
+  });
+}
+
+/** The side nav as it starts, grouped by project, checked. */
+async function byProject(page: Page): Promise<void> {
   await fakeApi(page);
   await page.goto(`/${SIGNED_IN}`);
   await expect(grouping(page, 'Project')).toBeChecked();
@@ -170,7 +178,7 @@ test('by project, as it starts, a thread that needs the person says so in its pl
   await expect(byTestId(page, 'nav-thread-line')).toHaveCount(1);
   await expect(byTestId(page, 'nav-needs-you')).toHaveCount(0);
   await expectAccessible(page);
-});
+}
 
 for (const colorScheme of ['light', 'dark'] as const) {
   test(`by status: Needs you with how many, Working, then Idle, each with its place (${colorScheme})`, async ({
@@ -186,7 +194,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
       sections.map(async (testId) => (await byTestId(page, testId).boundingBox())?.y ?? 0),
     );
     expect([...tops].sort((a, b) => a - b)).toEqual(tops);
-    await expect(byTestId(page, 'nav-needs-you-count')).toHaveText('1');
+    // The count shows alone; screen readers hear it in words.
+    await expect(byTestId(page, 'nav-needs-you-count')).toContainText('1 waiting');
     expect(await listed(page, 'nav-needs-you')).toEqual(['Review the release notes', 'glave']);
     expect(await listed(page, 'nav-working')).toEqual(['Nightly dependency audit', 'glave']);
     // Newest first, the thread another started listed on its own; each thread once.

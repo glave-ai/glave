@@ -1,6 +1,7 @@
-//! How a person's threads are grouped (`specs/session.md`, "Watching a list"): by project until
-//! they choose, their choice kept in their settings ledger, so every server on one store, and
-//! so every browser of theirs, reads the same, and no one else's is changed by it.
+//! How a person's threads are grouped (`specs/session.md`, "How threads are grouped"): by
+//! project until they choose, their choice kept in their settings ledger, so every server on
+//! one store, and so every browser of theirs, reads the same, and no one else's is changed by
+//! it.
 
 use glave_event::Grouping;
 use glave_ports::Caller;

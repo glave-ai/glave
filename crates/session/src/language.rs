@@ -4,7 +4,7 @@
 //! `language/set` read and keep their choice; a transport writes the server's own sentences in
 //! an answer in their language, and reads their choice only when an answer holds one.
 
-use glave_event::{Body, LanguageSet, Payload as _};
+use glave_event::{Body, LanguageSet};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
 use crate::protocol::{ApiError, Reply, code};
@@ -80,7 +80,7 @@ where
         &self,
         caller: &Caller,
     ) -> Result<Option<(String, Language)>, ApiError> {
-        let tag = match self.setting(caller, LanguageSet::TYPE).await? {
+        let tag = match self.setting::<LanguageSet>(caller).await? {
             Some(Body::LanguageSet(set)) => set.language,
             _ => None,
         };

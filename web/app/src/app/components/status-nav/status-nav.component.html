@@ -1,10 +1,11 @@
 <nav class="lists" [attr.aria-label]="copy.threads">
   @for (section of sections(); track section.testId) {
     <glz-nav-list [testId]="section.testId" [heading]="section.heading">
-      @if (section.count; as count) {
-        <glz-badge glzNavListEnd tone="accent" data-testid="nav-needs-you-count">{{
-          count
-        }}</glz-badge>
+      @if (section.count; as waiting) {
+        <glz-badge glzNavListEnd tone="accent" data-testid="nav-needs-you-count"
+          ><span aria-hidden="true">{{ waiting.count }}</span
+          ><span class="glz-visually-hidden">{{ waiting.words }}</span></glz-badge
+        >
       }
       @for (thread of section.threads; track thread.id) {
         <app-nav-thread [thread]="thread" (navigated)="followed()" />

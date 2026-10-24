@@ -102,7 +102,7 @@ describe('nav', () => {
       link: ['/t', 't1'],
       current: true,
       running: false,
-      waiting: false,
+      line: null,
     });
     expect(titles(sections.chats.list)).toEqual(['New chat', 'Café ideas']);
     expect(sections.projects).toMatchObject({ expanded: true, mark: null });
@@ -138,11 +138,11 @@ describe('nav', () => {
       'Write the notes',
     ]);
     expect(
-      sections.projects.list[1]?.threads.map(({ running, waiting }) => [running, waiting]),
+      sections.projects.list[1]?.threads.map(({ running, line: under }) => [running, under?.text]),
     ).toEqual([
-      [true, false],
-      [false, false],
-      [false, true],
+      [true, undefined],
+      [false, undefined],
+      [false, 'Waiting on you'],
     ]);
   });
 
@@ -290,7 +290,7 @@ describe('nav', () => {
     expect(sections.waiting[1]).toMatchObject({
       link: ['/t', 't2'],
       current: true,
-      waiting: true,
+      running: false,
       line: { text: 'glave', needsYou: false },
     });
     expect(statusSections([], VIEW)).toEqual({ waiting: [], running: [], idle: [] });

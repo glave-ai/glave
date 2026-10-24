@@ -9,7 +9,7 @@ import {
 } from '@angular/core';
 import { GlzBadgeComponent, GlzNavListComponent } from '@glave/glaze';
 
-import { statusSections } from '../../lib/nav';
+import { statusSections, threadsWords } from '../../lib/nav';
 import { ProjectsService } from '../../services/projects.service';
 import { NavThreadComponent } from '../nav-thread/nav-thread.component';
 
@@ -34,10 +34,7 @@ export class StatusNavComponent {
   /** Emitted when the person follows a link, so a drawer can close. */
   readonly navigated = output();
 
-  protected readonly copy = {
-    threads: $localize`:@@statusNav.threads:Threads`,
-    noMatch: $localize`:@@statusNav.noMatch:No threads match`,
-  } as const;
+  protected readonly copy = threadsWords();
   private readonly service = inject(ProjectsService);
   /** The reader's locale, which the threads' times and the count are written in. */
   private readonly locale = inject(LOCALE_ID);
@@ -49,12 +46,13 @@ export class StatusNavComponent {
       now: this.service.readAt(),
       reader: { locale: this.locale },
     });
+    // How many wait, shown alone and read to screen readers in words.
     const count = new Intl.NumberFormat(this.locale).format(waiting.length);
     return [
       {
         testId: 'nav-needs-you',
         heading: $localize`:@@statusNav.needsYou:Needs you`,
-        count,
+        count: { count, words: $localize`:@@statusNav.waiting:${count}:COUNT: waiting` },
         threads: waiting,
       },
       {

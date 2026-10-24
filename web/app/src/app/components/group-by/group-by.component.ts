@@ -10,11 +10,6 @@ import { type GlzOption, GlzSegmentedComponent } from '@glave/glaze';
 
 import { GroupingService } from '../../services/grouping.service';
 
-/** Whether `value` is a way the person's threads are grouped. */
-function isGrouping(value: string | null): value is Grouping {
-  return value === 'project' || value === 'status';
-}
-
 /**
  * How the side nav groups the person's threads, as a switch above them: by what each is doing,
  * or by project. A choice shows at once and is kept as the person's, for every browser of
@@ -35,15 +30,16 @@ export class GroupByComponent {
 
   protected readonly copy = { label: $localize`:@@groupBy.label:Group by` } as const;
   /** The ways the threads can be grouped, in the order the switch shows them. */
-  protected readonly groupings: readonly GlzOption[] = [
+  protected readonly groupings: readonly (GlzOption & { readonly value: Grouping })[] = [
     { value: 'status', label: $localize`:@@groupBy.status:Status` },
     { value: 'project', label: $localize`:@@groupBy.project:Project` },
   ];
   protected readonly grouping = this.service.grouping;
   protected readonly problem = this.service.problem;
 
-  protected async group(grouping: string | null): Promise<void> {
-    if (!isGrouping(grouping)) {
+  protected async group(value: string | null): Promise<void> {
+    const grouping = this.groupings.find((option) => option.value === value)?.value;
+    if (grouping === undefined) {
       return;
     }
     await this.service.choose(grouping);

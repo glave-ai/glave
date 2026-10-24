@@ -1,7 +1,8 @@
 //! The caller's settings ledger (`specs/events.md`, "The settings ledger"), in their personal
 //! project: the latest of one kind of their choices, and keeping a new one after the ledger's
-//! last event, whatever that chose. The language they read glave in and how their threads are
-//! grouped are kept here, beside whether their computer stays awake.
+//! last event, whatever that chose. The session API keeps the language they read glave in and
+//! how their threads are grouped through it; whether their computer stays awake is the host's
+//! to keep.
 
 use glave_event::{At, Body, EventId, Header, Payload, Seq, decode, encode};
 use glave_ports::stream::{Reserved, SETTINGS, append_retrying};
@@ -16,19 +17,18 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// The caller's latest choice recorded as `kind`; none when they never chose, or when this
-    /// glave cannot read the one they made.
-    pub(crate) async fn setting(
+    /// The caller's latest choice of the kind `T` records; none when they never chose, or when
+    /// this glave cannot read the one they made.
+    pub(crate) async fn setting<T: Payload>(
         &self,
         caller: &Caller,
-        kind: &str,
     ) -> Result<Option<Body>, ApiError> {
         let (_, scope) = self.personal_project(caller).await?;
         let latest = self
             .inner
             .harness
             .log()
-            .latest_of(&scope, Reserved::Settings.id(), &[kind])
+            .latest_of(&scope, Reserved::Settings.id(), &[T::TYPE])
             .await?;
         Ok(latest
             .and_then(|raw| decode(raw).ok())

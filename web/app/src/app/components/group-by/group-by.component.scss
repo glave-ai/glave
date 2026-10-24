@@ -1,5 +1,7 @@
-// The switch, its label lined up with the headings of the threads under it, and why a choice
-// was not kept under it.
+@use '../nav';
+
+// The switch, its label lined up with the text of the threads under it, and why a choice was
+// not kept under it.
 :host {
   display: flex;
   flex-direction: column;
@@ -8,10 +10,4 @@
 
 glz-segmented {
   padding-inline-start: var(--glz-space-3);
-}
-
-.error {
-  padding: var(--glz-inset-row);
-  color: var(--glz-color-danger);
-  font-size: var(--glz-text-sm);
 }

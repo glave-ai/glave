@@ -72,7 +72,8 @@ export class SideNavComponent {
   protected readonly tasksLive = this.tasks.live;
   private readonly locale = inject(LOCALE_ID);
   private readonly projects = inject(ProjectsService);
-  private readonly grouping = inject(GroupingService).grouping;
+  private readonly grouped = inject(GroupingService);
+  private readonly grouping = this.grouped.grouping;
   /** With only Chats there is nothing to group by project: no switch, and no projects named. */
   protected readonly groupable = computed(() => hasProjects(this.projects.projects()));
   protected readonly byStatus = computed(() => this.groupable() && this.grouping() === 'status');
@@ -91,6 +92,8 @@ export class SideNavComponent {
   constructor() {
     const unwatch = this.tasks.watch();
     inject(DestroyRef).onDestroy(unwatch);
+    // Read as the side nav opens, beside the lists' first read, so it groups them as it shows.
+    void this.grouped.read();
   }
 
   protected search(event: Event): void {

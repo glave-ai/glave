@@ -27,10 +27,21 @@ export function needsYou(): { readonly icon: GlzIconData; readonly label: string
 }
 
 /**
+ * The side nav's words for its threads, however they are grouped: what names them for screen
+ * readers, and what a search that finds none says.
+ */
+export function threadsWords(): { readonly threads: string; readonly noMatch: string } {
+  return {
+    threads: $localize`:@@nav.threads:Threads`,
+    noMatch: $localize`:@@nav.noMatch:No threads match`,
+  };
+}
+
+/**
  * What a thread's line in the side nav says under its title: that it needs the person, grouped
  * by project; or where it is, grouped by what it is doing.
  */
-export interface NavLine {
+interface NavLine {
   readonly text: string;
   /** Whether it says the thread needs the person, which reads stronger than where it is. */
   readonly needsYou: boolean;
@@ -41,9 +52,8 @@ export interface NavThread {
   readonly id: string;
   readonly link: readonly string[];
   readonly title: string;
-  /** What the server says it is doing: running, or waiting for the person; else neither. */
+  /** Whether the server says it runs. */
   readonly running: boolean;
-  readonly waiting: boolean;
   /** The line under its title, if it has one. */
   readonly line: NavLine | null;
   /** When it was last active, which its line shows while it does not run. */
@@ -86,14 +96,14 @@ export interface NavSections {
 }
 
 /** The side nav's threads by what the server says each is doing: its `status`. */
-export type StatusSections = Readonly<Record<Status, readonly NavThread[]>>;
+type StatusSections = Readonly<Record<Status, readonly NavThread[]>>;
 
 /**
  * What the side nav's threads show: the search, the thread shown now, and now, in milliseconds
  * since the epoch, for its reader (their own language and time zone unless set): their times
  * count from it.
  */
-export interface ThreadsView {
+interface ThreadsView {
   readonly query: string;
   readonly current: string | null;
   readonly now: number;
@@ -286,9 +296,10 @@ function threadTree(
             times,
             children.map((child) => child.item),
           );
+          const waiting = thread.status === 'waiting';
           return {
-            item: { ...item, line: item.waiting ? waits : null },
-            waiting: item.waiting || children.some(({ waiting }) => waiting),
+            item: { ...item, line: waiting ? waits : null },
+            waiting: waiting || children.some((child) => child.waiting),
             latest: [thread.updated_at, ...children.map(({ latest }) => latest)].reduce(later),
           };
         }),
@@ -309,7 +320,6 @@ function navThread(
     link: ['/t', thread.id],
     title: threadTitle(thread),
     running: thread.status === 'running',
-    waiting: thread.status === 'waiting',
     line: null,
     since: times.since(thread.updated_at),
     current: thread.id === view.current,

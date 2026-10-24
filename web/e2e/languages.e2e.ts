@@ -26,6 +26,7 @@ const NOT_THE_APPS = new Set([
   'OpenRouter',
   '5 minutes ago',
   '6 minutes ago',
+  '9 minutes ago',
 ]);
 
 /**

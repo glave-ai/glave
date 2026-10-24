@@ -2,14 +2,17 @@ import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
+import { GroupingService } from '../../services/grouping.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { GroupByComponent } from './group-by.component';
 
+/** The switch, once the person's choice has been read, as the side nav reads it. */
 async function render(fake: FakeSession): Promise<{
   readonly root: HTMLElement;
   readonly fixture: ReturnType<typeof TestBed.createComponent<GroupByComponent>>;
 }> {
   TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+  await TestBed.inject(GroupingService).read();
   const fixture = TestBed.createComponent(GroupByComponent);
   await fixture.whenStable();
   await new Promise((resolve) => setTimeout(resolve));

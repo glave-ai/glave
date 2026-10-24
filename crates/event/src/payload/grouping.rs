@@ -1,6 +1,6 @@
 //! The settings ledger's record of how the person's clients group their threads
-//! (`specs/session.md`, "Watching a list"). `grouping.set`: the person's choice; the latest
-//! replaces every one before it, and with none their threads are grouped by project.
+//! (`specs/session.md`, "How threads are grouped"). `grouping.set`: the person's choice; the
+//! latest replaces every one before it, and with none their threads are grouped by project.
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;

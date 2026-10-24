@@ -20,7 +20,14 @@ import Ellipsis from 'lucide/dist/esm/icons/ellipsis.mjs';
 import FolderPlus from 'lucide/dist/esm/icons/folder-plus.mjs';
 import Plus from 'lucide/dist/esm/icons/plus.mjs';
 
-import { CHATS_LIST, type NavProject, PROJECTS_LIST, navSections } from '../../lib/nav';
+import {
+  CHATS_LIST,
+  type NavProject,
+  PROJECTS_LIST,
+  hasProjects,
+  navSections,
+  threadsWords,
+} from '../../lib/nav';
 import { unloaded } from '../../lib/text';
 import { NavListsService } from '../../services/nav-lists.service';
 import { ProjectsService } from '../../services/projects.service';
@@ -73,13 +80,12 @@ export class ProjectsNavComponent {
   readonly navigated = output();
 
   protected readonly copy = {
-    threads: $localize`:@@projectsNav.threads:Threads`,
+    ...threadsWords(),
     chats: $localize`:@@projectsNav.chats:Chats`,
     projects: $localize`:@@projectsNav.projects:Projects`,
     newProject: $localize`:@@projectsNav.newProject:New project`,
     newChat: $localize`:@@projectsNav.newChat:New chat`,
     startProject: $localize`:@@projectsNav.startProject:Start a project`,
-    noMatch: $localize`:@@projectsNav.noMatch:No threads match`,
     unloaded: unloaded(),
   } as const;
   protected readonly icons = { add: Plus, more: Ellipsis, start: FolderPlus };
@@ -122,7 +128,7 @@ export class ProjectsNavComponent {
       this.service.loaded() &&
       this.service.error() === null &&
       this.query().trim() === '' &&
-      !this.service.projects().some(({ project }) => project.kind === 'project'),
+      !hasProjects(this.service.projects()),
   );
   protected readonly noMatch = computed(
     () => this.query().trim() !== '' && !this.hasChats() && !this.hasProjects(),

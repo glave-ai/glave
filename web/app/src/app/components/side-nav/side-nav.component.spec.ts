@@ -1,8 +1,9 @@
-import { TestBed } from '@angular/core/testing';
+import { DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import type { Grouping, Project, TaskInfo } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
+import { GroupingService } from '../../services/grouping.service';
 import { ProjectsService } from '../../services/projects.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { record, task, thread } from '../../testing/fixtures';
@@ -130,6 +131,25 @@ describe('SideNavComponent', () => {
     const { root } = await render([], { grouping: 'status' });
     expect(root.querySelector('app-status-nav')).not.toBeNull();
     expect(root.querySelector('app-projects-nav')).toBeNull();
+  });
+
+  it('says so when the threads by status cannot load, and only while they would show', async () => {
+    TestBed.configureTestingModule({ deferBlockBehavior: DeferBlockBehavior.Manual });
+    const { root, fixture } = await render([], { grouping: 'status' });
+    // The switch is the first block, the threads by status the second.
+    const status = (await fixture.getDeferBlocks())[1];
+    await status?.render(DeferBlockState.Error);
+    const unloaded = (): Element | null => root.querySelector('[data-testid="nav-unloaded"]');
+    expect(unloaded()?.getAttribute('role')).toBe('alert');
+    expect(unloaded()?.textContent.trim()).toBe(
+      'This part of glave could not load. Reload the page to try again.',
+    );
+    expect(root.querySelector('app-projects-nav')).toBeNull();
+    await expectAccessible(root);
+    await TestBed.inject(GroupingService).choose('project');
+    await settle(fixture);
+    expect(unloaded()).toBeNull();
+    expect(root.querySelector('app-projects-nav')).not.toBeNull();
   });
 
   it('with only Chats, shows no switch and lists the chats alone, whatever was chosen', async () => {
