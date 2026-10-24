@@ -1,8 +1,8 @@
 //! Projects over the session API: a server serves many projects, each its owner's alone, a thread
 //! is for whoever started it, a caller who does not own a thread's project can neither read nor
-//! answer it, a one-off chat lands in the caller's personal project with a scratch folder of its own, as does every
-//! request that names no project whatever folder the server started in, and a local turn sends
-//! the model exactly what it always did.
+//! answer it, a one-off chat lands in the caller's personal project with a scratch folder of its
+//! own, as does every request that names no project whatever folder the server started in, and a
+//! local turn sends the model exactly what it always did.
 
 use glave_event::{CallId, Opened, ThreadId};
 use glave_ports::{Caller, ProjectId, ProjectKind};

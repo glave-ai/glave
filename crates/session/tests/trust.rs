@@ -329,7 +329,8 @@ fn a_caller_signed_in_elsewhere_is_never_asked_and_cannot_answer() {
     block_on!(async {
         let repository = Arc::new(Repository::default());
         let (server, seen) = serving(&dir, &repository, 1, Answering::Clients).await;
-        // The person glave works for, signed in from another computer.
+        // The person glave works for, signed in from another computer, as a host that knows them
+        // by that sign-in calls for them.
         let elsewhere = Caller {
             person: server.person(),
             auth: Some(Auth {
@@ -363,8 +364,9 @@ fn a_caller_signed_in_elsewhere_is_never_asked_and_cannot_answer() {
             assert_eq!(refused.code, code::NOT_ALLOWED, "{refused}");
         }
         assert!(!repository.is_trusted());
-        // Trusted by the person here, it is theirs alone: another person on this computer, in a
-        // project of her own whose folder brings the same, gets none of it.
+        // Trusted by the person here, it is theirs alone: another person, as a host embedding the
+        // server may call for her, in a project of her own whose folder brings the same, gets
+        // none of it.
         let answered = server
             .request(answering(started.id, &ask.ask, TrustChoice::Trust))
             .await;

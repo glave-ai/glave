@@ -40,8 +40,8 @@ where
     B: BlobStore + 'static,
 {
     /// Answers `request` from `caller`, the person the transport verified. A request on a
-    /// thread, or on the server's memory, is refused with `-32012` unless the caller works in
-    /// that project; tasks and schedules are those of the projects they work in.
+    /// thread, or on the server's memory, is refused with `-32012` unless the caller owns that
+    /// project; tasks and schedules are those of the projects they own.
     pub async fn call(&self, caller: &Caller, request: Request) -> Answered {
         let span = crate::trace::span(&request);
         tracing::Instrument::instrument(self.answer(caller, request), span).await

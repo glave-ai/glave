@@ -215,7 +215,10 @@ describe('ProjectsNavComponent', () => {
   it('says why a rename failed', async () => {
     const fake = new FakeSession().answer(
       'project/rename',
-      new ApiError({ code: ErrorCode.NOT_ALLOWED, message: 'only its owner renames it' }),
+      new ApiError({
+        code: ErrorCode.INVALID_PARAMS,
+        message: 'there is a project called "glave" already; choose another name',
+      }),
     );
     const rendered = await render('', PROJECTS, fake);
     await pick(rendered, 'nav-project-more', 'action', 'Rename');
@@ -226,7 +229,7 @@ describe('ProjectsNavComponent', () => {
     find<HTMLButtonElement>(rendered.root, 'rename-save').click();
     await settle(rendered);
     expect(find(rendered.root, 'nav-error').textContent.trim()).toBe(
-      'Could not rename the project: only its owner renames it',
+      'Could not rename the project: there is a project called "glave" already; choose another name',
     );
   });
 

@@ -1336,7 +1336,7 @@ export type ThreadListWatchParams = {
    * read from the threads view, oldest first. Only what changes from now when absent.
    */
   readonly after?: At | null;
-  /** The project whose threads to follow: every project the caller works in when absent. */
+  /** The project whose threads to follow: every project the caller owns when absent. */
   readonly project?: ProjectId | null;
 };
 

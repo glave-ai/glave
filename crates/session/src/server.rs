@@ -74,7 +74,7 @@ pub struct Wiring<P, L, B> {
     pub tasks: TaskLimits,
     /// What threads remember from one to the next (`specs/memory.md`); none when memory is off.
     pub memory: Option<Arc<dyn Memory>>,
-    /// The projects of the server's organization: who owns each and who works in it.
+    /// The projects of the server's organization, and who owns each.
     pub projects: Arc<dyn Projects>,
     /// The models threads may choose besides the settings' own, the default (`model/list`).
     /// The provider must serve each by its id: the gateway's choices.

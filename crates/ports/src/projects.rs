@@ -1,7 +1,7 @@
 //! The projects port: each project as a record (a project, or a person's own), who owns it, and
-//! which folders lead to it (`specs/storage.md`, "Projects"). A folder is
-//! an index into projects, never a project's identity: a moved or re-cloned project finds its project
-//! again by its `origin` remote.
+//! which folders lead to it (`specs/storage.md`, "Projects"). A folder is an index into projects,
+//! never a project's identity: a moved or re-cloned project finds its project again by its
+//! `origin` remote.
 
 use std::fmt;
 

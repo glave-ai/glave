@@ -94,7 +94,9 @@ fn a_project_s_choices_reach_the_person_s_threads_in_it_never_another_s() {
         turn(&server, ours, "hi").await.unwrap();
         assert_eq!(sent_to(&seen, 0), "project-model");
 
-        // Someone else on this computer, in a project of her own whose folder chooses the same.
+        // Another person, as a host embedding the server may call for her, in a project of her
+        // own whose folder chooses the same: glave's own transports act as the person here, so
+        // this is the guard, kept.
         let elsewhere = Caller {
             person: Some(person("https://id.example.com", "grace").unwrap()),
             ..Caller::default()

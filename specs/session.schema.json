@@ -4253,7 +4253,7 @@
                 "type": "null"
               }
             ],
-            "description": "The project whose threads to follow: every project the caller works in when absent."
+            "description": "The project whose threads to follow: every project the caller owns when absent."
           }
         },
         "type": "object"

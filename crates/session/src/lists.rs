@@ -7,7 +7,8 @@
 //! a minute earlier: a thread sent twice is harmless, one missed is not. Changes that come
 //! together are summarised once each, and a subagent's change of status is its parent's too,
 //! whose summary says when a child waits. A project is read only once the caller is found to
-//! own it, checked as `thread/list` checks it, and the answer is kept for the watch's life.
+//! own it, checked as `thread/list` checks it, and the answer kept, since a project's owner never
+//! changes.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;

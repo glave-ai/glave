@@ -221,7 +221,8 @@ fn nobody_hears_of_threads_in_another_person_s_projects() {
             let dir = folder(&name);
             let server = server(&dir, Vec::new(), Answering::Clients).await;
             let mut over = Over::new(kind, &server, &name).await;
-            // The watcher is the person here; bea, on this computer too, has a project of her own.
+            // The watcher is the person here; bea, whom a host embedding the server calls for, has
+            // a project of her own.
             let bea = Caller {
                 person: Some(person("https://id.example.com", "bea").unwrap()),
                 auth: None,

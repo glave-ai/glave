@@ -232,7 +232,7 @@ methods! {
     /// watch. Streams as `thread/watch` does; a connection of lines watches each list once,
     /// within its 64 watches.
     "thread/list/watch" => ThreadListWatch {
-        /// The project whose threads to follow: every project the caller works in when absent.
+        /// The project whose threads to follow: every project the caller owns when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         project: Option<ProjectId>,
         /// The latest `updated_at` the client has: the threads updated since are sent first,
@@ -341,7 +341,7 @@ methods! {
     "goal/stop" => GoalStop { thread: ThreadId } -> [Done],
     /// The thread's latest goal and how far it has come.
     "goal/get" => GoalGet { thread: ThreadId } -> [Goal],
-    /// Tasks running and recently finished in every project the caller works in, running first,
+    /// Tasks running and recently finished in every project the caller owns, running first,
     /// then newest first.
     "tasks/list" => TasksList {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -366,7 +366,7 @@ methods! {
         /// Tokens each run may use. Required: no schedule runs unbounded.
         budget: u64,
     } -> [Schedule],
-    /// The schedules of every project the caller works in.
+    /// The schedules of every project the caller owns.
     "schedule/list" => ScheduleList {} -> [Schedules],
     "schedule/delete" => ScheduleDelete { schedule: ScheduleId } -> [Done],
     /// The projects the caller owns.
