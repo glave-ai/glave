@@ -67,7 +67,8 @@ pub trait Connections: Send + Sync {
     /// Finishes the sign-in the browser came back from: what to tell the person there.
     fn finish(&self, returned: Returned) -> BoxFuture<'_, String>;
 
-    /// The connections signed in to.
+    /// The connections signed in to, then the person's remote servers that ask them to sign
+    /// in and are not signed in to.
     fn list(&self) -> BoxFuture<'_, Result<Vec<ConnectionInfo>, ApiError>>;
 
     /// Removes the sign-in to `server`, by its name in the person's settings or its address,

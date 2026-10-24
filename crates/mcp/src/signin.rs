@@ -147,6 +147,15 @@ impl SignIn {
     }
 }
 
+/// Whether the MCP server at `url` asks people to sign in, as MCP's authorization says: it
+/// publishes where, which [`SignIn::start`] finds first.
+pub async fn asks_sign_in(url: &str) -> Result<bool, SignInError> {
+    let failed = |error: AuthError| SignInError::from_auth(url, &error);
+    let manager = AuthorizationManager::new(url).await.map_err(failed)?;
+    let resolution = manager.resolve_metadata().await.map_err(failed)?;
+    Ok(resolution.source.is_discovered())
+}
+
 /// Renews the sign-in to the MCP server at `url`, made through `client`, with `refresh`. The
 /// server's metadata is found again first, so the token is renewed for the resource it was
 /// granted for; the refresh token goes only to the authorization server that signed the person

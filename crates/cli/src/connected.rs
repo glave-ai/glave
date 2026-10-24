@@ -2,7 +2,8 @@
 //! in the browser, as MCP's authorization says (`flows.rs`). Each sign-in is kept sealed in
 //! the accounts ledger under a key of its own, one for each server's address; its token is
 //! renewed before it expires and handed to the person's own servers at that address with each
-//! request (`tokens.rs`), never to a file, a command or the model.
+//! request (`tokens.rs`), never to a file, a command or the model. Their remote servers that
+//! ask them to sign in, and are not signed in to, are listed beside the sign-ins.
 
 mod flows;
 mod tokens;
@@ -10,7 +11,7 @@ mod tokens;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use glave_event::{ConnectionConnected, PrincipalId};
 use glave_mcp::address;
@@ -18,11 +19,16 @@ use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::{BoxFuture, Clock as _, SystemClock};
 use glave_session::protocol::{ApiError, ConnectionInfo, ConnectionStatus, SignInLink, code};
 use glave_session::{Connections, Returned};
+use tokio::task::JoinSet;
 
 use crate::accounts::Ledger;
 use crate::credentials::renewing::Renewals;
 use crate::data::Data;
 use flows::Flows;
+
+/// The longest one of the person's remote servers is given to say whether it asks them to
+/// sign in, as `connection/list` lists it.
+const ASKING: Duration = Duration::from_secs(5);
 
 /// The person's connections.
 pub(crate) struct Connected {
@@ -126,6 +132,33 @@ fn described(connection: &ConnectionConnected, names: &BTreeMap<String, String>)
     }
 }
 
+/// Of the person's remote servers, by address with what their settings call each, those that
+/// ask them to sign in, as not signed in to, in the order of their addresses: each asked at
+/// once, for [`ASKING`] at most. One that asks no one is left out, and so is one that cannot
+/// say in time.
+async fn signed_out(servers: impl Iterator<Item = (String, String)>) -> Vec<ConnectionInfo> {
+    let mut asking = JoinSet::new();
+    for (url, name) in servers {
+        asking.spawn(async move {
+            let asks = tokio::time::timeout(ASKING, glave_mcp::asks_sign_in(&url)).await;
+            if let Ok(Err(error)) = &asks {
+                tracing::debug!("could not tell whether {url} asks for a sign-in: {error}");
+            }
+            matches!(asks, Ok(Ok(true))).then_some(ConnectionInfo {
+                url,
+                name: Some(name),
+                status: ConnectionStatus::SignedOut,
+            })
+        });
+    }
+    let mut listed = Vec::new();
+    while let Some(asked) = asking.join_next().await {
+        listed.extend(asked.ok().flatten());
+    }
+    listed.sort_by(|one, other| one.url.cmp(&other.url));
+    listed
+}
+
 impl Connections for Connected {
     fn start(
         &self,
@@ -147,7 +180,12 @@ impl Connections for Connected {
         Box::pin(async move {
             let names = self.names().await;
             let kept = self.kept().await?;
-            Ok(kept.iter().map(|kept| described(kept, &names)).collect())
+            let mut listed: Vec<_> = kept.iter().map(|kept| described(kept, &names)).collect();
+            let unkept = names
+                .into_iter()
+                .filter(|(url, _)| kept.iter().all(|kept| kept.url != *url));
+            listed.extend(signed_out(unkept).await);
+            Ok(listed)
         })
     }
 

@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use glave_event::Arguments;
-use glave_mcp::{Limits, McpError, McpServer, SignIn, SignInError, renew};
+use glave_mcp::{Limits, McpError, McpServer, SignIn, SignInError, asks_sign_in, renew};
 use glave_ports::auth::{Auth, AuthError, Header, Outgoing, RequestSigner};
 use glave_ports::testing::{FAKE_CLIENT, FakeAuthServer, FakeHttp, Grant, fake_secret};
 use glave_ports::{BoxFuture, NeverCancelled, ToolSource as _, block_on, conformance};
@@ -309,6 +309,7 @@ fn an_authorization_server_that_takes_no_registration_is_asked_nothing_more() {
 fn a_server_that_asks_no_one_to_sign_in_offers_no_sign_in() {
     let served = Served::with(&[]);
     block_on!(async {
+        assert_eq!(asks_sign_in(&served.url).await, Ok(false));
         let offered = SignIn::start(&served.url, "docs", REDIRECT).await;
         assert_eq!(
             offered.err(),
@@ -317,4 +318,21 @@ fn a_server_that_asks_no_one_to_sign_in_offers_no_sign_in() {
             })
         );
     });
+}
+
+#[test]
+fn a_server_that_says_where_its_sign_in_is_asks_for_one_before_anything_is_granted() {
+    let tokens = Tokens::new();
+    let auth = FakeAuthServer::start(tokens.grants()).unwrap();
+    let served = tokens.served(&auth);
+    block_on!(async {
+        assert_eq!(asks_sign_in(&served.url).await, Ok(true));
+    });
+    let asked = auth.received();
+    assert!(
+        asked
+            .iter()
+            .all(|(_, path, _)| path != "/register" && path != "/token"),
+        "only where its sign-in is: {asked:?}"
+    );
 }
