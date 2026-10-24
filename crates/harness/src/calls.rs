@@ -195,11 +195,6 @@ where
         if let Some(refused) = self.let_out_refused(thread, lifted, lifted, &summary, live) {
             return Ok(refused);
         }
-        // A command that stays in the thread's sandbox, which Read-only lets run.
-        let confined = index == BUILTINS
-            && name == Tool::Bash.name()
-            && lifted.is_none()
-            && self.workspace_for(thread).sandbox().is_some();
         let request = ApprovalRequest {
             thread: thread.id,
             call_id: call.call_id.clone(),
@@ -210,11 +205,7 @@ where
             caution: sandbox::with_outside(caution, lifted),
             outside_sandbox: outside,
         };
-        let needs = Needs {
-            request,
-            firm,
-            confined,
-        };
+        let needs = Needs { request, firm };
         let turn = &mut step.summary;
         if let Some(refused) = self.approve(thread, &needs, turn, cancel, live).await? {
             return Ok(refused);
@@ -374,9 +365,14 @@ where
                 Judged::Cancelled => return Ok(Some(ToolOutput::text(true, NOT_RUN))),
             }
         }
+        // A command that stays in the thread's sandbox, which Read-only lets run: `bash` is
+        // always the built-in, the first source that names a tool keeping it.
+        let confined = request.tool == Tool::Bash.name()
+            && request.outside_sandbox.is_none()
+            && self.workspace_for(thread).sandbox().is_some();
         // A caution asks even when the tool was allowed for the rest of the thread.
         let asks = cautioned
-            || (asks_for(self.approval_for(thread), request.effect, needs.confined)
+            || (asks_for(self.approval_for(thread), request.effect, confined)
                 && !thread.allowed.contains(&request.tool));
         if !asks {
             return Ok(None);
@@ -634,8 +630,6 @@ fn settle(
 struct Needs {
     request: ApprovalRequest,
     firm: bool,
-    /// It is a command that runs in the thread's sandbox.
-    confined: bool,
 }
 
 /// What the judge made of a soft caution.
