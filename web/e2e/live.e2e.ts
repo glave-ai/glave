@@ -6,6 +6,7 @@ import {
   LIVE_MODEL_URL,
   byTestId,
   expectAccessible,
+  newTab,
   served,
   signInCode,
   watchForProblems,
@@ -32,8 +33,8 @@ test('a second tab sees a turn and its approval as they happen, and answers it',
   browser,
 }) => {
   const context = await browser.newContext();
-  const [first, second] = [await context.newPage(), await context.newPage()];
-  const problems = [watchForProblems(first), watchForProblems(second)];
+  const first = await context.newPage();
+  const problems = [watchForProblems(first)];
   const live = served(LIVE);
 
   await first.goto(`${live}/#code=${await signInCode(LIVE)}`);
@@ -45,6 +46,8 @@ test('a second tab sees a turn and its approval as they happen, and answers it',
 
   // The second tab opens the thread the first started, and follows it from then on.
   const thread = new URL(first.url()).pathname;
+  const second = await newTab(first);
+  problems.push(watchForProblems(second));
   await second.goto(`${live}${thread}#code=${await signInCode(LIVE)}`);
   await expect(byTestId(second, 'thread-message').last()).toContainText(HELLO);
 
@@ -84,17 +87,19 @@ test('the side nav shows a turn another tab starts running, then needing the per
   browserName,
 }) => {
   const context = await browser.newContext();
-  const [watching, working] = [await context.newPage(), await context.newPage()];
-  const problems = [watchForProblems(watching), watchForProblems(working)];
+  const watching = await context.newPage();
+  const problems = [watchForProblems(watching)];
   const called = callsOf(watching);
   const live = served(LIVE);
-  // A prompt of its own in each browser, which run side by side on the one glave.
-  const held = `${browserName}-${String(Date.now())}`;
+  // A prompt of its own for each run: both browsers, and runs repeated, share the one glave.
+  const held = `${browserName}-${crypto.randomUUID()}`;
   const prompt = `${holding(held)}, then touch a file`;
 
   await watching.goto(`${live}/#code=${await signInCode(LIVE)}`);
   await expect.poll(() => called.includes('thread/list/watch')).toBe(true);
   const read = called.length;
+  const working = await newTab(watching);
+  problems.push(watchForProblems(working));
   await working.goto(`${live}/#code=${await signInCode(LIVE)}`);
   const composer = byTestId(working, 'home-composer-input');
   await composer.fill(prompt);
