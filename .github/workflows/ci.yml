@@ -271,6 +271,16 @@ jobs:
           docker run --rm --init --ipc=host -e CI -e GLAVE_BIN
           -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE"
           npm run e2e:killed
+      # A failed run keeps what Playwright kept (a trace of each failed test), so a flake is
+      # found from what happened rather than rerun until it passes.
+      - name: Keep the traces of failed tests
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-${{ matrix.browser }}-${{ matrix.shard }}
+          path: web/test-results
+          if-no-files-found: ignore
+          retention-days: 14
 
   web:
     if: always()
