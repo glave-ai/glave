@@ -86,9 +86,11 @@
   font-size: var(--glz-text-xs);
 }
 
+// At the pane's foot, even while the threads by what each is doing are still loading.
 .foot {
   display: flex;
   flex: none;
   flex-direction: column;
   gap: var(--glz-space-1);
+  margin-block-start: auto;
 }
