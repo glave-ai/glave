@@ -9,7 +9,7 @@ use serde_json::json;
 use crate::support::*;
 
 /// The test server, built beside `glave` by `cargo xtask ci`.
-fn test_server() -> PathBuf {
+pub(crate) fn test_server() -> PathBuf {
     let path = Path::new(env!("CARGO_BIN_EXE_glave")).with_file_name("glave-mcp-test-server");
     assert!(
         path.exists(),

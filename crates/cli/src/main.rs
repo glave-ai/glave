@@ -19,6 +19,7 @@ mod cloud;
 mod commands;
 mod computer;
 mod config;
+mod connected;
 mod connections;
 mod credentials;
 
