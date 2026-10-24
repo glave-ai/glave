@@ -7,14 +7,14 @@
 
 use std::process::{Command, Stdio};
 
-use glave_ports::testing::{FakeAuthServer, Grant, Running, fake_secret};
+use glave_ports::testing::{FakeAuthServer, FakeGitHost, Grant, Running, fake_secret};
 
 use glave_provider_openai::fake::{FakeServer, Reply};
 use glave_session::client::Remote;
 use glave_session::protocol::Request;
 use serde_json::{Value, json};
 
-use crate::http::serve_http_with;
+use crate::http::{only_the_server_answers, serve_http_with};
 use crate::served::holds;
 use crate::support::*;
 
@@ -308,4 +308,82 @@ fn a_sign_in_the_person_declines_keeps_nothing() {
     assert_eq!(again, shown, "the page loaded again says the same");
     let never = world.api.shown(&back.replace("state=", "state=x"));
     assert!(never.starts_with("glave is no longer waiting"), "{never}");
+}
+
+#[test]
+fn glave_connect_signs_in_to_a_server_and_connections_lists_and_removes_it() {
+    let world = World::new("conn-cli", &grants(), Vec::new());
+    let (place, model) = (&world.place, &world.model);
+    only_the_server_answers(place);
+    let mut connecting = start(place, model, &["connect", "docs"]);
+    let mut out = std::io::BufReader::new(connecting.stdout.take().unwrap());
+    let mut line = String::new();
+    std::io::BufRead::read_line(&mut out, &mut line).unwrap();
+    let page = line
+        .trim()
+        .strip_prefix("Open ")
+        .unwrap_or_else(|| panic!("{line}"));
+    let page = page.strip_suffix(" to sign in").unwrap();
+    let back = world.api.followed(page);
+    assert!(world.api.shown(&back).starts_with("Signed in to docs."));
+    let mut rest = String::new();
+    std::io::Read::read_to_string(&mut out, &mut rest).unwrap();
+    assert!(connecting.wait().unwrap().success(), "{rest}");
+    let connected = format!("Connected docs ({}), signed in", world.address);
+    assert!(rest.contains(&connected), "{rest}");
+
+    let listed = text(&glave(place, model, &["connections"], ""));
+    assert!(
+        listed.contains(&format!("docs ({}), signed in", world.address)),
+        "{listed}"
+    );
+    let removed = glave(place, model, &["connections", "remove", "docs"], "");
+    let said = text(&removed);
+    assert!(
+        removed.status.success() && said.contains("Removed docs"),
+        "{said}"
+    );
+    let listed = text(&glave(place, model, &["connections"], ""));
+    assert!(
+        !listed.contains("docs (") && listed.contains("No connection is signed in to"),
+        "{listed}"
+    );
+
+    let host = glave(place, model, &["connect", "https://git.example.com"], "");
+    let said = text(&host);
+    assert!(
+        !host.status.success() && said.contains("no token given"),
+        "a git host's: {said}"
+    );
+}
+
+#[test]
+fn with_no_server_running_a_git_host_still_takes_its_token_and_a_server_says_what_it_needs() {
+    let place = place("conn-alone");
+    let token = fake_secret("gta_");
+    let host = FakeGitHost::start("ana", &token).unwrap();
+    std::fs::create_dir_all(&place.home).unwrap();
+    let servers = json!({"mcpServers": {"docs": {"url": "https://mcp.example.com/mcp"}}});
+    std::fs::write(place.home.join("mcp.json"), servers.to_string()).unwrap();
+    let model = FakeServer::start(Vec::new()).unwrap();
+    // No one is at the terminal and no server runs: each answers in its own process.
+    let piped = glave(
+        &place,
+        &model,
+        &["connect", &host.url],
+        &format!("{token}\n"),
+    );
+    let said = text(&piped);
+    assert!(
+        piped.status.success() && said.contains("Connected"),
+        "{said}"
+    );
+    let asked = glave(&place, &model, &["connect", "docs"], "");
+    let said = text(&asked);
+    assert!(!asked.status.success(), "{said}");
+    assert!(
+        said.contains("needs glave running in the background"),
+        "{said}"
+    );
+    assert!(!said.contains(&token), "{said}");
 }

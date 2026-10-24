@@ -1,9 +1,11 @@
-//! `glave connect` and `glave connections`: the person's git hosts from the terminal, through
-//! the session API of the person's server (`reach.rs`, `specs/session.md`, "Git hosts"), as
-//! the web app's settings reach them. A token is read from standard input, hidden on a
-//! terminal, never from an argument, so it lands in neither the shell's history nor the list of
-//! processes (`token.rs`).
+//! `glave connect` and `glave connections`: the person's connections and git hosts from the
+//! terminal, through the session API of the person's server (`reach.rs`, `specs/session.md`,
+//! "Connections" and "Git hosts"), as the web app's settings reach them. A connection is
+//! signed in to in the browser; a git host's token is read from standard input, hidden on a
+//! terminal, never from an argument, so it lands in neither the shell's history nor the list
+//! of processes (`token.rs`).
 
+mod servers;
 mod token;
 
 use std::fmt::Write as _;
@@ -17,11 +19,16 @@ use uuid::Uuid;
 
 use crate::reach::{self, Reached};
 use crate::tasks::run_with;
+use servers::{remove as remove_server, server_or_host};
 
 pub(crate) const CONNECT_USAGE: &str = "\
-glave connect: connect a git host, so git and the host's own tool sign in as you
+glave connect: sign in to a connection, so glave uses it as you; or connect a git host, so git
+and the host's own tool sign in as you
 
 Usage:
+  glave connect <name>          sign in to one of your MCP servers in the browser, by its name
+                                or its address (one called github by its address): glave
+                                shows the page to open, and waits while you approve glave there
   glave connect github          sign in to GitHub in the browser: glave shows a code and the
                                 page to enter it on, and waits while you approve glave there.
                                 Where that is not set up, connect GitHub with a token instead
@@ -32,15 +39,19 @@ Usage:
                                 host and keeps it sealed; --username is the name git sends
                                 with it, for a host that needs one
 
-Connecting the same host again replaces it. List or remove them with glave connections.";
+Connecting the same server or host again replaces it. List or remove them with
+glave connections.";
 
 pub(crate) const CONNECTIONS_USAGE: &str = "\
-glave connections: the git hosts you connected
+glave connections: your connections and git hosts
 
 Usage:
-  glave connections               list them: the host, whom it signs in as, the end of its
-                                  token, and what glave can do with it
-  glave connections remove <id>   remove one, destroying its token";
+  glave connections                list them: each connection, and whether you are still
+                                   signed in; each host, whom it signs in as, the end of its
+                                   token, and what glave can do with it
+  glave connections remove <id>    remove a host, destroying its token
+  glave connections remove <name>  remove a connection's sign-in, by its name or its
+                                   address, destroying its tokens";
 
 /// GitHub's own address.
 const GITHUB: &str = "https://github.com";
@@ -53,9 +64,11 @@ pub(crate) fn connect_main(words: &[String]) -> ExitCode {
         let (url, username) = match words.as_slice() {
             ["github"] => return reach::with(sign_in).await,
             words if words.iter().any(token) => bail!("{}", token::NOT_AN_ARGUMENT),
-            [url] if !url.starts_with('-') => (*url, None),
+            [named] if !named.starts_with('-') => {
+                return reach::with(async |server| server_or_host(server, named).await).await;
+            }
             [url, "--username", name] => (*url, Some(*name)),
-            _ => bail!("give a host's address, or github\n\n{CONNECT_USAGE}"),
+            _ => bail!("give one of your servers, a host's address, or github\n\n{CONNECT_USAGE}"),
         };
         let (url, token) = asked_token(url).await?;
         reach::with(async |server| connect(server, &url, token, username).await).await
@@ -68,10 +81,12 @@ pub(crate) fn connections_main(words: &[String]) -> ExitCode {
         let words: Vec<&str> = words.iter().map(String::as_str).collect();
         match words.as_slice() {
             [] => reach::with(list).await,
-            ["remove", id] => {
-                let credential = credential_id(id)?;
-                reach::with(async |server| remove(server, credential, id).await).await
-            }
+            ["remove", id] => match credential_id(id) {
+                Ok(credential) => {
+                    reach::with(async |server| remove(server, credential, id).await).await
+                }
+                Err(_) => reach::with(async |server| remove_server(server, id).await).await,
+            },
             _ => bail!("unexpected words\n\n{CONNECTIONS_USAGE}"),
         }
     })
@@ -163,6 +178,7 @@ async fn said_connected(server: &mut Reached, credential: &CredentialInfo) -> an
 }
 
 async fn list(server: &mut Reached) -> anyhow::Result<()> {
+    servers::list(server).await?;
     let Reply::Credentials {
         credentials,
         install,
@@ -191,8 +207,8 @@ async fn list(server: &mut Reached) -> anyhow::Result<()> {
 }
 
 fn credential_id(id: &str) -> anyhow::Result<CredentialId> {
-    let uuid = Uuid::parse_str(id).with_context(|| format!("{id:?} is not a connection's id"))?;
-    CredentialId::try_from(uuid).with_context(|| format!("{id:?} is not a connection's id"))
+    let uuid = Uuid::parse_str(id).with_context(|| format!("{id:?} is not a git host's id"))?;
+    CredentialId::try_from(uuid).with_context(|| format!("{id:?} is not a git host's id"))
 }
 
 async fn remove(server: &mut Reached, credential: CredentialId, id: &str) -> anyhow::Result<()> {
@@ -203,7 +219,7 @@ async fn remove(server: &mut Reached, credential: CredentialId, id: &str) -> any
     Ok(())
 }
 
-/// A connection as a line: the host, its forge, whom it signs in as and the end of its token.
+/// A git host as a line: the host, its forge, whom it signs in as and the end of its token.
 fn shown(credential: &CredentialInfo) -> String {
     let host = credential.url.trim_start_matches("https://");
     let mut line = match credential.forge {
@@ -220,7 +236,7 @@ fn shown(credential: &CredentialInfo) -> String {
     line
 }
 
-/// What glave can do with a connection, in plain words; nothing claimed the host did not say.
+/// What glave can do with a git host, in plain words; nothing claimed the host did not say.
 fn can(credential: &CredentialInfo) -> String {
     let Some(can) = &credential.can else {
         return "What it can do depends on the access you gave its token.".to_owned();
