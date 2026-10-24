@@ -33,6 +33,22 @@ pub fn serialize_exposed<S: Serializer>(secret: &Secret, serializer: S) -> Resul
     serializer.serialize_str(&secret.0)
 }
 
+/// [`serialize_exposed`] for a field that may hold none, skipped when it does
+/// (`skip_serializing_if = "Option::is_none"`).
+#[expect(
+    clippy::ref_option,
+    reason = "serde's serialize_with hands the field over by reference"
+)]
+pub(crate) fn serialize_exposed_some<S: Serializer>(
+    secret: &Option<Secret>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match secret {
+        Some(secret) => serializer.serialize_some(&secret.0),
+        None => serializer.serialize_none(),
+    }
+}
+
 impl<'de> Deserialize<'de> for Secret {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         String::deserialize(deserializer).map(Self)

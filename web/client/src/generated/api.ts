@@ -81,7 +81,22 @@ export type CommandId = string;
 /** Identifies a computer, unique everywhere (UUID v7, minted by the adapter that made it). */
 export type ComputerId = string;
 
-/** Identifies one git host a person connected (`credential.connected`). */
+/** A connection's sign-in to its remote MCP server. */
+export type ConnectionInfo = {
+  /** What the person's settings call the server at that address, when they name one. */
+  readonly name?: string | null;
+  readonly status: ConnectionStatus;
+  /** The MCP server's address: `https://mcp.example.com/mcp`. */
+  readonly url: string;
+};
+
+/** Whether a sign-in still works. */
+export type ConnectionStatus = "signed_in" | "expired";
+
+/**
+ * Identifies one sign-in a person keeps, sealed under a key of its own: a git host
+ * (`credential.connected`) or a connection (`connection.connected`).
+ */
 export type CredentialId = string;
 
 /** A git host the person connected. */
@@ -184,6 +199,12 @@ export type GoneFolder = {
   readonly message: string;
   readonly project: ProjectId;
 };
+
+/**
+ * How a client groups the person's threads: each under its project, or each under what it is
+ * doing (waiting for the person, running, idle).
+ */
+export type Grouping = "project" | "status";
 
 /** A client's name for one attempt at a turn: 1 to 255 bytes of text. */
 export type IdempotencyKey = string;
@@ -316,10 +337,8 @@ export type Project = {
   readonly created_at: At;
   readonly id: ProjectId;
   readonly kind: ProjectKind;
-  /** Who else works in it. */
-  readonly members?: readonly (Principal)[];
   readonly name: string;
-  /** Whose it is: a person, or later a team or an agent. */
+  /** Whose it is: a person, or later a team or an agent. Only they work in it. */
   readonly owner: Principal;
   readonly updated_at: At;
 };
@@ -330,7 +349,7 @@ export type ProjectFolder = {
   readonly source: FolderSource;
 };
 
-/** Identifies a project: the boundary for memory, history, files, members and policy. */
+/** Identifies a project: the boundary for memory, history, files and policy. */
 export type ProjectId = string;
 
 /** What a project is. */
@@ -473,6 +492,11 @@ export type ServerInfo = {
    */
   readonly approvals: readonly (ApprovalMode)[];
   /**
+   * Where a browser on this computer makes and signs in with passkeys, when the server
+   * makes them here rather than at a public origin: `http://localhost:<port>`.
+   */
+  readonly here?: string | null;
+  /**
    * The server's id, where it signs browsers in: the same across restarts, and the one a
    * browser's session must name before the browser presents it.
    */
@@ -482,13 +506,27 @@ export type ServerInfo = {
   readonly origin?: string | null;
   /** The protocol versions spoken. */
   readonly protocols: readonly (string)[];
-  /** How a browser signs in to it; none where no browser does, as over stdio. */
+  /**
+   * How a browser signs in to it; none where no browser does, as over stdio. A passkey: at a
+   * public origin always, a setup link making the first; on this computer once one is made.
+   */
   readonly signin?: readonly (SignInWay)[];
   readonly version: string;
 };
 
 /** Which threads `thread/list` shows. */
 export type Show = "archived" | "active" | "deleted";
+
+/**
+ * Signing in to a remote server in the browser: the person opens `url`, its authorization server's
+ * page, then the client waits on `flow` with `connection/poll`.
+ */
+export type SignInLink = {
+  /** Names this sign-in to `connection/poll`. */
+  readonly flow: string;
+  /** The page where the person signs in and approves glave. */
+  readonly url: string;
+};
 
 /** A way a browser signs in to the server, as `server/discover` says. */
 export type SignInWay = "link" | "passkey";
@@ -753,6 +791,39 @@ export type CommandStopParams = {
 
 export type CommandStopResult = Readonly<Record<string, never>>;
 
+export type ConnectionListParams = Readonly<Record<string, never>>;
+
+export type ConnectionListResult = {
+  readonly connections: readonly (ConnectionInfo)[];
+};
+
+export type ConnectionPollParams = {
+  readonly flow: string;
+};
+
+export type ConnectionPollResult = {
+  readonly connection: ConnectionInfo;
+} | {
+  readonly flow: string;
+};
+
+export type ConnectionRemoveParams = {
+  /** What the person's `mcp.json` calls the server, or its address. */
+  readonly server: string;
+};
+
+export type ConnectionRemoveResult = Readonly<Record<string, never>>;
+
+export type ConnectionStartParams = {
+  /** What the person's `mcp.json` calls the server, or its address. */
+  readonly server: string;
+};
+
+/** Where the person signs in to a remote server. */
+export type ConnectionStartResult = {
+  readonly sign_in: SignInLink;
+};
+
 export type CredentialConnectParams = {
   /** The token, sent once and never answered back. */
   readonly token: Secret;
@@ -876,6 +947,22 @@ export type GoalStopParams = {
 
 export type GoalStopResult = Readonly<Record<string, never>>;
 
+export type GroupingGetParams = Readonly<Record<string, never>>;
+
+/** How the caller's clients group their threads. */
+export type GroupingGetResult = {
+  readonly grouping: Grouping;
+};
+
+export type GroupingSetParams = {
+  readonly grouping: Grouping;
+};
+
+/** How the caller's clients group their threads. */
+export type GroupingSetResult = {
+  readonly grouping: Grouping;
+};
+
 export type LanguageGetParams = Readonly<Record<string, never>>;
 
 /** The language the caller chose, as a BCP 47 tag; `null` while their client's counts. */
@@ -899,7 +986,10 @@ export type MemoryEditParams = {
   readonly text: string;
 };
 
-/** Memories listed, or the ones a change touched. */
+/**
+ * Memories listed, or the ones a change touched. A memory's `source` names the chat it
+ * was saved in only when that chat was started for the caller and is still there.
+ */
 export type MemoryEditResult = {
   readonly memories: readonly (Remembered)[];
 };
@@ -912,7 +1002,10 @@ export type MemoryForgetParams = {
   readonly scope?: MemoryScope | null;
 };
 
-/** Memories listed, or the ones a change touched. */
+/**
+ * Memories listed, or the ones a change touched. A memory's `source` names the chat it
+ * was saved in only when that chat was started for the caller and is still there.
+ */
 export type MemoryForgetResult = {
   readonly memories: readonly (Remembered)[];
 };
@@ -923,7 +1016,10 @@ export type MemoryListParams = {
   readonly scope?: MemoryScope | null;
 };
 
-/** Memories listed, or the ones a change touched. */
+/**
+ * Memories listed, or the ones a change touched. A memory's `source` names the chat it
+ * was saved in only when that chat was started for the caller and is still there.
+ */
 export type MemoryListResult = {
   readonly memories: readonly (Remembered)[];
 };
@@ -935,7 +1031,10 @@ export type MemoryMoveParams = {
   readonly scope: MemoryScope;
 };
 
-/** Memories listed, or the ones a change touched. */
+/**
+ * Memories listed, or the ones a change touched. A memory's `source` names the chat it
+ * was saved in only when that chat was started for the caller and is still there.
+ */
 export type MemoryMoveResult = {
   readonly memories: readonly (Remembered)[];
 };
@@ -946,7 +1045,10 @@ export type MemoryRestoreParams = {
   readonly project?: ProjectId | null;
 };
 
-/** Memories listed, or the ones a change touched. */
+/**
+ * Memories listed, or the ones a change touched. A memory's `source` names the chat it
+ * was saved in only when that chat was started for the caller and is still there.
+ */
 export type MemoryRestoreResult = {
   readonly memories: readonly (Remembered)[];
 };
@@ -958,7 +1060,10 @@ export type MemorySaveParams = {
   readonly text: string;
 };
 
-/** Memories listed, or the ones a change touched. */
+/**
+ * Memories listed, or the ones a change touched. A memory's `source` names the chat it
+ * was saved in only when that chat was started for the caller and is still there.
+ */
 export type MemorySaveResult = {
   readonly memories: readonly (Remembered)[];
 };
@@ -1068,7 +1173,6 @@ export type PasskeyRemoveResult = Readonly<Record<string, never>>;
 
 export type ProjectCreateParams = {
   readonly folder?: NewFolder | null;
-  readonly members?: readonly (Principal)[];
   readonly name: string;
 };
 
@@ -1339,7 +1443,7 @@ export type ThreadListWatchParams = {
    * read from the threads view, oldest first. Only what changes from now when absent.
    */
   readonly after?: At | null;
-  /** The project whose threads to follow: every project the caller works in when absent. */
+  /** The project whose threads to follow: every project the caller owns when absent. */
   readonly project?: ProjectId | null;
 };
 
@@ -1495,6 +1599,10 @@ export interface Methods {
   readonly "awake/set": { readonly params: AwakeSetParams; readonly result: AwakeSetResult };
   readonly "command/list": { readonly params: CommandListParams; readonly result: CommandListResult };
   readonly "command/stop": { readonly params: CommandStopParams; readonly result: CommandStopResult };
+  readonly "connection/list": { readonly params: ConnectionListParams; readonly result: ConnectionListResult };
+  readonly "connection/poll": { readonly params: ConnectionPollParams; readonly result: ConnectionPollResult };
+  readonly "connection/remove": { readonly params: ConnectionRemoveParams; readonly result: ConnectionRemoveResult };
+  readonly "connection/start": { readonly params: ConnectionStartParams; readonly result: ConnectionStartResult };
   readonly "credential/connect": { readonly params: CredentialConnectParams; readonly result: CredentialConnectResult };
   readonly "credential/device/poll": { readonly params: CredentialDevicePollParams; readonly result: CredentialDevicePollResult };
   readonly "credential/device/start": { readonly params: CredentialDeviceStartParams; readonly result: CredentialDeviceStartResult };
@@ -1505,6 +1613,8 @@ export interface Methods {
   readonly "goal/get": { readonly params: GoalGetParams; readonly result: GoalGetResult };
   readonly "goal/start": { readonly params: GoalStartParams; readonly result: GoalStartResult };
   readonly "goal/stop": { readonly params: GoalStopParams; readonly result: GoalStopResult };
+  readonly "grouping/get": { readonly params: GroupingGetParams; readonly result: GroupingGetResult };
+  readonly "grouping/set": { readonly params: GroupingSetParams; readonly result: GroupingSetResult };
   readonly "language/get": { readonly params: LanguageGetParams; readonly result: LanguageGetResult };
   readonly "language/set": { readonly params: LanguageSetParams; readonly result: LanguageSetResult };
   readonly "memory/edit": { readonly params: MemoryEditParams; readonly result: MemoryEditResult };
@@ -1603,7 +1713,7 @@ export const ErrorCode = {
   ARCHIVED: -32014,
   /** The operation was cancelled */
   CANCELLED: -32005,
-  /** The git host refused, or could not be reached */
+  /** The git host, or a connection's server or its sign-in, refused or could not be reached */
   HOST: -32025,
   /** The server failed */
   INTERNAL: -32603,
@@ -1623,7 +1733,7 @@ export const ErrorCode = {
   NO_APPROVAL: -32004,
   /** No such command is running in the background in this thread */
   NO_COMMAND: -32027,
-  /** No such git host, or sign-in, here */
+  /** No such git host, connection or sign-in here */
   NO_CREDENTIAL: -32024,
   /** No such file here: never kept in this project, or no message used it within a day */
   NO_FILE: -32030,
@@ -1647,6 +1757,8 @@ export const ErrorCode = {
   NO_QUESTION: -32006,
   /** No such schedule */
   NO_SCHEDULE: -32016,
+  /** No remote server of the person's settings goes by that name or address */
+  NO_SERVER: -32032,
   /** No valid sign-in (network transports) */
   NO_SIGN_IN: -32013,
   /** No such thread */

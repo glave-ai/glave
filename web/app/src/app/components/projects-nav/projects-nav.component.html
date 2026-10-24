@@ -1,5 +1,4 @@
 <nav class="lists" [attr.aria-label]="copy.threads">
-  <app-needs-you [threads]="needsYou()" (navigated)="followed()" />
   @if (offerProject()) {
     <button
       glzNavItem

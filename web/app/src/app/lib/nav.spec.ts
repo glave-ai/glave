@@ -10,8 +10,10 @@ import {
   PROJECTS_LIST,
   needsYou,
   type ProjectWithThreads,
+  hasProjects,
   matchesQuery,
   navSections,
+  statusSections,
 } from './nav';
 
 /** A time on the fixtures' day, at 10:`minute`. */
@@ -100,7 +102,7 @@ describe('nav', () => {
       link: ['/t', 't1'],
       current: true,
       running: false,
-      waiting: false,
+      line: null,
     });
     expect(titles(sections.chats.list)).toEqual(['New chat', 'Café ideas']);
     expect(sections.projects).toMatchObject({ expanded: true, mark: null });
@@ -136,11 +138,11 @@ describe('nav', () => {
       'Write the notes',
     ]);
     expect(
-      sections.projects.list[1]?.threads.map(({ running, waiting }) => [running, waiting]),
+      sections.projects.list[1]?.threads.map(({ running, line: under }) => [running, under?.text]),
     ).toEqual([
-      [true, false],
-      [false, false],
-      [false, true],
+      [true, undefined],
+      [false, undefined],
+      [false, 'Waiting on you'],
     ]);
   });
 
@@ -243,40 +245,72 @@ describe('nav', () => {
     expect(found('Oct 9')).toEqual([]);
   });
 
-  it('pins every thread that needs the person, newest first, with its place', () => {
-    const projects: readonly ProjectWithThreads[] = [
+  it('says under the title of each thread that waits, and of no other, that it waits', () => {
+    const threads = [
+      line('t1', 'Plan', 5),
+      line('t2', 'Fix the build', 7, { status: 'waiting' }),
+      line('t3', 'Read the logs', 6, { parent: 't1', status: 'waiting' }),
+      line('t4', 'Audit', 4, { status: 'running' }),
+    ];
+    const { projects } = navSections([{ project: made('p1', 'glave', 0), threads }], VIEW);
+    const [fix, plan, audit] = projects.list[0]?.threads ?? [];
+    const waits = { text: 'Waiting on you', needsYou: true };
+    expect([fix?.line, plan?.line, plan?.children[0]?.line, audit?.line]).toEqual([
+      waits,
+      null,
+      waits,
+      null,
+    ]);
+  });
+
+  it('groups the threads by what each is doing, each once, newest first, with its place', () => {
+    const lists: readonly ProjectWithThreads[] = [
       {
-        project: record('p1', 'glave'),
+        project: made('p1', 'glave', 0),
         threads: [
-          line('t1', 'Plan', 5, { project: 'p1' }),
-          line('t2', 'Fix the build', 7, { project: 'p1', status: 'waiting' }),
+          line('t1', 'Plan', 5, { status: 'running' }),
+          line('t2', 'Fix the build', 7, { status: 'waiting' }),
+          line('t3', 'Read the logs', 9, { parent: 't1', status: 'waiting' }),
+          line('t4', 'Audit', 4),
         ],
       },
       {
         project: record('me', 'Personal', 'personal'),
-        threads: [line('t3', 'Café ideas', 1, { project: 'me', status: 'waiting' })],
+        threads: [line('t5', 'Café ideas', 8), line('t6', 'Trip', 1, { status: 'running' })],
       },
     ];
-    expect(navSections(projects, { ...VIEW, current: 't3' }).needsYou).toEqual([
-      { id: 't2', link: ['/t', 't2'], title: 'Fix the build', place: 'glave', current: false },
-      { id: 't3', link: ['/t', 't3'], title: 'Café ideas', place: 'Chats', current: true },
-    ]);
-    // Each stays in its place in its own list too.
-    expect(titles(navSections(projects, VIEW).chats.list)).toEqual(['Café ideas']);
-    // A search keeps those it finds.
-    expect(navSections(projects, { ...VIEW, query: 'cafe' }).needsYou.map(({ id }) => id)).toEqual([
-      't3',
-    ]);
-    expect(navSections([], VIEW).needsYou).toEqual([]);
+    const sections = statusSections(lists, { ...VIEW, current: 't2' });
+    const shown = (threads: readonly NavThread[]): readonly string[] =>
+      threads.map(({ title, line: under }) => `${title} · ${under?.text ?? ''}`);
+    // A thread another started is listed on its own, where what it does puts it.
+    expect(shown(sections.waiting)).toEqual(['Read the logs · glave', 'Fix the build · glave']);
+    expect(shown(sections.running)).toEqual(['Plan · glave', 'Trip · Chats']);
+    expect(shown(sections.idle)).toEqual(['Café ideas · Chats', 'Audit · glave']);
+    expect(sections.running[0]?.children).toEqual([]);
+    expect(sections.waiting[1]).toMatchObject({
+      link: ['/t', 't2'],
+      current: true,
+      running: false,
+      line: { text: 'glave', needsYou: false },
+    });
+    expect(statusSections([], VIEW)).toEqual({ waiting: [], running: [], idle: [] });
   });
 
-  it('names no place in Needs you when the person has only Chats', () => {
-    const chats: readonly ProjectWithThreads[] = [
+  it('keeps only the threads a search finds, grouped by what each is doing', () => {
+    const lists: readonly ProjectWithThreads[] = [
       {
-        project: record('me', 'Personal', 'personal'),
-        threads: [line('t3', 'Café ideas', 1, { project: 'me', status: 'waiting' })],
+        project: made('p1', 'glave', 0),
+        threads: [line('t1', 'Fix the build', 7, { status: 'waiting' }), line('t2', 'Café', 3)],
       },
     ];
-    expect(navSections(chats, VIEW).needsYou.map(({ place }) => place)).toEqual([null]);
+    const found = statusSections(lists, { ...VIEW, query: 'cafe' });
+    expect(found.waiting).toEqual([]);
+    expect(found.idle.map(({ id }) => id)).toEqual(['t2']);
+  });
+
+  it('knows whether the person has a project beside their Chats', () => {
+    expect(hasProjects(PROJECTS)).toBe(true);
+    expect(hasProjects(PROJECTS.filter(({ project }) => project.kind === 'personal'))).toBe(false);
+    expect(hasProjects([])).toBe(false);
   });
 });

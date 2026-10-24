@@ -35,6 +35,15 @@ export const ACCOUNTS: Site = {
   address: 'GLAVE_E2E_ACCOUNTS_URL',
   home: 'GLAVE_E2E_ACCOUNTS_HOME',
 };
+/**
+ * Glaves reached on this computer alone, for passkeys made here, one for each engine, since
+ * each makes the first (passkeys.e2e.ts).
+ */
+export const HERE: Site = { address: 'GLAVE_E2E_HERE_URL', home: 'GLAVE_E2E_HERE_HOME' };
+export const HERE_WEBKIT: Site = {
+  address: 'GLAVE_E2E_HERE_WEBKIT_URL',
+  home: 'GLAVE_E2E_HERE_WEBKIT_HOME',
+};
 /** A glave reached from elsewhere, for passkeys (passkeys.e2e.ts). */
 export const PASSKEYS: Site = {
   address: 'GLAVE_E2E_PASSKEYS_URL',

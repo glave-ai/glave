@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use glave_event::Arguments;
+use glave_ports::auth::Auth;
 use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::{
     BoxFuture, Cancellation, ToolError, ToolInfo, ToolOutput, ToolSource, unless_cancelled,
@@ -22,6 +23,7 @@ use tokio::task::JoinHandle;
 
 use crate::McpError;
 use crate::connection::{CANCELLED, Connection};
+use crate::signed::Signed;
 
 /// Variables a server's process starts with, beyond its own configured ones. Nothing else from
 /// glave's environment reaches it, so neither do glave's keys.
@@ -93,9 +95,23 @@ impl McpServer {
                 let program = program(command, args, env, environment, dir);
                 Self::program(name, program, processes.clone(), limits)
             }
-            ServerConfig::Http { url, headers } => Self::http(name, url, headers, limits, false)
-                .unwrap_or_else(|error| Self::failed(name, error, limits)),
+            ServerConfig::Http { url, headers } => {
+                Self::remote(name, url, headers, Auth::None, limits)
+            }
         }
+    }
+
+    /// A server at `url`, sent `headers` with every request, and what `auth` gives to prove
+    /// who is calling, asked again for each: the person's sign-in to it, renewed meanwhile.
+    pub fn remote(
+        name: &str,
+        url: &str,
+        headers: &BTreeMap<String, String>,
+        auth: Auth,
+        limits: Limits,
+    ) -> Self {
+        Self::http(name, url, headers, auth, limits, false)
+            .unwrap_or_else(|error| Self::failed(name, error, limits))
     }
 
     /// A server that is a program, started in the background with its connection, its
@@ -129,16 +145,17 @@ impl McpServer {
         headers: &BTreeMap<String, String>,
         limits: Limits,
     ) -> Self {
-        Self::http(name, url, headers, limits, true)
+        Self::http(name, url, headers, Auth::None, limits, true)
             .unwrap_or_else(|error| Self::failed(name, error, limits))
     }
 
-    /// A server over Streamable HTTP, sent `headers` with every request. A header's value is
-    /// never shown, since it is often a key.
+    /// A server over Streamable HTTP, sent `headers` and what `auth` gives with every
+    /// request. A header's value is never shown, since it is often a key.
     fn http(
         name: &str,
         url: &str,
         headers: &BTreeMap<String, String>,
+        auth: Auth,
         limits: Limits,
         catalog: bool,
     ) -> Result<Self, McpError> {
@@ -152,7 +169,10 @@ impl McpServer {
             sent.insert(header_name, header_value);
         }
         let config = StreamableHttpClientTransportConfig::with_uri(url).custom_headers(sent);
-        let transport = StreamableHttpClientTransport::from_config(config);
+        let client = Signed::new(auth).map_err(|error| {
+            McpError::start(name, format!("could not make its client: {error}"))
+        })?;
+        let transport = StreamableHttpClientTransport::with_client(client, config);
         Ok(Self::open(
             name,
             async { Ok((transport, None)) },

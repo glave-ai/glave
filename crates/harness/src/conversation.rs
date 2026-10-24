@@ -73,6 +73,8 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::ProviderRemoved(_)
         | Body::CredentialConnected(_)
         | Body::CredentialRemoved(_)
+        | Body::ConnectionConnected(_)
+        | Body::ConnectionRemoved(_)
         | Body::ProjectFolderSet(_)
         | Body::ProjectRemoved(_)
         | Body::TrustDecided(_)
@@ -87,6 +89,7 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::PasskeyRemoved(_)
         | Body::AwakeSet(_)
         | Body::LanguageSet(_)
+        | Body::GroupingSet(_)
         | Body::Unknown(_) => {}
     }
 }

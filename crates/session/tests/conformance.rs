@@ -1,7 +1,8 @@
 //! One set of scenarios, run over every transport: in-process, JSON-RPC 2.0 over a stream of
 //! lines (as stdio carries it), the same over a Unix socket to a long-running server, and HTTP
 //! with server-sent events, signed in. A transport changes how messages travel, never what they
-//! mean (`specs/session.md`), so each scenario must end the same way over each.
+//! mean (`specs/session.md`), so each scenario must end the same way over each. Each works in
+//! its caller's own Chats: the person here's on this computer, the signed-in person's over HTTP.
 
 use glave_event::{Body, Outcome, ThreadId, decode};
 use glave_session::protocol::{
@@ -296,7 +297,7 @@ fn asked(note: &Notification) -> Option<glave_event::CallId> {
 async fn thread_of(client: &mut impl Client) -> ThreadId {
     let reply = client
         .call(Request::ThreadStart {
-            project: Some(scope().project()),
+            project: None,
             background: false,
             worktree: None,
             computer: None,
@@ -307,6 +308,25 @@ async fn thread_of(client: &mut impl Client) -> ThreadId {
         .await
         .unwrap();
     serde_json::from_value(reply["thread"]["id"].clone()).unwrap()
+}
+
+/// The folder `thread` works in, as its events say.
+async fn root_of(client: &mut impl Client, thread: ThreadId) -> std::path::PathBuf {
+    let page = client
+        .call(Request::ThreadEvents {
+            thread,
+            after: None,
+            limit: None,
+        })
+        .await
+        .unwrap();
+    let bound = page["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|event| event["type"] == "workspace.bound")
+        .unwrap();
+    bound["data"]["root"].as_str().unwrap().into()
 }
 
 /// Runs `scenario` over every transport, each with a fresh server and folder.
@@ -391,7 +411,7 @@ fn a_turn_streams_its_events_and_progress_and_they_are_in_the_log() {
                 assert!(logged.ends_with(&streamed), "{logged:?}");
                 let listed = client
                     .call(Request::ThreadList {
-                        project: Some(scope().project()),
+                        project: None,
                         limit: None,
                         show: None,
                         cursor: None,
@@ -437,7 +457,8 @@ fn an_approval_answered_by_the_client_lets_the_call_run() {
                 .position(|kind| kind == "approval.requested")
                 .unwrap();
             assert_eq!(streamed[asked + 1], "approval.decided", "{streamed:?}");
-            assert!(dir.join("ran.txt").exists());
+            assert!(root_of(&mut client, thread).await.join("ran.txt").exists());
+            let _ = &dir;
         });
     });
 }
@@ -490,7 +511,8 @@ fn a_message_sent_while_a_turn_runs_reaches_the_model_in_the_same_stream() {
             };
             let turn = client.turn(thread, "touch it", &mut react).await.unwrap();
             assert_eq!(turn.outcome, Outcome::Completed);
-            assert!(dir.join("ran.txt").exists());
+            assert!(root_of(&mut client, thread).await.join("ran.txt").exists());
+            let _ = &dir;
             let last = said.last().unwrap();
             assert_eq!(last[0]["text"], "and name it done.txt", "{said:?}");
         });
@@ -516,7 +538,8 @@ fn cancelling_a_paused_turn_ends_it_and_the_call_never_runs() {
             };
             let turn = client.turn(thread, "touch it", &mut react).await.unwrap();
             assert_eq!(turn.outcome, Outcome::Cancelled);
-            assert!(!dir.join("ran.txt").exists());
+            assert!(!root_of(&mut client, thread).await.join("ran.txt").exists());
+            let _ = &dir;
         });
     });
 }
@@ -554,7 +577,7 @@ fn models_are_listed_and_one_the_server_does_not_run_is_refused() {
             );
             let refused = client
                 .call(Request::ThreadStart {
-                    project: Some(scope().project()),
+                    project: None,
                     background: false,
                     worktree: None,
                     computer: None,
@@ -580,7 +603,7 @@ fn a_thread_chooses_its_approval_mode_and_its_summary_shows_it() {
             assert_eq!(info["approvals"], json!(["ask", "auto"]));
             let started = client
                 .call(Request::ThreadStart {
-                    project: Some(scope().project()),
+                    project: None,
                     background: false,
                     worktree: None,
                     computer: None,
@@ -604,7 +627,6 @@ fn a_background_turn_in_another_project_answers_at_once_and_its_task_is_listed_w
             let made = client
                 .call(Request::ProjectCreate {
                     name: "Notes".into(),
-                    members: Vec::new(),
                     folder: None,
                 })
                 .await

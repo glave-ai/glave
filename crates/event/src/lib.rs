@@ -23,7 +23,9 @@ pub use id::{
     CallId, CredentialId, EventId, MemoryId, PrincipalId, ProviderId, ScheduleId, ThreadId,
 };
 pub use money::{Currency, Decimal, Money};
-pub use payload::{AcmeRegistered, AwakeSet, CertificateIssued, LanguageSet};
+pub use payload::{
+    AcmeRegistered, AwakeSet, CertificateIssued, Grouping, GroupingSet, LanguageSet,
+};
 pub use payload::{
     ApprovalDecided, ApprovalMode, ApprovalModeChosen, ApprovalRequested, Arguments, Auth,
     AuthMethod, Cost, EffortChosen, ForkPoint, GatewayToolCalled, GoalEnded, GoalReason,
@@ -41,6 +43,7 @@ pub use payload::{
     ComputerKind, ComputerRef, Fired, Opened, RemovedReason, ScheduleCreated, ScheduleDeleted,
     TaskEnded, TaskStarted, When, WorkspaceBound, WorkspaceRemoved, sealed_under_memory,
 };
+pub use payload::{ConnectionConnected, ConnectionRemoved, SignInClient};
 pub use payload::{
     CredentialConnected, CredentialRemoved, Forge, ProjectFolderSet, ProjectRemoved,
     ProviderConnected, ProviderKind, ProviderRemoved, Renewal, sealed_under_account,

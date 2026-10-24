@@ -23,16 +23,16 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 
 | Term | Meaning |
 | --- | --- |
-| Organization | The tenant: one on a laptop (never shown), one in a company, many on Glave Cloud. Holds providers, catalogs, policy, the theme, the budget (`specs/model.md`) |
+| Organization | The tenant: one on a laptop (never shown), one in a company, many on Glave Cloud. Holds providers, catalogs, its policy file, company skills, the theme, the budget (`specs/model.md`) |
 | Team | A flat group of people, granted models, connections and budgets |
-| Person | Someone who signs in: their Chats, their computer, their own sign-ins and choices |
-| Project | The scope boundary: a project (folders, instructions, members), or a person's Chats, their project of kind `personal`. Holds memory, history, files, members, policy, budget, default environment |
+| Person | Someone who signs in, with a role: their Chats and projects, their computer, their own files (`~/.glave`) and sign-ins |
+| Project | The scope boundary, and personal: one person's project (one folder, whose files are its instructions, skills and setup), or their Chats, their project of kind `personal`. No members: people share through the repository and the organization. Holds memory, history, files, policy, budget, default environment |
 | Thread | A conversation or task in a project. Workers fork from a parent with permissions and budget ⊆ the parent's |
-| Environment | A reusable template for where work runs: computer type, image, setup, network, credentials, limits |
+| Environment | A reusable template for where work runs: computer type, image, setup, network, the secrets it names, limits |
 | Computer | A person's one machine (laptop, server or cloud machine) where the agent works, its reach drawn by the operating system's sandbox: secrets hidden, the machine readable, the project writable. Fresh per-task workers are an upgrade |
 | Harness | The agent loop: context, tool calls, approvals, receipts, threads, scheduling |
 | Gateway | The single door out for models and remote tools: routing, keys, policy, budgets, metering |
-| Data store | Everything durable: the event log (history), memory, files, config. Enforces scope on every query |
+| Data store | Everything durable glave holds, which is only what can't be a file: the event log (history), memory, files given to threads, secret values and sign-ins, people, groups and roles. Configuration is files (`specs/model.md`). Enforces scope on every query |
 | Hope | Glave's open model. Great in any harness, best in Glave |
 
 ## Repository
@@ -58,12 +58,12 @@ crates/store-sqlite/  glave-store-sqlite: the event log, blobs' records, wrapped
 crates/store-postgres/  glave-store-postgres: the event log, blobs' records, wrapped keys and leases on Postgres, an organization's one data store (`[store] url`), TLS off this computer, content sealed
 crates/process/     glave-process: every operating-system process glave starts, through one place (`cargo xtask spawns` checks): its own process group, stopped at once by a helper of glave's own when glave ends however it ends (the lifeline), a ledger under GLAVE_HOME/run while it runs, and what a glave that ended left stopped at the next start
 crates/shell/       glave-shell: shell commands read before they run (tree-sitter-bash): read-only, risky with a reason, or neither
-crates/mcp/         glave-mcp: MCP servers as tool sources, through the official rmcp SDK (a test server behind `test-server`); open-world tools and servers marked untrusted return untrusted output
+crates/mcp/         glave-mcp: MCP servers as tool sources, through the official rmcp SDK (a test server behind `test-server`, which can ask for a sign-in); open-world tools and servers marked untrusted return untrusted output; signing in to remote servers as MCP's authorization says, the token asked for at each request
 crates/memory/      glave-memory: memory (specs/memory.md): an in-process MCP server over the data store, each memory sealed under its own key, scoped by the session
 crates/web/         glave-web: web_fetch as a tool source: private addresses refused at every hop, limits, a host policy, HTML as Markdown, output untrusted (a local page server behind `pages`)
 crates/harness/     glave-harness: the agent loop, its seven tools (search, glob, read, write, edit, bash, command_output for commands kept running in the background) run on a computer through the port, approvals, resume, AGENTS.md, skills (agentskills.io), custom commands, hooks
 crates/computer/    glave-computer: computers (specs/computers.md): this machine as one (in the sandbox by default), environments from devcontainer.json or environment.toml, workers on Docker or Kubernetes (the `kubernetes` feature), served (`glave computer serve`, TLS across machines) and reached over JSON-RPC
-crates/session/     glave-session: the session API (specs/session.md) in-process, over stdio, and over HTTP with OIDC or local sign-in (glave-identity), and its JSON Schema (specs/session.schema.json, generated), the accounts ledger a host keeps a person's model accounts and git hosts in, and its own sentences in the caller's language (Fluent, `words.rs`); every surface, the CLI first, runs threads through it
+crates/session/     glave-session: the session API (specs/session.md) in-process, over stdio, and over HTTP with OIDC or local sign-in (glave-identity), and its JSON Schema (specs/session.schema.json, generated), the accounts ledger a host keeps a person's model accounts, git hosts and sign-ins to connections in, the page a browser comes back to from signing in to a remote server, and its own sentences in the caller's language (Fluent, `words.rs`); every surface, the CLI first, runs threads through it
 crates/eval/        glave-eval: the eval factory, the harness run in-process on evals/tasks against real models
 crates/cli/         glave: the command-line binary; with the `web` feature, as releases build it, the web app inside (build.rs)
 web/client/         the session API's TypeScript client: types generated from the schema (`cargo xtask schema`), a small typed client, no framework
@@ -126,10 +126,10 @@ The bar is code a careful reader admires: every line earns its place, and each i
   - what this tab remembers: drafts, panes, scroll.
 
   A click may show its result at once; the server's answer is what stays. No item names a pane, a fold or a place on screen: every item prints as one line of plain text, which the CLI proves.
-- **One project shows no projects.** With only the person's Chats, the UI shows no project grouping, members or moving between projects.
+- **One project shows no projects.** With only the person's Chats, the UI shows no project grouping or moving between projects.
 - **Plain words.** No user-visible text names a file, flag, command or error code unless the person typed it. Every error a client can show has a message a person can act on.
 - **The consumer journey test** (`web/e2e/consumer.e2e.ts`, planned in #251) runs against a real server with a fresh home: add a model, chat, approve a command, connect GitHub. It fails if an admin word appears (policy, organization, member, group, admin, SSO, `config.toml`).
-- **Startup and size are measured** on every pull request, in the merge queue and after every merge to `main` (`budgets.yml`). A cloud or server dependency moves behind a Cargo feature only for a real reason (a security or licence problem, or a size that hurts people), not to meet a number: one build serves every deployment.
+- **Startup and size are measured** in the merge queue before every merge, after every merge to `main`, and weekly (`budgets.yml`), not on a pull request's own pushes. A cloud or server dependency moves behind a Cargo feature only for a real reason (a security or licence problem, or a size that hurts people), not to meet a number: one build serves every deployment.
 
 ## Rust
 

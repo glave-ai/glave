@@ -16,6 +16,12 @@ ignore = [
     # uses rsa only to check the RS256 signatures of passkeys with their public keys. Remove
     # when rsa has a constant-time release.
     { id = "RUSTSEC-2023-0071", reason = "rsa only checks passkey signatures with public keys" },
+    # crypto-bigint 0.5's timing leaks matter for arithmetic on secret integers. It reaches glave
+    # only through webauthn-rs (crypto-glue -> elliptic-curve 0.13), which uses it to check
+    # passkeys' ECDSA signatures with their public keys: glave holds no EC private key there.
+    # The fix is in 0.7.6, which elliptic-curve 0.13 can't take. Remove when webauthn-rs moves to
+    # elliptic-curve 0.14.
+    { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5 only checks passkey signatures with public keys" },
 ]
 
 [licenses]

@@ -2,9 +2,10 @@
 //! program here asks for a link's one-time code, the browser trades it for a session of its
 //! own, and ends it, or every other browser's, when the person signs out. Where the server is
 //! reached from elsewhere, a browser there signs in with a passkey, the first made through a
-//! setup link from a program here (`specs/session.md`, "Signing in"). Sessions are only ever
-//! the local person's: nobody an identity provider signs in gets one, so a browser's sign-in
-//! through a provider ends when the provider stops renewing it.
+//! setup link from a program here; where it is not, a browser here signed in by a link makes
+//! one, which signs any browser here in (`specs/session.md`, "Signing in"). Sessions are only
+//! ever the local person's: nobody an identity provider signs in gets one, so a browser's
+//! sign-in through a provider ends when the provider stops renewing it.
 
 use glave_event::{At, AuthMethod, Secret};
 use glave_identity::signin::{Browsers, Ceremony, PasskeyInfo, Proof, Session};
@@ -21,6 +22,15 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
+    /// Where a browser on this computer makes and uses passkeys, when the server makes them
+    /// here.
+    pub(crate) fn passkeys_here(&self) -> Option<String> {
+        self.inner
+            .browsers
+            .as_ref()
+            .and_then(|browsers| browsers.passkeys_here())
+    }
+
     /// The server's id, where it signs browsers in.
     pub(crate) fn server_id(&self) -> Option<String> {
         self.inner
@@ -35,7 +45,7 @@ where
             return Vec::new();
         };
         let mut ways = vec![SignInWay::Link];
-        if browsers.offers_passkeys() {
+        if browsers.signs_in_with_passkeys() {
             ways.push(SignInWay::Passkey);
         }
         ways

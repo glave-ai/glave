@@ -1,12 +1,15 @@
 import { type BrowserContext, type CDPSession, type Page, expect, test } from '@playwright/test';
 
 import {
+  HERE,
+  HERE_WEBKIT,
   PASSKEYS,
   PASSKEYS_ORIGIN,
   byTestId,
   expectAccessible,
   served,
   setupCode,
+  signInCode,
   watchForProblems,
 } from './support';
 
@@ -172,7 +175,22 @@ function scriptedAuthenticator(): void {
     },
   };
   Object.defineProperty(navigator, 'credentials', { value: credentials, configurable: true });
+  // An authenticator of the computer's own, which checks who is there. WebKit as built for
+  // Linux has no WebAuthn, so no `PublicKeyCredential` either, which the script then stands in
+  // for, as it does for `navigator.credentials`.
+  const available = (): Promise<boolean> => Promise.resolve(true);
+  if (typeof PublicKeyCredential === 'function') {
+    PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable = available;
+  } else {
+    Object.defineProperty(window, 'PublicKeyCredential', {
+      value: { isUserVerifyingPlatformAuthenticatorAvailable: available },
+      configurable: true,
+    });
+  }
 }
+
+/** Where the scripted authenticator keeps its key, in the page's storage. */
+const SCRIPTED = 'glave-e2e-authenticator';
 
 /** A virtual authenticator Chromium gives one page, through the DevTools protocol. */
 interface Virtual {
@@ -180,17 +198,55 @@ interface Virtual {
   readonly authenticatorId: string;
 }
 
+/** The passkeys `virtual` holds. */
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- the protocol's own credentials, whose type Playwright does not export
+async function heldBy(virtual: Virtual) {
+  const { authenticatorId } = virtual;
+  return (await virtual.cdp.send('WebAuthn.getCredentials', { authenticatorId })).credentials;
+}
+
 /**
- * Opens tabs on one device, each able to make and use its passkeys: in Chromium a virtual
- * authenticator per tab, holding the passkeys the tabs before it made; in WebKit the script,
- * whose key every tab reads from the same storage.
+ * A device's passkeys, carried to another browser on the same computer, as the system keeps
+ * them for every browser: Chromium's virtual credentials, or the scripted authenticator's key.
  */
-function oneDevice(context: BrowserContext, browserName: string): () => Promise<Page> {
+interface Carried {
+  readonly credentials: Awaited<ReturnType<typeof heldBy>>;
+  readonly key: string | null;
+}
+
+/** One device's tabs, and what its passkeys are to carry to another browser. */
+interface Device {
+  readonly tab: () => Promise<Page>;
+  readonly carried: () => Promise<Carried>;
+}
+
+/**
+ * Opens tabs on one device, each able to make and use its passkeys, those `carried` from
+ * another browser first: in Chromium a virtual authenticator per tab, holding the passkeys the
+ * tabs before it made; in WebKit the script, whose key every tab reads from the same storage.
+ */
+function oneDevice(
+  context: BrowserContext,
+  browserName: string,
+  carried: Carried = { credentials: [], key: null },
+): Device {
   let before: Virtual | null = null;
-  return async () => {
+  let last: Page | null = null;
+  const tab = async (): Promise<Page> => {
     const page = await context.newPage();
+    last = page;
     if (browserName !== 'chromium') {
       await page.addInitScript(scriptedAuthenticator);
+      if (carried.key !== null) {
+        await page.addInitScript(
+          ([name, key]) => {
+            if (localStorage.getItem(name) === null) {
+              localStorage.setItem(name, key);
+            }
+          },
+          [SCRIPTED, carried.key] as const,
+        );
+      }
       return page;
     }
     const cdp = await context.newCDPSession(page);
@@ -205,19 +261,20 @@ function oneDevice(context: BrowserContext, browserName: string): () => Promise<
         automaticPresenceSimulation: true,
       },
     });
-    const made =
-      before === null
-        ? []
-        : (
-            await before.cdp.send('WebAuthn.getCredentials', {
-              authenticatorId: before.authenticatorId,
-            })
-          ).credentials;
+    const made = before === null ? carried.credentials : await heldBy(before);
     for (const credential of made) {
       await cdp.send('WebAuthn.addCredential', { authenticatorId, credential });
     }
     before = { cdp, authenticatorId };
     return page;
+  };
+  return {
+    tab,
+    carried: async () => ({
+      credentials: before === null ? [] : await heldBy(before),
+      key:
+        last === null ? null : await last.evaluate((name) => localStorage.getItem(name), SCRIPTED),
+    }),
   };
 }
 
@@ -234,7 +291,7 @@ test('a setup link makes a passkey here, and the passkey signs the browser in ag
   browserName,
 }) => {
   await tunnel(context);
-  const tab = oneDevice(context, browserName);
+  const { tab } = oneDevice(context, browserName);
   const code = await setupCode(PASSKEYS);
 
   const page = await tab();
@@ -269,11 +326,63 @@ test('a setup link makes a passkey here, and the passkey signs the browser in ag
   // The setup link is spent, for another browser too.
   const another = await browser.newContext();
   await tunnel(another);
-  const spent = await oneDevice(another, browserName)();
+  const spent = await oneDevice(another, browserName).tab();
   const problemsSpent = watchForProblems(spent);
   await spent.goto(`${PASSKEYS_ORIGIN}/#setup=${code}`);
   await byTestId(spent, 'sign-in-passkey').click();
   await expect(byTestId(spent, 'sign-in-problem')).toBeVisible();
   expect([...problems(), ...problemsAgain(), ...problemsSpent()]).toEqual([]);
   await another.close();
+});
+
+/**
+ * A passkey on this computer, against a real glave reached only here (`specs/session.md`,
+ * "Signing in"): before any is made, a browser's sign-in page offers none; signed in by glave's
+ * link at `localhost`, the app offers once to make one, in the words of the computer's own
+ * authenticator; then another browser on this computer, which the system gives the same
+ * passkeys, signs in with it in one step. Each engine has a glave of its own, as each makes the
+ * first passkey.
+ */
+test('a passkey made here signs another browser on this computer in', async ({
+  browser,
+  browserName,
+}) => {
+  const site = browserName === 'webkit' ? HERE_WEBKIT : HERE;
+  const here = `http://localhost:${new URL(served(site)).port}`;
+  const nobody = await browser.newContext();
+  const signedOut = await nobody.newPage();
+  await signedOut.goto(`${here}/`);
+  await expect(byTestId(signedOut, 'sign-in')).toBeVisible();
+  await expect(byTestId(signedOut, 'sign-in-passkey')).toHaveCount(0);
+  await nobody.close();
+
+  const first = await browser.newContext();
+  const device = oneDevice(first, browserName);
+  const page = await device.tab();
+  const problems = watchForProblems(page);
+  await page.goto(`${here}/#code=${await signInCode(site)}`);
+  const offer = byTestId(page, 'passkey-offer');
+  await expect(offer).toBeVisible();
+  await expect(offer).toContainText(/Sign in with (Touch ID|Windows Hello|a passkey) next time\?/u);
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    await expectAccessible(page);
+  }
+  await byTestId(page, 'passkey-offer-make').click();
+  await expect(offer).toBeHidden();
+  await expect(byTestId(page, 'home-composer-input')).toBeVisible();
+
+  const second = await browser.newContext();
+  const other = await oneDevice(second, browserName, await device.carried()).tab();
+  const problemsThere = watchForProblems(other);
+  await other.goto(`${here}/`);
+  const signIn = byTestId(other, 'sign-in-passkey');
+  await expect(signIn).toHaveText(/Sign in with (Touch ID|Windows Hello|a passkey)/u);
+  await expectAccessible(other);
+  await signIn.click();
+  await expect(byTestId(other, 'home-composer-input')).toBeVisible();
+  await expect(byTestId(other, 'passkey-offer')).toBeHidden();
+  expect([...problems(), ...problemsThere()]).toEqual([]);
+  await second.close();
+  await first.close();
 });

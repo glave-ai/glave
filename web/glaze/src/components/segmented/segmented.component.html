@@ -1,0 +1,16 @@
+<span class="label" [id]="labelId" [attr.data-testid]="ids().label">{{ label() }}</span>
+<span class="segments" role="radiogroup" [attr.aria-labelledby]="labelId">
+  @for (segment of segments(); track segment.value) {
+    <label class="segment" [attr.data-testid]="ids().option">
+      <input
+        type="radio"
+        class="native"
+        [name]="name"
+        [value]="segment.value"
+        [checked]="segment.checked"
+        (change)="pick(segment.value)"
+      />
+      <span class="text">{{ segment.label }}</span>
+    </label>
+  }
+</span>

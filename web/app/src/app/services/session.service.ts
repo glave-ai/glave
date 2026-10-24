@@ -71,12 +71,25 @@ export class SessionService {
   private readonly session = signal<BrowserSession | null>(inject(INITIAL_SESSION));
   /** How the server signs browsers in, and its id, as it said when the app started. */
   private readonly ways = signal<readonly SignInWay[]>([]);
+  /** Whether people reach the server from elsewhere, at its public origin. */
+  private readonly reachedElsewhere = signal(false);
+  /** Where browsers on this computer make passkeys for it, when it makes them here. */
+  private readonly here = signal<string | null>(null);
   private server: string | undefined;
   private readonly setupLink = signal<string | null>(null);
 
   readonly signedIn = computed(() => this.session() !== null);
-  /** Whether a browser signs in to the server with a passkey: it is reached from elsewhere. */
-  readonly passkeys = computed(() => this.ways().includes('passkey'));
+  /** Whether glave makes passkeys for browsers on this computer, at this page's origin. */
+  readonly passkeysHere = computed(() => this.here() === this.document.location.origin);
+  /**
+   * Whether this page makes passkeys and signs in with them: at the server's public origin, or
+   * on this computer where glave makes them here.
+   */
+  readonly passkeys = computed(
+    () => (this.reachedElsewhere() && this.ways().includes('passkey')) || this.passkeysHere(),
+  );
+  /** Whether a passkey signs this page in now: one exists, or a setup link makes the first. */
+  readonly passkeySignIn = computed(() => this.passkeys() && this.ways().includes('passkey'));
   /** The code of the setup link the tab was opened with, until the tab signs in. */
   readonly setupCode = this.setupLink.asReadonly();
   /** Whether the session is with a glave on this computer: a browser session. */
@@ -84,6 +97,13 @@ export class SessionService {
     const session = this.session();
     return session !== null && isLocalToken(session.token);
   });
+  /**
+   * Whether to offer making a passkey here: a browser on this computer signed in by glave's
+   * link, where glave makes passkeys at this page and none exists yet.
+   */
+  readonly offersPasskey = computed(
+    () => this.local() && this.passkeysHere() && !this.ways().includes('passkey'),
+  );
   private readonly client = inject(SESSION_CLIENT_FACTORY)(() => this.session()?.token ?? '');
 
   /**
@@ -102,9 +122,7 @@ export class SessionService {
     const code = takeCode(place, 'code');
     this.setupLink.set(takeCode(place, 'setup'));
     try {
-      const discovered = await this.client.call('server/discover', {});
-      this.server = discovered.id ?? undefined;
-      this.ways.set(discovered.signin ?? []);
+      this.take(await this.client.call('server/discover', {}));
     } catch {
       return;
     }
@@ -165,6 +183,23 @@ export class SessionService {
       }
     }
     this.forget(presented);
+  }
+
+  /** Asks the server again how it signs browsers in, as once a passkey is made or removed. */
+  async rediscover(): Promise<void> {
+    try {
+      this.take(await this.client.call('server/discover', {}));
+    } catch {
+      // Away: what it said before stands.
+    }
+  }
+
+  /** Takes in what the server says it is and how it signs browsers in. */
+  private take(discovered: Methods['server/discover']['result']): void {
+    this.server = discovered.id ?? undefined;
+    this.ways.set(discovered.signin ?? []);
+    this.reachedElsewhere.set(typeof discovered.origin === 'string');
+    this.here.set(discovered.here ?? null);
   }
 
   /** Signs every other browser out; this one stays signed in. */

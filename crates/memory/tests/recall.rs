@@ -1,16 +1,19 @@
 //! `recall` on a sealed store: memories and past conversations found by keyword, scoped
 //! exactly as memory is (the person's and this project's in a shared project, this project's only in
 //! an isolated one, never another organization's), labelled with their source, the asking
-//! thread left out, untrusted output marked so and counted as untrusted content read.
+//! thread and deleted chats left out, untrusted output marked so and counted as untrusted
+//! content read.
+
+use std::sync::Arc;
 
 use glave_event::{
-    At, CallId, EventId, Header, MemoryId, MemoryScope, MessageAdded, Part, Principal, RawEvent,
+    Arguments, At, CallId, EventId, Header, MemoryScope, MessageAdded, Part, Principal, RawEvent,
     Role, Seq, ThreadId, ToolCallCompleted, encode,
 };
-use glave_harness::{AllowAll, Cancel};
-use glave_memory::{MOST_HITS, Recalled, Source, Tidier, Writer};
-use glave_ports::memories::{MemoryContext, RECALL, REMEMBER};
-use glave_ports::{EventLog, Scope};
+use glave_harness::{AllowAll, Cancel, Change, change_standing};
+use glave_memory::{MOST_HITS, Recalled, Source, Writer};
+use glave_ports::memories::{FORGET, Memory as _, MemoryContext, RECALL, REMEMBER};
+use glave_ports::{Clock as _, EventLog, Scope};
 use serde_json::json;
 
 use crate::support::*;
@@ -312,8 +315,10 @@ fn a_message_holding_every_word_outranks_memories_sharing_only_the_projects_name
     });
 }
 
+/// #630: forgetting erases the memory, and the chat it was saved in stays history, found as any
+/// other; once the person deletes that chat too, recall finds nothing of it.
 #[test]
-fn forgetting_a_memory_takes_the_turn_it_came_from_out_of_recall() {
+fn a_forgotten_memory_s_chat_is_history_until_it_is_deleted_too() {
     block_on!(async {
         let kit = Kit::new();
         let memory = kit.memory(rules(), 2).await;
@@ -322,7 +327,6 @@ fn forgetting_a_memory_takes_the_turn_it_came_from_out_of_recall() {
         let answers = vec![
             answer(None, vec![(REMEMBER, save)]),
             said("OK, remembered marigold."),
-            said("Marigold beds need sun."),
         ];
         let (harness, _) = kit
             .harness(&dir, answers, AllowAll, Some(memory), settings())
@@ -332,15 +336,6 @@ fn forgetting_a_memory_takes_the_turn_it_came_from_out_of_recall() {
             .run_turn(
                 &mut first,
                 "Remember: my favourite flower is marigold.",
-                &Cancel::new(),
-                &mut |_| {},
-            )
-            .await
-            .unwrap();
-        harness
-            .run_turn(
-                &mut first,
-                "Where do marigold beds go?",
                 &Cancel::new(),
                 &mut |_| {},
             )
@@ -365,30 +360,93 @@ fn forgetting_a_memory_takes_the_turn_it_came_from_out_of_recall() {
         };
         memories.forget(&writer, saved).await.unwrap();
 
-        // A process that never saw the memory, reading the ledger afresh, hides it too.
-        let fresh = kit.memories(rules(), 4);
-        let after = fresh.recall(&asking, "marigold", 10).await.unwrap();
-        assert!(
-            after
-                .iter()
-                .all(|hit| !hit.text.contains("favourite flower is marigold")
-                    && !hit.text.contains("remembered marigold")),
-            "{after:?}"
-        );
-        assert!(
-            after.iter().any(|hit| hit.text.contains("beds")),
-            "a later turn still is found: {after:?}"
-        );
-        let kept = kit
-            .store
-            .log()
-            .read(&shared(), first.id, None, usize::MAX)
+        // A process that never saw the memory, reading the ledger afresh.
+        let after = kit
+            .memories(rules(), 4)
+            .recall(&asking, "marigold", 10)
             .await
             .unwrap();
         assert!(
-            kept.iter()
-                .any(|event| event.data.get().contains("favourite flower is marigold")),
-            "the conversation itself stays"
+            after.iter().all(
+                |hit| matches!(hit.source, Source::Thread { thread, .. } if thread == first.id)
+            ),
+            "the memory is gone: {after:?}"
+        );
+        assert!(
+            after
+                .iter()
+                .any(|hit| hit.text.contains("my favourite flower is marigold")),
+            "the chat is history: {after:?}"
+        );
+        let (log, now) = (kit.store.log(), kit.clock.now());
+        change_standing(&log, &shared(), first.id, now, [7; 10], Change::Delete)
+            .await
+            .unwrap();
+        let deleted = kit
+            .memories(rules(), 5)
+            .recall(&asking, "marigold", 10)
+            .await
+            .unwrap();
+        assert_eq!(deleted, [], "nothing finds it once its chat is deleted");
+    });
+}
+
+/// When the model forgets a memory for the person, its result says the chat the memory was
+/// saved in still mentions it and can be deleted, so the model can tell them. It says nothing of
+/// a chat deleted already, nor of another person's chat.
+#[test]
+fn the_model_s_forget_tells_of_the_person_s_own_chat_that_still_mentions_it() {
+    block_on!(async {
+        let kit = Kit::new();
+        let memory = kit.memory(rules(), 2).await;
+        let dir = folder("recall-forget-says");
+        let save = |text: &str| {
+            let args = json!({"text": text, "scope": "project", "force": true});
+            vec![answer(None, vec![(REMEMBER, args)]), said("Saved.")]
+        };
+        let mut someone = settings();
+        someone.person = Some(glave_event::PrincipalId::try_from(uuid(52)).unwrap());
+        let mut chats = Vec::new();
+        for (text, settings) in [
+            ("The favourite flower is marigold", settings()),
+            ("The favourite tree is the oak", settings()),
+            ("The favourite bird is the wren", someone),
+        ] {
+            let (harness, _) = (kit.harness(
+                &dir,
+                save(text),
+                AllowAll,
+                Some(Arc::clone(&memory)),
+                settings,
+            ))
+            .await;
+            let mut chat = harness.start_thread(shared()).await.unwrap();
+            harness
+                .run_turn(&mut chat, text, &Cancel::new(), &mut |_| {})
+                .await
+                .unwrap();
+            chats.push(chat.id);
+        }
+        let (log, now) = (kit.store.log(), kit.clock.now());
+        change_standing(&log, &shared(), chats[1], now, [7; 10], Change::Delete)
+            .await
+            .unwrap();
+        let asking = on(shared(), thread(9));
+        let saved = memory.list(&asking).await.unwrap();
+        let mut said = Vec::new();
+        for forgotten in &saved {
+            let mut arguments = serde_json::Map::new();
+            arguments.insert("memory".to_owned(), json!(forgotten.memory.to_string()));
+            let arguments = Arguments::Json(arguments);
+            let out = memory.call(&asking, FORGET, &arguments).await;
+            said.push(format!("{:?}", out.output.parts));
+        }
+        let mentions = "The chat it was saved in still mentions it";
+        let told: Vec<bool> = said.iter().map(|said| said.contains(mentions)).collect();
+        assert_eq!(
+            told,
+            [true, false, false],
+            "own, deleted, another's: {said:?}"
         );
     });
 }
@@ -466,190 +524,6 @@ fn the_model_recalls_through_the_server_and_untrusted_hits_mark_the_thread() {
         assert!(
             rebuilt.get(..live.len()) == Some(live.as_slice()),
             "resumed, the model reads the result as it did, labelled the same"
-        );
-    });
-}
-
-/// What the person said, among `hits`.
-fn persons(hits: &[Recalled]) -> Vec<String> {
-    let mut said: Vec<String> = hits
-        .iter()
-        .filter(|hit| {
-            matches!(
-                hit.source,
-                Source::Thread {
-                    said_by: "person",
-                    ..
-                }
-            )
-        })
-        .map(|hit| hit.text.clone())
-        .collect();
-    said.sort();
-    said
-}
-
-const MERGED_QUERY: &str = "atlas Railway merging";
-
-/// Two threads, each saving a memory, then tidy-up merging the two: the memories, oldest (the
-/// one that takes the merged text) first.
-async fn merged(kit: &Kit) -> Vec<MemoryId> {
-    let memory = kit.memory(rules(), 2).await;
-    let dir = folder("recall-merged");
-    let save = |text: &str| {
-        let args = json!({"text": text, "scope": "project", "force": true});
-        answer(None, vec![(REMEMBER, args)])
-    };
-    let answers = vec![
-        save("Atlas deploys to Railway"),
-        said("Noted."),
-        save("Merging to main ships atlas to Railway"),
-        said("Noted."),
-    ];
-    // No AGENTS.md, so the person's first message is only their words.
-    let mut plain = settings();
-    plain.instructions = None;
-    let (harness, _) = kit
-        .harness(&dir, answers, AllowAll, Some(memory), plain)
-        .await;
-    for message in [
-        "We deploy atlas to Railway.",
-        "Merging to main ships atlas.",
-    ] {
-        let mut thread = harness.start_thread(shared()).await.unwrap();
-        harness
-            .run_turn(&mut thread, message, &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
-    }
-    let memories = kit.memories(rules(), 3);
-    let saved: Vec<MemoryId> = memories
-        .list(&on(shared(), thread(9)))
-        .await
-        .unwrap()
-        .iter()
-        .map(|memory| memory.memory)
-        .collect();
-    let tidier = Tidier {
-        provider: ScriptedModel::cycling(vec![said(
-            r#"{"merge": [{"memories": [1, 2], "text": "Atlas deploys to Railway: merging to main ships it"}]}"#,
-        )]),
-        model: "small".to_owned(),
-    };
-    assert_eq!(memories.tidy(shared(), &tidier).await.unwrap().merged, 1);
-    let hits = memories
-        .recall(&on(shared(), thread(9)), MERGED_QUERY, 10)
-        .await
-        .unwrap();
-    assert_eq!(
-        persons(&hits),
-        [
-            "Merging to main ships atlas.",
-            "We deploy atlas to Railway."
-        ],
-        "the merged text lives on, so both turns stay"
-    );
-    saved
-}
-
-fn persons_writer() -> Writer {
-    Writer {
-        person: Some(person()),
-        scope: shared(),
-        by: Principal::person(person()),
-        source: None,
-        untrusted_read: false,
-    }
-}
-
-/// #555: tidy-up merged away the memory a turn saved, and the turn dropped out of recall though
-/// the person forgot nothing.
-#[test]
-fn a_merge_hides_no_turn_and_forgetting_what_it_made_hides_and_erases_what_went_in() {
-    block_on!(async {
-        let kit = Kit::new();
-        let saved = merged(&kit).await;
-        let [kept, folded] = saved.as_slice() else {
-            panic!("{saved:?}");
-        };
-        let memories = kit.memories(rules(), 4);
-        memories.forget(&persons_writer(), *kept).await.unwrap();
-        let after = kit
-            .memories(rules(), 5)
-            .recall(&on(shared(), thread(9)), MERGED_QUERY, 10)
-            .await
-            .unwrap();
-        assert!(after.is_empty(), "{after:?}");
-        assert!(
-            memories.restore(&persons_writer(), *folded).await.is_err(),
-            "what went into the forgotten memory is erased with it, not waiting to be restored"
-        );
-    });
-}
-
-#[test]
-fn once_the_merged_away_memory_is_erased_forgetting_the_merge_still_hides_its_turn() {
-    block_on!(async {
-        let kit = Kit::new();
-        let saved = merged(&kit).await;
-        let kept = saved.first().copied().unwrap();
-        kit.clock.advance_millis(31 * 86_400_000);
-        let memories = kit.memories(rules(), 4);
-        let housekept = memories.housekeep(&[shared()]).await.unwrap();
-        assert_eq!(housekept.erased, 1, "{housekept:?}");
-        let fresh = kit.memories(rules(), 5);
-        let asking = on(shared(), thread(9));
-        let hits = fresh.recall(&asking, MERGED_QUERY, 10).await.unwrap();
-        assert_eq!(persons(&hits).len(), 2, "{hits:?}");
-        fresh.forget(&persons_writer(), kept).await.unwrap();
-        let after = kit
-            .memories(rules(), 6)
-            .recall(&asking, MERGED_QUERY, 10)
-            .await
-            .unwrap();
-        assert!(after.is_empty(), "{after:?}");
-    });
-}
-
-#[test]
-fn a_merge_undone_then_forgotten_leaves_what_went_in_restorable() {
-    block_on!(async {
-        let kit = Kit::new();
-        let saved = merged(&kit).await;
-        let [kept, folded] = saved.as_slice() else {
-            panic!("{saved:?}");
-        };
-        let memories = kit.memories(rules(), 4);
-        let undone = memories.restore(&persons_writer(), *kept).await.unwrap();
-        assert_eq!(
-            undone.text, "Atlas deploys to Railway",
-            "the merge's edit undone"
-        );
-        memories.forget(&persons_writer(), *kept).await.unwrap();
-        let hits = kit
-            .memories(rules(), 5)
-            .recall(&on(shared(), thread(9)), MERGED_QUERY, 10)
-            .await
-            .unwrap();
-        let same = memories
-            .recall(&on(shared(), thread(9)), MERGED_QUERY, 10)
-            .await
-            .unwrap();
-        assert_eq!(
-            hits, same,
-            "a view read afresh hides what the live one does"
-        );
-        let back = memories.restore(&persons_writer(), *folded).await.unwrap();
-        assert_eq!(back.text, "Merging to main ships atlas to Railway");
-        let after = kit
-            .memories(rules(), 6)
-            .recall(&on(shared(), thread(9)), MERGED_QUERY, 10)
-            .await
-            .unwrap();
-        assert_eq!(
-            persons(&after),
-            ["Merging to main ships atlas."],
-            "restored, its turn is back; the forgotten one's stays hidden"
         );
     });
 }

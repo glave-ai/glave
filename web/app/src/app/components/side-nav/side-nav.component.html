@@ -25,12 +25,39 @@
     (input)="search($event)"
   />
 </label>
-<app-projects-nav
-  class="threads"
-  [current]="current()"
-  [query]="query()"
-  (navigated)="followed()"
-/>
+<!-- The switch's code loads as the page starts, beside the lists' first read, and the switch
+     shows once the person has a project: kept out of the first load. If its code cannot load,
+     the threads stay grouped as they are. -->
+@defer (on immediate) {
+  @if (groupable()) {
+    <app-group-by class="grouping" />
+  }
+} @error {}
+<!-- The threads by what each is doing load the first time they show, fetched once the page is
+     idle: most people never leave the grouping by project. If their code cannot load, the side
+     nav says so in their place. -->
+@defer (when byStatus(); prefetch on idle) {
+  @if (byStatus()) {
+    <app-status-nav
+      class="threads"
+      [current]="current()"
+      [query]="query()"
+      (navigated)="followed()"
+    />
+  }
+} @error {
+  @if (byStatus()) {
+    <p class="error threads" role="alert" data-testid="nav-unloaded">{{ copy.unloaded }}</p>
+  }
+}
+@if (byProject()) {
+  <app-projects-nav
+    class="threads"
+    [current]="current()"
+    [query]="query()"
+    (navigated)="followed()"
+  />
+}
 <div class="foot">
   @if (tasksLive()) {
     <a

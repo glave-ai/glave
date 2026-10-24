@@ -272,19 +272,3 @@ test('tasks, settings and memory open from the side nav', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Memory' })).toBeVisible();
   await expectAccessible(page);
 });
-
-for (const colorScheme of ['light', 'dark'] as const) {
-  test(`Needs you lists every thread that waits for the person, and goes to one (${colorScheme})`, async ({
-    page,
-  }) => {
-    await page.emulateMedia({ colorScheme });
-    await fakeApi(page);
-    await page.goto(`/${SIGNED_IN}`);
-    const waiting = byTestId(page, 'needs-you-thread');
-    await expect(waiting).toHaveText(['Review the release notes glave']);
-    await expectAccessible(page);
-    await waiting.click();
-    await expect(page).toHaveURL(/\/t\/01900000-0000-7000-8000-000000000103$/u);
-    await expect(waiting).toHaveAttribute('aria-current', 'page');
-  });
-}

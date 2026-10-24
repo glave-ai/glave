@@ -7,6 +7,7 @@
   @if (hasMessage()) {
     <p class="message">{{ message() }}</p>
   }
+  <ng-content />
   <div glzDialogActions>
     <button glzButton [attr.data-testid]="ids().cancel" (click)="cancel()">
       {{ cancelLabel() }}

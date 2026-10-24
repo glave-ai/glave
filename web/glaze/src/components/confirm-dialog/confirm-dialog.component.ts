@@ -20,7 +20,8 @@ const PARTS = { cancel: 'cancel', ok: 'ok' } as const;
  * Asks the person to confirm before something happens: a question, Cancel, and the action.
  * `decided` says which they chose (`true` to go ahead); Escape and the close button count as
  * Cancel. The dialog's first control, its close button, takes focus first, so Enter never
- * destroys anything by accident.
+ * destroys anything by accident. What it holds, such as a choice that goes with the action,
+ * shows under the message.
  *
  * ```html
  * <glz-confirm-dialog heading="Delete the thread?" confirmLabel="Delete" danger

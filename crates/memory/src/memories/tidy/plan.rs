@@ -81,20 +81,23 @@ fn minute(at: At) -> String {
         .replace('T', " ")
 }
 
-/// The request: the candidates as a numbered list, oldest first, with their times.
+/// The request: the candidates as a numbered list, oldest first, with their times: when each
+/// was saved and, when later, last said (`Entry::stated`), the time a contradiction is settled
+/// by, never tidy-up's own merges.
 fn request(model: &str, candidates: &[Entry], compact: bool) -> ModelRequest {
     let mut text = String::from("The memories, oldest first:\n");
     for (number, entry) in (1_usize..).zip(candidates) {
         let Some((_, current)) = entry.current() else {
             continue;
         };
-        let saved = entry
-            .versions
-            .first()
-            .map_or_else(String::new, |v| minute(v.at));
-        let _ = write!(text, "\n{number}. (saved {saved}");
-        if entry.versions.len() > 1 {
-            let _ = write!(text, ", changed {}", minute(current.at));
+        let saved = entry.versions.first().map(|version| version.at);
+        let _ = write!(
+            text,
+            "\n{number}. (saved {}",
+            saved.map_or_else(String::new, minute)
+        );
+        if let Some(said) = entry.stated().filter(|said| Some(*said) != saved) {
+            let _ = write!(text, ", changed {}", minute(said));
         }
         let _ = write!(text, ") {}", current.text);
     }

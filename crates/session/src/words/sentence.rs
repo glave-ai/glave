@@ -142,8 +142,6 @@ sentences! {
 
     // Projects and their folders.
     NoProject { project: String } = "no-project" "no project { $project } here",
-    RenameOnlyOwner { project: String } = "rename-only-owner"
-        "only its owner renames project { $project }",
     FolderGone = "folder-gone" "This project's folder isn't there anymore.",
     FolderStillThere = "folder-still-there" "this project's folder is still where it was",
     FolderOthers = "folder-others" "that folder is already another project's",
@@ -154,8 +152,6 @@ sentences! {
         "only the person on the computer glave runs on gives a project its folder",
     RemoveOnlyHere = "remove-only-here"
         "only the person on the computer glave runs on removes a project",
-    SetFolderOnlyOwner = "set-folder-only-owner" "only its owner gives a project its folder",
-    RemoveOnlyOwner = "remove-only-owner" "only its owner removes a project",
     NewFolderOnlyHere = "new-folder-only-here"
         "a project's folder is on the computer glave runs on, so only the person there can give one",
     LookOnlyHere = "look-only-here"
@@ -228,6 +224,14 @@ sentences! {
         "connecting accounts is set up by whoever runs this server, not from here",
     AccountsOnItsComputer = "accounts-on-its-computer"
         "accounts are connected on the computer glave runs on, by its person",
+    ConnectionsNotHere = "connections-not-here"
+        "signing in to connections is set up by whoever runs this server, not from here",
+    ConnectionsOnItsComputer = "connections-on-its-computer"
+        "connections are signed in to on the computer glave runs on, by its person",
+    SignInNeedsServer = "sign-in-needs-server"
+        "signing in to a connection needs glave running in the background, for your browser to come back to: open glave, then try again",
+    SignInNoWayBack = "sign-in-no-way-back"
+        "this glave has no address your browser can come back to after signing in: whoever runs it gives it the address people reach it at, then try again",
     BrowserNotKept = "browser-not-kept" "glave could not keep this browser's sign-in: try again",
     PasskeysOnlyTheirs = "passkeys-only-theirs"
         "only the person this glave is for changes its passkeys",

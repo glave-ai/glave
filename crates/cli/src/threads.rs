@@ -164,8 +164,8 @@ async fn released(thread: ThreadId) -> anyhow::Result<Vec<String>> {
     let Some(project) = store.projects().get(located.org, located.project).await? else {
         return Ok(Vec::new());
     };
-    // Only a thread of a project the person here works in.
-    match Scope::of_member(located.org, &project, person) {
+    // Only a thread of a project the person here owns.
+    match Scope::of_owner(located.org, &project, person) {
         Some(scope) => worktrees::release_archived(&log, scope, thread).await,
         None => Ok(Vec::new()),
     }

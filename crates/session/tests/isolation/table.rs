@@ -169,6 +169,9 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
             "language/set",
             vec![json!({"language": "en-XA"}), json!({})],
         ),
+        // How the caller's own threads are grouped: no one else's to name.
+        ("grouping/get", vec![json!({})]),
+        ("grouping/set", vec![json!({"grouping": "status"})]),
         ("signin/link", vec![json!({})]),
         ("signin/redeem", vec![json!({"code": "@code"})]),
         ("signin/end", vec![json!({"@caller": "@session"})]),
@@ -238,7 +241,7 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
             ],
         ),
         ("thread/unwatch", on_thread()),
-        // A watch of every project the caller works in names no one's id and never ends: who
+        // A watch of every project the caller owns names no one's id and never ends: who
         // hears of what there is `list_watching.rs`'s to show.
         (
             "thread/list/watch",
@@ -384,6 +387,16 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         ),
         ("credential/device/start", vec![json!({})]),
         ("credential/device/poll", vec![json!({"flow": "@flow"})]),
+        (
+            "connection/start",
+            vec![json!({"server": "https://mcp.example.com/mcp"})],
+        ),
+        ("connection/poll", vec![json!({"flow": "@flow"})]),
+        ("connection/list", vec![json!({})]),
+        (
+            "connection/remove",
+            vec![json!({"server": "https://mcp.example.com/mcp"})],
+        ),
     ]
 }
 

@@ -27,7 +27,7 @@ use crate::McpError;
 use crate::client::{Client, subscribe, watch_tools};
 use crate::names::{catalog, exposed};
 use crate::output::output;
-use crate::reason::reason;
+use crate::reason::{failed, reason};
 
 /// What the model is told when the person cancels the turn mid-call.
 pub(crate) const CANCELLED: &str = "[stopped: the person cancelled the turn]";
@@ -166,7 +166,7 @@ impl Connection {
             self.stale.store(true, Ordering::SeqCst);
             ToolError {
                 source_name: self.name.clone(),
-                message: err.to_string(),
+                message: failed(&self.name, &err),
             }
         })?;
         let mut named = HashMap::new();
@@ -342,7 +342,7 @@ impl Connection {
             .await;
         let mut handle = match sent {
             Ok(handle) => handle,
-            Err(err) => return ToolOutput::text(true, format!("{}: {err}", self.name)),
+            Err(err) => return ToolOutput::text(true, failed(&self.name, &err)),
         };
         let waited = unless_cancelled(cancel, tokio::time::timeout(limit, &mut handle.rx)).await;
         match waited {
@@ -352,7 +352,7 @@ impl Connection {
                 "The server asked for more input, which glave cannot give it yet.",
             ),
             Some(Ok(Ok(Ok(_)))) => ToolOutput::text(true, "The server answered something else."),
-            Some(Ok(Ok(Err(err)))) => ToolOutput::text(true, format!("{}: {err}", self.name)),
+            Some(Ok(Ok(Err(err)))) => ToolOutput::text(true, failed(&self.name, &err)),
             Some(Ok(Err(_))) => ToolOutput::text(true, format!("{} stopped answering.", self.name)),
             Some(Err(_)) => {
                 let _ = handle.cancel(Some("timed out".to_owned())).await;

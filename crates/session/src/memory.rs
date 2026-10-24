@@ -1,14 +1,16 @@
 //! The person's controls over memory (`specs/memory.md`, "Seeing, editing and forgetting"):
 //! `memory/list`, `save`, `edit`, `move`, `forget` and `restore`, in the project a request names
-//! or the caller's Chats when it names none. The caller decides what may be seen and changed: a project's members may
-//! change its memory, and only the person their own. And what a memory call's result kept by
-//! reference shows the caller, read again as they may read memory.
+//! or the caller's Chats when it names none. The caller decides what may be seen and changed: a
+//! project's members may change its memory, and only the person their own; a memory names the
+//! chat it was saved in only to the person it was started for. And what a memory call's result
+//! kept by reference shows the caller, read again as they may read memory.
 
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 
 use glave_event::{Body, CallId, RawEvent, ThreadId, decode};
 use glave_ports::memories::{Access, Control, MemoryContext, SHOWN};
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope, Standing};
 
 use crate::protocol::{ApiError, Reply, code};
 use crate::server::Server;
@@ -21,7 +23,9 @@ where
     B: BlobStore + 'static,
 {
     /// Answers a `memory/*` request for `caller`: `control` on the memory of `project` (their
-    /// Chats when it names none) and the caller's own.
+    /// Chats when it names none) and the caller's own, each memory as they are shown it: its
+    /// `source` names only a chat started for them that is still there, so no one learns of
+    /// another's.
     pub(crate) async fn remember(
         &self,
         caller: &Caller,
@@ -35,13 +39,39 @@ where
             .ok_or_else(|| ApiError::new(code::MEMORY_OFF, Sentence::MemoryOff))?;
         let (_, scope) = self.project_for(caller, project).await?;
         let access = Access {
-            person: caller.person,
+            person: self.person_of(caller)?,
             scope,
         };
-        match memory.control(&access, control).await {
-            Ok(memories) => Ok(Reply::Memories { memories }),
-            Err(error) => Err(error.into()),
+        let mut memories = memory.control(&access, control).await?;
+        // Each chat looked up once: one chat often holds several memories.
+        let mut theirs = BTreeMap::new();
+        for memory in &mut memories {
+            let Some(thread) = memory.source.map(|source| source.thread) else {
+                continue;
+            };
+            if let Entry::Vacant(unknown) = theirs.entry(thread) {
+                unknown.insert(self.theirs(caller, thread).await);
+            }
+            if theirs.get(&thread) != Some(&true) {
+                memory.source = None;
+            }
         }
+        Ok(Reply::Memories { memories })
+    }
+
+    /// Whether `thread` is a chat started for `caller`, in a project they work in, and not
+    /// deleted: the only chat a memory names to them.
+    async fn theirs(&self, caller: &Caller, thread: ThreadId) -> bool {
+        let (Ok(person), Ok(scope)) =
+            (self.person_of(caller), self.authorize(caller, thread).await)
+        else {
+            return false;
+        };
+        let Ok(Some(view)) = self.inner.harness.log().thread_view(&scope, thread).await else {
+            return false;
+        };
+        let whose = view.whose().or_else(|| self.person());
+        view.standing != Standing::Deleted && whose == Some(person)
     }
 
     /// By call, the words each memory call's result among `events` of `thread` in `scope`

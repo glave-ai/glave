@@ -5,7 +5,15 @@
   [current]="thread().current"
   (click)="followed()"
 >
-  <span dir="auto" data-testid="nav-thread-title">{{ thread().title }}</span>
+  <span class="lines">
+    <!-- The title in its own direction; the space after it keeps it apart from what follows. -->
+    <span class="title" dir="auto" data-testid="nav-thread-title">{{ thread().title }} </span>
+    @if (thread().line; as line) {
+      <span class="line" dir="auto" data-testid="nav-thread-line" [class.needs-you]="line.needsYou"
+        >{{ line.text }}
+      </span>
+    }
+  </span>
   @if (thread().running) {
     <glz-icon
       glzNavItemEnd
@@ -13,14 +21,6 @@
       data-testid="nav-thread-running"
       [icon]="running.icon"
       [label]="running.label"
-    />
-  } @else if (thread().waiting) {
-    <glz-icon
-      glzNavItemEnd
-      class="status"
-      data-testid="nav-thread-waiting"
-      [icon]="needsYou.icon"
-      [label]="needsYou.label"
     />
   } @else {
     <time

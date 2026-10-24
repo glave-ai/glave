@@ -68,6 +68,21 @@ pub(crate) fn local(caller: &Caller) -> bool {
         .is_none_or(|auth| auth.method == AuthMethod::Local)
 }
 
+/// What the host keeps for the person on this computer, `kept`, for `caller`: refused with
+/// `missing` where the host keeps none, and with `elsewhere` for anyone but that person.
+pub(crate) fn theirs<'a, T: ?Sized>(
+    caller: &Caller,
+    kept: Option<&'a T>,
+    missing: Sentence,
+    elsewhere: Sentence,
+) -> Result<&'a T, ApiError> {
+    let kept = kept.ok_or_else(|| ApiError::new(code::NOT_AVAILABLE, missing))?;
+    if !local(caller) {
+        return Err(ApiError::new(code::NOT_ALLOWED, elsewhere));
+    }
+    Ok(kept)
+}
+
 impl<P, L, B> Server<P, L, B>
 where
     P: ModelProvider + 'static,
@@ -77,16 +92,9 @@ where
     /// The host's accounts, for the person on this computer only: elsewhere an organization
     /// sets up its models itself.
     fn providers_for(&self, caller: &Caller) -> Result<&dyn Providers, ApiError> {
-        let Some(providers) = self.inner.providers.as_deref() else {
-            return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::ModelsNotHere));
-        };
-        if !local(caller) {
-            return Err(ApiError::new(
-                code::NOT_ALLOWED,
-                Sentence::ModelAccountsOnItsComputer,
-            ));
-        }
-        Ok(providers)
+        let providers = self.inner.providers.as_deref();
+        let elsewhere = Sentence::ModelAccountsOnItsComputer;
+        theirs(caller, providers, Sentence::ModelsNotHere, elsewhere)
     }
 
     /// Answers `provider/connect`.

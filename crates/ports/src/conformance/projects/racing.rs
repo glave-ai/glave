@@ -1,5 +1,5 @@
-//! Projects with writers racing each other, as two processes on one store race: updates from
-//! one read, people's first personal project, and new projects under one name.
+//! Projects with writers racing each other, as two processes on one store race: renames to one
+//! name, people's first personal project, and new projects under one name.
 
 use glave_event::Principal;
 
@@ -11,45 +11,42 @@ use crate::scope::OrgId;
 
 /// The racing cases, in `org`, a fresh organization, for `owner`.
 pub(super) async fn racing(store: &dyn Projects, org: OrgId, owner: &Principal) -> Verdict {
-    updates(store, org, owner).await?;
+    renames(store, org, owner).await?;
     personal(store, org, owner).await?;
     same_name(store, org, owner).await
 }
 
-/// Updates made from one read: exactly one is kept and every other is told the project
-/// changed, so none is lost without its writer knowing.
-async fn updates(store: &dyn Projects, org: OrgId, owner: &Principal) -> Verdict {
-    let read = store
-        .create(org, &record(40, ProjectKind::Project, owner)?)
-        .await
-        .map_err(failed)?;
-    let writers = (0..WRITERS).map(|writer| {
-        let mut changed = read.clone();
-        changed.name = format!("renamed by {writer}");
-        async move { store.update(org, &changed).await }
-    });
-    let results = together(writers.collect()).await;
-    let kept: Vec<&Project> = results
+/// One owner's projects renamed to one name at once: one takes it and every other is refused
+/// as taken, so no two of an owner's projects ever share a name.
+async fn renames(store: &dyn Projects, org: OrgId, owner: &Principal) -> Verdict {
+    let mut made = Vec::new();
+    for writer in 0..WRITERS {
+        let new = record(40 + writer, ProjectKind::Project, owner)?;
+        made.push(store.create(org, &new).await.map_err(failed)?);
+    }
+    let renames = made
         .iter()
-        .filter_map(|result| result.as_ref().ok())
-        .collect();
+        .map(|project| store.rename(org, project.id, "raced", project.updated_at));
+    let results = together(renames.collect()).await;
+    let kept = results.iter().filter(|result| result.is_ok()).count();
     ensure(
-        kept.len() == 1,
-        &format!(
-            "exactly one of updates from one read must be kept, not {}",
-            kept.len()
-        ),
+        kept == 1,
+        &format!("exactly one of renames to one name must take it, not {kept}"),
     )?;
     ensure(
         results
             .iter()
-            .all(|result| result.is_ok() || matches!(result, Err(ProjectError::Changed(_)))),
-        "an update another came before must be told the project changed",
+            .all(|result| result.is_ok() || matches!(result, Err(ProjectError::Conflict(_)))),
+        "every other rename to the name must be refused as taken",
     )?;
-    let stored = store.get(org, read.id).await.map_err(failed)?;
+    let listed = store.list(org, owner, 100).await.map_err(failed)?;
+    let named = listed
+        .iter()
+        .filter(|project| Project::same_name(&project.name, "raced"))
+        .count();
     ensure(
-        stored.as_ref() == kept.first().copied() && stored.is_some_and(|p| p.revision == 1),
-        "the project must be the one update kept, one revision on",
+        named == 1,
+        &format!("the owner must have one project called that, not {named}"),
     )
 }
 

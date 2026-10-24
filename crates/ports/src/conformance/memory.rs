@@ -22,15 +22,12 @@ pub struct MemoryPlaces {
     pub abroad: Scope,
     /// The person whose memory it is.
     pub person: PrincipalId,
-    /// Someone else working in `here`.
+    /// Someone else in the organization of `here`.
     pub stranger: PrincipalId,
 }
 
 fn access(person: PrincipalId, scope: Scope) -> Access {
-    Access {
-        person: Some(person),
-        scope,
-    }
+    Access { person, scope }
 }
 
 /// What a control answers, with `id` written as `@memory`.
@@ -199,10 +196,6 @@ pub async fn memory_scopes(memory: &dyn Memory, at: MemoryPlaces) -> Verdict {
         "no memory may be read from another organization",
     )?;
     let stranger = seen(memory, at.stranger, at.here).await?;
-    ensure(
-        stranger.contains(&p),
-        "a project's memory must be read by everyone working in it",
-    )?;
     ensure(
         !stranger.contains(&q),
         "a person's own memory must not be read by anyone else",

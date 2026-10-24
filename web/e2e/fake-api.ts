@@ -20,6 +20,7 @@ import {
 import { type Awake, keptAwake } from './fake-awake';
 import { keptFile } from './fake-files';
 import { HOME, listFolders } from './fake-folders';
+import { type Grouped, keptGrouping } from './fake-grouping';
 import { FakeLists } from './fake-lists';
 import {
   type Gone,
@@ -51,7 +52,6 @@ function record(id: string, name: string, kind: Project['kind']): Project {
     kind,
     name,
     owner: OWNER,
-    members: [],
     created_at: '2026-10-11T10:00:00.000Z',
     updated_at: '2026-10-11T10:00:00.000Z',
   };
@@ -296,6 +296,7 @@ const MEMORIES: readonly Remembered[] = [
     text: 'Prefers short answers',
     saved_at: '2026-10-11T10:00:00.000Z',
     version: 1,
+    source: { thread: THREAD, seq: 3 },
   },
 ];
 
@@ -487,6 +488,7 @@ interface Known {
   /** Playground, whose folder is gone, when the test has it. */
   readonly gone: Gone | null;
   readonly awake: Awake;
+  readonly grouped: Grouped;
 }
 
 /** The answer to a call that is not a turn. */
@@ -570,7 +572,12 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
         id: FAKE_SERVER,
       };
     default:
-      return signIn(method, params) ?? keptAwake(method, params, known.awake) ?? {};
+      return (
+        signIn(method, params) ??
+        keptAwake(method, params, known.awake) ??
+        keptGrouping(method, params, known.grouped) ??
+        {}
+      );
   }
 }
 
@@ -598,7 +605,8 @@ function trusted(method: string, params: Record<string, unknown>, trust: Trust):
  * Answers the session API's calls the app makes, as JSON-RPC over POST /. With `trust`, the
  * person also has acme, a project that asks to be trusted; with `commands`, a thread in the
  * project that keeps the docs site running in the background; with `account`, a GitHub account
- * connected; with `gone`, playground, a project whose folder isn't there anymore.
+ * connected; with `gone`, playground, a project whose folder isn't there anymore. How the
+ * person's threads are grouped is kept in `grouped`, which two pages share as one server.
  */
 export async function fakeApi(
   page: Page,
@@ -607,11 +615,13 @@ export async function fakeApi(
     commands = false,
     account = false,
     gone = false,
+    grouped = { grouping: 'project' },
   }: {
     readonly trust?: boolean;
     readonly commands?: boolean;
     readonly account?: boolean;
     readonly gone?: boolean;
+    readonly grouped?: Grouped;
   } = {},
 ): Promise<{ readonly calls: readonly string[]; readonly requests: readonly Request[] }> {
   const calls: string[] = [];
@@ -625,6 +635,7 @@ export async function fakeApi(
     touched: new Set(),
     gone: gone ? folderGone() : null,
     awake: { on: true },
+    grouped,
   };
   const lists = new FakeLists((method, params) => answer(method, params, known));
   await page.route('**/*', async (route: Route) => {

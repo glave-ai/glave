@@ -1,6 +1,6 @@
 [task]
 name = "glave/memory-forget"
-description = "A remembered preference is forgotten when the person asks: a later thread does not know it, and its memory can no longer be opened."
+description = "A remembered preference is forgotten when the person asks: its memory can no longer be opened nor is it loaded again, and once the person also deletes the chat it was saved in, a later thread finds it nowhere."
 
 [glave]
 memory = true
@@ -11,5 +11,9 @@ checks = [{ answer_lacks = ["marigold"] }, "memory_forgotten"]
 [[glave.threads]]
 messages = ["Please forget my favourite flower."]
 
+# The chats are history until the person deletes them too, as the forget's answer says they
+# can: the one it was saved in, and the one where it was forgotten, which may repeat it. Then
+# neither memory nor recall has it.
 [[glave.threads]]
+delete = [1, 2]
 messages = ["What is my favourite flower? If you do not know, say so."]

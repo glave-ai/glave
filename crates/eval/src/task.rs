@@ -136,6 +136,10 @@ pub struct TaskThread {
     /// How many days ago it happens: today when absent. Never more than the thread before.
     #[serde(default)]
     pub days_ago: u32,
+    /// Earlier threads the person deletes before this one starts, as deleting a chat does, by
+    /// their number in the order they ran: 1 is the instruction's.
+    #[serde(default)]
+    pub delete: Vec<usize>,
     /// Checks of this thread's own answer, commands and events (those of files and memory see
     /// how the attempt ended): a probe, counted toward the task's `probe_share`.
     #[serde(default)]
@@ -303,6 +307,7 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
     }
     memory_named(&glave).map_err(bad)?;
     days_run_forward(&glave).map_err(bad)?;
+    deletes_earlier(&glave).map_err(bad)?;
     probes_can_pass(&glave).map_err(bad)?;
     let tidy = tidying(glave.tidy.as_ref()).map_err(bad)?;
     let mut turns = vec![instruction];
@@ -360,6 +365,20 @@ fn days_run_forward(glave: &Glave) -> Result<(), String> {
             ));
         }
         before = thread.days_ago;
+    }
+    Ok(())
+}
+
+/// Whether each thread deletes only threads that ran before it.
+fn deletes_earlier(glave: &Glave) -> Result<(), String> {
+    // The instruction's thread is 1, so the first of `threads` is 2.
+    for (number, thread) in (2_usize..).zip(&glave.threads) {
+        if let Some(late) = thread.delete.iter().find(|n| !(1..number).contains(*n)) {
+            return Err(format!(
+                "thread {number} deletes thread {late}, which has not run before it (the \
+                 instruction's is 1)"
+            ));
+        }
     }
     Ok(())
 }
@@ -533,6 +552,8 @@ mod tests {
         assert!(error("[glave]\ntidy = \"weekly\"").contains("tidy is true or \"due\""));
         let back = "[glave]\ndays_ago = 1\n[[glave.threads]]\ndays_ago = 2\nmessages = [\"x\"]";
         assert!(error(back).contains("never more than the one before it (1;"));
+        let later = "[[glave.threads]]\ndelete = [2]\nmessages = [\"x\"]";
+        assert!(error(later).contains("deletes thread 2, which has not run before it"));
         let probed = "[[glave.threads]]\nmessages = [\"x\"]\nprobe = [\"one_thread\"]";
         let share = |share: &str| error(&format!("[glave]\nprobe_share = {share}\n{probed}"));
         assert!(share("1.5").contains("at most 1"));

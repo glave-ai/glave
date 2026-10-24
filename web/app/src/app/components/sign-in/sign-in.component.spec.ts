@@ -5,7 +5,7 @@ import { expectAccessible } from '@glave/glaze/testing';
 
 import { FAKE_SERVER, FakeSession, provideFakeSession } from '../../testing/fake-session';
 import type { Authenticator } from '../../lib/passkeys';
-import { AUTHENTICATOR, passkeyRefused } from '../../services/passkeys.service';
+import { AUTHENTICATOR, PLATFORM, passkeyRefused } from '../../services/passkeys.service';
 import { SessionService } from '../../services/session.service';
 import { SignInComponent } from './sign-in.component';
 
@@ -38,14 +38,19 @@ const OPTIONS = {
   },
 };
 
-/** A glave reached from elsewhere, signing browsers in with passkeys. */
-function reached(): FakeSession {
+/** A glave answering `discovered` to `server/discover`, signing browsers in with passkeys. */
+function signingIn(discovered: object): FakeSession {
   return new FakeSession()
-    .answer('server/discover', { id: FAKE_SERVER, signin: ['link', 'passkey'] })
+    .answer('server/discover', { id: FAKE_SERVER, ...discovered })
     .answer('passkey/get_options', OPTIONS)
     .answer('passkey/create_options', OPTIONS)
     .answer('passkey/get', { session: 'glave_session_got', server: FAKE_SERVER })
     .answer('passkey/create', { session: 'glave_session_made', server: FAKE_SERVER });
+}
+
+/** A glave reached from elsewhere, signing browsers in with passkeys. */
+function reached(): FakeSession {
+  return signingIn({ origin: 'https://glave.test', signin: ['link', 'passkey'] });
 }
 
 /** The sign-in page, signed out, on `fake`, with `authenticator` making and using passkeys. */
@@ -62,6 +67,7 @@ async function render(
       provideRouter([]),
       ...provideFakeSession(fake, null),
       { provide: AUTHENTICATOR, useValue: authenticator },
+      { provide: PLATFORM, useValue: 'MacIntel' },
     ],
   });
   await TestBed.inject(SessionService).start();
@@ -143,5 +149,34 @@ describe('SignInComponent', () => {
     expect(problem?.getAttribute('role')).toBe('alert');
     expect(navigate).not.toHaveBeenCalled();
     await expectAccessible(root);
+  });
+
+  it('on this computer, signs in with Touch ID once a passkey was made here', async () => {
+    const fake = signingIn({ here: window.location.origin, signin: ['link', 'passkey'] });
+    const { fixture, navigate, root } = await render(fake, answering(ANSWER));
+    const said = root.querySelector('main')?.textContent ?? '';
+    expect(said).toContain('the passkey you made for glave on this computer');
+    expect(said).toContain('Open glave on this computer: it signs this browser in');
+    const button = root.querySelector<HTMLButtonElement>('[data-testid="sign-in-passkey"]');
+    expect(button?.textContent.trim()).toBe('Sign in with Touch ID');
+    await expectAccessible(root);
+    button?.click();
+    await fixture.whenStable();
+    expect(fake.paramsOf('passkey/get')).toHaveLength(1);
+    expect(navigate).toHaveBeenCalledWith('/');
+  });
+
+  it('on this computer, offers no passkey before one is made, nor at another address', async () => {
+    for (const discovered of [
+      { here: window.location.origin, signin: ['link'] },
+      { here: 'http://localhost:1', signin: ['link', 'passkey'] },
+    ]) {
+      TestBed.resetTestingModule();
+      const { root } = await render(signingIn(discovered), answering(ANSWER));
+      expect(root.querySelector('[data-testid="sign-in-passkey"]')).toBeNull();
+      expect(root.querySelector('main')?.textContent).toContain(
+        'Open glave on this computer to sign this browser in',
+      );
+    }
   });
 });

@@ -190,12 +190,17 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
     }
 
     /// Forgets a memory now: its key is destroyed at once, so no version can be read again, and
-    /// so are those of the memories tidy-up merged into it that still wait to be erased.
-    pub async fn forget(&self, who: &Writer, memory: MemoryId) -> Result<(), MemoryError> {
+    /// so are those of the memories tidy-up merged into it that still wait to be erased. The
+    /// memory as it was, unless glave had forgotten it already.
+    pub async fn forget(
+        &self,
+        who: &Writer,
+        memory: MemoryId,
+    ) -> Result<Option<Remembered>, MemoryError> {
         let (ledger, entry) = self.locate(who.person, who.scope, memory).await?;
         // A memory glave forgot waits to be erased; anyone else's forget erases it now.
         if entry.forgot.is_some() && by_glave(&who.by) {
-            return Ok(());
+            return Ok(None);
         }
         // Those merged into it first, so a forget stopped halfway can be asked for again.
         let merged = self
@@ -205,7 +210,9 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
             self.forget_in(ledger, merged, &who.by, Erasure::Now)
                 .await?;
         }
-        self.forget_in(ledger, memory, &who.by, Erasure::Now).await
+        self.forget_in(ledger, memory, &who.by, Erasure::Now)
+            .await?;
+        Ok(entry.live())
     }
 
     /// Records the forget in `ledger`, erased as `erasure` says.
@@ -222,15 +229,9 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
             Erasure::At(at) => (at, None),
             Erasure::Merged(at, into) => (at, Some(into)),
         };
-        let source = self
-            .with_book(ledger, |book| {
-                book.entries.get(&memory).and_then(|entry| entry.source)
-            })
-            .await?;
         let forgotten = MemoryForgotten {
             memory,
             erase_at,
-            source,
             into,
             by: by.clone(),
         };

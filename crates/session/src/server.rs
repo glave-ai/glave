@@ -27,6 +27,7 @@ use tokio::task::JoinHandle;
 use crate::answers::Followed;
 use crate::approvals::{Answering, Approvals};
 use crate::awake::{Awake, KeepAwake};
+use crate::connections::Connections;
 use crate::credentials::GitHosts;
 use crate::held::{Slot, finished};
 use crate::hub::{Hub, Observed};
@@ -74,7 +75,7 @@ pub struct Wiring<P, L, B> {
     pub tasks: TaskLimits,
     /// What threads remember from one to the next (`specs/memory.md`); none when memory is off.
     pub memory: Option<Arc<dyn Memory>>,
-    /// The projects of the server's organization: who owns each and who works in it.
+    /// The projects of the server's organization, and who owns each.
     pub projects: Arc<dyn Projects>,
     /// The models threads may choose besides the settings' own, the default (`model/list`).
     /// The provider must serve each by its id: the gateway's choices.
@@ -91,6 +92,9 @@ pub struct Wiring<P, L, B> {
     /// The git hosts the person on this computer connects; none where whoever runs the
     /// server sets up what its threads sign in to.
     pub git_hosts: Option<Arc<dyn GitHosts>>,
+    /// The connections the person on this computer signs in to; none where whoever runs the server
+    /// sets up what its threads sign in to.
+    pub connections: Option<Arc<dyn Connections>>,
     /// Where a thread in a folder of its own reads the instructions it opens with (its
     /// project's AGENTS.md and what its folder brings that stays off), and what its project
     /// turns on at each turn. None: every thread opens with the settings' instructions, with
@@ -118,11 +122,11 @@ impl<P, L, B> Wiring<P, L, B> {
     /// A server's wiring with what it cannot do without: its models, its store's log, blobs
     /// and projects, and the workspace on the computer its threads work on. Everything else
     /// starts off or empty: the system clock and the operating system's randomness; no
-    /// `web_fetch`, other tools, hooks, workers, memory, model accounts, git hosts, rereading,
-    /// project folders, trust or browsers; no limit on tasks; only the settings' own model and
-    /// mode; threads in their project's folder rather than a worktree; reached only on its own
-    /// computer, which it does not keep awake; leases in its own memory. An embedder names only
-    /// what it changes: `Wiring { hooks, ..Wiring::new(...) }`.
+    /// `web_fetch`, other tools, hooks, workers, memory, model accounts, git hosts, connections,
+    /// rereading, project folders, trust or browsers; no limit on tasks; only the settings' own
+    /// model and mode; threads in their project's folder rather than a worktree; reached only on
+    /// its own computer, which it does not keep awake; leases in its own memory. An embedder
+    /// names only what it changes: `Wiring { hooks, ..Wiring::new(...) }`.
     pub fn new(
         provider: P,
         log: L,
@@ -151,6 +155,7 @@ impl<P, L, B> Wiring<P, L, B> {
             providers: None,
             rereads: None,
             git_hosts: None,
+            connections: None,
             project_folders: None,
             trust: None,
             browsers: None,
@@ -209,6 +214,11 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) changing_models: tokio::sync::Mutex<()>,
     /// Where git hosts are kept, when the person here may connect them.
     pub(crate) git_hosts: Option<Arc<dyn GitHosts>>,
+    /// Where sign-ins to connections are kept, when the person here may sign in.
+    pub(crate) connections: Option<Arc<dyn Connections>>,
+    /// Once it listens over HTTP, its address on this computer when it listens on loopback:
+    /// where a browser here comes back to from signing in to a remote server.
+    pub(crate) reached: OnceLock<Option<String>>,
     /// The modes a thread may choose, cautious first, as the policy now leaves them.
     pub(crate) modes: RwLock<Vec<ApprovalMode>>,
     /// The project's own person, whom the log leaves implied.
@@ -297,6 +307,8 @@ where
                 rereads: wiring.rereads,
                 changing_models: tokio::sync::Mutex::new(()),
                 git_hosts: wiring.git_hosts,
+                connections: wiring.connections,
+                reached: OnceLock::new(),
                 modes: RwLock::new(choosable),
                 person,
                 limits: wiring.tasks,

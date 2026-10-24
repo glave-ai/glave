@@ -102,8 +102,9 @@ export class FakeTurn {
  * A session API in memory for tests: answers by method, notifications for a turn and for a
  * watch, and every call recorded. An answer that is an `ApiError` is thrown. Unanswered,
  * `thread/get` answers the thread as the fixtures make one, idle and asking nothing;
- * `command/list`, nothing running; `awake/get`, a server, which keeps no computer awake; a
- * watch, of a thread or of the lists, sends nothing until it is stopped; any other method, `{}`.
+ * `command/list`, nothing running; `awake/get`, a server, which keeps no computer awake;
+ * `grouping/get`, by project, and `grouping/set`, the grouping asked for; a watch, of a thread
+ * or of the lists, sends nothing until it is stopped; any other method, `{}`.
  */
 export class FakeSession implements SessionClient {
   readonly calls: SeenCall[] = [];
@@ -207,6 +208,13 @@ function unanswered(method: Method, params: unknown): Answer {
   }
   if (method === 'awake/get') {
     return { awake: { kind: 'never' } };
+  }
+  if (method === 'grouping/get') {
+    return { grouping: 'project' };
+  }
+  if (method === 'grouping/set') {
+    const { grouping } = params as { readonly grouping: string };
+    return { grouping };
   }
   return {};
 }

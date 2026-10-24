@@ -90,6 +90,45 @@ describe('SessionService', () => {
     });
   });
 
+  it('makes passkeys at the public origin, or here at this page once the server says so', async () => {
+    const cases = [
+      [{ origin: 'https://glave.test', signin: ['link', 'passkey'] }, [true, true, false]],
+      [{ here: window.location.origin, signin: ['link'] }, [true, false, true]],
+      [{ here: window.location.origin, signin: ['link', 'passkey'] }, [true, true, true]],
+      [{ here: 'http://localhost:1', signin: ['link', 'passkey'] }, [false, false, false]],
+      [{ signin: ['link'] }, [false, false, false]],
+    ] as const;
+    for (const [discovered, [passkeys, signIn, here]] of cases) {
+      TestBed.resetTestingModule();
+      startingOut(new FakeSession().answer('server/discover', { ...DISCOVERED, ...discovered }));
+      const session = TestBed.inject(SessionService);
+      await session.start();
+      const said = JSON.stringify(discovered);
+      expect(session.passkeys(), said).toBe(passkeys);
+      expect(session.passkeySignIn(), said).toBe(signIn);
+      expect(session.passkeysHere(), said).toBe(here);
+    }
+  });
+
+  it('offers a passkey here until the server says one is made, and asks it again', async () => {
+    let made = false;
+    localStorage.setItem(TOKEN_KEY, JSON.stringify(SIGNED_IN));
+    const here = { ...DISCOVERED, here: window.location.origin };
+    startingOut(
+      new FakeSession().answer('server/discover', () => ({
+        ...here,
+        signin: made ? ['link', 'passkey'] : ['link'],
+      })),
+    );
+    const session = TestBed.inject(SessionService);
+    await session.start();
+    expect(session.offersPasskey()).toBe(true);
+    made = true;
+    await session.rediscover();
+    expect(session.offersPasskey()).toBe(false);
+    expect(session.passkeySignIn()).toBe(true);
+  });
+
   it('follows the session another tab of this browser keeps or forgets', async () => {
     const fake = new FakeSession().answer('server/discover', DISCOVERED);
     const sent = startingOut(fake);

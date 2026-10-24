@@ -10,6 +10,8 @@ import {
   ACCOUNTS,
   APP,
   FIRST_RUN,
+  HERE,
+  HERE_WEBKIT,
   LIFELINE,
   LIVE,
   LIVE_MODEL_URL,
@@ -83,8 +85,9 @@ process.env[LIVE_MODEL_URL] = liveModel;
  * What glave serves: the app on a model the fake API names, Glaze's showcase, the app on a
  * glave with nothing set up, for the first run against the real server, the app on a real
  * glave with a model, to connect accounts to, the app on a real glave reached from elsewhere
- * at a public origin, to sign in to with passkeys, and the app on a real glave whose model is a
- * fake service and which asks before commands run, to follow a thread from two tabs.
+ * at a public origin, to sign in to with passkeys, the app on real glaves reached here alone,
+ * to make passkeys on this computer, and the app on a real glave whose model is a fake service
+ * and which asks before commands run, to follow a thread from two tabs.
  */
 const SITES: readonly { site: Site; web: string; env: Record<string, string> }[] = [
   {
@@ -107,6 +110,11 @@ const SITES: readonly { site: Site; web: string; env: Record<string, string> }[]
     web: 'dist/app/browser',
     env: { ...tied, GLAVE_HOME: home(ACCOUNTS), GLAVE_MODEL: 'e2e' },
   },
+  ...[HERE, HERE_WEBKIT].map((site) => ({
+    site,
+    web: 'dist/app/browser',
+    env: { ...tied, GLAVE_HOME: home(site), GLAVE_MODEL: 'e2e' },
+  })),
   {
     site: PASSKEYS,
     web: 'dist/app/browser',
@@ -169,10 +177,15 @@ export default defineConfig({
   ],
   // Each glave listens on a port the system picks (port 0), so two runs on one machine, such as
   // two `cargo xtask ci` side by side, never meet. It is ready once it says where it serves,
-  // and Playwright keeps that address in the site's variable, which the workers inherit.
+  // and Playwright keeps that address in the site's variable, which the workers inherit. The
+  // whole line, to its end: Playwright matches what has come so far after each piece of output,
+  // and glave's error output is written in pieces, so without the end a line read only to
+  // `http://127.0.0.` would be taken for an address (127.0.0.0, port 80).
   webServer: SITES.map(({ site, web, env }) => ({
     command: `"${glave}" serve --http 0 --web ${web}`,
-    wait: { stderr: new RegExp(`serving the session API on (?<${site.address}>http://\\S+)`, 'u') },
+    wait: {
+      stderr: new RegExp(`serving the session API on (?<${site.address}>http://\\S+)\\n`, 'u'),
+    },
     cwd: '..',
     env,
   })),

@@ -16,7 +16,9 @@ import { GlzConfirmDialogComponent } from './confirm-dialog.component';
       danger
       [(open)]="open"
       (decided)="decisions.push($event)"
-    />
+    >
+      <p data-testid="extra">Its replies go too.</p>
+    </glz-confirm-dialog>
   `,
 })
 class HostComponent {
@@ -34,6 +36,7 @@ describe('GlzConfirmDialogComponent', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelector('.message')?.textContent).toBe('It cannot be undone.');
+    expect(root.querySelector('[data-testid="confirm-body"] [data-testid="extra"]')).not.toBeNull();
     expect(find(root, 'confirm-ok')?.classList).toContain('glz-button--danger');
     await expectAccessible(root);
     find(root, 'confirm-ok')?.click();

@@ -6,8 +6,8 @@
 use glave_event::{CredentialId, Secret};
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 
-use crate::protocol::{ApiError, CredentialInfo, DeviceCode, Reply, code};
-use crate::providers::local;
+use crate::protocol::{ApiError, CredentialInfo, DeviceCode, Reply};
+use crate::providers::theirs;
 use crate::server::Server;
 use crate::words::Sentence;
 
@@ -52,19 +52,9 @@ where
 {
     /// The host's git hosts, for the person on this computer only.
     fn git_hosts_for(&self, caller: &Caller) -> Result<&dyn GitHosts, ApiError> {
-        let Some(hosts) = self.inner.git_hosts.as_deref() else {
-            return Err(ApiError::new(
-                code::NOT_AVAILABLE,
-                Sentence::AccountsNotHere,
-            ));
-        };
-        if !local(caller) {
-            return Err(ApiError::new(
-                code::NOT_ALLOWED,
-                Sentence::AccountsOnItsComputer,
-            ));
-        }
-        Ok(hosts)
+        let hosts = self.inner.git_hosts.as_deref();
+        let elsewhere = Sentence::AccountsOnItsComputer;
+        theirs(caller, hosts, Sentence::AccountsNotHere, elsewhere)
     }
 
     /// Answers `credential/connect`.

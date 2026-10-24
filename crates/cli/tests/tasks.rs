@@ -30,7 +30,6 @@ fn made_a_project(place: &Place) {
     let path = std::fs::canonicalize(&place.project).unwrap();
     let created = Request::ProjectCreate {
         name: "project".into(),
-        members: Vec::new(),
         folder: Some(NewFolder::Path {
             path: path.to_string_lossy().into_owned(),
         }),

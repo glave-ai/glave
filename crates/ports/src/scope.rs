@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use glave_event::PrincipalId;
+use glave_event::{Principal, PrincipalId};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -29,7 +29,7 @@ impl fmt::Display for OrgId {
     }
 }
 
-/// Identifies a project: the boundary for memory, history, files, members and policy.
+/// Identifies a project: the boundary for memory, history, files and policy.
 #[derive(
     Debug,
     Clone,
@@ -67,7 +67,7 @@ impl fmt::Display for ProjectId {
 /// hold it, so code cannot read where no one was checked (`specs/invariants.md`, 17). It is
 /// made only two ways, each easy to find:
 ///
-/// - [`Scope::of_member`], for what a person asks: only once they are found to work in the
+/// - [`Scope::of_owner`], for what a person asks: only once they are found to own the
 ///   project, read from the store in their organization. The session API's one check makes it.
 /// - [`Scope::glaves_own`], for glave's own work that no one asks for at that moment (the
 ///   scheduler, sweeps, recovery, the ledgers it keeps, the host opening its own folder), and
@@ -83,15 +83,15 @@ pub struct Scope {
 
 impl Scope {
     /// The scope of `project`, in the organization `org` it was read from, for `person` when
-    /// they work in it: its owner or one of its members. `None` otherwise.
-    pub fn of_member(org: OrgId, project: &Project, person: PrincipalId) -> Option<Self> {
-        project.admits_person(person).then_some(Self {
+    /// they own it. `None` otherwise.
+    pub fn of_owner(org: OrgId, project: &Project, person: PrincipalId) -> Option<Self> {
+        (project.owner == Principal::person(person)).then_some(Self {
             org,
             project: project.id,
         })
     }
 
-    /// The scope of `project` in `org` for glave's own work, which no person's membership
+    /// The scope of `project` in `org` for glave's own work, which no person's ownership
     /// decides.
     pub fn glaves_own(org: OrgId, project: ProjectId) -> Self {
         Self { org, project }
@@ -113,8 +113,8 @@ impl fmt::Display for Scope {
 }
 
 /// Where the store found a thread by its bare id (`EventLog::locate`): which organization and
-/// project hold it. A hint, not a scope: the caller's membership of `project` must be checked,
-/// making a [`Scope`], before anything of the thread is read.
+/// project hold it. A hint, not a scope: that the caller owns `project` must be checked, making
+/// a [`Scope`], before anything of the thread is read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Located {
     pub org: OrgId,
@@ -138,7 +138,7 @@ impl<'de> Deserialize<'de> for Scope {
 
 #[cfg(test)]
 mod tests {
-    use glave_event::{At, Principal};
+    use glave_event::At;
 
     use super::*;
     use crate::projects::ProjectKind;
@@ -151,23 +151,20 @@ mod tests {
     }
 
     #[test]
-    fn only_the_owner_and_members_get_a_scope_and_it_is_the_projects_in_its_organization() {
+    fn only_the_owner_gets_a_scope_and_it_is_the_projects_in_its_organization() {
         let at = At::try_from("2026-10-01T00:00:00.000Z".to_owned()).unwrap();
         let project = Project {
             id: ProjectId::from_uuid(Uuid::from_u128(2)),
             kind: ProjectKind::Project,
             name: "garden".into(),
             owner: Principal::person(person(1)),
-            members: vec![Principal::person(person(2))],
             created_at: at,
             updated_at: at,
-            revision: 0,
         };
         let org = OrgId::from_uuid(Uuid::from_u128(1));
         let expected = Scope::glaves_own(org, project.id);
-        assert_eq!(Scope::of_member(org, &project, person(1)), Some(expected));
-        assert_eq!(Scope::of_member(org, &project, person(2)), Some(expected));
-        assert_eq!(Scope::of_member(org, &project, person(3)), None);
+        assert_eq!(Scope::of_owner(org, &project, person(1)), Some(expected));
+        assert_eq!(Scope::of_owner(org, &project, person(2)), None);
         let written = serde_json::to_value(expected).unwrap();
         assert_eq!(serde_json::from_value::<Scope>(written).unwrap(), expected);
     }

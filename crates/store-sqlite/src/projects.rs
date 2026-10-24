@@ -1,5 +1,4 @@
-//! Projects on SQLite: one row per project, its members in order beside it, and the folder keys
-//! that lead to it.
+//! Projects on SQLite: one row per project, and the folder keys that lead to it.
 
 use glave_event::{At, Principal};
 use glave_ports::{
@@ -71,7 +70,7 @@ fn corrupt(error: impl std::fmt::Display) -> Failure {
     )))
 }
 
-/// A project's row, before its members are read.
+/// A project's row, as read.
 struct Row {
     id: String,
     kind: String,
@@ -79,10 +78,9 @@ struct Row {
     owner: String,
     created_at: String,
     updated_at: String,
-    revision: i64,
 }
 
-const COLUMNS: &str = "id, kind, name, owner, created_at, updated_at, revision";
+const COLUMNS: &str = "id, kind, name, owner, created_at, updated_at";
 
 fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
     Ok(Row {
@@ -92,32 +90,19 @@ fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
         owner: row.get(3)?,
         created_at: row.get(4)?,
         updated_at: row.get(5)?,
-        revision: row.get(6)?,
     })
 }
 
-/// The whole project `row` stands for, with its members.
-fn assemble(connection: &Connection, org: &str, row: Row) -> Result<Project, Failure> {
-    let mut statement = connection.prepare_cached(
-        "SELECT member FROM project_members WHERE org = ?1 AND project = ?2 ORDER BY position",
-    )?;
-    let members = statement
-        .query_map(params![org, row.id], |member| member.get::<_, String>(0))?
-        .collect::<rusqlite::Result<Vec<String>>>()?;
-    let members = members
-        .iter()
-        .map(|member| serde_json::from_str(member).map_err(corrupt))
-        .collect::<Result<Vec<Principal>, Failure>>()?;
+/// The project `row` stands for.
+fn assemble(row: Row) -> Result<Project, Failure> {
     Ok(Project {
         id: ProjectId::from_uuid(Uuid::parse_str(&row.id).map_err(corrupt)?),
         kind: ProjectKind::named(&row.kind)
             .ok_or_else(|| corrupt(format!("unknown kind {:?}", row.kind)))?,
         name: row.name,
         owner: serde_json::from_str(&row.owner).map_err(corrupt)?,
-        members,
         created_at: At::try_from(row.created_at).map_err(corrupt)?,
         updated_at: At::try_from(row.updated_at).map_err(corrupt)?,
-        revision: u64::try_from(row.revision).map_err(corrupt)?,
     })
 }
 
@@ -128,28 +113,7 @@ fn get_now(connection: &Connection, org: &str, id: &str) -> Result<Option<Projec
         ))?
         .query_row(params![org, id], row)
         .optional()?;
-    found
-        .map(|found| assemble(connection, org, found))
-        .transpose()
-}
-
-fn write_members(
-    transaction: &Transaction<'_>,
-    org: &str,
-    project: &Project,
-) -> Result<(), Failure> {
-    let id = project.id.to_string();
-    transaction.execute(
-        "DELETE FROM project_members WHERE org = ?1 AND project = ?2",
-        params![org, id],
-    )?;
-    for (position, member) in (0_i64..).zip(&project.members) {
-        transaction.execute(
-            "INSERT INTO project_members (org, project, position, member) VALUES (?1, ?2, ?3, ?4)",
-            params![org, id, position, principal_text(member)?],
-        )?;
-    }
-    Ok(())
+    found.map(assemble).transpose()
 }
 
 /// The ids and names of the projects `owner` (as stored) has in `org`.
@@ -187,7 +151,6 @@ fn insert(transaction: &Transaction<'_>, org: &str, project: &Project) -> Result
     Project::check_name(&project.name)?;
     let owner = principal_text(&project.owner)?;
     let mut project = project.clone();
-    project.revision = 0;
     if project.kind == ProjectKind::Project {
         let taken: Vec<String> = projects_of(transaction, org, &owner)?
             .into_iter()
@@ -197,8 +160,8 @@ fn insert(transaction: &Transaction<'_>, org: &str, project: &Project) -> Result
     }
     let project = &project;
     let inserted = transaction.execute(
-        "INSERT INTO project_records (org, id, kind, name, owner, created_at, updated_at, revision)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0)",
+        "INSERT INTO project_records (org, id, kind, name, owner, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
             org,
             project.id.to_string(),
@@ -210,10 +173,7 @@ fn insert(transaction: &Transaction<'_>, org: &str, project: &Project) -> Result
         ],
     );
     match inserted {
-        Ok(_) => {
-            write_members(transaction, org, project)?;
-            Ok(project.clone())
-        }
+        Ok(_) => Ok(project.clone()),
         Err(rusqlite::Error::SqliteFailure(error, _))
             if error.code == ErrorCode::ConstraintViolation =>
         {
@@ -343,75 +303,58 @@ impl Projects for SqliteProjects {
     fn list<'a>(
         &'a self,
         org: OrgId,
-        member: &'a Principal,
+        owner: &'a Principal,
         limit: usize,
     ) -> BoxFuture<'a, Result<Vec<Project>, ProjectError>> {
-        let member = principal_text(member);
+        let owner = principal_text(owner);
         Box::pin(async move {
-            let member = member?;
+            let owner = owner?;
             let limit = i64::try_from(limit).unwrap_or(i64::MAX);
             self.with(move |connection| {
-                let org = org.to_string();
                 let rows = connection
                     .prepare_cached(&format!(
-                        "SELECT {COLUMNS} FROM project_records r WHERE r.org = ?1
-                           AND (r.owner = ?2 OR EXISTS (SELECT 1 FROM project_members m
-                                WHERE m.org = r.org AND m.project = r.id AND m.member = ?2))
-                         ORDER BY r.id LIMIT ?3"
+                        "SELECT {COLUMNS} FROM project_records WHERE org = ?1 AND owner = ?2
+                         ORDER BY id LIMIT ?3"
                     ))?
-                    .query_map(params![org, member, limit], row)?
+                    .query_map(params![org.to_string(), owner, limit], row)?
                     .collect::<rusqlite::Result<Vec<Row>>>()?;
-                rows.into_iter()
-                    .map(|found| assemble(connection, &org, found))
-                    .collect()
+                rows.into_iter().map(assemble).collect()
             })
             .await
         })
     }
 
-    fn update<'a>(
+    fn rename<'a>(
         &'a self,
         org: OrgId,
-        project: &'a Project,
+        project: ProjectId,
+        name: &'a str,
+        at: At,
     ) -> BoxFuture<'a, Result<Project, ProjectError>> {
-        let project = project.clone();
+        let name = name.to_owned();
         Box::pin(self.with(move |connection| {
-            Project::check_name(&project.name)?;
-            let org = org.to_string();
+            Project::check_name(&name)?;
+            let (org, id) = (org.to_string(), project.to_string());
             let transaction = writing(connection)?;
-            let stored: Option<(String, String, i64)> = transaction
+            let stored: Option<(String, String)> = transaction
                 .query_row(
-                    "SELECT kind, owner, revision FROM project_records WHERE org = ?1 AND id = ?2",
-                    params![org, project.id.to_string()],
-                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                    "SELECT kind, owner FROM project_records WHERE org = ?1 AND id = ?2",
+                    params![org, id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .optional()?;
-            let Some((kind, owner, revision)) = stored else {
-                return Err(ProjectError::NotFound(project.id).into());
+            let Some((kind, owner)) = stored else {
+                return Err(ProjectError::NotFound(project).into());
             };
-            if u64::try_from(revision).ok() != Some(project.revision) {
-                return Err(ProjectError::Changed(project.id).into());
-            }
             if kind == ProjectKind::Project.as_str() {
                 let taken = projects_of(&transaction, &org, &owner)?;
-                Project::check_free(project.id, &project.name, &taken)?;
+                Project::check_free(project, &name, &taken)?;
             }
-            let changed = transaction.execute(
-                "UPDATE project_records SET name = ?3, updated_at = ?4, revision = revision + 1
-                 WHERE org = ?1 AND id = ?2",
-                params![
-                    org,
-                    project.id.to_string(),
-                    project.name,
-                    project.updated_at.to_string()
-                ],
+            transaction.execute(
+                "UPDATE project_records SET name = ?3, updated_at = ?4 WHERE org = ?1 AND id = ?2",
+                params![org, id, name, at.to_string()],
             )?;
-            if changed == 0 {
-                return Err(ProjectError::NotFound(project.id).into());
-            }
-            write_members(&transaction, &org, &project)?;
-            let kept = get_now(&transaction, &org, &project.id.to_string())?
-                .ok_or(ProjectError::NotFound(project.id))?;
+            let kept = get_now(&transaction, &org, &id)?.ok_or(ProjectError::NotFound(project))?;
             transaction.commit()?;
             Ok(kept)
         }))

@@ -55,11 +55,18 @@ jobs:
       GLAVE_TEST_WORKER_GLAVE: ${{ github.workspace }}/target/debug/glave
       GLAVE_TEST_WORKER_IMAGE: buildpack-deps:noble-scm@sha256:4163ac2c58660c533f3cf3d178551287ddd0ac18269ef84f3a382d0698c89254
     steps:
-      # Linking every test binary of the workspace fills the runner's disk (ld dies with a bus
-      # error), so the toolchains the runner ships and glave never uses go first (about 30 GB).
-      - name: Free disk space
+      # Linking every test binary of the workspace once filled a smaller runner's disk (ld died
+      # with a bus error). Today's runner starts with about 85 GB free and the build takes about
+      # 8, so the toolchains it ships that glave never uses (about 30 GB, and minutes to remove)
+      # go only when less than 40 GB is free, five times what the build needs.
+      - name: Free disk space, if the runner is short of it
         run: |
           df -h /
+          free="$(df -BG --output=avail / | awk 'NR == 2 { print int($1) }')"
+          if [ "$free" -ge 40 ]; then
+            echo "$free GB free, enough: nothing removed"
+            exit 0
+          fi
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium
           sudo docker image prune --all --force >/dev/null
           df -h /
@@ -107,7 +114,7 @@ jobs:
           exit 1
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@v2
@@ -156,7 +163,7 @@ jobs:
         run: rustup toolchain install
         working-directory: .
       # One build cache for the web jobs: this job saves it (from main), the shards restore it.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: web
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -194,6 +201,10 @@ jobs:
   # End-to-end tests in Chromium and WebKit with axe in light and dark, against the real
   # `glave serve --http --web` and its Content Security Policy: each browser's tests split in
   # two shards, each on a runner of its own, with the app, the showcase and glave built there.
+  # The tests run in Playwright's own image, which carries the browsers and every system
+  # package they need, so no run installs them (installing them with `--with-deps` took
+  # minutes, and once 35). The builds stay on the runner, with its toolchain and caches, and
+  # what they make runs in the image: Ubuntu 24.04, as the runner is.
   e2e:
     name: e2e (${{ matrix.browser }} ${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
@@ -207,12 +218,15 @@ jobs:
         working-directory: web
     env:
       GLAVE_BIN: ${{ github.workspace }}/target/debug/glave
+      # At the Playwright version web/ uses (package-lock.json), pinned by digest. When web/
+      # moves to another, the tests fail at once and name the image they need.
+      PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
     steps:
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
         working-directory: .
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: web
           save-if: false
@@ -222,33 +236,35 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
-      # The browser lives in node_modules (PLAYWRIGHT_BROWSERS_PATH=0), which `npm ci` empties,
-      # so it is cached apart, by browser and Playwright's version, and saved from main.
-      - name: Which Playwright
-        id: playwright
-        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@v6
-        id: browser
-        with:
-          path: web/node_modules/playwright-core/.local-browsers
-          key: playwright-${{ matrix.browser }}-${{ steps.playwright.outputs.version }}
-      - name: Install ${{ matrix.browser }}, with what it needs
-        run: PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install --with-deps --only-shell ${{ matrix.browser }}
-      - if: github.ref == 'refs/heads/main' && steps.browser.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: web/node_modules/playwright-core/.local-browsers
-          key: ${{ steps.browser.outputs.cache-primary-key }}
       - run: npm run build
       - run: npm run build:showcase
       # Built as the checks build it for its serving tests, so the cache they save serves it.
-      - name: Build glave with the app inside
-        run: cargo test -p glave --features web --test cli --no-run
+      # Playwright's image is pulled meanwhile, which takes about as long.
+      - name: Build glave with the app inside, and pull Playwright's image
+        run: |
+          docker pull -q "$PLAYWRIGHT_IMAGE" >/dev/null &
+          cargo test -p glave --features web --test cli --no-run
+          wait $!
         working-directory: .
-      - run: npm run e2e -- --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/2
+      # The scripts look for the browsers in node_modules (PLAYWRIGHT_BROWSERS_PATH=0), and the
+      # image keeps them in /ms-playwright: a link to there, which resolves in the image.
+      - name: The image's browsers, where the scripts look for them
+        run: ln -s /ms-playwright node_modules/playwright-core/.local-browsers
+      # In the image, the workspace is at its path on the runner, so GLAVE_BIN and every other
+      # path are the same there. As Playwright's docs run it: with an init process, which reaps
+      # what a killed runner leaves, and the runner's shared memory, which Chromium needs.
+      - name: npm run e2e -- --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/2
+        run: >-
+          docker run --rm --init --ipc=host -e CI -e GLAVE_BIN
+          -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE"
+          npm run e2e -- --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/2
       # A runner killed outright leaves nothing it started (#558): once, on one shard.
-      - if: matrix.browser == 'chromium' && matrix.shard == 1
-        run: npm run e2e:killed
+      - name: npm run e2e:killed
+        if: matrix.browser == 'chromium' && matrix.shard == 1
+        run: >-
+          docker run --rm --init --ipc=host -e CI -e GLAVE_BIN
+          -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE"
+          npm run e2e:killed
 
   web:
     if: always()
@@ -302,18 +318,25 @@ jobs:
       GLAVE_TEST_WORKER_GLAVE: ${{ github.workspace }}/target/debug/glave
       GLAVE_TEST_WORKER_IMAGE: buildpack-deps:noble-scm@sha256:4163ac2c58660c533f3cf3d178551287ddd0ac18269ef84f3a382d0698c89254
     steps:
-      # Linking every test binary of the workspace fills the runner's disk (ld dies with a bus
-      # error), so the toolchains the runner ships and glave never uses go first (about 30 GB).
-      - name: Free disk space
+      # Linking every test binary of the workspace once filled a smaller runner's disk (ld died
+      # with a bus error). Today's runner starts with about 85 GB free and the build takes about
+      # 8, so the toolchains it ships that glave never uses (about 30 GB, and minutes to remove)
+      # go only when less than 40 GB is free, five times what the build needs.
+      - name: Free disk space, if the runner is short of it
         run: |
           df -h /
+          free="$(df -BG --output=avail / | awk 'NR == 2 { print int($1) }')"
+          if [ "$free" -ge 40 ]; then
+            echo "$free GB free, enough: nothing removed"
+            exit 0
+          fi
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium
           sudo docker image prune --all --force >/dev/null
           df -h /
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@v2
@@ -354,18 +377,25 @@ jobs:
   sandbox-linux:
     runs-on: ubuntu-latest
     steps:
-      # Linking every test binary of the workspace fills the runner's disk (ld dies with a bus
-      # error), so the toolchains the runner ships and glave never uses go first (about 30 GB).
-      - name: Free disk space
+      # Linking every test binary of the workspace once filled a smaller runner's disk (ld died
+      # with a bus error). Today's runner starts with about 85 GB free and the build takes about
+      # 8, so the toolchains it ships that glave never uses (about 30 GB, and minutes to remove)
+      # go only when less than 40 GB is free, five times what the build needs.
+      - name: Free disk space, if the runner is short of it
         run: |
           df -h /
+          free="$(df -BG --output=avail / | awk 'NR == 2 { print int($1) }')"
+          if [ "$free" -ge 40 ]; then
+            echo "$free GB free, enough: nothing removed"
+            exit 0
+          fi
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium
           sudo docker image prune --all --force >/dev/null
           df -h /
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@v2
@@ -418,7 +448,7 @@ jobs:
         run: for script in .github/*.sh; do /bin/sh -n "$script"; done
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@v2

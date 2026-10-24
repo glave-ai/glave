@@ -179,11 +179,15 @@ impl<L: EventLog + 'static> Memories<L> {
                 if let Err(why) = keeps_facts(&text, &sources) {
                     return Ok(Settled::Refused(why));
                 }
-                // The oldest takes the merged text first, so stopping halfway leaves a
-                // duplicate, never a loss.
-                let mut ids: Vec<MemoryId> = picked.iter().map(|(entry, _)| entry.memory).collect();
-                ids.sort();
-                let Some((keep, rest)) = ids.split_first() else {
+                // The one stated last takes the merged text first, so the merge dates from the
+                // newest statement that went into it, and stopping halfway leaves a duplicate,
+                // never a loss.
+                let mut said: Vec<(Option<At>, MemoryId)> = (picked.iter())
+                    .map(|(entry, _)| (entry.stated(), entry.memory))
+                    .collect();
+                said.sort();
+                let ids: Vec<MemoryId> = said.into_iter().map(|(_, memory)| memory).collect();
+                let Some((keep, rest)) = ids.split_last() else {
                     return Ok(Settled::Refused(
                         "a merge needs two memories or more".into(),
                     ));
@@ -215,7 +219,7 @@ impl<L: EventLog + 'static> Memories<L> {
                         proposal.memories()
                     )));
                 }
-                let (one_at, other_at) = (one.touched(), other.touched());
+                let (one_at, other_at) = (one.stated(), other.stated());
                 used.extend([one.memory, other.memory]);
                 if !clear || one_at == other_at {
                     return Ok(Settled::Asked([one.memory, other.memory]));

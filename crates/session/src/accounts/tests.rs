@@ -4,8 +4,8 @@
 use std::sync::Arc;
 
 use glave_event::{
-    CredentialConnected, CredentialId, Forge, Principal, PrincipalId, ProviderConnected,
-    ProviderId, ProviderKind, Secret,
+    ConnectionConnected, CredentialConnected, CredentialId, Forge, Principal, PrincipalId,
+    ProviderConnected, ProviderId, ProviderKind, Secret, SignInClient,
 };
 use glave_keys::{InMemoryRoot, KeySettings};
 use glave_ports::stream::Reserved;
@@ -186,5 +186,114 @@ fn erasing_an_account_destroys_its_key_and_it_reads_as_erased() {
             "the project key was rotated, so backups lose it too"
         );
         assert!(!ledger.remove_provider(account.provider).await.unwrap());
+    });
+}
+
+/// The connection at `url`, the `n`th signed in, with `token`.
+fn connection(n: u128, url: &str, token: &str) -> ConnectionConnected {
+    ConnectionConnected {
+        connection: credential(n),
+        url: url.into(),
+        token: Secret::new(token),
+        expires: None,
+        refresh: Some(Secret::new(fake_secret("mcr_"))),
+        client: SignInClient {
+            issuer: None,
+            client_id: "client".into(),
+            scopes: Vec::new(),
+        },
+        by: Principal::glave(),
+    }
+}
+
+/// How many of `data` hold `token`.
+fn holding(data: &[String], token: &str) -> usize {
+    data.iter().filter(|data| data.contains(token)).count()
+}
+
+#[test]
+fn a_connection_is_kept_by_its_address_renewed_while_kept_and_erased_when_removed() {
+    block_on!(async {
+        let kit = kit();
+        let ledger = &kit.ledger;
+        let url = "https://mcp.example.com/mcp";
+        let [one, two, three] = [(); 3].map(|()| fake_secret("mcp_"));
+        let first = connection(1, url, &one);
+        ledger.keep_connection(&first).await.unwrap();
+        let other = connection(2, "https://docs.example.com/mcp", &three);
+        ledger.keep_connection(&other).await.unwrap();
+        let renewed = connection(3, url, &two);
+        let kept = ledger.renew_connection(first.connection, &renewed).await;
+        assert!(kept.unwrap());
+        let again = ledger.renew_connection(first.connection, &renewed).await;
+        assert!(
+            !again.unwrap(),
+            "a connection renewed already is renewed no more"
+        );
+        let accounts = ledger.accounts().await.unwrap();
+        assert_eq!(accounts.connections, [other.clone(), renewed]);
+        let data = stored(&kit).await;
+        assert_eq!((holding(&data, &one), holding(&data, &two)), (0, 1));
+
+        assert!(ledger.remove_connection(url).await.unwrap());
+        assert!(!ledger.remove_connection(url).await.unwrap());
+        assert_eq!(ledger.accounts().await.unwrap().connections, [other]);
+        let data = stored(&kit).await;
+        assert_eq!(holding(&data, &two), 0, "its key is destroyed: {data:?}");
+    });
+}
+
+#[test]
+fn a_ledger_read_by_two_processes_shows_each_what_the_other_changed() {
+    block_on!(async {
+        let kit = kit();
+        let elsewhere = AccountLedger::new(
+            kit.store.log(),
+            kit.store.keyring(),
+            kit.ledger.scope,
+            kit.ledger.person,
+            Arc::new(ManualClock::ticking(START)),
+            Arc::new(CountingEntropy::starting_at(100)),
+        );
+        let url = "https://mcp.example.com/mcp";
+        assert_eq!(elsewhere.accounts().await.unwrap().connections, []);
+        let token = fake_secret("mcp_");
+        kit.ledger
+            .keep_connection(&connection(1, url, &token))
+            .await
+            .unwrap();
+        let seen = elsewhere.accounts().await.unwrap().connections;
+        assert_eq!(seen.len(), 1, "what the other kept, at once");
+        assert!(elsewhere.remove_connection(url).await.unwrap());
+        assert_eq!(kit.ledger.accounts().await.unwrap().connections, []);
+        // Each erases what it saw removed; the second finds its key gone already.
+        assert_eq!(elsewhere.accounts().await.unwrap().connections, []);
+        let data = stored(&kit).await;
+        assert_eq!(holding(&data, &token), 0, "erased: {data:?}");
+    });
+}
+
+#[test]
+fn one_person_s_connections_are_never_another_s() {
+    block_on!(async {
+        let kit = kit();
+        let theirs = Scope::glaves_own(OrgId::from_uuid(uuid(1)), ProjectId::from_uuid(uuid(101)));
+        let other = AccountLedger::new(
+            kit.store.log(),
+            kit.store.keyring(),
+            theirs,
+            PrincipalId::try_from(uuid(51)).unwrap(),
+            Arc::new(ManualClock::ticking(START)),
+            Arc::new(CountingEntropy::starting_at(100)),
+        );
+        let url = "https://mcp.example.com/mcp";
+        kit.ledger
+            .keep_connection(&connection(1, url, &fake_secret("mcp_")))
+            .await
+            .unwrap();
+        assert_eq!(other.accounts().await.unwrap().connections, []);
+        assert!(!other.remove_connection(url).await.unwrap());
+        let mine = kit.ledger.accounts().await.unwrap().connections;
+        assert_eq!(mine.len(), 1, "removing theirs left mine");
     });
 }

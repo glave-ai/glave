@@ -35,7 +35,7 @@ pub(crate) const TIDIED: &str = "memory.tidied";
 pub enum MemoryScope {
     /// About the person: read in their threads, in projects that allow it.
     Personal,
-    /// About the project's work: read by every member and agent working in it.
+    /// About the project's work: read in its threads.
     Project,
 }
 
@@ -100,12 +100,8 @@ pub struct MemoryForgotten {
     pub memory: MemoryId,
     /// When its key is destroyed: at once when the person forgets, 30 days on when glave does.
     pub erase_at: At,
-    /// Where it was saved, kept here because the saved event's text (and its source with it)
-    /// is erased: once the person forgets it, `recall` never returns that turn again.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<MemorySource>,
-    /// The memory a merge by tidy-up folded it into: its turn stays in `recall` until the
-    /// person forgets that one.
+    /// The memory a merge by tidy-up folded it into: erased with that one when the person
+    /// forgets it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub into: Option<MemoryId>,
     /// Who forgot it.

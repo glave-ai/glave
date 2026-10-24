@@ -11,8 +11,8 @@ use uuid::Uuid;
 use crate::codec::{Payload, parse};
 use crate::envelope::RawEvent;
 use crate::id::{CredentialId, ProviderId};
-use crate::payload::credential;
 use crate::payload::principal::Principal;
+use crate::payload::{connection, credential};
 use crate::secret::Secret;
 
 pub(crate) const CONNECTED: &str = "provider.connected";
@@ -81,8 +81,8 @@ pub(crate) fn decode_removed(
 }
 
 /// The account whose own data key seals `event`, when it is a `provider.connected` (a model
-/// account) or a `credential.connected` (a git host); every other event is sealed under its
-/// month's key.
+/// account), a `credential.connected` (a git host) or a `connection.connected` (a connection);
+/// every other event is sealed under its month's key.
 pub fn sealed_under_account(event: &RawEvent) -> Option<Uuid> {
     #[derive(Deserialize)]
     struct Provider {
@@ -92,6 +92,10 @@ pub fn sealed_under_account(event: &RawEvent) -> Option<Uuid> {
     struct Credential {
         credential: CredentialId,
     }
+    #[derive(Deserialize)]
+    struct Connection {
+        connection: CredentialId,
+    }
     let data = event.data.get();
     match event.kind.as_str() {
         CONNECTED => serde_json::from_str::<Provider>(data)
@@ -100,6 +104,9 @@ pub fn sealed_under_account(event: &RawEvent) -> Option<Uuid> {
         credential::CONNECTED => serde_json::from_str::<Credential>(data)
             .ok()
             .map(|named| named.credential.as_uuid()),
+        connection::CONNECTED => serde_json::from_str::<Connection>(data)
+            .ok()
+            .map(|named| named.connection.as_uuid()),
         _ => None,
     }
 }

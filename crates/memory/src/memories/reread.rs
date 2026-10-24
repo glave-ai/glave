@@ -1,7 +1,7 @@
 //! Reading again what memory tools' results showed (`reply.rs`), for a thread being rebuilt:
 //! each memory at the version shown, unless it is forgotten since, and each turn of a past
-//! conversation recall found, unless recall hides it now or it no longer opens. Scoped exactly
-//! as recall is, by the thread reading them now, never by what the reply names.
+//! conversation recall found, unless its chat is deleted since or it no longer opens. Scoped
+//! exactly as recall is, by the thread reading them now, never by what the reply names.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -10,7 +10,7 @@ use glave_ports::search::{Found, query_terms};
 use glave_ports::{EventLog, Scope};
 
 use super::Memories;
-use super::recall::{Hidden, ledgers, snippet};
+use super::recall::{ledgers, snippet};
 use crate::reply::{Hit, Of, Reply, Texts};
 
 impl<L: EventLog + 'static> Memories<L> {
@@ -25,17 +25,14 @@ impl<L: EventLog + 'static> Memories<L> {
             .into_iter()
             .map(|memory| (memory.shown(), memory.text))
             .collect();
-        let readable = self.rules().readable(on.person, on.scope);
-        let mut hidden = self.hidden(&readable).await?;
-        let ledgers = ledgers(&readable);
+        let ledgers = ledgers(&self.rules().readable(on.person, on.scope));
         let mut all = Vec::with_capacity(replies.len());
         for reply in replies {
             let mut texts: Texts = (reply.memories().into_iter())
                 .filter_map(|shown| Some((Of::Memory(shown), memories.get(&shown)?.clone())))
                 .collect();
             if let Reply::Recalled { query, hits } = reply {
-                self.turns(&ledgers, &mut hidden, (query, hits), &mut texts)
-                    .await;
+                self.turns(&ledgers, (query, hits), &mut texts).await;
             }
             all.push(texts);
         }
@@ -43,15 +40,10 @@ impl<L: EventLog + 'static> Memories<L> {
     }
 
     /// Into `texts`, each turn of a past conversation among `hits` as it reads now around
-    /// `query`'s words, from the first of `ledgers` that holds it, unless `hidden` hides it.
-    async fn turns(
-        &self,
-        ledgers: &[Scope],
-        hidden: &mut Hidden,
-        (query, hits): (&str, &[Hit]),
-        texts: &mut Texts,
-    ) {
+    /// `query`'s words, from the first of `ledgers` that holds it, unless its chat is deleted.
+    async fn turns(&self, ledgers: &[Scope], (query, hits): (&str, &[Hit]), texts: &mut Texts) {
         let wanted: BTreeSet<String> = query_terms(query).into_iter().collect();
+        let mut seen = BTreeMap::new();
         for hit in hits {
             let &Hit::Thread { thread, seq, .. } = hit else {
                 continue;
@@ -61,9 +53,7 @@ impl<L: EventLog + 'static> Memories<L> {
                 let Some(said) = self.said_at(*ledger, found).await else {
                     continue;
                 };
-                // Hidden is asked only in the ledger that holds the turn: it reads the turn's
-                // bounds there.
-                if !hidden.hides(&self.inner.log, *ledger, found).await {
+                if self.kept(*ledger, thread, &mut seen).await {
                     texts.insert(Of::Turn(thread, seq), snippet(&said.text, &wanted));
                 }
                 break;

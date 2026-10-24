@@ -171,7 +171,7 @@ test('signed in from another computer, a project is made by its name alone', asy
   await page.goto(`/${SIGNED_IN_ELSEWHERE}`);
   await byTestId(page, 'nav-new-project').click();
   await expect(byTestId(page, 'new-project')).toBeVisible();
-  await expect(page.getByRole('radio')).toHaveCount(0);
+  await expect(byTestId(page, 'new-project').getByRole('radio')).toHaveCount(0);
   await expect(byTestId(page, 'new-project-no-folder')).toHaveText(
     'Its threads start in an empty folder for now; a computer for it comes later.',
   );

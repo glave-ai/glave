@@ -35,7 +35,6 @@ async fn server_in(base: &Path) -> (Tested, PathBuf, PathBuf) {
 fn create_at(path: &Path) -> Request {
     Request::ProjectCreate {
         name: "app".into(),
-        members: Vec::new(),
         folder: Some(NewFolder::Path {
             path: path.to_string_lossy().into_owned(),
         }),

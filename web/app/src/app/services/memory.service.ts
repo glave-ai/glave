@@ -33,10 +33,19 @@ export class MemoryService {
     });
   }
 
-  async forget(memory: MemoryId): Promise<void> {
+  /**
+   * Forgets `memory`, then, with `deleteChat`, deletes the chat the server says it was saved in:
+   * two of the person's own actions, each answered by the server. A chat that cannot go now, such
+   * as one with a turn running, is said so in the server's words; the memory is forgotten anyway.
+   */
+  async forget(memory: MemoryId, deleteChat = false): Promise<void> {
     await this.run(async () => {
-      await this.session.call('memory/forget', { memory });
+      const { memories } = await this.session.call('memory/forget', { memory });
       await this.refresh();
+      const chat = deleteChat ? memories[0]?.source?.thread : undefined;
+      if (chat !== undefined) {
+        await this.session.call('thread/delete', { thread: chat });
+      }
     });
   }
 

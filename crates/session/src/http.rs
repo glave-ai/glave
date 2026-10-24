@@ -38,7 +38,8 @@ use tokio::task::JoinSet;
 
 use self::body::Answer;
 use self::hosts::door;
-use self::listen::connected;
+use self::listen::{Listening, accept, connected};
+use crate::connections::CALLBACK;
 use crate::dispatch::Answered;
 use crate::protocol::{ApiError, Request, code};
 use crate::rpc::{Id, parse, respond};
@@ -84,7 +85,17 @@ where
         None => signin,
     });
     let site = Arc::new(site);
-    let (clear, secured) = listeners.listening(server.inner.origin.as_ref())?;
+    // Browsers on this computer make and use passkeys at `localhost`, where only this server
+    // answers, unless the server is reached at a public origin, its relying party then.
+    if server.inner.origin.is_none()
+        && let (Some(browsers), Some(port)) = (&server.inner.browsers, listeners.localhost())
+        && let Err(error) = browsers.reached_here(port)
+    {
+        tracing::warn!(%error, "browsers here cannot sign in with passkeys");
+    }
+    let all = listeners.listening(server.inner.origin.as_ref())?;
+    let here = all.iter().find_map(Listening::loopback);
+    server.reached_at(here.map(|at| format!("http://{at}")));
     let mut connections = JoinSet::new();
     let mut stop = pin!(stop);
     loop {
@@ -98,7 +109,7 @@ where
         } else {
             tokio::select! {
                 () = &mut stop => break,
-                accepted = clear.accept(secured.as_ref()) => accepted,
+                accepted = accept(&all) => accepted,
             }
         };
         // A connection that failed to open is that client's problem, not the server's.
@@ -118,6 +129,11 @@ where
                 async move {
                     if foreign {
                         return Ok::<_, Infallible>(plain(StatusCode::FORBIDDEN));
+                    }
+                    // Only a browser's GET: a prefetch's HEAD must not spend the sign-in's state.
+                    if request.method() == Method::GET && request.uri().path() == CALLBACK {
+                        let query = request.uri().query().unwrap_or_default();
+                        return Ok(said(server.finish_connection(query).await));
                     }
                     let answered = match site.as_ref() {
                         Some(site) if is_read(request.method()) => {
@@ -327,6 +343,27 @@ fn plain(status: StatusCode) -> Response<Answer> {
 
 fn accepted() -> Response<Answer> {
     plain(StatusCode::ACCEPTED)
+}
+
+/// A page of plain text, `sentence`: what a browser back from a sign-in is told. Never kept,
+/// and its address, which carried a code, sent nowhere else.
+fn said(sentence: String) -> Response<Answer> {
+    let mut response = Response::new(Answer::once(sentence));
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/plain; charset=utf-8"),
+    );
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    headers.insert(
+        header::REFERRER_POLICY,
+        HeaderValue::from_static("no-referrer"),
+    );
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    response
 }
 
 fn json(status: StatusCode, message: String) -> Response<Answer> {

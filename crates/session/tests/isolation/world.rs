@@ -18,6 +18,7 @@ use glave_session::{Answering, TurnItem, TurnStream};
 use serde_json::{Value, json};
 
 use super::table::Kind;
+use crate::connections::InMemory;
 use crate::credentials::Hosts;
 use crate::providers::Accounts;
 use crate::support::*;
@@ -145,6 +146,7 @@ async fn serve<L: EventLog + Clone + 'static>(n: u128, parts: &Parts<L>, dir: &P
     if n == 1 {
         setup.providers = Some(Arc::new(Accounts::default()));
         setup.hosts = Some(Arc::new(Hosts::default()));
+        setup.connections = Some(Arc::new(InMemory::default()));
     }
     let (server, _) = setup.build_on(dir, parts.log.clone()).await;
     Org { server, browsers }

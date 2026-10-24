@@ -229,10 +229,11 @@ pub enum Control {
     },
 }
 
-/// Who asks for a control, and in which project: the verified caller, never a parameter.
+/// Who asks for a control, and in which project: the verified caller, or the local person when
+/// none signed in, never a parameter. A control is always a person's own action, never glave's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Access {
-    pub person: Option<PrincipalId>,
+    pub person: PrincipalId,
     pub scope: Scope,
 }
 
@@ -271,8 +272,8 @@ pub trait Memory: Send + Sync {
 
     /// The words memory calls' results showed the model, read again from what each one's
     /// [`Kept`] recorded (`shown`) for a thread of `on` being rebuilt, in order: each text as it
-    /// reads now, so a memory forgotten since, or a past conversation `recall` hides now, is
-    /// left out. `None` for a result that cannot be read again.
+    /// reads now, so a memory forgotten since, or a past chat deleted since, is left out.
+    /// `None` for a result that cannot be read again.
     fn reread<'a>(
         &'a self,
         on: &'a MemoryContext,

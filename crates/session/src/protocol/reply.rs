@@ -13,8 +13,9 @@ use glave_ports::{Project, ProjectId, Standing};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    ApprovalMode, CredentialInfo, DeviceCode, FileInfo, GoneFolder, ModelInfo, PasskeySummary,
-    ProjectFolder, ProviderInfo, ScheduleInfo, SignInWay, TaskInfo, Told, TrustAsk, WatchEnd,
+    ApprovalMode, ConnectionInfo, CredentialInfo, DeviceCode, FileInfo, GoneFolder, Grouping,
+    ModelInfo, PasskeySummary, ProjectFolder, ProviderInfo, ScheduleInfo, SignInLink, SignInWay,
+    TaskInfo, Told, TrustAsk, WatchEnd,
 };
 
 /// What the server is.
@@ -37,7 +38,12 @@ pub struct ServerInfo {
     /// Where people reach the server from elsewhere, if they do: its public origin.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<String>,
-    /// How a browser signs in to it; none where no browser does, as over stdio.
+    /// Where a browser on this computer makes and signs in with passkeys, when the server
+    /// makes them here rather than at a public origin: `http://localhost:<port>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub here: Option<String>,
+    /// How a browser signs in to it; none where no browser does, as over stdio. A passkey: at a
+    /// public origin always, a setup link making the first; on this computer once one is made.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub signin: Vec<SignInWay>,
 }
@@ -225,7 +231,8 @@ pub enum Reply {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         refused: Option<Told>,
     },
-    /// Memories listed, or the ones a change touched.
+    /// Memories listed, or the ones a change touched. A memory's `source` names the chat it
+    /// was saved in only when that chat was started for the caller and is still there.
     #[schemars(title = "Memories")]
     Memories { memories: Vec<Remembered> },
     /// The models a thread may be sent to, the default first.
@@ -250,6 +257,14 @@ pub enum Reply {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         install: Option<String>,
     },
+    /// A connection, as it was signed in to.
+    #[schemars(title = "Connection")]
+    Connection { connection: ConnectionInfo },
+    #[schemars(title = "Connections")]
+    Connections { connections: Vec<ConnectionInfo> },
+    /// Where the person signs in to a remote server.
+    #[schemars(title = "SignIn")]
+    SignIn { sign_in: SignInLink },
     #[schemars(title = "Commands")]
     Commands { commands: Vec<RunningCommand> },
     #[schemars(title = "Device")]
@@ -294,6 +309,9 @@ pub enum Reply {
         #[serde(deserialize_with = "Option::deserialize")]
         language: Option<String>,
     },
+    /// How the caller's clients group their threads.
+    #[schemars(title = "Grouping")]
+    Grouping { grouping: Grouping },
     /// Whether the computer is kept awake while glave works.
     #[schemars(title = "Awake")]
     Awake { awake: AwakeInfo },

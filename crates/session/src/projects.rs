@@ -2,16 +2,14 @@
 //! who may do what"). A server serves many projects of one organization, with none of its own:
 //! those its callers work in, and each caller's Chats, where requests that name none act. Every
 //! request that acts on a thread, or on a project, is checked against the caller: they must own
-//! the project or be one of its members, or it is answered before anything is read or
-//! recorded exactly as a thread or project that does not exist is, so whether it exists never
-//! leaks.
+//! the project, or it is answered before anything is read or recorded exactly as a thread or
+//! project that does not exist is, so whether it exists never leaks.
 
 use std::collections::HashMap;
 
 use glave_event::{At, Principal, PrincipalId, ThreadId};
 use glave_ports::{
-    BlobStore, Caller, EventLog, ModelProvider, Project, ProjectError, ProjectId, ProjectKind,
-    Scope,
+    BlobStore, Caller, EventLog, ModelProvider, Project, ProjectId, ProjectKind, Scope,
 };
 
 use crate::held::Slot;
@@ -44,9 +42,6 @@ impl Places {
         self.0.insert(thread, project);
     }
 }
-
-/// How many times a change to a project is made again when another came first.
-const UPDATE_TRIES: usize = 3;
 
 pub(crate) fn no_project(project: ProjectId) -> ApiError {
     ApiError::new(
@@ -81,9 +76,8 @@ where
     }
 
     /// The one check of who may use a project's scope: `project`, read from this server's
-    /// organization, and the scope `caller` may read and write it with, when they own it or are
-    /// one of its members; otherwise "no project", as for one that does not exist
-    /// (`specs/invariants.md`, 17).
+    /// organization, and the scope `caller` may read and write it with, when they own it;
+    /// otherwise "no project", as for one that does not exist (`specs/invariants.md`, 17).
     pub(crate) async fn authorized(
         &self,
         caller: &Caller,
@@ -92,12 +86,12 @@ where
         let found = self.project(project).await?;
         let person = self.person_of(caller)?;
         let scope =
-            Scope::of_member(self.inner.org, &found, person).ok_or_else(|| no_project(project))?;
+            Scope::of_owner(self.inner.org, &found, person).ok_or_else(|| no_project(project))?;
         Ok((found, scope))
     }
 
-    /// The project `project`, when `caller` works in it; see [`Server::authorized`].
-    pub(crate) async fn member_of(
+    /// The project `project`, when `caller` owns it; see [`Server::authorized`].
+    pub(crate) async fn owned(
         &self,
         caller: &Caller,
         project: ProjectId,
@@ -117,20 +111,18 @@ where
             kind: ProjectKind::Personal,
             name: PERSONAL_NAME.to_owned(),
             owner: Principal::person(self.person_of(caller)?),
-            members: Vec::new(),
             created_at: At::from(now),
             updated_at: At::from(now),
-            revision: 0,
         };
         let kept = self.inner.projects.personal(self.inner.org, &new).await?;
         let person = self.person_of(caller)?;
         let scope =
-            Scope::of_member(self.inner.org, &kept, person).ok_or_else(|| no_project(kept.id))?;
+            Scope::of_owner(self.inner.org, &kept, person).ok_or_else(|| no_project(kept.id))?;
         Ok((kept, scope))
     }
 
     /// The project a request acts in, and the caller's scope in it: `asked`, when the caller
-    /// works in it; with none, their personal project, their Chats, whatever folder the server
+    /// owns it; with none, their personal project, their Chats, whatever folder the server
     /// started in.
     pub(crate) async fn project_for(
         &self,
@@ -143,7 +135,7 @@ where
         }
     }
 
-    /// The projects `caller` works in: those whose tasks and schedules they see.
+    /// The projects `caller` owns: those whose tasks and schedules they see.
     pub(crate) async fn projects_of(&self, caller: &Caller) -> Result<Vec<ProjectId>, ApiError> {
         let person = Principal::person(self.person_of(caller)?);
         let projects = self
@@ -186,8 +178,8 @@ where
         Ok(Scope::glaves_own(self.inner.org, project))
     }
 
-    /// The scope of `thread`, when `caller` works in its project; otherwise "no such thread",
-    /// as for one that does not exist.
+    /// The scope of `thread`, when `caller` owns its project; otherwise "no such thread", as
+    /// for one that does not exist.
     pub(crate) async fn authorize(
         &self,
         caller: &Caller,
@@ -204,18 +196,18 @@ where
         Ok(scope)
     }
 
-    /// Refuses `request` unless `caller` may make it: for a thread, they work in its project;
-    /// for a project's memory, in the project it names (with none, their own Chats).
+    /// Refuses `request` unless `caller` may make it: for a thread, they own its project; for
+    /// a project's memory, the project it names (with none, their own Chats).
     pub(crate) async fn allow(&self, caller: &Caller, request: &Request) -> Result<(), ApiError> {
         if let Some(thread) = request.thread() {
             self.authorize(caller, thread).await?;
         } else if let Some(project) = request.memory_project() {
-            self.member_of(caller, project).await?;
+            self.owned(caller, project).await?;
         }
         Ok(())
     }
 
-    /// Answers `project/list`: the projects `caller` works in but removed projects, and which of
+    /// Answers `project/list`: the projects `caller` owns but removed projects, and which of
     /// them have no folder here anymore.
     pub(crate) async fn list_projects(
         &self,
@@ -239,7 +231,6 @@ where
         &self,
         caller: &Caller,
         name: String,
-        members: Vec<Principal>,
         folder: Option<NewFolder>,
     ) -> Result<Reply, ApiError> {
         Project::check_name(&name)?;
@@ -250,10 +241,8 @@ where
             kind: ProjectKind::Project,
             name,
             owner: Principal::person(self.person_of(caller)?),
-            members,
             created_at: At::from(now),
             updated_at: At::from(now),
-            revision: 0,
         };
         if let Some(folder) = folder {
             return self.create_with_folder(caller, project, folder).await;
@@ -271,38 +260,25 @@ where
         caller: &Caller,
         project: ProjectId,
     ) -> Result<Reply, ApiError> {
-        let project = self.member_of(caller, project).await?;
+        let project = self.owned(caller, project).await?;
         let folder = self.folder_of(project.id).await?;
         Ok(Reply::Project { project, folder })
     }
 
-    /// Answers `project/rename`: for its owner only.
+    /// Answers `project/rename`: the last rename wins.
     pub(crate) async fn rename_project(
         &self,
         caller: &Caller,
         project: ProjectId,
         name: String,
     ) -> Result<Reply, ApiError> {
-        let mut tries = 0;
-        let renamed = loop {
-            let mut found = self.member_of(caller, project).await?;
-            if found.owner != Principal::person(self.person_of(caller)?) {
-                return Err(ApiError::new(
-                    code::NOT_ALLOWED,
-                    Sentence::RenameOnlyOwner {
-                        project: project.to_string(),
-                    },
-                ));
-            }
-            found.name.clone_from(&name);
-            found.updated_at = At::from(self.inner.harness.clock().now());
-            tries += 1;
-            // Changed by someone else since it was read: the name goes on what they left.
-            match self.inner.projects.update(self.inner.org, &found).await {
-                Err(ProjectError::Changed(_)) if tries < UPDATE_TRIES => {}
-                updated => break updated?,
-            }
-        };
+        self.owned(caller, project).await?;
+        let at = At::from(self.inner.harness.clock().now());
+        let renamed = self
+            .inner
+            .projects
+            .rename(self.inner.org, project, &name, at)
+            .await?;
         let folder = self.folder_of(project).await?;
         Ok(Reply::Project {
             project: renamed,
