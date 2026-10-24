@@ -374,7 +374,7 @@ mod tests {
             let root: Arc<dyn glave_keys::Root> =
                 Arc::new(glave_keys::InMemoryRoot::new().unwrap());
             let first = handle(&root).await;
-            assert!(first.is_string(), "{first}");
+            assert!(first.is_string(), "the handle is text");
             assert_eq!(handle(&root).await, first, "a fresh store, the same root");
             let theirs: Arc<dyn glave_keys::Root> =
                 Arc::new(glave_keys::InMemoryRoot::new().unwrap());
