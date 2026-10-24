@@ -88,7 +88,7 @@ impl From<ProjectError> for ApiError {
             ProjectError::Conflict(_) | ProjectError::Invalid(_) => {
                 Self::new(code::INVALID_PARAMS, error.to_string())
             }
-            ProjectError::Changed(_) | ProjectError::Storage(_) => Self::internal(&error),
+            ProjectError::Storage(_) => Self::internal(&error),
         }
     }
 }
