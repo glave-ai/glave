@@ -55,6 +55,7 @@ const RESULTS: TurnResults = {
       summary: 'bash: git push',
       caution: 'It pushes to a remote.',
       outsideSandbox: false,
+      withNetwork: false,
       modelReason: '',
       decision: null,
     },

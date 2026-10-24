@@ -276,6 +276,7 @@
     "results.outsideSandbox": "{{$COUNT}, plural, one {# command} other {# commands}} outside the sandbox",
     "results.steps": "{{$COUNT}, plural, one {# step} other {# steps}}",
     "results.via": "via {$ROUTES}",
+    "results.withNetwork": "{{$COUNT}, plural, one {# command} other {# commands}} with the network",
     "routes.connect": "Add a model · glave",
     "routes.memory": "Memory · glave",
     "routes.project": "Project · glave",

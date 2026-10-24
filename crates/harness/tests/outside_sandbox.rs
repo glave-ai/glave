@@ -21,20 +21,20 @@ const CAUTION: &str = "It runs outside the sandbox, where it can read and change
 /// Someone at the keyboard, who answers every approval with `answer` and keeps what they
 /// were asked.
 #[derive(Clone)]
-struct Person {
+pub(crate) struct Person {
     answer: Decision,
     asked: Arc<Mutex<Vec<ApprovalRequest>>>,
 }
 
 impl Person {
-    fn answering(answer: Decision) -> Self {
+    pub(crate) fn answering(answer: Decision) -> Self {
         Self {
             answer,
             asked: Arc::default(),
         }
     }
 
-    fn asked(&self) -> Vec<ApprovalRequest> {
+    pub(crate) fn asked(&self) -> Vec<ApprovalRequest> {
         self.asked.lock().unwrap().clone()
     }
 }
@@ -50,7 +50,7 @@ impl Approver for Person {
     }
 }
 
-fn judged() -> Settings {
+pub(crate) fn judged() -> Settings {
     let mut settings = settings();
     settings.judge = glave_ports::settings::Judge::Main;
     settings
@@ -58,7 +58,7 @@ fn judged() -> Settings {
 
 /// A folder with a project in it, outside the system temp folder (which the sandbox lets
 /// commands write); `None` where this computer has no sandbox.
-fn sandboxed(name: &str) -> Option<glave_ports::testing::TempDir> {
+pub(crate) fn sandboxed(name: &str) -> Option<glave_ports::testing::TempDir> {
     if !glave_computer::sandbox_available() {
         assert!(
             std::env::var_os("GLAVE_REQUIRE_SANDBOX").is_none(),
@@ -72,9 +72,15 @@ fn sandboxed(name: &str) -> Option<glave_ports::testing::TempDir> {
 }
 
 async fn in_sandbox(base: &Path) -> glave_harness::Workspace {
+    walled(base, false).await
+}
+
+/// The project in `base` as the tools' workspace, its commands in the sandbox, with the
+/// `network` or without.
+pub(crate) async fn walled(base: &Path, network: bool) -> glave_harness::Workspace {
     let sandbox = Sandbox {
         level: SandboxLevel::Project,
-        network: false,
+        network,
         home: Some(base.to_owned()),
         glave_home: Some(base.join(".glave")),
     };
@@ -86,13 +92,13 @@ async fn in_sandbox(base: &Path) -> glave_harness::Workspace {
 }
 
 /// A `bash` call asking to write `file` beside the project, outside the sandbox.
-fn outside(base: &Path, file: &str) -> (&'static str, serde_json::Value) {
+pub(crate) fn outside(base: &Path, file: &str) -> (&'static str, serde_json::Value) {
     let command = format!("echo x > {}", base.join(file).display());
     let arguments = json!({ "command": command, "outside_sandbox": true, "reason": REASON });
     ("bash", arguments)
 }
 
-fn results(messages: &[Message]) -> Vec<String> {
+pub(crate) fn results(messages: &[Message]) -> Vec<String> {
     messages
         .iter()
         .filter_map(|message| match message {
@@ -105,7 +111,7 @@ fn results(messages: &[Message]) -> Vec<String> {
         .collect()
 }
 
-fn decided(events: &[Event]) -> Vec<(Verdict, Option<Principal>)> {
+pub(crate) fn decided(events: &[Event]) -> Vec<(Verdict, Option<Principal>)> {
     events
         .iter()
         .filter_map(|event| match &event.body {
@@ -115,7 +121,7 @@ fn decided(events: &[Event]) -> Vec<(Verdict, Option<Principal>)> {
         .collect()
 }
 
-fn judges(seen: &[ModelRequest]) -> Vec<String> {
+pub(crate) fn judges(seen: &[ModelRequest]) -> Vec<String> {
     seen.iter()
         .filter(|request| request.purpose == Purpose::Judge)
         .map(|request| format!("{:?}", request.messages))

@@ -33,6 +33,10 @@ pub enum Kind {
     ApprovalModes(Vec<ApprovalMode>),
     Judge(JudgeRule),
     SandboxRequired,
+    /// Commands go without the network, which only the sandbox can keep from them.
+    NetworkOff,
+    /// No command without the network may ask the person to run with it.
+    NetworkAskForbidden,
     /// The servers the organization offers.
     McpCatalog(Vec<String>),
     /// People may not add MCP servers of their own.
@@ -72,6 +76,8 @@ impl fmt::Display for Kind {
             }
             Self::Judge(rule) => write!(f, "[approval] judge = {:?}", rule.name()),
             Self::SandboxRequired => f.write_str("[sandbox] required = true"),
+            Self::NetworkOff => f.write_str("[sandbox] network = false"),
+            Self::NetworkAskForbidden => f.write_str("[sandbox] ask_network = false"),
             Self::McpCatalog(names) => write!(f, "[mcp] catalog = {}", quoted(names)),
             Self::McpOwnForbidden => f.write_str("[mcp] own = false"),
             Self::McpUntrusted(names) => write!(f, "[mcp] untrusted = {}", quoted(names)),
@@ -138,6 +144,12 @@ impl Constraints {
             }
             if file.sandbox.required {
                 add(Kind::SandboxRequired);
+            }
+            if file.sandbox.network == Some(false) {
+                add(Kind::NetworkOff);
+            }
+            if file.sandbox.ask_network == Some(false) {
+                add(Kind::NetworkAskForbidden);
             }
             if let Some(catalog) = &file.mcp.catalog {
                 add(Kind::McpCatalog(catalog.clone()));
@@ -233,9 +245,20 @@ impl Constraints {
         }))
     }
 
-    /// The first rule that requires the sandbox.
+    /// The first rule that requires the sandbox: `[sandbox] required`, or a rule that takes
+    /// the network from commands, which only the sandbox can keep.
     pub fn sandbox_required(&self) -> Option<&Rule> {
-        self.first(|kind| matches!(kind, Kind::SandboxRequired))
+        self.first(|kind| matches!(kind, Kind::SandboxRequired | Kind::NetworkOff))
+    }
+
+    /// The first rule that takes the network from commands.
+    pub fn network_off(&self) -> Option<&Rule> {
+        self.first(|kind| matches!(kind, Kind::NetworkOff))
+    }
+
+    /// The first rule that forbids a command without the network to ask for it.
+    pub fn network_ask_forbidden(&self) -> Option<&Rule> {
+        self.first(|kind| matches!(kind, Kind::NetworkAskForbidden))
     }
 
     /// The first rule that forbids people's own MCP servers.

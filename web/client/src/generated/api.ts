@@ -670,6 +670,11 @@ export type TurnResult = {
   readonly outside_sandbox?: number;
   readonly tokens: TokenCounts;
   readonly tool_calls: number;
+  /**
+   * The commands that ran with the network the sandbox otherwise kept from them, each one
+   * allowed.
+   */
+  readonly with_network?: number;
 };
 
 /**

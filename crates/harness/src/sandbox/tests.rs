@@ -130,7 +130,7 @@ fn a_command_allowed_outside_the_sandbox_runs_without_it_and_the_next_is_sandbox
     assert!(
         blocked
             .text
-            .contains("run it again with outside_sandbox: true and a reason"),
+            .contains("network: true when it needs the internet, or outside_sandbox: true"),
         "the note says how to ask: {}",
         blocked.text
     );
@@ -169,18 +169,40 @@ fn a_command_allowed_outside_the_sandbox_runs_without_it_and_the_next_is_sandbox
 
 #[test]
 fn running_outside_the_sandbox_is_added_to_a_command_s_own_caution() {
-    use super::{OUTSIDE_SANDBOX, with_outside};
-    assert_eq!(with_outside(None, false), None);
-    assert_eq!(with_outside(None, true).as_deref(), Some(OUTSIDE_SANDBOX));
+    use super::{OUTSIDE_SANDBOX, WITH_NETWORK, with_outside};
+    use glave_event::Lifted;
+    assert_eq!(with_outside(None, None), None);
     assert_eq!(
-        with_outside(Some("it pushes to a remote".to_owned()), true).as_deref(),
+        with_outside(None, Some(Lifted::Sandbox)).as_deref(),
+        Some(OUTSIDE_SANDBOX)
+    );
+    assert_eq!(
+        with_outside(
+            Some("it pushes to a remote".to_owned()),
+            Some(Lifted::Sandbox)
+        )
+        .as_deref(),
         Some(
             "it pushes to a remote, and it runs outside the sandbox, where it can read and \
              change any file you can"
         )
     );
     assert_eq!(
-        with_outside(Some("it pushes to a remote".to_owned()), false).as_deref(),
+        with_outside(
+            Some("it pushes to a remote".to_owned()),
+            Some(Lifted::Network)
+        )
+        .as_deref(),
+        Some(
+            "it pushes to a remote, and it can reach the internet, which commands here otherwise cannot"
+        )
+    );
+    assert_eq!(
+        with_outside(None, Some(Lifted::Network)).as_deref(),
+        Some(WITH_NETWORK)
+    );
+    assert_eq!(
+        with_outside(Some("it pushes to a remote".to_owned()), None).as_deref(),
         Some("it pushes to a remote")
     );
 }
@@ -371,12 +393,39 @@ fn the_network_is_off_unless_allowed() {
         &connect,
     );
     assert!(!off.text.contains("connected"), "{}", off.text);
+    assert!(
+        off.text.contains("network: true"),
+        "the note says how to ask: {}",
+        off.text
+    );
     let on = run(
         &project,
         &sandbox(SandboxLevel::Project, true, &dir),
         &connect,
     );
     assert!(on.text.contains("connected"), "{}", on.text);
+    // Let out with the network, one command keeps the rest of the sandbox.
+    let with_network = bash(serde_json::json!({
+        "command": format!("echo out > ../outside.txt; {connect}"),
+        "network": true,
+    }));
+    let lifted = block_on!(async {
+        let workspace = Workspace::open(&project, std::env::vars_os())
+            .await
+            .unwrap()
+            .with_sandbox(&sandbox(SandboxLevel::Project, false, &dir))
+            .await
+            .unwrap();
+        Tool::Bash
+            .run(
+                &with_network,
+                (&workspace, &crate::background::Commands::default()),
+                &Cancel::new(),
+            )
+            .await
+    });
+    assert!(lifted.text.contains("connected"), "{}", lifted.text);
+    assert!(!dir.join("outside.txt").exists(), "{}", lifted.text);
 }
 
 #[test]

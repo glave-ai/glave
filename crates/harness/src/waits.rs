@@ -7,8 +7,8 @@
 use std::collections::{HashMap, HashSet};
 
 use glave_event::{
-    ApprovalDecided, ApprovalRequested, Body, CallId, Event, Outcome, ParentCall, Part, Payload,
-    Principal, PrincipalId, Seq, ThreadId, ToolCallCompleted, Verdict, decode,
+    ApprovalDecided, ApprovalRequested, Body, CallId, Event, Lifted, Outcome, ParentCall, Part,
+    Payload, Principal, PrincipalId, Seq, ThreadId, ToolCallCompleted, Verdict, decode,
 };
 use glave_ports::{
     BlobStore, CallKind, EventLog, LogError, ModelProvider, Scope, Standing, ThreadQuery,
@@ -402,7 +402,7 @@ pub(crate) fn own_tallies(events: &[Event]) -> TurnSummary {
         .unwrap_or(0);
     let turn = events.get(started..).unwrap_or_default();
     let mut summary = TurnSummary::started();
-    let mut outside: HashMap<&CallId, bool> = HashMap::new();
+    let mut outside: HashMap<&CallId, Lifted> = HashMap::new();
     for event in turn {
         match &event.body {
             Body::ModelResponded(responded) => {
@@ -418,16 +418,19 @@ pub(crate) fn own_tallies(events: &[Event]) -> TurnSummary {
                 summary.tool_calls = summary.tool_calls.saturating_add(1);
             }
             Body::ApprovalRequested(asked) => {
-                outside.insert(&asked.call_id, asked.outside_sandbox.is_some());
+                if let Some(let_out) = &asked.outside_sandbox {
+                    outside.insert(&asked.call_id, let_out.lifted);
+                }
             }
             Body::ApprovalDecided(decided)
-                if outside.get(&decided.call_id).copied().unwrap_or(false)
-                    && matches!(
-                        decided.decision,
-                        Verdict::AllowOnce | Verdict::AllowForThread
-                    ) =>
+                if matches!(
+                    decided.decision,
+                    Verdict::AllowOnce | Verdict::AllowForThread
+                ) =>
             {
-                summary.outside_sandbox = summary.outside_sandbox.saturating_add(1);
+                if let Some(lifted) = outside.get(&decided.call_id) {
+                    summary.let_out(*lifted);
+                }
             }
             Body::TurnEnded(ended) => summary.outcome = ended.outcome,
             _ => {}

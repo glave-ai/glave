@@ -233,7 +233,24 @@ describe('conversation', () => {
       outsideSandbox: true,
       modelReason: 'cargo add writes to ~/.cargo/registry.',
     });
-    expect(items[1]).toMatchObject({ outsideSandbox: true, modelReason: '' });
+    expect(items[1]).toMatchObject({ outsideSandbox: true, withNetwork: false, modelReason: '' });
+  });
+
+  it('reads a request to run with the network, in the sandbox otherwise', () => {
+    const items = threadItems([
+      event('approval.requested', {
+        call_id: 'c1',
+        tool: 'bash',
+        summary: 'bash: npm install',
+        caution: 'It can reach the internet, which commands here otherwise cannot.',
+        outside_sandbox: { reason: 'npm install downloads packages.', lifted: 'network' },
+      }),
+    ]);
+    expect(items[0]).toMatchObject({
+      outsideSandbox: true,
+      withNetwork: true,
+      modelReason: 'npm install downloads packages.',
+    });
   });
 
   it('grows the draft with text and reasoning only', () => {

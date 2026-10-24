@@ -453,6 +453,12 @@ impl JudgeRule {
 pub struct SandboxRules {
     #[serde(default)]
     pub required: bool,
+    /// Whether commands may use the network: `false` takes it from them, whatever anyone
+    /// chooses.
+    pub network: Option<bool>,
+    /// Whether a command without the network may ask the person to run with it: `false`
+    /// forbids asking.
+    pub ask_network: Option<bool>,
 }
 
 /// `[mcp]`.

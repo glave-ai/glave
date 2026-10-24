@@ -256,6 +256,7 @@ fn runs(setup: &Setup, glave_home: &Path) -> anyhow::Result<Runs> {
             judge: choices.judge.value.clone(),
             titles: choices.titles.value,
             sandbox: crate::sandboxing::sandbox_of(choices, Some(glave_home)),
+            ask_network: setup.loaded.constraints.network_ask_forbidden().is_none(),
             hooks: Hooks::new(setup.hooks.clone())?,
             web: crate::project_folders::web_offered(&choices.web.value)?,
         },

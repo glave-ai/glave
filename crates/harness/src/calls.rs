@@ -158,13 +158,16 @@ where
         let hooked = ToolHook::of(call, name);
         if let Some(answered) = waited {
             // Its hooks ran and it asked before the turn stopped: its answer decides, as it
-            // would have the moment it came.
-            let outside = answered.asked.outside_sandbox.is_some();
+            // would have the moment it came, unless the policy took asking away meanwhile.
+            let lifted = answered.asked.outside_sandbox.as_ref().map(|o| o.lifted);
             if let Some(refused) = self.answered(thread, answered, cancel, live).await? {
                 return Ok(refused);
             }
-            if outside {
-                step.summary.outside_sandbox = step.summary.outside_sandbox.saturating_add(1);
+            if lifted.is_some() && self.network_forbidden(thread) {
+                return Ok(not_allowed(&summary, live));
+            }
+            if let Some(lifted) = lifted {
+                step.summary.let_out(lifted);
             }
             return self
                 .run_call(thread, call, &source, &hooked, summary, cancel, live)
@@ -186,6 +189,10 @@ where
         let outside = (index == BUILTINS)
             .then(|| sandbox::outside(self.workspace_for(thread), name, &call.arguments))
             .flatten();
+        if outside.is_some() && self.network_forbidden(thread) {
+            return Ok(not_allowed(&summary, live));
+        }
+        let lifted = outside.as_ref().map(|outside| outside.lifted);
         let request = ApprovalRequest {
             thread: thread.id,
             call_id: call.call_id.clone(),
@@ -193,7 +200,7 @@ where
             effect,
             summary: summary.clone(),
             secret,
-            caution: sandbox::with_outside(caution, outside.is_some()),
+            caution: sandbox::with_outside(caution, lifted),
             outside_sandbox: outside,
         };
         let needs = Needs { request, firm };
@@ -201,11 +208,18 @@ where
         if let Some(refused) = self.approve(thread, &needs, turn, cancel, live).await? {
             return Ok(refused);
         }
-        if needs.request.outside_sandbox.is_some() {
-            step.summary.outside_sandbox = step.summary.outside_sandbox.saturating_add(1);
+        if let Some(lifted) = lifted {
+            step.summary.let_out(lifted);
         }
         self.run_call(thread, call, &source, &hooked, summary, cancel, live)
             .await
+    }
+
+    /// Whether a command in `thread` may not even ask to run with the network, or outside the
+    /// sandbox, which has it: its commands go without the network, and the policy forbids
+    /// asking.
+    fn network_forbidden(&self, thread: &Thread) -> bool {
+        sandbox::forbidden(self.workspace_for(thread), thread.defaults.ask_network)
     }
 
     /// Runs `call` with its tool's `source`, once nothing stops it, and its `PostToolUse`
@@ -389,7 +403,7 @@ where
             action: &request.summary,
             flagged: reason,
             untrusted: thread.untrusted,
-            outside_sandbox: request.outside_sandbox.is_some(),
+            outside_sandbox: request.outside_sandbox.as_ref().map(|o| o.lifted),
         };
         let asking = judge(&self.provider, &model, &case, thread.lineage());
         let Some((ruling, answer)) = cancel.run(asking).await else {
@@ -542,6 +556,16 @@ pub(crate) fn completed(
         structured,
         untrusted,
     }
+}
+
+/// The result of a call that would have the network where commands go without it and asking
+/// for it is not allowed, the person shown it was not.
+fn not_allowed(summary: &str, live: &mut (dyn FnMut(Live) + Send)) -> ToolOutput {
+    live(Live::ToolFinished {
+        summary: format!("{summary} (not allowed here)"),
+        is_error: true,
+    });
+    ToolOutput::text(true, sandbox::NOT_ALLOWED)
 }
 
 /// What `verdict` on the approval `asked` means for its call: `None` when it may run; otherwise

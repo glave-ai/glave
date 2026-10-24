@@ -48,6 +48,7 @@ function approval(seq: number, decided: boolean): ApprovalItem {
     summary: 'bash: git push',
     caution: 'It pushes to a remote.',
     outsideSandbox: false,
+    withNetwork: false,
     modelReason: '',
     decision: decided ? 'allow_once' : null,
   };
@@ -60,6 +61,15 @@ function outside(seq: number, decision: ApprovalItem['decision']): ApprovalItem 
     caution: 'It runs outside the sandbox.',
     outsideSandbox: true,
     decision,
+  };
+}
+
+function withNetwork(seq: number, decision: ApprovalItem['decision']): ApprovalItem {
+  return {
+    ...outside(seq, decision),
+    summary: 'bash: npm install',
+    caution: 'It can reach the internet, which commands here otherwise cannot.',
+    withNetwork: true,
   };
 }
 
@@ -121,6 +131,22 @@ describe('results', () => {
     expect(shown.receipt?.facts).toEqual(['2s', '1 command outside the sandbox']);
     const none = turnResults(turn([ask, call(2), outside(3, 'deny')]), null, null, false, 'en-US');
     expect(none.receipt?.facts).toEqual([]);
+  });
+
+  it('counts the commands that ran with the network apart from those outside the sandbox', () => {
+    const items = [
+      ask,
+      withNetwork(2, 'allow_once'),
+      withNetwork(3, 'allow_once'),
+      withNetwork(4, 'deny'),
+      outside(5, 'allow_once'),
+      call(6),
+    ];
+    const shown = turnResults(turn(items), null, null, false, 'en-US');
+    expect(shown.receipt?.facts).toEqual([
+      '1 command outside the sandbox',
+      '2 commands with the network',
+    ]);
   });
 
   it('shows what waits for the person last, never folded', () => {

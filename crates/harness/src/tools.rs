@@ -17,6 +17,7 @@ pub(crate) use bash::outside_sandbox;
 
 use glave_event::Arguments;
 use glave_ports::ToolSpec;
+use glave_ports::computer::Sandbox;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
@@ -170,6 +171,35 @@ impl Tool {
             description: description.to_owned(),
             parameters,
         }
+    }
+
+    /// The tool as it is offered where commands run in `sandbox`: `bash` takes `network`, for
+    /// asking to run one command with it, only where the sandbox has none.
+    pub(crate) fn spec_in(self, sandbox: Option<&Sandbox>) -> ToolSpec {
+        let mut spec = self.spec();
+        if self != Self::Bash || sandbox.is_none_or(|sandbox| sandbox.network) {
+            return spec;
+        }
+        spec.description.push_str(
+            " The sandbox has no network here: if a command the task needs must reach the \
+             internet, run it again with network and a reason instead; the person is asked to \
+             allow it, and it stays in the sandbox otherwise.",
+        );
+        if let Some(properties) = spec
+            .parameters
+            .get_mut("properties")
+            .and_then(Value::as_object_mut)
+        {
+            properties.insert(
+                "network".to_owned(),
+                json!({"type": "boolean", "description": "Run with the internet, in the sandbox otherwise. Only after this same command failed without it; the person is asked every time"}),
+            );
+            properties.insert(
+                "reason".to_owned(),
+                json!({"type": "string", "description": "With outside_sandbox or network: why the command needs it, in one sentence for the person"}),
+            );
+        }
+        spec
     }
 
     /// Runs the tool with the model's arguments, keeping the thread's commands in the

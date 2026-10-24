@@ -24,6 +24,9 @@ pub struct Defaults {
     pub titles: bool,
     /// The sandbox commands on this computer run in; none runs them unconfined.
     pub sandbox: Option<Sandbox>,
+    /// Whether a command in a sandbox without the network may ask to run with it, or outside
+    /// the sandbox: not where the organization's policy forbids it.
+    pub ask_network: bool,
     /// Commands run at points of the turns of the person the harness works for.
     pub hooks: Hooks,
     /// `web_fetch`, offered right after the built-in tools unless a thread's project sets up
@@ -38,6 +41,7 @@ impl std::fmt::Debug for Defaults {
             .field("judge", &self.judge)
             .field("titles", &self.titles)
             .field("sandbox", &self.sandbox)
+            .field("ask_network", &self.ask_network)
             .field("hooks", &self.hooks)
             .field("web", &self.web.is_some())
             .finish()

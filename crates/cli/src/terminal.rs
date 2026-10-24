@@ -328,17 +328,16 @@ impl Printer {
 const ERROR_CHARS: usize = 200;
 
 /// What a turn did and cost, after the protections it ran under: the commands that ran outside
-/// the sandbox, if any, then the calls, the tokens and the cost.
+/// the sandbox or with its network, if any, then the calls, the tokens and the cost.
 fn receipt_line(protections: &str, summary: &TurnResult, local: bool) -> String {
     let tokens = &summary.tokens;
     let mut line = format!("{protections} · ");
-    if summary.outside_sandbox > 0 {
-        let _ = write!(
-            line,
-            "{} command{} outside the sandbox · ",
-            summary.outside_sandbox,
-            plural(u64::from(summary.outside_sandbox))
-        );
+    let let_out = [
+        (summary.outside_sandbox, "outside the sandbox"),
+        (summary.with_network, "with the network"),
+    ];
+    for (count, how) in let_out.into_iter().filter(|(count, _)| *count > 0) {
+        let _ = write!(line, "{count} command{} {how} · ", plural(u64::from(count)));
     }
     let _ = write!(
         line,
@@ -486,6 +485,7 @@ mod tests {
             Some("It runs outside the sandbox, where it can read and change any file you can.");
         let outside = OutsideSandbox {
             reason: Some("cargo add writes to ~/.cargo/registry, which the sandbox blocks.".into()),
+            ..OutsideSandbox::default()
         };
         assert_eq!(
             approval_prompt(false, "bash: cargo add serde", caution, Some(&outside)),
@@ -508,6 +508,7 @@ mod tests {
             model_calls: 2,
             tool_calls: 1,
             outside_sandbox: 0,
+            with_network: 0,
             tokens: glave_event::TokenCounts {
                 input: 1_200,
                 cache_read: 0,
@@ -529,6 +530,12 @@ mod tests {
             receipt_line(protections, &turn, true),
             "approval: auto · sandbox: project + network · 1 command outside the sandbox · 2 \
              model calls · 1 tool call · 1,234 tokens · $0.00, on this computer"
+        );
+        (turn.outside_sandbox, turn.with_network) = (0, 2);
+        assert_eq!(
+            receipt_line("approval: auto · sandbox: project", &turn, true),
+            "approval: auto · sandbox: project · 2 commands with the network · 2 model calls · \
+             1 tool call · 1,234 tokens · $0.00, on this computer"
         );
     }
 

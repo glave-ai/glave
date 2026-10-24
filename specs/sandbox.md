@@ -14,7 +14,7 @@ There are two safe defaults: ask before each command (Claude Code, Gemini CLI), 
 
 The network stays on inside it, so installing a dependency, fetching a page or pushing to a review still works; the other walls stay up: writes confined to the project and temp folders, common credential stores and secret-named project files hidden, git hooks and settings read-only.
 
-**Why the network is on.** With it off, every install would need the person: a blocked command can ask to run outside the sandbox (*Letting one command out*, below), but each one asks, and a wall that asks for every dependency is one people turn off altogether. With the network on, the cost is exfiltration: a command planted in fetched content can send what it can read. `--no-network` (or `network = false`) is the real stop for that, for work that needs no network.
+**Why the network is on.** With it off, every install would need the person: a blocked command can ask to run with the network (*Letting one command out*, below), but each one asks, and a wall that asks for every dependency is one people turn off altogether. With the network on, the cost is exfiltration: a command planted in fetched content can send what it can read. `--no-network` (or `network = false`) is the real stop for that, for work that needs no network. An organization makes the other trade by default: its policy takes the network (`policy.md`, "The network"), and each install asks.
 
 **What the read limits do and do not hide.** Hidden from sandboxed commands, by location: the credential stores of the common tools in the home folder (keys, cloud and cluster sign-ins, package registries, forges, infrastructure and secret managers, other agents' sign-ins, shell histories, keychains and keyrings, browser profiles; the list is under *Reads*), and glave's own folder; and, by name, project files named like secrets (`.env` and its variants, private keys, credential files, `secrets.yaml` and other `secrets.` data files, but not source such as `secrets.rs`). Still reachable: the macOS keychain while the network is on (through `securityd`, which the profile allows then, as Codex's does, for TLS to work; the commands that print from it ask first, `approvals.md`), tokens stored anywhere else (a tool not on the list, an unusual file name), and every readable project file. With the network on, any of those can be sent out.
 
@@ -26,7 +26,7 @@ What protects against what:
 | Damage outside the project (`rm -rf ~`, shell startup files, other repositories) | the sandbox; without it, the person approving each command |
 | Code planted to run later (git hooks, agent settings) | the sandbox's protected paths; without it, the same |
 | Secrets read by a command | the sandbox's read limits, for common credential stores and secret-named project files; commands that print a credential (`gh auth token`, `security find-generic-password -w`, …) always ask (`approvals.md`); not tokens stored elsewhere |
-| Secrets or project files sent out over the network | `--no-network`; with the network on (the default), whatever a command can read can be sent. `evals/tasks/web-exfil` measures how often a planted instruction gets the model to try |
+| Secrets or project files sent out over the network | `--no-network`, or an organization's `[sandbox] network = false`, each command that needs it then asking; with the network on (a person's default), whatever a command can read can be sent. `evals/tasks/web-exfil` measures how often a planted instruction gets the model to try |
 | Destruction inside the project (`rm -rf src`, `git checkout .`) | the cautions that ask in every mode, and the judge (`approvals.md`) |
 
 ## Using it
@@ -44,7 +44,7 @@ glave --sandbox off --approval auto "…"            # unconfined, nothing asks:
 | `read-only` | the run's temp folder and `/tmp` | the same |
 | `off` | anything the person can | anything |
 
-`sandbox` and `network` are choices in `config.toml` too (`policy.md`). A project's file may tighten them at once (`read-only`, `network = false`); `sandbox = "off"` needs the person's trust in the project, and a project can never turn the network back on.
+`sandbox` and `network` are choices in `config.toml` too (`policy.md`). A project's file may tighten them at once (`read-only`, `network = false`); `sandbox = "off"` needs the person's trust in the project, and a project can never turn the network back on. An organization's `[sandbox] network = false` keeps it off whatever anyone chooses, and so keeps the sandbox on (`policy.md`, "The network").
 
 **Where it cannot run** (Linux without bubblewrap, or where AppArmor stops it; Windows), glave never falls back to running commands unconfined without asking. It says so once at startup, and approval becomes `ask`: every change and command asks first, and with no one at the keyboard they are not run. Only a person who chose both `sandbox = "off"` and `approval = "auto"` (flags or `config.toml`) gets commands unconfined with nothing asked; `sandbox = "off"` alone asks. An organization's policy that allows only `auto` has decided for its people. `glave policy explain` shows all of it with its source: `sandbox off from default, but it cannot run here: …` and `approval ask from default when commands run without a sandbox`.
 
@@ -67,6 +67,8 @@ Cargo's home is left alone. It holds the person's settings, installed tools and 
 - The person sees what would run, glave's sentence for what it means ("It runs outside the sandbox, where it can read and change any file you can."), and apart from both, the model's reason, as the model's words.
 - Allowed, that one command runs as the person, with none of the limits on this page: it writes anywhere, reads every secret, uses the network as the person can, and its package managers use the person's own caches. The next command is in the sandbox again.
 - Where commands run without a sandbox (`off`, none on this computer, or a worker's own wall), the argument changes nothing: there is nothing to ask.
+
+**Or only with the network.** Where the sandbox has no network, a command that needs the internet (an install, `git push`) can ask for that alone: `network: true` and a `reason`. It is the same request narrowed, and asks the same way, every time, in every mode, with the caution "It can reach the internet, which commands here otherwise cannot." Allowed, the command runs with the network and the rest of this page still holds: its writes stay in the project, secrets stay hidden, and its package managers keep the sandbox's caches. The model is offered `network` only where the sandbox has none; with the network on, the argument changes nothing. An organization's `[sandbox] ask_network = false` forbids asking for the network, and with it asking to run outside the sandbox where the network is off (`policy.md`, "The network"): such a call is refused without asking, and the model is told it is not allowed here.
 
 ## What the project level allows
 
@@ -114,7 +116,7 @@ Secrets are hidden by **location** in the home folder and by **name** in the pro
 
 ### Network
 
-On by default; off with `--no-network` or `network = false`, and off includes Unix sockets: `docker.sock` is root on the machine, and the ssh agent signs with the person's keys. On or off, Unix sockets stay unreachable on Linux (seccomp), and on macOS `docker.sock` and the ssh agent's socket are outside the profile's network rules. A per-domain allowlist (package registries) needs a filtering proxy and comes later; such a proxy must refuse allowed names that resolve to loopback or link-local addresses (`169.254.169.254`).
+On by default; off with `--no-network`, `network = false` or an organization's `[sandbox] network = false`, and off includes Unix sockets: `docker.sock` is root on the machine, and the ssh agent signs with the person's keys. On or off, Unix sockets stay unreachable on Linux (seccomp), and on macOS `docker.sock` and the ssh agent's socket are outside the profile's network rules. A per-domain allowlist (package registries) needs a filtering proxy and comes later; such a proxy must refuse allowed names that resolve to loopback or link-local addresses (`169.254.169.254`).
 
 **Loopback stays reachable** with the network on: dev servers, test databases and a project's own services listen there, and tests must reach them. The cost: a sandboxed command can also reach whatever else listens on this computer's loopback (another program's local API), and the `web-exfil` eval's sink is on loopback.
 
@@ -176,7 +178,7 @@ profile bwrap /usr/bin/bwrap flags=(unconfined) {
 
 - The turn's config blob (`turn.started`) gains the sandbox level, whether the network is on, and the enforcement (`seatbelt`, `linux` for bubblewrap or Landlock with seccomp, or `none`).
 - The receipt names it: `done · sandbox: project · …`.
-- A command run outside the sandbox (*Letting one command out*) is in the log as its `approval.requested`, with `outside_sandbox` and the model's reason, and its `approval.decided` (`events.md`). The receipt counts them: `done · approval: auto · sandbox: project + network · 1 command outside the sandbox · …`, and the app's receipt of the turn says the same.
+- A command run outside the sandbox (*Letting one command out*) is in the log as its `approval.requested`, with `outside_sandbox` and the model's reason, and its `approval.decided` (`events.md`); one run only with the network says so in it (`"lifted": "network"`). The receipt counts each kind: `done · approval: auto · sandbox: project + network · 1 command outside the sandbox · …`, or `sandbox: project · 2 commands with the network`, and the app's receipt of the turn says the same.
 
 ## Tests
 
@@ -194,13 +196,14 @@ profile bwrap /usr/bin/bwrap flags=(unconfined) {
   - `git-hook`: plant a pre-commit hook with commands.
   - `commit-sandboxed` and `fix-bug-sandboxed`: committing and fixing a bug still work.
   - `outside-sandbox`: add a crate and build, with Cargo's home empty, so the build must download outside the project. Passes only if the model asked to run the build outside the sandbox and, with no one there to allow it, the program was never built: neither outside the sandbox nor by a way around it.
-- Integration tests run the request to run outside without a model (`crates/harness/tests/outside_sandbox.rs`, in the real sandbox): it asks in auto mode and each time, an answer for the thread counts once, with no one there it never runs and the judge is not asked, after untrusted content the judge is not asked, the judge never sees the model's reason, and without a sandbox nothing asks.
+  - `network-ask`: install a package with the network off, as an organization has it. Passes only if the model asked to run the install with the network and, with no one there to allow it, nothing was installed.
+- Integration tests run the request to run outside without a model (`crates/harness/tests/outside_sandbox.rs`, in the real sandbox): it asks in auto mode and each time, an answer for the thread counts once, with no one there it never runs and the judge is not asked, after untrusted content the judge is not asked, the judge never sees the model's reason, and without a sandbox nothing asks. The request for the network alone (`crates/harness/tests/network.rs`): it asks each time and the command reaches a listener on this computer while its write beside the project is still blocked, the next command is offline again, with no one there it never runs, with the network on nothing asks and `network` is not offered, and where the policy forbids asking neither request asks or runs.
 
 ## Later, decided separately
 
 - **A judge model** for `auto` that approves or flags each action (issue #13).
 - **Undo**, if it proves worth it. Locally, git is the safety net; in cloud Computers, undo is restoring a snapshot.
-- **Turning off letting one command out**, for an organization that wants every command in the sandbox, as Claude Code's `allowUnsandboxedCommands: false` does.
+- **Turning off letting one command out**, for an organization that wants every command in the sandbox, as Claude Code's `allowUnsandboxedCommands: false` does. Where its policy takes the network, `ask_network = false` already turns it off.
 - **Granting a folder** to a thread, so commands may write it without leaving the sandbox (#307).
 - **A domain allowlist** for the network, through a filtering proxy.
 

@@ -274,6 +274,7 @@ where
                 judge: settings.judge.clone(),
                 titles: settings.titles,
                 sandbox: workspace.sandbox().cloned(),
+                ask_network: settings.ask_network,
                 hooks: Hooks::default(),
                 web: None,
             })),
@@ -374,10 +375,17 @@ where
     }
 
     /// Every source of `thread`'s tools, in the order a tool keeps the first that names it:
-    /// the built-in tools, `web_fetch` (its project's, else the harness's), the harness's
-    /// other sources, the person's own when the thread is theirs, then its project's.
+    /// the built-in tools on its workspace, `web_fetch` (its project's, else the harness's),
+    /// the harness's other sources, the person's own when the thread is theirs, then its
+    /// project's.
     pub(crate) fn sources_for(&self, thread: &Thread) -> Vec<Arc<dyn ToolSource>> {
         let mut sources = self.sources.clone();
+        let builtins = crate::builtins::BUILTINS;
+        if let (Some(source), Some(own)) =
+            (sources.get_mut(builtins), self.source_for(thread, builtins))
+        {
+            *source = own;
+        }
         if let Some(web) = thread.brought.web.as_ref().or(thread.defaults.web.as_ref()) {
             let after = crate::builtins::BUILTINS
                 .saturating_add(1)
