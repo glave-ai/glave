@@ -1,8 +1,12 @@
+import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { DOCUMENT } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  ElementRef,
+  Injector,
+  afterNextRender,
   computed,
   inject,
   signal,
@@ -22,6 +26,14 @@ import { ConnectionsService } from '../../services/connections.service';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 import { ServiceRowComponent } from '../service-row/service-row.component';
 
+/** A sign-in waiting for the person in the browser. */
+interface Waiting {
+  /** The service's own sign-in page, once the server gave it. */
+  readonly link: string | null;
+  /** Whether a new tab is open at it: none where the browser opened none, or it was closed. */
+  readonly opened: boolean;
+}
+
 /** A service as a row of the page shows it. */
 interface Row {
   /** Its address, which names it to the server. */
@@ -29,12 +41,15 @@ interface Row {
   readonly name: string;
   /** Whether it is signed in to, ready to use. */
   readonly ready: boolean;
-  /** Whether it waits for the person to sign in to it in the new tab. */
+  /** Whether it waits for the person to sign in to it in the browser. */
   readonly waiting: boolean;
+  /** Whether its sign-in is being removed. */
+  readonly busy: boolean;
   /** The line under its name. */
   readonly detail: string;
-  /** The sign-in's page, to open again while it waits, once the server gave it. */
+  /** The sign-in's page, to open while it waits, once the server gave it, and the link's word. */
   readonly link: string | null;
+  readonly linkText: string;
   /** Why the last thing done with it failed, in the server's words. */
   readonly problem: string | null;
   /** Its button's word, its name for screen readers, and how much it stands out. */
@@ -63,7 +78,7 @@ function including<T>(map: ReadonlyMap<string, T>, key: string, value: T): Reado
   return new Map(map).set(key, value);
 }
 
-/** Sends `tab` to `url`; whether it could be, as one the person closed cannot. */
+/** Sends `tab` to `url`; whether it is open there, as one the person closed is not. */
 function sent(tab: Window | null, url: string): boolean {
   try {
     tab?.location.replace(url);
@@ -102,11 +117,14 @@ export class ConnectionsComponent {
     ready: $localize`:@@connections.ready:Ready to use`,
     available: $localize`:@@connections.available:Available`,
     connected: $localize`:@@connections.connected:Connected`,
+    disconnected: $localize`:@@connections.disconnected:Disconnected`,
     expired: $localize`:@@connections.expired:Your sign-in expired`,
     connect: $localize`:@@connections.connect:Connect`,
     cancel: $localize`:@@connections.cancel:Cancel`,
     disconnect: $localize`:@@connections.disconnect:Disconnect`,
+    disconnecting: $localize`:@@connections.disconnecting:Disconnecting…`,
     openAgain: $localize`:@@connections.openAgain:Open it again`,
+    openSignIn: $localize`:@@connections.openSignIn:Open the sign-in`,
     newTab: $localize`:@@connections.newTab:in a new tab`,
     disconnectText: $localize`:@@connections.disconnectText:glave forgets your sign-in and stops using it for you. You can connect it again at any time.`,
     emptyHeading: $localize`:@@connections.emptyHeading:Nothing to connect yet`,
@@ -115,10 +133,15 @@ export class ConnectionsComponent {
   protected readonly icons = { waiting: LoaderCircle, open: ExternalLink, empty: Plug } as const;
   private readonly service = inject(ConnectionsService);
   private readonly document = inject(DOCUMENT);
-  /** The sign-ins waiting, by the service's address: the page to open, once the server gave it. */
-  private readonly waiting = signal<ReadonlyMap<string, string | null>>(new Map());
+  private readonly announcer = inject(LiveAnnouncer);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
+  /** The sign-ins waiting, by the service's address. */
+  private readonly waiting = signal<ReadonlyMap<string, Waiting>>(new Map());
   /** What stops each sign-in waiting, by the service's address. */
   private readonly stops = new Map<string, AbortController>();
+  /** The services whose sign-ins are being removed, by address. */
+  private readonly removing = signal<ReadonlySet<string>>(new Set());
   /** Why the last thing done with a service failed, by its address. */
   private readonly problems = signal<ReadonlyMap<string, string>>(new Map());
   /** The service Disconnect asks about. */
@@ -170,13 +193,16 @@ export class ConnectionsComponent {
 
   /** What the row's button does: disconnects, stops waiting, or connects. */
   protected act(row: Row): void {
+    if (row.busy) {
+      return;
+    }
     if (row.ready) {
       this.disconnecting.set(row);
       this.confirming.set(true);
     } else if (row.waiting) {
       this.cancel(row.url);
     } else {
-      void this.connect(row.url);
+      void this.connect(row);
     }
   }
 
@@ -185,26 +211,36 @@ export class ConnectionsComponent {
     if (!yes || row === null) {
       return;
     }
-    this.problems.update((problems) => without(problems, row.url));
+    const { url, name } = row;
+    this.problems.update((problems) => without(problems, url));
+    this.removing.update((removing) => new Set(removing).add(url));
     try {
-      await this.service.remove(row.url);
+      await this.service.remove(url);
+      this.moved(url, this.said(name, this.copy.disconnected));
     } catch (error: unknown) {
-      this.problems.update((problems) => including(problems, row.url, connectionProblem(error)));
+      this.problems.update((problems) => including(problems, url, connectionProblem(error)));
+    } finally {
+      this.removing.update((removing) => {
+        const rest = new Set(removing);
+        rest.delete(url);
+        return rest;
+      });
     }
   }
 
   /**
-   * Signs in to the service at `url`: a new tab opens at once, while the click is handled, so
-   * no browser blocks it, and goes to the service's own sign-in once the server gives it; the
-   * row waits until the server says the person signed in there, or they cancel.
+   * Signs in to `row`'s service: a new tab opens at once, while the click is handled, so no
+   * browser blocks it, and goes to the service's own sign-in once the server gives it; the row
+   * waits until the server says the person signed in there, or they cancel.
    */
-  private async connect(url: string): Promise<void> {
+  private async connect(row: Row): Promise<void> {
+    const { url, name } = row;
     this.stops.get(url)?.abort();
     const stop = new AbortController();
     this.stops.set(url, stop);
     this.problems.update((problems) => without(problems, url));
-    this.waiting.update((waiting) => including(waiting, url, null));
     const tab = this.opened();
+    this.waiting.update((waiting) => including(waiting, url, { link: null, opened: tab !== null }));
     let shown = false;
     try {
       const link = await this.service.start(url);
@@ -213,8 +249,11 @@ export class ConnectionsComponent {
         return;
       }
       shown = sent(tab, link.url);
-      this.waiting.update((waiting) => including(waiting, url, link.url));
-      await this.service.finish(link.flow, stop.signal);
+      this.waiting.update((waiting) => including(waiting, url, { link: link.url, opened: shown }));
+      void this.announcer.announce(this.waitingLine(name, shown));
+      if ((await this.service.finish(link.flow, stop.signal)) !== null) {
+        this.moved(url, this.said(name, this.copy.connected));
+      }
     } catch (error: unknown) {
       if (!shown) {
         tab?.close();
@@ -236,7 +275,11 @@ export class ConnectionsComponent {
     this.waiting.update((waiting) => without(waiting, url));
   }
 
-  /** A new tab, which cannot reach this page; none where the browser opens none. */
+  /**
+   * A new tab, which cannot reach this page; none where the browser opens none. Once it reaches
+   * the sign-in, on another origin, glave's opener policy cuts it off from this page too, and
+   * this page from it.
+   */
   private opened(): Window | null {
     const tab = this.document.defaultView?.open('', '_blank') ?? null;
     if (tab !== null) {
@@ -245,29 +288,65 @@ export class ConnectionsComponent {
     return tab;
   }
 
+  /**
+   * Says that the service at `url` moved to another card, as `said`, and, once it is drawn
+   * there, gives its button the focus its old one took with it, unless the person has moved on.
+   */
+  private moved(url: string, said: string): void {
+    void this.announcer.announce(said);
+    afterNextRender(
+      () => {
+        const focused = this.document.activeElement;
+        if (focused !== null && focused !== this.document.body) {
+          return;
+        }
+        const rows = this.host.nativeElement.querySelectorAll('app-service-row');
+        const row = [...rows].find((found) => found.getAttribute('data-url') === url);
+        row?.querySelector<HTMLElement>('[data-testid="connection-action"]')?.focus();
+      },
+      { injector: this.injector },
+    );
+  }
+
+  /** What is said of the service `name` now in the state `state`, a row's own words. */
+  private said(name: string, state: string): string {
+    return $localize`:@@connections.said:${name}:NAME:, ${state}:STATE:`;
+  }
+
+  /** What a row waiting for its sign-in says, as the tab for it opened or not. */
+  private waitingLine(name: string, opened: boolean): string {
+    return opened
+      ? $localize`:@@connections.waiting:Finish signing in to ${name}:NAME: in the new tab.`
+      : $localize`:@@connections.openToFinish:To finish, open the sign-in for ${name}:NAME:.`;
+  }
+
   /** `connection` as a row: what it is, what it is doing, and what its button does. */
   private row(connection: ConnectionInfo): Row {
     const { url, status } = connection;
     const name = serviceName(connection);
     const ready = status === 'signed_in';
-    const waiting = !ready && this.waiting().has(url);
-    const base = { url, name, ready, waiting, link: this.waiting().get(url) ?? null };
+    const waited = ready ? undefined : this.waiting().get(url);
+    const busy = this.removing().has(url);
     const problem = this.problems().get(url) ?? null;
+    const base = { url, name, ready, busy, problem, link: waited?.link ?? null };
     if (ready) {
       return {
         ...base,
+        waiting: false,
         detail: this.copy.connected,
-        problem,
-        action: this.copy.disconnect,
+        linkText: '',
+        action: busy ? this.copy.disconnecting : this.copy.disconnect,
         actionLabel: $localize`:@@connections.disconnectLabel:Disconnect ${name}:NAME:`,
         variant: 'ghost',
       };
     }
-    if (waiting) {
+    if (waited !== undefined) {
       return {
         ...base,
-        detail: $localize`:@@connections.waiting:Finish signing in to ${name}:NAME: in the new tab.`,
+        waiting: true,
         problem: null,
+        detail: this.waitingLine(name, waited.opened),
+        linkText: waited.opened ? this.copy.openAgain : this.copy.openSignIn,
         action: this.copy.cancel,
         actionLabel: $localize`:@@connections.cancelLabel:Cancel signing in to ${name}:NAME:`,
         variant: 'secondary',
@@ -275,10 +354,11 @@ export class ConnectionsComponent {
     }
     return {
       ...base,
+      waiting: false,
       detail: status === 'expired' ? this.copy.expired : serviceHost(connection),
-      problem,
+      linkText: '',
       action: this.copy.connect,
-      actionLabel: $localize`:@@connections.connectLabel:Connect ${name}:NAME:`,
+      actionLabel: $localize`:@@connections.connectLabel:Connect ${name}:NAME: in a new tab`,
       variant: 'secondary',
     };
   }

@@ -1,3 +1,4 @@
+import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { TestBed } from '@angular/core/testing';
 import { ApiError, type ConnectionInfo, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
@@ -62,6 +63,31 @@ function fakeTab(): { readonly tab: Window; readonly sentTo: string[]; closed: (
   return { tab, sentTo, closed: () => closed };
 }
 
+/** The page on `fake`, and what it says to screen readers. */
+async function page(fake: FakeSession): Promise<{
+  readonly fixture: { whenStable(): Promise<unknown>; destroy(): void };
+  readonly root: HTMLElement;
+  readonly said: string[];
+}> {
+  const said: string[] = [];
+  const announce = (text: string): Promise<void> => {
+    said.push(text);
+    return Promise.resolve();
+  };
+  TestBed.configureTestingModule({
+    providers: [...provideFakeSession(fake), { provide: LiveAnnouncer, useValue: { announce } }],
+  });
+  const fixture = TestBed.createComponent(ConnectionsComponent);
+  await settle(fixture);
+  return { fixture, root: fixture.nativeElement as HTMLElement, said };
+}
+
+/** Polls the fake answers while waiting: a tick each, the flow again. */
+async function stillWaiting(): Promise<object> {
+  await new Promise((resolve) => setTimeout(resolve));
+  return { flow: 'f1' };
+}
+
 describe('ConnectionsComponent', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -71,10 +97,7 @@ describe('ConnectionsComponent', () => {
     const fake = new FakeSession().answer('connection/list', {
       connections: [DOCS, TRACKER, NOTES],
     });
-    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
-    const fixture = TestBed.createComponent(ConnectionsComponent);
-    await settle(fixture);
-    const root: HTMLElement = fixture.nativeElement;
+    const { root } = await page(fake);
     expect(root.querySelector('h1')?.textContent).toBe('Connections');
     expect(rows(root, 'connections-ready')).toEqual(['D docs Connected Disconnect']);
     expect(rows(root, 'connections-available')).toEqual([
@@ -82,39 +105,31 @@ describe('ConnectionsComponent', () => {
       'N notes.example.com Your sign-in expired Connect',
     ]);
     const connect = root.querySelectorAll('[data-testid="connection-action"]')[1];
-    expect(connect?.getAttribute('aria-label')).toBe('Connect Issue Tracker');
+    expect(connect?.getAttribute('aria-label')).toBe('Connect Issue Tracker in a new tab');
     expect(root.querySelector('[data-testid="connections-loading"]')).toBeNull();
     expect(root.textContent).not.toMatch(ADMIN_OR_FILES);
     await expectAccessible(root);
   });
 
   it('connects in a new tab, waits there, then shows the service ready to use', async () => {
-    let signedIn = false;
     let polls = 0;
     let signIn: () => void = () => undefined;
     const signedInThere = new Promise<void>((resolve) => {
       signIn = resolve;
     });
     const fake = new FakeSession()
-      .answer('connection/list', () => ({
-        connections: [{ ...TRACKER, status: signedIn ? 'signed_in' : 'signed_out' }],
-      }))
+      .answer('connection/list', { connections: [TRACKER] })
       .answer('connection/start', { sign_in: { flow: 'f1', url: PAGE } })
       .answer('connection/poll', async () => {
         polls += 1;
         if (polls < 3) {
-          await new Promise((resolve) => setTimeout(resolve));
-          return { flow: 'f1' };
+          return stillWaiting();
         }
         await signedInThere;
-        signedIn = true;
         return { connection: { ...TRACKER, status: 'signed_in' } };
       });
-    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
     const opened = fakeTab();
-    const fixture = TestBed.createComponent(ConnectionsComponent);
-    await settle(fixture);
-    const root: HTMLElement = fixture.nativeElement;
+    const { fixture, root, said } = await page(fake);
 
     click(root, 'connection-action');
     expect(window.open).toHaveBeenCalledWith('', '_blank');
@@ -126,9 +141,11 @@ describe('ConnectionsComponent', () => {
     expect(waiting?.textContent).toContain('Finish signing in to Issue Tracker in the new tab.');
     expect(waiting?.querySelector('a')?.getAttribute('href')).toBe(PAGE);
     expect(waiting?.querySelector('a')?.getAttribute('target')).toBe('_blank');
+    expect(waiting?.querySelector('a')?.textContent).toContain('Open it again');
     const cancel = root.querySelector('[data-testid="connection-action"]');
     expect(cancel?.textContent.trim()).toBe('Cancel');
     expect(cancel?.getAttribute('aria-label')).toBe('Cancel signing in to Issue Tracker');
+    expect(said).toEqual(['Finish signing in to Issue Tracker in the new tab.']);
     await expectAccessible(root);
 
     signIn();
@@ -136,7 +153,9 @@ describe('ConnectionsComponent', () => {
     expect(polls).toBe(3);
     expect(rows(root, 'connections-ready')).toEqual(['IT Issue Tracker Connected Disconnect']);
     expect(root.querySelector('[data-testid="connections-available"]')).toBeNull();
-    expect(root.querySelector('[data-testid="connection-waiting"]')).toBeNull();
+    expect(fake.paramsOf('connection/list')).toHaveLength(1);
+    expect(said.at(-1)).toBe('Issue Tracker, Connected');
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Disconnect Issue Tracker');
     expect(opened.closed()).toBe(false);
   });
 
@@ -144,15 +163,9 @@ describe('ConnectionsComponent', () => {
     const fake = new FakeSession()
       .answer('connection/list', { connections: [TRACKER] })
       .answer('connection/start', { sign_in: { flow: 'f1', url: PAGE } })
-      .answer('connection/poll', async () => {
-        await new Promise((resolve) => setTimeout(resolve));
-        return { flow: 'f1' };
-      });
-    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+      .answer('connection/poll', stillWaiting);
     fakeTab();
-    const fixture = TestBed.createComponent(ConnectionsComponent);
-    await settle(fixture);
-    const root: HTMLElement = fixture.nativeElement;
+    const { fixture, root } = await page(fake);
     click(root, 'connection-action');
     await settle(fixture);
     expect(root.querySelector('[data-testid="connection-waiting"]')).not.toBeNull();
@@ -169,23 +182,58 @@ describe('ConnectionsComponent', () => {
     expect(root.querySelector('[data-testid="connection-problem"]')).toBeNull();
   });
 
+  it('closes the tab when cancelled before the sign-in began', async () => {
+    let begin: () => void = () => undefined;
+    const begun = new Promise<void>((resolve) => {
+      begin = resolve;
+    });
+    const fake = new FakeSession()
+      .answer('connection/list', { connections: [TRACKER] })
+      .answer('connection/start', async () => {
+        await begun;
+        return { sign_in: { flow: 'f1', url: PAGE } };
+      });
+    const opened = fakeTab();
+    const { fixture, root } = await page(fake);
+    click(root, 'connection-action');
+    await settle(fixture);
+    click(root, 'connection-action');
+    begin();
+    await settle(fixture);
+    expect(opened.closed()).toBe(true);
+    expect(opened.sentTo).toEqual([]);
+    expect(fake.paramsOf('connection/poll')).toEqual([]);
+  });
+
+  it('stops waiting when the page is left', async () => {
+    const fake = new FakeSession()
+      .answer('connection/list', { connections: [TRACKER] })
+      .answer('connection/start', { sign_in: { flow: 'f1', url: PAGE } })
+      .answer('connection/poll', stillWaiting);
+    fakeTab();
+    const { fixture, root } = await page(fake);
+    click(root, 'connection-action');
+    await settle(fixture);
+    fixture.destroy();
+    const polled = fake.paramsOf('connection/poll').length;
+    await settle(fixture);
+    expect(fake.paramsOf('connection/poll')).toHaveLength(polled);
+  });
+
   it('says in the server’s words why a service could not be connected, and closes the tab', async () => {
     const fake = new FakeSession().answer('connection/list', { connections: [TRACKER] }).answer(
       'connection/start',
       new ApiError({
         code: ErrorCode.HOST,
-        message: 'Issue Tracker asks no one to sign in: it works as it is',
+        message: 'glave could not reach the sign-in for Issue Tracker: try again in a while',
       }),
     );
-    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
     const opened = fakeTab();
-    const fixture = TestBed.createComponent(ConnectionsComponent);
-    await settle(fixture);
-    const root: HTMLElement = fixture.nativeElement;
+    const { fixture, root } = await page(fake);
     click(root, 'connection-action');
     await settle(fixture);
     expect(root.querySelector('[data-testid="connection-problem"]')?.textContent).toBe(
-      'Issue Tracker asks no one to sign in: it works as it is.',
+      'Glave could not reach the sign-in for Issue Tracker: try again in a while.',
     );
     expect(opened.closed()).toBe(true);
     expect(root.querySelector('[data-testid="connection-action"]')?.textContent.trim()).toBe(
@@ -194,48 +242,46 @@ describe('ConnectionsComponent', () => {
     await expectAccessible(root);
   });
 
-  it('waits even where the browser opens no tab, with the sign-in to open', async () => {
+  it('where the browser opens no tab, waits with the sign-in to open', async () => {
     const fake = new FakeSession()
       .answer('connection/list', { connections: [TRACKER] })
       .answer('connection/start', { sign_in: { flow: 'f1', url: PAGE } })
-      .answer('connection/poll', async () => {
-        await new Promise((resolve) => setTimeout(resolve));
-        return { flow: 'f1' };
-      });
-    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+      .answer('connection/poll', stillWaiting);
     vi.spyOn(window, 'open').mockReturnValue(null);
-    const fixture = TestBed.createComponent(ConnectionsComponent);
-    await settle(fixture);
-    const root: HTMLElement = fixture.nativeElement;
+    const { fixture, root, said } = await page(fake);
     click(root, 'connection-action');
     await settle(fixture);
-    const again = root.querySelector('[data-testid="connection-open"]');
-    expect(again?.getAttribute('href')).toBe(PAGE);
-    expect(again?.textContent).toContain('Open it again');
+    const waiting = root.querySelector('[data-testid="connection-waiting"]');
+    expect(waiting?.textContent).toContain('To finish, open the sign-in for Issue Tracker.');
+    const link = root.querySelector('[data-testid="connection-open"]');
+    expect(link?.getAttribute('href')).toBe(PAGE);
+    expect(link?.textContent).toContain('Open the sign-in');
+    expect(said).toEqual(['To finish, open the sign-in for Issue Tracker.']);
     fixture.destroy();
   });
 
   it('disconnects once asked, and says why when it could not', async () => {
     let kept = true;
     let refuse = true;
+    let release: () => void = () => undefined;
     const fake = new FakeSession()
       .answer('connection/list', () => ({
         connections: [{ ...DOCS, status: kept ? 'signed_in' : 'signed_out' }],
       }))
-      .answer('connection/remove', () => {
+      .answer('connection/remove', async () => {
         if (refuse) {
           return new ApiError({
             code: ErrorCode.NO_CREDENTIAL,
             message: 'nothing at https://mcp.docs.example.com/mcp is signed in to here',
           });
         }
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
         kept = false;
         return {};
       });
-    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
-    const fixture = TestBed.createComponent(ConnectionsComponent);
-    await settle(fixture);
-    const root: HTMLElement = fixture.nativeElement;
+    const { fixture, root, said } = await page(fake);
     click(root, 'connection-action');
     await settle(fixture);
     expect(document.querySelector('[data-testid="connections-disconnect"]')?.textContent).toContain(
@@ -258,17 +304,20 @@ describe('ConnectionsComponent', () => {
     await settle(fixture);
     click(document, 'connections-disconnect-ok');
     await settle(fixture);
+    const busy = root.querySelector<HTMLButtonElement>('[data-testid="connection-action"]');
+    expect(busy?.textContent.trim()).toBe('Disconnecting…');
+    expect(busy?.disabled).toBe(true);
+    release();
+    await settle(fixture);
     expect(fake.paramsOf('connection/remove').at(-1)).toEqual({ server: DOCS.url });
     expect(rows(root, 'connections-available')).toEqual(['D docs mcp.docs.example.com Connect']);
     expect(root.querySelector('[data-testid="connection-problem"]')).toBeNull();
+    expect(said.at(-1)).toBe('docs, Disconnected');
   });
 
   it('says when there is nothing to connect, and why the list could not be read', async () => {
     const fake = new FakeSession().answer('connection/list', { connections: [] });
-    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
-    const fixture = TestBed.createComponent(ConnectionsComponent);
-    await settle(fixture);
-    const root: HTMLElement = fixture.nativeElement;
+    const { root } = await page(fake);
     expect(root.querySelector('[data-testid="connections-empty"]')?.textContent).toContain(
       'Nothing to connect yet',
     );
@@ -282,14 +331,11 @@ describe('ConnectionsComponent', () => {
         message: 'connections are signed in to on the computer glave runs on, by its person',
       }),
     );
-    TestBed.configureTestingModule({ providers: provideFakeSession(refusing) });
-    const refused = TestBed.createComponent(ConnectionsComponent);
-    await settle(refused);
-    const page: HTMLElement = refused.nativeElement;
-    expect(page.querySelector('[data-testid="connections-problem"]')?.textContent).toBe(
+    const refused = await page(refusing);
+    expect(refused.root.querySelector('[data-testid="connections-problem"]')?.textContent).toBe(
       'Connections are signed in to on the computer glave runs on, by its person.',
     );
-    expect(page.querySelector('[data-testid="connections-loading"]')).toBeNull();
-    expect(page.querySelector('[data-testid="connections-empty"]')).toBeNull();
+    expect(refused.root.querySelector('[data-testid="connections-loading"]')).toBeNull();
+    expect(refused.root.querySelector('[data-testid="connections-empty"]')).toBeNull();
   });
 });

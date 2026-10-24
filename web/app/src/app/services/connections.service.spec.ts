@@ -36,8 +36,9 @@ describe('ConnectionsService', () => {
     );
   });
 
-  it('signs in: waits while the server does, then lists the connections again', async () => {
+  it('signs in: waits while the server does, then takes the connection it answers', async () => {
     let polls = 0;
+    const tracker = { ...DOCS, url: 'https://mcp.tracker.example.com/mcp', name: 'tracker' };
     const fake = new FakeSession()
       .answer('connection/start', {
         sign_in: { flow: 'f1', url: 'https://auth.example.com/authorize' },
@@ -46,21 +47,44 @@ describe('ConnectionsService', () => {
         polls += 1;
         return polls < 3 ? { flow: 'f1' } : { connection: { ...DOCS, status: 'signed_in' } };
       })
-      .answer('connection/list', () => ({
-        connections: [{ ...DOCS, status: polls < 3 ? 'signed_out' : 'signed_in' }],
-      }));
+      .answer('connection/list', { connections: [DOCS, tracker] });
     TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
     const connections = TestBed.inject(ConnectionsService);
+    await connections.load();
     const link = await connections.start(DOCS.url);
     expect(link.url).toBe('https://auth.example.com/authorize');
     expect(fake.paramsOf('connection/start')).toEqual([{ server: DOCS.url }]);
-    await connections.finish(link.flow, new AbortController().signal);
+    const signedIn = await connections.finish(link.flow, new AbortController().signal);
+    expect(signedIn?.status).toBe('signed_in');
     expect(fake.paramsOf('connection/poll')).toEqual([
       { flow: 'f1' },
       { flow: 'f1' },
       { flow: 'f1' },
     ]);
-    expect(connections.connections()?.[0]?.status).toBe('signed_in');
+    expect(fake.paramsOf('connection/list')).toHaveLength(1);
+    expect(connections.connections()).toEqual([{ ...DOCS, status: 'signed_in' }, tracker]);
+  });
+
+  it('never lets a list that comes late take the place of a newer answer', async () => {
+    const answers: ((connections: readonly ConnectionInfo[]) => void)[] = [];
+    const fake = new FakeSession().answer(
+      'connection/list',
+      () =>
+        new Promise((resolve) => {
+          answers.push((connections) => {
+            resolve({ connections });
+          });
+        }),
+    );
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const connections = TestBed.inject(ConnectionsService);
+    const older = connections.load();
+    const newer = connections.load();
+    answers[1]?.([{ ...DOCS, status: 'signed_in' }]);
+    await newer;
+    answers[0]?.([DOCS]);
+    await older;
+    expect(connections.connections()).toEqual([{ ...DOCS, status: 'signed_in' }]);
   });
 
   it('stops waiting once told to, and passes a refusal on', async () => {

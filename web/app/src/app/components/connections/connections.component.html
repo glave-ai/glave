@@ -15,13 +15,13 @@
       <h2 class="head" [id]="section.id">{{ section.heading }}</h2>
       <div class="rows" role="list">
         @for (row of section.rows; track row.url) {
-          <app-service-row data-testid="connection" [name]="row.name">
+          <app-service-row data-testid="connection" [name]="row.name" [attr.data-url]="row.url">
             @if (row.problem; as problem) {
               <span class="detail problem" role="alert" data-testid="connection-problem">{{
                 problem
               }}</span>
             } @else if (row.waiting) {
-              <span class="waiting" role="status" data-testid="connection-waiting">
+              <span class="waiting" data-testid="connection-waiting">
                 <span class="detail">
                   <glz-icon class="glz-spin" [icon]="icons.waiting" />
                   {{ row.detail }}
@@ -34,7 +34,7 @@
                     data-testid="connection-open"
                     [href]="link"
                   >
-                    {{ copy.openAgain }}
+                    {{ row.linkText }}
                     <glz-icon class="glz-mirrored" [icon]="icons.open" [label]="copy.newTab" />
                   </a>
                 }
@@ -54,6 +54,7 @@
               size="sm"
               data-testid="connection-action"
               [variant]="row.variant"
+              [disabled]="row.busy"
               [attr.aria-label]="row.actionLabel"
               (click)="act(row)"
             >
