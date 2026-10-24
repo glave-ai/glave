@@ -11,6 +11,9 @@ const START: i64 = 1_791_590_400;
 const ORIGIN: &str = "https://glave.test";
 const SERVER: &str = "0192f5c6-0000-7000-8000-0000000005e7";
 
+/// The person's passkey handle, which the caller keeps.
+const HANDLE: Uuid = Uuid::from_u128(0x0dd1_7e5a_5e7a_4a1d_8a2e_0000_0000_0691);
+
 fn store() -> Store {
     let root = glave_keys::InMemoryRoot::new().unwrap();
     Store::open_in_memory(glave_keys::KeySettings::new(Arc::new(root))).unwrap()
@@ -25,11 +28,18 @@ fn scope() -> Scope {
 
 /// The browsers of a server reached at [`ORIGIN`], on `log`.
 async fn open(log: SqliteLog, clock: &ManualClock) -> Browsers {
+    open_for(log, scope(), HANDLE, clock).await
+}
+
+/// The browsers of the person whose personal project is `scope` and whose handle is
+/// `handle`, on a server reached at [`ORIGIN`], on `log`.
+async fn open_for(log: SqliteLog, scope: Scope, handle: Uuid, clock: &ManualClock) -> Browsers {
     let origin = PublicOrigin::parse(ORIGIN).unwrap();
     Browsers::open(
         log,
-        scope(),
+        scope,
         SERVER.into(),
+        handle,
         Some(&origin),
         Box::new(clock.clone()),
     )
@@ -233,15 +243,7 @@ fn setup_codes_and_requests_expire_and_codes_that_are_not_one_are_limited() {
 fn a_server_reached_nowhere_makes_no_passkeys_and_only_once_one_exists_signs_in() {
     block_on!(async {
         let clock = ManualClock::at_second(START);
-        let here = Browsers::open(
-            store().log(),
-            scope(),
-            SERVER.into(),
-            None,
-            Box::new(clock.clone()),
-        )
-        .await
-        .unwrap();
+        let here = nowhere(store().log(), &clock).await;
         assert!(matches!(here.setup(), Err(BrowserError::NoPasskeys)));
         assert!(matches!(here.get_options(), Err(BrowserError::NoPasskeys)));
         let reached = open(store().log(), &clock).await;
@@ -256,15 +258,7 @@ fn a_server_reached_nowhere_makes_no_passkeys_and_only_once_one_exists_signs_in(
 fn on_this_computer_passkeys_are_made_at_localhost_once_the_server_listens_there() {
     block_on!(async {
         let clock = ManualClock::at_second(START);
-        let here = Browsers::open(
-            store().log(),
-            scope(),
-            SERVER.into(),
-            None,
-            Box::new(clock.clone()),
-        )
-        .await
-        .unwrap();
+        let here = nowhere(store().log(), &clock).await;
         assert_eq!(here.passkeys_here(), None);
         here.reached_here(4180).unwrap();
         here.reached_here(4181).unwrap();
@@ -311,11 +305,23 @@ fn on_this_computer_passkeys_are_made_at_localhost_once_the_server_listens_there
     });
 }
 
+/// The browsers of the server on `log` reached from nowhere else, before it listens here.
+async fn nowhere(log: SqliteLog, clock: &ManualClock) -> Browsers {
+    Browsers::open(
+        log,
+        scope(),
+        SERVER.into(),
+        HANDLE,
+        None,
+        Box::new(clock.clone()),
+    )
+    .await
+    .unwrap()
+}
+
 /// The browsers of the server on `log` reached here alone, at port 4180.
 async fn here_on(log: SqliteLog, clock: &ManualClock) -> Browsers {
-    let here = Browsers::open(log, scope(), SERVER.into(), None, Box::new(clock.clone()))
-        .await
-        .unwrap();
+    let here = nowhere(log, clock).await;
     here.reached_here(4180).unwrap();
     here
 }
@@ -373,5 +379,129 @@ fn a_server_reached_from_elsewhere_keeps_its_public_origin_as_its_relying_party(
         let code = reached.setup().unwrap();
         let asked = reached.create_options(Proof::Code(code.expose())).unwrap();
         assert_eq!(asked.options["publicKey"]["rp"]["id"], "glave.test");
+    });
+}
+
+/// `handle` as a passkey keeps it: base64url.
+fn encoded(handle: Uuid) -> String {
+    use base64::Engine as _;
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(handle.as_bytes())
+}
+
+/// The user handle a request to make a passkey names, as `browsers` begins one.
+fn handle_asked(browsers: &Browsers) -> serde_json::Value {
+    let code = browsers.setup().unwrap();
+    let asked = browsers.create_options(Proof::Code(code.expose())).unwrap();
+    asked.options["publicKey"]["user"]["id"].clone()
+}
+
+#[test]
+fn every_passkey_keeps_the_handle_its_caller_gives_through_a_new_store_and_per_person() {
+    block_on!(async {
+        let clock = ManualClock::at_second(START);
+        let first = open(store().log(), &clock).await;
+        assert_eq!(handle_asked(&first), encoded(HANDLE));
+        // A new store, the handle given again: a passkey made again names the same person, so
+        // the device's passkey manager replaces the one it made before.
+        let fresh = open(store().log(), &clock).await;
+        assert_eq!(handle_asked(&fresh), handle_asked(&first));
+        // Another person on the same store keeps a handle of their own.
+        let other = Uuid::from_u128(0x0dd1_7e5a_5e7a_4a1d_8a2e_0000_0000_0692);
+        let theirs = Scope::glaves_own(
+            OrgId::from_uuid(Uuid::from_u128(1)),
+            ProjectId::from_uuid(Uuid::from_u128(3)),
+        );
+        let kept = store();
+        let mine = open(kept.log(), &clock).await;
+        let someone = open_for(kept.log(), theirs, other, &clock).await;
+        assert_eq!(handle_asked(&someone), encoded(other));
+        assert_eq!(handle_asked(&mine), encoded(HANDLE));
+    });
+}
+
+#[test]
+fn a_sign_in_tells_the_browser_every_passkey_that_signs_the_person_in() {
+    block_on!(async {
+        let clock = ManualClock::at_second(START);
+        let browsers = open(store().log(), &clock).await;
+        let mut phone = Authenticator::new(ORIGIN).unwrap();
+        let (_, made) = set_up(&browsers, &mut phone).await;
+        let only_phone = AcceptedPasskeys {
+            party: "glave.test".into(),
+            user: encoded(HANDLE),
+            credentials: vec![phone.credential()],
+        };
+        assert_eq!(made.accepted.as_ref(), Some(&only_phone));
+        let mut laptop = Authenticator::new(ORIGIN).unwrap();
+        let asked = browsers.create_options(Proof::SignedIn).unwrap();
+        let answer = laptop.create(&asked.options).unwrap();
+        let added = browsers.add(&asked.id, &answer, None).await.unwrap();
+        let both = sign_in(&browsers, &mut phone).await.unwrap().accepted;
+        let credentials = both.map(|accepted| accepted.credentials);
+        assert_eq!(
+            credentials,
+            Some(vec![phone.credential(), laptop.credential()])
+        );
+        browsers.remove(&added.id).await.unwrap();
+        let after = sign_in(&browsers, &mut phone).await.unwrap();
+        assert_eq!(after.accepted, Some(only_phone));
+        // A link's page is on the server's computer, not at its public origin.
+        let link = browsers.link().unwrap();
+        assert_eq!(browsers.redeem(link.expose()).await.unwrap().accepted, None);
+
+        // Here, a link signs in at the relying party's own page: with no passkey made yet, none
+        // signs in, so the browser's passkey manager forgets those of a store before.
+        let here = here_on(store().log(), &clock).await;
+        let link = here.link().unwrap();
+        let none = AcceptedPasskeys {
+            party: "localhost".into(),
+            user: encoded(HANDLE),
+            credentials: Vec::new(),
+        };
+        assert_eq!(
+            here.redeem(link.expose()).await.unwrap().accepted,
+            Some(none)
+        );
+        let nowhere = nowhere(store().log(), &clock).await;
+        let link = nowhere.link().unwrap();
+        assert_eq!(nowhere.redeem(link.expose()).await.unwrap().accepted, None);
+    });
+}
+
+#[test]
+fn a_passkey_removed_since_a_sign_in_began_is_named_when_it_carries_the_person_s_handle() {
+    block_on!(async {
+        let clock = ManualClock::at_second(START);
+        let kept = store();
+        let browsers = open(kept.log(), &clock).await;
+        let mut phone = Authenticator::new(ORIGIN).unwrap();
+        set_up(&browsers, &mut phone).await;
+        let mut laptop = Authenticator::new(ORIGIN).unwrap();
+        let (laptop_s, _) = set_up(&browsers, &mut laptop).await;
+        // Removed on another server on this store after the request began.
+        let asked = browsers.get_options().unwrap();
+        let another = open(kept.log(), &clock).await;
+        another.remove(&laptop_s.id).await.unwrap();
+        let answer = laptop.get(&asked.options).unwrap();
+        let refused = browsers.get(&asked.id, &answer).await.unwrap_err();
+        let named = UnknownPasskey {
+            party: "glave.test".into(),
+            credential: laptop.credential(),
+        };
+        assert!(
+            matches!(&refused, BrowserError::Unknown(unknown) if *unknown == named),
+            "{refused:?}"
+        );
+        // Another program's passkey for the same relying party, which a browser never presents
+        // to a request that does not name it, is not this server's to judge.
+        let other = Uuid::from_u128(0x0dd1_7e5a_5e7a_4a1d_8a2e_0000_0000_0693);
+        let mut stranger = Authenticator::new(ORIGIN).unwrap();
+        let elsewhere = open_for(store().log(), scope(), other, &clock).await;
+        set_up(&elsewhere, &mut stranger).await;
+        assert!(matches!(
+            sign_in(&browsers, &mut stranger).await,
+            Err(BrowserError::Passkey(_))
+        ));
+        assert!(sign_in(&browsers, &mut phone).await.is_ok());
     });
 }

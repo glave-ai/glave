@@ -3,7 +3,7 @@
 use glave_ports::Failure;
 use serde::{Deserialize, Serialize};
 
-use super::{Told, code};
+use super::{Told, UnknownPasskey, code};
 use crate::words::Sentence;
 
 /// A request that failed, as JSON-RPC carries it.
@@ -16,10 +16,16 @@ pub struct ApiError {
     pub data: Option<ErrorData>,
 }
 
-/// Why a model call failed, for a client to say what to fix.
+/// What a failure says beyond its sentence, for a client to act on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct ErrorData {
-    pub failure: Failure,
+#[serde(untagged)]
+pub enum ErrorData {
+    /// Why a model call failed, for a client to say what to fix.
+    #[schemars(title = "ModelFailure")]
+    Failed { failure: Failure },
+    /// The passkey a browser signed in with that the server does not know.
+    #[schemars(title = "UnknownPasskeyFailure")]
+    UnknownPasskey { unknown_passkey: UnknownPasskey },
 }
 
 impl ApiError {

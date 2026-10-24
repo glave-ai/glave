@@ -84,7 +84,8 @@ On Postgres, the database itself keeps each organization's rows apart as well, a
 | Project key | wraps data keys; names blobs | wrapped by the organization key, versioned |
 | Data key | seals content | one per project per month, wrapped by the project key |
 
-- The data store holds only wrapped keys. The root is called only to unwrap an organization key; unwrapped keys are cached in memory, with a size cap.
+- The data store holds only wrapped keys. The root is called to unwrap an organization key, and to derive (below); unwrapped keys are cached in memory, with a size cap.
+- **The root also derives** a value for a purpose, the same each time, for what must outlive a store that starts over: today the local person's passkey handle (`session.md`, "Signing in"). A root held in glave's process makes it as HMAC-SHA-256 under the root key of a label of its own and the purpose, so the root key both wraps (XChaCha20-Poly1305) and keys this MAC, their inputs kept apart by their labels; the value says nothing of the root. The same root key kept somewhere else (systemd credentials or the TPM, #22) derives the same value; a new root key, another. A root in a KMS derives with the KMS's own MAC where it has one, else derives none, and is for organizations, whose people's handles are kept in the store.
 - **`key_id`** names the data key that sealed a payload: `v1/<project>/<YYYY-MM>/<n>`. Data keys per thread can come later, under the same field, without re-sealing anything.
 
 ## Sealed format

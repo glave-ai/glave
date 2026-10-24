@@ -11,13 +11,14 @@ publish.workspace = true
 [features]
 # A passkey authenticator in software (`testing`), for the tests of crates that sign in through
 # this one.
-fake-authenticator = ["dep:aws-lc-rs", "dep:base64"]
+fake-authenticator = ["dep:aws-lc-rs"]
 
 [dependencies]
 # The fake authenticator's key and signatures, on the crypto rustls already uses.
 aws-lc-rs = { workspace = true, optional = true }
-# The fake authenticator's buffers, in base64url as WebAuthn's JSON has them.
-base64 = { workspace = true, optional = true }
+# Credential ids and the person's passkey handle in base64url, as WebAuthn's JSON and its
+# Signal API take them (and the fake authenticator's buffers).
+base64.workspace = true
 glave-event.workspace = true
 # The clock tokens' lifetimes are checked against.
 glave-ports.workspace = true
@@ -28,6 +29,9 @@ jiff.workspace = true
 jsonwebtoken.workspace = true
 # Fetching an identity provider's discovery document and keys.
 reqwest.workspace = true
+# The passkeys a sign-in names for the browser's passkey manager, as the session API's schema
+# describes them, defined once here.
+schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -39,7 +43,6 @@ webauthn-rs.workspace = true
 
 [dev-dependencies]
 aws-lc-rs.workspace = true
-base64.workspace = true
 # A real store for the browsers ledger, in memory.
 glave-keys.workspace = true
 glave-ports = { workspace = true, features = ["conformance"] }

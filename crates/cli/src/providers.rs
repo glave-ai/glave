@@ -318,7 +318,7 @@ fn provider_failed(failure: Failure, message: String) -> ApiError {
     ApiError {
         code: code::PROVIDER,
         message: message.into(),
-        data: Some(ErrorData { failure }),
+        data: Some(ErrorData::Failed { failure }),
     }
 }
 

@@ -116,6 +116,13 @@ impl From<BrowserError> for ApiError {
             | BrowserError::TooMany
             | BrowserError::Ceremony
             | BrowserError::Passkey(_) => Self::new(code::NO_SIGN_IN, error.to_string()),
+            BrowserError::Unknown(ref unknown) => Self {
+                code: code::NO_SIGN_IN,
+                message: error.to_string().into(),
+                data: Some(ErrorData::UnknownPasskey {
+                    unknown_passkey: unknown.clone(),
+                }),
+            },
             BrowserError::NoPasskeys | BrowserError::NoPasskey => {
                 Self::new(code::NOT_AVAILABLE, error.to_string())
             }
@@ -135,7 +142,7 @@ impl From<&HarnessError> for ApiError {
             HarnessError::Provider(failed) => Self {
                 code: code::PROVIDER,
                 message: error.to_string().into(),
-                data: Some(ErrorData {
+                data: Some(ErrorData::Failed {
                     failure: failed.failure(),
                 }),
             },

@@ -14,6 +14,7 @@ use glave_ports::{Clock, Scope, SystemClock};
 
 use crate::error::KeyError;
 use crate::key_id::{KeyId, Month, Period};
+use crate::material::KeyMaterial;
 use crate::root::Root;
 use crate::seal::{associated, open, seal};
 use crate::storage::KeyStorage;
@@ -98,6 +99,12 @@ impl<S: KeyStorage> Keys<S> {
 
     pub fn storage(&self) -> &S {
         &self.storage
+    }
+
+    /// What the root derives for `purpose` ([`Root::derive`]): the same while the root lasts,
+    /// however often the store starts over.
+    pub async fn derive(&self, purpose: &str) -> Result<KeyMaterial, KeyError> {
+        self.root.derive(purpose).await
     }
 
     /// Seals `event`'s payload under its project's data key for the month it happened in, or,

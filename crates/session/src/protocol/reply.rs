@@ -10,9 +10,9 @@ use glave_ports::{Project, ProjectId, Standing};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    ConnectionInfo, CredentialInfo, DeviceCode, FileInfo, GoneFolder, Grouping, ModelInfo,
-    PasskeySummary, Permissions, ProjectFolder, ProviderInfo, ScheduleInfo, SignInLink, SignInWay,
-    TaskInfo, Told, TrustAsk, WatchEnd,
+    AcceptedPasskeys, ConnectionInfo, CredentialInfo, DeviceCode, FileInfo, GoneFolder, Grouping,
+    ModelInfo, PasskeySummary, Permissions, ProjectFolder, ProviderInfo, ScheduleInfo, SignInLink,
+    SignInWay, TaskInfo, Told, TrustAsk, WatchEnd,
 };
 
 /// What the server is.
@@ -296,6 +296,11 @@ pub enum Reply {
         session: Secret,
         /// The id of the server it is for: the browser presents it to no other.
         server: String,
+        /// Every passkey that signs the person in, for the browser's passkey manager; none
+        /// where the server makes no passkeys for the page signed in, as after a link on a
+        /// server whose passkeys are made at its public origin.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        accepted: Option<AcceptedPasskeys>,
     },
     /// How a watch ended: its stream's last message.
     #[schemars(title = "Watched")]

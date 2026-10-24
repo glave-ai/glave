@@ -33,7 +33,7 @@ pub use glave_event::{Forge, ProviderKind};
 pub use glave_event::{Grouping, Permissions};
 pub use live::Update;
 pub use models::ModelInfo;
-pub use passkeys::{PasskeySummary, SignInWay};
+pub use passkeys::{AcceptedPasskeys, PasskeySummary, SignInWay, UnknownPasskey};
 pub use projects::{GoneFolder, NewFolder, ProjectFolder};
 pub use providers::{ProviderInfo, hint};
 pub use reply::{AwakeInfo, QueuedMessage, Reply, ServerInfo, Status, ThreadSummary, TurnResult};
