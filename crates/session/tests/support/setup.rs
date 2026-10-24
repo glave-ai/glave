@@ -23,7 +23,8 @@ use glave_ports::{
 use glave_session::protocol::ModelInfo;
 use glave_session::signin::Browsers;
 use glave_session::{
-    Answering, GitHosts, KeepAwake, ProjectTrust, Providers, Server, TaskLimits, Wiring,
+    Answering, Connections, GitHosts, KeepAwake, ProjectTrust, Providers, Server, TaskLimits,
+    Wiring,
 };
 use glave_store_sqlite::Store;
 use tokio::sync::Notify;
@@ -80,6 +81,8 @@ pub(crate) struct Setup {
     pub providers: Option<Arc<dyn Providers>>,
     /// Where accounts with hosts are kept; with none, connecting one is refused.
     pub hosts: Option<Arc<dyn GitHosts>>,
+    /// Where sign-ins to connections are kept; with none, signing in is refused.
+    pub connections: Option<Arc<dyn Connections>>,
     /// Where new projects' folders are made; with none, making one is refused.
     pub project_base: Option<PathBuf>,
     /// Where threads in a folder of their own read their opening instructions, and what their
@@ -126,6 +129,7 @@ impl Setup {
             worktrees: None,
             providers: None,
             hosts: None,
+            connections: None,
             project_base: None,
             project_folders: None,
             trust: None,
@@ -217,6 +221,7 @@ impl Setup {
             modes: self.modes,
             providers: self.providers,
             git_hosts: self.hosts,
+            connections: self.connections,
             project_folders: self.project_folders,
             trust: self.trust,
             browsers: self.browsers,

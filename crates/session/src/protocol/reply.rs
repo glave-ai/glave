@@ -13,9 +13,9 @@ use glave_ports::{Project, ProjectId, Standing};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    ApprovalMode, CredentialInfo, DeviceCode, FileInfo, GoneFolder, Grouping, ModelInfo,
-    PasskeySummary, ProjectFolder, ProviderInfo, ScheduleInfo, SignInWay, TaskInfo, Told, TrustAsk,
-    WatchEnd,
+    ApprovalMode, ConnectionInfo, CredentialInfo, DeviceCode, FileInfo, GoneFolder, Grouping,
+    ModelInfo, PasskeySummary, ProjectFolder, ProviderInfo, ScheduleInfo, SignInLink, SignInWay,
+    TaskInfo, Told, TrustAsk, WatchEnd,
 };
 
 /// What the server is.
@@ -257,6 +257,14 @@ pub enum Reply {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         install: Option<String>,
     },
+    /// A connection, as it was signed in to.
+    #[schemars(title = "Connection")]
+    Connection { connection: ConnectionInfo },
+    #[schemars(title = "Connections")]
+    Connections { connections: Vec<ConnectionInfo> },
+    /// Where the person signs in to a remote server.
+    #[schemars(title = "SignIn")]
+    SignIn { sign_in: SignInLink },
     #[schemars(title = "Commands")]
     Commands { commands: Vec<RunningCommand> },
     #[schemars(title = "Device")]

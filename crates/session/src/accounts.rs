@@ -1,16 +1,17 @@
 //! Where a person's accounts are kept: the accounts ledger in their personal project, glave's
-//! own stream under a reserved id, holding their model accounts and git hosts. Each
-//! `provider.connected` and `credential.connected` is sealed under a key of its own; removing
-//! an account records its removal and erases it ([`Eraser::erase`]), so neither the store nor
-//! a backup can read it again. A removed account whose key still opens, as after a crash
-//! between the two, is erased the next time the ledger is read.
+//! own stream under a reserved id, holding their model accounts, git hosts and sign-ins to
+//! connections. Each `provider.connected`, `credential.connected` and `connection.connected` is
+//! sealed under a key of its own; removing an account records its removal and erases it
+//! ([`Eraser::erase`]), so neither the store nor a backup can read it again. A removed account
+//! whose key still opens, as after a crash between the two, is erased the next time the ledger
+//! is read.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use glave_event::{
-    At, Body, CredentialConnected, CredentialId, CredentialRemoved, EncodeError, EventId, Header,
-    InvalidValue, Principal, PrincipalId, ProviderConnected, ProviderId, ProviderRemoved, RawEvent,
-    Seq, ThreadId, decode, encode,
+    At, Body, ConnectionConnected, ConnectionRemoved, CredentialConnected, CredentialId,
+    CredentialRemoved, EncodeError, EventId, Header, InvalidValue, Principal, PrincipalId,
+    ProviderConnected, ProviderId, ProviderRemoved, RawEvent, Seq, ThreadId, decode, encode,
 };
 use glave_ports::stream::{Reserved, StreamError, append_retrying, catch_up};
 use glave_ports::{Clock, Entropy, EntropyError, Erasable, EraseError, Eraser, EventLog, Scope};
@@ -57,13 +58,19 @@ pub struct AccountLedger<L> {
     person: PrincipalId,
     clock: Arc<dyn Clock>,
     entropy: Arc<dyn Entropy>,
+    /// What it last read, which each read catches up from, shared by its clones: a read takes
+    /// in only what was appended since, by this process or another, so it is never stale and
+    /// costs one look at the store when nothing changed.
+    last: Arc<Mutex<Option<Read>>>,
 }
 
 /// The accounts kept, oldest first.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Accounts {
     pub providers: Vec<ProviderConnected>,
     pub credentials: Vec<CredentialConnected>,
+    /// The connections signed in to, one for each server's address.
+    pub connections: Vec<ConnectionConnected>,
     /// Credentials renewed, each with the kept one it became, the latest last.
     renamed: Vec<(CredentialId, CredentialId)>,
 }
@@ -101,6 +108,7 @@ impl Accounts {
 
 /// The accounts the ledger holds, the `seq` its next event takes, and the accounts removed
 /// whose keys still open.
+#[derive(Clone)]
 struct Read {
     accounts: Accounts,
     next: u64,
@@ -125,6 +133,7 @@ impl<L: EventLog> AccountLedger<L> {
             person,
             clock,
             entropy,
+            last: Arc::default(),
         }
     }
 
@@ -136,12 +145,20 @@ impl<L: EventLog> AccountLedger<L> {
     /// The accounts kept, oldest first, once any removed ones are erased.
     pub async fn accounts(&self) -> Result<Accounts, AccountsError> {
         let read = self.read().await?;
-        for account in read.unerased {
+        for account in &read.unerased {
             self.eraser
-                .erase(self.scope, Erasable::Account(account))
+                .erase(self.scope, Erasable::Account(*account))
                 .await?;
         }
+        if let Some(last) = self.last().as_mut() {
+            last.unerased
+                .retain(|account| !read.unerased.contains(account));
+        }
         Ok(read.accounts)
+    }
+
+    fn last(&self) -> MutexGuard<'_, Option<Read>> {
+        self.last.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Keeps the model account `account`, replacing any it stands in for, the same service at
@@ -236,6 +253,70 @@ impl<L: EventLog> AccountLedger<L> {
         Ok(removed.is_some())
     }
 
+    /// Keeps the sign-in `connection`, replacing any kept for the same server, which is erased
+    /// when the accounts are next read.
+    pub async fn keep_connection(
+        &self,
+        connection: &ConnectionConnected,
+    ) -> Result<(), AccountsError> {
+        self.append(|accounts| {
+            let mut events = vec![Event::ConnectionConnected(connection.clone())];
+            events.extend(
+                accounts
+                    .connections
+                    .iter()
+                    .filter(|kept| kept.url == connection.url)
+                    .map(|kept| Event::ConnectionRemoved(kept.connection)),
+            );
+            Some((events, ()))
+        })
+        .await?;
+        Ok(())
+    }
+
+    /// Keeps `fresh`, the renewal of the sign-in `old`, in its place under a key of its
+    /// own, only while `old` is still kept: false, keeping nothing, when it was removed or
+    /// replaced meanwhile.
+    pub async fn renew_connection(
+        &self,
+        old: CredentialId,
+        fresh: &ConnectionConnected,
+    ) -> Result<bool, AccountsError> {
+        let renewed = self
+            .append(|accounts| {
+                let kept = accounts
+                    .connections
+                    .iter()
+                    .any(|kept| kept.connection == old);
+                kept.then(|| {
+                    let events = vec![
+                        Event::ConnectionConnected(fresh.clone()),
+                        Event::ConnectionRemoved(old),
+                    ];
+                    (events, ())
+                })
+            })
+            .await?;
+        Ok(renewed.is_some())
+    }
+
+    /// Removes the sign-in at `url`; it is erased when the accounts are next read. False when
+    /// none is kept there.
+    pub async fn remove_connection(&self, url: &str) -> Result<bool, AccountsError> {
+        let removed = self
+            .append(|accounts| {
+                let events: Vec<Event> = accounts
+                    .connections
+                    .iter()
+                    .filter(|kept| kept.url == url)
+                    .map(|kept| Event::ConnectionRemoved(kept.connection))
+                    .collect();
+                (!events.is_empty()).then_some((events, ()))
+            })
+            .await?;
+        Ok(removed.is_some())
+    }
+
     /// Appends what `change` makes of the accounts kept, read again and tried again when
     /// another process wrote first; nothing when it makes nothing.
     async fn append<T>(
@@ -263,19 +344,24 @@ impl<L: EventLog> AccountLedger<L> {
         Ok(appended.map(|(_, made)| made))
     }
 
-    /// Reads the whole ledger. An account whose key was destroyed reads as erased and is left
-    /// out with its removal.
+    /// Reads the ledger: what it last read, and what was appended since. An account whose key
+    /// was destroyed reads as erased and is left out with its removal.
     async fn read(&self) -> Result<Read, AccountsError> {
-        let mut read = Read {
+        let last = self.last().clone();
+        let mut read = last.unwrap_or_else(|| Read {
             accounts: Accounts::default(),
             next: 1,
             unerased: Vec::new(),
+        });
+        let after = match read.next.saturating_sub(1) {
+            0 => None,
+            seq => Some(Seq::new(seq)?),
         };
         catch_up(
             &self.log,
             &self.scope,
             Reserved::Accounts.id(),
-            None,
+            after,
             |page| {
                 for raw in page {
                     read.next = raw.seq.get().saturating_add(1);
@@ -286,6 +372,11 @@ impl<L: EventLog> AccountLedger<L> {
             },
         )
         .await?;
+        let mut last = self.last();
+        if last.as_ref().is_none_or(|kept| kept.next <= read.next) {
+            *last = Some(read.clone());
+        }
+        drop(last);
         Ok(read)
     }
 
@@ -310,6 +401,10 @@ impl<L: EventLog> AccountLedger<L> {
                     by,
                 };
                 encode(header, &removed)?
+            }
+            Event::ConnectionConnected(connected) => encode(header, &connected)?,
+            Event::ConnectionRemoved(connection) => {
+                encode(header, &ConnectionRemoved { connection, by })?
             }
         })
     }
@@ -351,6 +446,21 @@ impl Read {
                     self.unerased.push(removed.credential.as_uuid());
                 }
             }
+            Body::ConnectionConnected(connected) => {
+                accounts
+                    .connections
+                    .retain(|kept| kept.connection != connected.connection);
+                accounts.connections.push(connected);
+            }
+            Body::ConnectionRemoved(removed) => {
+                let before = accounts.connections.len();
+                accounts
+                    .connections
+                    .retain(|kept| kept.connection != removed.connection);
+                if accounts.connections.len() < before {
+                    self.unerased.push(removed.connection.as_uuid());
+                }
+            }
             _ => {}
         }
     }
@@ -363,6 +473,8 @@ enum Event {
     CredentialConnected(CredentialConnected),
     /// A git host removed, and the one that renewed it in its place.
     CredentialRemoved(CredentialId, Option<CredentialId>),
+    ConnectionConnected(ConnectionConnected),
+    ConnectionRemoved(CredentialId),
 }
 
 #[cfg(test)]

@@ -41,12 +41,13 @@ codes! {
     NO_MODEL = -32021, "No such model here, or not one this server may run";
     NOT_AVAILABLE = -32022, "Not available yet, such as a thread on a computer of the person's own";
     NO_PROVIDER = -32023, "No such model account here";
-    NO_CREDENTIAL = -32024, "No such git host, or sign-in, here";
-    HOST = -32025, "The git host refused, or could not be reached";
+    NO_CREDENTIAL = -32024, "No such git host, connection or sign-in here";
+    HOST = -32025, "The git host, or a connection's server or its sign-in, refused or could not be reached";
     NO_TRUST = -32026, "No such ask waits: the project changed since, or asks nothing now";
     NO_COMMAND = -32027, "No such command is running in the background in this thread";
     QUEUE_FULL = -32028, "As many messages wait for the running turn as it takes";
     NO_FILE = -32030, "No such file here: never kept in this project, or no message used it within a day";
     NO_IMAGES = -32031, "The thread's model does not read images";
+    NO_SERVER = -32032, "No remote server of the person's settings goes by that name or address";
     NO_FOLDER = -32029, "The project's folder isn't there anymore: give it its new place (`project/folder/set`) or remove the project (`project/remove`)";
 }

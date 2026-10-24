@@ -203,8 +203,47 @@
       "format": "uuid",
       "type": "string"
     },
+    "ConnectionInfo": {
+      "description": "A connection's sign-in to its remote MCP server.",
+      "properties": {
+        "name": {
+          "description": "What the person's settings call the server at that address, when they name one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/ConnectionStatus"
+        },
+        "url": {
+          "description": "The MCP server's address: `https://mcp.example.com/mcp`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "status"
+      ],
+      "type": "object"
+    },
+    "ConnectionStatus": {
+      "description": "Whether a sign-in still works.",
+      "oneOf": [
+        {
+          "const": "signed_in",
+          "description": "Its token works, or renews before it expires.",
+          "type": "string"
+        },
+        {
+          "const": "expired",
+          "description": "Its token expired with nothing to renew it: the person signs in again.",
+          "type": "string"
+        }
+      ]
+    },
     "CredentialId": {
-      "description": "Identifies one git host a person connected (`credential.connected`).",
+      "description": "Identifies one sign-in a person keeps, sealed under a key of its own: a git host\n(`credential.connected`) or a connection (`connection.connected`).",
       "format": "uuid",
       "type": "string"
     },
@@ -1384,6 +1423,24 @@
         }
       ]
     },
+    "SignInLink": {
+      "description": "Signing in to a remote server in the browser: the person opens `url`, its authorization server's\npage, then the client waits on `flow` with `connection/poll`.",
+      "properties": {
+        "flow": {
+          "description": "Names this sign-in to `connection/poll`.",
+          "type": "string"
+        },
+        "url": {
+          "description": "The page where the person signs in and approves glave.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "flow",
+        "url"
+      ],
+      "type": "object"
+    },
     "SignInWay": {
       "description": "A way a browser signs in to the server, as `server/discover` says.",
       "oneOf": [
@@ -2234,7 +2291,7 @@
     },
     "HOST": {
       "code": -32025,
-      "message": "The git host refused, or could not be reached"
+      "message": "The git host, or a connection's server or its sign-in, refused or could not be reached"
     },
     "INTERNAL": {
       "code": -32603,
@@ -2274,7 +2331,7 @@
     },
     "NO_CREDENTIAL": {
       "code": -32024,
-      "message": "No such git host, or sign-in, here"
+      "message": "No such git host, connection or sign-in here"
     },
     "NO_FILE": {
       "code": -32030,
@@ -2319,6 +2376,10 @@
     "NO_SCHEDULE": {
       "code": -32016,
       "message": "No such schedule"
+    },
+    "NO_SERVER": {
+      "code": -32032,
+      "message": "No remote server of the person's settings goes by that name or address"
     },
     "NO_SIGN_IN": {
       "code": -32013,
@@ -2480,6 +2541,113 @@
         "type": "object"
       },
       "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "connection/list": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "connections": {
+            "items": {
+              "$ref": "#/$defs/ConnectionInfo"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "connections"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "connection/poll": {
+      "params": {
+        "properties": {
+          "flow": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "anyOf": [
+          {
+            "description": "A connection, as it was signed in to.",
+            "properties": {
+              "connection": {
+                "$ref": "#/$defs/ConnectionInfo"
+              }
+            },
+            "required": [
+              "connection"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "A sign-in in the browser still waiting for the person.",
+            "properties": {
+              "flow": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "flow"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "streams": false
+    },
+    "connection/remove": {
+      "params": {
+        "properties": {
+          "server": {
+            "description": "What the person's `mcp.json` calls the server, or its address.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "connection/start": {
+      "params": {
+        "properties": {
+          "server": {
+            "description": "What the person's `mcp.json` calls the server, or its address.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "Where the person signs in to a remote server.",
+        "properties": {
+          "sign_in": {
+            "$ref": "#/$defs/SignInLink"
+          }
+        },
+        "required": [
+          "sign_in"
+        ],
         "type": "object"
       },
       "streams": false

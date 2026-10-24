@@ -387,6 +387,16 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         ),
         ("credential/device/start", vec![json!({})]),
         ("credential/device/poll", vec![json!({"flow": "@flow"})]),
+        (
+            "connection/start",
+            vec![json!({"server": "https://mcp.example.com/mcp"})],
+        ),
+        ("connection/poll", vec![json!({"flow": "@flow"})]),
+        ("connection/list", vec![json!({})]),
+        (
+            "connection/remove",
+            vec![json!({"server": "https://mcp.example.com/mcp"})],
+        ),
     ]
 }
 
