@@ -61,6 +61,7 @@ jobs:
         if: matrix.way == 'public'
         run: |
           image=ghcr.io/letsencrypt/pebble:2.10.1@sha256:ddf230642b1a584f519f32e347de1b05a6e4c1f6c35c1863b33effeab5f78199
+          .github/pull-image.sh "$image"
           docker create --name pebble-config "$image" >/dev/null
           docker cp pebble-config:/test/config/pebble-config.json "$RUNNER_TEMP/pebble.json"
           docker rm pebble-config >/dev/null
