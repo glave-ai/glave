@@ -229,10 +229,11 @@ pub enum Control {
     },
 }
 
-/// Who asks for a control, and in which project: the verified caller, never a parameter.
+/// Who asks for a control, and in which project: the verified caller, or the local person when
+/// none signed in, never a parameter. A control is always a person's own action, never glave's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Access {
-    pub person: Option<PrincipalId>,
+    pub person: PrincipalId,
     pub scope: Scope,
 }
 

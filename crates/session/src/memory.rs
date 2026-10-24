@@ -35,7 +35,7 @@ where
             .ok_or_else(|| ApiError::new(code::MEMORY_OFF, Sentence::MemoryOff))?;
         let (_, scope) = self.project_for(caller, project).await?;
         let access = Access {
-            person: caller.person,
+            person: self.person_of(caller)?,
             scope,
         };
         match memory.control(&access, control).await {

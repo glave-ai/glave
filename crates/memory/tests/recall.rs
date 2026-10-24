@@ -491,8 +491,8 @@ fn persons(hits: &[Recalled]) -> Vec<String> {
 
 const MERGED_QUERY: &str = "atlas Railway merging";
 
-/// Two threads, each saving a memory, then tidy-up merging the two: the memories, oldest (the
-/// one that takes the merged text) first.
+/// Two threads, each saving a memory, then tidy-up merging the two: the memories, the one that
+/// takes the merged text (stated last) first.
 async fn merged(kit: &Kit) -> Vec<MemoryId> {
     let memory = kit.memory(rules(), 2).await;
     let dir = folder("recall-merged");
@@ -528,6 +528,7 @@ async fn merged(kit: &Kit) -> Vec<MemoryId> {
         .await
         .unwrap()
         .iter()
+        .rev()
         .map(|memory| memory.memory)
         .collect();
     let tidier = Tidier {
@@ -622,7 +623,7 @@ fn a_merge_undone_then_forgotten_leaves_what_went_in_restorable() {
         let memories = kit.memories(rules(), 4);
         let undone = memories.restore(&persons_writer(), *kept).await.unwrap();
         assert_eq!(
-            undone.text, "Atlas deploys to Railway",
+            undone.text, "Merging to main ships atlas to Railway",
             "the merge's edit undone"
         );
         memories.forget(&persons_writer(), *kept).await.unwrap();
@@ -640,7 +641,7 @@ fn a_merge_undone_then_forgotten_leaves_what_went_in_restorable() {
             "a view read afresh hides what the live one does"
         );
         let back = memories.restore(&persons_writer(), *folded).await.unwrap();
-        assert_eq!(back.text, "Merging to main ships atlas to Railway");
+        assert_eq!(back.text, "Atlas deploys to Railway");
         let after = kit
             .memories(rules(), 6)
             .recall(&on(shared(), thread(9)), MERGED_QUERY, 10)
@@ -648,7 +649,7 @@ fn a_merge_undone_then_forgotten_leaves_what_went_in_restorable() {
             .unwrap();
         assert_eq!(
             persons(&after),
-            ["Merging to main ships atlas."],
+            ["We deploy atlas to Railway."],
             "restored, its turn is back; the forgotten one's stays hidden"
         );
     });
