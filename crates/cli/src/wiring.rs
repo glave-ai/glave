@@ -11,7 +11,7 @@ use glave_config::policy::{self, Choices};
 use glave_config::trust::Asking;
 use glave_harness::{AGENTS_MD, Settings, Workspace, agents_md};
 use glave_memory::Tidier;
-use glave_ports::computer::{GitCredentials, Sandbox, SandboxLevel};
+use glave_ports::computer::{GitCredentials, Sandbox};
 use glave_ports::settings::Hooks;
 use glave_ports::{ProjectId, SystemClock};
 use glave_process::Processes;
@@ -118,11 +118,8 @@ pub(crate) async fn wire(
     let folder = std::env::current_dir()?;
     let mut setup = Setup::load(args, &folder).await?;
     let telemetry = crate::telemetry::start_for(args.log.as_deref(), &setup.choices)?;
-    let database = home::database().await?;
     let processes = home::reaped().await?;
-    let workspace =
-        crate::sandboxing::workspace(&folder, &mut setup, &database, &processes).await?;
-    let sandbox = workspace.sandbox().cloned();
+    let workspace = crate::sandboxing::workspace(&folder, &mut setup, &processes).await?;
     let choices = &setup.choices;
     let (remote, configured) = crate::providers::endpoint(choices)?;
     let store = store(&setup).await?;
@@ -146,17 +143,7 @@ pub(crate) async fn wire(
     tidy(memory.as_ref(), &lined.switch, settings.model.clone());
     let wiring = Wiring {
         // Before the lineup's parts move into the rest.
-        rereads: Some(
-            rereading(
-                args,
-                &folder,
-                (choices, sandbox.as_ref().map(|sandbox| sandbox.level)),
-                &lined,
-                &servers,
-                &projects,
-            )
-            .await?,
-        ),
+        rereads: Some(rereading(args, &folder, &setup, &lined, &servers, &projects).await?),
         models: lined.built.models.offered,
         presets: setup.loaded.constraints.permissions_allowed(),
         providers: lined.accounts.map(|kept| kept as Arc<dyn Providers>),
@@ -197,7 +184,7 @@ pub(crate) async fn wire(
         project: scope.project(),
         root,
         choices: setup.choices,
-        sandbox,
+        sandbox: setup.sandbox,
         workers,
         memory,
         log: store.log(),
@@ -255,7 +242,7 @@ async fn keep_here(server: &Glave, project: ProjectId, root: &Path) -> anyhow::R
 async fn rereading(
     args: &Args,
     folder: &Path,
-    (start, here): (&Choices, Option<SandboxLevel>),
+    start: &Setup,
     lined: &Lined,
     servers: &Arc<Servers>,
     projects: &Arc<ProjectFolders>,
@@ -264,8 +251,8 @@ async fn rereading(
         args: args.clone(),
         folder: folder.to_owned(),
         home: home::folder()?,
-        start: start.clone(),
-        here,
+        start: start.choices.clone(),
+        here: start.sandbox.as_ref().map(|sandbox| sandbox.level),
         accounts: lined.accounts.clone(),
         switch: lined.switch.clone(),
         servers: Arc::clone(servers),

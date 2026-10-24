@@ -37,10 +37,10 @@ pub(crate) fn sandbox_at(
 pub(crate) async fn workspace(
     folder: &Path,
     setup: &mut Setup,
-    database: &Path,
     processes: &Processes,
 ) -> anyhow::Result<Workspace> {
     let asks = setup.loaded.constraints.network_ask_forbidden().is_none();
+    let database = home::database().await?;
     let glave_home = database.parent();
     let project = sandbox_at(SandboxLevel::Project, &setup.choices, glave_home);
     let why = match open_here(folder, processes, asks)
@@ -48,7 +48,10 @@ pub(crate) async fn workspace(
         .with_sandbox(&project)
         .await
     {
-        Ok(workspace) => return Ok(workspace),
+        Ok(workspace) => {
+            setup.sandbox = Some(project);
+            return Ok(workspace);
+        }
         Err(error) => error.to_string(),
     };
     if let Some(rule) = setup.loaded.constraints.sandbox_required() {
@@ -69,7 +72,10 @@ pub(crate) async fn workspace(
         .with_sandbox(&reading)
         .await
     {
-        Ok(workspace) => Ok(workspace),
+        Ok(workspace) => {
+            setup.sandbox = Some(reading);
+            Ok(workspace)
+        }
         Err(_) => open_here(folder, processes, asks).await,
     }
 }

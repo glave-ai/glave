@@ -111,8 +111,24 @@ fn files_are_read_from_their_places_and_the_project_s_counts_once_trusted() {
         "none of the first's"
     );
     assert_eq!(elsewhere.configs, [other, locations.person.clone()]);
-    // A project never widens what the person chose, unless trust lets it give full access.
+    std::fs::write(home.join("config.toml"), "aproval = \"ask\"\n").unwrap();
+    let typo = load_all(&locations, None);
+    assert!(format!("{:#}", typo.unwrap_err()).contains("aproval"));
+}
+
+#[test]
+fn a_project_never_widens_the_person_s_preset_unless_trust_gives_full_access() {
+    let dir = scratch("wider");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
     std::fs::write(home.join("config.toml"), "permissions = \"read-only\"\n").unwrap();
+    let org = dir.join("policy.toml");
+    let mut locations = Locations::here(&home, &dir);
+    locations.policies = vec![org.clone()];
+    let theirs = |preset| ConfigFile {
+        permissions: Some(preset),
+        ..ConfigFile::default()
+    };
     let wider = load_all(&locations, Some(theirs(Permissions::Workspace))).unwrap();
     let choices = wider.settle().unwrap();
     assert_eq!(
@@ -122,15 +138,27 @@ fn files_are_read_from_their_places_and_the_project_s_counts_once_trusted() {
             &Source::File(locations.person.clone())
         )
     );
+    // Full access is in a project's file only once trusted (`config_without_trust`).
     let trusted = load_all(&locations, Some(theirs(Permissions::FullAccess))).unwrap();
-    let refused = trusted.settle().unwrap_err().to_string();
+    let choices = trusted.settle().unwrap();
+    assert_eq!(
+        (choices.permissions.value, &choices.permissions.from),
+        (
+            Permissions::FullAccess,
+            &Source::File(locations.project.clone())
+        )
+    );
+    std::fs::write(
+        &org,
+        "version = 1\n[permissions]\nhighest = \"workspace\"\n",
+    )
+    .unwrap();
+    let capped = load_all(&locations, Some(theirs(Permissions::FullAccess))).unwrap();
+    let refused = capped.settle().unwrap_err().to_string();
     assert!(
         refused.contains("permissions full-access (from") && refused.contains("highest"),
-        "trusted, it applies, and the policy refuses it: {refused}"
+        "the policy refuses it: {refused}"
     );
-    std::fs::write(home.join("config.toml"), "aproval = \"ask\"\n").unwrap();
-    let typo = load_all(&locations, None);
-    assert!(format!("{:#}", typo.unwrap_err()).contains("aproval"));
 }
 
 #[test]
