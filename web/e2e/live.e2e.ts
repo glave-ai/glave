@@ -103,9 +103,8 @@ test('the side nav shows a turn another tab starts running, then needing the per
   const row = byTestId(watching, 'nav-thread').filter({ hasText: prompt });
   await expect(row.getByTestId('nav-thread-running')).toBeVisible();
   await letGo(process.env[LIVE_MODEL_URL] ?? '', held);
-  await expect(row.getByTestId('nav-thread-waiting')).toBeVisible();
-  const needsYou = byTestId(watching, 'needs-you-thread').filter({ hasText: prompt });
-  await expect(needsYou).toBeVisible();
+  const waits = row.getByTestId('nav-thread-line');
+  await expect(waits).toHaveText('Waiting on you');
   await expect(byTestId(working, 'thread-approval').locator('code')).toHaveText(TOUCH);
   for (const colorScheme of ['light', 'dark'] as const) {
     await watching.emulateMedia({ colorScheme });
@@ -114,7 +113,7 @@ test('the side nav shows a turn another tab starts running, then needing the per
 
   await byTestId(working, 'thread-approval-deny').click();
   await expect(row.getByTestId('nav-thread-since')).toBeVisible();
-  await expect(needsYou).toHaveCount(0);
+  await expect(waits).toHaveCount(0);
   // Heard from the lists' watch alone: nothing read the lists again.
   const reads = called.slice(read).filter((method) => /^(project|thread)\/list$/u.test(method));
   expect(reads).toEqual([]);

@@ -1,0 +1,12 @@
+@use '../nav';
+
+:host {
+  display: block;
+}
+
+// The sections, as far apart as the lists grouped by project.
+.lists {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-5);
+}

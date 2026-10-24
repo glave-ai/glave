@@ -1,3 +1,15 @@
+// A native input out of sight that keeps its keyboard and screen-reader behaviour, inside the
+// label drawn in its place, which must be positioned (see `choice`).
+@mixin native {
+  .native {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+  }
+}
+
 // The shared look of a checkbox or radio: a visually hidden native input that keeps keyboard
 // and screen-reader behaviour, followed by a drawn mark and the label's text.
 @mixin choice {
@@ -13,13 +25,7 @@
     line-height: var(--glz-leading-normal);
   }
 
-  .native {
-    position: absolute;
-    opacity: 0;
-    width: 1px;
-    height: 1px;
-    margin: 0;
-  }
+  @include native;
 
   .mark {
     flex: none;

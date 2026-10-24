@@ -155,7 +155,7 @@ When a client can answer, the model is offered `question`: up to four questions,
 
 A project's folder can bring what runs only once the person trusts it: tool servers, hooks, and settings that loosen how its commands run (`policy.md`, "Project trust"). The terminal asks before glave starts; over the API, the thread asks.
 
-- **The ask's form.** A thread's summary carries `trust`: each thing in plain words (a sentence, and the command, address or model itself in `detail`), and `ask`, a name for exactly what was shown. While it carries one, the thread is `waiting`, so Needs you lists it. `trust/answer` answers with that name and `trust` or `not_now`, and replies with the summary after it. It is neither an approval, which belongs to a tool call in a paused turn and is answered into the conversation, nor a question, which the model writes and whose answer the model reads: a project's trust is not the model's to raise or to read, so neither the log nor the conversation changes, and the model sees only its tools appear from the next turn.
+- **The ask's form.** A thread's summary carries `trust`: each thing in plain words (a sentence, and the command, address or model itself in `detail`), and `ask`, a name for exactly what was shown. While it carries one, the thread is `waiting`, so a client says it needs the person. `trust/answer` answers with that name and `trust` or `not_now`, and replies with the summary after it. It is neither an approval, which belongs to a tool call in a paused turn and is answered into the conversation, nor a question, which the model writes and whose answer the model reads: a project's trust is not the model's to raise or to read, so neither the log nor the conversation changes, and the model sees only its tools appear from the next turn.
 - **When it asks.** Once the person on this computer starts a thread in such a project, or opens one (`thread/start`, `thread/get`), until they answer; threads not opened since do not ask, so a project with many threads asks only in the ones the person goes to. Nothing waits for it: turns run meanwhile, with what it lists off.
 - **Durable, never stale.** What a project asks is read again from its files and the person's answers whenever a summary shows it (`thread/start`, `thread/get`, `thread/list`, `thread/rename`), so every client sees the same ask, an answered one is gone everywhere, and a server that restarts asks again when the thread is opened. Which threads asked, and which said not now, the server keeps in memory, for its 4,096 latest threads; one it forgot asks again.
 - **Trust this project** records exactly what the terminal's yes records (a `trust.decided` in the person's trust ledger, each item with its definition) and, from the next turn of every thread in the project, turns on what a server runs of a project's own: its servers, its hooks, and its settings that need trust (`policy.md`). A changed or added item is asked about again, and only it.
@@ -246,6 +246,14 @@ Standard codes, `-32700` to `-32603`, for malformed messages; a method the serve
 - `-32020`, the model provider failed: `data` has `failure`, its kind (`Failure` in `glave-ports`), so a client can say what to fix; the CLI turns it into a fix for the person's own endpoint.
 - `-32011`: the thread is working on another server, which holds its lease ("Turns that outlive a server"); try again once it is done there.
 
+## How threads are grouped
+
+How a person's clients group their threads is theirs to choose and the server's to keep, as their language is.
+
+- **Kept.** `grouping/set` (`project`, the default, or `status`) records `grouping.set` in their settings ledger (`events.md`), so the choice follows them to every browser and every server on one store, and `grouping/get` reads it. It is theirs alone, in every deployment: it lives in their personal project.
+- **Never grouped by the server.** What each thread is doing, and so what needs the person, is the summary's `status`; a client groups by it and writes no sentence of its own about the work.
+- **Read, not pushed.** A client reads the choice as it opens; another of the person's clients already open sees a new one at its next read.
+
 ## Languages
 
 The server writes its own sentences (why a request was refused, the folder-gone notice, why a folder is no project's) in the caller's language, as the web app writes its own words in the reader's.
@@ -314,6 +322,7 @@ Version 1: in-process (`glave-session`, used by the CLI), over stdio (`glave ser
 - **Commands in the background** (issue #321), not yet: credentials for a command in the background (its git asks no one); telling the model at a turn's start which of its commands ended meanwhile (it learns on its next read); `glave threads archive` stopping them, since a command in another glave process is out of its reach (the idle hour stops them).
 - **Projects** (issue #64), not yet: promoting a one-off chat into a project (`storage.md`), and the organization's policy in the check.
 - **Projects' folders** (#294), not yet: changing a project's one folder while it is still there (project settings, #267); moving a thread's worktree with a folder that moved; an archive of removed projects; checking a project out again on another computer, or after one is reset, from its source; a project's own skills and commands, which the folder the server started in still gives every thread; and telling a client, rather than the log and the terminal, which of a project's settings were set aside.
+- **Grouping** (#665): the web app's side nav reads and keeps the choice. Not yet: telling the person's other open clients of a new choice, and the facts the side nav would need to say a thread is blocked or has news the person has not read.
 - **Languages** (#374): the server's own sentences in the caller's language, with the pseudo-locales alone besides English. Not yet: a real language, the web app reading the person's choice for its own words, and the words other crates give the server to pass on.
 - Still to come from "Over the network" (issue #64): SAML and glave session tokens, idempotency keys in the log (#410), and WebSocket.
 

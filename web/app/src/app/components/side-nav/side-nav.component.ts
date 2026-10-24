@@ -15,14 +15,22 @@ import ListChecks from 'lucide/dist/esm/icons/list-checks.mjs';
 import PenLine from 'lucide/dist/esm/icons/pen-line.mjs';
 import Search from 'lucide/dist/esm/icons/search.mjs';
 
+import { hasProjects } from '../../lib/nav';
+import { unloaded } from '../../lib/text';
+import { GroupingService } from '../../services/grouping.service';
+import { ProjectsService } from '../../services/projects.service';
 import { TasksService } from '../../services/tasks.service';
+import { GroupByComponent } from '../group-by/group-by.component';
 import { PersonComponent } from '../person/person.component';
 import { ProjectsNavComponent } from '../projects-nav/projects-nav.component';
+import { StatusNavComponent } from '../status-nav/status-nav.component';
 
 /**
- * The side nav: glave's name with New chat beside it, and the search; what needs the person, the
- * person's projects with their threads, then their chats; and at its foot Tasks (only while
- * tasks are going or a schedule will start one) and the person signed in, with their pages.
+ * The side nav: glave's name with New chat beside it, and the search; the person's threads,
+ * grouped as they choose, by project (their projects, then their chats) or by what each is
+ * doing, the switch above them while they have a project beside their Chats; and at its foot
+ * Tasks (only while tasks are going or a schedule will start one) and the person signed in,
+ * with their pages.
  */
 @Component({
   selector: 'app-side-nav',
@@ -31,8 +39,10 @@ import { ProjectsNavComponent } from '../projects-nav/projects-nav.component';
     GlzIconButtonComponent,
     GlzIconComponent,
     GlzNavItemComponent,
+    GroupByComponent,
     PersonComponent,
     ProjectsNavComponent,
+    StatusNavComponent,
   ],
   templateUrl: './side-nav.component.html',
   styleUrl: './side-nav.component.scss',
@@ -52,6 +62,7 @@ export class SideNavComponent {
     search: $localize`:@@sideNav.search:Search threads`,
     searchPlaceholder: $localize`:@@sideNav.searchPlaceholder:Search`,
     tasks: $localize`:@@sideNav.tasks:Tasks`,
+    unloaded: unloaded(),
   } as const;
   protected readonly icons = { newChat: PenLine, search: Search, tasks: ListChecks };
   protected readonly tasksLink = '/tasks';
@@ -60,6 +71,13 @@ export class SideNavComponent {
   private readonly tasks = inject(TasksService);
   protected readonly tasksLive = this.tasks.live;
   private readonly locale = inject(LOCALE_ID);
+  private readonly projects = inject(ProjectsService);
+  private readonly grouped = inject(GroupingService);
+  private readonly grouping = this.grouped.grouping;
+  /** With only Chats there is nothing to group by project: no switch, and no projects named. */
+  protected readonly groupable = computed(() => hasProjects(this.projects.projects()));
+  protected readonly byStatus = computed(() => this.groupable() && this.grouping() === 'status');
+  protected readonly byProject = computed(() => !this.byStatus());
   /**
    * How many tasks are going, as the reader writes numbers: shown alone, and read to screen
    * readers in words.
@@ -74,6 +92,8 @@ export class SideNavComponent {
   constructor() {
     const unwatch = this.tasks.watch();
     inject(DestroyRef).onDestroy(unwatch);
+    // Read as the side nav opens, beside the lists' first read, so it groups them as it shows.
+    void this.grouped.read();
   }
 
   protected search(event: Event): void {

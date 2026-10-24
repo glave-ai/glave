@@ -17,6 +17,7 @@ mod durable;
 mod files;
 mod goals;
 mod gone;
+mod grouping;
 mod http;
 mod isolation;
 mod languages;

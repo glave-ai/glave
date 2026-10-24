@@ -23,7 +23,9 @@ pub use id::{
     CallId, CredentialId, EventId, MemoryId, PrincipalId, ProviderId, ScheduleId, ThreadId,
 };
 pub use money::{Currency, Decimal, Money};
-pub use payload::{AcmeRegistered, AwakeSet, CertificateIssued, LanguageSet};
+pub use payload::{
+    AcmeRegistered, AwakeSet, CertificateIssued, Grouping, GroupingSet, LanguageSet,
+};
 pub use payload::{
     ApprovalDecided, ApprovalMode, ApprovalModeChosen, ApprovalRequested, Arguments, Auth,
     AuthMethod, Cost, EffortChosen, ForkPoint, GatewayToolCalled, GoalEnded, GoalReason,

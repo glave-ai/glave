@@ -1,0 +1,10 @@
+<glz-segmented
+  testId="nav-group"
+  [label]="copy.label"
+  [options]="groupings"
+  [value]="grouping()"
+  (valueChange)="group($event)"
+/>
+@if (problem(); as said) {
+  <p class="error" role="alert" data-testid="nav-group-error">{{ said }}</p>
+}

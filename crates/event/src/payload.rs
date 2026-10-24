@@ -11,6 +11,7 @@ pub(crate) mod command;
 pub(crate) mod credential;
 pub(crate) mod gateway;
 pub(crate) mod goal;
+pub(crate) mod grouping;
 pub(crate) mod hook;
 pub(crate) mod language;
 pub(crate) mod memory;
@@ -39,6 +40,7 @@ pub use command::{CommandEnded, CommandEnding, CommandStarted};
 pub use credential::{CredentialConnected, CredentialRemoved, Forge, Renewal};
 pub use gateway::GatewayToolCalled;
 pub use goal::{GoalEnded, GoalReason, GoalResumed, GoalSet};
+pub use grouping::{Grouping, GroupingSet};
 pub use hook::{HookPoint, HookRan, HookResult};
 pub use language::LanguageSet;
 pub use memory::{

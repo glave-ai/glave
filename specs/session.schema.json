@@ -557,6 +557,14 @@
       ],
       "type": "object"
     },
+    "Grouping": {
+      "description": "How a client groups the person's threads: each under its project, or each under what it is\ndoing (waiting for the person, running, idle).",
+      "enum": [
+        "project",
+        "status"
+      ],
+      "type": "string"
+    },
     "IdempotencyKey": {
       "description": "A client's name for one attempt at a turn: 1 to 255 bytes of text.",
       "type": "string"
@@ -2826,6 +2834,50 @@
         "type": "object"
       },
       "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "grouping/get": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "How the caller's clients group their threads.",
+        "properties": {
+          "grouping": {
+            "$ref": "#/$defs/Grouping"
+          }
+        },
+        "required": [
+          "grouping"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "grouping/set": {
+      "params": {
+        "properties": {
+          "grouping": {
+            "$ref": "#/$defs/Grouping"
+          }
+        },
+        "required": [
+          "grouping"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "How the caller's clients group their threads.",
+        "properties": {
+          "grouping": {
+            "$ref": "#/$defs/Grouping"
+          }
+        },
+        "required": [
+          "grouping"
+        ],
         "type": "object"
       },
       "streams": false
