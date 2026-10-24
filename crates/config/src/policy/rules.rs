@@ -388,12 +388,17 @@ impl Constraints {
         limits
     }
 
-    /// The limits every `[workers]` rule sets at once.
+    /// The limits every `[workers]` rule sets at once, and a rule that takes the network from
+    /// commands takes it from workers too: theirs is set when they start, so none asks.
     pub fn worker_limits(&self) -> glave_ports::computer::Limits {
-        limits(self.rules.iter().filter_map(|rule| match &rule.kind {
+        let mut limits = limits(self.rules.iter().filter_map(|rule| match &rule.kind {
             Kind::Workers(rules) => Some(rules),
             _ => None,
-        }))
+        }));
+        if self.network_off().is_some() {
+            limits.network = Some(glave_ports::computer::Network::Off);
+        }
+        limits
     }
 
     fn first(&self, test: impl Fn(&Kind) -> bool) -> Option<&Rule> {

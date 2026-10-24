@@ -274,7 +274,7 @@ where
                 judge: settings.judge.clone(),
                 titles: settings.titles,
                 sandbox: workspace.sandbox().cloned(),
-                ask_network: settings.ask_network,
+                ask_network: workspace.asks_network(),
                 hooks: Hooks::default(),
                 web: None,
             })),

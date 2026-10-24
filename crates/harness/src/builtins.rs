@@ -78,7 +78,7 @@ impl ToolSource for Builtins {
         let tools = Tool::ALL
             .iter()
             .map(|tool| ToolInfo {
-                spec: tool.spec_in(self.workspace.sandbox()),
+                spec: tool.spec_in(&self.workspace),
                 effect: tool.effect(),
                 parallel: tool.effect() == Effect::Reads,
             })

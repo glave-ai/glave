@@ -201,6 +201,21 @@ fn an_organization_takes_the_network_and_only_glave_s_default_gives_way() {
 }
 
 #[test]
+fn taking_the_network_from_commands_takes_it_from_workers_too() {
+    use glave_ports::computer::Network;
+    let off = constraints("version = 1\n[sandbox]\nnetwork = false\n");
+    assert_eq!(off.worker_limits().network, Some(Network::Off));
+    let workers_on =
+        constraints("version = 1\n[sandbox]\nnetwork = false\n[workers]\nnetwork = \"on\"\n");
+    assert_eq!(
+        workers_on.worker_limits().network,
+        Some(Network::Off),
+        "off wins"
+    );
+    assert_eq!(Constraints::default().worker_limits().network, None);
+}
+
+#[test]
 fn asking_for_the_network_is_allowed_unless_a_rule_forbids_it() {
     let off = constraints("version = 1\n[sandbox]\nnetwork = false\n");
     assert_eq!(off.network_ask_forbidden(), None);

@@ -24,8 +24,8 @@ pub struct Defaults {
     pub titles: bool,
     /// The sandbox commands on this computer run in; none runs them unconfined.
     pub sandbox: Option<Sandbox>,
-    /// Whether a command in a sandbox without the network may ask to run with it, or outside
-    /// the sandbox: not where the organization's policy forbids it.
+    /// Whether a command whose sandbox has no network may ask to run with it, or outside the
+    /// sandbox: not where the organization's policy forbids it.
     pub ask_network: bool,
     /// Commands run at points of the turns of the person the harness works for.
     pub hooks: Hooks,

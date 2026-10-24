@@ -8,21 +8,93 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use glave_event::{Arguments, Lifted, OutsideSandbox};
-use glave_ports::Cancellation;
 use glave_ports::computer::{ComputerError, Ending as Exit, OnTimeout, Sandbox};
+use glave_ports::{Cancellation, ToolSpec};
 use serde::Deserialize;
+use serde_json::{Map, json};
 
 use super::background::{moved, start};
 use super::captured::Capture;
 use super::workspace::{Workspace, explain};
 use super::{Tool, ToolOutcome, parse};
 use crate::background::Commands;
-use crate::sandbox::blocked_note;
+use crate::sandbox::{Asks, blocked_note};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 120;
 const MAX_TIMEOUT_SECS: u64 = 600;
 /// The most of the model's reason for running outside the sandbox the person is shown.
 const MOST_REASON_CHARS: usize = 500;
+
+/// How `bash` is offered where its commands may ask for `asks` beyond the sandbox: to run
+/// outside it, which every thread is offered where the sandbox has the network; also with the
+/// network, where it has none; or nothing, where asking for the network is not allowed.
+pub(crate) fn spec(asks: Asks) -> ToolSpec {
+    let mut description = String::from(
+        "Run a bash command at the project root and see its output and exit code. Each call \
+         starts fresh: cd does not carry over, so use `cd dir && command`. Default timeout 120 \
+         seconds, at most 600; a command still running then keeps running in the background. \
+         For a server, a watcher or a long build, set background: it starts there at once and \
+         keeps running, and command_output shows what it prints or stops it. Commands run in a \
+         sandbox.",
+    );
+    let mut properties = Map::new();
+    properties.insert("command".into(), json!({"type": "string"}));
+    properties.insert(
+        "timeout_secs".into(),
+        json!({"type": "integer", "minimum": 1, "maximum": 600}),
+    );
+    properties.insert(
+        "background".into(),
+        json!({"type": "boolean", "description": "Start it in the background and answer at once with its number"}),
+    );
+    if asks != Asks::Nothing {
+        description.push_str(
+            " If it blocked a command the task needs, run that same command again with \
+             outside_sandbox and a reason: the person is asked to allow it.",
+        );
+        properties.insert(
+            "outside_sandbox".into(),
+            json!({"type": "boolean", "description": "Run outside the sandbox. Only after the sandbox blocked this same command; the person is asked every time"}),
+        );
+    }
+    let reason = match asks {
+        Asks::Outside => {
+            Some("With outside_sandbox: why the command needs it, in one sentence for the person")
+        }
+        Asks::OutsideOrNetwork => {
+            description.push_str(
+                " The sandbox has no network here: if a command the task needs must reach the \
+                 internet, run it again with network and a reason instead; the person is asked \
+                 to allow it, and it stays in the sandbox otherwise.",
+            );
+            properties.insert(
+                "network".into(),
+                json!({"type": "boolean", "description": "Run with the internet, in the sandbox otherwise. Only after this same command failed without it; the person is asked every time"}),
+            );
+            Some(
+                "With outside_sandbox or network: why the command needs it, in one sentence for the person",
+            )
+        }
+        Asks::Nothing => {
+            description.push_str(
+                " They have no network here, and none may ask for it or to run outside the \
+                 sandbox: do the task without the internet, or tell the person what needs it.",
+            );
+            None
+        }
+    };
+    if let Some(reason) = reason {
+        properties.insert(
+            "reason".into(),
+            json!({"type": "string", "description": reason}),
+        );
+    }
+    ToolSpec {
+        name: Tool::Bash.name().to_owned(),
+        description,
+        parameters: json!({"type": "object", "properties": properties, "required": ["command"]}),
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct BashArgs {
@@ -125,7 +197,7 @@ pub(crate) async fn bash(
     };
     if let Some(note) = workspace
         .sandbox()
-        .and_then(|sandbox| blocked_note(sandbox, exit, &body))
+        .and_then(|_| blocked_note(Asks::of(workspace), exit, &body))
     {
         text.push('\n');
         text.push_str(note);

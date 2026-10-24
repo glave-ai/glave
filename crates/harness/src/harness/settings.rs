@@ -48,10 +48,6 @@ pub struct Settings {
     /// Whether a model titles each thread after its first exchange (`title.rs`); off, a
     /// thread's title is the first line of its first message. Off by default.
     pub titles: bool,
-    /// Whether a command in a sandbox without the network may ask the person to run with it,
-    /// or outside the sandbox, where it would have it. On by default; an organization's policy
-    /// can forbid it.
-    pub ask_network: bool,
 }
 
 impl Settings {
@@ -75,7 +71,6 @@ impl Settings {
             agent: None,
             commands: Vec::new(),
             titles: false,
-            ask_network: true,
         }
     }
 }

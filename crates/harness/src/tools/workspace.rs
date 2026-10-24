@@ -31,6 +31,9 @@ pub struct Workspace {
     info: WorkspaceInfo,
     root: PathBuf,
     sandbox: Option<Sandbox>,
+    /// Whether a command whose sandbox has no network may ask the person to run with it, or
+    /// outside the sandbox, which has it; on by default.
+    asks_network: bool,
     /// Where commands' git and forge tools ask for credentials, at each use; none by default.
     credentials: Option<Arc<dyn GitCredentials>>,
     temp: Option<PathBuf>,
@@ -56,9 +59,24 @@ impl Workspace {
             computers,
             info: workspace,
             sandbox: None,
+            asks_network: true,
             credentials: None,
             reads: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Lets a command whose sandbox has no network ask the person to run with it, or outside
+    /// the sandbox, which has it, or not (`asks`): an organization's policy can forbid it. The
+    /// worktrees and scratch folders made from this workspace keep it.
+    #[must_use]
+    pub fn asking_network(mut self, asks: bool) -> Self {
+        self.asks_network = asks;
+        self
+    }
+
+    /// Whether a command whose sandbox has no network may ask for it.
+    pub(crate) fn asks_network(&self) -> bool {
+        self.asks_network
     }
 
     /// Lets every command's git and forge tools ask `credentials` for a credential each time
@@ -75,8 +93,13 @@ impl Workspace {
         self.credentials.as_ref()
     }
 
-    /// The same binding's credentials, given to `other`, made from it.
+    /// The same binding's credentials, and whether its commands may ask for the network, given
+    /// to `other`, made from it.
     fn sharing(&self, other: Self) -> Self {
+        let other = Self {
+            asks_network: self.asks_network,
+            ..other
+        };
         match &self.credentials {
             Some(credentials) => other.with_credentials(Arc::clone(credentials)),
             None => other,

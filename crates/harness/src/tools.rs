@@ -17,7 +17,8 @@ pub(crate) use bash::outside_sandbox;
 
 use glave_event::Arguments;
 use glave_ports::ToolSpec;
-use glave_ports::computer::Sandbox;
+
+use crate::sandbox::Asks;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
@@ -147,23 +148,7 @@ impl Tool {
                     "replace_all": {"type": "boolean", "description": "Replace every occurrence"}
                 }, "required": ["path", "old_string", "new_string"]}),
             ),
-            Self::Bash => (
-                "Run a bash command at the project root and see its output and exit code. Each \
-                 call starts fresh: cd does not carry over, so use `cd dir && command`. Default \
-                 timeout 120 seconds, at most 600; a command still running then keeps running \
-                 in the background. For a server, a watcher or a long build, set background: \
-                 it starts there at once and keeps running, and command_output shows what it \
-                 prints or stops it. Commands run in a sandbox. If it blocked a command the \
-                 task needs, run that same command again with outside_sandbox and a reason: the \
-                 person is asked to allow it.",
-                json!({"type": "object", "properties": {
-                    "command": {"type": "string"},
-                    "timeout_secs": {"type": "integer", "minimum": 1, "maximum": 600},
-                    "background": {"type": "boolean", "description": "Start it in the background and answer at once with its number"},
-                    "outside_sandbox": {"type": "boolean", "description": "Run outside the sandbox. Only after the sandbox blocked this same command; the person is asked every time"},
-                    "reason": {"type": "string", "description": "With outside_sandbox: why the command needs it, in one sentence for the person"}
-                }, "required": ["command"]}),
-            ),
+            Self::Bash => return bash::spec(Asks::Outside),
             Self::CommandOutput => background::spec(),
         };
         ToolSpec {
@@ -173,33 +158,13 @@ impl Tool {
         }
     }
 
-    /// The tool as it is offered where commands run in `sandbox`: `bash` takes `network`, for
-    /// asking to run one command with it, only where the sandbox has none.
-    pub(crate) fn spec_in(self, sandbox: Option<&Sandbox>) -> ToolSpec {
-        let mut spec = self.spec();
-        if self != Self::Bash || sandbox.is_none_or(|sandbox| sandbox.network) {
-            return spec;
+    /// The tool as it is offered on `workspace`: `bash` as its commands may ask to leave the
+    /// sandbox there (`Asks`).
+    pub(crate) fn spec_in(self, workspace: &Workspace) -> ToolSpec {
+        match self {
+            Self::Bash => bash::spec(Asks::of(workspace)),
+            _ => self.spec(),
         }
-        spec.description.push_str(
-            " The sandbox has no network here: if a command the task needs must reach the \
-             internet, run it again with network and a reason instead; the person is asked to \
-             allow it, and it stays in the sandbox otherwise.",
-        );
-        if let Some(properties) = spec
-            .parameters
-            .get_mut("properties")
-            .and_then(Value::as_object_mut)
-        {
-            properties.insert(
-                "network".to_owned(),
-                json!({"type": "boolean", "description": "Run with the internet, in the sandbox otherwise. Only after this same command failed without it; the person is asked every time"}),
-            );
-            properties.insert(
-                "reason".to_owned(),
-                json!({"type": "string", "description": "With outside_sandbox or network: why the command needs it, in one sentence for the person"}),
-            );
-        }
-        spec
     }
 
     /// Runs the tool with the model's arguments, keeping the thread's commands in the

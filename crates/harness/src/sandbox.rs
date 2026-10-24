@@ -26,7 +26,36 @@ pub(crate) const NOT_ALLOWED: &str = "Not run: commands here go without the inte
      reach the internet another way. Finish what you can without it, and say at the end which \
      command needs it.";
 
-/// What a call of the built-in `bash` asks to run without of the sandbox, when commands in
+/// What the model is told when what a command would run without of the sandbox changed while
+/// it waited for the person, so their answer was about something else.
+pub(crate) const CHANGED: &str = "Not run: the sandbox changed while this waited for the \
+     person's answer, so the answer no longer fits it. Run the command again if it is still \
+     needed.";
+
+/// What a command may ask the person for beyond the sandbox it runs in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Asks {
+    /// To run outside it, where the sandbox has the network, or there is none.
+    Outside,
+    /// To run outside it, or in it with the network, where it has none.
+    OutsideOrNetwork,
+    /// Nothing: the sandbox has no network, and the policy forbids asking for it, so running
+    /// outside the sandbox, which has it, too.
+    Nothing,
+}
+
+impl Asks {
+    /// What commands in `workspace` may ask for.
+    pub(crate) fn of(workspace: &Workspace) -> Self {
+        match workspace.sandbox() {
+            Some(sandbox) if !sandbox.network && workspace.asks_network() => Self::OutsideOrNetwork,
+            Some(sandbox) if !sandbox.network => Self::Nothing,
+            _ => Self::Outside,
+        }
+    }
+}
+
+/// What of the sandbox a call of the built-in `bash` asks to run without, when commands in
 /// `workspace` run in one: all of it, or its network where it has none. Where they run
 /// without one, or already have the network, the request changes nothing, so there is
 /// nothing to ask.
@@ -41,12 +70,6 @@ pub(crate) fn outside(
     let sandbox = workspace.sandbox()?;
     let asked = crate::tools::outside_sandbox(arguments)?;
     (asked.lifted == Lifted::Sandbox || !sandbox.network).then_some(asked)
-}
-
-/// Whether a request to run without the sandbox's limits may not even ask: commands in
-/// `workspace` go without the network, which it would have, and `ask_network` is off.
-pub(crate) fn forbidden(workspace: &Workspace, ask_network: bool) -> bool {
-    !ask_network && workspace.sandbox().is_some_and(|sandbox| !sandbox.network)
 }
 
 /// The reason a call needs the person: the command's own caution, if it has one, and then
@@ -82,16 +105,13 @@ const ENFORCEMENT: &str = if cfg!(target_os = "macos") {
     "none"
 };
 
-/// A note for the model when a failed command looks blocked by the sandbox, so it stops
-/// guessing: it can ask the person to run that command outside the sandbox, or with the
-/// network where the sandbox has none, or do the task another way. Follows Codex's heuristic:
-/// a failure other than usage (2), not executable (126) or not found (127) that mentions a
-/// refusal, or, without the network, a name or address it could not reach.
-pub(crate) fn blocked_note(
-    sandbox: &Sandbox,
-    exit: Option<i32>,
-    output: &str,
-) -> Option<&'static str> {
+/// A note for the model when a failed command in a sandbox looks blocked by it, so it stops
+/// guessing: it can ask the person for what `asks` allows (to run that command outside the
+/// sandbox, or with the network where the sandbox has none), or do the task another way.
+/// Follows Codex's heuristic: a failure other than usage (2), not executable (126) or not found
+/// (127) that mentions a refusal, or, without the network, a name or address it could not
+/// reach.
+pub(crate) fn blocked_note(asks: Asks, exit: Option<i32>, output: &str) -> Option<&'static str> {
     if matches!(exit, Some(0 | 2 | 126 | 127)) {
         return None;
     }
@@ -104,35 +124,44 @@ pub(crate) fn blocked_note(
         "could not resolve host",
         "nodename nor servname",
     ];
-    let offline: &[&str] = if sandbox.network {
-        &[]
-    } else {
-        &[
+    let offline: &[&str] = match asks {
+        Asks::Outside => &[],
+        Asks::OutsideOrNetwork | Asks::Nothing => &[
             "name resolution",
             "getaddrinfo",
             "enotfound",
             "network is unreachable",
-        ]
+        ],
     };
     let refused = refusals
         .iter()
         .chain(offline)
         .any(|sign| output.contains(sign));
-    refused.then_some(if sandbox.network {
-        "[This command may have been blocked by the sandbox: commands here cannot write \
-         outside the project, change git hooks or config, or read secrets (credential \
-         stores and files such as .env and private keys are hidden). If the task needs this \
-         very command, run it again with outside_sandbox: true and a reason, and the person \
-         is asked to allow it; otherwise do the task another way or tell the person what is \
-         needed.]"
-    } else {
-        "[This command may have been blocked by the sandbox: commands here cannot use the \
-         network, write outside the project, change git hooks or config, or read secrets \
-         (credential stores and files such as .env and private keys are hidden). If the \
-         task needs this very command, run it again with a reason and network: true when \
-         it needs the internet, or outside_sandbox: true when it needs more, and the person \
-         is asked to allow it; otherwise do the task another way or tell the person what is \
-         needed.]"
+    refused.then_some(match asks {
+        Asks::Outside => {
+            "[This command may have been blocked by the sandbox: commands here cannot write \
+             outside the project, change git hooks or config, or read secrets (credential \
+             stores and files such as .env and private keys are hidden). If the task needs \
+             this very command, run it again with outside_sandbox: true and a reason, and the \
+             person is asked to allow it; otherwise do the task another way or tell the person \
+             what is needed.]"
+        }
+        Asks::OutsideOrNetwork => {
+            "[This command may have been blocked by the sandbox: commands here cannot use the \
+             network, write outside the project, change git hooks or config, or read secrets \
+             (credential stores and files such as .env and private keys are hidden). If the \
+             task needs this very command, run it again with a reason and network: true when \
+             it needs the internet, or outside_sandbox: true when it needs more, and the person \
+             is asked to allow it; otherwise do the task another way or tell the person what is \
+             needed.]"
+        }
+        Asks::Nothing => {
+            "[This command may have been blocked by the sandbox: commands here cannot use the \
+             network, write outside the project, change git hooks or config, or read secrets \
+             (credential stores and files such as .env and private keys are hidden), and none \
+             may ask to run with the network or outside the sandbox. Do the task another way, \
+             or tell the person what is needed.]"
+        }
     })
 }
 

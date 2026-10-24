@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use glave_event::{
-    ApprovalDecided, ApprovalMode, ApprovalRequested, CallId, Outcome, Principal,
+    ApprovalDecided, ApprovalMode, ApprovalRequested, CallId, Lifted, Outcome, Principal,
     ToolCallCompleted, Verdict,
 };
 use glave_ports::settings::Judge;
@@ -21,7 +21,7 @@ use crate::harness::{Harness, HarnessError, Thread};
 use crate::hooks::ToolHook;
 use crate::judge::{JudgeCase, Ruling, judge};
 use crate::question::{self, QuestionRequest};
-use crate::sandbox;
+use crate::sandbox::{self, Asks};
 use crate::turn::{Live, Step, TurnSummary, absorb, tally};
 use crate::waits::{Answered, verdict_of};
 
@@ -156,15 +156,20 @@ where
         let name = info.spec.name.as_str();
         let summary = source.describe(name, &call.arguments);
         let hooked = ToolHook::of(call, name);
+        // What of the sandbox it would run without, as its commands run now.
+        let outside = (index == BUILTINS)
+            .then(|| sandbox::outside(self.workspace_for(thread), name, &call.arguments))
+            .flatten();
+        let lifted = outside.as_ref().map(|outside| outside.lifted);
         if let Some(answered) = waited {
             // Its hooks ran and it asked before the turn stopped: its answer decides, as it
-            // would have the moment it came, unless the policy took asking away meanwhile.
-            let lifted = answered.asked.outside_sandbox.as_ref().map(|o| o.lifted);
+            // would have the moment it came, unless the sandbox changed meanwhile.
+            let asked = answered.asked.outside_sandbox.as_ref().map(|o| o.lifted);
             if let Some(refused) = self.answered(thread, answered, cancel, live).await? {
                 return Ok(refused);
             }
-            if lifted.is_some() && self.network_forbidden(thread) {
-                return Ok(not_allowed(&summary, live));
+            if let Some(refused) = self.let_out_refused(thread, lifted, asked, &summary, live) {
+                return Ok(refused);
             }
             if let Some(lifted) = lifted {
                 step.summary.let_out(lifted);
@@ -186,13 +191,9 @@ where
                 firm,
             } => (info.effect, Some(reason), secret, firm),
         };
-        let outside = (index == BUILTINS)
-            .then(|| sandbox::outside(self.workspace_for(thread), name, &call.arguments))
-            .flatten();
-        if outside.is_some() && self.network_forbidden(thread) {
-            return Ok(not_allowed(&summary, live));
+        if let Some(refused) = self.let_out_refused(thread, lifted, lifted, &summary, live) {
+            return Ok(refused);
         }
-        let lifted = outside.as_ref().map(|outside| outside.lifted);
         let request = ApprovalRequest {
             thread: thread.id,
             call_id: call.call_id.clone(),
@@ -215,11 +216,32 @@ where
             .await
     }
 
-    /// Whether a command in `thread` may not even ask to run with the network, or outside the
-    /// sandbox, which has it: its commands go without the network, and the policy forbids
-    /// asking.
-    fn network_forbidden(&self, thread: &Thread) -> bool {
-        sandbox::forbidden(self.workspace_for(thread), thread.defaults.ask_network)
+    /// The result the model is given instead of running a call that would run without
+    /// `lifted` of the sandbox, where the person is asked, or was, about `asked`: refused when
+    /// it would leave the sandbox otherwise than they were asked, since the sandbox changed
+    /// while it waited, and when it would leave it at all where its commands may not ask to.
+    /// `None` when it may go on.
+    fn let_out_refused(
+        &self,
+        thread: &Thread,
+        lifted: Option<Lifted>,
+        asked: Option<Lifted>,
+        summary: &str,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Option<ToolOutput> {
+        let forbidden = Asks::of(self.workspace_for(thread)) == Asks::Nothing;
+        let refused = if lifted.is_some() && lifted != asked {
+            sandbox::CHANGED
+        } else if lifted.is_some() && forbidden {
+            sandbox::NOT_ALLOWED
+        } else {
+            return None;
+        };
+        live(Live::ToolFinished {
+            summary: format!("{summary} (not allowed here)"),
+            is_error: true,
+        });
+        Some(ToolOutput::text(true, refused))
     }
 
     /// Runs `call` with its tool's `source`, once nothing stops it, and its `PostToolUse`
@@ -556,16 +578,6 @@ pub(crate) fn completed(
         structured,
         untrusted,
     }
-}
-
-/// The result of a call that would have the network where commands go without it and asking
-/// for it is not allowed, the person shown it was not.
-fn not_allowed(summary: &str, live: &mut (dyn FnMut(Live) + Send)) -> ToolOutput {
-    live(Live::ToolFinished {
-        summary: format!("{summary} (not allowed here)"),
-        is_error: true,
-    });
-    ToolOutput::text(true, sandbox::NOT_ALLOWED)
 }
 
 /// What `verdict` on the approval `asked` means for its call: `None` when it may run; otherwise

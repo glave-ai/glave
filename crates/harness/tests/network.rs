@@ -3,12 +3,16 @@
 //! never runs; where the sandbox has the network, nothing asks; and where the organization
 //! forbids asking, no command asks, for the network or to run outside the sandbox, which has it.
 
+use std::future::{Future, ready};
 use std::net::TcpListener;
 use std::path::Path;
 
-use glave_event::{Body, Event, Lifted, Principal, StopReason, Verdict};
-use glave_harness::{Approver, Cancel, Decision, NoOneToAsk, Settings, TurnSummary};
-use glave_ports::{Completion, InMemoryLog, ModelRequest};
+use glave_event::{Body, Event, Lifted, Principal, StopReason, ThreadId, Verdict};
+use glave_harness::{
+    ApprovalRequest, Approver, Cancel, Decision, Defaults, HarnessError, NoOneToAsk, TurnSummary,
+};
+use glave_ports::computer::Sandbox;
+use glave_ports::{Caller, Completion, InMemoryLog, ModelRequest};
 use serde_json::json;
 
 use crate::outside_sandbox::{Person, decided, outside, results, sandboxed, walled};
@@ -59,13 +63,13 @@ struct Ran {
 }
 
 impl Ran {
-    /// Whether the model was offered `bash` with `network`.
-    fn offered_network(&self) -> bool {
+    /// Whether the model was offered `bash` with `parameter`.
+    fn offers(&self, parameter: &str) -> bool {
         let bash = self
             .seen
             .first()
             .and_then(|request| request.tools.iter().find(|tool| tool.name == "bash"));
-        bash.is_some_and(|bash| bash.parameters["properties"].get("network").is_some())
+        bash.is_some_and(|bash| bash.parameters["properties"].get(parameter).is_some())
     }
 
     fn asked(&self) -> usize {
@@ -75,18 +79,17 @@ impl Ran {
 }
 
 /// One turn of `answers` in a new thread on the project in `base`, its commands in the
-/// sandbox with the `network` or without, `approver` answering.
+/// sandbox with the `network` or without, and asking for it if `asks`, `approver` answering.
 fn one_turn<A: Approver>(
     base: &Path,
-    network: bool,
+    (network, asks): (bool, bool),
     answers: Vec<Completion>,
     approver: A,
-    settings: Settings,
 ) -> Ran {
     block_on!(async {
-        let workspace = walled(base, network).await;
+        let workspace = walled(base, network).await.asking_network(asks);
         let log = InMemoryLog::new();
-        let (harness, seen) = harness_with(workspace, answers, approver, log, 1, settings);
+        let (harness, seen) = harness_with(workspace, answers, approver, log, 1, settings());
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let turn = harness
             .run_turn(
@@ -123,8 +126,8 @@ fn a_command_without_the_network_asks_for_it_each_time_and_stays_in_the_sandbox_
     ]);
     // "For this thread" is the answer: the network is still allowed once each.
     let person = Person::answering(Decision::AllowForThread);
-    let ran = one_turn(&base, false, answers, person.clone(), settings());
-    assert!(ran.offered_network(), "bash takes network here");
+    let ran = one_turn(&base, (false, true), answers, person.clone());
+    assert!(ran.offers("network"), "bash takes network here");
     let said = &ran.said;
     assert!(
         said[0].contains("connected") && said[1].contains("connected"),
@@ -170,7 +173,7 @@ fn with_no_one_there_a_command_never_gets_the_network() {
     };
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let answers = making(vec![connect(&base, "a.txt", &listener, true)]);
-    let ran = one_turn(&base, false, answers, NoOneToAsk, settings());
+    let ran = one_turn(&base, (false, true), answers, NoOneToAsk);
     assert_eq!(ran.turn.with_network, 0);
     let said = &ran.said;
     assert!(
@@ -194,8 +197,8 @@ fn where_the_sandbox_has_the_network_asking_for_it_changes_nothing() {
     };
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let answers = making(vec![connect(&base, "a.txt", &listener, true)]);
-    let ran = one_turn(&base, true, answers, NoOneToAsk, settings());
-    assert!(!ran.offered_network(), "nothing to ask for");
+    let ran = one_turn(&base, (true, true), answers, NoOneToAsk);
+    assert!(!ran.offers("network"), "nothing to ask for");
     assert!(ran.said[0].contains("connected"), "{:?}", ran.said);
     assert_eq!((ran.turn.with_network, ran.asked()), (0, 0));
 }
@@ -206,14 +209,16 @@ fn where_the_organization_forbids_asking_no_command_asks_for_the_network_or_to_l
         return;
     };
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let mut forbidden = settings();
-    forbidden.ask_network = false;
     let answers = making(vec![
         connect(&base, "a.txt", &listener, true),
         outside(&base, "left.txt"),
     ]);
     let person = Person::answering(Decision::AllowOnce);
-    let ran = one_turn(&base, false, answers, person.clone(), forbidden.clone());
+    let ran = one_turn(&base, (false, false), answers, person.clone());
+    assert!(
+        !ran.offers("network") && !ran.offers("outside_sandbox"),
+        "the model is not told to ask"
+    );
     assert!(person.asked().is_empty(), "never asked");
     for said in &ran.said {
         assert!(said.contains("is not allowed here"), "{:?}", ran.said);
@@ -224,7 +229,85 @@ fn where_the_organization_forbids_asking_no_command_asks_for_the_network_or_to_l
     assert_eq!(ran.asked(), 0);
     // Where commands have the network, running outside the sandbox asks as ever.
     let answers = making(vec![outside(&base, "left.txt")]);
-    let ran = one_turn(&base, true, answers, person.clone(), forbidden);
+    let ran = one_turn(&base, (true, false), answers, person.clone());
     assert_eq!((person.asked().len(), ran.turn.outside_sandbox), (1, 1));
     assert!(base.join("left.txt").exists());
+}
+
+/// Waits for every answer in the log, as a server does.
+struct InTheLog;
+
+impl Approver for InTheLog {
+    fn decide(&self, _request: &ApprovalRequest) -> impl Future<Output = Decision> + Send {
+        ready(Decision::Unavailable)
+    }
+
+    fn can_answer(&self, _thread: ThreadId) -> bool {
+        true
+    }
+
+    fn waits(&self, _thread: ThreadId) -> bool {
+        true
+    }
+}
+
+#[test]
+fn an_answer_given_before_the_network_was_taken_never_gives_a_command_the_network() {
+    let Some(base) = sandboxed("network-changed") else {
+        return;
+    };
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    // Asked as any command is in `ask` mode, with the network on: nothing to let out then.
+    let answers = making(vec![connect(&base, "a.txt", &listener, true)]);
+    block_on!(async {
+        let workspace = walled(&base, true).await;
+        let (harness, _) = harness_with(
+            workspace,
+            answers,
+            InTheLog,
+            InMemoryLog::new(),
+            1,
+            asking(),
+        );
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let stopped = harness
+            .run_turn(
+                &mut thread,
+                "install the packages",
+                &Cancel::new(),
+                &mut |_| {},
+            )
+            .await;
+        assert!(
+            matches!(stopped, Err(HarnessError::Waits(_))),
+            "{stopped:?}"
+        );
+        let call = events(harness.log(), thread.id)
+            .await
+            .iter()
+            .find_map(|event| match &event.body {
+                Body::ApprovalRequested(asked) => Some(asked.call_id.clone()),
+                _ => None,
+            });
+        // While it waits, the network is taken from commands.
+        let mut defaults = Defaults::clone(&harness.defaults());
+        defaults.sandbox = defaults.sandbox.map(|sandbox| Sandbox {
+            network: false,
+            ..sandbox
+        });
+        harness.set_defaults(defaults);
+        let call = call.unwrap();
+        harness
+            .decide(scope(), thread.id, &call, Decision::AllowOnce, None)
+            .await
+            .unwrap();
+        let turn = harness
+            .go_on(&mut thread, &Caller::default(), &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+        let said = results(thread.messages());
+        assert!(said[0].contains("the sandbox changed"), "{said:?}");
+        assert!(!said[0].contains("connected"), "{said:?}");
+        assert_eq!(turn.with_network, 0);
+    });
 }
