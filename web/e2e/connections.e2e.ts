@@ -66,10 +66,9 @@ test('a service that asks for a sign-in is connected in a new tab, then disconne
   const settings = { mcpServers: { Tracker: { url: address } } };
   writeFileSync(join(homeOf(site), 'mcp.json'), JSON.stringify(settings));
   const code = await signInCode(site);
-  await page.goto(`${glave}/#code=${code}`);
-  await expect(byTestId(page, 'home-composer-input')).toBeVisible();
-
-  await page.goto(`${glave}/settings`);
+  // One page load, signed in by the link where it lands. Loading another page would cut the
+  // requests this one holds open, such as the side nav's watch, and WebKit says so on the console.
+  await page.goto(`${glave}/settings#code=${code}`);
   await byTestId(page, 'settings-connections').click();
   await expect(page).toHaveURL(/\/settings\/connections$/u);
   await expect(page.getByRole('heading', { name: 'Connections', level: 1 })).toBeVisible();
