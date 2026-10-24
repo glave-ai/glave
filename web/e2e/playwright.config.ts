@@ -177,10 +177,15 @@ export default defineConfig({
   ],
   // Each glave listens on a port the system picks (port 0), so two runs on one machine, such as
   // two `cargo xtask ci` side by side, never meet. It is ready once it says where it serves,
-  // and Playwright keeps that address in the site's variable, which the workers inherit.
+  // and Playwright keeps that address in the site's variable, which the workers inherit. The
+  // whole line, to its end: Playwright matches what has come so far after each piece of output,
+  // and glave's error output is written in pieces, so without the end a line read only to
+  // `http://127.0.0.` would be taken for an address (127.0.0.0, port 80).
   webServer: SITES.map(({ site, web, env }) => ({
     command: `"${glave}" serve --http 0 --web ${web}`,
-    wait: { stderr: new RegExp(`serving the session API on (?<${site.address}>http://\\S+)`, 'u') },
+    wait: {
+      stderr: new RegExp(`serving the session API on (?<${site.address}>http://\\S+)\\n`, 'u'),
+    },
     cwd: '..',
     env,
   })),
