@@ -75,9 +75,9 @@ pub async fn projects(store: &dyn Projects) -> Verdict {
     ensure(
         matches!(
             store.create(org, &nameless).await,
-            Err(ProjectError::Invalid(_))
+            Err(ProjectError::Invalid(said)) if said.starts_with("a project's name")
         ),
-        "a name of only spaces must be refused",
+        "a name of only spaces must be refused, saying what a project's name may be",
     )?;
     ensure(
         store
