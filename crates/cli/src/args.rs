@@ -83,11 +83,12 @@ Usage:
   glave worktrees [prune]       list the worktrees threads made, or remove the merged ones
                                 (glave worktrees --help)
   glave commands                list the custom commands you can type here as /name
-  glave connect github | <address>
-                                connect GitHub, or any git host with a token, so git and the
-                                host's own tool sign in as you (glave connect --help)
-  glave connections [remove <id>]
-                                list the git hosts you connected, or remove one
+  glave connect <name> | github | <address>
+                                sign in to one of your MCP servers in the browser; or connect
+                                GitHub, or any git host with a token, so git and the host's own
+                                tool sign in as you (glave connect --help)
+  glave connections [remove <id> | <name>]
+                                list your connections and git hosts, or remove one
 
 Options:
   --model <name>     the model to use: one glave runs (default: its default model)
