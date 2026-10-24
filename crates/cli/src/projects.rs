@@ -28,7 +28,6 @@ fn new_project(kind: ProjectKind, name: String, owner: Principal) -> anyhow::Res
         owner,
         created_at: now,
         updated_at: now,
-        revision: 0,
     })
 }
 

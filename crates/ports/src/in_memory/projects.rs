@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Mutex, MutexGuard};
 
-use glave_event::Principal;
+use glave_event::{At, Principal};
 
 use crate::projects::{FolderKey, Project, ProjectError, ProjectKind, Projects};
 use crate::scope::{OrgId, ProjectId};
@@ -55,29 +55,31 @@ impl InMemoryProjects {
             .collect())
     }
 
-    fn update_now(&self, org: OrgId, project: &Project) -> Result<Project, ProjectError> {
-        Project::check_name(&project.name)?;
+    fn rename_now(
+        &self,
+        org: OrgId,
+        project: ProjectId,
+        name: &str,
+        at: At,
+    ) -> Result<Project, ProjectError> {
+        Project::check_name(name)?;
         let mut held = self.held()?;
         let stored = held
             .projects
-            .get(&(org, project.id))
-            .ok_or(ProjectError::NotFound(project.id))?;
-        if stored.revision != project.revision {
-            return Err(ProjectError::Changed(project.id));
-        }
+            .get(&(org, project))
+            .ok_or(ProjectError::NotFound(project))?;
         if stored.kind == ProjectKind::Project {
             let taken = projects_of(&held, org, &stored.owner)
                 .map(|other| (other.id, other.name.clone()))
                 .collect::<Vec<_>>();
-            Project::check_free(project.id, &project.name, &taken)?;
+            Project::check_free(project, name, &taken)?;
         }
         let kept = held
             .projects
-            .get_mut(&(org, project.id))
-            .ok_or(ProjectError::NotFound(project.id))?;
-        kept.name.clone_from(&project.name);
-        kept.updated_at = project.updated_at;
-        kept.revision = kept.revision.saturating_add(1);
+            .get_mut(&(org, project))
+            .ok_or(ProjectError::NotFound(project))?;
+        name.clone_into(&mut kept.name);
+        kept.updated_at = at;
         Ok(kept.clone())
     }
 
@@ -171,7 +173,6 @@ fn insert(held: &mut Held, org: OrgId, project: &Project) -> Result<Project, Pro
         ));
     }
     let mut kept = project.clone();
-    kept.revision = 0;
     if kept.kind == ProjectKind::Project {
         let taken: Vec<String> = projects_of(held, org, &kept.owner)
             .map(|other| other.name.clone())
@@ -211,12 +212,14 @@ impl Projects for InMemoryProjects {
         Box::pin(std::future::ready(self.list_now(org, owner, limit)))
     }
 
-    fn update<'a>(
+    fn rename<'a>(
         &'a self,
         org: OrgId,
-        project: &'a Project,
+        project: ProjectId,
+        name: &'a str,
+        at: At,
     ) -> BoxFuture<'a, Result<Project, ProjectError>> {
-        Box::pin(std::future::ready(self.update_now(org, project)))
+        Box::pin(std::future::ready(self.rename_now(org, project, name, at)))
     }
 
     fn personal<'a>(
