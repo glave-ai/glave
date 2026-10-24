@@ -175,9 +175,17 @@ function scriptedAuthenticator(): void {
     },
   };
   Object.defineProperty(navigator, 'credentials', { value: credentials, configurable: true });
-  // An authenticator of the computer's own, which checks who is there.
+  // An authenticator of the computer's own, which checks who is there. WebKit as built for
+  // Linux has no WebAuthn, so no `PublicKeyCredential` either, which the script then stands in
+  // for, as it does for `navigator.credentials`.
+  const available = (): Promise<boolean> => Promise.resolve(true);
   if (typeof PublicKeyCredential === 'function') {
-    PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable = () => Promise.resolve(true);
+    PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable = available;
+  } else {
+    Object.defineProperty(window, 'PublicKeyCredential', {
+      value: { isUserVerifyingPlatformAuthenticatorAvailable: available },
+      configurable: true,
+    });
   }
 }
 
