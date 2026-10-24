@@ -25,7 +25,8 @@ pub struct Defaults {
     /// The sandbox commands on this computer run in; none runs them unconfined.
     pub sandbox: Option<Sandbox>,
     /// Whether a command whose sandbox has no network may ask to run with it, or outside the
-    /// sandbox: not where the organization's policy forbids it.
+    /// sandbox: not where the organization's policy forbids it. Each turn gives it to its
+    /// thread's workspace as it does the sandbox (`Harness::bring`), which enforces it.
     pub ask_network: bool,
     /// Commands run at points of the turns of the person the harness works for.
     pub hooks: Hooks,

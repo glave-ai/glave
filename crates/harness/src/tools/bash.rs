@@ -129,7 +129,7 @@ impl BashArgs {
 /// What of the sandbox a `bash` call asks to run without, with the model's reason, read as the
 /// tool reads its arguments; `None` when it asks nothing of the kind.
 pub(crate) fn outside_sandbox(arguments: &Arguments) -> Option<OutsideSandbox> {
-    let args: BashArgs = parse(Tool::Bash, arguments).ok()?;
+    let args: BashArgs = parse(Tool::Bash, arguments, None).ok()?;
     let lifted = args.lifted()?;
     let reason = args
         .reason

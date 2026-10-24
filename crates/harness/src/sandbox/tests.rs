@@ -168,6 +168,28 @@ fn a_command_allowed_outside_the_sandbox_runs_without_it_and_the_next_is_sandbox
 }
 
 #[test]
+fn the_note_on_a_blocked_command_offers_only_what_its_commands_may_ask_for() {
+    use super::{Asks, blocked_note};
+    let offline = "curl: (6) Could not resolve host: example.com";
+    let note = |asks| blocked_note(asks, Some(6), offline).unwrap_or_default();
+    let network = note(Asks::OutsideOrNetwork);
+    assert!(network.contains("network: true") && network.contains("outside_sandbox: true"));
+    let nothing = note(Asks::Nothing);
+    assert!(nothing.contains("none may ask"), "{nothing}");
+    assert!(
+        !nothing.contains("network: true") && !nothing.contains("outside_sandbox"),
+        "{nothing}"
+    );
+    let outside = note(Asks::Outside);
+    assert!(outside.contains("outside_sandbox: true") && !outside.contains("network: true"));
+    assert_eq!(
+        blocked_note(Asks::Nothing, Some(0), offline),
+        None,
+        "it worked"
+    );
+}
+
+#[test]
 fn running_outside_the_sandbox_is_added_to_a_command_s_own_caution() {
     use super::{OUTSIDE_SANDBOX, WITH_NETWORK, with_outside};
     use glave_event::Lifted;

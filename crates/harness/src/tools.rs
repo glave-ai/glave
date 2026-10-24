@@ -17,14 +17,13 @@ pub(crate) use bash::outside_sandbox;
 
 use glave_event::Arguments;
 use glave_ports::ToolSpec;
-
-use crate::sandbox::Asks;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 use workspace::Workspace;
 
 use crate::background::Commands;
+use crate::sandbox::Asks;
 use glave_ports::Cancellation;
 
 /// What a tool call produced, as the model will see it.
@@ -177,31 +176,31 @@ impl Tool {
         cancel: &dyn Cancellation,
     ) -> ToolOutcome {
         match self {
-            Self::Search => match parse(self, arguments) {
+            Self::Search => match parse(self, arguments, Some(workspace)) {
                 Ok(args) => search::search(workspace, args).await,
                 Err(outcome) => outcome,
             },
-            Self::Glob => match parse(self, arguments) {
+            Self::Glob => match parse(self, arguments, Some(workspace)) {
                 Ok(args) => glob::glob(workspace, args).await,
                 Err(outcome) => outcome,
             },
-            Self::Read => match parse(self, arguments) {
+            Self::Read => match parse(self, arguments, Some(workspace)) {
                 Ok(args) => read::read(workspace, args).await,
                 Err(outcome) => outcome,
             },
-            Self::Write => match parse(self, arguments) {
+            Self::Write => match parse(self, arguments, Some(workspace)) {
                 Ok(args) => write::write(workspace, args).await,
                 Err(outcome) => outcome,
             },
-            Self::Edit => match parse(self, arguments) {
+            Self::Edit => match parse(self, arguments, Some(workspace)) {
                 Ok(args) => edit::edit(workspace, args).await,
                 Err(outcome) => outcome,
             },
-            Self::Bash => match parse(self, arguments) {
+            Self::Bash => match parse(self, arguments, Some(workspace)) {
                 Ok(args) => bash::bash(workspace, commands, args, cancel).await,
                 Err(outcome) => outcome,
             },
-            Self::CommandOutput => match parse(self, arguments) {
+            Self::CommandOutput => match parse(self, arguments, Some(workspace)) {
                 Ok(args) => background::command_output(commands, args, cancel).await,
                 Err(outcome) => outcome,
             },
@@ -209,7 +208,13 @@ impl Tool {
     }
 }
 
-fn parse<T: DeserializeOwned>(tool: Tool, arguments: &Arguments) -> Result<T, ToolOutcome> {
+/// The arguments of a call of `tool`, or an error the model can act on, which shows the
+/// parameters the tool takes as it is offered on `workspace`, when there is one.
+fn parse<T: DeserializeOwned>(
+    tool: Tool,
+    arguments: &Arguments,
+    workspace: Option<&Workspace>,
+) -> Result<T, ToolOutcome> {
     let map = match arguments {
         Arguments::Json(map) => map.clone(),
         Arguments::Malformed(raw) => {
@@ -221,10 +226,11 @@ fn parse<T: DeserializeOwned>(tool: Tool, arguments: &Arguments) -> Result<T, To
         }
     };
     serde_json::from_value(Value::Object(map)).map_err(|e| {
+        let offered = workspace.map_or_else(|| tool.spec(), |workspace| tool.spec_in(workspace));
         ToolOutcome::error(format!(
             "The arguments for {} are invalid: {e}. Expected: {}",
             tool.name(),
-            tool.spec().parameters
+            offered.parameters
         ))
     })
 }

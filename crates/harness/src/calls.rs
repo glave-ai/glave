@@ -230,15 +230,15 @@ where
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Option<ToolOutput> {
         let forbidden = Asks::of(self.workspace_for(thread)) == Asks::Nothing;
-        let refused = if lifted.is_some() && lifted != asked {
-            sandbox::CHANGED
+        let (refused, why) = if lifted.is_some() && lifted != asked {
+            (sandbox::CHANGED, "not run: the sandbox changed")
         } else if lifted.is_some() && forbidden {
-            sandbox::NOT_ALLOWED
+            (sandbox::NOT_ALLOWED, "not allowed here")
         } else {
             return None;
         };
         live(Live::ToolFinished {
-            summary: format!("{summary} (not allowed here)"),
+            summary: format!("{summary} ({why})"),
             is_error: true,
         });
         Some(ToolOutput::text(true, refused))
