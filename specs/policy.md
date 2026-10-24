@@ -233,7 +233,7 @@ A laptop's own config can never loosen a constraint, because the constraint arri
 
 ## Connections
 
-A connection (`model.md`, "The hierarchy") reaches its service through a tool server started on the person's computer or run remotely. Decided on 2026-10-23 (#633); what is built is `[mcp]` ("Status") and the gateway's catalog (`gateway.md`, "Remote tools: the catalog").
+A connection (`model.md`, "The hierarchy") reaches its service through a tool server started on the person's computer or run remotely. Decided on 2026-10-23 (#633); what is built is `[mcp]` ("Status"), the gateway's catalog (`gateway.md`, "Remote tools: the catalog"), and signing a person in to a remote server of their own `mcp.json` (`session.md`, "Connections").
 
 - **One list per organization: its approved connections,** kept in its policy file as `[mcp] catalog`.
 - **Services that hold documents** (Google Drive, SharePoint, Confluence) are connections like any other. glave's own knowledge bases are a separate thing, planned in #661: curated documents searched by meaning, each with an owner, granted to groups, and private to whoever made it by default.

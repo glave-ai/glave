@@ -4,10 +4,12 @@
 //! run with what they choose: the models (and the judge, with the models it names), approval,
 //! the sandbox and its network, hooks, `[web]`, titles and memory; a new thread takes
 //! `worktree`; and the person's own servers are reconciled: an added one starts, a removed one
-//! stops, a changed one starts again. A constraint added meanwhile narrows the next turn
-//! whatever the person's file says. What only a start applies stays as the start set it until
-//! glave restarts, and the log says so. Settings that no longer read leave the last that did.
+//! stops, a changed one starts again, and so does a remote one the person signs in to or whose
+//! sign-in they remove. A constraint added meanwhile narrows the next turn whatever the
+//! person's file says. What only a start applies stays as the start set it until glave
+//! restarts, and the log says so. Settings that no longer read leave the last that did.
 
+use std::collections::BTreeSet;
 use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, PoisonError};
@@ -69,7 +71,7 @@ impl Rereading {
             .chain(locations.policies.iter().cloned())
             .chain([parts.home.join(mcp::FILE)])
             .collect::<Vec<_>>();
-        let seen = digest(&files).await;
+        let seen = digest(&files, &parts.servers.signed_in().await).await;
         Self {
             args: parts.args,
             locations,
@@ -123,7 +125,9 @@ impl Rereading {
         let constraints = &setup.loaded.constraints;
         let through_gateway = self.start.gateway.is_some();
         let mcp = setup.choices.mcp.as_ref();
-        let wanted = match mcp::wanted(&self.home, mcp, constraints, through_gateway).await {
+        let signed_in = self.servers.signed_in().await;
+        let wanted = mcp::wanted(&self.home, mcp, constraints, through_gateway, &signed_in);
+        let wanted = match wanted.await {
             Ok(wanted) => wanted,
             Err(error) if constraints.own_mcp_forbidden().is_some() => {
                 tracing::warn!("your own MCP servers are put away: {error:#}");
@@ -265,7 +269,7 @@ impl Rereads for Rereading {
         Box::pin(async move {
             {
                 let mut seen = self.seen.lock().await;
-                let now = digest(&self.files).await;
+                let now = digest(&self.files, &self.servers.signed_in().await).await;
                 if now != *seen {
                     *seen = now;
                     match self.read().await {
@@ -282,13 +286,15 @@ impl Rereads for Rereading {
     }
 }
 
-/// The hash of `files`' names and content now; one missing or unreadable counts as such.
-async fn digest(files: &[PathBuf]) -> u64 {
+/// The hash of `files`' names and content now, one missing or unreadable counting as such,
+/// and of the addresses the person is `signed_in` to, which their servers follow too.
+async fn digest(files: &[PathBuf], signed_in: &BTreeSet<String>) -> u64 {
     let mut hasher = DefaultHasher::new();
     for file in files {
         file.hash(&mut hasher);
         content(file).await.hash(&mut hasher);
     }
+    signed_in.hash(&mut hasher);
     hasher.finish()
 }
 

@@ -1,5 +1,5 @@
 //! Renewing a sign-in whose token expires, with its refresh token: a GitHub App's, which lasts
-//! eight hours, and any other kind's (`Renew`). One renewal runs at a time for each
+//! eight hours, and a connection's (`connected.rs`). One renewal runs at a time for each
 //! sign-in in this process, as a task the host owns that runs to its end while glave runs, so
 //! a request that stops waiting never leaves a spent refresh token unkept; a request is only
 //! ever handed what renewed its own sign-in. A refresh token is spent once: a sign-in renewed,
@@ -77,6 +77,7 @@ struct State<A> {
 
 /// One sign-in's latest renewal.
 struct Renewal<A> {
+    started: Instant,
     ended: watch::Receiver<Option<Ended<A>>>,
 }
 
@@ -121,6 +122,17 @@ impl<A: Clone + Send + Sync + 'static> Renewals<A> {
             Some(Ended::Unkept(fresh)) => Some(*fresh),
             _ => None,
         }
+    }
+
+    /// Forgets the renewals of sign-ins no longer `kept`, as a read of the ledger begun at
+    /// `read` found them, removed here or by another glave: a renewal of one that glave could
+    /// not keep goes with it, so its token is held nowhere. A renewal started since that read
+    /// began stays, as the read may not show what it renews.
+    pub(crate) fn only(&self, read: Instant, kept: impl Fn(CredentialId) -> bool) {
+        let mut state = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        state
+            .renewals
+            .retain(|signed_in, renewal| renewal.started >= read || kept(*signed_in));
     }
 
     /// Joins the renewal of `signed_in` running, or starts one.
@@ -169,8 +181,10 @@ impl<A: Clone + Send + Sync + 'static> Renewals<A> {
             let how = job.run().await;
             let _ = tell.send(Some(how));
         });
-        state.started.insert(url, Instant::now());
+        let started = Instant::now();
+        state.started.insert(url, started);
         let renewal = Renewal {
+            started,
             ended: ended.clone(),
         };
         state.renewals.insert(signed_in, renewal);

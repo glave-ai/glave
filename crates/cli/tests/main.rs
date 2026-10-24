@@ -18,6 +18,7 @@ mod support;
 mod cloud;
 mod computer;
 mod config;
+mod connected;
 mod connections;
 mod credentials;
 mod e2e;
