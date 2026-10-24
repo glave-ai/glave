@@ -51,11 +51,21 @@ jobs:
         working-directory: .
       - name: The image's browsers, where the scripts look for them
         run: ln -s /ms-playwright node_modules/playwright-core/.local-browsers
-      - name: second tabs, eight at once, with and without COOP
+      - name: before, the tests as they were, eight at once
         run: >-
-          docker run --rm --init --ipc=host -e CI -e GLAVE_BIN -e GLAVE_DIAG_COOP=1
+          docker run --rm --init --ipc=host -e CI -e GLAVE_BIN
           -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE"
-          npm run e2e -- --project=webkit e2e/zz-probe-stress.e2e.ts --workers=8 --repeat-each=2 --output=test-results/stress || true
+          npm run e2e -- --project=webkit e2e/zz-before-live.e2e.ts e2e/zz-before-signin.e2e.ts --repeat-each=40 --workers=8 --output=test-results/before || true
+      - name: after, the tests with second tabs opened from the first, eight at once
+        run: >-
+          docker run --rm --init --ipc=host -e CI -e GLAVE_BIN
+          -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE"
+          npm run e2e -- --project=webkit e2e/live.e2e.ts e2e/signin.e2e.ts --repeat-each=40 --workers=8 --output=test-results/after || true
+      - name: after, in Chromium
+        run: >-
+          docker run --rm --init --ipc=host -e CI -e GLAVE_BIN
+          -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE"
+          npm run e2e -- --project=chromium e2e/live.e2e.ts e2e/signin.e2e.ts --repeat-each=20 --workers=8 --output=test-results/after-chromium || true
       - uses: actions/upload-artifact@v7
         if: always()
         with:
