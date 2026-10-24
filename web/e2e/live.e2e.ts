@@ -91,7 +91,7 @@ test('the side nav shows a turn another tab starts running, then needing the per
   const problems = [watchForProblems(watching)];
   const called = callsOf(watching);
   const live = served(LIVE);
-  // A prompt of its own in each run, as both browsers, and a run repeated, share the one glave.
+  // A prompt of its own for each run: both browsers, and runs repeated, share the one glave.
   const held = `${browserName}-${crypto.randomUUID()}`;
   const prompt = `${holding(held)}, then touch a file`;
 

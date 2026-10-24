@@ -153,14 +153,15 @@ export async function readIn(page: Page, language: string): Promise<void> {
 }
 
 /**
- * A second tab of the browser `from` is in, opened from it on a blank page, for a test to go to
- * a page of glave in, beside the first. Opened from a page of glave, it starts in that page's
- * origin and its browsing context group, which `Cross-Origin-Opener-Policy: same-origin` (glave
- * sends it) keeps it in, so its load needs no new process. A tab of its own
- * (`context.newPage()`) starts on a page of no origin, and its first load of glave moves to a
- * new process; Linux WebKit at times cancels that load and never commits it, so `goto` waits
- * until the test's time runs out (WebKit bug 325840, microsoft/playwright#42957), most often
- * for a second tab beside a page that has just loaded.
+ * A tab beside `from`, opened from it on a blank page, for the test to go to glave in. It starts
+ * in `from`'s origin and browsing context group, which glave's `Cross-Origin-Opener-Policy:
+ * same-origin` keeps it in, so its load stays in `from`'s process. A tab of its own
+ * (`context.newPage()`) starts on a page of no origin, and its first load of glave moves to a new
+ * process, which Linux WebKit at times cancels and never commits, so `goto` waits until the
+ * test's time runs out (WebKit bug 325840, microsoft/playwright#42957). Any tab of its own can be
+ * caught, a context's first too, which has nothing to open from; a second tab beside a page that
+ * has just loaded is caught most often. Like any tab opened from another, it starts with a copy
+ * of `from`'s session storage.
  */
 export async function newTab(from: Page): Promise<Page> {
   const [tab] = await Promise.all([
