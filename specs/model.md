@@ -86,7 +86,7 @@ Everything that configures glave is a file, read where it lives, and glave holds
 
 - **glave is monochrome by default.**
 - **An organization's theme** sets its name, logo and one accent (#283). A person always chooses light or dark, and chooses an accent where the organization allows.
-- **The assistant** has no name or icon unless an organization gives it one (#287).
+- **The assistant is Hope by default,** shown with fine text that says it's the person's assistant. An organization renames it and gives it an icon in its files (#287). It keeps glave's monochrome look either way.
 
 ## Where the code disagrees
 
