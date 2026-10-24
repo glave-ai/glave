@@ -209,8 +209,6 @@ async fn threads(dir: &Path) -> anyhow::Result<(Duration, Duration)> {
             bail!("the resumed thread differs from the recorded one");
         }
     }
-    let each: Vec<String> = resumes.iter().map(|d| format!("{:.1}", ms(*d))).collect();
-    println!("resumes in order (ms): {}", each.join(" "));
     Ok((recorded, median(resumes)))
 }
 
