@@ -160,7 +160,6 @@ mod tests {
             owner: Principal::person(person(1)),
             created_at: at,
             updated_at: at,
-            revision: 0,
         };
         let org = OrgId::from_uuid(Uuid::from_u128(1));
         let expected = Scope::glaves_own(org, project.id);
