@@ -108,7 +108,7 @@ fn duplicates_merge_the_newer_wins_and_untrusted_memories_are_never_touched() {
         let kit = Kit::new();
         let tabs = seed(&kit, TABS, false).await;
         let fly = seed(&kit, FLY, false).await;
-        seed(&kit, TABS_AGAIN, false).await;
+        let tabs_again = seed(&kit, TABS_AGAIN, false).await;
         let planted = seed(&kit, PLANTED, true).await;
         let render = seed(&kit, RENDER, false).await;
         // The list the model sees: 1 tabs, 2 Fly, 3 tabs again, 4 Render.
@@ -138,7 +138,7 @@ fn duplicates_merge_the_newer_wins_and_untrusted_memories_are_never_touched() {
             now,
             [
                 (
-                    tabs,
+                    tabs_again,
                     2,
                     "Use tabs, not spaces, for indentation in this project's Python code"
                         .to_owned()
@@ -163,8 +163,10 @@ fn duplicates_merge_the_newer_wins_and_untrusted_memories_are_never_touched() {
         // Every change can be undone for 30 days.
         let restored = memories.restore(&writer(false), fly).await.unwrap();
         assert_eq!(restored.text, FLY);
-        let undone = memories.restore(&writer(false), tabs).await.unwrap();
-        assert_eq!(undone.text, TABS);
+        let undone = memories.restore(&writer(false), tabs_again).await.unwrap();
+        assert_eq!(undone.text, TABS_AGAIN);
+        let back = memories.restore(&writer(false), tabs).await.unwrap();
+        assert_eq!(back.text, TABS);
     });
 }
 
@@ -487,5 +489,61 @@ fn a_tidier_in_the_background_tidies_after_a_save_when_due() {
         }
         assert_eq!(live(&kit).await.len(), 1, "merged in the background");
         memory.close().await;
+    });
+}
+
+/// #583: a merge is glave's edit, not a newer statement. A memory saved long ago and merged
+/// since is, for a contradiction, as old as its save: the person's statement made between the
+/// two is the one kept.
+#[test]
+fn a_merge_never_makes_a_memory_newer_than_what_the_person_said_since() {
+    block_on!(async {
+        let kit = Kit::new();
+        seed(&kit, FLY, false).await;
+        seed(&kit, "We deploy the app with Fly", false).await;
+        let render = seed(&kit, RENDER, false).await;
+        let memories = kit.memories(rules(), 1);
+        // The list: 1 Fly, 2 Fly again, 3 Render. Tidy-up merges the two about Fly.
+        let merge =
+            scripted(r#"{"merge": [{"memories": [1, 2], "text": "We deploy the app with Fly"}]}"#);
+        assert_eq!(memories.tidy(shared(), &merge).await.unwrap().merged, 1);
+        kit.clock.advance_millis(86_400_000);
+        // A day on, the list: 1 Fly, merged, 2 Render.
+        let conflict = scripted(r#"{"conflict": [{"memories": [1, 2], "clear": true}]}"#);
+        let tidied = memories.tidy(shared(), &conflict).await.unwrap();
+        assert_eq!(tidied.forgotten, 1);
+        let now: Vec<MemoryId> = (live(&kit).await.into_iter())
+            .map(|(memory, ..)| memory)
+            .collect();
+        assert!(now == [render], "the person's later statement is kept");
+    });
+}
+
+/// #583's mirror: a merge that took in a statement made after the other side of a contradiction
+/// dates from that statement, so the fact restated last is the one kept.
+#[test]
+fn a_merge_dates_from_the_newest_statement_that_went_into_it() {
+    block_on!(async {
+        let kit = Kit::new();
+        seed(&kit, FLY, false).await;
+        seed(&kit, RENDER, false).await;
+        seed(&kit, "We deploy the app with Fly", false).await;
+        let memories = kit.memories(rules(), 1);
+        // The list: 1 Fly, 2 Render, 3 Fly again. Tidy-up merges the two about Fly.
+        let merge =
+            scripted(r#"{"merge": [{"memories": [1, 3], "text": "We deploy the app with Fly"}]}"#);
+        assert_eq!(memories.tidy(shared(), &merge).await.unwrap().merged, 1);
+        kit.clock.advance_millis(86_400_000);
+        // A day on, the list: 1 Render, 2 Fly, merged.
+        let conflict = scripted(r#"{"conflict": [{"memories": [1, 2], "clear": true}]}"#);
+        let tidied = memories.tidy(shared(), &conflict).await.unwrap();
+        assert_eq!(tidied.forgotten, 1);
+        let now: Vec<String> = (live(&kit).await.into_iter())
+            .map(|(_, _, text)| text)
+            .collect();
+        assert!(
+            now == ["We deploy the app with Fly"],
+            "the fact restated last is kept"
+        );
     });
 }

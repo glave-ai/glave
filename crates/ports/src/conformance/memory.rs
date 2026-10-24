@@ -27,10 +27,7 @@ pub struct MemoryPlaces {
 }
 
 fn access(person: PrincipalId, scope: Scope) -> Access {
-    Access {
-        person: Some(person),
-        scope,
-    }
+    Access { person, scope }
 }
 
 /// What a control answers, with `id` written as `@memory`.

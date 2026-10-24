@@ -70,10 +70,7 @@ where
                 continue;
             }
             // The approval the turn stopped at is settled even when it was stopped.
-            let waited = step
-                .answered
-                .as_ref()
-                .is_some_and(|answered| answered.asked.call_id == first.call_id);
+            let waited = step.waits_on(&first.call_id);
             let output = if cancel.is_cancelled() && !waited {
                 ToolOutput::text(true, NOT_RUN)
             } else if step.repeats.refuse(first) {
@@ -139,18 +136,15 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<ToolOutput, HarnessError> {
-        // The approval a turn going on from the log stopped at, when this is its call.
-        let waited = step
-            .answered
-            .take_if(|answered| answered.asked.call_id == call.call_id);
-        let tools = &step.toolset;
-        if tools.is_question(&call.tool) {
+        if step.toolset.is_question(&call.tool) {
             return self.put_questions(thread, call, cancel, live).await;
-        } else if tools.is_goal(&call.tool) {
+        } else if step.toolset.is_goal(&call.tool) {
             return Ok(crate::goal::update(thread, &call.arguments));
-        } else if tools.is_memory(&call.tool) {
+        } else if step.toolset.is_memory(&call.tool) {
             return self.call_memory(thread, call, step, cancel, live).await;
         }
+        let waited = step.waited(&call.call_id);
+        let tools = &step.toolset;
         let Some((index, info)) = tools.get(&call.tool) else {
             let (tool, names) = (&call.tool, tools.names().join(", "));
             let text = format!("There is no tool named {tool:?}. The tools are {names}.");
@@ -480,7 +474,7 @@ where
     /// recorded for it, or, once the turn was stopped, a cancellation recorded now. `None` when
     /// the call may go ahead; otherwise the result the model is given instead. With no answer
     /// yet and the turn not stopped, it waits on.
-    async fn answered(
+    pub(crate) async fn answered(
         &self,
         thread: &mut Thread,
         answered: Answered,

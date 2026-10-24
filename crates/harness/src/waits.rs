@@ -17,7 +17,7 @@ use glave_ports::{
 
 use crate::approval::{Approver, Decision};
 use crate::harness::{Harness, HarnessError};
-use crate::turn::{TurnSummary, absorb};
+use crate::turn::{Step, TurnSummary, absorb};
 
 /// A turn its log has open: where it started, and its calls without a result, in order, with
 /// the approval asked for the first of them when one was.
@@ -34,6 +34,20 @@ pub(crate) struct Open {
 pub(crate) struct Answered {
     pub(crate) asked: ApprovalRequested,
     pub(crate) decided: Option<ApprovalDecided>,
+}
+
+impl Step {
+    /// Whether `call` is the one the turn going on from the log stopped at.
+    pub(crate) fn waits_on(&self, call: &CallId) -> bool {
+        (self.answered.as_ref()).is_some_and(|answered| answered.asked.call_id == *call)
+    }
+
+    /// The approval the turn going on from the log stopped at, taken when `call` is its call:
+    /// its answer decides that call, which asked before the turn stopped.
+    pub(crate) fn waited(&mut self, call: &CallId) -> Option<Answered> {
+        self.answered
+            .take_if(|answered| answered.asked.call_id == *call)
+    }
 }
 
 /// How a thread's log left its turn: waiting, answered and going on, or left open by a glave

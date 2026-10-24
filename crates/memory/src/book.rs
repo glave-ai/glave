@@ -84,6 +84,17 @@ impl Entry {
     pub(crate) fn touched(&self) -> Option<At> {
         self.current().map(|(_, version)| version.at)
     }
+
+    /// When it was last said, for which of two contradicting memories is newer: its save, or
+    /// the last edit in force by the person or the model. Tidy-up's merges are glave's, not a
+    /// newer statement.
+    pub(crate) fn stated(&self) -> Option<At> {
+        let edits = self.versions.iter().skip(1).rev();
+        let said = edits.filter(|version| !version.undone && !by_glave(&version.by));
+        said.chain(self.versions.first())
+            .next()
+            .map(|version| version.at)
+    }
 }
 
 /// What one project's memory ledger says.

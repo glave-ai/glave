@@ -5,12 +5,13 @@
 
 use std::sync::Arc;
 
-use glave_event::{Body, MemoryScope, PrincipalId, decode};
+use glave_event::{Body, MemoryScope, PrincipalId, PrincipalKind, decode};
 use glave_keys::{InMemoryRoot, KeySettings};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules};
-use glave_ports::memories::REMEMBER;
-use glave_ports::testing::TempDir;
-use glave_ports::{Caller, OrgId, ProjectId, Scope};
+use glave_ports::memories::{Memory, REMEMBER};
+use glave_ports::stream::Reserved;
+use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
+use glave_ports::{Caller, EventLog, OrgId, ProjectId, Scope};
 use glave_session::Answering;
 use glave_session::protocol::{Reply, Request, code};
 use glave_store_sqlite::{SqliteLog, Store};
@@ -372,5 +373,85 @@ fn a_server_without_memory_says_so() {
             .await
             .unwrap_err();
         assert_eq!(off.code, code::MEMORY_OFF);
+    });
+}
+
+/// Who each save and forget in the memory ledger of the server's own project is by, in order,
+/// of those still readable: an erased save no longer opens.
+async fn changed_by(store: &Store) -> Vec<(&'static str, PrincipalKind)> {
+    let ledger = (store.log())
+        .read(&scope(), Reserved::Memory.id(), None, usize::MAX)
+        .await
+        .unwrap();
+    (ledger.into_iter())
+        .filter_map(|raw| match decode(raw).ok()?.body {
+            Body::MemorySaved(saved) => Some(("saved", saved.by.kind)),
+            Body::MemoryForgotten(gone) => Some(("forgotten", gone.by.kind)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// #582: with personal memory off, the local person's own save and forget are recorded as
+/// theirs, never as glave's: so their forget of a memory glave forgot, waiting 30 days to be
+/// erased, erases it at once.
+#[test]
+fn the_local_persons_own_changes_are_theirs_with_personal_memory_off() {
+    block_on!(async {
+        let store = Store::open_in_memory(KeySettings::new(Arc::new(InMemoryRoot::new().unwrap())))
+            .unwrap();
+        let clock = ManualClock::at_millis(1_791_001_000_000);
+        let rules = Rules {
+            retention_days: Some(1),
+            ..Rules::default()
+        };
+        let memories = Memories::new(
+            store.log(),
+            store.keyring(),
+            rules,
+            Box::new(clock.clone()),
+            Box::new(CountingEntropy::starting_at(9 << 32)),
+        );
+        let memory = Arc::new(GlaveMemory::start(memories).await.unwrap());
+        let mut setup = Setup::new(Vec::new());
+        setup.answering = Answering::NoOne;
+        setup.settings.person = Some(person());
+        setup.memory = Some(Arc::clone(&memory) as Arc<dyn Memory>);
+        let dir = folder("memory-personal-off");
+        let (server, _) = setup.build_on(&dir, store.log()).await;
+        let here = Some(scope().project());
+        let save = Request::MemorySave {
+            text: "Ada prefers short answers".into(),
+            scope: MemoryScope::Project,
+            project: here,
+        };
+        let saved = listed(server.request(save).await.unwrap());
+        assert_eq!(changed_by(&store).await, [("saved", PrincipalKind::Person)]);
+        // Past its retention, glave forgets it: erased in 30 days, unless restored first.
+        clock.advance_millis(2 * 86_400_000);
+        let kept = memory.memories().housekeep(&[scope()]).await.unwrap();
+        assert_eq!(kept.forgotten, 1);
+        let id = saved.first().unwrap().memory;
+        let forget = Request::MemoryForget {
+            memory: Some(id),
+            all: false,
+            scope: None,
+            project: here,
+        };
+        server.request(forget).await.unwrap();
+        assert_eq!(
+            changed_by(&store).await,
+            [
+                ("forgotten", PrincipalKind::Glave),
+                ("forgotten", PrincipalKind::Person)
+            ],
+            "glave's forget, then the person's, which erased the save"
+        );
+        let restore = Request::MemoryRestore {
+            memory: id,
+            project: here,
+        };
+        let gone = server.request(restore).await.unwrap_err();
+        assert_eq!(gone.code, code::NO_MEMORY, "nothing is left to restore");
     });
 }
