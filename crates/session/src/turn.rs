@@ -183,7 +183,9 @@ where
         if let Some(effort) = &choice.effort {
             self.offered_effort(&model, effort)?;
         }
-        self.check_permissions(thread, choice.permissions).await?;
+        if let Some(preset) = choice.permissions {
+            self.allowed_permissions(preset)?;
+        }
         let files = self.attach(&scope, thread, files, &model).await?;
         let (finish, done) = watch::channel(None);
         if let Some(key) = key

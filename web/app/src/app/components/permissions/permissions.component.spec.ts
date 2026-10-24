@@ -51,7 +51,7 @@ describe('PermissionsComponent', () => {
       expect.stringContaining('Workspace'),
       expect.stringContaining('Full access'),
     ]);
-    expect(options()[0]?.textContent).toContain('asks before changing anything');
+    expect(options()[0]?.textContent).toContain('asks before changing your files');
     expect(options()[1]?.textContent).toContain('asks before risky actions');
     expect(options()[2]?.textContent).toContain('for work you fully trust');
     await expectAccessible(document.body);

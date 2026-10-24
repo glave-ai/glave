@@ -61,23 +61,28 @@ pub(crate) async fn workspace(
         );
     }
     setup.choices.unsandboxed = Some(why.clone());
-    let quiet = setup.choices.on.value == On::Cloud
-        || setup.choices.permissions.value != Permissions::Workspace;
-    if !quiet {
-        eprintln!("glave: {}", unsandboxed_notice(&why));
-    }
     let reading = sandbox_at(SandboxLevel::ReadOnly, &setup.choices, glave_home);
-    match open_here(folder, processes, asks)
+    let workspace = match open_here(folder, processes, asks)
         .await?
         .with_sandbox(&reading)
         .await
     {
         Ok(workspace) => {
             setup.sandbox = Some(reading);
-            Ok(workspace)
+            workspace
         }
-        Err(_) => open_here(folder, processes, asks).await,
+        Err(_) => open_here(folder, processes, asks).await?,
+    };
+    // Workspace asks before everything here; Read-only does too where no sandbox runs at all.
+    let asks_all = match setup.choices.permissions.value {
+        Permissions::Workspace => true,
+        Permissions::ReadOnly => setup.sandbox.is_none(),
+        Permissions::FullAccess => false,
+    };
+    if asks_all && setup.choices.on.value != On::Cloud {
+        eprintln!("glave: {}", unsandboxed_notice(&why));
     }
+    Ok(workspace)
 }
 
 /// The workspace in `folder` on this computer, without a sandbox yet, its commands asking for
@@ -96,12 +101,12 @@ async fn open_here(folder: &Path, processes: &Processes, asks: bool) -> anyhow::
     Ok(Workspace::new(computers, here).asking_network(asks))
 }
 
-/// What the person is told, once at startup, when the sandbox that lets commands change the
-/// project cannot run here.
+/// What the person is told, once at startup, when the sandbox their preset needs cannot run
+/// here.
 fn unsandboxed_notice(why: &str) -> String {
     format!(
-        "the sandbox cannot run on this computer ({why}), so in Workspace every command and \
-         change asks you first. To let commands run without the sandbox and without asking, \
-         choose full access (permissions = \"full-access\", or --permissions full-access)."
+        "the sandbox cannot run on this computer ({why}), so every command and change asks \
+         you first. To let commands run without the sandbox and without asking, choose full \
+         access (permissions = \"full-access\", or --permissions full-access)."
     )
 }

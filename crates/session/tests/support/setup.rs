@@ -72,8 +72,6 @@ pub(crate) struct Setup {
     pub limits: TaskLimits,
     /// Models offered beside the settings' own.
     pub models: Vec<ModelInfo>,
-    /// The presets a thread may choose.
-    pub presets: Vec<Permissions>,
     pub memory: Option<Arc<dyn Memory>>,
     /// Where worktrees are kept; with none, a thread asking for one is refused.
     pub worktrees: Option<PathBuf>,
@@ -124,7 +122,6 @@ impl Setup {
             seed: 1,
             limits: TaskLimits::default(),
             models: Vec::new(),
-            presets: Permissions::ALL.to_vec(),
             memory: None,
             worktrees: None,
             providers: None,
@@ -219,7 +216,6 @@ impl Setup {
             tasks: self.limits,
             memory: self.memory,
             models: self.models,
-            presets: self.presets,
             providers: self.providers,
             git_hosts: self.hosts,
             connections: self.connections,

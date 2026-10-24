@@ -2,7 +2,8 @@
 //! `turn/start` take `permissions`, recorded as `permissions.chosen`, so the thread's turns
 //! run with that preset from then on, across restarts; choosing the preset a thread already
 //! has records nothing; a thread that chooses none runs with the server's; the summary shows
-//! the preset; and one the policy does not leave is refused with `-32012`, in plain words.
+//! the preset; one above the policy's cap is refused with `-32012`, in plain words; and one
+//! chosen before a cap came runs capped.
 
 use std::path::Path;
 
@@ -15,7 +16,7 @@ use serde_json::json;
 
 use crate::support::*;
 
-/// A server on `log` whose own preset is `own`, where threads may choose `presets`, with no one
+/// A server on `log` whose own preset is `own`, under the policy's cap `highest`, with no one
 /// to answer what asks. Its commands run without a sandbox, so only Full access lets a write
 /// run without asking.
 async fn serve(
@@ -23,12 +24,12 @@ async fn serve(
     answers: Vec<Completion>,
     log: &Shared,
     own: Permissions,
-    presets: &[Permissions],
+    highest: Permissions,
 ) -> Tested<Shared> {
     let mut setup = Setup::new(answers);
     setup.answering = Answering::NoOne;
     setup.settings.permissions = own;
-    setup.presets = presets.to_vec();
+    setup.settings.highest = highest;
     setup.build_on(dir, log.clone()).await.0
 }
 
@@ -128,7 +129,7 @@ fn a_chosen_preset_holds_for_the_turns_after_it_and_a_restart() {
     let log = Shared::default();
     block_on!(async {
         let all = Permissions::ALL;
-        let server = serve(&dir, writes("one.txt"), &log, FullAccess, &all).await;
+        let server = serve(&dir, writes("one.txt"), &log, FullAccess, FullAccess).await;
         let Reply::Server(info) = server.request(Request::Discover {}).await.unwrap() else {
             panic!("server info");
         };
@@ -141,7 +142,7 @@ fn a_chosen_preset_holds_for_the_turns_after_it_and_a_restart() {
         server.shutdown().await;
         let mut answers = writes("two.txt");
         answers.extend(writes("three.txt"));
-        let restarted = serve(&dir, answers, &log, FullAccess, &all).await;
+        let restarted = serve(&dir, answers, &log, FullAccess, FullAccess).await;
         assert_eq!(shown(&restarted, thread).await, ReadOnly);
         // Choosing the preset the thread has records nothing; then full access lets it run.
         turn_in(&restarted, thread, Some(ReadOnly)).await.unwrap();
@@ -169,7 +170,7 @@ fn a_thread_that_chooses_nothing_runs_with_the_servers_preset() {
             writes("a.txt"),
             &Shared::default(),
             Workspace,
-            &[ReadOnly, Workspace],
+            Workspace,
         )
         .await;
         let thread = started(&server, None).await;
@@ -186,7 +187,7 @@ fn a_preset_the_policy_does_not_leave_is_refused_in_plain_words() {
     let log = Shared::default();
     block_on!(async {
         let capped = [ReadOnly, Workspace];
-        let server = serve(&dir, Vec::new(), &log, Workspace, &capped).await;
+        let server = serve(&dir, Vec::new(), &log, Workspace, Workspace).await;
         let Reply::Server(info) = server.request(Request::Discover {}).await.unwrap() else {
             panic!("server info");
         };
@@ -220,21 +221,32 @@ fn a_preset_the_policy_does_not_leave_is_refused_in_plain_words() {
 }
 
 #[test]
-fn a_preset_chosen_before_the_policy_narrowed_is_refused_until_chosen_again() {
+fn a_preset_chosen_before_the_policy_narrowed_runs_capped() {
     let dir = folder("permissions-stale");
     let log = Shared::default();
     block_on!(async {
-        let all = Permissions::ALL;
-        let server = serve(&dir, Vec::new(), &log, ReadOnly, &all).await;
+        let server = serve(&dir, Vec::new(), &log, ReadOnly, FullAccess).await;
         let thread = started(&server, Some(FullAccess)).await;
         server.shutdown().await;
-        let narrowed = serve(&dir, writes("a.txt"), &log, ReadOnly, &[ReadOnly]).await;
-        let refused = turn_in(&narrowed, thread, None).await.unwrap_err();
-        assert_eq!(refused.code, code::NOT_ALLOWED);
-        turn_in(&narrowed, thread, Some(ReadOnly)).await.unwrap();
+        let narrowed = serve(&dir, writes("a.txt"), &log, ReadOnly, ReadOnly).await;
+        assert_eq!(
+            shown(&narrowed, thread).await,
+            ReadOnly,
+            "what it runs with now"
+        );
+        // Nothing to choose again: the turn runs under the cap, and its write asks.
+        turn_in(&narrowed, thread, None).await.unwrap();
         assert_eq!(
             recorded(&narrowed, thread).await,
-            ["chose full-access", "chose read-only", "asked: NoOneThere"]
+            ["chose full-access", "asked: NoOneThere"]
+        );
+        let refused = turn_in(&narrowed, thread, Some(FullAccess))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            refused.code,
+            code::NOT_ALLOWED,
+            "asked for again, it is refused"
         );
     });
 }

@@ -145,7 +145,6 @@ pub(crate) async fn wire(
         // Before the lineup's parts move into the rest.
         rereads: Some(rereading(args, &folder, &setup, &lined, &servers, &projects).await?),
         models: lined.built.models.offered,
-        presets: setup.loaded.constraints.permissions_allowed(),
         providers: lined.accounts.map(|kept| kept as Arc<dyn Providers>),
         git_hosts: hosts.map(|hosts| hosts as Arc<dyn GitHosts>),
         connections: connected.map(|connected| connected as Arc<dyn Connections>),

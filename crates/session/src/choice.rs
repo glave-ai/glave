@@ -1,8 +1,8 @@
 //! What a request chooses for a thread's turns, kept for the turns after it: the model, how
 //! much it reasons, and what the agent may do (`specs/approvals.md`, "Permissions"). A thread's
-//! preset is its latest `permissions.chosen`, else its project's, else the server's own, and
-//! only a preset the policy leaves may be chosen, so the log tells any server of the deployment
-//! what a thread may do.
+//! preset is its latest `permissions.chosen`, else its project's, else the server's own, never
+//! above the policy's cap, and only a preset the cap leaves may be chosen, so the log tells any
+//! server of the deployment what a thread may do.
 
 use glave_event::{Body, Permissions, ThreadId};
 use glave_harness::{HarnessError, Settled, Thread};
@@ -28,12 +28,12 @@ pub(crate) struct Choice {
     pub(crate) effort: Option<String>,
 }
 
-/// The presets a thread may choose on a server whose own is `own`: `allowed`, the most cautious
-/// first, and always `own`.
-pub(crate) fn choosable(own: Permissions, allowed: &[Permissions]) -> Vec<Permissions> {
+/// The presets a thread may choose on a server whose own is `own`, under the cap `highest`: the
+/// most cautious first, and always `own`.
+pub(crate) fn choosable(own: Permissions, highest: Permissions) -> Vec<Permissions> {
     Permissions::ALL
         .into_iter()
-        .filter(|preset| *preset == own || allowed.contains(preset))
+        .filter(|preset| *preset == own || *preset <= highest)
         .collect()
 }
 
@@ -93,25 +93,6 @@ where
         ))
     }
 
-    /// Refuses a turn in `thread` that would run with a preset no longer allowed here: `asked`,
-    /// else the one it chose before. A thread that chose none runs with the server's own.
-    pub(crate) async fn check_permissions(
-        &self,
-        thread: ThreadId,
-        asked: Option<Permissions>,
-    ) -> Result<(), ApiError> {
-        let preset = if asked.is_some() {
-            asked
-        } else {
-            let scope = self.scope_of(thread).await?;
-            self.chosen_permissions(&scope, thread).await?
-        };
-        match preset {
-            Some(preset) => self.allowed_permissions(preset),
-            None => Ok(()),
-        }
-    }
-
     /// The preset `thread` runs with now, as its summary shows it, as its turns run with it:
     /// its own choice, else its project's, else the server's, as `project` changes them.
     pub(crate) async fn permissions_now(
@@ -124,13 +105,11 @@ where
         Ok(self.inner.harness.defaults().permissions(project, chosen))
     }
 
-    /// The presets a thread may choose now, the most cautious first.
+    /// The presets a thread may choose now, the most cautious first: what the harness's cap
+    /// leaves. One the thread chose before a cap came runs capped, never refused.
     pub(crate) fn presets(&self) -> Vec<Permissions> {
-        self.inner
-            .presets
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
+        let defaults = self.inner.harness.defaults();
+        choosable(defaults.permissions, defaults.highest)
     }
 
     /// Why Workspace asks before every change and command here, when it does: no sandbox can
@@ -177,12 +156,9 @@ mod tests {
     use Permissions::{FullAccess, ReadOnly, Workspace};
 
     #[test]
-    fn a_thread_may_choose_what_the_policy_leaves_and_the_servers_own() {
-        assert_eq!(choosable(Workspace, &Permissions::ALL), Permissions::ALL);
-        assert_eq!(
-            choosable(Workspace, &[ReadOnly, Workspace]),
-            [ReadOnly, Workspace]
-        );
-        assert_eq!(choosable(FullAccess, &[]), [FullAccess]);
+    fn a_thread_may_choose_what_the_cap_leaves_and_the_servers_own() {
+        assert_eq!(choosable(Workspace, FullAccess), Permissions::ALL);
+        assert_eq!(choosable(Workspace, Workspace), [ReadOnly, Workspace]);
+        assert_eq!(choosable(FullAccess, ReadOnly), [ReadOnly, FullAccess]);
     }
 }

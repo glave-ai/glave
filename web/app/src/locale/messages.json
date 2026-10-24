@@ -265,7 +265,7 @@
     "permissions.onlyOne": "{$ABOUT}. The only choice this server allows.",
     "permissions.prefix": "Permissions:",
     "permissions.readOnly": "Read-only",
-    "permissions.readOnlyAbout": "Looks around; asks before changing anything",
+    "permissions.readOnlyAbout": "Looks around; asks before changing your files",
     "permissions.workspace": "Workspace",
     "permissions.workspaceAbout": "Edits and runs commands here; asks before risky actions",
     "person.settings": "Settings",

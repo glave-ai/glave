@@ -44,7 +44,7 @@ fn a_constraint_added_while_it_runs_narrows_the_next_turn_whatever_the_file_loos
     let before = runs_now(&locations, &start, &dir);
     assert_eq!(before.defaults.permissions, Permissions::FullAccess);
     assert!(before.defaults.ask_network);
-    assert_eq!(before.presets, Permissions::ALL);
+    assert_eq!(before.defaults.highest, Permissions::FullAccess, "no cap");
     let sandbox = before.defaults.sandbox.unwrap();
     assert_eq!(
         (sandbox.level, sandbox.network),
@@ -64,9 +64,9 @@ fn a_constraint_added_while_it_runs_narrows_the_next_turn_whatever_the_file_loos
         "asks from now on"
     );
     assert_eq!(
-        after.presets,
-        [Permissions::ReadOnly],
-        "and no thread may choose more"
+        after.defaults.highest,
+        Permissions::ReadOnly,
+        "and no thread may run with more"
     );
     assert!(!after.defaults.ask_network, "no command may ask for it");
     assert!(

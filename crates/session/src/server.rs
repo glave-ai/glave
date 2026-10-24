@@ -35,7 +35,7 @@ use crate::hub::{Hub, Observed};
 use crate::keyed::Keyed;
 use crate::ledger::Ledgers;
 use crate::projects::Places;
-use crate::protocol::{ApiError, ModelInfo, Permissions, Reply, code};
+use crate::protocol::{ApiError, ModelInfo, Reply, code};
 use crate::providers::Providers;
 use crate::reread::Rereads;
 use crate::tasks::{TaskLimits, Tasks};
@@ -80,9 +80,6 @@ pub struct Wiring<P, L, B> {
     /// The models threads may choose besides the settings' own, the default (`model/list`).
     /// The provider must serve each by its id: the gateway's choices.
     pub models: Vec<ModelInfo>,
-    /// The presets a thread may choose besides the settings' own: those the policy leaves
-    /// (`specs/approvals.md`, "Permissions").
-    pub presets: Vec<Permissions>,
     /// The model accounts the person on this computer connects, which the models follow;
     /// none where whoever runs the server sets up its models.
     pub providers: Option<Arc<dyn Providers>>,
@@ -151,7 +148,6 @@ impl<P, L, B> Wiring<P, L, B> {
             memory: None,
             projects,
             models: Vec::new(),
-            presets: Vec::new(),
             providers: None,
             rereads: None,
             git_hosts: None,
@@ -219,9 +215,6 @@ pub(crate) struct Inner<P, L, B> {
     /// Once it listens over HTTP, its address on this computer when it listens on loopback:
     /// where a browser here comes back to from signing in to a remote server.
     pub(crate) reached: OnceLock<Option<String>>,
-    /// The presets a thread may choose, the most cautious first, as the policy now leaves
-    /// them.
-    pub(crate) presets: RwLock<Vec<Permissions>>,
     /// The project's own person, whom the log leaves implied.
     pub(crate) person: Option<PrincipalId>,
     pub(crate) limits: TaskLimits,
@@ -276,7 +269,6 @@ where
         let approvals = Approvals::new(answering, Arc::clone(&hub));
         let person = settings.person;
         let catalog = crate::models::catalog(&settings.model, wiring.models);
-        let choosable = crate::choice::choosable(settings.permissions, &wiring.presets);
         let clock: Arc<dyn Clock> = Arc::from(wiring.clock);
         let leases = wiring
             .leases
@@ -310,7 +302,6 @@ where
                 git_hosts: wiring.git_hosts,
                 connections: wiring.connections,
                 reached: OnceLock::new(),
-                presets: RwLock::new(choosable),
                 person,
                 limits: wiring.tasks,
                 ledgers: Mutex::new(Ledgers::new()),

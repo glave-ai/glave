@@ -45,7 +45,7 @@ export class PermissionsComponent {
   > = {
     'read-only': {
       text: $localize`:@@permissions.readOnly:Read-only`,
-      about: $localize`:@@permissions.readOnlyAbout:Looks around; asks before changing anything`,
+      about: $localize`:@@permissions.readOnlyAbout:Looks around; asks before changing your files`,
       icon: Eye,
     },
     workspace: {

@@ -164,7 +164,7 @@ fn a_firm_caution_never_reaches_the_judge() {
 }
 
 #[test]
-fn in_the_cautious_mode_the_judge_is_never_consulted() {
+fn where_every_change_asks_the_judge_is_never_consulted() {
     let dir = folder("judge-ask-mode");
     block_on!(async {
         let answers = vec![

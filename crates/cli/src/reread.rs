@@ -239,7 +239,6 @@ fn runs(setup: &Setup, here: Option<SandboxLevel>, glave_home: &Path) -> anyhow:
             hooks: Hooks::new(setup.hooks.clone())?,
             web: crate::project_folders::web_offered(&choices.web.value)?,
         },
-        presets: setup.loaded.constraints.permissions_allowed(),
         worktree: choices.worktree.value,
     })
 }
