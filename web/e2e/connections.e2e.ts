@@ -42,6 +42,9 @@ test.beforeAll(async () => {
   address = await new Promise<string>((resolve, reject) => {
     lines.once('line', resolve);
     service.once('error', reject);
+    service.once('exit', (code) => {
+      reject(new Error(`the test server ended first (${String(code)}): cargo xtask ci builds it`));
+    });
   });
   lines.close();
 });

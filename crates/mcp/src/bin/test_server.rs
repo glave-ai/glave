@@ -290,14 +290,14 @@ fn main() -> ExitCode {
         tokens: Arc::new(valued("--token")),
         ..TestServer::default()
     };
-    let fake = match server.tokens.first() {
-        Some(token) if flags.iter().any(|flag| flag == "--fake-sign-in") => {
-            let Ok(fake) = fake_sign_in(token) else {
-                return ExitCode::FAILURE;
-            };
-            Some(fake)
-        }
-        _ => None,
+    let fake = if flags.iter().any(|flag| flag == "--fake-sign-in") {
+        // A sign-in that grants nothing would quietly let no one in.
+        let Some(Ok(fake)) = server.tokens.first().map(|token| fake_sign_in(token)) else {
+            return ExitCode::FAILURE;
+        };
+        Some(fake)
+    } else {
+        None
     };
     let issuer = fake.as_ref().map(|fake| fake.url.clone());
     let issuer = issuer.or_else(|| valued("--sign-in").into_iter().next());
