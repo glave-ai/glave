@@ -51,16 +51,11 @@ jobs:
         working-directory: .
       - name: The image's browsers, where the scripts look for them
         run: ln -s /ms-playwright node_modules/playwright-core/.local-browsers
-      - name: a second tab beside a first that just loaded, with and without COOP
+      - name: pages of one context whose watches are cut
         run: >-
-          docker run --rm --init --ipc=host -e CI -e GLAVE_BIN -e GLAVE_DIAG_COOP=1
+          docker run --rm --init --ipc=host -e CI -e GLAVE_BIN
           -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE"
-          npm run e2e -- --project=webkit e2e/zz-probe-coop.e2e.ts --workers=4 --repeat-each=2 --output=test-results/coop || true
-      - name: the same in Chromium
-        run: >-
-          docker run --rm --init --ipc=host -e CI -e GLAVE_BIN -e GLAVE_DIAG_COOP=1
-          -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE"
-          npm run e2e -- --project=chromium e2e/zz-probe-coop.e2e.ts --workers=4 --repeat-each=2 --output=test-results/coop-chromium || true
+          npm run e2e -- e2e/zz-probe-leak.e2e.ts --workers=3 --repeat-each=3 --output=test-results/leak || true
       - uses: actions/upload-artifact@v7
         if: always()
         with:
