@@ -82,6 +82,10 @@ tracing-opentelemetry = { workspace = true, optional = true }
 tracing-subscriber.workspace = true
 uuid.workspace = true
 
+# The memory allocator of the static Linux builds, in place of musl's (src/allocator.rs).
+[target.'cfg(target_env = "musl")'.dependencies]
+mimalloc.workspace = true
+
 [dev-dependencies]
 # The session API's fake identity provider signs the gateway's callers in.
 aws-lc-rs.workspace = true

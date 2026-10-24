@@ -7,9 +7,10 @@ name: budgets
 # The binary's size and the answered command are measured on the build that ships: glave for
 # x86-64 Linux as the release builds it (dist-workspace.toml), static with musl, in the dist
 # profile, with the web app inside. The benchmark is built for musl too, so the thread it
-# resumes runs on musl's allocator, as a released glave's does. The two optimized builds are
-# what cost, about 5 minutes each, nearly all of it LTO, and on one runner they slow each other
-# down: so each has a runner of its own, at the same time, and a third measures, in seconds.
+# resumes runs on the allocator a released glave's does (crates/cli/src/allocator.rs). The two
+# optimized builds are what cost, about 5 minutes each, nearly all of it LTO, and on one runner
+# they slow each other down: so each has a runner of its own, at the same time, and a third
+# measures, in seconds.
 # The numbers are wall-clock, and depend on the kind of machine the measuring job is given,
 # which it names.
 on:
