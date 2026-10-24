@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     defaults:
       run:
         working-directory: web
@@ -51,20 +51,11 @@ jobs:
         working-directory: .
       - name: The image's browsers, where the scripts look for them
         run: ln -s /ms-playwright node_modules/playwright-core/.local-browsers
-      # Half the processors kept busy meanwhile, as on a runner beside busy others.
-      - name: all of WebKit's tests, twice, the machine kept busy
-        run: |
-          burners=""
-          for i in $(seq $(( $(nproc) / 2 ))); do
-            sh -c 'while :; do :; done' &
-            burners="$burners $!"
-          done
-          for i in 1 2; do
-            docker run --rm --init --ipc=host -e CI -e GLAVE_BIN \
-              -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE" \
-              npm run e2e -- --project=webkit --grep-invert=probe --output=test-results/all-$i || true
-          done
-          kill $burners
+      - name: second tabs, eight at once, with and without COOP
+        run: >-
+          docker run --rm --init --ipc=host -e CI -e GLAVE_BIN -e GLAVE_DIAG_COOP=1
+          -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE"
+          npm run e2e -- --project=webkit e2e/zz-probe-stress.e2e.ts --workers=8 --repeat-each=2 --output=test-results/stress || true
       - uses: actions/upload-artifact@v7
         if: always()
         with:
