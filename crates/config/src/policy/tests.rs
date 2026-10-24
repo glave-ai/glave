@@ -252,10 +252,7 @@ fn model_allow_lists_intersect_and_a_deny_always_wins() {
 #[test]
 fn the_lowest_highest_preset_holds_and_below_full_access_the_sandbox_is_required() {
     let rules = Constraints::of(&[
-        policy_at(
-            ORG,
-            "version = 1\n[permissions]\nhighest = \"workspace\"\n",
-        ),
+        policy_at(ORG, "version = 1\n[permissions]\nhighest = \"workspace\"\n"),
         policy_at(
             PROJECT_POLICY,
             "version = 1\n[permissions]\nhighest = \"read-only\"\n",
@@ -272,7 +269,10 @@ fn the_lowest_highest_preset_holds_and_below_full_access_the_sandbox_is_required
     let open = constraints("version = 1\n[permissions]\nhighest = \"full-access\"\n");
     assert_eq!(open.permissions_allowed(), Permissions::ALL);
     assert!(open.sandbox_required().is_none(), "full access needs none");
-    assert_eq!(Constraints::default().permissions_allowed(), Permissions::ALL);
+    assert_eq!(
+        Constraints::default().permissions_allowed(),
+        Permissions::ALL
+    );
     let error = files::policy(
         "version = 1\n[approval]\nmodes = [\"ask\"]\n",
         Path::new(ORG),

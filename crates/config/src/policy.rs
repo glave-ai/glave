@@ -25,8 +25,8 @@ pub use choices::{Choices, Chosen, Layer, Level, Source, project_permissions};
 pub use effective::{check_model, check_own_servers, give_way};
 pub use explain::explain;
 pub use files::{
-    ConfigFile, GithubFile, HooksFile, ModelEntry, PolicyFile, ServeFile,
-    ServerFile, StoreFile, TaskRules, TelemetryFile, config,
+    ConfigFile, GithubFile, HooksFile, ModelEntry, PolicyFile, ServeFile, ServerFile, StoreFile,
+    TaskRules, TelemetryFile, config,
 };
 pub use memory::{MemorySettings, settle as memory_settings};
 pub use placement::{Placement, PlacementRules};

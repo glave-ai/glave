@@ -204,13 +204,16 @@ impl Constraints {
             Kind::NetworkOff => Some((Permissions::Workspace, rule)),
             _ => None,
         });
-        caps.fold((Permissions::FullAccess, None), |(lowest, first), (preset, rule)| {
-            if preset < lowest {
-                (preset, Some(rule))
-            } else {
-                (lowest, first)
-            }
-        })
+        caps.fold(
+            (Permissions::FullAccess, None),
+            |(lowest, first), (preset, rule)| {
+                if preset < lowest {
+                    (preset, Some(rule))
+                } else {
+                    (lowest, first)
+                }
+            },
+        )
     }
 
     /// The presets anyone may choose, the most cautious first.

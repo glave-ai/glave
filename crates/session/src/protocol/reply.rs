@@ -10,8 +10,8 @@ use glave_ports::{Project, ProjectId, Standing};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    ConnectionInfo, CredentialInfo, DeviceCode, FileInfo, GoneFolder, Grouping, Permissions,
-    ModelInfo, PasskeySummary, ProjectFolder, ProviderInfo, ScheduleInfo, SignInLink, SignInWay,
+    ConnectionInfo, CredentialInfo, DeviceCode, FileInfo, GoneFolder, Grouping, ModelInfo,
+    PasskeySummary, Permissions, ProjectFolder, ProviderInfo, ScheduleInfo, SignInLink, SignInWay,
     TaskInfo, Told, TrustAsk, WatchEnd,
 };
 

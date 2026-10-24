@@ -8,14 +8,13 @@ use serde_json::value::RawValue;
 use crate::envelope::{ENVELOPE_VERSION, Header, PayloadVersion, RawEvent, TypeName};
 use crate::error::{DecodeError, EncodeError};
 use crate::payload::{
-    AcmeRegistered, ApprovalDecided, ApprovalRequested, AwakeSet,
-    BrowserSignedIn, BrowserSignedOut, BrowserUsed, CatalogRefreshed, CertificateIssued,
-    CommandEnded, CommandStarted, ConnectionConnected, ConnectionRemoved, CredentialConnected,
-    CredentialRemoved, EffortChosen, GatewayToolCalled, GoalEnded, GoalResumed, GoalSet,
-    GroupingSet, HookRan, LanguageSet, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved,
-    MemoryTidied, MessageAdded, ModelChosen, ModelResponded, PasskeyAdded, PasskeyRemoved,
-    PasskeyUsed, PermissionsChosen, ProjectFolderSet, ProjectRemoved, ProviderConnected,
-    ProviderRemoved,
+    AcmeRegistered, ApprovalDecided, ApprovalRequested, AwakeSet, BrowserSignedIn,
+    BrowserSignedOut, BrowserUsed, CatalogRefreshed, CertificateIssued, CommandEnded,
+    CommandStarted, ConnectionConnected, ConnectionRemoved, CredentialConnected, CredentialRemoved,
+    EffortChosen, GatewayToolCalled, GoalEnded, GoalResumed, GoalSet, GroupingSet, HookRan,
+    LanguageSet, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryTidied,
+    MessageAdded, ModelChosen, ModelResponded, PasskeyAdded, PasskeyRemoved, PasskeyUsed,
+    PermissionsChosen, ProjectFolderSet, ProjectRemoved, ProviderConnected, ProviderRemoved,
     ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted,
     ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted,
     ToolCallRequested, TrustDecided, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved,

@@ -12,8 +12,8 @@ use glave_ports::{
 };
 use tokio::sync::watch;
 
-use crate::held::{Slot, Use, finished};
 use crate::choice::Choice;
+use crate::held::{Slot, Use, finished};
 use crate::protocol::{ApiError, Reply, Show, ThreadSummary, code};
 use crate::server::{MAX_PAGE, Server, no_thread};
 use crate::words::Sentence;
@@ -254,7 +254,9 @@ where
             status: self.status_of(&scope, &view).await,
             standing: view.standing,
             title,
-            permissions: self.permissions_now(&scope, view.thread, protections).await?,
+            permissions: self
+                .permissions_now(&scope, view.thread, protections)
+                .await?,
             trust: None,
             for_: view.for_,
             origin: view.origin,

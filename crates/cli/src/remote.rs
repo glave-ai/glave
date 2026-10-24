@@ -56,8 +56,7 @@ pub(crate) async fn run(args: &Args, url: &str) -> anyhow::Result<ExitCode> {
     let Reply::Server(_) = elsewhere.request(Request::Discover {}).await? else {
         bail!("{url} is not a glave session server");
     };
-    if args.resume && args.goal.is_some() && (args.model.is_some() || args.permissions.is_some())
-    {
+    if args.resume && args.goal.is_some() && (args.model.is_some() || args.permissions.is_some()) {
         bail!(
             "--model and --permissions choose for a new thread or a turn; a goal on a thread \
              you continue keeps the thread's choice"

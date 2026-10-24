@@ -17,7 +17,10 @@ fn choose(place: &Place, text: &str) {
 #[test]
 fn the_person_s_choices_reach_the_run_and_flags_win_over_them() {
     let place = place("config-choices");
-    choose(&place, "model = \"from-file\"\npermissions = \"read-only\"\n");
+    choose(
+        &place,
+        "model = \"from-file\"\npermissions = \"read-only\"\n",
+    );
     let model = FakeServer::start(vec![Reply::text("Hi."), Reply::text("Hi again.")]).unwrap();
     let output = glave(&place, &model, &["hello"], "");
     let shown = text(&output);

@@ -6,7 +6,15 @@ fn parse_words(words: &[&str]) -> Result<Args, String> {
 
 #[test]
 fn prompt_words_join_and_flags_parse() {
-    let words = ["--permissions", "read-only", "fix", "the", "--model", "m", "test"];
+    let words = [
+        "--permissions",
+        "read-only",
+        "fix",
+        "the",
+        "--model",
+        "m",
+        "test",
+    ];
     let args = parse_words(&words).unwrap();
     assert_eq!(args.permissions, Some(Permissions::ReadOnly));
     assert_eq!(args.model.as_deref(), Some("m"));
@@ -26,7 +34,10 @@ fn the_network_is_a_choice_of_its_own_in_the_sandbox() {
         serve(&["--permissions", "full-access", "--no-network"]).is_ok(),
         "for the threads that choose a sandbox"
     );
-    assert!(serve(&["--sandbox", "off"]).is_err(), "part of the preset now");
+    assert!(
+        serve(&["--sandbox", "off"]).is_err(),
+        "part of the preset now"
+    );
 }
 
 #[test]
@@ -144,8 +155,14 @@ fn presets_parse() {
         assert_eq!(chosen.permissions, Some(preset));
     }
     let unknown = parse_words(&["--permissions", "auto"]).unwrap_err();
-    assert!(unknown.contains("read-only, workspace or full-access"), "{unknown}");
-    assert!(parse_words(&["--approval", "ask"]).is_err(), "part of the preset now");
+    assert!(
+        unknown.contains("read-only, workspace or full-access"),
+        "{unknown}"
+    );
+    assert!(
+        parse_words(&["--approval", "ask"]).is_err(),
+        "part of the preset now"
+    );
     assert!(
         parse_words(&["--yes", "hi"]).is_err(),
         "workspace is the default"

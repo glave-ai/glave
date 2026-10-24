@@ -129,10 +129,15 @@ fn an_organization_takes_the_network_and_only_glave_s_default_gives_way() {
         )),
         "{refused}"
     );
-    let unconfined = layers(flags(Permissions::FullAccess), ConfigFile::default(), vec![]);
+    let unconfined = layers(
+        flags(Permissions::FullAccess),
+        ConfigFile::default(),
+        vec![],
+    );
     let refused = settle(&unconfined, &off).unwrap_err().to_string();
     assert!(
-        refused.contains("permissions full-access") && refused.contains("[sandbox] network = false"),
+        refused.contains("permissions full-access")
+            && refused.contains("[sandbox] network = false"),
         "{refused}"
     );
     assert_eq!(
@@ -195,7 +200,9 @@ fn asking_for_the_network_is_allowed_unless_a_rule_forbids_it() {
 #[test]
 fn explain_says_when_the_sandbox_cannot_run_here_and_that_commands_ask() {
     let row = |text: &str| {
-        let line = text.lines().find(|line| line.trim_start().starts_with("permissions"));
+        let line = text
+            .lines()
+            .find(|line| line.trim_start().starts_with("permissions"));
         line.map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
     };
     let (text, runs) = explain(&unsandboxed(&[], &[]), None);
@@ -207,7 +214,11 @@ fn explain_says_when_the_sandbox_cannot_run_here_and_that_commands_ask() {
              change and command asks from default"
         )
     );
-    let full = layers(flags(Permissions::FullAccess), ConfigFile::default(), vec![]);
+    let full = layers(
+        flags(Permissions::FullAccess),
+        ConfigFile::default(),
+        vec![],
+    );
     let (text, _) = explain(&unsandboxed(&full, &[]), None);
     assert_eq!(
         row(&text).as_deref(),

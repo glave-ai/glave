@@ -6,11 +6,11 @@
 
 use std::path::Path;
 
+use Permissions::{FullAccess, ReadOnly, Workspace};
 use glave_event::{Body, ThreadId, decode};
 use glave_ports::Completion;
 use glave_session::Answering;
 use glave_session::protocol::{ApiError, Meta, Permissions, Reply, Request, code};
-use Permissions::{FullAccess, ReadOnly, Workspace};
 use serde_json::json;
 
 use crate::support::*;
@@ -110,9 +110,7 @@ async fn recorded(server: &Tested<Shared>, thread: ThreadId) -> Vec<String> {
     events
         .into_iter()
         .filter_map(|raw| match decode(raw).unwrap().body {
-            Body::PermissionsChosen(chosen) => {
-                Some(format!("chose {}", chosen.permissions.name()))
-            }
+            Body::PermissionsChosen(chosen) => Some(format!("chose {}", chosen.permissions.name())),
             Body::ApprovalRequested(_) => {
                 asked = true;
                 None
@@ -213,7 +211,9 @@ fn a_preset_the_policy_does_not_leave_is_refused_in_plain_words() {
         };
         assert!(threads.is_empty(), "no thread starts: {threads:?}");
         let thread = started(&server, None).await;
-        let refused = turn_in(&server, thread, Some(FullAccess)).await.unwrap_err();
+        let refused = turn_in(&server, thread, Some(FullAccess))
+            .await
+            .unwrap_err();
         assert_eq!(refused.code, code::NOT_ALLOWED);
         assert_eq!(recorded(&server, thread).await, Vec::<String>::new());
     });

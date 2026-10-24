@@ -4,8 +4,8 @@
 use std::sync::Arc;
 
 use glave_event::{
-    ApprovalDecided, ApprovalRequested, CallId, Lifted, Outcome, Principal,
-    ToolCallCompleted, Verdict,
+    ApprovalDecided, ApprovalRequested, CallId, Lifted, Outcome, Principal, ToolCallCompleted,
+    Verdict,
 };
 use glave_ports::settings::Judge;
 use glave_ports::{

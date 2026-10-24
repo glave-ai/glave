@@ -16,10 +16,10 @@ use glave_event::{
 use glave_harness::Goal;
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope, title_from};
 
+use crate::choice::Choice;
 use crate::held::{Slot, busy};
 use crate::leased::Repaired;
 use crate::ledger::Recorded;
-use crate::choice::Choice;
 use crate::protocol::{
     ApiError, Notification, Reply, TaskInfo, TaskKind, TaskStatus, TurnResult, code,
 };

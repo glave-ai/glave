@@ -14,9 +14,9 @@ use glave_harness::Goal;
 use glave_ports::{BlobStore, Caller, EventLog, Leased, ModelProvider, ProjectId, Scope};
 use jiff::Timestamp;
 
+use crate::choice::Choice;
 use crate::cron::Cron;
 use crate::ledger::Scheduled;
-use crate::choice::Choice;
 use crate::protocol::{ApiError, Reply, ScheduleInfo, code};
 use crate::server::Server;
 use crate::tasks::Work;

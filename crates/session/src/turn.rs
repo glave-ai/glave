@@ -10,10 +10,10 @@ use glave_harness::{Cancel, HarnessError, Live, Said, Thread, TurnSummary};
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 use tokio::sync::watch;
 
+use crate::choice::Choice;
 use crate::held::{Finish, Use, busy, finished};
 use crate::hub::Hub;
 use crate::keyed::Done;
-use crate::choice::Choice;
 use crate::protocol::{ApiError, IdempotencyKey, Notification, TurnResult, Update, code};
 use crate::server::{Ended, Inner, Server};
 use crate::steer::{Message, Queue, Sent};

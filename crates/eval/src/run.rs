@@ -9,8 +9,8 @@ use std::time::Instant;
 
 use glave_computer::LocalComputers;
 use glave_harness::{
-    Cancel, Change, DEFAULT_BUDGET, Goal, Harness, Live, NoOneToAsk, Parts, Settings,
-    Skills, Todo, Workspace, agents_md, change_standing, find_skills, skill_folders,
+    Cancel, Change, DEFAULT_BUDGET, Goal, Harness, Live, NoOneToAsk, Parts, Settings, Skills, Todo,
+    Workspace, agents_md, change_standing, find_skills, skill_folders,
 };
 use glave_memory::Tidier;
 use glave_ports::computer::{Sandbox, SandboxLevel};

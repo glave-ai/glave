@@ -62,7 +62,12 @@ mod tests {
     }
 
     fn chose(preset: Permissions, from: Source) -> impl FnOnce(&mut Choices) {
-        move |choices| choices.permissions = Chosen { value: preset, from }
+        move |choices| {
+            choices.permissions = Chosen {
+                value: preset,
+                from,
+            }
+        }
     }
 
     fn mine() -> Source {

@@ -9,8 +9,8 @@ use glave_harness::{Inbox, NotQueued, Queued, Said};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 use tokio::sync::watch;
 
-use crate::held::{Slot, busy};
 use crate::choice::Choice;
+use crate::held::{Slot, busy};
 use crate::protocol::{ApiError, AttachedFile, code};
 use crate::server::Server;
 use crate::turn::TurnStream;

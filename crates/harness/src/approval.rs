@@ -303,12 +303,21 @@ mod tests {
             }
             assert!(asks_for(Ask, Effect::Changes, confined));
             assert!(asks_for(Ask, Effect::Runs, confined));
-            assert!(asks_for(Look, Effect::Changes, confined), "changes ask in Read-only");
+            assert!(
+                asks_for(Look, Effect::Changes, confined),
+                "changes ask in Read-only"
+            );
             assert!(!asks_for(Auto, Effect::Changes, confined));
             assert!(!asks_for(Auto, Effect::Runs, confined));
         }
-        assert!(!asks_for(Look, Effect::Runs, true), "a command in the sandbox goes");
-        assert!(asks_for(Look, Effect::Runs, false), "any other tool that acts asks");
+        assert!(
+            !asks_for(Look, Effect::Runs, true),
+            "a command in the sandbox goes"
+        );
+        assert!(
+            asks_for(Look, Effect::Runs, false),
+            "any other tool that acts asks"
+        );
     }
 
     #[test]

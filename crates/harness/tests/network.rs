@@ -259,7 +259,10 @@ fn an_answer_given_before_the_network_was_taken_never_gives_a_command_the_networ
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     // Asked for its push, with the network on: nothing to let out then.
     let (tool, mut arguments) = connect(&base, "a.txt", &listener, true);
-    let command = format!("git push origin main; {}", arguments["command"].as_str().unwrap());
+    let command = format!(
+        "git push origin main; {}",
+        arguments["command"].as_str().unwrap()
+    );
     arguments["command"] = command.into();
     let answers = making(vec![(tool, arguments)]);
     block_on!(async {

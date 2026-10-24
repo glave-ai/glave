@@ -57,7 +57,11 @@ fn files_are_read_from_their_places_and_the_project_s_counts_once_trusted() {
     )
     .unwrap();
     let org = dir.join("policy.toml");
-    std::fs::write(&org, "version = 1\n[permissions]\nhighest = \"workspace\"\n").unwrap();
+    std::fs::write(
+        &org,
+        "version = 1\n[permissions]\nhighest = \"workspace\"\n",
+    )
+    .unwrap();
     let mut locations = Locations::here(&home, &project.join("src"));
     assert_eq!(locations.root, project);
     assert_eq!(locations.project, project.join(".glave/config.toml"));
@@ -77,7 +81,10 @@ fn files_are_read_from_their_places_and_the_project_s_counts_once_trusted() {
     let choices = loaded.settle().unwrap();
     assert_eq!(
         (choices.permissions.value, &choices.permissions.from),
-        (Permissions::ReadOnly, &Source::File(locations.project.clone())),
+        (
+            Permissions::ReadOnly,
+            &Source::File(locations.project.clone())
+        ),
         "nearer than the person's, and narrower"
     );
     assert_eq!(choices.model.map(|m| m.value).as_deref(), Some("mine"));
@@ -110,7 +117,10 @@ fn files_are_read_from_their_places_and_the_project_s_counts_once_trusted() {
     let choices = wider.settle().unwrap();
     assert_eq!(
         (choices.permissions.value, &choices.permissions.from),
-        (Permissions::ReadOnly, &Source::File(locations.person.clone()))
+        (
+            Permissions::ReadOnly,
+            &Source::File(locations.person.clone())
+        )
     );
     let trusted = load_all(&locations, Some(theirs(Permissions::FullAccess))).unwrap();
     let refused = trusted.settle().unwrap_err().to_string();

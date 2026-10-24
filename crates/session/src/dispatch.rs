@@ -6,9 +6,9 @@ use glave_harness::{Change, DEFAULT_BUDGET, Goal};
 use glave_ports::memories::Control;
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
+use crate::choice::Choice;
 use crate::credentials::NewCredential;
 use crate::lists::ListWatch;
-use crate::choice::Choice;
 use crate::protocol::{ApiError, QueuedMessage, Reply, Request, ServerInfo, code};
 use crate::providers::NewProvider;
 use crate::schedule::NewSchedule;

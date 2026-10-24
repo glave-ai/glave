@@ -45,7 +45,12 @@ fn a_command_runs_unasked_but_changes_nothing_and_a_change_asks_first() {
         );
         let mut thread = harness.start_thread(scope()).await.unwrap();
         harness
-            .run_turn(&mut thread, "look, then note it", &Cancel::new(), &mut |_| {})
+            .run_turn(
+                &mut thread,
+                "look, then note it",
+                &Cancel::new(),
+                &mut |_| {},
+            )
             .await
             .unwrap();
         let asked: Vec<String> = person.asked().iter().map(|a| a.tool.clone()).collect();
@@ -87,6 +92,9 @@ fn with_no_one_there_read_only_changes_nothing() {
             .iter()
             .filter(|event| matches!(event.body, Body::ApprovalDecided(_)))
             .count();
-        assert_eq!(declined, 1, "the change was declined, the command never asked");
+        assert_eq!(
+            declined, 1,
+            "the change was declined, the command never asked"
+        );
     });
 }

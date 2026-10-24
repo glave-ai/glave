@@ -227,8 +227,7 @@ fn as_started(start: &Choices, now: Choices) -> Choices {
 /// the most a sandbox here allows (`here`), with `glave_home`, glave's folder, protected in it.
 fn runs(setup: &Setup, here: Option<SandboxLevel>, glave_home: &Path) -> anyhow::Result<Runs> {
     let choices = &setup.choices;
-    let sandbox =
-        here.map(|level| crate::sandboxing::sandbox_at(level, choices, Some(glave_home)));
+    let sandbox = here.map(|level| crate::sandboxing::sandbox_at(level, choices, Some(glave_home)));
     Ok(Runs {
         defaults: Defaults {
             permissions: choices.permissions.value,

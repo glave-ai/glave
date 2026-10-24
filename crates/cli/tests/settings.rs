@@ -155,7 +155,11 @@ fn a_narrower_preset_asks_from_the_next_turn_and_a_running_turn_keeps_its_own() 
     let home = place.home.clone();
     let asked = turn_in(&mut served, &thread, |_| {
         // While the turn waits on the push, the person chooses to be asked first.
-        writing(&home, "m", &format!("{unjudged}permissions = \"read-only\"\n"));
+        writing(
+            &home,
+            "m",
+            &format!("{unjudged}permissions = \"read-only\"\n"),
+        );
         "allow_once"
     });
     assert_eq!(asked, 1, "only the push asked: the running turn kept auto");

@@ -40,7 +40,11 @@ fn undecided(project: &Project, record: &Record, rules: &Constraints) -> usize {
 #[test]
 fn a_repository_with_nothing_that_runs_commands_never_asks() {
     let dir = scratch("nothing");
-    let project = repository(&dir, "", Some("model = \"m\"\npermissions = \"read-only\"\n"));
+    let project = repository(
+        &dir,
+        "",
+        Some("model = \"m\"\npermissions = \"read-only\"\n"),
+    );
     let assessment = assess(project, &Record::default(), &Constraints::default());
     assert_eq!(assessment.items.len(), 0);
     let outcome = assessment.apply(Answer::NoOne);
@@ -70,7 +74,11 @@ fn settings_that_loosen_wait_for_trust_and_the_rest_apply_at_once() {
     assert_eq!(trusted.permissions, Some(Permissions::FullAccess));
     let workspace = repository(&dir, "", Some("permissions = \"workspace\"\n"));
     let assessment = assess(workspace, &Record::default(), &Constraints::default());
-    assert_eq!(assessment.items.len(), 0, "Workspace narrows or keeps: never asks");
+    assert_eq!(
+        assessment.items.len(),
+        0,
+        "Workspace narrows or keeps: never asks"
+    );
 }
 
 #[test]
@@ -216,7 +224,11 @@ fn an_app_is_shown_each_thing_in_plain_words_and_until_it_answers_they_stay_off(
 fn on_another_person_s_thread_every_server_and_setting_is_off_however_trusted() {
     let dir = scratch("all-off");
     let rules = Constraints::default();
-    let project = repository(&dir, DOCS, Some(&format!("permissions = \"full-access\"\n{GUARD}")));
+    let project = repository(
+        &dir,
+        DOCS,
+        Some(&format!("permissions = \"full-access\"\n{GUARD}")),
+    );
     let mut record = Record::default();
     let yes = assess(project.clone(), &record, &rules).apply(Answer::Yes);
     record.take(Record::deciding(&project, yes.decisions.unwrap()));
