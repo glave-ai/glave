@@ -55,11 +55,18 @@ jobs:
       GLAVE_TEST_WORKER_GLAVE: ${{ github.workspace }}/target/debug/glave
       GLAVE_TEST_WORKER_IMAGE: buildpack-deps:noble-scm@sha256:4163ac2c58660c533f3cf3d178551287ddd0ac18269ef84f3a382d0698c89254
     steps:
-      # Linking every test binary of the workspace fills the runner's disk (ld dies with a bus
-      # error), so the toolchains the runner ships and glave never uses go first (about 30 GB).
-      - name: Free disk space
+      # Linking every test binary of the workspace once filled a smaller runner's disk (ld died
+      # with a bus error). Today's runner starts with about 85 GB free and the build takes about
+      # 8, so the toolchains it ships that glave never uses (about 30 GB, and minutes to remove)
+      # go only when less than 40 GB is free, five times what the build needs.
+      - name: Free disk space, if the runner is short of it
         run: |
           df -h /
+          free="$(df -BG --output=avail / | awk 'NR == 2 { print int($1) }')"
+          if [ "$free" -ge 40 ]; then
+            echo "$free GB free, enough: nothing removed"
+            exit 0
+          fi
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium
           sudo docker image prune --all --force >/dev/null
           df -h /
@@ -302,11 +309,18 @@ jobs:
       GLAVE_TEST_WORKER_GLAVE: ${{ github.workspace }}/target/debug/glave
       GLAVE_TEST_WORKER_IMAGE: buildpack-deps:noble-scm@sha256:4163ac2c58660c533f3cf3d178551287ddd0ac18269ef84f3a382d0698c89254
     steps:
-      # Linking every test binary of the workspace fills the runner's disk (ld dies with a bus
-      # error), so the toolchains the runner ships and glave never uses go first (about 30 GB).
-      - name: Free disk space
+      # Linking every test binary of the workspace once filled a smaller runner's disk (ld died
+      # with a bus error). Today's runner starts with about 85 GB free and the build takes about
+      # 8, so the toolchains it ships that glave never uses (about 30 GB, and minutes to remove)
+      # go only when less than 40 GB is free, five times what the build needs.
+      - name: Free disk space, if the runner is short of it
         run: |
           df -h /
+          free="$(df -BG --output=avail / | awk 'NR == 2 { print int($1) }')"
+          if [ "$free" -ge 40 ]; then
+            echo "$free GB free, enough: nothing removed"
+            exit 0
+          fi
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium
           sudo docker image prune --all --force >/dev/null
           df -h /
@@ -354,11 +368,18 @@ jobs:
   sandbox-linux:
     runs-on: ubuntu-latest
     steps:
-      # Linking every test binary of the workspace fills the runner's disk (ld dies with a bus
-      # error), so the toolchains the runner ships and glave never uses go first (about 30 GB).
-      - name: Free disk space
+      # Linking every test binary of the workspace once filled a smaller runner's disk (ld died
+      # with a bus error). Today's runner starts with about 85 GB free and the build takes about
+      # 8, so the toolchains it ships that glave never uses (about 30 GB, and minutes to remove)
+      # go only when less than 40 GB is free, five times what the build needs.
+      - name: Free disk space, if the runner is short of it
         run: |
           df -h /
+          free="$(df -BG --output=avail / | awk 'NR == 2 { print int($1) }')"
+          if [ "$free" -ge 40 ]; then
+            echo "$free GB free, enough: nothing removed"
+            exit 0
+          fi
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium
           sudo docker image prune --all --force >/dev/null
           df -h /
