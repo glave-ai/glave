@@ -7,10 +7,11 @@ name: budgets
 # The binary's size and the answered command are measured on the build that ships: glave for
 # x86-64 Linux as the release builds it (dist-workspace.toml), static with musl, in the dist
 # profile, with the web app inside. The benchmark is built for musl too, so the thread it
-# resumes runs on musl's allocator, as a released glave's does. The optimized builds are what
-# cost (the release's, then the benchmark's, about 5 minutes each, which makes this the
-# slowest check); measuring takes seconds. The numbers are wall-clock, but the budgets have
-# room enough that a busy runner does not trip them; a real regression does.
+# resumes runs on musl's allocator, as a released glave's does. The two optimized builds are
+# what cost, about 5 minutes each, nearly all of it LTO, and on one runner they slow each other
+# down: so each has a runner of its own, at the same time, and a third measures, in seconds.
+# The numbers are wall-clock, and depend on the kind of machine the measuring job is given,
+# which it names.
 on:
   push:
     branches: [main]
@@ -34,7 +35,7 @@ env:
   TARGET: x86_64-unknown-linux-musl
 
 jobs:
-  measure:
+  release:
     if: github.event_name != 'pull_request'
     # The runner the release builds x86-64 Linux on (dist's plan), so its C compiler and musl.
     runs-on: ubuntu-22.04
@@ -51,8 +52,7 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q musl-tools
       # Saved from main only, as in ci.yml: per-PR copies would fill the repository's cache. Its
-      # key names the target: a cache saved under the old key, without these builds, would match
-      # exactly, and one that matches is never saved again.
+      # key names the target, and the job's name keeps this build's apart from the benchmark's.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: ${{ env.TARGET }}
@@ -72,10 +72,61 @@ jobs:
         run: cargo build --profile dist --target "$TARGET" -p glave --features web
         env:
           RUSTFLAGS: -Ctarget-feature=+crt-static -Clink-self-contained=yes
+      - uses: actions/upload-artifact@v7
+        with:
+          name: glave
+          path: target/${{ env.TARGET }}/dist/glave
+          if-no-files-found: error
+          retention-days: 1
+
+  benchmark:
+    if: github.event_name != 'pull_request'
+    # As the release's, so the same C compiler and musl.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the pinned toolchain (rust-toolchain.toml), with musl's standard library
+        run: |
+          rustup toolchain install
+          rustup target add "$TARGET"
+      - name: Install musl-gcc
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q musl-tools
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: ${{ env.TARGET }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Built, not run, through `cargo xtask bench`, and without the web app: what it measures
+      # in-process is the same either way, and the glave this build makes beside it, which the
+      # feature would change, is not the one measured.
+      - name: Build the benchmark
+        run: |
+          cargo xtask bench --bench budgets --target "$TARGET" --no-run \
+            --message-format=json-render-diagnostics > built.json
+          mkdir benchmark
+          cp "$(jq -r 'select(.target.name == "budgets" and .executable) | .executable' built.json)" benchmark/budgets
+      - uses: actions/upload-artifact@v7
+        with:
+          name: benchmark
+          path: benchmark/budgets
+          if-no-files-found: error
+          retention-days: 1
+
+  # On a runner nothing else uses, which is what `cargo xtask bench`'s lock is for elsewhere.
+  measure:
+    needs: [release, benchmark]
+    runs-on: ubuntu-22.04
+    steps:
+      # Each into a folder of its own name; the files lose their mode on the way.
+      - uses: actions/download-artifact@v8
       - name: Measure it
-        run: cargo xtask bench --bench budgets --features glave/web --target "$TARGET"
+        run: |
+          chmod +x glave/glave benchmark/budgets
+          echo "measured on $(nproc) cores of $(lscpu | sed -n 's/^Model name: *//p')"
+          benchmark/budgets
         env:
-          GLAVE_BUDGETS_BINARY: ${{ github.workspace }}/target/${{ env.TARGET }}/dist/glave
+          GLAVE_BUDGETS_BINARY: glave/glave
 
   # The check the ruleset requires: on a pull request it passes at once, and everywhere else
   # only when `measure` did.
