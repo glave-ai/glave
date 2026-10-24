@@ -23,6 +23,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use bytes::Bytes;
+use glave_ports::testing::{FakeAuthServer, Grant};
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt as _, Full};
 use hyper::service::Service as _;
@@ -37,7 +38,6 @@ use rmcp::model::{
 use rmcp::service::{RequestContext, RoleServer, SubscriptionContext, SubscriptionSink};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
-use glave_ports::testing::{FakeAuthServer, Grant};
 use rmcp::{ErrorData, ServerHandler, ServiceExt as _};
 use serde_json::json;
 
