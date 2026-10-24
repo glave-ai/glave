@@ -1,9 +1,11 @@
 //! A fake HTTP server for tests of clients that call a cloud: it answers each request with the
-//! next of its answers, one connection each, and records what it was asked.
+//! next of its answers, or with the same one until it is done, one connection each, and records
+//! what it was asked.
 
 use std::collections::BTreeMap;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
 
@@ -26,6 +28,8 @@ pub struct FakeHttp {
     pub host: String,
     received: Arc<Mutex<Vec<Received>>>,
     thread: Option<JoinHandle<()>>,
+    /// Set to stop one that answers until it is done.
+    stop: Option<Arc<AtomicBool>>,
 }
 
 impl FakeHttp {
@@ -51,15 +55,65 @@ impl FakeHttp {
             host,
             received,
             thread: Some(thread),
+            stop: None,
         })
     }
 
-    /// Every request, once all the answers have been given.
+    /// Starts answering every request with `status` and the JSON `body`, until its requests are
+    /// asked for or it is dropped.
+    pub fn always(status: u16, body: &str) -> io::Result<Self> {
+        let listener = TcpListener::bind("127.0.0.1:0")?;
+        let host = listener.local_addr()?.to_string();
+        let received = Arc::new(Mutex::new(Vec::new()));
+        let stop = Arc::new(AtomicBool::new(false));
+        let (log, stopping, body) = (Arc::clone(&received), Arc::clone(&stop), body.to_owned());
+        let thread = std::thread::spawn(move || {
+            loop {
+                let answered = answer(&listener, status, &body);
+                if stopping.load(Ordering::SeqCst) {
+                    return;
+                }
+                if let Ok(request) = answered {
+                    log.lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .push(request);
+                }
+            }
+        });
+        Ok(Self {
+            url: format!("http://{host}"),
+            host,
+            received,
+            thread: Some(thread),
+            stop: Some(stop),
+        })
+    }
+
+    /// Every request, once all the answers have been given, or one that answers until it is
+    /// done has stopped.
     pub fn received(mut self) -> Vec<Received> {
+        self.finish();
+        std::mem::take(&mut *self.received.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+
+    /// Waits for its answers to end, stopping one that answers until it is done.
+    fn finish(&mut self) {
+        if let Some(stop) = &self.stop {
+            stop.store(true, Ordering::SeqCst);
+            // Wakes the thread blocked in accept, so it sees the stop.
+            let _ = TcpStream::connect(&self.host);
+        }
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
-        std::mem::take(&mut *self.received.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+}
+
+impl Drop for FakeHttp {
+    fn drop(&mut self) {
+        if self.stop.is_some() {
+            self.finish();
+        }
     }
 }
 
@@ -76,7 +130,8 @@ fn answer(listener: &TcpListener, status: u16, body: &str) -> io::Result<Receive
     Ok(request)
 }
 
-fn read(stream: &TcpStream) -> io::Result<Received> {
+/// The request on `stream`: its line, headers and body.
+pub(super) fn read(stream: &TcpStream) -> io::Result<Received> {
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut line = String::new();
     reader.read_line(&mut line)?;

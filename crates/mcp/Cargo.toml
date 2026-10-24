@@ -28,6 +28,8 @@ glave-process.workspace = true
 # Header types for rmcp's HTTP transport, which does not re-export them.
 http.workspace = true
 rmcp = { workspace = true, features = [
+    # Signing in to remote servers as MCP's authorization says (`signin.rs`).
+    "auth",
     "client",
     "reqwest",
     "transport-async-rw",
@@ -38,13 +40,17 @@ reqwest.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "time"] }
-# Only for the test server.
+# Only for the test server: its HTTP, and what it answers when it asks for a sign-in.
+bytes = { workspace = true, optional = true }
+http-body-util = { workspace = true, optional = true }
 hyper = { workspace = true, optional = true, features = ["http1", "server"] }
 hyper-util = { workspace = true, optional = true, features = ["service", "tokio"] }
 
 [features]
 # A small MCP server on stdio, for tests in this and other crates.
 test-server = [
+    "dep:bytes",
+    "dep:http-body-util",
     "dep:hyper",
     "dep:hyper-util",
     "rmcp/server",

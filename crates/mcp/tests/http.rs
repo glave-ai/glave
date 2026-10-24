@@ -15,15 +15,21 @@ use glave_ports::{NeverCancelled, ToolOutput, ToolSource as _, conformance};
 use serde_json::json;
 
 /// The test server serving HTTP, killed when this is dropped.
-struct Served {
+pub(crate) struct Served {
     _running: Running,
-    url: String,
+    pub(crate) url: String,
 }
 
 impl Served {
     fn start() -> Self {
+        Self::with(&[])
+    }
+
+    /// The test server serving HTTP with `args` besides.
+    pub(crate) fn with(args: &[&str]) -> Self {
         let child = Command::new(env!("CARGO_BIN_EXE_glave-mcp-test-server"))
             .arg("--http")
+            .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .spawn()
