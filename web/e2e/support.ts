@@ -153,6 +153,26 @@ export async function readIn(page: Page, language: string): Promise<void> {
 }
 
 /**
+ * A second tab of the browser `from` is in, opened from it on a blank page, for a test to go to
+ * a page of glave in, beside the first. Opened from a page of glave, it starts in that page's
+ * origin and its browsing context group, which `Cross-Origin-Opener-Policy: same-origin` (glave
+ * sends it) keeps it in, so its load needs no new process. A tab of its own
+ * (`context.newPage()`) starts on a page of no origin, and its first load of glave moves to a
+ * new process; Linux WebKit at times cancels that load and never commits it, so `goto` waits
+ * until the test's time runs out (WebKit bug 325840, microsoft/playwright#42957), most often
+ * for a second tab beside a page that has just loaded.
+ */
+export async function newTab(from: Page): Promise<Page> {
+  const [tab] = await Promise.all([
+    from.waitForEvent('popup'),
+    from.evaluate(() => {
+      window.open('about:blank');
+    }),
+  ]);
+  return tab;
+}
+
+/**
  * The file of the app's build, as glave serves it, whose code `holds` picks out, such as the
  * chunk with a part the app loads late, for a test to hold on its way. Fails when none does.
  */
