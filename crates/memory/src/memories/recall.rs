@@ -260,7 +260,7 @@ fn shared(text: &str, wanted: &BTreeSet<String>) -> usize {
 
 /// The part of `text` around the first word in `wanted`, on one line, at most
 /// [`SNIPPET_CHARS`], with `…` where it was cut.
-pub(crate) fn snippet(text: &str, wanted: &BTreeSet<String>) -> String {
+fn snippet(text: &str, wanted: &BTreeSet<String>) -> String {
     let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
     let mut first = 0;
     let mut start = None;

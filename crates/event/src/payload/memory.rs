@@ -35,7 +35,7 @@ pub(crate) const TIDIED: &str = "memory.tidied";
 pub enum MemoryScope {
     /// About the person: read in their threads, in projects that allow it.
     Personal,
-    /// About the project's work, and the person's own as well: read only in its threads.
+    /// About the project's work, in a project that is the person's own: read only in its threads.
     Project,
 }
 

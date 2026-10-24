@@ -126,7 +126,7 @@ pub async fn search<L: EventLog>(log: &L) -> Verdict {
         find(here, "favourite flower marigold", 10)
             .await?
             .is_empty(),
-        "a search must never find a memory tool's result, as it does any other tool's",
+        "a search must never find a memory tool's result, unlike any other tool's",
     )?;
     ensure(
         find(here, "make db first postgres", 10).await? == [at(first, 1)?, at(second, 1)?],

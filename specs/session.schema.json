@@ -623,7 +623,7 @@
         },
         {
           "const": "project",
-          "description": "About the project's work, and the person's own as well: read only in its threads.",
+          "description": "About the project's work, in a project that is the person's own: read only in its threads.",
           "type": "string"
         }
       ]

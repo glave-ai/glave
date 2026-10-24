@@ -39,7 +39,7 @@ pub(crate) struct MemoryState {
     pub(crate) known: BTreeMap<MemoryId, Remembered>,
     /// The contradictions the model was told to ask the person about.
     pub(crate) questions: Vec<[MemoryId; 2]>,
-    /// What the memory call being recorded changed, for its `tool.call.completed`.
+    /// What the memory call being recorded records in its `tool.call.completed` ([`recorded`]).
     pub(crate) structured: Option<serde_json::Value>,
 }
 
@@ -95,25 +95,26 @@ pub(crate) fn among(questions: &[[MemoryId; 2]], memories: &[Remembered]) -> Vec
 /// from memory ([`FROM_MEMORY`]), so search never indexes it, and what it changed, as ids and
 /// versions only.
 pub(crate) fn recorded(change: Option<&Change>) -> serde_json::Value {
-    match change {
+    let mut recorded = match change {
         Some(Change::Saved { memory, replaced }) => serde_json::json!({
-            FROM_MEMORY: true,
             "memory": memory.memory,
             "version": memory.version,
             "replaced": replaced,
         }),
         Some(Change::Edited(memory)) => serde_json::json!({
-            FROM_MEMORY: true,
             "memory": memory.memory,
             "version": memory.version,
         }),
         Some(Change::Forgotten(memory)) => serde_json::json!({
-            FROM_MEMORY: true,
             "memory": memory,
             "forgotten": true,
         }),
-        None => serde_json::json!({ FROM_MEMORY: true }),
+        None => serde_json::json!({}),
+    };
+    if let Some(fields) = recorded.as_object_mut() {
+        fields.insert(FROM_MEMORY.to_owned(), true.into());
     }
+    recorded
 }
 
 /// `messages` with memory laid over them, as the model is sent them.
