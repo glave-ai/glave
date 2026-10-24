@@ -1,11 +1,11 @@
-//! The projects port: each project as a record (a project, or a person's own), who owns it and who
-//! else works in it, and which folders lead to it (`specs/storage.md`, "Projects"). A folder is
-//! an index into projects, never a project's identity: a moved or re-cloned project finds its project
-//! again by its `origin` remote.
+//! The projects port: each project as a record (a project, or a person's own), who owns it, and
+//! which folders lead to it (`specs/storage.md`, "Projects"). A folder is an index into projects,
+//! never a project's identity: a moved or re-cloned project finds its project again by its
+//! `origin` remote.
 
 use std::fmt;
 
-use glave_event::{At, Principal, PrincipalId};
+use glave_event::{At, Principal};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -19,7 +19,7 @@ pub const MAX_NAME: usize = 200;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectKind {
-    /// A project: the work of its owner and members, usually tied to folders.
+    /// A project: its owner's work, usually tied to a folder.
     Project,
     /// A person's own project: their one-off chats and their personal memory. Each
     /// person has exactly one in each organization.
@@ -49,11 +49,8 @@ pub struct Project {
     pub id: ProjectId,
     pub kind: ProjectKind,
     pub name: String,
-    /// Whose it is: a person, or later a team or an agent.
+    /// Whose it is: a person, or later a team or an agent. Only they work in it.
     pub owner: Principal,
-    /// Who else works in it.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub members: Vec<Principal>,
     pub created_at: At,
     pub updated_at: At,
     /// How many times the record was updated since it was kept. An update names the revision
@@ -64,21 +61,11 @@ pub struct Project {
 }
 
 impl Project {
-    /// Whether `principal` works in this project: its owner or one of its members.
-    pub fn admits(&self, principal: &Principal) -> bool {
-        self.owner == *principal || self.members.contains(principal)
-    }
-
-    /// Whether the person `person` works in this project.
-    pub fn admits_person(&self, person: PrincipalId) -> bool {
-        self.admits(&Principal::person(person))
-    }
-
     /// Refuses a name no one could read: empty, or longer than [`MAX_NAME`] characters.
     pub fn check_name(name: &str) -> Result<(), ProjectError> {
         if name.trim().is_empty() || name.chars().count() > MAX_NAME {
             return Err(ProjectError::Invalid(format!(
-                "a space's name is 1 to {MAX_NAME} characters, not only spaces"
+                "a project's name is 1 to {MAX_NAME} characters, not only spaces"
             )));
         }
         Ok(())
@@ -210,16 +197,15 @@ pub trait Projects: Send + Sync {
         project: ProjectId,
     ) -> BoxFuture<'_, Result<Option<Project>, ProjectError>>;
 
-    /// The projects `member` owns or is a member of, in id order (oldest first, for UUID v7
-    /// ids), at most `limit`.
+    /// The projects `owner` owns, in id order (oldest first, for UUID v7 ids), at most `limit`.
     fn list<'a>(
         &'a self,
         org: OrgId,
-        member: &'a Principal,
+        owner: &'a Principal,
         limit: usize,
     ) -> BoxFuture<'a, Result<Vec<Project>, ProjectError>>;
 
-    /// Replaces the project's name, members and `updated_at` with `project`'s, if its revision
+    /// Replaces the project's name and `updated_at` with `project`'s, if its revision
     /// is still `project.revision`, and answers it as kept, its revision one more. Its kind,
     /// owner and creation never change. Refused with [`ProjectError::Changed`] when another
     /// update came first, and a name another of its owner's projects has with

@@ -47,6 +47,12 @@ impl Authenticator {
         })
     }
 
+    /// Its answers come from the page at `origin` from now on, as when another page asks it
+    /// for the same passkey.
+    pub fn on_page(&mut self, origin: &str) {
+        origin.clone_into(&mut self.origin);
+    }
+
     /// The answer to `options`, the options to make a passkey (`{"publicKey": …}`): a new
     /// credential, as `navigator.credentials.create` gives it.
     pub fn create(&mut self, options: &Value) -> Result<Value, Unspecified> {

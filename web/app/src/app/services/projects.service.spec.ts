@@ -173,15 +173,16 @@ describe('ProjectsService', () => {
   });
 
   it('throws a rename the server refused', async () => {
-    const fake = new FakeSession()
-      .answer('project/list', { projects: [] })
-      .answer(
-        'project/rename',
-        new ApiError({ code: ErrorCode.NOT_ALLOWED, message: 'only its owner renames it' }),
-      );
+    const fake = new FakeSession().answer('project/list', { projects: [] }).answer(
+      'project/rename',
+      new ApiError({
+        code: ErrorCode.INVALID_PARAMS,
+        message: 'there is a project called "glave" already; choose another name',
+      }),
+    );
     TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
     const projects = TestBed.inject(ProjectsService);
-    await expect(projects.rename('p1', 'x')).rejects.toThrow('only its owner renames it');
+    await expect(projects.rename('p1', 'x')).rejects.toThrow('choose another name');
     expect(fake.paramsOf('project/list')).toHaveLength(0);
   });
 

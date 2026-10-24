@@ -576,7 +576,7 @@
         },
         {
           "const": "project",
-          "description": "About the project's work: read by every member and agent working in it.",
+          "description": "About the project's work: read in its threads.",
           "type": "string"
         }
       ]
@@ -906,19 +906,12 @@
         "kind": {
           "$ref": "#/$defs/ProjectKind"
         },
-        "members": {
-          "description": "Who else works in it.",
-          "items": {
-            "$ref": "#/$defs/Principal"
-          },
-          "type": "array"
-        },
         "name": {
           "type": "string"
         },
         "owner": {
           "$ref": "#/$defs/Principal",
-          "description": "Whose it is: a person, or later a team or an agent."
+          "description": "Whose it is: a person, or later a team or an agent. Only they work in it."
         },
         "updated_at": {
           "$ref": "#/$defs/At"
@@ -951,7 +944,7 @@
       "type": "object"
     },
     "ProjectId": {
-      "description": "Identifies a project: the boundary for memory, history, files, members and policy.",
+      "description": "Identifies a project: the boundary for memory, history, files and policy.",
       "format": "uuid",
       "type": "string"
     },
@@ -960,7 +953,7 @@
       "oneOf": [
         {
           "const": "project",
-          "description": "A project: the work of its owner and members, usually tied to folders.",
+          "description": "A project: its owner's work, usually tied to a folder.",
           "type": "string"
         },
         {
@@ -1311,6 +1304,13 @@
           },
           "type": "array"
         },
+        "here": {
+          "description": "Where a browser on this computer makes and signs in with passkeys, when the server\nmakes them here rather than at a public origin: `http://localhost:<port>`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "id": {
           "description": "The server's id, where it signs browsers in: the same across restarts, and the one a\nbrowser's session must name before the browser presents it.",
           "type": [
@@ -1336,7 +1336,7 @@
           "type": "array"
         },
         "signin": {
-          "description": "How a browser signs in to it; none where no browser does, as over stdio.",
+          "description": "How a browser signs in to it; none where no browser does, as over stdio. A passkey: at a\npublic origin always, a setup link making the first; on this computer once one is made.",
           "items": {
             "$ref": "#/$defs/SignInWay"
           },
@@ -1386,7 +1386,7 @@
         },
         {
           "const": "passkey",
-          "description": "A passkey, at the server's public origin; a setup link from glave on its computer makes\nthe first.",
+          "description": "A passkey: at the server's public origin, where a setup link from glave on its computer\nmakes the first; or on this computer, once a browser signed in by glave's link made one.",
           "type": "string"
         }
       ]
@@ -3398,12 +3398,6 @@
               }
             ]
           },
-          "members": {
-            "items": {
-              "$ref": "#/$defs/Principal"
-            },
-            "type": "array"
-          },
           "name": {
             "type": "string"
           }
@@ -4266,7 +4260,7 @@
                 "type": "null"
               }
             ],
-            "description": "The project whose threads to follow: every project the caller works in when absent."
+            "description": "The project whose threads to follow: every project the caller owns when absent."
           }
         },
         "type": "object"

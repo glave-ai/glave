@@ -40,8 +40,8 @@ where
     B: BlobStore + 'static,
 {
     /// Answers `request` from `caller`, the person the transport verified. A request on a
-    /// thread, or on the server's memory, is refused with `-32012` unless the caller works in
-    /// that project; tasks and schedules are those of the projects they work in.
+    /// thread, or on the server's memory, is refused with `-32012` unless the caller owns that
+    /// project; tasks and schedules are those of the projects they own.
     pub async fn call(&self, caller: &Caller, request: Request) -> Answered {
         let span = crate::trace::span(&request);
         tracing::Instrument::instrument(self.answer(caller, request), span).await
@@ -116,6 +116,7 @@ where
                     approvals: self.modes(),
                     id: self.server_id(),
                     origin: self.inner.origin.as_ref().map(ToString::to_string),
+                    here: self.passkeys_here(),
                     signin: self.signin_ways(),
                 }))
             }
@@ -216,12 +217,9 @@ where
                     Err(refused) => Answered::Reply(Err(refused)),
                 };
             }
-            // Only for a project the caller works in, as watching it is.
+            // Only for a project the caller owns, as watching it is.
             Request::ThreadListUnwatch { project } => match project {
-                Some(project) => self
-                    .member_of(caller, project)
-                    .await
-                    .map(|_| Reply::Done {}),
+                Some(project) => self.owned(caller, project).await.map(|_| Reply::Done {}),
                 None => Ok(Reply::Done {}),
             },
             Request::ThreadCompact { thread } => self.compact(thread).await,
@@ -371,11 +369,9 @@ where
             Request::ProjectList { limit } => self.list_projects(caller, limit).await,
             Request::ProjectGet { project } => self.get_project(caller, project).await,
             Request::ProjectFind { path } => self.find_project(caller, &path).await,
-            Request::ProjectCreate {
-                name,
-                members,
-                folder,
-            } => self.create_project(caller, name, members, folder).await,
+            Request::ProjectCreate { name, folder } => {
+                self.create_project(caller, name, folder).await
+            }
             Request::ProjectRename { project, name } => {
                 self.rename_project(caller, project, name).await
             }

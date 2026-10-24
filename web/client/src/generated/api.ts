@@ -316,10 +316,8 @@ export type Project = {
   readonly created_at: At;
   readonly id: ProjectId;
   readonly kind: ProjectKind;
-  /** Who else works in it. */
-  readonly members?: readonly (Principal)[];
   readonly name: string;
-  /** Whose it is: a person, or later a team or an agent. */
+  /** Whose it is: a person, or later a team or an agent. Only they work in it. */
   readonly owner: Principal;
   readonly updated_at: At;
 };
@@ -330,7 +328,7 @@ export type ProjectFolder = {
   readonly source: FolderSource;
 };
 
-/** Identifies a project: the boundary for memory, history, files, members and policy. */
+/** Identifies a project: the boundary for memory, history, files and policy. */
 export type ProjectId = string;
 
 /** What a project is. */
@@ -473,6 +471,11 @@ export type ServerInfo = {
    */
   readonly approvals: readonly (ApprovalMode)[];
   /**
+   * Where a browser on this computer makes and signs in with passkeys, when the server
+   * makes them here rather than at a public origin: `http://localhost:<port>`.
+   */
+  readonly here?: string | null;
+  /**
    * The server's id, where it signs browsers in: the same across restarts, and the one a
    * browser's session must name before the browser presents it.
    */
@@ -482,7 +485,10 @@ export type ServerInfo = {
   readonly origin?: string | null;
   /** The protocol versions spoken. */
   readonly protocols: readonly (string)[];
-  /** How a browser signs in to it; none where no browser does, as over stdio. */
+  /**
+   * How a browser signs in to it; none where no browser does, as over stdio. A passkey: at a
+   * public origin always, a setup link making the first; on this computer once one is made.
+   */
   readonly signin?: readonly (SignInWay)[];
   readonly version: string;
 };
@@ -1086,7 +1092,6 @@ export type PasskeyRemoveResult = Readonly<Record<string, never>>;
 
 export type ProjectCreateParams = {
   readonly folder?: NewFolder | null;
-  readonly members?: readonly (Principal)[];
   readonly name: string;
 };
 
@@ -1357,7 +1362,7 @@ export type ThreadListWatchParams = {
    * read from the threads view, oldest first. Only what changes from now when absent.
    */
   readonly after?: At | null;
-  /** The project whose threads to follow: every project the caller works in when absent. */
+  /** The project whose threads to follow: every project the caller owns when absent. */
   readonly project?: ProjectId | null;
 };
 

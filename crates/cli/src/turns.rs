@@ -159,7 +159,6 @@ async fn made(session: Session<'_>, root: &Path) -> anyhow::Result<ProjectId> {
         .map_or_else(|| path.clone(), |name| name.to_string_lossy().into_owned());
     let created = Request::ProjectCreate {
         name,
-        members: Vec::new(),
         folder: Some(NewFolder::Path { path }),
     };
     match session.request(created).await? {

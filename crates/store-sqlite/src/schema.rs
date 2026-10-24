@@ -8,7 +8,7 @@ use crate::store::StoreError;
 
 /// The schema this build makes and reads. Bumped whenever [`SCHEMA`] changes. It starts past
 /// every version the migrations it replaced wrote, so a file one of them made is refused.
-pub(crate) const VERSION: u32 = 15;
+pub(crate) const VERSION: u32 = 16;
 
 /// Every table, made in one transaction in a new file.
 const SCHEMA: &str = "
@@ -79,9 +79,9 @@ const SCHEMA: &str = "
         PRIMARY KEY (org, project)
     ) STRICT;
 
-    -- Projects as records: a kind, a name, an owner (a principal as JSON), members in order,
-    -- and times; one personal project per person; and the folder keys (`path:<path>` or
-    -- `remote:<url>`) that lead to them.
+    -- Projects as records: a kind, a name, an owner (a principal as JSON) and times; one
+    -- personal project per person; and the folder keys (`path:<path>` or `remote:<url>`) that
+    -- lead to them.
     CREATE TABLE project_records (
         org         TEXT NOT NULL,
         id          TEXT NOT NULL,
@@ -97,16 +97,6 @@ const SCHEMA: &str = "
 
     CREATE UNIQUE INDEX one_personal_project ON project_records (org, owner)
         WHERE kind = 'personal';
-
-    CREATE TABLE project_members (
-        org       TEXT    NOT NULL,
-        project   TEXT    NOT NULL,
-        position  INTEGER NOT NULL,
-        member    TEXT    NOT NULL,
-        PRIMARY KEY (org, project, position)
-    ) STRICT;
-
-    CREATE INDEX project_members_by_member ON project_members (org, member);
 
     CREATE TABLE project_folders (
         org      TEXT NOT NULL,

@@ -42,14 +42,14 @@ impl InMemoryProjects {
     fn list_now(
         &self,
         org: OrgId,
-        member: &Principal,
+        owner: &Principal,
         limit: usize,
     ) -> Result<Vec<Project>, ProjectError> {
         let held = self.held()?;
         Ok(held
             .projects
             .iter()
-            .filter(|((owner, _), project)| *owner == org && project.admits(member))
+            .filter(|((at, _), project)| *at == org && project.owner == *owner)
             .map(|(_, project)| project.clone())
             .take(limit)
             .collect())
@@ -76,7 +76,6 @@ impl InMemoryProjects {
             .get_mut(&(org, project.id))
             .ok_or(ProjectError::NotFound(project.id))?;
         kept.name.clone_from(&project.name);
-        kept.members.clone_from(&project.members);
         kept.updated_at = project.updated_at;
         kept.revision = kept.revision.saturating_add(1);
         Ok(kept.clone())
@@ -206,10 +205,10 @@ impl Projects for InMemoryProjects {
     fn list<'a>(
         &'a self,
         org: OrgId,
-        member: &'a Principal,
+        owner: &'a Principal,
         limit: usize,
     ) -> BoxFuture<'a, Result<Vec<Project>, ProjectError>> {
-        Box::pin(std::future::ready(self.list_now(org, member, limit)))
+        Box::pin(std::future::ready(self.list_now(org, owner, limit)))
     }
 
     fn update<'a>(

@@ -1,14 +1,14 @@
 //! What a project chooses for its threads (`specs/one-server.md`, "Each project's own tools,
-//! hooks and settings"): its model and its worktrees reach the person's threads in it, never
-//! a thread of someone signed in from elsewhere.
+//! hooks and settings"): its model and its worktrees reach the threads of the person glave
+//! works for, never another person's, even in a project of their own with a folder here.
 
 use std::path::Path;
 use std::sync::Arc;
 
-use glave_event::{Opened, Principal, ThreadId};
+use glave_event::{Opened, ThreadId};
 use glave_harness::{Brought, ProjectFolders, Settled};
 use glave_ports::{BoxFuture, Caller, InMemoryLog, ProjectId};
-use glave_session::protocol::{ModelInfo, Reply, Request};
+use glave_session::protocol::{ModelInfo, NewFolder, Reply, Request};
 use glave_session::signin::person;
 
 use crate::support::*;
@@ -80,22 +80,9 @@ fn a_project_s_choices_reach_the_person_s_threads_in_it_never_another_s() {
         let mut setup = Setup::new(answers);
         setup.project_folders = Some(Arc::new(Chooses));
         setup.models = vec![ModelInfo::new("project-model")];
-        let (server, seen, _, _dir) = setup
+        let (server, seen, _, dir) = setup
             .build_in_repository("choices-project", InMemoryLog::new())
             .await;
-        let grace = person("https://id.example.com", "grace").unwrap();
-        let mut home = server
-            .projects()
-            .get(scope().org(), scope().project())
-            .await
-            .unwrap()
-            .unwrap();
-        home.members.push(Principal::person(grace));
-        server
-            .projects()
-            .update(scope().org(), &home)
-            .await
-            .unwrap();
 
         let here = Caller::default();
         let ours = start_as(&server, &here, scope().project()).await;
@@ -107,12 +94,27 @@ fn a_project_s_choices_reach_the_person_s_threads_in_it_never_another_s() {
         turn(&server, ours, "hi").await.unwrap();
         assert_eq!(sent_to(&seen, 0), "project-model");
 
+        // Another person, as a host embedding the server may call for her, in a project of her
+        // own whose folder chooses the same: glave's own transports act as the person here, so
+        // this is the guard, kept.
         let elsewhere = Caller {
-            person: Some(grace),
+            person: Some(person("https://id.example.com", "grace").unwrap()),
             ..Caller::default()
         };
-        let theirs = start_as(&server, &elsewhere, scope().project()).await;
-        let (place, _) = opened(&server, theirs).await;
+        let garden = dir.join("garden");
+        std::fs::create_dir_all(&garden).unwrap();
+        let made = Request::ProjectCreate {
+            name: "Hers".into(),
+            folder: Some(NewFolder::Path {
+                path: garden.to_string_lossy().into_owned(),
+            }),
+        };
+        let Reply::Project { project, .. } = server.request_as(&elsewhere, made).await.unwrap()
+        else {
+            panic!("a project");
+        };
+        let theirs = start_as(&server, &elsewhere, project.id).await;
+        let (place, _) = opened_as(&server, &elsewhere, theirs).await;
         assert!(
             matches!(place, Opened::Folder { .. }),
             "none of it: {place:?}"

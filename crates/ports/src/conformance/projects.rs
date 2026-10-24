@@ -28,7 +28,6 @@ pub(super) fn record(n: u64, kind: ProjectKind, owner: &Principal) -> Result<Pro
         kind,
         name: format!("project {n}"),
         owner: owner.clone(),
-        members: Vec::new(),
         created_at: created,
         updated_at: created,
         revision: 0,
@@ -49,8 +48,7 @@ pub async fn projects(store: &dyn Projects) -> Verdict {
     let other_org = OrgId::from_uuid(uuid_v7(1_102));
     let (ada, grace, linus) = (person(1)?, person(2)?, person(3)?);
 
-    let mut project = record(1, ProjectKind::Project, &ada)?;
-    project.members = vec![grace.clone()];
+    let project = record(1, ProjectKind::Project, &ada)?;
     ensure(
         store.get(org, project.id).await.map_err(failed)?.is_none(),
         "a project never kept must read as none",
@@ -75,9 +73,9 @@ pub async fn projects(store: &dyn Projects) -> Verdict {
     ensure(
         matches!(
             store.create(org, &nameless).await,
-            Err(ProjectError::Invalid(_))
+            Err(ProjectError::Invalid(said)) if said.starts_with("a project's name")
         ),
-        "a name of only spaces must be refused",
+        "a name of only spaces must be refused, saying what a project's name may be",
     )?;
     ensure(
         store
@@ -87,7 +85,7 @@ pub async fn projects(store: &dyn Projects) -> Verdict {
             .is_none(),
         "another organization must not see the project",
     )?;
-    listing(store, org, other_org, &project, [&ada, &grace, &linus]).await?;
+    listing(store, org, other_org, &project, [&ada, &grace]).await?;
     updating(store, org, &project, &linus).await?;
     personal(store, org, other_org, &ada).await?;
     folders(store, org, other_org, &ada).await?;
@@ -162,7 +160,7 @@ async fn listing(
     org: OrgId,
     other_org: OrgId,
     project: &Project,
-    [ada, grace, linus]: [&Principal; 3],
+    [ada, grace]: [&Principal; 2],
 ) -> Verdict {
     let later = record(3, ProjectKind::Project, ada)?;
     store.create(org, &later).await.map_err(failed)?;
@@ -176,12 +174,8 @@ async fn listing(
         "a listing must keep to its limit",
     )?;
     ensure(
-        ids(store.list(org, grace, 10).await.map_err(failed)?) == [project.id],
-        "a member must see the projects they are a member of",
-    )?;
-    ensure(
-        store.list(org, linus, 10).await.map_err(failed)?.is_empty(),
-        "someone neither owner nor member must see no project",
+        store.list(org, grace, 10).await.map_err(failed)?.is_empty(),
+        "someone else must see none of the owner's projects",
     )?;
     ensure(
         store
@@ -201,7 +195,6 @@ async fn updating(
 ) -> Verdict {
     let mut changed = project.clone();
     changed.name = "renamed".into();
-    changed.members = vec![linus.clone(), project.owner.clone()];
     changed.updated_at = at("2026-10-12T09:00:00.000Z")?;
     let mut tampered = changed.clone();
     tampered.kind = ProjectKind::Personal;
@@ -211,7 +204,7 @@ async fn updating(
     changed.revision = 1;
     ensure(
         kept == changed && store.get(org, project.id).await.map_err(failed)? == Some(kept),
-        "an update must change the name, members and updated_at, count a revision, and nothing else",
+        "an update must change the name and updated_at, count a revision, and nothing else",
     )?;
     ensure(
         matches!(
@@ -226,8 +219,8 @@ async fn updating(
             .await
             .map_err(failed)?
             .iter()
-            .any(|listed| listed.id == project.id),
-        "a member added by an update must see the project",
+            .all(|listed| listed.id != project.id),
+        "an update must not hand the project to another owner",
     )?;
     let missing = record(9, ProjectKind::Project, linus)?;
     ensure(

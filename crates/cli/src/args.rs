@@ -37,20 +37,20 @@ Usage:
                                 run glave for you in the foreground, as a service or a
                                 container does: one per GLAVE_HOME (a second one exits),
                                 on the Unix socket GLAVE_HOME/run/server.sock and over
-                                HTTP, on 127.0.0.1:4180 (any free port when that is taken)
-                                unless --http says where. A browser on this computer signs
-                                in by a link glave prints or opens, good once for five
-                                minutes, and stays signed in; programs here use the token
-                                in GLAVE_HOME/serve.token, made at every start. Reached
-                                from elsewhere, at origin or domain under [serve] in
-                                config.toml, a browser there signs in with a passkey: the
-                                first made through a link glave server link prints here.
-                                With --issuer and --audience, clients elsewhere sign in
-                                with an OIDC access token from that issuer for that
-                                audience. The address is host:port, or a port on
-                                127.0.0.1. The listener has no
-                                TLS: beyond this computer, a tunnel or a proxy that serves
-                                HTTPS goes in front, and origin under [serve] in config.toml
+                                HTTP, on 127.0.0.1:4180 and [::1]:4180 (another port free
+                                at both when that is taken) unless --http says where. A
+                                browser on this computer signs in by a link glave prints or
+                                opens, good once for five minutes, and stays signed in;
+                                programs here use the token in GLAVE_HOME/serve.token, made
+                                at every start. Reached from elsewhere, at origin or domain
+                                under [serve] in config.toml, a browser there signs in with
+                                a passkey: the first made through a link glave server link
+                                prints here. With --issuer and --audience, clients
+                                elsewhere sign in with an OIDC access token from that
+                                issuer for that audience. The address is host:port, or a
+                                port on 127.0.0.1. The listener has no TLS: beyond this
+                                computer, a tunnel or a proxy that serves HTTPS goes in
+                                front, and origin under [serve] in config.toml
                                 says where people reach it (https://glave.example.com); a
                                 tunnel on this computer reaches 127.0.0.1 at that name too.
                                 With domain under [serve] instead, glave serves HTTPS for

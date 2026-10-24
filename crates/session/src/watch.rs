@@ -351,7 +351,7 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Follows `thread` for `caller`, who must work in its project: its events after `after`
+    /// Follows `thread` for `caller`, who must own its project: its events after `after`
     /// (every one when there is none) from the log, then each as it is recorded, with its live
     /// updates and its running subagents', until it is deleted or the watch is dropped.
     pub async fn watch(
