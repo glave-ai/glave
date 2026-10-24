@@ -59,7 +59,7 @@ pub struct ToolCallCompleted {
     pub structured: Option<Value>,
     /// The output holds content from outside that no one vouches for, such as a web page,
     /// labelled so for the model. Once a thread has one, risky actions are judged knowing it.
-    /// Since version 2; absent means `false`.
+    /// Absent means `false`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub untrusted: bool,
 }

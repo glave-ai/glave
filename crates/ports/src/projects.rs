@@ -78,7 +78,7 @@ impl Project {
     pub fn check_name(name: &str) -> Result<(), ProjectError> {
         if name.trim().is_empty() || name.chars().count() > MAX_NAME {
             return Err(ProjectError::Invalid(format!(
-                "a space's name is 1 to {MAX_NAME} characters, not only spaces"
+                "a project's name is 1 to {MAX_NAME} characters, not only spaces"
             )));
         }
         Ok(())
