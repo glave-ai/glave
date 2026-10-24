@@ -28,10 +28,12 @@ jobs:
         include:
           - { name: x86-glave-base, at: base, kind: release, target: x86_64-unknown-linux-musl }
           - { name: x86-glave-head, at: head, kind: release, target: x86_64-unknown-linux-musl }
+          - { name: x86-glave-v2, at: head, kind: release, target: x86_64-unknown-linux-musl, features: '"v2"' }
+          - { name: x86-glave-nothp, at: head, kind: release, target: x86_64-unknown-linux-musl, features: '"no_thp"' }
           - { name: x86-bench-musl-base, at: base, kind: bench, target: x86_64-unknown-linux-musl }
           - { name: x86-bench-musl-head, at: head, kind: bench, target: x86_64-unknown-linux-musl }
-          - { name: x86-bench-musl-v2, at: head, kind: bench, target: x86_64-unknown-linux-musl, v2: true }
-          - { name: x86-bench-gnu-base, at: base, kind: bench, target: x86_64-unknown-linux-gnu }
+          - { name: x86-bench-musl-v2, at: head, kind: bench, target: x86_64-unknown-linux-musl, features: '"v2"' }
+          - { name: x86-bench-musl-nothp, at: head, kind: bench, target: x86_64-unknown-linux-musl, features: '"no_thp"' }
     runs-on: ubuntu-22.04
     steps: &build
       - uses: actions/checkout@v7
@@ -46,9 +48,9 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q musl-tools
-      - name: mimalloc v2
-        if: matrix.v2
-        run: sed -i 's/^mimalloc = "0.1.52"$/mimalloc = { version = "0.1.52", features = ["v2"] }/' Cargo.toml && grep -n '^mimalloc' Cargo.toml
+      - name: mimalloc's features
+        if: matrix.features
+        run: sed -i 's/^mimalloc = "0.1.52"$/mimalloc = { version = "0.1.52", features = [${{ matrix.features }}] }/' Cargo.toml && grep -n '^mimalloc' Cargo.toml
       - uses: actions/setup-node@v7
         if: matrix.kind == 'release'
         with:
@@ -104,45 +106,55 @@ jobs:
         run: |
           chmod +x x86-*/*
           echo "measured on $(nproc) cores of $(lscpu | sed -n 's/^Model name: *//p')"
-      - name: Size and linking
+          echo "THP enabled: $(cat /sys/kernel/mm/transparent_hugepage/enabled)"
+          echo "THP defrag: $(cat /sys/kernel/mm/transparent_hugepage/defrag)"
+          echo "overcommit: $(cat /proc/sys/vm/overcommit_memory)"
+          uname -r
+      - name: Size
         run: |
-          for v in base head; do
-            echo "glave $v: $(stat -c %s x86-glave-$v/glave) bytes"
-            file x86-glave-$v/glave
-          done
+          for v in base head v2 nothp; do echo "glave $v: $(stat -c %s x86-glave-$v/glave) bytes"; done
       - name: Startup, glave --version, 300 times each, interleaved
         run: |
+          launch() {
+            start=$(date +%s%N)
+            for i in $(seq 300); do env $2 x86-glave-$1/glave --version >/dev/null; done
+            end=$(date +%s%N)
+            echo "round $round glave $1 ${2:-}: $(( (end - start) / 300000 )) us per launch"
+          }
           for round in 1 2 3; do
-            for v in base head; do
-              start=$(date +%s%N)
-              for i in $(seq 300); do x86-glave-$v/glave --version >/dev/null; done
-              end=$(date +%s%N)
-              echo "round $round glave $v: $(( (end - start) / 300000 )) us per launch"
-            done
+            launch base
+            launch head
+            launch v2
+            launch nothp
+            launch head MIMALLOC_ALLOW_THP=0
+            launch head MIMALLOC_ARENA_EAGER_COMMIT=0
+            launch head MIMALLOC_ARENA_RESERVE=64MiB
+            launch base MIMALLOC_ALLOW_THP=0
           done
-      - name: The budgets benchmark, interleaved
-        run: |
-          for round in 1 2 3 4 5; do
-            for v in musl-base musl-head musl-v2 gnu-base; do
-              case $v in *base) glave=x86-glave-base/glave ;; *) glave=x86-glave-head/glave ;; esac
-              echo "== round $round $v (with $glave)"
-              GLAVE_BUDGETS_BINARY=$glave x86-bench-$v/budgets | grep -E 'release binary|answered|resume|record' || true
-            done
-          done
-      - name: Where the time goes (perf, the benchmark's own process)
+      - name: Startup, counted (perf stat, strace)
         continue-on-error: true
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q "linux-tools-$(uname -r)" linux-tools-common
-          sudo sysctl -w kernel.perf_event_paranoid=-1 kernel.kptr_restrict=0
-          for v in musl-base musl-head gnu-base; do
-            case $v in *base) glave=x86-glave-base/glave ;; *) glave=x86-glave-head/glave ;; esac
-            echo "== perf $v"
-            GLAVE_BUDGETS_BINARY=$glave perf record -q -e cpu-clock -F 1999 -o perf-$v.data x86-bench-$v/budgets >/dev/null
-            echo "-- by program (the benchmark is budgets; glave is the server and commands it times)"
-            perf report -i perf-$v.data --stdio --sort dso 2>/dev/null | grep -v '^#' | grep -v '^$' | head -8
-            echo "-- the benchmark's own code, by symbol"
-            perf report -i perf-$v.data --stdio --no-children --dsos budgets --sort sym 2>/dev/null | grep -v '^#' | grep -v '^$' | head -45
+          sudo sysctl -w kernel.perf_event_paranoid=-1
+          for v in base head v2 nothp; do
+            echo "== perf stat $v"
+            perf stat -r 200 -e task-clock,page-faults,context-switches x86-glave-$v/glave --version 2>&1 >/dev/null | grep -E 'task-clock|page-faults|context|elapsed'
+          done
+          sudo apt-get install -y -q strace >/dev/null 2>&1 || true
+          for v in base head v2; do
+            echo "== strace -c $v"
+            strace -c -f x86-glave-$v/glave --version 2>&1 >/dev/null | head -30
+          done
+          echo "== strace head, memory and files"
+          strace -T -e trace=memory,prctl,openat,read,sysinfo,exit_group x86-glave-head/glave --version 2>&1 >/dev/null | head -60
+          echo "== strace base, memory and files"
+          strace -T -e trace=memory,prctl,openat,read,sysinfo,exit_group x86-glave-base/glave --version 2>&1 >/dev/null | head -60
+      - name: The budgets benchmark, interleaved
+        run: |
+          for round in 1 2 3; do
+            for v in base head v2 nothp; do
+              echo "== round $round $v"
+              GLAVE_BUDGETS_BINARY=x86-glave-$v/glave x86-bench-musl-$v/budgets | grep -E 'release binary|answered|resume|record' || true
+            done
           done
 
   measure-arm:
