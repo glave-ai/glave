@@ -7,8 +7,7 @@ import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './suppo
 const LISTED = [
   'Runs a tool server npx @acme/mcp',
   'Runs a hook before each command ./scripts/check.sh',
-  'Lets glave approve actions without asking',
-  'Turns off the sandbox',
+  'Lets glave work outside the sandbox without asking',
 ];
 
 /** The titles of the side nav's threads that say they wait for the person, in order. */

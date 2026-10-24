@@ -181,12 +181,12 @@ test.describe('on a touch screen', () => {
     expect((options?.x ?? 0) < (input?.x ?? 0)).toBe(true);
     expect((input?.x ?? 0) < (send?.x ?? 0)).toBe(true);
     expect(Math.round(options?.y ?? 0)).toBe(Math.round(send?.y ?? -1));
-    // The approval mode and the model wait behind the options button, in a sheet.
+    // What the agent may do and the model wait behind the options button, in a sheet.
     const status = byTestId(page, 'thread-composer-status');
     await expect(status).toBeHidden();
     await byTestId(page, 'thread-composer-options').click();
     await expect(status).toBeVisible();
-    await expect(status.getByTestId('approval-mode-trigger')).toBeVisible();
+    await expect(status.getByTestId('permissions-trigger')).toBeVisible();
     await expect(status.getByTestId('model-picker-trigger')).toContainText('Claude Haiku 5.5');
     await expectAccessible(page);
     await page.keyboard.press('Escape');

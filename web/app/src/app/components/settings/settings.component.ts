@@ -145,7 +145,7 @@ export class SettingsComponent {
       return this.copy.serverUnknown;
     }
     const protocols = info.protocols.join(', ');
-    return $localize`:@@settings.serverInfo:${info.name}:NAME: ${info.version}:VERSION: · protocol ${protocols}:PROTOCOLS: · approvals: ${info.approval}:APPROVALS:`;
+    return $localize`:@@settings.serverInfo:${info.name}:NAME: ${info.version}:VERSION: · protocol ${protocols}:PROTOCOLS: · permissions: ${info.permissions}:PERMISSIONS:`;
   });
 
   constructor() {

@@ -1,0 +1,18 @@
+@if (choosable()) {
+  <glz-menu-select
+    testId="permissions"
+    quiet
+    [label]="copy.label"
+    [options]="options()"
+    [value]="shown()"
+    (valueChange)="pick($event)"
+  />
+}
+@if (fixed(); as preset) {
+  <span class="preset" data-testid="permissions" [attr.title]="preset.title">
+    <glz-icon [icon]="preset.icon" />
+    <span class="glz-visually-hidden">{{ copy.prefix }}</span>
+    <span>{{ preset.text }}</span>
+    <span class="glz-visually-hidden">{{ preset.title }}</span>
+  </span>
+}

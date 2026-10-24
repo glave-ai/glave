@@ -73,7 +73,7 @@ describe('HomeComponent', () => {
     expect(root.querySelector('[data-testid="home-composer"]')?.classList).toContain(
       'glz-composer--lg',
     );
-    expect(root.querySelector('[data-testid="approval-mode"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="permissions"]')).not.toBeNull();
     expect(root.querySelector('[data-testid="model-picker-trigger"]')?.textContent).toContain(
       'GPT-6 Luna',
     );
@@ -87,7 +87,7 @@ describe('HomeComponent', () => {
     const box = root.querySelector('[data-testid="home-composer"] .box');
     const status = root.querySelector('[data-testid="home-composer-status"]');
     expect(box?.querySelector('[data-testid="home-where"]')).not.toBeNull();
-    expect(status?.querySelector('[data-testid="approval-mode"]')).not.toBeNull();
+    expect(status?.querySelector('[data-testid="permissions"]')).not.toBeNull();
     expect(status?.querySelector('[data-testid="model-picker"]')).not.toBeNull();
     // Nothing to attach yet.
     expect(root.querySelector('[aria-label="Attach files"]')).toBeNull();
@@ -103,7 +103,7 @@ describe('HomeComponent', () => {
     navigate.mockRestore();
   });
 
-  it('starts in the project the link names, on the model and in the mode picked', async () => {
+  it('starts in the project the link names, on the model and with the preset picked', async () => {
     const fake = session();
     const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
     const root = await render(fake, 'p2');
@@ -115,13 +115,13 @@ describe('HomeComponent', () => {
     root.querySelector<HTMLButtonElement>('[data-testid="model-picker-trigger"]')?.click();
     await new Promise((resolve) => setTimeout(resolve));
     document.querySelectorAll<HTMLElement>('[data-testid="model-picker-option"]')[1]?.click();
-    root.querySelector<HTMLButtonElement>('[data-testid="approval-mode-trigger"]')?.click();
+    root.querySelector<HTMLButtonElement>('[data-testid="permissions-trigger"]')?.click();
     await new Promise((resolve) => setTimeout(resolve));
-    document.querySelectorAll<HTMLElement>('[data-testid="approval-mode-option"]')[0]?.click();
+    document.querySelectorAll<HTMLElement>('[data-testid="permissions-option"]')[0]?.click();
     await send(root, 'Plant tomatoes');
     await new Promise((resolve) => setTimeout(resolve));
     expect(fake.paramsOf('thread/start')).toEqual([
-      { project: 'p2', model: 'hope-12b', approval: 'ask' },
+      { project: 'p2', model: 'hope-12b', permissions: 'read-only' },
     ]);
     navigate.mockRestore();
   });

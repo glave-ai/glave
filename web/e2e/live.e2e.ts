@@ -24,9 +24,9 @@ function callsOf(page: Page): readonly string[] {
 }
 
 /**
- * A real glave, its model the fake service of fake-model.ts, asking before commands run: what
- * one tab does in a thread, another tab open on it sees as it happens, the approval a turn
- * waits for among it, and either tab may answer.
+ * A real glave, its model the fake service of fake-model.ts, in Read-only, asking before
+ * changes: what one tab does in a thread, another tab open on it sees as it happens, the
+ * approval a turn waits for among it, and either tab may answer.
  */
 test('a second tab sees a turn and its approval as they happen, and answers it', async ({
   browser,

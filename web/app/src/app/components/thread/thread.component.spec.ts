@@ -111,9 +111,11 @@ describe('ThreadComponent', () => {
     expect(root.querySelector('[data-testid="thread-question"]')?.textContent).toContain(
       'Keep logs?',
     );
-    // The approval mode and the model in the composer's quiet line.
+    // What the agent may do and the model in the composer's quiet line.
     const status = root.querySelector('[data-testid="thread-composer-status"]');
-    expect(status?.querySelector('[data-testid="approval-mode"]')?.textContent).toContain('Auto');
+    expect(status?.querySelector('[data-testid="permissions"]')?.textContent).toContain(
+      'Workspace',
+    );
     expect(status?.querySelector('[data-testid="model-picker"]')).not.toBeNull();
     // What waits for the person comes last, after the receipt.
     const order = Array.from(
@@ -138,7 +140,7 @@ describe('ThreadComponent', () => {
       ask: 'ask-1',
       items: [
         { text: 'Runs a tool server', detail: 'npx @acme/mcp' },
-        { text: 'Lets glave approve actions without asking' },
+        { text: 'Lets glave work outside the sandbox without asking' },
       ],
     };
     const fake = session(ANSWERED)
@@ -151,7 +153,7 @@ describe('ThreadComponent', () => {
     const items = Array.from(root.querySelectorAll('[data-testid="thread-trust-item"]'));
     expect(items.map((item) => item.textContent.replace(/\s+/gu, ' ').trim())).toEqual([
       'Runs a tool server npx @acme/mcp',
-      'Lets glave approve actions without asking',
+      'Lets glave work outside the sandbox without asking',
     ]);
     const last = root.querySelector('[data-testid="thread-items"] .reading')?.lastElementChild;
     expect(last?.getAttribute('data-testid')).toBe('thread-trust');
@@ -424,28 +426,26 @@ describe('ThreadComponent', () => {
     ]);
   });
 
-  it('sends the approval mode picked with the next turn, and only when it changes', async () => {
-    // The thread's own mode is auto (its summary says so).
+  it('sends the preset picked with the next turn, and only when it changes', async () => {
+    // The thread's own preset is Workspace (its summary says so).
     const fake = session([]);
     const { root } = await open(fake);
-    const mode = async (index: number): Promise<void> => {
-      root.querySelector<HTMLButtonElement>('[data-testid="approval-mode-trigger"]')?.click();
+    const preset = async (index: number): Promise<void> => {
+      root.querySelector<HTMLButtonElement>('[data-testid="permissions-trigger"]')?.click();
       await settle();
-      const options = document.querySelectorAll<HTMLElement>(
-        '[data-testid="approval-mode-option"]',
-      );
+      const options = document.querySelectorAll<HTMLElement>('[data-testid="permissions-option"]');
       options.item(index).click();
       await settle();
     };
-    expect(root.querySelector('[data-testid="approval-mode-trigger"]')?.textContent).toContain(
-      'Auto',
+    expect(root.querySelector('[data-testid="permissions-trigger"]')?.textContent).toContain(
+      'Workspace',
     );
-    await mode(0);
+    await preset(0);
     await type(root, 'Careful now');
-    await mode(1);
+    await preset(1);
     await type(root, 'Go ahead');
     expect(fake.paramsOf('turn/start')).toMatchObject([
-      { thread: 'thread-1', prompt: 'Careful now', approval: 'ask' },
+      { thread: 'thread-1', prompt: 'Careful now', permissions: 'read-only' },
       { thread: 'thread-1', prompt: 'Go ahead' },
     ]);
   });
