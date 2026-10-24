@@ -5,7 +5,9 @@
 
 use std::collections::BTreeSet;
 
-use glave_event::{Body, Part, RawEvent, Seq, ThreadId, decode};
+use glave_event::{Body, Part, RawEvent, Seq, ThreadId, ToolCallCompleted, decode};
+
+use crate::memories::FROM_MEMORY;
 
 /// Distinct words one event is indexed under, at most: a long output is found by its first.
 const MOST_TERMS: usize = 2_048;
@@ -69,12 +71,12 @@ fn searchable(event: &RawEvent) -> Option<String> {
 }
 
 /// The text an event's `body` is found by, when it is one a search looks in: a message's text,
-/// or a tool's output. Everything else (configuration, approvals, memory ledgers) is never
-/// indexed.
+/// or a tool's output. Everything else (configuration, approvals, memory ledgers, and memory
+/// tools' results, so a forgotten memory is never found through one) is never indexed.
 pub fn searchable_body(body: &Body) -> Option<String> {
     let parts = match body {
         Body::MessageAdded(message) => &message.parts,
-        Body::ToolCallCompleted(done) if !done.is_error => &done.output,
+        Body::ToolCallCompleted(done) if !done.is_error && !from_memory(done) => &done.output,
         _ => return None,
     };
     let mut text = String::new();
@@ -91,6 +93,12 @@ pub fn searchable_body(body: &Body) -> Option<String> {
     }
     let cut: String = text.chars().take(MOST_CHARS).collect();
     (!cut.trim().is_empty()).then_some(cut)
+}
+
+/// Whether `done` is a memory tool's result ([`FROM_MEMORY`]).
+fn from_memory(done: &ToolCallCompleted) -> bool {
+    let marked = done.structured.as_ref().and_then(|s| s.get(FROM_MEMORY));
+    marked.and_then(serde_json::Value::as_bool) == Some(true)
 }
 
 /// The words `event` is indexed under; empty for an event a search never looks in.

@@ -623,7 +623,7 @@
         },
         {
           "const": "project",
-          "description": "About the project's work: read in its threads.",
+          "description": "About the project's work, and the person's own as well: read only in its threads.",
           "type": "string"
         }
       ]
@@ -4314,7 +4314,6 @@
       "result": {
         "properties": {
           "events": {
-            "description": "The events exactly as stored.",
             "items": {
               "$ref": "#/$defs/RawEvent"
             },
@@ -4329,13 +4328,6 @@
                 "type": "null"
               }
             ]
-          },
-          "results": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "description": "By call, the words of each memory call's result among `events` that the log keeps by\nreference, read again as the caller may read memory now: with the text of each\nmemory at the version it showed and of each past conversation, except what is\nforgotten since or not theirs to read (`specs/memory.md`, \"Seeing, editing and\nforgetting\"). A client shows these in place of the first part of the stored output.",
-            "type": "object"
           }
         },
         "required": [

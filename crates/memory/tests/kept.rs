@@ -1,22 +1,21 @@
-//! Memory tools' results kept by reference (#578, `specs/memory.md`, "Seeing, editing and
-//! forgetting"): a forgotten memory's text stays nowhere a tool showed it, neither in a thread's
-//! log nor in the search index, a past chat deleted since is read again as nothing, and a kept
-//! result read again shows only what its reader may.
+//! Memory tools' results as the log keeps them (`specs/memory.md`, "Seeing, editing and
+//! forgetting"): written as the model read them, and never searchable, so a forgotten memory's
+//! text is never found again through a result that showed it.
 
-use glave_event::{Arguments, Principal};
+use glave_event::Principal;
 use glave_harness::{AllowAll, Cancel, Change, change_standing};
 use glave_memory::{Source, Writer};
-use glave_ports::memories::{Memory, MemoryContext, RECALL, REMEMBER};
+use glave_ports::memories::{RECALL, REMEMBER};
 use glave_ports::{Clock as _, EventLog};
 use serde_json::json;
 
-use crate::recall::{on, thread, world};
+use crate::recall::{on, thread};
 use crate::support::*;
 
-/// #578: a memory's text that came back to the model through a tool, here `recall`'s result,
-/// stays nowhere a forget cannot reach: not in the thread's log, so not in the search index
-/// either. Once the person also deletes the chat it was saved in (#630), a thread read again no
-/// longer shows the model any of it.
+/// #578: a memory's text that came back to the model through a tool, here a save's and
+/// `recall`'s results, is kept in those threads' logs as the model read it, and resumed, reads
+/// the same; but search never indexes it, so once the memory is forgotten nothing finds it
+/// there. The chat it was saved in is history, found until the person deletes it too (#630).
 #[test]
 #[expect(clippy::too_many_lines, reason = "one scenario, end to end")]
 fn a_forgotten_memory_is_never_found_again_through_an_earlier_recall() {
@@ -44,11 +43,6 @@ fn a_forgotten_memory_is_never_found_again_through_an_earlier_recall() {
             )
             .await
             .unwrap();
-        let saved = kit.results(shared(), saving.id).await;
-        assert!(
-            saved.len() == 1 && saved.iter().all(|kept| !kept.contains("marigold")),
-            "the save's own result is kept without the text"
-        );
         let mut recalling = harness.start_thread(shared()).await.unwrap();
         harness
             .run_turn(
@@ -66,6 +60,15 @@ fn a_forgotten_memory_is_never_found_again_through_an_earlier_recall() {
                 && result.contains("Remember: my favourite flower is marigold."),
             "the model reads what recall found"
         );
+        let log = kit.store.log();
+        for (whose, thread) in [("save's", saving.id), ("recall's", recalling.id)] {
+            let events = log.read(&shared(), thread, None, usize::MAX).await.unwrap();
+            assert!(
+                (events.iter()).any(|event| event.kind.as_str() == "tool.call.completed"
+                    && event.data.get().contains("favourite flower is marigold")),
+                "the {whose} result is kept as the model read it"
+            );
+        }
         // Read again by another process, the thread reads as it did.
         let (again, seen_again) = kit
             .harness(
@@ -105,17 +108,17 @@ fn a_forgotten_memory_is_never_found_again_through_an_earlier_recall() {
         memories.forget(&writer, saved).await.unwrap();
         let asking = on(shared(), thread(9));
         let query = "favourite flower marigold";
-        let said_there = |hit: &glave_memory::Recalled| matches!(hit.source, Source::Thread { thread, .. } if thread == saving.id);
+        let said_there = |hit: &glave_memory::Recalled| matches!(hit.source, Source::Thread { thread, said_by: "person", .. } if thread == saving.id);
         let after = kit.memories(rules(), 4).recall(&asking, query, 10).await;
         let after = after.unwrap();
         assert!(
             after.iter().any(said_there)
                 && (after.iter()).all(|hit| !hit.text.contains("marigold") || said_there(hit)),
-            "a later recall finds nothing of the forgotten memory's text but the chat it was \
-             saved in, which is history: {after:?}"
+            "a later recall finds nothing of the forgotten memory's text but what the person \
+             said in the chat it was saved in, which is history: {after:?}"
         );
         // The person deletes that chat too.
-        let (log, now) = (kit.store.log(), kit.clock.now());
+        let now = kit.clock.now();
         change_standing(&log, &shared(), saving.id, now, [7; 10], Change::Delete)
             .await
             .unwrap();
@@ -125,93 +128,7 @@ fn a_forgotten_memory_is_never_found_again_through_an_earlier_recall() {
                 .unwrap()
                 .iter()
                 .all(|hit| !hit.text.contains("marigold")),
-            "a later recall finds nothing of it"
-        );
-        let kept = kit
-            .store
-            .log()
-            .read(&shared(), recalling.id, None, usize::MAX)
-            .await
-            .unwrap();
-        assert!(
-            kept.iter()
-                .all(|event| !event.data.get().contains("marigold")),
-            "the recalling thread's log keeps no copy of it"
-        );
-
-        // Read again after the forget, the recalling thread no longer shows it to the model.
-        let (again, seen_again) = kit
-            .harness(
-                &dir,
-                vec![said("back")],
-                AllowAll,
-                Some(kit.memory(rules(), 5).await),
-                settings(),
-            )
-            .await;
-        let mut resumed = again.resume_thread(shared(), recalling.id).await.unwrap();
-        again
-            .run_turn(&mut resumed, "And now?", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
-        let sent = format!("{:?}", seen_again.lock().unwrap()[0].messages);
-        assert!(
-            !sent.contains("marigold"),
-            "resumed, the model reads none of it"
-        );
-    });
-}
-
-/// A recall's result kept by reference names past conversations by place, which a later
-/// process reads back from the log: read again, it shows only what the thread reading it may.
-#[test]
-fn a_kept_recall_reads_again_only_what_its_reader_may_read() {
-    block_on!(async {
-        let kit = Kit::new();
-        world(&kit).await;
-        let memory = kit.memory(rules(), 2).await;
-        let mut query = serde_json::Map::new();
-        query.insert("query".to_owned(), json!("orca"));
-        let found = (memory.call(&on(shared(), thread(9)), RECALL, &Arguments::Json(query))).await;
-        let shown = [found.kept.unwrap().shown];
-        let read = async |reader: MemoryContext| -> String {
-            let again = memory.reread(&reader, &shown).await.unwrap();
-            again.into_iter().flatten().collect()
-        };
-        let here = read(on(shared(), thread(9))).await;
-        assert!(
-            ["host orca", "orca-7", "being retired", "laptop"]
-                .iter()
-                .all(|text| here.contains(text)),
-            "where it was found, it reads as found"
-        );
-        let stranger = MemoryContext {
-            person: Some(glave_event::PrincipalId::try_from(uuid(52)).unwrap()),
-            ..on(shared(), thread(9))
-        };
-        let project = ["host orca", "orca-7", "being retired"];
-        for (who, reader, theirs) in [
-            (
-                "from another project",
-                on(scope(1, 5), thread(9)),
-                &project[..],
-            ),
-            (
-                "from another organization",
-                on(scope(9, 6), thread(9)),
-                &project[..],
-            ),
-            ("by someone else", stranger, &["laptop"][..]),
-        ] {
-            let again = read(reader).await;
-            assert!(
-                theirs.iter().all(|text| !again.contains(text)),
-                "read again {who}, it shows only what they may read"
-            );
-        }
-        assert!(
-            !read(on(scope(9, 6), thread(9))).await.contains("laptop"),
-            "nor the person's own from another organization"
+            "a later recall finds nothing of it, though the recalling thread still holds it"
         );
     });
 }

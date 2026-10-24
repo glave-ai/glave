@@ -1,7 +1,7 @@
 import type { RawEvent } from '@glave/client';
 import type { GlzMoney } from '@glave/glaze';
 
-import { NO_RESULTS, type Results, type ThreadItem, threadItems } from './conversation';
+import { type ThreadItem, threadItems } from './conversation';
 import { type ChangedFile, changedFiles } from './files';
 
 /** How a turn ended, as its `turn.ended` says. */
@@ -149,13 +149,9 @@ function turnOf(events: readonly RawEvent[], items: readonly ThreadItem[]): Turn
  * A thread's turns, from its events, in order: each from the person's message (or the
  * `turn.started` just before it) to the next, with its items, the files it changed, how long
  * it took and how it ended, and what it cost. Events before the first message that put nothing
- * in the conversation (the thread's start, its workspace) make no turn of their own. A memory
- * call's result reads as `results` has it.
+ * in the conversation (the thread's start, its workspace) make no turn of their own.
  */
-export function threadTurns(
-  events: readonly RawEvent[],
-  results: Results = NO_RESULTS,
-): readonly Turn[] {
+export function threadTurns(events: readonly RawEvent[]): readonly Turn[] {
   const groups: RawEvent[][] = [];
   for (const event of events) {
     const last = groups.at(-1);
@@ -165,7 +161,7 @@ export function threadTurns(
       last.push(event);
     }
   }
-  const items = threadItems(events, results);
+  const items = threadItems(events);
   return groups
     .map((group, index) => {
       const from = group[0]?.seq ?? 0;

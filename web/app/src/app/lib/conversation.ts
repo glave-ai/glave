@@ -170,54 +170,13 @@ function byGlave(data: Data): boolean {
   return isRecord(author) && author['kind'] === 'glave';
 }
 
-/** What memory calls' results read to this person, by call (`thread/events`' `results`). */
-export type Results = ReadonlyMap<string, string>;
-
-/** No memory call's result read again. */
-export const NO_RESULTS: Results = new Map();
-
-/** `known` with the words a page of events reads for memory calls' results. */
-export function withResults(
-  known: Results,
-  more: Readonly<Record<string, string>> | undefined,
-): Results {
-  const read = Object.entries(more ?? {});
-  return read.length === 0 ? known : new Map([...known, ...read]);
-}
-
-/**
- * Whether `event` is a memory call's result the log keeps by reference, without the text of
- * the memories or past conversations it showed: the server reads its words for the person
- * with `thread/events`.
- */
-export function keptByReference(event: RawEvent): boolean {
-  const structured = event.data['structured'];
-  return event.type === 'tool.call.completed' && isRecord(structured) && 'shown' in structured;
-}
-
-/**
- * A call's result as the thread view shows it: the words `read` for it by the server, when it
- * has some, in place of the first part the log keeps (any after it, such as a hook's, stay).
- */
-function resultText(output: unknown, read: string | undefined): string {
-  if (read === undefined) {
-    return partsText(output).text;
-  }
-  const after = Array.isArray(output) ? partsText(output.slice(1)).text : '';
-  return trimBlankLines(after === '' ? read : `${read}\n${after}`);
-}
-
 /**
  * A thread's items from its stored events, in order: messages, tool calls with their
- * results, approvals with their decisions, and questions with their answers. A memory call's
- * result reads as `results` has it, and its call is not drawn from the memory's text, which
- * the person may have forgotten since. A message of the person's after the one that started a
- * turn, before the turn ended, is one they sent while it ran: `steered`.
+ * results, approvals with their decisions, and questions with their answers. A message of the
+ * person's after the one that started a turn, before the turn ended, is one they sent while it
+ * ran: `steered`.
  */
-export function threadItems(
-  events: readonly RawEvent[],
-  results: Results = NO_RESULTS,
-): readonly ThreadItem[] {
+export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] {
   const items: ThreadItem[] = [];
   // Whether a turn runs at this point of the log, and whether the person has asked in it.
   let running = false;
@@ -288,12 +247,10 @@ export function threadItems(
       }
       case 'tool.call.completed': {
         const call = text(data['call_id']);
-        const output = resultText(data['output'], results.get(call));
-        const kept = keptByReference(event);
+        const output = partsText(data['output']).text;
         update(`call-${call}`, (item) => {
           if (item.kind === 'call') {
-            const status = data['is_error'] === true ? 'failed' : 'done';
-            return kept ? { ...item, status, output, summary: '' } : { ...item, status, output };
+            return { ...item, status: data['is_error'] === true ? 'failed' : 'done', output };
           }
           if (item.kind === 'question') {
             return { ...item, answers: answersFrom(output) };

@@ -1,11 +1,8 @@
 //! What the server answers: each reply by the shape of its result, and what it carries about
 //! the server, threads and turns.
 
-use std::collections::BTreeMap;
-
 use glave_event::{
-    At, CallId, EventId, Money, Origin, Outcome, Principal, RawEvent, Secret, Seq, ThreadId,
-    TokenCounts,
+    At, EventId, Money, Origin, Outcome, Principal, RawEvent, Secret, Seq, ThreadId, TokenCounts,
 };
 use glave_harness::{GoalProgress, RunningCommand, TurnSummary};
 use glave_ports::memories::Remembered;
@@ -168,17 +165,9 @@ pub enum Reply {
     },
     #[schemars(title = "Events")]
     Events {
-        /// The events exactly as stored.
         events: Vec<RawEvent>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         next: Option<Seq>,
-        /// By call, the words of each memory call's result among `events` that the log keeps by
-        /// reference, read again as the caller may read memory now: with the text of each
-        /// memory at the version it showed and of each past conversation, except what is
-        /// forgotten since or not theirs to read (`specs/memory.md`, "Seeing, editing and
-        /// forgetting"). A client shows these in place of the first part of the stored output.
-        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-        results: BTreeMap<CallId, String>,
     },
     #[schemars(title = "Turn")]
     Turn { turn: TurnResult },

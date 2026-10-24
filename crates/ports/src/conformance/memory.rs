@@ -1,13 +1,12 @@
 //! What every [`Memory`] must do about scope, which it enforces itself since the model never
 //! names a project: a project's memory is read and changed only from that project, a person's
 //! own only by them and never from another organization, and a memory someone may not reach is
-//! answered exactly as one that does not exist, so not even its existence leaks. A result kept
-//! by reference holds no memory's text, and reads again only what the thread reading it may.
+//! answered exactly as one that does not exist, so not even its existence leaks.
 
-use glave_event::{Arguments, MemoryId, MemoryScope, PrincipalId, ThreadId};
+use glave_event::{MemoryId, MemoryScope, PrincipalId, ThreadId};
 
 use super::{Verdict, ensure, uuid_v7};
-use crate::memories::{Access, Control, Memory, MemoryContext, RECALL, Remembered};
+use crate::memories::{Access, Control, Memory, MemoryContext, Remembered};
 use crate::scope::Scope;
 
 /// Where the memory suite works. The implementation's rules must let memory be shared (the
@@ -85,7 +84,14 @@ async fn seen(
     person: PrincipalId,
     scope: Scope,
 ) -> Result<Vec<MemoryId>, String> {
-    let on = thread_of(person, scope)?;
+    let on = MemoryContext {
+        person: Some(person),
+        agent: None,
+        scope,
+        thread: ThreadId::try_from(uuid_v7(9_902)).map_err(|e| e.to_string())?,
+        seq: None,
+        untrusted_read: false,
+    };
     let mut seen = ids(&memory.list(&on).await.map_err(|e| e.to_string())?);
     let listed = memory
         .control(&access(person, scope), Control::List { scope: None })
@@ -118,71 +124,10 @@ async fn save(
         .ok_or_else(|| "a saved memory must be answered back".to_owned())
 }
 
-/// A thread of `person` in `scope`.
-fn thread_of(person: PrincipalId, scope: Scope) -> Result<MemoryContext, String> {
-    Ok(MemoryContext {
-        person: Some(person),
-        agent: None,
-        scope,
-        thread: ThreadId::try_from(uuid_v7(9_903)).map_err(|e| e.to_string())?,
-        seq: None,
-        untrusted_read: false,
-    })
-}
-
-/// A result that showed memories is kept without their text, and read again only as the
-/// thread reading it may read: never another project's memory, another organization's, or
-/// another person's own, whatever the kept result names.
-async fn rereads_only_what_may_be_read(
-    memory: &dyn Memory,
-    at: &MemoryPlaces,
-    [project, personal]: [&Remembered; 2],
-) -> Verdict {
-    let mut query = serde_json::Map::new();
-    query.insert("query".to_owned(), "person note".into());
-    let found = (memory.call(
-        &thread_of(at.person, at.here)?,
-        RECALL,
-        &Arguments::Json(query),
-    ))
-    .await;
-    let kept = found
-        .kept
-        .ok_or("a result that showed memories must be kept by reference")?;
-    let both = [project.text.as_str(), personal.text.as_str()];
-    ensure(
-        both.iter().all(|text| !kept.text.contains(text)),
-        "the words a result is kept in must hold no memory's text",
-    )?;
-    let shown = [kept.shown];
-    let read = async |person, scope| -> Result<String, String> {
-        let again = memory.reread(&thread_of(person, scope)?, &shown).await;
-        Ok(again.unwrap_or_default().into_iter().flatten().collect())
-    };
-    let here = read(at.person, at.here).await?;
-    ensure(
-        both.iter().all(|text| here.contains(text)),
-        "a result read again where it was shown must show what it showed",
-    )?;
-    for (who, person, scope, theirs) in [
-        ("from another project", at.person, at.next_door, &both[..1]),
-        ("from another organization", at.person, at.abroad, &both[..]),
-        ("by someone else", at.stranger, at.here, &both[1..]),
-    ] {
-        let again = read(person, scope).await?;
-        ensure(
-            theirs.iter().all(|text| !again.contains(text)),
-            &format!("a result read again {who} must not show what they may not read"),
-        )?;
-    }
-    Ok(())
-}
-
 /// The memory scope suite.
 pub async fn memory_scopes(memory: &dyn Memory, at: MemoryPlaces) -> Verdict {
     let project = save(memory, &at, MemoryScope::Project).await?;
     let personal = save(memory, &at, MemoryScope::Personal).await?;
-    rereads_only_what_may_be_read(memory, &at, [&project, &personal]).await?;
     let (p, q) = (project.memory, personal.memory);
 
     let next_door = seen(memory, at.person, at.next_door).await?;

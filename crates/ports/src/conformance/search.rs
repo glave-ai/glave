@@ -1,6 +1,7 @@
 //! What every event log's keyword search must do (`EventLog::search`): find messages and tool
 //! output by their words as soon as they are appended, best match first, never a failed call's
-//! output or any other event, never another scope's, and never more than asked.
+//! output, a memory tool's result or any other event, never another scope's, and never more than
+//! asked.
 
 use glave_event::{
     At, CallId, EventId, Header, MessageAdded, Outcome, Part, RawEvent, Role, Seq, ThreadId,
@@ -9,6 +10,7 @@ use glave_event::{
 
 use super::{Verdict, ensure, scope, thread, uuid_v7};
 use crate::log::EventLog;
+use crate::memories::FROM_MEMORY;
 use crate::search::Found;
 
 fn header(thread: ThreadId, seq: u64) -> Result<Header, String> {
@@ -35,6 +37,18 @@ fn output(thread: ThreadId, seq: u64, text: &str, is_error: bool) -> Result<RawE
         is_error,
         output: vec![Part::Text { text: text.into() }],
         structured: None,
+        untrusted: false,
+    };
+    encode(header(thread, seq)?, &done).map_err(|e| e.to_string())
+}
+
+/// A memory tool's result, marked so as the harness records it.
+fn from_memory(thread: ThreadId, seq: u64, text: &str) -> Result<RawEvent, String> {
+    let done = ToolCallCompleted {
+        call_id: CallId::new(format!("call_{seq}")).map_err(|e| e.to_string())?,
+        is_error: false,
+        output: vec![Part::Text { text: text.into() }],
+        structured: Some(serde_json::json!({ FROM_MEMORY: true })),
         untrusted: false,
     };
     encode(header(thread, seq)?, &done).map_err(|e| e.to_string())
@@ -78,6 +92,7 @@ pub async fn search<L: EventLog>(log: &L) -> Verdict {
             vec![
                 output(second, 1, "We chose Postgres over MySQL for JSONB.", false)?,
                 output(second, 2, "deploy failed: no such host", true)?,
+                from_memory(second, 3, "Remembered: the favourite flower is marigold.")?,
             ],
         ),
         (
@@ -106,6 +121,12 @@ pub async fn search<L: EventLog>(log: &L) -> Verdict {
     ensure(
         find(here, "postgres jsonb", 10).await? == [at(second, 1)?],
         "a search must find a tool's output by its words",
+    )?;
+    ensure(
+        find(here, "favourite flower marigold", 10)
+            .await?
+            .is_empty(),
+        "a search must never find a memory tool's result, as it does any other tool's",
     )?;
     ensure(
         find(here, "make db first postgres", 10).await? == [at(first, 1)?, at(second, 1)?],
