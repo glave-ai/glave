@@ -1,7 +1,9 @@
 name: budgets
 
-# The performance budgets in AGENTS.md, set in crates/cli/benches/budgets.rs and measured on
-# every pull request, in the merge queue, after every merge to main, weekly, and on demand.
+# The performance budgets in AGENTS.md, set in crates/cli/benches/budgets.rs and measured in
+# the merge queue, after every merge to main, weekly, and on demand. A pull request is not
+# measured: `budgets`, the check the `main` ruleset requires, passes on it at once, and the
+# merge queue measures the change before it merges, on top of the ones ahead of it.
 # The binary's size and the answered command are measured on the build that ships: glave for
 # x86-64 Linux as the release builds it (dist-workspace.toml), static with musl, in the dist
 # profile, with the web app inside. The benchmark is built for musl too, so the thread it
@@ -32,7 +34,8 @@ env:
   TARGET: x86_64-unknown-linux-musl
 
 jobs:
-  budgets:
+  measure:
+    if: github.event_name != 'pull_request'
     # The runner the release builds x86-64 Linux on (dist's plan), so its C compiler and musl.
     runs-on: ubuntu-22.04
     steps:
@@ -73,3 +76,22 @@ jobs:
         run: cargo xtask bench --bench budgets --features glave/web --target "$TARGET"
         env:
           GLAVE_BUDGETS_BINARY: ${{ github.workspace }}/target/${{ env.TARGET }}/dist/glave
+
+  # The check the ruleset requires: on a pull request it passes at once, and everywhere else
+  # only when `measure` did.
+  budgets:
+    if: always()
+    needs: measure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Within budget
+        env:
+          EVENT: ${{ github.event_name }}
+          MEASURE: ${{ needs.measure.result }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            echo "Not measured on a pull request: budgets are measured in the merge queue, before the change merges, then after the merge to main and weekly."
+            exit 0
+          fi
+          echo "measured: $MEASURE"
+          test "$MEASURE" = success

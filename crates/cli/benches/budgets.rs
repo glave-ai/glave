@@ -34,8 +34,8 @@ const EVENTS_PER_TURN: usize = 8;
 /// Commands timed against the running server.
 const ANSWERS: usize = 30;
 const RESUMES: usize = 10;
-/// The release binary's budget in MB (AGENTS.md), the one place it is set: pull requests,
-/// the merge queue and `main` all run this benchmark (`budgets.yml`).
+/// The release binary's budget in MB (AGENTS.md), the one place it is set: the merge queue,
+/// `main` and a weekly run all run this benchmark (`budgets.yml`).
 const BINARY_MB: f64 = 40.0;
 /// The environment variable naming the glave program to measure: in CI, the build that ships.
 const BINARY: &str = "GLAVE_BUDGETS_BINARY";
