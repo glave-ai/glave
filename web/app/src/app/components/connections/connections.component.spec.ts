@@ -268,18 +268,19 @@ describe('ConnectionsComponent', () => {
       .answer('connection/list', () => ({
         connections: [{ ...DOCS, status: kept ? 'signed_in' : 'signed_out' }],
       }))
-      .answer('connection/remove', async () => {
+      .answer('connection/remove', () => {
         if (refuse) {
           return new ApiError({
             code: ErrorCode.NO_CREDENTIAL,
             message: 'nothing at https://mcp.docs.example.com/mcp is signed in to here',
           });
         }
-        await new Promise<void>((resolve) => {
-          release = resolve;
+        return new Promise<object>((resolve) => {
+          release = () => {
+            kept = false;
+            resolve({});
+          };
         });
-        kept = false;
-        return {};
       });
     const { fixture, root, said } = await page(fake);
     click(root, 'connection-action');
