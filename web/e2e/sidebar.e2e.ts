@@ -1,6 +1,7 @@
 import { type Locator, type Page, expect, test } from '@playwright/test';
 
 import { NEW_THREAD, PERSONAL, PROJECT, THREAD, WAITING, fakeApi } from './fake-api';
+import type { Grouped } from './fake-grouping';
 import {
   SIGNED_IN,
   builtChunk,
@@ -40,11 +41,13 @@ interface Marker {
 }
 
 /**
- * The bar beside the row `locator` (its `::before`), with its contrast as WCAG measures it
- * against the row's own background and the first one behind the row that is not transparent.
+ * What marks `locator` as the one chosen: the bar beside a row (its `::before`), or the line
+ * round a segment (its border); with its contrast as WCAG measures it against the element's
+ * own background and the first one behind it that is opaque (a tint over the sidebar, as a
+ * switch's track is, is passed over for the sidebar under it).
  */
-async function markerOf(locator: Locator): Promise<Marker> {
-  return locator.evaluate((element) => {
+async function markerOf(locator: Locator, mark: 'bar' | 'outline' = 'bar'): Promise<Marker> {
+  return locator.evaluate((element, drawn) => {
     // Any colour the browser computes (rgb, oklch, color()) as sRGB bytes, painted on a canvas.
     const canvas = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
     const channels = (color: string): readonly number[] => {
@@ -55,7 +58,7 @@ async function markerOf(locator: Locator): Promise<Marker> {
       }
       return Array.from(canvas?.getImageData(0, 0, 1, 1).data ?? []);
     };
-    const opaque = (color: string): boolean => (channels(color)[3] ?? 0) !== 0;
+    const opaque = (color: string): boolean => channels(color)[3] === 255;
     const luminance = (color: string): number => {
       const [r = 0, g = 0, b = 0] = channels(color).map((value) => {
         const unit = value / 255;
@@ -76,13 +79,16 @@ async function markerOf(locator: Locator): Promise<Marker> {
       const color = getComputedStyle(node).backgroundColor;
       sidebar = opaque(color) ? color : '';
     }
+    const own = getComputedStyle(element);
     const bar = getComputedStyle(element, '::before');
+    const [width, color] =
+      drawn === 'bar' ? [bar.width, bar.backgroundColor] : [own.borderTopWidth, own.borderTopColor];
     return {
-      width: bar.width,
-      againstFill: contrast(bar.backgroundColor, getComputedStyle(element).backgroundColor),
-      againstSidebar: contrast(bar.backgroundColor, sidebar),
+      width,
+      againstFill: contrast(color, own.backgroundColor),
+      againstSidebar: contrast(color, sidebar),
     };
-  });
+  }, mark);
 }
 
 test('projects come first, then Chats; each list newest first, in one order', async ({ page }) => {
@@ -121,25 +127,134 @@ test('a thread moves up when it gets a new message', async ({ page }) => {
   ]);
 });
 
-test('Needs you is pinned at the top while something waits, the thread in its place too', async ({
+/** The switch's choice `label` (Status or Project), a native radio. */
+function grouping(page: Page, label: string): Locator {
+  return byTestId(page, 'nav-group').getByRole('radio', { name: label });
+}
+
+/** The titles, then the line under each, of the side nav's section `testId`. */
+async function listed(page: Page, testId: string): Promise<readonly string[]> {
+  const section = byTestId(page, testId);
+  return [
+    ...(await section.getByTestId('nav-thread-title').allTextContents()),
+    ...(await section.getByTestId('nav-thread-line').allTextContents()),
+  ].map((text) => text.trim());
+}
+
+test('by project, as it starts, a thread that needs the person says so in its place, listed once', async ({
   page,
 }) => {
   await fakeApi(page);
   await page.goto(`/${SIGNED_IN}`);
-  const needsYou = byTestId(page, 'needs-you');
-  await expect(needsYou).toBeVisible();
-  const [pinned, projects] = [
-    await needsYou.boundingBox(),
-    await byTestId(page, 'nav-projects').boundingBox(),
+  await expect(grouping(page, 'Project')).toBeChecked();
+  await expect(grouping(page, 'Status')).not.toBeChecked();
+  // The switch sits above the threads, its label lined up with their text, the switch at the
+  // pane's end, where the threads' times are.
+  const label = byTestId(page, 'nav-group-label');
+  await expect(label).toHaveText('Group by');
+  const [said, toggle, title, row, option] = [
+    await label.boundingBox(),
+    await byTestId(page, 'nav-projects-toggle').boundingBox(),
+    await shown(page).first().boundingBox(),
+    await byTestId(page, 'nav-thread').first().boundingBox(),
+    await byTestId(page, 'nav-group-option').last().boundingBox(),
   ];
-  expect(pinned?.y ?? Infinity).toBeLessThan(projects?.y ?? 0);
-  await expect(byTestId(page, 'needs-you-thread')).toHaveText(['Review the release notes glave']);
-  // It stays in its own place in its project too.
+  expect(said?.y ?? Infinity).toBeLessThan(toggle?.y ?? 0);
+  expect(Math.abs((said?.x ?? 0) - (title?.x ?? 0))).toBeLessThan(1);
+  expect(
+    Math.abs((option?.x ?? 0) + (option?.width ?? 0) - (row?.x ?? 0) - (row?.width ?? 0)),
+  ).toBeLessThan(6);
   await expect(shown(page)).toHaveText([...BY_ACTIVITY, 'Dinner ideas for Saturday']);
-  await byTestId(page, 'needs-you-thread').click();
-  await expect(page).toHaveURL(new RegExp(`/t/${WAITING}$`, 'u'));
-  await expect(byTestId(page, 'needs-you-thread')).toHaveAttribute('aria-current', 'page');
+  const waiting = byTestId(page, 'nav-thread').filter({ hasText: 'Review the release notes' });
+  await expect(waiting.getByTestId('nav-thread-line')).toHaveText('Waiting on you');
+  await expect(byTestId(page, 'nav-thread-line')).toHaveCount(1);
+  await expect(byTestId(page, 'nav-needs-you')).toHaveCount(0);
   await expectAccessible(page);
+});
+
+for (const colorScheme of ['light', 'dark'] as const) {
+  test(`by status: Needs you with how many, Working, then Idle, each with its place (${colorScheme})`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme });
+    const api = await fakeApi(page);
+    await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+    await grouping(page, 'Status').check();
+    await expect(byTestId(page, 'nav-projects')).toHaveCount(0);
+    const sections = ['nav-needs-you', 'nav-working', 'nav-idle'];
+    const tops = await Promise.all(
+      sections.map(async (testId) => (await byTestId(page, testId).boundingBox())?.y ?? 0),
+    );
+    expect([...tops].sort((a, b) => a - b)).toEqual(tops);
+    await expect(byTestId(page, 'nav-needs-you-count')).toHaveText('1');
+    expect(await listed(page, 'nav-needs-you')).toEqual(['Review the release notes', 'glave']);
+    expect(await listed(page, 'nav-working')).toEqual(['Nightly dependency audit', 'glave']);
+    // Newest first, the thread another started listed on its own; each thread once.
+    expect(await listed(page, 'nav-idle')).toEqual([
+      'Make the tests pass',
+      'Dinner ideas for Saturday',
+      'Check the parser’s edge cases',
+      'glave',
+      'Chats',
+      'glave',
+    ]);
+    await expect(shown(page)).toHaveCount(5);
+    // The thread shown keeps its bar, and the switch marks its choice in more than a fill.
+    await expect(
+      byTestId(page, 'nav-thread').filter({ hasText: 'Make the tests pass' }),
+    ).toHaveAttribute('aria-current', 'page');
+    const option = (label: string): Locator =>
+      byTestId(page, 'nav-group-option').filter({ hasText: label });
+    const outline = await markerOf(option('Status'), 'outline');
+    expect(outline.width).toBe('1px');
+    expect(outline.againstFill).toBeGreaterThanOrEqual(3);
+    expect(outline.againstSidebar).toBeGreaterThanOrEqual(3);
+    expect(
+      await option('Project').evaluate((element) => getComputedStyle(element).borderTopColor),
+    ).toBe('rgba(0, 0, 0, 0)');
+    await expectAccessible(page);
+    // From Needs you, straight to what waits.
+    await byTestId(page, 'nav-needs-you').getByTestId('nav-thread').click();
+    await expect(page).toHaveURL(new RegExp(`/t/${WAITING}$`, 'u'));
+    await expect(byTestId(page, 'nav-needs-you').getByTestId('nav-thread')).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(
+      api.requests.filter(({ method }) => method === 'grouping/set').map(({ params }) => params),
+    ).toEqual([{ grouping: 'status' }]);
+  });
+}
+
+test('the grouping is the person’s: kept by glave, the same after a reload and in another browser', async ({
+  page,
+  browser,
+}) => {
+  const grouped: Grouped = { grouping: 'project' };
+  await fakeApi(page, { grouped });
+  await page.goto(`/${SIGNED_IN}`);
+  await grouping(page, 'Status').check();
+  await expect(byTestId(page, 'nav-needs-you')).toBeVisible();
+  await expect.poll(() => grouped.grouping).toBe('status');
+  await page.reload();
+  await expect(grouping(page, 'Status')).toBeChecked();
+  await expect(byTestId(page, 'nav-needs-you')).toBeVisible();
+
+  // Another browser, with nothing of this one's kept in it.
+  const elsewhere = await browser.newContext();
+  const other = await elsewhere.newPage();
+  await fakeApi(other, { grouped });
+  await other.goto(`${new URL(page.url()).origin}/${SIGNED_IN}`);
+  await expect(grouping(other, 'Status')).toBeChecked();
+  await expect(byTestId(other, 'nav-idle')).toBeVisible();
+  // Back by project there, by project here at the next look.
+  await grouping(other, 'Project').check();
+  await expect(byTestId(other, 'nav-projects')).toBeVisible();
+  await expect.poll(() => grouped.grouping).toBe('project');
+  await elsewhere.close();
+  await page.reload();
+  await expect(grouping(page, 'Project')).toBeChecked();
+  await expect(byTestId(page, 'nav-projects')).toBeVisible();
 });
 
 test('the search finds a thread by its day as well as its title', async ({ page }) => {
@@ -153,23 +268,31 @@ test('the search finds a thread by its day as well as its title', async ({ page 
   }
   await search.fill('oct 12');
   await expect(shown(page)).toHaveCount(0);
-  await expect(byTestId(page, 'needs-you')).toHaveCount(0);
   await expect(byTestId(page, 'nav-no-match')).toBeVisible();
   await search.fill('release');
   await expect(shown(page)).toHaveText(['Review the release notes']);
-  await expect(byTestId(page, 'needs-you-thread')).toHaveText(['Review the release notes glave']);
+  // By status, the search keeps what it finds the same way, under what each is doing.
+  await grouping(page, 'Status').check();
+  await expect(byTestId(page, 'nav-needs-you').getByTestId('nav-thread-title')).toHaveText([
+    'Review the release notes',
+  ]);
+  await expect(byTestId(page, 'nav-idle')).toHaveCount(0);
+  await search.fill('oct 12');
+  await expect(byTestId(page, 'nav-no-match')).toBeVisible();
   await search.fill('');
+  await expect(shown(page)).toHaveCount(5);
+  await grouping(page, 'Project').check();
   await expect(shown(page)).toHaveText([...BY_ACTIVITY, 'Dinner ideas for Saturday']);
 });
 
-test('where a thread’s time sits, a ring turns while it runs and a mark says it needs you', async ({
+test('where a thread’s time sits, a ring turns while it runs; what waits says so under its title', async ({
   page,
 }) => {
   await page.clock.setFixedTime(NOW);
   await fakeApi(page);
   await page.goto(`/${SIGNED_IN}`);
   // The rest say how long ago they were last active, in words for a screen reader.
-  await expect(byTestId(page, 'nav-thread-since')).toHaveText([/^5m/u, /^6m/u, /^5m/u]);
+  await expect(byTestId(page, 'nav-thread-since')).toHaveText([/^5m/u, /^6m/u, /^9m/u, /^5m/u]);
   const row = (title: string): Locator => byTestId(page, 'nav-thread').filter({ hasText: title });
   await expect(row('Make the tests pass')).toHaveAccessibleName(
     /^Make the tests pass\s*5 minutes ago$/u,
@@ -178,29 +301,35 @@ test('where a thread’s time sits, a ring turns while it runs and a mark says i
     /^Nightly dependency audit\s*running$/u,
   );
   await expect(row('Review the release notes')).toHaveAccessibleName(
-    /^Review the release notes\s*needs you$/u,
+    /^Review the release notes\s+Waiting on you\s+9 minutes ago$/u,
   );
   // At the row's end, where the time sits, and as large as the title.
   const ring = byTestId(page, 'nav-thread-running');
-  const mark = byTestId(page, 'nav-thread-waiting');
-  for (const [status, title] of [
-    [ring, 'Nightly dependency audit'],
-    [mark, 'Review the release notes'],
-  ] as const) {
-    const [box, line] = [await status.boundingBox(), await row(title).boundingBox()];
-    expect((line?.x ?? 0) + (line?.width ?? 0) - ((box?.x ?? 0) + (box?.width ?? 0))).toBeLessThan(
-      20,
-    );
-    const size = await row(title)
-      .getByTestId('nav-thread-title')
-      .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
-    // Its own height: a turning ring's box on the page grows as it turns.
-    const height = await status.evaluate((element) =>
-      Number.parseFloat(getComputedStyle(element).height),
-    );
-    expect(Math.abs(height - size)).toBeLessThan(1);
-  }
+  const [box, line] = [
+    await ring.boundingBox(),
+    await row('Nightly dependency audit').boundingBox(),
+  ];
+  expect((line?.x ?? 0) + (line?.width ?? 0) - ((box?.x ?? 0) + (box?.width ?? 0))).toBeLessThan(
+    20,
+  );
+  const size = await row('Nightly dependency audit')
+    .getByTestId('nav-thread-title')
+    .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
+  // Its own height: a turning ring's box on the page grows as it turns.
+  const height = await ring.evaluate((element) =>
+    Number.parseFloat(getComputedStyle(element).height),
+  );
+  expect(Math.abs(height - size)).toBeLessThan(1);
   expect(await turning(ring)).not.toBe('none');
+  // Under the title, on a line of its own, bold in the ink of the text.
+  const waits = row('Review the release notes').getByTestId('nav-thread-line');
+  const [title, under] = [
+    await row('Review the release notes').getByTestId('nav-thread-title').boundingBox(),
+    await waits.boundingBox(),
+  ];
+  expect(under?.y ?? 0).toBeGreaterThanOrEqual((title?.y ?? 0) + (title?.height ?? 0) - 1);
+  expect(Math.abs((under?.x ?? 0) - (title?.x ?? 0))).toBeLessThan(1);
+  expect(await waits.evaluate((element) => getComputedStyle(element).fontWeight)).toBe('700');
   await expectAccessible(page);
 });
 

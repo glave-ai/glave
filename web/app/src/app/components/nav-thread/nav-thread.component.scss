@@ -5,7 +5,33 @@
   gap: var(--glz-space-half);
 }
 
-// Running or waiting: a ring or a small mark as large as the title, in its ink, never a colour.
+// The title, and the line under it when there is one, each on one line, cut short if need be.
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-half);
+  min-width: 0;
+}
+
+.title,
+.line {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+// Where it is, small and muted; that it waits for the person, in the ink of the text and bold.
+.line {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-xs);
+}
+
+.line.needs-you {
+  color: var(--glz-color-text);
+  font-weight: var(--glz-weight-bold);
+}
+
+// Running: a ring as large as the title, in its ink, never a colour.
 .status {
   --glz-icon-size: 1em;
 

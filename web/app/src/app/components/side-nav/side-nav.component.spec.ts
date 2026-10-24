@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import type { TaskInfo } from '@glave/client';
+import type { Grouping, Project, TaskInfo } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import { ProjectsService } from '../../services/projects.service';
@@ -8,15 +8,26 @@ import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { record, task, thread } from '../../testing/fixtures';
 import { SideNavComponent } from './side-nav.component';
 
-async function render(tasks: readonly TaskInfo[] = []): Promise<{
+/** What the fake server has beside the tasks: the person's projects, and how they group. */
+interface Has {
+  readonly projects?: readonly Project[];
+  readonly grouping?: Grouping;
+}
+
+async function render(
+  tasks: readonly TaskInfo[] = [],
+  { projects = [record('p1', 'glave')], grouping = 'project' }: Has = {},
+): Promise<{
   readonly root: HTMLElement;
   readonly fixture: ReturnType<typeof TestBed.createComponent<SideNavComponent>>;
+  readonly fake: FakeSession;
 }> {
   const fake = new FakeSession()
-    .answer('project/list', { projects: [record('p1', 'glave')] })
+    .answer('project/list', { projects })
     .answer('thread/list', { threads: [thread('t1', 'Plan the launch'), thread('t2', 'Fix CI')] })
     .answer('tasks/list', { tasks })
-    .answer('schedule/list', { schedules: [] });
+    .answer('schedule/list', { schedules: [] })
+    .answer('grouping/get', { grouping });
   TestBed.configureTestingModule({
     providers: [provideRouter([{ path: '**', children: [] }]), ...provideFakeSession(fake)],
   });
@@ -24,9 +35,18 @@ async function render(tasks: readonly TaskInfo[] = []): Promise<{
   const fixture = TestBed.createComponent(SideNavComponent);
   fixture.componentRef.setInput('page', 'tasks');
   await fixture.whenStable();
-  await new Promise((resolve) => setTimeout(resolve));
-  await fixture.whenStable();
-  return { root: fixture.nativeElement as HTMLElement, fixture };
+  await settle(fixture);
+  return { root: fixture.nativeElement as HTMLElement, fixture, fake };
+}
+
+/** Lets what the side nav started settle: its calls, and the code it loads late. */
+async function settle(
+  fixture: ReturnType<typeof TestBed.createComponent<SideNavComponent>>,
+): Promise<void> {
+  for (let turn = 0; turn < 3; turn += 1) {
+    await new Promise((resolve) => setTimeout(resolve));
+    await fixture.whenStable();
+  }
 }
 
 describe('SideNavComponent', () => {
@@ -82,5 +102,44 @@ describe('SideNavComponent', () => {
     tasks?.click();
     await fixture.whenStable();
     expect(navigated).toBe(1);
+  });
+
+  it('groups the threads by project until the person picks Status in the switch above them', async () => {
+    const { root, fixture, fake } = await render();
+    const radio = (label: string): HTMLInputElement | undefined =>
+      Array.from(root.querySelectorAll<HTMLInputElement>('[data-testid="nav-group"] input')).find(
+        (each) => each.labels?.[0]?.textContent.trim() === label,
+      );
+    expect(radio('Project')?.checked).toBe(true);
+    expect(root.querySelector('[data-testid="nav-projects"]')).not.toBeNull();
+    expect(root.querySelector('app-status-nav')).toBeNull();
+    // Above the threads, as they scroll.
+    const group = root.querySelector('app-group-by');
+    expect(group?.nextElementSibling?.tagName.toLowerCase()).toBe('app-projects-nav');
+    await expectAccessible(root);
+    radio('Status')?.click();
+    await settle(fixture);
+    expect(fake.paramsOf('grouping/set')).toEqual([{ grouping: 'status' }]);
+    expect(root.querySelector('[data-testid="nav-projects"]')).toBeNull();
+    expect(root.querySelector('[data-testid="nav-idle"]')).not.toBeNull();
+    expect(root.querySelectorAll('[data-testid="nav-thread-line"]')).toHaveLength(2);
+    await expectAccessible(root);
+  });
+
+  it('groups the threads as the person chose in another browser', async () => {
+    const { root } = await render([], { grouping: 'status' });
+    expect(root.querySelector('app-status-nav')).not.toBeNull();
+    expect(root.querySelector('app-projects-nav')).toBeNull();
+  });
+
+  it('with only Chats, shows no switch and lists the chats alone, whatever was chosen', async () => {
+    const { root } = await render([], {
+      projects: [record('me', 'Personal', 'personal')],
+      grouping: 'status',
+    });
+    expect(root.querySelector('[data-testid="nav-group"]')).toBeNull();
+    expect(root.querySelector('app-status-nav')).toBeNull();
+    expect(root.querySelector('[data-testid="nav-chats"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="nav-thread-line"]')).toBeNull();
   });
 });

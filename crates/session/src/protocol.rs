@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 pub use credentials::{Ability, CredentialInfo, DeviceCode};
 pub use error::{ApiError, ErrorData};
 pub use files::{AttachedFile, FileInfo};
-pub use glave_event::ApprovalMode;
+pub use glave_event::{ApprovalMode, Grouping};
 pub use glave_event::{Forge, ProviderKind};
 pub use live::Update;
 pub use models::ModelInfo;
@@ -96,6 +96,11 @@ methods! {
         #[serde(default)]
         language: Option<String>,
     } -> [Language],
+    /// How the caller's clients group their threads: by project until they choose.
+    "grouping/get" => GroupingGet {} -> [Grouping],
+    /// Chooses how the caller's clients group their threads: by project or by status. The
+    /// server keeps the choice; a client groups by what each thread is doing, as it says.
+    "grouping/set" => GroupingSet { grouping: Grouping } -> [Grouping],
     /// A one-time code for a link that signs a browser on this computer in: good once, for
     /// five minutes. Only glave on this computer: a local transport, or the local token.
     "signin/link" => SigninLink {} -> [Link],

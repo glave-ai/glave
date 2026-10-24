@@ -4,8 +4,7 @@
 //! `language/set` read and keep their choice; a transport writes the server's own sentences in
 //! an answer in their language, and reads their choice only when an answer holds one.
 
-use glave_event::{At, Body, EventId, Header, LanguageSet, Payload as _, Seq, decode, encode};
-use glave_ports::stream::{Reserved, SETTINGS, append_retrying};
+use glave_event::{Body, LanguageSet, Payload as _};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
 use crate::protocol::{ApiError, Reply, code};
@@ -44,27 +43,10 @@ where
         }
         // Kept as the person wrote it, but for the spaces around it.
         let language = language.map(|tag| tag.trim().to_owned());
-        let (_, scope) = self.personal_project(caller).await?;
-        let (log, ledger) = (self.inner.harness.log(), Reserved::Settings.id());
         let set = LanguageSet {
             language: language.clone(),
         };
-        let (this, set, scope) = (self, &set, &scope);
-        append_retrying(log, scope, ledger, move || async move {
-            let last = log.latest_of(scope, ledger, &SETTINGS).await?;
-            let seq = last
-                .map_or(Some(Seq::FIRST), |raw| raw.seq.next())
-                .ok_or_else(|| ApiError::internal(&"the settings ledger is full"))?;
-            let now = this.inner.harness.clock().now();
-            let header = Header {
-                id: EventId::new(now, this.inner.harness.entropy().bytes()?)?,
-                thread: ledger,
-                seq,
-                at: At::from(now),
-            };
-            Ok::<_, ApiError>(Some((vec![encode(header, set)?], ())))
-        })
-        .await?;
+        self.keep_setting(caller, &set).await?;
         Ok(Reply::Language { language })
     }
 
@@ -98,18 +80,8 @@ where
         &self,
         caller: &Caller,
     ) -> Result<Option<(String, Language)>, ApiError> {
-        let (_, scope) = self.personal_project(caller).await?;
-        let latest = self
-            .inner
-            .harness
-            .log()
-            .latest_of(&scope, Reserved::Settings.id(), &[LanguageSet::TYPE])
-            .await?;
-        let tag = match latest.map(decode) {
-            Some(Ok(event)) => match event.body {
-                Body::LanguageSet(set) => set.language,
-                _ => None,
-            },
+        let tag = match self.setting(caller, LanguageSet::TYPE).await? {
+            Some(Body::LanguageSet(set)) => set.language,
             _ => None,
         };
         Ok(tag.and_then(|tag| Language::of(&tag).map(|language| (tag, language))))

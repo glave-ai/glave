@@ -1,4 +1,4 @@
-import type { Project, ThreadSummary } from '@glave/client';
+import type { Project, Status, ThreadSummary } from '@glave/client';
 import type { GlzIconData } from '@glave/glaze';
 import Hand from 'lucide/dist/esm/icons/hand.mjs';
 import TriangleAlert from 'lucide/dist/esm/icons/triangle-alert.mjs';
@@ -19,11 +19,21 @@ export interface ProjectWithThreads {
 }
 
 /**
- * What says a thread or a closed list needs the person: a small, neutral mark, and what screen
- * readers hear.
+ * What says a closed list has something in it that needs the person: a small, neutral mark, and
+ * what screen readers hear.
  */
 export function needsYou(): { readonly icon: GlzIconData; readonly label: string } {
   return { icon: Hand, label: $localize`:@@nav.needsYou:needs you` };
+}
+
+/**
+ * What a thread's line in the side nav says under its title: that it needs the person, grouped
+ * by project; or where it is, grouped by what it is doing.
+ */
+export interface NavLine {
+  readonly text: string;
+  /** Whether it says the thread needs the person, which reads stronger than where it is. */
+  readonly needsYou: boolean;
 }
 
 /** A thread's line in the side nav, with the threads it started under it. */
@@ -34,7 +44,9 @@ export interface NavThread {
   /** What the server says it is doing: running, or waiting for the person; else neither. */
   readonly running: boolean;
   readonly waiting: boolean;
-  /** When it was last active, which its line shows while it neither runs nor waits. */
+  /** The line under its title, if it has one. */
+  readonly line: NavLine | null;
+  /** When it was last active, which its line shows while it does not run. */
   readonly since: Since;
   readonly current: boolean;
   readonly children: readonly NavThread[];
@@ -66,39 +78,34 @@ export interface NavProject extends NavHeading {
   readonly gone: string | null;
 }
 
-/**
- * What the side nav lists: what needs the person, then each project with its threads, then the
- * person's own chats.
- */
+/** What the side nav lists by project: each project with its threads, then the person's chats. */
 export interface NavSections {
-  /** The threads that wait for the person; none, and Needs you does not show. */
-  readonly needsYou: readonly WaitingThread[];
   readonly projects: NavHeading & { readonly list: readonly NavProject[] };
   /** Every personal project's threads together. */
   readonly chats: NavHeading & { readonly list: readonly NavThread[] };
 }
 
+/** The side nav's threads by what the server says each is doing: its `status`. */
+export type StatusSections = Readonly<Record<Status, readonly NavThread[]>>;
+
 /**
- * What the side nav shows: the search, the thread shown now, the lists the person closed
- * (`PROJECTS_LIST`, `CHATS_LIST` or a project's id), and now, in milliseconds since the epoch,
- * for its reader (their own language and time zone unless set): its times count from it.
+ * What the side nav's threads show: the search, the thread shown now, and now, in milliseconds
+ * since the epoch, for its reader (their own language and time zone unless set): their times
+ * count from it.
  */
-export interface NavView {
+export interface ThreadsView {
   readonly query: string;
   readonly current: string | null;
-  readonly collapsed: ReadonlySet<string>;
   readonly now: number;
   readonly reader?: Reader;
 }
 
-/** A thread that needs the person, as Needs you shows it: its title and its place. */
-export interface WaitingThread {
-  readonly id: string;
-  readonly link: readonly string[];
-  readonly title: string;
-  /** Its project's name, or Chats; none when the person has only Chats. */
-  readonly place: string | null;
-  readonly current: boolean;
+/**
+ * What the side nav shows by project: its threads, and the lists the person closed
+ * (`PROJECTS_LIST`, `CHATS_LIST` or a project's id).
+ */
+export interface NavView extends ThreadsView {
+  readonly collapsed: ReadonlySet<string>;
 }
 
 /** An item and when it was last active, which its list is ordered by. */
@@ -132,13 +139,19 @@ export function matchesQuery(title: string, days: readonly string[], query: stri
   });
 }
 
+/** Whether the person has a project of their own beside their Chats. */
+export function hasProjects(lists: readonly ProjectWithThreads[]): boolean {
+  return lists.some(({ project }) => project.kind === 'project');
+}
+
 /**
- * The side nav's lists: what waits for the person, pinned first; each project with its threads;
- * then the person's own chats (every personal project's threads together). Each list is newest
- * first, in one order the person can learn, whatever waits or runs: a project by its latest
- * thread (its making, before it has one), a thread with the threads it started, which sit under
- * it. A search keeps only the threads it finds, by title or by day, and the projects that have
- * one, all shown open; without one, every project shows, each list closed as the person left it.
+ * The side nav's lists by project: each project with its threads, then the person's own chats
+ * (every personal project's threads together). Each list is newest first, in one order the
+ * person can learn, whatever waits or runs: a project by its latest thread (its making, before
+ * it has one), a thread with the threads it started, which sit under it. A thread that needs the
+ * person says so under its title. A search keeps only the threads it finds, by title or by day,
+ * and the projects that have one, all shown open; without one, every project shows, each list
+ * closed as the person left it.
  */
 export function navSections(lists: readonly ProjectWithThreads[], view: NavView): NavSections {
   const times = readerTimes(view.now, view.reader);
@@ -151,7 +164,6 @@ export function navSections(lists: readonly ProjectWithThreads[], view: NavView)
     .filter(({ item }) => !searching(view) || item.threads.length > 0);
   const chats = threadTree(personalThreads(lists), view, times, found);
   return {
-    needsYou: waitingThreads(lists, view, found),
     projects: {
       ...heading(
         PROJECTS_LIST,
@@ -165,39 +177,36 @@ export function navSections(lists: readonly ProjectWithThreads[], view: NavView)
 }
 
 /**
- * Every thread the search finds that needs the person (an approval, a question, or its
- * project's trust), newest first, with its place when the person has projects.
+ * The side nav's threads by what the server says each is doing: those that need the person (an
+ * approval, a question, or their project's trust), those running, then the rest, each newest
+ * first, and each thread once, with its project's name, or Chats, under its title. A thread
+ * another started is listed on its own, where what it is doing puts it. A search keeps only the
+ * threads it finds.
  */
-function waitingThreads(
+export function statusSections(
   lists: readonly ProjectWithThreads[],
-  view: NavView,
-  found: (thread: ThreadSummary) => boolean,
-): readonly WaitingThread[] {
-  const hasProjects = lists.some(({ project }) => project.kind === 'project');
+  view: ThreadsView,
+): StatusSections {
+  const times = readerTimes(view.now, view.reader);
   // What the side nav calls the person's own chats (their personal projects' threads).
   const chats = $localize`:@@nav.chats:Chats`;
-  return lists
-    .flatMap(({ project, threads }) => {
-      const place = project.kind === 'project' ? project.name : chats;
-      return threads
-        .filter((thread) => thread.status === 'waiting' && found(thread))
-        .map((thread) => ({
-          latest: thread.updated_at,
-          item: {
-            id: thread.id,
-            link: ['/t', thread.id],
-            title: threadTitle(thread),
-            place: hasProjects ? place : null,
-            current: thread.id === view.current,
-          },
-        }));
-    })
-    .sort((a, b) => b.latest.localeCompare(a.latest))
-    .map(({ item }) => item);
+  const dated = lists.flatMap(({ project, threads }) => {
+    const line = { text: project.kind === 'project' ? project.name : chats, needsYou: false };
+    return threads
+      .filter((thread) => isFound(thread, view, times))
+      .map((thread) => ({
+        status: thread.status,
+        latest: thread.updated_at,
+        item: { ...navThread(thread, view, times, []), line },
+      }));
+  });
+  const doing = (status: Status): readonly NavThread[] =>
+    newestFirst(dated.filter((each) => each.status === status)).map(({ item }) => item);
+  return { waiting: doing('waiting'), running: doing('running'), idle: doing('idle') };
 }
 
 /** Whether the search finds `thread`, by its title or by the day it began or was last active. */
-function isFound(thread: ThreadSummary, view: NavView, times: Times): boolean {
+function isFound(thread: ThreadSummary, view: ThreadsView, times: Times): boolean {
   return (
     !searching(view) ||
     matchesQuery(
@@ -208,7 +217,7 @@ function isFound(thread: ThreadSummary, view: NavView, times: Times): boolean {
   );
 }
 
-function searching(view: NavView): boolean {
+function searching(view: ThreadsView): boolean {
   return view.query.trim() !== '';
 }
 
@@ -251,8 +260,8 @@ interface ThreadTree {
 
 /**
  * The threads the search finds, each under the thread that started it when that one is shown
- * too, every level newest first. A thread waits, and was last active, with the threads under
- * it.
+ * too, every level newest first, and under the title of each that waits, that it waits for the
+ * person. A thread waits, and was last active, with the threads under it.
  */
 function threadTree(
   threads: readonly ThreadSummary[],
@@ -264,25 +273,22 @@ function threadTree(
   const ids = new Set(shown.map((thread) => thread.id));
   const parentOf = (thread: ThreadSummary): string | null =>
     typeof thread.parent === 'string' && ids.has(thread.parent) ? thread.parent : null;
+  const waits = { text: $localize`:@@nav.waitingOnYou:Waiting on you`, needsYou: true };
   const level = (parent: string | null): readonly Dated<NavThread>[] =>
     newestFirst(
       shown
         .filter((thread) => parentOf(thread) === parent)
         .map((thread) => {
           const children = level(thread.id);
+          const item = navThread(
+            thread,
+            view,
+            times,
+            children.map((child) => child.item),
+          );
           return {
-            item: {
-              id: thread.id,
-              link: ['/t', thread.id],
-              title: threadTitle(thread),
-              running: thread.status === 'running',
-              waiting: thread.status === 'waiting',
-              since: times.since(thread.updated_at),
-              current: thread.id === view.current,
-              children: children.map(({ item }) => item),
-              hasChildren: children.length > 0,
-            },
-            waiting: thread.status === 'waiting' || children.some(({ waiting }) => waiting),
+            item: { ...item, line: item.waiting ? waits : null },
+            waiting: item.waiting || children.some(({ waiting }) => waiting),
             latest: [thread.updated_at, ...children.map(({ latest }) => latest)].reduce(later),
           };
         }),
@@ -291,8 +297,29 @@ function threadTree(
   return { list: roots.map(({ item }) => item), waiting: roots.some(({ waiting }) => waiting) };
 }
 
+/** `thread`'s line in the side nav, with `children` under it, and nothing under its title. */
+function navThread(
+  thread: ThreadSummary,
+  view: ThreadsView,
+  times: Times,
+  children: readonly NavThread[],
+): NavThread {
+  return {
+    id: thread.id,
+    link: ['/t', thread.id],
+    title: threadTitle(thread),
+    running: thread.status === 'running',
+    waiting: thread.status === 'waiting',
+    line: null,
+    since: times.since(thread.updated_at),
+    current: thread.id === view.current,
+    children,
+    hasChildren: children.length > 0,
+  };
+}
+
 /** `items` with the latest active first. */
-function newestFirst<T>(items: readonly Dated<T>[]): readonly Dated<T>[] {
+function newestFirst<T extends { readonly latest: string }>(items: readonly T[]): readonly T[] {
   return [...items].sort((a, b) => b.latest.localeCompare(a.latest));
 }
 

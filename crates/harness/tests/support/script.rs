@@ -222,6 +222,7 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::PasskeyRemoved(_) => "passkey.removed",
             Body::AwakeSet(_) => "awake.set",
             Body::LanguageSet(_) => "language.set",
+            Body::GroupingSet(_) => "grouping.set",
             Body::Unknown(_) => "unknown",
         })
         .collect()

@@ -35,6 +35,7 @@ export * from './components/radio-group/radio-group.component';
 export * from './components/radio/radio.component';
 export * from './components/reasoning/reasoning.component';
 export * from './components/receipt/receipt.component';
+export * from './components/segmented/segmented.component';
 export * from './components/sidenav-layout/sidenav-layout.component';
 export * from './components/steps/steps.component';
 export * from './components/tab/tab.component';

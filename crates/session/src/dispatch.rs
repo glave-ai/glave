@@ -124,6 +124,8 @@ where
             Request::AwakeSet { on } => self.set_awake(caller, on).await,
             Request::LanguageGet {} => self.language(caller).await,
             Request::LanguageSet { language } => self.set_language(caller, language).await,
+            Request::GroupingGet {} => self.grouping(caller).await,
+            Request::GroupingSet { grouping } => self.set_grouping(caller, grouping).await,
             Request::SigninLink {} => self.link(caller),
             Request::SigninSetup {} => self.setup(caller),
             Request::PasskeyCreateOptions { code } => self.create_options(&code),

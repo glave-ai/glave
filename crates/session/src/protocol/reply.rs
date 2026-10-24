@@ -13,8 +13,9 @@ use glave_ports::{Project, ProjectId, Standing};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    ApprovalMode, CredentialInfo, DeviceCode, FileInfo, GoneFolder, ModelInfo, PasskeySummary,
-    ProjectFolder, ProviderInfo, ScheduleInfo, SignInWay, TaskInfo, Told, TrustAsk, WatchEnd,
+    ApprovalMode, CredentialInfo, DeviceCode, FileInfo, GoneFolder, Grouping, ModelInfo,
+    PasskeySummary, ProjectFolder, ProviderInfo, ScheduleInfo, SignInWay, TaskInfo, Told, TrustAsk,
+    WatchEnd,
 };
 
 /// What the server is.
@@ -299,6 +300,9 @@ pub enum Reply {
         #[serde(deserialize_with = "Option::deserialize")]
         language: Option<String>,
     },
+    /// How the caller's clients group their threads.
+    #[schemars(title = "Grouping")]
+    Grouping { grouping: Grouping },
     /// Whether the computer is kept awake while glave works.
     #[schemars(title = "Awake")]
     Awake { awake: AwakeInfo },

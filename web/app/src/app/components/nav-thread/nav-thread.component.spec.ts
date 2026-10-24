@@ -14,6 +14,7 @@ function line(id: string, title: string, more: Partial<NavThread> = {}): NavThre
     title,
     running: false,
     waiting: false,
+    line: null,
     since: SINCE,
     current: false,
     children: [],
@@ -53,7 +54,8 @@ describe('NavThreadComponent', () => {
     expect(text(since?.querySelector('[aria-hidden="true"]'))).toBe('5m');
     expect(text(since?.querySelector('.glz-visually-hidden'))).toBe('5 minutes ago');
     expect(find(root, 'nav-thread-running')).toBeNull();
-    expect(find(root, 'nav-thread-waiting')).toBeNull();
+    // Nothing under its title: it neither waits nor is listed away from its project.
+    expect(find(root, 'nav-thread-line')).toBeNull();
     await expectAccessible(root);
   });
 
@@ -68,14 +70,27 @@ describe('NavThreadComponent', () => {
     await expectAccessible(root);
   });
 
-  it('shows a small mark in its time’s place while it waits, read out as needs you', async () => {
-    const { root } = await render(line('t1', 'Fix the build', { waiting: true }));
-    const mark = find(root, 'nav-thread-waiting');
-    expect(mark?.tagName).toBe('GLZ-ICON');
-    expect(mark?.getAttribute('role')).toBe('img');
-    expect(mark?.getAttribute('aria-label')).toBe('needs you');
-    expect(find(root, 'nav-thread-since')).toBeNull();
+  it('says under its title that it waits for the person, bold, its time still at its end', async () => {
+    const waits = { text: 'Waiting on you', needsYou: true };
+    const { root } = await render(line('t1', 'Fix the build', { waiting: true, line: waits }));
+    const said = find(root, 'nav-thread-line');
+    expect(text(said)).toBe('Waiting on you');
+    expect(said?.classList).toContain('needs-you');
+    // Under the title, apart from it in what screen readers hear.
+    expect(said?.previousElementSibling).toBe(find(root, 'nav-thread-title'));
+    expect(text(find(root, 'nav-thread'))).toMatch(/^Fix the build Waiting on you 5m/u);
+    expect(find(root, 'nav-thread-since')).not.toBeNull();
     expect(find(root, 'nav-children')).toBeNull();
+    await expectAccessible(root);
+  });
+
+  it('says where it is under its title, muted, for a list of threads from every project', async () => {
+    const place = { text: 'glave', needsYou: false };
+    const { root } = await render(line('t1', 'Fix the build', { line: place }));
+    const said = find(root, 'nav-thread-line');
+    expect(text(said)).toBe('glave');
+    expect(said?.classList).not.toContain('needs-you');
+    expect(said?.getAttribute('dir')).toBe('auto');
     await expectAccessible(root);
   });
 

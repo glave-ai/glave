@@ -67,6 +67,18 @@
   opacity: 1;
 }
 
+// How the threads are grouped, always in view above them, as they scroll.
+.grouping {
+  flex: none;
+}
+
+// The threads by what each is doing, when their code cannot load.
+.error {
+  padding: var(--glz-inset-row);
+  color: var(--glz-color-danger);
+  font-size: var(--glz-text-sm);
+}
+
 .threads {
   flex: 1;
   min-height: 0;

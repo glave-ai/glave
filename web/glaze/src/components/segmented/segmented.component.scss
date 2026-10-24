@@ -1,0 +1,66 @@
+@use '../../styles/choice';
+
+// The label at the start, the segments at the end, on one line.
+:host {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glz-space-2);
+}
+
+// Small and muted, as a list's heading is.
+.label {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-xs);
+  font-weight: var(--glz-weight-bold);
+}
+
+// A sunken track the segments sit in, as tall as a small control.
+.segments {
+  display: flex;
+  flex: none;
+  gap: var(--glz-space-half);
+  padding: var(--glz-space-half);
+  border-radius: var(--glz-radius-control);
+  background: var(--glz-surface-hover);
+}
+
+@include choice.native;
+
+.segment {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: calc(var(--glz-control-height-sm) - 2 * var(--glz-space-half));
+  padding-inline: var(--glz-space-2);
+  border: var(--glz-border-width) solid transparent;
+  border-radius: var(--glz-radius-row);
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.segment:hover {
+  color: var(--glz-color-text);
+}
+
+// The one chosen is lifted onto the card's surface and, since a fill alone is not enough,
+// drawn round in the selected marker.
+.segment:has(:checked) {
+  border-color: var(--glz-selected-marker);
+  background: var(--glz-surface-card);
+  box-shadow: var(--glz-elevation-1);
+  color: var(--glz-color-text);
+}
+
+.segment:has(:focus-visible) {
+  box-shadow: var(--glz-focus-ring);
+}
+
+// On a phone, each segment is a finger's size.
+@media (width <= 48rem) {
+  .segment {
+    min-height: var(--glz-control-height-touch);
+  }
+}

@@ -115,17 +115,11 @@ describe('ProjectsNavComponent', () => {
       'nav-projects',
       'nav-chats',
     ]);
-    // Needs you comes first, while something waits.
-    expect(
-      find(root, 'needs-you').compareDocumentPosition(find(root, 'nav-projects')) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(texts(root, 'needs-you-thread')).toEqual(['New chat glave']);
     expect(texts(root, 'nav-projects-toggle')).toEqual(['Projects']);
     expect(texts(root, 'nav-chats-toggle')).toEqual(['Chats']);
     // Garden has no threads, and counts from when it was made, before glave's latest.
     expect(texts(root, 'nav-project-toggle')).toEqual(['glave', 'Garden']);
-    // What waits keeps its place in its list too.
+    // What waits keeps its place in its list, and is listed nowhere else.
     expect(texts(root, 'nav-thread-title')).toEqual([
       'Plan the launch',
       'Check the parser',
@@ -135,8 +129,9 @@ describe('ProjectsNavComponent', () => {
     ]);
     const threads = Array.from(root.querySelectorAll<HTMLElement>('[data-testid="nav-thread"]'));
     expect(threads[0]?.getAttribute('aria-current')).toBe('page');
-    // Where the time sits, a small mark for what needs the person, a ring for what runs.
-    expect(threads[3]?.querySelector('[data-testid="nav-thread-waiting"]')).not.toBeNull();
+    // What needs the person says so under its title, and it alone; a ring for what runs.
+    expect(texts(root, 'nav-thread-line')).toEqual(['Waiting on you']);
+    expect(threads[3]?.querySelector('[data-testid="nav-thread-line"]')).not.toBeNull();
     expect(threads[4]?.querySelector('[data-testid="nav-thread-running"]')).not.toBeNull();
     expect(threads[2]?.querySelector('[data-testid="nav-thread-since"]')).not.toBeNull();
     // No folder beside a project's name, and an empty project shows no filler.
@@ -236,8 +231,6 @@ describe('ProjectsNavComponent', () => {
   it('keeps the threads whose title matches the search, and says when none do', async () => {
     const { root, fixture } = await render('launch');
     expect(texts(root, 'nav-thread-title')).toEqual(['Plan the launch']);
-    // What waits is not found, so Needs you is gone.
-    expect(root.querySelector('[data-testid="needs-you"]')).toBeNull();
     expect(root.querySelector('[data-testid="nav-chats"]')).toBeNull();
     expect(root.querySelectorAll('[data-testid="nav-project"]')).toHaveLength(1);
     fixture.componentRef.setInput('query', 'zebra');

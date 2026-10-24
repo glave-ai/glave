@@ -1,0 +1,17 @@
+<nav class="lists" [attr.aria-label]="copy.threads">
+  @for (section of sections(); track section.testId) {
+    <glz-nav-list [testId]="section.testId" [heading]="section.heading">
+      @if (section.count; as count) {
+        <glz-badge glzNavListEnd tone="accent" data-testid="nav-needs-you-count">{{
+          count
+        }}</glz-badge>
+      }
+      @for (thread of section.threads; track thread.id) {
+        <app-nav-thread [thread]="thread" (navigated)="followed()" />
+      }
+    </glz-nav-list>
+  }
+  @if (noMatch()) {
+    <p class="empty" data-testid="nav-no-match">{{ copy.noMatch }}</p>
+  }
+</nav>

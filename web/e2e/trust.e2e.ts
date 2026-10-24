@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { type Locator, type Page, expect, test } from '@playwright/test';
 
 import { TRUSTING, TRUST_ASK, fakeApi } from './fake-api';
 import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './support';
@@ -11,8 +11,15 @@ const LISTED = [
   'Turns off the sandbox',
 ];
 
+/** The titles of the side nav's threads that say they wait for the person, in order. */
+function waiting(page: Page): Locator {
+  return byTestId(page, 'nav-thread')
+    .filter({ has: byTestId(page, 'nav-thread-line') })
+    .getByTestId('nav-thread-title');
+}
+
 for (const colorScheme of ['light', 'dark'] as const) {
-  test(`a project that brings its own tools asks in its thread and in Needs you, and trusting it is sent (${colorScheme})`, async ({
+  test(`a project that brings its own tools asks in its thread and in the side nav, and trusting it is sent (${colorScheme})`, async ({
     page,
   }) => {
     const problems = watchForProblems(page);
@@ -26,10 +33,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(card).not.toContainText(/\.mcp\.json|config\.toml|trust\.toml/u);
     await expect(byTestId(page, 'thread-trust-trust')).toHaveText('Trust this project');
     await expect(byTestId(page, 'thread-trust-not-now')).toHaveText('Not now');
-    await expect(byTestId(page, 'needs-you-thread')).toHaveText([
-      'Search the Acme docs acme',
-      'Review the release notes glave',
-    ]);
+    // Each project's thread that waits says so in its place: glave's, the latest active, first.
+    await expect(waiting(page)).toHaveText(['Review the release notes', 'Search the Acme docs']);
     await expectAccessible(page);
 
     await byTestId(page, 'thread-trust-trust').click();
@@ -39,7 +44,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     expect(answers.map((request) => request.params)).toEqual([
       { thread: TRUSTING, ask: TRUST_ASK.ask, answer: 'trust' },
     ]);
-    await expect(byTestId(page, 'needs-you-thread')).toHaveText(['Review the release notes glave']);
+    await expect(waiting(page)).toHaveText(['Review the release notes']);
     await expectAccessible(page);
     expect(problems()).toEqual([]);
   });

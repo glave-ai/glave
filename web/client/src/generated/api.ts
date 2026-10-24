@@ -185,6 +185,12 @@ export type GoneFolder = {
   readonly project: ProjectId;
 };
 
+/**
+ * How a client groups the person's threads: each under its project, or each under what it is
+ * doing (waiting for the person, running, idle).
+ */
+export type Grouping = "project" | "status";
+
 /** A client's name for one attempt at a turn: 1 to 255 bytes of text. */
 export type IdempotencyKey = string;
 
@@ -882,6 +888,22 @@ export type GoalStopParams = {
 
 export type GoalStopResult = Readonly<Record<string, never>>;
 
+export type GroupingGetParams = Readonly<Record<string, never>>;
+
+/** How the caller's clients group their threads. */
+export type GroupingGetResult = {
+  readonly grouping: Grouping;
+};
+
+export type GroupingSetParams = {
+  readonly grouping: Grouping;
+};
+
+/** How the caller's clients group their threads. */
+export type GroupingSetResult = {
+  readonly grouping: Grouping;
+};
+
 export type LanguageGetParams = Readonly<Record<string, never>>;
 
 /** The language the caller chose, as a BCP 47 tag; `null` while their client's counts. */
@@ -1510,6 +1532,8 @@ export interface Methods {
   readonly "goal/get": { readonly params: GoalGetParams; readonly result: GoalGetResult };
   readonly "goal/start": { readonly params: GoalStartParams; readonly result: GoalStartResult };
   readonly "goal/stop": { readonly params: GoalStopParams; readonly result: GoalStopResult };
+  readonly "grouping/get": { readonly params: GroupingGetParams; readonly result: GroupingGetResult };
+  readonly "grouping/set": { readonly params: GroupingSetParams; readonly result: GroupingSetResult };
   readonly "language/get": { readonly params: LanguageGetParams; readonly result: LanguageGetResult };
   readonly "language/set": { readonly params: LanguageSetParams; readonly result: LanguageSetResult };
   readonly "memory/edit": { readonly params: MemoryEditParams; readonly result: MemoryEditResult };

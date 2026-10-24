@@ -27,7 +27,6 @@ import { ProjectsService } from '../../services/projects.service';
 import { FolderGoneComponent } from '../folder-gone/folder-gone.component';
 import { NavListMenuComponent } from '../nav-list-menu/nav-list-menu.component';
 import { NavThreadComponent } from '../nav-thread/nav-thread.component';
-import { NeedsYouComponent } from '../needs-you/needs-you.component';
 import { NewProjectComponent } from '../new-project/new-project.component';
 import { RenameDialogComponent } from '../rename-dialog/rename-dialog.component';
 
@@ -35,12 +34,12 @@ import { RenameDialogComponent } from '../rename-dialog/rename-dialog.component'
 const RENAME = 'rename';
 
 /**
- * The person's threads in the side nav: Needs you pinned first while something waits for them,
- * then each project with its threads, then their chats, each list newest first in one order,
- * whatever waits or runs. Each heading opens and closes its list; beside it, on hover and
- * keyboard focus, its + starts a project, a thread in the project or a chat, and a project's ⋯
- * renames it. A closed list still shows, with the small mark a waiting thread has, that
- * something in it needs the person. A thread another started sits under it. A project whose
+ * The person's threads in the side nav by project: each project with its threads, then their
+ * chats, each list newest first in one order, whatever waits or runs, and under the title of
+ * each that waits for the person, that it does. Each heading opens and closes its list; beside
+ * it, on hover and keyboard focus, its + starts a project, a thread in the project or a chat,
+ * and a project's ⋯ renames it. A closed list still shows, with a small mark, that something in
+ * it needs the person. A thread another started sits under it. A project whose
  * folder isn't there anymore says so, in the server's words: a mark on its heading in the
  * warning tone, and above its threads, what can be done about it. How the person left the lists
  * is kept in this browser. A search keeps the threads it finds by title or by day. A list with
@@ -58,7 +57,6 @@ const RENAME = 'rename';
     GlzNavListComponent,
     NavListMenuComponent,
     NavThreadComponent,
-    NeedsYouComponent,
     NewProjectComponent,
     RenameDialogComponent,
   ],
@@ -104,7 +102,6 @@ export class ProjectsNavComponent {
       reader: { locale: this.locale },
     }),
   );
-  protected readonly needsYou = computed(() => this.sections().needsYou);
   protected readonly projects = computed(() => this.sections().projects);
   protected readonly projectList = computed(() =>
     this.projects().list.map((project) => ({
