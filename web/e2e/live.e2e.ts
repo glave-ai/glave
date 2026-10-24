@@ -129,8 +129,8 @@ test('the side nav shows a turn another tab starts running, then needing the per
   const log: string[] = [];
   const openA = track(watching, 'A', log, t0);
   const openB = track(working, 'B', log, t0);
-  await seeVisibility(watching);
-  await seeVisibility(working);
+  // Diagnostic run 3: no init scripts, as the test itself has none.
+  void seeVisibility;
   const names = (open: Set<Request>): string =>
     [...open].map((r) => r.headers()['glave-method'] ?? new URL(r.url()).pathname).join(',');
   const problems = [watchForProblems(watching), watchForProblems(working)];
@@ -150,6 +150,7 @@ test('the side nav shows a turn another tab starts running, then needing the per
     const state = await working
       .evaluate(() => ({
         ready: document.readyState,
+        url: location.href,
         visible: document.visibilityState,
         resources: performance
           .getEntriesByType('resource')
@@ -165,6 +166,12 @@ test('the side nav shows a turn another tab starts running, then needing the per
     console.log(`DIAG OPEN B: [${names(openB)}]`);
     console.log(`DIAG B state: ${JSON.stringify(state, null, 1)}`);
     console.log(`DIAG A state: ${JSON.stringify(stateA)}`);
+    console.log(
+      `DIAG B page url: ${working.url()} frames: ${working
+        .frames()
+        .map((f) => f.url())
+        .join(',')}`,
+    );
     throw error;
   }
   log.push(
