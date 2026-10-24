@@ -275,11 +275,14 @@ fn secured(mut response: Response<Answer>, nonce: &str) -> Response<Answer> {
     set(&mut response, header::X_CONTENT_TYPE_OPTIONS, "nosniff");
     set(&mut response, header::REFERRER_POLICY, "no-referrer");
     set(&mut response, header::X_FRAME_OPTIONS, "DENY");
-    set(
-        &mut response,
-        HeaderName::from_static("cross-origin-opener-policy"),
-        "same-origin",
-    );
+    // Diagnostic for #695 only, never merged: a glave that sends no COOP.
+    if std::env::var_os("GLAVE_DIAG_NO_COOP").is_none() {
+        set(
+            &mut response,
+            HeaderName::from_static("cross-origin-opener-policy"),
+            "same-origin",
+        );
+    }
     response
 }
 

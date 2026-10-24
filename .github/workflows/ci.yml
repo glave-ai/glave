@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     defaults:
       run:
         working-directory: web
@@ -51,13 +51,16 @@ jobs:
         working-directory: .
       - name: The image's browsers, where the scripts look for them
         run: ln -s /ms-playwright node_modules/playwright-core/.local-browsers
-      - name: webkit shard 1, as CI runs it, three times
-        run: |
-          for i in 1 2 3; do
-            docker run --rm --init --ipc=host -e CI -e GLAVE_BIN \
-              -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE" \
-              npm run e2e -- --project=webkit --shard=1/2 --grep-invert=probe --output=test-results/shard-$i || true
-          done
+      - name: a second tab beside a first that just loaded, with and without COOP
+        run: >-
+          docker run --rm --init --ipc=host -e CI -e GLAVE_BIN -e GLAVE_DIAG_COOP=1
+          -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE"
+          npm run e2e -- --project=webkit e2e/zz-probe-coop.e2e.ts --workers=4 --repeat-each=2 --output=test-results/coop || true
+      - name: the same in Chromium
+        run: >-
+          docker run --rm --init --ipc=host -e CI -e GLAVE_BIN -e GLAVE_DIAG_COOP=1
+          -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE"
+          npm run e2e -- --project=chromium e2e/zz-probe-coop.e2e.ts --workers=4 --repeat-each=2 --output=test-results/coop-chromium || true
       - uses: actions/upload-artifact@v7
         if: always()
         with:

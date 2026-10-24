@@ -114,7 +114,15 @@ const SITES: readonly { site: Site; web: string; env: Record<string, string> }[]
   ...[HERE, HERE_WEBKIT, CONNECTIONS, CONNECTIONS_WEBKIT].map((site) => ({
     site,
     web: 'dist/app/browser',
-    env: { ...tied, GLAVE_HOME: home(site), GLAVE_MODEL: 'e2e' },
+    env: {
+      ...tied,
+      GLAVE_HOME: home(site),
+      GLAVE_MODEL: 'e2e',
+      // Diagnostic for #695 only: this one sends no COOP.
+      ...(site === HERE_WEBKIT && process.env['GLAVE_DIAG_COOP'] !== undefined
+        ? { GLAVE_DIAG_NO_COOP: '1' }
+        : {}),
+    },
   })),
   {
     site: PASSKEYS,
