@@ -23,7 +23,9 @@ use crate::support::*;
 async fn browsers(dir: &Path, clock: &ManualClock) -> Arc<Browsers> {
     let store = sqlite(&dir.join("browsers.db")).await;
     let server = dir.file_name().unwrap().to_string_lossy().into_owned();
-    let opened = Browsers::open(store.log(), scope(), server, None, Box::new(clock.clone()));
+    let handle = uuid::Uuid::from_u128(0x691);
+    let clock = Box::new(clock.clone());
+    let opened = Browsers::open(store.log(), scope(), server, handle, None, clock);
     Arc::new(opened.await.unwrap())
 }
 

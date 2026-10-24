@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use hmac::{Hmac, KeyInit as _};
+use sha2::Sha256;
 use zeroize::Zeroizing;
 
 use crate::error::KeyError;
@@ -33,6 +35,11 @@ impl KeyMaterial {
 
     pub fn bytes(&self) -> &[u8; 32] {
         &self.0
+    }
+
+    /// HMAC-SHA-256 keyed with this key, waiting for its message.
+    pub(crate) fn mac(&self) -> Result<Hmac<Sha256>, KeyError> {
+        Hmac::<Sha256>::new_from_slice(self.bytes()).map_err(|e| KeyError::Corrupt(e.to_string()))
     }
 }
 

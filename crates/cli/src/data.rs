@@ -9,6 +9,7 @@ use anyhow::Context as _;
 use glave_bucket::Bucket;
 use glave_config::policy::StoreFile;
 use glave_event::{BlobRef, PrincipalId, RawEvent, Seq, Sha256, ThreadId};
+use glave_keys::KeyMaterial;
 use glave_ports::search::Found;
 use glave_ports::{
     Blob, BlobError, BlobStore, Chunks, Eraser, EventLog, Leases, Located, LogError, Objects,
@@ -131,6 +132,15 @@ impl Data {
         Ok(match self {
             Self::Sqlite(store) => store.server(new).await?,
             Self::Postgres(store) => store.server(new).await?,
+        })
+    }
+
+    /// What the root derives for `purpose`: the same while the root lasts, however often this
+    /// store starts over.
+    pub(crate) async fn derived(&self, purpose: &str) -> anyhow::Result<KeyMaterial> {
+        Ok(match self {
+            Self::Sqlite(store) => store.keys().derive(purpose).await?,
+            Self::Postgres(store) => store.keys().derive(purpose).await?,
         })
     }
 

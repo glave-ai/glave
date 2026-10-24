@@ -22,9 +22,16 @@ fn scope() -> Scope {
 }
 
 async fn open(log: SqliteLog, clock: &ManualClock) -> Browsers {
-    Browsers::open(log, scope(), "server".into(), None, Box::new(clock.clone()))
-        .await
-        .unwrap()
+    Browsers::open(
+        log,
+        scope(),
+        "server".into(),
+        Uuid::nil(),
+        None,
+        Box::new(clock.clone()),
+    )
+    .await
+    .unwrap()
 }
 
 fn later(clock: &ManualClock, by: SignedDuration) {

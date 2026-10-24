@@ -35,6 +35,7 @@ describe('SessionService', () => {
   afterEach(() => {
     localStorage.clear();
     history.replaceState(null, '', '/');
+    vi.unstubAllGlobals();
   });
 
   it('is signed in with a session, and calls through the client', async () => {
@@ -88,6 +89,43 @@ describe('SessionService', () => {
       token: 'glave_session_new',
       server: FAKE_SERVER,
     });
+  });
+
+  it("tells the browser's passkey manager every passkey that signs the person in", async () => {
+    const told = vi.fn(() => Promise.resolve());
+    vi.stubGlobal('PublicKeyCredential', { signalAllAcceptedCredentials: told });
+    history.replaceState(null, '', '/#code=abc');
+    const accepted = { party: 'localhost', user: 'AQID', credentials: ['BAU'] };
+    const began = { session: 'glave_session_new', server: FAKE_SERVER, accepted };
+    startingOut(
+      new FakeSession().answer('server/discover', DISCOVERED).answer('signin/redeem', began),
+    );
+    const session = TestBed.inject(SessionService);
+    await session.start();
+    expect(session.signedIn()).toBe(true);
+    expect(told).toHaveBeenCalledExactlyOnceWith({
+      rpId: 'localhost',
+      userId: 'AQID',
+      allAcceptedCredentialIds: ['BAU'],
+    });
+    // Another server's session is not kept, nor are its passkeys told.
+    expect(session.begin({ ...began, server: 'another-server' })).toBe(false);
+    expect(session.begin({ ...began, accepted: null })).toBe(true);
+    expect(told).toHaveBeenCalledOnce();
+  });
+
+  it('signs in as before where the browser has no Signal API', async () => {
+    vi.stubGlobal('PublicKeyCredential', undefined);
+    history.replaceState(null, '', '/#code=abc');
+    const accepted = { party: 'localhost', user: 'AQID', credentials: [] };
+    startingOut(
+      new FakeSession()
+        .answer('server/discover', DISCOVERED)
+        .answer('signin/redeem', { session: 'glave_session_new', server: FAKE_SERVER, accepted }),
+    );
+    const session = TestBed.inject(SessionService);
+    await session.start();
+    expect(session.signedIn()).toBe(true);
   });
 
   it('makes passkeys at the public origin, or here at this page once the server says so', async () => {

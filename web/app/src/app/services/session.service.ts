@@ -10,6 +10,7 @@ import {
   type StreamingMethod,
 } from '@glave/client';
 
+import { type PasskeySignals, signalAccepted } from '../lib/passkey-signals';
 import { forget, storageOf } from '../lib/storage';
 import {
   type BrowserSession,
@@ -43,6 +44,15 @@ export const INITIAL_SESSION = new InjectionToken<BrowserSession | null>('INITIA
   providedIn: 'root',
   factory: () => null,
 });
+
+/** The browser's `PublicKeyCredential`, for its Signal API, where it has one. */
+export const PASSKEY_SIGNALS = new InjectionToken<PasskeySignals | null>('PASSKEY_SIGNALS', {
+  providedIn: 'root',
+  factory: () => inject(DOCUMENT).defaultView?.PublicKeyCredential ?? null,
+});
+
+/** A session a server began, by a link's code or a passkey: each answers it alike. */
+export type Began = Methods['signin/redeem']['result'];
 
 /** Makes the client for the server that served the app, signing each call in with `token`. */
 export const SESSION_CLIENT_FACTORY = new InjectionToken<(token: () => string) => SessionClient>(
@@ -105,6 +115,7 @@ export class SessionService {
     () => this.local() && this.passkeysHere() && !this.ways().includes('passkey'),
   );
   private readonly client = inject(SESSION_CLIENT_FACTORY)(() => this.session()?.token ?? '');
+  private readonly passkeySignals = inject(PASSKEY_SIGNALS);
 
   /**
    * Signs the tab in, before the app starts: with the link's code when it carries one, else
@@ -209,9 +220,11 @@ export class SessionService {
 
   /**
    * Keeps for this browser the session a server began, as a link's code or a passkey began
-   * it: whether the server that served the app began it, the only one it is presented to.
+   * it: whether the server that served the app began it, the only one it is presented to. The
+   * browser's passkey manager is then told which of the person's passkeys sign them in, where
+   * the server named them, so it hides or deletes the rest.
    */
-  begin(began: { readonly session: string; readonly server: string }): boolean {
+  begin(began: Began): boolean {
     if (this.server === undefined || began.server !== this.server) {
       return false;
     }
@@ -219,6 +232,10 @@ export class SessionService {
     keepSession(this.storage, session);
     this.session.set(session);
     this.setupLink.set(null);
+    const accepted = began.accepted ?? null;
+    if (accepted !== null) {
+      void signalAccepted(this.passkeySignals, accepted);
+    }
     return true;
   }
 

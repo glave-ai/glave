@@ -25,6 +25,32 @@
         }
       ]
     },
+    "AcceptedPasskeys": {
+      "description": "Every passkey that signs the person in with a relying party, after a sign-in, for the\nbrowser to tell its passkey manager (`PublicKeyCredential.signalAllAcceptedCredentials`),\nwhich then hides or deletes the person's others there.",
+      "properties": {
+        "credentials": {
+          "description": "Each passkey's credential id (`allAcceptedCredentialIds`), in base64url.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "party": {
+          "description": "The relying party's id (`rpId`): the public origin's name, or `localhost`.",
+          "type": "string"
+        },
+        "user": {
+          "description": "The person's user handle (`userId`), in base64url.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "party",
+        "user",
+        "credentials"
+      ],
+      "type": "object"
+    },
     "Answer": {
       "description": "The person's answer to an approval.",
       "enum": [
@@ -332,16 +358,35 @@
       "type": "object"
     },
     "ErrorData": {
-      "description": "Why a model call failed, for a client to say what to fix.",
-      "properties": {
-        "failure": {
-          "$ref": "#/$defs/Failure"
+      "anyOf": [
+        {
+          "description": "Why a model call failed, for a client to say what to fix.",
+          "properties": {
+            "failure": {
+              "$ref": "#/$defs/Failure"
+            }
+          },
+          "required": [
+            "failure"
+          ],
+          "title": "ModelFailure",
+          "type": "object"
+        },
+        {
+          "description": "The passkey a browser signed in with that the server does not know.",
+          "properties": {
+            "unknown_passkey": {
+              "$ref": "#/$defs/UnknownPasskey"
+            }
+          },
+          "required": [
+            "unknown_passkey"
+          ],
+          "title": "UnknownPasskeyFailure",
+          "type": "object"
         }
-      },
-      "required": [
-        "failure"
       ],
-      "type": "object"
+      "description": "What a failure says beyond its sentence, for a client to act on."
     },
     "EventId": {
       "description": "Identifies one event, unique everywhere.",
@@ -1921,6 +1966,24 @@
       "description": "What happened: lowercase dotted segments such as `tool.call.requested`, at most 64 bytes.\nEach segment is lowercase ASCII letters, digits and underscores; the name starts with a\nletter.",
       "type": "string"
     },
+    "UnknownPasskey": {
+      "description": "A passkey a browser signed in with that the server does not know, removed since the\nsign-in began, for the browser to tell its passkey manager\n(`PublicKeyCredential.signalUnknownCredential`), which then deletes it.",
+      "properties": {
+        "credential": {
+          "description": "Its credential id (`credentialId`), in base64url.",
+          "type": "string"
+        },
+        "party": {
+          "description": "The relying party's id (`rpId`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "party",
+        "credential"
+      ],
+      "type": "object"
+    },
     "Update": {
       "description": "Progress while a turn runs: the live side of `Live`, in a form any transport carries.",
       "oneOf": [
@@ -3481,6 +3544,17 @@
       "result": {
         "description": "A browser session, sent once.",
         "properties": {
+          "accepted": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AcceptedPasskeys"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Every passkey that signs the person in, for the browser's passkey manager; none\nwhere the server makes no passkeys for the page signed in, as after a link on a\nserver whose passkeys are made at its public origin."
+          },
           "server": {
             "description": "The id of the server it is for: the browser presents it to no other.",
             "type": "string"
@@ -3543,6 +3617,17 @@
       "result": {
         "description": "A browser session, sent once.",
         "properties": {
+          "accepted": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AcceptedPasskeys"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Every passkey that signs the person in, for the browser's passkey manager; none\nwhere the server makes no passkeys for the page signed in, as after a link on a\nserver whose passkeys are made at its public origin."
+          },
           "server": {
             "description": "The id of the server it is for: the browser presents it to no other.",
             "type": "string"
@@ -4144,6 +4229,17 @@
       "result": {
         "description": "A browser session, sent once.",
         "properties": {
+          "accepted": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AcceptedPasskeys"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Every passkey that signs the person in, for the browser's passkey manager; none\nwhere the server makes no passkeys for the page signed in, as after a link on a\nserver whose passkeys are made at its public origin."
+          },
           "server": {
             "description": "The id of the server it is for: the browser presents it to no other.",
             "type": "string"

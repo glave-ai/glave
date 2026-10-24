@@ -23,7 +23,9 @@ use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 
 use self::browsers::SESSION_PREFIX;
-pub use self::browsers::{BrowserError, Browsers, Ceremony, PasskeyInfo, Proof, Session};
+pub use self::browsers::{
+    AcceptedPasskeys, BrowserError, Browsers, Ceremony, PasskeyInfo, Proof, Session, UnknownPasskey,
+};
 use self::keys::Keys;
 pub use self::local::{LOCAL_BYTES, LOCAL_PREFIX, LocalToken};
 

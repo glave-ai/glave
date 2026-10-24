@@ -4,7 +4,7 @@ use std::fmt::Write as _;
 
 use glave_event::Sha256;
 use glave_ports::{Clock as _, OrgId, Scope};
-use hmac::{Hmac, KeyInit as _, Mac as _};
+use hmac::Mac as _;
 use zeroize::Zeroizing;
 
 use crate::error::KeyError;
@@ -39,8 +39,7 @@ impl ProjectKey {
 
     /// HMAC-SHA-256 of the blob's hash under the naming half, in lowercase hex.
     pub(super) fn name_blob(&self, sha256: &Sha256) -> Result<String, KeyError> {
-        let mut mac = Hmac::<sha2::Sha256>::new_from_slice(self.name.bytes())
-            .map_err(|e| KeyError::Corrupt(e.to_string()))?;
+        let mut mac = self.name.mac()?;
         mac.update(sha256.as_str().as_bytes());
         let mut hex = String::with_capacity(64);
         for byte in mac.finalize().into_bytes() {
@@ -53,8 +52,7 @@ impl ProjectKey {
     /// apart from blob names by its own label, its first 16 bytes in lowercase hex. The index
     /// holds no word in the clear, and loses every word when the project is erased.
     pub(super) fn name_term(&self, term: &str) -> Result<String, KeyError> {
-        let mut mac = Hmac::<sha2::Sha256>::new_from_slice(self.name.bytes())
-            .map_err(|e| KeyError::Corrupt(e.to_string()))?;
+        let mut mac = self.name.mac()?;
         mac.update(b"glave/search/v1\0");
         mac.update(term.as_bytes());
         let mut hex = String::with_capacity(32);

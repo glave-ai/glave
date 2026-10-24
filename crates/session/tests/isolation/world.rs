@@ -120,6 +120,7 @@ async fn serve<L: EventLog + Clone + 'static>(n: u128, parts: &Parts<L>, dir: &P
         parts.log.clone(),
         personal,
         format!("server-{n}"),
+        uuid::Uuid::from_u128(0x691 + n),
         None,
         Box::new(clock.clone()),
     );

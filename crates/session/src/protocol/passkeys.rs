@@ -1,7 +1,9 @@
 //! Signing in from elsewhere with passkeys (`specs/session.md`, "Signing in"): how a server
-//! says it signs browsers in, and a passkey as a client lists it.
+//! says it signs browsers in, a passkey as a client lists it, and what a browser tells its
+//! passkey manager of the person's passkeys (WebAuthn's Signal API).
 
 use glave_event::At;
+pub use glave_identity::signin::{AcceptedPasskeys, UnknownPasskey};
 use serde::{Deserialize, Serialize};
 
 /// A way a browser signs in to the server, as `server/discover` says.
