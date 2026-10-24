@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use glave_event::{
-    ApprovalDecided, ApprovalMode, ApprovalRequested, CallId, Outcome, Principal,
+    ApprovalDecided, ApprovalMode, ApprovalRequested, CallId, Lifted, Outcome, Principal,
     ToolCallCompleted, Verdict,
 };
 use glave_ports::settings::Judge;
@@ -21,7 +21,7 @@ use crate::harness::{Harness, HarnessError, Thread};
 use crate::hooks::ToolHook;
 use crate::judge::{JudgeCase, Ruling, judge};
 use crate::question::{self, QuestionRequest};
-use crate::sandbox;
+use crate::sandbox::{self, Asks};
 use crate::turn::{Live, Step, TurnSummary, absorb, tally};
 use crate::waits::{Answered, verdict_of};
 
@@ -156,15 +156,23 @@ where
         let name = info.spec.name.as_str();
         let summary = source.describe(name, &call.arguments);
         let hooked = ToolHook::of(call, name);
+        // What of the sandbox it would run without, as its commands run now.
+        let outside = (index == BUILTINS)
+            .then(|| sandbox::outside(self.workspace_for(thread), name, &call.arguments))
+            .flatten();
+        let lifted = outside.as_ref().map(|outside| outside.lifted);
         if let Some(answered) = waited {
             // Its hooks ran and it asked before the turn stopped: its answer decides, as it
-            // would have the moment it came.
-            let outside = answered.asked.outside_sandbox.is_some();
+            // would have the moment it came, unless the sandbox changed meanwhile.
+            let asked = answered.asked.outside_sandbox.as_ref().map(|o| o.lifted);
             if let Some(refused) = self.answered(thread, answered, cancel, live).await? {
                 return Ok(refused);
             }
-            if outside {
-                step.summary.outside_sandbox = step.summary.outside_sandbox.saturating_add(1);
+            if let Some(refused) = self.let_out_refused(thread, lifted, asked, &summary, live) {
+                return Ok(refused);
+            }
+            if let Some(lifted) = lifted {
+                step.summary.let_out(lifted);
             }
             return self
                 .run_call(thread, call, &source, &hooked, summary, cancel, live)
@@ -183,9 +191,9 @@ where
                 firm,
             } => (info.effect, Some(reason), secret, firm),
         };
-        let outside = (index == BUILTINS)
-            .then(|| sandbox::outside(self.workspace_for(thread), name, &call.arguments))
-            .flatten();
+        if let Some(refused) = self.let_out_refused(thread, lifted, lifted, &summary, live) {
+            return Ok(refused);
+        }
         let request = ApprovalRequest {
             thread: thread.id,
             call_id: call.call_id.clone(),
@@ -193,7 +201,7 @@ where
             effect,
             summary: summary.clone(),
             secret,
-            caution: sandbox::with_outside(caution, outside.is_some()),
+            caution: sandbox::with_outside(caution, lifted),
             outside_sandbox: outside,
         };
         let needs = Needs { request, firm };
@@ -201,11 +209,39 @@ where
         if let Some(refused) = self.approve(thread, &needs, turn, cancel, live).await? {
             return Ok(refused);
         }
-        if needs.request.outside_sandbox.is_some() {
-            step.summary.outside_sandbox = step.summary.outside_sandbox.saturating_add(1);
+        if let Some(lifted) = lifted {
+            step.summary.let_out(lifted);
         }
         self.run_call(thread, call, &source, &hooked, summary, cancel, live)
             .await
+    }
+
+    /// The result the model is given instead of running a call that would run without
+    /// `lifted` of the sandbox, where the person is asked, or was, about `asked`: refused when
+    /// it would leave the sandbox otherwise than they were asked, since the sandbox changed
+    /// while it waited, and when it would leave it at all where its commands may not ask to.
+    /// `None` when it may go on.
+    fn let_out_refused(
+        &self,
+        thread: &Thread,
+        lifted: Option<Lifted>,
+        asked: Option<Lifted>,
+        summary: &str,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Option<ToolOutput> {
+        let forbidden = Asks::of(self.workspace_for(thread)) == Asks::Nothing;
+        let (refused, why) = if lifted.is_some() && lifted != asked {
+            (sandbox::CHANGED, "not run: the sandbox changed")
+        } else if lifted.is_some() && forbidden {
+            (sandbox::NOT_ALLOWED, "not allowed here")
+        } else {
+            return None;
+        };
+        live(Live::ToolFinished {
+            summary: format!("{summary} ({why})"),
+            is_error: true,
+        });
+        Some(ToolOutput::text(true, refused))
     }
 
     /// Runs `call` with its tool's `source`, once nothing stops it, and its `PostToolUse`
@@ -389,7 +425,7 @@ where
             action: &request.summary,
             flagged: reason,
             untrusted: thread.untrusted,
-            outside_sandbox: request.outside_sandbox.is_some(),
+            outside_sandbox: request.outside_sandbox.as_ref().map(|o| o.lifted),
         };
         let asking = judge(&self.provider, &model, &case, thread.lineage());
         let Some((ruling, answer)) = cancel.run(asking).await else {

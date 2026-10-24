@@ -276,6 +276,7 @@
     "results.outsideSandbox": "[{{$COUNT}, plural, one {# çöɱɱåñð} other {# çöɱɱåñðš}} öûţšîðé ţĥé šåñðƀöẋ one two three]",
     "results.steps": "[{{$COUNT}, plural, one {# šţéþ} other {# šţéþš}} one]",
     "results.via": "[ṽîå {$ROUTES} one]",
+    "results.withNetwork": "[{{$COUNT}, plural, one {# çöɱɱåñð} other {# çöɱɱåñðš}} ŵîţĥ ţĥé ñéţŵöŕķ one two three]",
     "routes.connect": "[Åðð å ɱöðéļ · ĝļåṽé one two]",
     "routes.memory": "[Ṁéɱöŕý · ĝļåṽé one]",
     "routes.project": "[Þŕöĵéçţ · ĝļåṽé one]",

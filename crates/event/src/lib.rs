@@ -29,7 +29,7 @@ pub use payload::{
 pub use payload::{
     ApprovalDecided, ApprovalMode, ApprovalModeChosen, ApprovalRequested, Arguments, Auth,
     AuthMethod, Cost, EffortChosen, ForkPoint, GatewayToolCalled, GoalEnded, GoalReason,
-    GoalResumed, GoalSet, HookPoint, HookRan, HookResult, MemoryEdited, MemoryForgotten,
+    GoalResumed, GoalSet, HookPoint, HookRan, HookResult, Lifted, MemoryEdited, MemoryForgotten,
     MemoryRestored, MemorySaved, MemoryScope, MemorySource, MemoryTidied, MessageAdded,
     ModelChosen, ModelRef, ModelResponded, Opaque, Origin, OriginKind, Outcome, OutsideSandbox,
     ParentCall, Part, Principal, PrincipalKind, Producer, Role, StopReason, ThreadArchived,

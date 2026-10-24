@@ -135,7 +135,7 @@ fn network(environment: &Environment, limits: &Limits) -> Result<bool, ComputerE
     match environment.network {
         Some(Network::On) if !allowed => Err(ComputerError::Refused(
             "the environment asks for the network, and policy allows workers none \
-             ([workers] network = \"off\")"
+             ([workers] network = \"off\", or [sandbox] network = false)"
                 .into(),
         )),
         Some(Network::Off) => Ok(false),

@@ -5,7 +5,8 @@ use std::future::{Future, ready};
 use std::path::Path;
 
 use glave_event::{
-    ApprovalMode, ApprovalRequested, Arguments, CallId, OutsideSandbox, PrincipalId, ThreadId,
+    ApprovalMode, ApprovalRequested, Arguments, CallId, Lifted, OutsideSandbox, PrincipalId,
+    ThreadId,
 };
 use glave_ports::Effect;
 
@@ -33,8 +34,9 @@ pub struct ApprovalRequest {
     /// Why the call needs the person whatever the mode, when it does, as the model and the
     /// judge are told it: "it deletes ~/x". The person reads it as a sentence (`sentence`).
     pub caution: Option<String>,
-    /// The command would run outside the sandbox, as the model asked, with its reason. Such a
-    /// request asks every time: allowing it for the thread allows it once.
+    /// The command would run outside the sandbox, or in it with the network, as the model
+    /// asked, with its reason. Such a request asks every time: allowing it for the thread
+    /// allows it once.
     pub outside_sandbox: Option<OutsideSandbox>,
 }
 
@@ -161,7 +163,11 @@ impl Approver for AllowAll {
 /// What the model is told when an action needs a person and no one is at the keyboard: not to
 /// retry or work around it, and to say what is left for a person.
 pub(crate) fn no_one_there(request: &ApprovalRequest) -> String {
-    let outside = request.outside_sandbox.is_some();
+    let lifted = request
+        .outside_sandbox
+        .as_ref()
+        .map(|outside| outside.lifted);
+    let outside = lifted == Some(Lifted::Sandbox);
     if request.secret {
         "No one is available to approve this, which would show you secrets such as keys, tokens \
          or passwords: glave is running without anyone at the keyboard. Do not try to get them \
@@ -174,6 +180,18 @@ pub(crate) fn no_one_there(request: &ApprovalRequest) -> String {
              without anyone at the keyboard. Do not get the same result another way, such as by \
              pointing the command at folders inside the project. Finish what you can in the \
              sandbox, and say at the end which command still needs a person to allow it."
+        )
+    } else if let Some(reason) = request
+        .caution
+        .as_ref()
+        .filter(|_| lifted == Some(Lifted::Network))
+    {
+        format!(
+            "Not run, because {reason}, and no one is available to allow that: glave is running \
+             without anyone at the keyboard. Do not try to reach the internet another way, \
+             and do not stand in for what it would fetch, such as by writing your own \
+             replacement for a package. Finish what does not depend on it, and say at the end \
+             which command still needs a person to allow it."
         )
     } else if let Some(reason) = &request.caution {
         format!(

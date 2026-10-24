@@ -37,21 +37,22 @@ pub(crate) fn given_up(choices: Choices, why: &str, constraints: &Constraints) -
     choices
 }
 
-/// The workspace in `folder`, in the sandbox the setup's choices ask for. Where glave's
-/// default sandbox cannot run, commands go unconfined and the choices say so
-/// ([`given_up`]). A sandbox someone chose, or a policy requires, is never given up: glave
-/// refuses to start instead.
+/// The workspace in `folder`, in the sandbox the setup's choices ask for, its commands asking
+/// for the network unless the policy forbids it. Where glave's default sandbox cannot run,
+/// commands go unconfined and the choices say so ([`given_up`]). A sandbox someone chose, or a
+/// policy requires, is never given up: glave refuses to start instead.
 pub(crate) async fn workspace(
     folder: &Path,
     setup: &mut Setup,
     database: &Path,
     processes: &Processes,
 ) -> anyhow::Result<Workspace> {
+    let asks = setup.loaded.constraints.network_ask_forbidden().is_none();
     let choices = &setup.choices;
     let Some(sandbox) = sandbox_of(choices, database.parent()) else {
-        return open_here(folder, processes).await;
+        return open_here(folder, processes, asks).await;
     };
-    let error = match open_here(folder, processes)
+    let error = match open_here(folder, processes, asks)
         .await?
         .with_sandbox(&sandbox)
         .await
@@ -72,11 +73,12 @@ pub(crate) async fn workspace(
     if setup.choices.on.value != On::Cloud {
         eprintln!("glave: {}", unsandboxed_notice(&setup.choices, &why));
     }
-    open_here(folder, processes).await
+    open_here(folder, processes, asks).await
 }
 
-/// The workspace in `folder` on this computer, without a sandbox yet.
-async fn open_here(folder: &Path, processes: &Processes) -> anyhow::Result<Workspace> {
+/// The workspace in `folder` on this computer, without a sandbox yet, its commands asking for
+/// the network when they have none if `asks`.
+async fn open_here(folder: &Path, processes: &Processes, asks: bool) -> anyhow::Result<Workspace> {
     let computer = identity::computer(&home::folder()?).await?;
     let computers = LocalComputers::for_here(std::env::vars_os())
         .known_as(computer)
@@ -87,7 +89,7 @@ async fn open_here(folder: &Path, processes: &Processes) -> anyhow::Result<Works
     let (computers, here) = crate::helpers::with_sandbox_helper(computers)
         .open_here(folder)
         .await?;
-    Ok(Workspace::new(computers, here))
+    Ok(Workspace::new(computers, here).asking_network(asks))
 }
 
 /// What the person is told, once at startup, when glave's default sandbox cannot run here.

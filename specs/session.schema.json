@@ -1900,6 +1900,13 @@
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
+        },
+        "with_network": {
+          "default": 0,
+          "description": "The commands that ran with the network the sandbox otherwise kept from them, each one\nallowed.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "required": [

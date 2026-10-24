@@ -276,6 +276,7 @@
     "results.outsideSandbox": "{{$COUNT}, plural, one {# \u200f\u202ecommand\u202c\u200f} other {# \u200f\u202ecommands\u202c\u200f}} \u200f\u202eoutside\u202c\u200f \u200f\u202ethe\u202c\u200f \u200f\u202esandbox\u202c\u200f",
     "results.steps": "{{$COUNT}, plural, one {# \u200f\u202estep\u202c\u200f} other {# \u200f\u202esteps\u202c\u200f}}",
     "results.via": "\u200f\u202evia\u202c\u200f {$ROUTES}",
+    "results.withNetwork": "{{$COUNT}, plural, one {# \u200f\u202ecommand\u202c\u200f} other {# \u200f\u202ecommands\u202c\u200f}} \u200f\u202ewith\u202c\u200f \u200f\u202ethe\u202c\u200f \u200f\u202enetwork\u202c\u200f",
     "routes.connect": "\u200f\u202eAdd\u202c\u200f \u200f\u202ea\u202c\u200f \u200f\u202emodel\u202c\u200f \u200f\u202e·\u202c\u200f \u200f\u202eglave\u202c\u200f",
     "routes.memory": "\u200f\u202eMemory\u202c\u200f \u200f\u202e·\u202c\u200f \u200f\u202eglave\u202c\u200f",
     "routes.project": "\u200f\u202eProject\u202c\u200f \u200f\u202e·\u202c\u200f \u200f\u202eglave\u202c\u200f",

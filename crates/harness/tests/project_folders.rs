@@ -463,3 +463,69 @@ fn a_project_that_turned_the_sandbox_off_runs_its_commands_without_it_once_trust
     });
     let _ = std::fs::remove_dir_all(&base);
 }
+
+#[test]
+fn a_project_that_takes_the_network_offers_its_commands_the_ask_for_it() {
+    if !glave_computer::sandbox_available() {
+        return;
+    }
+    let base = glave_ports::testing::TempDir::outside_temp("projects-offline").unwrap();
+    std::fs::create_dir_all(base.join("project")).unwrap();
+    let project_dir = base.join("project");
+    let project = Project::new(Protections {
+        offline: true,
+        ..Protections::default()
+    });
+    block_on!(async {
+        let sandbox = Sandbox {
+            level: SandboxLevel::Project,
+            network: true,
+            home: Some(base.to_path_buf()),
+            glave_home: Some(base.join(".glave")),
+        };
+        let workspace = workspace(&project_dir)
+            .await
+            .with_sandbox(&sandbox)
+            .await
+            .unwrap();
+        let answers = vec![
+            answer(Some("Online."), vec![], StopReason::EndTurn),
+            answer(Some("Offline."), vec![], StopReason::EndTurn),
+        ];
+        let (harness, seen) = harness_with(
+            workspace,
+            answers,
+            NoOneToAsk,
+            InMemoryLog::new(),
+            1,
+            settings(),
+        );
+        let harness =
+            harness.with_project_folders(Some(Arc::clone(&project) as Arc<dyn ProjectFolders>));
+        let place = Place::Folder(project_dir.to_string_lossy().into_owned());
+        let mut thread = harness
+            .start_thread_in(scope(), &Caller::default(), place)
+            .await
+            .unwrap();
+        for prompt in ["before", "after"] {
+            harness
+                .run_turn(&mut thread, prompt, &Cancel::new(), &mut |_| {})
+                .await
+                .unwrap();
+            project.trust();
+        }
+        let network = |request: usize| {
+            let requests = seen.lock().unwrap();
+            let offered = requests[request]
+                .tools
+                .iter()
+                .find(|tool| tool.name == "bash");
+            offered.is_some_and(|tool| tool.parameters["properties"].get("network").is_some())
+        };
+        assert!(!network(0), "the sandbox has the network");
+        assert!(
+            network(1),
+            "the project's threads go without it, and may ask"
+        );
+    });
+}

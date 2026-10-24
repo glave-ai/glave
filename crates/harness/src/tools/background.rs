@@ -53,7 +53,7 @@ pub(crate) struct OutputArgs {
 
 /// The number of the command a `command_output` call names, read as the tool reads it.
 pub(crate) fn named(arguments: &glave_event::Arguments) -> Option<u32> {
-    let args: OutputArgs = super::parse(super::Tool::CommandOutput, arguments).ok()?;
+    let args: OutputArgs = super::parse(super::Tool::CommandOutput, arguments, None).ok()?;
     args.command
 }
 

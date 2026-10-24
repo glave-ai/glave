@@ -208,6 +208,12 @@ mod tests {
             loosened(&project(AUTO, OFF), &server(|_| {}), &required),
             (AUTO, false)
         );
+        let offline = constraints("version = 1\n[sandbox]\nnetwork = false\n");
+        assert_eq!(
+            loosened(&project(AUTO, OFF), &server(|_| {}), &offline),
+            (AUTO, false),
+            "out of the sandbox it would have the network"
+        );
         let auto_only = constraints("version = 1\n[approval]\nmodes = [\"auto\"]\n");
         assert_eq!(
             loosened(&project(None, OFF), &server(|_| {}), &auto_only),

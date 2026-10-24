@@ -20,6 +20,7 @@ pub(super) fn settle(mut choices: Choices, constraints: &Constraints) -> crate::
     choices.approval = approval(choices.approval, constraints)?;
     choices.judge = judge(choices.judge, constraints)?;
     choices.sandbox = sandbox(choices.sandbox, constraints)?;
+    choices.network = network(choices.network, constraints)?;
     crate::policy::memory::settle(&choices, constraints)?;
     let choices = crate::policy::placement::settle(choices, constraints)?;
     Ok(asks_unconfined(choices, constraints))
@@ -48,6 +49,10 @@ pub fn give_way(
     if let Err(refused) = sandbox(choices.sandbox.clone(), constraints) {
         aside.push(refused.to_string());
         choices.sandbox.from = Source::Default;
+    }
+    if let Err(refused) = network(choices.network.clone(), constraints) {
+        aside.push(refused.to_string());
+        choices.network.from = Source::Default;
     }
     if let Err(refused) = crate::policy::memory::settle(&choices, constraints) {
         aside.push(refused.to_string());
@@ -173,6 +178,22 @@ fn sandbox(
             from: Source::Narrowed(rule.from.clone()),
         }),
         (None, from) => refuse!("sandbox off (from {from}) is not allowed: {rule}"),
+    }
+}
+
+/// The network commands get within `constraints`: glave's default gives way to off where a
+/// rule takes it, and choosing it on there is refused.
+fn network(chosen: Chosen<bool>, constraints: &Constraints) -> crate::Result<Chosen<bool>> {
+    let Some(rule) = constraints.network_off() else {
+        return Ok(chosen);
+    };
+    match (chosen.value, &chosen.from) {
+        (false, _) => Ok(chosen),
+        (true, Source::Default) => Ok(Chosen {
+            value: false,
+            from: Source::Narrowed(rule.from.clone()),
+        }),
+        (true, from) => refuse!("network on (from {from}) is not allowed: {rule}"),
     }
 }
 

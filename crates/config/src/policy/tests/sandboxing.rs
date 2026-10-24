@@ -134,6 +134,101 @@ fn the_network_is_chosen_like_the_rest_and_a_project_only_takes_it_away() {
 }
 
 #[test]
+fn an_organization_takes_the_network_and_only_glave_s_default_gives_way() {
+    let off = [policy_at(ORG, "version = 1\n[sandbox]\nnetwork = false\n")];
+    let narrowed = settle(&[], &off).unwrap();
+    assert_eq!(
+        (narrowed.network.value, &narrowed.network.from),
+        (false, &Source::Narrowed(PathBuf::from(ORG)))
+    );
+    // Only the sandbox keeps the network from commands, so it never gives way.
+    let kept = unsandboxed(narrowed, "no bubblewrap", &Constraints::of(&off));
+    assert_eq!(
+        (kept.sandbox.value, &kept.sandbox.from),
+        (
+            Some(SandboxLevel::Project),
+            &Source::Narrowed(PathBuf::from(ORG))
+        )
+    );
+    let on = layers(
+        ConfigFile {
+            network: Some(true),
+            ..ConfigFile::default()
+        },
+        ConfigFile::default(),
+        vec![],
+    );
+    let refused = settle(&on, &off).unwrap_err().to_string();
+    assert!(
+        refused.contains(&format!(
+            "network on (from --network or --no-network) is not allowed: [sandbox] network = \
+             false in {ORG}"
+        )),
+        "{refused}"
+    );
+    let unconfined = layers(
+        flags(Some(SandboxChoice::Off), None),
+        ConfigFile::default(),
+        vec![],
+    );
+    let refused = settle(&unconfined, &off).unwrap_err().to_string();
+    assert!(
+        refused.contains("sandbox off") && refused.contains("[sandbox] network = false"),
+        "{refused}"
+    );
+    let mine = layers(
+        ConfigFile::default(),
+        ConfigFile::default(),
+        vec![file(PERSON, "network = false\n")],
+    );
+    assert_eq!(
+        settle(&mine, &off).unwrap().network.from,
+        file_source(PERSON),
+        "choosing it off agrees"
+    );
+    // A running server cannot refuse: the person's own `network = true` gives way, said.
+    let loose = layers(
+        ConfigFile::default(),
+        ConfigFile::default(),
+        vec![file(PERSON, "network = true\n")],
+    );
+    let (choices, aside) = assemble(&loose, &off, None).settle_giving_way().unwrap();
+    assert!(!choices.network.value);
+    assert!(
+        aside.len() == 1 && aside[0].contains(&format!("network on (from {PERSON})")),
+        "{aside:?}"
+    );
+}
+
+#[test]
+fn taking_the_network_from_commands_takes_it_from_workers_too() {
+    use glave_ports::computer::Network;
+    let off = constraints("version = 1\n[sandbox]\nnetwork = false\n");
+    assert_eq!(off.worker_limits().network, Some(Network::Off));
+    let workers_on =
+        constraints("version = 1\n[sandbox]\nnetwork = false\n[workers]\nnetwork = \"on\"\n");
+    assert_eq!(
+        workers_on.worker_limits().network,
+        Some(Network::Off),
+        "off wins"
+    );
+    assert_eq!(Constraints::default().worker_limits().network, None);
+}
+
+#[test]
+fn asking_for_the_network_is_allowed_unless_a_rule_forbids_it() {
+    let off = constraints("version = 1\n[sandbox]\nnetwork = false\n");
+    assert_eq!(off.network_ask_forbidden(), None);
+    let forbids = constraints("version = 1\n[sandbox]\nnetwork = false\nask_network = false\n");
+    assert_eq!(
+        forbids.network_ask_forbidden().map(ToString::to_string),
+        Some(format!("[sandbox] ask_network = false in {ORG}"))
+    );
+    let allows = constraints("version = 1\n[sandbox]\nnetwork = true\nask_network = true\n");
+    assert_eq!(allows, Constraints::default(), "true limits nothing");
+}
+
+#[test]
 fn explain_says_when_the_sandbox_cannot_run_here_and_that_commands_ask() {
     let mut loaded = assemble(&[], &[], None);
     loaded.no_sandbox_here = Some("no bubblewrap".into());

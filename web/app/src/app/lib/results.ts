@@ -116,22 +116,37 @@ function statusOf(turn: Turn, waiting: readonly Waiting[], running: boolean): Gl
   return running || calling(turn) ? 'running' : 'done';
 }
 
-/** How many commands the person let run outside the sandbox, in words, when any were. */
+/**
+ * How many commands the person let run outside the sandbox, and in it with the network, in
+ * words, when any were.
+ */
 function outsideSandbox(items: readonly ThreadItem[], locale: string): readonly string[] {
-  const ran = items.filter(
-    (item) =>
+  const allowed = items.filter(
+    (item): item is ApprovalItem =>
       item.kind === 'approval' &&
       item.outsideSandbox &&
       (item.decision === 'allow_once' || item.decision === 'allow_for_thread'),
-  ).length;
-  return ran === 0
-    ? []
-    : [
-        plural(
-          $localize`:@@results.outsideSandbox:{${ran}:COUNT:, plural, one {# command} other {# commands}} outside the sandbox`,
-          locale,
-        ),
-      ];
+  );
+  const network = allowed.filter((item) => item.withNetwork).length;
+  const ran = allowed.length - network;
+  return [
+    ...(ran === 0
+      ? []
+      : [
+          plural(
+            $localize`:@@results.outsideSandbox:{${ran}:COUNT:, plural, one {# command} other {# commands}} outside the sandbox`,
+            locale,
+          ),
+        ]),
+    ...(network === 0
+      ? []
+      : [
+          plural(
+            $localize`:@@results.withNetwork:{${network}:COUNT:, plural, one {# command} other {# commands}} with the network`,
+            locale,
+          ),
+        ]),
+  ];
 }
 
 /**

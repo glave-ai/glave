@@ -31,7 +31,7 @@ pub(crate) mod trust;
 pub(crate) mod turn;
 pub(crate) mod workspace;
 
-pub use approval::{ApprovalDecided, ApprovalRequested, OutsideSandbox, Verdict};
+pub use approval::{ApprovalDecided, ApprovalRequested, Lifted, OutsideSandbox, Verdict};
 pub use awake::AwakeSet;
 pub use browser::{BrowserSignedIn, BrowserSignedOut, BrowserUsed};
 pub use catalog::{Catalog, CatalogModel, CatalogRefreshed, Reasoning, TokenPrice};

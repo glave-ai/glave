@@ -19,6 +19,7 @@ mod goals;
 mod hooks;
 mod instructions;
 mod judge;
+mod network;
 mod outside_sandbox;
 mod project_folders;
 mod purposes;

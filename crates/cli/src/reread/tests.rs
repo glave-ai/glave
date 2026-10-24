@@ -43,9 +43,11 @@ fn a_constraint_added_while_it_runs_narrows_the_next_turn_whatever_the_file_loos
     let before = runs_now(&locations, &start, &dir);
     assert_eq!(before.defaults.approval, ApprovalMode::Auto);
     assert_eq!(before.defaults.sandbox, None);
+    assert!(before.defaults.ask_network);
     assert_eq!(before.modes, [ApprovalMode::Ask, ApprovalMode::Auto]);
 
-    let strict = "version = 1\n[approval]\nmodes = [\"ask\"]\n[sandbox]\nrequired = true\n";
+    let strict = "version = 1\n[approval]\nmodes = [\"ask\"]\n[sandbox]\nrequired = true\n\
+                  network = false\nask_network = false\n";
     std::fs::write(&locations.policies[0], strict).unwrap();
     // And the person's file loosens further: the network too.
     std::fs::write(&locations.person, format!("{loose}network = true\n")).unwrap();
@@ -60,12 +62,17 @@ fn a_constraint_added_while_it_runs_narrows_the_next_turn_whatever_the_file_loos
         [ApprovalMode::Ask],
         "and no thread may choose auto"
     );
+    assert!(!after.defaults.ask_network, "no command may ask for it");
     if glave_computer::sandbox_available() {
         let sandbox = after.defaults.sandbox.unwrap();
         assert_eq!(
             sandbox.level,
             SandboxLevel::Project,
             "the sandbox is back on"
+        );
+        assert!(
+            !sandbox.network,
+            "without the network, whatever the file says"
         );
     } else {
         assert_eq!(after.defaults.sandbox, None, "it cannot run here");

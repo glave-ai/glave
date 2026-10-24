@@ -12,6 +12,7 @@ First cut built, in the `glave-config` library (`crates/config/src/policy`), whi
 - A choice someone made outside the constraints is an error naming the rule, its file and the choice's source. Only glave's own defaults give way, to what the policy leaves (shown as "default, narrowed by" the file).
 - Safe by default (`sandbox.md`, `approvals.md`): `sandbox` defaults to `project` and `network` to on. Where glave's default sandbox cannot run, it gives way: `sandbox` becomes off ("default, but it cannot run here: …") and approval `ask` ("default when commands run without a sandbox"), said once at startup; with `sandbox = "off"` chosen, approval is `ask` unless `approval = "auto"` was chosen too. A sandbox someone chose, or one `[sandbox] required` keeps (shown as "default, narrowed by" the policy), never gives way: glave refuses to start. `glave policy explain` checks whether the sandbox can run here and shows the result.
 - Enforced: `[models]` when the gateway's targets are built (and by a gateway serving many, on every call, for each caller), `[approval] modes` and `judge` in the settings the harness runs with, `[sandbox] required` before the workspace exists, `[mcp] own = false` before any server starts, `[mcp] catalog` (below), `[budget] person_per_day_usd` by a gateway serving many, for each person each UTC day (`gateway.md`), `[workers]` (cpu, memory_gb, max_minutes, per_person, network on or off, isolation) by the worker adapter: limits take the smallest, `off` wins over `on`, and `vm` over `container`; a policy requiring `vm` refuses every worker on a backend without a runtime class.
+- `[sandbox] network = false` takes the network from commands (#641): glave's default `network` gives way to off ("default, narrowed by" the file), a choice of on is an error naming the rule, the rule requires the sandbox as `required` does, and it narrows `[workers] network` to off. `[sandbox] ask_network = false` forbids a command without the network to ask for it, or to run outside the sandbox, which has it ("The network").
 - Refused at load as not enforced yet, so glave will not run under them: `[budget]` in glave itself (only a gateway serving many keeps a daily budget; glave keeps budgets for one run), and `[workers] network = "allowlist"` (no egress allow-list on workers yet).
 - `[mcp] catalog` names the servers the organization offers; several catalogs narrow one another. A gateway serving many offers exactly those, from its own `mcp.json`, at `/mcp`, and refuses to start when one has no settings there (`gateway.md`, "Remote tools"). glave with `[gateway] url` takes the catalog from that gateway, and every server of the person's `mcp.json` is then their own. Without a gateway, the servers of the person's `mcp.json` the catalog names count as the catalog's, so `[mcp] own = false` leaves them on and refuses only the others; an organization that needs the catalog's settings out of people's hands serves it from a gateway.
 - `[gateway] url` (a choice, `https`, or `http` only to this computer) sends model calls to that gateway and adds its catalog (`gateway.md`, "Client mode"). Only the person's own `config.toml` sets it: a project's is ignored, since the person's sign-in goes there.
@@ -175,6 +176,8 @@ judge = "required"                                # or "allowed", "off"
 
 [sandbox]
 required = true
+network = false                                   # commands go without the network ("The network")
+ask_network = false                               # nor may one ask for it; asking is allowed when absent
 
 [mcp]
 catalog = ["github", "jira"]                      # the organization's approved connections
@@ -220,7 +223,8 @@ Each constraint is enforced where it cannot be bypassed:
 | --- | --- |
 | models, budgets | the gateway, which holds the keys: in glave, or as a service for each caller |
 | approval modes, the judge | the session API and the harness's tool gate |
-| sandbox | the computer port, before any command runs |
+| sandbox, and its network | the computer port, before any command runs |
+| asking for the network | the harness's tool gate, before anyone is asked |
 | MCP servers | glave, when it starts servers; the gateway, which serves only the catalog's |
 | hooks | the CLI, before the harness is built: forbidden hooks are never handed to it |
 | workers | the worker adapter (`WorkerComputers`), before a worker starts and on every call to it |
@@ -247,8 +251,17 @@ A connection (`model.md`, "The hierarchy") reaches its service through a tool se
 
 ## The network
 
-- **On by default for a person on their own** (a laptop, their own server, Glave Cloud's personal plan); **off by default in an organization** (#641), its policy file setting the default. The switch always exists.
+Decided on 2026-10-23 and built (#641). Web search, the tool beside `web_fetch` the issue named, waits for its search provider to be chosen (#677).
+
+- **On by default for a person on their own** (a laptop, their own server, Glave Cloud's personal plan): glave's own default, an organization of one's. **Off by default in an organization:** its policy file says `[sandbox] network = false`, a constraint that narrows the `network` choice as every constraint does. glave's default gives way to off ("default, narrowed by" the file); a person's `network = true` or `--network` is an error naming the rule, and on a server already running it gives way, said in a sentence. Glave Cloud's enterprise plan writes it into the policy each organization starts with (there is no template file yet; the admin console, #222, edits the policy).
+- **The switch always exists:** `network` (`network = false`, `--no-network`) in every deployment. A person on their own turns it off; an organization's policy keeps it off; a project's file can only take it away.
+- **Only the sandbox keeps the network from commands on the person's computer,** so the rule requires the sandbox, as `[sandbox] required` does: where it cannot run, glave refuses to start, and `sandbox = "off"`, a person's or a trusted project's, is refused.
+- **A command that needs the internet asks** (`npm install`, a build fetching dependencies, `git push`). The model runs it again with `network: true` and a reason, and the person is asked to allow that one command with the network, in the sandbox otherwise: "It can reach the internet, which commands here otherwise cannot." It is the request to run outside the sandbox narrowed to the network, and asks as that one does (`approvals.md`, "Running outside the sandbox"): in every mode, each time, and with no one there it never runs. Where commands have the network, nothing asks, and the model is not offered it. A command that needs more than the network (a build writing the person's own package cache) still asks to run outside the sandbox.
+- **The policy says whether asking is allowed;** it is unless `[sandbox] ask_network = false`. Then no command without the network asks for it, nor to run outside the sandbox, which has it: the model is offered neither and told so, a call that asks anyway is refused, and the person is never asked. An answer never widens what the policy allows: a command whose question was answered before the sandbox changed is refused, not run, if it would now leave the sandbox otherwise than the person was asked.
+- **Workers go without it too:** the rule narrows `[workers] network` to off. A worker's network is its container's, set when it starts, so no command on one asks. Like every `[workers]` rule, it reaches a server's workers from its next start.
+- **glave's own web tools stay,** as the decision has it: `web_fetch` reads the web for the model, labelled untrusted and limited by `[web]`, and so will web search (#677). A URL it fetches can still carry what the model read; `[web]` rules in a policy, to narrow its hosts, are not built yet.
 - **The list governs connections; the network governs the machine.** What a command reaches is the network's to say, whatever the list says: the outbound proxy allows, blocks or holds the machine's traffic (#643), and beyond glave an organization restricts its machines with its firewall, or network policy in the Helm chart (#220).
+- **Later:** an allow-list of package registries and git hosts, through that proxy, so the common installs need no ask.
 
 ## Project trust
 

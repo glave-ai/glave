@@ -23,6 +23,7 @@ use serde_json::{Value, json};
 use workspace::Workspace;
 
 use crate::background::Commands;
+use crate::sandbox::Asks;
 use glave_ports::Cancellation;
 
 /// What a tool call produced, as the model will see it.
@@ -146,29 +147,22 @@ impl Tool {
                     "replace_all": {"type": "boolean", "description": "Replace every occurrence"}
                 }, "required": ["path", "old_string", "new_string"]}),
             ),
-            Self::Bash => (
-                "Run a bash command at the project root and see its output and exit code. Each \
-                 call starts fresh: cd does not carry over, so use `cd dir && command`. Default \
-                 timeout 120 seconds, at most 600; a command still running then keeps running \
-                 in the background. For a server, a watcher or a long build, set background: \
-                 it starts there at once and keeps running, and command_output shows what it \
-                 prints or stops it. Commands run in a sandbox. If it blocked a command the \
-                 task needs, run that same command again with outside_sandbox and a reason: the \
-                 person is asked to allow it.",
-                json!({"type": "object", "properties": {
-                    "command": {"type": "string"},
-                    "timeout_secs": {"type": "integer", "minimum": 1, "maximum": 600},
-                    "background": {"type": "boolean", "description": "Start it in the background and answer at once with its number"},
-                    "outside_sandbox": {"type": "boolean", "description": "Run outside the sandbox. Only after the sandbox blocked this same command; the person is asked every time"},
-                    "reason": {"type": "string", "description": "With outside_sandbox: why the command needs it, in one sentence for the person"}
-                }, "required": ["command"]}),
-            ),
+            Self::Bash => return bash::spec(Asks::Outside),
             Self::CommandOutput => background::spec(),
         };
         ToolSpec {
             name: self.name().to_owned(),
             description: description.to_owned(),
             parameters,
+        }
+    }
+
+    /// The tool as it is offered on `workspace`: `bash` as its commands may ask to leave the
+    /// sandbox there (`Asks`).
+    pub(crate) fn spec_in(self, workspace: &Workspace) -> ToolSpec {
+        match self {
+            Self::Bash => bash::spec(Asks::of(workspace)),
+            _ => self.spec(),
         }
     }
 
@@ -182,31 +176,31 @@ impl Tool {
         cancel: &dyn Cancellation,
     ) -> ToolOutcome {
         match self {
-            Self::Search => match parse(self, arguments) {
+            Self::Search => match parse(self, arguments, Some(workspace)) {
                 Ok(args) => search::search(workspace, args).await,
                 Err(outcome) => outcome,
             },
-            Self::Glob => match parse(self, arguments) {
+            Self::Glob => match parse(self, arguments, Some(workspace)) {
                 Ok(args) => glob::glob(workspace, args).await,
                 Err(outcome) => outcome,
             },
-            Self::Read => match parse(self, arguments) {
+            Self::Read => match parse(self, arguments, Some(workspace)) {
                 Ok(args) => read::read(workspace, args).await,
                 Err(outcome) => outcome,
             },
-            Self::Write => match parse(self, arguments) {
+            Self::Write => match parse(self, arguments, Some(workspace)) {
                 Ok(args) => write::write(workspace, args).await,
                 Err(outcome) => outcome,
             },
-            Self::Edit => match parse(self, arguments) {
+            Self::Edit => match parse(self, arguments, Some(workspace)) {
                 Ok(args) => edit::edit(workspace, args).await,
                 Err(outcome) => outcome,
             },
-            Self::Bash => match parse(self, arguments) {
+            Self::Bash => match parse(self, arguments, Some(workspace)) {
                 Ok(args) => bash::bash(workspace, commands, args, cancel).await,
                 Err(outcome) => outcome,
             },
-            Self::CommandOutput => match parse(self, arguments) {
+            Self::CommandOutput => match parse(self, arguments, Some(workspace)) {
                 Ok(args) => background::command_output(commands, args, cancel).await,
                 Err(outcome) => outcome,
             },
@@ -214,7 +208,13 @@ impl Tool {
     }
 }
 
-fn parse<T: DeserializeOwned>(tool: Tool, arguments: &Arguments) -> Result<T, ToolOutcome> {
+/// The arguments of a call of `tool`, or an error the model can act on, which shows the
+/// parameters the tool takes as it is offered on `workspace`, when there is one.
+fn parse<T: DeserializeOwned>(
+    tool: Tool,
+    arguments: &Arguments,
+    workspace: Option<&Workspace>,
+) -> Result<T, ToolOutcome> {
     let map = match arguments {
         Arguments::Json(map) => map.clone(),
         Arguments::Malformed(raw) => {
@@ -226,10 +226,11 @@ fn parse<T: DeserializeOwned>(tool: Tool, arguments: &Arguments) -> Result<T, To
         }
     };
     serde_json::from_value(Value::Object(map)).map_err(|e| {
+        let offered = workspace.map_or_else(|| tool.spec(), |workspace| tool.spec_in(workspace));
         ToolOutcome::error(format!(
             "The arguments for {} are invalid: {e}. Expected: {}",
             tool.name(),
-            tool.spec().parameters
+            offered.parameters
         ))
     })
 }

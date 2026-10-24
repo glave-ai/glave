@@ -1,6 +1,6 @@
 //! What a turn did and what it cost: its calls, tokens and money, its subagents' added in.
 
-use glave_event::{Currency, Money, Outcome, TokenCounts};
+use glave_event::{Currency, Lifted, Money, Outcome, TokenCounts};
 use glave_ports::Completion;
 
 /// What a turn did and what it cost.
@@ -11,6 +11,9 @@ pub struct TurnSummary {
     pub tool_calls: u32,
     /// The commands that ran outside the sandbox, each one allowed.
     pub outside_sandbox: u32,
+    /// The commands that ran with the network the sandbox otherwise kept from them, each one
+    /// allowed.
+    pub with_network: u32,
     pub tokens: TokenCounts,
     /// The total the provider reported, when it reported a cost for every call.
     pub cost: Option<Money>,
@@ -25,6 +28,7 @@ impl TurnSummary {
             model_calls: 0,
             tool_calls: 0,
             outside_sandbox: 0,
+            with_network: 0,
             tokens: TokenCounts::default(),
             cost: Some(Money {
                 micros: 0,
@@ -32,6 +36,15 @@ impl TurnSummary {
             }),
             estimated: false,
         }
+    }
+
+    /// Counts one command allowed to run without what `lifted` says of the sandbox.
+    pub(crate) fn let_out(&mut self, lifted: Lifted) {
+        let count = match lifted {
+            Lifted::Sandbox => &mut self.outside_sandbox,
+            Lifted::Network => &mut self.with_network,
+        };
+        *count = count.saturating_add(1);
     }
 }
 
@@ -42,6 +55,7 @@ pub(crate) fn absorb(summary: &mut TurnSummary, child: &TurnSummary) {
     summary.outside_sandbox = summary
         .outside_sandbox
         .saturating_add(child.outside_sandbox);
+    summary.with_network = summary.with_network.saturating_add(child.with_network);
     summary.tokens += child.tokens;
     summary.estimated |= child.estimated;
     summary.cost = summary

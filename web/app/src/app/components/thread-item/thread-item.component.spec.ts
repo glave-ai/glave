@@ -115,6 +115,7 @@ describe('ThreadItemComponent', () => {
       summary: 'bash: cargo test --workspace',
       caution: '',
       outsideSandbox: false,
+      withNetwork: false,
       modelReason: '',
       decision: null,
     });
@@ -142,6 +143,7 @@ describe('ThreadItemComponent', () => {
       summary: 'bash: git push -u origin fix/worktree-race',
       caution: 'It pushes to a remote.',
       outsideSandbox: false,
+      withNetwork: false,
       modelReason: '',
       decision: null,
     });
@@ -165,6 +167,7 @@ describe('ThreadItemComponent', () => {
       summary: 'bash: cargo add serde',
       caution: 'It runs outside the sandbox, where it can read and change any file you can.',
       outsideSandbox: true,
+      withNetwork: false,
       modelReason: 'cargo add writes to ~/.cargo/registry, which the sandbox blocks.',
       decision: null,
     });

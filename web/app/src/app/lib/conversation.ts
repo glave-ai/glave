@@ -43,8 +43,13 @@ export interface ApprovalItem extends Placed {
   readonly summary: string;
   /** Why it asks whatever the mode, in the server's sentences; empty when only the mode asks. */
   readonly caution: string;
-  /** Whether the command would run outside the sandbox: each one asks, and is allowed once. */
+  /**
+   * Whether the command would run outside the sandbox, or in it with the network
+   * (`withNetwork`): each one asks, and is allowed once.
+   */
   readonly outsideSandbox: boolean;
+  /** Whether it would run in the sandbox with the network, which commands otherwise go without. */
+  readonly withNetwork: boolean;
   /** The model's own words for why it must run outside the sandbox; empty when it gave none. */
   readonly modelReason: string;
   readonly decision: GlzDecision | null;
@@ -271,6 +276,7 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
           summary: text(data['summary']),
           caution: text(data['caution']),
           outsideSandbox: isRecord(outside),
+          withNetwork: isRecord(outside) && outside['lifted'] === 'network',
           modelReason: isRecord(outside) ? text(outside['reason']) : '',
           decision: null,
         });

@@ -105,4 +105,4 @@ What today's code doesn't do yet, so no one takes it as built.
 8. The web app works out what happened in a conversation by itself, and reads an approval's question out of a summary, so the reason glave asks can look like part of the command; the terminal words approvals its own way. The server will send these as separate facts (#311).
 9. There's no Connect page yet: adding a service means editing a file, and it can't sign in as each person (#42).
 10. Skills come only from the repository and the person's own folders, and one can replace another of the same name. There are no company skills in `/etc/glave/skills`, no skills built into glave, no `acme:` or `glave:` names, and no way for a policy to turn personal skills off.
-11. The agent's network is on by default everywhere; off by default in a company is #641.
+11. A company's policy file can take the agent's network away (#641), but nothing writes it for one yet: a company starts with the network on until its policy says otherwise, and Glave Cloud's starting policy comes with the admin screens (#222).

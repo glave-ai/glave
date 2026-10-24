@@ -116,8 +116,10 @@ where
                 .settled
                 .protections
                 .sandbox(thread.defaults.sandbox.as_ref());
-            if workspace.sandbox() != wanted.as_ref() {
-                thread.workspace = Some(Arc::new(workspace.within(wanted.as_ref()).await?));
+            let asks = thread.defaults.ask_network;
+            if workspace.sandbox() != wanted.as_ref() || workspace.asks_network() != asks {
+                let within = workspace.within(wanted.as_ref()).await?;
+                thread.workspace = Some(Arc::new(within.asking_network(asks)));
             }
         }
         thread.brought = Arc::new(brought);
