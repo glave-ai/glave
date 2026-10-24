@@ -2,13 +2,14 @@
 //! person trusts it asks them when it is opened or started, and waits; trusting turns it on
 //! from the next turn and asks nothing more; not now keeps it off and stops asking in that
 //! thread alone; an ask the project no longer makes trusts nothing; nothing is ever on without
-//! an answer; a caller signed in from elsewhere is never asked and cannot answer; and a list's
-//! watch hears each ask raised and answered.
+//! an answer; a caller signed in from elsewhere is never asked and cannot answer, and what the
+//! person here trusts reaches no one else's threads; and a list's watch hears each ask raised
+//! and answered.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use glave_event::{Auth, AuthMethod, Principal, ThreadId};
+use glave_event::{Auth, AuthMethod, ThreadId};
 use glave_harness::{Brought, ProjectFolders};
 use glave_ports::{
     BoxFuture, Caller, Effect, InMemoryTools, ProjectId, ToolInfo, ToolOutput, ToolSpec,
@@ -328,32 +329,20 @@ fn a_caller_signed_in_elsewhere_is_never_asked_and_cannot_answer() {
     block_on!(async {
         let repository = Arc::new(Repository::default());
         let (server, seen) = serving(&dir, &repository, 1, Answering::Clients).await;
-        let grace = person("https://id.example.com", "grace").unwrap();
+        // The person glave works for, signed in from another computer, as a host that knows them
+        // by that sign-in calls for them.
         let elsewhere = Caller {
-            person: Some(grace),
+            person: server.person(),
             auth: Some(Auth {
                 method: AuthMethod::Oidc,
                 issuer: Some("https://id.example.com".into()),
-                subject: Some("grace".into()),
+                subject: Some("ada".into()),
                 session: None,
             }),
             trace: None,
         };
-        let created = server
-            .request(Request::ProjectCreate {
-                name: "Shared".into(),
-                members: vec![Principal::person(grace)],
-                folder: Some(NewFolder::Path {
-                    path: other.to_string_lossy().into_owned(),
-                }),
-            })
-            .await
-            .unwrap();
-        let Reply::Project { project, .. } = created else {
-            panic!("a project")
-        };
         let started = server
-            .request_as(&elsewhere, thread_start(project.id))
+            .request_as(&elsewhere, thread_start(scope().project()))
             .await
             .unwrap();
         let started = summary(started);
@@ -375,13 +364,35 @@ fn a_caller_signed_in_elsewhere_is_never_asked_and_cannot_answer() {
             assert_eq!(refused.code, code::NOT_ALLOWED, "{refused}");
         }
         assert!(!repository.is_trusted());
-        // Trusted by the person here, it is theirs alone: grace's threads get none of it.
+        // Trusted by the person here, it is theirs alone: another person, as a host embedding the
+        // server may call for her, in a project of her own whose folder brings the same, gets
+        // none of it.
         let answered = server
             .request(answering(started.id, &ask.ask, TrustChoice::Trust))
             .await;
         assert!(answered.is_ok(), "{answered:?}");
+        let grace = Caller {
+            person: Some(person("https://id.example.com", "grace").unwrap()),
+            ..Caller::default()
+        };
+        let created = Request::ProjectCreate {
+            name: "Hers".into(),
+            folder: Some(NewFolder::Path {
+                path: other.to_string_lossy().into_owned(),
+            }),
+        };
+        let Reply::Project { project, .. } = server.request_as(&grace, created).await.unwrap()
+        else {
+            panic!("a project")
+        };
+        let hers = summary(
+            server
+                .request_as(&grace, thread_start(project.id))
+                .await
+                .unwrap(),
+        );
         let turn = Request::TurnStart {
-            thread: started.id,
+            thread: hers.id,
             prompt: "search acme".into(),
             background: false,
             budget: None,
@@ -392,7 +403,7 @@ fn a_caller_signed_in_elsewhere_is_never_asked_and_cannot_answer() {
             unattended: false,
             files: Vec::new(),
         };
-        server.request_as(&elsewhere, turn).await.unwrap();
+        server.request_as(&grace, turn).await.unwrap();
         assert!(!offered(&seen, 0), "no project tools for another's thread");
     });
 }

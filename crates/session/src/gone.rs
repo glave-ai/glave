@@ -24,9 +24,9 @@ pub(crate) fn folder_gone() -> ApiError {
     ApiError::new(code::NO_FOLDER, Sentence::FolderGone)
 }
 
-/// What only a project's owner, on the computer glave runs on, does to it.
+/// What only the person on the computer glave runs on does to a project of theirs.
 #[derive(Clone, Copy)]
-enum OwnersOnly {
+enum HereOnly {
     /// Gives it its folder's new place.
     SetFolder,
     /// Removes it.
@@ -82,7 +82,7 @@ where
         path: String,
     ) -> Result<Reply, ApiError> {
         let found = self
-            .owned_here(caller, project, OwnersOnly::SetFolder)
+            .owned_here(caller, project, HereOnly::SetFolder)
             .await?;
         let was = match self.folder_found(project).await {
             Err(error) if is_gone(&error) => self.folder_of(project).await?,
@@ -134,7 +134,7 @@ where
         caller: &Caller,
         project: ProjectId,
     ) -> Result<Reply, ApiError> {
-        self.owned_here(caller, project, OwnersOnly::Remove).await?;
+        self.owned_here(caller, project, HereOnly::Remove).await?;
         let threads = self.active_threads(project).await?;
         if threads
             .iter()
@@ -199,29 +199,22 @@ where
     }
 
     /// The project `project`, for `caller` on this computer, who owns it; refused otherwise, as
-    /// only its owner, on this computer, `does` this.
+    /// only the person on this computer `does` this.
     async fn owned_here(
         &self,
         caller: &Caller,
         project: ProjectId,
-        does: OwnersOnly,
+        does: HereOnly,
     ) -> Result<Project, ApiError> {
         if !local(caller) {
             return Err(only_here(match does {
-                OwnersOnly::SetFolder => Sentence::SetFolderOnlyHere,
-                OwnersOnly::Remove => Sentence::RemoveOnlyHere,
+                HereOnly::SetFolder => Sentence::SetFolderOnlyHere,
+                HereOnly::Remove => Sentence::RemoveOnlyHere,
             }));
         }
-        let found = self.member_of(caller, project).await?;
+        let found = self.owned(caller, project).await?;
         if found.kind != ProjectKind::Project {
             return Err(ApiError::new(code::INVALID_PARAMS, Sentence::OnlyProjects));
-        }
-        if found.owner != Principal::person(self.person_of(caller)?) {
-            let sentence = match does {
-                OwnersOnly::SetFolder => Sentence::SetFolderOnlyOwner,
-                OwnersOnly::Remove => Sentence::RemoveOnlyOwner,
-            };
-            return Err(ApiError::new(code::NOT_ALLOWED, sentence));
         }
         Ok(found)
     }

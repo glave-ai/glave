@@ -92,7 +92,7 @@ describe('FolderGoneComponent', () => {
       'project/remove',
       new ApiError({
         code: ErrorCode.NOT_ALLOWED,
-        message: 'only its owner removes a project',
+        message: 'only the person on the computer glave runs on removes a project',
       }),
     );
     const { root, fixture } = await render(fake);
@@ -101,7 +101,7 @@ describe('FolderGoneComponent', () => {
     byTestId<HTMLButtonElement>(root, 'gone-confirm-ok')?.click();
     await settle(fixture);
     expect(byTestId(root, 'gone-problem')?.textContent.trim()).toBe(
-      'Only its owner removes a project.',
+      'Only the person on the computer glave runs on removes a project.',
     );
     await expectAccessible(root);
   });

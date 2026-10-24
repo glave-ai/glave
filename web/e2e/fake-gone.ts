@@ -12,7 +12,6 @@ export const PLAYGROUND: Project = {
   kind: 'project',
   name: 'playground',
   owner: { kind: 'person', id: '01900000-0000-7000-8000-0000000000aa' },
-  members: [],
   created_at: '2026-10-11T10:00:00.000Z',
   updated_at: '2026-10-11T10:00:00.000Z',
 };

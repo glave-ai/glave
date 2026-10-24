@@ -111,7 +111,7 @@ impl Store {
         )
     }
 
-    /// The projects: their records, members, and the folders that lead to them.
+    /// The projects: their records, and the folders that lead to them.
     pub fn projects(&self) -> PostgresProjects {
         PostgresProjects::new(self.pool.clone())
     }

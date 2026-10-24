@@ -230,7 +230,7 @@ where
     }
 
     /// Answers `project/create` with a folder: the project its folder leads to, made now unless
-    /// the folder already led to one the caller works in, with the folder as its own.
+    /// the folder already led to one the caller owns, with the folder as its own.
     pub(crate) async fn create_with_folder(
         &self,
         caller: &Caller,
@@ -251,7 +251,7 @@ where
             .projects
             .folder(self.inner.org, &keys, &new)
             .await?;
-        if project.kind != ProjectKind::Project || !project.admits(&person) {
+        if project.kind != ProjectKind::Project || project.owner != person {
             return Err(ApiError::new(
                 code::NOT_ALLOWED,
                 Sentence::FolderNotYours { folder: root },
@@ -266,8 +266,8 @@ where
         })
     }
 
-    /// Answers `project/find`: the project the folder at `path` leads to, when the caller works
-    /// in it, making nothing.
+    /// Answers `project/find`: the project the folder at `path` leads to, when the caller owns
+    /// it, making nothing.
     pub(crate) async fn find_project(
         &self,
         caller: &Caller,
@@ -293,7 +293,7 @@ where
             .projects
             .find_folder(self.inner.org, &keys)
             .await?
-            .filter(|project| project.kind == ProjectKind::Project && project.admits(&person));
+            .filter(|project| project.kind == ProjectKind::Project && project.owner == person);
         let (projects, gone) = self.listed(found.into_iter().collect()).await?;
         Ok(Reply::Projects { projects, gone })
     }

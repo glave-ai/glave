@@ -1,5 +1,4 @@
-//! Projects on Postgres: one row per project, its members in order beside it, and the folder keys
-//! that lead to it.
+//! Projects on Postgres: one row per project, and the folder keys that lead to it.
 
 use deadpool_postgres::{GenericClient, Pool};
 use glave_event::{At, Principal};
@@ -43,37 +42,19 @@ fn principal_text(principal: &Principal) -> Result<String, ProjectError> {
 const SELECT: &str = "SELECT id, kind, name, owner, created_at, updated_at, revision
     FROM project_records WHERE org = $1";
 
-/// The whole project `row` stands for, with its members.
-async fn assemble<C: GenericClient>(
-    client: &C,
-    org: Uuid,
-    row: &Row,
-) -> Result<Project, ProjectError> {
+/// The project `row` stands for.
+fn assemble(row: &Row) -> Result<Project, ProjectError> {
     let id: Uuid = row.try_get(0).map_err(corrupt)?;
     let kind: String = row.try_get(1).map_err(corrupt)?;
     let owner: String = row.try_get(3).map_err(corrupt)?;
     let created: Timestamp = row.try_get(4).map_err(corrupt)?;
     let updated: Timestamp = row.try_get(5).map_err(corrupt)?;
     let revision: i64 = row.try_get(6).map_err(corrupt)?;
-    let members = client
-        .query(
-            "SELECT member FROM project_members WHERE org = $1 AND project = $2 ORDER BY position",
-            &[&org, &id],
-        )
-        .await
-        .map_err(database(ProjectError::Storage))?
-        .iter()
-        .map(|member| {
-            let text: String = member.try_get(0).map_err(corrupt)?;
-            serde_json::from_str(&text).map_err(corrupt)
-        })
-        .collect::<Result<Vec<Principal>, ProjectError>>()?;
     Ok(Project {
         id: ProjectId::from_uuid(id),
         kind: ProjectKind::named(&kind).ok_or_else(|| corrupt(format!("unknown kind {kind:?}")))?,
         name: row.try_get(2).map_err(corrupt)?,
         owner: serde_json::from_str(&owner).map_err(corrupt)?,
-        members,
         created_at: At::from(created),
         updated_at: At::from(updated),
         revision: u64::try_from(revision).map_err(corrupt)?,
@@ -89,35 +70,7 @@ async fn get_now<C: GenericClient>(
         .query_opt(&format!("{SELECT} AND id = $2"), &[&org, &id])
         .await
         .map_err(database(ProjectError::Storage))?;
-    match row {
-        Some(row) => Ok(Some(assemble(client, org, &row).await?)),
-        None => Ok(None),
-    }
-}
-
-async fn write_members<C: GenericClient>(
-    client: &C,
-    org: Uuid,
-    project: &Project,
-) -> Result<(), ProjectError> {
-    let id = project.id.as_uuid();
-    client
-        .execute(
-            "DELETE FROM project_members WHERE org = $1 AND project = $2",
-            &[&org, &id],
-        )
-        .await
-        .map_err(database(ProjectError::Storage))?;
-    for (position, member) in (0_i64..).zip(&project.members) {
-        client
-            .execute(
-                "INSERT INTO project_members (org, project, position, member) VALUES ($1, $2, $3, $4)",
-                &[&org, &id, &position, &principal_text(member)?],
-            )
-            .await
-            .map_err(database(ProjectError::Storage))?;
-    }
-    Ok(())
+    row.as_ref().map(assemble).transpose()
 }
 
 /// Holds `owner`'s projects in `org` until the transaction `client` is in ends, so a name read
@@ -196,11 +149,7 @@ async fn insert<C: GenericClient>(
         )
         .await
         .map_err(database(ProjectError::Storage))?;
-    if inserted == 0 {
-        return Ok(None);
-    }
-    write_members(client, org, project).await?;
-    Ok(Some(project.clone()))
+    Ok((inserted != 0).then(|| project.clone()))
 }
 
 impl PostgresProjects {
@@ -224,7 +173,7 @@ impl PostgresProjects {
             )
             .await
             .map_err(database(ProjectError::Storage))?;
-        let project = assemble(&transaction, org, &row).await?;
+        let project = assemble(&row)?;
         transaction
             .commit()
             .await
@@ -347,31 +296,23 @@ impl Projects for PostgresProjects {
     fn list<'a>(
         &'a self,
         org: OrgId,
-        member: &'a Principal,
+        owner: &'a Principal,
         limit: usize,
     ) -> BoxFuture<'a, Result<Vec<Project>, ProjectError>> {
         Box::pin(async move {
-            let member = principal_text(member)?;
+            let owner = principal_text(owner)?;
             let limit = i64::try_from(limit).unwrap_or(i64::MAX);
-            let org = org.as_uuid();
             let client = connection(&self.pool).await.map_err(unavailable)?;
-            let rows = client
+            client
                 .query(
-                    &format!(
-                        "{SELECT} AND (owner = $2 OR EXISTS (SELECT 1 FROM project_members m
-                            WHERE m.org = project_records.org AND m.project = project_records.id
-                              AND m.member = $2))
-                         ORDER BY id LIMIT $3"
-                    ),
-                    &[&org, &member, &limit],
+                    &format!("{SELECT} AND owner = $2 ORDER BY id LIMIT $3"),
+                    &[&org.as_uuid(), &owner, &limit],
                 )
                 .await
-                .map_err(database(ProjectError::Storage))?;
-            let mut projects = Vec::with_capacity(rows.len());
-            for row in &rows {
-                projects.push(assemble(&client, org, row).await?);
-            }
-            Ok(projects)
+                .map_err(database(ProjectError::Storage))?
+                .iter()
+                .map(assemble)
+                .collect()
         })
     }
 
@@ -426,7 +367,6 @@ impl Projects for PostgresProjects {
             if changed == 0 {
                 return Err(ProjectError::Changed(project.id));
             }
-            write_members(&transaction, org, project).await?;
             let kept = get_now(&transaction, org, project.id.as_uuid())
                 .await?
                 .ok_or(ProjectError::NotFound(project.id))?;

@@ -133,7 +133,7 @@ impl Store {
         Arc::clone(&self.keys)
     }
 
-    /// The projects: their records, members, and the folders that lead to them.
+    /// The projects: their records, and the folders that lead to them.
     pub fn projects(&self) -> SqliteProjects {
         SqliteProjects::new(Arc::clone(&self.connection))
     }

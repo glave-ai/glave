@@ -51,7 +51,6 @@ function record(id: string, name: string, kind: Project['kind']): Project {
     kind,
     name,
     owner: OWNER,
-    members: [],
     created_at: '2026-10-11T10:00:00.000Z',
     updated_at: '2026-10-11T10:00:00.000Z',
   };

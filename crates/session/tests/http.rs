@@ -96,7 +96,7 @@ fn requests_without_a_valid_sign_in_are_refused() {
         let mut web = Web::new(&served, Some(late));
         let listed = web
             .call(&Request::ThreadList {
-                project: Some(scope().project()),
+                project: None,
                 limit: None,
                 show: None,
                 cursor: None,
@@ -229,7 +229,7 @@ fn the_signed_in_caller_is_recorded_and_the_token_never_is() {
         let mut web = Web::new(&served, Some(token.clone()));
         let started = web
             .call(&Request::ThreadStart {
-                project: Some(scope().project()),
+                project: None,
                 background: false,
                 worktree: None,
                 computer: None,
@@ -258,9 +258,16 @@ fn the_signed_in_caller_is_recorded_and_the_token_never_is() {
                 web.post(&decide).await;
             }
         }
-        assert!(dir.join("ran.txt").exists());
         let ada = json!({"kind": "person", "id": person(&issuer.url, "ada").unwrap()});
         let events = events(&mut web, &thread).await;
+        // In ada's own Chats, in a folder of the thread's own.
+        let root = of_type(&events, "workspace.bound")[0]["data"]["root"].clone();
+        let root = std::path::PathBuf::from(root.as_str().unwrap());
+        assert!(root.join("ran.txt").exists(), "{root:?}");
+        assert!(
+            !dir.join("ran.txt").exists(),
+            "never in the server's own folder"
+        );
         // The thread is ada's work: she is its `for`, so nothing else names her.
         let started = &of_type(&events, "thread.started")[0]["data"];
         assert_eq!(started["for"], ada);
@@ -296,7 +303,7 @@ fn the_method_header_must_agree_and_only_post_to_the_root_is_served() {
         let served = serve_http(server(&dir, Vec::new(), Answering::Clients).await, &issuer).await;
         let mut web = Web::new(&served, Some(signer.sign(&issuer.claims("ada"))));
         let (message, _) = web.message(&Request::ThreadStart {
-            project: Some(scope().project()),
+            project: None,
             background: false,
             worktree: None,
             computer: None,
@@ -332,7 +339,7 @@ fn a_retried_turn_start_returns_the_turn_already_started() {
         let mut web = Web::new(&served, Some(signer.sign(&issuer.claims("ada"))));
         let started = web
             .call(&Request::ThreadStart {
-                project: Some(scope().project()),
+                project: None,
                 background: false,
                 worktree: None,
                 computer: None,

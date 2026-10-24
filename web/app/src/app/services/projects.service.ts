@@ -16,7 +16,7 @@ import { SessionService } from './session.service';
 const LIMIT = 30;
 
 /**
- * The projects the person works in and each one's latest threads: read, then followed live
+ * The person's projects and each one's latest threads: read, then followed live
  * (`thread/list/watch`) while the tab is shown, so the side nav shows a thread running, waiting
  * for the person, renamed, new or gone the moment the server says so (`lists-feed.ts`, loaded
  * after the first page). Read again too after the app changes a project.

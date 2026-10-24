@@ -17,8 +17,8 @@ mod told;
 mod trust;
 
 use glave_event::{
-    At, CallId, CredentialId, MemoryId, MemoryScope, Principal, ProviderId, RawEvent, ScheduleId,
-    Secret, Seq, ThreadId, When,
+    At, CallId, CredentialId, MemoryId, MemoryScope, ProviderId, RawEvent, ScheduleId, Secret, Seq,
+    ThreadId, When,
 };
 use glave_ports::ProjectId;
 use glave_ports::computer::{CommandId, ComputerId};
@@ -232,7 +232,7 @@ methods! {
     /// watch. Streams as `thread/watch` does; a connection of lines watches each list once,
     /// within its 64 watches.
     "thread/list/watch" => ThreadListWatch {
-        /// The project whose threads to follow: every project the caller works in when absent.
+        /// The project whose threads to follow: every project the caller owns when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         project: Option<ProjectId>,
         /// The latest `updated_at` the client has: the threads updated since are sent first,
@@ -341,7 +341,7 @@ methods! {
     "goal/stop" => GoalStop { thread: ThreadId } -> [Done],
     /// The thread's latest goal and how far it has come.
     "goal/get" => GoalGet { thread: ThreadId } -> [Goal],
-    /// Tasks running and recently finished in every project the caller works in, running first,
+    /// Tasks running and recently finished in every project the caller owns, running first,
     /// then newest first.
     "tasks/list" => TasksList {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -366,10 +366,10 @@ methods! {
         /// Tokens each run may use. Required: no schedule runs unbounded.
         budget: u64,
     } -> [Schedule],
-    /// The schedules of every project the caller works in.
+    /// The schedules of every project the caller owns.
     "schedule/list" => ScheduleList {} -> [Schedules],
     "schedule/delete" => ScheduleDelete { schedule: ScheduleId } -> [Done],
-    /// The projects the caller works in: owns, or is a member of.
+    /// The projects the caller owns.
     "project/list" => ProjectList {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<usize>,
@@ -382,30 +382,25 @@ methods! {
         /// The folder's full path.
         path: String,
     } -> [Projects],
-    /// A new project, owned by the caller, with `members` working in it too, and its
-    /// folder, if it has one: its threads work there. A folder that already leads to a
-    /// project answers that project, its name and members as they were. Only the person on
-    /// this computer gives a folder.
+    /// A new project, owned by the caller, and its folder, if it has one: its threads work
+    /// there. A folder that already leads to a project answers that project, its name as it
+    /// was. Only the person on this computer gives a folder.
     "project/create" => ProjectCreate {
         name: String,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        members: Vec<Principal>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         folder: Option<NewFolder>,
     } -> [Project],
-    /// Renames a project: its owner only.
+    /// Renames a project.
     "project/rename" => ProjectRename { project: ProjectId, name: String } -> [Project],
     /// Gives a project the folder already on this computer at `path`, as its folder's new
-    /// place: its threads work there from now on. Its owner only, and only the person on this
-    /// computer.
+    /// place: its threads work there from now on. Only the person on this computer.
     "project/folder/set" => ProjectFolderSet {
         project: ProjectId,
         /// The folder's full path.
         path: String,
     } -> [Project],
     /// Removes a project: its threads go to the archive, their history kept, and it is listed
-    /// no more until it is given a folder again. Its owner only, and only the person on this
-    /// computer.
+    /// no more until it is given a folder again. Only the person on this computer.
     "project/remove" => ProjectRemove { project: ProjectId } -> [Done],
     /// The folders inside a folder on this computer, by name, to choose a project's folder
     /// from: the home folder when `path` is absent. Only the person on this computer.
