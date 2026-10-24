@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use glave_event::{
     At, Auth, AuthMethod, Body, Checkout, EventId, FolderSource, Header, Opened, Principal,
-    PrincipalId, ProjectFolderSet, Seq, ThreadId, decode, encode,
+    ProjectFolderSet, Seq, ThreadId, decode, encode,
 };
 use glave_harness::ProjectFolders;
 use glave_ports::computer::{CredentialHost, Forge, GitCredential};
@@ -36,7 +36,6 @@ fn canonical(path: &Path) -> String {
 fn create(name: &str, folder: Option<NewFolder>) -> Request {
     Request::ProjectCreate {
         name: name.into(),
-        members: Vec::new(),
         folder,
     }
 }
@@ -589,18 +588,17 @@ fn a_project_whose_folder_is_on_another_computer_starts_no_thread_here() {
 }
 
 /// Projects where another change lands between the first update's read and its write, as
-/// another server's would: it adds a member.
+/// another server's would: it renames the project.
 struct Meddled {
     projects: InMemoryProjects,
     landed: AtomicBool,
-    member: Principal,
 }
 
 impl Meddled {
     async fn update_meddled(&self, org: OrgId, project: &Project) -> Result<Project, ProjectError> {
         if !self.landed.swap(true, Ordering::SeqCst) {
             let mut theirs = self.projects.get(org, project.id).await?.unwrap();
-            theirs.members.push(self.member.clone());
+            theirs.name = "Grove".into();
             self.projects.update(org, &theirs).await?;
         }
         self.projects.update(org, project).await
@@ -627,10 +625,10 @@ impl Projects for Meddled {
     fn list<'a>(
         &'a self,
         org: OrgId,
-        member: &'a Principal,
+        owner: &'a Principal,
         limit: usize,
     ) -> BoxFuture<'a, Result<Vec<Project>, ProjectError>> {
-        self.projects.list(org, member, limit)
+        self.projects.list(org, owner, limit)
     }
 
     fn update<'a>(
@@ -668,16 +666,13 @@ impl Projects for Meddled {
 }
 
 #[test]
-fn a_rename_while_another_change_lands_keeps_both() {
+fn a_rename_while_another_lands_is_made_again_on_what_it_left() {
     let dir = folder("projects-meddled");
     block_on!(async {
-        let member = PrincipalId::new(jiff::Timestamp::UNIX_EPOCH, [9; 10]).unwrap();
-        let member = Principal::person(member);
         let mut setup = Setup::new(Vec::new());
         setup.projects = Some(Arc::new(Meddled {
             projects: InMemoryProjects::new(),
             landed: AtomicBool::new(false),
-            member: member.clone(),
         }));
         let server = setup.build(&dir).await.0;
         let (project, _) = made(server.request(create("Garden", None)).await.unwrap());
@@ -687,6 +682,9 @@ fn a_rename_while_another_change_lands_keeps_both() {
         };
         let (renamed, _) = made(server.request(rename).await.unwrap());
         assert_eq!(renamed.name, "Orchard");
-        assert_eq!(renamed.members, [member], "the other change stands");
+        assert_eq!(
+            renamed.revision, 2,
+            "the other rename was kept, then this one"
+        );
     });
 }

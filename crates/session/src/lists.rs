@@ -1,13 +1,13 @@
 //! Watching the threads list (`thread/list/watch`): each thread's summary, as `thread/list`
 //! shows it to the caller, whenever it changes, in one project or in every project the caller
-//! works in. The watch subscribes before it reads. With `after`, the threads the threads view
+//! owns. The watch subscribes before it reads. With `after`, the threads the threads view
 //! says were updated since come first, oldest first; a watcher that falls behind its backlog is
 //! caught up from the view the same way, from before the first change it may have missed. An
 //! event's time is taken as it is made, a moment before it is recorded, so a catch-up reads from
 //! a minute earlier: a thread sent twice is harmless, one missed is not. Changes that come
 //! together are summarised once each, and a subagent's change of status is its parent's too,
 //! whose summary says when a child waits. A project is read only once the caller is found to
-//! work in it, checked as `thread/list` checks it, and checked again a minute later.
+//! own it, checked as `thread/list` checks it, and the answer is kept for the watch's life.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
@@ -40,9 +40,6 @@ const MOST_CAUGHT_UP: usize = 5_000;
 
 /// The projects whose answer a watch remembers; past it, it forgets them and asks again.
 const MOST_PROJECTS: usize = 1_024;
-
-/// How long a watch keeps whether the caller works in a project before it asks again.
-const RECHECK: SignedDuration = SignedDuration::from_secs(60);
 
 /// The threads whose status a watch remembers, to tell their parents only when it changes;
 /// past it, it forgets them all.
@@ -89,9 +86,8 @@ struct Follower<P, L, B> {
     caller: Caller,
     /// The one project followed, when the watch names one.
     only: Option<ProjectId>,
-    /// The projects heard of, with the caller's scope in each they work in, and when that was
-    /// asked.
-    scopes: BTreeMap<ProjectId, (Option<Scope>, At)>,
+    /// The projects heard of, with the caller's scope in each they own.
+    scopes: BTreeMap<ProjectId, Option<Scope>>,
     /// The status each thread was last sent with.
     statuses: BTreeMap<ThreadId, Status>,
     /// The threads to summarise next, in order, each with how many generations above it are
@@ -112,7 +108,7 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Follows the threads `caller` sees in `project`, or in every project they work in: the
+    /// Follows the threads `caller` sees in `project`, or in every project they own: the
     /// summary of each thread updated since `after` from the threads view first, then each
     /// thread's as it changes, until the watch is dropped.
     pub async fn watch_list(
@@ -126,7 +122,7 @@ where
         match project {
             Some(project) => {
                 let (_, scope) = self.authorized(caller, project).await?;
-                scopes.insert(project, (Some(scope), now));
+                scopes.insert(project, Some(scope));
             }
             // Whom the caller is, once, before anything is followed.
             None => {
@@ -315,7 +311,7 @@ where
         }
     }
 
-    /// The scopes of the projects followed: the one named, or every one the caller works in.
+    /// The scopes of the projects followed: the one named, or every one the caller owns.
     async fn followed(&mut self) -> Result<Vec<Scope>, ApiError> {
         let projects = match self.only {
             Some(only) => vec![only],
@@ -330,18 +326,13 @@ where
         Ok(scopes)
     }
 
-    /// The caller's scope in `project`, when they work in it: asked the first time, then
-    /// remembered for a minute, so someone added to a project or taken off it hears or stops
-    /// hearing of it within one.
+    /// The caller's scope in `project`, when they own it: asked the first time, then
+    /// remembered, since a project's owner never changes.
     async fn scope_of(&mut self, project: ProjectId) -> Result<Option<Scope>, ApiError> {
         if self.only.is_some_and(|only| only != project) {
             return Ok(None);
         }
-        let now = self.now();
-        let fresh = now.timestamp().checked_sub(RECHECK).map_or(now, At::from);
-        if let Some((known, asked)) = self.scopes.get(&project)
-            && *asked >= fresh
-        {
+        if let Some(known) = self.scopes.get(&project) {
             return Ok(*known);
         }
         let scope = match self.server.authorized(&self.caller, project).await {
@@ -352,7 +343,7 @@ where
         if self.scopes.len() >= MOST_PROJECTS {
             self.scopes.clear();
         }
-        self.scopes.insert(project, (scope, now));
+        self.scopes.insert(project, scope);
         Ok(scope)
     }
 

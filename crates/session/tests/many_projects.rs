@@ -1,10 +1,10 @@
-//! Projects over the session API: a server serves many projects, a thread is for whoever started
-//! it, a caller who does not work in a thread's project can neither read nor answer it, a one-off
-//! chat lands in the caller's personal project with a scratch folder of its own, as does every
+//! Projects over the session API: a server serves many projects, each its owner's alone, a thread
+//! is for whoever started it, a caller who does not own a thread's project can neither read nor
+//! answer it, a one-off chat lands in the caller's personal project with a scratch folder of its own, as does every
 //! request that names no project whatever folder the server started in, and a local turn sends
 //! the model exactly what it always did.
 
-use glave_event::{CallId, Opened, Principal, ThreadId};
+use glave_event::{CallId, Opened, ThreadId};
 use glave_ports::{Caller, ProjectId, ProjectKind};
 use glave_session::Answering;
 use glave_session::protocol::{Answer, Meta, Reply, Request, code};
@@ -128,7 +128,7 @@ fn one_person_can_neither_read_nor_answer_anothers_threads() {
         let signer = Signer::es256("key-1");
         issuer.publish(&signer);
         let served = serve_http(server(&dir, Vec::new(), Answering::Clients).await, &issuer).await;
-        // ada works in the server's own project; grace does not.
+        // ada and grace each work in their own Chats; neither in the server's own project.
         let mut ada = Web::new(&served, Some(signer.sign(&issuer.claims("ada"))));
         let mut grace = Web::new(&served, Some(signer.sign(&issuer.claims("grace"))));
         let start = Request::ThreadStart {
@@ -258,7 +258,7 @@ fn a_one_off_chat_lands_in_the_callers_personal_project_with_a_scratch_folder() 
             !dir.join("note.md").exists(),
             "never in the server's folder"
         );
-        // ada works in the server's own project, not in grace's.
+        // ada works in her own projects, never in grace's.
         let peek = ada.call(&Request::ThreadGet { thread }).await;
         assert_eq!(refused(&peek), Some(code::NO_THREAD), "{peek}");
         served.close().await;
@@ -281,8 +281,17 @@ fn rename(project: ProjectId, name: &str) -> Request {
     }
 }
 
+/// The projects `caller` is listed.
+async fn projects_of(server: &Tested, caller: &Caller) -> Vec<glave_ports::Project> {
+    let listed = server.request_as(caller, Request::ProjectList { limit: None });
+    match listed.await.unwrap() {
+        Reply::Projects { projects, .. } => projects,
+        other => panic!("projects, not {other:?}"),
+    }
+}
+
 #[test]
-fn projects_are_made_shared_and_renamed_only_by_their_owner() {
+fn a_project_is_its_owner_s_alone_to_see_work_in_and_rename() {
     let dir = folder("projects-made");
     block_on!(async {
         let server = server(&dir, Vec::new(), Answering::Clients).await;
@@ -292,7 +301,6 @@ fn projects_are_made_shared_and_renamed_only_by_their_owner() {
                 &grace,
                 Request::ProjectCreate {
                     name: "Garden".into(),
-                    members: vec![Principal::person(linus.person.unwrap())],
                     folder: None,
                 },
             )
@@ -301,15 +309,14 @@ fn projects_are_made_shared_and_renamed_only_by_their_owner() {
         let Reply::Project { project, .. } = made else {
             panic!("a project, not {made:?}");
         };
-        let Reply::Projects { projects, .. } = server
-            .request_as(&linus, Request::ProjectList { limit: None })
-            .await
-            .unwrap()
-        else {
-            panic!("projects");
-        };
-        assert_eq!(projects, std::slice::from_ref(&project), "a member sees it");
-        // linus may start a thread there, which is his.
+        assert_eq!(
+            projects_of(&server, &grace).await,
+            std::slice::from_ref(&project),
+            "its owner sees it"
+        );
+        let theirs = projects_of(&server, &linus).await;
+        assert!(theirs.is_empty(), "no one else does: {theirs:?}");
+        // linus can neither start a thread there nor rename it: for him it is not there.
         let started = server
             .request_as(
                 &linus,
@@ -323,13 +330,12 @@ fn projects_are_made_shared_and_renamed_only_by_their_owner() {
                     effort: None,
                 },
             )
-            .await
-            .unwrap();
-        assert!(matches!(started, Reply::Thread { .. }));
+            .await;
+        assert_eq!(started.unwrap_err().code, code::NO_PROJECT);
         let renamed = server
             .request_as(&linus, rename(project.id, "Mine now"))
             .await;
-        assert_eq!(renamed.unwrap_err().code, code::NOT_ALLOWED);
+        assert_eq!(renamed.unwrap_err().code, code::NO_PROJECT);
         let renamed = server
             .request_as(&grace, rename(project.id, "Allotment"))
             .await

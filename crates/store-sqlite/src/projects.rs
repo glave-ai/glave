@@ -1,5 +1,4 @@
-//! Projects on SQLite: one row per project, its members in order beside it, and the folder keys
-//! that lead to it.
+//! Projects on SQLite: one row per project, and the folder keys that lead to it.
 
 use glave_event::{At, Principal};
 use glave_ports::{
@@ -71,7 +70,7 @@ fn corrupt(error: impl std::fmt::Display) -> Failure {
     )))
 }
 
-/// A project's row, before its members are read.
+/// A project's row, as read.
 struct Row {
     id: String,
     kind: String,
@@ -96,25 +95,14 @@ fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
     })
 }
 
-/// The whole project `row` stands for, with its members.
-fn assemble(connection: &Connection, org: &str, row: Row) -> Result<Project, Failure> {
-    let mut statement = connection.prepare_cached(
-        "SELECT member FROM project_members WHERE org = ?1 AND project = ?2 ORDER BY position",
-    )?;
-    let members = statement
-        .query_map(params![org, row.id], |member| member.get::<_, String>(0))?
-        .collect::<rusqlite::Result<Vec<String>>>()?;
-    let members = members
-        .iter()
-        .map(|member| serde_json::from_str(member).map_err(corrupt))
-        .collect::<Result<Vec<Principal>, Failure>>()?;
+/// The project `row` stands for.
+fn assemble(row: Row) -> Result<Project, Failure> {
     Ok(Project {
         id: ProjectId::from_uuid(Uuid::parse_str(&row.id).map_err(corrupt)?),
         kind: ProjectKind::named(&row.kind)
             .ok_or_else(|| corrupt(format!("unknown kind {:?}", row.kind)))?,
         name: row.name,
         owner: serde_json::from_str(&row.owner).map_err(corrupt)?,
-        members,
         created_at: At::try_from(row.created_at).map_err(corrupt)?,
         updated_at: At::try_from(row.updated_at).map_err(corrupt)?,
         revision: u64::try_from(row.revision).map_err(corrupt)?,
@@ -128,28 +116,7 @@ fn get_now(connection: &Connection, org: &str, id: &str) -> Result<Option<Projec
         ))?
         .query_row(params![org, id], row)
         .optional()?;
-    found
-        .map(|found| assemble(connection, org, found))
-        .transpose()
-}
-
-fn write_members(
-    transaction: &Transaction<'_>,
-    org: &str,
-    project: &Project,
-) -> Result<(), Failure> {
-    let id = project.id.to_string();
-    transaction.execute(
-        "DELETE FROM project_members WHERE org = ?1 AND project = ?2",
-        params![org, id],
-    )?;
-    for (position, member) in (0_i64..).zip(&project.members) {
-        transaction.execute(
-            "INSERT INTO project_members (org, project, position, member) VALUES (?1, ?2, ?3, ?4)",
-            params![org, id, position, principal_text(member)?],
-        )?;
-    }
-    Ok(())
+    found.map(assemble).transpose()
 }
 
 /// The ids and names of the projects `owner` (as stored) has in `org`.
@@ -210,10 +177,7 @@ fn insert(transaction: &Transaction<'_>, org: &str, project: &Project) -> Result
         ],
     );
     match inserted {
-        Ok(_) => {
-            write_members(transaction, org, project)?;
-            Ok(project.clone())
-        }
+        Ok(_) => Ok(project.clone()),
         Err(rusqlite::Error::SqliteFailure(error, _))
             if error.code == ErrorCode::ConstraintViolation =>
         {
@@ -343,27 +307,22 @@ impl Projects for SqliteProjects {
     fn list<'a>(
         &'a self,
         org: OrgId,
-        member: &'a Principal,
+        owner: &'a Principal,
         limit: usize,
     ) -> BoxFuture<'a, Result<Vec<Project>, ProjectError>> {
-        let member = principal_text(member);
+        let owner = principal_text(owner);
         Box::pin(async move {
-            let member = member?;
+            let owner = owner?;
             let limit = i64::try_from(limit).unwrap_or(i64::MAX);
             self.with(move |connection| {
-                let org = org.to_string();
                 let rows = connection
                     .prepare_cached(&format!(
-                        "SELECT {COLUMNS} FROM project_records r WHERE r.org = ?1
-                           AND (r.owner = ?2 OR EXISTS (SELECT 1 FROM project_members m
-                                WHERE m.org = r.org AND m.project = r.id AND m.member = ?2))
-                         ORDER BY r.id LIMIT ?3"
+                        "SELECT {COLUMNS} FROM project_records WHERE org = ?1 AND owner = ?2
+                         ORDER BY id LIMIT ?3"
                     ))?
-                    .query_map(params![org, member, limit], row)?
+                    .query_map(params![org.to_string(), owner, limit], row)?
                     .collect::<rusqlite::Result<Vec<Row>>>()?;
-                rows.into_iter()
-                    .map(|found| assemble(connection, &org, found))
-                    .collect()
+                rows.into_iter().map(assemble).collect()
             })
             .await
         })
@@ -409,7 +368,6 @@ impl Projects for SqliteProjects {
             if changed == 0 {
                 return Err(ProjectError::NotFound(project.id).into());
             }
-            write_members(&transaction, &org, &project)?;
             let kept = get_now(&transaction, &org, &project.id.to_string())?
                 .ok_or(ProjectError::NotFound(project.id))?;
             transaction.commit()?;

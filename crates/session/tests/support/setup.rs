@@ -235,7 +235,6 @@ impl Setup {
             kind: ProjectKind::Project,
             name: "test".into(),
             owner: Principal::person(server.person().unwrap()),
-            members: Vec::new(),
             created_at: at,
             updated_at: at,
             revision: 0,

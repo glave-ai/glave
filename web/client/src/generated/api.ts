@@ -316,10 +316,8 @@ export type Project = {
   readonly created_at: At;
   readonly id: ProjectId;
   readonly kind: ProjectKind;
-  /** Who else works in it. */
-  readonly members?: readonly (Principal)[];
   readonly name: string;
-  /** Whose it is: a person, or later a team or an agent. */
+  /** Whose it is: a person, or later a team or an agent. Only they work in it. */
   readonly owner: Principal;
   readonly updated_at: At;
 };
@@ -330,7 +328,7 @@ export type ProjectFolder = {
   readonly source: FolderSource;
 };
 
-/** Identifies a project: the boundary for memory, history, files, members and policy. */
+/** Identifies a project: the boundary for memory, history, files and policy. */
 export type ProjectId = string;
 
 /** What a project is. */
@@ -1068,7 +1066,6 @@ export type PasskeyRemoveResult = Readonly<Record<string, never>>;
 
 export type ProjectCreateParams = {
   readonly folder?: NewFolder | null;
-  readonly members?: readonly (Principal)[];
   readonly name: string;
 };
 

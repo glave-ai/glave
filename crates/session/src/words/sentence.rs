@@ -142,8 +142,6 @@ sentences! {
 
     // Projects and their folders.
     NoProject { project: String } = "no-project" "no project { $project } here",
-    RenameOnlyOwner { project: String } = "rename-only-owner"
-        "only its owner renames project { $project }",
     FolderGone = "folder-gone" "This project's folder isn't there anymore.",
     FolderStillThere = "folder-still-there" "this project's folder is still where it was",
     FolderOthers = "folder-others" "that folder is already another project's",
@@ -154,8 +152,6 @@ sentences! {
         "only the person on the computer glave runs on gives a project its folder",
     RemoveOnlyHere = "remove-only-here"
         "only the person on the computer glave runs on removes a project",
-    SetFolderOnlyOwner = "set-folder-only-owner" "only its owner gives a project its folder",
-    RemoveOnlyOwner = "remove-only-owner" "only its owner removes a project",
     NewFolderOnlyHere = "new-folder-only-here"
         "a project's folder is on the computer glave runs on, so only the person there can give one",
     LookOnlyHere = "look-only-here"

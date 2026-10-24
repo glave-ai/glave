@@ -20,7 +20,6 @@ pub(crate) async fn make_project<L: EventLog + 'static>(
 ) -> ProjectId {
     let made = Request::ProjectCreate {
         name: name.into(),
-        members: Vec::new(),
         folder: Some(NewFolder::Path {
             path: path.to_string_lossy().into_owned(),
         }),
@@ -57,7 +56,16 @@ pub(crate) async fn opened<L: EventLog + 'static>(
     server: &Tested<L>,
     thread: ThreadId,
 ) -> (Opened, String) {
-    events(server, thread)
+    opened_as(server, &Caller::default(), thread).await
+}
+
+/// Where `caller`'s `thread` was bound to work, and its root there.
+pub(crate) async fn opened_as<L: EventLog + 'static>(
+    server: &Tested<L>,
+    caller: &Caller,
+    thread: ThreadId,
+) -> (Opened, String) {
+    events_as(server, caller, thread)
         .await
         .into_iter()
         .find_map(|raw| match decode(raw).unwrap().body {
@@ -142,12 +150,21 @@ pub(crate) async fn events<L: EventLog + 'static>(
     server: &Tested<L>,
     thread: ThreadId,
 ) -> Vec<RawEvent> {
+    events_as(server, &Caller::default(), thread).await
+}
+
+/// `caller`'s thread's events, as [`events`] checks them.
+pub(crate) async fn events_as<L: EventLog + 'static>(
+    server: &Tested<L>,
+    caller: &Caller,
+    thread: ThreadId,
+) -> Vec<RawEvent> {
     let page = Request::ThreadEvents {
         thread,
         after: None,
         limit: None,
     };
-    let Reply::Events { events, .. } = server.request(page).await.unwrap() else {
+    let Reply::Events { events, .. } = server.request_as(caller, page).await.unwrap() else {
         panic!("events")
     };
     let seqs: Vec<u64> = events.iter().map(|event| event.seq.get()).collect();

@@ -1,12 +1,12 @@
 //! Watching the threads list (`thread/list/watch`) over every transport: a thread's summary
 //! comes the moment it runs, waits for the person, goes on, ends, is renamed or deleted; with
 //! `after`, what changed since comes first and nothing older; a watcher far behind still hears
-//! the latest; a subagent's wait is its parent's; and nobody hears of threads in a project they
-//! do not work in.
+//! the latest; a subagent's wait is its parent's; a removed project's threads are heard
+//! archived; and nobody hears of threads in another person's projects.
 
 use std::sync::Arc;
 
-use glave_event::{At, Body, Principal, ThreadId, decode};
+use glave_event::{At, Body, ThreadId, decode};
 use glave_ports::testing::ManualClock;
 use glave_ports::{Caller, ProjectId, Standing};
 use glave_session::protocol::{
@@ -214,32 +214,30 @@ fn a_list_watcher_far_behind_still_hears_what_it_missed() {
 }
 
 #[test]
-fn nobody_hears_of_threads_in_a_project_they_do_not_work_in() {
+fn nobody_hears_of_threads_in_another_person_s_projects() {
     block_on!(async {
         for kind in [Kind::InProcess, Kind::Http] {
             let name = format!("list-scope-{kind:?}").to_lowercase();
             let dir = folder(&name);
             let server = server(&dir, Vec::new(), Answering::Clients).await;
             let mut over = Over::new(kind, &server, &name).await;
-            // Over HTTP the watcher is ada, whom the test's server lets work in its own
-            // project; in-process, bea, made a member of it here.
+            // The watcher is the person here; bea, on this computer too, has a project of her own.
             let bea = Caller {
                 person: Some(person("https://id.example.com", "bea").unwrap()),
                 auth: None,
                 trace: None,
             };
-            if kind == Kind::InProcess {
-                set_members(&server, vec![Principal::person(bea.person.unwrap())]).await;
-            }
-            let theirs = elsewhere(&server).await;
-            let hidden = start_in(&server, theirs).await;
+            let theirs = project_of(&server, &bea).await;
+            let hidden = start_in(&server, &bea, theirs).await;
             let mut watcher = over.watcher().await;
             let mut heard = Vec::new();
-            watcher.watch_list(&bea, None, Some(long_ago())).await;
-            // Named, the other project is not there for them.
+            watcher
+                .watch_list(&Caller::default(), None, Some(long_ago()))
+                .await;
+            // Named, her project is not there for them.
             if kind == Kind::InProcess {
                 let refused = server
-                    .watch_list(&bea, Some(theirs), None)
+                    .watch_list(&Caller::default(), Some(theirs), None)
                     .await
                     .err()
                     .unwrap();
@@ -249,12 +247,12 @@ fn nobody_hears_of_threads_in_a_project_they_do_not_work_in() {
                 thread: hidden,
                 title: "Not yours".into(),
             };
-            server.request(rename).await.unwrap();
-            let shared = start(&server, false).await;
-            hear(&mut watcher, shared, &mut heard, |_| true).await;
+            server.request_as(&bea, rename).await.unwrap();
+            let own = start(&server, false).await;
+            hear(&mut watcher, own, &mut heard, |_| true).await;
             assert!(
                 heard.iter().all(|s| s.id != hidden && s.project != theirs),
-                "{kind:?} heard of another project: {heard:?}"
+                "{kind:?} heard of another person's project: {heard:?}"
             );
             over.close().await;
         }
@@ -262,71 +260,39 @@ fn nobody_hears_of_threads_in_a_project_they_do_not_work_in() {
 }
 
 #[test]
-fn someone_taken_off_a_project_stops_hearing_of_it_within_a_minute() {
+fn removing_a_project_is_heard_by_whoever_watches_it() {
     block_on!(async {
-        let dir = folder("list-left");
-        let mut setup = Setup::new(Vec::new());
-        let clock = ManualClock::ticking(1_791_001_000_000);
-        setup.clock = clock.clone();
-        let server = setup.build(&dir).await.0;
-        let bea = Caller {
-            person: Some(person("https://id.example.com", "bea").unwrap()),
-            auth: None,
-            trace: None,
-        };
-        let joined = Principal::person(bea.person.unwrap());
-        set_members(&server, vec![joined]).await;
-        let shared = start(&server, false).await;
-        let mut over = Over::new(Kind::InProcess, &server, "list-left").await;
-        let mut watcher = over.watcher().await;
-        let mut heard = Vec::new();
-        watcher.watch_list(&bea, None, Some(long_ago())).await;
-        hear(&mut watcher, shared, &mut heard, |_| true).await;
-        set_members(&server, Vec::new()).await;
-        clock.advance_seconds(61);
-        let rename = Request::ThreadRename {
-            thread: shared,
-            title: "Not yours now".into(),
-        };
-        server.request(rename).await.unwrap();
-        // Something of bea's own, told after the rename was.
-        let chat = Request::ThreadStart {
-            project: None,
-            background: false,
-            worktree: None,
-            computer: None,
-            model: None,
-            approval: None,
-            effort: None,
-        };
-        let Reply::Thread { thread: own } = server.request_as(&bea, chat).await.unwrap() else {
-            panic!("a thread")
-        };
-        hear(&mut watcher, own.id, &mut heard, |_| true).await;
-        assert!(
-            heard
-                .iter()
-                .all(|s| s.title.as_deref() != Some("Not yours now")),
-            "heard of a project they were taken off: {heard:?}"
-        );
-        over.close().await;
+        for kind in KINDS {
+            let name = format!("list-removed-{kind:?}").to_lowercase();
+            let dir = folder(&name);
+            let garden = dir.join("garden");
+            std::fs::create_dir_all(&garden).unwrap();
+            let server = server(&dir, Vec::new(), Answering::Clients).await;
+            let project = make_project(&server, "Garden", &garden).await;
+            let thread = start_in(&server, &Caller::default(), project).await;
+            let mut over = Over::new(kind, &server, &name).await;
+            // From long ago, so whether a watch over a connection begins before the removal or
+            // after it, it is heard: what was recorded first comes from the threads view.
+            let (mut every, mut named) = (over.watcher().await, over.watcher().await);
+            every
+                .watch_list(&Caller::default(), None, Some(long_ago()))
+                .await;
+            named
+                .watch_list(&Caller::default(), Some(project), Some(long_ago()))
+                .await;
+            let removed = server.request(Request::ProjectRemove { project }).await;
+            assert!(matches!(removed, Ok(Reply::Done {})), "{removed:?}");
+            let mut heard = Vec::new();
+            for watcher in [&mut every, &mut named] {
+                let archived = hear(watcher, thread, &mut heard, |s| {
+                    s.standing == Standing::Archived
+                })
+                .await;
+                assert_eq!(archived.project, project, "{kind:?}");
+            }
+            over.close().await;
+        }
     });
-}
-
-/// Sets who works in the server's own project beside its person.
-async fn set_members(server: &Tested, members: Vec<Principal>) {
-    let mut home = server
-        .projects()
-        .get(scope().org(), scope().project())
-        .await
-        .unwrap()
-        .unwrap();
-    home.members = members;
-    server
-        .projects()
-        .update(scope().org(), &home)
-        .await
-        .unwrap();
 }
 
 #[test]
@@ -521,21 +487,20 @@ async fn ask_and_allow(
     .await;
 }
 
-/// A project of the local person's own that no one else works in.
-async fn elsewhere(server: &Tested) -> ProjectId {
+/// A project of `caller`'s own, with no folder.
+async fn project_of(server: &Tested, caller: &Caller) -> ProjectId {
     let made = Request::ProjectCreate {
         name: "private".into(),
-        members: Vec::new(),
         folder: None,
     };
-    match server.request(made).await.unwrap() {
+    match server.request_as(caller, made).await.unwrap() {
         Reply::Project { project, .. } => project.id,
         other => panic!("a project, not {other:?}"),
     }
 }
 
-/// A thread in `project`.
-async fn start_in(server: &Tested, project: ProjectId) -> ThreadId {
+/// A thread of `caller`'s in `project`.
+async fn start_in(server: &Tested, caller: &Caller, project: ProjectId) -> ThreadId {
     let started = Request::ThreadStart {
         project: Some(project),
         background: false,
@@ -545,7 +510,7 @@ async fn start_in(server: &Tested, project: ProjectId) -> ThreadId {
         approval: None,
         effort: None,
     };
-    match server.request(started).await.unwrap() {
+    match server.request_as(caller, started).await.unwrap() {
         Reply::Thread { thread } => thread.id,
         other => panic!("a thread, not {other:?}"),
     }

@@ -1,10 +1,13 @@
 //! Clients of a test server over each of the four transports (in-process, a stream of lines
 //! as stdio carries it, a Unix socket to a long-running server, HTTP with server-sent events),
-//! made to follow a thread (watching it, or a turn in it) or a list of threads.
+//! made to follow a thread (watching it, or a turn in it) or a list of threads. Over each the
+//! client is the person on this computer, whose threads the test makes in the server's
+//! process: a transport changes how messages travel, never who sends them.
 
 use glave_event::{At, ThreadId};
 use glave_ports::{Caller, ProjectId};
 use glave_session::protocol::{Answer, Notification, Request, Update};
+use glave_session::signin::{LocalToken, SignIn};
 use glave_session::{Answering, ListWatch, TurnItem, TurnStream, Watch, Watched, rpc};
 use serde_json::{Value, json};
 use tokio::io::{
@@ -13,11 +16,11 @@ use tokio::io::{
 use tokio::net::UnixListener;
 use tokio::task::JoinHandle;
 
-use super::issuer::{Issuer, Signer};
+use super::issuer::fixed_clock;
 use super::requests::{events, stream_turn, turn_start};
 use super::script::answer;
 use super::setup::{Tested, folder, server};
-use super::web::{Events, Served, Web, serve_http};
+use super::web::{Events, Served, Web, serve_with};
 
 /// The four transports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,7 +38,7 @@ pub(crate) struct Over {
     kind: Kind,
     server: Tested,
     socket: Option<(std::path::PathBuf, JoinHandle<()>)>,
-    http: Option<(Served, Issuer, String)>,
+    http: Option<(Served, String)>,
     /// Stdio connections, each the server's only client, kept until the test is done.
     stdio: Vec<JoinHandle<std::io::Result<()>>>,
 }
@@ -73,13 +76,12 @@ impl Over {
                 });
                 over.socket = Some((path, accepting));
             }
+            // Signed in with the local token, as a browser on this computer is.
             Kind::Http => {
-                let issuer = Issuer::start().await;
-                let signer = Signer::es256("key-1");
-                issuer.publish(&signer);
-                let http = serve_http(server.clone(), &issuer).await;
-                let token = signer.sign(&issuer.claims("ada"));
-                over.http = Some((http, issuer, token));
+                let token = LocalToken::new([8; 32]);
+                let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
+                let http = serve_with(server.clone(), signin, None).await;
+                over.http = Some((http, token.reveal().to_owned()));
             }
             Kind::InProcess | Kind::Stdio => {}
         }
@@ -105,7 +107,7 @@ impl Over {
                 Watcher::Lines(LinesWatcher::new(Box::new(write), Box::new(read)))
             }
             Kind::Http => {
-                let (served, _, token) = self.http.as_ref().unwrap();
+                let (served, token) = self.http.as_ref().unwrap();
                 Watcher::Http(Web::new(served, Some(token.clone())), None)
             }
         }
@@ -113,7 +115,7 @@ impl Over {
 
     /// A client of the server over HTTP, signed in.
     pub(crate) fn web(&self) -> Web {
-        let (served, _, token) = self.http.as_ref().unwrap();
+        let (served, token) = self.http.as_ref().unwrap();
         Web::new(served, Some(token.clone()))
     }
 
@@ -122,7 +124,7 @@ impl Over {
             accepting.abort();
             let _ = std::fs::remove_file(path);
         }
-        if let Some((served, _, _)) = self.http {
+        if let Some((served, _)) = self.http {
             served.close().await;
         }
         self.server.shutdown().await;
@@ -208,9 +210,9 @@ impl Watcher {
         }
     }
 
-    /// Starts watching the threads `caller` sees in `project`, or in every project they work
-    /// in, those updated since `after` first. Over HTTP the caller is the signed-in one, over
-    /// lines the local person.
+    /// Starts watching the threads `caller` sees in `project`, or in every project they own,
+    /// those updated since `after` first. Over a connection the caller is the person on this
+    /// computer.
     pub(crate) async fn watch_list(
         &mut self,
         caller: &Caller,

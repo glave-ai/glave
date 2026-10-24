@@ -16,7 +16,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use super::issuer::{AUDIENCE, Issuer, fixed_clock};
-use super::setup::{Tested, scope};
+use super::setup::Tested;
 
 /// A session server listening over HTTP until it is closed.
 pub(crate) struct Served {
@@ -26,25 +26,12 @@ pub(crate) struct Served {
     serving: JoinHandle<std::io::Result<()>>,
 }
 
-/// Serves `server` over HTTP, trusting `issuer` for `AUDIENCE`, with `ada` of that issuer
-/// working in the server's own project beside its person.
+/// Serves `server` over HTTP, trusting `issuer` for `AUDIENCE`: whoever signs in there works
+/// in their own projects, never the server's own.
 pub(crate) async fn serve_http<L: EventLog + 'static>(
     server: Tested<L>,
     issuer: &Issuer,
 ) -> Served {
-    let mut home = server
-        .projects()
-        .get(scope().org(), scope().project())
-        .await
-        .unwrap()
-        .unwrap();
-    let ada = glave_session::signin::person(&issuer.url, "ada").unwrap();
-    home.members.push(glave_event::Principal::person(ada));
-    server
-        .projects()
-        .update(scope().org(), &home)
-        .await
-        .unwrap();
     let trust = Trust {
         issuers: vec![issuer.url.clone()],
         audience: AUDIENCE.into(),

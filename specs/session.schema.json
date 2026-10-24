@@ -576,7 +576,7 @@
         },
         {
           "const": "project",
-          "description": "About the project's work: read by every member and agent working in it.",
+          "description": "About the project's work: read in its threads.",
           "type": "string"
         }
       ]
@@ -906,19 +906,12 @@
         "kind": {
           "$ref": "#/$defs/ProjectKind"
         },
-        "members": {
-          "description": "Who else works in it.",
-          "items": {
-            "$ref": "#/$defs/Principal"
-          },
-          "type": "array"
-        },
         "name": {
           "type": "string"
         },
         "owner": {
           "$ref": "#/$defs/Principal",
-          "description": "Whose it is: a person, or later a team or an agent."
+          "description": "Whose it is: a person, or later a team or an agent. Only they work in it."
         },
         "updated_at": {
           "$ref": "#/$defs/At"
@@ -951,7 +944,7 @@
       "type": "object"
     },
     "ProjectId": {
-      "description": "Identifies a project: the boundary for memory, history, files, members and policy.",
+      "description": "Identifies a project: the boundary for memory, history, files and policy.",
       "format": "uuid",
       "type": "string"
     },
@@ -960,7 +953,7 @@
       "oneOf": [
         {
           "const": "project",
-          "description": "A project: the work of its owner and members, usually tied to folders.",
+          "description": "A project: its owner's work, usually tied to a folder.",
           "type": "string"
         },
         {
@@ -3397,12 +3390,6 @@
                 "type": "null"
               }
             ]
-          },
-          "members": {
-            "items": {
-              "$ref": "#/$defs/Principal"
-            },
-            "type": "array"
           },
           "name": {
             "type": "string"

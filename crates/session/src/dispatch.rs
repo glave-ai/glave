@@ -216,12 +216,9 @@ where
                     Err(refused) => Answered::Reply(Err(refused)),
                 };
             }
-            // Only for a project the caller works in, as watching it is.
+            // Only for a project the caller owns, as watching it is.
             Request::ThreadListUnwatch { project } => match project {
-                Some(project) => self
-                    .member_of(caller, project)
-                    .await
-                    .map(|_| Reply::Done {}),
+                Some(project) => self.owned(caller, project).await.map(|_| Reply::Done {}),
                 None => Ok(Reply::Done {}),
             },
             Request::ThreadCompact { thread } => self.compact(thread).await,
@@ -371,11 +368,9 @@ where
             Request::ProjectList { limit } => self.list_projects(caller, limit).await,
             Request::ProjectGet { project } => self.get_project(caller, project).await,
             Request::ProjectFind { path } => self.find_project(caller, &path).await,
-            Request::ProjectCreate {
-                name,
-                members,
-                folder,
-            } => self.create_project(caller, name, members, folder).await,
+            Request::ProjectCreate { name, folder } => {
+                self.create_project(caller, name, folder).await
+            }
             Request::ProjectRename { project, name } => {
                 self.rename_project(caller, project, name).await
             }

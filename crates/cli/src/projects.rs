@@ -26,7 +26,6 @@ fn new_project(kind: ProjectKind, name: String, owner: Principal) -> anyhow::Res
         kind,
         name,
         owner,
-        members: Vec::new(),
         created_at: now,
         updated_at: now,
         revision: 0,

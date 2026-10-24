@@ -150,7 +150,6 @@ fn a_request_that_names_a_project_acts_in_that_project_s_memory() {
         let (server, _store, _dir) = served("memory-projects").await;
         let created = Request::ProjectCreate {
             name: "other".into(),
-            members: Vec::new(),
             folder: None,
         };
         let Ok(Reply::Project { project: other, .. }) = server.request(created).await else {
