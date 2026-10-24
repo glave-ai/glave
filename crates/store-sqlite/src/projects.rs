@@ -78,10 +78,9 @@ struct Row {
     owner: String,
     created_at: String,
     updated_at: String,
-    revision: i64,
 }
 
-const COLUMNS: &str = "id, kind, name, owner, created_at, updated_at, revision";
+const COLUMNS: &str = "id, kind, name, owner, created_at, updated_at";
 
 fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
     Ok(Row {
@@ -91,7 +90,6 @@ fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
         owner: row.get(3)?,
         created_at: row.get(4)?,
         updated_at: row.get(5)?,
-        revision: row.get(6)?,
     })
 }
 
@@ -105,7 +103,6 @@ fn assemble(row: Row) -> Result<Project, Failure> {
         owner: serde_json::from_str(&row.owner).map_err(corrupt)?,
         created_at: At::try_from(row.created_at).map_err(corrupt)?,
         updated_at: At::try_from(row.updated_at).map_err(corrupt)?,
-        revision: u64::try_from(row.revision).map_err(corrupt)?,
     })
 }
 
@@ -154,7 +151,6 @@ fn insert(transaction: &Transaction<'_>, org: &str, project: &Project) -> Result
     Project::check_name(&project.name)?;
     let owner = principal_text(&project.owner)?;
     let mut project = project.clone();
-    project.revision = 0;
     if project.kind == ProjectKind::Project {
         let taken: Vec<String> = projects_of(transaction, org, &owner)?
             .into_iter()
@@ -164,8 +160,8 @@ fn insert(transaction: &Transaction<'_>, org: &str, project: &Project) -> Result
     }
     let project = &project;
     let inserted = transaction.execute(
-        "INSERT INTO project_records (org, id, kind, name, owner, created_at, updated_at, revision)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0)",
+        "INSERT INTO project_records (org, id, kind, name, owner, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
             org,
             project.id.to_string(),
@@ -328,48 +324,37 @@ impl Projects for SqliteProjects {
         })
     }
 
-    fn update<'a>(
+    fn rename<'a>(
         &'a self,
         org: OrgId,
-        project: &'a Project,
+        project: ProjectId,
+        name: &'a str,
+        at: At,
     ) -> BoxFuture<'a, Result<Project, ProjectError>> {
-        let project = project.clone();
+        let name = name.to_owned();
         Box::pin(self.with(move |connection| {
-            Project::check_name(&project.name)?;
-            let org = org.to_string();
+            Project::check_name(&name)?;
+            let (org, id) = (org.to_string(), project.to_string());
             let transaction = writing(connection)?;
-            let stored: Option<(String, String, i64)> = transaction
+            let stored: Option<(String, String)> = transaction
                 .query_row(
-                    "SELECT kind, owner, revision FROM project_records WHERE org = ?1 AND id = ?2",
-                    params![org, project.id.to_string()],
-                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                    "SELECT kind, owner FROM project_records WHERE org = ?1 AND id = ?2",
+                    params![org, id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .optional()?;
-            let Some((kind, owner, revision)) = stored else {
-                return Err(ProjectError::NotFound(project.id).into());
+            let Some((kind, owner)) = stored else {
+                return Err(ProjectError::NotFound(project).into());
             };
-            if u64::try_from(revision).ok() != Some(project.revision) {
-                return Err(ProjectError::Changed(project.id).into());
-            }
             if kind == ProjectKind::Project.as_str() {
                 let taken = projects_of(&transaction, &org, &owner)?;
-                Project::check_free(project.id, &project.name, &taken)?;
+                Project::check_free(project, &name, &taken)?;
             }
-            let changed = transaction.execute(
-                "UPDATE project_records SET name = ?3, updated_at = ?4, revision = revision + 1
-                 WHERE org = ?1 AND id = ?2",
-                params![
-                    org,
-                    project.id.to_string(),
-                    project.name,
-                    project.updated_at.to_string()
-                ],
+            transaction.execute(
+                "UPDATE project_records SET name = ?3, updated_at = ?4 WHERE org = ?1 AND id = ?2",
+                params![org, id, name, at.to_string()],
             )?;
-            if changed == 0 {
-                return Err(ProjectError::NotFound(project.id).into());
-            }
-            let kept = get_now(&transaction, &org, &project.id.to_string())?
-                .ok_or(ProjectError::NotFound(project.id))?;
+            let kept = get_now(&transaction, &org, &id)?.ok_or(ProjectError::NotFound(project))?;
             transaction.commit()?;
             Ok(kept)
         }))
