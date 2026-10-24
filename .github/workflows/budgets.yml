@@ -55,7 +55,7 @@ jobs:
       # key names the target, and the job's name keeps this build's apart from the benchmark's.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          shared-key: ${{ env.TARGET }}-measure
+          key: ${{ env.TARGET }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: actions/setup-node@v7
         with:
@@ -81,6 +81,7 @@ jobs:
 
   benchmark:
     if: github.event_name != 'pull_request'
+    # As the release's, so the same C compiler and musl.
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
@@ -94,7 +95,7 @@ jobs:
           sudo apt-get install -y -q musl-tools
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          shared-key: ${{ env.TARGET }}-measure
+          key: ${{ env.TARGET }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # Built, not run, through `cargo xtask bench`, and without the web app: what it measures
       # in-process is the same either way, and the glave this build makes beside it, which the
