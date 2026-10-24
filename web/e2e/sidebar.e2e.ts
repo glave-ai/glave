@@ -194,8 +194,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
       sections.map(async (testId) => (await byTestId(page, testId).boundingBox())?.y ?? 0),
     );
     expect([...tops].sort((a, b) => a - b)).toEqual(tops);
-    // The count shows alone; screen readers hear it in words.
-    await expect(byTestId(page, 'nav-needs-you-count')).toContainText('1 waiting');
+    // The count shows alone, "1", and screen readers hear it in words, "1 waiting".
+    await expect(byTestId(page, 'nav-needs-you-count')).toHaveText('11 waiting');
     expect(await listed(page, 'nav-needs-you')).toEqual(['Review the release notes', 'glave']);
     expect(await listed(page, 'nav-working')).toEqual(['Nightly dependency audit', 'glave']);
     // Newest first, the thread another started listed on its own; each thread once.

@@ -76,17 +76,51 @@ describe('GroupingService', () => {
     expect(grouping.grouping()).toBe('status');
   });
 
-  it('takes the latest choice’s answer alone, whatever order the answers come in', async () => {
+  it('sends choices one after another, so the server keeps the last, and shows the last', async () => {
     const answers = [held(), held()];
     const fake = new FakeSession().answer('grouping/set', () => answers.shift()?.answer ?? {});
     const [first, second] = answers;
     const grouping = service(fake);
     const status = grouping.choose('status');
     const project = grouping.choose('project');
-    second?.give({ grouping: 'project' });
-    await project;
+    await settled();
+    // The second waits for the first's answer.
+    expect(fake.paramsOf('grouping/set')).toEqual([{ grouping: 'status' }]);
     first?.give({ grouping: 'status' });
     await status;
+    // The first's answer does not move the switch back while the second is on its way.
+    expect(grouping.grouping()).toBe('project');
+    await settled();
+    expect(fake.paramsOf('grouping/set')).toEqual([
+      { grouping: 'status' },
+      { grouping: 'project' },
+    ]);
+    second?.give({ grouping: 'project' });
+    await project;
     expect(grouping.grouping()).toBe('project');
   });
+
+  it('when none of the choices is kept, shows what the server last kept', async () => {
+    const fake = new FakeSession()
+      .answer('grouping/get', { grouping: 'project' })
+      .answer(
+        'grouping/set',
+        new ApiError({ code: ErrorCode.INTERNAL, message: 'the store is read-only' }),
+      );
+    const grouping = service(fake);
+    await grouping.read();
+    await Promise.all([grouping.choose('status'), grouping.choose('project')]);
+    expect(grouping.grouping()).toBe('project');
+    await Promise.all([grouping.choose('project'), grouping.choose('status')]);
+    expect(grouping.grouping()).toBe('project');
+    expect(grouping.problem()).toBe('The store is read-only.');
+    // Read again, as the side nav opens for the next person, it says nothing of before.
+    await grouping.read();
+    expect(grouping.problem()).toBeNull();
+  });
 });
+
+/** Lets the calls already made reach the fake. */
+async function settled(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve));
+}
