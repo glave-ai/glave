@@ -16,14 +16,15 @@ const KEYCHAIN: (&str, &str) = ("glave", "root key");
 /// The key file's name in glave's folder.
 const KEY_FILE: &str = "root.key";
 
-/// What the root derives the person's passkey handle for.
+/// What the root derives the local person's passkey handle for.
 const PASSKEY_HANDLE: &str = "passkey user handle";
 
-/// The person's passkey handle, which every passkey made for them keeps (WebAuthn's user
-/// handle): derived from the root, so it is random, says nothing of them, and lasts as long as
-/// the root does, through a fresh start of the store; a passkey made again on a device then
-/// replaces the one made there before (`specs/session.md`, "Signing in").
-pub(crate) async fn passkey_handle(store: &Data) -> anyhow::Result<Uuid> {
+/// The passkey handle of the local person, whose root this is, which every passkey made for
+/// them keeps (WebAuthn's user handle): derived from the root, so it is random, says nothing of
+/// them, and lasts as long as the root does, through a fresh start of the store; a passkey made
+/// again on a device then replaces the one made there before (`specs/session.md`, "Signing
+/// in"). It is the root's, so it is for the one person the root is for, never another.
+pub(crate) async fn local_passkey_handle(store: &Data) -> anyhow::Result<Uuid> {
     let derived = store.derived(PASSKEY_HANDLE).await?;
     let bytes = derived
         .bytes()

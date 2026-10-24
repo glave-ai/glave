@@ -30,8 +30,8 @@ async fn open(log: SqliteLog, clock: &ManualClock) -> Browsers {
         None,
         Box::new(clock.clone()),
     )
-        .await
-        .unwrap()
+    .await
+    .unwrap()
 }
 
 fn later(clock: &ManualClock, by: SignedDuration) {

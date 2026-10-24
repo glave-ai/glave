@@ -325,7 +325,14 @@ fn a_browser_signed_in_on_one_server_is_signed_in_on_another_on_the_database() {
         let clock = || Box::new(glave_ports::testing::ManualClock::at_second(1_791_590_400));
         let open = |store: &Store| {
             let handle = Uuid::from_u128(9);
-            Browsers::open(store.log(), scope(), server.to_string(), handle, None, clock())
+            Browsers::open(
+                store.log(),
+                scope(),
+                server.to_string(),
+                handle,
+                None,
+                clock(),
+            )
         };
         let (one, two) = (open(&first).await.unwrap(), open(&second).await.unwrap());
         let session = one.redeem(one.link().unwrap().expose()).await.unwrap();

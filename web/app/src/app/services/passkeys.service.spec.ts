@@ -1,10 +1,10 @@
 import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode } from '@glave/client';
-import type { Mock } from 'vitest';
 
-import type { PasskeySignals } from '../lib/signals';
+import type { PasskeySignals } from '../lib/passkey-signals';
 import { unreached } from '../lib/text';
 import { FAKE_SERVER, FakeSession, provideFakeSession } from '../testing/fake-session';
+import { stubPasskeySignals } from '../testing/passkey-signals';
 import { AUTHENTICATOR, passkeyRefused, PasskeysService } from './passkeys.service';
 import { PASSKEY_SIGNALS, SessionService } from './session.service';
 
@@ -60,17 +60,6 @@ async function signedOut(
   return TestBed.inject(PasskeysService);
 }
 
-/** A stand-in for the browser's `PublicKeyCredential` with the Signal API. */
-function withSignals(): {
-  readonly signalAllAcceptedCredentials: Mock<() => Promise<void>>;
-  readonly signalUnknownCredential: Mock<() => Promise<void>>;
-} {
-  return {
-    signalAllAcceptedCredentials: vi.fn(() => Promise.resolve()),
-    signalUnknownCredential: vi.fn(() => Promise.resolve()),
-  };
-}
-
 function service(fake: FakeSession, made: unknown = null): PasskeysService {
   TestBed.configureTestingModule({
     providers: [
@@ -120,7 +109,7 @@ describe('PasskeysService', () => {
   });
 
   it('signs in with a passkey, and tells the passkey manager every one that signs in', async () => {
-    const signals = withSignals();
+    const signals = stubPasskeySignals();
     const keys = await signedOut(reached(), signals);
     expect(await keys.signIn()).toBeNull();
     expect(TestBed.inject(SessionService).signedIn()).toBe(true);
@@ -133,7 +122,7 @@ describe('PasskeysService', () => {
   });
 
   it('tells the passkey manager of a passkey the server does not know, and says why', async () => {
-    const signals = withSignals();
+    const signals = stubPasskeySignals();
     const unknown = { unknown_passkey: { party: 'glave.test', credential: 'BAU' } };
     const fake = reached().answer(
       'passkey/get',

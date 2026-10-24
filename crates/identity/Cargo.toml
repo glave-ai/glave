@@ -29,6 +29,9 @@ jiff.workspace = true
 jsonwebtoken.workspace = true
 # Fetching an identity provider's discovery document and keys.
 reqwest.workspace = true
+# The passkeys a sign-in names for the browser's passkey manager, as the session API's schema
+# describes them, defined once here.
+schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -40,7 +43,6 @@ webauthn-rs.workspace = true
 
 [dev-dependencies]
 aws-lc-rs.workspace = true
-base64.workspace = true
 # A real store for the browsers ledger, in memory.
 glave-keys.workspace = true
 glave-ports = { workspace = true, features = ["conformance"] }

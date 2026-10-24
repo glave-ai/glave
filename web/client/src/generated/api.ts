@@ -701,8 +701,8 @@ export type TurnResult = {
 export type TypeName = string;
 
 /**
- * A passkey a browser signed in with that the server does not know, removed or never made
- * for it, for the browser to tell its passkey manager
+ * A passkey a browser signed in with that the server does not know, removed since the
+ * sign-in began, for the browser to tell its passkey manager
  * (`PublicKeyCredential.signalUnknownCredential`), which then deletes it.
  */
 export type UnknownPasskey = {

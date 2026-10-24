@@ -7,14 +7,15 @@ use std::io::{ErrorKind, Read as _, Write as _};
 use std::path::{Path, PathBuf};
 
 use glave_ports::{BoxFuture, OrgId};
-use hmac::{Hmac, KeyInit as _, Mac as _};
+use hmac::Mac as _;
 
 use crate::error::KeyError;
 use crate::material::KeyMaterial;
 use crate::seal::{associated, open, seal};
 
-/// Wraps and unwraps organization keys. It is called only when an organization key is not
-/// already in memory, so it may be slow or remote (a KMS).
+/// Wraps and unwraps organization keys, and derives values that outlive a store. Wrapping and
+/// unwrapping are called only when an organization key is not already in memory, and deriving
+/// when a server opens its sign-ins, so each may be slow or remote (a KMS).
 pub trait Root: Send + Sync {
     /// Wraps `key`, the key of `org`, for the data store to keep.
     fn wrap<'a>(
@@ -30,10 +31,12 @@ pub trait Root: Send + Sync {
         wrapped: &'a [u8],
     ) -> BoxFuture<'a, Result<KeyMaterial, KeyError>>;
 
-    /// A value this root alone makes for `purpose`, the same each time it is asked: HMAC-SHA-256
-    /// under the root key of a label of its own and `purpose` (a KMS's own MAC, for a KMS
-    /// root). It says nothing of the root, and lasts as long as the root does, wherever that is
-    /// kept: for what must outlive glave's data, as the person's passkey handle does.
+    /// A value this root alone makes for `purpose`, the same each time it is asked, for what
+    /// must outlive glave's data, as the person's passkey handle does: it says nothing of the
+    /// root, and lasts as long as the root does, wherever that is kept. A root held in this
+    /// process makes it as HMAC-SHA-256 under the root key of a label of its own and `purpose`;
+    /// a root kept in a KMS (#22) makes it with the KMS's own MAC where it has one, else
+    /// answers that it makes none.
     fn derive<'a>(&'a self, purpose: &'a str) -> BoxFuture<'a, Result<KeyMaterial, KeyError>>;
 }
 
@@ -68,8 +71,7 @@ impl LocalRoot {
     }
 
     pub(crate) fn derive(&self, purpose: &str) -> Result<KeyMaterial, KeyError> {
-        let mut mac = Hmac::<sha2::Sha256>::new_from_slice(self.key.bytes())
-            .map_err(|e| KeyError::Corrupt(e.to_string()))?;
+        let mut mac = self.key.mac()?;
         mac.update(&associated(&[b"glave/derived/v1", purpose.as_bytes()]));
         let derived = zeroize::Zeroizing::new(<[u8; 32]>::from(mac.finalize().into_bytes()));
         KeyMaterial::from_bytes(derived.as_slice())
@@ -260,7 +262,11 @@ mod tests {
             "each purpose its own"
         );
         let planted = std::fs::read(&path).unwrap();
-        assert_ne!(derived.bytes().as_slice(), planted.as_slice(), "not the root");
+        assert_ne!(
+            derived.bytes().as_slice(),
+            planted.as_slice(),
+            "not the root"
+        );
         let other = folder("derive-other");
         let another = KeyFileRoot::open_or_create(other.join("root.key")).unwrap();
         assert_ne!(

@@ -4,7 +4,7 @@ import { ApiError, type PasskeySummary } from '@glave/client';
 
 import { type Authenticator, made, used } from '../lib/passkeys';
 import { type PlatformAuthenticator, platformAuthenticator } from '../lib/platform';
-import { signalUnknown, unknownPasskey } from '../lib/signals';
+import { signalUnknown, unknownPasskey } from '../lib/passkey-signals';
 import { unreached } from '../lib/text';
 import { type Began, PASSKEY_SIGNALS, SessionService } from './session.service';
 
@@ -60,7 +60,7 @@ export function passkeyRefused(): string {
 export class PasskeysService {
   private readonly session = inject(SessionService);
   private readonly authenticator = inject(AUTHENTICATOR);
-  private readonly signals = inject(PASSKEY_SIGNALS);
+  private readonly passkeySignals = inject(PASSKEY_SIGNALS);
   private readonly listed = signal<readonly PasskeySummary[]>([]);
 
   /** The person's passkeys, oldest first, as the server last listed them. */
@@ -145,7 +145,7 @@ export class PasskeysService {
       }
       const unknown = unknownPasskey(error.data);
       if (unknown !== null) {
-        await signalUnknown(this.signals, unknown);
+        void signalUnknown(this.passkeySignals, unknown);
       }
       return error.message;
     }

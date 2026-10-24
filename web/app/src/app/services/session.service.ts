@@ -1,7 +1,6 @@
 import { DOCUMENT } from '@angular/common';
 import { InjectionToken, Service, computed, inject, signal } from '@angular/core';
 import {
-  type AcceptedPasskeys,
   ApiError,
   GlaveClient,
   type Method,
@@ -11,7 +10,7 @@ import {
   type StreamingMethod,
 } from '@glave/client';
 
-import { type PasskeySignals, signalAccepted } from '../lib/signals';
+import { type PasskeySignals, signalAccepted } from '../lib/passkey-signals';
 import { forget, storageOf } from '../lib/storage';
 import {
   type BrowserSession,
@@ -52,12 +51,8 @@ export const PASSKEY_SIGNALS = new InjectionToken<PasskeySignals | null>('PASSKE
   factory: () => inject(DOCUMENT).defaultView?.PublicKeyCredential ?? null,
 });
 
-/** A session a server began: the token, the server it is for, and the person's passkeys. */
-export interface Began {
-  readonly session: string;
-  readonly server: string;
-  readonly accepted?: AcceptedPasskeys | null;
-}
+/** A session a server began, by a link's code or a passkey: each answers it alike. */
+export type Began = Methods['signin/redeem']['result'];
 
 /** Makes the client for the server that served the app, signing each call in with `token`. */
 export const SESSION_CLIENT_FACTORY = new InjectionToken<(token: () => string) => SessionClient>(
@@ -120,7 +115,7 @@ export class SessionService {
     () => this.local() && this.passkeysHere() && !this.ways().includes('passkey'),
   );
   private readonly client = inject(SESSION_CLIENT_FACTORY)(() => this.session()?.token ?? '');
-  private readonly signals = inject(PASSKEY_SIGNALS);
+  private readonly passkeySignals = inject(PASSKEY_SIGNALS);
 
   /**
    * Signs the tab in, before the app starts: with the link's code when it carries one, else
@@ -239,7 +234,7 @@ export class SessionService {
     this.setupLink.set(null);
     const accepted = began.accepted ?? null;
     if (accepted !== null) {
-      void signalAccepted(this.signals, accepted);
+      void signalAccepted(this.passkeySignals, accepted);
     }
     return true;
   }

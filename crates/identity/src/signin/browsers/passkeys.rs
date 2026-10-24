@@ -15,7 +15,7 @@
 
 mod signals;
 
-pub use self::signals::Accepted;
+pub use self::signals::{AcceptedPasskeys, UnknownPasskey};
 
 use std::sync::{MutexGuard, PoisonError};
 

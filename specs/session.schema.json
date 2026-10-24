@@ -1967,7 +1967,7 @@
       "type": "string"
     },
     "UnknownPasskey": {
-      "description": "A passkey a browser signed in with that the server does not know, removed or never made\nfor it, for the browser to tell its passkey manager\n(`PublicKeyCredential.signalUnknownCredential`), which then deletes it.",
+      "description": "A passkey a browser signed in with that the server does not know, removed since the\nsign-in began, for the browser to tell its passkey manager\n(`PublicKeyCredential.signalUnknownCredential`), which then deletes it.",
       "properties": {
         "credential": {
           "description": "Its credential id (`credentialId`), in base64url.",

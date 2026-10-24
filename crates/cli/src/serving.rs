@@ -235,16 +235,16 @@ pub(crate) async fn browsers(
         .map(|browsers| Some(Arc::new(browsers)))
 }
 
-/// The browsers of `person` in `store`, signed in by the server whose id the store keeps,
-/// reached from elsewhere at `origin` if anywhere, their passkeys keeping the person's handle,
-/// which the root derives.
+/// The browsers of `person`, the local person, in `store`, signed in by the server whose id the
+/// store keeps, reached from elsewhere at `origin` if anywhere, their passkeys keeping the
+/// handle the root derives for them.
 async fn open_browsers(
     store: &Data,
     person: PrincipalId,
     origin: Option<&PublicOrigin>,
 ) -> anyhow::Result<Browsers> {
     let server = store.server(random_uuid()?).await?.to_string();
-    let handle = crate::keys::passkey_handle(store).await?;
+    let handle = crate::keys::local_passkey_handle(store).await?;
     let scope = crate::projects::personal(store, person).await?;
     let clock = Box::new(SystemClock);
     Ok(Browsers::open(store.log(), scope, server, handle, origin, clock).await?)
@@ -371,7 +371,8 @@ mod tests {
                 let asked = browsers.create_options(proof).unwrap();
                 asked.options["publicKey"]["user"]["id"].clone()
             };
-            let root: Arc<dyn glave_keys::Root> = Arc::new(glave_keys::InMemoryRoot::new().unwrap());
+            let root: Arc<dyn glave_keys::Root> =
+                Arc::new(glave_keys::InMemoryRoot::new().unwrap());
             let first = handle(&root).await;
             assert!(first.is_string(), "{first}");
             assert_eq!(handle(&root).await, first, "a fresh store, the same root");

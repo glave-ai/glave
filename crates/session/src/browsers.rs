@@ -11,7 +11,7 @@ use glave_event::{At, AuthMethod, Secret};
 use glave_identity::signin::{Browsers, Ceremony, PasskeyInfo, Proof, Session};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
-use crate::protocol::{AcceptedPasskeys, ApiError, PasskeySummary, Reply, SignInWay, code};
+use crate::protocol::{ApiError, PasskeySummary, Reply, SignInWay, code};
 use crate::providers::local;
 use crate::server::Server;
 use crate::words::Sentence;
@@ -217,11 +217,7 @@ fn signed_in(session: Session, browsers: &Browsers) -> Reply {
     Reply::Browser {
         session: session.token,
         server: browsers.server(),
-        accepted: session.accepted.map(|accepted| AcceptedPasskeys {
-            party: accepted.party,
-            user: accepted.user,
-            credentials: accepted.credentials,
-        }),
+        accepted: session.accepted,
     }
 }
 

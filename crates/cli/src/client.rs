@@ -17,9 +17,7 @@ use glave_harness::{ApprovalMode, Cancel, Goal, Question};
 use glave_ports::Caller;
 use glave_session::client::{Remote, RemoteTurn};
 use glave_session::protocol::Meta;
-use glave_session::protocol::{
-    Answer, ApiError, ErrorData, Notification, Reply, Request, Update,
-};
+use glave_session::protocol::{Answer, ApiError, ErrorData, Notification, Reply, Request, Update};
 use glave_session::{Server, TurnItem, TurnStream};
 
 use crate::asking;

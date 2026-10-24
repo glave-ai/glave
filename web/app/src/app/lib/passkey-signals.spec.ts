@@ -1,27 +1,12 @@
-import type { Mock } from 'vitest';
-
-import { signalAccepted, signalUnknown, unknownPasskey } from './signals';
+import { stubPasskeySignals } from '../testing/passkey-signals';
+import { signalAccepted, signalUnknown, unknownPasskey } from './passkey-signals';
 
 const ACCEPTED = { party: 'glave.test', user: 'AQID', credentials: ['BAU', 'Bgc'] };
 const UNKNOWN = { party: 'localhost', credential: 'CAk' };
 
-/** A stand-in for the browser's `PublicKeyCredential` with the Signal API. */
-interface StubSignals {
-  readonly signalAllAcceptedCredentials: Mock<() => Promise<void>>;
-  readonly signalUnknownCredential: Mock<() => Promise<void>>;
-}
-
-/** A browser's `PublicKeyCredential` with the Signal API, recording what it was told. */
-function withSignals(): StubSignals {
-  return {
-    signalAllAcceptedCredentials: vi.fn(() => Promise.resolve()),
-    signalUnknownCredential: vi.fn(() => Promise.resolve()),
-  };
-}
-
-describe('signals', () => {
+describe('passkey signals', () => {
   it("tells the passkey manager every passkey that signs the person in, as the API's names", async () => {
-    const credential = withSignals();
+    const credential = stubPasskeySignals();
     await signalAccepted(credential, ACCEPTED);
     expect(credential.signalAllAcceptedCredentials).toHaveBeenCalledWith({
       rpId: 'glave.test',
@@ -32,7 +17,7 @@ describe('signals', () => {
   });
 
   it('tells the passkey manager of a passkey the server does not know', async () => {
-    const credential = withSignals();
+    const credential = stubPasskeySignals();
     await signalUnknown(credential, UNKNOWN);
     expect(credential.signalUnknownCredential).toHaveBeenCalledWith({
       rpId: 'localhost',

@@ -15,7 +15,7 @@ mod ledger;
 mod passkeys;
 mod state;
 
-pub use self::passkeys::{Accepted, Ceremony, PasskeyInfo, Proof};
+pub use self::passkeys::{AcceptedPasskeys, Ceremony, PasskeyInfo, Proof, UnknownPasskey};
 
 use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
 
@@ -76,14 +76,13 @@ pub enum BrowserError {
     NoPasskey,
     #[error("that passkey request has expired: try again")]
     Ceremony,
-    /// A passkey with the person's handle that this server does not know, removed or never
-    /// made here: the relying party's id, and its credential id in base64url, for the browser
-    /// to tell its passkey manager.
+    /// A passkey with the person's handle that this server does not know, for the browser to
+    /// tell its passkey manager.
     #[error(
         "that passkey no longer signs in to this glave: sign in with another, or open a link \
          glave gives you to make a new one"
     )]
-    Unknown { party: String, credential: String },
+    Unknown(UnknownPasskey),
     #[error("the passkey was not accepted: {0}")]
     Passkey(String),
     #[error("could not keep this computer's browser sign-ins: {0}")]
@@ -105,7 +104,7 @@ impl From<StreamError> for BrowserError {
 pub struct Session {
     pub token: Secret,
     pub id: String,
-    pub accepted: Option<Accepted>,
+    pub accepted: Option<AcceptedPasskeys>,
 }
 
 /// The codes, browser sessions and passkeys of one server, the sessions and passkeys kept in
@@ -128,7 +127,9 @@ impl Browsers {
     /// The sessions and passkeys the browsers ledger in `scope` of `log` holds, for the server
     /// whose id is `server`, reached from elsewhere at `origin` if anywhere: there it makes
     /// passkeys and signs browsers in with them; with none, on this computer once it listens
-    /// here ([`Browsers::reached_here`]). Every passkey it makes keeps `handle`, the person's.
+    /// here ([`Browsers::reached_here`]). Every passkey it makes keeps `handle`, which must be
+    /// this person's alone: two people with one handle replace and hide each other's passkeys
+    /// where one device or passkey manager holds both.
     pub async fn open<L: EventLog + 'static>(
         log: L,
         scope: Scope,

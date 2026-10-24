@@ -396,13 +396,13 @@ fn handle_asked(browsers: &Browsers) -> serde_json::Value {
 }
 
 #[test]
-fn every_passkey_keeps_the_person_s_handle_through_a_fresh_store_and_each_person_their_own() {
+fn every_passkey_keeps_the_handle_its_caller_gives_through_a_new_store_and_per_person() {
     block_on!(async {
         let clock = ManualClock::at_second(START);
         let first = open(store().log(), &clock).await;
         assert_eq!(handle_asked(&first), encoded(HANDLE));
-        // The store started over, the handle kept by the caller: a passkey made again names the
-        // same person, so the device's passkey manager replaces the one it made before.
+        // A new store, the handle given again: a passkey made again names the same person, so
+        // the device's passkey manager replaces the one it made before.
         let fresh = open(store().log(), &clock).await;
         assert_eq!(handle_asked(&fresh), handle_asked(&first));
         // Another person on the same store keeps a handle of their own.
@@ -426,7 +426,7 @@ fn a_sign_in_tells_the_browser_every_passkey_that_signs_the_person_in() {
         let browsers = open(store().log(), &clock).await;
         let mut phone = Authenticator::new(ORIGIN).unwrap();
         let (_, made) = set_up(&browsers, &mut phone).await;
-        let only_phone = Accepted {
+        let only_phone = AcceptedPasskeys {
             party: "glave.test".into(),
             user: encoded(HANDLE),
             credentials: vec![phone.credential()],
@@ -453,7 +453,7 @@ fn a_sign_in_tells_the_browser_every_passkey_that_signs_the_person_in() {
         // signs in, so the browser's passkey manager forgets those of a store before.
         let here = here_on(store().log(), &clock).await;
         let link = here.link().unwrap();
-        let none = Accepted {
+        let none = AcceptedPasskeys {
             party: "localhost".into(),
             user: encoded(HANDLE),
             credentials: Vec::new(),
@@ -469,39 +469,39 @@ fn a_sign_in_tells_the_browser_every_passkey_that_signs_the_person_in() {
 }
 
 #[test]
-fn a_passkey_the_server_does_not_know_is_named_only_when_it_carries_the_person_s_handle() {
+fn a_passkey_removed_since_a_sign_in_began_is_named_when_it_carries_the_person_s_handle() {
     block_on!(async {
         let clock = ManualClock::at_second(START);
-        // Made before the store started over, the person's handle kept.
-        let mut phone = Authenticator::new(ORIGIN).unwrap();
-        set_up(&open(store().log(), &clock).await, &mut phone).await;
         let kept = store();
-        let fresh = open(kept.log(), &clock).await;
+        let browsers = open(kept.log(), &clock).await;
+        let mut phone = Authenticator::new(ORIGIN).unwrap();
+        set_up(&browsers, &mut phone).await;
         let mut laptop = Authenticator::new(ORIGIN).unwrap();
-        let (laptop_s, _) = set_up(&fresh, &mut laptop).await;
-        let refused = sign_in(&fresh, &mut phone).await.unwrap_err();
+        let (laptop_s, _) = set_up(&browsers, &mut laptop).await;
+        // Removed on another server on this store after the request began.
+        let asked = browsers.get_options().unwrap();
+        let another = open(kept.log(), &clock).await;
+        another.remove(&laptop_s.id).await.unwrap();
+        let answer = laptop.get(&asked.options).unwrap();
+        let refused = browsers.get(&asked.id, &answer).await.unwrap_err();
+        let named = UnknownPasskey {
+            party: "glave.test".into(),
+            credential: laptop.credential(),
+        };
         assert!(
-            matches!(&refused, BrowserError::Unknown { party, credential }
-                if party == "glave.test" && *credential == phone.credential()),
+            matches!(&refused, BrowserError::Unknown(unknown) if *unknown == named),
             "{refused:?}"
         );
-        // Another program's passkey for the same relying party is not this server's to judge.
+        // Another program's passkey for the same relying party, which a browser never presents
+        // to a request that does not name it, is not this server's to judge.
         let other = Uuid::from_u128(0x0dd1_7e5a_5e7a_4a1d_8a2e_0000_0000_0693);
         let mut stranger = Authenticator::new(ORIGIN).unwrap();
         let elsewhere = open_for(store().log(), scope(), other, &clock).await;
         set_up(&elsewhere, &mut stranger).await;
         assert!(matches!(
-            sign_in(&fresh, &mut stranger).await,
+            sign_in(&browsers, &mut stranger).await,
             Err(BrowserError::Passkey(_))
         ));
-        // Removed on another server on this store after the request began.
-        let asked = fresh.get_options().unwrap();
-        let another = open(kept.log(), &clock).await;
-        another.remove(&laptop_s.id).await.unwrap();
-        let answer = laptop.get(&asked.options).unwrap();
-        assert!(matches!(
-            fresh.get(&asked.id, &answer).await,
-            Err(BrowserError::Unknown { credential, .. }) if credential == laptop.credential()
-        ));
+        assert!(sign_in(&browsers, &mut phone).await.is_ok());
     });
 }

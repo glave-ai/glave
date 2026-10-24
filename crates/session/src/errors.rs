@@ -12,7 +12,7 @@ use glave_ports::stream::StreamError;
 use glave_ports::{EntropyError, LogError, ProjectError};
 
 use crate::accounts::AccountsError;
-use crate::protocol::{ApiError, ErrorData, UnknownPasskey, code};
+use crate::protocol::{ApiError, ErrorData, code};
 use crate::server::no_thread;
 use crate::words::Sentence;
 
@@ -116,17 +116,11 @@ impl From<BrowserError> for ApiError {
             | BrowserError::TooMany
             | BrowserError::Ceremony
             | BrowserError::Passkey(_) => Self::new(code::NO_SIGN_IN, error.to_string()),
-            BrowserError::Unknown {
-                ref party,
-                ref credential,
-            } => Self {
+            BrowserError::Unknown(ref unknown) => Self {
                 code: code::NO_SIGN_IN,
                 message: error.to_string().into(),
                 data: Some(ErrorData::UnknownPasskey {
-                    unknown_passkey: UnknownPasskey {
-                        party: party.clone(),
-                        credential: credential.clone(),
-                    },
+                    unknown_passkey: unknown.clone(),
                 }),
             },
             BrowserError::NoPasskeys | BrowserError::NoPasskey => {
