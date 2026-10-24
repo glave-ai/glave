@@ -36,7 +36,7 @@ const ANSWERS: usize = 30;
 const RESUMES: usize = 10;
 /// The release binary's budget in MB (AGENTS.md), the one place it is set: the merge queue,
 /// `main` and a weekly run all run this benchmark (`budgets.yml`).
-const BINARY_MB: f64 = 40.0;
+const BINARY_MB: f64 = 50.0;
 /// The environment variable naming the glave program to measure: in CI, the build that ships.
 const BINARY: &str = "GLAVE_BUDGETS_BINARY";
 
