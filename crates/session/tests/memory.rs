@@ -1,7 +1,6 @@
 //! The person's controls over memory through the session API: `memory/list`, `save`, `edit`,
 //! `move` and `forget`, over JSON as in-process; another person may not touch the person's own
-//! memory; a memory call's result is shown the person as they may read memory now; and a server
-//! without memory says so.
+//! memory; and a server without memory says so.
 
 use std::sync::Arc;
 
@@ -224,78 +223,6 @@ fn another_person_may_not_change_the_persons_own_memory() {
             .unwrap_err();
         // It acts in their own Chats, and the person's own memory is still not theirs.
         assert_eq!(refused.code, code::NOT_ALLOWED);
-    });
-}
-
-/// #578: a memory call's result is kept in the log without the memory's text, and a client
-/// reading the thread is shown it as the caller may read memory now: the save's text, then,
-/// once the person forgets it, the memory named alone.
-#[test]
-fn a_saves_result_shows_the_person_its_text_until_they_forget_it() {
-    block_on!(async {
-        let save = serde_json::json!({"text": "Ada prefers short answers", "scope": "personal"});
-        let answers = vec![
-            answer(None, Some((REMEMBER, save))),
-            answer(Some("Saved."), None),
-        ];
-        let (server, _store, _dir) = served_with("memory-shown", answers).await;
-        let thread = start(&server, false).await;
-        turn(&server, thread, "Remember that I like short answers.")
-            .await
-            .unwrap();
-        let read = async || {
-            let page = Request::ThreadEvents {
-                thread,
-                after: None,
-                limit: None,
-            };
-            let Reply::Events {
-                events, results, ..
-            } = server.request(page).await.unwrap()
-            else {
-                panic!("a page of events")
-            };
-            (events, results)
-        };
-        let (events, results) = read().await;
-        let kept: Vec<String> = (events.into_iter())
-            .filter_map(|raw| match decode(raw).ok()?.body {
-                Body::ToolCallCompleted(done) => Some(format!("{:?}", done.output)),
-                _ => None,
-            })
-            .collect();
-        assert!(
-            kept.len() == 1 && kept.iter().all(|kept| !kept.contains("short answers")),
-            "the log keeps the save's result without the text"
-        );
-        assert!(
-            results.len() == 1
-                && (results.values()).all(|words| words.contains("Ada prefers short answers")),
-            "the person is shown it"
-        );
-        let saved = listed(
-            server
-                .request(Request::MemoryList {
-                    scope: None,
-                    project: None,
-                })
-                .await
-                .unwrap(),
-        );
-        let forgot = Request::MemoryForget {
-            memory: saved.first().map(|memory| memory.memory),
-            all: false,
-            scope: None,
-            project: None,
-        };
-        server.request(forgot).await.unwrap();
-        let (_, after) = read().await;
-        assert!(
-            after.len() == 1
-                && (after.values())
-                    .all(|words| words.starts_with("Remembered [") && !words.contains("short")),
-            "once forgotten, it is named alone"
-        );
     });
 }
 

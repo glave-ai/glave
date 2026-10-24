@@ -485,7 +485,6 @@ where
 
     pub(crate) async fn events(
         &self,
-        caller: &Caller,
         thread: ThreadId,
         after: Option<Seq>,
         limit: Option<usize>,
@@ -508,12 +507,7 @@ where
         let next = (events.len() == limit)
             .then(|| events.last().map(|event| event.seq))
             .flatten();
-        let results = self.results(caller, scope, thread, &events).await;
-        Ok(Reply::Events {
-            events,
-            next,
-            results,
-        })
+        Ok(Reply::Events { events, next })
     }
 
     pub(crate) async fn cancel(&self, thread: ThreadId) -> Result<Reply, ApiError> {

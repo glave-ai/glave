@@ -438,18 +438,16 @@ fn the_paraphrased_fact_is_found_only_with_other_words() {
     let run = dir.join("run");
     let attempt = block_on!(attempt(&setup(&server), &task, "fake-model", 1, &run)).unwrap();
     assert_eq!(attempt.failures, Vec::<String>::new());
-    // What the model read of each recall: the log keeps its results without their texts.
-    let found: Vec<String> = (server.received().iter())
-        .filter_map(|request| request.body["messages"].as_array()?.last().cloned())
-        .filter(|message| message["role"] == "tool")
-        .map(|message| message.to_string())
+    let events = std::fs::read_to_string(run.join("events.jsonl")).unwrap();
+    let found: Vec<&str> = (events.lines())
+        .filter(|line| line.contains("\"type\":\"tool.call.completed\""))
         .collect();
-    let [asked, reworded] = &found[..] else {
-        panic!("two recalls, each read once: {} read", found.len());
+    let [asked, reworded] = found[..] else {
+        panic!("two recalls: {events}");
     };
     assert!(
         !asked.contains("gannet-12") && !asked.contains("heron-9"),
-        "the question's words find nothing here"
+        "the question's words find nothing here: {asked}"
     );
-    assert!(reworded.contains("gannet-12"), "the old thread's words do");
+    assert!(reworded.contains("gannet-12"), "{reworded}");
 }

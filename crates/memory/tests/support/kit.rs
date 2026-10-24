@@ -4,9 +4,7 @@
 use std::future::{Future, ready};
 use std::sync::Arc;
 
-use glave_event::{
-    Arguments, Body, ModelRef, Part, PrincipalId, StopReason, ThreadId, TokenCounts, Usage, decode,
-};
+use glave_event::{Arguments, ModelRef, Part, PrincipalId, StopReason, TokenCounts, Usage};
 use glave_harness::{ApprovalRequest, Approver, Decision, Harness, Parts, Settings, Workspace};
 use glave_keys::{InMemoryRoot, KeySettings};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules};
@@ -14,7 +12,7 @@ pub(crate) use glave_ports::block_on;
 use glave_ports::memories::ProjectMemory;
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
 pub(crate) use glave_ports::testing::{ScriptedModel, Seen};
-use glave_ports::{Clock, Completion, EventLog, OrgId, ProjectId, RequestedCall, Scope};
+use glave_ports::{Clock, Completion, OrgId, ProjectId, RequestedCall, Scope};
 use glave_store_sqlite::{SqliteBlobs, SqliteLog, Store};
 use jiff::Timestamp;
 
@@ -113,21 +111,6 @@ impl Kit {
                 .await
                 .unwrap(),
         )
-    }
-
-    /// The output of each tool call's result in `thread` of `scope`, as its log keeps it.
-    pub(crate) async fn results(&self, scope: Scope, thread: ThreadId) -> Vec<String> {
-        let events = (self.store.log())
-            .read(&scope, thread, None, usize::MAX)
-            .await
-            .unwrap();
-        events
-            .into_iter()
-            .filter_map(|raw| match decode(raw).ok()?.body {
-                Body::ToolCallCompleted(done) => Some(format!("{:?}", done.output)),
-                _ => None,
-            })
-            .collect()
     }
 
     /// A harness on this store, with `memory` when given, and what the model is sent.

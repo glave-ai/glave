@@ -504,19 +504,15 @@ where
         call_id: CallId,
         outcome: ToolOutput,
     ) -> Result<(), HarnessError> {
-        // Only a memory call records anything here: which memory, at which version, and what
-        // its result showed; a result showing text is kept in words without it.
+        // Only a memory call records anything here: that it is memory's, which memory, at which
+        // version.
         let completed = completed(call_id, outcome, thread.memory.structured.take());
-        let (completed, read) = thread.memory.keep(completed);
         let mut events = Vec::new();
         // A command the call started or moved to the background, or saw end, first.
         self.stage_commands(thread, &mut events)?;
         self.stage(thread, &mut events, &completed)?;
         self.commit(thread, events).await?;
         thread.untrusted |= completed.untrusted;
-        if let Some(read) = read {
-            thread.memory.read_instead(completed.call_id.clone(), read);
-        }
         thread.messages.push(Message::Tool {
             call_id: completed.call_id,
             is_error: completed.is_error,

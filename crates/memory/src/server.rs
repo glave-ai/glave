@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use glave_event::{MemoryId, MemoryScope, MemorySource, Principal};
 use glave_ports::EventLog;
-use glave_ports::memories::{MemoryContext, MemoryError, Remembered, Shown};
+use glave_ports::memories::{MemoryContext, MemoryError, Shown};
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, JsonObject,
     ListResourceTemplatesResult, ListResourcesResult, ListToolsResult, PaginatedRequestParams,
@@ -20,15 +20,10 @@ use rmcp::{ErrorData, ServerHandler};
 use serde_json::json;
 
 use crate::memories::{DEFAULT_HITS, Memories, Remembering, Writer};
-use crate::reply::{Hit, Mentioned, Of, Reply, Texts, words};
+use crate::reply;
 
 /// The `_meta` key that carries who and where a request is for.
 const CONTEXT: &str = "glave/context";
-/// The field of a result's structured content that holds what it showed, by reference.
-pub(crate) const REPLY: &str = "reply";
-/// A result whose reference could not be written down, in place of its words: whatever it did
-/// stands, and no text is shown without the reference that keeps it.
-pub(crate) const UNSHOWN: &str = "Done, but its result cannot be shown.";
 /// The resource listing the caller's memories.
 pub(crate) const RESOURCE: &str = "glave://memory";
 
@@ -126,7 +121,7 @@ fn tools() -> Vec<Tool> {
             "scope": {
                 "type": "string",
                 "enum": ["personal", "project"],
-                "description": "personal: about the person, read in all their threads. project: about this project's work, read by everyone working in it."
+                "description": "personal: about the person, read in all their threads. project: about this project's work, read only in this project's threads."
             },
             "replaces": {"type": "string", "description": "The id of the memory this corrects or replaces. Leave it out for a new memory."},
             "force": {"type": "boolean", "description": "Save even though a similar memory exists."}
@@ -222,25 +217,6 @@ fn done(text: String, structured: serde_json::Value) -> CallToolResult {
     result
 }
 
-/// A result showing `texts`: its words with them, for the model, and the reply beside what
-/// `structured` says, so the client keeps it by reference (`reply.rs`). A reply that cannot be
-/// written down shows no text at all: the text is never handed on without its reference.
-fn replied(reply: &Reply, texts: &Texts, mut structured: serde_json::Value) -> CallToolResult {
-    let (Some(fields), Ok(kept)) = (structured.as_object_mut(), serde_json::to_value(reply)) else {
-        return done(UNSHOWN.to_owned(), structured);
-    };
-    fields.insert(REPLY.to_owned(), kept);
-    done(words(reply, Some(texts)), structured)
-}
-
-/// The texts of `memories`, by memory and version.
-fn texts_of<'a>(memories: impl IntoIterator<Item = &'a Remembered>) -> Texts {
-    memories
-        .into_iter()
-        .map(|memory| (Of::Memory(memory.shown()), memory.text.clone()))
-        .collect()
-}
-
 impl<L: EventLog + 'static> MemoryServer<L> {
     async fn remember(
         &self,
@@ -265,24 +241,11 @@ impl<L: EventLog + 'static> MemoryServer<L> {
             .remember(&writer(on), &text, scope, replaces, force)
             .await
         {
-            Ok(Remembering::Saved { memory, replaced }) => {
-                let reply = Reply::Remembered {
-                    memory: Mentioned::of(&memory),
-                    replaced,
-                };
-                let texts = texts_of([&memory]);
-                replied(
-                    &reply,
-                    &texts,
-                    json!({"memory": memory, "replaced": replaced}),
-                )
-            }
-            Ok(Remembering::Similar(similar)) => {
-                let reply = Reply::Similar {
-                    similar: similar.iter().map(Mentioned::of).collect(),
-                };
-                replied(&reply, &texts_of(&similar), json!({}))
-            }
+            Ok(Remembering::Saved { memory, replaced }) => done(
+                reply::remembered(&memory, replaced),
+                json!({"memory": memory, "replaced": replaced}),
+            ),
+            Ok(Remembering::Similar(similar)) => done(reply::similar(&similar), json!({})),
             Err(error) => failed(error.to_string()),
         }
     }
@@ -294,12 +257,7 @@ impl<L: EventLog + 'static> MemoryServer<L> {
             _ => return failed("edit needs `memory` and `text`."),
         };
         match self.memories.edit(&writer(on), memory, &text).await {
-            Ok(memory) => {
-                let reply = Reply::Edited {
-                    memory: Mentioned::of(&memory),
-                };
-                replied(&reply, &texts_of([&memory]), json!({"memory": memory}))
-            }
+            Ok(memory) => done(reply::edited(&memory), json!({"memory": memory})),
             Err(error) => failed(error.to_string()),
         }
     }
@@ -334,14 +292,8 @@ impl<L: EventLog + 'static> MemoryServer<L> {
         match self.memories.recall(on, &query, limit).await {
             Ok(hits) => {
                 let untrusted = hits.iter().any(|hit| hit.untrusted);
-                let found: Vec<Hit> = hits.iter().map(Hit::of).collect();
-                let texts: Texts = (found.iter().zip(&hits))
-                    .map(|(hit, recalled)| (hit.shows(), recalled.text.clone()))
-                    .collect();
-                let reply = Reply::Recalled { hits: found, query };
-                replied(
-                    &reply,
-                    &texts,
+                done(
+                    reply::recalled(&query, &hits),
                     json!({"recalled": hits.len(), "untrusted": untrusted}),
                 )
             }

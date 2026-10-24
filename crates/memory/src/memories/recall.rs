@@ -4,8 +4,7 @@
 //! person's and this project's in a shared project, this project's only in an isolated one, nothing
 //! when memory is off, never another organization's, and never a deleted chat. Hits are ranked
 //! together by how many of the query's words they share. A hit from untrusted tool output says
-//! so. A thread keeps what recall found by reference (`reply.rs`), and `reread.rs` reads its
-//! texts again.
+//! so.
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
@@ -31,10 +30,9 @@ const BEFORE_CHARS: usize = 120;
 /// Where a hit came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source {
-    /// A memory in force, at the version found.
+    /// A memory in force.
     Memory {
         memory: MemoryId,
-        version: u32,
         scope: MemoryScope,
         /// Saved in a thread that had read untrusted content.
         untrusted_read: bool,
@@ -102,11 +100,11 @@ impl<L: EventLog + 'static> Memories<L> {
     }
 
     /// Whether `thread`, found in `ledger`, is not a deleted chat: a deleted chat is hidden
-    /// everywhere, for good (`specs/storage.md`, "Archive and delete"), recall and what it
-    /// found before included. Each thread is looked up once in `seen`. A view that cannot be
-    /// read counts as deleted, so a failure never shows one; a past conversation with no view
-    /// (one glave did not start) is never deleted.
-    pub(super) async fn kept(
+    /// everywhere, for good (`specs/storage.md`, "Archive and delete"), recall included. Each
+    /// thread is looked up once in `seen`. A view that cannot be read counts as deleted, so a
+    /// failure never shows one; a past conversation with no view (one glave did not start) is
+    /// never deleted.
+    async fn kept(
         &self,
         ledger: Scope,
         thread: ThreadId,
@@ -183,7 +181,7 @@ impl<L: EventLog + 'static> Memories<L> {
 
     /// The event at `found` in `ledger`, as recall shows it; `None` when there is none there
     /// with text, or it no longer opens (an event whose key was destroyed, an erased month).
-    pub(super) async fn said_at(&self, ledger: Scope, found: Found) -> Option<Said> {
+    async fn said_at(&self, ledger: Scope, found: Found) -> Option<Said> {
         let after = Seq::new(found.seq.get().saturating_sub(1)).ok();
         let events = (self.inner.log.read(&ledger, found.thread, after, 1).await).ok()?;
         let raw = events
@@ -211,8 +209,8 @@ impl<L: EventLog + 'static> Memories<L> {
 }
 
 /// One event of a past conversation, as recall shows it.
-pub(super) struct Said {
-    pub(super) text: String,
+struct Said {
+    text: String,
     /// `person`, `assistant` or `tool output`.
     by: &'static str,
     /// Output from outside that no one vouches for.
@@ -222,7 +220,7 @@ pub(super) struct Said {
 
 /// The ledgers whose conversations a thread reading `readable` searches: this project's, then
 /// the person's own (one ledger in their Chats).
-pub(super) fn ledgers(readable: &[(MemoryScope, Scope)]) -> Vec<Scope> {
+fn ledgers(readable: &[(MemoryScope, Scope)]) -> Vec<Scope> {
     let mut ledgers: Vec<Scope> = readable.iter().rev().map(|(_, ledger)| *ledger).collect();
     ledgers.dedup();
     ledgers
@@ -239,7 +237,6 @@ fn matching(book: &Book, kind: MemoryScope, wanted: &BTreeSet<String>) -> Vec<(u
                 let hit = Recalled {
                     source: Source::Memory {
                         memory: memory.memory,
-                        version: memory.version,
                         scope: memory.scope,
                         untrusted_read: memory.untrusted_read,
                     },
@@ -263,7 +260,7 @@ fn shared(text: &str, wanted: &BTreeSet<String>) -> usize {
 
 /// The part of `text` around the first word in `wanted`, on one line, at most
 /// [`SNIPPET_CHARS`], with `…` where it was cut.
-pub(crate) fn snippet(text: &str, wanted: &BTreeSet<String>) -> String {
+fn snippet(text: &str, wanted: &BTreeSet<String>) -> String {
     let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
     let mut first = 0;
     let mut start = None;

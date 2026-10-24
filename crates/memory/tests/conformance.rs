@@ -1,6 +1,6 @@
 //! glave's memory passes the memory port's scope suite on a sealed store: a project's memory
-//! stays in its project, a person's own with them and in their organization, what someone may
-//! not reach is answered as missing, and a result kept by reference reads again only that.
+//! stays in its project, a person's own with them and in their organization, and what someone
+//! may not reach is answered as missing.
 
 use glave_ports::conformance::{MemoryPlaces, memory_scopes};
 

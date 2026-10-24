@@ -9,6 +9,7 @@ use glave_ports::memories::{
 };
 use glave_ports::{BlobStore, Effect, EventLog, ModelProvider, ToolCall, ToolOutput};
 
+use super::state::recorded;
 use crate::approval::{ApprovalRequest, Approver};
 use crate::calls::{Judged, NOT_RUN};
 use crate::cancel::Cancel;
@@ -101,11 +102,7 @@ where
             seq: Some(thread.next_seq),
             ..on
         };
-        let MemoryOutput {
-            output,
-            kept,
-            change,
-        } = memory.call(&on, name, &call.arguments).await;
+        let MemoryOutput { output, change } = memory.call(&on, name, &call.arguments).await;
         if let Some(change) = &change {
             thread.memory.apply(change);
         }
@@ -117,7 +114,7 @@ where
             live(shown(change));
         }
         let output = self.after_tool(thread, &hooked, output, cancel).await?;
-        thread.memory.called(change.as_ref(), kept);
+        thread.memory.structured = Some(recorded(change.as_ref()));
         Ok(output)
     }
 }

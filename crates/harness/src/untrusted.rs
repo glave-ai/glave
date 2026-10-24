@@ -17,17 +17,15 @@ const CLOSE: &str = "</untrusted>";
 /// `parts`, each text labelled as untrusted. A closing tag inside the content is broken up,
 /// so the content cannot end the label early and speak as if from outside it.
 pub(crate) fn label(parts: Vec<Part>) -> Vec<Part> {
-    parts.into_iter().map(labelled).collect()
-}
-
-/// `part`, labelled as untrusted when it is text.
-pub(crate) fn labelled(part: Part) -> Part {
-    match part {
-        Part::Text { text } => Part::Text {
-            text: format!("{LABEL}\n{OPEN}\n{}\n{CLOSE}", defuse(&text, "untrusted")),
-        },
-        other => other,
-    }
+    parts
+        .into_iter()
+        .map(|part| match part {
+            Part::Text { text } => Part::Text {
+                text: format!("{LABEL}\n{OPEN}\n{}\n{CLOSE}", defuse(&text, "untrusted")),
+            },
+            other => other,
+        })
+        .collect()
 }
 
 /// `text` with every closing `</tag`, in any case, broken up as `</ tag`, so text shown
