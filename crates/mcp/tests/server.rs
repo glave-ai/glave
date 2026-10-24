@@ -94,6 +94,7 @@ fn tools_are_named_for_their_server_and_marked_by_what_they_do() {
                 ("mcp__tests__grow", Effect::Runs, false),
                 ("mcp__tests__listed", Effect::Runs, false),
                 ("mcp__tests__flood", Effect::Runs, false),
+                ("mcp__tests__whose", Effect::Runs, false),
                 ("mcp__tests__lookup", Effect::Reads, true),
             ]
         );
@@ -225,7 +226,7 @@ fn a_server_starts_in_the_background_and_its_first_listing_waits_for_it() {
     block_on!(async {
         let server = launch("tests", &stdio(SERVER, &[], &[]), Limits::default());
         let tools = server.tools().await.unwrap();
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 10);
         server.close().await;
     });
 }

@@ -10,16 +10,17 @@ use crate::error::{DecodeError, EncodeError};
 use crate::payload::{
     AcmeRegistered, ApprovalDecided, ApprovalModeChosen, ApprovalRequested, AwakeSet,
     BrowserSignedIn, BrowserSignedOut, BrowserUsed, CatalogRefreshed, CertificateIssued,
-    CommandEnded, CommandStarted, CredentialConnected, CredentialRemoved, EffortChosen,
-    GatewayToolCalled, GoalEnded, GoalResumed, GoalSet, GroupingSet, HookRan, LanguageSet,
-    MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryTidied, MessageAdded,
-    ModelChosen, ModelResponded, PasskeyAdded, PasskeyRemoved, PasskeyUsed, ProjectFolderSet,
-    ProjectRemoved, ProviderConnected, ProviderRemoved, ScheduleCreated, ScheduleDeleted,
-    TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed,
-    ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested, TrustDecided, TurnEnded,
-    TurnStarted, WorkspaceBound, WorkspaceRemoved, approval, awake, browser, catalog, certificate,
-    chosen, command, credential, gateway, goal, grouping, hook, language, memory, message, model,
-    passkey, project, provider, standing, task, thread, tool, trust, turn, workspace,
+    CommandEnded, CommandStarted, ConnectionConnected, ConnectionRemoved, CredentialConnected,
+    CredentialRemoved, EffortChosen, GatewayToolCalled, GoalEnded, GoalResumed, GoalSet,
+    GroupingSet, HookRan, LanguageSet, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved,
+    MemoryTidied, MessageAdded, ModelChosen, ModelResponded, PasskeyAdded, PasskeyRemoved,
+    PasskeyUsed, ProjectFolderSet, ProjectRemoved, ProviderConnected, ProviderRemoved,
+    ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted,
+    ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted,
+    ToolCallRequested, TrustDecided, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved,
+    approval, awake, browser, catalog, certificate, chosen, command, connection, credential,
+    gateway, goal, grouping, hook, language, memory, message, model, passkey, project, provider,
+    standing, task, thread, tool, trust, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -72,6 +73,8 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (provider::REMOVED, 1),
     (credential::CONNECTED, 1),
     (credential::REMOVED, 1),
+    (connection::CONNECTED, 1),
+    (connection::REMOVED, 1),
     (project::FOLDER_SET, 1),
     (project::REMOVED, 1),
     (trust::DECIDED, 1),
@@ -138,6 +141,8 @@ pub enum Body {
     ProviderRemoved(ProviderRemoved),
     CredentialConnected(CredentialConnected),
     CredentialRemoved(CredentialRemoved),
+    ConnectionConnected(ConnectionConnected),
+    ConnectionRemoved(ConnectionRemoved),
     ProjectFolderSet(ProjectFolderSet),
     ProjectRemoved(ProjectRemoved),
     TrustDecided(TrustDecided),
@@ -319,6 +324,8 @@ impl Event {
             Body::ProviderRemoved(payload) => encode(header, payload),
             Body::CredentialConnected(payload) => encode(header, payload),
             Body::CredentialRemoved(payload) => encode(header, payload),
+            Body::ConnectionConnected(payload) => encode(header, payload),
+            Body::ConnectionRemoved(payload) => encode(header, payload),
             Body::ProjectFolderSet(payload) => encode(header, payload),
             Body::ProjectRemoved(payload) => encode(header, payload),
             Body::TrustDecided(payload) => encode(header, payload),
@@ -382,6 +389,12 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         }
         credential::REMOVED => {
             credential::decode_removed(version, data).map(|r| r.map(Body::CredentialRemoved))
+        }
+        connection::CONNECTED => {
+            connection::decode_connected(version, data).map(|r| r.map(Body::ConnectionConnected))
+        }
+        connection::REMOVED => {
+            connection::decode_removed(version, data).map(|r| r.map(Body::ConnectionRemoved))
         }
         project::FOLDER_SET => {
             project::decode_folder_set(version, data).map(|r| r.map(Body::ProjectFolderSet))
