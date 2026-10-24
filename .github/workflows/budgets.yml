@@ -65,13 +65,26 @@ jobs:
       - name: Build the web app, which the binary carries
         run: npm ci && npm run build
         working-directory: web
-      # As dist builds it: the glave package alone (`precise-builds`), with its `web` feature
-      # (crates/cli/Cargo.toml, [package.metadata.dist]), in the dist profile, with the flags
-      # dist sets for a musl target (today's defaults, which dist keeps in case they change).
-      - name: Build glave as the release does
-        run: cargo build --profile dist --target "$TARGET" -p glave --features web
-        env:
-          RUSTFLAGS: -Ctarget-feature=+crt-static -Clink-self-contained=yes
+      # Glave as dist builds it: the glave package alone (`precise-builds`), with its `web`
+      # feature (crates/cli/Cargo.toml, [package.metadata.dist]), in the dist profile, with the
+      # flags dist sets for a musl target (today's defaults, which dist keeps in case they
+      # change). The benchmark builds at the same time, in the bench profile: each build spends
+      # most of its five minutes in LTO on one core, and cargo locks each profile's folder on its
+      # own, so on the runner's four cores the two take about as long as one. The step waits for
+      # both, and fails if either did.
+      - name: Build glave as the release does, and the benchmark beside it
+        run: |
+          echo "runner: $(nproc) cores, $(lscpu | sed -n 's/^Model name: *//p')"
+          free -m
+          ( while sleep 20; do free -m | awk '/Mem:/ { print "memory: " $3 " MB used, " $7 " MB available" }'; done ) &
+          RUSTFLAGS="-Ctarget-feature=+crt-static -Clink-self-contained=yes" \
+            cargo build --profile dist --target "$TARGET" -p glave --features web &
+          release=$!
+          benchmark=0
+          cargo xtask bench --bench budgets --features glave/web --target "$TARGET" --no-run || benchmark=$?
+          wait "$release"
+          exit "$benchmark"
+      # With the arguments the benchmark was built with, so it runs at once.
       - name: Measure it
         run: cargo xtask bench --bench budgets --features glave/web --target "$TARGET"
         env:
