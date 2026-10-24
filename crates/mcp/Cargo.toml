@@ -47,8 +47,10 @@ hyper = { workspace = true, optional = true, features = ["http1", "server"] }
 hyper-util = { workspace = true, optional = true, features = ["service", "tokio"] }
 
 [features]
-# A small MCP server on stdio, for tests in this and other crates.
+# A small MCP server on stdio, for tests in this and other crates; over HTTP, it can ask for a
+# sign-in at a fake authorization server of its own (glave-ports' test doubles).
 test-server = [
+    "glave-ports/conformance",
     "dep:bytes",
     "dep:http-body-util",
     "dep:hyper",

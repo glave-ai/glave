@@ -4,7 +4,11 @@
 //! in only a request signed in with one of its `--token`s, which the authorization server at
 //! `issuer` grants, and asks anyone else to sign in there, as MCP's authorization says: a 401
 //! that points at its protected resource metadata, which names it, or with `--resource-above`
-//! its origin, which a token is then granted for. Built with the `test-server` feature.
+//! its origin, which a token is then granted for. With `--fake-sign-in` in its place, it asks
+//! for the sign-in at a fake authorization server of its own (`glave_ports::testing`'s), which
+//! grants its first `--token` at each sign-in, for the web app's end-to-end tests. With
+//! `--ends-with-stdin` it ends once its standard input closes, as when what started it ends,
+//! however that ends. Built with the `test-server` feature.
 //!
 //! Its tools: `echo` (read-only), `fail`, `slow` (waits until the call is cancelled), `env`
 //! (whether a variable reached it), `header` (what a request header was), `grow` (adds the
@@ -33,6 +37,7 @@ use rmcp::model::{
 use rmcp::service::{RequestContext, RoleServer, SubscriptionContext, SubscriptionSink};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
+use glave_ports::testing::{FakeAuthServer, Grant};
 use rmcp::{ErrorData, ServerHandler, ServiceExt as _};
 use serde_json::json;
 
@@ -285,12 +290,23 @@ fn main() -> ExitCode {
         tokens: Arc::new(valued("--token")),
         ..TestServer::default()
     };
-    let issuer = valued("--sign-in").into_iter().next();
+    let fake = match server.tokens.first() {
+        Some(token) if flags.iter().any(|flag| flag == "--fake-sign-in") => {
+            let Ok(fake) = fake_sign_in(token) else {
+                return ExitCode::FAILURE;
+            };
+            Some(fake)
+        }
+        _ => None,
+    };
+    let issuer = fake.as_ref().map(|fake| fake.url.clone());
+    let issuer = issuer.or_else(|| valued("--sign-in").into_iter().next());
     let above = flags.iter().any(|flag| flag == "--resource-above");
+    let ends = flags.iter().any(|flag| flag == "--ends-with-stdin");
     let http = flags.iter().any(|flag| flag == "--http");
     let outcome = runtime.block_on(async {
         if http {
-            serve_http(server, issuer, above).await
+            serve_http(server, issuer, above, ends).await
         } else {
             let running = server.serve(rmcp::transport::stdio()).await?;
             running.waiting().await?;
@@ -304,12 +320,41 @@ fn main() -> ExitCode {
     }
 }
 
-/// Serves until killed, after printing its URL; with an `issuer`, only to a request signed
-/// in with one of its tokens.
+/// How many sign-ins the authorization server of `--fake-sign-in` grants.
+const FAKE_GRANTS: usize = 64;
+
+/// A fake authorization server granting `token` at each sign-in, never to expire.
+fn fake_sign_in(token: &str) -> std::io::Result<FakeAuthServer> {
+    let grant = Grant {
+        token: token.to_owned(),
+        refresh: None,
+        lasts: None,
+    };
+    FakeAuthServer::start(vec![grant; FAKE_GRANTS])
+}
+
+/// Resolves once standard input closes, when `ends`; else never.
+async fn stdin_closed(ends: bool) {
+    if !ends {
+        return std::future::pending().await;
+    }
+    let (closed, waiting) = tokio::sync::oneshot::channel();
+    // A thread the process ends with: a blocking task would hold the runtime open when the
+    // server ends some other way.
+    std::thread::spawn(move || {
+        let _ = std::io::copy(&mut std::io::stdin(), &mut std::io::sink());
+        let _ = closed.send(());
+    });
+    let _ = waiting.await;
+}
+
+/// Serves until killed, or with `ends` until its standard input closes, after printing its
+/// URL; with an `issuer`, only to a request signed in with one of its tokens.
 async fn serve_http(
     server: TestServer,
     issuer: Option<String>,
     above: bool,
+    ends: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let tokens = Arc::clone(&server.tokens);
     let service = StreamableHttpService::new(
@@ -335,8 +380,12 @@ async fn serve_http(
         })
     });
     let mut connections = tokio::task::JoinSet::new();
+    let mut closed = std::pin::pin!(stdin_closed(ends));
     loop {
-        let (stream, _) = listener.accept().await?;
+        let (stream, _) = tokio::select! {
+            accepted = listener.accept() => accepted?,
+            () = &mut closed => return Ok(()),
+        };
         let service = TowerToHyperService::new(service.clone());
         let gate = gate.clone();
         let gated = hyper::service::service_fn(move |request| {
