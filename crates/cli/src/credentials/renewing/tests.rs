@@ -270,3 +270,44 @@ fn a_sign_in_renewed_waits_a_while_under_its_new_id_too() {
     let spent = spent.load(Ordering::SeqCst);
     assert_eq!(spent, 1, "renewed at most once a while, at one address");
 }
+
+#[test]
+fn a_renewal_not_kept_goes_once_its_sign_in_is_no_longer_kept() {
+    let signed_in = super::super::new_id().unwrap();
+    let spent = Arc::new(AtomicUsize::new(0));
+    let renewals = Renewals::<String>::default();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .start_paused(true)
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let read = Instant::now();
+        let unkept = renewals.wait(signed_in, |fresh| {
+            let job = Counted {
+                fresh: "renewed".into(),
+                spent: Arc::clone(&spent),
+                keeps: false,
+            };
+            Some(Renewing { job, fresh })
+        });
+        assert_eq!(unkept.await.as_deref(), Some("renewed"));
+        // A read begun before the renewal started can't tell it was renewed.
+        renewals.only(read, |_| false);
+        let kept = renewals.wait(signed_in, |fresh| {
+            assert!(fresh.is_some(), "a read that began before it keeps it");
+            None::<Renewing<Counted>>
+        });
+        assert_eq!(kept.await, None);
+        // Removed by another glave on the same store.
+        renewals.only(Instant::now(), |_| false);
+        let again = renewals.wait(signed_in, |fresh| {
+            assert!(
+                fresh.is_none(),
+                "the renewal not kept went with its sign-in"
+            );
+            None::<Renewing<Counted>>
+        });
+        assert_eq!(again.await, None);
+    });
+}

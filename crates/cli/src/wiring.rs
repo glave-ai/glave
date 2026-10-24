@@ -1,6 +1,7 @@
 //! Wiring glave together: the session server on this computer's store and workspace, with
 //! the folder glave runs in as its project's, its models, MCP servers, memory and projects.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -14,12 +15,15 @@ use glave_ports::computer::GitCredentials;
 use glave_ports::settings::Hooks;
 use glave_ports::{ProjectId, SystemClock};
 use glave_process::Processes;
-use glave_session::{Answering, GitHosts, ProjectTrust, Providers, Rereads, Server, Wiring};
+use glave_session::{
+    Answering, Connections, GitHosts, ProjectTrust, Providers, Rereads, Server, Wiring,
+};
 
 use crate::args::Args;
 use crate::catalogs::Catalogs;
 use crate::client::Glave;
 use crate::config::{self, Endpoint};
+use crate::connected::Connected;
 use crate::credentials::Hosts;
 use crate::data::Data;
 use crate::gateway::GatewaySwitch;
@@ -71,18 +75,29 @@ fn task_limits(constraints: &policy::Constraints) -> glave_session::TaskLimits {
 }
 
 /// The MCP servers the setup turns on for the person's threads everywhere, in their home
-/// folder: their own, after the catalog of the gateway elsewhere.
+/// folder: their own, after the catalog of the gateway elsewhere, remote ones signed in with
+/// what the person `connected`.
 async fn mcp_servers(
     setup: &Setup,
     remote: Option<&Remote>,
     processes: &Processes,
+    connected: Option<&Arc<Connected>>,
 ) -> anyhow::Result<Arc<Servers>> {
     let chosen = setup.choices.mcp.as_ref();
     let constraints = &setup.loaded.constraints;
     let home = home::folder()?;
-    let wanted = crate::mcp::wanted(&home, chosen, constraints, remote.is_some()).await?;
+    let signed_in = match connected {
+        Some(connected) => connected.addresses().await,
+        None => BTreeSet::new(),
+    };
+    let through_gateway = remote.is_some();
+    let wanted =
+        crate::mcp::wanted(&home, chosen, constraints, through_gateway, &signed_in).await?;
     let root = home::person()?;
-    Ok(Arc::new(Servers::start(wanted, &root, remote, processes)))
+    let connected = connected.map(Arc::clone);
+    Ok(Arc::new(Servers::start(
+        wanted, &root, remote, processes, connected,
+    )))
 }
 
 /// What a thread opens with where `root` is: the person's own AGENTS.md, then the folder's.
@@ -112,12 +127,12 @@ pub(crate) async fn wire(
     let (asked, told) = asked_here(&folder, &setup, &store, identity.person, asking).await?;
     let lineup = Lineup::new(&setup, configured);
     let lined = line_up(args, lineup, &store, identity.person, remote.is_some()).await?;
-    let (workspace, hosts) = with_hosts(args, &store, identity.person, choices, workspace).await?;
-    let opening = opening(workspace.root()).await?;
-    let mut settings = settings_for(args, choices, &lined, identity, opening)?;
+    let (workspace, hosts, connected) =
+        signed(args, &store, identity.person, choices, workspace).await?;
+    let mut settings = settings_for(args, choices, &lined, identity, workspace.root()).await?;
     let root = workspace.root().to_owned();
     settings.commands = crate::commands::find(&root).await?;
-    let servers = mcp_servers(&setup, remote.as_ref(), &processes).await?;
+    let servers = mcp_servers(&setup, remote.as_ref(), &processes, connected.as_ref()).await?;
     let scope = scope_here(args, choices, &store, &folder, &root, identity.person).await?;
     let (on_workers, workers) =
         crate::cloud::workers(choices, &setup.loaded.constraints, &folder, scope.project()).await?;
@@ -126,13 +141,14 @@ pub(crate) async fn wire(
     let set_aside = projects.set_aside(&folder).await;
     (told.iter().chain(&set_aside)).for_each(|line| eprintln!("glave: {line}"));
     tidy(memory.as_ref(), &lined.switch, settings.model.clone());
-    let rereads = rereading(args, &folder, choices, &lined, &servers, &projects).await?;
     let wiring = Wiring {
+        // Before the lineup's parts move into the rest.
+        rereads: Some(rereading(args, &folder, choices, &lined, &servers, &projects).await?),
         models: lined.built.models.offered,
         modes: policy::thread_modes(choices, &setup.loaded.constraints),
         providers: lined.accounts.map(|kept| kept as Arc<dyn Providers>),
-        rereads: Some(rereads),
         git_hosts: hosts.map(|hosts| hosts as Arc<dyn GitHosts>),
+        connections: connected.map(|connected| connected as Arc<dyn Connections>),
         web: crate::project_folders::web_offered(&choices.web.value)?,
         tools: crate::skills::offered(&root).await?,
         // The person's own servers, for their threads alone.
@@ -294,17 +310,17 @@ fn projects_for(
 }
 
 /// How the harness runs: the default model, the instructions a thread opens with when it has
-/// no folder of its own here (a worker's, from `opening`), and the choices.
-fn settings_for(
+/// no folder of its own here (a worker's, what `root` opens with), and the choices.
+async fn settings_for(
     args: &Args,
     choices: &Choices,
     lined: &Lined,
     identity: identity::Identity,
-    opening: Option<String>,
+    root: &Path,
 ) -> anyhow::Result<Settings> {
     let (model, named) = lined.built.models.default.clone().unwrap_or_default();
     let mut settings = Settings::new(model, named);
-    settings.instructions = opening;
+    settings.instructions = opening(root).await?;
     settings.approval = choices.approval.value;
     settings.max_steps = args.max_steps;
     settings.subagents = true; // As Claude Code, Codex and OpenCode offer it.
@@ -319,23 +335,25 @@ fn settings_for(
 }
 
 /// The git hosts `person` connected, when they may connect them here, and `workspace` with
-/// every thread's commands asking them for credentials at each use.
-async fn with_hosts(
+/// every thread's commands asking them for credentials at each use; and the remote servers they
+/// sign in to, likewise.
+async fn signed(
     args: &Args,
     store: &Data,
     person: glave_event::PrincipalId,
     choices: &Choices,
     workspace: Workspace,
-) -> anyhow::Result<(Workspace, Option<Arc<Hosts>>)> {
+) -> anyhow::Result<(Workspace, Option<Arc<Hosts>>, Option<Arc<Connected>>)> {
     let others_sign_in = !args.issuers.is_empty();
     let github = choices.github.as_ref().map(|github| &github.value);
     let hosts = Hosts::for_person(store, person, github, others_sign_in).await?;
+    let connected = Connected::for_person(store, person, &home::folder()?, others_sign_in).await?;
     Ok(match hosts {
         Some(hosts) => {
             let asked = Arc::clone(&hosts) as Arc<dyn GitCredentials>;
-            (workspace.with_credentials(asked), Some(hosts))
+            (workspace.with_credentials(asked), Some(hosts), connected)
         }
-        None => (workspace, None),
+        None => (workspace, None, connected),
     })
 }
 

@@ -1,8 +1,11 @@
 //! The person's own MCP servers, from `mcp.json` in glave's folder, for their threads
 //! everywhere: started once in their home folder, and reconciled when their settings change
 //! (`specs/one-server.md`, "Its settings"): an added server starts, a removed one stops, and a
-//! changed one starts again. One a turn still uses is closed once no turn does.
+//! changed one starts again. One a turn still uses is closed once no turn does. A remote
+//! server is signed in with the person's sign-in to its address, asked for at each request
+//! (`connected.rs`), and starts again when they sign in to it or remove that sign-in.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -15,6 +18,7 @@ use glave_ports::settings::mcp::ServerConfig;
 use glave_process::Processes;
 
 use super::{FILE, environment, mine_untrusted, turned_on};
+use crate::connected::Connected;
 use crate::gateway::remote::Remote;
 use crate::terminal::Printer;
 
@@ -25,16 +29,20 @@ pub(crate) struct Wanted {
     name: String,
     config: ServerConfig,
     untrusted: bool,
+    /// Whether the person is signed in at its address.
+    signed_in: bool,
 }
 
 /// What the person's settings turn on: the servers of `home`'s `mcp.json` that `chosen`
-/// names, or every one, those `constraints` allow, and how far each is trusted. With no
-/// settings file there are none. `through_gateway`: the person uses a gateway's catalog.
+/// names, or every one, those `constraints` allow, how far each is trusted, and whether the
+/// person is signed in to it, at one of the addresses `signed_in`. With no settings file there
+/// are none. `through_gateway`: the person uses a gateway's catalog.
 pub(crate) async fn wanted(
     home: &Path,
     chosen: Option<&Chosen<Vec<String>>>,
     constraints: &Constraints,
     through_gateway: bool,
+    signed_in: &BTreeSet<String>,
 ) -> anyhow::Result<Vec<Wanted>> {
     let path = home.join(FILE);
     let text = match tokio::fs::read_to_string(&path).await {
@@ -66,10 +74,17 @@ pub(crate) async fn wanted(
         .into_iter()
         .map(|(name, config)| {
             let untrusted = mine_untrusted(&name, &config, marks.get(&name), constraints);
+            let signed_in = match &config {
+                ServerConfig::Http { url, .. } => {
+                    glave_mcp::address(url).is_some_and(|url| signed_in.contains(&url))
+                }
+                ServerConfig::Stdio { .. } => false,
+            };
             Wanted {
                 name,
                 config,
                 untrusted,
+                signed_in,
             }
         })
         .collect())
@@ -93,15 +108,19 @@ pub(crate) struct Servers {
     reported: AtomicBool,
     /// Where they started, and where each project's servers start too.
     processes: Processes,
+    /// The person's sign-ins to remote servers, where they may sign in here.
+    connected: Option<Arc<Connected>>,
 }
 
 impl Servers {
-    /// Starts `wanted` in `root`, after the catalog of the `remote` gateway, when there is one.
+    /// Starts `wanted` in `root`, after the catalog of the `remote` gateway, when there is one,
+    /// remote ones signed in with what the person `connected`.
     pub(crate) fn start(
         wanted: Vec<Wanted>,
         root: &Path,
         remote: Option<&Remote>,
         processes: &Processes,
+        connected: Option<Arc<Connected>>,
     ) -> Self {
         let servers = Self {
             catalog: remote.map(|remote| Arc::new(remote.catalog())),
@@ -109,6 +128,7 @@ impl Servers {
             root: root.to_owned(),
             reported: AtomicBool::new(false),
             processes: processes.clone(),
+            connected,
         };
         servers.lock().servers = wanted
             .into_iter()
@@ -124,18 +144,31 @@ impl Servers {
         self.running.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// `wanted` started, in the person's home folder.
+    /// `wanted` started, in the person's home folder; a remote one signed in as the person.
     fn started(&self, wanted: &Wanted) -> Arc<McpServer> {
         let (name, limits) = (&wanted.name, Limits::default());
-        let server = McpServer::start(
-            name,
-            &wanted.config,
-            &environment(),
-            &self.root,
-            limits,
-            &self.processes,
-        );
+        let server = match (&wanted.config, &self.connected) {
+            (ServerConfig::Http { url, headers }, Some(connected)) => {
+                McpServer::remote(name, url, headers, connected.signer(url), limits)
+            }
+            (config, _) => McpServer::start(
+                name,
+                config,
+                &environment(),
+                &self.root,
+                limits,
+                &self.processes,
+            ),
+        };
         Arc::new(server.untrusted(wanted.untrusted))
+    }
+
+    /// The addresses the person is signed in to.
+    pub(crate) async fn signed_in(&self) -> BTreeSet<String> {
+        match &self.connected {
+            Some(connected) => connected.addresses().await,
+            None => BTreeSet::new(),
+        }
     }
 
     /// Runs `wanted` from now on: keeps the servers that stay the same, starts those added or
@@ -257,7 +290,8 @@ mod tests {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
             .unwrap();
-        let start = |chosen| runtime.block_on(wanted(&home, chosen, &forbidden, false));
+        let start =
+            |chosen| runtime.block_on(wanted(&home, chosen, &forbidden, false, &BTreeSet::new()));
         let refused = start(None).err().unwrap().to_string();
         assert!(
             refused.contains("mine") && refused.contains("[mcp] own = false"),
@@ -270,7 +304,7 @@ mod tests {
         assert_eq!(start(Some(&none)).unwrap(), Vec::new());
         let offered = constraints("version = 1\n[mcp]\nown = false\ncatalog = [\"mine\"]\n");
         let started = runtime
-            .block_on(wanted(&home, None, &offered, false))
+            .block_on(wanted(&home, None, &offered, false, &BTreeSet::new()))
             .unwrap();
         assert_eq!(
             started
@@ -292,6 +326,7 @@ mod tests {
                 env: std::collections::BTreeMap::new(),
             },
             untrusted: false,
+            signed_in: false,
         }
     }
 
@@ -305,7 +340,7 @@ mod tests {
             let root = std::env::temp_dir();
             let unrecorded = Processes::unrecorded();
             let started = vec![server("a", "a"), server("b", "b")];
-            let servers = Servers::start(started.clone(), &root, None, &unrecorded);
+            let servers = Servers::start(started.clone(), &root, None, &unrecorded, None);
             let first = |servers: &Servers| Arc::clone(&servers.lock().servers[0].1);
             let a = first(&servers);
             assert!(
