@@ -5,9 +5,10 @@ import { hasModelGuard } from './guards/has-model.guard';
 import { signedInGuard } from './guards/signed-in.guard';
 
 /**
- * The app's pages: the workspace (chat, a project, a thread, tasks, memory, settings) for a signed-in
- * person with a model set up, the page that adds one, and the sign-in page. Each title is read
- * when its page opens, in the app's language.
+ * The app's pages: the workspace (chat, a project, a thread, tasks, memory, settings and the
+ * pages reached from it, `settings.routes.ts`) for a signed-in person with a model set up, the
+ * page that adds one, and the sign-in page. Each title is read when its page opens, in the
+ * app's language.
  */
 export const routes: Routes = [
   {
@@ -49,9 +50,7 @@ export const routes: Routes = [
       },
       {
         path: 'settings',
-        title: () => $localize`:@@routes.settings:Settings · glave`,
-        loadComponent: () =>
-          import('./components/settings/settings.component').then((m) => m.SettingsComponent),
+        loadChildren: () => import('./settings.routes').then((m) => m.SETTINGS_ROUTES),
       },
     ],
   },

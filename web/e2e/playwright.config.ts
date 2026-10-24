@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { type Socket, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 
 import { defineConfig, devices } from '@playwright/test';
 
@@ -9,7 +9,10 @@ import { LIVE_MODEL, startFakeModel } from './fake-model';
 import {
   ACCOUNTS,
   APP,
+  CONNECTIONS,
+  CONNECTIONS_WEBKIT,
   FIRST_RUN,
+  GLAVE_BIN,
   HERE,
   HERE_WEBKIT,
   LIFELINE,
@@ -20,9 +23,6 @@ import {
   SHOWCASE,
   type Site,
 } from './support';
-
-/** The glave binary that serves the app: GLAVE_BIN, else the workspace's debug build. */
-const glave = process.env['GLAVE_BIN'] ?? resolve(import.meta.dirname, '../../target/debug/glave');
 
 /**
  * A home of its own for the glave of `site`, with `settings` as its config.toml, so the tests
@@ -86,8 +86,9 @@ process.env[LIVE_MODEL_URL] = liveModel;
  * glave with nothing set up, for the first run against the real server, the app on a real
  * glave with a model, to connect accounts to, the app on a real glave reached from elsewhere
  * at a public origin, to sign in to with passkeys, the app on real glaves reached here alone,
- * to make passkeys on this computer, and the app on a real glave whose model is a fake service
- * and which asks before commands run, to follow a thread from two tabs.
+ * to make passkeys on this computer, the app on a real glave whose model is a fake service
+ * and which asks before commands run, to follow a thread from two tabs, and the app on real
+ * glaves whose person has a service of their own to sign in to.
  */
 const SITES: readonly { site: Site; web: string; env: Record<string, string> }[] = [
   {
@@ -110,7 +111,7 @@ const SITES: readonly { site: Site; web: string; env: Record<string, string> }[]
     web: 'dist/app/browser',
     env: { ...tied, GLAVE_HOME: home(ACCOUNTS), GLAVE_MODEL: 'e2e' },
   },
-  ...[HERE, HERE_WEBKIT].map((site) => ({
+  ...[HERE, HERE_WEBKIT, CONNECTIONS, CONNECTIONS_WEBKIT].map((site) => ({
     site,
     web: 'dist/app/browser',
     env: { ...tied, GLAVE_HOME: home(site), GLAVE_MODEL: 'e2e' },
@@ -182,7 +183,7 @@ export default defineConfig({
   // and glave's error output is written in pieces, so without the end a line read only to
   // `http://127.0.0.` would be taken for an address (127.0.0.0, port 80).
   webServer: SITES.map(({ site, web, env }) => ({
-    command: `"${glave}" serve --http 0 --web ${web}`,
+    command: `"${GLAVE_BIN}" serve --http 0 --web ${web}`,
     wait: {
       stderr: new RegExp(`serving the session API on (?<${site.address}>http://\\S+)\\n`, 'u'),
     },

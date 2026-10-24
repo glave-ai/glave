@@ -1,0 +1,68 @@
+@use '../page';
+
+// A card across the column for each kind of service: its head, then a row for each, behind a
+// rule.
+.card {
+  overflow: hidden;
+  border: var(--glz-border-width) solid var(--glz-color-border);
+  border-radius: var(--glz-radius-card);
+  background: var(--glz-surface-card);
+}
+
+.head {
+  padding: var(--glz-inset-card-head);
+  font-size: var(--glz-text-md);
+}
+
+// Under the head, the card's own rule; between rows, the quieter divider.
+.rows > app-service-row:first-child {
+  border-block-start-color: var(--glz-color-border);
+}
+
+.detail {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+  line-height: var(--glz-leading-tight);
+}
+
+.dot {
+  flex: none;
+  width: var(--glz-dot-size);
+  height: var(--glz-dot-size);
+  border-radius: var(--glz-radius-full);
+  background: var(--glz-color-success);
+}
+
+.problem {
+  color: var(--glz-color-danger);
+}
+
+.waiting {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-2);
+
+  .detail {
+    color: var(--glz-color-text-secondary);
+  }
+}
+
+.again {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: var(--glz-space-1);
+  font-size: var(--glz-text-sm);
+}
+
+// On a phone, a row's button is a finger's size.
+@media (width <= 48rem) {
+  .rows .action {
+    min-height: var(--glz-control-height-touch);
+  }
+}

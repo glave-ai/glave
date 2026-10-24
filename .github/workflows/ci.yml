@@ -238,12 +238,14 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run build:showcase
-      # Built as the checks build it for its serving tests, so the cache they save serves it.
-      # Playwright's image is pulled meanwhile, which takes about as long.
+      # Built as the checks build it for its serving tests, so the cache they save serves it,
+      # and the MCP test server beside it, which the tests sign in to. Playwright's image is
+      # pulled meanwhile, which takes about as long.
       - name: Build glave with the app inside, and pull Playwright's image
         run: |
           docker pull -q "$PLAYWRIGHT_IMAGE" >/dev/null &
           cargo test -p glave --features web --test cli --no-run
+          cargo build -p glave-mcp --features test-server --bin=glave-mcp-test-server
           wait $!
         working-directory: .
       # The scripts look for the browsers in node_modules (PLAYWRIGHT_BROWSERS_PATH=0), and the

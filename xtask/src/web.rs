@@ -2,7 +2,8 @@
 //! ships, unit tests, the library and app builds, and the end-to-end tests of `web/`
 //! (`npm run check`), served by the real `glave serve --http --web`. This step builds that
 //! glave with the app inside it (the `web` feature, after `npm run build`), and runs its
-//! serving tests against it first.
+//! serving tests against it first, and builds the MCP test server beside it, which the
+//! end-to-end tests sign in to.
 //! They need Node 22.22.3 or later: without it the step fails, unless `GLAVE_SKIP_WEB=1` says
 //! to skip it, as CI's Rust jobs do (its `web` job runs these).
 
@@ -12,6 +13,17 @@ use std::time::SystemTime;
 
 /// The oldest Node the web build supports (Angular's own minimum, `web/package.json`).
 const MINIMUM: (u32, u32, u32) = (22, 22, 3);
+
+/// How cargo builds glave-mcp's test server, a service that asks for a sign-in, which the
+/// end-to-end tests start beside glave (`web/e2e/connections.e2e.ts`).
+const TEST_SERVER: [&str; 6] = [
+    "build",
+    "-p",
+    "glave-mcp",
+    "--features",
+    "test-server",
+    "--bin=glave-mcp-test-server",
+];
 
 /// Runs the web checks, or skips them when asked to, with `threads`' variables: how many tests
 /// run at once.
@@ -46,6 +58,8 @@ pub(crate) fn check(threads: &[(&str, String)]) -> Result<(), String> {
         &["-E", "test(/^serve::/)"],
         threads,
     )?;
+    // The service the end-to-end tests sign in to, beside that glave.
+    crate::cmd::run("cargo", &TEST_SERVER)?;
     let glave = target_directory()?.join("debug/glave");
     let glave = ("GLAVE_BIN", glave.display().to_string());
     npm(&web, &["run", "check"], &[threads, &[glave]].concat())

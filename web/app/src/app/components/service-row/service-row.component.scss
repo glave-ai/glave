@@ -1,0 +1,37 @@
+// A row of a card that lists services: the tile, the name over its line, then the action.
+:host {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-3);
+  padding: var(--glz-inset-card-row);
+  border-block-start: var(--glz-border-width) solid var(--glz-color-divider);
+}
+
+.tile {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--glz-control-height-sm);
+  height: var(--glz-control-height-sm);
+  border: var(--glz-border-width) solid var(--glz-color-border);
+  border-radius: var(--glz-radius-row);
+  background: var(--glz-surface-sunken);
+  color: var(--glz-color-text-secondary);
+  font-size: var(--glz-text-xs);
+  font-weight: var(--glz-weight-bold);
+}
+
+.text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--glz-space-half);
+  min-width: 0;
+}
+
+.name {
+  overflow-wrap: anywhere;
+  font-weight: var(--glz-weight-bold);
+  line-height: var(--glz-leading-tight);
+}

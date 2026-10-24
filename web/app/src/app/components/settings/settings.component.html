@@ -76,6 +76,15 @@
       (decided)="decided($event)"
     />
     <glz-card>
+      <h2 glzCardHeader>{{ copy.connections }}</h2>
+      <p class="details">{{ copy.connectionsText }}</p>
+      <div glzCardFooter class="glz-row glz-gap-2">
+        <a glzButton data-testid="settings-connections" [routerLink]="connectionsLink">{{
+          copy.connectionsOpen
+        }}</a>
+      </div>
+    </glz-card>
+    <glz-card>
       <h2 glzCardHeader>{{ copy.memory }}</h2>
       <p class="details">{{ copy.memoryText }}</p>
       <div glzCardFooter class="glz-row glz-gap-2">
