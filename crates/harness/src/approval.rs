@@ -188,9 +188,10 @@ pub(crate) fn no_one_there(request: &ApprovalRequest) -> String {
     {
         format!(
             "Not run, because {reason}, and no one is available to allow that: glave is running \
-             without anyone at the keyboard. Do not try to reach the internet another way. \
-             Finish what you can without it, and say at the end which command still needs a \
-             person to allow it."
+             without anyone at the keyboard. Do not try to reach the internet another way, \
+             and do not stand in for what it would fetch, such as by writing your own \
+             replacement for a package. Finish what does not depend on it, and say at the end \
+             which command still needs a person to allow it."
         )
     } else if let Some(reason) = &request.caution {
         format!(

@@ -23,8 +23,9 @@ pub(crate) const WITH_NETWORK: &str =
 /// it, and the organization does not let one ask.
 pub(crate) const NOT_ALLOWED: &str = "Not run: commands here go without the internet, and \
      asking to run one with it, or outside the sandbox, is not allowed here. Do not try to \
-     reach the internet another way. Finish what you can without it, and say at the end which \
-     command needs it.";
+     reach the internet another way, and do not stand in for what it would fetch, such as by \
+     writing your own replacement for a package. Finish what does not depend on it, and say at \
+     the end which command needs it.";
 
 /// What the model is told when what a command would run without of the sandbox changed while
 /// it waited for the person, so their answer was about something else.
