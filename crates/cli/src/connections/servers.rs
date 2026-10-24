@@ -50,7 +50,8 @@ async fn signed_in(server: &mut Reached, sign_in: &SignInLink) -> anyhow::Result
     }
 }
 
-/// Lists the servers signed in to, where the server keeps them.
+/// Lists the servers signed in to, and those that ask the person to sign in, where the server
+/// keeps them.
 pub(super) async fn list(server: &mut Reached) -> anyhow::Result<()> {
     let connections = match server.request(Request::ConnectionList {}).await {
         Ok(Reply::Connections { connections }) => connections,
@@ -59,14 +60,15 @@ pub(super) async fn list(server: &mut Reached) -> anyhow::Result<()> {
         Err(error) => return Err(error),
     };
     if connections.is_empty() {
-        println!("No connection is signed in to. Sign in to one of your MCP servers with");
-        println!("glave connect <name>.");
+        println!("No connection is signed in to, and none of your MCP servers asks you to.");
     }
     for connection in &connections {
         println!("{}", shown(connection));
-        if connection.status == ConnectionStatus::Expired {
-            let named = connection.name.as_ref().unwrap_or(&connection.url);
-            println!("  Sign in again with glave connect {named}");
+        let named = connection.name.as_ref().unwrap_or(&connection.url);
+        match connection.status {
+            ConnectionStatus::SignedIn => {}
+            ConnectionStatus::Expired => println!("  Sign in again with glave connect {named}"),
+            ConnectionStatus::SignedOut => println!("  Sign in with glave connect {named}"),
         }
     }
     Ok(())
@@ -87,6 +89,7 @@ fn shown(connection: &ConnectionInfo) -> String {
     let status = match connection.status {
         ConnectionStatus::SignedIn => "signed in",
         ConnectionStatus::Expired => "signed out: its sign-in expired",
+        ConnectionStatus::SignedOut => "not signed in",
     };
     match &connection.name {
         Some(name) => format!("{name} ({}), {status}", connection.url),

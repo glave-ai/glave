@@ -81,7 +81,7 @@ export type CommandId = string;
 /** Identifies a computer, unique everywhere (UUID v7, minted by the adapter that made it). */
 export type ComputerId = string;
 
-/** A connection's sign-in to its remote MCP server. */
+/** A connection's sign-in to its remote MCP server, or a server that asks for one. */
 export type ConnectionInfo = {
   /** What the person's settings call the server at that address, when they name one. */
   readonly name?: string | null;
@@ -90,8 +90,8 @@ export type ConnectionInfo = {
   readonly url: string;
 };
 
-/** Whether a sign-in still works. */
-export type ConnectionStatus = "signed_in" | "expired";
+/** Whether the person is signed in, and the sign-in still works. */
+export type ConnectionStatus = "signed_in" | "expired" | "signed_out";
 
 /**
  * Identifies one sign-in a person keeps, sealed under a key of its own: a git host

@@ -204,7 +204,7 @@
       "type": "string"
     },
     "ConnectionInfo": {
-      "description": "A connection's sign-in to its remote MCP server.",
+      "description": "A connection's sign-in to its remote MCP server, or a server that asks for one.",
       "properties": {
         "name": {
           "description": "What the person's settings call the server at that address, when they name one.",
@@ -228,7 +228,7 @@
       "type": "object"
     },
     "ConnectionStatus": {
-      "description": "Whether a sign-in still works.",
+      "description": "Whether the person is signed in, and the sign-in still works.",
       "oneOf": [
         {
           "const": "signed_in",
@@ -238,6 +238,11 @@
         {
           "const": "expired",
           "description": "Its token expired with nothing to renew it: the person signs in again.",
+          "type": "string"
+        },
+        {
+          "const": "signed_out",
+          "description": "Not signed in: one of the person's remote servers, which asks them to sign in.",
           "type": "string"
         }
       ]

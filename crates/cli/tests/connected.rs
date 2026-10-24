@@ -21,12 +21,18 @@ use crate::support::*;
 /// The remote server, asking for a sign-in at `issuer` and letting in `tokens`, and its
 /// address.
 fn remote_server(issuer: &str, tokens: &[&str]) -> (Running, String) {
-    let mut command = Command::new(crate::mcp::test_server());
-    command.args(["--http", "--sign-in", issuer]);
+    let mut args = vec!["--sign-in", issuer];
     for token in tokens {
-        command.args(["--token", token]);
+        args.extend(["--token", token]);
     }
-    let child = command
+    serving(&args)
+}
+
+/// The test server over HTTP with `args`, and its address.
+fn serving(args: &[&str]) -> (Running, String) {
+    let child = Command::new(crate::mcp::test_server())
+        .arg("--http")
+        .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .spawn()
@@ -208,6 +214,10 @@ fn a_connection_signed_in_in_the_browser_signs_the_server_in_renewed_until_remov
     api.turn(&thread, "who am I there?");
     assert!(!offered_whose(&world.model.received()[0].body));
 
+    let asking = api.call("connection/list", json!({}));
+    let signed_out = json!([{"url": world.address, "name": "docs", "status": "signed_out"}]);
+    assert_eq!(asking["result"]["connections"], signed_out, "{asking}");
+
     let elsewhere = json!({"server": "https://elsewhere.example.com/mcp"});
     let refused = api.call("connection/start", elsewhere);
     assert_eq!(
@@ -256,8 +266,8 @@ fn a_connection_signed_in_in_the_browser_signs_the_server_in_renewed_until_remov
 
     let removed = api.call("connection/remove", json!({"server": world.address}));
     assert!(removed["error"].is_null(), "{removed}");
-    let none = api.call("connection/list", json!({}));
-    assert_eq!(none["result"]["connections"], json!([]), "{none}");
+    let again = api.call("connection/list", json!({}));
+    assert_eq!(again["result"]["connections"], signed_out, "{again}");
     api.turn(&thread, "still there?");
     assert!(!offered_whose(&world.model.received()[3].body));
 
@@ -303,7 +313,8 @@ fn a_sign_in_the_person_declines_keeps_nothing() {
     let polled = world.api.call("connection/poll", json!({"flow": flow}));
     assert_eq!(polled["error"]["code"], -32025, "{polled}");
     let none = world.api.call("connection/list", json!({}));
-    assert_eq!(none["result"]["connections"], json!([]), "{none}");
+    let status = &none["result"]["connections"][0]["status"];
+    assert_eq!(status, "signed_out", "{none}");
     let again = world.api.shown(&back);
     assert_eq!(again, shown, "the page loaded again says the same");
     let never = world.api.shown(&back.replace("state=", "state=x"));
@@ -344,9 +355,10 @@ fn glave_connect_signs_in_to_a_server_and_connections_lists_and_removes_it() {
         "{said}"
     );
     let listed = text(&glave(place, model, &["connections"], ""));
+    let asking = format!("docs ({}), not signed in", world.address);
     assert!(
-        !listed.contains("docs (") && listed.contains("No connection is signed in to"),
-        "{listed}"
+        listed.contains(&asking) && listed.contains("Sign in with glave connect docs"),
+        "it asks again: {listed}"
     );
 
     let host = glave(place, model, &["connect", "https://git.example.com"], "");
@@ -386,4 +398,28 @@ fn with_no_server_running_a_git_host_still_takes_its_token_and_a_server_says_wha
         "{said}"
     );
     assert!(!said.contains(&token), "{said}");
+}
+
+#[test]
+fn only_the_servers_that_ask_for_a_sign_in_are_listed_before_one() {
+    let world = World::new("conn-list", &grants(), Vec::new());
+    let (_open, open) = serving(&[]);
+    // Asking for a sign-in too, but given a key of the person's own.
+    let (_keyed, keyed) = remote_server(&world.auth.url, &[]);
+    let gone = "http://127.0.0.1:1/mcp";
+    let key = format!("Bearer {}", fake_secret("key_"));
+    let servers = json!({"mcpServers": {
+        "docs": {"url": world.address},
+        "open": {"url": open},
+        "keyed": {"url": keyed, "headers": {"authorization": key}},
+        "gone": {"url": gone},
+        "local": {"command": crate::mcp::test_server()},
+    }});
+    std::fs::write(world.place.home.join("mcp.json"), servers.to_string()).unwrap();
+    let listed = world.api.call("connection/list", json!({}));
+    assert_eq!(
+        listed["result"]["connections"],
+        json!([{"url": world.address, "name": "docs", "status": "signed_out"}]),
+        "not one that asks no one, has a key, can't be reached or runs here: {listed}"
+    );
 }

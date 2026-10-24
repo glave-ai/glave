@@ -46,9 +46,10 @@ pub(crate) const CONNECTIONS_USAGE: &str = "\
 glave connections: your connections and git hosts
 
 Usage:
-  glave connections                list them: each connection, and whether you are still
-                                   signed in; each host, whom it signs in as, the end of its
-                                   token, and what glave can do with it
+  glave connections                list them: each connection, and whether you are signed
+                                   in, those that ask you to sign in too; each host, whom it
+                                   signs in as, the end of its token, and what glave can do
+                                   with it
   glave connections remove <id>    remove a host, destroying its token
   glave connections remove <name>  remove a connection's sign-in, by its name or its
                                    address, destroying its tokens";

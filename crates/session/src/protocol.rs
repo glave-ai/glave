@@ -518,7 +518,8 @@ methods! {
     /// Waits a little for the sign-in `flow`: the connection, signed in to, once the person approved
     /// glave in the browser; else the flow again, to ask again.
     "connection/poll" => ConnectionPoll { flow: String } -> [Connection, Waiting],
-    /// The connections signed in to here.
+    /// The connections signed in to here, then the person's remote servers that ask them to
+    /// sign in and are not signed in to.
     "connection/list" => ConnectionList {} -> [Connections],
     /// Removes a connection's sign-in, destroying its tokens.
     "connection/remove" => ConnectionRemove {
