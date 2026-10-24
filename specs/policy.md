@@ -21,7 +21,7 @@ First cut built, in the `glave-config` library (`crates/config/src/policy`), whi
 - `glave policy explain` prints every setting with its source, every rule with its file, and why glave would refuse to run; it exits non-zero when it would.
 - A server that runs for days reads the person's `config.toml`, the policy and `mcp.json` again at the start of a turn when their content's hash changed, and every choice a turn runs with follows from the next turn, the judge with the models it names; a running turn keeps what it started with. It cannot refuse to start, so a choice a constraint added meanwhile refuses gives way as glave's default would, and the log names the rule: constraints still only narrow, whatever the person's or a project's file says (`one-server.md`, "Its settings").
 
-Project trust (issue #83), in `crates/config/src/trust`, until a repository's items become suggestions ("A repository's suggestions"):
+Project trust (issue #83), in `crates/config/src/trust`:
 
 - A repository's `.mcp.json` servers and the loosening parts of its `.glave/config.toml` (`approval = "auto"`, `sandbox = "off"`, a `judge_model` other than `"off"`) run only after the person trusts the project. glave asks once, in the terminal or in an app (issue #250, below), and only when the repository brings such things; a repository without them never asks, and the rest of its `config.toml` (a model, a tighter approval or sandbox) applies at once.
 - The answer is kept in the store, in the person's trust ledger (below). What is trusted is each server's definition, so a repository that changes a server, or adds one, is asked about again, and only that.
@@ -65,17 +65,15 @@ A "requirement" (the sandbox must be on) is a constraint that allows one value. 
 
 1. command-line flags;
 2. environment variables (`GLAVE_MODEL`, `GLAVE_JUDGE_MODEL`, …);
-3. the project's settings: those accepted into it, and its repository's that add no power ("A repository's suggestions"; today its `.glave/config.toml`, its loosening parts once the project is trusted);
-4. the person's (today their `~/.glave/config.toml`);
+3. the project's `.glave/config.toml` (once the project is trusted);
+4. the person's `~/.glave/config.toml`;
 5. glave's built-in defaults.
-
-A project's and a person's settings are powers kept in glave, each with its owner and record (`model.md`, "Words and powers").
 
 **Constraints**, all of which apply at once:
 
 1. the organization's policy: served by the organization's glave server as a signed, versioned bundle, or installed by device management at `/etc/glave/policy.toml` (macOS: managed preferences; Windows: Group Policy);
 2. a project's own policy, which may only narrow the organization's (a client's sealed project, say);
-3. none at all for a person on their own, an organization of one, which allows everything: anyone can add an app ("Connected apps").
+3. none at all for a person on their own computer, whose personal organization allows everything.
 
 A consumer never sees a policy. They set at most a few choices.
 
@@ -212,7 +210,7 @@ max_schedules = 10                                # schedules one person may kee
 
 Unknown keys are errors that name the key and file, so a typo never silently does nothing.
 
-A policy is a power like any other setting (`model.md`, "Words and powers"): it lives in the data store with its author and history, the admin console edits it, and admins who prefer configuration as code keep it in git and apply it (`glave admin apply`). One that device management installs is managed by its file and shows read-only in the console. Today the file is all there is ("Status").
+The policy file is the source of truth, and an organization's admin console is an editor for it: changes made in the console are written to the same policy and recorded as events, so every change has a history and an author. Admins who prefer configuration as code edit the file; both reach the same result.
 
 ## Enforcement
 
@@ -235,29 +233,23 @@ A laptop's own config can never loosen a constraint, because the constraint arri
 
 ## Connected apps
 
-An app is a tool server reached over MCP, started on the person's computer or remote: a service such as a forge, a tracker or a drive, or a knowledge base. Decided on 2026-10-23 (#633); what is built is `[mcp]` above ("Status") and the gateway's catalog (`gateway.md`, "Remote tools: the catalog").
+An app is a tool server reached over MCP, started on the person's computer or remote; a knowledge base is one too, a tool server with a search tool. Decided on 2026-10-23 (#633); what is built is `[mcp]` ("Status") and the gateway's catalog (`gateway.md`, "Remote tools: the catalog").
 
-- **One list per organization: the catalog** (`[mcp] catalog`), the apps it approves. Knowledge bases are apps on the same list, shown first-class on the Connect page beside the rest: one list and one way to connect, not a second system for knowledge (`memory.md`).
-- **Its default follows who the organization is, never the deployment.** A company's is "only from our list"; an organization of one's is "anyone can add", so a person on their own connects any app, with glave's own list to pick from and nothing to set up (`model.md`, organization-first).
-- **Everyone signs in as themselves.** Connecting an app signs the person in with their own account, so the app allows what that person may and its own record names them. Shared keys, where an organization needs one, live only in its gateway, never on a person's computer.
-- **One permission: "may add their own".** Whether someone may connect an app that is not on the list is one permission, granted to groups from the identity provider (`model.md`, the Team row). It covers servers started on the person's computer and remote ones alike: both reach data with that person's sign-ins, so one answer fits both. Today it is `[mcp] own`, one answer for everyone a policy covers: groups aren't built, so it cannot yet be granted to some people and not others.
+- **One list per organization: the catalog** (`[mcp] catalog`), the apps it approves, in its policy file. Knowledge bases are on the same list, shown first-class on the Connect page beside the rest.
+- **Its default follows who the organization is, never the deployment.** A company's is "only from our list": it runs no other tool server, whatever a file says (`[mcp] own = false`). An organization of one's is "anyone can add".
+- **"May add their own" is one grant,** given to groups (#645). It covers servers started on the person's computer and remote ones alike: both reach data with that person's sign-ins, so one answer fits both.
+- **Connect** writes one line into the person's own `mcp.json` and signs them in. An app on the organization's list needs only the sign-in, and no file is written.
+- **Everyone signs in as themselves.** Shared keys, where an organization needs one, live only in its gateway, never on a person's computer.
+- **A tool server from a repository's file asks "run this?"** before its first run, and again when its definition changes, for each person ("Project trust", as built). An app on the organization's list needs only the person's sign-in.
 - **On the list means approved, not vouched for.** Whether what an app returns is labelled untrusted follows `approvals.md` ("Untrusted content"), with `[mcp] untrusted` and `[mcp] trusted`, whatever list the app is on; a tool that reaches the open world is labelled anyway.
 - **Safety is the industry's baseline today:** the list, each person's own sign-in, approvals (`approvals.md`), the sandbox around every command (`sandbox.md`), untrusted content labelled, and every tool call recorded (`events.md`). A stronger rule waits for its own decision and measurement: checking a write to an app after untrusted content is #634.
-- **The list governs apps; the network governs the machine.** What a computer can reach is the organization's to restrict, with its firewall, or network policy in the Helm chart (#220) where glave runs on its cluster: a command reaches what the machine's network allows, whatever the list says. glave's own switches (`network`, `[workers] network`) stay as they are.
 
-## A repository's suggestions
+## The network
 
-A repository's `.mcp.json`, its hooks and its settings that add power only suggest powers, never set them (`model.md`, "Words and powers"). Decided on 2026-10-23 (#633), not built: today they run once the person trusts the project ("Project trust", below), and changing that is a follow-up issue.
-
-- **Each item is a suggestion:** each server of its `.mcp.json`, each hook, and each setting of its `.glave/config.toml` that adds power, shown in plain words. Only a setting that adds power is a suggestion, the model among them (it spends money and policy governs it); every other setting, one that takes power away (the network off, a stricter approval mode, a narrower sandbox) or a neutral one (`worktree`, `titles`), applies straight from the repository, as today.
-- **The project's owner accepts a suggestion for the project,** within the organization's list and their own "may add their own" ("Connected apps"); `[hooks] own = false` refuses every hook. Anyone may add the same for themselves alone, within the same limits: that is adding a power of their own.
-- **Accepted, it reaches every member's threads in the project,** each member signing in as themselves: the setup a shared project shares (#631).
-- **Accepted as it was shown.** A suggestion is accepted by its exact definition, as trust is today, and kept in glave with who accepted it and when; the file is not read again for it. A file that changes or adds an item makes a new suggestion and leaves what was accepted as it was.
-- **Words are not suggestions.** The repository's AGENTS.md and skills are read in place: they are files.
+- **On by default for a person on their own** (a laptop, their own server, Glave Cloud's personal plan); **off by default in an organization** (#641), its policy file setting the default. The switch always exists.
+- **The list governs apps; the network governs the machine.** What a command reaches is the network's to say, whatever the list says: the outbound proxy allows, blocks or holds the machine's connections (#643), and beyond glave an organization restricts its machines with its firewall, or network policy in the Helm chart (#220).
 
 ## Project trust
-
-What is built until a repository's items become suggestions (above; `model.md`, "Where the code disagrees").
 
 - A project's `.glave/config.toml` and its `.mcp.json` can run commands (MCP servers and hooks). So they are honoured only after the person trusts the project once. glave asks at most once per project, and only when the project brings something that runs commands.
 - Trust decisions are kept in the store, in the trust ledger in the person's personal project (`events.md`, "The trust ledger"), one `trust.decided` per decision about a project, keyed by its canonical root path; the latest about a project holds, so every server on one store reads the same. A clone that moved is recognised by its `origin` remote, read from the repository's config file without running anything. Each item records the exact definition that was answered, so trust is of the content:

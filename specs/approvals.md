@@ -73,7 +73,7 @@ Which MCP servers are untrusted, first rule that applies:
 
 1. A server a policy's `[mcp] untrusted` names is untrusted, whatever else says otherwise.
 2. A server in the person's own `mcp.json` (`~/.glave/mcp.json`) follows its own `"untrusted"` mark. Unmarked, a server glave starts on this computer (stdio) is trusted, and a remote one (HTTP) is untrusted unless a policy's `[mcp] trusted` names it: the person vouches for what they run, not for what a far server sends.
-3. A server from a project's `.mcp.json` is untrusted unless a policy's `[mcp] trusted` names it. The project's own `"untrusted": false` is ignored: a repository cannot vouch for itself. To trust one, the person copies it into their own `mcp.json` with `"untrusted": false` (theirs wins on a name clash). This is today's code: as decided, a project's servers come from its repository's suggestions, accepted into the project (`policy.md`, "A repository's suggestions").
+3. A server from a project's `.mcp.json` is untrusted unless a policy's `[mcp] trusted` names it. The project's own `"untrusted": false` is ignored: a repository cannot vouch for itself. To trust one, the person copies it into their own `mcp.json` with `"untrusted": false` (theirs wins on a name clash).
 
 The organization's catalog, served by its gateway, is the organization's and trusted.
 
