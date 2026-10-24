@@ -24,7 +24,7 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 | Term | Meaning |
 | --- | --- |
 | Organization | The tenant: one on a laptop (never shown), one in a company, many on Glave Cloud. Holds providers, catalogs, its policy file, company skills, the theme, the budget (`specs/model.md`) |
-| Team | A flat group of people, granted models, apps and budgets |
+| Team | A flat group of people, granted models, connections and budgets |
 | Person | Someone who signs in, with a role: their Chats and projects, their computer, their own files (`~/.glave`) and sign-ins |
 | Project | The scope boundary, and personal: one person's project (one folder, whose files are its instructions, skills and setup), or their Chats, their project of kind `personal`. No members: people share through the repository and the organization. Holds memory, history, files, policy, budget, default environment |
 | Thread | A conversation or task in a project. Workers fork from a parent with permissions and budget ⊆ the parent's |

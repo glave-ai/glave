@@ -1,6 +1,6 @@
 # One server per person
 
-How a person's glave runs as one server on their own computer: how it starts and stops, how every client finds it, what each project brings to its own threads, and what survives a restart. The server holds every project, thread, task and schedule; the web app, a phone, the CLI's commands and later a terminal UI are its clients. It is step 2 of #294 and the rest of #64, and it settles items 1 to 3 of `model.md`'s "Where the code disagrees", and the part of item 9 that concerns tasks.
+How a person's glave runs as one server on their own computer: how it starts and stops, how every client finds it, what each project brings to its own threads, and what survives a restart. The server holds every project, thread, task and schedule; the web app, a phone, the CLI's commands and later a terminal UI are its clients. It is step 2 of #294 and the rest of #64, and it settles what `model.md`'s "Where the code disagrees" listed for the CLI, tasks and schedules, and the folder a server starts in; item 1 there is what is left.
 
 ## Status
 
@@ -238,7 +238,7 @@ Every project's trusted servers and hooks reach only its threads (`policy.md`, "
 - **The scheduler** is one loop over every project's schedules, in UTC as today. Only the lock's holder runs it, and never where people sign in from elsewhere (`--issuer`); it fires only while it holds the organization's scheduler lease, so servers on one store fire each run once.
 - **When it starts**, tasks the ledgers have open whose thread's lease lapsed or that have none are recorded `interrupted` (`recover_tasks`, over every project; those another server's lease holds are looked at again until it lapses), and missed runs run once.
 - **Always on a copy** (decided). A task or a schedule's run in a project with a folder works in a git worktree of its own (`computers.md`), whatever `worktree` says, never in the folder itself: it never meets the one-writer rule and never changes files under the person. Its work is on its `glave/` branch, and the app shows what it changed. A request for a task in place is refused rather than quietly moved. In a folder that is not a git repository, or one with no commit, a task is refused, with a sentence saying it needs one to work on a copy (*decided*). Considered: copying the folder, rejected for size and for secrets copied along; copy-on-write clones come later (`computers.md`, "Placement defaults"). In Chats a task works in its own scratch folder.
-- **On a worker only when chosen**: when the person or the project chooses workers (`on = "cloud"`), not merely because a backend is set up as today, so the person's own computer comes first (`model.md`, item 9).
+- **On a worker only when chosen**: when the person or the project chooses workers (`on = "cloud"`), not merely because a backend is set up as today, so the person's own computer comes first (`computers.md`, "Placement defaults").
 - **When one finishes**, its thread's watchers get `task/finished`, and later a push goes out (#333).
 
 ## One writer per folder

@@ -177,8 +177,8 @@ judge = "required"                                # or "allowed", "off"
 required = true
 
 [mcp]
-catalog = ["github", "jira"]                      # the organization's list of approved apps
-own = false                                       # may people add their own apps, local or remote
+catalog = ["github", "jira"]                      # the organization's approved connections
+own = false                                       # may people add their own connections, local or remote
 untrusted = ["search"]                            # servers whose output is untrusted (approvals.md)
 trusted = ["docs"]                                # remote or project servers vouched for
 
@@ -231,23 +231,24 @@ A laptop's own config can never loosen a constraint, because the constraint arri
 
 `glave policy explain` prints every effective setting, which file or flag set it, and every constraint with its source. Every denial names the rule that denied it and where that rule came from. Each turn records the policy bundle version it ran under, in its configuration blob.
 
-## Connected apps
+## Connections
 
-An app is a tool server reached over MCP, started on the person's computer or remote; a knowledge base is one too, a tool server with a search tool. Decided on 2026-10-23 (#633); what is built is `[mcp]` ("Status") and the gateway's catalog (`gateway.md`, "Remote tools: the catalog").
+A connection (`model.md`, "The hierarchy") reaches its service through a tool server started on the person's computer or run remotely. Decided on 2026-10-23 (#633); what is built is `[mcp]` ("Status") and the gateway's catalog (`gateway.md`, "Remote tools: the catalog").
 
-- **One list per organization: the catalog** (`[mcp] catalog`), the apps it approves, in its policy file. Knowledge bases are on the same list, shown first-class on the Connect page beside the rest.
+- **One list per organization: its approved connections,** kept in its policy file as `[mcp] catalog`.
+- **Services that hold documents** (Google Drive, SharePoint, Confluence) are connections like any other. glave's own knowledge bases are a separate thing, planned in #661: curated documents searched by meaning, each with an owner, granted to groups, and private to whoever made it by default.
 - **Its default follows who the organization is, never the deployment.** A company's is "only from our list": it runs no other tool server, whatever a file says (`[mcp] own = false`). An organization of one's is "anyone can add".
 - **"May add their own" is one grant,** given to groups (#645). It covers servers started on the person's computer and remote ones alike: both reach data with that person's sign-ins, so one answer fits both.
-- **Connect** writes one line into the person's own `mcp.json` and signs them in. An app on the organization's list needs only the sign-in, and no file is written.
+- **Connect**, the page that lists connections, writes one line into the person's own `mcp.json` and signs them in. An approved connection needs only the sign-in, and no file is written.
 - **Everyone signs in as themselves.** Shared keys, where an organization needs one, live only in its gateway, never on a person's computer.
-- **A tool server from a repository's file asks "run this?"** before its first run, and again when its definition changes, for each person ("Project trust", as built). An app on the organization's list needs only the person's sign-in.
-- **On the list means approved, not vouched for.** Whether what an app returns is labelled untrusted follows `approvals.md` ("Untrusted content"), with `[mcp] untrusted` and `[mcp] trusted`, whatever list the app is on; a tool that reaches the open world is labelled anyway.
-- **Safety is the industry's baseline today:** the list, each person's own sign-in, approvals (`approvals.md`), the sandbox around every command (`sandbox.md`), untrusted content labelled, and every tool call recorded (`events.md`). A stronger rule waits for its own decision and measurement: checking a write to an app after untrusted content is #634.
+- **A tool server from a repository's file asks "run this?"** before its first run, and again when its definition changes, for each person ("Project trust", as built). An approved connection is never asked about.
+- **Approved is not vouched for.** Whether what a connection returns is labelled untrusted follows `approvals.md` ("Untrusted content"), with `[mcp] untrusted` and `[mcp] trusted`, whether it is approved or not; a tool that reaches the open world is labelled anyway.
+- **Safety is the industry's baseline today:** the approved connections, each person's own sign-in, approvals (`approvals.md`), the sandbox around every command (`sandbox.md`), untrusted content labelled, and every tool call recorded (`events.md`). A stronger rule waits for its own decision and measurement: checking a write through a connection after untrusted content is #634.
 
 ## The network
 
 - **On by default for a person on their own** (a laptop, their own server, Glave Cloud's personal plan); **off by default in an organization** (#641), its policy file setting the default. The switch always exists.
-- **The list governs apps; the network governs the machine.** What a command reaches is the network's to say, whatever the list says: the outbound proxy allows, blocks or holds the machine's connections (#643), and beyond glave an organization restricts its machines with its firewall, or network policy in the Helm chart (#220).
+- **The list governs connections; the network governs the machine.** What a command reaches is the network's to say, whatever the list says: the outbound proxy allows, blocks or holds the machine's traffic (#643), and beyond glave an organization restricts its machines with its firewall, or network policy in the Helm chart (#220).
 
 ## Project trust
 

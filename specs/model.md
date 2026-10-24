@@ -1,6 +1,6 @@
 # The model
 
-What glave is made of, from an organization down to a thread, and where each part runs. The other specs hold the detail; this one holds the shape they agree on. Decided with the owner on 2026-10-16 (issue #294); projects, configuration and connected apps on 2026-10-23 (#633).
+What glave is made of, from an organization down to a thread, and where each part runs. The other specs hold the detail; this one holds the shape they agree on. Decided with the owner on 2026-10-16 (issue #294); projects, configuration and connections on 2026-10-23 (#633).
 
 ## Status
 
@@ -10,13 +10,14 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 
 | Level | Is | Holds |
 | --- | --- | --- |
-| Organization | The tenant: one on a laptop (never shown), one in a company, many on Glave Cloud | Model providers and their catalogs, its policy file (the list of approved apps among it), company skills, environments, the theme, the budget |
-| Team | A flat group of people, mirrored from the identity provider's groups where there are some | What it is granted on top of its people's roles (#645): models, apps, budgets, and "may add their own" |
-| Person | Someone who signs in, with a role in the organization ("Admin") | Their Chats and projects, their computer, their own files (`~/.glave`), their own sign-ins (git hosts, apps) |
+| Organization | The tenant: one on a laptop (never shown), one in a company, many on Glave Cloud | Model providers and their catalogs, its policy file (its approved connections among it, `policy.md`), company skills, environments, the theme, the budget |
+| Team | A flat group of people, mirrored from the identity provider's groups where there are some | What it is granted on top of its people's roles (#645): models, connections, a budget ("Configuration is files"), and "may add their own" |
+| Person | Someone who signs in, with a role in the organization ("Admin") | Their Chats and projects, their computer, their own files (`~/.glave`), their own sign-ins (git hosts, connections) |
 | Project | One person's named place for work: one folder. It belongs to the organization and to that person alone | Its folder, whose files are its instructions, skills and setup; its threads; its memory, which is the person's |
 | Thread | A conversation or task, in a project or in the person's Chats | Its events, and the project's folder or a worktree of it |
 
 - **One rule at every level** (`policy.md`): choices, the nearest wins; constraints, they only narrow. A level grants only what it was given.
+- **A connection** is a service the agent can use for a person through a tool server (MCP): Gmail, Linear, GovWin, Google Drive. How they are approved, added and signed in to is `policy.md`, "Connections".
 - **Projects are personal:** no shared projects and no members. People work together through the repository (git) and the organization (its policy, its skills, its groups), which already share code and setup, so glave needs no second way to share. A project is one folder; other folders a thread is given ("Two roles", below) are access only and bring no instructions, tools or settings. The organization always owns its data, so when a person leaves, their projects pass to an admin, and nothing is lost or orphaned.
 - **Words:** people see Chats and projects, and the code says the same: Chats is the person's project of kind `personal` (`storage.md`). Spaces became projects on 2026-10-19 (#435); only stored names that sealed content depends on keep the old word.
 - **Organization-first: a person on their own is an organization of one,** on a laptop, their own server or Glave Cloud's personal plan: no teams, one person. The organization's screens are that person's Settings, and the word "organization" never appears there (AGENTS.md, "Keeping principle 4"). The same rules hold as in a company, through the same mechanism and one code path (`deployments.md`); only the defaults differ.
@@ -53,13 +54,13 @@ Everything that configures glave is a file, read where it lives, and glave holds
 - **The repository's**, read in place, as today: AGENTS.md, skills (`.agents/skills`, `.glave/skills`, `.claude/skills`), `.mcp.json` and `.glave/config.toml`. What runs from them asks first (`policy.md`, "Project trust").
 - **The person's own,** in `~/.glave` (AGENTS.md, skills, `mcp.json`, `config.toml`), with `~/.agents/skills` and `~/.claude/skills`.
 - **The organization's:**
-  - its policy file: the list of approved apps, the models allowed, the network default, who may add their own apps, budgets (`policy.md`);
+  - its policy file (`policy.md`): its approved connections, the models allowed, the network default, who may add their own connections, and the budget: one dollar budget per person per month, covering all AI use; groups set it, the larger applies (#662);
   - company skills in one fixed folder, `/etc/glave/skills`, as Codex keeps its own: baked read-only into the images glave runs, and put there on people's own machines by IT or a setup step.
 - **glave's built-in skills** ship with glave.
 - **Skills keep their names apart.** Company skills show as `acme:name` and glave's as `glave:name`; the person's and the repository's have no prefix. So a same-named skill never replaces a company's or glave's, and a policy can turn the person's own skills off.
-- **The app never writes into a repository.** It writes only the person's own files (Connect, settings, their instructions) and shows a repository's setup read-only, saying to change it in the repository or ask the agent: a change to a repository is code, and people commit it.
+- **glave's settings screens never change a repository's files;** they change only the person's own settings (Connect, their preferences, their instructions). A repository's setup is shown read-only: change it like code, or ask the agent. The agent still edits a repository's files when the person asks, as any other change, and shows the diff.
 - **glave holds only what can't be a file:**
-  - secret values and sign-ins, which files name (`${NAME}`, or an app's name) and never hold;
+  - secret values and sign-ins, which files name (`${NAME}`, or a connection's name) and never hold;
   - people, groups and roles ("Admin");
   - memory;
   - the record of what happened (the log).
@@ -74,7 +75,7 @@ Everything that configures glave is a file, read where it lives, and glave holds
 
 ## Admin
 
-- **Roles** (#645): an Owner can do everything, billing and transferring ownership included; an Admin manages people, policy, the app list, models, budgets and audit; a Member uses glave within what is granted. Groups from the identity provider add grants on top (the Team row). A person on their own is silently the owner of their organization of one.
+- **Roles** (#645): an Owner can do everything, billing and transferring ownership included; an Admin manages people, policy, the approved connections, models, the budget and audit; a Member uses glave within what is granted. Groups from the identity provider add grants on top (the Team row). A person on their own is silently the owner of their organization of one.
 - **The screens:** `/admin` in the same web app, reached from the person's menu and shown only when `server/discover` says the caller is an admin. They come later (#222), and they only edit the organization's files: its policy and its skills ("Configuration is files").
 - **The methods:** admin methods are part of the session API, checked against the caller's role on every call. The same methods serve `glave admin` and an admin MCP server.
 - **The log is the single place to see everything:** usage, spend, activity, every tool call and a thread's trace are views over it.
@@ -85,22 +86,23 @@ Everything that configures glave is a file, read where it lives, and glave holds
 ## The look
 
 - **glave is monochrome by default.**
-- **An organization's theme** sets its name, logo and one accent (#283). A person always chooses light or dark, and chooses an accent where the organization allows.
-- **The assistant is Hope by default,** shown with fine text that says it's the person's assistant. An organization renames it and gives it an icon in its files (#287). It keeps glave's monochrome look either way.
+- **A person** chooses light or dark, an accent colour, and a name for their assistant, each unless their organization fixes it.
+- **An organization's theme** sets its name, logo and accent, and its assistant's name and icon, and either lets people personalize the accent and the assistant's name or fixes them (#283, #287).
+- **The assistant is called Hope by default,** with fine text saying it's the person's assistant.
+- **A person on their own** sets all of it for themselves.
 
 ## Where the code disagrees
 
-1. **A server still keeps a little of the folder it started in:** its skills and commands reach every thread, and where its threads go to workers, only that folder's project's do (`session.md`, "Where a thread works"). Otherwise every project owns its folder, and its settings, servers and hooks reach its threads alone; a request that names no project acts in the caller's Chats.
-2. **Settled** (`one-server.md`, 3): the CLI is a client of the person's server, a new folder asks once before it becomes a project, and `glave` alone opens the browser at the folder's project.
-3. **Settled** (`one-server.md`, 2c): tasks and schedules run in the person's server, and the CLI's commands for tasks, schedules, threads, memory and git hosts are its clients.
-4. **Model accounts are refused on an organization's server,** and there is one cloud provider at a time (`policy.md`, `session.md` "Model accounts", `gateway.md`); several providers, routed per model, follow (#289, #290).
-5. **The gateway service is configured from its own environment** (`gateway.md`, "Surfaces"). It becomes a role of the server, reading the same files.
-6. **There are no roles and no groups** (#645), so policy can't tell callers apart and "may add their own" is one answer for everyone (`[mcp] own`), and budgets live in one process's memory. Roles, groups and their grants fix all three.
-7. **There is no admin API and no admin screens.** They come as described under "Admin".
-8. **There is no theme.** Theming arrives (#283).
-9. **A person on a server or cloud machine reaching it from a phone needs a sign-in that isn't a company identity provider.** Tasks already work on the person's one machine, with workers as the upgrade (`computers.md`, "Placement defaults").
-10. **The web app works out a thread's items itself,** and finds an approval's sentence by parsing the summary the harness wrote, with the reason it asks folded into the same string, so that reason shows as if it were part of the command. The CLI words approvals its own way. Thread items come from the server as typed fields (#311).
-11. **Apps are added by editing `mcp.json`:** there is no Connect page that writes the line and signs the person in, and a remote server takes fixed headers rather than each person's own sign-in (#42).
-12. **Skills come only from the repository and the person's folders,** the nearest winning a name: there is no `/etc/glave/skills`, no built-in skills, no `acme:` or `glave:` prefix, and no policy switch for the person's own.
-13. **Projects still have members in the code** (`storage.md`, "Projects"; `session.md`, "Projects and who may do what"; the isolation suite, `memory.md`), set when a project is made or by the host and never managed over the API, until they are pruned.
-14. **The agent's network is on by default everywhere;** off by default in an organization is #641.
+What today's code doesn't do yet, so no one takes it as built.
+
+1. The folder the server was started in still gives every conversation its skills and commands, and only that folder's project can send its work to fresh machines (`session.md`, "Where a thread works"). Everywhere else, a project's settings and tools reach only its own conversations.
+2. A company's server turns away people's own model accounts, and glave uses one cloud provider at a time. Using several, with glave picking the route for each model, comes with #289 and #290.
+3. The gateway, when it runs as a service of its own, takes its settings from its own environment rather than the server's files (`gateway.md`, "Surfaces"). It will become part of the server.
+4. There are no roles or groups yet, so everyone in a company gets the same access, and spending limits reset when the server restarts (#645, #662).
+5. There are no admin screens or admin methods yet; they come as "Admin" describes (#222).
+6. There is no theme yet: no organization name, logo or accent, and no choosing an accent or the assistant's name (#283, #287).
+7. On Glave Cloud there is no way yet to sign in without a company's identity provider, as from a phone. On a person's own server a passkey already works (`deployments.md`, "Sign-in").
+8. The web app works out what happened in a conversation by itself, and reads an approval's question out of a summary, so the reason glave asks can look like part of the command; the terminal words approvals its own way. The server will send these as separate facts (#311).
+9. There's no Connect page yet: adding a service means editing a file, and it can't sign in as each person (#42).
+10. Skills come only from the repository and the person's own folders, and one can replace another of the same name. There are no company skills in `/etc/glave/skills`, no skills built into glave, no `acme:` or `glave:` names, and no way for a policy to turn personal skills off.
+11. The agent's network is on by default everywhere; off by default in a company is #641.
