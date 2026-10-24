@@ -404,10 +404,14 @@ fn with_no_server_running_a_git_host_still_takes_its_token_and_a_server_says_wha
 fn only_the_servers_that_ask_for_a_sign_in_are_listed_before_one() {
     let world = World::new("conn-list", &grants(), Vec::new());
     let (_open, open) = serving(&[]);
+    // Asking for a sign-in too, but given a key of the person's own.
+    let (_keyed, keyed) = remote_server(&world.auth.url, &[]);
     let gone = "http://127.0.0.1:1/mcp";
+    let key = format!("Bearer {}", fake_secret("key_"));
     let servers = json!({"mcpServers": {
         "docs": {"url": world.address},
         "open": {"url": open},
+        "keyed": {"url": keyed, "headers": {"authorization": key}},
         "gone": {"url": gone},
         "local": {"command": crate::mcp::test_server()},
     }});
@@ -416,6 +420,6 @@ fn only_the_servers_that_ask_for_a_sign_in_are_listed_before_one() {
     assert_eq!(
         listed["result"]["connections"],
         json!([{"url": world.address, "name": "docs", "status": "signed_out"}]),
-        "not one that asks no one, can't be reached or runs here: {listed}"
+        "not one that asks no one, has a key, can't be reached or runs here: {listed}"
     );
 }

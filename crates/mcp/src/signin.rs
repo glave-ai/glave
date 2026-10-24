@@ -11,8 +11,9 @@ use std::time::Duration;
 
 use glave_event::{Secret, SignInClient};
 use rmcp::transport::auth::{
-    AuthError, AuthorizationManager, AuthorizationRequest, AuthorizationSession,
-    CredentialStore as _, InMemoryCredentialStore, OAuthTokenResponse, StoredCredentials,
+    AuthError, AuthorizationManager, AuthorizationMetadataResolution, AuthorizationRequest,
+    AuthorizationSession, CredentialStore as _, InMemoryCredentialStore, OAuthTokenResponse,
+    StoredCredentials,
 };
 use serde_json::{Value, json};
 use thiserror::Error;
@@ -81,20 +82,7 @@ impl SignIn {
         redirect: &str,
     ) -> Result<(Self, String), SignInError> {
         let failed = |error: AuthError| SignInError::from_auth(url, &error);
-        let mut manager = AuthorizationManager::new(url).await.map_err(failed)?;
-        let resolution = manager.resolve_metadata().await.map_err(failed)?;
-        if !resolution.source.is_discovered() {
-            return Err(SignInError::NotOffered {
-                url: url.to_owned(),
-            });
-        }
-        // Client ID Metadata Documents, its alternative, need an address of glave's own.
-        if resolution.metadata.registration_endpoint.is_none() {
-            return Err(SignInError::Unregistered {
-                url: url.to_owned(),
-                message: "its authorization server takes no registration".to_owned(),
-            });
-        }
+        let (mut manager, resolution) = offered(url).await?;
         let issuer = resolution.metadata.issuer.clone();
         manager.set_metadata(resolution.metadata);
         let client = format!("glave ({name})");
@@ -147,13 +135,39 @@ impl SignIn {
     }
 }
 
-/// Whether the MCP server at `url` asks people to sign in, as MCP's authorization says: it
-/// publishes where, which [`SignIn::start`] finds first.
-pub async fn asks_sign_in(url: &str) -> Result<bool, SignInError> {
+/// The sign-in the MCP server at `url` offers, as MCP's authorization says, when glave can sign
+/// in there: it publishes where its sign-in is, and that authorization server takes glave's
+/// registration. Nothing is registered or asked for yet.
+async fn offered(
+    url: &str,
+) -> Result<(AuthorizationManager, AuthorizationMetadataResolution), SignInError> {
     let failed = |error: AuthError| SignInError::from_auth(url, &error);
     let manager = AuthorizationManager::new(url).await.map_err(failed)?;
     let resolution = manager.resolve_metadata().await.map_err(failed)?;
-    Ok(resolution.source.is_discovered())
+    if !resolution.source.is_discovered() {
+        return Err(SignInError::NotOffered {
+            url: url.to_owned(),
+        });
+    }
+    // Client ID Metadata Documents, its alternative, need an address of glave's own.
+    if resolution.metadata.registration_endpoint.is_none() {
+        return Err(SignInError::Unregistered {
+            url: url.to_owned(),
+            message: "its authorization server takes no registration".to_owned(),
+        });
+    }
+    Ok((manager, resolution))
+}
+
+/// Whether the MCP server at `url` asks people to sign in in a way glave can, as
+/// [`SignIn::start`] would find first: false for one that asks no one, or whose sign-in glave
+/// can't use yet.
+pub async fn offers_sign_in(url: &str) -> Result<bool, SignInError> {
+    match offered(url).await {
+        Ok(_) => Ok(true),
+        Err(SignInError::NotOffered { .. } | SignInError::Unregistered { .. }) => Ok(false),
+        Err(error) => Err(error),
+    }
 }
 
 /// Renews the sign-in to the MCP server at `url`, made through `client`, with `refresh`. The

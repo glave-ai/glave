@@ -19,6 +19,7 @@ use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::{BoxFuture, Clock as _, SystemClock};
 use glave_session::protocol::{ApiError, ConnectionInfo, ConnectionStatus, SignInLink, code};
 use glave_session::{Connections, Returned};
+use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use crate::accounts::Ledger;
@@ -29,6 +30,8 @@ use flows::Flows;
 /// The longest one of the person's remote servers is given to say whether it asks them to
 /// sign in, as `connection/list` lists it.
 const ASKING: Duration = Duration::from_secs(5);
+/// How many of them are asked at once.
+const ASKERS: usize = 8;
 
 /// The person's connections.
 pub(crate) struct Connected {
@@ -82,8 +85,8 @@ impl Connected {
         }
     }
 
-    /// What the person's settings call each of their remote servers, by address.
-    async fn names(&self) -> BTreeMap<String, String> {
+    /// The person's remote servers, by address, as their settings give them.
+    async fn remotes(&self) -> BTreeMap<String, Remote> {
         let file = self.home.join(crate::mcp::FILE);
         let text = tokio::fs::read_to_string(file).await.unwrap_or_default();
         if text.trim().is_empty() {
@@ -97,7 +100,12 @@ impl Connected {
             })
             .into_iter()
             .filter_map(|(name, config)| match config {
-                ServerConfig::Http { url, .. } => Some((address(&url)?, name)),
+                ServerConfig::Http { url, headers } => {
+                    let keyed = headers
+                        .keys()
+                        .any(|it| it.eq_ignore_ascii_case("authorization"));
+                    Some((address(&url)?, Remote { name, keyed }))
+                }
                 ServerConfig::Stdio { .. } => None,
             })
             .collect()
@@ -106,16 +114,33 @@ impl Connected {
     /// The address of the person's remote server `server` and what their settings call it: the
     /// one they call that, or at that address.
     async fn resolved(&self, server: &str) -> Option<(String, String)> {
-        let names = self.names().await;
-        let at = address(server).and_then(|url| names.get_key_value(&url));
-        let at = at.map(|(url, name)| (url.clone(), name.clone()));
-        at.or_else(|| names.into_iter().find(|(_, name)| name == server.trim()))
+        let remotes = self.remotes().await;
+        let at = address(server).and_then(|url| remotes.get_key_value(&url));
+        let at = at.map(|(url, remote)| (url.clone(), remote.name.clone()));
+        at.or_else(|| {
+            let mut remotes = remotes.into_iter();
+            remotes
+                .find(|(_, remote)| remote.name == server.trim())
+                .map(|(url, remote)| (url, remote.name))
+        })
     }
 }
 
-/// `connection` as a client sees it, named as `names` say. A token that lapsed while it can be
-/// renewed still works: the next request renews it.
-fn described(connection: &ConnectionConnected, names: &BTreeMap<String, String>) -> ConnectionInfo {
+/// One of the person's remote servers, as their settings give it.
+struct Remote {
+    /// What their settings call it.
+    name: String,
+    /// Whether their settings give it an `Authorization` header: a key of their own, which a
+    /// sign-in's token would take the place of.
+    keyed: bool,
+}
+
+/// `connection` as a client sees it, named as `remotes` say. A token that lapsed while it can
+/// be renewed still works: the next request renews it.
+fn described(
+    connection: &ConnectionConnected,
+    remotes: &BTreeMap<String, Remote>,
+) -> ConnectionInfo {
     let now = SystemClock.now();
     let lapsed = connection
         .expires
@@ -127,22 +152,30 @@ fn described(connection: &ConnectionConnected, names: &BTreeMap<String, String>)
     };
     ConnectionInfo {
         url: connection.url.clone(),
-        name: names.get(&connection.url).cloned(),
+        name: remotes
+            .get(&connection.url)
+            .map(|remote| remote.name.clone()),
         status,
     }
 }
 
-/// Of the person's remote servers, by address with what their settings call each, those that
-/// ask them to sign in, as not signed in to, in the order of their addresses: each asked at
-/// once, for [`ASKING`] at most. One that asks no one is left out, and so is one that cannot
-/// say in time.
-async fn signed_out(servers: impl Iterator<Item = (String, String)>) -> Vec<ConnectionInfo> {
+/// Of the person's remote servers, by address, those that ask them to sign in in a way glave
+/// can, as not signed in to, in the order of their addresses: [`ASKERS`] asked at once, each
+/// for [`ASKING`] at most. One their settings give a key of their own is left out, as is one
+/// that asks no one, or cannot say in time.
+async fn signed_out(remotes: impl Iterator<Item = (String, Remote)>) -> Vec<ConnectionInfo> {
+    let askers = Arc::new(Semaphore::new(ASKERS));
     let mut asking = JoinSet::new();
-    for (url, name) in servers {
+    for (url, Remote { name, keyed }) in remotes {
+        if keyed {
+            continue;
+        }
+        let askers = Arc::clone(&askers);
         asking.spawn(async move {
-            let asks = tokio::time::timeout(ASKING, glave_mcp::asks_sign_in(&url)).await;
+            let _asker = askers.acquire().await.ok()?;
+            let asks = tokio::time::timeout(ASKING, glave_mcp::offers_sign_in(&url)).await;
             if let Ok(Err(error)) = &asks {
-                tracing::debug!("could not tell whether {url} asks for a sign-in: {error}");
+                tracing::debug!("could not tell whether {name} asks for a sign-in: {error}");
             }
             matches!(asks, Ok(Ok(true))).then_some(ConnectionInfo {
                 url,
@@ -178,10 +211,10 @@ impl Connections for Connected {
 
     fn list(&self) -> BoxFuture<'_, Result<Vec<ConnectionInfo>, ApiError>> {
         Box::pin(async move {
-            let names = self.names().await;
+            let remotes = self.remotes().await;
             let kept = self.kept().await?;
-            let mut listed: Vec<_> = kept.iter().map(|kept| described(kept, &names)).collect();
-            let unkept = names
+            let mut listed: Vec<_> = kept.iter().map(|kept| described(kept, &remotes)).collect();
+            let unkept = remotes
                 .into_iter()
                 .filter(|(url, _)| kept.iter().all(|kept| kept.url != *url));
             listed.extend(signed_out(unkept).await);

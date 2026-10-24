@@ -20,4 +20,4 @@ pub use names::{catalog, exposed};
 pub use output::output as tool_output;
 pub use resources::Resources;
 pub use server::{Limits, McpServer};
-pub use signin::{Granted, SignIn, SignInError, address, asks_sign_in, renew};
+pub use signin::{Granted, SignIn, SignInError, address, offers_sign_in, renew};
