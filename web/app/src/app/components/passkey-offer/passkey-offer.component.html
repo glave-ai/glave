@@ -1,0 +1,25 @@
+<glz-dialog
+  testId="passkey-offer"
+  [heading]="heading()"
+  [open]="open()"
+  (openChange)="openChanged($event)"
+>
+  <p>{{ copy.text }}</p>
+  @if (problem(); as problem) {
+    <p class="problem" role="alert" data-testid="passkey-offer-problem">{{ problem }}</p>
+  }
+  <div glzDialogActions>
+    <button glzButton data-testid="passkey-offer-later" [disabled]="busy()" (click)="later()">
+      {{ copy.later }}
+    </button>
+    <button
+      glzButton
+      variant="primary"
+      data-testid="passkey-offer-make"
+      [disabled]="busy()"
+      (click)="make()"
+    >
+      {{ action() }}
+    </button>
+  </div>
+</glz-dialog>

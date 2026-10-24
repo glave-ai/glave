@@ -37,7 +37,12 @@ pub struct ServerInfo {
     /// Where people reach the server from elsewhere, if they do: its public origin.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<String>,
-    /// How a browser signs in to it; none where no browser does, as over stdio.
+    /// Where a browser on this computer makes and signs in with passkeys, when the server
+    /// makes them here rather than at a public origin: `http://localhost:<port>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub here: Option<String>,
+    /// How a browser signs in to it; none where no browser does, as over stdio. A passkey: at a
+    /// public origin always, a setup link making the first; on this computer once one is made.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub signin: Vec<SignInWay>,
 }

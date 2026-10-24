@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 use std::net::SocketAddr;
 
 use glave_ports::{EventLog, SseDecoder};
-use glave_session::http::Site;
+use glave_session::http::{Listeners, Site};
 use glave_session::protocol::Request;
 use glave_session::rpc;
 use glave_session::signin::{SignIn, Trust};
@@ -61,13 +61,35 @@ pub(crate) async fn serve_with<L: EventLog + 'static>(
     site: Option<Site>,
 ) -> Served {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
+    serve_on(server, signin, site, listener.into())
+}
+
+/// Serves `server` as `serve_with` does, on both of this computer's loopback addresses at one
+/// port, as the person's server listens, so browsers here reach it as `localhost`.
+pub(crate) async fn serve_here<L: EventLog + 'static>(server: Tested<L>, signin: SignIn) -> Served {
+    let v4 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = v4.local_addr().unwrap().port();
+    let v6 = TcpListener::bind(("::1", port)).await.unwrap();
+    let listeners = Listeners {
+        plain: vec![v4, v6],
+        secure: None,
+    };
+    serve_on(server, signin, None, listeners)
+}
+
+fn serve_on<L: EventLog + 'static>(
+    server: Tested<L>,
+    signin: SignIn,
+    site: Option<Site>,
+    listeners: Listeners,
+) -> Served {
+    let address = listeners.plain[0].local_addr().unwrap();
     let (stop, stopped) = oneshot::channel::<()>();
     let serving = tokio::spawn(glave_session::http::serve(
         server,
         signin,
         site,
-        listener.into(),
+        listeners,
         async move {
             let _ = stopped.await;
         },
@@ -129,6 +151,12 @@ impl Web {
         self
     }
 
+    /// This client's requests go to `url`, such as the listener at ::1 beside 127.0.0.1's.
+    pub(crate) fn via(mut self, url: &str) -> Self {
+        url.clone_into(&mut self.url);
+        self
+    }
+
     /// This client's requests ask for the languages `accepted`, as a browser set to them does.
     pub(crate) fn reading(mut self, accepted: &str) -> Self {
         self.reading = Some(accepted.to_owned());
@@ -154,7 +182,10 @@ impl Web {
             post = post.header("accept-language", accepted);
         }
         if let Some(origin) = &self.reaching {
-            let host = origin.strip_prefix("https://").unwrap_or(origin);
+            let host = origin
+                .strip_prefix("https://")
+                .or_else(|| origin.strip_prefix("http://"))
+                .unwrap_or(origin);
             post = post.header("host", host).header("origin", origin);
         }
         post.send().await.unwrap()

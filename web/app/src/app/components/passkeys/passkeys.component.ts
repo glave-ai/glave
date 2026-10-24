@@ -18,8 +18,9 @@ interface Shown {
 }
 
 /**
- * The person's passkeys, in Settings, where glave is reached from elsewhere: each one, with
- * when it was added and last used, adding one on this device, and removing one.
+ * The person's passkeys, in Settings, where glave is reached from elsewhere or makes them on
+ * this computer: each one, with when it was added and last used, adding one on this device,
+ * and removing one.
  */
 @Component({
   selector: 'app-passkeys',

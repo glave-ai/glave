@@ -25,6 +25,11 @@ pub struct PasskeyAdded {
     pub name: String,
     /// The credential as the relying party keeps it: its id and public key, never a secret.
     pub credential: String,
+    /// The relying party it was made for, by its id: the public origin's name, or `localhost`
+    /// on the person's own computer. None for one made before it was kept, at a public origin,
+    /// the only place passkeys were made then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub party: Option<String>,
 }
 
 /// A passkey signed a browser in at the event's time.

@@ -1,8 +1,10 @@
-//! Passkeys for the person on their own server (`specs/session.md`, "Signing in"), where it is
-//! reached from elsewhere at a public origin, WebAuthn's relying party. No password and no
-//! email: glave on its computer makes a setup code, good once and for ten minutes, which a
-//! browser elsewhere trades for a passkey it makes there and a session with it; after that, a
-//! passkey signs a browser in, and someone signed in may make another. Each request to make or
+//! Passkeys for the person (`specs/session.md`, "Signing in"): on their own server reached from
+//! elsewhere, at its public origin, WebAuthn's relying party; on their own computer, at
+//! `http://localhost` and the port the server listens on there alone. No password and no
+//! email: elsewhere, glave on its computer makes a setup code, good once and for ten minutes,
+//! which a browser there trades for a passkey it makes and a session with it; on this
+//! computer, a browser signed in by glave's link makes one. After that, a passkey signs a
+//! browser in, and someone signed in may make another. Each request to make or
 //! use one is answered within five minutes, on the server that began it, and kept in memory
 //! meanwhile, at most 16 of each. Setup codes that are not one are counted, and past 10 in a
 //! minute none is taken until it passes. Removing a passkey ends the sessions it began.
@@ -18,7 +20,7 @@ use webauthn_rs::prelude::{
     Url, Webauthn, WebauthnBuilder,
 };
 
-use super::state::{Change, State};
+use super::state::{Change, KeptPasskey, State};
 use super::{BrowserError, Browsers, Session, new_id, random_hex};
 use crate::signin::local::{digest, same};
 
@@ -69,25 +71,57 @@ pub struct PasskeyInfo {
     pub used: Option<Timestamp>,
 }
 
-/// The relying party passkeys are made for: the public origin, and the person they sign in.
+/// The relying party's id on the person's own computer.
+pub(super) const HERE: &str = "localhost";
+
+/// The relying party passkeys are made for, and the person they sign in.
 pub(super) struct Relying {
     webauthn: Webauthn,
     person: Uuid,
+    /// Its id: the public origin's name, or [`HERE`].
+    id: String,
+    party: Party,
+}
+
+/// Where a relying party's pages are.
+enum Party {
+    /// At the server's public origin.
+    Public,
+    /// On this computer, at this origin: `http://localhost:<port>`.
+    Here(String),
 }
 
 impl Relying {
-    /// The relying party at `origin`, for the server whose id is `server`.
-    pub(super) fn new(origin: &PublicOrigin, server: &str) -> Result<Self, BrowserError> {
+    /// The relying party at the public origin `origin`, for the server whose id is `server`.
+    pub(super) fn public(origin: &PublicOrigin, server: &str) -> Result<Self, BrowserError> {
+        Self::at(origin.as_str(), server, Party::Public)
+    }
+
+    /// The relying party for browsers on this computer: [`HERE`], at `port` alone, so a page
+    /// another program serves at another port here is never one.
+    fn here(port: u16, server: &str) -> Result<Self, BrowserError> {
+        let origin = format!("http://{HERE}:{port}");
+        Self::at(&origin, server, Party::Here(origin.clone()))
+    }
+
+    fn at(origin: &str, server: &str, party: Party) -> Result<Self, BrowserError> {
         let refused = |error: &dyn std::fmt::Display| BrowserError::Passkey(error.to_string());
-        let url = Url::parse(origin.as_str()).map_err(|e| refused(&e))?;
-        let name = url.host_str().ok_or(BrowserError::NoPasskeys)?.to_owned();
-        let webauthn = WebauthnBuilder::new(&name, &url)
+        let url = Url::parse(origin).map_err(|e| refused(&e))?;
+        let id = url.host_str().ok_or(BrowserError::NoPasskeys)?.to_owned();
+        let webauthn = WebauthnBuilder::new(&id, &url)
             .and_then(|builder| builder.rp_name("glave").build())
             .map_err(|e| refused(&e))?;
         Ok(Self {
             webauthn,
             person: Uuid::parse_str(server).unwrap_or_default(),
+            id,
+            party,
         })
+    }
+
+    /// Whether `kept` was made for this relying party, so it signs browsers in with it.
+    fn made(&self, kept: &KeptPasskey) -> bool {
+        kept.made_for(&self.id, matches!(self.party, Party::Public))
     }
 }
 
@@ -108,10 +142,38 @@ struct Making {
 }
 
 impl Browsers {
-    /// Whether this server makes passkeys and signs browsers in with them: it is reached from
-    /// elsewhere.
-    pub fn offers_passkeys(&self) -> bool {
-        self.relying.is_some()
+    /// Makes and uses passkeys for browsers on this computer, which reach the server as
+    /// `http://localhost:<port>`, once it listens there on every address that name stands for:
+    /// the relying party `localhost`, at that port alone. A server reached at a public origin
+    /// keeps that one.
+    pub fn reached_here(&self, port: u16) -> Result<(), BrowserError> {
+        if self.relying.get().is_none() {
+            // Set once: a second call, as of another listener, keeps the first.
+            let _ = self.relying.set(Relying::here(port, &self.server)?);
+        }
+        Ok(())
+    }
+
+    /// Whether a browser signs in with a passkey now: at the public origin always, since a
+    /// setup link makes the first; on this computer once one is made.
+    pub fn signs_in_with_passkeys(&self) -> bool {
+        match self.relying.get() {
+            Some(Relying {
+                party: Party::Public,
+                ..
+            }) => true,
+            Some(relying) => self.state().passkeys.iter().any(|kept| relying.made(kept)),
+            None => false,
+        }
+    }
+
+    /// Where a browser on this computer makes and uses passkeys, when the server makes them
+    /// here rather than at a public origin: `http://localhost:<port>`.
+    pub fn passkeys_here(&self) -> Option<String> {
+        match self.relying.get().map(|relying| &relying.party) {
+            Some(Party::Here(origin)) => Some(origin.clone()),
+            _ => None,
+        }
     }
 
     /// A new setup code, for a link that makes a passkey elsewhere: good once, for ten minutes.
@@ -148,6 +210,7 @@ impl Browsers {
             let exclude = state
                 .passkeys
                 .iter()
+                .filter(|kept| relying.made(kept))
                 .map(|kept| kept.credential.cred_id().clone())
                 .collect();
             (code, exclude)
@@ -246,16 +309,19 @@ impl Browsers {
             added: now,
             used: None,
         };
-        Ok((info, Change::PasskeyAdded(id, name, kept)))
+        let party = relying.id.clone();
+        Ok((info, Change::PasskeyAdded(id, name, kept, party)))
     }
 
-    /// Begins signing a browser in with a passkey: any of the person's.
+    /// Begins signing a browser in with a passkey: any of the person's made for this relying
+    /// party.
     pub fn get_options(&self) -> Result<Ceremony, BrowserError> {
         let relying = self.relying()?;
         let passkeys: Vec<_> = self
             .state()
             .passkeys
             .iter()
+            .filter(|kept| relying.made(kept))
             .map(|kept| kept.credential.clone())
             .collect();
         if passkeys.is_empty() {
@@ -309,6 +375,7 @@ impl Browsers {
             let kept = state
                 .passkeys
                 .iter()
+                .filter(|kept| relying.made(kept))
                 .find(|kept| kept.credential.cred_id() == result.cred_id())
                 .ok_or(BrowserError::NoPasskey)?;
             let mut credential = kept.credential.clone();
@@ -361,7 +428,7 @@ impl Browsers {
     }
 
     fn relying(&self) -> Result<&Relying, BrowserError> {
-        self.relying.as_ref().ok_or(BrowserError::NoPasskeys)
+        self.relying.get().ok_or(BrowserError::NoPasskeys)
     }
 
     fn ceremonies(&self) -> MutexGuard<'_, Ceremonies> {

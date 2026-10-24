@@ -12,7 +12,7 @@ mod serve;
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io::IsTerminal as _;
-use std::net::{Ipv4Addr, SocketAddr, TcpListener};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
@@ -86,13 +86,23 @@ impl Lock {
 }
 
 /// Where the person's server listens over HTTP when nothing else is chosen: 127.0.0.1:4180
-/// when it is free, else any free port.
+/// when that port is free on both loopback addresses, which `localhost` stands for, else a port
+/// that is, else any free port.
 pub(crate) fn loopback() -> SocketAddr {
-    let usual = SocketAddr::from((Ipv4Addr::LOCALHOST, PORT));
-    if TcpListener::bind(usual).is_ok() {
-        usual
-    } else {
-        SocketAddr::from((Ipv4Addr::LOCALHOST, 0))
+    let port = free_here(PORT)
+        .or_else(|| (0..8).find_map(|_| free_here(0)))
+        .unwrap_or(0);
+    SocketAddr::from((Ipv4Addr::LOCALHOST, port))
+}
+
+/// `port` (any free one for 0) when it is free at 127.0.0.1 and at ::1, or this computer has
+/// no IPv6 loopback.
+fn free_here(port: u16) -> Option<u16> {
+    let v4 = TcpListener::bind((Ipv4Addr::LOCALHOST, port)).ok()?;
+    let port = v4.local_addr().ok()?.port();
+    match TcpListener::bind((Ipv6Addr::LOCALHOST, port)) {
+        Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => None,
+        _ => Some(port),
     }
 }
 
@@ -179,4 +189,18 @@ pub(crate) async fn claim(args: &mut crate::args::Args) -> anyhow::Result<Option
     };
     args.http.get_or_insert_with(loopback);
     Ok(Some(lock))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_port_is_free_here_only_when_free_at_both_loopback_addresses() {
+        let free = free_here(0).unwrap();
+        assert_ne!(free, 0);
+        let held = TcpListener::bind((Ipv6Addr::LOCALHOST, 0)).unwrap();
+        let port = held.local_addr().unwrap().port();
+        assert_eq!(free_here(port), None, "taken at [::1]");
+    }
 }

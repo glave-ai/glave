@@ -142,7 +142,8 @@ mod web {
         let token = std::fs::read_to_string(place.home.join("serve.token")).unwrap();
         assert_eq!(token.len(), "glave_local_".len() + 64, "{token}");
         let kept = std::fs::read_to_string(place.home.join("serve.url")).unwrap();
-        assert_eq!(kept, url);
+        // Where a browser here reaches it: `localhost`, since it holds both loopback addresses.
+        assert_eq!(kept, url.replace("http://127.0.0.1:", "http://localhost:"));
         block_on!(async {
             let client = reqwest::Client::new();
             let ask = |token: String| {

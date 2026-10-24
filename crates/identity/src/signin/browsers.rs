@@ -2,13 +2,14 @@
 //! program on this computer signed in as the local person asks for a link; its code, good once
 //! and for five minutes, is traded for a browser session: a bearer token the browser keeps in
 //! its origin's storage, for every tab, and sends as a header, never a cookie, good for 30
-//! days from its last use. A server reached
-//! from elsewhere at a public origin signs browsers there in with passkeys instead
-//! (`passkeys`). Codes are kept in memory, as their SHA-256 alone. Sessions and passkeys are
-//! kept in the store, in the browsers ledger of the person's personal project (glave's own
-//! stream under a reserved id), each session as the SHA-256 of its token alone, so nothing
-//! kept signs anyone in; every server on one store signs in the same browsers. The server's
-//! id, which a browser checks before it presents its session, is the caller's to keep.
+//! days from its last use. Passkeys sign browsers in too (`passkeys`): at the server's public
+//! origin where it is reached from elsewhere, else on this computer at `localhost`, each with
+//! the relying party it was made for alone. Codes are kept in memory, as their SHA-256 alone.
+//! Sessions and passkeys are kept in the store, in the browsers ledger of the person's
+//! personal project (glave's own stream under a reserved id), each session as the SHA-256 of
+//! its token alone, so nothing kept signs anyone in; every server on one store signs in the
+//! same browsers. The server's id, which a browser checks before it presents its session, is
+//! the caller's to keep.
 
 mod ledger;
 mod passkeys;
@@ -16,7 +17,7 @@ mod state;
 
 pub use self::passkeys::{Ceremony, PasskeyInfo, Proof};
 
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
 
 use glave_event::{RawEvent, Secret, Seq};
 use glave_ports::host::PublicOrigin;
@@ -69,9 +70,9 @@ pub enum BrowserError {
     Ended,
     #[error("this browser was signed in on the computer glave runs on, and signs in only there")]
     Elsewhere,
-    #[error("this glave is reached only on its own computer, so it signs no one in with passkeys")]
+    #[error("this glave makes no passkeys for this page: open glave on its computer to sign in")]
     NoPasskeys,
-    #[error("no passkey signs in to this glave yet: open the link glave gave you to make one")]
+    #[error("no passkey signs in to this glave yet: open a link glave gives you, and make one")]
     NoPasskey,
     #[error("that passkey request has expired: try again")]
     Ceremony,
@@ -104,16 +105,18 @@ pub struct Browsers {
     server: String,
     clock: Box<dyn Clock>,
     state: Mutex<State>,
-    /// Passkeys' relying party, where the server is reached from elsewhere.
-    relying: Option<Relying>,
+    /// Passkeys' relying party: the public origin, where the server is reached from
+    /// elsewhere; else this computer's `localhost`, once the server listens there.
+    relying: OnceLock<Relying>,
     /// The passkey requests begun and not yet answered.
     ceremonies: Mutex<Ceremonies>,
 }
 
 impl Browsers {
     /// The sessions and passkeys the browsers ledger in `scope` of `log` holds, for the server
-    /// whose id is `server`, reached from elsewhere at `origin` if anywhere: only there does it
-    /// make passkeys and sign browsers in with them.
+    /// whose id is `server`, reached from elsewhere at `origin` if anywhere: there it makes
+    /// passkeys and signs browsers in with them; with none, on this computer once it listens
+    /// here ([`Browsers::reached_here`]).
     pub async fn open<L: EventLog + 'static>(
         log: L,
         scope: Scope,
@@ -122,9 +125,10 @@ impl Browsers {
         clock: Box<dyn Clock>,
     ) -> Result<Self, BrowserError> {
         let thread = Reserved::Browsers.id();
-        let relying = origin
-            .map(|origin| Relying::new(origin, &server))
-            .transpose()?;
+        let relying = match origin {
+            Some(origin) => OnceLock::from(Relying::public(origin, &server)?),
+            None => OnceLock::new(),
+        };
         let browsers = Self {
             ledger: Box::new(Stream { log, scope, thread }),
             server,
@@ -217,9 +221,10 @@ impl Browsers {
             self.catch_up().await?;
             found = self.find(&presented);
         }
-        let (id, used, passkey) = found.ok_or(BrowserError::Ended)?;
-        // Checked before it is renewed, so a link's session is never renewed from elsewhere.
-        if !here && !passkey {
+        let (id, used, public) = found.ok_or(BrowserError::Ended)?;
+        // Checked before it is renewed, so a session begun on this computer, by a link or a
+        // passkey made here, is never renewed from elsewhere.
+        if !here && !public {
             return Err(BrowserError::Elsewhere);
         }
         if self.clock.now().duration_since(used) >= RECORD_USE {
@@ -261,14 +266,21 @@ impl Browsers {
     }
 
     /// The live session whose token's hash is `presented`: its id, when it was last used,
-    /// and whether a passkey signed it in.
+    /// and whether a passkey made at a public origin signed it in, so it signs in through
+    /// that origin too.
     fn find(&self, presented: &str) -> Option<(Uuid, Timestamp, bool)> {
         let now = self.clock.now();
         let state = self.state();
-        state
+        let session = state
             .live(now)
-            .find(|session| same(session.hash.as_bytes(), presented.as_bytes()))
-            .map(|session| (session.id, session.used, session.passkey.is_some()))
+            .find(|session| same(session.hash.as_bytes(), presented.as_bytes()))?;
+        let public = session.passkey.is_some_and(|passkey| {
+            state
+                .passkeys
+                .iter()
+                .any(|kept| kept.id == passkey && kept.public())
+        });
+        Some((session.id, session.used, public))
     }
 
     fn state(&self) -> MutexGuard<'_, State> {
