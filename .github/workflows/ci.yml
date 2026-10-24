@@ -84,7 +84,9 @@ jobs:
       # bucket once it answers. It keeps no keys, so the tests send their requests unsigned.
       - name: Start an S3-compatible bucket
         run: |
-          docker run -d --name seaweedfs -p 8333:8333 chrislusf/seaweedfs@sha256:08d516132314207d10c8e37cbffc1f32b147d870169688734cc61c6231625b62 server -s3
+          image=chrislusf/seaweedfs@sha256:08d516132314207d10c8e37cbffc1f32b147d870169688734cc61c6231625b62
+          .github/pull-image.sh "$image"
+          docker run -d --name seaweedfs -p 8333:8333 "$image" server -s3
           for _ in $(seq 1 60); do
             if curl -sf -o /dev/null -X PUT http://localhost:8333/glave-test; then exit 0; fi
             sleep 1
@@ -96,9 +98,11 @@ jobs:
       # Its directory is served under a root of its own, which the test hands to glave alone.
       - name: Start an ACME test server
         run: |
+          image=ghcr.io/letsencrypt/pebble:2.10.1@sha256:ddf230642b1a584f519f32e347de1b05a6e4c1f6c35c1863b33effeab5f78199
+          .github/pull-image.sh "$image"
           docker run -d --name pebble -p 14000:14000 -p 15000:15000 \
             --add-host glave.test:host-gateway -e PEBBLE_VA_NOSLEEP=1 -e PEBBLE_WFE_NONCEREJECT=0 \
-            ghcr.io/letsencrypt/pebble:2.10.1@sha256:ddf230642b1a584f519f32e347de1b05a6e4c1f6c35c1863b33effeab5f78199
+            "$image"
           docker cp pebble:/test/certs/pebble.minica.pem "$RUNNER_TEMP/pebble.minica.pem"
           {
             echo "GLAVE_TEST_ACME_DIRECTORY=https://localhost:14000/dir"
@@ -243,7 +247,7 @@ jobs:
       # pulled meanwhile, which takes about as long.
       - name: Build glave with the app inside, and pull Playwright's image
         run: |
-          docker pull -q "$PLAYWRIGHT_IMAGE" >/dev/null &
+          .github/pull-image.sh "$PLAYWRIGHT_IMAGE" &
           cargo test -p glave --features web --test cli --no-run
           cargo build -p glave-mcp --features test-server --bin=glave-mcp-test-server
           wait $!
