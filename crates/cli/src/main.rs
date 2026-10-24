@@ -8,6 +8,8 @@
 )]
 
 mod accounts;
+#[cfg(target_env = "musl")]
+mod allocator;
 mod app;
 mod args;
 mod asking;

@@ -130,6 +130,9 @@ keyring = { version = "4.2", default-features = false, features = ["v1"] }
 # The Kubernetes client for the worker backend on Kubernetes: kubeconfig and in-cluster auth,
 # rustls on aws-lc-rs as the rest of glave, and WebSockets for exec, attach and port-forward.
 kube = { version = "4.2", default-features = false, features = ["client", "rustls-tls", "aws-lc-rs", "ws"] }
+# The memory allocator of glave's static Linux builds (crates/cli/src/allocator.rs): musl's own
+# is slow at the many small allocations glave makes. Microsoft's, MIT, one C file built with cc.
+mimalloc = "0.1.52"
 # Blobs' bytes in a folder or a bucket (specs/storage.md, "Which stores"): Apache Arrow's one
 # interface for a local folder and every object store, so one code path serves them all. `aws`
 # is any S3-compatible bucket (S3, R2, GCS, Ceph, SeaweedFS), on the reqwest, rustls and

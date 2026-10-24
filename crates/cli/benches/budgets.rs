@@ -8,9 +8,13 @@
 //! names when it is set: in CI, glave as the release builds it for x86-64 Linux
 //! (`budgets.yml`). Otherwise they are measured on the glave this benchmark's own build made,
 //! which also carries the features the workspace's tests turn on: close to what ships, but
-//! not it.
+//! not it. The threads are recorded and resumed in this program, on glave's own allocator.
 
 #![expect(clippy::print_stdout, reason = "a benchmark: its table is its output")]
+
+#[cfg(target_env = "musl")]
+#[path = "../src/allocator.rs"]
+mod allocator;
 
 use std::io::{BufRead as _, BufReader};
 use std::path::{Path, PathBuf};
