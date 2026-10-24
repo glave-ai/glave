@@ -904,7 +904,7 @@
       "oneOf": [
         {
           "const": "read-only",
-          "description": "The agent looks: commands run in a sandbox that writes nothing of the project, and\nevery change and command asks first.",
+          "description": "The agent looks: commands run in a sandbox that writes nothing of the project, and\nevery change asks first.",
           "type": "string"
         },
         {
@@ -1400,7 +1400,7 @@
           "type": "array"
         },
         "unsandboxed": {
-          "description": "Why Read-only and Workspace ask before every change and command here, in a sentence,\nwhen they do: no sandbox can run on this computer.",
+          "description": "Why Workspace asks before every change and command here, in a sentence, when it does:\nno sandbox can run on this computer (Read-only then asks so too), or only one that keeps\nfiles as they are.",
           "type": [
             "string",
             "null"

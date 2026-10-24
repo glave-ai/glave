@@ -19,9 +19,8 @@ pub fn protections(outcome: &Outcome, choices: &Choices, constraints: &Constrain
     };
     let flag = |from: &Source| matches!(from, Source::Flag(_));
     let (highest, _) = constraints.highest_permissions();
-    let permissions = project_permissions(config.permissions, choices.permissions.value)
-        .filter(|_| !flag(&choices.permissions.from))
-        .map(|preset| preset.min(highest));
+    let permissions = project_permissions(config.permissions, choices.permissions.value, highest)
+        .filter(|_| !flag(&choices.permissions.from));
     Protections {
         permissions,
         offline: config.network == Some(false) && !flag(&choices.network.from),

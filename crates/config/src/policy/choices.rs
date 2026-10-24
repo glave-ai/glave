@@ -53,8 +53,8 @@ pub struct Choices {
     pub judge: Chosen<Judge>,
     /// What the agent may do without asking: Workspace by default.
     pub permissions: Chosen<Permissions>,
-    /// Why no sandbox can run on this computer, once glave knows: Read-only and Workspace then
-    /// run without one, and every change and command asks.
+    /// Why the sandbox that lets commands change the project cannot run on this computer, once
+    /// glave knows: Workspace then runs without one, and every change and command asks.
     pub unsandboxed: Option<String>,
     /// Whether sandboxed commands may use the network: on by default.
     pub network: Chosen<bool>,
@@ -230,10 +230,16 @@ fn nearest<T>(
 }
 
 /// The preset a project's `config.toml` gives its threads where the levels other than the
-/// project's choose `own`: a narrower one, or the same, at once; full access only when it is
-/// there at all, since it stays out of a project's file until the person trusts the project
-/// (`trust::Project::config_without_trust`). A wider one is ignored, so a repository never
-/// widens what the person chose.
-pub fn project_permissions(project: Option<Permissions>, own: Permissions) -> Option<Permissions> {
-    project.filter(|preset| *preset == Permissions::FullAccess || *preset <= own)
+/// project's choose `own`, under the policy's cap `highest`: a narrower one, or the same, at
+/// once; full access only when it is there at all, since it stays out of a project's file until
+/// the person trusts the project (`trust::Project::config_without_trust`), and then no higher
+/// than the cap. A wider one is ignored, so a repository never widens what the person chose.
+pub(crate) fn project_permissions(
+    project: Option<Permissions>,
+    own: Permissions,
+    highest: Permissions,
+) -> Option<Permissions> {
+    project
+        .filter(|preset| *preset == Permissions::FullAccess || *preset <= own)
+        .map(|preset| preset.min(highest))
 }

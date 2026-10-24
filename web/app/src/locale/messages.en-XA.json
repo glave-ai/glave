@@ -333,7 +333,7 @@
     "settings.removeHeading": "[Ŕéɱöṽé ţĥîš ɱöðéļ åççöûñţ? one two]",
     "settings.removeText": "[ĝļåṽé ƒöŕĝéţš îţš ķéý, åñð îţš ɱöðéļš åŕé ñö ļöñĝéŕ öƒƒéŕéð. one two three four]",
     "settings.server": "[Ţĥîš šéŕṽéŕ one]",
-    "settings.serverInfo": "[{$NAME} {$VERSION} · þŕöţöçöļ {$PROTOCOLS} · þéŕɱîššîöñš: {$PERMISSIONS} one two]",
+    "settings.serverInfo": "[{$NAME} {$VERSION} · þŕöţöçöļ {$PROTOCOLS} one]",
     "settings.serverUnknown": "[Ŕéåðîñĝ… one]",
     "settings.signOut": "[Šîĝñ öûţ öƒ ţĥîš ƀŕöŵšéŕ one two]",
     "settings.signOutOthers": "[Šîĝñ öûţ öţĥéŕ ƀŕöŵšéŕš one two]",

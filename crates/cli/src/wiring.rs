@@ -129,7 +129,7 @@ pub(crate) async fn wire(
     let lined = line_up(args, lineup, &store, identity.person, remote.is_some()).await?;
     let (workspace, hosts, connected) =
         signed(args, &store, identity.person, choices, workspace).await?;
-    let mut settings = settings_for(args, choices, &lined, identity, workspace.root()).await?;
+    let mut settings = settings_for(args, &setup, &lined, identity, workspace.root()).await?;
     let root = workspace.root().to_owned();
     settings.commands = crate::commands::find(&root).await?;
     let servers = mcp_servers(&setup, remote.as_ref(), &processes, connected.as_ref()).await?;
@@ -315,15 +315,17 @@ fn projects_for(
 /// no folder of its own here (a worker's, what `root` opens with), and the choices.
 async fn settings_for(
     args: &Args,
-    choices: &Choices,
+    setup: &Setup,
     lined: &Lined,
     identity: identity::Identity,
     root: &Path,
 ) -> anyhow::Result<Settings> {
+    let choices = &setup.choices;
     let (model, named) = lined.built.models.default.clone().unwrap_or_default();
     let mut settings = Settings::new(model, named);
     settings.instructions = opening(root).await?;
     settings.permissions = choices.permissions.value;
+    settings.highest = setup.loaded.constraints.highest_permissions().0;
     settings.max_steps = args.max_steps;
     settings.subagents = true; // As Claude Code, Codex and OpenCode offer it.
     // As Claude.ai, ChatGPT and OpenCode title chats; a one-shot prompt turns them off (its

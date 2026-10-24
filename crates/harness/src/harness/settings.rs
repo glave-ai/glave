@@ -22,6 +22,9 @@ pub struct Settings {
     pub instructions: Option<String>,
     /// What the agent may do without asking, in threads that chose no preset.
     pub permissions: Permissions,
+    /// The most any thread may run with, whatever it or its project chose: the policy's cap.
+    /// Full access, no cap, by default.
+    pub highest: Permissions,
     /// When to summarize a thread to keep it within the model's context window.
     pub compaction: Compaction,
     /// How a model call that fails in a way that may pass is tried again.
@@ -61,6 +64,7 @@ impl Settings {
             model,
             provider,
             permissions: Permissions::default(),
+            highest: Permissions::FullAccess,
             compaction: Compaction::default(),
             retries: Retries::default(),
             max_steps: None,

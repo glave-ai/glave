@@ -120,7 +120,7 @@ fn tool_names(seen: &Seen, request: usize) -> Vec<String> {
 }
 
 #[test]
-fn a_project_s_tools_hooks_and_mode_are_on_from_the_turn_after_it_is_trusted() {
+fn a_project_s_tools_hooks_and_preset_are_on_from_the_turn_after_it_is_trusted() {
     let dir = folder("projects-on");
     let project_dir = folder("projects-on-project");
     let project = Project::new(Protections {
@@ -392,7 +392,7 @@ fn a_project_s_model_judge_titles_and_web_reach_its_threads_alone() {
 }
 
 #[test]
-fn a_project_that_turned_the_sandbox_off_runs_its_commands_without_it_once_trusted() {
+fn a_project_that_gives_full_access_runs_its_commands_without_the_sandbox_once_trusted() {
     if !glave_computer::sandbox_available() {
         assert!(
             std::env::var_os("GLAVE_REQUIRE_SANDBOX").is_none(),

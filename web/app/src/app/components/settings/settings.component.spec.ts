@@ -34,7 +34,7 @@ describe('SettingsComponent', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelector('[data-testid="settings-server"]')?.textContent).toContain(
-      'glave 0.1.0 · protocol 2026-10 · permissions: workspace',
+      'glave 0.1.0 · protocol 2026-10',
     );
     expect(root.textContent).not.toMatch(/config|policy|toml|--/u);
     expect(root.querySelector('[data-testid="settings-no-accounts"]')).not.toBeNull();

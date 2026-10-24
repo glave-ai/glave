@@ -153,11 +153,15 @@ fn a_project_never_widens_the_person_s_preset_unless_trust_gives_full_access() {
         "version = 1\n[permissions]\nhighest = \"workspace\"\n",
     )
     .unwrap();
+    // Under a cap, it is narrowed to the cap, as a server narrows it: never refused.
     let capped = load_all(&locations, Some(theirs(Permissions::FullAccess))).unwrap();
-    let refused = capped.settle().unwrap_err().to_string();
-    assert!(
-        refused.contains("permissions full-access (from") && refused.contains("highest"),
-        "the policy refuses it: {refused}"
+    let choices = capped.settle().unwrap();
+    assert_eq!(
+        (choices.permissions.value, &choices.permissions.from),
+        (
+            Permissions::Workspace,
+            &Source::File(locations.project.clone())
+        )
     );
 }
 

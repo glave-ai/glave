@@ -28,8 +28,9 @@ pub struct ServerInfo {
     /// The presets a thread may choose (`permissions` on `thread/start` and `turn/start`):
     /// those the policy leaves, the most cautious first.
     pub presets: Vec<Permissions>,
-    /// Why Read-only and Workspace ask before every change and command here, in a sentence,
-    /// when they do: no sandbox can run on this computer.
+    /// Why Workspace asks before every change and command here, in a sentence, when it does:
+    /// no sandbox can run on this computer (Read-only then asks so too), or only one that keeps
+    /// files as they are.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unsandboxed: Option<Told>,
     /// The server's id, where it signs browsers in: the same across restarts, and the one a

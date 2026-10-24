@@ -514,8 +514,9 @@ export type ServerInfo = {
    */
   readonly signin?: readonly (SignInWay)[];
   /**
-   * Why Read-only and Workspace ask before every change and command here, in a sentence,
-   * when they do: no sandbox can run on this computer.
+   * Why Workspace asks before every change and command here, in a sentence, when it does:
+   * no sandbox can run on this computer (Read-only then asks so too), or only one that keeps
+   * files as they are.
    */
   readonly unsandboxed?: string | null;
   readonly version: string;

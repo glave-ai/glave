@@ -113,7 +113,7 @@ where
         // commands run in the sandbox.
         if workspace.info().computer == self.workspace.info().computer {
             let protections = brought.settled.protections;
-            let preset = protections.permissions(thread.permissions, thread.defaults.permissions);
+            let preset = thread.defaults.permissions(protections, thread.permissions);
             let wanted = protections.sandbox(preset, thread.defaults.sandbox.as_ref());
             let asks = thread.defaults.ask_network;
             if workspace.sandbox() != wanted.as_ref() || workspace.asks_network() != asks {

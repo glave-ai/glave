@@ -207,7 +207,7 @@ fn unknown_keys_are_refused_naming_the_file_and_the_key() {
     assert!(shown.contains(ORG) && shown.contains("alow"), "{shown}");
     let section = files::policy("version = 1\n[network]\nallow = []\n", Path::new(ORG));
     assert!(format!("{:#}", section.unwrap_err()).contains("network"));
-    let mode = files::config("approval = \"bypass\"\n", Path::new(PERSON)).unwrap_err();
+    let mode = files::config("permissions = \"bypass\"\n", Path::new(PERSON)).unwrap_err();
     assert!(format!("{mode:#}").contains("bypass"));
 }
 

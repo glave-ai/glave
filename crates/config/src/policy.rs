@@ -19,9 +19,11 @@ mod workers;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
+use glave_event::Permissions;
 use glave_ports::settings::Hook;
 
-pub use choices::{Choices, Chosen, Layer, Level, Source, project_permissions};
+pub(crate) use choices::project_permissions;
+pub use choices::{Choices, Chosen, Layer, Level, Source};
 pub use effective::{check_model, check_own_servers, give_way};
 pub use explain::explain;
 pub use files::{
@@ -131,7 +133,8 @@ impl Loaded {
     /// hold gives way to it.
     #[must_use]
     pub fn with_project(&self, path: &Path, project: ConfigFile) -> Self {
-        let layers = with_project(&self.layers, project_layer(path, project));
+        let (highest, _) = self.constraints.highest_permissions();
+        let layers = with_project(&self.layers, project_layer(path, project), highest);
         Self {
             choices: choices::resolve(&layers),
             configs: files_of(&layers),
@@ -142,10 +145,11 @@ impl Loaded {
 
 /// `own`, the levels other than a project's, with `project` among them: after the flags and
 /// the environment, before the person's file. Its preset only narrows what `own` choose,
-/// unless it gives the full access its trust lets it ([`project_permissions`]).
-fn with_project(own: &[Layer], mut project: Layer) -> Vec<Layer> {
+/// unless it gives the full access its trust lets it, under the cap `highest`
+/// ([`project_permissions`]).
+fn with_project(own: &[Layer], mut project: Layer, highest: Permissions) -> Vec<Layer> {
     let mine = choices::resolve(own).permissions.value;
-    project.values.permissions = project_permissions(project.values.permissions, mine);
+    project.values.permissions = project_permissions(project.values.permissions, mine, highest);
     let at = own
         .iter()
         .position(|layer| matches!(layer.level, Level::File(_)))
@@ -251,7 +255,9 @@ pub async fn load(
     }
     let mut loaded = match project {
         Some(values) => {
-            let layers = with_project(&own, project_layer(&locations.project, values));
+            let (highest, _) = Constraints::of(policies).highest_permissions();
+            let project = project_layer(&locations.project, values);
+            let layers = with_project(&own, project, highest);
             assemble(&layers, policies, None)
         }
         None => assemble(&own, policies, None),

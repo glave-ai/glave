@@ -166,11 +166,11 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
     rows
 }
 
-/// The preset, and what it comes to where no sandbox can run here.
+/// The preset, and what Workspace comes to where the sandbox cannot run here.
 fn permissions(choices: &Choices) -> String {
     let preset = choices.permissions.value;
     match &choices.unsandboxed {
-        Some(why) if preset != glave_event::Permissions::FullAccess => format!(
+        Some(why) if preset == glave_event::Permissions::Workspace => format!(
             "{}, but the sandbox cannot run here ({why}), so every change and command asks",
             preset.name()
         ),

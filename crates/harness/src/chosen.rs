@@ -139,13 +139,10 @@ where
     }
 
     /// What the agent may do in `thread`: its own choice, else its project's, else the
-    /// harness's preset.
+    /// harness's preset, never above the policy's cap ([`crate::Defaults::permissions`]).
     pub fn permissions_for(&self, thread: &Thread) -> Permissions {
-        thread
-            .brought
-            .settled
-            .protections
-            .permissions(thread.permissions, thread.defaults.permissions)
+        let protections = thread.brought.settled.protections;
+        thread.defaults.permissions(protections, thread.permissions)
     }
 
     /// How much `thread`'s turns ask before acting, as its preset comes to it where its

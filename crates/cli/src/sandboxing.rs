@@ -62,7 +62,7 @@ pub(crate) async fn workspace(
     }
     setup.choices.unsandboxed = Some(why.clone());
     let quiet = setup.choices.on.value == On::Cloud
-        || setup.choices.permissions.value == Permissions::FullAccess;
+        || setup.choices.permissions.value != Permissions::Workspace;
     if !quiet {
         eprintln!("glave: {}", unsandboxed_notice(&why));
     }
@@ -96,11 +96,12 @@ async fn open_here(folder: &Path, processes: &Processes, asks: bool) -> anyhow::
     Ok(Workspace::new(computers, here).asking_network(asks))
 }
 
-/// What the person is told, once at startup, when the sandbox cannot run here.
+/// What the person is told, once at startup, when the sandbox that lets commands change the
+/// project cannot run here.
 fn unsandboxed_notice(why: &str) -> String {
     format!(
-        "the sandbox cannot run on this computer ({why}), so every command and change asks \
-         you first. To let commands run without the sandbox and without asking, choose full \
-         access (permissions = \"full-access\", or --permissions full-access)."
+        "the sandbox cannot run on this computer ({why}), so in Workspace every command and \
+         change asks you first. To let commands run without the sandbox and without asking, \
+         choose full access (permissions = \"full-access\", or --permissions full-access)."
     )
 }

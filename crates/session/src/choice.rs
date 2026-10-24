@@ -6,6 +6,7 @@
 
 use glave_event::{Body, Permissions, ThreadId};
 use glave_harness::{HarnessError, Settled, Thread};
+use glave_ports::computer::SandboxLevel;
 use glave_ports::settings::Protections;
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope};
 
@@ -120,7 +121,7 @@ where
         project: Protections,
     ) -> Result<Permissions, ApiError> {
         let chosen = self.chosen_permissions(scope, thread).await?;
-        Ok(project.permissions(chosen, self.inner.harness.defaults().permissions))
+        Ok(self.inner.harness.defaults().permissions(project, chosen))
     }
 
     /// The presets a thread may choose now, the most cautious first.
@@ -132,15 +133,17 @@ where
             .clone()
     }
 
-    /// Why Read-only and Workspace ask before every change and command here, when they do:
-    /// no sandbox can run on this computer.
+    /// Why Workspace asks before every change and command here, when it does: no sandbox can
+    /// run on this computer (and Read-only asks so too), or only one that keeps files as they
+    /// are.
     pub(crate) fn unsandboxed(&self) -> Option<Sentence> {
-        self.inner
-            .harness
-            .defaults()
-            .sandbox
-            .is_none()
-            .then_some(Sentence::Unsandboxed)
+        match self.inner.harness.defaults().sandbox.as_ref() {
+            None => Some(Sentence::Unsandboxed),
+            Some(sandbox) if sandbox.level != SandboxLevel::Project => {
+                Some(Sentence::OnlyReadOnlySandbox)
+            }
+            Some(_) => None,
+        }
     }
 
     /// What the project of `project` chooses for its threads: for the person on this

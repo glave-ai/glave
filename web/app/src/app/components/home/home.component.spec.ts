@@ -83,7 +83,7 @@ describe('HomeComponent', () => {
     );
     // The Chats is where Back leads, so it has none.
     expect(root.querySelector('[data-testid="page-back"]')).toBeNull();
-    // Where it goes in the box; the approval mode and the model in the quiet line under it.
+    // Where it goes in the box; the permissions and the model in the quiet line under it.
     const box = root.querySelector('[data-testid="home-composer"] .box');
     const status = root.querySelector('[data-testid="home-composer-status"]');
     expect(box?.querySelector('[data-testid="home-where"]')).not.toBeNull();

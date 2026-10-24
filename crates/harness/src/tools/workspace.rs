@@ -216,7 +216,7 @@ impl Workspace {
     }
 
     /// The sandbox commands run in, if one was asked for.
-    pub fn sandbox(&self) -> Option<&Sandbox> {
+    pub(crate) fn sandbox(&self) -> Option<&Sandbox> {
         self.sandbox.as_ref()
     }
 

@@ -78,7 +78,7 @@ pub(crate) fn decode_effort(
 #[serde(rename_all = "kebab-case")]
 pub enum Permissions {
     /// The agent looks: commands run in a sandbox that writes nothing of the project, and
-    /// every change and command asks first.
+    /// every change asks first.
     ReadOnly,
     /// The agent changes the project, or the chat's folder: commands run in the sandbox and
     /// nothing inside it asks; risky actions ask or go to the judge. Where no sandbox can run,

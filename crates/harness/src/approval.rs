@@ -217,7 +217,7 @@ pub(crate) fn no_one_there(request: &ApprovalRequest) -> String {
         "No one is available to approve this action: glave is running without anyone at the \
          keyboard, in a mode that needs approval for it. Do not retry it or do the same thing \
          another way. Finish what you can without it, and say at the end what still needs a \
-         person (or that it can be run with more permissions, such as --permissions workspace)."
+         person (or that it can run once the person chooses wider permissions)."
             .to_owned()
     }
 }

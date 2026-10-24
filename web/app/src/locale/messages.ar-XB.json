@@ -333,7 +333,7 @@
     "settings.removeHeading": "\u200f\u202eRemove\u202c\u200f \u200f\u202ethis\u202c\u200f \u200f\u202emodel\u202c\u200f \u200f\u202eaccount?\u202c\u200f",
     "settings.removeText": "\u200f\u202eglave\u202c\u200f \u200f\u202eforgets\u202c\u200f \u200f\u202eits\u202c\u200f \u200f\u202ekey,\u202c\u200f \u200f\u202eand\u202c\u200f \u200f\u202eits\u202c\u200f \u200f\u202emodels\u202c\u200f \u200f\u202eare\u202c\u200f \u200f\u202eno\u202c\u200f \u200f\u202elonger\u202c\u200f \u200f\u202eoffered.\u202c\u200f",
     "settings.server": "\u200f\u202eThis\u202c\u200f \u200f\u202eserver\u202c\u200f",
-    "settings.serverInfo": "{$NAME} {$VERSION} \u200f\u202e·\u202c\u200f \u200f\u202eprotocol\u202c\u200f {$PROTOCOLS} \u200f\u202e·\u202c\u200f \u200f\u202epermissions:\u202c\u200f {$PERMISSIONS}",
+    "settings.serverInfo": "{$NAME} {$VERSION} \u200f\u202e·\u202c\u200f \u200f\u202eprotocol\u202c\u200f {$PROTOCOLS}",
     "settings.serverUnknown": "\u200f\u202eReading…\u202c\u200f",
     "settings.signOut": "\u200f\u202eSign\u202c\u200f \u200f\u202eout\u202c\u200f \u200f\u202eof\u202c\u200f \u200f\u202ethis\u202c\u200f \u200f\u202ebrowser\u202c\u200f",
     "settings.signOutOthers": "\u200f\u202eSign\u202c\u200f \u200f\u202eout\u202c\u200f \u200f\u202eother\u202c\u200f \u200f\u202ebrowsers\u202c\u200f",

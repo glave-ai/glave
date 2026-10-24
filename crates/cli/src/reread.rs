@@ -231,6 +231,7 @@ fn runs(setup: &Setup, here: Option<SandboxLevel>, glave_home: &Path) -> anyhow:
     Ok(Runs {
         defaults: Defaults {
             permissions: choices.permissions.value,
+            highest: setup.loaded.constraints.highest_permissions().0,
             judge: choices.judge.value.clone(),
             titles: choices.titles.value,
             sandbox,

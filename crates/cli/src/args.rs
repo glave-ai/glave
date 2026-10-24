@@ -96,10 +96,10 @@ Options:
   --permissions <preset>
                      what the agent may do: workspace (the default: it changes this
                      project, its commands in the sandbox, and risky actions ask),
-                     read-only (it looks; every change and command asks) or full-access
-                     (no sandbox; only risky actions ask). Where the sandbox cannot run,
-                     workspace asks as read-only does. With no one at the keyboard,
-                     anything that would ask is declined
+                     read-only (it looks: its commands change nothing, and every change
+                     asks) or full-access (no sandbox; only risky actions ask). Where
+                     the sandbox cannot run, every change and command asks. With no one
+                     at the keyboard, anything that would ask is declined
   --worktree         work in a new worktree of this repository, on a branch glave/<id>,
                      kept under GLAVE_HOME/worktrees, rather than in this folder itself
   --events <file>    save the thread's events to this file as JSON Lines

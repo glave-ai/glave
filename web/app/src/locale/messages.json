@@ -333,7 +333,7 @@
     "settings.removeHeading": "Remove this model account?",
     "settings.removeText": "glave forgets its key, and its models are no longer offered.",
     "settings.server": "This server",
-    "settings.serverInfo": "{$NAME} {$VERSION} · protocol {$PROTOCOLS} · permissions: {$PERMISSIONS}",
+    "settings.serverInfo": "{$NAME} {$VERSION} · protocol {$PROTOCOLS}",
     "settings.serverUnknown": "Reading…",
     "settings.signOut": "Sign out of this browser",
     "settings.signOutOthers": "Sign out other browsers",

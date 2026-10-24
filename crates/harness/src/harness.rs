@@ -272,6 +272,7 @@ where
             })],
             defaults: RwLock::new(Arc::new(Defaults {
                 permissions: settings.permissions,
+                highest: settings.highest,
                 judge: settings.judge.clone(),
                 titles: settings.titles,
                 sandbox: workspace.sandbox().cloned(),

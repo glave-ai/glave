@@ -129,7 +129,7 @@ pub(crate) fn judges(seen: &[ModelRequest]) -> Vec<String> {
 }
 
 #[test]
-fn it_asks_every_time_even_in_auto_mode_and_runs_outside_once_allowed() {
+fn it_asks_every_time_even_in_workspace_and_runs_outside_once_allowed() {
     let Some(base) = sandboxed("allowed") else {
         return;
     };
