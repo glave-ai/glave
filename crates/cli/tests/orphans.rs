@@ -86,18 +86,20 @@ fn commands(pids: &[u32]) -> Vec<String> {
         .collect()
 }
 
-/// glave in `place`, mid-turn, in `sandbox` (glave's default when none): a command kept in the
-/// background and one in the foreground, each with a program of its own beside it, and an MCP
-/// server, which `server_starts` one too; and every process glave started and those started.
+/// No sandbox, and nothing asks: the preset, as `config.toml` writes it.
+const FULL_ACCESS: &str = "\"full-access\"";
+
+/// glave in `place`, mid-turn, with `permissions` (a preset, as `config.toml` writes it): a
+/// command kept in the background and one in the foreground, each with a program of its own
+/// beside it, and an MCP server, which `server_starts` one too; and every process glave started
+/// and those started.
 fn mid_turn(
     place: &Place,
-    sandbox: Option<&str>,
+    permissions: &str,
     server_starts: bool,
 ) -> (Running, FakeServer, Vec<u32>) {
     choose(place, "memory", "\"off\"");
-    if let Some(sandbox) = sandbox {
-        choose(place, "sandbox", sandbox);
-    }
+    choose(place, "permissions", permissions);
     let beside = if server_starts { "sleep 300 & " } else { "" };
     let server = format!("{beside}exec '{}'", test_server().display());
     let servers = json!({ "mcpServers": { "tests": { "command": "sh", "args": ["-c", server] } } });
@@ -116,7 +118,7 @@ fn mid_turn(
         Reply::text("never reached"),
     ])
     .unwrap();
-    let args = ["--model", "m", "--approval", "auto", "go"];
+    let args = ["--model", "m", "go"];
     let glave = start(place, &model, &args);
     let running = until(HUNG, || recorded(&place.home).len() == 3);
     let entries = recorded(&place.home);
@@ -153,17 +155,17 @@ fn kill_outright(glave: &mut Running) {
     glave.wait().unwrap();
 }
 
-fn killed_mid_turn_leaves_nothing(name: &str, sandbox: Option<&str>) {
+fn killed_mid_turn_leaves_nothing(name: &str, permissions: &str) {
     // Where no sandbox can run, a sandboxed command asks, and no one is here to answer: nothing
     // would run to prove anything. Where CI requires one, it runs.
     let required = ["GLAVE_REQUIRE_SANDBOX", "GLAVE_REQUIRE_LANDLOCK"]
         .iter()
         .any(|variable| std::env::var_os(variable).is_some());
-    if sandbox != Some("\"off\"") && !glave_computer::sandbox_available() && !required {
+    if permissions != FULL_ACCESS && !glave_computer::sandbox_available() && !required {
         return;
     }
     let place = place(name);
-    let (mut killed, _model, every) = mid_turn(&place, sandbox, true);
+    let (mut killed, _model, every) = mid_turn(&place, permissions, true);
     let _folders = TempFolders(killed.id());
     kill_outright(&mut killed);
     let stopped = until(HUNG, || !every.iter().any(|pid| alive(*pid)));
@@ -203,19 +205,19 @@ impl Drop for TempFolders {
 #[test]
 fn a_glave_killed_outright_has_what_it_started_stopped_at_once() {
     // Unconfined, so nothing but the lifeline stops what it leaves.
-    killed_mid_turn_leaves_nothing("orphans", Some("\"off\""));
+    killed_mid_turn_leaves_nothing("orphans", FULL_ACCESS);
 }
 
 #[test]
 fn a_glave_killed_outright_has_its_sandboxed_commands_stopped_at_once() {
-    killed_mid_turn_leaves_nothing("sandboxed", None);
+    killed_mid_turn_leaves_nothing("sandboxed", "\"workspace\"");
 }
 
 #[test]
 fn a_glave_killed_outright_has_its_landlocked_commands_stopped_at_once() {
     // Read-only, the level Landlock keeps where bubblewrap cannot start (CI's Landlock job):
     // there each command runs under glave's own sandbox helper, in a session of its own.
-    killed_mid_turn_leaves_nothing("landlocked", Some("\"read-only\""));
+    killed_mid_turn_leaves_nothing("landlocked", "\"read-only\"");
 }
 
 #[test]
@@ -223,7 +225,7 @@ fn when_glave_and_its_helper_are_killed_the_next_start_stops_what_they_left() {
     let place = place("helperless");
     // A server that starts nothing beside it: once its leader ends, as a server does when glave
     // goes, nothing proves the rest of its group is still the one recorded.
-    let (mut killed, model, every) = mid_turn(&place, Some("\"off\""), false);
+    let (mut killed, model, every) = mid_turn(&place, FULL_ACCESS, false);
     let helper = helper_of(killed.id()).expect("glave's lifeline helper runs");
     Command::new("kill")
         .args(["-KILL", &helper.to_string()])

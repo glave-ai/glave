@@ -29,7 +29,7 @@ pub use connections::{ConnectionInfo, ConnectionStatus, SignInLink};
 pub use credentials::{Ability, CredentialInfo, DeviceCode};
 pub use error::{ApiError, ErrorData};
 pub use files::{AttachedFile, FileInfo};
-pub use glave_event::{ApprovalMode, Grouping};
+pub use glave_event::{Grouping, Permissions};
 pub use glave_event::{Forge, ProviderKind};
 pub use live::Update;
 pub use models::ModelInfo;
@@ -181,10 +181,10 @@ methods! {
         /// when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model: Option<String>,
-        /// How much the thread's turns ask before acting, one of the server's `approvals`;
-        /// the server's own mode when absent.
+        /// What the agent may do in the thread's turns, one of the server's `presets`; its
+        /// project's, else the server's own, when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        approval: Option<ApprovalMode>,
+        permissions: Option<Permissions>,
         /// How much the model reasons in the thread's turns: one of the levels `model/list`
         /// gives for its model, such as `high`. The model's own default when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -274,11 +274,11 @@ methods! {
         /// a turn runs.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model: Option<String>,
-        /// How much this turn, and the thread's turns after it, ask before acting: one of the
-        /// server's `approvals`. The thread's latest choice when absent, else the server's.
-        /// Not while a turn runs.
+        /// What the agent may do in this turn, and the thread's turns after it: one of the
+        /// server's `presets`. The thread's latest choice when absent, else its project's, else
+        /// the server's. Not while a turn runs.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        approval: Option<ApprovalMode>,
+        permissions: Option<Permissions>,
         /// How much the model reasons in this turn, and the thread's turns after it: one of
         /// the levels `model/list` gives for the model the turn goes to. The thread's latest
         /// choice when absent, else the model's own default. Not while a turn runs.

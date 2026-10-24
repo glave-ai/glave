@@ -57,7 +57,7 @@ async fn start_on(server: &Tested<Shared>, model: Option<&str>) -> Result<Thread
         background: false,
         computer: None,
         model: model.map(str::to_owned),
-        approval: None,
+        permissions: None,
         effort: None,
     };
     match server.request(started).await? {
@@ -79,7 +79,7 @@ async fn turn_on(
             budget: None,
             meta: Meta::default(),
             model: model.map(str::to_owned),
-            approval: None,
+            permissions: None,
             effort: None,
             unattended: false,
             files: Vec::new(),
@@ -277,7 +277,7 @@ fn a_background_turn_runs_on_the_model_it_chose_and_the_task_says_so() {
                 budget: None,
                 meta: Meta::default(),
                 model: Some("other".into()),
-                approval: None,
+                permissions: None,
                 effort: None,
                 unattended: false,
                 files: Vec::new(),
@@ -306,7 +306,7 @@ fn a_reasoning_level_the_model_offers_is_kept_for_every_turn_after_it() {
             budget: None,
             meta: Meta::default(),
             model: None,
-            approval: None,
+            permissions: None,
             effort: Some(effort.into()),
             unattended: false,
             files: Vec::new(),
@@ -336,7 +336,7 @@ fn a_reasoning_level_the_model_offers_is_kept_for_every_turn_after_it() {
             background: false,
             computer: None,
             model: None,
-            approval: None,
+            permissions: None,
             effort: Some("high".into()),
         };
         let none = server.request(started).await.unwrap_err();

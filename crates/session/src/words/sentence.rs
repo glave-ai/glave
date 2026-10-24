@@ -80,7 +80,7 @@ sentences! {
     QueuedElsewhere = "queued-elsewhere"
         "a turn was already running in this thread: your message was queued to it, and the model reads it at its next step",
     NoChoiceWhileRunning = "no-choice-while-running"
-        "a model, reasoning level or approval mode is chosen for a turn to start with: while a turn runs, send the message without one, or choose once the turn has ended",
+        "a model, reasoning level or permissions are chosen for a turn to start with: while a turn runs, send the message without one, or choose once the turn has ended",
     NoComputerYet { computer: String } = "no-computer-yet"
         "threads on a computer of your own (computer { $computer }) are not available yet: start the thread without `computer`",
     NoFolderForWorktree = "no-folder-for-worktree"
@@ -113,7 +113,7 @@ sentences! {
     TooManyWatches { most: usize } = "too-many-watches"
         "a connection watches at most { $most } threads and lists at once: unwatch one first",
 
-    // Models and approval modes.
+    // Models and permissions.
     NoModelYet = "no-model-yet" "no model is set up here yet: connect a model account first",
     ModelNotRun { model: String, models: String } = "model-not-run"
         "glave does not run the model \"{ $model }\" here; it runs { $models }",
@@ -121,8 +121,10 @@ sentences! {
         "{ $model } offers no choice of how much it reasons: start without a level",
     NoSuchEffort { model: String, effort: String, efforts: String } = "no-such-effort"
         "{ $model } does not offer the reasoning level \"{ $effort }\": choose one of { $efforts }",
-    ModeNotAllowed { mode: String, left: String } = "mode-not-allowed"
-        "approval mode { $mode } is not allowed here: the policy leaves { $left }",
+    PermissionsNotAllowed { preset: String, left: String } = "permissions-not-allowed"
+        "{ $preset } isn't allowed here: choose { $left }",
+    Unsandboxed = "unsandboxed"
+        "This computer can't run the sandbox, so Read-only and Workspace ask before every change and command.",
 
     // Files sent with a message.
     FileName { most: usize } = "file-name" "a file's name is 1 to { $most } characters",

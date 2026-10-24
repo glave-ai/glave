@@ -34,7 +34,7 @@ fn a_browser_here_signs_in_with_the_local_token_as_the_local_person() {
                 background: false,
                 computer: None,
                 model: None,
-                approval: None,
+                permissions: None,
                 effort: None,
             })
             .await;
@@ -47,7 +47,7 @@ fn a_browser_here_signs_in_with_the_local_token_as_the_local_person() {
             budget: None,
             meta: Meta::default(),
             model: None,
-            approval: None,
+            permissions: None,
             effort: None,
             unattended: false,
             files: Vec::new(),

@@ -1,6 +1,6 @@
 //! What someone chose for a thread's turns: `model.chosen`, the model they are sent to,
-//! `effort.chosen`, how much that model reasons, and `approval.mode.chosen`, how much glave
-//! asks before acting in them. The latest of each type is the thread's choice; a thread with
+//! `effort.chosen`, how much that model reasons, and `permissions.chosen`, what the agent may
+//! do in them without asking. The latest of each type is the thread's choice; a thread with
 //! none uses the deployment's own.
 
 use serde::{Deserialize, Serialize};
@@ -10,7 +10,7 @@ use crate::codec::{Payload, parse};
 use crate::payload::principal::Principal;
 
 pub(crate) const TYPE: &str = "model.chosen";
-pub(crate) const APPROVAL: &str = "approval.mode.chosen";
+pub(crate) const PERMISSIONS: &str = "permissions.chosen";
 pub(crate) const EFFORT: &str = "effort.chosen";
 
 /// The thread's turns go to `model` from now on, until another is chosen.
@@ -57,74 +57,92 @@ pub(crate) fn decode_effort(
     (version == 1).then(|| parse(data))
 }
 
-/// How much glave asks the person before acting (`specs/approvals.md`, "Modes"). Secret files
-/// ask in every mode.
+/// What the agent may do without asking the person (`specs/approvals.md`, "Permissions"): the
+/// one choice a person makes about it, of three presets, the most cautious first. Each comes to
+/// a sandbox and how much asks wherever it runs (`glave-harness`); risky actions ask in every
+/// preset.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, schemars::JsonSchema,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
 )]
-#[serde(rename_all = "snake_case")]
-pub enum ApprovalMode {
-    /// The cautious mode: ask before every change and every command.
-    Ask,
-    /// Changes and commands go through: in the sandbox when it is on, as the person when not;
-    /// risky ones still ask. glave chooses it by default only where commands run in the
-    /// sandbox.
+#[serde(rename_all = "kebab-case")]
+pub enum Permissions {
+    /// The agent looks: commands run in a sandbox that writes nothing of the project, and
+    /// every change and command asks first.
+    ReadOnly,
+    /// The agent changes the project, or the chat's folder: commands run in the sandbox and
+    /// nothing inside it asks; risky actions ask or go to the judge. Where no sandbox can run,
+    /// every change and command asks instead.
     #[default]
-    Auto,
+    Workspace,
+    /// No sandbox, and nothing asks but the risky actions: for work the person fully trusts.
+    FullAccess,
 }
 
-impl ApprovalMode {
-    /// The mode `name` names, as config and the API write it.
+impl Permissions {
+    /// Every preset, the most cautious first.
+    pub const ALL: [Self; 3] = [Self::ReadOnly, Self::Workspace, Self::FullAccess];
+
+    /// The preset `name` names, as config and the API write it.
     pub fn named(name: &str) -> Option<Self> {
-        match name {
-            "ask" => Some(Self::Ask),
-            "auto" => Some(Self::Auto),
-            _ => None,
-        }
+        Self::ALL.into_iter().find(|preset| preset.name() == name)
     }
 
-    /// The mode's name, as config and the API write it.
+    /// The preset's name, as config and the API write it.
     pub fn name(self) -> &'static str {
         match self {
-            Self::Ask => "ask",
-            Self::Auto => "auto",
+            Self::ReadOnly => "read-only",
+            Self::Workspace => "workspace",
+            Self::FullAccess => "full-access",
         }
     }
 }
 
-/// The thread's turns run in approval mode `mode` from now on, until another is chosen.
+/// The thread's turns run with `permissions` from now on, until another preset is chosen.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ApprovalModeChosen {
-    pub mode: ApprovalMode,
+pub struct PermissionsChosen {
+    pub permissions: Permissions,
     /// Who chose it. Absent: the thread's `for`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<Principal>,
 }
 
-impl Payload for ApprovalModeChosen {
-    const TYPE: &'static str = APPROVAL;
+impl Payload for PermissionsChosen {
+    const TYPE: &'static str = PERMISSIONS;
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode_approval(
+pub(crate) fn decode_permissions(
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<ApprovalModeChosen>> {
+) -> Option<serde_json::Result<PermissionsChosen>> {
     (version == 1).then(|| parse(data))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::ApprovalMode::{self, Ask, Auto};
+    use super::Permissions;
 
     #[test]
-    fn modes_are_named_as_config_and_the_api_write_them() {
-        assert_eq!(ApprovalMode::default(), Auto);
-        assert_eq!(ApprovalMode::named("edits"), None, "retired");
-        for mode in [Ask, Auto] {
-            assert_eq!(ApprovalMode::named(mode.name()), Some(mode));
-            assert_eq!(serde_json::to_value(mode).unwrap(), mode.name());
+    fn presets_are_named_as_config_and_the_api_write_them_most_cautious_first() {
+        assert_eq!(Permissions::default(), Permissions::Workspace);
+        assert_eq!(Permissions::named("auto"), None);
+        for preset in Permissions::ALL {
+            assert_eq!(Permissions::named(preset.name()), Some(preset));
+            assert_eq!(serde_json::to_value(preset).unwrap(), preset.name());
         }
+        assert!(Permissions::ReadOnly < Permissions::Workspace);
+        assert!(Permissions::Workspace < Permissions::FullAccess);
     }
 }

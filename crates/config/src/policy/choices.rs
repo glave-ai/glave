@@ -4,13 +4,12 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use glave_event::ApprovalMode;
-use glave_ports::computer::SandboxLevel;
+use glave_event::Permissions;
 use glave_ports::host::PublicOrigin;
 use glave_ports::memories::ProjectMemory;
 use glave_ports::settings::Judge;
 
-use crate::policy::files::{ConfigFile, GithubFile, ModelEntry, SandboxChoice};
+use crate::policy::files::{ConfigFile, GithubFile, ModelEntry};
 use crate::policy::memory::{MemoryChoice, ProjectChoice};
 use crate::policy::provider::ProviderFile;
 use crate::policy::web::WebFile;
@@ -25,10 +24,6 @@ pub enum Source {
     Default,
     /// glave's default was not allowed, so this is the value the policy file leaves.
     Narrowed(PathBuf),
-    /// glave's default sandbox cannot run on this computer, for this reason.
-    Unavailable(String),
-    /// glave's default approval mode when commands run without a sandbox.
-    Unsandboxed,
 }
 
 impl fmt::Display for Source {
@@ -39,8 +34,6 @@ impl fmt::Display for Source {
             Self::File(path) => write!(f, "{}", path.display()),
             Self::Default => f.write_str("default"),
             Self::Narrowed(path) => write!(f, "default, narrowed by {}", path.display()),
-            Self::Unavailable(why) => write!(f, "default, but it cannot run here: {why}"),
-            Self::Unsandboxed => f.write_str("default when commands run without a sandbox"),
         }
     }
 }
@@ -58,9 +51,11 @@ pub struct Choices {
     /// No default: glave says how to choose one when there is none.
     pub model: Option<Chosen<String>>,
     pub judge: Chosen<Judge>,
-    pub approval: Chosen<ApprovalMode>,
-    /// `None` is no sandbox. `project` by default, wherever it can run.
-    pub sandbox: Chosen<Option<SandboxLevel>>,
+    /// What the agent may do without asking: Workspace by default.
+    pub permissions: Chosen<Permissions>,
+    /// Why no sandbox can run on this computer, once glave knows: Read-only and Workspace then
+    /// run without one, and every change and command asks.
+    pub unsandboxed: Option<String>,
     /// Whether sandboxed commands may use the network: on by default.
     pub network: Chosen<bool>,
     /// The MCP servers to turn on; every server in `mcp.json` when not chosen.
@@ -128,8 +123,7 @@ impl Layer {
         match &self.level {
             Level::Flags => Source::Flag(match key {
                 "model" => "--model",
-                "approval" => "--approval",
-                "sandbox" => "--sandbox",
+                "permissions" => "--permissions",
                 "network" => "--network or --no-network",
                 "worktree" => "--worktree",
                 "on" => "--on",
@@ -155,16 +149,11 @@ pub(super) fn resolve(layers: &[Layer]) -> Choices {
             }),
             Judge::Main,
         ),
-        approval: defaulted(
-            nearest(layers, "approval", |file| file.approval),
-            ApprovalMode::default(),
+        permissions: defaulted(
+            nearest(layers, "permissions", |file| file.permissions),
+            Permissions::default(),
         ),
-        sandbox: defaulted(
-            nearest(layers, "sandbox", |file| {
-                file.sandbox.map(SandboxChoice::level)
-            }),
-            Some(SandboxLevel::Project),
-        ),
+        unsandboxed: None,
         network: defaulted(nearest(layers, "network", |file| file.network), true),
         mcp: nearest(layers, "mcp", |file| file.mcp.clone()),
         models: nearest(layers, "models", |file| file.models.clone()),
@@ -238,4 +227,13 @@ fn nearest<T>(
             from: layer.source(key),
         })
     })
+}
+
+/// The preset a project's `config.toml` gives its threads where the levels other than the
+/// project's choose `own`: a narrower one, or the same, at once; full access only when it is
+/// there at all, since it stays out of a project's file until the person trusts the project
+/// (`trust::Project::config_without_trust`). A wider one is ignored, so a repository never
+/// widens what the person chose.
+pub fn project_permissions(project: Option<Permissions>, own: Permissions) -> Option<Permissions> {
+    project.filter(|preset| *preset == Permissions::FullAccess || *preset <= own)
 }

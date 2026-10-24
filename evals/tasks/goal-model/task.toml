@@ -8,7 +8,7 @@ timeout_sec = 900
 [glave]
 tier = "hard"
 # Real work runs commands: nothing asks but secrets.
-approval = "auto"
+permissions = "workspace"
 # Three tool steps a turn, so the work takes several turns and the goal must continue.
 max_steps = 4
 goal = { budget = 600000 }

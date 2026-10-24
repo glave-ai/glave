@@ -57,7 +57,7 @@ pub use compaction::{Compacted, Compaction};
 pub use conversation::conversation;
 pub use defaults::Defaults;
 pub use files::{MAX_IMAGE, is_image};
-pub use glave_event::ApprovalMode;
+pub use glave_event::Permissions;
 pub use goal::{DEFAULT_BUDGET, Goal, GoalProgress, UPDATE_GOAL};
 pub use harness::{Harness, HarnessError, Parts, Settings, Thread};
 pub use inbox::{Inbox, MAX_QUEUED, NotQueued, Queued};

@@ -1,33 +1,34 @@
-//! Choosing a thread's approval mode through the session API: `thread/start` and `turn/start`
-//! take `approval`, recorded as `approval.mode.chosen`, so the thread's turns ask that much
-//! from then on, across restarts; choosing the mode a thread already has records nothing; a
-//! thread that chooses none runs in the server's mode; the summary shows the mode; and a mode
-//! the policy does not leave is refused with `-32012`.
+//! Choosing what the agent may do in a thread through the session API: `thread/start` and
+//! `turn/start` take `permissions`, recorded as `permissions.chosen`, so the thread's turns
+//! run with that preset from then on, across restarts; choosing the preset a thread already
+//! has records nothing; a thread that chooses none runs with the server's; the summary shows
+//! the preset; and one the policy does not leave is refused with `-32012`, in plain words.
 
 use std::path::Path;
 
 use glave_event::{Body, ThreadId, decode};
-use glave_harness::ApprovalMode as Mode;
 use glave_ports::Completion;
 use glave_session::Answering;
-use glave_session::protocol::{ApiError, ApprovalMode, Meta, Reply, Request, code};
+use glave_session::protocol::{ApiError, Meta, Permissions, Reply, Request, code};
+use Permissions::{FullAccess, ReadOnly, Workspace};
 use serde_json::json;
 
 use crate::support::*;
 
-/// A server on `log` whose own mode is `own`, where threads may choose `modes`, with no one
-/// to answer what asks.
+/// A server on `log` whose own preset is `own`, where threads may choose `presets`, with no one
+/// to answer what asks. Its commands run without a sandbox, so only Full access lets a write
+/// run without asking.
 async fn serve(
     dir: &Path,
     answers: Vec<Completion>,
     log: &Shared,
-    own: Mode,
-    modes: &[Mode],
+    own: Permissions,
+    presets: &[Permissions],
 ) -> Tested<Shared> {
     let mut setup = Setup::new(answers);
     setup.answering = Answering::NoOne;
-    setup.settings.approval = own;
-    setup.modes = modes.to_vec();
+    setup.settings.permissions = own;
+    setup.presets = presets.to_vec();
     setup.build_on(dir, log.clone()).await.0
 }
 
@@ -41,7 +42,7 @@ fn writes(path: &str) -> Vec<Completion> {
 
 async fn start_in(
     server: &Tested<Shared>,
-    approval: Option<ApprovalMode>,
+    permissions: Option<Permissions>,
 ) -> Result<Reply, ApiError> {
     server
         .request(Request::ThreadStart {
@@ -50,14 +51,14 @@ async fn start_in(
             background: false,
             computer: None,
             model: None,
-            approval,
+            permissions,
             effort: None,
         })
         .await
 }
 
-async fn started(server: &Tested<Shared>, approval: Option<ApprovalMode>) -> ThreadId {
-    match start_in(server, approval).await.unwrap() {
+async fn started(server: &Tested<Shared>, permissions: Option<Permissions>) -> ThreadId {
+    match start_in(server, permissions).await.unwrap() {
         Reply::Thread { thread } => thread.id,
         other => panic!("a thread, not {other:?}"),
     }
@@ -66,7 +67,7 @@ async fn started(server: &Tested<Shared>, approval: Option<ApprovalMode>) -> Thr
 async fn turn_in(
     server: &Tested<Shared>,
     thread: ThreadId,
-    approval: Option<ApprovalMode>,
+    permissions: Option<Permissions>,
 ) -> Result<Reply, ApiError> {
     server
         .request(Request::TurnStart {
@@ -76,7 +77,7 @@ async fn turn_in(
             budget: None,
             meta: Meta::default(),
             model: None,
-            approval,
+            permissions,
             unattended: false,
             files: Vec::new(),
             effort: None,
@@ -84,15 +85,15 @@ async fn turn_in(
         .await
 }
 
-/// The mode the thread's summary shows.
-async fn shown(server: &Tested<Shared>, thread: ThreadId) -> ApprovalMode {
+/// The preset the thread's summary shows.
+async fn shown(server: &Tested<Shared>, thread: ThreadId) -> Permissions {
     match server.request(Request::ThreadGet { thread }).await.unwrap() {
-        Reply::Thread { thread } => thread.approval,
+        Reply::Thread { thread } => thread.permissions,
         other => panic!("a thread, not {other:?}"),
     }
 }
 
-/// The modes chosen, and how each write was decided (`ran` when nothing asked), in order.
+/// The presets chosen, and how each write was decided (`ran` when nothing asked), in order.
 async fn recorded(server: &Tested<Shared>, thread: ThreadId) -> Vec<String> {
     let Reply::Events { events, .. } = server
         .request(Request::ThreadEvents {
@@ -109,7 +110,9 @@ async fn recorded(server: &Tested<Shared>, thread: ThreadId) -> Vec<String> {
     events
         .into_iter()
         .filter_map(|raw| match decode(raw).unwrap().body {
-            Body::ApprovalModeChosen(chosen) => Some(format!("chose {:?}", chosen.mode)),
+            Body::PermissionsChosen(chosen) => {
+                Some(format!("chose {}", chosen.permissions.name()))
+            }
             Body::ApprovalRequested(_) => {
                 asked = true;
                 None
@@ -122,40 +125,37 @@ async fn recorded(server: &Tested<Shared>, thread: ThreadId) -> Vec<String> {
 }
 
 #[test]
-fn a_chosen_mode_holds_for_the_turns_after_it_and_a_restart() {
-    let dir = folder("modes-choose");
+fn a_chosen_preset_holds_for_the_turns_after_it_and_a_restart() {
+    let dir = folder("permissions-choose");
     let log = Shared::default();
     block_on!(async {
-        let both = [Mode::Ask, Mode::Auto];
-        let server = serve(&dir, writes("one.txt"), &log, Mode::Auto, &both).await;
+        let all = Permissions::ALL;
+        let server = serve(&dir, writes("one.txt"), &log, FullAccess, &all).await;
         let Reply::Server(info) = server.request(Request::Discover {}).await.unwrap() else {
             panic!("server info");
         };
-        assert_eq!(info.approval, ApprovalMode::Auto);
-        let thread = started(&server, Some(ApprovalMode::Ask)).await;
-        assert_eq!(shown(&server, thread).await, ApprovalMode::Ask);
-        // In ask mode the write asks, and with no one there it does not run.
+        assert_eq!(info.permissions, FullAccess);
+        assert_eq!(info.presets, all);
+        let thread = started(&server, Some(ReadOnly)).await;
+        assert_eq!(shown(&server, thread).await, ReadOnly);
+        // In Read-only the write asks, and with no one there it does not run.
         turn_in(&server, thread, None).await.unwrap();
         server.shutdown().await;
         let mut answers = writes("two.txt");
         answers.extend(writes("three.txt"));
-        let restarted = serve(&dir, answers, &log, Mode::Auto, &both).await;
-        assert_eq!(shown(&restarted, thread).await, ApprovalMode::Ask);
-        // Choosing the mode the thread has records nothing; then auto lets the write run.
-        turn_in(&restarted, thread, Some(ApprovalMode::Ask))
-            .await
-            .unwrap();
-        turn_in(&restarted, thread, Some(ApprovalMode::Auto))
-            .await
-            .unwrap();
-        assert_eq!(shown(&restarted, thread).await, ApprovalMode::Auto);
+        let restarted = serve(&dir, answers, &log, FullAccess, &all).await;
+        assert_eq!(shown(&restarted, thread).await, ReadOnly);
+        // Choosing the preset the thread has records nothing; then full access lets it run.
+        turn_in(&restarted, thread, Some(ReadOnly)).await.unwrap();
+        turn_in(&restarted, thread, Some(FullAccess)).await.unwrap();
+        assert_eq!(shown(&restarted, thread).await, FullAccess);
         assert_eq!(
             recorded(&restarted, thread).await,
             [
-                "chose Ask",
+                "chose read-only",
                 "asked: NoOneThere",
                 "asked: NoOneThere",
-                "chose Auto",
+                "chose full-access",
                 "ran"
             ]
         );
@@ -163,36 +163,42 @@ fn a_chosen_mode_holds_for_the_turns_after_it_and_a_restart() {
 }
 
 #[test]
-fn a_thread_that_chooses_nothing_runs_in_the_servers_mode() {
-    let dir = folder("modes-default");
+fn a_thread_that_chooses_nothing_runs_with_the_servers_preset() {
+    let dir = folder("permissions-default");
     block_on!(async {
         let server = serve(
             &dir,
             writes("a.txt"),
             &Shared::default(),
-            Mode::Ask,
-            &[Mode::Ask],
+            Workspace,
+            &[ReadOnly, Workspace],
         )
         .await;
         let thread = started(&server, None).await;
-        assert_eq!(shown(&server, thread).await, ApprovalMode::Ask);
+        assert_eq!(shown(&server, thread).await, Workspace);
+        // No sandbox here: Workspace asks as Read-only does.
         turn_in(&server, thread, None).await.unwrap();
         assert_eq!(recorded(&server, thread).await, ["asked: NoOneThere"]);
     });
 }
 
 #[test]
-fn a_mode_the_policy_does_not_leave_is_refused() {
-    let dir = folder("modes-refused");
+fn a_preset_the_policy_does_not_leave_is_refused_in_plain_words() {
+    let dir = folder("permissions-refused");
     let log = Shared::default();
     block_on!(async {
-        let ask = [Mode::Ask];
-        let server = serve(&dir, Vec::new(), &log, Mode::Ask, &ask).await;
-        let refused = start_in(&server, Some(ApprovalMode::Auto))
-            .await
-            .unwrap_err();
+        let capped = [ReadOnly, Workspace];
+        let server = serve(&dir, Vec::new(), &log, Workspace, &capped).await;
+        let Reply::Server(info) = server.request(Request::Discover {}).await.unwrap() else {
+            panic!("server info");
+        };
+        assert_eq!(info.presets, capped, "only what a thread may choose");
+        let refused = start_in(&server, Some(FullAccess)).await.unwrap_err();
         assert_eq!(refused.code, code::NOT_ALLOWED, "{refused:?}");
-        assert!(refused.message.contains("auto"), "{}", refused.message);
+        assert_eq!(
+            refused.message.to_string(),
+            "Full access isn't allowed here: choose Read-only or Workspace"
+        );
         let Reply::Threads { threads, .. } = server
             .request(Request::ThreadList {
                 project: Some(scope().project()),
@@ -207,32 +213,28 @@ fn a_mode_the_policy_does_not_leave_is_refused() {
         };
         assert!(threads.is_empty(), "no thread starts: {threads:?}");
         let thread = started(&server, None).await;
-        let refused = turn_in(&server, thread, Some(ApprovalMode::Auto))
-            .await
-            .unwrap_err();
+        let refused = turn_in(&server, thread, Some(FullAccess)).await.unwrap_err();
         assert_eq!(refused.code, code::NOT_ALLOWED);
         assert_eq!(recorded(&server, thread).await, Vec::<String>::new());
     });
 }
 
 #[test]
-fn a_mode_chosen_before_the_policy_narrowed_is_refused_until_chosen_again() {
-    let dir = folder("modes-stale");
+fn a_preset_chosen_before_the_policy_narrowed_is_refused_until_chosen_again() {
+    let dir = folder("permissions-stale");
     let log = Shared::default();
     block_on!(async {
-        let both = [Mode::Ask, Mode::Auto];
-        let server = serve(&dir, Vec::new(), &log, Mode::Ask, &both).await;
-        let thread = started(&server, Some(ApprovalMode::Auto)).await;
+        let all = Permissions::ALL;
+        let server = serve(&dir, Vec::new(), &log, ReadOnly, &all).await;
+        let thread = started(&server, Some(FullAccess)).await;
         server.shutdown().await;
-        let narrowed = serve(&dir, writes("a.txt"), &log, Mode::Ask, &[Mode::Ask]).await;
+        let narrowed = serve(&dir, writes("a.txt"), &log, ReadOnly, &[ReadOnly]).await;
         let refused = turn_in(&narrowed, thread, None).await.unwrap_err();
         assert_eq!(refused.code, code::NOT_ALLOWED);
-        turn_in(&narrowed, thread, Some(ApprovalMode::Ask))
-            .await
-            .unwrap();
+        turn_in(&narrowed, thread, Some(ReadOnly)).await.unwrap();
         assert_eq!(
             recorded(&narrowed, thread).await,
-            ["chose Auto", "chose Ask", "asked: NoOneThere"]
+            ["chose full-access", "chose read-only", "asked: NoOneThere"]
         );
     });
 }

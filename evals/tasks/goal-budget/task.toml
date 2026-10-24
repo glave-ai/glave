@@ -6,7 +6,7 @@ description = "A goal that cannot be met ends without being called met: the mode
 timeout_sec = 600
 
 [glave]
-approval = "auto"
+permissions = "workspace"
 # No whole number squares to 2, so the goal can never be met.
 goal = { budget = 60000 }
 checks = [{ goal_ended = ["paused", "budget", "stalled"] }]

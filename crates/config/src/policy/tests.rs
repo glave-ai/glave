@@ -2,12 +2,11 @@
 
 use std::path::{Path, PathBuf};
 
-use glave_event::ApprovalMode;
-use glave_ports::computer::SandboxLevel;
+use glave_event::Permissions;
 use glave_ports::settings::Judge;
 
 use super::*;
-use crate::policy::files::{PolicyFile, SandboxChoice};
+use crate::policy::files::PolicyFile;
 
 const ORG: &str = "/etc/glave/policy.toml";
 const PROJECT_POLICY: &str = "/srv/project/policy.toml";
@@ -68,7 +67,7 @@ fn file_source(path: &str) -> Source {
 #[test]
 fn each_choice_comes_from_the_nearest_level_that_sets_it() {
     let flags = ConfigFile {
-        approval: Some(ApprovalMode::Ask),
+        network: Some(false),
         ..ConfigFile::default()
     };
     let env = ConfigFile {
@@ -77,24 +76,26 @@ fn each_choice_comes_from_the_nearest_level_that_sets_it() {
     };
     let project = file(
         PROJECT,
-        "model = \"project-model\"\nsandbox = \"read-only\"\nworktree = true\n",
+        "model = \"project-model\"\npermissions = \"read-only\"\nworktree = true\n",
     );
     let person = file(
         PERSON,
-        "model = \"m\"\njudge_model = \"off\"\napproval = \"auto\"\nsandbox = \"project\"\nmcp = [\"github\"]\n",
+        "model = \"m\"\njudge_model = \"off\"\npermissions = \"full-access\"\nnetwork = true\nmcp = [\"github\"]\n",
     );
     let choices = choices::resolve(&layers(flags, env, vec![project, person]));
     assert_eq!(
-        (choices.approval.value, &choices.approval.from),
-        (ApprovalMode::Ask, &Source::Flag("--approval"))
+        (choices.network.value, &choices.network.from),
+        (false, &Source::Flag("--network or --no-network"))
     );
     let model = choices.model.unwrap();
     assert_eq!(
         (model.value.as_str(), model.from),
         ("env-model", Source::Env("GLAVE_MODEL"))
     );
-    assert_eq!(choices.sandbox.value, Some(SandboxLevel::ReadOnly));
-    assert_eq!(choices.sandbox.from, file_source(PROJECT));
+    assert_eq!(
+        (choices.permissions.value, choices.permissions.from),
+        (Permissions::ReadOnly, file_source(PROJECT))
+    );
     assert_eq!(choices.judge.value, Judge::Off);
     assert_eq!(choices.judge.from, file_source(PERSON));
     assert_eq!(choices.mcp.unwrap().from, file_source(PERSON));
@@ -141,17 +142,13 @@ fn with_nothing_set_every_choice_is_the_default() {
     ));
     assert_eq!(choices.model, None);
     assert_eq!(
-        (choices.approval.value, &choices.approval.from),
-        (ApprovalMode::Auto, &Source::Default)
+        (choices.permissions.value, &choices.permissions.from),
+        (Permissions::Workspace, &Source::Default),
+        "commands in the sandbox, nothing inside it asking"
     );
     assert_eq!(
         (choices.judge.value, choices.judge.from),
         (Judge::Main, Source::Default)
-    );
-    assert_eq!(
-        (choices.sandbox.value, choices.sandbox.from),
-        (Some(SandboxLevel::Project), Source::Default),
-        "the sandbox is on by default"
     );
     assert_eq!(
         (choices.network.value, choices.network.from),
@@ -180,13 +177,17 @@ fn with_nothing_set_every_choice_is_the_default() {
     );
     let flags_beat_files = choices::resolve(&layers(
         ConfigFile {
-            sandbox: Some(SandboxChoice::Off),
+            permissions: Some(Permissions::FullAccess),
             ..ConfigFile::default()
         },
         ConfigFile::default(),
-        vec![file(PERSON, "sandbox = \"project\"\n")],
+        vec![file(PERSON, "permissions = \"read-only\"\n")],
     ));
-    assert_eq!(flags_beat_files.sandbox.value, None, "--sandbox off wins");
+    assert_eq!(
+        flags_beat_files.permissions.value,
+        Permissions::FullAccess,
+        "--permissions full-access wins"
+    );
 }
 
 #[test]
@@ -249,32 +250,36 @@ fn model_allow_lists_intersect_and_a_deny_always_wins() {
 }
 
 #[test]
-fn approval_modes_intersect_and_none_left_is_an_error() {
+fn the_lowest_highest_preset_holds_and_below_full_access_the_sandbox_is_required() {
     let rules = Constraints::of(&[
         policy_at(
             ORG,
-            "version = 1\n[approval]\nmodes = [\"ask\", \"auto\"]\n",
+            "version = 1\n[permissions]\nhighest = \"workspace\"\n",
         ),
         policy_at(
             PROJECT_POLICY,
-            "version = 1\n[approval]\nmodes = [\"ask\"]\n",
+            "version = 1\n[permissions]\nhighest = \"read-only\"\n",
         ),
     ]);
-    assert_eq!(rules.approval_modes().0, [ApprovalMode::Ask]);
-    let empty = Constraints::of(&[
-        policy_at(ORG, "version = 1\n[approval]\nmodes = [\"auto\"]\n"),
-        policy_at(
-            PROJECT_POLICY,
-            "version = 1\n[approval]\nmodes = [\"ask\"]\n",
-        ),
-    ]);
-    let error = effective::settle(no_choices(), &empty)
-        .unwrap_err()
-        .to_string();
-    assert!(
-        error.contains("no approval mode is left") && error.contains(PROJECT_POLICY),
-        "{error}"
+    let (highest, rule) = rules.highest_permissions();
+    assert_eq!(highest, Permissions::ReadOnly);
+    assert_eq!(rule.unwrap().from, Path::new(PROJECT_POLICY));
+    assert_eq!(rules.permissions_allowed(), [Permissions::ReadOnly]);
+    assert_eq!(
+        rules.sandbox_required().unwrap().to_string(),
+        format!("[permissions] highest = \"read-only\" in {PROJECT_POLICY}")
     );
+    let open = constraints("version = 1\n[permissions]\nhighest = \"full-access\"\n");
+    assert_eq!(open.permissions_allowed(), Permissions::ALL);
+    assert!(open.sandbox_required().is_none(), "full access needs none");
+    assert_eq!(Constraints::default().permissions_allowed(), Permissions::ALL);
+    let error = files::policy(
+        "version = 1\n[approval]\nmodes = [\"ask\"]\n",
+        Path::new(ORG),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("modes"), "the old rule is gone: {error}");
 }
 
 #[test]
@@ -305,8 +310,8 @@ fn the_strictest_judge_sandbox_and_mcp_rules_win() {
             .contains("contradict")
     );
     let sandbox = both(
-        "[sandbox]\nrequired = false\n",
-        "[sandbox]\nrequired = true\n",
+        "[permissions]\nhighest = \"full-access\"\n",
+        "[permissions]\nhighest = \"workspace\"\n",
     );
     assert_eq!(
         sandbox.sandbox_required().unwrap().from,
@@ -490,34 +495,38 @@ fn no_choices() -> Choices {
 
 #[test]
 fn a_choice_outside_the_constraints_is_an_error_naming_rule_and_source() {
-    let ask_only = [policy_at(
+    let read_only = [policy_at(
         ORG,
-        "version = 1\n[approval]\nmodes = [\"ask\"]\n",
+        "version = 1\n[permissions]\nhighest = \"read-only\"\n",
     )];
     let chosen = layers(
         ConfigFile::default(),
         ConfigFile::default(),
-        vec![file(PERSON, "approval = \"auto\"\n")],
+        vec![file(PERSON, "permissions = \"workspace\"\n")],
     );
-    let error = settle(&chosen, &ask_only).unwrap_err().to_string();
+    let error = settle(&chosen, &read_only).unwrap_err().to_string();
     assert_eq!(
         error,
         format!(
-            "approval auto (from {PERSON}) is not allowed: [approval] modes = [\"ask\"] in {ORG}"
+            "permissions workspace (from {PERSON}) is not allowed: [permissions] highest = \
+             \"read-only\" in {ORG}"
         )
     );
-    let sandboxed = [policy_at(ORG, "version = 1\n[sandbox]\nrequired = true\n")];
-    let off = layers(
+    let sandboxed = [policy_at(
+        ORG,
+        "version = 1\n[permissions]\nhighest = \"workspace\"\n",
+    )];
+    let full = layers(
         ConfigFile {
-            sandbox: Some(SandboxChoice::Off),
+            permissions: Some(Permissions::FullAccess),
             ..ConfigFile::default()
         },
         ConfigFile::default(),
         vec![],
     );
-    let error = settle(&off, &sandboxed).unwrap_err().to_string();
+    let error = settle(&full, &sandboxed).unwrap_err().to_string();
     assert!(
-        error.contains("sandbox off (from --sandbox)") && error.contains(ORG),
+        error.contains("permissions full-access (from --permissions)") && error.contains(ORG),
         "{error}"
     );
     let required = [policy_at(
@@ -543,20 +552,29 @@ fn a_choice_outside_the_constraints_is_an_error_naming_rule_and_source() {
 fn only_defaults_give_way_to_what_the_policy_leaves() {
     let strict = [policy_at(
         ORG,
-        "version = 1\n[approval]\nmodes = [\"ask\"]\njudge = \"off\"\n[sandbox]\nrequired = true\n",
+        "version = 1\n[permissions]\nhighest = \"read-only\"\n[approval]\njudge = \"off\"\n",
     )];
     let choices = settle(&[], &strict).unwrap();
     let narrowed = Source::Narrowed(PathBuf::from(ORG));
     assert_eq!(
-        (choices.approval.value, &choices.approval.from),
-        (ApprovalMode::Ask, &narrowed)
+        (choices.permissions.value, &choices.permissions.from),
+        (Permissions::ReadOnly, &narrowed)
     );
     assert_eq!(
         (choices.judge.value, &choices.judge.from),
         (Judge::Off, &narrowed)
     );
-    assert_eq!(choices.sandbox.value, Some(SandboxLevel::Project));
     assert_eq!(narrowed.to_string(), format!("default, narrowed by {ORG}"));
+    let capped = [policy_at(
+        ORG,
+        "version = 1\n[permissions]\nhighest = \"workspace\"\n",
+    )];
+    let kept = settle(&[], &capped).unwrap();
+    assert_eq!(
+        (kept.permissions.value, kept.permissions.from),
+        (Permissions::Workspace, Source::Default),
+        "the default already fits"
+    );
 }
 
 #[test]

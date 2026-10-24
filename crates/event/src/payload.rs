@@ -36,7 +36,7 @@ pub use awake::AwakeSet;
 pub use browser::{BrowserSignedIn, BrowserSignedOut, BrowserUsed};
 pub use catalog::{Catalog, CatalogModel, CatalogRefreshed, Reasoning, TokenPrice};
 pub use certificate::{AcmeRegistered, CertificateIssued};
-pub use chosen::{ApprovalMode, ApprovalModeChosen, EffortChosen, ModelChosen};
+pub use chosen::{EffortChosen, ModelChosen, Permissions, PermissionsChosen};
 pub use command::{CommandEnded, CommandEnding, CommandStarted};
 pub use connection::{ConnectionConnected, ConnectionRemoved, SignInClient};
 pub use credential::{CredentialConnected, CredentialRemoved, Forge, Renewal};

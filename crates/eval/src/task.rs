@@ -20,8 +20,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use glave_event::Outcome;
-use glave_harness::ApprovalMode;
-use glave_ports::computer::SandboxLevel;
+use glave_harness::Permissions;
 use serde::Deserialize;
 
 use crate::check::Check;
@@ -45,13 +44,11 @@ pub struct Task {
     /// the way a person returns to it later.
     pub turns: Vec<String>,
     pub tier: Tier,
-    /// As glave chooses it: `auto` in the sandbox, `ask` without one, unless the task says.
-    pub approval: ApprovalMode,
-    /// `project` unless the task says otherwise, as glave runs by default; `None` is off.
-    pub sandbox: Option<SandboxLevel>,
-    /// Whether the task names its sandbox. One it names must run; glave's default gives way
-    /// where this computer has none, as it does in glave.
-    pub sandbox_named: bool,
+    /// What the agent may do: Workspace unless the task says, as glave runs by default.
+    pub permissions: Permissions,
+    /// Whether the task tests the sandbox itself: then it must run, and the task is left out
+    /// where this computer has none. Any other task runs as glave would there, asking.
+    pub sandboxed: bool,
     /// Whether sandboxed commands may use the network: on unless the task says otherwise.
     pub network: bool,
     pub context_window: Option<u64>,
@@ -226,8 +223,9 @@ struct Agent {
 struct Glave {
     #[serde(default)]
     tier: Tier,
-    approval: Option<String>,
-    sandbox: Option<String>,
+    permissions: Option<String>,
+    #[serde(default)]
+    sandboxed: bool,
     network: Option<bool>,
     context_window: Option<u64>,
     #[serde(default)]
@@ -283,20 +281,19 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         return Err(bad("instruction.md is empty".into()));
     }
     let glave = file.glave;
-    let sandbox = match glave.sandbox.as_deref() {
-        None => Some(SandboxLevel::Project),
-        Some("off") => None,
-        Some(name) => Some(
-            SandboxLevel::named(name)
-                .ok_or_else(|| bad(format!("no sandbox is named {name:?}")))?,
-        ),
+    let permissions = match glave.permissions.as_deref() {
+        None => Permissions::default(),
+        Some(name) => Permissions::named(name).ok_or_else(|| {
+            bad(format!(
+                "no preset is named {name:?}: use read-only, workspace or full-access"
+            ))
+        })?,
     };
-    let approval = match glave.approval.as_deref() {
-        None if sandbox.is_some() => ApprovalMode::Auto,
-        None => ApprovalMode::Ask,
-        Some(name) => ApprovalMode::named(name)
-            .ok_or_else(|| bad(format!("no approval mode is named {name:?}")))?,
-    };
+    if glave.sandboxed && permissions == Permissions::FullAccess {
+        return Err(bad(
+            "sandboxed and full-access: full access runs without the sandbox".into(),
+        ));
+    }
     let timeout = match file.agent.timeout_sec {
         None => DEFAULT_TIMEOUT,
         Some(seconds) => Duration::try_from_secs_f64(seconds)
@@ -318,9 +315,8 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         description: file.task.description,
         turns,
         tier: glave.tier,
-        approval,
-        sandbox,
-        sandbox_named: glave.sandbox.is_some(),
+        permissions,
+        sandboxed: glave.sandboxed,
         network: glave.network.unwrap_or(true),
         context_window: glave.context_window,
         setup: glave.setup,
@@ -463,8 +459,8 @@ mod tests {
             timeout_sec = 90
             [glave]
             tier = "hard"
-            approval = "auto"
-            sandbox = "project"
+            permissions = "workspace"
+            sandboxed = true
             network = true
             context_window = 6000
             setup = ["git init -q"]
@@ -481,8 +477,8 @@ mod tests {
         assert_eq!(task.name, "full");
         assert_eq!(task.turns, ["Do it.", "And again."]);
         assert_eq!(task.tier, Tier::Hard);
-        assert_eq!(task.approval, ApprovalMode::Auto);
-        assert_eq!(task.sandbox, Some(SandboxLevel::Project));
+        assert_eq!(task.permissions, Permissions::Workspace);
+        assert!(task.sandboxed);
         assert!(task.network);
         assert_eq!(task.context_window, Some(6000));
         assert_eq!(task.timeout, Duration::from_secs(90));
@@ -521,20 +517,16 @@ mod tests {
     fn a_bare_task_takes_the_defaults() {
         let task = load(&folder("bare", "", "Hello.")).unwrap();
         assert_eq!(task.tier, Tier::Fast);
-        assert_eq!(task.approval, ApprovalMode::Auto);
         assert_eq!(
-            task.sandbox,
-            Some(SandboxLevel::Project),
+            task.permissions,
+            Permissions::Workspace,
             "as glave runs by default"
         );
+        assert!(!task.sandboxed, "it gives way where no sandbox runs");
         assert!(task.network);
-        let off = load(&folder("off", "[glave]\nsandbox = \"off\"\n", "Hi.")).unwrap();
-        assert_eq!(off.sandbox, None);
-        assert_eq!(
-            off.approval,
-            ApprovalMode::Ask,
-            "as glave asks without a sandbox"
-        );
+        let full = "[glave]\npermissions = \"full-access\"\n";
+        let full = load(&folder("full-access", full, "Hi.")).unwrap();
+        assert_eq!(full.permissions, Permissions::FullAccess);
         assert_eq!(task.timeout, DEFAULT_TIMEOUT);
         assert_eq!(task.checks, []);
         assert_eq!(task.outcome, Outcome::Completed);
@@ -543,8 +535,10 @@ mod tests {
     #[test]
     fn mistakes_are_named() {
         let error = |toml: &str| load(&folder("bad", toml, "Hi.")).unwrap_err().to_string();
-        assert!(error("[glave]\napproval = \"yolo\"").contains("no approval mode is named"));
-        assert!(error("[glave]\nsandbox = \"all\"").contains("no sandbox is named"));
+        assert!(error("[glave]\npermissions = \"yolo\"").contains("no preset is named"));
+        assert!(error("[glave]\napproval = \"auto\"").contains("unknown field"));
+        let both = "[glave]\npermissions = \"full-access\"\nsandboxed = true";
+        assert!(error(both).contains("runs without the sandbox"));
         assert!(error("[glave]\ncheckz = []").contains("unknown field"));
         assert!(error("[glave]\ncontext_window = 10").contains("under 1,000"));
         let early = "[glave]\nsteer = { after = 0, message = \"now\" }";

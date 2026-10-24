@@ -16,7 +16,7 @@ use jiff::Timestamp;
 
 use crate::cron::Cron;
 use crate::ledger::Scheduled;
-use crate::modes::Choice;
+use crate::choice::Choice;
 use crate::protocol::{ApiError, Reply, ScheduleInfo, code};
 use crate::server::Server;
 use crate::tasks::Work;

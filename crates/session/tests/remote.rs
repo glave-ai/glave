@@ -37,7 +37,7 @@ async fn thread_through(remote: &Remote) -> glave_event::ThreadId {
         background: false,
         computer: None,
         model: None,
-        approval: None,
+        permissions: None,
         effort: None,
     };
     let Reply::Thread { thread } = remote.request(&started).await.unwrap() else {
@@ -54,7 +54,7 @@ fn turn_saying(thread: glave_event::ThreadId, prompt: &str) -> Request {
         background: false,
         budget: None,
         model: None,
-        approval: None,
+        permissions: None,
         effort: None,
         meta: Meta::default(),
         unattended: false,

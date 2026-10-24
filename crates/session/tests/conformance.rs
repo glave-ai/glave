@@ -192,7 +192,7 @@ impl Client for OverJsonRpc {
             prompt: prompt.to_owned(),
             meta: Meta::default(),
             model: None,
-            approval: None,
+            permissions: None,
             effort: None,
             unattended: false,
             files: Vec::new(),
@@ -257,7 +257,7 @@ impl Client for OverHttp {
             prompt: prompt.to_owned(),
             meta: Meta::default(),
             model: None,
-            approval: None,
+            permissions: None,
             effort: None,
             unattended: false,
             files: Vec::new(),
@@ -302,7 +302,7 @@ async fn thread_of(client: &mut impl Client) -> ThreadId {
             worktree: None,
             computer: None,
             model: None,
-            approval: None,
+            permissions: None,
             effort: None,
         })
         .await
@@ -495,7 +495,7 @@ fn a_message_sent_while_a_turn_runs_reaches_the_model_in_the_same_stream() {
                                 budget: None,
                                 meta: Meta::default(),
                                 model: None,
-                                approval: None,
+                                permissions: None,
                                 effort: None,
                                 unattended: false,
                                 files: Vec::new(),
@@ -582,7 +582,7 @@ fn models_are_listed_and_one_the_server_does_not_run_is_refused() {
                     worktree: None,
                     computer: None,
                     model: Some("elsewhere".into()),
-                    approval: None,
+                    permissions: None,
                     effort: None,
                 })
                 .await
@@ -595,12 +595,23 @@ fn models_are_listed_and_one_the_server_does_not_run_is_refused() {
 }
 
 #[test]
-fn a_thread_chooses_its_approval_mode_and_its_summary_shows_it() {
+fn a_thread_chooses_its_preset_and_its_summary_shows_it() {
     block_on!(async {
-        over_each_transport!("modes", Vec::new(), |client, dir| {
+        over_each_transport!("permissions", Vec::new(), |client, dir| {
             let info = client.call(Request::Discover {}).await.unwrap();
-            assert_eq!(info["approval"], json!("ask"));
-            assert_eq!(info["approvals"], json!(["ask", "auto"]));
+            assert_eq!(info["permissions"], json!("read-only"));
+            assert_eq!(
+                info["presets"],
+                json!(["read-only", "workspace", "full-access"])
+            );
+            assert_eq!(
+                info["unsandboxed"],
+                json!(
+                    "This computer can't run the sandbox, so Read-only and Workspace ask before \
+                     every change and command."
+                ),
+                "the server says why both ask here"
+            );
             let started = client
                 .call(Request::ThreadStart {
                     project: None,
@@ -608,12 +619,12 @@ fn a_thread_chooses_its_approval_mode_and_its_summary_shows_it() {
                     worktree: None,
                     computer: None,
                     model: None,
-                    approval: Some(glave_session::protocol::ApprovalMode::Auto),
+                    permissions: Some(glave_session::protocol::Permissions::FullAccess),
                     effort: None,
                 })
                 .await
                 .unwrap();
-            assert_eq!(started["thread"]["approval"], json!("auto"));
+            assert_eq!(started["thread"]["permissions"], json!("full-access"));
             let _ = &dir;
         });
     });
@@ -638,7 +649,7 @@ fn a_background_turn_in_another_project_answers_at_once_and_its_task_is_listed_w
                     worktree: None,
                     computer: None,
                     model: None,
-                    approval: None,
+                    permissions: None,
                     effort: None,
                 })
                 .await
@@ -652,7 +663,7 @@ fn a_background_turn_in_another_project_answers_at_once_and_its_task_is_listed_w
                     budget: Some(10_000),
                     meta: Meta::default(),
                     model: None,
-                    approval: None,
+                    permissions: None,
                     effort: None,
                     unattended: false,
                     files: Vec::new(),

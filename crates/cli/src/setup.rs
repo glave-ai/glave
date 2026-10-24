@@ -37,13 +37,6 @@ impl Setup {
     pub(crate) async fn load(args: &Args, folder: &Path) -> anyhow::Result<Self> {
         let loaded = read(args, folder, None).await?;
         let choices = loaded.settle()?;
-        if args.network.is_some() && choices.sandbox.value.is_none() {
-            anyhow::bail!(
-                "--network and --no-network only apply with a sandbox, and the sandbox is off \
-                 here (from {})",
-                choices.sandbox.from
-            );
-        }
         let mine = &loaded.person_hooks;
         if let Some(rule) = loaded.constraints.own_hooks_forbidden()
             && !mine.is_empty()
@@ -210,8 +203,7 @@ fn flags(args: &Args) -> ConfigFile {
     let one_shot = args.action == crate::args::Action::Run && !args.prompt.is_empty();
     ConfigFile {
         model: args.model.clone(),
-        approval: args.approval,
-        sandbox: args.sandbox,
+        permissions: args.permissions,
         network: args.network,
         worktree: args.worktree.then_some(true),
         titles: one_shot.then_some(false),

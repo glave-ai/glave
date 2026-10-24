@@ -11,7 +11,7 @@ use glave_config::policy::{self, Choices};
 use glave_config::trust::Asking;
 use glave_harness::{AGENTS_MD, Settings, Workspace, agents_md};
 use glave_memory::Tidier;
-use glave_ports::computer::GitCredentials;
+use glave_ports::computer::{GitCredentials, Sandbox, SandboxLevel};
 use glave_ports::settings::Hooks;
 use glave_ports::{ProjectId, SystemClock};
 use glave_process::Processes;
@@ -48,6 +48,8 @@ pub(crate) struct Wired {
     pub(crate) root: PathBuf,
     /// The settings in use, for the banner and receipts.
     pub(crate) choices: Choices,
+    /// The most a sandbox here allows, which each preset narrows: for the banner and receipts.
+    pub(crate) sandbox: Option<Sandbox>,
     /// The workers threads work on, with `--on cloud`.
     pub(crate) workers: Option<Arc<WorkerComputers>>,
     /// Memory, when it is on.
@@ -120,6 +122,7 @@ pub(crate) async fn wire(
     let processes = home::reaped().await?;
     let workspace =
         crate::sandboxing::workspace(&folder, &mut setup, &database, &processes).await?;
+    let sandbox = workspace.sandbox().cloned();
     let choices = &setup.choices;
     let (remote, configured) = crate::providers::endpoint(choices)?;
     let store = store(&setup).await?;
@@ -143,9 +146,19 @@ pub(crate) async fn wire(
     tidy(memory.as_ref(), &lined.switch, settings.model.clone());
     let wiring = Wiring {
         // Before the lineup's parts move into the rest.
-        rereads: Some(rereading(args, &folder, choices, &lined, &servers, &projects).await?),
+        rereads: Some(
+            rereading(
+                args,
+                &folder,
+                (choices, sandbox.as_ref().map(|sandbox| sandbox.level)),
+                &lined,
+                &servers,
+                &projects,
+            )
+            .await?,
+        ),
         models: lined.built.models.offered,
-        modes: policy::thread_modes(choices, &setup.loaded.constraints),
+        presets: setup.loaded.constraints.permissions_allowed(),
         providers: lined.accounts.map(|kept| kept as Arc<dyn Providers>),
         git_hosts: hosts.map(|hosts| hosts as Arc<dyn GitHosts>),
         connections: connected.map(|connected| connected as Arc<dyn Connections>),
@@ -184,6 +197,7 @@ pub(crate) async fn wire(
         project: scope.project(),
         root,
         choices: setup.choices,
+        sandbox,
         workers,
         memory,
         log: store.log(),
@@ -241,7 +255,7 @@ async fn keep_here(server: &Glave, project: ProjectId, root: &Path) -> anyhow::R
 async fn rereading(
     args: &Args,
     folder: &Path,
-    start: &Choices,
+    (start, here): (&Choices, Option<SandboxLevel>),
     lined: &Lined,
     servers: &Arc<Servers>,
     projects: &Arc<ProjectFolders>,
@@ -251,6 +265,7 @@ async fn rereading(
         folder: folder.to_owned(),
         home: home::folder()?,
         start: start.clone(),
+        here,
         accounts: lined.accounts.clone(),
         switch: lined.switch.clone(),
         servers: Arc::clone(servers),
@@ -321,7 +336,7 @@ async fn settings_for(
     let (model, named) = lined.built.models.default.clone().unwrap_or_default();
     let mut settings = Settings::new(model, named);
     settings.instructions = opening(root).await?;
-    settings.approval = choices.approval.value;
+    settings.permissions = choices.permissions.value;
     settings.max_steps = args.max_steps;
     settings.subagents = true; // As Claude Code, Codex and OpenCode offer it.
     // As Claude.ai, ChatGPT and OpenCode title chats; a one-shot prompt turns them off (its

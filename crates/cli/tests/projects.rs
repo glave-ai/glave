@@ -103,7 +103,7 @@ fn each_project_s_server_hook_model_and_web_reach_its_own_threads_alone() {
     let beta = project(&place, "beta", "");
     let answers = (0..3).map(|_| Reply::text("Done.")).collect();
     let model = FakeServer::start(answers).unwrap();
-    let mut served = Served::start(&place, &model, &["--sandbox", "off", "--approval", "auto"]);
+    let mut served = Served::start(&place, &model, &["--permissions", "full-access"]);
     let (alpha, beta) = (
         project_of(&mut served, &alpha),
         project_of(&mut served, &beta),

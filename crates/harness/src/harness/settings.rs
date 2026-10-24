@@ -1,7 +1,7 @@
-//! How the harness runs: the model, the prompt and instructions, how much it asks, and the
+//! How the harness runs: the model, the prompt and instructions, what the agent may do, and the
 //! limits and choices every thread starts with.
 
-use glave_event::{ApprovalMode, PrincipalId};
+use glave_event::{Permissions, PrincipalId};
 use glave_ports::settings::Judge;
 
 use crate::commands::Command;
@@ -20,8 +20,8 @@ pub struct Settings {
     /// The project's instructions (see [`crate::agents_md`]), sent at the start of every new
     /// thread and again after a compaction.
     pub instructions: Option<String>,
-    /// How much to ask the person before acting.
-    pub approval: ApprovalMode,
+    /// What the agent may do without asking, in threads that chose no preset.
+    pub permissions: Permissions,
     /// When to summarize a thread to keep it within the model's context window.
     pub compaction: Compaction,
     /// How a model call that fails in a way that may pass is tried again.
@@ -32,9 +32,9 @@ pub struct Settings {
     pub max_output_tokens: Option<u32>,
     /// Whether the model may hand work to subagents with `agent`.
     pub subagents: bool,
-    /// Whether, in auto mode, a judge decides if an action a rule flagged may run because the
-    /// person asked for it, and which model: its calls name it, for the `judge` purpose. Off
-    /// by default: every flagged action asks.
+    /// Whether, where nothing else asks, a judge decides if an action a rule flagged may run
+    /// because the person asked for it, and which model: its calls name it, for the `judge`
+    /// purpose. Off by default: every flagged action asks.
     pub judge: Judge,
     /// The person whose work every thread is: recorded as the thread's `for`. When `None`,
     /// the harness makes one id when it is created, used for all its threads.
@@ -60,7 +60,7 @@ impl Settings {
             instructions: None,
             model,
             provider,
-            approval: ApprovalMode::default(),
+            permissions: Permissions::default(),
             compaction: Compaction::default(),
             retries: Retries::default(),
             max_steps: None,

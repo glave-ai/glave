@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use glave_event::{Arguments, MemoryScope, Principal};
-use glave_harness::{AllowAll, ApprovalMode, Cancel, NoOneToAsk};
+use glave_harness::{AllowAll, Cancel, NoOneToAsk, Permissions};
 use glave_memory::{Remembering, Writer};
 use glave_ports::memories::REMEMBER;
 use glave_ports::testing::fake_secret;
@@ -167,13 +167,13 @@ fn after_untrusted_content_the_judge_lets_a_save_through_only_on_the_persons_wor
 }
 
 #[test]
-fn in_ask_mode_a_save_after_untrusted_content_asks_the_person() {
+fn in_read_only_a_save_after_untrusted_content_asks_the_person() {
     block_on!(async {
         let kit = Kit::new();
         let memory = kit.memory(rules(), 1).await;
         let dir = folder("untrusted-ask");
         let mut asking = settings();
-        asking.approval = ApprovalMode::Ask;
+        asking.permissions = Permissions::ReadOnly;
         let (harness, _) = kit
             .harness(&dir, planted_save(), Yes, Some(memory), asking)
             .await;

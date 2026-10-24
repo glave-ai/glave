@@ -1,8 +1,8 @@
 //! The person's own settings, read again (`specs/one-server.md`, "Its settings"): a server that
 //! runs for days looks at its `config.toml`, the policy and `mcp.json` at the start of each
 //! turn, and when their content's hash changed, reads them again. From the next turn, threads
-//! run with what they choose: the models (and the judge, with the models it names), approval,
-//! the sandbox and its network, hooks, `[web]`, titles and memory; a new thread takes
+//! run with what they choose: the models (and the judge, with the models it names), the preset,
+//! the network, hooks, `[web]`, titles and memory; a new thread takes
 //! `worktree`; and the person's own servers are reconciled: an added one starts, a removed one
 //! stops, a changed one starts again, and so does a remote one the person signs in to or whose
 //! sign-in they remove. A constraint added meanwhile narrows the next turn whatever the
@@ -14,8 +14,9 @@ use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, PoisonError};
 
-use glave_config::policy::{self, Choices, Chosen, Constraints, Locations, Source};
-use glave_harness::{ApprovalMode, Defaults};
+use glave_config::policy::{Choices, Locations};
+use glave_harness::Defaults;
+use glave_ports::computer::SandboxLevel;
 use glave_ports::settings::{Hooks, Judge};
 use glave_ports::{BoxFuture, ToolSource};
 use glave_session::{Apply, Changed, Models, Rereads, Runs};
@@ -25,7 +26,7 @@ use crate::gateway::GatewaySwitch;
 use crate::mcp::{self, Servers};
 use crate::project_folders::ProjectFolders;
 use crate::providers::{Lineup, ModelAccounts};
-use crate::setup::{NO_SANDBOX, Setup};
+use crate::setup::Setup;
 
 /// What the person's settings change as they are read again.
 pub(crate) struct Rereading {
@@ -40,6 +41,9 @@ pub(crate) struct Rereading {
     seen: tokio::sync::Mutex<u64>,
     /// The choices glave started with: what only a start applies.
     start: Choices,
+    /// The most a sandbox here allows, as glave found it when it started; none where none
+    /// can run.
+    here: Option<SandboxLevel>,
     /// The judge as last run: one the models in use serve.
     judge: std::sync::Mutex<Judge>,
     /// Where model accounts are kept, when the person may connect them here; else the gateway
@@ -56,6 +60,7 @@ pub(crate) struct Parts {
     pub folder: PathBuf,
     pub home: PathBuf,
     pub start: Choices,
+    pub here: Option<SandboxLevel>,
     pub accounts: Option<Arc<ModelAccounts>>,
     pub switch: GatewaySwitch,
     pub servers: Arc<Servers>,
@@ -80,6 +85,7 @@ impl Rereading {
             seen: tokio::sync::Mutex::new(seen),
             judge: std::sync::Mutex::new(parts.start.judge.value.clone()),
             start: parts.start,
+            here: parts.here,
             accounts: parts.accounts,
             switch: parts.switch,
             servers: parts.servers,
@@ -91,7 +97,7 @@ impl Rereading {
     /// even where the models no longer line up, or the person's servers no longer read.
     async fn read(&self) -> anyhow::Result<Changed> {
         let setup = reloaded(&self.args, &self.locations, &self.start).await?;
-        let mut runs = runs(&setup, &self.home)?;
+        let mut runs = runs(&setup, self.here, &self.home)?;
         let own = self.own_servers(&setup).await;
         let models = match self.models(&setup).await {
             Ok(models) => Some(models),
@@ -172,7 +178,8 @@ fn kept(chosen: &Judge, last: Judge) -> Judge {
 }
 
 /// The person's settings at `locations` as a server that started with `start` runs them
-/// from now on: within the constraints as they are now, and walled as glave can wall them.
+/// from now on: within the constraints as they are now. Where no sandbox runs, a rule that now
+/// requires one leaves every command asking: the preset is narrowed below full access.
 async fn reloaded(args: &Args, locations: &Locations, start: &Choices) -> anyhow::Result<Setup> {
     let (mut setup, aside) = Setup::reload(args, locations).await?;
     for line in aside {
@@ -180,8 +187,7 @@ async fn reloaded(args: &Args, locations: &Locations, start: &Choices) -> anyhow
             "the policy does not allow what your settings chose, so glave's default applies: {line}"
         );
     }
-    let constraints = &setup.loaded.constraints;
-    setup.choices = walled(as_started(start, setup.choices), start, constraints);
+    setup.choices = as_started(start, setup.choices);
     Ok(setup)
 }
 
@@ -212,55 +218,28 @@ fn as_started(start: &Choices, now: Choices) -> Choices {
         github: start.github.clone(),
         origin: start.origin.clone(),
         acme: start.acme.clone(),
+        unsandboxed: start.unsandboxed.clone(),
         ..now
     }
 }
 
-/// `choices`, with the sandbox given up where it cannot run here: glave's default could not
-/// when it started (`start`), or this computer has none. Where the person or the policy asks
-/// for one that cannot run, commands still never run unconfined without asking.
-fn walled(choices: Choices, start: &Choices, constraints: &Constraints) -> Choices {
-    if choices.sandbox.value.is_none() {
-        return choices;
-    }
-    let why = match &start.sandbox.from {
-        Source::Unavailable(why) => why.clone(),
-        _ if glave_computer::sandbox_available() => return choices,
-        _ => NO_SANDBOX.to_owned(),
-    };
-    let mut choices = crate::sandboxing::given_up(choices, &why, constraints);
-    if choices.sandbox.value.is_some() {
-        tracing::warn!(
-            "a sandbox is asked for, but it cannot run on this computer ({why}), so every \
-             command and change asks first"
-        );
-        choices.sandbox = Chosen {
-            value: None,
-            from: Source::Unavailable(why),
-        };
-        choices.approval = Chosen {
-            value: ApprovalMode::Ask,
-            from: Source::Unsandboxed,
-        };
-    }
-    choices
-}
-
-/// How threads run with `setup`'s choices, where neither they nor their projects choose;
-/// `glave_home`, glave's folder, protected in the sandbox.
-fn runs(setup: &Setup, glave_home: &Path) -> anyhow::Result<Runs> {
+/// How threads run with `setup`'s choices, where neither they nor their projects choose: in
+/// the most a sandbox here allows (`here`), with `glave_home`, glave's folder, protected in it.
+fn runs(setup: &Setup, here: Option<SandboxLevel>, glave_home: &Path) -> anyhow::Result<Runs> {
     let choices = &setup.choices;
+    let sandbox =
+        here.map(|level| crate::sandboxing::sandbox_at(level, choices, Some(glave_home)));
     Ok(Runs {
         defaults: Defaults {
-            approval: choices.approval.value,
+            permissions: choices.permissions.value,
             judge: choices.judge.value.clone(),
             titles: choices.titles.value,
-            sandbox: crate::sandboxing::sandbox_of(choices, Some(glave_home)),
+            sandbox,
             ask_network: setup.loaded.constraints.network_ask_forbidden().is_none(),
             hooks: Hooks::new(setup.hooks.clone())?,
             web: crate::project_folders::web_offered(&choices.web.value)?,
         },
-        modes: policy::thread_modes(choices, &setup.loaded.constraints),
+        presets: setup.loaded.constraints.permissions_allowed(),
         worktree: choices.worktree.value,
     })
 }

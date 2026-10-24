@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use glave_config::policy::Locations;
-use glave_harness::ApprovalMode;
+use glave_harness::Permissions;
 use glave_ports::block_on;
 use glave_ports::computer::SandboxLevel;
 use glave_ports::testing::TempDir;
@@ -23,17 +23,18 @@ fn place(name: &str) -> (TempDir, Locations) {
     (dir, locations)
 }
 
+/// How threads run from now on, where the most a sandbox allows is the project.
 fn runs_now(locations: &Locations, start: &Choices, glave_home: &Path) -> Runs {
     block_on!(async {
         let setup = reloaded(&Args::default(), locations, start).await.unwrap();
-        runs(&setup, glave_home).unwrap()
+        runs(&setup, Some(SandboxLevel::Project), glave_home).unwrap()
     })
 }
 
 #[test]
 fn a_constraint_added_while_it_runs_narrows_the_next_turn_whatever_the_file_loosens() {
     let (dir, locations) = place("narrowed");
-    let loose = "approval = \"auto\"\nsandbox = \"off\"\nmemory = \"off\"\n";
+    let loose = "permissions = \"full-access\"\nmemory = \"off\"\n";
     std::fs::write(&locations.person, loose).unwrap();
     let start = block_on!(async {
         let (setup, aside) = Setup::reload(&Args::default(), &locations).await.unwrap();
@@ -41,65 +42,57 @@ fn a_constraint_added_while_it_runs_narrows_the_next_turn_whatever_the_file_loos
         setup.choices
     });
     let before = runs_now(&locations, &start, &dir);
-    assert_eq!(before.defaults.approval, ApprovalMode::Auto);
-    assert_eq!(before.defaults.sandbox, None);
+    assert_eq!(before.defaults.permissions, Permissions::FullAccess);
     assert!(before.defaults.ask_network);
-    assert_eq!(before.modes, [ApprovalMode::Ask, ApprovalMode::Auto]);
+    assert_eq!(before.presets, Permissions::ALL);
+    let sandbox = before.defaults.sandbox.unwrap();
+    assert_eq!(
+        (sandbox.level, sandbox.network),
+        (SandboxLevel::Project, true),
+        "there for the threads that choose it"
+    );
 
-    let strict = "version = 1\n[approval]\nmodes = [\"ask\"]\n[sandbox]\nrequired = true\n\
+    let strict = "version = 1\n[permissions]\nhighest = \"read-only\"\n[sandbox]\n\
                   network = false\nask_network = false\n";
     std::fs::write(&locations.policies[0], strict).unwrap();
     // And the person's file loosens further: the network too.
     std::fs::write(&locations.person, format!("{loose}network = true\n")).unwrap();
     let after = runs_now(&locations, &start, &dir);
     assert_eq!(
-        after.defaults.approval,
-        ApprovalMode::Ask,
+        after.defaults.permissions,
+        Permissions::ReadOnly,
         "asks from now on"
     );
     assert_eq!(
-        after.modes,
-        [ApprovalMode::Ask],
-        "and no thread may choose auto"
+        after.presets,
+        [Permissions::ReadOnly],
+        "and no thread may choose more"
     );
     assert!(!after.defaults.ask_network, "no command may ask for it");
-    if glave_computer::sandbox_available() {
-        let sandbox = after.defaults.sandbox.unwrap();
-        assert_eq!(
-            sandbox.level,
-            SandboxLevel::Project,
-            "the sandbox is back on"
-        );
-        assert!(
-            !sandbox.network,
-            "without the network, whatever the file says"
-        );
-    } else {
-        assert_eq!(after.defaults.sandbox, None, "it cannot run here");
-    }
+    assert!(
+        !after.defaults.sandbox.unwrap().network,
+        "without the network, whatever the file says"
+    );
     let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
-fn a_sandbox_asked_for_where_none_can_run_leaves_every_command_asking() {
+fn where_no_sandbox_ran_at_the_start_none_runs_after_and_the_choices_say_why() {
     let (dir, locations) = place("unwalled");
-    let chosen = "approval = \"auto\"\nsandbox = \"project\"\n";
-    std::fs::write(&locations.person, chosen).unwrap();
+    std::fs::write(&locations.person, "permissions = \"workspace\"\n").unwrap();
     let start = block_on!(async {
         let (setup, _) = Setup::reload(&Args::default(), &locations).await.unwrap();
-        setup.choices
+        Choices {
+            unsandboxed: Some("no bubblewrap".to_owned()),
+            ..setup.choices
+        }
     });
+    let setup = block_on!(reloaded(&Args::default(), &locations, &start)).unwrap();
+    assert_eq!(setup.choices.unsandboxed.as_deref(), Some("no bubblewrap"));
+    let runs = runs(&setup, None, &dir).unwrap();
+    assert_eq!(runs.defaults.sandbox, None, "every command asks");
+    assert_eq!(runs.defaults.permissions, Permissions::Workspace);
     let _ = std::fs::remove_dir_all(dir);
-    let started = Choices {
-        sandbox: Chosen {
-            value: None,
-            from: Source::Unavailable("no bubblewrap".to_owned()),
-        },
-        ..start.clone()
-    };
-    let walled = walled(start, &started, &Constraints::default());
-    assert_eq!(walled.sandbox.value, None);
-    assert_eq!(walled.approval.value, ApprovalMode::Ask);
 }
 
 #[test]

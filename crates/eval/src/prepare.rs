@@ -73,18 +73,23 @@ pub(crate) async fn prepare(
     })
 }
 
+/// Whether the task's commands run in the sandbox wherever it can run: below full access.
+fn sandboxed(task: &Task) -> bool {
+    task.permissions != glave_harness::Permissions::FullAccess
+}
+
 /// Where the run in `dir` builds: in `dir`, or in the sandbox, which writes only the project
 /// and temp folders, in a folder of the run's own in `/tmp`.
 fn target(dir: &Path, task: &Task) -> PathBuf {
-    match task.sandbox {
-        Some(_) => {
+    match sandboxed(task) {
+        true => {
             let mut hasher = std::hash::DefaultHasher::new();
             dir.hash(&mut hasher);
             Path::new("/tmp")
                 .join(format!("glave-eval-{:016x}", hasher.finish()))
                 .join("target")
         }
-        None => dir.join("target"),
+        false => dir.join("target"),
     }
 }
 
@@ -92,9 +97,9 @@ fn target(dir: &Path, task: &Task) -> PathBuf {
 pub(crate) async fn tidy(dir: &Path, task: &Task) {
     // Best effort: a leftover build folder costs disk space, not correctness.
     let target = target(dir, task);
-    let built = match task.sandbox {
-        Some(_) => target.parent().unwrap_or(&target),
-        None => &target,
+    let built = match sandboxed(task) {
+        true => target.parent().unwrap_or(&target),
+        false => &target,
     };
     let _ = tokio::fs::remove_dir_all(built).await;
 }

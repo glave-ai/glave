@@ -19,21 +19,22 @@ use serde_json::json;
 
 use crate::support::*;
 
-/// `place` where the person's settings answer with the model `m`, ask before commands run,
+/// `place` where the person's settings answer with the model `m`, ask before changes (Read-only),
 /// and title no threads (a title call would take one of the model's replies).
 pub(crate) fn asking(name: &str) -> Place {
     let place = place(name);
     choose(&place, "model", "\"m\"");
-    choose(&place, "approval", "\"ask\"");
+    choose(&place, "permissions", "\"read-only\"");
     choose(&place, "titles", "false");
     place
 }
 
-/// A model that runs `touch ran.txt` once, then says `then`, then each of `after`.
+/// A model that writes `ran.txt` once, a change that asks in Read-only, then says `then`, then
+/// each of `after`.
 fn touching(then: &str, after: &[&str]) -> FakeServer {
-    let touch = json!({"command": "touch ran.txt"});
+    let touch = json!({"path": "ran.txt", "content": "ran\n"});
     let replies = [
-        Reply::tool_call("call_1", "bash", &touch),
+        Reply::tool_call("call_1", "write", &touch),
         Reply::text(then),
     ];
     let more = after.iter().map(|text| Reply::text(text));

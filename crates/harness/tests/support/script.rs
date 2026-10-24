@@ -83,14 +83,26 @@ pub(crate) async fn harness<A: Approver>(
     harness_on(dir, answers, approver, InMemoryLog::new(), 1, settings()).await
 }
 
+/// Settings where nothing asks but the risky actions: Full access, since a test's commands run
+/// without a sandbox unless it gives them one ([`in_the_sandbox`]).
 pub(crate) fn settings() -> Settings {
-    Settings::new("test-model", "script")
+    let mut settings = Settings::new("test-model", "script");
+    settings.permissions = glave_harness::Permissions::FullAccess;
+    settings
 }
 
-/// Settings for the cautious mode, where changes and commands ask.
+/// Settings for the cautious preset, Read-only, where changes and commands ask.
 pub(crate) fn asking() -> Settings {
     let mut settings = settings();
-    settings.approval = glave_harness::ApprovalMode::Ask;
+    settings.permissions = glave_harness::Permissions::ReadOnly;
+    settings
+}
+
+/// Settings for glave's default preset, Workspace: in the sandbox a test gives its workspace,
+/// nothing inside it asks.
+pub(crate) fn in_the_sandbox() -> Settings {
+    let mut settings = settings();
+    settings.permissions = glave_harness::Permissions::Workspace;
     settings
 }
 
@@ -181,7 +193,7 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::ToolCallCompleted(_) => "tool.call.completed",
             Body::ModelResponded(_) => "model.responded",
             Body::ModelChosen(_) => "model.chosen",
-            Body::ApprovalModeChosen(_) => "approval.mode.chosen",
+            Body::PermissionsChosen(_) => "permissions.chosen",
             Body::EffortChosen(_) => "effort.chosen",
             Body::TurnEnded(_) => "turn.ended",
             Body::ApprovalRequested(_) => "approval.requested",

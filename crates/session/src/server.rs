@@ -33,9 +33,9 @@ use crate::held::{Slot, finished};
 use crate::hub::{Hub, Observed};
 use crate::keyed::Keyed;
 use crate::ledger::Ledgers;
-use crate::modes::Choice;
+use crate::choice::Choice;
 use crate::projects::Places;
-use crate::protocol::{ApiError, ApprovalMode, ModelInfo, Reply, code};
+use crate::protocol::{ApiError, ModelInfo, Permissions, Reply, code};
 use crate::providers::Providers;
 use crate::reread::Rereads;
 use crate::tasks::{TaskLimits, Tasks};
@@ -80,9 +80,9 @@ pub struct Wiring<P, L, B> {
     /// The models threads may choose besides the settings' own, the default (`model/list`).
     /// The provider must serve each by its id: the gateway's choices.
     pub models: Vec<ModelInfo>,
-    /// The approval modes a thread may choose besides the settings' own: those the policy
-    /// leaves, where auto runs behind a wall (`specs/approvals.md`).
-    pub modes: Vec<ApprovalMode>,
+    /// The presets a thread may choose besides the settings' own: those the policy leaves
+    /// (`specs/approvals.md`, "Permissions").
+    pub presets: Vec<Permissions>,
     /// The model accounts the person on this computer connects, which the models follow;
     /// none where whoever runs the server sets up its models.
     pub providers: Option<Arc<dyn Providers>>,
@@ -151,7 +151,7 @@ impl<P, L, B> Wiring<P, L, B> {
             memory: None,
             projects,
             models: Vec::new(),
-            modes: Vec::new(),
+            presets: Vec::new(),
             providers: None,
             rereads: None,
             git_hosts: None,
@@ -219,8 +219,9 @@ pub(crate) struct Inner<P, L, B> {
     /// Once it listens over HTTP, its address on this computer when it listens on loopback:
     /// where a browser here comes back to from signing in to a remote server.
     pub(crate) reached: OnceLock<Option<String>>,
-    /// The modes a thread may choose, cautious first, as the policy now leaves them.
-    pub(crate) modes: RwLock<Vec<ApprovalMode>>,
+    /// The presets a thread may choose, the most cautious first, as the policy now leaves
+    /// them.
+    pub(crate) presets: RwLock<Vec<Permissions>>,
     /// The project's own person, whom the log leaves implied.
     pub(crate) person: Option<PrincipalId>,
     pub(crate) limits: TaskLimits,
@@ -275,7 +276,7 @@ where
         let approvals = Approvals::new(answering, Arc::clone(&hub));
         let person = settings.person;
         let catalog = crate::models::catalog(&settings.model, wiring.models);
-        let choosable = crate::modes::choosable(settings.approval, &wiring.modes);
+        let choosable = crate::choice::choosable(settings.permissions, &wiring.presets);
         let clock: Arc<dyn Clock> = Arc::from(wiring.clock);
         let leases = wiring
             .leases
@@ -309,7 +310,7 @@ where
                 git_hosts: wiring.git_hosts,
                 connections: wiring.connections,
                 reached: OnceLock::new(),
-                modes: RwLock::new(choosable),
+                presets: RwLock::new(choosable),
                 person,
                 limits: wiring.tasks,
                 ledgers: Mutex::new(Ledgers::new()),
@@ -390,7 +391,7 @@ where
     /// in the folder itself; a task's thread (`background`) always works on a copy, never in
     /// the folder. In the project whose settings chose workers, every thread works on a worker
     /// instead, which clones that project's repository. With no folder (a person's Chats, or a project without one), the thread gets a
-    /// scratch folder of its own. With a model or an approval mode in `choice`, its turns go
+    /// scratch folder of its own. With a model or a preset in `choice`, its turns go
     /// to that model, or ask that much.
     pub(crate) async fn new_thread(
         &self,
@@ -410,8 +411,8 @@ where
             let model = model.unwrap_or_else(|| self.inner.harness.default_model());
             self.offered_effort(&model, effort)?;
         }
-        if let Some(mode) = choice.approval {
-            self.allowed_mode(mode)?;
+        if let Some(preset) = choice.permissions {
+            self.allowed_permissions(preset)?;
         }
         let project = scope.project();
         let own = self.inner.worktree.load(Ordering::Relaxed);
@@ -455,7 +456,7 @@ where
                 }
                 error => ApiError::from(&error),
             })?;
-        crate::modes::record(&self.inner.harness, &mut thread, caller, choice)
+        crate::choice::record(&self.inner.harness, &mut thread, caller, choice)
             .await
             .map_err(|error| ApiError::from(&error))?;
         let id = thread.id;

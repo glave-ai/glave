@@ -5,16 +5,13 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use glave_event::{ApprovalMode, Money};
+use glave_event::{Money, Permissions};
 use globset::Glob;
 
 use crate::policy::files::{JudgeRule, PolicyFile, TaskRules};
 use crate::policy::memory::MemoryRules;
 use crate::policy::placement::Placement;
 use crate::policy::workers::{NetworkRule, WorkerRules, limits};
-
-/// The approval modes there are, cautious first.
-const MODES: [ApprovalMode; 2] = [ApprovalMode::Ask, ApprovalMode::Auto];
 
 /// One rule, from one policy file.
 #[derive(Debug, Clone, PartialEq)]
@@ -30,9 +27,9 @@ pub enum Kind {
     ModelsAllow(Vec<String>),
     /// Models must match none of these.
     ModelsDeny(Vec<String>),
-    ApprovalModes(Vec<ApprovalMode>),
+    /// The most anyone may choose.
+    PermissionsHighest(Permissions),
     Judge(JudgeRule),
-    SandboxRequired,
     /// Commands go without the network, which only the sandbox can keep from them.
     NetworkOff,
     /// No command without the network may ask the person to run with it.
@@ -70,12 +67,10 @@ impl fmt::Display for Kind {
         match self {
             Self::ModelsAllow(globs) => write!(f, "[models] allow = {}", quoted(globs)),
             Self::ModelsDeny(globs) => write!(f, "[models] deny = {}", quoted(globs)),
-            Self::ApprovalModes(modes) => {
-                let names: Vec<String> = modes.iter().map(|m| m.name().to_owned()).collect();
-                write!(f, "[approval] modes = {}", quoted(&names))
+            Self::PermissionsHighest(preset) => {
+                write!(f, "[permissions] highest = {:?}", preset.name())
             }
             Self::Judge(rule) => write!(f, "[approval] judge = {:?}", rule.name()),
-            Self::SandboxRequired => f.write_str("[sandbox] required = true"),
             Self::NetworkOff => f.write_str("[sandbox] network = false"),
             Self::NetworkAskForbidden => f.write_str("[sandbox] ask_network = false"),
             Self::McpCatalog(names) => write!(f, "[mcp] catalog = {}", quoted(names)),
@@ -136,14 +131,11 @@ impl Constraints {
             if !file.models.deny.is_empty() {
                 add(Kind::ModelsDeny(file.models.deny.clone()));
             }
-            if let Some(modes) = &file.approval.modes {
-                add(Kind::ApprovalModes(modes.clone()));
+            if let Some(highest) = file.permissions.highest {
+                add(Kind::PermissionsHighest(highest));
             }
             if let Some(judge) = file.approval.judge.filter(|j| *j != JudgeRule::Allowed) {
                 add(Kind::Judge(judge));
-            }
-            if file.sandbox.required {
-                add(Kind::SandboxRequired);
             }
             if file.sandbox.network == Some(false) {
                 add(Kind::NetworkOff);
@@ -203,23 +195,31 @@ impl Constraints {
         })
     }
 
-    /// The approval modes every rule allows, and the rules that narrowed them.
-    pub fn approval_modes(&self) -> (Vec<ApprovalMode>, Vec<&Rule>) {
-        let narrowing: Vec<&Rule> = self
-            .rules
-            .iter()
-            .filter(|rule| matches!(rule.kind, Kind::ApprovalModes(_)))
-            .collect();
-        let allowed = MODES
+    /// The most anyone may choose, and the first rule that keeps it there: the lowest
+    /// `[permissions] highest`, and Workspace where a rule takes the network from commands,
+    /// which only the sandbox can keep. Full access, and no rule, where none narrows it.
+    pub fn highest_permissions(&self) -> (Permissions, Option<&Rule>) {
+        let caps = self.rules.iter().filter_map(|rule| match rule.kind {
+            Kind::PermissionsHighest(preset) => Some((preset, rule)),
+            Kind::NetworkOff => Some((Permissions::Workspace, rule)),
+            _ => None,
+        });
+        caps.fold((Permissions::FullAccess, None), |(lowest, first), (preset, rule)| {
+            if preset < lowest {
+                (preset, Some(rule))
+            } else {
+                (lowest, first)
+            }
+        })
+    }
+
+    /// The presets anyone may choose, the most cautious first.
+    pub fn permissions_allowed(&self) -> Vec<Permissions> {
+        let (highest, _) = self.highest_permissions();
+        Permissions::ALL
             .into_iter()
-            .filter(|mode| {
-                narrowing.iter().all(|rule| match &rule.kind {
-                    Kind::ApprovalModes(modes) => modes.contains(mode),
-                    _ => true,
-                })
-            })
-            .collect();
-        (allowed, narrowing)
+            .filter(|preset| *preset <= highest)
+            .collect()
     }
 
     /// The judge rule in force, `required` or `off`; an error when files ask for both.
@@ -245,10 +245,10 @@ impl Constraints {
         }))
     }
 
-    /// The first rule that requires the sandbox: `[sandbox] required`, or a rule that takes
-    /// the network from commands, which only the sandbox can keep.
+    /// The rule that requires the sandbox, if one does: one that leaves no Full access, so
+    /// commands never run without the sandbox and without asking.
     pub fn sandbox_required(&self) -> Option<&Rule> {
-        self.first(|kind| matches!(kind, Kind::SandboxRequired | Kind::NetworkOff))
+        self.highest_permissions().1
     }
 
     /// The first rule that takes the network from commands.

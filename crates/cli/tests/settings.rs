@@ -65,7 +65,7 @@ fn an_edited_config_changes_the_next_turn_s_model_and_mcp_json_is_reconciled() {
     choosing(&place.home, "m");
     let answers = (0..3).map(|_| Reply::text("Done.")).collect();
     let model = FakeServer::start(answers).unwrap();
-    let mut served = Served::start(&place, &model, &["--sandbox", "off", "--approval", "auto"]);
+    let mut served = Served::start(&place, &model, &["--permissions", "full-access"]);
     turn(&mut served);
     assert_eq!(latest(&model), ("m".to_owned(), false));
     assert_eq!(running(&place.home), 0);
@@ -129,20 +129,24 @@ fn result(model: &FakeServer, index: usize) -> String {
 }
 
 #[test]
-fn a_tightened_approval_asks_from_the_next_turn_and_a_running_turn_keeps_its_own() {
+fn a_narrower_preset_asks_from_the_next_turn_and_a_running_turn_keeps_its_own() {
     let place = place("settings-approval");
     std::fs::create_dir_all(&place.home).unwrap();
-    let unconfined = "sandbox = \"off\"\njudge_model = \"off\"\n";
+    let unjudged = "judge_model = \"off\"\n";
     writing(
         &place.home,
         "m",
-        &format!("{unconfined}approval = \"auto\"\n"),
+        &format!("{unjudged}permissions = \"full-access\"\n"),
     );
     let model = FakeServer::start(vec![
         bash("call_1", "git push --dry-run origin main"),
         bash("call_2", "touch first.txt"),
         Reply::text("Done."),
-        bash("call_3", "touch second.txt"),
+        Reply::tool_call(
+            "call_3",
+            "write",
+            &serde_json::json!({"path": "second.txt", "content": "x"}),
+        ),
         Reply::text("Done."),
     ])
     .unwrap();
@@ -151,14 +155,14 @@ fn a_tightened_approval_asks_from_the_next_turn_and_a_running_turn_keeps_its_own
     let home = place.home.clone();
     let asked = turn_in(&mut served, &thread, |_| {
         // While the turn waits on the push, the person chooses to be asked first.
-        writing(&home, "m", &format!("{unconfined}approval = \"ask\"\n"));
+        writing(&home, "m", &format!("{unjudged}permissions = \"read-only\"\n"));
         "allow_once"
     });
     assert_eq!(asked, 1, "only the push asked: the running turn kept auto");
     assert!(!result(&model, 2).contains("Not run"), "it ran");
 
     let asked = turn_in(&mut served, &thread, |_| "allow_once");
-    assert_eq!(asked, 1, "the next turn asks before a plain command");
+    assert_eq!(asked, 1, "the next turn asks before a change");
     served.end();
 }
 
@@ -197,7 +201,7 @@ fn turning_the_network_off_applies_to_the_next_turn_s_commands() {
 fn the_judge_follows_the_models_it_names_when_they_change() {
     let place = place("settings-judge");
     std::fs::create_dir_all(&place.home).unwrap();
-    let unconfined = "sandbox = \"off\"\napproval = \"auto\"\n";
+    let unconfined = "permissions = \"full-access\"\n";
     writing(
         &place.home,
         "m",

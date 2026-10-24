@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use glave_event::ApprovalMode;
+use glave_event::Permissions;
 use glave_ports::block_on;
 use glave_ports::testing::TempDir;
 
@@ -53,33 +53,32 @@ fn files_are_read_from_their_places_and_the_project_s_counts_once_trusted() {
     std::fs::create_dir_all(project.join("src")).unwrap();
     std::fs::write(
         home.join("config.toml"),
-        "approval = \"ask\"\nmodel = \"mine\"\n",
+        "permissions = \"workspace\"\nmodel = \"mine\"\n",
     )
     .unwrap();
     let org = dir.join("policy.toml");
-    std::fs::write(&org, "version = 1\n[sandbox]\nrequired = true\n").unwrap();
+    std::fs::write(&org, "version = 1\n[permissions]\nhighest = \"workspace\"\n").unwrap();
     let mut locations = Locations::here(&home, &project.join("src"));
     assert_eq!(locations.root, project);
     assert_eq!(locations.project, project.join(".glave/config.toml"));
     locations.policies = vec![org.clone()];
     let loaded = load_all(&locations, None).unwrap();
     let choices = loaded.settle().unwrap();
-    assert_eq!(choices.approval.value, ApprovalMode::Ask, "the person's");
-    assert_eq!(choices.sandbox.from, Source::Narrowed(org));
-    let theirs = ConfigFile {
-        approval: Some(ApprovalMode::Auto),
+    assert_eq!(
+        choices.permissions.from,
+        Source::File(locations.person.clone()),
+        "the person's"
+    );
+    let theirs = |preset| ConfigFile {
+        permissions: Some(preset),
         ..ConfigFile::default()
     };
-    let loaded = load_all(&locations, Some(theirs)).unwrap();
+    let loaded = load_all(&locations, Some(theirs(Permissions::ReadOnly))).unwrap();
     let choices = loaded.settle().unwrap();
     assert_eq!(
-        choices.approval.value,
-        ApprovalMode::Auto,
-        "nearer than the person's"
-    );
-    assert_eq!(
-        choices.approval.from,
-        Source::File(locations.project.clone())
+        (choices.permissions.value, &choices.permissions.from),
+        (Permissions::ReadOnly, &Source::File(locations.project.clone())),
+        "nearer than the person's, and narrower"
     );
     assert_eq!(choices.model.map(|m| m.value).as_deref(), Some("mine"));
     assert_eq!(
@@ -100,11 +99,25 @@ fn files_are_read_from_their_places_and_the_project_s_counts_once_trusted() {
     let model = choices.model.map(|model| (model.value, model.from));
     assert_eq!(model, Some(("theirs".into(), Source::File(other.clone()))));
     assert_eq!(
-        choices.approval.value,
-        ApprovalMode::Ask,
+        choices.permissions.value,
+        Permissions::Workspace,
         "none of the first's"
     );
     assert_eq!(elsewhere.configs, [other, locations.person.clone()]);
+    // A project never widens what the person chose, unless trust lets it give full access.
+    std::fs::write(home.join("config.toml"), "permissions = \"read-only\"\n").unwrap();
+    let wider = load_all(&locations, Some(theirs(Permissions::Workspace))).unwrap();
+    let choices = wider.settle().unwrap();
+    assert_eq!(
+        (choices.permissions.value, &choices.permissions.from),
+        (Permissions::ReadOnly, &Source::File(locations.person.clone()))
+    );
+    let trusted = load_all(&locations, Some(theirs(Permissions::FullAccess))).unwrap();
+    let refused = trusted.settle().unwrap_err().to_string();
+    assert!(
+        refused.contains("permissions full-access (from") && refused.contains("highest"),
+        "trusted, it applies, and the policy refuses it: {refused}"
+    );
     std::fs::write(home.join("config.toml"), "aproval = \"ask\"\n").unwrap();
     let typo = load_all(&locations, None);
     assert!(format!("{:#}", typo.unwrap_err()).contains("aproval"));
@@ -114,7 +127,7 @@ fn files_are_read_from_their_places_and_the_project_s_counts_once_trusted() {
 fn explain_shows_every_setting_and_rule_with_its_source() {
     let chosen = layers(
         ConfigFile {
-            approval: Some(ApprovalMode::Ask),
+            permissions: Some(Permissions::ReadOnly),
             ..ConfigFile::default()
         },
         ConfigFile {
@@ -130,10 +143,13 @@ fn explain_shows_every_setting_and_rule_with_its_source() {
         policy_at(
             ORG,
             "version = 1\n[models]\nallow = [\"acme/*\"]\ndeny = [\"acme/old-*\"]\n\
-             [approval]\nmodes = [\"ask\", \"auto\"]\njudge = \"required\"\n\
-             [sandbox]\nrequired = true\n[mcp]\nown = true\n",
+             [permissions]\nhighest = \"full-access\"\n[approval]\njudge = \"required\"\n\
+             [sandbox]\nnetwork = false\n[mcp]\nown = true\n",
         ),
-        policy_at(PROJECT, "version = 1\n[approval]\nmodes = [\"ask\"]\n"),
+        policy_at(
+            PROJECT,
+            "version = 1\n[permissions]\nhighest = \"read-only\"\n",
+        ),
     ];
     let trust = ProjectTrust {
         root: PathBuf::from("/code/app"),
@@ -143,7 +159,7 @@ fn explain_shows_every_setting_and_rule_with_its_source() {
                 "trusted (your answer)".to_owned(),
             ],
             [
-                "settings (approval = \"auto\")".to_owned(),
+                "settings (permissions = \"full-access\")".to_owned(),
                 "off until trusted: glave will ask once".to_owned(),
             ],
         ],

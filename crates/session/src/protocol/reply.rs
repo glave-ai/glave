@@ -10,7 +10,7 @@ use glave_ports::{Project, ProjectId, Standing};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    ApprovalMode, ConnectionInfo, CredentialInfo, DeviceCode, FileInfo, GoneFolder, Grouping,
+    ConnectionInfo, CredentialInfo, DeviceCode, FileInfo, GoneFolder, Grouping, Permissions,
     ModelInfo, PasskeySummary, ProjectFolder, ProviderInfo, ScheduleInfo, SignInLink, SignInWay,
     TaskInfo, Told, TrustAsk, WatchEnd,
 };
@@ -22,12 +22,16 @@ pub struct ServerInfo {
     pub version: String,
     /// The protocol versions spoken.
     pub protocols: Vec<String>,
-    /// How much this server asks before acting in a thread that chose no mode: `--approval` or
-    /// `approval` in `config.toml` (`specs/approvals.md`).
-    pub approval: ApprovalMode,
-    /// The modes a thread may choose (`approval` on `thread/start` and `turn/start`): those
-    /// the policy leaves, cautious first.
-    pub approvals: Vec<ApprovalMode>,
+    /// What the agent may do in a thread that, and whose project, chose no preset:
+    /// `--permissions` or `permissions` in `config.toml` (`specs/approvals.md`, "Permissions").
+    pub permissions: Permissions,
+    /// The presets a thread may choose (`permissions` on `thread/start` and `turn/start`):
+    /// those the policy leaves, the most cautious first.
+    pub presets: Vec<Permissions>,
+    /// Why Read-only and Workspace ask before every change and command here, in a sentence,
+    /// when they do: no sandbox can run on this computer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unsandboxed: Option<Told>,
     /// The server's id, where it signs browsers in: the same across restarts, and the one a
     /// browser's session must name before the browser presents it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -70,10 +74,9 @@ pub struct ThreadSummary {
     /// The title the person gave it, else the first line of their first message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
-    /// How much its turns ask before acting: the mode last chosen for it, else its project's,
-    /// else the server's; never auto where its project runs commands without the sandbox and
-    /// auto was chosen nowhere.
-    pub approval: ApprovalMode,
+    /// What the agent may do in its next turn: the preset last chosen for it, else its
+    /// project's, else the server's.
+    pub permissions: Permissions,
     /// What its project asks the person on this computer to trust, once the thread was opened
     /// or started: shown to them alone, until they answer it.
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -11,7 +11,7 @@ use glave_event::{
     At, Checkout, EventId, FolderSource, Header, Principal, ProjectFolderSet, RawEvent, Seq,
     ThreadId, encode,
 };
-use glave_harness::{ApprovalMode, ProjectFolders, Settings, Workspace};
+use glave_harness::{Permissions, ProjectFolders, Settings, Workspace};
 use glave_keys::{KeyFileRoot, KeySettings};
 use glave_ports::computer::{ComputerId, GitCredentials, WorkspaceInfo};
 use glave_ports::memories::Memory;
@@ -72,8 +72,8 @@ pub(crate) struct Setup {
     pub limits: TaskLimits,
     /// Models offered beside the settings' own.
     pub models: Vec<ModelInfo>,
-    /// The approval modes a thread may choose.
-    pub modes: Vec<ApprovalMode>,
+    /// The presets a thread may choose.
+    pub presets: Vec<Permissions>,
     pub memory: Option<Arc<dyn Memory>>,
     /// Where worktrees are kept; with none, a thread asking for one is refused.
     pub worktrees: Option<PathBuf>,
@@ -119,12 +119,12 @@ impl Setup {
             answers,
             gate: None,
             answering: Answering::Clients,
-            settings: Settings::new("test-model", "script"),
+            settings: full_access(),
             clock: ManualClock::ticking(1_791_001_000_000),
             seed: 1,
             limits: TaskLimits::default(),
             models: Vec::new(),
-            modes: vec![ApprovalMode::Ask, ApprovalMode::Auto],
+            presets: Permissions::ALL.to_vec(),
             memory: None,
             worktrees: None,
             providers: None,
@@ -146,11 +146,12 @@ impl Setup {
         }
     }
 
-    /// A server answering `answers` in ask mode, so commands ask, with `answering` to ask.
+    /// A server answering `answers` in Read-only, so changes and commands ask, with
+    /// `answering` to ask.
     pub(crate) fn asking(answers: Vec<Completion>, answering: Answering) -> Self {
         let mut setup = Self::new(answers);
         setup.answering = answering;
-        setup.settings.approval = ApprovalMode::Ask;
+        setup.settings.permissions = Permissions::ReadOnly;
         setup
     }
 
@@ -218,7 +219,7 @@ impl Setup {
             tasks: self.limits,
             memory: self.memory,
             models: self.models,
-            modes: self.modes,
+            presets: self.presets,
             providers: self.providers,
             git_hosts: self.hosts,
             connections: self.connections,
@@ -371,4 +372,12 @@ impl EventLog for Shared {
     ) -> impl Future<Output = Result<Option<glave_ports::ThreadView>, LogError>> + Send {
         self.0.rebuild_thread_view(scope, thread)
     }
+}
+
+/// Settings where nothing asks but the risky actions: Full access, since a test server's
+/// commands run without a sandbox.
+fn full_access() -> Settings {
+    let mut settings = Settings::new("test-model", "script");
+    settings.permissions = Permissions::FullAccess;
+    settings
 }

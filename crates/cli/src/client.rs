@@ -13,7 +13,7 @@ use std::time::Duration;
 use glave_event::{
     ApprovalRequested, Body, CallId, GoalReason, Outcome, PrincipalKind, ThreadId, decode,
 };
-use glave_harness::{ApprovalMode, Cancel, Goal, Question};
+use glave_harness::{Cancel, Goal, Permissions, Question};
 use glave_ports::Caller;
 use glave_session::client::{Remote, RemoteTurn};
 use glave_session::protocol::Meta;
@@ -92,10 +92,10 @@ pub(crate) struct Client<'a> {
     pub asks: bool,
     /// The MCP servers started here, if any.
     pub servers: Option<&'a Servers>,
-    /// The model and approval mode each turn chooses for the thread, when the person named
-    /// them for a server elsewhere: the server records a choice only when it changes.
+    /// The model and preset each turn chooses for the thread, when the person named them for a
+    /// server elsewhere: the server records a choice only when it changes.
     pub model: Option<String>,
-    pub approval: Option<ApprovalMode>,
+    pub permissions: Option<Permissions>,
 }
 
 impl Client<'_> {
@@ -113,7 +113,7 @@ impl Client<'_> {
                 background: false,
                 budget: None,
                 model: self.model.clone(),
-                approval: self.approval,
+                permissions: self.permissions,
                 effort: None,
                 meta: Meta::default(),
                 // With no one here, no one answers: what would ask is declined at once.

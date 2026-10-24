@@ -95,10 +95,6 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
         let value = if chosen.value { "on" } else { "off" };
         row(name, value.to_owned(), &chosen.from)
     };
-    let sandbox = choices
-        .sandbox
-        .value
-        .map_or("off", glave_ports::computer::SandboxLevel::name);
     let mut rows = vec![
         match &choices.model {
             Some(model) => row("model", model.value.clone(), &model.from),
@@ -114,11 +110,10 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
             &choices.judge.from,
         ),
         row(
-            "approval",
-            choices.approval.value.name().to_owned(),
-            &choices.approval.from,
+            "permissions",
+            permissions(choices),
+            &choices.permissions.from,
         ),
-        row("sandbox", sandbox.to_owned(), &choices.sandbox.from),
         switch("network", &choices.network),
         match &choices.mcp {
             Some(mcp) => row("mcp", format!("{:?}", mcp.value), &mcp.from),
@@ -169,6 +164,18 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
         rows.push(row("telemetry", telemetry.value.clone(), &telemetry.from));
     }
     rows
+}
+
+/// The preset, and what it comes to where no sandbox can run here.
+fn permissions(choices: &Choices) -> String {
+    let preset = choices.permissions.value;
+    match &choices.unsandboxed {
+        Some(why) if preset != glave_event::Permissions::FullAccess => format!(
+            "{}, but the sandbox cannot run here ({why}), so every change and command asks",
+            preset.name()
+        ),
+        _ => preset.name().to_owned(),
+    }
 }
 
 /// The models `[[models]]` offers besides the main one, and where that choice came from.

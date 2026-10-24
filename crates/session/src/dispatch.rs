@@ -8,7 +8,7 @@ use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
 use crate::credentials::NewCredential;
 use crate::lists::ListWatch;
-use crate::modes::Choice;
+use crate::choice::Choice;
 use crate::protocol::{ApiError, QueuedMessage, Reply, Request, ServerInfo, code};
 use crate::providers::NewProvider;
 use crate::schedule::NewSchedule;
@@ -112,8 +112,9 @@ where
                     name: "glave".to_owned(),
                     version: env!("CARGO_PKG_VERSION").to_owned(),
                     protocols: vec![crate::protocol::PROTOCOL.to_owned()],
-                    approval: self.inner.harness.defaults().approval,
-                    approvals: self.modes(),
+                    permissions: self.inner.harness.defaults().permissions,
+                    presets: self.presets(),
+                    unsandboxed: self.unsandboxed().map(crate::protocol::Told::from),
                     id: self.server_id(),
                     origin: self.inner.origin.as_ref().map(ToString::to_string),
                     here: self.passkeys_here(),
@@ -172,12 +173,12 @@ where
                 background,
                 computer: None,
                 model,
-                approval,
+                permissions,
                 effort,
             } => {
                 let choice = Choice {
                     model,
-                    approval,
+                    permissions,
                     effort,
                 };
                 self.start_thread(caller, project, worktree, background, &choice)
@@ -232,7 +233,7 @@ where
                 background: false,
                 budget,
                 model,
-                approval,
+                permissions,
                 effort,
                 unattended,
                 meta,
@@ -246,7 +247,7 @@ where
                     files: &files,
                     choice: Choice {
                         model,
-                        approval,
+                        permissions,
                         effort,
                     },
                     queue: true,
@@ -268,7 +269,7 @@ where
                 background: true,
                 budget,
                 model,
-                approval,
+                permissions,
                 effort,
                 // A task is answered by no one anyway.
                 unattended: _,
@@ -282,7 +283,7 @@ where
                 }
                 let choice = Choice {
                     model,
-                    approval,
+                    permissions,
                     effort,
                 };
                 let work = Work::Turn(prompt, choice);

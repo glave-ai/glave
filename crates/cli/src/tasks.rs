@@ -185,7 +185,7 @@ pub(crate) async fn background(args: &Args) -> anyhow::Result<ExitCode> {
         background: true,
         computer: None,
         model: args.model.clone(),
-        approval: args.approval,
+        permissions: args.permissions,
         effort: None,
     };
     let Reply::Thread { thread } = server.request(started).await? else {
@@ -207,7 +207,7 @@ pub(crate) async fn background(args: &Args) -> anyhow::Result<ExitCode> {
             budget: args.budget,
             meta: glave_session::protocol::Meta::default(),
             model: None,
-            approval: None,
+            permissions: None,
             effort: None,
             unattended: false,
             files: Vec::new(),

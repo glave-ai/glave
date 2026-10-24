@@ -51,7 +51,7 @@ impl Approver for Person {
 }
 
 pub(crate) fn judged() -> Settings {
-    let mut settings = settings();
+    let mut settings = in_the_sandbox();
     settings.judge = glave_ports::settings::Judge::Main;
     settings
 }
@@ -148,7 +148,7 @@ fn it_asks_every_time_even_in_auto_mode_and_runs_outside_once_allowed() {
             person.clone(),
             InMemoryLog::new(),
             1,
-            settings(),
+            in_the_sandbox(),
         );
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let turn = harness

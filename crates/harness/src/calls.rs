@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use glave_event::{
-    ApprovalDecided, ApprovalMode, ApprovalRequested, CallId, Lifted, Outcome, Principal,
+    ApprovalDecided, ApprovalRequested, CallId, Lifted, Outcome, Principal,
     ToolCallCompleted, Verdict,
 };
 use glave_ports::settings::Judge;
@@ -13,7 +13,7 @@ use glave_ports::{
     ToolSource,
 };
 
-use crate::approval::{ApprovalRequest, Approver, asks_for, no_one_there, sentence};
+use crate::approval::{ApprovalMode, ApprovalRequest, Approver, asks_for, no_one_there, sentence};
 use crate::builtins::BUILTINS;
 use crate::cancel::Cancel;
 use crate::children::Ran;
@@ -22,6 +22,7 @@ use crate::hooks::ToolHook;
 use crate::judge::{JudgeCase, Ruling, judge};
 use crate::question::{self, QuestionRequest};
 use crate::sandbox::{self, Asks};
+use crate::tools::Tool;
 use crate::turn::{Live, Step, TurnSummary, absorb, tally};
 use crate::waits::{Answered, verdict_of};
 
@@ -194,6 +195,11 @@ where
         if let Some(refused) = self.let_out_refused(thread, lifted, lifted, &summary, live) {
             return Ok(refused);
         }
+        // A command that stays in the thread's sandbox, which Read-only lets run.
+        let confined = index == BUILTINS
+            && name == Tool::Bash.name()
+            && lifted.is_none()
+            && self.workspace_for(thread).sandbox().is_some();
         let request = ApprovalRequest {
             thread: thread.id,
             call_id: call.call_id.clone(),
@@ -204,7 +210,11 @@ where
             caution: sandbox::with_outside(caution, lifted),
             outside_sandbox: outside,
         };
-        let needs = Needs { request, firm };
+        let needs = Needs {
+            request,
+            firm,
+            confined,
+        };
         let turn = &mut step.summary;
         if let Some(refused) = self.approve(thread, &needs, turn, cancel, live).await? {
             return Ok(refused);
@@ -366,7 +376,7 @@ where
         }
         // A caution asks even when the tool was allowed for the rest of the thread.
         let asks = cautioned
-            || (asks_for(self.approval_for(thread), request.effect)
+            || (asks_for(self.approval_for(thread), request.effect, needs.confined)
                 && !thread.allowed.contains(&request.tool));
         if !asks {
             return Ok(None);
@@ -624,6 +634,8 @@ fn settle(
 struct Needs {
     request: ApprovalRequest,
     firm: bool,
+    /// It is a command that runs in the thread's sandbox.
+    confined: bool,
 }
 
 /// What the judge made of a soft caution.

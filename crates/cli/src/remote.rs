@@ -56,10 +56,11 @@ pub(crate) async fn run(args: &Args, url: &str) -> anyhow::Result<ExitCode> {
     let Reply::Server(_) = elsewhere.request(Request::Discover {}).await? else {
         bail!("{url} is not a glave session server");
     };
-    if args.resume && args.goal.is_some() && (args.model.is_some() || args.approval.is_some()) {
+    if args.resume && args.goal.is_some() && (args.model.is_some() || args.permissions.is_some())
+    {
         bail!(
-            "--model and --approval choose for a new thread or a turn; a goal on a thread you \
-             continue keeps the thread's choice"
+            "--model and --permissions choose for a new thread or a turn; a goal on a thread \
+             you continue keeps the thread's choice"
         );
     }
     let worktree = args.worktree.then_some(true);
@@ -70,7 +71,7 @@ pub(crate) async fn run(args: &Args, url: &str) -> anyhow::Result<ExitCode> {
         args.resume,
         worktree,
         args.model.clone(),
-        args.approval,
+        args.permissions,
     )
     .await?;
     let input = Input::start();
@@ -82,7 +83,7 @@ pub(crate) async fn run(args: &Args, url: &str) -> anyhow::Result<ExitCode> {
         asks: std::io::stdin().is_terminal(),
         servers: None,
         model: args.model.clone(),
-        approval: args.approval,
+        permissions: args.permissions,
     };
     let mut printer = Printer::new("glave", format!("on {}", remote.url()));
     let code = if let Some(objective) = &args.goal {

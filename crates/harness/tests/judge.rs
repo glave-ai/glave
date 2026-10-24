@@ -3,7 +3,7 @@
 //! and in the cautious mode the judge is never consulted.
 
 use glave_event::{Body, Part, StopReason, Verdict};
-use glave_harness::{ApprovalMode, Cancel, NoOneToAsk, Settings};
+use glave_harness::{Cancel, NoOneToAsk, Permissions, Settings};
 use glave_ports::{InMemoryLog, Message};
 use serde_json::json;
 
@@ -172,7 +172,7 @@ fn in_the_cautious_mode_the_judge_is_never_consulted() {
             answer(Some("Waiting for you."), vec![], StopReason::EndTurn),
         ];
         let mut settings = judged();
-        settings.approval = ApprovalMode::Ask;
+        settings.permissions = Permissions::ReadOnly;
         let harness = harness_on(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
         harness
