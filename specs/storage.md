@@ -85,6 +85,7 @@ On Postgres, the database itself keeps each organization's rows apart as well, a
 | Data key | seals content | one per project per month, wrapped by the project key |
 
 - The data store holds only wrapped keys. The root is called only to unwrap an organization key; unwrapped keys are cached in memory, with a size cap.
+- **The root also derives** a value for a purpose, the same each time: HMAC-SHA-256 under the root key of a label of its own and the purpose (a KMS's own MAC, for a KMS root). It says nothing of the root and lasts as long as the root does, for what must outlive a store that starts over: today the person's passkey handle (`session.md`, "Signing in"). The same root key kept somewhere else (systemd credentials or the TPM, #22) derives the same value; a new root key, another.
 - **`key_id`** names the data key that sealed a payload: `v1/<project>/<YYYY-MM>/<n>`. Data keys per thread can come later, under the same field, without re-sealing anything.
 
 ## Sealed format

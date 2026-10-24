@@ -4,8 +4,9 @@ import { ApiError, type PasskeySummary } from '@glave/client';
 
 import { type Authenticator, made, used } from '../lib/passkeys';
 import { type PlatformAuthenticator, platformAuthenticator } from '../lib/platform';
+import { signalUnknown, unknownPasskey } from '../lib/signals';
 import { unreached } from '../lib/text';
-import { SessionService } from './session.service';
+import { type Began, PASSKEY_SIGNALS, SessionService } from './session.service';
 
 /** The browser's authenticator, where it has one. */
 export const AUTHENTICATOR = new InjectionToken<Authenticator | null>('AUTHENTICATOR', {
@@ -52,12 +53,14 @@ export function passkeyRefused(): string {
  * first with a setup link and signing in with one, which begin the browser's session; then
  * the person's passkeys, adding one on this device, and removing one, which signs out the
  * browsers it signed in. Each says `null` when it did, else why not, in a sentence: the
- * server's when it refused.
+ * server's when it refused, after telling the browser's passkey manager of a passkey the
+ * server named as one it does not know.
  */
 @Service()
 export class PasskeysService {
   private readonly session = inject(SessionService);
   private readonly authenticator = inject(AUTHENTICATOR);
+  private readonly signals = inject(PASSKEY_SIGNALS);
   private readonly listed = signal<readonly PasskeySummary[]>([]);
 
   /** The person's passkeys, oldest first, as the server last listed them. */
@@ -128,7 +131,7 @@ export class PasskeysService {
   }
 
   /** Keeps the session a passkey began, when the server that served the app began it. */
-  private begun(began: { readonly session: string; readonly server: string }): string | null {
+  private begun(began: Began): string | null {
     return this.session.begin(began) ? null : passkeyRefused();
   }
 
@@ -137,7 +140,14 @@ export class PasskeysService {
     try {
       return await ask();
     } catch (error: unknown) {
-      return error instanceof ApiError ? error.message : unreached();
+      if (!(error instanceof ApiError)) {
+        return unreached();
+      }
+      const unknown = unknownPasskey(error.data);
+      if (unknown !== null) {
+        await signalUnknown(this.signals, unknown);
+      }
+      return error.message;
     }
   }
 }
