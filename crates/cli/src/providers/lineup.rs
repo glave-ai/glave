@@ -136,9 +136,11 @@ impl Lineup {
                 cards.extend(cards_for(&target.model, own, catalogs));
                 providers.push(service);
             }
-            let id = group.first().map_or("", |target| target.model.as_str());
+            let first = group.first();
+            let id = first.map_or("", |target| target.model.as_str());
             let entry = self.entries.iter().find(|entry| entry.id.trim() == id);
-            describe::info(id, &cards, providers, entry.and_then(|e| e.name.as_deref()))
+            let name = entry.and_then(|e| e.name.as_deref());
+            describe::info(id, &cards, providers, name, first.copied())
         };
         let models = Models {
             default: Some((endpoint.model.clone(), endpoint.provider.provider.clone())),

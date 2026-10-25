@@ -8,9 +8,10 @@ import { ModelsService } from '../../services/models.service';
  * How much the next turn's model reasons, quiet in the composer's status line beside the model:
  * shown only when that model offers a choice, with exactly the levels its provider lists, in
  * their names as people read them (`Extra high`, `Off`). The person's pick, else the thread's
- * own (`current`), else the model's default. `model` is the model the next turn goes to, `null`
- * for the server's default. `value` is the person's pick, `null` until they make one; it goes
- * with the next `thread/start` or `turn/start` when the model offers it.
+ * own (`current`), else the level the server says it sends unasked, else `Default`: none is
+ * sent, and the model reasons as its maker set it. `model` is the model the next turn goes to,
+ * `null` for the server's default. `value` is the person's pick, `null` until they make one; it
+ * goes with the next `thread/start` or `turn/start` when the model offers it.
  */
 @Component({
   selector: 'app-effort-picker',
@@ -29,6 +30,8 @@ export class EffortPickerComponent {
 
   protected readonly copy = {
     label: $localize`:@@effortPicker.label:Reasoning`,
+    // The button when no level is sent: the model reasons as its maker set it.
+    unasked: $localize`:@@effortPicker.unasked:Default`,
   } as const;
   private readonly models = inject(ModelsService);
   private readonly info = computed(() => {

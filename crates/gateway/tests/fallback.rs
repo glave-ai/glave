@@ -2,7 +2,7 @@
 //! failure that may pass moves to the next target and any other is final; and a conversation
 //! holding opaque reasoning stays with the model that produced it, or is stripped, on record.
 
-use glave_event::{BlobRef, Part, Sha256};
+use glave_event::{BlobRef, Part, Reasoning, Sha256};
 use glave_gateway::{Capabilities, Gateway, Routes, Target};
 use glave_ports::{Failure, Message, ModelProvider, ModelRequest, ProviderError, Purpose};
 
@@ -212,17 +212,31 @@ fn a_target_that_takes_no_reasoning_back_is_not_sticky() {
 }
 
 #[test]
-fn a_reasoning_level_goes_only_to_a_target_that_offers_it() {
+fn each_call_of_any_purpose_is_sent_its_target_s_level_and_the_answer_records_it() {
     let fake = Fake::new("p");
-    let mut asked = request(Purpose::Main);
-    asked.effort = Some("high".into());
-    let offers = fake
-        .target("reasons")
-        .with_efforts(vec!["high".into(), "low".into()]);
-    serve(vec![offers], &asked).unwrap();
-    serve(vec![fake.target("unknown")], &asked).unwrap();
-    let only_low = fake.target("low-only").with_efforts(vec!["low".into()]);
-    serve(vec![only_low], &asked).unwrap();
+    let reasoning = Reasoning {
+        efforts: vec!["high".into(), "low".into()],
+        default: Some("low".into()),
+        mandatory: false,
+    };
+    let reasons = || fake.target("reasons").with_reasoning(&reasoning);
+    let mut recorded = Vec::new();
+    for (target, purpose, effort) in [
+        (reasons(), Purpose::Main, Some("high")),
+        (reasons(), Purpose::Title, None),
+        (fake.target("plain"), Purpose::Main, Some("high")),
+    ] {
+        let mut asked = request(purpose);
+        asked.effort = effort.map(str::to_owned);
+        let gateway = Gateway::new(Routes::new(vec![target]).unwrap());
+        let answer = block_on!(gateway.complete(&asked, &mut |_| {})).unwrap();
+        recorded.push(answer.served.and_then(|served| served.effort));
+    }
     let sent: Vec<Option<String>> = fake.seen().into_iter().map(|r| r.effort).collect();
-    assert_eq!(sent, [Some("high".to_owned()), None, None]);
+    let expected = [Some("high".to_owned()), Some("low".to_owned()), None];
+    assert_eq!(
+        sent, expected,
+        "the pick, the default, and none where none is offered"
+    );
+    assert_eq!(recorded, expected, "each answer records the level sent");
 }

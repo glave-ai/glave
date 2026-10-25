@@ -36,7 +36,10 @@ pub struct ModelInfo {
     /// What its tokens cost at the first of its providers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub price: Option<TokenPrice>,
-    /// How it reasons, when it can: the levels of effort it offers, in its provider's names.
+    /// How it reasons, when it can: the levels of effort it offers, in its provider's names,
+    /// and as `default` the level its first provider is sent when a thread chooses none, the
+    /// one that provider's catalog says the model uses unasked. No `default` when glave sends
+    /// none, and the model reasons as its maker set it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<Reasoning>,
 }

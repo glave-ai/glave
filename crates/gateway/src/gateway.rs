@@ -94,6 +94,7 @@ impl Gateway {
                     }
                 };
             let (sent, stripped) = prepare(request, target, &needs);
+            let effort = sent.effort.clone();
             let span = telemetry::model_call(request.purpose.id(), &target.name);
             let sent = target.handle.send(&sent, on_delta).instrument(span.clone());
             let sent = sent.await.map(|mut completion| {
@@ -113,6 +114,7 @@ impl Gateway {
                         route: request.purpose.id().to_owned(),
                         target: target.name.clone(),
                         service: target.service.clone(),
+                        effort,
                         reasoning_stripped: stripped,
                     });
                     return Ok(completion);

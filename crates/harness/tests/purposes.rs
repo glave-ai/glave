@@ -31,6 +31,7 @@ fn served(route: &str, target: &str) -> Served {
         route: route.into(),
         target: target.into(),
         service: None,
+        effort: None,
         reasoning_stripped: route == "summary",
     }
 }

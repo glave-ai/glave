@@ -67,6 +67,13 @@ describe('EffortPickerComponent', () => {
     fixture.componentRef.setInput('current', 'none');
     await fixture.whenStable();
     expect(trigger(root)?.textContent).not.toContain('Off');
+    // No level is sent, so the model reasons as its maker set it.
+    expect(trigger(root)?.textContent).toContain('Default');
+    // A model that does not offer the thread's level is sent its default, which shows.
+    fixture.componentRef.setInput('model', 'openai/gpt-6-luna');
+    fixture.componentRef.setInput('current', 'max');
+    await fixture.whenStable();
+    expect(trigger(root)?.textContent).toContain('Medium');
     fixture.componentRef.setInput('model', 'plain');
     await fixture.whenStable();
     expect(trigger(root)).toBeNull();
