@@ -12,6 +12,7 @@ import {
   TEST_SERVER,
   byTestId,
   expectAccessible,
+  hold,
   homeOf,
   served,
   signInCode,
@@ -81,17 +82,7 @@ test('a service that asks for a sign-in is connected in a new tab, then disconne
   }
 
   // The service's own sign-in waits until the test lets it go, so the row is seen waiting.
-  let letGo: () => void = () => undefined;
-  const held = new Promise<void>((resolve) => {
-    letGo = resolve;
-  });
-  await context.route(
-    (url) => url.pathname === '/authorize',
-    async (route) => {
-      await held;
-      await route.continue();
-    },
-  );
+  const signIn = await hold(context, (url) => url.pathname === '/authorize');
   const opened = page.waitForEvent('popup');
   await byTestId(page, 'connection-action').click();
   const tab = await opened;
@@ -104,7 +95,7 @@ test('a service that asks for a sign-in is connected in a new tab, then disconne
     await expectAccessible(page);
   }
 
-  letGo();
+  signIn.letGo();
   await expect(tab.locator('body')).toContainText('Signed in to Tracker.');
   const ready = byTestId(page, 'connections-ready');
   await expect(ready.getByTestId('connection')).toContainText('Connected');
