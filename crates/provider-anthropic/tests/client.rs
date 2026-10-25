@@ -124,6 +124,54 @@ mod over_http {
     }
 
     #[test]
+    fn an_effort_level_reaches_anthropic_bedrock_and_vertex_with_adaptive_thinking() {
+        let server = FakeServer::start(vec![Reply::text("ok"); 3]).unwrap();
+        let route = |base: String, api| {
+            Anthropic::new(Config {
+                base_url: base,
+                api,
+                auth: glave_ports::auth::Auth::bearer(None),
+                provider: "anthropic".into(),
+                idle_timeout: IDLE_TIMEOUT,
+            })
+            .unwrap()
+        };
+        let routes = [
+            (
+                route(server.url().to_owned(), Api::Messages),
+                "/v1/messages",
+            ),
+            (
+                route(format!("{}/anthropic", server.url()), Api::Messages),
+                "/anthropic/v1/messages",
+            ),
+            (
+                route(
+                    format!("{}/v1/projects/p/locations/global", server.url()),
+                    Api::Vertex,
+                ),
+                "/v1/projects/p/locations/global/publishers/anthropic/models/fake-model:streamRawPredict",
+            ),
+        ];
+        let mut asked = request();
+        asked.effort = Some("high".into());
+        for (provider, _) in &routes {
+            block_on!(provider.complete(&asked, &mut |_| {})).unwrap();
+        }
+        let received = server.received();
+        for (sent, (_, path)) in received.iter().zip(&routes) {
+            assert_eq!(sent.path, *path);
+            assert_eq!(
+                sent.body["output_config"],
+                json!({"effort": "high"}),
+                "{path}"
+            );
+            assert_eq!(sent.body["thinking"], json!({"type": "adaptive"}), "{path}");
+        }
+        assert_eq!(received.len(), 3);
+    }
+
+    #[test]
     fn no_key_means_no_key_header() {
         let server = FakeServer::start(vec![Reply::text("ok")]).unwrap();
         let (result, _) = ask(&provider(server.url(), None));

@@ -2,9 +2,10 @@
 //! the OpenAI-compatible one anywhere else, and at a cloud that serves both, each model by the
 //! API its family speaks. The harness sees one provider either way.
 
+use glave_event::Reasoning;
 use glave_ports::auth::KeyHeader;
 use glave_ports::{Completion, Delta, ModelProvider, ModelRequest, ProviderError};
-use glave_provider_anthropic::Anthropic;
+use glave_provider_anthropic::{Anthropic, EFFORTS};
 use glave_provider_openai::{Config, OpenAiCompatible};
 
 use crate::config::Endpoint;
@@ -109,6 +110,21 @@ pub(crate) fn speaks_anthropic(config: &Config) -> bool {
     config.host().as_deref() == Some(ANTHROPIC_HOST)
 }
 
+/// How Claude reasons through `endpoint`'s Messages API, when calls for `model` go there and
+/// nothing lists its levels, as at a cloud contract: Anthropic's documented levels, none sent
+/// unasked, so a level the model does not take is refused by the API with its own message.
+pub(crate) fn documented_reasoning(endpoint: &Endpoint, model: &str) -> Option<Reasoning> {
+    let messages = match &endpoint.claude {
+        Some(claude) => claude.models.takes(model),
+        None => speaks_anthropic(&endpoint.provider),
+    };
+    messages.then(|| Reasoning {
+        efforts: EFFORTS.map(str::to_owned).to_vec(),
+        default: None,
+        mandatory: false,
+    })
+}
+
 impl ModelProvider for Model {
     async fn complete(
         &self,
@@ -171,6 +187,45 @@ mod tests {
             model("http://localhost:11434/v1"),
             Model::OpenAi(_)
         ));
+    }
+
+    #[test]
+    fn claude_by_the_messages_api_with_no_listing_is_offered_anthropic_s_documented_levels() {
+        let endpoint = |url: &str, models: Option<Family>| Endpoint {
+            local: false,
+            provider: Config::for_url(url, None).unwrap(),
+            claude: models.map(|models| Claude {
+                config: glave_provider_anthropic::Config::new(None),
+                models,
+            }),
+            model: "m".into(),
+            gateway: None,
+            at: "[provider]".into(),
+            key_from: "GLAVE_API_KEY",
+        };
+        let levels = |endpoint: &Endpoint, model: &str| {
+            documented_reasoning(endpoint, model).map(|reasoning| reasoning.efforts)
+        };
+        let documented = Some(EFFORTS.map(str::to_owned).to_vec());
+        let own = endpoint("https://api.anthropic.com", None);
+        assert_eq!(levels(&own, "claude-opus-5-5"), documented);
+        let bedrock = endpoint(
+            "https://bedrock-mantle.us-east-1.api.aws/v1",
+            Some(Family::BedrockClaude),
+        );
+        assert_eq!(levels(&bedrock, "us.anthropic.claude-opus-5-5"), documented);
+        assert_eq!(
+            levels(&bedrock, "openai.gpt-oss-120b-1:0"),
+            None,
+            "Chat Completions"
+        );
+        let vertex = endpoint(
+            "https://aiplatform.googleapis.com/v1",
+            Some(Family::VertexClaude),
+        );
+        assert_eq!(levels(&vertex, "claude-haiku-5-5"), documented);
+        let router = endpoint("https://openrouter.ai/api/v1", None);
+        assert_eq!(levels(&router, "anthropic/claude-haiku-5.5"), None);
     }
 
     #[test]

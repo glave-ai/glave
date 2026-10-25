@@ -77,10 +77,9 @@ pub struct Target {
     /// The model it serves, by a name it shares with targets at other providers that serve the
     /// same one: a thread that chooses any of them is sent to them all, tried in order.
     pub same_model: Option<String>,
-    /// The reasoning levels it offers, in its provider's names.
-    efforts: Vec<String>,
-    /// The one of `efforts` its model uses when asked for none, as its service's catalog says.
-    default_effort: Option<String>,
+    /// How it reasons, as its own service says: the levels it offers, in its provider's names,
+    /// and the one of them its model uses when asked for none.
+    reasoning: Option<Reasoning>,
     pub(crate) handle: Arc<dyn Model>,
 }
 
@@ -101,8 +100,7 @@ impl Target {
             price: None,
             service: None,
             same_model: None,
-            efforts: Vec::new(),
-            default_effort: None,
+            reasoning: None,
             handle,
         }
     }
@@ -132,16 +130,24 @@ impl Target {
         self
     }
 
-    /// The target, reasoning as its own service's catalog says: offering its levels, its
-    /// model using its default when asked for none. A default it does not offer is not known.
+    /// The target, reasoning as its own service says, in its catalog or, where it lists
+    /// nothing, its API's documentation: offering its levels, its model using its default when
+    /// asked for none. A default it does not offer is not known.
     #[must_use]
     pub fn with_reasoning(mut self, reasoning: &Reasoning) -> Self {
-        self.efforts.clone_from(&reasoning.efforts);
-        self.default_effort = reasoning
+        let mut reasoning = reasoning.clone();
+        reasoning.default = reasoning
             .default
-            .clone()
-            .filter(|default| self.efforts.contains(default));
+            .take()
+            .filter(|default| reasoning.efforts.contains(default));
+        self.reasoning = Some(reasoning);
         self
+    }
+
+    /// How it reasons, as [`Target::with_reasoning`] said: what a client is told it offers.
+    /// None when nothing said.
+    pub fn reasoning(&self) -> Option<&Reasoning> {
+        self.reasoning.as_ref()
     }
 
     /// The reasoning level a request asking for `asked` is sent to this target with: that
@@ -149,9 +155,10 @@ impl Target {
     /// sent explicitly rather than left to whichever provider serves it; none when neither is
     /// known, which leaves it to the model's maker.
     pub fn effort_for<'a>(&'a self, asked: Option<&'a str>) -> Option<&'a str> {
+        let reasoning = self.reasoning.as_ref()?;
         asked
-            .filter(|asked| self.efforts.iter().any(|offered| offered == asked))
-            .or(self.default_effort.as_deref())
+            .filter(|asked| reasoning.efforts.iter().any(|offered| offered == asked))
+            .or(reasoning.default.as_deref())
     }
 
     /// The target at the service people know as `service`.
@@ -179,8 +186,7 @@ impl fmt::Debug for Target {
             .field("price", &self.price)
             .field("service", &self.service)
             .field("same_model", &self.same_model)
-            .field("efforts", &self.efforts)
-            .field("default_effort", &self.default_effort)
+            .field("reasoning", &self.reasoning)
             .finish_non_exhaustive()
     }
 }

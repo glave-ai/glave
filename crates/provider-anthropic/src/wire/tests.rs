@@ -111,7 +111,14 @@ fn a_request_has_the_messages_shape() {
 fn defaults_fill_what_the_api_requires_and_leave_out_the_rest() {
     let body = body(&request(vec![user("hi")]));
     assert_eq!(body["max_tokens"], DEFAULT_MAX_TOKENS);
-    for absent in ["system", "tools", "tool_choice", "thinking", "temperature"] {
+    for absent in [
+        "system",
+        "tools",
+        "tool_choice",
+        "thinking",
+        "output_config",
+        "temperature",
+    ] {
         assert!(body.get(absent).is_none(), "{absent} is not sent");
     }
     assert_eq!(body["cache_control"], json!({"type": "ephemeral"}));
@@ -206,6 +213,28 @@ fn thinking_from_this_provider_and_model_goes_back_first_and_unchanged() {
             {"type": "tool_use", "id": "call_1", "name": "bash", "input": {}}
         ])
     );
+}
+
+#[test]
+fn an_effort_level_asks_for_adaptive_thinking_and_the_turn_s_thinking_still_goes_back() {
+    let mut request = request(vec![
+        user("fix it"),
+        Message::Assistant {
+            parts: vec![thinking("anthropic", "claude-haiku-5-5", SIGNATURE, None)],
+            tool_calls: vec![call("call_1", Arguments::Json(Map::new()))],
+        },
+        result("call_1", "fixed", false),
+    ]);
+    let unasked = body(&request);
+    request.effort = Some("xhigh".into());
+    let mut asked = body(&request);
+    let fields = asked.as_object_mut().unwrap();
+    assert_eq!(fields.remove("thinking"), Some(json!({"type": "adaptive"})));
+    assert_eq!(
+        fields.remove("output_config"),
+        Some(json!({"effort": "xhigh"}))
+    );
+    assert_eq!(asked, unasked, "the rest, thinking sent back, is unchanged");
 }
 
 #[test]
