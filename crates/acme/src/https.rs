@@ -138,7 +138,7 @@ impl<L: EventLog> Https<L> {
     }
 
     /// Orders a certificate now, keeps it, and serves it from the next handshake on, within
-    /// [`ORDERED_WITHIN`].
+    /// 10 minutes.
     pub async fn renew(&self) -> Result<Issued, HttpsError> {
         tokio::time::timeout(ORDERED_WITHIN, self.ordered())
             .await

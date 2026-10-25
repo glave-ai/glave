@@ -74,7 +74,8 @@ impl Remote {
     }
 
     /// Answers `request`, which must not be one that streams (`turn/start`, `goal/start`),
-    /// within the time its kind may take ([`answers_within`]).
+    /// within the time its kind may take: 2 minutes, or 15 for one that waits on a model,
+    /// another service, a computer or a file.
     pub async fn request(&self, request: &Request) -> Result<Reply, ApiError> {
         let asked = async {
             match &self.0 {
@@ -89,7 +90,7 @@ impl Remote {
     }
 
     /// Starts `request` (`turn/start` or `goal/start`) and follows it, once the server has
-    /// started it within [`SLOW_ANSWERS_WITHIN`].
+    /// started it within 15 minutes.
     pub async fn start(&self, request: &Request) -> Result<RemoteTurn, ApiError> {
         let started = async {
             Ok(RemoteTurn(match &self.0 {
