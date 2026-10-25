@@ -124,8 +124,7 @@
       type="submit"
       data-testid="new-project-create"
       [attr.form]="formId"
-      [attr.aria-disabled]="createBusy()"
-      [disabled]="incomplete()"
+      [attr.aria-disabled]="createUnavailable()"
     >
       {{ createLabel() }}
     </button>
