@@ -1,16 +1,22 @@
 //! `cargo xtask waits`: every wait has a limit, sized to what it waits for (#710,
 //! `specs/invariants.md`, 20). In the non-test sources under `crates/` and `xtask/`, a call
-//! that waits for something to end or arrive (a process, a thread, a channel, an async lock, a
-//! notification, a watched value, a semaphore's permit) has its limit on the same line
-//! (`timeout(`), or is listed in [`BOUNDED`] with what bounds it instead: a limit set around
-//! it elsewhere, a stop or a close that always comes, or a person, the limit of a wait for
-//! them, who can always cancel it. A new wait fails the check until it has one or the other,
-//! and an entry that no longer matches anything fails it too, so the list stays true.
+//! that waits for something to end or arrive (a process, a thread, a task set, a channel, an
+//! async lock, a notification, a watched value, a semaphore's permit) has its limit on the
+//! same line (`timeout(` in its code, not a comment or a string), or is listed in
+//! [`bounded::BOUNDED`] with what bounds it instead: a limit set around it elsewhere, a stop
+//! or a close that always comes, the work it guards, or a person, the limit of a wait for
+//! them, who can always cancel it. Each entry says how many lines of its file it stands for,
+//! so a new wait fails the check until it has a limit or a reason, and an entry that matches
+//! fewer lines than it says fails it too, so the list stays true.
 //!
-//! Sockets, pipes and calls across the network cannot be told from a line, so their limits
-//! are kept by the tests the invariant names.
+//! What a line cannot show is not seen: a task's or a oneshot's handle awaited by name, and
+//! sockets, pipes and calls across the network. Their limits are kept by the tests the
+//! invariant names.
+
+mod bounded;
 
 use crate::sources;
+use bounded::BOUNDED;
 
 /// Where waits are looked for.
 const FOLDERS: &[&str] = &["crates", "xtask"];
@@ -20,10 +26,12 @@ const WAITS: &[(&str, &str)] = &[
     (".wait()", "a process's or a thread's end"),
     (".wait_with_output()", "a process's end"),
     (".join()", "a thread's end"),
+    (".join_next().await", "a task's end"),
     (".recv()", "a channel's next message"),
     (".lock().await", "an async lock"),
     (".notified()", "a notification"),
     (".changed()", "a watched value's change"),
+    (".wait_for(", "a watched value's change"),
     (".acquire().await", "a semaphore's permit"),
     (".acquire_owned().await", "a semaphore's permit"),
 ];
@@ -39,250 +47,40 @@ const XTASK_WAITS: &[(&str, &str)] = &[
 /// What says a wait's limit is on its line.
 const LIMITED: &str = "timeout(";
 
-/// The waits whose limit is not on their line: the file, what its line says, and what bounds
-/// the wait. One entry may stand for several lines of its file that say the same.
-const BOUNDED: &[(&str, &str, &str)] = &[
-    // A person is the limit: glave waits for them, and they can always stop it.
-    (
-        "crates/cli/src/connections.rs",
-        "_ = interrupts.recv() => bail!(\"stopped\"),",
-        "the person typing a git host's token, who stops it with Ctrl-C: this arm",
-    ),
-    (
-        "crates/cli/src/input.rs",
-        "self.lines.lock().await.recv().await",
-        "the person's next line at the terminal; Ctrl-C stops the wait",
-    ),
-    (
-        "crates/cli/src/input.rs",
-        "interrupts.recv().await",
-        "Ctrl-C itself, from the person at the terminal",
-    ),
-    (
-        "crates/session/src/turn.rs",
-        "if done.changed().await.is_err() {",
-        "a turn stopped at an approval or a question goes on once the person answers; \
-         cancelling the turn ends it",
-    ),
-    (
-        "crates/session/src/held.rs",
-        "if done.changed().await.is_err() {",
-        "work on a thread ending: a turn, whose model call has its idle limit, each tool its \
-         own and each wait the person; cancelling it ends it",
-    ),
-    // A life that ends when it is stopped or closed: a server's, a connection's, a watch's.
-    (
-        "crates/cli/src/server/serve.rs",
-        "_ = terminate.recv() => break None,",
-        "the person's server serves until told to stop: SIGTERM, which ends it",
-    ),
-    (
-        "crates/cli/src/server/serve.rs",
-        "_ = interrupt.recv() => break None,",
-        "the person's server serves until told to stop: Ctrl-C, which ends it",
-    ),
-    (
-        "crates/computer/src/remote.rs",
-        "line = queued.recv() => line,",
-        "the connection's writer, until it closes or stops (the arm beside it); each call on it \
-         waits within its own deadline",
-    ),
-    (
-        "crates/computer/src/remote.rs",
-        "() = shared.stop.notified() => None,",
-        "the stop of the connection's writer, which runs for as long as the connection",
-    ),
-    (
-        "crates/computer/src/serve.rs",
-        "while let Some(mut line) = queued.recv().await {",
-        "the connection's writer, which ends once its requests have and the queue closes",
-    ),
-    (
-        "crates/session/src/client/lines.rs",
-        "while let Some(mut line) = queued.recv().await {",
-        "the connection's writer, which ends when the connection drops",
-    ),
-    (
-        "crates/session/src/rpc.rs",
-        "while let Some(line) = queued.recv().await {",
-        "the connection's writer, which ends when the connection does",
-    ),
-    (
-        "crates/session/src/client/lines.rs",
-        "Some(item) = self.items.recv() => item,",
-        "a turn followed on this computer's socket: a turn waiting for the person sends \
-         nothing, and a server that goes closes the socket, which ends it",
-    ),
-    (
-        "crates/session/src/rpc/watches.rs",
-        "self.end.notified().await;",
-        "a watch's life: it ends when its client unwatches or its connection closes",
-    ),
-    (
-        "crates/session/src/lists.rs",
-        "self.items.recv().await",
-        "a watch of a list, followed until its client drops it",
-    ),
-    (
-        "crates/session/src/lists.rs",
-        "let behind = match changes.recv().await {",
-        "a list's changes, heard until its watch is dropped or the server stops",
-    ),
-    (
-        "crates/session/src/watch.rs",
-        "self.notes.recv().await",
-        "a thread's notes, heard until it is unwatched or its connection closes",
-    ),
-    (
-        "crates/memory/src/client.rs",
-        "while let Some(ledger) = asked.recv().await {",
-        "the tidy-up queue, until memory is dropped; each tidy-up is a model call within the \
-         provider's limits",
-    ),
-    // A limit around it, set elsewhere.
-    (
-        "crates/computer/src/local/background.rs",
-        "status = child.wait() => break status.map_or(Ending::Signalled, exited),",
-        "a command in the background, until a stop, its time limit or its idle limit, the arms \
-         beside it",
-    ),
-    (
-        "crates/computer/src/local/background.rs",
-        "() = shared.stop.notified() => {",
-        "the stop of a command in the background, whose time and idle limits are the arms \
-         beside it",
-    ),
-    (
-        "crates/computer/src/remote.rs",
-        "Some(text) = chunks.recv() => output.write(&text).await,",
-        "a running command's output, beside the timer of its call's deadline",
-    ),
-    (
-        "crates/computer/src/remote.rs",
-        "Some((id, ask)) = asks.recv() => self.give(id, &ask, &hosts, credentials).await,",
-        "a running command's credential requests, beside the timer of its call's deadline",
-    ),
-    (
-        "crates/process/src/child.rs",
-        "let status = self.inner.wait().await?;",
-        "Child::wait, which every caller bounds: a command's time limit, a stop or a cancel, \
-         each checked here where it waits",
-    ),
-    (
-        "crates/process/src/child.rs",
-        "if self.inner.wait().await.is_ok() {",
-        "Child::gone, only ever awaited within GRACE in Child::stop",
-    ),
-    (
-        "crates/process/src/program.rs",
-        "child.wait_with_output().await",
-        "inside Program::output_with's run, which has the caller's limit",
-    ),
-    (
-        "crates/process/src/within.rs",
-        "let _ = child.wait();",
-        "reaps a program just killed, which has ended",
-    ),
-    (
-        "crates/process/src/within.rs",
-        "reading.join()",
-        "the readers of a program's output, whose pipes close once it has ended or been \
-         killed at its limit",
-    ),
-    (
-        "crates/computer/src/worker/kubernetes.rs",
-        "let _ = process.join().await;",
-        "the end of the copy into a worker, within COPIED_WITHIN",
-    ),
-    (
-        "crates/computer/src/worker.rs",
-        "let mut done = worker.set_up.lock().await;",
-        "held while the worker's setup runs, each command within SETUP_TIMEOUT_SECS",
-    ),
-    (
-        "crates/computer/src/worker/reconnect.rs",
-        "let mut failed = self.failed.lock().await;",
-        "held while the connection to a worker is opened again, within the worker's START_WAIT \
-         and the remote computer's deadlines",
-    ),
-    (
-        "crates/cli/src/reread.rs",
-        "let mut seen = self.seen.lock().await;",
-        "held while the person's settings are read again from this computer's disk",
-    ),
-    (
-        "crates/session/src/providers.rs",
-        "let _changing = self.inner.changing_models.lock().await;",
-        "held while a provider is connected, refreshed or removed, its models listed within \
-         the check's limit",
-    ),
-    (
-        "crates/session/src/reread.rs",
-        "let _changing = self.inner.changing_models.lock().await;",
-        "held while the models offered are set again, from settings already read",
-    ),
-    (
-        "crates/cli/src/connected.rs",
-        "let _asker = askers.acquire().await.ok()?;",
-        "a permit held only for the ask beside it, within ASKING",
-    ),
-    (
-        "crates/eval/src/judging/model.rs",
-        "let _permit = gate.acquire().await;",
-        "a permit held for one judge call, within the provider's limits",
-    ),
-    (
-        "crates/eval/src/suite.rs",
-        "let _permit = permits.acquire_owned().await;",
-        "a permit held for one attempt, within its task's time limit",
-    ),
-    (
-        "xtask/src/cmd.rs",
-        "Ok::<_, std::io::Error>((child.wait().await?, output))",
-        "a query within QUERY_WITHIN; a step (a build, the tests, an eval) is the work asked \
-         for, stopped by Ctrl-C at the terminal and by the job's time limit in CI",
-    ),
-    // Test doubles compiled outside tests, behind a feature tests turn on.
-    (
-        "crates/provider-openai/src/fake.rs",
-        "let _ = thread.join();",
-        "the fake server's thread, which its drop has just told to stop",
-    ),
-    (
-        "crates/provider-anthropic/src/fake.rs",
-        "let _ = thread.join();",
-        "the fake server's thread, which its drop has just told to stop",
-    ),
-];
-
 /// Fails on a wait with no limit on its line that [`BOUNDED`] does not list, and on an entry
-/// of it that matches nothing.
+/// of it that stands for more lines than are there.
 pub(crate) fn check() -> Result<(), String> {
     let read = sources::read(FOLDERS)?;
-    let mut used = vec![false; BOUNDED.len()];
+    let mut matched = vec![0_usize; BOUNDED.len()];
     let mut problems = Vec::new();
     let mut waits = 0_usize;
     for (path, text) in &read {
-        for (n, what) in unbounded(path, text) {
+        for (n, found) in unbounded(path, text) {
             waits += 1;
-            match listed(path, &what.line) {
+            match listed(path, &found.line) {
                 Some(entry) => {
-                    if let Some(used) = used.get_mut(entry) {
-                        *used = true;
+                    if let Some(count) = matched.get_mut(entry) {
+                        *count += 1;
                     }
                 }
                 None => problems.push(format!(
                     "{path}:{n}: waits for {} with no limit: `{}`",
-                    what.waits_for, what.line
+                    found.waits_for, found.line
                 )),
             }
         }
     }
-    for ((path, line, _), used) in BOUNDED.iter().zip(&used) {
-        if !*used {
-            problems.push(format!(
-                "{path}: no wait says `{line}` any more; remove its entry from xtask/src/waits.rs"
-            ));
+    for ((path, line, lines, _), matched) in BOUNDED.iter().zip(&matched) {
+        match matched.cmp(lines) {
+            std::cmp::Ordering::Equal => {}
+            std::cmp::Ordering::Less => problems.push(format!(
+                "{path}: {matched} wait(s) say `{line}`, and its entry stands for {lines}; \
+                 correct it, or remove it from xtask/src/waits/bounded.rs"
+            )),
+            std::cmp::Ordering::Greater => problems.push(format!(
+                "{path}: {matched} waits say `{line}`, and its entry stands for {lines}: give \
+                 the new one a limit, or count it there if the same reason bounds it"
+            )),
         }
     }
     if problems.is_empty() {
@@ -294,8 +92,8 @@ pub(crate) fn check() -> Result<(), String> {
     } else {
         Err(format!(
             "{} wait(s) with no limit: give each one, sized to what it waits for, on its line \
-             (tokio::time::timeout), or list it in xtask/src/waits.rs with what bounds it \
-             (specs/invariants.md, 20):\n  {}",
+             (tokio::time::timeout), or list it in xtask/src/waits/bounded.rs with what bounds \
+             it (specs/invariants.md, 20):\n  {}",
             problems.len(),
             problems.join("\n  ")
         ))
@@ -309,14 +107,16 @@ struct Found {
 }
 
 /// Each wait in `text`, a source at `path`, with no limit on its line, by line number. What
-/// a string says is not a call.
+/// a string or a comment says is not code.
 fn unbounded(path: &str, text: &str) -> Vec<(usize, Found)> {
     let xtask = path.starts_with("xtask/");
     sources::code(text)
         .into_iter()
-        .filter(|(_, code)| !code.contains(LIMITED))
         .filter_map(|(n, code)| {
             let called = unquoted(code);
+            if called.contains(LIMITED) {
+                return None;
+            }
             let waits_for = WAITS
                 .iter()
                 .chain(XTASK_WAITS.iter().filter(|_| xtask))
@@ -333,11 +133,13 @@ fn unbounded(path: &str, text: &str) -> Vec<(usize, Found)> {
         .collect()
 }
 
-/// `code` with what its string literals say left out, their quotes kept.
+/// `code` with what its string literals say left out, their quotes kept, and without a comment
+/// at its end.
 fn unquoted(code: &str) -> String {
     let mut kept = String::with_capacity(code.len());
     let (mut quoted, mut escaped) = (false, false);
-    for c in code.chars() {
+    let mut chars = code.chars().peekable();
+    while let Some(c) = chars.next() {
         match (quoted, escaped, c) {
             (true, false, '\\') => escaped = true,
             (true, true, _) => escaped = false,
@@ -345,6 +147,7 @@ fn unquoted(code: &str) -> String {
                 quoted = !quoted;
                 kept.push(c);
             }
+            (false, _, '/') if chars.peek() == Some(&'/') => break,
             (false, _, c) => kept.push(c),
             (true, false, _) => {}
         }
@@ -356,7 +159,7 @@ fn unquoted(code: &str) -> String {
 fn listed(path: &str, line: &str) -> Option<usize> {
     BOUNDED
         .iter()
-        .position(|(file, said, _)| *file == path && line.contains(said))
+        .position(|(file, said, _, _)| *file == path && line.contains(said))
 }
 
 #[cfg(test)]
@@ -366,12 +169,13 @@ mod tests {
     #[test]
     fn a_wait_with_no_limit_on_its_line_is_found() {
         let text = "async fn go() {\n    let status = child.wait().await?;\n    \
-            let held = lock.lock().await;\n    let _ = rx.recv().await;\n}\n";
+            let held = lock.lock().await;\n    let _ = rx.recv().await;\n    \
+            let _ = done.wait_for(|d| *d).await;\n    while set.join_next().await.is_some() {}\n}\n";
         let found: Vec<usize> = unbounded("crates/a/src/b.rs", text)
             .into_iter()
             .map(|(n, _)| n)
             .collect();
-        assert_eq!(found, [2, 3, 4]);
+        assert_eq!(found, [2, 3, 4, 5, 6]);
     }
 
     #[test]
@@ -385,6 +189,19 @@ mod tests {
     }
 
     #[test]
+    fn a_limit_only_a_comment_or_a_string_names_is_none() {
+        let commented = "let _ = rx.recv().await; // no timeout( here\n";
+        assert_eq!(unbounded("crates/a/src/b.rs", commented).len(), 1);
+        let quoted = "let _ = rx.recv().await.context(\"timeout(\");\n";
+        assert_eq!(unbounded("crates/a/src/b.rs", quoted).len(), 1);
+        assert_eq!(unquoted("a.wait(); // b // c"), "a.wait(); ");
+        assert_eq!(
+            unquoted(r#"x("http://a") // c"#),
+            r#"x("")"#.to_owned() + " "
+        );
+    }
+
+    #[test]
     fn a_process_waited_for_in_xtask_is_found_and_an_http_status_elsewhere_is_not() {
         let text = "let ran = Command::new(\"ls\").status();\nlet code = response.status();\n";
         assert_eq!(unbounded("xtask/src/a.rs", text).len(), 2);
@@ -392,13 +209,14 @@ mod tests {
     }
 
     #[test]
-    fn every_entry_names_a_source_and_says_why() {
-        for (path, line, why) in BOUNDED {
+    fn every_entry_names_a_source_counts_its_lines_and_says_why() {
+        for (path, line, lines, why) in BOUNDED {
             assert!(
                 sources::non_test(path),
                 "{path} is not a source the check reads"
             );
             assert!(!line.trim().is_empty(), "{path}: an entry with no line");
+            assert!(*lines > 0, "{path}: `{line}` stands for no line");
             assert!(why.len() > 20, "{path}: `{line}` needs its reason");
         }
     }

@@ -11,13 +11,17 @@ use glave_ports::computer::{ComputerError, GitCredential, Save, Saved};
 
 use super::registry::Opened;
 
-/// How long git has for work on this computer (reading a repository, a commit, a checkout or
-/// a worktree): moments as a rule, a minute or so in a very large repository.
-const LOCAL: Duration = Duration::from_mins(2);
+/// How long git has to read the repository (a branch, a commit, its status): moments as a
+/// rule, a minute or so in a very large one.
+const READS_WITHIN: Duration = Duration::from_mins(2);
 
-/// How long git has for a clone or a push, which move the repository across the network: as
-/// long as glave waits for a computer elsewhere to open or save a workspace.
-const NETWORK: Duration = Duration::from_mins(30);
+/// How long git has for work that changes files or crosses the network (a clone, a checkout, a
+/// worktree, staging and committing everything, a push), which hooks and large files can make
+/// long: as long as glave waits for a computer elsewhere to open or save a workspace.
+const WORKS_WITHIN: Duration = Duration::from_mins(30);
+
+/// What git said: its output when it succeeded, what it said when it failed.
+pub(crate) type Said = Result<String, String>;
 
 /// One git invocation: the environment it runs with, the folder, and any leading options.
 pub(crate) struct Git<'a> {
@@ -45,15 +49,37 @@ impl<'a> Git<'a> {
         }
     }
 
-    /// Runs git with `args` on this computer, within [`LOCAL`]; its output, or what it said
-    /// when it failed.
-    pub(crate) async fn run(&self, args: &[&str]) -> Result<String, String> {
-        self.run_within(args, LOCAL).await
+    /// git's answer to `args`, a question about the repository, within [`READS_WITHIN`]; an
+    /// error when it gave none (it could not start, or did not finish in time), which a
+    /// question of yes or no never takes for a no.
+    pub(crate) async fn ask(&self, args: &[&str]) -> Result<Said, ComputerError> {
+        self.said(args, READS_WITHIN)
+            .await
+            .map_err(ComputerError::Failed)
     }
 
-    /// [`Git::run`], within `limit`: git still running then is stopped, and the error says
-    /// how long it had.
-    async fn run_within(&self, args: &[&str], limit: Duration) -> Result<String, String> {
+    /// [`Git::ask`], no answer counting as a failure: for a question whose unknown answer
+    /// counts against what it would allow (removing a worktree, reusing a folder).
+    pub(crate) async fn run(&self, args: &[&str]) -> Said {
+        self.said(args, READS_WITHIN).await.unwrap_or_else(Err)
+    }
+
+    /// A read that must succeed: git's output.
+    pub(crate) async fn must(&self, args: &[&str]) -> Result<String, ComputerError> {
+        self.ask(args).await?.map_err(ComputerError::Failed)
+    }
+
+    /// Work that must succeed, within [`WORKS_WITHIN`]: git's output.
+    pub(crate) async fn work(&self, args: &[&str]) -> Result<String, ComputerError> {
+        self.said(args, WORKS_WITHIN)
+            .await
+            .map_err(ComputerError::Failed)?
+            .map_err(ComputerError::Failed)
+    }
+
+    /// What git said to `args` within `limit`, or why it said nothing: git still running then
+    /// is stopped, and the error says how long it had.
+    async fn said(&self, args: &[&str], limit: Duration) -> Result<Said, String> {
         let mut command = glave_process::Program::new("git");
         if self.credential.is_some() {
             command
@@ -77,24 +103,12 @@ impl<'a> Git<'a> {
             .output(limit)
             .await
             .map_err(|error| format!("git {}: {error}", args.first().unwrap_or(&"")))?;
-        if output.status.success() {
+        Ok(if output.status.success() {
             Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
         } else {
             let said = String::from_utf8_lossy(&output.stderr);
             Err(format!("git {}: {}", args.join(" "), said.trim()))
-        }
-    }
-
-    pub(crate) async fn must(&self, args: &[&str]) -> Result<String, ComputerError> {
-        self.run(args).await.map_err(ComputerError::Failed)
-    }
-
-    /// [`Git::must`] for work that moves the repository across the network, within
-    /// [`NETWORK`].
-    async fn must_across(&self, args: &[&str]) -> Result<String, ComputerError> {
-        self.run_within(args, NETWORK)
-            .await
-            .map_err(ComputerError::Failed)
+        })
     }
 }
 
@@ -134,7 +148,7 @@ pub(crate) async fn clone(
         credential,
     };
     let dest_text = dest.to_string_lossy();
-    git.must_across(&["clone", "--quiet", "--", url, &dest_text])
+    git.work(&["clone", "--quiet", "--", url, &dest_text])
         .await?;
     if let Some(at) = at {
         let inside = Git {
@@ -143,9 +157,17 @@ pub(crate) async fn clone(
             options: Vec::new(),
             credential,
         };
-        if let Err(error) = inside.run(&["checkout", "--quiet", at, "--"]).await {
+        let failed = match inside
+            .said(&["checkout", "--quiet", at, "--"], WORKS_WITHIN)
+            .await
+        {
+            Ok(Ok(_)) => None,
+            Ok(Err(said)) => Some(ComputerError::NotFound(said)),
+            Err(unanswered) => Some(ComputerError::Failed(unanswered)),
+        };
+        if let Some(failed) = failed {
             let _ = tokio::fs::remove_dir_all(dest).await;
-            return Err(ComputerError::NotFound(error));
+            return Err(failed);
         }
     }
     Ok(())
@@ -160,8 +182,8 @@ pub(crate) async fn save(opened: &Opened, save: &Save) -> Result<Saved, Computer
     }
     let git = repository(opened).await?;
     if git
-        .run(&["check-ref-format", "--branch", &save.branch])
-        .await
+        .ask(&["check-ref-format", "--branch", &save.branch])
+        .await?
         .is_err()
     {
         return Err(ComputerError::Refused(format!(
@@ -171,12 +193,12 @@ pub(crate) async fn save(opened: &Opened, save: &Save) -> Result<Saved, Computer
     }
     let reference = format!("refs/heads/{}", save.branch);
     let exists = git
-        .run(&["rev-parse", "--verify", "--quiet", &reference])
-        .await
+        .ask(&["rev-parse", "--verify", "--quiet", &reference])
+        .await?
         .is_ok();
     let born = git
-        .run(&["rev-parse", "--verify", "--quiet", "HEAD"])
-        .await
+        .ask(&["rev-parse", "--verify", "--quiet", "HEAD"])
+        .await?
         .is_ok();
     if !exists && born {
         git.must(&["branch", "--", &save.branch]).await?;
@@ -184,9 +206,9 @@ pub(crate) async fn save(opened: &Opened, save: &Save) -> Result<Saved, Computer
     // Point HEAD at the branch without touching any file: the commit records the workspace
     // exactly as it is, on top of the branch.
     git.must(&["symbolic-ref", "HEAD", &reference]).await?;
-    git.must(&["add", "--all"]).await?;
+    git.work(&["add", "--all"]).await?;
     let mut commit = Vec::new();
-    if git.run(&["config", "user.email"]).await.is_err() {
+    if git.ask(&["config", "user.email"]).await?.is_err() {
         commit.extend(["-c", "user.name=glave", "-c", "user.email=glave@localhost"]);
     }
     commit.extend([
@@ -197,12 +219,11 @@ pub(crate) async fn save(opened: &Opened, save: &Save) -> Result<Saved, Computer
         "-m",
         &save.message,
     ]);
-    git.must(&commit).await?;
+    git.work(&commit).await?;
     let hash = git.must(&["rev-parse", "HEAD"]).await?;
-    let pushed = if git.run(&["remote", "get-url", "origin"]).await.is_ok() {
+    let pushed = if git.ask(&["remote", "get-url", "origin"]).await?.is_ok() {
         let refspec = format!("{reference}:{reference}");
-        git.must_across(&["push", "--quiet", "origin", &refspec])
-            .await?;
+        git.work(&["push", "--quiet", "origin", &refspec]).await?;
         true
     } else {
         false
@@ -248,21 +269,20 @@ mod tests {
         let mut path = dir.as_os_str().to_owned();
         path.push(":/usr/bin:/bin");
         let environment = [(OsString::from("PATH"), path)];
-        let ran = glave_ports::block_on!(async {
+        let (asked, worked) = glave_ports::block_on!(async {
             tokio::time::pause();
-            let local = Git::at(&environment, &dir).run(&["status"]).await;
-            let across = Git::at(&environment, &dir).must_across(&["push"]).await;
-            (local, across)
+            let asked = Git::at(&environment, &dir).ask(&["status"]).await;
+            let worked = Git::at(&environment, &dir).work(&["push"]).await;
+            (asked, worked)
         });
+        // No answer is never a no: a question's caller gets the error, not git's failure.
         assert_eq!(
-            ran.0.unwrap_err(),
-            "git status: git did not finish within 2 minutes"
+            asked.err().map(|error| error.to_string()).as_deref(),
+            Some("failed: git status: git did not finish within 2 minutes")
         );
-        assert!(
-            ran.1
-                .unwrap_err()
-                .to_string()
-                .ends_with("git push: git did not finish within 30 minutes"),
+        assert_eq!(
+            worked.err().map(|error| error.to_string()).as_deref(),
+            Some("failed: git push: git did not finish within 30 minutes")
         );
     }
 }

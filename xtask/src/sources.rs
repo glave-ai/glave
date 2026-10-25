@@ -35,16 +35,18 @@ pub(crate) fn non_test(path: &str) -> bool {
         && !name.ends_with("_tests.rs")
 }
 
-/// Each line of code in `text`, by number from 1, up to its inline tests: comment lines
-/// aside, each trimmed at its start.
+/// Each line of code in `text`, by number from 1, up to its inline tests (`#[cfg(test)]` then
+/// `mod tests {`, to the end of the file; a `mod tests;` names another file and is read past):
+/// comment lines aside, each trimmed at its start.
 pub(crate) fn code(text: &str) -> Vec<(usize, &str)> {
     let mut found = Vec::new();
     let mut lines = text.lines().enumerate().peekable();
     while let Some((n, line)) = lines.next() {
         let code = line.trim_start();
-        let tests_follow = lines
-            .peek()
-            .is_some_and(|(_, next)| next.trim_start().starts_with("mod tests"));
+        let tests_follow = lines.peek().is_some_and(|(_, next)| {
+            let next = next.trim_start();
+            next.starts_with("mod tests") && next.trim_end().ends_with('{')
+        });
         if code.starts_with("#[cfg(test)]") && tests_follow {
             break;
         }
@@ -63,6 +65,16 @@ mod tests {
     fn tests_and_comments_are_left_out() {
         let text = "fn go() {}\n// a comment\n    let x = 1;\n#[cfg(test)]\nmod tests {\n    fn t() {}\n}\n";
         assert_eq!(code(text), [(1, "fn go() {}"), (3, "let x = 1;")]);
+        let declared = "#[cfg(test)]\nmod tests;\n\nfn go() {}\n";
+        assert_eq!(
+            code(declared),
+            [
+                (1, "#[cfg(test)]"),
+                (2, "mod tests;"),
+                (3, ""),
+                (4, "fn go() {}")
+            ]
+        );
         assert!(non_test("crates/cli/src/daemon.rs"));
         assert!(non_test("xtask/src/cmd.rs"));
         assert!(!non_test("crates/cli/tests/serve.rs"));

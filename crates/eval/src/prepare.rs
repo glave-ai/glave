@@ -142,7 +142,10 @@ pub(crate) async fn script(
         }),
         Err(glave_process::ProcessError::TimedOut { .. }) => Ok(Output {
             success: false,
-            text: format!("stopped after {}s", SCRIPT_TIMEOUT.as_secs()),
+            text: format!(
+                "stopped: it did not finish within {}",
+                glave_ports::spoken(SCRIPT_TIMEOUT)
+            ),
         }),
         Err(err) => Err(EvalError::io("run a script in", dir)(
             std::io::Error::other(err),
