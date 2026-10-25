@@ -234,7 +234,7 @@ fn the_signed_in_caller_is_recorded_and_the_token_never_is() {
                 worktree: None,
                 computer: None,
                 model: None,
-                approval: None,
+                permissions: None,
                 effort: None,
             })
             .await;
@@ -308,7 +308,7 @@ fn the_method_header_must_agree_and_only_post_to_the_root_is_served() {
             worktree: None,
             computer: None,
             model: None,
-            approval: None,
+            permissions: None,
             effort: None,
         });
         let mismatched = web.open(&message, Some("turn/start")).await;
@@ -344,7 +344,7 @@ fn a_retried_turn_start_returns_the_turn_already_started() {
                 worktree: None,
                 computer: None,
                 model: None,
-                approval: None,
+                permissions: None,
                 effort: None,
             })
             .await;

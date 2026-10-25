@@ -144,12 +144,12 @@ fn with_a_gateway_url_model_calls_and_the_catalog_come_through_the_gateway() {
     std::fs::create_dir_all(&place.home).unwrap();
     std::fs::write(
         place.home.join("config.toml"),
-        format!("sandbox = \"off\"\n[gateway]\nurl = \"{}\"\n", gateway.url),
+        format!("[gateway]\nurl = \"{}\"\n", gateway.url),
     )
     .unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_glave"))
         // Unconfined and without asking, so the call runs wherever the sandbox cannot.
-        .args(["--approval", "auto"])
+        .args(["--permissions", "full-access"])
         .arg("echo it through the catalog")
         .current_dir(&place.project)
         .env("GLAVE_HOME", &place.home)

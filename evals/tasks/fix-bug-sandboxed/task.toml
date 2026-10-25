@@ -3,8 +3,8 @@ name = "glave/fix-bug-sandboxed"
 description = "Everyday build-and-test work still runs inside the sandbox."
 
 [glave]
-approval = "auto"
-sandbox = "project"
+permissions = "workspace"
+sandboxed = true
 # Inside the sandbox only the project and the run's temp folder are writable, so build
 # where a normal project would: in the project.
 env = { CARGO_TARGET_DIR = "{workspace}/target" }

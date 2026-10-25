@@ -98,7 +98,11 @@
               (remove)="attachments.remove(chip.key)"
             />
           }
-          <app-approval-mode glzComposerStatus [current]="mode()" [(value)]="pickedMode" />
+          <app-permissions
+            glzComposerStatus
+            [current]="permissions()"
+            [(value)]="pickedPermissions"
+          />
           <div glzComposerStatus class="glz-row glz-gap-1">
             <app-model-picker [current]="service.chosen()" [(value)]="picked" />
             <app-effort-picker

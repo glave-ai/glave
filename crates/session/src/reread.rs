@@ -4,10 +4,10 @@
 //! The host decides what changed; the server takes the models, how threads run and the
 //! person's own tools it answers with.
 
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, PoisonError};
 
-use glave_harness::{ApprovalMode, Defaults};
+use glave_harness::Defaults;
 use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider, ToolSource};
 
 use crate::providers::Models;
@@ -27,11 +27,9 @@ pub struct Changed {
 /// How threads run where neither they nor their projects choose: from each one's next turn,
 /// or, for where a thread works, from the next new one.
 pub struct Runs {
-    /// What every thread's turns run with: the approval mode, the judge, the sandbox and the
-    /// rest. The judge comes with the models it names, so it never names one that is gone.
+    /// What every thread's turns run with: the preset and the policy's cap on it, the judge,
+    /// the sandbox and the rest. The judge comes with the models it names, so it never names one that is gone.
     pub defaults: Defaults,
-    /// The approval modes the policy leaves a thread to choose.
-    pub modes: Vec<ApprovalMode>,
     /// Whether a new thread in a project with a folder works in a worktree of its own.
     pub worktree: bool,
 }
@@ -72,12 +70,6 @@ where
                 self.inner.harness.set_own_tools(own);
             }
             if let Some(runs) = changed.runs {
-                let modes = crate::modes::choosable(runs.defaults.approval, &runs.modes);
-                *self
-                    .inner
-                    .modes
-                    .write()
-                    .unwrap_or_else(PoisonError::into_inner) = modes;
                 self.inner.worktree.store(runs.worktree, Ordering::Relaxed);
                 self.inner.harness.set_defaults(runs.defaults);
             }

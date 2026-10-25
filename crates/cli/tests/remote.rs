@@ -92,14 +92,7 @@ fn a_turn_runs_on_the_server_and_shows_here() {
 /// `glave serve --http` where commands run as the person and only cautions ask, the judge
 /// first, with `model`'s replies, stopped when dropped; its address and token.
 fn judging(place: &Place, model: &FakeServer) -> (Running, String, String) {
-    let args = [
-        "--model",
-        "fake-model",
-        "--sandbox",
-        "off",
-        "--approval",
-        "auto",
-    ];
+    let args = ["--model", "fake-model", "--permissions", "full-access"];
     let (served, url) = serve_http(place, model, &args);
     let token = std::fs::read_to_string(place.home.join("serve.token")).unwrap();
     (served, url, token)

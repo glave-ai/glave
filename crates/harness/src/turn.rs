@@ -5,7 +5,7 @@ mod summary;
 use std::borrow::Cow;
 
 use glave_event::{
-    ApprovalMode, BlobRef, CallId, EventId, MemoryId, MessageAdded, ModelRef, Outcome, Part,
+    BlobRef, CallId, EventId, MemoryId, MessageAdded, ModelRef, Outcome, Part, Permissions,
     Principal, Role, StopReason, ThreadId, ToolCallRequested, TurnEnded, TurnStarted,
 };
 use glave_ports::{
@@ -180,7 +180,8 @@ struct TurnConfig<'a> {
     system: &'a str,
     tools: &'a [ToolSpec],
     max_output_tokens: Option<u32>,
-    approval: ApprovalMode,
+    /// What the agent could do without asking: the thread's preset.
+    permissions: Permissions,
     /// The sandbox commands ran in; absent when there was none.
     #[serde(skip_serializing_if = "Option::is_none")]
     sandbox: Option<Recorded>,
@@ -584,7 +585,7 @@ where
             system: &offer.system,
             tools: &offer.specs,
             max_output_tokens: self.settings.max_output_tokens,
-            approval: self.approval_for(thread),
+            permissions: self.permissions_for(thread),
             sandbox: self.workspace_for(thread).sandbox().map(recorded),
             memory,
         };

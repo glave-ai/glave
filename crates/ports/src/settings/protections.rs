@@ -1,48 +1,43 @@
-//! How a project's settings change the protections its threads' commands run under: the mode
-//! they ask in, and the sandbox they run in. The harness applies them; project trust decides them.
+//! What the agent may do in a thread: the preset it runs with, as its project changes it, and
+//! the sandbox that preset comes to on this computer (`specs/approvals.md`, "Permissions"). The
+//! harness applies them; project trust decides what a project changes.
 
-use glave_event::ApprovalMode;
+use glave_event::Permissions;
 
 use crate::computer::{Sandbox, SandboxLevel};
 
-/// How a project's settings change the protections its threads' commands run under.
+/// How a project's settings change what its threads may do.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Protections {
-    /// The mode its threads run in when they chose none: its own choice, `auto` once trusted;
-    /// `ask` when the project turned the sandbox off with auto chosen nowhere; none to leave
-    /// the harness's. Always set where its commands run unconfined.
-    pub approval: Option<ApprovalMode>,
-    /// Whether its threads' commands run without the sandbox, once trusted.
-    pub unconfined: bool,
-    /// A narrower sandbox than the harness's for its threads' commands.
-    pub level: Option<SandboxLevel>,
+    /// The preset its threads run with when they chose none: the project's own, where it
+    /// narrows the harness's or, trusted, gives full access; none to leave the harness's.
+    pub permissions: Option<Permissions>,
     /// Whether its threads' sandboxed commands go without the network.
     pub offline: bool,
 }
 
 impl Protections {
-    /// The mode a thread of the project runs in: its own choice (`chosen`), else the
-    /// project's, else the harness's (`own`). Where the project runs commands unconfined
-    /// without auto chosen, it asks whatever the thread chose: its auto was chosen behind the
-    /// sandbox, and commands run unconfined with nothing asked only when auto is chosen for
-    /// that.
-    pub fn mode(self, chosen: Option<ApprovalMode>, own: ApprovalMode) -> ApprovalMode {
-        if self.unconfined && self.approval != Some(ApprovalMode::Auto) {
-            return ApprovalMode::Ask;
-        }
-        chosen.or(self.approval).unwrap_or(own)
+    /// The preset a thread of the project runs with: its own choice (`chosen`), else the
+    /// project's, else the harness's (`own`).
+    pub fn permissions(self, chosen: Option<Permissions>, own: Permissions) -> Permissions {
+        chosen.or(self.permissions).unwrap_or(own)
     }
 
-    /// The sandbox its threads' commands run in, where the harness's is `own`: none where it
-    /// turned the sandbox off, else `own` narrowed as it asks.
-    pub fn sandbox(self, own: Option<&Sandbox>) -> Option<Sandbox> {
-        if self.unconfined {
-            return None;
-        }
-        own.map(|own| Sandbox {
-            level: self.level.unwrap_or(own.level),
-            network: own.network && !self.offline,
-            ..own.clone()
+    /// The sandbox a thread's commands run in with `permissions`, where the most a sandbox
+    /// here allows is `here` (none where none can run): read-only for Read-only, the project
+    /// for Workspace where that can run, and none for Full access. Without the network where
+    /// the project takes it.
+    pub fn sandbox(self, permissions: Permissions, here: Option<&Sandbox>) -> Option<Sandbox> {
+        let here = here?;
+        let level = match permissions {
+            Permissions::ReadOnly => SandboxLevel::ReadOnly,
+            Permissions::Workspace if here.level == SandboxLevel::Project => SandboxLevel::Project,
+            Permissions::Workspace | Permissions::FullAccess => return None,
+        };
+        Some(Sandbox {
+            level,
+            network: here.network && !self.offline,
+            ..here.clone()
         })
     }
 }
@@ -50,65 +45,65 @@ impl Protections {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use Permissions::{FullAccess, ReadOnly, Workspace};
 
     #[test]
-    fn a_thread_never_runs_in_auto_where_its_project_unconfines_it_without_auto() {
-        use ApprovalMode::{Ask, Auto};
+    fn a_thread_s_own_choice_is_nearest_then_its_project_s_then_the_harness_s() {
         let none = Protections::default();
-        assert_eq!(none.mode(None, Auto), Auto);
-        assert_eq!(none.mode(Some(Ask), Auto), Ask, "its own choice");
-        let auto = Protections {
-            approval: Some(Auto),
+        assert_eq!(none.permissions(None, Workspace), Workspace);
+        assert_eq!(none.permissions(Some(ReadOnly), Workspace), ReadOnly);
+        let project = Protections {
+            permissions: Some(ReadOnly),
             ..Protections::default()
         };
-        assert_eq!(auto.mode(None, Ask), Auto, "the project's");
-        assert_eq!(auto.mode(Some(Ask), Ask), Ask, "its own, nearer");
-        let off = Protections {
-            approval: Some(Ask),
-            unconfined: true,
-            ..Protections::default()
-        };
-        assert_eq!(
-            off.mode(Some(Auto), Auto),
-            Ask,
-            "auto chosen behind the sandbox"
-        );
-        let both = Protections {
-            approval: Some(Auto),
-            unconfined: true,
-            ..Protections::default()
-        };
-        assert_eq!(both.mode(None, Ask), Auto);
-        assert_eq!(both.mode(Some(Ask), Ask), Ask);
+        assert_eq!(project.permissions(None, FullAccess), ReadOnly);
+        assert_eq!(project.permissions(Some(FullAccess), Workspace), FullAccess);
     }
 
     #[test]
-    fn a_project_narrows_its_threads_sandbox_or_turns_it_off_and_never_widens_it() {
-        let own = Sandbox {
+    fn each_preset_comes_to_its_own_sandbox_and_never_one_that_cannot_run() {
+        let here = Sandbox {
             level: SandboxLevel::Project,
             network: true,
             home: None,
             glave_home: None,
         };
+        let level = |protections: Protections, preset, here: Option<&Sandbox>| {
+            protections
+                .sandbox(preset, here)
+                .map(|sandbox| (sandbox.level, sandbox.network))
+        };
+        let none = Protections::default();
         assert_eq!(
-            Protections::default().sandbox(Some(&own)),
-            Some(own.clone())
+            level(none, ReadOnly, Some(&here)),
+            Some((SandboxLevel::ReadOnly, true))
         );
-        let narrowed = Protections {
-            level: Some(SandboxLevel::ReadOnly),
+        assert_eq!(
+            level(none, Workspace, Some(&here)),
+            Some((SandboxLevel::Project, true))
+        );
+        assert_eq!(level(none, FullAccess, Some(&here)), None);
+        assert_eq!(level(none, ReadOnly, None), None, "none runs here");
+        let offline = Protections {
             offline: true,
             ..Protections::default()
         };
-        let sandbox = narrowed.sandbox(Some(&own)).unwrap();
         assert_eq!(
-            (sandbox.level, sandbox.network),
-            (SandboxLevel::ReadOnly, false)
+            level(offline, Workspace, Some(&here)),
+            Some((SandboxLevel::Project, false))
         );
-        assert_eq!(narrowed.sandbox(None), None, "no sandbox here to narrow");
-        let off = Protections {
-            unconfined: true,
-            ..Protections::default()
+        let read_only_here = Sandbox {
+            level: SandboxLevel::ReadOnly,
+            ..here
         };
-        assert_eq!(off.sandbox(Some(&own)), None);
+        assert_eq!(
+            level(none, ReadOnly, Some(&read_only_here)),
+            Some((SandboxLevel::ReadOnly, true))
+        );
+        assert_eq!(
+            level(none, Workspace, Some(&read_only_here)),
+            None,
+            "Workspace never runs where its commands could not write the project"
+        );
     }
 }

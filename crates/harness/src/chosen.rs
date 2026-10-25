@@ -1,14 +1,14 @@
-//! Which model a thread's turns are sent to, and how much they ask before acting: the ones
-//! last chosen for it, recorded as `model.chosen` and `approval.mode.chosen`, else the
-//! harness's own. A subagent's thread uses its parent's.
+//! Which model a thread's turns are sent to, and what the agent may do in them: the ones last
+//! chosen for it, recorded as `model.chosen` and `permissions.chosen`, else its project's, else
+//! the harness's own. A subagent's thread uses its parent's.
 
 use std::borrow::Cow;
 use std::sync::PoisonError;
 
-use glave_event::{ApprovalMode, ApprovalModeChosen, Body, EffortChosen, Event, ModelChosen};
+use glave_event::{Body, EffortChosen, Event, ModelChosen, Permissions, PermissionsChosen};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
-use crate::approval::Approver;
+use crate::approval::{ApprovalMode, Approver};
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::prompt::system_prompt;
 
@@ -40,10 +40,10 @@ impl Thread {
         self.model.as_deref()
     }
 
-    /// The approval mode chosen for this thread, when someone chose one: its turns run in it
-    /// instead of the harness's own.
-    pub fn approval(&self) -> Option<ApprovalMode> {
-        self.approval
+    /// The preset chosen for this thread, when someone chose one: its turns run with it
+    /// instead of its project's or the harness's own.
+    pub fn permissions(&self) -> Option<Permissions> {
+        self.permissions
     }
 
     /// How much this thread's model is asked to reason, when someone chose it.
@@ -138,37 +138,50 @@ where
         Ok(())
     }
 
-    /// How much `thread`'s turns ask before acting: its own choice, else its project's, else
-    /// the harness's mode; never auto where its project runs commands unconfined without auto
-    /// chosen ([`glave_ports::settings::Protections::mode`]).
-    pub fn approval_for(&self, thread: &Thread) -> ApprovalMode {
-        thread
-            .brought
-            .settled
-            .protections
-            .mode(thread.approval, thread.defaults.approval)
+    /// What the agent may do in `thread`: its own choice, else its project's, else the
+    /// harness's preset, never above the policy's cap ([`crate::Defaults::permissions`]).
+    pub fn permissions_for(&self, thread: &Thread) -> Permissions {
+        let protections = thread.brought.settled.protections;
+        thread.defaults.permissions(protections, thread.permissions)
     }
 
-    /// Runs `thread`'s turns in approval mode `mode` from now on, recorded as
-    /// `approval.mode.chosen` for `caller`. Choosing the mode already chosen records nothing.
-    /// Whether the mode is allowed is the caller's to check, against the policy.
-    pub async fn choose_approval(
+    /// How much `thread`'s turns ask before acting, as its preset comes to it where its
+    /// commands run. Full access asks only before risky actions. Read-only lets commands run
+    /// in its read-only sandbox and asks before every change, as Codex's does; Workspace asks
+    /// only before risky actions behind a wall (the sandbox, or a worker's own container).
+    /// Without a wall, both ask before every change and command.
+    pub(crate) fn approval_for(&self, thread: &Thread) -> ApprovalMode {
+        let workspace = self.workspace_for(thread);
+        let sandboxed = workspace.sandbox().is_some();
+        let worker = workspace.info().computer != self.workspace.info().computer;
+        match self.permissions_for(thread) {
+            Permissions::FullAccess => ApprovalMode::Auto,
+            Permissions::ReadOnly if sandboxed => ApprovalMode::Look,
+            Permissions::Workspace if sandboxed || worker => ApprovalMode::Auto,
+            Permissions::ReadOnly | Permissions::Workspace => ApprovalMode::Ask,
+        }
+    }
+
+    /// Runs `thread`'s turns with `permissions` from now on, recorded as `permissions.chosen`
+    /// for `caller`. Choosing the preset already chosen records nothing. Whether the preset is
+    /// allowed is the caller's to check, against the policy.
+    pub async fn choose_permissions(
         &self,
         thread: &mut Thread,
         caller: &Caller,
-        mode: ApprovalMode,
+        permissions: Permissions,
     ) -> Result<(), HarnessError> {
-        if thread.approval == Some(mode) {
+        if thread.permissions == Some(permissions) {
             return Ok(());
         }
-        let chosen = ApprovalModeChosen {
-            mode,
+        let chosen = PermissionsChosen {
+            permissions,
             by: Self::other_than_for(thread, caller.person),
         };
         self.record(thread, &chosen).await?;
         // Glave's own record: call ids do not count it, so the model is sent the same.
         thread.unnumbered = thread.unnumbered.saturating_add(1);
-        thread.approval = Some(mode);
+        thread.permissions = Some(permissions);
         Ok(())
     }
 
@@ -214,10 +227,10 @@ pub(crate) fn effort_in(events: &[Event]) -> Option<String> {
     })
 }
 
-/// The approval mode the latest `approval.mode.chosen` in `events` names, if any.
-pub(crate) fn approval_in(events: &[Event]) -> Option<ApprovalMode> {
+/// The preset the latest `permissions.chosen` in `events` names, if any.
+pub(crate) fn permissions_in(events: &[Event]) -> Option<Permissions> {
     events.iter().rev().find_map(|event| match &event.body {
-        Body::ApprovalModeChosen(chosen) => Some(chosen.mode),
+        Body::PermissionsChosen(chosen) => Some(chosen.permissions),
         _ => None,
     })
 }

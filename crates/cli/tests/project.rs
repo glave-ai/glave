@@ -76,11 +76,10 @@ fn a_trusted_projects_servers_start_and_nothing_is_said() {
     ])
     .unwrap();
     // Unconfined and without asking, so the call runs wherever the sandbox cannot.
-    choose(&place, "sandbox", "\"off\"");
     let output = glave(
         &place,
         &model,
-        &["--approval", "auto", "--model", "m", "echo it"],
+        &["--permissions", "full-access", "--model", "m", "echo it"],
         "",
     );
     let shown = text(&output);
@@ -122,7 +121,7 @@ fn a_repository_with_nothing_that_runs_commands_never_mentions_trust() {
     std::fs::create_dir_all(place.project.join(".glave")).unwrap();
     std::fs::write(
         place.project.join(".glave/config.toml"),
-        "approval = \"ask\"\nmodel = \"from-project\"\n",
+        "permissions = \"read-only\"\nmodel = \"from-project\"\n",
     )
     .unwrap();
     // A project's model must be one glave offers: the person's own choices offer it, and
@@ -134,7 +133,7 @@ fn a_repository_with_nothing_that_runs_commands_never_mentions_trust() {
     let output = glave(&place, &model, &["hello"], "");
     let shown = text(&output);
     assert!(output.status.success(), "{shown}");
-    assert!(shown.contains("approval: ask"), "applied: {shown}");
+    assert!(shown.contains("permissions: read-only"), "applied: {shown}");
     assert!(
         !shown.contains("trust") && !shown.contains("is off"),
         "{shown}"
@@ -212,7 +211,7 @@ fn policy_explain_shows_the_project_s_trust() {
     std::fs::create_dir_all(place.project.join(".glave")).unwrap();
     std::fs::write(
         place.project.join(".glave/config.toml"),
-        "approval = \"auto\"\n",
+        "permissions = \"full-access\"\n",
     )
     .unwrap();
     let explain = || {
@@ -229,7 +228,10 @@ fn policy_explain_shows_the_project_s_trust() {
     assert!(shown.contains("Project "), "{shown}");
     assert!(shown.contains("MCP server tests"), "{shown}");
     assert!(shown.contains("glave will ask once"), "{shown}");
-    assert!(shown.contains("settings (approval = \"auto\")"), "{shown}");
+    assert!(
+        shown.contains("settings (permissions = \"full-access\")"),
+        "{shown}"
+    );
     trust_project(&place, &[]);
     let shown = text(&explain());
     assert!(

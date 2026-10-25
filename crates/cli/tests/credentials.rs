@@ -71,7 +71,7 @@ fn a_pasted_token_is_checked_kept_sealed_and_signs_the_next_command_in() {
         Reply::text("Listed."),
     ])
     .unwrap();
-    let args = ["--model", "m", "--sandbox", "off", "--approval", "auto"];
+    let args = ["--model", "m", "--permissions", "full-access"];
     let mut served = Served::start(&place, &model, &args);
 
     let refused = served.call(
@@ -222,7 +222,7 @@ fn signing_in_to_github_in_the_browser_connects_it_and_renews_its_token() {
         Reply::text("Listed."),
     ])
     .unwrap();
-    let args = ["--model", "m", "--sandbox", "off", "--approval", "auto"];
+    let args = ["--model", "m", "--permissions", "full-access"];
     let mut served = Served::start(&place, &model, &args);
     let signed_in = signs_in(&mut served, &github);
     let thread = served.call("thread/start", &json!({}))["result"]["thread"]["id"].clone();

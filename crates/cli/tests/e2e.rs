@@ -10,13 +10,13 @@ use serde_json::{Value, json};
 
 use crate::support::*;
 
-/// What glave runs under by default here: in the sandbox where this computer can run
-/// it, and asking where it cannot.
+/// What glave runs under by default here: Workspace, in the sandbox where this computer can
+/// run it, and asking where it cannot.
 fn default_protections() -> &'static str {
     if glave_computer::sandbox_available() {
-        "approval: auto · sandbox: project + network"
+        "permissions: workspace · sandbox: project + network"
     } else {
-        "approval: ask"
+        "permissions: workspace"
     }
 }
 
@@ -69,15 +69,14 @@ fn a_tool_call_changes_the_project() {
     .unwrap();
     let events = place.project.join("../events.jsonl");
     let events_arg = events.to_string_lossy().into_owned();
-    choose(&place, "sandbox", "\"off\"");
     let output = glave(
         &place,
         &server,
         &[
             "--model",
             "m",
-            "--approval",
-            "auto",
+            "--permissions",
+            "full-access",
             "--events",
             &events_arg,
             "write notes",
@@ -178,24 +177,14 @@ fn by_default_commands_run_in_the_sandbox_or_ask_where_it_cannot() {
 }
 
 #[test]
-fn sandbox_off_asks_unless_auto_is_chosen_too() {
+fn only_full_access_chosen_runs_commands_unconfined_without_asking() {
     let place = place("off");
     let server = changes_and_commands();
-    choose(&place, "sandbox", "\"off\"");
+    choose(&place, "permissions", "\"full-access\"");
     let output = glave(&place, &server, &["--model", "m", "write notes"], "");
     let shown = text(&output);
     assert!(output.status.success(), "{shown}");
-    assert!(shown.contains("approval: ask"), "{shown}");
-    assert!(!place.project.join("notes.md").exists(), "{shown}");
-    let server = changes_and_commands();
-    let output = glave(
-        &place,
-        &server,
-        &["--model", "m", "--approval", "auto", "write notes"],
-        "",
-    );
-    let shown = text(&output);
-    assert!(output.status.success(), "{shown}");
+    assert!(shown.contains("permissions: full-access"), "{shown}");
     assert!(!shown.contains("sandbox:"), "{shown}");
     assert!(place.project.join("ran.txt").exists(), "{shown}");
     assert!(
@@ -205,7 +194,7 @@ fn sandbox_off_asks_unless_auto_is_chosen_too() {
 }
 
 #[test]
-fn in_ask_mode_with_no_one_to_ask_nothing_changes() {
+fn in_read_only_with_no_one_to_ask_nothing_changes() {
     let place = place("ask");
     let server = FakeServer::start(vec![
         Reply::tool_call(
@@ -219,7 +208,7 @@ fn in_ask_mode_with_no_one_to_ask_nothing_changes() {
     let output = glave(
         &place,
         &server,
-        &["--model", "m", "--approval", "ask", "write notes"],
+        &["--model", "m", "--permissions", "read-only", "write notes"],
         "",
     );
     assert!(output.status.success(), "{}", text(&output));
@@ -231,7 +220,7 @@ fn in_ask_mode_with_no_one_to_ask_nothing_changes() {
             .any(|result| result.contains("No one is available to approve")),
         "{second}"
     );
-    assert!(text(&output).contains("approval: ask"));
+    assert!(text(&output).contains("permissions: read-only"));
 }
 
 #[test]

@@ -113,11 +113,13 @@ fn a_declined_action_is_reported_to_the_model() {
 }
 
 #[test]
-fn the_approval_mode_decides_what_asks() {
-    use glave_harness::ApprovalMode;
+fn the_preset_decides_what_asks() {
+    use glave_harness::Permissions;
+    // No sandbox here: Workspace asks as Read-only does, and only Full access goes through.
     for (mode, wrote, ran) in [
-        (ApprovalMode::Ask, false, false),
-        (ApprovalMode::Auto, true, true),
+        (Permissions::ReadOnly, false, false),
+        (Permissions::Workspace, false, false),
+        (Permissions::FullAccess, true, true),
     ] {
         let dir = folder(&format!("mode-{}", mode.name()));
         block_on!(async {
@@ -133,7 +135,7 @@ fn the_approval_mode_decides_what_asks() {
                 answer(Some("Done."), vec![], StopReason::EndTurn),
             ];
             let mut settings = settings();
-            settings.approval = mode;
+            settings.permissions = mode;
             let harness = harness_on(&dir, answers, Refuse, InMemoryLog::new(), 1, settings).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness

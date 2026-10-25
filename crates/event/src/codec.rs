@@ -8,13 +8,13 @@ use serde_json::value::RawValue;
 use crate::envelope::{ENVELOPE_VERSION, Header, PayloadVersion, RawEvent, TypeName};
 use crate::error::{DecodeError, EncodeError};
 use crate::payload::{
-    AcmeRegistered, ApprovalDecided, ApprovalModeChosen, ApprovalRequested, AwakeSet,
-    BrowserSignedIn, BrowserSignedOut, BrowserUsed, CatalogRefreshed, CertificateIssued,
-    CommandEnded, CommandStarted, ConnectionConnected, ConnectionRemoved, CredentialConnected,
-    CredentialRemoved, EffortChosen, GatewayToolCalled, GoalEnded, GoalResumed, GoalSet,
-    GroupingSet, HookRan, LanguageSet, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved,
-    MemoryTidied, MessageAdded, ModelChosen, ModelResponded, PasskeyAdded, PasskeyRemoved,
-    PasskeyUsed, ProjectFolderSet, ProjectRemoved, ProviderConnected, ProviderRemoved,
+    AcmeRegistered, ApprovalDecided, ApprovalRequested, AwakeSet, BrowserSignedIn,
+    BrowserSignedOut, BrowserUsed, CatalogRefreshed, CertificateIssued, CommandEnded,
+    CommandStarted, ConnectionConnected, ConnectionRemoved, CredentialConnected, CredentialRemoved,
+    EffortChosen, GatewayToolCalled, GoalEnded, GoalResumed, GoalSet, GroupingSet, HookRan,
+    LanguageSet, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryTidied,
+    MessageAdded, ModelChosen, ModelResponded, PasskeyAdded, PasskeyRemoved, PasskeyUsed,
+    PermissionsChosen, ProjectFolderSet, ProjectRemoved, ProviderConnected, ProviderRemoved,
     ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted,
     ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted,
     ToolCallRequested, TrustDecided, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved,
@@ -46,7 +46,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (tool::COMPLETED, 1),
     (model::TYPE, 1),
     (chosen::TYPE, 1),
-    (chosen::APPROVAL, 1),
+    (chosen::PERMISSIONS, 1),
     (chosen::EFFORT, 1),
     (turn::ENDED, 1),
     (approval::REQUESTED, 1),
@@ -114,7 +114,7 @@ pub enum Body {
     ToolCallCompleted(ToolCallCompleted),
     ModelResponded(ModelResponded),
     ModelChosen(ModelChosen),
-    ApprovalModeChosen(ApprovalModeChosen),
+    PermissionsChosen(PermissionsChosen),
     EffortChosen(EffortChosen),
     TurnEnded(TurnEnded),
     ApprovalRequested(ApprovalRequested),
@@ -297,7 +297,7 @@ impl Event {
             Body::ToolCallCompleted(payload) => encode(header, payload),
             Body::ModelResponded(payload) => encode(header, payload),
             Body::ModelChosen(payload) => encode(header, payload),
-            Body::ApprovalModeChosen(payload) => encode(header, payload),
+            Body::PermissionsChosen(payload) => encode(header, payload),
             Body::EffortChosen(payload) => encode(header, payload),
             Body::TurnEnded(payload) => encode(header, payload),
             Body::ApprovalRequested(payload) => encode(header, payload),
@@ -366,8 +366,8 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         command::ENDED => command::decode_ended(version, data).map(|r| r.map(Body::CommandEnded)),
         chosen::TYPE => chosen::decode(version, data).map(|r| r.map(Body::ModelChosen)),
         chosen::EFFORT => chosen::decode_effort(version, data).map(|r| r.map(Body::EffortChosen)),
-        chosen::APPROVAL => {
-            chosen::decode_approval(version, data).map(|r| r.map(Body::ApprovalModeChosen))
+        chosen::PERMISSIONS => {
+            chosen::decode_permissions(version, data).map(|r| r.map(Body::PermissionsChosen))
         }
         memory::SAVED => memory::decode_saved(version, data).map(|r| r.map(Body::MemorySaved)),
         memory::EDITED => memory::decode_edited(version, data).map(|r| r.map(Body::MemoryEdited)),

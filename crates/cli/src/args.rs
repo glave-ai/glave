@@ -3,9 +3,9 @@
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 
-use glave_harness::ApprovalMode;
+use glave_harness::Permissions;
 
-use glave_config::policy::{On, SandboxChoice};
+use glave_config::policy::On;
 
 pub(crate) const USAGE: &str = "\
 glave: run hope, or any model, on the project in this folder
@@ -93,10 +93,13 @@ Usage:
 Options:
   --model <name>     the model to use: one glave runs (default: its default model)
   --continue, -c     continue your last thread in this folder
-  --approval <mode>  how much to ask before acting: auto (only reading secret files asks;
-                     the default when commands run in the sandbox) or ask (every change
-                     and command asks; the default when they cannot). With no one at the
-                     keyboard, anything that would ask is declined
+  --permissions <preset>
+                     what the agent may do: workspace (the default: it changes this
+                     project, its commands in the sandbox, and risky actions ask),
+                     read-only (it looks: its commands change nothing, and every change
+                     asks) or full-access (no sandbox; only risky actions ask). Where
+                     the sandbox cannot run, every change and command asks. With no one
+                     at the keyboard, anything that would ask is declined
   --worktree         work in a new worktree of this repository, on a branch glave/<id>,
                      kept under GLAVE_HOME/worktrees, rather than in this folder itself
   --events <file>    save the thread's events to this file as JSON Lines
@@ -114,9 +117,6 @@ With no one at the terminal and glave not running, they run in this command alon
 anything that would ask is declined.
 
 How glave runs is its settings, set in config.toml or given to glave serve:
-  --sandbox <level>  the wall around commands: project (the default wherever this computer
-                     can run it: writes only the project and temp folders, hooks and
-                     settings stay read-only), read-only, or off; never reads secrets
   --no-network       keep sandboxed commands off the network
   --network          let sandboxed commands use the network (the default)
   --on <place>       where threads work: here (the default), or cloud: a disposable worker
@@ -145,11 +145,11 @@ Environment:
   GLAVE_STORE_BUCKET an S3-compatible bucket (s3://name) to keep files in, as [store] bucket,
                      reached with the AWS_* settings (default: the blobs folder in GLAVE_HOME)
   GLAVE_LOG          how much --log records: error, warn, info (the default), debug or trace
-  GLAVE_JUDGE_MODEL     in auto mode, the model that decides whether an action a rule
-                     flagged may run because you asked for it (default: the main model;
-                     `off` to always ask)
+  GLAVE_JUDGE_MODEL     where nothing else asks, the model that decides whether an action
+                     a rule flagged may run because you asked for it (default: the main
+                     model; `off` to always ask)
 
-Settings: config.toml in GLAVE_HOME may set model, judge_model, approval, sandbox,
+Settings: config.toml in GLAVE_HOME may set model, judge_model, permissions, network,
 worktree (true or false), on (here or cloud), [workers] (backend = \"docker\" and glave,
 a Linux build of glave for workers), mcp (the servers in mcp.json to turn on) and
 [telemetry] (otlp = an OpenTelemetry collector's OTLP/HTTP URL, for builds with the otlp
@@ -213,10 +213,8 @@ pub(crate) enum Action {
 pub(crate) struct Args {
     pub action: Action,
     pub model: Option<String>,
-    /// How much to ask before acting; `auto` when not given.
-    pub approval: Option<ApprovalMode>,
-    /// Run commands in the sandbox at this level, or not at all.
-    pub sandbox: Option<SandboxChoice>,
+    /// What the agent may do; chosen elsewhere, or Workspace, when not given.
+    pub permissions: Option<Permissions>,
     /// Whether sandboxed commands may use the network; chosen elsewhere, or on, when not given.
     pub network: Option<bool>,
     /// Work in a worktree of the repository of its own, on a new branch.
@@ -288,21 +286,7 @@ pub(crate) fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args,
             }
             "--server" => args.server = Some(rest.next().ok_or("--server needs a URL")?),
             "--log" => args.log = Some(PathBuf::from(rest.next().ok_or("--log needs a file")?)),
-            "--approval" => {
-                let mode = rest.next().ok_or("--approval needs a mode: auto or ask")?;
-                args.approval =
-                    Some(ApprovalMode::named(&mode).ok_or_else(|| {
-                        format!("unknown approval mode {mode:?}: use auto or ask")
-                    })?);
-            }
-            "--sandbox" => {
-                let level = rest
-                    .next()
-                    .ok_or("--sandbox needs a level: read-only, project or off")?;
-                args.sandbox = Some(SandboxChoice::named(&level).ok_or_else(|| {
-                    format!("unknown sandbox level {level:?}: use read-only, project or off")
-                })?);
-            }
+            "--permissions" => args.permissions = Some(preset(rest.next())?),
             "--network" => args.network = Some(true),
             "--no-network" => args.network = Some(false),
             "--worktree" => args.worktree = true,
@@ -340,9 +324,6 @@ pub(crate) fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args,
             _ => words.push(argument),
         }
     }
-    if args.network.is_some() && args.sandbox == Some(SandboxChoice::Off) {
-        return Err("--network and --no-network only apply with a sandbox".into());
-    }
     args.prompt = words.join(" ");
     alone(&args)?;
     if serving && args.action == Action::Run {
@@ -363,7 +344,6 @@ fn settings_only(args: &Args) -> Result<(), String> {
         return Ok(());
     }
     let given = [
-        (args.sandbox.is_some(), "--sandbox"),
         (args.network == Some(true), "--network"),
         (args.network == Some(false), "--no-network"),
         (args.on.is_some(), "--on"),
@@ -507,6 +487,13 @@ fn address(value: Option<String>) -> Result<SocketAddr, String> {
     value
         .parse()
         .map_err(|_| format!("--http {value:?} is not host:port or a port"))
+}
+
+/// The preset `--permissions` names.
+fn preset(value: Option<String>) -> Result<Permissions, String> {
+    let name = value.ok_or("--permissions needs a preset: read-only, workspace or full-access")?;
+    Permissions::named(&name)
+        .ok_or_else(|| format!("unknown preset {name:?}: use read-only, workspace or full-access"))
 }
 
 /// The value of `--max-steps`: a whole number of model calls, at least one.

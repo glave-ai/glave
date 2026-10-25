@@ -38,7 +38,7 @@ export type GlzComposerSize = 'md' | 'lg';
  * Where the person writes to the model. The box holds only what they write: the text area,
  * which grows with what they write (CSS `field-sizing`, up to a limit), what sets where it
  * goes (`[glzComposerStart]`, such as a project chip), and send. Under the box, a quiet status
- * line (`[glzComposerStatus]`) holds what shapes the turn: the approval mode and the model,
+ * line (`[glzComposerStatus]`) holds what shapes the turn: what the agent may do and the model,
  * small and muted, with no box of their own, the first at the line's start and the last at its
  * end (what goes together shares one element). On a phone (`GLZ_NARROW`) the composer is one row
  * (an options button, the text, send), and the options button opens the status line as a

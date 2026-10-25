@@ -80,7 +80,7 @@ where
             memory: crate::memory::MemoryState::default(),
             for_,
             model: crate::chosen::chosen_in(&events),
-            approval: crate::chosen::approval_in(&events),
+            permissions: crate::chosen::permissions_in(&events),
             effort: crate::chosen::effort_in(&events),
             instructions,
             project,

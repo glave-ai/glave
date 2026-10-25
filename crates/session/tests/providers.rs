@@ -164,7 +164,7 @@ async fn first_run(client: &mut impl Client) {
             background: false,
             computer: None,
             model: None,
-            approval: None,
+            permissions: None,
             effort: None,
         })
         .await
@@ -177,7 +177,7 @@ async fn first_run(client: &mut impl Client) {
             background: false,
             budget: None,
             model: None,
-            approval: None,
+            permissions: None,
             effort: None,
             meta: glave_session::protocol::Meta::default(),
             unattended: false,

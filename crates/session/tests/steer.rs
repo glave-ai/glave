@@ -171,7 +171,7 @@ fn the_queue_is_bounded_a_message_chooses_no_model_and_stop_gives_back_what_wait
             background: false,
             budget: None,
             model: Some("test-model".into()),
-            approval: None,
+            permissions: None,
             effort: None,
             meta: glave_session::protocol::Meta::default(),
             unattended: false,

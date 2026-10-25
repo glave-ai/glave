@@ -1,5 +1,7 @@
-import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
+import { CdkMenuTrigger } from '@angular/cdk/menu';
+import { ChangeDetectionStrategy, Component, type Type, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { Folder, MessageCircle } from 'lucide';
 
 import { expectAccessible } from '../../testing/axe';
@@ -54,6 +56,7 @@ class PlacesComponent {
     testId="mode"
     label="Approvals"
     quiet
+    align="start"
     [options]="options"
     value="auto"
   />`,
@@ -182,6 +185,17 @@ describe('GlzMenuSelectComponent', () => {
     expect(button?.textContent.replace(/\s+/gu, ' ').trim()).toBe('Approvals: Auto');
     expect(button?.querySelectorAll('glz-icon')).toHaveLength(2);
     await expectAccessible(root);
+  });
+
+  it("lines its menu up with the button's end, or with its start where asked", async () => {
+    const edge = async (host: Type<unknown>): Promise<string | undefined> => {
+      const fixture = TestBed.createComponent(host);
+      await fixture.whenStable();
+      const menu = fixture.debugElement.query(By.directive(CdkMenuTrigger));
+      return menu.injector.get(CdkMenuTrigger).menuPosition[0]?.originX;
+    };
+    expect(await edge(HostComponent)).toBe('end');
+    expect(await edge(QuietComponent)).toBe('start');
   });
 
   it('shows the placeholder while nothing is chosen', async () => {

@@ -146,6 +146,8 @@ impl Kit {
 
 pub(crate) fn settings() -> Settings {
     let mut settings = Settings::new("test-model", "script");
+    // No sandbox in these tests: nothing asks but the risky actions.
+    settings.permissions = glave_harness::Permissions::FullAccess;
     settings.person = Some(person());
     settings.agent = Some(agent());
     settings.instructions = Some("# AGENTS.md\n\nUse tabs.".into());

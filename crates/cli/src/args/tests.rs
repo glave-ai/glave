@@ -6,44 +6,44 @@ fn parse_words(words: &[&str]) -> Result<Args, String> {
 
 #[test]
 fn prompt_words_join_and_flags_parse() {
-    let args = parse_words(&["--approval", "ask", "fix", "the", "--model", "m", "test"]).unwrap();
-    assert_eq!(args.approval, Some(ApprovalMode::Ask));
+    let words = [
+        "--permissions",
+        "read-only",
+        "fix",
+        "the",
+        "--model",
+        "m",
+        "test",
+    ];
+    let args = parse_words(&words).unwrap();
+    assert_eq!(args.permissions, Some(Permissions::ReadOnly));
     assert_eq!(args.model.as_deref(), Some("m"));
     assert_eq!(args.prompt, "fix the test");
 }
 
 #[test]
-fn the_sandbox_takes_a_level_and_optional_network() {
+fn the_network_is_a_choice_of_its_own_in_the_sandbox() {
     let serve = |words: &[&str]| parse_words(&[&["serve"], words].concat());
-    let args = serve(&["--sandbox", "project", "--network"]).unwrap();
-    assert_eq!(args.sandbox, Some(SandboxChoice::Project));
+    let args = serve(&["--permissions", "workspace", "--network"]).unwrap();
+    assert_eq!(args.permissions, Some(Permissions::Workspace));
     assert_eq!(args.network, Some(true));
     let offline = serve(&["--no-network"]).unwrap();
     assert_eq!(offline.network, Some(false));
     assert_eq!(serve(&[]).unwrap().network, None);
-    let off = serve(&["--sandbox", "off"]).unwrap();
-    assert_eq!(off.sandbox, Some(SandboxChoice::Off));
-    assert!(serve(&["--sandbox", "everything"]).is_err());
-    assert!(serve(&["--sandbox"]).is_err());
     assert!(
-        serve(&["--sandbox", "off", "--network"]).is_err(),
-        "network needs a sandbox"
+        serve(&["--permissions", "full-access", "--no-network"]).is_ok(),
+        "for the threads that choose a sandbox"
     );
     assert!(
-        serve(&["--sandbox", "off", "--no-network"]).is_err(),
-        "no network needs a sandbox"
-    );
-    assert!(
-        serve(&["--network"]).is_ok(),
-        "a config file may choose the sandbox"
+        serve(&["--sandbox", "off"]).is_err(),
+        "part of the preset now"
     );
 }
 
 #[test]
 fn how_glave_runs_is_the_server_s_to_choose_never_one_turn_s() {
     for flags in [
-        &["--sandbox", "off"][..],
-        &["--network"],
+        &["--network"][..],
         &["--no-network"],
         &["--on", "cloud"],
         &["--max-steps", "3"],
@@ -56,8 +56,14 @@ fn how_glave_runs_is_the_server_s_to_choose_never_one_turn_s() {
         let task = parse_words(&[flags, &["-b", "go"]].concat()).unwrap_err();
         assert!(task.contains("not one turn"), "{flags:?}: {task}");
     }
-    let explained = parse_words(&["policy", "explain", "--sandbox", "read-only"]).unwrap();
-    assert_eq!(explained.sandbox, Some(SandboxChoice::ReadOnly));
+    let explained = parse_words(&["policy", "explain", "--no-network"]).unwrap();
+    assert_eq!(explained.network, Some(false));
+    let chosen = parse_words(&["--permissions", "full-access", "go"]).unwrap();
+    assert_eq!(
+        chosen.permissions,
+        Some(Permissions::FullAccess),
+        "a thread's own choice, as in the app"
+    );
 }
 
 #[test]
@@ -68,9 +74,9 @@ fn a_worktree_is_asked_for_by_flag_and_off_otherwise() {
 
 #[test]
 fn serve_is_a_subcommand_only_as_the_first_word() {
-    let serve = parse_words(&["serve", "--stdio", "--approval", "auto"]).unwrap();
+    let serve = parse_words(&["serve", "--stdio", "--permissions", "full-access"]).unwrap();
     assert_eq!(serve.action, Action::Serve);
-    assert_eq!(serve.approval, Some(ApprovalMode::Auto));
+    assert_eq!(serve.permissions, Some(Permissions::FullAccess));
     let person = parse_words(&["serve"]).unwrap();
     assert!(person.person_s_server() && !person.own_session);
     assert!(
@@ -142,17 +148,26 @@ fn serving_over_http_needs_sign_in() {
 }
 
 #[test]
-fn approval_modes_parse() {
-    assert_eq!(parse_words(&["hi"]).unwrap().approval, None);
-    let ask = parse_words(&["--approval", "ask", "hi"]).unwrap();
-    assert_eq!(ask.approval, Some(ApprovalMode::Ask));
-    assert!(parse_words(&["--approval", "bypass"]).is_err());
-    assert!(parse_words(&["--approval", "edits"]).is_err(), "retired");
+fn presets_parse() {
+    assert_eq!(parse_words(&["hi"]).unwrap().permissions, None);
+    for preset in Permissions::ALL {
+        let chosen = parse_words(&["--permissions", preset.name(), "hi"]).unwrap();
+        assert_eq!(chosen.permissions, Some(preset));
+    }
+    let unknown = parse_words(&["--permissions", "auto"]).unwrap_err();
+    assert!(
+        unknown.contains("read-only, workspace or full-access"),
+        "{unknown}"
+    );
+    assert!(
+        parse_words(&["--approval", "ask"]).is_err(),
+        "part of the preset now"
+    );
     assert!(
         parse_words(&["--yes", "hi"]).is_err(),
-        "auto is the default"
+        "workspace is the default"
     );
-    assert!(parse_words(&["--approval"]).is_err());
+    assert!(parse_words(&["--permissions"]).is_err());
 }
 
 #[test]
@@ -190,9 +205,9 @@ fn skills_is_a_command_only_as_the_first_word() {
 
 #[test]
 fn policy_explain_is_a_command_that_takes_the_choice_flags() {
-    let explain = parse_words(&["policy", "explain", "--approval", "ask"]).unwrap();
+    let explain = parse_words(&["policy", "explain", "--permissions", "read-only"]).unwrap();
     assert_eq!(explain.action, Action::Explain);
-    assert_eq!(explain.approval, Some(ApprovalMode::Ask));
+    assert_eq!(explain.permissions, Some(Permissions::ReadOnly));
     assert!(parse_words(&["policy"]).is_err());
     assert!(parse_words(&["policy", "show"]).is_err());
     assert!(parse_words(&["policy", "explain", "why"]).is_err());

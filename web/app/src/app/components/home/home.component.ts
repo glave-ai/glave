@@ -12,7 +12,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import type { ApprovalMode, ThreadStartParams } from '@glave/client';
+import type { Permissions, ThreadStartParams } from '@glave/client';
 import {
   GlzAttachmentComponent,
   GlzComposerComponent,
@@ -29,15 +29,15 @@ import { ModelsService } from '../../services/models.service';
 import { NavService } from '../../services/nav.service';
 import { SessionService } from '../../services/session.service';
 import { ProjectsService } from '../../services/projects.service';
-import { ApprovalModeComponent } from '../approval-mode/approval-mode.component';
 import { EffortPickerComponent } from '../effort-picker/effort-picker.component';
 import { ModelPickerComponent } from '../model-picker/model-picker.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
+import { PermissionsComponent } from '../permissions/permissions.component';
 
 /**
  * A new chat: the question, then the composer that starts a thread, with where it goes (a
- * chat, or a project) in its box, and the approval mode and the model in the quiet line under
- * it. Sending starts the thread there, on the model and in the approval mode picked, and its
+ * chat, or a project) in its box, and what the agent may do and the model in the quiet line
+ * under it. Sending starts the thread there, on the model and with the preset picked, and its
  * first turn, and opens the thread at once. When glave runs on this
  * computer, a line under it says what stays private. Opened for a project, the composer takes
  * focus, and the page has Back.
@@ -45,7 +45,6 @@ import { PageHeaderComponent } from '../page-header/page-header.component';
 @Component({
   selector: 'app-home',
   imports: [
-    ApprovalModeComponent,
     GlzAttachmentComponent,
     EffortPickerComponent,
     GlzComposerComponent,
@@ -53,6 +52,7 @@ import { PageHeaderComponent } from '../page-header/page-header.component';
     GlzMenuSelectComponent,
     ModelPickerComponent,
     PageHeaderComponent,
+    PermissionsComponent,
   ],
   templateUrl: './home.component.html',
   styleUrl: './home.component.scss',
@@ -87,8 +87,8 @@ export class HomeComponent {
   });
   /** The model the person picked, or `null` for the server's default. */
   protected readonly picked = signal<string | null>(null);
-  /** The approval mode the person picked, or `null` for the server's. */
-  protected readonly pickedMode = signal<ApprovalMode | null>(null);
+  /** The preset the person picked, or `null` for the server's. */
+  protected readonly pickedPermissions = signal<Permissions | null>(null);
   /** How much the person picked the model reasons, or `null` for the model's own way. */
   protected readonly pickedEffort = signal<string | null>(null);
   private readonly models = inject(ModelsService);
@@ -151,14 +151,14 @@ export class HomeComponent {
     try {
       const project = this.where();
       const model = this.picked();
-      const approval = this.pickedMode();
+      const permissions = this.pickedPermissions();
       const next = model ?? this.models.default();
       const info = this.models.models().find((each) => each.id === next);
       const effort = effortToSend(this.pickedEffort(), null, info);
       const params: ThreadStartParams = {
         ...(project === null ? {} : { project }),
         ...(model === null ? {} : { model }),
-        ...(approval === null ? {} : { approval }),
+        ...(permissions === null ? {} : { permissions }),
         ...(effort === null ? {} : { effort }),
       };
       const { thread } = await this.session.call('thread/start', params);

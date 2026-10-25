@@ -7,7 +7,7 @@ use std::process::ExitCode;
 use glave_config::policy::Choices;
 use glave_config::trust::Asking;
 use glave_event::ThreadId;
-use glave_harness::{ApprovalMode, DEFAULT_BUDGET, Goal, ProjectFolders as _};
+use glave_harness::{DEFAULT_BUDGET, Goal, Permissions, ProjectFolders as _};
 use glave_ports::ProjectId;
 use glave_ports::computer::Sandbox;
 use glave_ports::settings::Protections;
@@ -168,6 +168,7 @@ async fn here(args: &Args, wired: &Wired) -> anyhow::Result<ExitCode> {
         project,
         root,
         choices,
+        sandbox,
         projects,
         ..
     } = wired;
@@ -191,9 +192,10 @@ async fn here(args: &Args, wired: &Wired) -> anyhow::Result<ExitCode> {
         asks: false,
         servers: Some(servers),
         model: None,
-        approval: None,
+        permissions: None,
     };
-    let mut printer = Printer::new(&model, protections(choices, settled.protections));
+    let shown = protections(choices, settled.protections, sandbox.as_ref());
+    let mut printer = Printer::new(&model, shown);
     let code = if let Some(objective) = &args.goal {
         let goal = Goal {
             objective: objective.clone(),
@@ -211,14 +213,15 @@ async fn here(args: &Args, wired: &Wired) -> anyhow::Result<ExitCode> {
 
 /// The thread to use in `project` (the caller's Chats when none): the newest one there with
 /// `--continue`, otherwise a new one, in a worktree of its own when `worktree` says so (the
-/// server's choice when it says nothing), choosing `model` and `approval` when they are given.
+/// server's choice when it says nothing), choosing `model` and `permissions` when they are
+/// given.
 pub(crate) async fn pick_thread(
     server: Session<'_>,
     project: Option<ProjectId>,
     resume: bool,
     worktree: Option<bool>,
     model: Option<String>,
-    approval: Option<ApprovalMode>,
+    permissions: Option<Permissions>,
 ) -> anyhow::Result<(ThreadId, &'static str)> {
     if resume {
         let latest = match server
@@ -251,7 +254,7 @@ pub(crate) async fn pick_thread(
             worktree,
             computer: None,
             model,
-            approval,
+            permissions,
             effort: None,
         })
         .await?
@@ -261,22 +264,17 @@ pub(crate) async fn pick_thread(
     }
 }
 
-/// The protections commands run under, as the folder's project changes them, for the banner
-/// and receipts: `approval: auto · sandbox: project`.
-fn protections(choices: &Choices, project: Protections) -> String {
-    let approval = project.mode(None, choices.approval.value);
-    let approval = format!("approval: {}", approval.name());
-    let own = choices.sandbox.value.map(|level| Sandbox {
-        level,
-        network: choices.network.value,
-        home: None,
-        glave_home: None,
-    });
-    match project.sandbox(own.as_ref()) {
+/// What the agent may do, as the folder's project changes it, for the banner and receipts:
+/// `permissions: workspace · sandbox: project + network`, within the most a sandbox here
+/// allows (`here`).
+fn protections(choices: &Choices, project: Protections, here: Option<&Sandbox>) -> String {
+    let preset = project.permissions(None, choices.permissions.value);
+    let shown = format!("permissions: {}", preset.name());
+    match project.sandbox(preset, here) {
         Some(sandbox) => {
             let network = if sandbox.network { " + network" } else { "" };
-            format!("{approval} · sandbox: {}{network}", sandbox.level.name())
+            format!("{shown} · sandbox: {}{network}", sandbox.level.name())
         }
-        None => approval,
+        None => shown,
     }
 }

@@ -130,7 +130,7 @@ const SITES: readonly { site: Site; web: string; env: Record<string, string> }[]
     web: 'dist/app/browser',
     env: {
       ...tied,
-      GLAVE_HOME: home(LIVE, 'approval = "ask"\n'),
+      GLAVE_HOME: home(LIVE, 'permissions = "read-only"\n'),
       GLAVE_BASE_URL: liveModel,
       GLAVE_MODEL: LIVE_MODEL,
     },

@@ -24,21 +24,16 @@ fn task(dir: &Path, glave: &str, test: &str) -> glave_eval::Task {
     std::fs::create_dir_all(task.join("tests")).unwrap();
     std::fs::write(task.join("environment/README.md"), "# scratch\n").unwrap();
     std::fs::write(task.join("instruction.md"), "Write hello.txt saying hi.\n").unwrap();
-    // Unconfined and without asking unless a test says otherwise, so the runner's own
-    // behaviour is the same on a computer with no sandbox.
-    let sandbox = if glave.contains("sandbox") {
+    // Full access unless a test says otherwise, so the runner's own behaviour is the same on a
+    // computer with no sandbox.
+    let permissions = if glave.contains("permissions") {
         ""
     } else {
-        "sandbox = \"off\"\n"
-    };
-    let approval = if glave.contains("approval") {
-        ""
-    } else {
-        "approval = \"auto\"\n"
+        "permissions = \"full-access\"\n"
     };
     std::fs::write(
         task.join("task.toml"),
-        format!("[glave]\n{sandbox}{approval}{glave}\n"),
+        format!("[glave]\n{permissions}{glave}\n"),
     )
     .unwrap();
     std::fs::write(task.join("tests/test.sh"), test).unwrap();

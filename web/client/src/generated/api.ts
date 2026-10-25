@@ -36,12 +36,6 @@ export type ApiError = {
 };
 
 /**
- * How much glave asks the person before acting (`specs/approvals.md`, "Modes"). Secret files
- * ask in every mode.
- */
-export type ApprovalMode = "ask" | "auto";
-
-/**
  * When an event was recorded, in UTC at millisecond precision. For people only: events are
  * ordered by [`Seq`]. Always written with three fractional digits, such as
  * `2026-10-07T21:14:01.250Z`, so every instant has exactly one spelling.
@@ -336,6 +330,14 @@ export type PasskeySummary = {
 export type PayloadVersion = number;
 
 /**
+ * What the agent may do without asking the person (`specs/approvals.md`, "Permissions"): the
+ * one choice a person makes about it, of three presets, the most cautious first. Each comes to
+ * a sandbox and how much asks wherever it runs (`glave-harness`); risky actions ask in every
+ * preset.
+ */
+export type Permissions = "read-only" | "workspace" | "full-access";
+
+/**
  * A reference to a principal: `{"kind": "person", "id": "…"}`. Every kind but `glave` has an
  * id.
  */
@@ -503,16 +505,6 @@ export type Seq = number;
 /** What the server is. */
 export type ServerInfo = {
   /**
-   * How much this server asks before acting in a thread that chose no mode: `--approval` or
-   * `approval` in `config.toml` (`specs/approvals.md`).
-   */
-  readonly approval: ApprovalMode;
-  /**
-   * The modes a thread may choose (`approval` on `thread/start` and `turn/start`): those
-   * the policy leaves, cautious first.
-   */
-  readonly approvals: readonly (ApprovalMode)[];
-  /**
    * Where a browser on this computer makes and signs in with passkeys, when the server
    * makes them here rather than at a public origin: `http://localhost:<port>`.
    */
@@ -525,6 +517,16 @@ export type ServerInfo = {
   readonly name: string;
   /** Where people reach the server from elsewhere, if they do: its public origin. */
   readonly origin?: string | null;
+  /**
+   * What the agent may do in a thread that, and whose project, chose no preset:
+   * `--permissions` or `permissions` in `config.toml` (`specs/approvals.md`, "Permissions").
+   */
+  readonly permissions: Permissions;
+  /**
+   * The presets a thread may choose (`permissions` on `thread/start` and `turn/start`):
+   * those the policy leaves, the most cautious first.
+   */
+  readonly presets: readonly (Permissions)[];
   /** The protocol versions spoken. */
   readonly protocols: readonly (string)[];
   /**
@@ -532,6 +534,12 @@ export type ServerInfo = {
    * public origin always, a setup link making the first; on this computer once one is made.
    */
   readonly signin?: readonly (SignInWay)[];
+  /**
+   * Why Workspace asks before every change and command here, in a sentence, when it does:
+   * no sandbox can run on this computer (Read-only then asks so too), or only one that keeps
+   * files as they are.
+   */
+  readonly unsandboxed?: string | null;
   readonly version: string;
 };
 
@@ -597,12 +605,6 @@ export type ThreadId = string;
 
 /** A thread, as a list shows it: from the threads view, with what it is doing now. */
 export type ThreadSummary = {
-  /**
-   * How much its turns ask before acting: the mode last chosen for it, else its project's,
-   * else the server's; never auto where its project runs commands without the sandbox and
-   * auto was chosen nowhere.
-   */
-  readonly approval: ApprovalMode;
   /** What they cost, when every call reported a cost. */
   readonly cost?: Money | null;
   readonly created_at: At;
@@ -614,6 +616,11 @@ export type ThreadSummary = {
   readonly outcome?: Outcome | null;
   /** The thread whose call started this one, for a subagent's. */
   readonly parent?: ThreadId | null;
+  /**
+   * What the agent may do in its next turn: the preset last chosen for it, else its
+   * project's, else the server's.
+   */
+  readonly permissions: Permissions;
   readonly project: ProjectId;
   readonly standing: Standing;
   readonly status: Status;
@@ -1510,11 +1517,6 @@ export type ThreadRenameResult = {
 
 export type ThreadStartParams = {
   /**
-   * How much the thread's turns ask before acting, one of the server's `approvals`;
-   * the server's own mode when absent.
-   */
-  readonly approval?: ApprovalMode | null;
-  /**
    * For a thread that runs as a task: in a project with a folder it works on a copy
    * of its own, a worktree (or a worker, where every thread works on one), never in
    * the folder itself, so `worktree: false` is refused.
@@ -1535,6 +1537,11 @@ export type ThreadStartParams = {
    * when absent.
    */
   readonly model?: string | null;
+  /**
+   * What the agent may do in the thread's turns, one of the server's `presets`; its
+   * project's, else the server's own, when absent.
+   */
+  readonly permissions?: Permissions | null;
   /** The project the thread is in: by default the caller's personal project, their Chats. */
   readonly project?: ProjectId | null;
   /**
@@ -1593,12 +1600,6 @@ export type TurnCancelResult = Readonly<Record<string, never>>;
 
 export type TurnStartParams = {
   readonly _meta?: Meta;
-  /**
-   * How much this turn, and the thread's turns after it, ask before acting: one of the
-   * server's `approvals`. The thread's latest choice when absent, else the server's.
-   * Not while a turn runs.
-   */
-  readonly approval?: ApprovalMode | null;
   /** Runs the turn as a task, with no one attached: answered at once with the task. */
   readonly background?: boolean;
   /** With `background`, tokens the turn may use, subagents' included. */
@@ -1621,6 +1622,12 @@ export type TurnStartParams = {
    * a turn runs.
    */
   readonly model?: string | null;
+  /**
+   * What the agent may do in this turn, and the thread's turns after it: one of the
+   * server's `presets`. The thread's latest choice when absent, else its project's, else
+   * the server's. Not while a turn runs.
+   */
+  readonly permissions?: Permissions | null;
   readonly prompt: string;
   readonly thread: ThreadId;
   /**
