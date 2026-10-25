@@ -438,6 +438,18 @@ jobs:
           if command -v bwrap; then echo "bubblewrap is still installed"; exit 1; fi
           cargo nextest run -p glave-computer -E 'test(/landlock/)'
           cargo nextest run -p glave --test cli -E 'test(/landlock/)'
+      # Again with the helper as releases build it, on musl, whose standard library opens files
+      # differently from glibc's: there it once waited forever on a named pipe in /tmp.
+      - name: Landlock, without bubblewrap, with the helper built for musl
+        env:
+          GLAVE_REQUIRE_LANDLOCK: "1"
+          GLAVE_TEST_SANDBOX_HELPER: ${{ github.workspace }}/target/x86_64-unknown-linux-musl/debug/glave
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q musl-tools
+          rustup target add x86_64-unknown-linux-musl
+          cargo build -p glave --target x86_64-unknown-linux-musl
+          cargo nextest run -p glave-computer -E 'test(/landlock/)'
       # Ubuntu 23.10 and later let only programs AppArmor allows create user namespaces; this
       # is the profile the person adds too (specs/sandbox.md).
       - name: Install bubblewrap, with an AppArmor profile that lets it make user namespaces

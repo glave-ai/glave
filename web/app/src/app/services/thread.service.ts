@@ -9,9 +9,9 @@ import {
   untracked,
 } from '@angular/core';
 import {
-  type ApprovalMode,
   type AttachedFile,
   type Notification,
+  type Permissions,
   type RawEvent,
   type ThreadId,
   type ThreadSummary,
@@ -233,15 +233,15 @@ export class ThreadService {
 
   /**
    * Sends `prompt`, with the `files` kept for it, and follows the turn as it runs. With
-   * `model`, the turn and the thread's turns after it go to that model; with `approval`, they
-   * run in that approval mode; with `effort`, their model reasons that much. While a turn runs,
-   * the message goes to it instead, for the model to read at its next step, and waits in the
-   * thread until it has; the model, mode and level go with the next turn.
+   * `model`, the turn and the thread's turns after it go to that model; with `permissions`, they
+   * run with that preset; with `effort`, their model reasons that much. While a turn runs, the
+   * message goes to it instead, for the model to read at its next step, and waits in the thread
+   * until it has; the model, preset and level go with the next turn.
    */
   async send(
     prompt: string,
     model: string | null = null,
-    approval: ApprovalMode | null = null,
+    permissions: Permissions | null = null,
     files: readonly AttachedFile[] = [],
     effort: string | null = null,
   ): Promise<void> {
@@ -263,7 +263,7 @@ export class ThreadService {
       prompt,
       ...withFiles(files),
       ...(model === null ? {} : { model }),
-      ...(approval === null ? {} : { approval }),
+      ...(permissions === null ? {} : { permissions }),
       ...(effort === null ? {} : { effort }),
     };
     await this.follow(thread, params, null);

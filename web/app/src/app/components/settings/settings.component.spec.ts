@@ -12,8 +12,8 @@ const SERVER = {
   name: 'glave',
   version: '0.1.0',
   protocols: ['2026-10'],
-  approval: 'auto',
-  approvals: ['ask', 'auto'],
+  permissions: 'workspace',
+  presets: ['read-only', 'workspace', 'full-access'],
 } as const;
 import { SettingsComponent } from './settings.component';
 
@@ -34,7 +34,7 @@ describe('SettingsComponent', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelector('[data-testid="settings-server"]')?.textContent).toContain(
-      'glave 0.1.0 · protocol 2026-10 · approvals: auto',
+      'glave 0.1.0 · protocol 2026-10',
     );
     expect(root.textContent).not.toMatch(/config|policy|toml|--/u);
     expect(root.querySelector('[data-testid="settings-no-accounts"]')).not.toBeNull();

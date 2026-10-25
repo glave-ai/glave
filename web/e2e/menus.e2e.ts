@@ -5,7 +5,7 @@ import { SIGNED_IN, byTestId, expectAccessible } from './support';
 
 /** The composer's three menus: each by its button, and the part of what it opens that shows. */
 const MENUS = {
-  'approval mode': { trigger: 'approval-mode-trigger', shown: 'approval-mode-option' },
+  permissions: { trigger: 'permissions-trigger', shown: 'permissions-option' },
   model: { trigger: 'model-picker-trigger', shown: 'model-picker-listbox' },
   reasoning: { trigger: 'effort-picker-trigger', shown: 'effort-picker-option' },
 } as const;
@@ -66,25 +66,25 @@ for (const name of Object.keys(MENUS) as readonly Name[]) {
 }
 
 test('a click outside an open menu closes it and still does what it does', async ({ page }) => {
-  const approval = menu(page, 'approval mode');
+  const permissions = menu(page, 'permissions');
   const model = menu(page, 'model');
   const reasoning = menu(page, 'reasoning');
   // A click on another menu's button closes the one open and opens its own.
-  await approval.trigger.click();
-  await expect(approval.shown).toBeVisible();
+  await permissions.trigger.click();
+  await expect(permissions.shown).toBeVisible();
   await model.trigger.click();
-  await expect(approval.shown).toBeHidden();
+  await expect(permissions.shown).toBeHidden();
   await expect(model.shown).toBeVisible();
   await reasoning.trigger.click();
   await expect(model.shown).toBeHidden();
   await expect(reasoning.shown).toBeVisible();
-  await approval.trigger.click();
+  await permissions.trigger.click();
   await expect(reasoning.shown).toBeHidden();
-  await expect(approval.shown).toBeVisible();
+  await expect(permissions.shown).toBeVisible();
   // A click in the composer closes it and puts the cursor there, ready to type.
   const input = byTestId(page, 'thread-composer-input');
   await input.click();
-  await expect(approval.shown).toBeHidden();
+  await expect(permissions.shown).toBeHidden();
   await expect(input).toBeFocused();
   await page.keyboard.type('Go on');
   await expect(input).toHaveValue('Go on');

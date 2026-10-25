@@ -508,7 +508,7 @@ async fn start_in(server: &Tested, caller: &Caller, project: ProjectId) -> Threa
         worktree: None,
         computer: None,
         model: None,
-        approval: None,
+        permissions: None,
         effort: None,
     };
     match server.request_as(caller, started).await.unwrap() {

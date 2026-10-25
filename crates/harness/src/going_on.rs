@@ -5,7 +5,7 @@
 //! goes on to the goal's next turns. Nothing of the turn is kept in memory meanwhile: what it did
 //! so far is read from the log.
 
-use glave_event::{ApprovalMode, Body, Event};
+use glave_event::{Body, Event, Permissions};
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider, read_all};
 use serde::Deserialize;
 
@@ -61,41 +61,47 @@ where
                 .ok_or_else(|| HarnessError::Event(format!("thread {} is full", thread.id)))?;
             thread.messages = crate::conversation::conversation(&events);
             let turn = events.get(open.started..).unwrap_or_default();
-            self.reopen_removed(thread).await?;
-            let mut toolset = if let Some(tools) = tools {
-                tools
-            } else {
-                self.bring(thread).await?;
-                self.tools(thread).await
-            };
-            let goal = crate::goal::of_turn(thread, &events, open.started);
-            let summary = self.tallies(&thread.scope, thread.id, turn).await?;
-            if goal {
-                toolset.offer_goal();
-                crate::goal::going_on(thread, turn);
-            }
-            let step = Step {
-                toolset,
-                repeats: Repeats::default(),
-                summary,
-                answered: open.asked,
-            };
-            // It keeps the model and mode it started with, whatever the settings say now.
-            let (model, mode) = self.kept_by(thread, turn).await;
-            let chosen = (thread.model.clone(), thread.approval);
+            // It keeps the model and preset it started with, whatever the settings say now,
+            // and its sandbox with the preset, so before the thread's own is brought.
+            let (model, preset) = self.kept_by(thread, turn).await;
+            let chosen = (thread.model.clone(), thread.permissions);
             thread.model = model.or_else(|| chosen.0.clone());
-            thread.approval = mode.or(chosen.1);
-            let span = crate::telemetry::turn(thread.id, caller.trace.as_ref());
-            let began = std::time::Instant::now();
-            let ran = tracing::Instrument::instrument(
-                self.steps(thread, step, &open.calls, cancel, live),
-                span.clone(),
-            )
+            thread.permissions = preset.or(chosen.1);
+            let carried = async {
+                self.reopen_removed(thread).await?;
+                let mut toolset = if let Some(tools) = tools {
+                    tools
+                } else {
+                    self.bring(thread).await?;
+                    self.tools(thread).await
+                };
+                let goal = crate::goal::of_turn(thread, &events, open.started);
+                let summary = self.tallies(&thread.scope, thread.id, turn).await?;
+                if goal {
+                    toolset.offer_goal();
+                    crate::goal::going_on(thread, turn);
+                }
+                let step = Step {
+                    toolset,
+                    repeats: Repeats::default(),
+                    summary,
+                    answered: open.asked,
+                };
+                let span = crate::telemetry::turn(thread.id, caller.trace.as_ref());
+                let began = std::time::Instant::now();
+                let ran = tracing::Instrument::instrument(
+                    self.steps(thread, step, &open.calls, cancel, live),
+                    span.clone(),
+                )
+                .await;
+                let ended = ran.as_ref().ok();
+                let ended = ended.map(|turn| (turn.outcome, turn.model_calls, turn.tool_calls));
+                crate::telemetry::turn_ended(&span, began, ended);
+                Ok::<_, HarnessError>((goal, ran))
+            }
             .await;
-            (thread.model, thread.approval) = chosen;
-            let ended = ran.as_ref().ok();
-            let ended = ended.map(|turn| (turn.outcome, turn.model_calls, turn.tool_calls));
-            crate::telemetry::turn_ended(&span, began, ended);
+            (thread.model, thread.permissions) = chosen;
+            let (goal, ran) = carried?;
             if !goal {
                 return ran;
             }
@@ -104,29 +110,29 @@ where
         })
     }
 
-    /// The model the turn whose events are `turn` was sent to and the approval mode it ran
-    /// in, as its `turn.started` and its configuration recorded them.
+    /// The model the turn whose events are `turn` was sent to and the preset it ran with, as
+    /// its `turn.started` and its configuration recorded them.
     async fn kept_by(
         &self,
         thread: &Thread,
         turn: &[Event],
-    ) -> (Option<String>, Option<ApprovalMode>) {
+    ) -> (Option<String>, Option<Permissions>) {
         let Some(Body::TurnStarted(started)) = turn.first().map(|event| &event.body) else {
             return (None, None);
         };
-        let mode = async {
+        let preset = async {
             let found = self.blobs.get(&thread.scope, &started.config.sha256).await;
             let mut blob = found.ok()??;
             let bytes = read_all(blob.bytes.as_mut(), CONFIG_LIMIT).await.ok()?;
             serde_json::from_slice::<Kept>(&bytes).ok()
         };
-        let mode = mode.await.map(|kept| kept.approval);
-        (Some(started.model.name.clone()), mode)
+        let preset = preset.await.map(|kept| kept.permissions);
+        (Some(started.model.name.clone()), preset)
     }
 }
 
 /// What a turn's configuration says it ran in, as far as it keeps it going on.
 #[derive(Deserialize)]
 struct Kept {
-    approval: ApprovalMode,
+    permissions: Permissions,
 }

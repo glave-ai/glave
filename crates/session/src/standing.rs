@@ -12,8 +12,8 @@ use glave_ports::{
 };
 use tokio::sync::watch;
 
+use crate::choice::Choice;
 use crate::held::{Slot, Use, finished};
-use crate::modes::Choice;
 use crate::protocol::{ApiError, Reply, Show, ThreadSummary, code};
 use crate::server::{MAX_PAGE, Server, no_thread};
 use crate::words::Sentence;
@@ -221,7 +221,7 @@ where
     }
 
     /// A view as the API shows it: what the thread is doing now, its title, read from the one
-    /// event that gives it, and the mode it runs in, as its project changes it (`protections`)
+    /// event that gives it, and the preset it runs with, as its project changes it (`protections`)
     /// when it is the person on this computer's.
     async fn summarize(
         &self,
@@ -254,7 +254,9 @@ where
             status: self.status_of(&scope, &view).await,
             standing: view.standing,
             title,
-            approval: self.approval_now(&scope, view.thread, protections).await?,
+            permissions: self
+                .permissions_now(&scope, view.thread, protections)
+                .await?,
             trust: None,
             for_: view.for_,
             origin: view.origin,

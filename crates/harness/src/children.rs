@@ -219,7 +219,7 @@ fn inherit(child: &mut Thread, parent: &Thread) {
     child.untrusted |= parent.untrusted;
     child.read_secret |= parent.read_secret;
     child.model.clone_from(&parent.model);
-    child.approval = parent.approval;
+    child.permissions = parent.permissions;
     child.effort.clone_from(&parent.effort);
 }
 

@@ -10,7 +10,7 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
-import type { ApprovalMode } from '@glave/client';
+import type { Permissions } from '@glave/client';
 import {
   GlzAttachmentComponent,
   GlzButtonComponent,
@@ -32,11 +32,11 @@ import { ModelsService } from '../../services/models.service';
 import { ProjectsService } from '../../services/projects.service';
 import { ThreadService } from '../../services/thread.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
-import { ApprovalModeComponent } from '../approval-mode/approval-mode.component';
 import { FolderGoneComponent } from '../folder-gone/folder-gone.component';
 import { MessageTextComponent } from '../message-text/message-text.component';
 import { EffortPickerComponent } from '../effort-picker/effort-picker.component';
 import { ModelPickerComponent } from '../model-picker/model-picker.component';
+import { PermissionsComponent } from '../permissions/permissions.component';
 import { RenameDialogComponent } from '../rename-dialog/rename-dialog.component';
 import { ThreadHeaderComponent } from '../thread-header/thread-header.component';
 import { ToolsPanelComponent } from '../tools-panel/tools-panel.component';
@@ -48,15 +48,14 @@ import { TurnComponent } from '../turn/turn.component';
  * receipt that opens to the steps, then what waits for the person), and after them what its
  * project asks the person to trust, while it asks; the reply streaming in as
  * markdown as a turn runs, and after it what the person sent meanwhile, waiting until the
- * model reads it; the composer pinned below it, usable while a turn runs, with the approval
- * mode and the model in its quiet line, or in its place, when the project's folder isn't there
+ * model reads it; the composer pinned below it, usable while a turn runs, with what the agent
+ * may do and the model in its quiet line, or in its place, when the project's folder isn't there
  * anymore, what the server says of it and what can be done; and the tools panel beside it, resized and collapsed by its edge and shown
  * or hidden by ⌘. or Ctrl+. anywhere in the thread.
  */
 @Component({
   selector: 'app-thread',
   imports: [
-    ApprovalModeComponent,
     FolderGoneComponent,
     GlzAttachmentComponent,
     GlzButtonComponent,
@@ -67,6 +66,7 @@ import { TurnComponent } from '../turn/turn.component';
     GlzTrustCardComponent,
     MessageTextComponent,
     ModelPickerComponent,
+    PermissionsComponent,
     RenameDialogComponent,
     ThreadHeaderComponent,
     ToolsPanelComponent,
@@ -118,8 +118,8 @@ export class ThreadComponent {
   protected readonly awayFromBottom = computed(() => !this.atBottom());
   /** The model the person picked for the next turn, or `null` for the thread's own. */
   protected readonly picked = signal<string | null>(null);
-  /** The approval mode the person picked for the next turn, or `null` for the thread's own. */
-  protected readonly pickedMode = signal<ApprovalMode | null>(null);
+  /** The preset the person picked for the next turn, or `null` for the thread's own. */
+  protected readonly pickedPermissions = signal<Permissions | null>(null);
   /** How much the person picked the next turn's model reasons, or `null` for the thread's own. */
   protected readonly pickedEffort = signal<string | null>(null);
   /** The model the next turn goes to: the person's pick, else the thread's, else the default. */
@@ -159,8 +159,8 @@ export class ThreadComponent {
     const summary = this.summary();
     return summary === undefined ? '' : threadTitle(summary);
   });
-  /** The thread's own approval mode, from its summary, or `null` until it is read. */
-  protected readonly mode = computed(() => this.summary()?.approval ?? null);
+  /** The thread's own preset, from its summary, or `null` until it is read. */
+  protected readonly permissions = computed(() => this.summary()?.permissions ?? null);
   /** The project the thread is in, by name; `null` for a chat. */
   protected readonly project = computed(() => {
     const project = this.projects.projectOf(this.thread());
@@ -184,7 +184,7 @@ export class ThreadComponent {
     const thread = this.thread();
     untracked(() => {
       this.picked.set(null);
-      this.pickedMode.set(null);
+      this.pickedPermissions.set(null);
       this.attachments.clear();
       this.pickedEffort.set(null);
       void this.service.open(thread);
@@ -199,15 +199,18 @@ export class ThreadComponent {
   });
 
   protected send(text: string): void {
-    // A pick goes with the turn only when it changes the thread's model or mode.
+    // A pick goes with the turn only when it changes the thread's model or preset.
     const picked = this.picked();
     const model = picked !== null && picked !== this.service.chosen() ? picked : null;
-    const pickedMode = this.pickedMode();
-    const mode = pickedMode !== null && pickedMode !== this.mode() ? pickedMode : null;
+    const pickedPermissions = this.pickedPermissions();
+    const permissions =
+      pickedPermissions !== null && pickedPermissions !== this.permissions()
+        ? pickedPermissions
+        : null;
     const next = this.nextModel() ?? this.models.default();
     const info = this.models.models().find((each) => each.id === next);
     const effort = effortToSend(this.pickedEffort(), this.service.chosenEffort(), info);
-    void this.service.send(text, model, mode, this.attachments.attached(), effort);
+    void this.service.send(text, model, permissions, this.attachments.attached(), effort);
     this.attachments.clear();
   }
 

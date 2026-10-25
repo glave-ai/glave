@@ -10,10 +10,10 @@ use glave_harness::{Cancel, HarnessError, Live, Said, Thread, TurnSummary};
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 use tokio::sync::watch;
 
+use crate::choice::Choice;
 use crate::held::{Finish, Use, busy, finished};
 use crate::hub::Hub;
 use crate::keyed::Done;
-use crate::modes::Choice;
 use crate::protocol::{ApiError, IdempotencyKey, Notification, TurnResult, Update, code};
 use crate::server::{Ended, Inner, Server};
 use crate::steer::{Message, Queue, Sent};
@@ -158,7 +158,7 @@ where
     B: BlobStore + 'static,
 {
     /// Sends `caller`'s `message` to `thread`: it starts a turn, streamed, first choosing for
-    /// the thread the model and approval mode the message names, when it does: this turn and
+    /// the thread the model and preset the message names, when it does: this turn and
     /// the thread's later ones go to it and ask that much. While a turn runs there, a message
     /// that may be queued is queued to it instead, for the model's next call. With `key`, a
     /// turn `caller` already started in `thread` with the same key is followed instead of starting
@@ -183,7 +183,9 @@ where
         if let Some(effort) = &choice.effort {
             self.offered_effort(&model, effort)?;
         }
-        self.check_approval(thread, choice.approval).await?;
+        if let Some(preset) = choice.permissions {
+            self.allowed_permissions(preset)?;
+        }
         let files = self.attach(&scope, thread, files, &model).await?;
         let (finish, done) = watch::channel(None);
         if let Some(key) = key
@@ -256,7 +258,7 @@ type TurnWork<P, L, B> = Box<
     dyn FnOnce(Arc<Inner<P, L, B>>, Thread, Cancel) -> BoxFuture<'static, (Thread, Ended)> + Send,
 >;
 
-/// A turn's work on a held thread: the model and approval mode `choice` names chosen first,
+/// A turn's work on a held thread: the model and preset `choice` names chosen first,
 /// then the turn on what was `said`, then a turn for each message sent too late for the one
 /// before it; answered by no one throughout when `unattended`. A turn that stops at a wait
 /// keeps `finish`, where it sends how it ends, for the work that goes on with it.
@@ -280,7 +282,7 @@ where
             let _no_one = unattended.then(|| inner.approvals.unattended_while(thread));
             let hub = Arc::clone(&inner.hub);
             let mut publish = |live| publish(&hub, thread, live);
-            let chose = crate::modes::record(&inner.harness, &mut held, &caller, &choice);
+            let chose = crate::choice::record(&inner.harness, &mut held, &caller, &choice);
             if let Err(error) = chose.await {
                 return (held, Err(error));
             }

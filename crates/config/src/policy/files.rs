@@ -4,9 +4,9 @@
 use std::path::Path;
 
 use crate::error::invalid;
-use glave_event::{ApprovalMode, HookPoint, Money};
+use glave_event::{HookPoint, Money, Permissions};
 use glave_ports::auth::safe_to_send;
-use glave_ports::computer::{CredentialHost, Forge, SandboxLevel};
+use glave_ports::computer::{CredentialHost, Forge};
 use glave_ports::host::PublicOrigin;
 use glave_ports::settings::{Hook, Hooks};
 use globset::Glob;
@@ -28,8 +28,9 @@ pub struct ConfigFile {
     pub model: Option<String>,
     /// A model, or `off`.
     pub judge_model: Option<String>,
-    pub approval: Option<ApprovalMode>,
-    pub sandbox: Option<SandboxChoice>,
+    /// What the agent may do without asking: `read-only`, `workspace` or `full-access`. A
+    /// project's file may only narrow it, or give full access once trusted.
+    pub permissions: Option<Permissions>,
     /// Whether sandboxed commands may use the network. A project's file may only turn it off.
     pub network: Option<bool>,
     /// The MCP servers to turn on.
@@ -319,42 +320,6 @@ impl HooksFile {
     }
 }
 
-/// A sandbox level as written, `off` included.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum SandboxChoice {
-    Off,
-    ReadOnly,
-    Project,
-}
-
-impl SandboxChoice {
-    pub fn named(name: &str) -> Option<Self> {
-        match name {
-            "off" => Some(Self::Off),
-            "read-only" => Some(Self::ReadOnly),
-            "project" => Some(Self::Project),
-            _ => None,
-        }
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Off => "off",
-            Self::ReadOnly => "read-only",
-            Self::Project => "project",
-        }
-    }
-
-    pub fn level(self) -> Option<SandboxLevel> {
-        match self {
-            Self::Off => None,
-            Self::ReadOnly => Some(SandboxLevel::ReadOnly),
-            Self::Project => Some(SandboxLevel::Project),
-        }
-    }
-}
-
 /// `policy.toml`: what an organization allows. Every section is optional; the version is not.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -362,6 +327,8 @@ pub struct PolicyFile {
     pub version: u32,
     #[serde(default)]
     pub models: ModelRules,
+    #[serde(default)]
+    pub permissions: PermissionRules,
     #[serde(default)]
     pub approval: ApprovalRules,
     #[serde(default)]
@@ -420,15 +387,22 @@ pub struct ModelRules {
     pub deny: Vec<String>,
 }
 
+/// `[permissions]`.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PermissionRules {
+    /// The most anyone may choose: below `full-access`, commands always run in the sandbox.
+    pub highest: Option<Permissions>,
+}
+
 /// `[approval]`.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ApprovalRules {
-    pub modes: Option<Vec<ApprovalMode>>,
     pub judge: Option<JudgeRule>,
 }
 
-/// Whether the judge must, may or must not decide flagged actions in auto mode.
+/// Whether the judge must, may or must not decide flagged actions where nothing else asks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum JudgeRule {
@@ -451,8 +425,6 @@ impl JudgeRule {
 #[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SandboxRules {
-    #[serde(default)]
-    pub required: bool,
     /// Whether commands may use the network: `false` takes it from them, whatever anyone
     /// chooses.
     pub network: Option<bool>,

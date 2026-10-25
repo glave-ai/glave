@@ -129,7 +129,7 @@ fn thread_start(project: ProjectId) -> Request {
         background: false,
         computer: None,
         model: None,
-        approval: None,
+        permissions: None,
         effort: None,
     }
 }
@@ -397,7 +397,7 @@ fn a_caller_signed_in_elsewhere_is_never_asked_and_cannot_answer() {
             background: false,
             budget: None,
             model: None,
-            approval: None,
+            permissions: None,
             effort: None,
             meta: glave_session::protocol::Meta::default(),
             unattended: false,

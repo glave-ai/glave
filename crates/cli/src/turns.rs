@@ -75,13 +75,14 @@ pub(crate) async fn run(
         asks: terminal,
         servers: None,
         model: args.model.clone(),
-        approval: args.approval,
+        permissions: args.permissions,
     };
     let model = match &args.model {
         Some(model) => model.clone(),
         None => default_model(session).await,
     };
-    let mut printer = Printer::new(&model, format!("approval: {}", summary.approval.name()));
+    let shown = format!("permissions: {}", summary.permissions.name());
+    let mut printer = Printer::new(&model, shown);
     let code = match &args.goal {
         Some(objective) => {
             let goal = Goal {
@@ -189,7 +190,7 @@ fn yes(line: Option<String>) -> bool {
 }
 
 /// The thread to use in `project` (Chats when none): the newest one there with `--continue`,
-/// otherwise a new one, choosing the model, approval mode and worktree `args` name.
+/// otherwise a new one, choosing the model, preset and worktree `args` name.
 async fn thread(
     session: Session<'_>,
     project: Option<ProjectId>,
@@ -218,7 +219,7 @@ async fn thread(
         worktree: args.worktree.then_some(true),
         computer: None,
         model: args.model.clone(),
-        approval: args.approval,
+        permissions: args.permissions,
         effort: None,
     };
     summary(session.request(started).await?)

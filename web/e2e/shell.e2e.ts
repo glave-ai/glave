@@ -114,7 +114,7 @@ test('the model picked is sent with the next turn, and no reply names a model', 
   await expectAccessible(page);
   await byTestId(page, 'effort-picker-option').filter({ hasText: 'High' }).click();
   await expect(effort).toContainText('High');
-  await expect(byTestId(page, 'approval-mode')).toContainText('Auto');
+  await expect(byTestId(page, 'permissions')).toContainText('Workspace');
   const reply = byTestId(page, 'thread-composer-input');
   await reply.fill('Thanks');
   await reply.press('Enter');

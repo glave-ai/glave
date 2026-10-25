@@ -88,14 +88,6 @@ pub enum SandboxLevel {
 }
 
 impl SandboxLevel {
-    pub fn named(name: &str) -> Option<Self> {
-        match name {
-            "read-only" => Some(Self::ReadOnly),
-            "project" => Some(Self::Project),
-            _ => None,
-        }
-    }
-
     pub fn name(self) -> &'static str {
         match self {
             Self::ReadOnly => "read-only",

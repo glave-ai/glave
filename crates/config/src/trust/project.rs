@@ -6,11 +6,11 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use glave_event::{ApprovalMode, HookPoint};
+use glave_event::{HookPoint, Permissions};
 use glave_ports::settings::{Hook, point_name};
 use serde_json::Value;
 
-use crate::policy::{self, ConfigFile, HooksFile, SandboxChoice, WebFile};
+use crate::policy::{self, ConfigFile, HooksFile, WebFile};
 
 /// A project's MCP servers, in Claude Code's format, at the repository's root.
 pub(super) const MCP_FILE: &str = ".mcp.json";
@@ -170,8 +170,9 @@ impl Project {
     /// and no hooks.
     pub fn config_without_trust(&self) -> Option<ConfigFile> {
         self.config.as_ref().map(|config| ConfigFile {
-            approval: config.approval.filter(|a| *a != ApprovalMode::Auto),
-            sandbox: config.sandbox.filter(|s| *s != SandboxChoice::Off),
+            permissions: config
+                .permissions
+                .filter(|preset| *preset != Permissions::FullAccess),
             judge_model: config.judge_model.clone().filter(|j| j.trim() == "off"),
             web: config.web.as_ref().map(WebFile::without_trust),
             hooks: None,
@@ -180,20 +181,16 @@ impl Project {
     }
 }
 
-/// The settings item for the choices in `config` that loosen how commands run: approval
-/// `auto`, the sandbox `off`, `[web]` reaching further than the default, and a judge model (a
-/// repo must not pick who judges its own actions; `off` only makes glave ask more). Everything
-/// else only tightens, or picks a model.
+/// The settings item for the choices in `config` that loosen how commands run: full access,
+/// `[web]` reaching further than the default, and a judge model (a repo must not pick who
+/// judges its own actions; `off` only makes glave ask more). Everything else only tightens,
+/// or picks a model.
 fn loosening(config: &ConfigFile) -> Option<Item> {
     let mut parts = Vec::new();
     let mut plain = Vec::new();
-    if config.approval == Some(ApprovalMode::Auto) {
-        parts.push("approval = \"auto\"");
-        plain.push(Plain::new(APPROVES, None));
-    }
-    if config.sandbox == Some(SandboxChoice::Off) {
-        parts.push("sandbox = \"off\"");
-        plain.push(Plain::new(UNSANDBOXED, None));
+    if config.permissions == Some(Permissions::FullAccess) {
+        parts.push("permissions = \"full-access\"");
+        plain.push(Plain::new(FULL_ACCESS, None));
     }
     let judge = config
         .judge_model
@@ -224,10 +221,8 @@ fn loosening(config: &ConfigFile) -> Option<Item> {
     })
 }
 
-/// What `approval = "auto"` does, in plain words.
-const APPROVES: &str = "Lets glave approve actions without asking";
-/// What `sandbox = "off"` does.
-const UNSANDBOXED: &str = "Turns off the sandbox";
+/// What `permissions = "full-access"` does, in plain words.
+const FULL_ACCESS: &str = "Lets glave work outside the sandbox without asking";
 /// What a `judge_model` other than `off` does.
 const JUDGES: &str = "Chooses which model judges risky actions";
 

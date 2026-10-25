@@ -178,17 +178,17 @@ fn a_socket_in_a_folder_others_may_open_is_refused() {
     );
 }
 
-/// What a command the model runs in `place` with `sandbox` printed, through the person's
+/// What a command the model runs in `place` with `permissions` printed, through the person's
 /// server, which `model` answers: `None` when the sandbox cannot run here and no one requires
 /// it.
-fn ran(place: &Place, model: &FakeServer, sandbox: &str) -> Option<String> {
-    // Where the sandbox cannot run, a server set to it leaves every command asking, and this
-    // turn has no one to answer: nothing would run to prove anything.
+fn ran(place: &Place, model: &FakeServer, permissions: &str) -> Option<String> {
+    // Where the sandbox cannot run, Workspace leaves every command asking, and this turn has
+    // no one to answer: nothing would run to prove anything.
     let required = std::env::var_os("GLAVE_REQUIRE_SANDBOX").is_some();
-    if sandbox != "off" && !glave_computer::sandbox_available() && !required {
+    if permissions != "full-access" && !glave_computer::sandbox_available() && !required {
         return None;
     }
-    crate::support::choose(place, "sandbox", &format!("\"{sandbox}\""));
+    crate::support::choose(place, "permissions", &format!("\"{permissions}\""));
     let said = crate::support::glave(place, model, &["go"], "");
     let shown = text(&said);
     assert!(said.status.success(), "{shown}");
@@ -223,10 +223,8 @@ fn a_sandboxed_command_reaches_neither_the_socket_nor_the_token_or_keys() {
         Reply::text("Done."),
     ])
     .unwrap();
-    // Auto without a sandbox needs both choices.
-    crate::support::choose(&place, "approval", "\"auto\"");
     let (_served, _) = crate::http::serve_http(&place, &model, &["--model", "m"]);
-    let Some(confined) = ran(&place, &model, "project") else {
+    let Some(confined) = ran(&place, &model, "workspace") else {
         return;
     };
     assert!(confined.contains("ran"), "{confined}");
@@ -234,7 +232,7 @@ fn a_sandboxed_command_reaches_neither_the_socket_nor_the_token_or_keys() {
         assert!(!confined.contains(reached), "{reached}: {confined}");
     }
     // Control: unconfined, the same command reaches all three.
-    let open = ran(&place, &model, "off").unwrap();
+    let open = ran(&place, &model, "full-access").unwrap();
     for reached in ["token-read", "key-read", "socket-reached"] {
         assert!(open.contains(reached), "{reached}: {open}");
     }

@@ -52,7 +52,7 @@ async fn start_in(server: &Tested, project: ProjectId, worktree: Option<bool>) -
         background: false,
         computer: None,
         model: None,
-        approval: None,
+        permissions: None,
         effort: None,
     };
     match server.request(started).await.unwrap() {
@@ -332,7 +332,7 @@ fn a_thread_opens_with_its_own_folder_s_instructions_and_a_chat_with_the_person_
                     background: false,
                     computer: None,
                     model: None,
-                    approval: None,
+                    permissions: None,
                     effort: None,
                 },
             )
@@ -495,7 +495,7 @@ fn a_caller_signed_in_elsewhere_gives_no_folder_and_sees_none() {
                     background: false,
                     computer: None,
                     model: None,
-                    approval: None,
+                    permissions: None,
                     effort: None,
                 },
             )
@@ -573,7 +573,7 @@ fn a_project_whose_folder_is_on_another_computer_starts_no_thread_here() {
                 background: false,
                 computer: None,
                 model: None,
-                approval: None,
+                permissions: None,
                 effort: None,
             })
             .await

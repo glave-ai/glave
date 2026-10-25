@@ -10,8 +10,11 @@ export const HELLO = 'Hello from the live model.';
 /** What it says once its call to touch a file has a result. */
 export const LEFT_ALONE = 'Left it alone.';
 
-/** The command it asks to run when asked to touch a file. */
-export const TOUCH = 'touch live.txt';
+/**
+ * What it asks to change when asked to touch a file: writing `live.txt`, a change that asks in
+ * Read-only, as the approval shows it.
+ */
+export const TOUCH = 'live.txt (1 lines)';
 
 /**
  * What, said in a prompt, holds the fake's reply to it until a test lets it go (`letGo`): so a
@@ -57,13 +60,13 @@ function say(response: ServerResponse, text: string): void {
   ]);
 }
 
-/** A reply asking to run `command`. */
-function run(response: ServerResponse, command: string): void {
+/** A reply asking to write `live.txt`. */
+function write(response: ServerResponse): void {
   const call = {
     index: 0,
     id: 'call_live',
     type: 'function',
-    function: { name: 'bash', arguments: JSON.stringify({ command }) },
+    function: { name: 'write', arguments: JSON.stringify({ path: 'live.txt', content: 'live\n' }) },
   };
   stream(response, [
     { id: 'gen-run', model: LIVE_MODEL, choices: [{ index: 0, delta: { tool_calls: [call] } }] },
@@ -132,7 +135,7 @@ function answer(request: IncomingMessage, response: ServerResponse): void {
       if (last?.role === 'tool') {
         say(response, LEFT_ALONE);
       } else if (text.toLowerCase().includes('touch')) {
-        run(response, TOUCH);
+        write(response);
       } else {
         say(response, HELLO);
       }
@@ -149,7 +152,7 @@ function answer(request: IncomingMessage, response: ServerResponse): void {
 /**
  * Starts a model service a real glave talks to in the end-to-end tests (live.e2e.ts), on a port
  * the system picks, and answers its OpenAI-compatible address. Asked to touch a file, it asks to
- * run `touch`; once that call has a result, it says it left the file alone; to anything else, it
+ * write one; once that call has a result, it says it left the file alone; to anything else, it
  * says hello. A prompt that holds its reply (`holding`) waits for the test to let it go. It does
  * not keep the process alive.
  */

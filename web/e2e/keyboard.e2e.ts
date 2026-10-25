@@ -117,7 +117,7 @@ test('a model is searched and picked by name, by keyboard alone', async ({ page,
   expect(turn?.params).toMatchObject({ prompt: 'Go on', model: 'openai/gpt-6-luna' });
 });
 
-test('the approval mode is chosen by keyboard and goes with the next turn', async ({
+test('the preset is chosen by keyboard and goes with the next turn', async ({
   page,
   browserName,
 }) => {
@@ -125,21 +125,21 @@ test('the approval mode is chosen by keyboard and goes with the next turn', asyn
     browserName === 'webkit' && process.platform === 'darwin',
     'WebKit on a Mac Tabs only to fields and links, as Safari does by default',
   );
-  const trigger = byTestId(page, 'approval-mode-trigger');
-  await expect(trigger).toContainText('Auto');
-  await tabTo(page, 'approval-mode-trigger');
+  const trigger = byTestId(page, 'permissions-trigger');
+  await expect(trigger).toContainText('Workspace');
+  await tabTo(page, 'permissions-trigger');
   await page.keyboard.press('Enter');
-  const ask = byTestId(page, 'approval-mode-option').first();
-  await expect(ask).toBeVisible();
+  const readOnly = byTestId(page, 'permissions-option').first();
+  await expect(readOnly).toBeVisible();
   await expectAccessible(page);
-  // Opened from the keyboard, the menu focuses its first mode, the cautious one.
-  await expect(ask).toBeFocused();
+  // Opened from the keyboard, the menu focuses its first preset, the most cautious.
+  await expect(readOnly).toBeFocused();
   await page.keyboard.press('Enter');
-  await expect(trigger).toContainText('Ask');
+  await expect(trigger).toContainText('Read-only');
   await tabTo(page, 'thread-composer-input', true);
   await page.keyboard.type('Carefully');
   await page.keyboard.press('Enter');
   await expect(byTestId(page, 'thread-message').last()).toContainText('Glad to help.');
   const turn = requests.find((request) => request.method === 'turn/start');
-  expect(turn?.params).toMatchObject({ prompt: 'Carefully', approval: 'ask' });
+  expect(turn?.params).toMatchObject({ prompt: 'Carefully', permissions: 'read-only' });
 });

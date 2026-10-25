@@ -8,9 +8,8 @@
 use std::path::{Path, PathBuf};
 
 use glave_config::policy::{self, ConfigFile, Constraints, ModelEntry, Source};
-use glave_harness::ApprovalMode;
+use glave_harness::Permissions;
 use glave_ports::block_on;
-use glave_ports::computer::SandboxLevel;
 use glave_ports::settings::{Judge, Protections};
 use glave_ports::testing::{ManualClock, TempDir};
 
@@ -228,9 +227,9 @@ fn a_project_is_asked_about_in_plain_words_and_on_once_trusted_and_only_then() {
 }
 
 /// A project that chooses almost everything a project may, two of them needing trust.
-const CHOOSES: &str = "model = \"alpha\"\njudge_model = \"alpha-judge\"\napproval = \"ask\"\n\
-                       sandbox = \"read-only\"\nnetwork = false\ntitles = false\nworktree = true\n\
-                       [web]\nfetch = false\n";
+const CHOOSES: &str = "model = \"alpha\"\njudge_model = \"alpha-judge\"\n\
+                       permissions = \"read-only\"\nnetwork = false\ntitles = false\n\
+                       worktree = true\n[web]\nfetch = false\n";
 
 #[test]
 fn each_project_s_settings_reach_its_own_threads_alone() {
@@ -258,9 +257,7 @@ fn each_project_s_settings_reach_its_own_threads_alone() {
         assert_eq!(
             settled.protections,
             Protections {
-                approval: Some(ApprovalMode::Ask),
-                unconfined: false,
-                level: Some(SandboxLevel::ReadOnly),
+                permissions: Some(Permissions::ReadOnly),
                 offline: true,
             }
         );

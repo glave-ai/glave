@@ -505,7 +505,7 @@ mod tests {
                 background: false,
                 computer: None,
                 model: None,
-                approval: None,
+                permissions: None,
                 effort: None,
             }
         );
@@ -520,7 +520,7 @@ mod tests {
                 background: false,
                 computer: None,
                 model: None,
-                approval: None,
+                permissions: None,
                 effort: None,
             }
         );

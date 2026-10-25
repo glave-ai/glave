@@ -1,7 +1,6 @@
 //! What a project chooses and turns on for the threads that work in it, read again at each
-//! turn: its tools offered after the harness's, its hooks run after the harness's, the approval
-//! mode its settings loosen to, its commands out of the sandbox where it turned the sandbox
-//! off, and its model, judge, titles and `web_fetch` in place of the harness's. Nothing of it
+//! turn: its tools offered after the harness's, its hooks run after the harness's, the preset
+//! its settings give, its commands out of the sandbox where that is full access, and its model, judge, titles and `web_fetch` in place of the harness's. Nothing of it
 //! before the person trusts it, all of it from the next turn after, none of it in a thread
 //! elsewhere, and nothing of the project's, nor the harness's own hooks and tools, in another
 //! person's.
@@ -12,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use glave_event::{Body, HookPoint, StopReason};
 use glave_harness::{
-    AllowAll, ApprovalMode, Brought, Cancel, NoOneToAsk, Place, ProjectFolders, Settled,
+    AllowAll, Brought, Cancel, NoOneToAsk, Permissions, Place, ProjectFolders, Settled,
 };
 use glave_ports::Caller;
 use glave_ports::computer::{Sandbox, SandboxLevel};
@@ -121,12 +120,11 @@ fn tool_names(seen: &Seen, request: usize) -> Vec<String> {
 }
 
 #[test]
-fn a_project_s_tools_hooks_and_mode_are_on_from_the_turn_after_it_is_trusted() {
+fn a_project_s_tools_hooks_and_preset_are_on_from_the_turn_after_it_is_trusted() {
     let dir = folder("projects-on");
     let project_dir = folder("projects-on-project");
     let project = Project::new(Protections {
-        approval: Some(ApprovalMode::Auto),
-        unconfined: false,
+        permissions: Some(Permissions::FullAccess),
         ..Protections::default()
     });
     block_on!(async {
@@ -157,13 +155,13 @@ fn a_project_s_tools_hooks_and_mode_are_on_from_the_turn_after_it_is_trusted() {
             .unwrap();
         assert!(!tool_names(&seen, 0).contains(&"mcp__docs__search".to_owned()));
         let refused = !project_dir.join("before.txt").exists();
-        assert!(refused, "ask mode refused it");
+        assert!(refused, "Read-only asked, and it was refused");
         let before = events(harness.log(), thread.id).await.len();
 
         project.trust();
         assert_eq!(
-            harness.settled(&project_dir).await.protections.approval,
-            Some(ApprovalMode::Auto)
+            harness.settled(&project_dir).await.protections.permissions,
+            Some(Permissions::FullAccess)
         );
         harness
             .run_turn(
@@ -177,7 +175,7 @@ fn a_project_s_tools_hooks_and_mode_are_on_from_the_turn_after_it_is_trusted() {
         assert!(tool_names(&seen, 2).contains(&"mcp__docs__search".to_owned()));
         assert!(
             project_dir.join("after.txt").exists(),
-            "auto, from the project"
+            "full access, from the project"
         );
         let after = events(harness.log(), thread.id).await;
         let second = &after[before..];
@@ -185,7 +183,7 @@ fn a_project_s_tools_hooks_and_mode_are_on_from_the_turn_after_it_is_trusted() {
             !second
                 .iter()
                 .any(|event| matches!(event.body, Body::ApprovalRequested(_))),
-            "nothing asked in auto"
+            "nothing asked with full access"
         );
         assert!(
                 second
@@ -209,8 +207,7 @@ fn another_person_s_thread_gets_nothing_the_project_brings() {
     let dir = folder("projects-another");
     let project_dir = folder("projects-another-project");
     let project = Project::new(Protections {
-        approval: Some(ApprovalMode::Auto),
-        unconfined: false,
+        permissions: Some(Permissions::FullAccess),
         ..Protections::default()
     });
     project.trust();
@@ -258,8 +255,8 @@ fn another_person_s_thread_gets_nothing_the_project_brings() {
             "none of the person's own"
         );
         assert_eq!(
-            harness.approval_for(&thread),
-            ApprovalMode::Ask,
+            harness.permissions_for(&thread),
+            Permissions::ReadOnly,
             "no settings"
         );
         assert!(
@@ -395,7 +392,7 @@ fn a_project_s_model_judge_titles_and_web_reach_its_threads_alone() {
 }
 
 #[test]
-fn a_project_that_turned_the_sandbox_off_runs_its_commands_without_it_once_trusted() {
+fn a_project_that_gives_full_access_runs_its_commands_without_the_sandbox_once_trusted() {
     if !glave_computer::sandbox_available() {
         assert!(
             std::env::var_os("GLAVE_REQUIRE_SANDBOX").is_none(),
@@ -408,8 +405,7 @@ fn a_project_that_turned_the_sandbox_off_runs_its_commands_without_it_once_trust
     std::fs::create_dir_all(base.join("project")).unwrap();
     let project_dir = base.join("project");
     let project = Project::new(Protections {
-        approval: Some(ApprovalMode::Auto),
-        unconfined: true,
+        permissions: Some(Permissions::FullAccess),
         ..Protections::default()
     });
     block_on!(async {
@@ -440,7 +436,7 @@ fn a_project_that_turned_the_sandbox_off_runs_its_commands_without_it_once_trust
             AllowAll,
             InMemoryLog::new(),
             1,
-            settings(),
+            in_the_sandbox(),
         );
         let harness =
             harness.with_project_folders(Some(Arc::clone(&project) as Arc<dyn ProjectFolders>));
@@ -459,7 +455,7 @@ fn a_project_that_turned_the_sandbox_off_runs_its_commands_without_it_once_trust
             .run_turn(&mut thread, "write outside", &Cancel::new(), &mut |_| {})
             .await
             .unwrap();
-        assert!(base.join("after.txt").exists(), "the sandbox is off");
+        assert!(base.join("after.txt").exists(), "full access: no sandbox");
     });
     let _ = std::fs::remove_dir_all(&base);
 }
@@ -498,7 +494,7 @@ fn a_project_that_takes_the_network_offers_its_commands_the_ask_for_it() {
             NoOneToAsk,
             InMemoryLog::new(),
             1,
-            settings(),
+            in_the_sandbox(),
         );
         let harness =
             harness.with_project_folders(Some(Arc::clone(&project) as Arc<dyn ProjectFolders>));

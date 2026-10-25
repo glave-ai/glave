@@ -58,7 +58,7 @@ async fn start_as(server: &Tested, caller: &Caller, project: ProjectId) -> Threa
         background: false,
         computer: None,
         model: None,
-        approval: None,
+        permissions: None,
         effort: None,
     };
     match server.request_as(caller, started).await.unwrap() {
@@ -125,7 +125,7 @@ fn a_project_s_choices_reach_the_person_s_threads_in_it_never_another_s() {
             background: false,
             budget: None,
             model: None,
-            approval: None,
+            permissions: None,
             effort: None,
             meta: glave_session::protocol::Meta::default(),
             unattended: false,

@@ -6,6 +6,7 @@
 use std::path::Path;
 use std::process::ExitCode;
 
+use glave_ports::computer::Sandbox;
 use glave_ports::settings::Hook;
 
 use crate::args::Args;
@@ -29,6 +30,9 @@ pub(crate) struct Setup {
     /// The hooks that run for the person's threads everywhere: their own. A project's trusted
     /// hooks run for its own threads alone, in its own folder (`project_folders.rs`).
     pub hooks: Vec<Hook>,
+    /// The most a sandbox on this computer allows, which each preset narrows, once the
+    /// workspace found it (`sandboxing.rs`); none where none can run, or before it looked.
+    pub sandbox: Option<Sandbox>,
 }
 
 impl Setup {
@@ -37,13 +41,6 @@ impl Setup {
     pub(crate) async fn load(args: &Args, folder: &Path) -> anyhow::Result<Self> {
         let loaded = read(args, folder, None).await?;
         let choices = loaded.settle()?;
-        if args.network.is_some() && choices.sandbox.value.is_none() {
-            anyhow::bail!(
-                "--network and --no-network only apply with a sandbox, and the sandbox is off \
-                 here (from {})",
-                choices.sandbox.from
-            );
-        }
         let mine = &loaded.person_hooks;
         if let Some(rule) = loaded.constraints.own_hooks_forbidden()
             && !mine.is_empty()
@@ -61,6 +58,7 @@ impl Setup {
             loaded,
             choices,
             hooks,
+            sandbox: None,
         })
     }
 
@@ -88,6 +86,7 @@ impl Setup {
             loaded,
             choices,
             hooks,
+            sandbox: None,
         };
         Ok((setup, aside))
     }
@@ -210,8 +209,7 @@ fn flags(args: &Args) -> ConfigFile {
     let one_shot = args.action == crate::args::Action::Run && !args.prompt.is_empty();
     ConfigFile {
         model: args.model.clone(),
-        approval: args.approval,
-        sandbox: args.sandbox,
+        permissions: args.permissions,
         network: args.network,
         worktree: args.worktree.then_some(true),
         titles: one_shot.then_some(false),

@@ -21,6 +21,7 @@ mod instructions;
 mod judge;
 mod network;
 mod outside_sandbox;
+mod presets;
 mod project_folders;
 mod purposes;
 mod retry;

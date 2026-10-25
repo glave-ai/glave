@@ -50,8 +50,7 @@ fn a_save_shows_at_once_opens_the_next_thread_and_can_be_forgotten() {
     ])
     .unwrap();
     // Unconfined and without asking, so the save goes through wherever the sandbox cannot.
-    choose(&place, "sandbox", "\"off\"");
-    let args = ["--approval", "auto", "--model", "m"];
+    let args = ["--permissions", "full-access", "--model", "m"];
     let first = glave(
         &place,
         &model,
@@ -96,8 +95,7 @@ fn through_the_person_s_server_memory_is_the_folder_s_project_s() {
         Reply::text("Noted."),
     ])
     .unwrap();
-    choose(&place, "sandbox", "\"off\"");
-    let args = ["--approval", "auto", "--model", "m"];
+    let args = ["--permissions", "full-access", "--model", "m"];
     let saved = glave(
         &other,
         &model,
