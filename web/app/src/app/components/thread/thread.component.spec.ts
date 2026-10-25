@@ -97,6 +97,20 @@ describe('ThreadComponent', () => {
     document.body.click();
   });
 
+  it('shows a globe in the composer while web search is on', async () => {
+    const off = await open(session(ANSWERED));
+    expect(off.root.querySelector('[data-testid="thread-searching"]')).toBeNull();
+    TestBed.resetTestingModule();
+    const on = session(ANSWERED).answer('search/get', {
+      search: { kind: 'chosen', on: true, detail: 'Uses Exa, free. Your searches go to Exa.' },
+    });
+    const { root } = await open(on);
+    const globe = root.querySelector('[data-testid="thread-searching"]');
+    expect(globe?.getAttribute('aria-label')).toBe('Web search is on');
+    expect(globe?.closest('[data-testid="thread-composer-box"]')).not.toBeNull();
+    await expectAccessible(root);
+  });
+
   it('shows the top bar, and the conversation with its receipts, approvals and questions', async () => {
     const fake = session(HISTORY);
     const { root } = await open(fake);

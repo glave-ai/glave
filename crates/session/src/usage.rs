@@ -1,8 +1,8 @@
-//! How much each connection was used (`specs/session.md`, "Connections"): the calls the
-//! person's agent asked of its tools since this month began (UTC), counted from the log, a view
-//! over it with nothing more kept. A connection's tools reach the model as `mcp__<name>__<tool>`
-//! after the name the person's settings give its server, so its calls are the
-//! `tool.call.requested` events naming one, in the threads of every project the person owns,
+//! How much each connection was used (`specs/session.md`, "Connections" and "Web search"): the
+//! calls the person's agent asked of its tools since this month began (UTC), counted from the
+//! log, a view over it with nothing more kept. A connection's tools reach the model as
+//! `mcp__<name>__<tool>` after the name the person's settings give its server, so its calls are
+//! the `tool.call.requested` events naming one, in the threads of every project the person owns,
 //! archived ones too, that changed this month. The count reads every event of those threads,
 //! so it has a time limit: one that runs out, or fails, leaves the connections without a count.
 
@@ -14,7 +14,8 @@ use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope, Standing, T
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 
-use crate::protocol::{ApiError, ConnectionInfo, ConnectionStatus, Usage};
+use crate::connections::Searching;
+use crate::protocol::{ApiError, ConnectionInfo, SearchInfo, Usage};
 use crate::server::Server;
 use crate::words::Sentence;
 
@@ -29,39 +30,75 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Gives each of `connections` in the person's settings how much it was used. A count that
-    /// fails, or takes longer than [`COUNTING`], leaves them without, and the log says why.
+    /// Gives each of `connections` in the person's settings how much it was used.
     pub(crate) async fn used(&self, caller: &Caller, connections: &mut [ConnectionInfo]) {
-        let mine = |connection: &ConnectionInfo| connection.status != ConnectionStatus::Off;
         let servers: Vec<&str> = connections
             .iter()
-            .filter(|connection| mine(connection))
             .filter_map(|connection| connection.name.as_deref())
             .collect();
-        if servers.is_empty() {
+        let Some(calls) = self.counted(caller, &servers).await else {
             return;
-        }
-        let calls = match tokio::time::timeout(COUNTING, self.calls(caller, &servers)).await {
-            Ok(Ok(calls)) => calls,
-            Ok(Err(error)) => {
-                tracing::warn!(
-                    "could not count the calls to connections: {}",
-                    error.message
-                );
-                return;
-            }
-            Err(_) => {
-                tracing::warn!("counting the calls to connections took over {COUNTING:?}");
-                return;
-            }
         };
-        for connection in connections.iter_mut().filter(|connection| mine(connection)) {
+        for connection in connections.iter_mut() {
             let Some(name) = &connection.name else {
                 continue;
             };
             let calls = calls.get(name).copied().unwrap_or(0);
             let sentence = Sentence::CallsThisMonth { calls }.into();
             connection.usage = Some(Usage { calls, sentence });
+        }
+    }
+
+    /// Web search as the person sees it, from `searching`: never theirs to choose when there is
+    /// none; else whether it is on, who searches and what it costs, and, while it is on, how
+    /// much it searched this month.
+    pub(crate) async fn search_info(
+        &self,
+        caller: &Caller,
+        searching: Option<Searching>,
+    ) -> SearchInfo {
+        let Some(Searching { on, name }) = searching else {
+            return SearchInfo::Never;
+        };
+        let usage = if on {
+            let counted = self.counted(caller, &[name.as_str()]).await;
+            counted.map(|calls| {
+                let searches = calls.get(&name).copied().unwrap_or(0);
+                let sentence = Sentence::SearchesThisMonth { searches }.into();
+                Usage {
+                    calls: searches,
+                    sentence,
+                }
+            })
+        } else {
+            None
+        };
+        SearchInfo::Chosen {
+            on,
+            detail: Sentence::SearchDetail.into(),
+            usage,
+        }
+    }
+
+    /// The calls asked this month of the tools of each of `servers`; none when there are no
+    /// servers, or the count fails or takes longer than [`COUNTING`], which the log says.
+    async fn counted(&self, caller: &Caller, servers: &[&str]) -> Option<BTreeMap<String, u64>> {
+        if servers.is_empty() {
+            return None;
+        }
+        match tokio::time::timeout(COUNTING, self.calls(caller, servers)).await {
+            Ok(Ok(calls)) => Some(calls),
+            Ok(Err(error)) => {
+                tracing::warn!(
+                    "could not count the calls to connections: {}",
+                    error.message
+                );
+                None
+            }
+            Err(_) => {
+                tracing::warn!("counting the calls to connections took over {COUNTING:?}");
+                None
+            }
         }
     }
 

@@ -12,45 +12,32 @@ pub(crate) use self::language::Language;
 pub(crate) use self::say::say;
 pub(crate) use self::sentence::Sentence;
 
-use crate::protocol::{ApiError, ConnectionInfo, Reply, Told};
+use crate::protocol::{ApiError, Reply, SearchInfo, Told, Usage};
 
 /// Whether `answered` holds a sentence of the server's own, which a transport writes in the
 /// caller's language.
 pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
+    let used = |usage: &Option<Usage>| usage.as_ref().is_some_and(|it| it.sentence.translatable());
     match answered {
         Err(error) => error.message.translatable(),
         Ok(Reply::Projects { gone, .. }) => gone.iter().any(|gone| gone.message.translatable()),
         Ok(Reply::Folders { refused, .. }) => refused.as_ref().is_some_and(Told::translatable),
-        Ok(Reply::Connections { connections }) => connections.iter().any(speaks),
-        Ok(Reply::Connection { connection }) => speaks(connection),
+        Ok(Reply::Connections { connections }) => connections.iter().any(|it| used(&it.usage)),
+        Ok(Reply::Connection { connection }) => used(&connection.usage),
+        Ok(Reply::Search {
+            search: SearchInfo::Chosen { detail, .. },
+        }) => detail.translatable(),
         Ok(_) => false,
-    }
-}
-
-/// Whether `connection` holds a sentence of the server's own: what a suggestion is for, or how
-/// much it was used.
-fn speaks(connection: &ConnectionInfo) -> bool {
-    let suggested = connection.suggested.as_ref();
-    suggested.is_some_and(|suggested| suggested.title.translatable())
-        || connection
-            .usage
-            .as_ref()
-            .is_some_and(|usage| usage.sentence.translatable())
-}
-
-/// Writes the server's own sentences in `connection` in `language`.
-fn translate_connection(connection: &mut ConnectionInfo, language: Language) {
-    if let Some(suggested) = &mut connection.suggested {
-        suggested.title.translate(language);
-        suggested.detail.translate(language);
-    }
-    if let Some(usage) = &mut connection.usage {
-        usage.sentence.translate(language);
     }
 }
 
 /// Writes the server's own sentences in `answered` in `language`.
 pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Language) {
+    let used = |usage: &mut Option<Usage>| {
+        if let Some(usage) = usage {
+            usage.sentence.translate(language);
+        }
+    };
     match answered {
         Err(error) => error.message.translate(language),
         Ok(Reply::Projects { gone, .. }) => {
@@ -64,10 +51,16 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
         }) => refused.translate(language),
         Ok(Reply::Connections { connections }) => {
             for connection in connections {
-                translate_connection(connection, language);
+                used(&mut connection.usage);
             }
         }
-        Ok(Reply::Connection { connection }) => translate_connection(connection, language),
+        Ok(Reply::Connection { connection }) => used(&mut connection.usage),
+        Ok(Reply::Search {
+            search: SearchInfo::Chosen { detail, usage, .. },
+        }) => {
+            detail.translate(language);
+            used(usage);
+        }
         Ok(_) => {}
     }
 }

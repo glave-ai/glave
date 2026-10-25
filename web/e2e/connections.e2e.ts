@@ -118,7 +118,7 @@ test('a service that asks for a sign-in is connected in a new tab, then disconne
   expect(problems()).toEqual([]);
 });
 
-test('the web search glave suggests is off until turned on in one click, then off again', async ({
+test('web search is a switch in Settings, and the composer shows a globe while it is on', async ({
   page,
   browserName,
 }) => {
@@ -129,23 +129,18 @@ test('the web search glave suggests is off until turned on in one click, then of
   writeFileSync(settings, JSON.stringify({ mcpServers: {} }));
   const code = await signInCode(site);
   await page.goto(`${glave}/settings#code=${code}`);
-  await byTestId(page, 'settings-connections').click();
-  await expect(page).toHaveURL(/\/settings\/connections$/u);
-  const suggested = byTestId(page, 'connections-suggested');
-  const search = suggested.getByTestId('connection');
-  await expect(search).toContainText('Search the web');
-  await expect(search).toContainText('Free, no key needed. Your searches go to Exa.');
-  await expect(byTestId(page, 'connections-ready')).toHaveCount(0);
+  const search = byTestId(page, 'web-search');
+  await expect(search).toContainText('Uses Exa, free. Your searches go to Exa.');
+  const box = byTestId(page, 'web-search-on-input');
+  await expect(box).not.toBeChecked();
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
     await expectAccessible(page);
   }
 
-  await suggested.getByTestId('connection-action').click();
-  const ready = byTestId(page, 'connections-ready');
-  await expect(ready.getByTestId('connection-detail')).toHaveText('On');
-  await expect(ready.getByTestId('connection-usage')).toHaveText('No calls this month');
-  await expect(suggested).toHaveCount(0);
+  await box.click();
+  await expect(box).toBeChecked();
+  await expect(byTestId(page, 'web-search-usage')).toHaveText('No searches this month');
   const turnedOn = JSON.parse(readFileSync(settings, 'utf8')) as {
     readonly mcpServers: Readonly<Record<string, { readonly url?: string }>>;
   };
@@ -156,9 +151,25 @@ test('the web search glave suggests is off until turned on in one click, then of
   }
   expect(await page.locator('body').innerText()).not.toMatch(ADMIN_WORDS);
 
-  await ready.getByTestId('connection-action').click();
-  await expect(suggested.getByTestId('connection-action')).toHaveText('Turn on');
-  await expect(ready).toHaveCount(0);
+  // It is no connection of the person's.
+  await byTestId(page, 'settings-connections').click();
+  await expect(page.getByRole('heading', { name: 'Connections', level: 1 })).toBeVisible();
+  await expect(byTestId(page, 'connections-empty')).toBeVisible();
+  await byTestId(page, 'nav-new-chat').click();
+  const globe = byTestId(page, 'home-searching');
+  await expect(globe).toHaveAttribute('aria-label', 'Web search is on');
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    await expectAccessible(page);
+  }
+
+  await page.goBack();
+  await page.goBack();
+  await byTestId(page, 'web-search-on-input').click();
+  await expect(byTestId(page, 'web-search-on-input')).not.toBeChecked();
   expect(readFileSync(settings, 'utf8')).not.toContain('web_search_exa');
+  await byTestId(page, 'nav-new-chat').click();
+  await expect(byTestId(page, 'home-composer-box')).toBeVisible();
+  await expect(globe).toHaveCount(0);
   expect(problems()).toEqual([]);
 });

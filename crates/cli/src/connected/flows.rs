@@ -239,7 +239,6 @@ impl Trade {
             url: connection.url,
             name: Some(self.name),
             status: ConnectionStatus::SignedIn,
-            suggested: None,
             usage: None,
         })
     }

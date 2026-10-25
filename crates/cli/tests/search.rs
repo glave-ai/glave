@@ -1,9 +1,9 @@
-//! Searching the web end to end: the real binary serves the person in a fresh home, the search
-//! glave suggests at a stand-in for Exa's hosted server (the MCP test server's, never Exa
-//! itself). It is off until the person turns it on, from the terminal, which puts it in their
-//! own `mcp.json`; from the next turn the model searches with it, the step says what it
-//! searched, the results reach the model labelled untrusted, and the call is counted. Removed,
-//! it is off again.
+//! Web search end to end: the real binary serves the person in a fresh home, its server a
+//! stand-in for Exa's hosted one (the MCP test server's, never Exa itself). It is off until the
+//! person turns it on, from the terminal, which puts it in their own `mcp.json`; it is no
+//! connection of theirs to list. From the next turn the model searches with it, the step says
+//! what it searched, the results reach the model labelled untrusted, and the search is
+//! counted. Turned off, it is out of their settings again.
 
 use glave_ports::{Clock as _, SystemClock};
 use glave_provider_openai::fake::{FakeServer, Reply};
@@ -16,16 +16,13 @@ use crate::support::*;
 /// What every search finds.
 const RESULTS: &str = "1. Tokio, an asynchronous runtime for Rust: https://tokio.rs";
 
-/// The suggestion as `connection/list` answers it.
+/// Web search as `search/get` answers it.
 fn search(api: &Api) -> Value {
-    let listed = api.call("connection/list", json!({}));
-    let connections = listed["result"]["connections"].as_array().unwrap();
-    let found = connections.iter().find(|it| it["name"] == "search");
-    found.unwrap_or_else(|| panic!("{listed}")).clone()
+    api.call("search/get", json!({}))["result"]["search"].clone()
 }
 
 #[test]
-fn the_suggested_search_is_off_until_turned_on_then_searches_untrusted_and_is_counted() {
+fn web_search_is_off_until_turned_on_then_searches_untrusted_and_is_counted() {
     let place = place("search");
     let (_exa, stand_in) = serving(&["--results", RESULTS]);
     let address = format!("{stand_in}?tools=web_search_exa");
@@ -41,30 +38,25 @@ fn the_suggested_search_is_off_until_turned_on_then_searches_untrusted_and_is_co
     let (_served, url, _) = serve_http_with(&place, &model, &["--model", "m"], &env);
     let api = Api::new(&place, &url);
 
-    let off = search(&api);
-    assert_eq!(
-        (&off["status"], &off["url"], &off["suggested"]["title"]),
-        (&json!("off"), &json!(address), &json!("Search the web")),
-        "{off}"
-    );
-    assert!(off.get("usage").is_none(), "{off}");
+    let off = json!({"kind": "chosen", "on": false, "detail": "Uses Exa, free. Your searches go to Exa."});
+    assert_eq!(search(&api), off);
     assert!(
         !place.home.join("mcp.json").exists(),
-        "nothing is written while it is off"
+        "nothing written while it is off"
     );
     let config = place.home.join("config.toml");
     let own = std::fs::read_to_string(&config).unwrap();
     only_the_server_answers(&place);
-    let listed = text(&glave(&place, &model, &["connections"], ""));
+    let said = text(&glave(&place, &model, &["search"], ""));
     assert!(
-        listed.contains("off: Search the web") && listed.contains("glave connect search"),
-        "{listed}"
+        said.contains("Web search is off. Uses Exa, free."),
+        "{said}"
     );
 
-    let turned = glave(&place, &model, &["connect", "search"], "");
+    let turned = glave(&place, &model, &["search", "on"], "");
     let said = text(&turned);
     assert!(
-        turned.status.success() && said.contains("Turned on search"),
+        turned.status.success() && said.contains("Web search is on."),
         "{said}"
     );
     let settings = std::fs::read_to_string(place.home.join("mcp.json")).unwrap();
@@ -72,6 +64,11 @@ fn the_suggested_search_is_off_until_turned_on_then_searches_untrusted_and_is_co
     assert_eq!(
         settings["mcpServers"]["search"],
         json!({"type": "http", "url": address})
+    );
+    let listed = text(&glave(&place, &model, &["connections"], ""));
+    assert!(
+        !listed.contains("search") && !listed.contains(&stand_in),
+        "{listed}"
     );
     // The person's own settings read again, so the next turn reads `mcp.json` again too.
     std::fs::write(&config, own).unwrap();
@@ -87,20 +84,18 @@ fn the_suggested_search_is_off_until_turned_on_then_searches_untrusted_and_is_co
         "{sent}"
     );
     searched_alone_and_untrusted(&model);
-
-    let on = search(&api);
-    assert_eq!(on["status"], "on", "{on}");
     // Counted this month, unless the month turned meanwhile, which starts the count again.
     let counted = if month() == searched_in {
-        json!({"calls": 1, "sentence": "One call this month"})
+        json!({"calls": 1, "sentence": "One search this month"})
     } else {
-        json!({"calls": 0, "sentence": "No calls this month"})
+        json!({"calls": 0, "sentence": "No searches this month"})
     };
-    assert_eq!(on["usage"], counted);
+    let on = search(&api);
+    assert_eq!((&on["on"], &on["usage"]), (&json!(true), &counted), "{on}");
 
-    let removed = glave(&place, &model, &["connections", "remove", "search"], "");
-    assert!(removed.status.success(), "{}", text(&removed));
-    assert_eq!(search(&api)["status"], "off");
+    let turned = glave(&place, &model, &["search", "off"], "");
+    assert!(turned.status.success(), "{}", text(&turned));
+    assert_eq!(search(&api), off);
     let settings = std::fs::read_to_string(place.home.join("mcp.json")).unwrap();
     assert!(!settings.contains("web_search_exa"), "{settings}");
 }

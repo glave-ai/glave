@@ -151,8 +151,8 @@ impl Servers {
         let server = match (&wanted.config, &self.connected) {
             (ServerConfig::Http { url, headers }, Some(connected)) => {
                 let server = McpServer::remote(name, url, headers, connected.signer(url), limits);
-                match connected.suggested_at(url) {
-                    Some(suggestion) => server.searching_with(suggestion.tool),
+                match connected.search_at(url) {
+                    Some(search) => server.searching_with(search.tool),
                     None => server,
                 }
             }

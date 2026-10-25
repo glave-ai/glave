@@ -118,14 +118,10 @@ fn request(method: &str, params: Value) -> Request {
     serde_json::from_value(Value::Object(message)).unwrap()
 }
 
-/// The connections `listed` answered from the person's own settings and sign-ins: without
-/// those glave suggests, and without how often each was called.
+/// The connections `listed` answered, without how often each was called.
 fn theirs(listed: &Value) -> Value {
     let connections = listed["result"]["connections"].as_array().unwrap();
-    let own = connections
-        .iter()
-        .filter(|it| it.get("suggested").is_none());
-    let bare = own.map(|it| {
+    let bare = connections.iter().map(|it| {
         let mut it = it.clone();
         it.as_object_mut().unwrap().remove("usage");
         it

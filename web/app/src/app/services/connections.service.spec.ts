@@ -107,26 +107,6 @@ describe('ConnectionsService', () => {
     await expect(connections.finish('f1', new AbortController().signal)).rejects.toBe(declined);
   });
 
-  it('turns a suggestion on, and takes the connection the server answers in its place', async () => {
-    const off: ConnectionInfo = {
-      url: 'https://mcp.exa.ai/mcp?tools=web_search_exa',
-      name: 'search',
-      status: 'off',
-      suggested: { title: 'Search the web', detail: 'Free, no key needed.' },
-    };
-    const on: ConnectionInfo = { ...off, status: 'on' };
-    const fake = new FakeSession()
-      .answer('connection/list', { connections: [DOCS, off] })
-      .answer('connection/add', { connection: on });
-    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
-    const connections = TestBed.inject(ConnectionsService);
-    await connections.load();
-    expect(await connections.add(off.url)).toEqual(on);
-    expect(fake.paramsOf('connection/add')).toEqual([{ url: off.url }]);
-    expect(connections.connections()).toEqual([DOCS, on]);
-    expect(fake.paramsOf('connection/list')).toHaveLength(1);
-  });
-
   it('removes a sign-in, then lists the connections again', async () => {
     const fake = new FakeSession()
       .answer('connection/remove', {})

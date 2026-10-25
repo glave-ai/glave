@@ -3,11 +3,12 @@
 //! the accounts ledger under a key of its own, one for each server's address; its token is
 //! renewed before it expires and handed to the person's own servers at that address with each
 //! request (`tokens.rs`), never to a file, a command or the model. Their remote servers that
-//! ask them to sign in, and are not signed in to, are listed beside the sign-ins, then the
-//! connections glave suggests, on or off (`suggested.rs`).
+//! ask them to sign in, and are not signed in to, are listed beside the sign-ins. Web search is
+//! a connection too, under the hood, which the person turns on and off as a setting
+//! (`search.rs`), never listed among them.
 
 mod flows;
-mod suggested;
+mod search;
 mod tokens;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -20,15 +21,16 @@ use glave_mcp::address;
 use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::{BoxFuture, Clock as _, SystemClock};
 use glave_session::protocol::{ApiError, ConnectionInfo, ConnectionStatus, SignInLink, code};
-use glave_session::{Connections, Returned, Suggestion};
+use glave_session::{Connections, Returned, Searching};
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use crate::accounts::Ledger;
 use crate::credentials::renewing::Renewals;
 use crate::data::Data;
-use crate::mcp::{Removed, Writer};
+use crate::mcp::Writer;
 use flows::Flows;
+pub(crate) use search::WebSearch;
 
 /// The longest one of the person's remote servers is given to say whether it asks them to
 /// sign in, as `connection/list` lists it.
@@ -43,23 +45,23 @@ pub(crate) struct Connected {
     home: PathBuf,
     flows: Flows,
     renewals: Renewals<ConnectionConnected>,
-    /// The connections glave suggests here: none where the person may add none of their own.
-    suggested: Vec<Suggestion>,
-    /// What changes their `mcp.json` when they turn one on or off.
+    /// Web search, the person's to turn on: none where they may add no servers of their own.
+    search: Option<WebSearch>,
+    /// What changes their `mcp.json` when they turn it on or off.
     writer: Writer,
 }
 
 impl Connected {
     /// The connections of `person` in `store`, whose servers `home`'s `mcp.json` names, when
     /// they may sign in to them here: everywhere but a server people sign in to with OIDC
-    /// (`others_sign_in`), whose people's own servers it does not run. glave suggests
-    /// `suggested` among them.
+    /// (`others_sign_in`), whose people's own servers it does not run; with `search`, the
+    /// person's to turn on.
     pub(crate) async fn for_person(
         store: &Data,
         person: PrincipalId,
         home: &Path,
         others_sign_in: bool,
-        suggested: Vec<Suggestion>,
+        search: Option<WebSearch>,
     ) -> anyhow::Result<Option<Arc<Self>>> {
         if others_sign_in {
             return Ok(None);
@@ -70,7 +72,7 @@ impl Connected {
             home: home.to_owned(),
             flows: Flows::default(),
             renewals: Renewals::default(),
-            suggested,
+            search,
             writer: Writer::default(),
         })))
     }
@@ -167,7 +169,6 @@ fn described(
             .get(&connection.url)
             .map(|remote| remote.name.clone()),
         status,
-        suggested: None,
         usage: None,
     }
 }
@@ -194,7 +195,6 @@ async fn signed_out(remotes: impl Iterator<Item = (String, Remote)>) -> Vec<Conn
                 url,
                 name: Some(name),
                 status: ConnectionStatus::SignedOut,
-                suggested: None,
                 usage: None,
             })
         });
@@ -217,10 +217,7 @@ impl Connections for Connected {
     }
 
     fn poll(&self, flow: String) -> BoxFuture<'_, Result<Option<ConnectionInfo>, ApiError>> {
-        Box::pin(async move {
-            let polled = self.polled(flow).await?;
-            Ok(polled.map(|connection| self.worded(connection)))
-        })
+        Box::pin(self.polled(flow))
     }
 
     fn finish(&self, returned: Returned) -> BoxFuture<'_, String> {
@@ -229,57 +226,46 @@ impl Connections for Connected {
 
     fn list(&self) -> BoxFuture<'_, Result<Vec<ConnectionInfo>, ApiError>> {
         Box::pin(async move {
-            let remotes = self.remotes().await;
-            let kept = self.kept().await?;
-            let mut listed: Vec<_> = kept
-                .iter()
-                .map(|kept| self.worded(described(kept, &remotes)))
-                .collect();
-            let suggestions = self.suggestions(&listed, &remotes);
-            // A suggestion's server is never asked anything to list it.
-            let unkept = remotes.into_iter().filter(|(url, _)| {
-                kept.iter().all(|kept| kept.url != *url) && self.suggested_at(url).is_none()
-            });
+            let mut remotes = self.remotes().await;
+            let mut kept = self.kept().await?;
+            // Web search is a setting of the person's, not a connection they see; its server
+            // is never asked anything to list it.
+            if let Some(url) = self.search_address() {
+                remotes.remove(&url);
+                kept.retain(|kept| kept.url != url);
+            }
+            let mut listed: Vec<_> = kept.iter().map(|kept| described(kept, &remotes)).collect();
+            let unkept = remotes
+                .into_iter()
+                .filter(|(url, _)| kept.iter().all(|kept| kept.url != *url));
             listed.extend(signed_out(unkept).await);
-            listed.extend(suggestions);
             Ok(listed)
         })
     }
 
-    fn add(&self, url: String) -> BoxFuture<'_, Result<ConnectionInfo, ApiError>> {
-        Box::pin(async move { self.added(&url).await })
-    }
-
     fn remove(&self, server: String) -> BoxFuture<'_, Result<(), ApiError>> {
         Box::pin(async move {
-            // A sign-in outlives its server's settings, so its address alone names it too, and
-            // a suggestion's name its address.
+            // A sign-in outlives its server's settings, so its address alone names it too.
             let resolved = self.resolved(&server).await.map(|(url, _)| url);
-            let resolved = resolved.or_else(|| address(&server));
-            let url = resolved
-                .or_else(|| self.suggestion_named(&server))
-                .unwrap_or(server);
-            let signed_out = self.ledger.remove_connection(&url).await?;
-            // Read again, so its tokens are destroyed now, a renewal of it not kept too.
-            self.kept().await?;
-            match self.turned_off(&url).await? {
-                Some(Removed::Gone) => Ok(()),
-                _ if signed_out => Ok(()),
-                Some(Removed::Theirs) => Err(ApiError::new(
-                    code::NOT_AVAILABLE,
-                    "you set this connection up in your own settings, so glave leaves it there: \
-                     change it there",
-                )),
-                Some(Removed::NotThere) => Err(ApiError::new(
-                    code::NO_CREDENTIAL,
-                    "this connection is off already",
-                )),
-                None => Err(ApiError::new(
+            let url = resolved.or_else(|| address(&server)).unwrap_or(server);
+            if !self.ledger.remove_connection(&url).await? {
+                return Err(ApiError::new(
                     code::NO_CREDENTIAL,
                     format!("nothing at {url} is signed in to here"),
-                )),
+                ));
             }
+            // Read again, so its tokens are destroyed now, a renewal of it not kept too.
+            self.kept().await?;
+            Ok(())
         })
+    }
+
+    fn search(&self) -> BoxFuture<'_, Result<Option<Searching>, ApiError>> {
+        Box::pin(self.searching())
+    }
+
+    fn set_search(&self, on: bool) -> BoxFuture<'_, Result<Option<Searching>, ApiError>> {
+        Box::pin(self.searching_set(on))
     }
 }
 

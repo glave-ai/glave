@@ -35,13 +35,14 @@ import { AccountsComponent } from '../accounts/accounts.component';
 import { AwakeComponent } from '../awake/awake.component';
 import { PasskeysComponent } from '../passkeys/passkeys.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
+import { WebSearchComponent } from '../web-search/web-search.component';
 
 /**
  * Settings: the theme, the model accounts (add, change, remove), the connected accounts git
- * signs in with, connections and memory (each its own page), the passkeys that sign the person
- * in where glave is reached from elsewhere, whether their own computer stays awake while glave
- * works, the server, signing this browser or every other out. A link to `#accounts` scrolls to
- * the connected accounts.
+ * signs in with, connections and memory (each its own page), whether glave may search the web,
+ * the passkeys that sign the person in where glave is reached from elsewhere, whether their own
+ * computer stays awake while glave works, the server, signing this browser or every other out.
+ * A link to `#accounts` scrolls to the connected accounts.
  */
 @Component({
   selector: 'app-settings',
@@ -50,6 +51,7 @@ import { PageHeaderComponent } from '../page-header/page-header.component';
     AwakeComponent,
     PasskeysComponent,
     PageHeaderComponent,
+    WebSearchComponent,
     GlzButtonComponent,
     GlzCardComponent,
     GlzConfirmDialogComponent,

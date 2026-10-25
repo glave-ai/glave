@@ -7,7 +7,7 @@
 use glave_event::Secret;
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 
-use crate::protocol::{ApiError, ConnectionInfo, Reply, SignInLink, code};
+use crate::protocol::{ApiError, ConnectionInfo, Reply, SearchInfo, SignInLink, code};
 use crate::providers::theirs;
 use crate::server::Server;
 use crate::words::Sentence;
@@ -68,17 +68,26 @@ pub trait Connections: Send + Sync {
     fn finish(&self, returned: Returned) -> BoxFuture<'_, String>;
 
     /// The connections signed in to, then the person's remote servers that ask them to sign
-    /// in and are not signed in to, then the connections glave suggests, on or off.
+    /// in and are not signed in to; never the web search's.
     fn list(&self) -> BoxFuture<'_, Result<Vec<ConnectionInfo>, ApiError>>;
 
-    /// Turns on the connection glave suggests at `url`, in the person's own settings: the
-    /// connection, on.
-    fn add(&self, url: String) -> BoxFuture<'_, Result<ConnectionInfo, ApiError>>;
-
     /// Removes the sign-in to `server`, by its name in the person's settings or its address,
-    /// destroying its tokens; one glave suggests leaves their settings too, unless they set it
-    /// up there themselves.
+    /// destroying its tokens.
     fn remove(&self, server: String) -> BoxFuture<'_, Result<(), ApiError>>;
+
+    /// Whether the person's agent searches the web: none where it is not theirs to choose.
+    fn search(&self) -> BoxFuture<'_, Result<Option<Searching>, ApiError>>;
+
+    /// Turns web search on or off in the person's own settings: how it is then.
+    fn set_search(&self, on: bool) -> BoxFuture<'_, Result<Option<Searching>, ApiError>>;
+}
+
+/// Whether the person's agent searches the web, as their own settings say.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Searching {
+    pub on: bool,
+    /// What their settings call its server, which its calls are counted by.
+    pub name: String,
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -147,16 +156,24 @@ where
         Ok(Reply::Connections { connections })
     }
 
-    /// Answers `connection/add`.
-    pub(crate) async fn add_connection(
-        &self,
-        caller: &Caller,
-        url: String,
-    ) -> Result<Reply, ApiError> {
-        let mut connection = self.connections_for(caller)?.add(url).await?;
-        self.used(caller, std::slice::from_mut(&mut connection))
-            .await;
-        Ok(Reply::Connection { connection })
+    /// Answers `search/get`: never the person's to choose where this server keeps no
+    /// connections of theirs.
+    pub(crate) async fn get_search(&self, caller: &Caller) -> Result<Reply, ApiError> {
+        if self.inner.connections.is_none() {
+            return Ok(Reply::Search {
+                search: SearchInfo::Never,
+            });
+        }
+        let searching = self.connections_for(caller)?.search().await?;
+        let search = self.search_info(caller, searching).await;
+        Ok(Reply::Search { search })
+    }
+
+    /// Answers `search/set`.
+    pub(crate) async fn set_search(&self, caller: &Caller, on: bool) -> Result<Reply, ApiError> {
+        let searching = self.connections_for(caller)?.set_search(on).await?;
+        let search = self.search_info(caller, searching).await;
+        Ok(Reply::Search { search })
     }
 
     /// Answers `connection/remove`.

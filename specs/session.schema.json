@@ -215,10 +215,10 @@
       "type": "string"
     },
     "ConnectionInfo": {
-      "description": "A connection's sign-in to its remote MCP server, a server that asks for one, or a server\nglave suggests.",
+      "description": "A connection's sign-in to its remote MCP server, or a server that asks for one.",
       "properties": {
         "name": {
-          "description": "What the person's settings call the server at that address, when they name one; for a\nsuggestion, what they will call it once it is on, which turns it on.",
+          "description": "What the person's settings call the server at that address, when they name one.",
           "type": [
             "string",
             "null"
@@ -226,17 +226,6 @@
         },
         "status": {
           "$ref": "#/$defs/ConnectionStatus"
-        },
-        "suggested": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Suggested"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "What it is for, when glave suggests it."
         },
         "url": {
           "description": "The MCP server's address: `https://mcp.example.com/mcp`.",
@@ -261,7 +250,7 @@
       "type": "object"
     },
     "ConnectionStatus": {
-      "description": "Whether the person is signed in, and the sign-in still works; or, for a server glave\nsuggests, whether it is on.",
+      "description": "Whether the person is signed in, and the sign-in still works.",
       "oneOf": [
         {
           "const": "signed_in",
@@ -276,16 +265,6 @@
         {
           "const": "signed_out",
           "description": "Not signed in: one of the person's remote servers, which asks them to sign in.",
-          "type": "string"
-        },
-        {
-          "const": "on",
-          "description": "In the person's settings and working with no sign-in: today, one glave suggests, once\nit is turned on.",
-          "type": "string"
-        },
-        {
-          "const": "off",
-          "description": "One glave suggests, not in the person's settings: `connection/add` turns it on.",
           "type": "string"
         }
       ]
@@ -1414,6 +1393,55 @@
       ],
       "type": "object"
     },
+    "SearchInfo": {
+      "description": "Whether the person's agent may search the web (`specs/session.md`, \"Web search\").",
+      "oneOf": [
+        {
+          "description": "Not the person's to choose here: their organization chooses its search among its\napproved connections, or this server keeps no connections of the person's own.",
+          "properties": {
+            "kind": {
+              "const": "never",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The person's to turn on or off: on when `on`; `detail` says who searches and what it\ncosts; `usage`, while it is on, how much it searched this month.",
+          "properties": {
+            "detail": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "chosen",
+              "type": "string"
+            },
+            "on": {
+              "type": "boolean"
+            },
+            "usage": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Usage"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "on",
+            "detail"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "Secret": {
       "description": "A key or token: sent once, never shown again.",
       "type": "string"
@@ -1586,24 +1614,6 @@
           "type": "string"
         }
       ]
-    },
-    "Suggested": {
-      "description": "A connection glave suggests, as the person reads it.",
-      "properties": {
-        "detail": {
-          "description": "What turning it on means: what it costs, and who is sent what.",
-          "type": "string"
-        },
-        "title": {
-          "description": "What it does: \"Search the web\".",
-          "type": "string"
-        }
-      },
-      "required": [
-        "title",
-        "detail"
-      ],
-      "type": "object"
     },
     "TaskInfo": {
       "description": "A task, as the tasks panel shows it.",
@@ -2375,7 +2385,7 @@
           "type": "integer"
         },
         "sentence": {
-          "description": "The calls, as the person reads them: \"412 calls this month\".",
+          "description": "The calls, as the person reads them: \"412 calls this month\", or for web search \"412\nsearches this month\".",
           "type": "string"
         }
       },
@@ -2698,32 +2708,6 @@
         "type": "object"
       },
       "result": {
-        "type": "object"
-      },
-      "streams": false
-    },
-    "connection/add": {
-      "params": {
-        "properties": {
-          "url": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "url"
-        ],
-        "type": "object"
-      },
-      "result": {
-        "description": "A connection, as it was signed in to.",
-        "properties": {
-          "connection": {
-            "$ref": "#/$defs/ConnectionInfo"
-          }
-        },
-        "required": [
-          "connection"
-        ],
         "type": "object"
       },
       "streams": false
@@ -4272,6 +4256,50 @@
         },
         "required": [
           "schedules"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "search/get": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "Whether the person's agent may search the web.",
+        "properties": {
+          "search": {
+            "$ref": "#/$defs/SearchInfo"
+          }
+        },
+        "required": [
+          "search"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "search/set": {
+      "params": {
+        "properties": {
+          "on": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "on"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "Whether the person's agent may search the web.",
+        "properties": {
+          "search": {
+            "$ref": "#/$defs/SearchInfo"
+          }
+        },
+        "required": [
+          "search"
         ],
         "type": "object"
       },

@@ -17,20 +17,6 @@ const TRACKER: ConnectionInfo = {
   status: 'signed_out',
 };
 const NOTES: ConnectionInfo = { url: 'https://notes.example.com/mcp', status: 'expired' };
-/** Searching the web, as glave suggests it: off. */
-const SEARCH: ConnectionInfo = {
-  url: 'https://mcp.exa.ai/mcp?tools=web_search_exa',
-  name: 'search',
-  status: 'off',
-  suggested: {
-    title: 'Search the web',
-    detail: 'Free, no key needed. Your searches go to Exa.',
-  },
-};
-/** `SEARCH`, turned on, and called `calls` times this month. */
-function searching(calls: number, sentence: string): ConnectionInfo {
-  return { ...SEARCH, status: 'on', usage: { calls, sentence } };
-}
 
 const PAGE = 'https://auth.example.com/authorize?state=s1';
 
@@ -328,70 +314,6 @@ describe('ConnectionsComponent', () => {
     expect(rows(root, 'connections-available')).toEqual(['D docs mcp.docs.example.com Connect']);
     expect(root.querySelector('[data-testid="connection-problem"]')).toBeNull();
     expect(said.at(-1)).toBe('docs, Disconnected');
-  });
-
-  it('suggests searching the web last, off, and turns it on in one click', async () => {
-    const fake = new FakeSession()
-      .answer('connection/list', { connections: [TRACKER, SEARCH] })
-      .answer('connection/add', { connection: searching(0, 'No calls this month') });
-    const { fixture, root, said } = await page(fake);
-    expect(rows(root, 'connections-suggested')).toEqual([
-      'SW Search the web Free, no key needed. Your searches go to Exa. Turn on',
-    ]);
-    const turnOn = root.querySelectorAll('[data-testid="connection-action"]')[1];
-    expect(turnOn?.getAttribute('aria-label')).toBe('Turn on Search the web');
-    expect(root.textContent).not.toMatch(ADMIN_OR_FILES);
-    await expectAccessible(root);
-
-    click(root.querySelector('[data-testid="connections-suggested"]') ?? root, 'connection-action');
-    await settle(fixture);
-    expect(fake.paramsOf('connection/add')).toEqual([{ url: SEARCH.url }]);
-    expect(rows(root, 'connections-ready')).toEqual([
-      'SW Search the web On No calls this month Turn off',
-    ]);
-    expect(root.querySelector('[data-testid="connections-suggested"]')).toBeNull();
-    expect(said.at(-1)).toBe('Search the web, On');
-    expect(document.activeElement?.getAttribute('aria-label')).toBe('Turn off Search the web');
-    await expectAccessible(root);
-  });
-
-  it('turns a suggestion off with no question, and says why when it could not turn on', async () => {
-    let on = true;
-    const fake = new FakeSession()
-      .answer('connection/list', () => ({
-        connections: [on ? searching(412, '412 calls this month') : SEARCH],
-      }))
-      .answer('connection/remove', () => {
-        on = false;
-        return {};
-      })
-      .answer(
-        'connection/add',
-        new ApiError({
-          code: ErrorCode.NOT_AVAILABLE,
-          message:
-            "your own connections' settings can't be read, so glave changed nothing: fix them, then try again",
-        }),
-      );
-    const { fixture, root, said } = await page(fake);
-    expect(rows(root, 'connections-ready')).toEqual([
-      'SW Search the web On 412 calls this month Turn off',
-    ]);
-    click(root, 'connection-action');
-    await settle(fixture);
-    expect(document.querySelector('[data-testid="connections-disconnect"][open]')).toBeNull();
-    expect(fake.paramsOf('connection/remove')).toEqual([{ server: SEARCH.url }]);
-    expect(rows(root, 'connections-suggested')).toEqual([
-      'SW Search the web Free, no key needed. Your searches go to Exa. Turn on',
-    ]);
-    expect(said.at(-1)).toBe('Search the web, Off');
-
-    click(root, 'connection-action');
-    await settle(fixture);
-    expect(root.querySelector('[data-testid="connection-problem"]')?.textContent).toBe(
-      "Your own connections' settings can't be read, so glave changed nothing: fix them, then try again.",
-    );
-    await expectAccessible(root);
   });
 
   it('shows how often each connection was called this month, in the server’s words', async () => {

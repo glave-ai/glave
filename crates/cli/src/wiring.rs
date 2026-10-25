@@ -16,14 +16,14 @@ use glave_ports::settings::Hooks;
 use glave_ports::{ProjectId, SystemClock};
 use glave_process::Processes;
 use glave_session::{
-    Answering, Connections, GitHosts, ProjectTrust, Providers, Rereads, Server, Suggestion, Wiring,
+    Answering, Connections, GitHosts, ProjectTrust, Providers, Rereads, Server, Wiring,
 };
 
 use crate::args::Args;
 use crate::catalogs::Catalogs;
 use crate::client::Glave;
 use crate::config::{self, Endpoint};
-use crate::connected::Connected;
+use crate::connected::{Connected, WebSearch};
 use crate::credentials::Hosts;
 use crate::data::Data;
 use crate::gateway::GatewaySwitch;
@@ -36,8 +36,8 @@ use crate::setup::{self, Setup};
 use crate::trust::Trust;
 use crate::{home, identity};
 
-/// The variable that puts a stand-in in place of the web search glave suggests, for tests,
-/// which must never reach Exa: every glave a test starts is given one.
+/// The variable that puts a stand-in in place of Exa's server for web search, for tests, which
+/// must never reach Exa: every glave a test starts is given one.
 const SEARCH_STAND_IN: &str = "GLAVE_SEARCH_URL";
 
 /// The server for this folder, and what the terminal needs to show it.
@@ -354,12 +354,11 @@ async fn signed(
     let others_sign_in = !args.issuers.is_empty();
     let github = setup.choices.github.as_ref().map(|github| &github.value);
     let hosts = Hosts::for_person(store, person, github, others_sign_in).await?;
-    let suggested = match setup.loaded.constraints.own_mcp_forbidden() {
-        Some(_) => Vec::new(),
-        None => vec![Suggestion::search(std::env::var(SEARCH_STAND_IN).ok())],
-    };
+    // Web search is the person's to turn on where they may add servers of their own.
+    let forbidden = setup.loaded.constraints.own_mcp_forbidden().is_some();
+    let search = (!forbidden).then(|| WebSearch::at(std::env::var(SEARCH_STAND_IN).ok()));
     let home = home::folder()?;
-    let connected = Connected::for_person(store, person, &home, others_sign_in, suggested).await?;
+    let connected = Connected::for_person(store, person, &home, others_sign_in, search).await?;
     Ok(match hosts {
         Some(hosts) => {
             let asked = Arc::clone(&hosts) as Arc<dyn GitCredentials>;

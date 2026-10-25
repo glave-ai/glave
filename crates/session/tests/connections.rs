@@ -11,10 +11,10 @@ use std::sync::{Arc, Mutex};
 
 use glave_ports::BoxFuture;
 use glave_session::protocol::{
-    ApiError, ConnectionInfo, ConnectionStatus, Reply, Request, SignInLink, code,
+    ApiError, ConnectionInfo, ConnectionStatus, Reply, Request, SearchInfo, SignInLink, code,
 };
 use glave_session::signin::{LocalToken, SignIn};
-use glave_session::{Answering, Connections, Returned, Suggestion};
+use glave_session::{Answering, Connections, Returned, Searching};
 use serde_json::json;
 
 use crate::conformance::{Client, OverHttp};
@@ -33,6 +33,8 @@ const NOT_MINE: &str = "https://plain.example.com/mcp";
 pub(crate) struct InMemory {
     redirects: Mutex<Vec<Option<String>>>,
     kept: Mutex<Vec<ConnectionInfo>>,
+    /// Web search, the person's to turn on or off once it is set; none, not theirs.
+    searching: Mutex<Option<Searching>>,
 }
 
 impl Connections for InMemory {
@@ -84,23 +86,6 @@ impl Connections for InMemory {
         Box::pin(async move { Ok(self.kept.lock().unwrap().clone()) })
     }
 
-    fn add(&self, url: String) -> BoxFuture<'_, Result<ConnectionInfo, ApiError>> {
-        Box::pin(async move {
-            let suggestion = Suggestion::search(None);
-            if url != suggestion.url {
-                return Err(ApiError::new(
-                    code::NO_SERVER,
-                    "glave suggests no such server",
-                ));
-            }
-            let on = suggestion.listed(ConnectionStatus::On);
-            let mut kept = self.kept.lock().unwrap();
-            kept.retain(|connection| connection.url != on.url);
-            kept.push(on.clone());
-            Ok(on)
-        })
-    }
-
     fn remove(&self, server: String) -> BoxFuture<'_, Result<(), ApiError>> {
         Box::pin(async move {
             let mut kept = self.kept.lock().unwrap();
@@ -112,6 +97,20 @@ impl Connections for InMemory {
             Ok(())
         })
     }
+
+    fn search(&self) -> BoxFuture<'_, Result<Option<Searching>, ApiError>> {
+        Box::pin(async move { Ok(self.searching.lock().unwrap().clone()) })
+    }
+
+    fn set_search(&self, on: bool) -> BoxFuture<'_, Result<Option<Searching>, ApiError>> {
+        Box::pin(async move {
+            let mut searching = self.searching.lock().unwrap();
+            if let Some(searching) = searching.as_mut() {
+                searching.on = on;
+            }
+            Ok(searching.clone())
+        })
+    }
 }
 
 /// The person's server `docs`, signed in to.
@@ -120,7 +119,6 @@ fn docs() -> ConnectionInfo {
         url: SERVER.into(),
         name: Some("docs".into()),
         status: ConnectionStatus::SignedIn,
-        suggested: None,
         usage: None,
     }
 }
@@ -257,20 +255,28 @@ fn only_the_person_on_this_computer_signs_in_to_connections() {
     block_on!(async {
         let (tested, _) = fresh(&folder("conn-oidc")).await;
         let mut client = OverHttp::new(tested).await;
-        let add = Request::ConnectionAdd {
-            url: Suggestion::search(None).url,
-        };
-        for request in [start(SERVER), Request::ConnectionList {}, add.clone()] {
+        let on = Request::SearchSet { on: true };
+        for request in [start(SERVER), Request::ConnectionList {}, on.clone()] {
             let refused = client.call(request).await.unwrap_err();
             assert_eq!(refused.code, code::NOT_ALLOWED, "{refused}");
         }
         client.close().await;
 
         let tested = server(&folder("conn-none"), Vec::new(), Answering::Clients).await;
-        for request in [start(SERVER), add] {
+        for request in [start(SERVER), on] {
             let refused = tested.request(request).await.unwrap_err();
             assert_eq!(refused.code, code::NOT_AVAILABLE);
         }
+        let never = tested.request(Request::SearchGet {}).await.unwrap();
+        assert!(
+            matches!(
+                never,
+                Reply::Search {
+                    search: SearchInfo::Never
+                }
+            ),
+            "not theirs to choose, so not shown: {never:?}"
+        );
         tested.shutdown().await;
     });
 }
@@ -288,47 +294,107 @@ fn each_connection_in_the_person_s_settings_says_how_often_it_was_called_this_mo
     block_on!(async {
         let connections = Arc::new(InMemory::default());
         connections.kept.lock().unwrap().push(docs());
-        let search = Suggestion::search(None);
-        let off = search.listed(ConnectionStatus::Off);
-        connections.kept.lock().unwrap().push(off);
-        let call = |text: &str| answer(None, Some(("mcp__docs__echo", json!({"text": text}))));
-        let mut setup = Setup::new(vec![call("one"), call("two"), answer(Some("done"), None)]);
+        let call = |tool: &str| answer(None, Some((tool, json!({"query": "rust"}))));
+        let mut setup = Setup::new(vec![
+            call("mcp__docs__echo"),
+            call("mcp__docs__echo"),
+            call("mcp__search__web_search_exa"),
+            answer(Some("done"), None),
+        ]);
         setup.connections = Some(Arc::clone(&connections) as Arc<dyn Connections>);
         let dir = folder("conn-usage");
         let (tested, _) = setup.build(&dir).await;
-        let before = listed(&tested).await;
-        let usage = |connections: &[ConnectionInfo], name: &str| {
-            let found = connections
-                .iter()
-                .find(|it| it.name.as_deref() == Some(name));
-            found.and_then(|it| it.usage.clone())
-        };
-        let none = usage(&before, "docs").unwrap();
+        let docs_used = |listed: &[ConnectionInfo]| listed.first().and_then(|it| it.usage.clone());
+        let none = docs_used(&listed(&tested).await).unwrap();
         assert_eq!((none.calls, &*none.sentence), (0, "No calls this month"));
-        let suggested = before.iter().find(|it| it.suggested.is_some()).unwrap();
-        let what = suggested.suggested.as_ref().unwrap();
-        assert_eq!(&*what.title, "Search the web");
-        assert!(what.detail.contains("Exa"), "{}", &*what.detail);
-        assert_eq!(suggested.usage, None, "off, it was never used");
 
         let thread = crate::support::start(&tested, false).await;
-        turn(&tested, thread, "look in the docs twice")
-            .await
-            .unwrap();
-        let after = listed(&tested).await;
-        let used = usage(&after, "docs").unwrap();
+        turn(&tested, thread, "look it up").await.unwrap();
+        let used = docs_used(&listed(&tested).await).unwrap();
         assert_eq!((used.calls, &*used.sentence), (2, "2 calls this month"));
+        tested.shutdown().await;
+    });
+}
 
-        let added = tested
-            .request(Request::ConnectionAdd { url: search.url })
-            .await
-            .unwrap();
-        let Reply::Connection { connection } = added else {
-            panic!("the connection, not {added:?}");
+/// Web search as the server answers it.
+async fn search(tested: &Tested, request: Request) -> SearchInfo {
+    match tested.request(request).await.unwrap() {
+        Reply::Search { search } => search,
+        other => panic!("search, not {other:?}"),
+    }
+}
+
+#[test]
+fn web_search_is_the_person_s_to_turn_on_and_says_how_often_it_searched_this_month() {
+    block_on!(async {
+        let connections = Arc::new(InMemory::default());
+        *connections.searching.lock().unwrap() = Some(Searching {
+            on: false,
+            name: "search".into(),
+        });
+        let searched = || {
+            answer(
+                None,
+                Some(("mcp__search__web_search_exa", json!({"query": "x"}))),
+            )
         };
-        assert_eq!(connection.status, ConnectionStatus::On);
-        let on = connection.usage.unwrap();
-        assert_eq!((on.calls, &*on.sentence), (0, "No calls this month"));
+        let mut setup = Setup::new(vec![searched(), searched(), answer(Some("done"), None)]);
+        setup.connections = Some(Arc::clone(&connections) as Arc<dyn Connections>);
+        let dir = folder("search-usage");
+        let (tested, _) = setup.build(&dir).await;
+        let off = search(&tested, Request::SearchGet {}).await;
+        let SearchInfo::Chosen { on, detail, usage } = off else {
+            panic!("the person's to choose, not {off:?}");
+        };
+        assert_eq!(
+            (on, &*detail, usage),
+            (false, "Uses Exa, free. Your searches go to Exa.", None)
+        );
+        assert!(
+            listed(&tested)
+                .await
+                .iter()
+                .all(|it| it.name.as_deref() != Some("search"))
+        );
+
+        let on = search(&tested, Request::SearchSet { on: true }).await;
+        let SearchInfo::Chosen {
+            on: true,
+            usage: Some(usage),
+            ..
+        } = on
+        else {
+            panic!("on, with its searches, not {on:?}");
+        };
+        assert_eq!(
+            (usage.calls, &*usage.sentence),
+            (0, "No searches this month")
+        );
+        let thread = crate::support::start(&tested, false).await;
+        turn(&tested, thread, "search twice").await.unwrap();
+        let counted = search(&tested, Request::SearchGet {}).await;
+        let SearchInfo::Chosen {
+            usage: Some(usage), ..
+        } = counted
+        else {
+            panic!("counted, not {counted:?}");
+        };
+        assert_eq!(
+            (usage.calls, &*usage.sentence),
+            (2, "2 searches this month")
+        );
+        let off = search(&tested, Request::SearchSet { on: false }).await;
+        assert!(
+            matches!(
+                off,
+                SearchInfo::Chosen {
+                    on: false,
+                    usage: None,
+                    ..
+                }
+            ),
+            "{off:?}"
+        );
         tested.shutdown().await;
     });
 }

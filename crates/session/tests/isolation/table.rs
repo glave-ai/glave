@@ -394,13 +394,11 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         ("connection/poll", vec![json!({"flow": "@flow"})]),
         ("connection/list", vec![json!({})]),
         (
-            "connection/add",
-            vec![json!({"url": "https://mcp.exa.ai/mcp?tools=web_search_exa"})],
-        ),
-        (
             "connection/remove",
             vec![json!({"server": "https://mcp.example.com/mcp"})],
         ),
+        ("search/get", vec![json!({})]),
+        ("search/set", vec![json!({"on": true})]),
     ]
 }
 

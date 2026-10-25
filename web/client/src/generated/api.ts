@@ -89,30 +89,19 @@ export type CommandId = string;
 /** Identifies a computer, unique everywhere (UUID v7, minted by the adapter that made it). */
 export type ComputerId = string;
 
-/**
- * A connection's sign-in to its remote MCP server, a server that asks for one, or a server
- * glave suggests.
- */
+/** A connection's sign-in to its remote MCP server, or a server that asks for one. */
 export type ConnectionInfo = {
-  /**
-   * What the person's settings call the server at that address, when they name one; for a
-   * suggestion, what they will call it once it is on, which turns it on.
-   */
+  /** What the person's settings call the server at that address, when they name one. */
   readonly name?: string | null;
   readonly status: ConnectionStatus;
-  /** What it is for, when glave suggests it. */
-  readonly suggested?: Suggested | null;
   /** The MCP server's address: `https://mcp.example.com/mcp`. */
   readonly url: string;
   /** How much it was used, once it is in the person's settings. */
   readonly usage?: Usage | null;
 };
 
-/**
- * Whether the person is signed in, and the sign-in still works; or, for a server glave
- * suggests, whether it is on.
- */
-export type ConnectionStatus = "signed_in" | "expired" | "signed_out" | "on" | "off";
+/** Whether the person is signed in, and the sign-in still works. */
+export type ConnectionStatus = "signed_in" | "expired" | "signed_out";
 
 /**
  * Identifies one sign-in a person keeps, sealed under a key of its own: a git host
@@ -506,6 +495,16 @@ export type ScheduleInfo = {
   readonly when: When;
 };
 
+/** Whether the person's agent may search the web (`specs/session.md`, "Web search"). */
+export type SearchInfo = {
+  readonly kind: "never";
+} | {
+  readonly detail: string;
+  readonly kind: "chosen";
+  readonly on: boolean;
+  readonly usage?: Usage | null;
+};
+
 /** A key or token: sent once, never shown again. */
 export type Secret = string;
 
@@ -581,14 +580,6 @@ export type Standing = "active" | "archived" | "deleted";
 
 /** What a thread is doing. */
 export type Status = "idle" | "running" | "waiting";
-
-/** A connection glave suggests, as the person reads it. */
-export type Suggested = {
-  /** What turning it on means: what it costs, and who is sent what. */
-  readonly detail: string;
-  /** What it does: "Search the web". */
-  readonly title: string;
-};
 
 /** A task, as the tasks panel shows it. */
 export type TaskInfo = {
@@ -809,7 +800,10 @@ export type Update = {
 export type Usage = {
   /** The calls the person's agent asked of its tools, refused ones too. */
   readonly calls: number;
-  /** The calls, as the person reads them: "412 calls this month". */
+  /**
+   * The calls, as the person reads them: "412 calls this month", or for web search "412
+   * searches this month".
+   */
   readonly sentence: string;
 };
 
@@ -864,15 +858,6 @@ export type CommandStopParams = {
 };
 
 export type CommandStopResult = Readonly<Record<string, never>>;
-
-export type ConnectionAddParams = {
-  readonly url: string;
-};
-
-/** A connection, as it was signed in to. */
-export type ConnectionAddResult = {
-  readonly connection: ConnectionInfo;
-};
 
 export type ConnectionListParams = Readonly<Record<string, never>>;
 
@@ -1406,6 +1391,22 @@ export type ScheduleListResult = {
   readonly schedules: readonly (ScheduleInfo)[];
 };
 
+export type SearchGetParams = Readonly<Record<string, never>>;
+
+/** Whether the person's agent may search the web. */
+export type SearchGetResult = {
+  readonly search: SearchInfo;
+};
+
+export type SearchSetParams = {
+  readonly on: boolean;
+};
+
+/** Whether the person's agent may search the web. */
+export type SearchSetResult = {
+  readonly search: SearchInfo;
+};
+
 export type ServerDiscoverParams = Readonly<Record<string, never>>;
 
 export type ServerDiscoverResult = ServerInfo;
@@ -1691,7 +1692,6 @@ export interface Methods {
   readonly "awake/set": { readonly params: AwakeSetParams; readonly result: AwakeSetResult };
   readonly "command/list": { readonly params: CommandListParams; readonly result: CommandListResult };
   readonly "command/stop": { readonly params: CommandStopParams; readonly result: CommandStopResult };
-  readonly "connection/add": { readonly params: ConnectionAddParams; readonly result: ConnectionAddResult };
   readonly "connection/list": { readonly params: ConnectionListParams; readonly result: ConnectionListResult };
   readonly "connection/poll": { readonly params: ConnectionPollParams; readonly result: ConnectionPollResult };
   readonly "connection/remove": { readonly params: ConnectionRemoveParams; readonly result: ConnectionRemoveResult };
@@ -1740,6 +1740,8 @@ export interface Methods {
   readonly "schedule/create": { readonly params: ScheduleCreateParams; readonly result: ScheduleCreateResult };
   readonly "schedule/delete": { readonly params: ScheduleDeleteParams; readonly result: ScheduleDeleteResult };
   readonly "schedule/list": { readonly params: ScheduleListParams; readonly result: ScheduleListResult };
+  readonly "search/get": { readonly params: SearchGetParams; readonly result: SearchGetResult };
+  readonly "search/set": { readonly params: SearchSetParams; readonly result: SearchSetResult };
   readonly "server/discover": { readonly params: ServerDiscoverParams; readonly result: ServerDiscoverResult };
   readonly "signin/end": { readonly params: SigninEndParams; readonly result: SigninEndResult };
   readonly "signin/end_others": { readonly params: SigninEndOthersParams; readonly result: SigninEndOthersResult };

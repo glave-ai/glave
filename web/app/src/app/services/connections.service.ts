@@ -5,9 +5,8 @@ import { connectionProblem } from '../lib/connections';
 import { SessionService } from './session.service';
 
 /**
- * The person's connections (`connection/list`): the services they are signed in to, those that
- * ask them to sign in, and those glave suggests; signing in to one in the browser, turning one
- * glave suggests on, and removing a sign-in or turning a suggestion off.
+ * The person's connections (`connection/list`): the services they are signed in to, and those
+ * that ask them to sign in; signing in to one in the browser, and removing a sign-in.
  */
 @Service()
 export class ConnectionsService {
@@ -65,20 +64,7 @@ export class ConnectionsService {
     return null;
   }
 
-  /**
-   * Turns on the connection glave suggests at `url`, and takes the connection the server
-   * answers in place of what was listed at its address. A refusal is thrown on.
-   */
-  async add(url: string): Promise<ConnectionInfo> {
-    const { connection } = await this.session.call('connection/add', { url });
-    this.take(connection);
-    return connection;
-  }
-
-  /**
-   * Removes the sign-in to `server`, destroying its tokens, or turns it off when glave
-   * suggests it, then lists the connections again.
-   */
+  /** Removes the sign-in to `server`, destroying its tokens, then lists the connections again. */
   async remove(server: string): Promise<void> {
     await this.session.call('connection/remove', { server });
     await this.load();

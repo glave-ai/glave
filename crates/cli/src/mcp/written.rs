@@ -1,5 +1,5 @@
-//! The person's `mcp.json` as glave changes it, which it does only when they turn on a
-//! connection glave suggests, or turn it off (`connected.rs`): one remote server added, or the
+//! The person's `mcp.json` as glave changes it, which it does only when they turn web search
+//! on, or off (`connected/search.rs`): one remote server added, or the
 //! one glave added taken out again. Everything else stays as the person wrote it, in its order,
 //! each server's text as it was; only the spacing between them is glave's. A crash leaves the
 //! old file or the new one, whole, at the place a link points to when the file is one. Changes
