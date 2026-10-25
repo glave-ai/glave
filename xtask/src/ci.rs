@@ -3,7 +3,9 @@
 //! only through glave-process, that the tests leave nothing behind (`leftovers.rs`), then the
 //! web checks (`web.rs`), which need Node unless `GLAVE_SKIP_WEB=1` skips them. On a laptop the
 //! lint, docs and tests cover only the crates a change reaches, and the web checks run only
-//! when the web changed (`changed.rs`); `--all`, and CI always, check everything.
+//! when the web changed (`changed.rs`); `--all`, and CI always, check everything. `--target`
+//! builds the lint, docs and tests for a target other than this machine's: CI's run on musl,
+//! which glave's Linux releases are built for.
 
 use std::collections::BTreeSet;
 
@@ -17,10 +19,23 @@ use crate::lock::{self, Mode};
 /// checks run with every feature but this one, and the web checks test it.
 pub(crate) const BUILT_IN_APP: (&str, &str) = ("glave", "web");
 
-/// The crates the Rust checks cover, as cargo takes them, and their features.
+/// How `cargo xtask ci` is run.
+const USAGE: &str = "usage: cargo xtask ci [--all] [--target <triple>]";
+
+/// What `cargo xtask ci` was asked for: everything, or only what changed; and the target the
+/// Rust checks build for, when it isn't this machine's.
+struct Asked {
+    all: bool,
+    target: Option<String>,
+}
+
+/// The crates the Rust checks cover, as cargo takes them, their features, and the target they
+/// build for, when it isn't this machine's. Given to cargo as `--target`, never in the
+/// environment, so the commands the tests run build for this machine as they would anywhere.
 struct Rust {
     packages: Vec<String>,
     features: String,
+    target: Option<String>,
 }
 
 impl Rust {
@@ -31,21 +46,20 @@ impl Rust {
         if !self.features.is_empty() {
             args.extend(["--features", self.features.as_str()]);
         }
+        if let Some(target) = &self.target {
+            args.extend(["--target", target.as_str()]);
+        }
         args.extend(rest);
         args
     }
 }
 
-/// Runs every check in order and stops at the first failure; `args` is empty or `--all`.
+/// Runs every check in order and stops at the first failure; `args` as `USAGE` says.
 pub(crate) fn run(args: &[String]) -> Result<(), String> {
-    let all = match args {
-        [] => false,
-        [flag] if flag == "--all" => true,
-        _ => return Err("usage: cargo xtask ci [--all]".to_owned()),
-    };
+    let Asked { all, target } = asked(args)?;
     let _guard = lock::acquire(Mode::Shared)?;
     let metadata = crate::workspace::metadata()?;
-    let (rust, web) = plan(&crate::changed::scope(all, &metadata)?, &metadata)?;
+    let (rust, web) = plan(&crate::changed::scope(all, &metadata)?, &metadata, target)?;
     let threads = threads()?;
     step("format", || cmd::run("cargo", &["fmt", "--all", "--check"]))?;
     step("secrets", crate::secrets::check)?;
@@ -97,15 +111,39 @@ fn rust_checks(rust: &Rust, threads: &[(&str, String)]) -> Result<(), String> {
     leftovers
 }
 
+/// `cargo xtask ci`'s arguments, read.
+fn asked(args: &[String]) -> Result<Asked, String> {
+    let mut asked = Asked {
+        all: false,
+        target: None,
+    };
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--all" if !asked.all => asked.all = true,
+            "--target" if asked.target.is_none() => {
+                asked.target = Some(args.next().ok_or(USAGE)?.clone());
+            }
+            _ => return Err(USAGE.to_owned()),
+        }
+    }
+    Ok(asked)
+}
+
 /// What `scope` checks, said before anything runs: the Rust checks' crates, none when no crate
-/// changed; and whether the web checks run.
-fn plan(scope: &Scope, metadata: &Value) -> Result<(Option<Rust>, bool), String> {
+/// changed, built for `target`; and whether the web checks run.
+fn plan(
+    scope: &Scope,
+    metadata: &Value,
+    target: Option<String>,
+) -> Result<(Option<Rust>, bool), String> {
     let change = match scope {
         Scope::All(why) => {
             println!("xtask: checking everything ({why})");
             let rust = Rust {
                 packages: vec!["--workspace".to_owned()],
                 features: features_in(metadata, None)?,
+                target,
             };
             return Ok((Some(rust), true));
         }
@@ -122,6 +160,7 @@ fn plan(scope: &Scope, metadata: &Value) -> Result<(Option<Rust>, bool), String>
             .flat_map(|name| ["-p".to_owned(), name.clone()])
             .collect(),
         features: features_in(metadata, Some(&change.reached))?,
+        target,
     };
     Ok((Some(rust), change.web))
 }
@@ -225,6 +264,56 @@ mod tests {
             Ok("glave-keys/conformance,glave-keys/keychain".to_owned())
         );
         assert!(features_in(&serde_json::json!({}), None).is_err());
+    }
+
+    #[test]
+    fn everything_and_a_target_may_be_asked_for_once_each_in_any_order() {
+        let asked_for = |args: &[&str]| {
+            let args: Vec<String> = args.iter().map(|&arg| arg.to_owned()).collect();
+            asked(&args).map(|Asked { all, target }| (all, target))
+        };
+        let musl = || Some("x86_64-unknown-linux-musl".to_owned());
+        assert_eq!(asked_for(&[]), Ok((false, None)));
+        assert_eq!(asked_for(&["--all"]), Ok((true, None)));
+        assert_eq!(
+            asked_for(&["--target", "x86_64-unknown-linux-musl"]),
+            Ok((false, musl()))
+        );
+        assert_eq!(
+            asked_for(&["--target", "x86_64-unknown-linux-musl", "--all"]),
+            Ok((true, musl()))
+        );
+        for wrong in [
+            &["--target"][..],
+            &["--all", "--all"],
+            &["--target", "a", "--target", "b"],
+            &["--fast"],
+        ] {
+            assert_eq!(asked_for(wrong), Err(USAGE.to_owned()), "{wrong:?}");
+        }
+    }
+
+    #[test]
+    fn the_target_follows_the_features_and_comes_before_the_commands_own_arguments() {
+        let rust = Rust {
+            packages: vec!["--workspace".to_owned()],
+            features: "glave/otlp".to_owned(),
+            target: Some("x86_64-unknown-linux-musl".to_owned()),
+        };
+        assert_eq!(
+            rust.args(&["clippy"], &["--", "-D", "warnings"]),
+            [
+                "clippy",
+                "--workspace",
+                "--features",
+                "glave/otlp",
+                "--target",
+                "x86_64-unknown-linux-musl",
+                "--",
+                "-D",
+                "warnings"
+            ]
+        );
     }
 
     #[test]

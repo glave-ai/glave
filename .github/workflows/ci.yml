@@ -26,9 +26,29 @@ env:
 # Every job has a timeout of about three times its longest run (October 2026), so a hang fails
 # in minutes rather than holding the merge queue for GitHub's six hours.
 jobs:
-  linux:
-    runs-on: ubuntu-latest
+  # `cargo xtask ci --all` on Linux twice, side by side: on the runner's glibc, and built for
+  # musl, as glave's Linux releases are (dist-workspace.toml), so every glave the tests start
+  # runs on the release's allocator too (crates/cli/src/allocator.rs). musl's standard library
+  # differs from glibc's in ways only its own run shows: #696 found a hang there that glibc
+  # never had. `linux`, below them, passes only when both did; it is the check the `main`
+  # ruleset requires.
+  linux-checks:
+    name: linux-checks (${{ matrix.libc }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - libc: glibc
+            runner: ubuntu-latest
+            worker-glave: target/debug/glave
+          # On the runner the release builds x86-64 Linux on (dist's plan), so with its C
+          # compiler and musl, as budgets.yml builds it too.
+          - libc: musl
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-musl
+            worker-glave: target/x86_64-unknown-linux-musl/debug/glave
     # A real Postgres, so the Postgres store runs its conformance suites here instead of
     # skipping them.
     services:
@@ -53,10 +73,15 @@ jobs:
       GLAVE_TEST_S3_URL: s3://glave-test
       GLAVE_TEST_S3_ENDPOINT: http://localhost:8333
       GLAVE_TEST_DOCKER: "1"
-      # A real worker too: the glave this job builds (Linux, the runner's processor), in an
-      # image with bash and git whose glibc is the runner's (Ubuntu 24.04), pinned.
-      GLAVE_TEST_WORKER_GLAVE: ${{ github.workspace }}/target/debug/glave
+      # A real worker too: the glave this job builds (Linux, the runner's processor), in a
+      # pinned image with bash and git whose glibc is Ubuntu 24.04's, as the glibc build's
+      # runner is; the musl build is static, and runs in any image.
+      GLAVE_TEST_WORKER_GLAVE: ${{ github.workspace }}/${{ matrix.worker-glave }}
       GLAVE_TEST_WORKER_IMAGE: buildpack-deps:noble-scm@sha256:4163ac2c58660c533f3cf3d178551287ddd0ac18269ef84f3a382d0698c89254
+      # The flags dist sets for a musl target (today's defaults, which dist keeps in case they
+      # change), as the target's own, which only what is built for musl reads: never the
+      # programs the tests build for the runner (the eval graders' `cargo build`).
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: -Ctarget-feature=+crt-static -Clink-self-contained=yes
     steps:
       # Linking every test binary of the workspace once filled a smaller runner's disk (ld died
       # with a bus error). Today's runner starts with about 85 GB free and the build takes about
@@ -76,8 +101,9 @@ jobs:
       - uses: actions/checkout@v7
       # Every shell script the repository tracks: each `.sh`, and each file whose first line runs
       # sh, bash, dash or ksh. Not the files an eval task starts from (evals/tasks/*/environment),
-      # which the model is given as they are, flaws and all.
+      # which the model is given as they are, flaws and all. Once, as the scripts are the same.
       - name: Shellcheck every shell script
+        if: matrix.libc == 'glibc'
         run: |
           git ls-files -z | xargs -0 awk 'FNR == 1 { if ((FILENAME ~ /\.sh$/ || $0 ~ /^#!.*[\/ ](ba|da|k)?sh( |$)/) && FILENAME !~ /^evals\/tasks\/[^\/]+\/environment\//) print FILENAME; nextfile }' >"$RUNNER_TEMP/scripts"
           echo "$(wc -l <"$RUNNER_TEMP/scripts") shell scripts"
@@ -121,13 +147,26 @@ jobs:
           exit 1
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
+      # As the release build installs them: musl's standard library for the pinned toolchain,
+      # and musl's compiler wrapper for the C in glave's dependencies.
+      - name: Install musl's standard library and musl-gcc
+        if: matrix.libc == 'musl'
+        run: |
+          rustup target add ${{ matrix.target }}
+          sudo apt-get update -q
+          sudo apt-get install -y -q musl-tools
+      # Saved from main only; each build's cache under a key of its own.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
+          key: ${{ matrix.libc }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest,cargo-deny,cargo-machete
-      - run: cargo xtask ci --all
+      # On musl the lint, docs and tests are built with `--target`, which the commands the tests
+      # run never see, so those (the eval graders' `cargo build`) build for the runner.
+      - name: cargo xtask ci --all, on ${{ matrix.libc }}
+        run: cargo xtask ci --all ${{ matrix.target && format('--target {0}', matrix.target) }}
       - name: Disk space after the build
         if: always()
         run: df -h /
@@ -150,6 +189,19 @@ jobs:
             echo "the test image is left behind"
             exit 1
           fi
+
+  linux:
+    if: always()
+    needs: linux-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: The checks passed on glibc and on musl
+        env:
+          CHECKS: ${{ needs.linux-checks.result }}
+        run: |
+          echo "checks: $CHECKS"
+          test "$CHECKS" = success
 
   # web/: the session API's TypeScript client, Glaze and the app, in jobs side by side: the
   # checks, and the end-to-end tests in four shards. `web`, below them, passes only when every
