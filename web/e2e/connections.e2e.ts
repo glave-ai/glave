@@ -1,5 +1,5 @@
 import { type ChildProcessByStdio, spawn } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
@@ -27,6 +27,9 @@ const TOKEN = 'e2e-connections';
  * nor the name of the protocol or the file their services are set up in.
  */
 const ADMIN_WORDS = /policy|organization|member|group|admin|SSO|config\.toml|GLAVE_|MCP|mcp\.json/u;
+
+// Each engine's tests change one glave's settings, so they run one after another.
+test.describe.configure({ mode: 'default' });
 
 /** The service: glave's MCP test server, asking for a sign-in at its own fake. */
 let service: ChildProcessByStdio<Writable, Readable, null>;
@@ -84,12 +87,12 @@ test('a service that asks for a sign-in is connected in a new tab, then disconne
   // The service's own sign-in waits until the test lets it go, so the row is seen waiting.
   const signIn = await hold(context, (url) => url.pathname === '/authorize');
   const opened = page.waitForEvent('popup');
-  await byTestId(page, 'connection-action').click();
+  await available.getByTestId('connection-action').click();
   const tab = await opened;
   const waiting = byTestId(page, 'connection-waiting');
   await expect(waiting).toContainText('Finish signing in to Tracker in the new tab.');
   await expect(byTestId(page, 'connection-open')).toHaveAttribute('href', /\/authorize\?/u);
-  await expect(byTestId(page, 'connection-action')).toHaveText('Cancel');
+  await expect(available.getByTestId('connection-action')).toHaveText('Cancel');
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
     await expectAccessible(page);
@@ -108,9 +111,54 @@ test('a service that asks for a sign-in is connected in a new tab, then disconne
   expect(await page.content()).not.toContain(TOKEN);
   expect(await page.locator('body').innerText()).not.toMatch(ADMIN_WORDS);
 
-  await byTestId(page, 'connection-action').click();
+  await ready.getByTestId('connection-action').click();
   await byTestId(page, 'connections-disconnect-ok').click();
   await expect(available.getByTestId('connection')).toContainText('Connect');
   await expect(ready).toHaveCount(0);
+  expect(problems()).toEqual([]);
+});
+
+test('the web search glave suggests is off until turned on in one click, then off again', async ({
+  page,
+  browserName,
+}) => {
+  const problems = watchForProblems(page);
+  const site = browserName === 'webkit' ? CONNECTIONS_WEBKIT : CONNECTIONS;
+  const glave = served(site);
+  const settings = join(homeOf(site), 'mcp.json');
+  writeFileSync(settings, JSON.stringify({ mcpServers: {} }));
+  const code = await signInCode(site);
+  await page.goto(`${glave}/settings#code=${code}`);
+  await byTestId(page, 'settings-connections').click();
+  await expect(page).toHaveURL(/\/settings\/connections$/u);
+  const suggested = byTestId(page, 'connections-suggested');
+  const search = suggested.getByTestId('connection');
+  await expect(search).toContainText('Search the web');
+  await expect(search).toContainText('Free, no key needed. Your searches go to Exa.');
+  await expect(byTestId(page, 'connections-ready')).toHaveCount(0);
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    await expectAccessible(page);
+  }
+
+  await suggested.getByTestId('connection-action').click();
+  const ready = byTestId(page, 'connections-ready');
+  await expect(ready.getByTestId('connection-detail')).toHaveText('On');
+  await expect(ready.getByTestId('connection-usage')).toHaveText('No calls this month');
+  await expect(suggested).toHaveCount(0);
+  const turnedOn = JSON.parse(readFileSync(settings, 'utf8')) as {
+    readonly mcpServers: Readonly<Record<string, { readonly url?: string }>>;
+  };
+  expect(turnedOn.mcpServers['search']?.url).toMatch(/tools=web_search_exa$/u);
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    await expectAccessible(page);
+  }
+  expect(await page.locator('body').innerText()).not.toMatch(ADMIN_WORDS);
+
+  await ready.getByTestId('connection-action').click();
+  await expect(suggested.getByTestId('connection-action')).toHaveText('Turn on');
+  await expect(ready).toHaveCount(0);
+  expect(readFileSync(settings, 'utf8')).not.toContain('web_search_exa');
   expect(problems()).toEqual([]);
 });

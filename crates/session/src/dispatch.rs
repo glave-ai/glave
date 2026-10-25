@@ -451,6 +451,7 @@ where
             Request::ConnectionStart { server } => self.start_connection(caller, server).await,
             Request::ConnectionPoll { flow } => self.poll_connection(caller, flow).await,
             Request::ConnectionList {} => self.list_connections(caller).await,
+            Request::ConnectionAdd { url } => self.add_connection(caller, url).await,
             Request::ConnectionRemove { server } => self.remove_connection(caller, server).await,
         })
     }

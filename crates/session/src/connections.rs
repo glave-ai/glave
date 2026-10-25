@@ -68,11 +68,16 @@ pub trait Connections: Send + Sync {
     fn finish(&self, returned: Returned) -> BoxFuture<'_, String>;
 
     /// The connections signed in to, then the person's remote servers that ask them to sign
-    /// in and are not signed in to.
+    /// in and are not signed in to, then the connections glave suggests, on or off.
     fn list(&self) -> BoxFuture<'_, Result<Vec<ConnectionInfo>, ApiError>>;
 
+    /// Turns on the connection glave suggests at `url`, in the person's own settings: the
+    /// connection, on.
+    fn add(&self, url: String) -> BoxFuture<'_, Result<ConnectionInfo, ApiError>>;
+
     /// Removes the sign-in to `server`, by its name in the person's settings or its address,
-    /// destroying its tokens.
+    /// destroying its tokens; one glave suggests leaves their settings too, unless they set it
+    /// up there themselves.
     fn remove(&self, server: String) -> BoxFuture<'_, Result<(), ApiError>>;
 }
 
@@ -126,15 +131,32 @@ where
     ) -> Result<Reply, ApiError> {
         let connections = self.connections_for(caller)?;
         Ok(match connections.poll(flow.clone()).await? {
-            Some(connection) => Reply::Connection { connection },
+            Some(mut connection) => {
+                self.used(caller, std::slice::from_mut(&mut connection))
+                    .await;
+                Reply::Connection { connection }
+            }
             None => Reply::Waiting { flow },
         })
     }
 
     /// Answers `connection/list`.
     pub(crate) async fn list_connections(&self, caller: &Caller) -> Result<Reply, ApiError> {
-        let connections = self.connections_for(caller)?.list().await?;
+        let mut connections = self.connections_for(caller)?.list().await?;
+        self.used(caller, &mut connections).await;
         Ok(Reply::Connections { connections })
+    }
+
+    /// Answers `connection/add`.
+    pub(crate) async fn add_connection(
+        &self,
+        caller: &Caller,
+        url: String,
+    ) -> Result<Reply, ApiError> {
+        let mut connection = self.connections_for(caller)?.add(url).await?;
+        self.used(caller, std::slice::from_mut(&mut connection))
+            .await;
+        Ok(Reply::Connection { connection })
     }
 
     /// Answers `connection/remove`.

@@ -1,6 +1,7 @@
 //! Connections from the terminal: one of the person's MCP servers signed in to in the browser, by
-//! its name or its address, listed with whether the sign-in still works, and removed. An
-//! address none of their servers is at is a git host's, connected with a token.
+//! its name or its address, listed with whether the sign-in still works and how often it was
+//! called this month, and removed; one glave suggests turned on, or off. An address none of
+//! their servers is at is a git host's, connected with a token.
 
 use anyhow::bail;
 use glave_session::protocol::{
@@ -9,21 +10,55 @@ use glave_session::protocol::{
 
 use crate::reach::Reached;
 
-/// Signs in to the server `named`, one of the person's MCP servers; else, for an address, to
-/// the git host there with a token read from standard input.
+/// Signs in to the server `named`, one of the person's MCP servers; else turns on the one
+/// glave suggests by that name; else, for an address, connects the git host there with a token
+/// read from standard input.
 pub(super) async fn server_or_host(server: &mut Reached, named: &str) -> anyhow::Result<()> {
     let start = Request::ConnectionStart {
         server: named.to_owned(),
     };
     match server.request(start).await {
-        Ok(Reply::SignIn { sign_in }) => signed_in(server, &sign_in).await,
+        Ok(Reply::SignIn { sign_in }) => return signed_in(server, &sign_in).await,
         Ok(_) => bail!("glave answered connection/start with something else"),
-        Err(error) if answered(&error, code::NO_SERVER) => {
-            let (url, token) = super::asked_token(named).await?;
-            super::connect(server, &url, token, None).await
-        }
+        Err(error) if answered(&error, code::NO_SERVER) => {}
+        Err(error) => return Err(error),
+    }
+    // A suggestion is turned on by its name; an address is a git host's.
+    if !named.contains("://")
+        && let Some(suggested) = suggested(server, named).await?
+    {
+        return turned_on(server, suggested).await;
+    }
+    let (url, token) = super::asked_token(named).await?;
+    super::connect(server, &url, token, None).await
+}
+
+/// The connection glave suggests as `named`, when it suggests one by that name here.
+async fn suggested(server: &mut Reached, named: &str) -> anyhow::Result<Option<ConnectionInfo>> {
+    match server.request(Request::ConnectionList {}).await {
+        Ok(Reply::Connections { connections }) => Ok(connections.into_iter().find(|connection| {
+            connection.suggested.is_some() && connection.name.as_deref() == Some(named.trim())
+        })),
+        Ok(_) => bail!("glave answered connection/list with something else"),
+        Err(error) if answered(&error, code::NOT_AVAILABLE) => Ok(None),
         Err(error) => Err(error),
     }
+}
+
+/// Turns on `connection`, one glave suggests, unless it is on, and shows it as it is then.
+async fn turned_on(server: &mut Reached, connection: ConnectionInfo) -> anyhow::Result<()> {
+    if connection.status != ConnectionStatus::Off {
+        println!("{}", shown(&connection));
+        return Ok(());
+    }
+    let add = Request::ConnectionAdd {
+        url: connection.url,
+    };
+    let Reply::Connection { connection } = server.request(add).await? else {
+        bail!("glave answered connection/add with something else");
+    };
+    println!("Turned on {}", shown(&connection));
+    Ok(())
 }
 
 /// Whether `error` is the server's answer with `code`.
@@ -64,35 +99,50 @@ pub(super) async fn list(server: &mut Reached) -> anyhow::Result<()> {
     }
     for connection in &connections {
         println!("{}", shown(connection));
+        if let Some(suggested) = &connection.suggested {
+            println!("  {}", suggested.detail);
+        }
+        if let Some(usage) = &connection.usage {
+            println!("  {}", usage.sentence);
+        }
         let named = connection.name.as_ref().unwrap_or(&connection.url);
         match connection.status {
-            ConnectionStatus::SignedIn => {}
+            ConnectionStatus::SignedIn | ConnectionStatus::On => {}
             ConnectionStatus::Expired => println!("  Sign in again with glave connect {named}"),
             ConnectionStatus::SignedOut => println!("  Sign in with glave connect {named}"),
+            ConnectionStatus::Off => println!("  Turn it on with glave connect {named}"),
         }
     }
     Ok(())
 }
 
-/// Removes the sign-in to the server `named`, by its name or its address.
+/// Removes the sign-in to the server `named`, by its name or its address; one glave suggests
+/// is turned off.
 pub(super) async fn remove(server: &mut Reached, named: &str) -> anyhow::Result<()> {
     let remove = Request::ConnectionRemove {
         server: named.to_owned(),
     };
     server.request(remove).await?;
-    println!("Removed {named}: its sign-in is destroyed.");
+    println!("Removed {named}.");
     Ok(())
 }
 
-/// A connection as a line: its name, its address, and whether the person is still signed in.
+/// A connection as a line: its name, its address, whether the person is still signed in or it
+/// is on, and what it is for when glave suggests it.
 fn shown(connection: &ConnectionInfo) -> String {
     let status = match connection.status {
         ConnectionStatus::SignedIn => "signed in",
         ConnectionStatus::Expired => "signed out: its sign-in expired",
         ConnectionStatus::SignedOut => "not signed in",
+        ConnectionStatus::On => "on",
+        ConnectionStatus::Off => "off",
     };
-    match &connection.name {
+    let line = match &connection.name {
         Some(name) => format!("{name} ({}), {status}", connection.url),
         None => format!("{}, {status}", connection.url),
+    };
+    match &connection.suggested {
+        Some(suggested) => format!("{line}: {}", suggested.title),
+        None => line,
     }
 }

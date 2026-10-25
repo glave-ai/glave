@@ -238,6 +238,10 @@ sentences! {
         "signing in to a connection needs glave running in the background, for your browser to come back to: open glave, then try again",
     SignInNoWayBack = "sign-in-no-way-back"
         "this glave has no address your browser can come back to after signing in: whoever runs it gives it the address people reach it at, then try again",
+    SearchTheWeb = "search-the-web" "Search the web",
+    SearchTheWebDetail = "search-the-web-detail" "Free, no key needed. Your searches go to Exa.",
+    CallsThisMonth { calls: u64 } = "calls-this-month"
+        "{ $calls ->\n    [0] No calls\n    [1] One call\n   *[other] { $calls } calls\n } this month",
     BrowserNotKept = "browser-not-kept" "glave could not keep this browser's sign-in: try again",
     PasskeysOnlyTheirs = "passkeys-only-theirs"
         "only the person this glave is for changes its passkeys",

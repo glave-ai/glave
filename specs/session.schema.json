@@ -215,10 +215,10 @@
       "type": "string"
     },
     "ConnectionInfo": {
-      "description": "A connection's sign-in to its remote MCP server, or a server that asks for one.",
+      "description": "A connection's sign-in to its remote MCP server, a server that asks for one, or a server\nglave suggests.",
       "properties": {
         "name": {
-          "description": "What the person's settings call the server at that address, when they name one.",
+          "description": "What the person's settings call the server at that address, when they name one; for a\nsuggestion, what they will call it once it is on, which turns it on.",
           "type": [
             "string",
             "null"
@@ -227,9 +227,31 @@
         "status": {
           "$ref": "#/$defs/ConnectionStatus"
         },
+        "suggested": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Suggested"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What it is for, when glave suggests it."
+        },
         "url": {
           "description": "The MCP server's address: `https://mcp.example.com/mcp`.",
           "type": "string"
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Usage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How much it was used, once it is in the person's settings."
         }
       },
       "required": [
@@ -239,7 +261,7 @@
       "type": "object"
     },
     "ConnectionStatus": {
-      "description": "Whether the person is signed in, and the sign-in still works.",
+      "description": "Whether the person is signed in, and the sign-in still works; or, for a server glave\nsuggests, whether it is on.",
       "oneOf": [
         {
           "const": "signed_in",
@@ -254,6 +276,16 @@
         {
           "const": "signed_out",
           "description": "Not signed in: one of the person's remote servers, which asks them to sign in.",
+          "type": "string"
+        },
+        {
+          "const": "on",
+          "description": "In the person's settings and working with no sign-in: today, one glave suggests, once\nit is turned on.",
+          "type": "string"
+        },
+        {
+          "const": "off",
+          "description": "One glave suggests, not in the person's settings: `connection/add` turns it on.",
           "type": "string"
         }
       ]
@@ -1555,6 +1587,24 @@
         }
       ]
     },
+    "Suggested": {
+      "description": "A connection glave suggests, as the person reads it.",
+      "properties": {
+        "detail": {
+          "description": "What turning it on means: what it costs, and who is sent what.",
+          "type": "string"
+        },
+        "title": {
+          "description": "What it does: \"Search the web\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "detail"
+      ],
+      "type": "object"
+    },
     "TaskInfo": {
       "description": "A task, as the tasks panel shows it.",
       "properties": {
@@ -2315,6 +2365,26 @@
         }
       ]
     },
+    "Usage": {
+      "description": "How much a connection was used since this month began (UTC).",
+      "properties": {
+        "calls": {
+          "description": "The calls the person's agent asked of its tools, refused ones too.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sentence": {
+          "description": "The calls, as the person reads them: \"412 calls this month\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "calls",
+        "sentence"
+      ],
+      "type": "object"
+    },
     "WatchEnd": {
       "description": "Why a watch ended (`thread/watch`, `thread/list/watch`).",
       "oneOf": [
@@ -2466,7 +2536,7 @@
     },
     "NO_SERVER": {
       "code": -32032,
-      "message": "No remote server of the person's settings goes by that name or address"
+      "message": "No remote server of the person's settings, nor one glave suggests, goes by that name or address"
     },
     "NO_SIGN_IN": {
       "code": -32013,
@@ -2628,6 +2698,32 @@
         "type": "object"
       },
       "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "connection/add": {
+      "params": {
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A connection, as it was signed in to.",
+        "properties": {
+          "connection": {
+            "$ref": "#/$defs/ConnectionInfo"
+          }
+        },
+        "required": [
+          "connection"
+        ],
         "type": "object"
       },
       "streams": false

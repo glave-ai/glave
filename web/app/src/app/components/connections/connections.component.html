@@ -47,6 +47,9 @@
                 <span dir="auto">{{ row.detail }}</span>
               </span>
             }
+            @if (row.usage; as usage) {
+              <span class="detail" dir="auto" data-testid="connection-usage">{{ usage }}</span>
+            }
             <button
               glzButton
               appServiceAction

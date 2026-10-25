@@ -89,17 +89,30 @@ export type CommandId = string;
 /** Identifies a computer, unique everywhere (UUID v7, minted by the adapter that made it). */
 export type ComputerId = string;
 
-/** A connection's sign-in to its remote MCP server, or a server that asks for one. */
+/**
+ * A connection's sign-in to its remote MCP server, a server that asks for one, or a server
+ * glave suggests.
+ */
 export type ConnectionInfo = {
-  /** What the person's settings call the server at that address, when they name one. */
+  /**
+   * What the person's settings call the server at that address, when they name one; for a
+   * suggestion, what they will call it once it is on, which turns it on.
+   */
   readonly name?: string | null;
   readonly status: ConnectionStatus;
+  /** What it is for, when glave suggests it. */
+  readonly suggested?: Suggested | null;
   /** The MCP server's address: `https://mcp.example.com/mcp`. */
   readonly url: string;
+  /** How much it was used, once it is in the person's settings. */
+  readonly usage?: Usage | null;
 };
 
-/** Whether the person is signed in, and the sign-in still works. */
-export type ConnectionStatus = "signed_in" | "expired" | "signed_out";
+/**
+ * Whether the person is signed in, and the sign-in still works; or, for a server glave
+ * suggests, whether it is on.
+ */
+export type ConnectionStatus = "signed_in" | "expired" | "signed_out" | "on" | "off";
 
 /**
  * Identifies one sign-in a person keeps, sealed under a key of its own: a git host
@@ -569,6 +582,14 @@ export type Standing = "active" | "archived" | "deleted";
 /** What a thread is doing. */
 export type Status = "idle" | "running" | "waiting";
 
+/** A connection glave suggests, as the person reads it. */
+export type Suggested = {
+  /** What turning it on means: what it costs, and who is sent what. */
+  readonly detail: string;
+  /** What it does: "Search the web". */
+  readonly title: string;
+};
+
 /** A task, as the tasks panel shows it. */
 export type TaskInfo = {
   /** Tokens the run may use; no limit when absent. */
@@ -784,6 +805,14 @@ export type Update = {
   readonly text?: string | null;
 };
 
+/** How much a connection was used since this month began (UTC). */
+export type Usage = {
+  /** The calls the person's agent asked of its tools, refused ones too. */
+  readonly calls: number;
+  /** The calls, as the person reads them: "412 calls this month". */
+  readonly sentence: string;
+};
+
 /** Why a watch ended (`thread/watch`, `thread/list/watch`). */
 export type WatchEnd = "unwatched" | "deleted";
 
@@ -835,6 +864,15 @@ export type CommandStopParams = {
 };
 
 export type CommandStopResult = Readonly<Record<string, never>>;
+
+export type ConnectionAddParams = {
+  readonly url: string;
+};
+
+/** A connection, as it was signed in to. */
+export type ConnectionAddResult = {
+  readonly connection: ConnectionInfo;
+};
 
 export type ConnectionListParams = Readonly<Record<string, never>>;
 
@@ -1653,6 +1691,7 @@ export interface Methods {
   readonly "awake/set": { readonly params: AwakeSetParams; readonly result: AwakeSetResult };
   readonly "command/list": { readonly params: CommandListParams; readonly result: CommandListResult };
   readonly "command/stop": { readonly params: CommandStopParams; readonly result: CommandStopResult };
+  readonly "connection/add": { readonly params: ConnectionAddParams; readonly result: ConnectionAddResult };
   readonly "connection/list": { readonly params: ConnectionListParams; readonly result: ConnectionListResult };
   readonly "connection/poll": { readonly params: ConnectionPollParams; readonly result: ConnectionPollResult };
   readonly "connection/remove": { readonly params: ConnectionRemoveParams; readonly result: ConnectionRemoveResult };
@@ -1811,7 +1850,7 @@ export const ErrorCode = {
   NO_QUESTION: -32006,
   /** No such schedule */
   NO_SCHEDULE: -32016,
-  /** No remote server of the person's settings goes by that name or address */
+  /** No remote server of the person's settings, nor one glave suggests, goes by that name or address */
   NO_SERVER: -32032,
   /** No valid sign-in (network transports) */
   NO_SIGN_IN: -32013,

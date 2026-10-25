@@ -71,8 +71,14 @@ function lifeline(): string {
   return path;
 }
 
-/** The run's lifeline, handed to each glave it starts. */
-const tied = { GLAVE_LIFELINE: lifeline() };
+/**
+ * What each glave the run starts is handed: the run's lifeline, and, in place of the web search
+ * glave suggests, an address nothing listens on (the discard port), so no test reaches Exa.
+ */
+const tied = {
+  GLAVE_LIFELINE: lifeline(),
+  GLAVE_SEARCH_URL: 'http://127.0.0.1:9/mcp?tools=web_search_exa',
+};
 
 /**
  * The fake model service the live glave asks, started once, in the run that starts the servers,

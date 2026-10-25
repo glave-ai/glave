@@ -3,17 +3,19 @@
 //! signed in to nothing of glave's, finishes it there; then it is listed, never with a token,
 //! and removed. Only the person on this computer may do this: a caller signed in with OIDC is
 //! refused, a server whose sign-ins someone else sets up refuses everyone, and one no browser
-//! can come back to says so.
+//! can come back to says so. Each connection in the person's settings says how often it was
+//! called this month; one glave suggests says what it is for.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use glave_ports::BoxFuture;
 use glave_session::protocol::{
-    ApiError, ConnectionInfo, ConnectionStatus, Request, SignInLink, code,
+    ApiError, ConnectionInfo, ConnectionStatus, Reply, Request, SignInLink, code,
 };
 use glave_session::signin::{LocalToken, SignIn};
-use glave_session::{Answering, Connections, Returned};
+use glave_session::{Answering, Connections, Returned, Suggestion};
+use serde_json::json;
 
 use crate::conformance::{Client, OverHttp};
 use crate::support::issuer::fixed_clock;
@@ -69,11 +71,7 @@ impl Connections for InMemory {
         Box::pin(async move {
             match (returned.state.as_str(), returned.code, returned.error) {
                 ("s1", Some(_), None) => {
-                    self.kept.lock().unwrap().push(ConnectionInfo {
-                        url: SERVER.into(),
-                        name: Some("docs".into()),
-                        status: ConnectionStatus::SignedIn,
-                    });
+                    self.kept.lock().unwrap().push(docs());
                     "Signed in to docs.".into()
                 }
                 (_, _, Some(error)) => format!("Not signed in: {error}."),
@@ -86,6 +84,23 @@ impl Connections for InMemory {
         Box::pin(async move { Ok(self.kept.lock().unwrap().clone()) })
     }
 
+    fn add(&self, url: String) -> BoxFuture<'_, Result<ConnectionInfo, ApiError>> {
+        Box::pin(async move {
+            let suggestion = Suggestion::search(None);
+            if url != suggestion.url {
+                return Err(ApiError::new(
+                    code::NO_SERVER,
+                    "glave suggests no such server",
+                ));
+            }
+            let on = suggestion.listed(ConnectionStatus::On);
+            let mut kept = self.kept.lock().unwrap();
+            kept.retain(|connection| connection.url != on.url);
+            kept.push(on.clone());
+            Ok(on)
+        })
+    }
+
     fn remove(&self, server: String) -> BoxFuture<'_, Result<(), ApiError>> {
         Box::pin(async move {
             let mut kept = self.kept.lock().unwrap();
@@ -96,6 +111,17 @@ impl Connections for InMemory {
             }
             Ok(())
         })
+    }
+}
+
+/// The person's server `docs`, signed in to.
+fn docs() -> ConnectionInfo {
+    ConnectionInfo {
+        url: SERVER.into(),
+        name: Some("docs".into()),
+        status: ConnectionStatus::SignedIn,
+        suggested: None,
+        usage: None,
     }
 }
 
@@ -231,15 +257,78 @@ fn only_the_person_on_this_computer_signs_in_to_connections() {
     block_on!(async {
         let (tested, _) = fresh(&folder("conn-oidc")).await;
         let mut client = OverHttp::new(tested).await;
-        for request in [start(SERVER), Request::ConnectionList {}] {
+        let add = Request::ConnectionAdd {
+            url: Suggestion::search(None).url,
+        };
+        for request in [start(SERVER), Request::ConnectionList {}, add.clone()] {
             let refused = client.call(request).await.unwrap_err();
             assert_eq!(refused.code, code::NOT_ALLOWED, "{refused}");
         }
         client.close().await;
 
         let tested = server(&folder("conn-none"), Vec::new(), Answering::Clients).await;
-        let refused = tested.request(start(SERVER)).await.unwrap_err();
-        assert_eq!(refused.code, code::NOT_AVAILABLE);
+        for request in [start(SERVER), add] {
+            let refused = tested.request(request).await.unwrap_err();
+            assert_eq!(refused.code, code::NOT_AVAILABLE);
+        }
+        tested.shutdown().await;
+    });
+}
+
+/// The connections the server lists.
+async fn listed(tested: &Tested) -> Vec<ConnectionInfo> {
+    match tested.request(Request::ConnectionList {}).await.unwrap() {
+        Reply::Connections { connections } => connections,
+        other => panic!("connections, not {other:?}"),
+    }
+}
+
+#[test]
+fn each_connection_in_the_person_s_settings_says_how_often_it_was_called_this_month() {
+    block_on!(async {
+        let connections = Arc::new(InMemory::default());
+        connections.kept.lock().unwrap().push(docs());
+        let search = Suggestion::search(None);
+        let off = search.listed(ConnectionStatus::Off);
+        connections.kept.lock().unwrap().push(off);
+        let call = |text: &str| answer(None, Some(("mcp__docs__echo", json!({"text": text}))));
+        let mut setup = Setup::new(vec![call("one"), call("two"), answer(Some("done"), None)]);
+        setup.connections = Some(Arc::clone(&connections) as Arc<dyn Connections>);
+        let dir = folder("conn-usage");
+        let (tested, _) = setup.build(&dir).await;
+        let before = listed(&tested).await;
+        let usage = |connections: &[ConnectionInfo], name: &str| {
+            let found = connections
+                .iter()
+                .find(|it| it.name.as_deref() == Some(name));
+            found.and_then(|it| it.usage.clone())
+        };
+        let none = usage(&before, "docs").unwrap();
+        assert_eq!((none.calls, &*none.sentence), (0, "No calls this month"));
+        let suggested = before.iter().find(|it| it.suggested.is_some()).unwrap();
+        let what = suggested.suggested.as_ref().unwrap();
+        assert_eq!(&*what.title, "Search the web");
+        assert!(what.detail.contains("Exa"), "{}", &*what.detail);
+        assert_eq!(suggested.usage, None, "off, it was never used");
+
+        let thread = crate::support::start(&tested, false).await;
+        turn(&tested, thread, "look in the docs twice")
+            .await
+            .unwrap();
+        let after = listed(&tested).await;
+        let used = usage(&after, "docs").unwrap();
+        assert_eq!((used.calls, &*used.sentence), (2, "2 calls this month"));
+
+        let added = tested
+            .request(Request::ConnectionAdd { url: search.url })
+            .await
+            .unwrap();
+        let Reply::Connection { connection } = added else {
+            panic!("the connection, not {added:?}");
+        };
+        assert_eq!(connection.status, ConnectionStatus::On);
+        let on = connection.usage.unwrap();
+        assert_eq!((on.calls, &*on.sentence), (0, "No calls this month"));
         tested.shutdown().await;
     });
 }
