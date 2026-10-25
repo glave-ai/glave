@@ -22,7 +22,7 @@ use kube::{Api, Client, Config};
 use serde_json::Value;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
-use super::backend::{Backend, Link, Spec, Started};
+use super::backend::{Backend, COPIED_WITHIN, Link, Spec, Started};
 use super::docker::elf_machine;
 use crate::token::Token;
 use objects::{Progress, Shape};
@@ -33,9 +33,6 @@ const START_WAIT: Duration = Duration::from_mins(5);
 const POLL: Duration = Duration::from_millis(500);
 /// Bytes sent to `tar` at a time while copying glave in.
 const CHUNK: usize = 1 << 20;
-/// How long copying glave into a running worker has: seconds through a cluster's API server,
-/// a minute or two over a slow link to it.
-const COPIED_WITHIN: Duration = Duration::from_mins(5);
 
 /// Which cluster workers run on, and the glave that goes into them.
 #[derive(Debug, Clone, PartialEq, Eq)]

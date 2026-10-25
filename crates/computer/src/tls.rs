@@ -6,6 +6,7 @@
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use glave_ports::computer::ComputerError;
 use glave_ports::digest;
@@ -26,6 +27,10 @@ const NAME: &str = "glave-worker";
 pub(crate) const NOT_LISTENING: &str = "could not connect to";
 /// How a failed handshake begins.
 pub(crate) const NO_HANDSHAKE: &str = "the TLS handshake with";
+/// How long reaching a computer's port, and then its TLS handshake, may each take: moments
+/// on any network glave serves across. A computer still starting is tried again (the
+/// worker's own wait).
+const CONNECTS_WITHIN: Duration = Duration::from_secs(10);
 
 /// The SHA-256 of a certificate (its DER bytes), as 64 hex digits.
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -200,15 +205,28 @@ pub async fn connect_tls(
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(pinned))
         .with_no_client_auth();
-    let stream = TcpStream::connect(address).await.map_err(|error| {
-        ComputerError::Unreachable(format!("{NOT_LISTENING} {address}: {error}"))
-    })?;
+    let late = glave_ports::spoken(CONNECTS_WITHIN);
+    let stream = tokio::time::timeout(CONNECTS_WITHIN, TcpStream::connect(address))
+        .await
+        .map_err(|_| {
+            ComputerError::Unreachable(format!(
+                "{NOT_LISTENING} {address}: no answer within {late}"
+            ))
+        })?
+        .map_err(|error| {
+            ComputerError::Unreachable(format!("{NOT_LISTENING} {address}: {error}"))
+        })?;
     let _ = stream.set_nodelay(true);
     let name = ServerName::try_from(NAME)
         .map_err(|error| ComputerError::Failed(format!("{NAME} is not a server name: {error}")))?;
-    let stream = TlsConnector::from(Arc::new(config))
-        .connect(name, stream)
+    let handshake = TlsConnector::from(Arc::new(config)).connect(name, stream);
+    let stream = tokio::time::timeout(CONNECTS_WITHIN, handshake)
         .await
+        .map_err(|_| {
+            ComputerError::Unreachable(format!(
+                "{NO_HANDSHAKE} {address} did not end within {late}"
+            ))
+        })?
         .map_err(|error| {
             ComputerError::Unreachable(format!("{NO_HANDSHAKE} {address} failed: {error}"))
         })?;

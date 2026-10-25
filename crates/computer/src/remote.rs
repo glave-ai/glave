@@ -33,6 +33,9 @@ const CHUNKS: usize = 64;
 const ASKS: usize = 8;
 /// How long the caller's credentials have to answer one request.
 const ASK: Duration = Duration::from_secs(30);
+/// How long signing in and asking what the computer speaks wait for their answer: a computer
+/// answers them at once, even one just started in a container on a busy machine.
+const HELLO: Duration = Duration::from_secs(30);
 /// How long a quick call (files, listings, status) waits for its answer.
 const QUICK: Duration = Duration::from_mins(5);
 /// How long a slow call waits: making or removing a computer, opening or saving a workspace
@@ -373,6 +376,7 @@ fn deadline(request: &Request) -> Duration {
         | Request::Destroy { .. }
         | Request::Open { .. }
         | Request::Save { .. } => SLOW,
+        Request::Authenticate { .. } | Request::Discover {} => HELLO,
         _ => QUICK,
     }
 }
@@ -380,9 +384,9 @@ fn deadline(request: &Request) -> Duration {
 /// A call that waited past its deadline.
 fn late(method: &str, limit: Duration) -> ComputerError {
     unreachable(&format!(
-        "the computer did not answer {method} within {} s: it may still be doing it, and \
+        "the computer did not answer {method} within {}: it may still be doing it, and \
          glave does not send it again",
-        limit.as_secs()
+        glave_ports::spoken(limit)
     ))
 }
 

@@ -2,8 +2,11 @@
 //! log and the blobs their connections.
 
 use std::sync::Arc;
+use std::time::Duration;
 
-use deadpool_postgres::{Manager, ManagerConfig, Object, Pool, RecyclingMethod};
+use deadpool_postgres::{
+    Manager, ManagerConfig, Object, Pool, PoolError, RecyclingMethod, Runtime, TimeoutType,
+};
 use glave_event::PrincipalId;
 use glave_keys::{KeySettings, Keys};
 use glave_ports::{Clock, Objects, OrgId};
@@ -31,6 +34,15 @@ pub enum StoreError {
 
 /// The keys of the database.
 pub type PostgresKeyring = Keys<PostgresKeys>;
+
+/// How long reaching the database's port may take, unless its URL sets `connect_timeout`:
+/// moments on any network, so one that has not answered by then is down or out of reach.
+const CONNECTS_WITHIN: Duration = Duration::from_secs(10);
+/// How long making a connection may take in all: reaching the database, TLS, signing in.
+const OPENS_WITHIN: Duration = Duration::from_secs(30);
+/// How long a call waits for one of the pool's connections to come free: each is held for one
+/// query or transaction, moments, so none free by then means they are stuck behind something.
+const FREE_WITHIN: Duration = Duration::from_secs(30);
 
 /// One Postgres database: the event log, the blobs' records and their keys, through a bounded
 /// connection pool; with the objects that hold the blobs' bytes.
@@ -66,10 +78,13 @@ impl Store {
     /// is filled from the log the first time, and again whenever this build folds threads
     /// differently from the one that filled it.
     pub async fn connect_with(
-        config: Config,
+        mut config: Config,
         keys: KeySettings,
         objects: Arc<dyn Objects>,
     ) -> Result<Self, StoreError> {
+        if config.get_connect_timeout().is_none() {
+            config.connect_timeout(CONNECTS_WITHIN);
+        }
         let manager = Manager::from_config(
             config,
             crate::tls::connector()?,
@@ -78,12 +93,15 @@ impl Store {
             },
         );
         let pool = Pool::builder(manager)
+            .runtime(Runtime::Tokio1)
+            .create_timeout(Some(OPENS_WITHIN))
+            .wait_timeout(Some(FREE_WITHIN))
             .build()
             .map_err(|e| StoreError::Connect(e.to_string()))?;
         let mut client = pool
             .get()
             .await
-            .map_err(|e| StoreError::Connect(e.to_string()))?;
+            .map_err(|e| StoreError::Connect(unavailable(&e)))?;
         schema::prepare(&mut client).await?;
         drop(client);
         let clock = Arc::clone(&keys.clock);
@@ -215,7 +233,22 @@ fn principal(text: &str) -> Result<PrincipalId, StoreError> {
 pub(crate) async fn connection(pool: &Pool) -> Result<Object, StoreError> {
     pool.get()
         .await
-        .map_err(|e| StoreError::Storage(format!("no connection: {e}")))
+        .map_err(|e| StoreError::Storage(unavailable(&e)))
+}
+
+/// Why the pool gave no connection, a limit that passed saying which and how long it was.
+fn unavailable(error: &PoolError) -> String {
+    match error {
+        PoolError::Timeout(TimeoutType::Wait) => format!(
+            "no connection to the database came free within {}",
+            glave_ports::spoken(FREE_WITHIN)
+        ),
+        PoolError::Timeout(TimeoutType::Create) => format!(
+            "the database did not answer within {}",
+            glave_ports::spoken(OPENS_WITHIN)
+        ),
+        other => format!("no connection: {other}"),
+    }
 }
 
 /// What the database said, not just that it failed: the driver's own message for a database
@@ -229,4 +262,32 @@ pub(crate) fn describe(error: &tokio_postgres::Error) -> String {
 /// A database failure as a port reports it, through that port's `storage` variant.
 pub(crate) fn database<E>(storage: fn(String) -> E) -> impl Fn(tokio_postgres::Error) -> E {
     move |error| storage(format!("the database failed: {}", describe(&error)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_database_that_takes_the_connection_and_never_answers_is_given_up_saying_so() {
+        // Listening, never answering: the system takes the connection and nothing reads it.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let url =
+            format!("postgres://glave@127.0.0.1:{port}/glave?sslmode=disable&connect_timeout=600");
+        let keys = KeySettings::new(Arc::new(glave_keys::InMemoryRoot::new().unwrap()));
+        let objects = Arc::new(glave_ports::InMemoryObjects::new());
+        let opened = glave_ports::block_on!(async {
+            // The clock jumps to the limit as soon as nothing else can run.
+            tokio::time::pause();
+            Store::connect(&url, keys, objects).await
+        });
+        let Err(error) = opened else {
+            panic!("a database that never answered was opened");
+        };
+        assert_eq!(
+            error.to_string(),
+            "could not connect to the database: the database did not answer within 30 seconds"
+        );
+    }
 }
