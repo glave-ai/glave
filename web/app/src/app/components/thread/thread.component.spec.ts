@@ -208,6 +208,37 @@ describe('ThreadComponent', () => {
     expect(latest?.classList).not.toContain('shown');
   });
 
+  it('never shows "Jump to latest" between a press and its release, which would take the click', async () => {
+    const { root, fixture } = await open(session(ANSWERED));
+    const items = root.querySelector<HTMLElement>('[data-testid="thread-items"]');
+    const latest = root.querySelector('[data-testid="thread-latest"]');
+    if (items === null) {
+      throw new Error('no conversation');
+    }
+    Object.defineProperty(items, 'scrollHeight', { value: 1000 });
+    Object.defineProperty(items, 'clientHeight', { value: 200 });
+    // Pressed on a line a scroll has just brought into view, away from the bottom.
+    document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    items.scrollTop = 760;
+    items.dispatchEvent(new Event('scroll'));
+    await fixture.whenStable();
+    expect(latest?.classList).not.toContain('shown');
+    // Released: the click has gone where the press began; now it shows.
+    document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    await fixture.whenStable();
+    expect(latest?.classList).toContain('shown');
+
+    // Held shown too, so a press on it ends on it.
+    document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    items.scrollTop = 800;
+    items.dispatchEvent(new Event('scroll'));
+    await fixture.whenStable();
+    expect(latest?.classList).toContain('shown');
+    document.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true }));
+    await fixture.whenStable();
+    expect(latest?.classList).not.toContain('shown');
+  });
+
   it('shows a turn that worked results first: the reply, what changed, then its steps', async () => {
     const call = (seq: number, id: string, tool: string, json: Record<string, unknown>): unknown =>
       event(seq, 'tool.call.requested', { call_id: id, tool, arguments: { json } });

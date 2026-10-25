@@ -6,6 +6,7 @@ import {
   effect,
   inject,
   input,
+  linkedSignal,
   signal,
   untracked,
   viewChild,
@@ -77,7 +78,12 @@ import { TurnComponent } from '../turn/turn.component';
   templateUrl: './thread.component.html',
   styleUrl: './thread.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { '(document:keydown)': 'keydown($event)' },
+  host: {
+    '(document:keydown)': 'keydown($event)',
+    '(document:pointerdown)': 'pressed(true)',
+    '(document:pointerup)': 'pressed(false)',
+    '(document:pointercancel)': 'pressed(false)',
+  },
 })
 export class ThreadComponent {
   /** The thread's id, from the route. */
@@ -115,7 +121,21 @@ export class ThreadComponent {
   /** The composer's draft, which a message the model never read comes back to. */
   protected readonly draft = this.service.composer;
   protected readonly atBottom = signal(true);
-  protected readonly awayFromBottom = computed(() => !this.atBottom());
+  /** Whether a pointer is down on the page, from its press to its release. */
+  private readonly pressing = signal(false);
+  /**
+   * Whether "Jump to latest" shows: once the person is away from the bottom, but held as it was
+   * from a press to its release. A scroll just before a press, bringing what is pressed into
+   * view, would otherwise show it under the pointer before the release, which would land on it,
+   * and the press would click nothing.
+   */
+  protected readonly awayFromBottom = linkedSignal<
+    { readonly away: boolean; readonly pressing: boolean },
+    boolean
+  >({
+    source: () => ({ away: !this.atBottom(), pressing: this.pressing() }),
+    computation: (now, before) => (now.pressing && before !== undefined ? before.value : now.away),
+  });
   /** The model the person picked for the next turn, or `null` for the thread's own. */
   protected readonly picked = signal<string | null>(null);
   /** The preset the person picked for the next turn, or `null` for the thread's own. */
@@ -236,5 +256,9 @@ export class ThreadComponent {
 
   protected keydown(event: KeyboardEvent): void {
     this.panel.keydown(event);
+  }
+
+  protected pressed(down: boolean): void {
+    this.pressing.set(down);
   }
 }
