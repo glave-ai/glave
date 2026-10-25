@@ -2,7 +2,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import AxeBuilder from '@axe-core/playwright';
-import { type Locator, type Page, expect } from '@playwright/test';
+import type { Method } from '@glave/client';
+import { type BrowserContext, type Locator, type Page, expect } from '@playwright/test';
 import type { Result } from 'axe-core';
 
 /**
@@ -186,6 +187,45 @@ export function builtChunk(holds: (code: string) => boolean): string {
     throw new Error('no file of the app’s build holds what the test looks for: npm run build');
   }
   return found;
+}
+
+/** What a test holds on its way (`hold`) until it lets it go. */
+export interface Held {
+  /** Settles once the page has sent the first of it. */
+  readonly sent: Promise<void>;
+  /** Lets it go on to what answers it, and holds nothing after. */
+  readonly letGo: () => void;
+}
+
+/**
+ * Holds what `on` (a page, or every page of a context) sends to `url` (a pattern, as `route`
+ * takes), or only its calls of the session API's `method` there, on its way until the test lets
+ * it go, as a busy server or a slow network would: so the test sees what the page shows
+ * meanwhile for as long as it looks, with no timer to race. A route added later runs first, so
+ * called after `fakeApi`, whose route answers every call itself, this holds a call before the
+ * fake answers it; with no fake, it holds a request before the glave, or the service, does.
+ */
+export async function hold(
+  on: Page | BrowserContext,
+  url: Parameters<Page['route']>[0],
+  method?: Method,
+): Promise<Held> {
+  let sending = (): void => undefined;
+  const sent = new Promise<void>((resolve) => {
+    sending = resolve;
+  });
+  let letGo = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    letGo = resolve;
+  });
+  await on.route(url, async (route) => {
+    if (method === undefined || route.request().headers()['glave-method'] === method) {
+      sending();
+      await held;
+    }
+    await route.fallback();
+  });
+  return { sent, letGo };
 }
 
 /** Elements end-to-end tests use, by their `data-testid` (AGENTS.md, "Test hooks"). */

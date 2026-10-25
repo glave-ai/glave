@@ -1,7 +1,7 @@
 import { type Page, type Route, expect, test } from '@playwright/test';
 
 import { HELLO } from './fake-model';
-import { LIVE, byTestId, served, signInCode } from './support';
+import { LIVE, byTestId, hold, served, signInCode } from './support';
 
 /** Whether `route` is a `turn/start`. */
 function turnStart(route: Route): boolean {
@@ -72,21 +72,12 @@ test('the thread opens with the message before the server has its turn', async (
   page,
   browserName,
 }) => {
-  let letGo = (): void => undefined;
-  const held = new Promise<void>((resolve) => {
-    letGo = resolve;
-  });
-  await page.route(`${served(LIVE)}/`, async (route) => {
-    if (turnStart(route)) {
-      await held;
-    }
-    await route.fallback();
-  });
+  const turn = await hold(page, `${served(LIVE)}/`, 'turn/start');
   const prompt = await write(page, 'Early', browserName);
   await byTestId(page, 'home-composer-input').press('Enter');
   await expect(byTestId(page, 'thread-message').filter({ hasText: prompt })).toHaveCount(1);
   await expect(byTestId(page, 'thread-working')).toBeVisible();
-  letGo();
+  turn.letGo();
   expect(await asked(page, prompt)).toBe(1);
 });
 
