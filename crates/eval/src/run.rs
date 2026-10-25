@@ -290,8 +290,9 @@ async fn wire(
         workspace,
     };
     // web_fetch, as the CLI offers it; a task's own pages are on 127.0.0.1, named exactly.
+    let pages = web;
     let mut policy = WebPolicy::default();
-    if web.is_some() {
+    if pages.is_some() {
         policy.allow = ["127.0.0.1", "*"]
             .iter()
             .filter_map(|pattern| Domain::parse(pattern).ok())
@@ -303,6 +304,9 @@ async fn wire(
     })
     .map_err(|err| EvalError::Setup(err.to_string()))?;
     let mut tools: Vec<Arc<dyn ToolSource>> = vec![Arc::new(web)];
+    // The person's own servers follow glave's tools, as the CLI offers them.
+    let searching = crate::search::connection(task, pages, root, &setup.processes).await?;
+    tools.extend(searching.map(|server| Arc::new(server) as Arc<dyn ToolSource>));
     // The project's skills, as the CLI finds them; the person's own are not part of a task.
     let skills = find_skills(&skill_folders(root, &[])).await;
     if let Some(warning) = skills.warnings.first() {

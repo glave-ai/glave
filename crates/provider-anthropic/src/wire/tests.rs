@@ -279,6 +279,23 @@ fn text_only_requests_keep_their_tools_and_say_none() {
 }
 
 #[test]
+fn no_request_turns_on_anthropic_s_own_web_search() {
+    // Every search is a call of a connection the person turned on (specs/session.md).
+    let mut asked = request(vec![user("what is new in rust?")]);
+    asked.tools = vec![bash()];
+    asked.effort = Some("high".into());
+    for api in [Api::Messages, Api::Vertex] {
+        let sent = serde_json::to_value(messages_request(&asked, "anthropic", api)).unwrap();
+        let tools = sent["tools"].as_array().unwrap();
+        assert!(
+            tools.iter().all(|tool| tool.get("type").is_none()),
+            "only tools of glave's own, never a server tool: {sent}"
+        );
+        assert!(!sent.to_string().contains("web_search"), "{sent}");
+    }
+}
+
+#[test]
 fn vertex_takes_its_version_in_the_body_and_the_model_in_the_url() {
     let request = request(vec![user("hi")]);
     let vertex = serde_json::to_value(messages_request(&request, "vertex", Api::Vertex)).unwrap();

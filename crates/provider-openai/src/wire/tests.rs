@@ -111,6 +111,44 @@ fn consecutive_user_messages_are_sent_as_one() {
 }
 
 #[test]
+fn no_request_turns_on_a_provider_s_own_web_search() {
+    // Every search is a call of a connection the person turned on (specs/session.md): never
+    // OpenRouter's `:online` or `web` plugin, nor OpenAI's own search.
+    let request = ModelRequest {
+        model: "openai/gpt-6-luna".into(),
+        system: String::new(),
+        messages: Vec::new(),
+        tools: vec![ToolSpec {
+            name: "web_fetch".into(),
+            description: "Fetch a web page.".into(),
+            parameters: json!({"type": "object"}),
+        }],
+        tool_choice: ToolChoice::Auto,
+        max_output_tokens: None,
+        purpose: glave_ports::Purpose::Main,
+        threads: Vec::new(),
+        effort: Some("high".into()),
+        files: Vec::new(),
+    };
+    for provider in ["openrouter", "openai", "ollama"] {
+        let sent = serde_json::to_value(chat_request(&request, provider)).unwrap();
+        assert_eq!(sent["model"], "openai/gpt-6-luna", "no :online");
+        let tools = sent["tools"].as_array().unwrap();
+        assert!(
+            tools.iter().all(|tool| tool["type"] == "function"),
+            "{sent}"
+        );
+        let plugins = sent["plugins"].as_array().cloned().unwrap_or_default();
+        assert!(plugins.iter().all(|plugin| plugin["id"] != "web"), "{sent}");
+        let text = sent.to_string();
+        assert!(
+            !text.contains("web_search") && !text.contains(":online"),
+            "{text}"
+        );
+    }
+}
+
+#[test]
 fn text_only_requests_keep_their_tools_and_say_none() {
     let mut request = ModelRequest {
         model: "m".into(),

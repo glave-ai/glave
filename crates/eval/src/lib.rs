@@ -17,6 +17,7 @@ mod prepare;
 mod probe;
 mod report;
 mod run;
+mod search;
 mod steer;
 mod suite;
 mod task;
