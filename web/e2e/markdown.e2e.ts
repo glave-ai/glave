@@ -54,7 +54,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
     await page.setViewportSize({ width: 1440, height: 900 });
     await fakeApi(page);
-    await streamReply(page, MARKDOWN_REPLY, { heldAfter: '**empty input**' });
+    await streamReply(page, MARKDOWN_REPLY, { heldAfter: '**empty input' });
     const response = await page.goto(`/t/${THREAD}${SIGNED_IN}`);
     // Images come from the app, and from files the person adds (`blob:`), under Trusted Types.
     const policy = response?.headers()['content-security-policy'] ?? '';
@@ -65,8 +65,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
     const composer = byTestId(page, 'thread-composer-input');
     await composer.fill(MARKDOWN_PROMPT);
     await composer.press('Enter');
-    // While it streams, held just after the bold, the reply is markdown: bold as it is written,
-    // never its asterisks.
+    // While it streams, held halfway through the bold, the reply is markdown: bold as it is
+    // written, never its asterisks.
     const live = byTestId(page, 'thread-reply');
     await expect(live.locator('strong', { hasText: 'empty input' })).toBeVisible();
     await letGo(page, 'reply');

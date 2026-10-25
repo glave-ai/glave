@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 
 import { HISTORY } from './fake-api';
-import { type Gated, gates } from './fake-gate';
+import { type Gate, type Gated, gates } from './fake-gate';
 import { THREAD } from './fake-records';
 
 /** What the person asks in a turn that thinks first (`thinkingTurn`). */
@@ -30,7 +30,8 @@ export async function thinkingTurn(page: Page): Promise<void> {
     ({ after, thread, started, step, thinking, answer }) => {
       const real = window.fetch.bind(window);
       const encoder = new TextEncoder();
-      const { passed } = (window as unknown as Gated).glaveGates;
+      const passed = (gate: Gate): Promise<void> =>
+        (window as unknown as Gated).glaveGates.passed(gate);
       const stored = (seq: number, type: string, data: unknown): string =>
         JSON.stringify({
           jsonrpc: '2.0',

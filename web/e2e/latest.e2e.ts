@@ -101,7 +101,7 @@ test('while the person is at the end, a streaming reply keeps its last line in v
   await askForMarkdown(page);
   // Partway through, held after its task list, the line being written shows, and nothing
   // offers to jump.
-  await expect(byTestId(page, 'thread-reply').locator('th').first()).toBeVisible();
+  await expect(byTestId(page, 'thread-reply')).toContainText('Document the change');
   await expect.poll(() => bottomShows(page, 'thread-reply')).toBe(true);
   await expect(byTestId(page, 'thread-latest')).toBeHidden();
   await letGo(page, 'reply');

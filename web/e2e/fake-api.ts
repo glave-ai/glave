@@ -461,7 +461,6 @@ export async function streamReply(
   await page.addInitScript(
     ({ notes, delay, held }) => {
       const real = window.fetch.bind(window);
-      const { passed } = (window as unknown as Gated).glaveGates;
       window.fetch = async (input, init) => {
         const body = typeof init?.body === 'string' ? init.body : '';
         if (!body.includes('"turn/start"')) {
@@ -473,7 +472,7 @@ export async function streamReply(
           async start(controller) {
             for (const [index, note] of notes.entries()) {
               if (index === held) {
-                await passed('reply');
+                await (window as unknown as Gated).glaveGates.passed('reply');
               }
               const message = 'result' in note ? { ...note, id } : note;
               controller.enqueue(encoder.encode(`data: ${JSON.stringify(message)}\n\n`));

@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 
 import { HISTORY } from './fake-api';
-import { type Gated, gates } from './fake-gate';
+import { type Gate, type Gated, gates } from './fake-gate';
 import { THREAD } from './fake-records';
 
 /** The id the fake answers a message sent while its turn runs with (`steerTurn`). */
@@ -26,7 +26,8 @@ export async function steerTurn(page: Page): Promise<void> {
     ({ after, thread, queuedId }) => {
       const real = window.fetch.bind(window);
       const encoder = new TextEncoder();
-      const { passed } = (window as unknown as Gated).glaveGates;
+      const passed = (gate: Gate): Promise<void> =>
+        (window as unknown as Gated).glaveGates.passed(gate);
       let sent = '';
       let turns = 0;
       const at = '2026-10-11T10:10:00.000Z';

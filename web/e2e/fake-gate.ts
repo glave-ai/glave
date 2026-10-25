@@ -1,12 +1,21 @@
 import type { Page } from '@playwright/test';
 
-/** A page with gates in it (`gates`), as a fake's page script sees `window`. */
+/**
+ * The gates the fakes' streams wait at: `streamReply`'s `reply`, `steerTurn`'s `read`, and
+ * `thinkingTurn`'s steps.
+ */
+export type Gate = 'reply' | 'read' | 'start' | 'tool' | 'think' | 'answer';
+
+/**
+ * A page with gates in it (`gates`), as a fake's page script sees `window`. The order the page's
+ * init scripts run in is not defined, so a fake looks its gate up once its stream comes to it.
+ */
 export interface Gated {
   readonly glaveGates: {
     /** Settles once the test lets `gate` go: at once, when it already has. */
-    readonly passed: (gate: string) => Promise<void>;
+    readonly passed: (gate: Gate) => Promise<void>;
     /** Lets `gate` go. */
-    readonly letGo: (gate: string) => void;
+    readonly letGo: (gate: Gate) => void;
   };
 }
 
@@ -19,12 +28,13 @@ export interface Gated {
  */
 export async function gates(page: Page): Promise<void> {
   await page.addInitScript(() => {
-    interface Gate {
+    /** A gate as the page keeps it: passed once let go. */
+    interface Passing {
       readonly passed: Promise<void>;
       readonly letGo: () => void;
     }
-    const known = new Map<string, Gate>();
-    const gate = (name: string): Gate => {
+    const known = new Map<Gate, Passing>();
+    const gate = (name: Gate): Passing => {
       const found = known.get(name);
       if (found !== undefined) {
         return found;
@@ -48,7 +58,7 @@ export async function gates(page: Page): Promise<void> {
 }
 
 /** Lets the page's `gate` go, and its fake's stream on past it. */
-export async function letGo(page: Page, gate: string): Promise<void> {
+export async function letGo(page: Page, gate: Gate): Promise<void> {
   await page.evaluate((gate) => {
     (window as unknown as Gated).glaveGates.letGo(gate);
   }, gate);
