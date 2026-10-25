@@ -7,9 +7,10 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use glave_event::{Part, ThreadId};
-use glave_harness::{FileError, MAX_FILE, is_image, is_visual, kind_of};
+use glave_harness::{FileError, MAX_FILE, MAX_SIDE, kind_of};
 use glave_ports::{
-    BlobError, BlobStore, Caller, EventLog, ModelProvider, Pieces, ProjectId, Scope,
+    BlobError, BlobStore, Caller, EventLog, ModelProvider, Pieces, ProjectId, Scope, is_image,
+    is_inline,
 };
 
 use crate::protocol::{ApiError, AttachedFile, FileInfo, Reply, code};
@@ -83,10 +84,11 @@ where
         })
     }
 
-    /// The `file` parts `files` make in `thread`'s message, once the thread refers to each and
-    /// each image has the copy the model is sent: refused when one is not kept in its project
-    /// (never uploaded there, or swept), when an image cannot be opened, and when one is an
-    /// image or a PDF and `model` does not read them.
+    /// The `file` parts `files` make in `thread`'s message, each image with the copy the model
+    /// is sent, once the thread refers to each file and copy: refused, before the thread
+    /// refers to any, when one is not kept in its project (never uploaded there, or swept),
+    /// when an image cannot be opened, and when one is an image or a PDF and `model` does not
+    /// read them.
     pub(crate) async fn attach(
         &self,
         scope: &Scope,
@@ -109,18 +111,14 @@ where
             let blob = blob.ok_or_else(|| gone(&file.name))?.reference;
             found.push((file.name.trim(), blob));
         }
-        let shown = found.iter().any(|(_, blob)| is_visual(&blob.media_type));
+        let shown = found.iter().any(|(_, blob)| is_inline(&blob.media_type));
         if shown && !harness.reads_images(model) {
             return Err(ApiError::new(code::NO_IMAGES, Sentence::NoImages));
         }
         let mut parts = Vec::with_capacity(found.len());
         for (name, blob) in found {
-            let referred = blobs.refer(scope, &blob.sha256, thread).await;
-            if !referred.map_err(|error| ApiError::internal(&error))? {
-                return Err(gone(name));
-            }
             let resized = if is_image(&blob.media_type) {
-                let resized = harness.resized(scope, thread, &blob).await;
+                let resized = harness.resized(scope, &blob).await;
                 resized.map_err(|error| unfit(name, &error))?
             } else {
                 None
@@ -130,6 +128,22 @@ where
                 name: Some(name.to_owned()),
                 resized,
             });
+        }
+        for part in &parts {
+            let Part::File {
+                blob,
+                name,
+                resized,
+            } = part
+            else {
+                continue;
+            };
+            for kept in std::iter::once(blob).chain(resized) {
+                let referred = blobs.refer(scope, &kept.sha256, thread).await;
+                if !referred.map_err(|error| ApiError::internal(&error))? {
+                    return Err(gone(name.as_deref().unwrap_or_default()));
+                }
+            }
         }
         Ok(parts)
     }
@@ -147,11 +161,17 @@ fn gone(name: &str) -> ApiError {
 
 /// Why the image `name` could not be made fit to send.
 fn unfit(name: &str, error: &FileError) -> ApiError {
+    let shown = || name.escape_debug().to_string();
     match error {
-        FileError::NotAnImage => ApiError::new(
+        FileError::Unreadable => ApiError::new(
             code::INVALID_PARAMS,
-            Sentence::ImageUnreadable {
-                name: name.escape_debug().to_string(),
+            Sentence::ImageUnreadable { name: shown() },
+        ),
+        FileError::TooLarge => ApiError::new(
+            code::LIMIT,
+            Sentence::ImageTooLarge {
+                name: shown(),
+                pixels: MAX_SIDE,
             },
         ),
         FileError::Gone => gone(name),

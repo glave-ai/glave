@@ -225,8 +225,10 @@ fn read_shows_files_and_folders_and_refuses_what_it_cannot_show() {
     );
     let binary = s.call(Tool::Read, json!({"path": "app"}));
     assert!(binary.is_error && binary.text.contains("is a binary file"));
-    let cut = s.call(Tool::Read, json!({"path": "logo.png"}));
-    assert!(cut.is_error && cut.text.contains("an image that cannot be read"));
+    // An image is handed over whole: the harness makes it fit to send as it keeps it.
+    let logo = s.call(Tool::Read, json!({"path": "logo.png"}));
+    assert_eq!(logo.text, "logo.png is an image of 16 bytes.");
+    assert_eq!(logo.file.unwrap().media_type, "image/png");
     let pdf = s.call(Tool::Read, json!({"path": "terms.pdf"}));
     assert_eq!(pdf.text, "terms.pdf is a PDF of 9 bytes.");
     let handed = pdf.file.unwrap();

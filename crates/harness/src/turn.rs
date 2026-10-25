@@ -20,6 +20,7 @@ use crate::approval::Approver;
 use crate::cancel::Cancel;
 use crate::commands::invoked;
 use crate::compaction::{Measured, chars};
+use crate::files::refuses_files;
 use crate::goal::{BUDGET_SPENT, counted};
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::memory::{ConfigMemory, MemoryVerb};
@@ -601,7 +602,10 @@ where
         Ok(stored.await?)
     }
 
-    /// Sends the conversation to the model, forwarding live text as it arrives.
+    /// Sends the conversation to the model, forwarding live text as it arrives. When its
+    /// provider refuses the images and PDFs sent inline, it is asked once more with every file
+    /// by its name, and the model is taken for one that reads none: a file never stops a
+    /// thread.
     async fn ask_model(
         &self,
         thread: &Thread,
@@ -613,7 +617,7 @@ where
         let (messages, files) = self
             .with_files(&thread.scope, &model, self.sent(thread))
             .await;
-        let request = ModelRequest {
+        let mut request = ModelRequest {
             model,
             system: offer.system.clone(),
             messages,
@@ -631,6 +635,7 @@ where
         };
         let retries = self.settings.retries;
         let mut retry = 0;
+        let mut named = false;
         loop {
             live(Live::Waiting);
             let mut forward = |delta: Delta| match delta {
@@ -638,7 +643,20 @@ where
                 Delta::Reasoning(text) => live(Live::Reasoning(text)),
             };
             match self.provider.complete(&request, &mut forward).await {
-                Ok(completion) => return Ok(completion),
+                Ok(completion) => {
+                    if named {
+                        self.learn_without_images(&request.model);
+                    }
+                    return Ok(completion);
+                }
+                Err(error) if !request.files.is_empty() && refuses_files(&error) => {
+                    tracing::warn!(
+                        model = %request.model,
+                        "the provider refused the files sent inline: sent again by their names"
+                    );
+                    request.files.clear();
+                    named = true;
+                }
                 Err(error) if error.is_transient() && retry < retries.attempts => {
                     retry += 1;
                     // Only the wait's jitter: without randomness it waits the plain backoff.

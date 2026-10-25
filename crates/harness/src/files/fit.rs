@@ -1,20 +1,25 @@
 //! Images made fit to send a model, once, as they come into a thread (`specs/session.md`,
-//! "Attachments"): upright, at most [`LONG_EDGE`] on the long side and [`MAX_IMAGE`] in bytes.
-//! An image already so is sent as it is; any other, and every GIF (OpenAI reads no animated
-//! ones), is scaled down and encoded as a JPEG, what was transparent made white and its
-//! metadata (where it was taken, with what) left out. The original is never changed.
+//! "Attachments"): upright, at most [`LONG_EDGE`] on the long side and [`MAX_IMAGE`] in bytes,
+//! with no metadata. An image already so is sent as it is; any other, and every GIF (OpenAI
+//! reads no animated ones), gets a copy: scaled down, what was transparent made white, its
+//! metadata (where it was taken, with what) left out, encoded as a JPEG. The original is never
+//! changed.
 
 use std::io::Cursor;
 
 use image::codecs::jpeg::JpegEncoder;
 use image::imageops::FilterType;
 use image::metadata::Orientation;
-use image::{DynamicImage, ImageDecoder as _, ImageFormat, ImageReader, Limits, Rgb, RgbImage};
+use image::{
+    DynamicImage, ImageDecoder as _, ImageError, ImageFormat, ImageReader, Limits, Rgb, RgbImage,
+};
+
+use super::FileError;
 
 /// The long edge an image is sent at, at most, in pixels: what Claude reads at its standard
 /// tier without scaling it down itself (its newest models read up to 2,576); OpenAI scales
 /// to 2,048, and refuses no image this size.
-pub(crate) const LONG_EDGE: u32 = 1_568;
+const LONG_EDGE: u32 = 1_568;
 
 /// The largest image sent as it is, in bytes: 5 MB once in base64, what Amazon Bedrock takes
 /// for Claude (Anthropic's own API takes 10 MB, OpenAI's far more).
@@ -30,71 +35,51 @@ const QUALITIES: [u8; 3] = [85, 60, 40];
 const MAX_DECODED: u64 = 256 * 1024 * 1024;
 
 /// The widest and tallest image decoded at all, in pixels.
-const MAX_SIDE: u32 = 20_000;
+pub const MAX_SIDE: u32 = 20_000;
 
-/// An image, made fit to send.
-#[derive(Debug)]
-pub(crate) struct Fitted {
-    /// Its width as given, upright, in pixels.
-    pub(crate) width: u32,
-    pub(crate) height: u32,
-    /// The JPEG the model is sent in its place; `None` when it is sent as it is.
-    pub(crate) copy: Option<Resized>,
-}
-
-/// An image's copy, fit to send.
-#[derive(Debug)]
-pub(crate) struct Resized {
-    pub(crate) bytes: Vec<u8>,
-    pub(crate) width: u32,
-    pub(crate) height: u32,
-}
-
-/// `bytes`, an image, made fit to send: `None` when they are not one glave reads (PNG, JPEG,
-/// GIF or WebP, whole), or would take too much memory to decode.
-pub(crate) fn fit(bytes: &[u8]) -> Option<Fitted> {
+/// The copy of `bytes`, an image, the model is sent in its place: a JPEG fit to send, or
+/// `None` when the image is sent as it is. Refused when they are not a whole image glave reads
+/// (PNG, JPEG, GIF or WebP), or one too large to open.
+pub(crate) fn fit(bytes: &[u8]) -> Result<Option<Vec<u8>>, FileError> {
     let mut reader = ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
-        .ok()?;
-    let format = reader.format()?;
+        .map_err(|_| FileError::Unreadable)?;
+    let format = reader.format().ok_or(FileError::Unreadable)?;
     let mut limits = Limits::default();
     limits.max_alloc = Some(MAX_DECODED);
     limits.max_image_width = Some(MAX_SIDE);
     limits.max_image_height = Some(MAX_SIDE);
     reader.limits(limits);
-    let mut decoder = reader.into_decoder().ok()?;
+    let mut decoder = reader.into_decoder().map_err(|error| refused(&error))?;
     let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
-    let mut image = DynamicImage::from_decoder(decoder).ok()?;
+    let metadata = decoder.exif_metadata().ok().flatten().is_some();
+    let mut image = DynamicImage::from_decoder(decoder).map_err(|error| refused(&error))?;
     image.apply_orientation(orientation);
-    let (width, height) = (image.width(), image.height());
-    let small = width.max(height) <= LONG_EDGE;
+    let small = image.width().max(image.height()) <= LONG_EDGE;
     let light = u64::try_from(bytes.len()).is_ok_and(|len| len <= MAX_IMAGE);
-    if small && light && orientation == Orientation::NoTransforms && format != ImageFormat::Gif {
-        return Some(Fitted {
-            width,
-            height,
-            copy: None,
-        });
+    let upright = orientation == Orientation::NoTransforms;
+    if small && light && upright && !metadata && format != ImageFormat::Gif {
+        return Ok(None);
     }
     if !small {
         image = image.resize(LONG_EDGE, LONG_EDGE, FilterType::Lanczos3);
     }
     let rgb = over_white(image);
-    let bytes = QUALITIES.iter().find_map(|quality| {
+    let copy = QUALITIES.iter().find_map(|quality| {
         let mut out = Vec::new();
         let encoded = JpegEncoder::new_with_quality(&mut out, *quality).encode_image(&rgb);
-        let light = u64::try_from(out.len()).is_ok_and(|len| len <= MAX_IMAGE);
-        (encoded.is_ok() && light).then_some(out)
-    })?;
-    Some(Fitted {
-        width,
-        height,
-        copy: Some(Resized {
-            bytes,
-            width: rgb.width(),
-            height: rgb.height(),
-        }),
-    })
+        let fits = u64::try_from(out.len()).is_ok_and(|len| len <= MAX_IMAGE);
+        (encoded.is_ok() && fits).then_some(out)
+    });
+    copy.map(Some).ok_or(FileError::Unreadable)
+}
+
+/// Why an image could not be opened: too large to, or not a whole image.
+fn refused(error: &ImageError) -> FileError {
+    match error {
+        ImageError::Limits(_) => FileError::TooLarge,
+        _ => FileError::Unreadable,
+    }
 }
 
 /// `image` with nothing transparent: what was shows white, as on a page.

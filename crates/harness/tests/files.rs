@@ -116,55 +116,119 @@ fn an_image_and_a_pdf_go_inline_and_a_text_file_as_text() {
             .collect();
         assert_eq!(
             inline,
-            [("image/png", "iVBORw=="), ("application/pdf", "JVBERg==")]
+            [("application/pdf", "JVBERg=="), ("image/png", "iVBORw==")],
+            "the newest first"
         );
     });
 }
 
+/// Runs one turn of `harness` for the message "what is this?" with `files`.
+async fn ask_about<P: glave_ports::ModelProvider>(
+    harness: &glave_harness::Harness<P, InMemoryLog, glave_ports::InMemoryBlobs, AllowAll>,
+    files: &[Part],
+) -> glave_harness::TurnSummary {
+    let mut thread = harness.start_thread(scope()).await.unwrap();
+    let said = Said {
+        text: "what is this?",
+        files,
+    };
+    harness
+        .run_turn_with_files(
+            &mut thread,
+            said,
+            &Caller::default(),
+            &Cancel::new(),
+            &mut |_| {},
+        )
+        .await
+        .unwrap()
+}
+
+/// `bytes` kept as an upload of `media_type`, as a file part named `name`.
+async fn uploaded<P: glave_ports::ModelProvider>(
+    harness: &glave_harness::Harness<P, InMemoryLog, glave_ports::InMemoryBlobs, AllowAll>,
+    bytes: &[u8],
+    media_type: &str,
+    name: &str,
+) -> Part {
+    let blob = harness
+        .blobs()
+        .put(
+            &scope(),
+            None,
+            media_type,
+            1024,
+            Box::new(Pieces::from(bytes.to_vec())),
+        )
+        .await
+        .unwrap();
+    file(blob, name)
+}
+
 #[test]
-fn a_model_that_reads_no_images_is_sent_every_file_by_its_name() {
+fn a_model_that_reads_no_images_is_told_each_is_not_shown() {
     let dir = folder("files-blind");
     block_on!(async {
         let answers = vec![answer(Some("Text only."), Vec::new(), StopReason::EndTurn)];
         let (harness, seen) =
             harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
         harness.set_without_images(vec!["test-model".into()]);
-        let mut thread = harness.start_thread(scope()).await.unwrap();
-        let blob = harness
-            .blobs()
-            .put(
-                &scope(),
-                None,
-                "image/png",
-                1024,
-                Box::new(Pieces::from(b"\x89PNG".to_vec())),
-            )
-            .await
-            .unwrap();
-        let files = [file(blob, "cat.png")];
-        let said = Said {
-            text: "what is this?",
-            files: &files,
-        };
-        harness
-            .run_turn_with_files(
-                &mut thread,
-                said,
-                &Caller::default(),
-                &Cancel::new(),
-                &mut |_| {},
-            )
-            .await
-            .unwrap();
+        let image = uploaded(&harness, b"\x89PNG", "image/png", "cat.png").await;
+        ask_about(&harness, &[image]).await;
         let requests = seen.lock().unwrap();
-        assert!(requests.first().unwrap().files.is_empty(), "nothing inline");
+        let request = requests.first().unwrap();
+        assert!(request.files.is_empty(), "nothing inline");
+        let Some(Message::User { parts }) = request.messages.last() else {
+            panic!("the person's message is sent last")
+        };
+        assert_eq!(
+            parts.last(),
+            Some(&Part::Text {
+                text: "[cat.png is not shown: this model reads no images]".into()
+            })
+        );
+    });
+}
+
+#[test]
+fn a_provider_that_refuses_what_went_inline_is_asked_again_with_names() {
+    let dir = folder("files-refused");
+    block_on!(async {
+        let refused = glave_ports::ProviderError::Http {
+            status: 400,
+            body: "unsupported content type: file".into(),
+        };
+        let model = ScriptedModel::answering(vec![
+            Err(refused),
+            Ok(answer(Some("By name."), Vec::new(), StopReason::EndTurn)),
+        ]);
+        let script = model.seen();
+        let parts = glave_harness::Parts {
+            provider: model,
+            log: InMemoryLog::new(),
+            blobs: glave_ports::InMemoryBlobs::new(),
+            approver: AllowAll,
+            clock: Box::new(glave_ports::testing::ManualClock::ticking(
+                1_791_000_000_000,
+            )),
+            entropy: Box::new(glave_ports::testing::CountingEntropy::starting_at(1)),
+            workspace: workspace(&dir).await,
+        };
+        let harness = glave_harness::Harness::new(parts, settings());
+        let pdf = uploaded(&harness, b"%PDF", "application/pdf", "terms.pdf").await;
+        ask_about(&harness, &[pdf]).await;
+        let asked = script.lock().unwrap();
+        let files: Vec<usize> = asked.iter().map(|request| request.files.len()).collect();
+        assert_eq!(files, [1, 0], "inline, then by its name");
+        assert!(!harness.reads_images("test-model"), "taken as reading none");
     });
 }
 
 #[test]
 fn reading_an_image_hands_the_model_a_copy_fit_to_send() {
     let dir = folder("files-read");
-    std::fs::write(dir.join("shot.png"), png(2000, 1000)).unwrap();
+    let shot = png(2000, 1000);
+    std::fs::write(dir.join("shot.png"), &shot).unwrap();
     block_on!(async {
         let answers = vec![
             answer(
@@ -208,7 +272,7 @@ fn reading_an_image_hands_the_model_a_copy_fit_to_send() {
         };
         assert_eq!(
             text,
-            "shot.png is an image of 2000x1000 pixels, scaled to 1568x784."
+            &format!("shot.png is an image of {} bytes.", shot.len())
         );
         assert_eq!(
             (blob.media_type.as_str(), name.as_deref()),
@@ -300,7 +364,7 @@ fn a_message_read_mid_turn_keeps_its_files() {
 }
 
 #[test]
-fn an_image_coming_into_a_thread_keeps_its_original_beside_the_copy() {
+fn an_image_made_fit_to_send_keeps_its_original_beside_the_copy() {
     let dir = folder("files-copy");
     block_on!(async {
         let (harness, _) = harness_seeing(
@@ -312,7 +376,6 @@ fn an_image_coming_into_a_thread_keeps_its_original_beside_the_copy() {
             settings(),
         )
         .await;
-        let thread = harness.start_thread(scope()).await.unwrap();
         let original = png(3000, 1500);
         let blobs = harness.blobs();
         let put = Box::new(Pieces::from(original.clone()));
@@ -320,11 +383,7 @@ fn an_image_coming_into_a_thread_keeps_its_original_beside_the_copy() {
             .put(&scope(), None, "image/png", 20_000_000, put)
             .await
             .unwrap();
-        let copy = harness
-            .resized(&scope(), thread.id, &blob)
-            .await
-            .unwrap()
-            .unwrap();
+        let copy = harness.resized(&scope(), &blob).await.unwrap().unwrap();
         assert_eq!(copy.media_type, "image/jpeg");
         let read = |sha256| async move {
             let mut found = blobs.get(&scope(), sha256).await.unwrap().unwrap();
@@ -344,7 +403,7 @@ fn an_image_coming_into_a_thread_keeps_its_original_beside_the_copy() {
             .put(&scope(), None, "image/png", 20_000_000, small)
             .await
             .unwrap();
-        let none = harness.resized(&scope(), thread.id, &small).await.unwrap();
+        let none = harness.resized(&scope(), &small).await.unwrap();
         assert_eq!(none, None, "sent as it is");
     });
 }

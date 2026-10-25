@@ -198,11 +198,10 @@ fn a_photo_is_kept_as_it_is_and_the_model_sent_a_copy_made_once() {
 }
 
 #[test]
-fn files_are_refused_plainly_before_anything_is_sent() {
-    let dir = folder("files-refused");
+fn uploads_glave_cannot_read_are_refused_plainly() {
+    let dir = folder("files-refused-uploads");
     block_on!(async {
-        let (server, seen) = setup().build(&dir).await;
-        let thread = start(&server, false).await;
+        let (server, _) = setup().build(&dir).await;
         let refused = |answered: &Result<FileInfo, ApiError>, wanted: i64, words: &str| {
             assert!(
                 matches!(answered, Err(error) if error.code == wanted
@@ -231,7 +230,15 @@ fn files_are_refused_plainly_before_anything_is_sent() {
         )
         .await;
         refused(&heic, code::INVALID_PARAMS, "PNG, JPEG, GIF or WebP");
+    });
+}
 
+#[test]
+fn messages_with_files_that_cannot_be_sent_are_refused_before_anything_is() {
+    let dir = folder("files-refused-sends");
+    block_on!(async {
+        let (server, seen) = setup().build(&dir).await;
+        let thread = start(&server, false).await;
         let cut = STANDARD.decode(PIXEL).unwrap();
         let cut = upload(&server, "cut.png", "image/png", cut.get(..40).unwrap())
             .await
@@ -241,6 +248,18 @@ fn files_are_refused_plainly_before_anything_is_sent() {
             matches!(&broken, Err(error) if error.code == code::INVALID_PARAMS
                 && error.message.contains("\"cut.png\" can't be opened")),
             "{broken:?}"
+        );
+        let mut wide = Cursor::new(Vec::new());
+        let strip = image::GrayImage::new(glave_harness::MAX_SIDE + 1, 1);
+        strip.write_to(&mut wide, image::ImageFormat::Png).unwrap();
+        let wide = upload(&server, "strip.png", "image/png", wide.get_ref())
+            .await
+            .unwrap();
+        let huge = send(&server, thread, vec![attached(&wide)], None).await;
+        assert!(
+            matches!(&huge, Err(error) if error.code == code::LIMIT
+                && error.message.contains("too large to open")),
+            "{huge:?}"
         );
         let pixel = STANDARD.decode(PIXEL).unwrap();
         let image = upload(&server, "cat.png", "image/png", &pixel)

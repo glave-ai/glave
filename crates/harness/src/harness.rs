@@ -77,8 +77,11 @@ pub struct Harness<P, L, B, A> {
     pub(crate) settings: Settings,
     /// The model threads that chose none go to: the settings' at first, then the host's.
     pub(crate) default: RwLock<DefaultModel>,
-    /// The models that read no images, as the host's catalog says; none at first.
+    /// The models that read no images, as the host's catalog says or a refusal showed; none
+    /// at first.
     pub(crate) without_images: RwLock<Vec<String>>,
+    /// Images being made fit to send, [`crate::files::FITTING_AT_ONCE`] at most.
+    pub(crate) fitting: tokio::sync::Semaphore,
     /// Who every thread works for, and the agent that runs it: from the settings, or made once.
     pub(crate) actors: Actors,
     /// Each model's real context window, once a refusal has stated it.
@@ -292,6 +295,7 @@ where
                 provider: settings.provider.clone(),
             }),
             without_images: RwLock::default(),
+            fitting: tokio::sync::Semaphore::new(crate::files::FITTING_AT_ONCE),
             settings,
             learned_windows: LearnedWindows::default(),
             workers: None,

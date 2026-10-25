@@ -141,6 +141,8 @@ sentences! {
         "glave can't read this kind of file yet: add an image (PNG, JPEG, GIF or WebP), a PDF or a text file",
     ImageUnreadable { name: String } = "image-unreadable"
         "\"{ $name }\" can't be opened as an image: add it again, or a screenshot of it",
+    ImageTooLarge { name: String, pixels: u32 } = "image-too-large"
+        "\"{ $name }\" is too large to open, at most { $pixels } pixels on a side: add a smaller copy, or a screenshot of part of it",
     FileTooLarge { megabytes: u64 } = "file-too-large"
         "this file is larger than { $megabytes } MB: add a smaller one, or the part that matters",
     FilesNotForTasks = "files-not-for-tasks"

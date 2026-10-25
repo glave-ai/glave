@@ -325,6 +325,7 @@ fn an_image_and_a_pdf_are_sent_inline_beside_the_text_and_a_file_not_inline_by_n
 #[test]
 fn what_tool_results_hand_the_model_follows_them_as_the_persons() {
     let (image, image_inline) = inline(b"png", "image/png", "cG5n");
+    let (pdf, pdf_inline) = inline(b"%PDF", "application/pdf", "JVBERg==");
     let call = |id: &str| ToolCall {
         call_id: CallId::new(id).unwrap(),
         tool: "read".into(),
@@ -347,12 +348,15 @@ fn what_tool_results_hand_the_model_follows_them_as_the_persons() {
             result("call_1", vec![said.clone(), file(&image, "shot.png")]),
             result(
                 "call_2",
-                vec![Part::Text {
-                    text: "notes".into(),
-                }],
+                vec![
+                    Part::Text {
+                        text: "notes".into(),
+                    },
+                    file(&pdf, "terms.pdf"),
+                ],
             ),
         ],
-        vec![image_inline],
+        vec![image_inline, pdf_inline],
     );
     let body = serde_json::to_value(chat_request(&request, "openai")).unwrap();
     let messages = body["messages"].as_array().unwrap();
@@ -365,7 +369,10 @@ fn what_tool_results_hand_the_model_follows_them_as_the_persons() {
     assert_eq!(
         messages[3],
         json!({"role": "user", "content": [
-            {"type": "image_url", "image_url": {"url": "data:image/png;base64,cG5n"}}
+            {"type": "text", "text": "shot.png, from tool result call_1:"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,cG5n"}},
+            {"type": "text", "text": "terms.pdf, from tool result call_2:"},
+            {"type": "file", "file": {"filename": "terms.pdf", "file_data": "data:application/pdf;base64,JVBERg=="}}
         ]})
     );
     assert_eq!(messages.len(), 4);

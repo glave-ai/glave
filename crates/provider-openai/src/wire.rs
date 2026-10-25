@@ -239,16 +239,29 @@ pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> Cha
             content: &request.system,
         });
     }
-    // The images and PDFs tool results hand the model go after them, as the person's: a tool's
-    // message takes text alone. OpenCode sends them so too.
+    // The images and PDFs tool results hand the model go after them, as the person's, each
+    // after a line naming its result: a tool's message takes text alone. OpenCode sends them
+    // so too.
     let mut handed: Vec<ContentPart> = Vec::new();
     for message in &request.messages {
-        if let Message::Tool { output, .. } = message {
-            let files = output.iter().filter_map(|part| {
-                let file = request.inline(part)?;
-                Some(ContentPart::inline(file, part))
-            });
-            handed.extend(files);
+        if let Message::Tool {
+            call_id, output, ..
+        } = message
+        {
+            for part in output {
+                if let Some(file) = request.inline(part) {
+                    let name = match part {
+                        Part::File {
+                            name: Some(name), ..
+                        } => name.as_str(),
+                        _ => "a file",
+                    };
+                    let call = call_id.as_str();
+                    let text = format!("{name}, from tool result {call}:");
+                    handed.push(ContentPart::Text { text });
+                    handed.push(ContentPart::inline(file, part));
+                }
+            }
         } else {
             hand(&mut messages, &mut handed);
         }

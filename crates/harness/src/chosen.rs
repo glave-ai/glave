@@ -95,7 +95,20 @@ where
             .unwrap_or_else(PoisonError::into_inner) = models;
     }
 
-    /// Whether `model` reads images and PDFs: unless the host said it does not.
+    /// Takes `model` for one that reads no images from now on, as a refusal showed, until the
+    /// host says again which do.
+    pub(crate) fn learn_without_images(&self, model: &str) {
+        let mut blind = self
+            .without_images
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
+        if !blind.iter().any(|known| known == model) {
+            blind.push(model.to_owned());
+        }
+    }
+
+    /// Whether `model` reads images and PDFs: unless the host said it does not, or a refusal
+    /// showed it.
     pub fn reads_images(&self, model: &str) -> bool {
         !self
             .without_images

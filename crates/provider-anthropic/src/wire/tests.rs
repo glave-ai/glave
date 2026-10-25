@@ -342,8 +342,9 @@ fn an_image_and_a_pdf_are_sent_inline_beside_the_text_and_a_file_not_inline_by_n
 }
 
 #[test]
-fn a_tool_result_holds_the_image_it_hands_the_model() {
+fn a_tool_result_holds_the_image_or_pdf_it_hands_the_model() {
     let (image, image_inline) = inline(b"png", "image/png", "shot.png", "cG5n");
+    let (pdf, pdf_inline) = inline(b"%PDF", "application/pdf", "terms.pdf", "JVBERg==");
     let said = Part::Text {
         text: "shot.png is an image of 4x3 pixels.".into(),
     };
@@ -355,17 +356,18 @@ fn a_tool_result_holds_the_image_it_hands_the_model() {
         Message::Tool {
             call_id: CallId::new("call_1").unwrap(),
             is_error: false,
-            output: vec![said, image],
+            output: vec![said, image, pdf],
         },
         result("call_2", "plain", false),
     ]);
-    asked.files = vec![image_inline];
+    asked.files = vec![image_inline, pdf_inline];
     assert_eq!(
         body(&asked)["messages"][1]["content"],
         json!([
             {"type": "tool_result", "tool_use_id": "call_1", "is_error": false, "content": [
                 {"type": "text", "text": "shot.png is an image of 4x3 pixels."},
-                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "cG5n"}}
+                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "cG5n"}},
+                {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": "JVBERg=="}}
             ]},
             {"type": "tool_result", "tool_use_id": "call_2", "is_error": false, "content": "plain"}
         ])

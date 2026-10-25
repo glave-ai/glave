@@ -125,7 +125,7 @@ impl Tool {
             ),
             Self::Read => (
                 "Read a file, shown with line numbers, or list a folder. Reads up to 2000 lines; \
-                 use offset and limit for more. An image or a PDF is shown as itself.",
+                 use offset and limit for more.",
                 json!({"type": "object", "properties": {
                     "path": {"type": "string", "description": "File or folder, relative to the project"},
                     "offset": {"type": "integer", "minimum": 1, "description": "First line to read"},

@@ -57,13 +57,29 @@ pub struct ModelRequest {
     pub files: Vec<InlineFile>,
 }
 
+/// The image types every provider glave speaks to reads inline.
+const IMAGE_TYPES: [&str; 4] = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+
+/// A PDF's media type: providers read one as its text and an image of each page.
+pub const PDF: &str = "application/pdf";
+
+/// Whether a file of `media_type` is an image every provider reads inline.
+pub fn is_image(media_type: &str) -> bool {
+    IMAGE_TYPES.contains(&media_type)
+}
+
+/// Whether a file of `media_type` is sent to a model inline, which only a model that reads
+/// images reads: an image, or a PDF.
+pub fn is_inline(media_type: &str) -> bool {
+    is_image(media_type) || media_type == PDF
+}
+
 /// An image or a PDF a message or a tool result holds, its content ready to send inline.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InlineFile {
     /// The blob it is, as [`Part::sent`] names it.
     pub sha256: Sha256,
-    /// Its media type: `image/png`, `image/jpeg`, `image/gif`, `image/webp` or
-    /// `application/pdf`.
+    /// Its media type, one [`is_inline`] takes.
     pub media_type: String,
     /// Its bytes, in base64.
     pub data: String,
@@ -72,7 +88,7 @@ pub struct InlineFile {
 impl InlineFile {
     /// Whether it is a PDF, which providers take as a document rather than an image.
     pub fn is_pdf(&self) -> bool {
-        self.media_type == "application/pdf"
+        self.media_type == PDF
     }
 }
 

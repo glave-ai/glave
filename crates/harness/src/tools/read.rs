@@ -1,15 +1,15 @@
 //! `read`: a file with numbered lines, or a folder's entries apart from what git ignores. An
-//! image or a PDF is handed to the model as a person's is: an image fit to send, a PDF whole.
+//! image or a PDF is handed to the model as a person's is.
 
 use std::fmt::Write as _;
 
-use glave_ports::ToolFile;
 use glave_ports::computer::{EntryKind, Listing, looks_binary};
+use glave_ports::{PDF, ToolFile};
 use serde::Deserialize;
 
 use super::ToolOutcome;
 use super::workspace::Workspace;
-use crate::files::{MAX_FILE, PDF, fitted, sniffed};
+use crate::files::{MAX_FILE, sniffed};
 
 /// Most lines returned by one read.
 const MAX_LINES: usize = 2_000;
@@ -53,7 +53,7 @@ pub(crate) async fn read(workspace: &Workspace, args: ReadArgs) -> ToolOutcome {
         Err(e) => return ToolOutcome::error(format!("Could not read {shown}: {}", e.message())),
     };
     if let Some(media_type) = sniffed(&bytes) {
-        return handed(&shown, media_type, bytes).await;
+        return handed(&shown, media_type, bytes);
     }
     if looks_binary(&bytes) {
         return ToolOutcome::error(format!("{shown} is a binary file."));
@@ -63,8 +63,8 @@ pub(crate) async fn read(workspace: &Workspace, args: ReadArgs) -> ToolOutcome {
 }
 
 /// The image or PDF at `shown`, `bytes` of `media_type`, handed to the model after a line
-/// saying what it is: an image fit to send, a PDF as it is.
-async fn handed(shown: &str, media_type: &str, bytes: Vec<u8>) -> ToolOutcome {
+/// saying what it is; the harness keeps it as it keeps a person's, an image fit to send.
+fn handed(shown: &str, media_type: &str, bytes: Vec<u8>) -> ToolOutcome {
     let name = shown.rsplit('/').next().unwrap_or(shown).to_owned();
     let size = bytes.len();
     if media_type == PDF {
@@ -84,37 +84,14 @@ async fn handed(shown: &str, media_type: &str, bytes: Vec<u8>) -> ToolOutcome {
             ..ToolOutcome::ok(format!("{shown} is a PDF of {size} bytes."))
         };
     }
-    let (bytes, fitted) = fitted(bytes).await;
-    let Some(fitted) = fitted else {
-        return ToolOutcome::error(format!(
-            "{shown} is an image that cannot be read: cut short, or too large to open."
-        ));
-    };
-    let pixels = format!("{}x{}", fitted.width, fitted.height);
-    let (text, file) = match fitted.copy {
-        Some(copy) => (
-            format!(
-                "{shown} is an image of {pixels} pixels, scaled to {}x{}.",
-                copy.width, copy.height
-            ),
-            ToolFile {
-                name,
-                media_type: "image/jpeg".to_owned(),
-                bytes: copy.bytes,
-            },
-        ),
-        None => (
-            format!("{shown} is an image of {pixels} pixels."),
-            ToolFile {
-                name,
-                media_type: media_type.to_owned(),
-                bytes,
-            },
-        ),
+    let file = ToolFile {
+        name,
+        media_type: media_type.to_owned(),
+        bytes,
     };
     ToolOutcome {
         file: Some(file),
-        ..ToolOutcome::ok(text)
+        ..ToolOutcome::ok(format!("{shown} is an image of {size} bytes."))
     }
 }
 

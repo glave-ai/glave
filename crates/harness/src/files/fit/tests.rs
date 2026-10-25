@@ -26,59 +26,79 @@ fn grainy(width: u32, height: u32) -> DynamicImage {
     }))
 }
 
-fn decoded(bytes: &[u8]) -> DynamicImage {
-    image::load_from_memory(bytes).unwrap()
+/// A JPEG of `image` carrying `exif`.
+fn with_exif(image: &DynamicImage, exif: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut encoder = JpegEncoder::new_with_quality(&mut out, 90);
+    encoder.set_exif_metadata(exif.to_vec()).unwrap();
+    let rgb = image.to_rgb8();
+    encoder
+        .write_image(
+            &rgb,
+            rgb.width(),
+            rgb.height(),
+            image::ExtendedColorType::Rgb8,
+        )
+        .unwrap();
+    out
+}
+
+/// The copy `bytes` are sent as, decoded, checked to be a JPEG.
+fn copied(bytes: &[u8]) -> DynamicImage {
+    let copy = fit(bytes).unwrap().unwrap();
+    assert_eq!(image::guess_format(&copy).unwrap(), ImageFormat::Jpeg);
+    image::load_from_memory(&copy).unwrap()
 }
 
 #[test]
 fn a_phone_photo_is_scaled_to_the_long_edge_as_a_jpeg_of_a_few_hundred_kilobytes() {
     let photo = encoded(&grainy(4032, 3024), ImageFormat::Jpeg);
     assert!(photo.len() > 1_000_000, "a photo of {} bytes", photo.len());
-    let fitted = fit(&photo).unwrap();
-    assert_eq!((fitted.width, fitted.height), (4032, 3024));
-    let copy = fitted.copy.unwrap();
-    assert_eq!((copy.width, copy.height), (1568, 1176));
-    assert!(copy.bytes.len() < 600_000, "{} bytes", copy.bytes.len());
-    assert_eq!(image::guess_format(&copy.bytes).unwrap(), ImageFormat::Jpeg);
-    let sent = decoded(&copy.bytes);
+    let copy = fit(&photo).unwrap().unwrap();
+    assert!(copy.len() < 600_000, "{} bytes", copy.len());
+    let sent = image::load_from_memory(&copy).unwrap();
     assert_eq!((sent.width(), sent.height()), (1568, 1176));
 }
 
 #[test]
-fn a_small_light_upright_image_is_sent_as_it_is() {
+fn a_small_light_upright_image_with_no_metadata_is_sent_as_it_is() {
     for format in [ImageFormat::Png, ImageFormat::Jpeg, ImageFormat::WebP] {
         let fitted = fit(&encoded(&grainy(1568, 900), format)).unwrap();
-        assert_eq!((fitted.width, fitted.height), (1568, 900));
-        assert!(fitted.copy.is_none(), "{format:?}");
+        assert!(fitted.is_none(), "{format:?}");
     }
 }
 
 #[test]
 fn a_photo_turned_by_its_metadata_is_made_upright() {
     // EXIF orientation 6: shown turned a quarter clockwise.
-    let exif = b"MM\0\x2a\0\0\0\x08\0\x01\x01\x12\0\x03\0\0\0\x01\0\x06\0\0\0\0\0\0".to_vec();
-    let mut photo = Vec::new();
-    let mut encoder = JpegEncoder::new_with_quality(&mut photo, 90);
-    encoder.set_exif_metadata(exif).unwrap();
-    let image = grainy(400, 300).into_rgb8();
-    encoder
-        .write_image(&image, 400, 300, image::ExtendedColorType::Rgb8)
+    let exif = b"MM\0\x2a\0\0\0\x08\0\x01\x01\x12\0\x03\0\0\0\x01\0\x06\0\0\0\0\0\0";
+    let sent = copied(&with_exif(&grainy(400, 300), exif));
+    assert_eq!((sent.width(), sent.height()), (300, 400));
+}
+
+#[test]
+fn metadata_such_as_where_a_photo_was_taken_is_left_out() {
+    // Upright (orientation 1), with a GPS block: small and light, but not sent as it is.
+    let exif = b"MM\0\x2a\0\0\0\x08\0\x02\x01\x12\0\x03\0\0\0\x01\0\x01\0\0\x88\x25\0\x04\0\0\0\x01\0\0\0\x26\0\0\0\0\0\0\0\0\0\0";
+    let photo = with_exif(&grainy(400, 300), exif);
+    let copy = fit(&photo).unwrap().unwrap();
+    let mut decoder = ImageReader::new(Cursor::new(&copy))
+        .with_guessed_format()
+        .unwrap()
+        .into_decoder()
         .unwrap();
-    let fitted = fit(&photo).unwrap();
-    assert_eq!((fitted.width, fitted.height), (300, 400));
-    let copy = fitted.copy.unwrap();
-    assert_eq!((copy.width, copy.height), (300, 400));
+    assert_eq!(
+        decoder.exif_metadata().unwrap(),
+        None,
+        "no metadata in the copy"
+    );
 }
 
 #[test]
 fn what_was_transparent_shows_white() {
     let clear = DynamicImage::ImageRgba8(RgbaImage::new(2000, 1000));
-    let copy = fit(&encoded(&clear, ImageFormat::Png))
-        .unwrap()
-        .copy
-        .unwrap();
-    assert_eq!((copy.width, copy.height), (1568, 784));
-    let sent = decoded(&copy.bytes).into_rgb8();
+    let sent = copied(&encoded(&clear, ImageFormat::Png)).into_rgb8();
+    assert_eq!((sent.width(), sent.height()), (1568, 784));
     assert!(
         sent.pixels().all(|pixel| pixel.0.iter().all(|c| *c > 250)),
         "white"
@@ -87,10 +107,8 @@ fn what_was_transparent_shows_white() {
 
 #[test]
 fn a_gif_is_sent_as_a_jpeg_of_its_first_frame() {
-    let fitted = fit(&encoded(&grainy(64, 48), ImageFormat::Gif)).unwrap();
-    let copy = fitted.copy.unwrap();
-    assert_eq!((copy.width, copy.height), (64, 48));
-    assert_eq!(image::guess_format(&copy.bytes).unwrap(), ImageFormat::Jpeg);
+    let sent = copied(&encoded(&grainy(64, 48), ImageFormat::Gif));
+    assert_eq!((sent.width(), sent.height()), (64, 48));
 }
 
 #[test]
@@ -105,20 +123,20 @@ fn even_noise_at_the_long_edge_comes_within_the_size_sent() {
     });
     let png = encoded(&DynamicImage::ImageRgb8(noise), ImageFormat::Png);
     assert!(png.len() as u64 > MAX_IMAGE, "too heavy to send as it is");
-    let copy = fit(&png).unwrap().copy.unwrap();
-    assert_eq!((copy.width, copy.height), (LONG_EDGE, LONG_EDGE));
-    assert!(copy.bytes.len() as u64 <= MAX_IMAGE, "{}", copy.bytes.len());
+    let copy = fit(&png).unwrap().unwrap();
+    assert!(copy.len() as u64 <= MAX_IMAGE, "{}", copy.len());
 }
 
 #[test]
-fn what_is_not_a_whole_image_glave_reads_is_refused() {
+fn what_is_not_a_whole_image_glave_reads_is_refused_and_a_huge_one_said_so() {
     let png = encoded(&grainy(32, 32), ImageFormat::Png);
-    assert!(
-        fit(png.get(..png.len() / 2).unwrap()).is_none(),
-        "cut short"
-    );
-    assert!(fit(b"%PDF-1.7\n").is_none());
-    assert!(fit(b"plain text").is_none());
+    let unreadable = |bytes: &[u8]| matches!(fit(bytes), Err(FileError::Unreadable));
+    assert!(unreadable(png.get(..png.len() / 2).unwrap()), "cut short");
+    assert!(unreadable(b"%PDF-1.7\n"));
+    assert!(unreadable(b"plain text"));
     let wide = encoded(&grainy(MAX_SIDE + 1, 1), ImageFormat::Png);
-    assert!(fit(&wide).is_none(), "too wide to decode");
+    assert!(
+        matches!(fit(&wide), Err(FileError::TooLarge)),
+        "too wide to open"
+    );
 }

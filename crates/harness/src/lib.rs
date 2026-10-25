@@ -56,7 +56,7 @@ pub use commands::{Command, FoundCommands, command_folders, find_commands};
 pub use compaction::{Compacted, Compaction};
 pub use conversation::conversation;
 pub use defaults::Defaults;
-pub use files::{FileError, MAX_FILE, is_image, is_visual, kind_of};
+pub use files::{FileError, MAX_FILE, MAX_SIDE, kind_of};
 pub use glave_event::Permissions;
 pub use goal::{DEFAULT_BUDGET, Goal, GoalProgress, UPDATE_GOAL};
 pub use harness::{Harness, HarnessError, Parts, Settings, Thread};

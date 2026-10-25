@@ -45,15 +45,18 @@ pub struct ToolOutput {
     /// risky actions after it are judged knowing it was read (`specs/approvals.md`).
     pub untrusted: bool,
     /// Files the call hands the model, such as an image it read: kept in the blob store as
-    /// the result is recorded, each a `file` part after the parts.
+    /// the result is recorded, an image made fit to send, each a `file` part after the parts.
     pub files: Vec<ToolFile>,
 }
 
-/// A file a call hands the model: an image fit to send, or a PDF.
+/// A file a call hands the model: an image or a PDF.
 #[derive(Clone, PartialEq, Eq)]
 pub struct ToolFile {
+    /// Its name, as the model is told it.
     pub name: String,
+    /// What it holds, such as `image/png`.
     pub media_type: String,
+    /// Its content, whole.
     pub bytes: Vec<u8>,
 }
 
