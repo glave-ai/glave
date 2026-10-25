@@ -100,6 +100,21 @@ function create(root: Element): HTMLButtonElement {
   return find<HTMLButtonElement>(root, 'new-project-create');
 }
 
+/**
+ * Presses Enter in a field of the form as a browser does, which jsdom doesn't: HTML's implicit
+ * submission clicks the form's default button, its first submit button, and does nothing at
+ * all while that button is disabled.
+ */
+function pressEnter(root: Element): void {
+  const form = find<HTMLFormElement>(root, 'new-project-form');
+  const button = Array.from(form.elements).find(
+    (element) => element instanceof HTMLButtonElement && element.type === 'submit',
+  );
+  if (button instanceof HTMLButtonElement && !button.disabled) {
+    button.click();
+  }
+}
+
 describe('NewProjectComponent', () => {
   it('starts from a folder on this computer, picked from the home folder', async () => {
     const { root } = await render();
@@ -117,7 +132,7 @@ describe('NewProjectComponent', () => {
     expect(radios[0]?.checked).toBe(true);
     expect(find(root, 'new-project-folder').textContent).toContain('Folder');
     expect(root.querySelector('app-folder-picker')).not.toBeNull();
-    expect(create(root).disabled).toBe(true);
+    expect(create(root).getAttribute('aria-disabled')).toBe('true');
     expect(root.textContent).not.toMatch(/space|workspace/iu);
     await expectAccessible(root);
   });
@@ -186,7 +201,7 @@ describe('NewProjectComponent', () => {
     await settle(fixture);
     // The picker opens at the folder picked, and nothing is picked until one is used again.
     expect(fake.paramsOf('folder/list').at(-1)).toEqual({ path: '/Users/ana' });
-    expect(create(root).disabled).toBe(true);
+    expect(create(root).getAttribute('aria-disabled')).toBe('true');
     find(root, 'folder-picker-folder').click();
     await settle(fixture);
     find(root, 'folder-picker-use').click();
@@ -307,10 +322,27 @@ describe('NewProjectComponent', () => {
     choose(root, 'Empty');
     await settle(fixture);
     expect(root.querySelector('app-folder-picker')).toBeNull();
-    expect(create(root).disabled).toBe(true);
+    expect(create(root).getAttribute('aria-disabled')).toBe('true');
+    // Unavailable, pressing it, as Enter in a field does, does nothing.
+    create(root).click();
+    await settle(fixture);
+    expect(fake.paramsOf('project/create')).toEqual([]);
     type(root, 'new-project-name', 'Ideas');
     await settle(fixture);
+    expect(create(root).getAttribute('aria-disabled')).toBeNull();
     create(root).click();
+    await settle(fixture);
+    expect(fake.paramsOf('project/create')).toEqual([{ name: 'Ideas', folder: { kind: 'empty' } }]);
+  });
+
+  it('makes what is in the field when Enter comes before the page is drawn again', async () => {
+    const { root, fixture, fake } = await render();
+    choose(root, 'Empty');
+    await settle(fixture);
+    // The name and Enter at once, as on a busy computer: the page isn't drawn between them, so
+    // Create still shows what it was before the name.
+    type(root, 'new-project-name', 'Ideas');
+    pressEnter(root);
     await settle(fixture);
     expect(fake.paramsOf('project/create')).toEqual([{ name: 'Ideas', folder: { kind: 'empty' } }]);
   });

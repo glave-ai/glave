@@ -155,9 +155,14 @@ export class NewProjectComponent {
   protected readonly fromRepository = computed(() => this.draft().start === 'repository');
   protected readonly connected = computed(() => this.credentials.accounts().length > 0);
   protected readonly cloning = computed(() => this.creating() && this.fromRepository());
-  protected readonly incomplete = computed(() => this.params() === null);
-  /** While it is being made, Create stays focusable but does nothing. */
-  protected readonly createBusy = computed(() => (this.creating() ? 'true' : null));
+  /**
+   * While the project can't be made yet, or is being made, Create reads as unavailable but is
+   * never disabled, so Enter in a field always reaches `create()`, which decides from the fields
+   * (Glaze's AGENTS.md, "Forms", says why).
+   */
+  protected readonly createUnavailable = computed(() =>
+    this.params() === null || this.creating() ? 'true' : null,
+  );
   protected readonly createLabel = computed(() => {
     if (this.cloning()) {
       return this.copy.cloningButton;
