@@ -128,17 +128,17 @@ fn tied(
         };
         let ran = match limit {
             None => ran.await,
-            Some(limit) => match tokio::time::timeout(limit, ran).await {
-                Ok(ran) => ran,
-                Err(_) => {
+            Some(limit) => {
+                let Ok(ran) = tokio::time::timeout(limit, ran).await else {
                     child.stop().await;
                     return Err(format!(
                         "`{program} {}` did not finish within {}",
                         args.join(" "),
                         glave_ports::spoken(limit)
                     ));
-                }
-            },
+                };
+                ran
+            }
         };
         let (status, output) = ran.map_err(|err| failed(&err))?;
         // What it left running in its group goes with it.

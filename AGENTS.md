@@ -88,6 +88,7 @@ cargo xtask deps        # the dependency rule: each crate depends only on the la
 cargo xtask file-sizes  # line limits only
 cargo xtask secrets     # no secret-shaped literal in a tracked file
 cargo xtask spawns      # every process glave starts goes through glave-process
+cargo xtask waits       # every wait has a limit on its line, or a reason in xtask/src/waits.rs
 cargo xtask schema      # regenerate specs/session.schema.json and the web client's types after changing the session API
 cargo xtask release-workflow   # regenerate .github/workflows/release.yml after changing dist-workspace.toml or .github/build-setup.yml (needs dist, the version dist-workspace.toml names)
 cargo xtask bench       # benchmarks, alone on the machine (see Performance)
@@ -170,6 +171,7 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - tokio. Never block inside async code; use `spawn_blocking` for blocking work.
 - Channels and queues are bounded. Every cache has a size cap. Memory is bounded, not unbounded.
 - Every spawned task has an owner that awaits or cancels it. No fire-and-forget.
+- Every wait has a limit, sized to what it waits for: seconds for a local program to start or a socket to answer, minutes only for real work, an idle limit for a stream. When it runs out, say what was waited for and how long (`glave_ports::spoken`). A wait for a person has the person as its limit, as long as it can be cancelled. `cargo xtask waits` checks it (`specs/invariants.md`, 20).
 - Never hold a lock across `.await`. Code must be cancellation-safe.
 
 **Dependencies**

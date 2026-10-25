@@ -394,7 +394,10 @@ mod tests {
     #[test]
     fn every_entry_names_a_source_and_says_why() {
         for (path, line, why) in BOUNDED {
-            assert!(sources::non_test(path), "{path} is not a source the check reads");
+            assert!(
+                sources::non_test(path),
+                "{path} is not a source the check reads"
+            );
             assert!(!line.trim().is_empty(), "{path}: an entry with no line");
             assert!(why.len() > 20, "{path}: `{line}` needs its reason");
         }

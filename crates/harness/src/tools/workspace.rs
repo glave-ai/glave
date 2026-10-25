@@ -112,9 +112,9 @@ impl Workspace {
     }
 
     /// Runs every command in `sandbox`. Fails if the computer cannot enforce it, so a
-    /// requested sandbox is never quietly skipped, and fails within
-    /// [`SANDBOX_STARTS_WITHIN`] when it starts no command; on success, learns the temp
-    /// folder its commands get, which the shell assessment treats as theirs to write.
+    /// requested sandbox is never quietly skipped, and within 10 seconds when it starts no
+    /// command; on success, learns the temp folder its commands get, which the shell
+    /// assessment treats as theirs to write.
     pub async fn with_sandbox(mut self, sandbox: &Sandbox) -> Result<Self, ComputerError> {
         let mut probe = Command::new(r#"printf '%s' "$TMPDIR""#);
         probe.sandbox = Some(sandbox.clone());
