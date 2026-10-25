@@ -27,6 +27,7 @@ pub fn output(result: &CallToolResult) -> ToolOutput {
         // The connection marks it untrusted for an open-world tool, the server for one the
         // person or a policy marked.
         untrusted: false,
+        files: Vec::new(),
     }
 }
 

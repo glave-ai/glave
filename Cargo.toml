@@ -111,6 +111,10 @@ http-body-util = "0.1"
 hyper = { version = "1", default-features = false }
 hyper-util = { version = "0.1", default-features = false }
 ignore = "0.4"
+# Images a person adds or the agent reads, made fit to send a model once: decoded (PNG, JPEG,
+# GIF, WebP), turned upright, scaled down and encoded as a JPEG. Pure Rust, only the formats
+# models read; zune-image, the other choice, was three times the size once it read WebP.
+image = { version = "0.25.10", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
 # ACME (RFC 8555) for glave's own certificate (glave-acme): accounts, orders and challenges, on
 # the hyper, rustls and aws-lc-rs glave already uses; its key and request made with rcgen.
 instant-acme = { version = "0.8.5", default-features = false, features = ["aws-lc-rs", "hyper-rustls", "rcgen"] }
@@ -193,6 +197,13 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 debug = false
+
+# Decoding, scaling and encoding a photo unoptimized takes seconds; tests that fit one would.
+[profile.dev.package.image]
+opt-level = 3
+
+[profile.dev.package.zune-jpeg]
+opt-level = 3
 
 # Full debug info for stepping through code: `cargo build --profile debugging`.
 [profile.debugging]

@@ -16,7 +16,7 @@ pub(crate) use background::named as command_named;
 pub(crate) use bash::outside_sandbox;
 
 use glave_event::Arguments;
-use glave_ports::ToolSpec;
+use glave_ports::{ToolFile, ToolSpec};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
@@ -31,6 +31,8 @@ use glave_ports::Cancellation;
 pub struct ToolOutcome {
     pub is_error: bool,
     pub text: String,
+    /// A file it hands the model after the text, such as an image `read` read.
+    pub file: Option<ToolFile>,
 }
 
 impl ToolOutcome {
@@ -38,6 +40,7 @@ impl ToolOutcome {
         Self {
             is_error: false,
             text: text.into(),
+            file: None,
         }
     }
 
@@ -45,6 +48,7 @@ impl ToolOutcome {
         Self {
             is_error: true,
             text: text.into(),
+            file: None,
         }
     }
 }
@@ -121,7 +125,7 @@ impl Tool {
             ),
             Self::Read => (
                 "Read a file, shown with line numbers, or list a folder. Reads up to 2000 lines; \
-                 use offset and limit for more.",
+                 use offset and limit for more. An image or a PDF is shown as itself.",
                 json!({"type": "object", "properties": {
                     "path": {"type": "string", "description": "File or folder, relative to the project"},
                     "offset": {"type": "integer", "minimum": 1, "description": "First line to read"},

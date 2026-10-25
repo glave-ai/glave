@@ -77,6 +77,8 @@ pub struct Harness<P, L, B, A> {
     pub(crate) settings: Settings,
     /// The model threads that chose none go to: the settings' at first, then the host's.
     pub(crate) default: RwLock<DefaultModel>,
+    /// The models that read no images, as the host's catalog says; none at first.
+    pub(crate) without_images: RwLock<Vec<String>>,
     /// Who every thread works for, and the agent that runs it: from the settings, or made once.
     pub(crate) actors: Actors,
     /// Each model's real context window, once a refusal has stated it.
@@ -289,6 +291,7 @@ where
                 model: settings.model.clone(),
                 provider: settings.provider.clone(),
             }),
+            without_images: RwLock::default(),
             settings,
             learned_windows: LearnedWindows::default(),
             workers: None,

@@ -245,22 +245,52 @@ fn a_reasoning_level_is_sent_as_each_service_takes_it() {
     assert!(openai.get("reasoning").is_none());
 }
 
-#[test]
-fn an_image_is_sent_inline_beside_the_text_and_a_file_not_inline_by_name() {
-    let image = glave_event::BlobRef {
-        sha256: glave_ports::digest(b"png"),
-        bytes: 3,
-        media_type: "image/png".into(),
+/// A file part for `blob`, named `name`.
+fn file(blob: &glave_event::BlobRef, name: &str) -> Part {
+    Part::File {
+        blob: blob.clone(),
+        name: Some(name.into()),
+        resized: None,
+    }
+}
+
+/// A blob of `media_type` holding `bytes`, and its content inline: `data`, in base64.
+fn inline(bytes: &[u8], media_type: &str, data: &str) -> (glave_event::BlobRef, InlineFile) {
+    let blob = glave_event::BlobRef {
+        sha256: glave_ports::digest(bytes),
+        bytes: bytes.len() as u64,
+        media_type: media_type.into(),
     };
-    let pdf = glave_event::BlobRef {
-        sha256: glave_ports::digest(b"pdf"),
-        bytes: 3,
-        media_type: "application/pdf".into(),
+    let file = InlineFile {
+        sha256: blob.sha256.clone(),
+        media_type: media_type.into(),
+        data: data.into(),
     };
-    let request = ModelRequest {
+    (blob, file)
+}
+
+fn asking(messages: Vec<Message>, files: Vec<InlineFile>) -> ModelRequest {
+    ModelRequest {
         model: "gpt".into(),
         system: String::new(),
-        messages: vec![
+        messages,
+        tools: Vec::new(),
+        tool_choice: ToolChoice::Auto,
+        max_output_tokens: None,
+        purpose: glave_ports::Purpose::Main,
+        threads: Vec::new(),
+        effort: None,
+        files,
+    }
+}
+
+#[test]
+fn an_image_and_a_pdf_are_sent_inline_beside_the_text_and_a_file_not_inline_by_name() {
+    let (image, image_inline) = inline(b"png", "image/png", "cG5n");
+    let (pdf, pdf_inline) = inline(b"%PDF", "application/pdf", "JVBERg==");
+    let (other, _) = inline(b"old", "application/pdf", "b2xk");
+    let request = asking(
+        vec![
             Message::User {
                 parts: vec![Part::Text {
                     text: "earlier".into(),
@@ -271,29 +301,14 @@ fn an_image_is_sent_inline_beside_the_text_and_a_file_not_inline_by_name() {
                     Part::Text {
                         text: "what is this?".into(),
                     },
-                    Part::File {
-                        blob: image.clone(),
-                        name: Some("shot.png".into()),
-                    },
-                    Part::File {
-                        blob: pdf,
-                        name: Some("terms.pdf".into()),
-                    },
+                    file(&image, "shot.png"),
+                    file(&pdf, "terms.pdf"),
+                    file(&other, "old.pdf"),
                 ],
             },
         ],
-        tools: Vec::new(),
-        tool_choice: ToolChoice::Auto,
-        max_output_tokens: None,
-        purpose: glave_ports::Purpose::Main,
-        threads: Vec::new(),
-        effort: None,
-        files: vec![glave_ports::InlineFile {
-            sha256: image.sha256,
-            media_type: "image/png".into(),
-            data: "cG5n".into(),
-        }],
-    };
+        vec![image_inline, pdf_inline],
+    );
     let body = serde_json::to_value(chat_request(&request, "openai")).unwrap();
     assert_eq!(
         body["messages"],
@@ -301,7 +316,57 @@ fn an_image_is_sent_inline_beside_the_text_and_a_file_not_inline_by_name() {
             {"type": "text", "text": "earlier"},
             {"type": "text", "text": "what is this?"},
             {"type": "image_url", "image_url": {"url": "data:image/png;base64,cG5n"}},
-            {"type": "text", "text": "terms.pdf"}
+            {"type": "file", "file": {"filename": "terms.pdf", "file_data": "data:application/pdf;base64,JVBERg=="}},
+            {"type": "text", "text": "old.pdf"}
         ]}])
     );
+}
+
+#[test]
+fn what_tool_results_hand_the_model_follows_them_as_the_persons() {
+    let (image, image_inline) = inline(b"png", "image/png", "cG5n");
+    let call = |id: &str| ToolCall {
+        call_id: CallId::new(id).unwrap(),
+        tool: "read".into(),
+        arguments: Arguments::Json(serde_json::Map::new()),
+    };
+    let result = |id: &str, output: Vec<Part>| Message::Tool {
+        call_id: CallId::new(id).unwrap(),
+        is_error: false,
+        output,
+    };
+    let said = Part::Text {
+        text: "shot.png is an image of 4x3 pixels.".into(),
+    };
+    let request = asking(
+        vec![
+            Message::Assistant {
+                parts: Vec::new(),
+                tool_calls: vec![call("call_1"), call("call_2")],
+            },
+            result("call_1", vec![said.clone(), file(&image, "shot.png")]),
+            result(
+                "call_2",
+                vec![Part::Text {
+                    text: "notes".into(),
+                }],
+            ),
+        ],
+        vec![image_inline],
+    );
+    let body = serde_json::to_value(chat_request(&request, "openai")).unwrap();
+    let messages = body["messages"].as_array().unwrap();
+    assert_eq!(
+        messages[1],
+        json!({"role": "tool", "tool_call_id": "call_1",
+            "content": "shot.png is an image of 4x3 pixels.\nshot.png"})
+    );
+    assert_eq!(messages[2]["role"], "tool", "every result comes first");
+    assert_eq!(
+        messages[3],
+        json!({"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,cG5n"}}
+        ]})
+    );
+    assert_eq!(messages.len(), 4);
 }

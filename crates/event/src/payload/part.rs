@@ -23,7 +23,21 @@ pub enum Part {
         blob: BlobRef,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         name: Option<String>,
+        /// The copy of an image the model is sent in its place, made once as the image came
+        /// into the thread: smaller and upright. None when the image is sent as it is.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        resized: Option<BlobRef>,
     },
+}
+
+impl Part {
+    /// The blob the model is sent for a file: its resized copy when it has one.
+    pub fn sent(&self) -> Option<&BlobRef> {
+        match self {
+            Self::File { blob, resized, .. } => Some(resized.as_ref().unwrap_or(blob)),
+            Self::Text { .. } | Self::Reasoning { .. } => None,
+        }
+    }
 }
 
 /// Provider data that must be sent back byte for byte, such as a reasoning signature or

@@ -85,6 +85,26 @@ where
         };
     }
 
+    /// Tells the harness which models read no images, nor PDFs (which models read as images
+    /// of their pages), as the host's catalog says: each file goes to one by its name. Every
+    /// other model is sent them inline.
+    pub fn set_without_images(&self, models: Vec<String>) {
+        *self
+            .without_images
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = models;
+    }
+
+    /// Whether `model` reads images and PDFs: unless the host said it does not.
+    pub fn reads_images(&self, model: &str) -> bool {
+        !self
+            .without_images
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .any(|blind| blind == model)
+    }
+
     /// The default model now, and its provider's name.
     pub(crate) fn current_default(&self) -> DefaultModel {
         self.default

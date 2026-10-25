@@ -2,7 +2,7 @@
 //! shape of each streamed chunk coming back.
 
 use glave_event::{Arguments, Part};
-use glave_ports::{Message, ModelRequest, ToolChoice, ToolSpec};
+use glave_ports::{InlineFile, Message, ModelRequest, ToolChoice, ToolSpec};
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
@@ -95,7 +95,7 @@ enum WireMessage<'a> {
     },
 }
 
-/// A person's message: its text alone, or its parts in order when it holds an image.
+/// A person's message: its text alone, or its parts in order when it holds an image or a PDF.
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 enum Content {
@@ -106,8 +106,16 @@ enum Content {
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ContentPart {
-    Text { text: String },
-    ImageUrl { image_url: ImageUrl },
+    Text {
+        text: String,
+    },
+    ImageUrl {
+        image_url: ImageUrl,
+    },
+    /// A PDF: the API takes no other document inline.
+    File {
+        file: FileData,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -116,9 +124,40 @@ struct ImageUrl {
     url: String,
 }
 
+#[derive(Debug, Serialize)]
+struct FileData {
+    filename: String,
+    /// A `data:` URL holding the file.
+    file_data: String,
+}
+
+impl ContentPart {
+    /// `file`, which `part` names, sent inline: an image as one, a PDF as a file.
+    fn inline(file: &InlineFile, part: &Part) -> Self {
+        let url = format!("data:{};base64,{}", file.media_type, file.data);
+        if !file.is_pdf() {
+            return Self::ImageUrl {
+                image_url: ImageUrl { url },
+            };
+        }
+        let name = match part {
+            Part::File {
+                name: Some(name), ..
+            } => name.clone(),
+            _ => "document.pdf".to_owned(),
+        };
+        Self::File {
+            file: FileData {
+                filename: name,
+                file_data: url,
+            },
+        }
+    }
+}
+
 impl Content {
-    /// `parts` as a person's message: images sent inline where `request` holds their content,
-    /// the rest as text.
+    /// `parts` as a person's message: images and PDFs sent inline where `request` holds their
+    /// content, the rest as text.
     fn of(request: &ModelRequest, parts: &[Part]) -> Self {
         if !parts.iter().any(|part| request.inline(part).is_some()) {
             return Self::Text(text_of(parts));
@@ -126,11 +165,7 @@ impl Content {
         let mut out: Vec<ContentPart> = Vec::new();
         for part in parts {
             if let Some(file) = request.inline(part) {
-                out.push(ContentPart::ImageUrl {
-                    image_url: ImageUrl {
-                        url: format!("data:{};base64,{}", file.media_type, file.data),
-                    },
-                });
+                out.push(ContentPart::inline(file, part));
                 continue;
             }
             let text = text_of(std::slice::from_ref(part));
@@ -204,18 +239,22 @@ pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> Cha
             content: &request.system,
         });
     }
+    // The images and PDFs tool results hand the model go after them, as the person's: a tool's
+    // message takes text alone. OpenCode sends them so too.
+    let mut handed: Vec<ContentPart> = Vec::new();
     for message in &request.messages {
-        let message = wire_message(request, message);
-        // Consecutive user messages become one. Strict chat templates (Gemma's among them)
-        // refuse two in a row, and a conversation has them after a cancelled turn or a
-        // compaction.
-        match (messages.last_mut(), message) {
-            (Some(WireMessage::User { content }), WireMessage::User { content: next }) => {
-                content.append(next);
-            }
-            (_, message) => messages.push(message),
+        if let Message::Tool { output, .. } = message {
+            let files = output.iter().filter_map(|part| {
+                let file = request.inline(part)?;
+                Some(ContentPart::inline(file, part))
+            });
+            handed.extend(files);
+        } else {
+            hand(&mut messages, &mut handed);
         }
+        push(&mut messages, wire_message(request, message));
     }
+    hand(&mut messages, &mut handed);
     ChatRequest {
         model: &request.model,
         messages,
@@ -251,6 +290,26 @@ pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> Cha
             data_collection: "deny",
             require_parameters: true,
         }),
+    }
+}
+
+/// Adds `message` after `messages`. Consecutive user messages become one: strict chat
+/// templates (Gemma's among them) refuse two in a row, and a conversation has them after a
+/// cancelled turn or a compaction.
+fn push<'a>(messages: &mut Vec<WireMessage<'a>>, message: WireMessage<'a>) {
+    match (messages.last_mut(), message) {
+        (Some(WireMessage::User { content }), WireMessage::User { content: next }) => {
+            content.append(next);
+        }
+        (_, message) => messages.push(message),
+    }
+}
+
+/// Sends what tool results `handed` the model, if anything, as a message of the person's.
+fn hand(messages: &mut Vec<WireMessage<'_>>, handed: &mut Vec<ContentPart>) {
+    if !handed.is_empty() {
+        let content = Content::Parts(std::mem::take(handed));
+        push(messages, WireMessage::User { content });
     }
 }
 

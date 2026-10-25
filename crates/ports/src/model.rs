@@ -50,30 +50,37 @@ pub struct ModelRequest {
     /// it leaves it out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
-    /// The content of the images the messages hold, for the provider to send inline where a
-    /// [`Part::File`] names them; a file not here is sent by its name alone.
+    /// The content of the images and PDFs the messages and tool results hold, for the provider
+    /// to send inline where a [`Part::File`] names them; a file not here is sent by its name
+    /// alone.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<InlineFile>,
 }
 
-/// An image a message holds, its content ready to send inline.
+/// An image or a PDF a message or a tool result holds, its content ready to send inline.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InlineFile {
-    /// The blob it is, as the [`Part::File`] that holds it names it.
+    /// The blob it is, as [`Part::sent`] names it.
     pub sha256: Sha256,
-    /// Its media type: `image/png`, `image/jpeg`, `image/gif` or `image/webp`.
+    /// Its media type: `image/png`, `image/jpeg`, `image/gif`, `image/webp` or
+    /// `application/pdf`.
     pub media_type: String,
     /// Its bytes, in base64.
     pub data: String,
 }
 
+impl InlineFile {
+    /// Whether it is a PDF, which providers take as a document rather than an image.
+    pub fn is_pdf(&self) -> bool {
+        self.media_type == "application/pdf"
+    }
+}
+
 impl ModelRequest {
     /// The content of the file `part` names, when it is sent inline.
     pub fn inline(&self, part: &Part) -> Option<&InlineFile> {
-        let Part::File { blob, .. } = part else {
-            return None;
-        };
-        self.files.iter().find(|file| file.sha256 == blob.sha256)
+        let sent = part.sent()?;
+        self.files.iter().find(|file| file.sha256 == sent.sha256)
     }
 }
 

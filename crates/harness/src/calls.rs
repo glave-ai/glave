@@ -546,6 +546,7 @@ where
         call_id: CallId,
         outcome: ToolOutput,
     ) -> Result<(), HarnessError> {
+        let outcome = self.keep_files(thread, outcome).await;
         // Only a memory call records anything here: that it is memory's, which memory, at which
         // version.
         let completed = completed(call_id, outcome, thread.memory.structured.take());

@@ -282,18 +282,20 @@ where
             entropy: wiring.entropy,
             workspace: wiring.workspace,
         };
+        let harness = match wiring.workers.clone() {
+            Some(on) => Harness::new(parts, settings).with_workers(on.workers),
+            None => Harness::new(parts, settings),
+        }
+        .with_web(wiring.web)
+        .with_tools(wiring.tools)
+        .with_own_tools(wiring.own)
+        .with_hooks(wiring.hooks)
+        .with_memory_if(wiring.memory)
+        .with_project_folders(wiring.project_folders);
+        harness.set_without_images(crate::models::without_images(&catalog));
         Self {
             inner: Arc::new(Inner {
-                harness: match wiring.workers.clone() {
-                    Some(on) => Harness::new(parts, settings).with_workers(on.workers),
-                    None => Harness::new(parts, settings),
-                }
-                .with_web(wiring.web)
-                .with_tools(wiring.tools)
-                .with_own_tools(wiring.own)
-                .with_hooks(wiring.hooks)
-                .with_memory_if(wiring.memory)
-                .with_project_folders(wiring.project_folders),
+                harness,
                 worker: wiring.workers.map(|on| (on.project, on.environment)),
                 models: RwLock::new(catalog),
                 providers: wiring.providers,

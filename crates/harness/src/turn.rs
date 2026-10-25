@@ -609,9 +609,12 @@ where
         tool_choice: ToolChoice,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Completion, HarnessError> {
-        let (messages, files) = self.with_files(&thread.scope, self.sent(thread)).await;
+        let model = self.model_for(thread);
+        let (messages, files) = self
+            .with_files(&thread.scope, &model, self.sent(thread))
+            .await;
         let request = ModelRequest {
-            model: self.model_for(thread),
+            model,
             system: offer.system.clone(),
             messages,
             tools: offer.specs.clone(),

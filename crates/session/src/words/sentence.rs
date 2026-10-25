@@ -134,11 +134,13 @@ sentences! {
     FileUnreadable = "file-unreadable" "the file's content could not be read: add it again",
     TooManyFiles { most: usize } = "too-many-files" "a message holds at most { $most } files",
     NoImages = "no-images"
-        "this model can't read images: choose one that can, or remove the image",
+        "this model can't read images or PDFs: choose one that can, or remove the file",
     FileGone { name: String } = "file-gone"
         "\"{ $name }\" is no longer here: add it to the message again",
-    ImageTooLarge { megabytes: u64 } = "image-too-large"
-        "this image is larger than { $megabytes } MB: make it smaller, or add a screenshot of part of it",
+    FileKind = "file-kind"
+        "glave can't read this kind of file yet: add an image (PNG, JPEG, GIF or WebP), a PDF or a text file",
+    ImageUnreadable { name: String } = "image-unreadable"
+        "\"{ $name }\" can't be opened as an image: add it again, or a screenshot of it",
     FileTooLarge { megabytes: u64 } = "file-too-large"
         "this file is larger than { $megabytes } MB: add a smaller one, or the part that matters",
     FilesNotForTasks = "files-not-for-tasks"

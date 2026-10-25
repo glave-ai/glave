@@ -59,4 +59,67 @@ for (const colorScheme of ['light', 'dark'] as const) {
     ]);
     expect(problems()).toEqual([]);
   });
+
+  test(`a screenshot and a PDF pasted into the box are shown and sent with the message (${colorScheme})`, async ({
+    page,
+  }) => {
+    const problems = watchForProblems(page);
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const { requests } = await fakeApi(page);
+    await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+    const input = byTestId(page, 'thread-composer-input');
+    await expect(input).toBeVisible();
+
+    await input.evaluate(pasteScreenshotAndPdf);
+    const chips = byTestId(page, 'thread-composer-file');
+    await expect(chips).toHaveCount(2);
+    await expect(chips.first()).toContainText('screenshot.png');
+    await expect(chips.first().locator('img')).toHaveJSProperty('naturalWidth', 640);
+    await expect(chips.last()).toContainText('terms.pdf');
+    await expectAccessible(page);
+
+    await input.fill('What do these say?');
+    await input.press('Enter');
+    await expect(chips).toHaveCount(0);
+    // Each is sent as soon as it is read, so the smaller may go first.
+    const uploaded = requests.filter((request) => request.method === 'file/upload');
+    expect(uploaded.map((request) => String(request.params['media_type'])).sort()).toEqual([
+      'application/pdf',
+      'image/png',
+    ]);
+    const sent = requests.filter((request) => request.method === 'turn/start').at(-1);
+    expect(sent?.params['files']).toEqual([
+      expect.objectContaining({ name: 'screenshot.png' }),
+      expect.objectContaining({ name: 'terms.pdf' }),
+    ]);
+    expect(problems()).toEqual([]);
+  });
+}
+
+/**
+ * Pastes into `box` what a person copies from a screenshot tool and a folder: a 640 by 400
+ * PNG, drawn here, and a PDF.
+ */
+async function pasteScreenshotAndPdf(box: HTMLElement): Promise<void> {
+  const canvas = document.createElement('canvas');
+  canvas.width = 640;
+  canvas.height = 400;
+  const context = canvas.getContext('2d');
+  if (context !== null) {
+    const shade = context.createLinearGradient(0, 0, 640, 400);
+    shade.addColorStop(0, '#3b82f6');
+    shade.addColorStop(1, '#f59e0b');
+    context.fillStyle = shade;
+    context.fillRect(0, 0, 640, 400);
+  }
+  const png = await new Promise<Blob | null>((done) => {
+    canvas.toBlob(done, 'image/png');
+  });
+  const pasted = new DataTransfer();
+  pasted.items.add(new File([png ?? ''], 'screenshot.png', { type: 'image/png' }));
+  pasted.items.add(new File(['%PDF-1.7\n%%EOF\n'], 'terms.pdf', { type: 'application/pdf' }));
+  box.dispatchEvent(
+    new ClipboardEvent('paste', { clipboardData: pasted, bubbles: true, cancelable: true }),
+  );
 }
