@@ -80,9 +80,11 @@ import { TurnComponent } from '../turn/turn.component';
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '(document:keydown)': 'keydown($event)',
-    '(document:pointerdown)': 'pressed(true)',
-    '(document:pointerup)': 'pressed(false)',
-    '(document:pointercancel)': 'pressed(false)',
+    '(document:pointerdown)': 'pressed($event)',
+    '(document:pointerup)': 'released()',
+    '(document:pointercancel)': 'released()',
+    '(document:contextmenu)': 'released()',
+    '(document:dragstart)': 'released()',
   },
 })
 export class ThreadComponent {
@@ -121,7 +123,7 @@ export class ThreadComponent {
   /** The composer's draft, which a message the model never read comes back to. */
   protected readonly draft = this.service.composer;
   protected readonly atBottom = signal(true);
-  /** Whether a pointer is down on the page, from its press to its release. */
+  /** Whether the main button is down on the page, from its press to its release. */
   private readonly pressing = signal(false);
   /**
    * Whether "Jump to latest" shows: once the person is away from the bottom, but held as it was
@@ -129,12 +131,10 @@ export class ThreadComponent {
    * view, would otherwise show it under the pointer before the release, which would land on it,
    * and the press would click nothing.
    */
-  protected readonly awayFromBottom = linkedSignal<
-    { readonly away: boolean; readonly pressing: boolean },
-    boolean
-  >({
+  protected readonly latestShown = linkedSignal({
     source: () => ({ away: !this.atBottom(), pressing: this.pressing() }),
-    computation: (now, before) => (now.pressing && before !== undefined ? before.value : now.away),
+    computation: (now, before?: { readonly value: boolean }) =>
+      now.pressing && before !== undefined ? before.value : now.away,
   });
   /** The model the person picked for the next turn, or `null` for the thread's own. */
   protected readonly picked = signal<string | null>(null);
@@ -258,7 +258,14 @@ export class ThreadComponent {
     this.panel.keydown(event);
   }
 
-  protected pressed(down: boolean): void {
-    this.pressing.set(down);
+  protected pressed(event: PointerEvent): void {
+    if (event.button === 0) {
+      this.pressing.set(true);
+    }
+  }
+
+  /** The press ends: released, cancelled, or taken by a menu or a drag the browser opened. */
+  protected released(): void {
+    this.pressing.set(false);
   }
 }

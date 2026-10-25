@@ -97,6 +97,25 @@ if (typeof Element.prototype.getAnimations !== 'function') {
   });
 }
 
+// jsdom does no layout, so no size ever changes: what watches sizes hears nothing.
+if (typeof globalThis.ResizeObserver !== 'function') {
+  Object.assign(globalThis, {
+    ResizeObserver: class {
+      observe(): void {
+        // Nothing to watch without layout.
+      }
+
+      unobserve(): void {
+        // Nor to stop watching.
+      }
+
+      disconnect(): void {
+        // Nor to let go of.
+      }
+    },
+  });
+}
+
 // jsdom does no layout, so it scrolls nothing into view.
 if (typeof Element.prototype.scrollIntoView !== 'function') {
   Object.assign(Element.prototype, {

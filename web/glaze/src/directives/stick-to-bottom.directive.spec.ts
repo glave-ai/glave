@@ -58,10 +58,22 @@ function resized(): void {
   }
 }
 
-/** Gives jsdom a scroll box `height` high, 200 of it shown. */
+/**
+ * Gives jsdom a scroll box `height` high, 200 of it shown, which scrolls no further than its
+ * bottom, as a browser's does, and stays where it was as it grows.
+ */
 function scrollBox(element: HTMLElement, height: number): void {
+  const bottom = height - 200;
+  let top = element.scrollTop;
   Object.defineProperty(element, 'scrollHeight', { configurable: true, value: height });
   Object.defineProperty(element, 'clientHeight', { configurable: true, value: 200 });
+  Object.defineProperty(element, 'scrollTop', {
+    configurable: true,
+    get: () => top,
+    set: (value: number) => {
+      top = Math.max(0, Math.min(value, bottom));
+    },
+  });
 }
 
 /** Scrolls to `top`, as the person (or anything else) does. */
@@ -101,7 +113,7 @@ describe('GlzStickToBottomDirective', () => {
     fixture.componentInstance.lines.set(['one', 'two']);
     await fixture.whenStable();
     await flushMutations();
-    expect(list.scrollTop).toBe(1000);
+    expect(list.scrollTop).toBe(800);
 
     scrollTo(list, 100);
     await fixture.whenStable();
@@ -116,7 +128,7 @@ describe('GlzStickToBottomDirective', () => {
     fixture.componentInstance.stick().scrollToBottom();
     await fixture.whenStable();
     expect(fixture.componentInstance.atBottom()).toBe(true);
-    expect(list.scrollTop).toBe(1200);
+    expect(list.scrollTop).toBe(1000);
   });
 
   it('keeps the person at the bottom when something there opens, so a small scroll after finds them still there', async () => {
@@ -134,12 +146,12 @@ describe('GlzStickToBottomDirective', () => {
     details.open = true;
     scrollBox(list, 1040);
     resized();
-    expect(list.scrollTop).toBe(1040);
+    expect(list.scrollTop).toBe(840);
 
-    // Bringing what opened into view scrolls the few pixels left, which the browser holds at
-    // the bottom (1040 - 200); "Jump to latest" stays away. Left at 800, the same 8 pixels would
-    // have put the person 32 from the bottom, past the threshold.
-    scrollTo(list, 840);
+    // Bringing a line of what opened into view scrolls a few pixels more, which the bottom
+    // holds: the person is still there, and "Jump to latest" stays away. Left 40 short, the same
+    // 8 pixels would have put them 32 from the bottom, past the threshold.
+    scrollTo(list, list.scrollTop + 8);
     await fixture.whenStable();
     expect(fixture.componentInstance.atBottom()).toBe(true);
   });

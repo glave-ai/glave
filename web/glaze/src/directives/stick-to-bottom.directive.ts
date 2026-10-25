@@ -45,21 +45,21 @@ export class GlzStickToBottomDirective {
     // What only a size records: a <details> opening, a fold sliding open, an image loading,
     // the container made shorter. Unfollowed, it would leave the person short of a bottom they
     // still seem to be at, and their next scroll, however small, would show them away from it.
-    const sizes =
-      typeof view.ResizeObserver === 'function' ? new view.ResizeObserver(follow) : null;
-    sizes?.observe(this.element);
-    // What is added, removed or rewritten, followed at once: before the browser, keeping the
-    // scroll inside what is left, reports a scroll the person never made.
+    const sizes = new view.ResizeObserver(follow);
+    sizes.observe(this.element);
+    // Content added, removed or rewritten is followed at once, as it changes: sizes are reported
+    // only after the frame's scroll events, and by then content swapped out and in again may
+    // have pulled the scroll up with it, which would read as the person leaving the bottom.
     const changes = new view.MutationObserver((records) => {
       for (const record of records.filter((each) => each.target === this.element)) {
-        for (const node of Array.from(record.addedNodes)) {
-          if (node instanceof view.Element) {
-            sizes?.observe(node);
-          }
-        }
         for (const node of Array.from(record.removedNodes)) {
           if (node instanceof view.Element) {
-            sizes?.unobserve(node);
+            sizes.unobserve(node);
+          }
+        }
+        for (const node of Array.from(record.addedNodes)) {
+          if (node instanceof view.Element) {
+            sizes.observe(node);
           }
         }
       }
@@ -68,7 +68,7 @@ export class GlzStickToBottomDirective {
     changes.observe(this.element, { childList: true, subtree: true, characterData: true });
     inject(DestroyRef).onDestroy(() => {
       changes.disconnect();
-      sizes?.disconnect();
+      sizes.disconnect();
     });
   }
 

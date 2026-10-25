@@ -239,6 +239,36 @@ describe('ThreadComponent', () => {
     expect(latest?.classList).not.toContain('shown');
   });
 
+  it('holds "Jump to latest" for no press a menu or a drag takes over', async () => {
+    const { root, fixture } = await open(session(ANSWERED));
+    const items = root.querySelector<HTMLElement>('[data-testid="thread-items"]');
+    const latest = root.querySelector('[data-testid="thread-latest"]');
+    if (items === null) {
+      throw new Error('no conversation');
+    }
+    Object.defineProperty(items, 'scrollHeight', { value: 1000 });
+    Object.defineProperty(items, 'clientHeight', { value: 200 });
+    const scrolled = async (top: number): Promise<void> => {
+      items.scrollTop = top;
+      items.dispatchEvent(new Event('scroll'));
+      await fixture.whenStable();
+    };
+    // The other button opens a menu, which takes the release: nothing is held.
+    document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 2 }));
+    await scrolled(0);
+    expect(latest?.classList).toContain('shown');
+    await scrolled(800);
+    // A press that opens a menu (Control and click on a Mac) or starts a drag ends there.
+    for (const taken of ['contextmenu', 'dragstart']) {
+      document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      document.dispatchEvent(new Event(taken, { bubbles: true }));
+      await scrolled(0);
+      expect(latest?.classList).toContain('shown');
+      await scrolled(800);
+      expect(latest?.classList).not.toContain('shown');
+    }
+  });
+
   it('shows a turn that worked results first: the reply, what changed, then its steps', async () => {
     const call = (seq: number, id: string, tool: string, json: Record<string, unknown>): unknown =>
       event(seq, 'tool.call.requested', { call_id: id, tool, arguments: { json } });

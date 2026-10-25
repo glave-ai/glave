@@ -48,7 +48,7 @@
     <div class="dock">
       <!-- Laid over the conversation's bottom edge, just above the composer: it takes no room. -->
       <div class="float">
-        <div class="latest" data-testid="thread-latest" [class.shown]="awayFromBottom()">
+        <div class="latest" data-testid="thread-latest" [class.shown]="latestShown()">
           <button glzButton size="sm" pill (click)="jumpToLatest()">{{ copy.latest }}</button>
         </div>
         @if (problem(); as problem) {
