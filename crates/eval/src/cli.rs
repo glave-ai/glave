@@ -153,12 +153,12 @@ fn run(options: &Options) -> Result<bool, String> {
     let attempts = runtime.block_on(suite::run(Arc::clone(&setup), plan, |attempt| {
         println!("{}", report::line(attempt));
     }));
-    let report = Report {
-        started: started.to_string(),
-        provider: setup.endpoint.provider.clone(),
-        models: options.models.clone(),
+    let report = Report::new(
+        started.to_string(),
+        setup.endpoint.provider.clone(),
+        options.models.clone(),
         attempts,
-    };
+    );
     let table = report.markdown(baseline.as_ref());
     let json = serde_json::to_string_pretty(&report).map_err(|err| err.to_string())?;
     write(&dir.join("report.json"), &json)?;

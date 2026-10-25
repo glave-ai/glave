@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
+use std::num::NonZeroU64;
 
 use glave_event::{Currency, Money};
 use glave_memory::BUDGET_TOKENS;
@@ -18,7 +19,33 @@ pub struct Report {
     /// The provider's short name, such as `openrouter`.
     pub provider: String,
     pub models: Vec<String>,
+    /// What a passed task took on each model, for readers of `report.json`; `None` where none
+    /// passed. Reports written before it lack it and still read as baselines.
+    #[serde(default)]
+    per_passed_task: BTreeMap<String, Option<PerPassedTask>>,
     pub attempts: Vec<Attempt>,
+}
+
+/// What a passed task took on one model: everything its attempts spent, the failed ones
+/// too, over the attempts that passed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+struct PerPassedTask {
+    /// Micros of the reported currency; `None` when no cost was reported (see `spent`).
+    cost_micros: Option<i64>,
+    /// Input and output tokens.
+    tokens: u64,
+}
+
+impl PerPassedTask {
+    /// What a passed task took over one model's `attempts`; `None` when none passed.
+    fn of(attempts: &[&Attempt]) -> Option<Self> {
+        let passed = NonZeroU64::new(as_u64(passes(attempts)))?;
+        let divisor = i64::try_from(passed.get()).ok()?;
+        Some(Self {
+            cost_micros: spent(attempts).map(|micros| micros / divisor),
+            tokens: tokens(attempts) / passed,
+        })
+    }
 }
 
 /// Passed and run attempts of one task on one model.
@@ -29,6 +56,25 @@ struct Rate {
 }
 
 impl Report {
+    /// The report of a run, with what a passed task took on each model worked out.
+    pub(crate) fn new(
+        started: String,
+        provider: String,
+        models: Vec<String>,
+        attempts: Vec<Attempt>,
+    ) -> Self {
+        let per_passed_task = (models.iter())
+            .map(|model| (model.clone(), PerPassedTask::of(&ran(&attempts, model))))
+            .collect();
+        Self {
+            started,
+            provider,
+            models,
+            per_passed_task,
+            attempts,
+        }
+    }
+
     /// Whether every attempt ran and passed.
     pub fn passed(&self) -> bool {
         self.attempts.iter().all(Attempt::passed)
@@ -50,17 +96,15 @@ impl Report {
         self.attempts.iter().map(|a| a.task.as_str()).collect()
     }
 
-    /// The pass rate of each task on each model, the totals per model, and every failure.
-    /// Rates that differ from `baseline` show what they were.
+    /// The model cheapest per passed task, then the pass rate of each task on each model, the
+    /// totals per model, and every failure. Rates that differ from `baseline` show what they
+    /// were.
     pub fn markdown(&self, baseline: Option<&Self>) -> String {
         let mut out = String::new();
-        let short: Vec<&str> = self
-            .models
-            .iter()
-            .map(|model| model.rsplit('/').next().unwrap_or(model))
-            .collect();
-        let _ = writeln!(out, "| task | {} |", short.join(" | "));
-        let _ = writeln!(out, "| --- |{}", " --- |".repeat(short.len()));
+        let _ = writeln!(out, "{}\n", self.cheapest());
+        let names: Vec<&str> = self.models.iter().map(|model| short(model)).collect();
+        let _ = writeln!(out, "| task | {} |", names.join(" | "));
+        let _ = writeln!(out, "| --- |{}", " --- |".repeat(names.len()));
         for task in self.tasks() {
             let cells: Vec<String> = self
                 .models
@@ -93,43 +137,48 @@ impl Report {
         out
     }
 
-    /// Rows of totals per model: passed, cost, tokens, tool calls, median time.
+    /// The headline: the model cheapest per passed task (the first listed on a tie) and how
+    /// many it passed, then the models left out for reporting no cost.
+    fn cheapest(&self) -> String {
+        let (priced, unpriced): (Vec<_>, Vec<_>) = (self.models.iter())
+            .filter_map(|model| {
+                let ran = ran(&self.attempts, model);
+                Some((short(model), PerPassedTask::of(&ran)?, ran))
+            })
+            .partition(|(_, per, _)| per.cost_micros.is_some());
+        let mut line = match priced.iter().min_by_key(|(_, per, _)| per.cost_micros) {
+            Some((model, per, ran)) => format!(
+                "Cheapest per passed task: {model}, {}, {}/{} passed.",
+                per_task(Some(*per)),
+                passes(ran),
+                ran.len()
+            ),
+            None => "Cheapest per passed task: none, as no model passed a task with its cost \
+                     reported."
+                .to_owned(),
+        };
+        if !unpriced.is_empty() {
+            let names: Vec<&str> = unpriced.iter().map(|(model, ..)| *model).collect();
+            let _ = write!(line, " No cost reported: {}.", names.join(", "));
+        }
+        line
+    }
+
+    /// Rows of totals per model: passed, what a passed task took, cost, tokens, tool calls,
+    /// median time.
     fn totals(&self, out: &mut String) {
         let per_model = |row: &Row| -> String {
             self.models
                 .iter()
-                .map(|model| {
-                    let attempts: Vec<&Attempt> = self
-                        .attempts
-                        .iter()
-                        .filter(|a| &a.model == model && !a.skipped)
-                        .collect();
-                    row(&attempts)
-                })
+                .map(|model| row(&ran(&self.attempts, model)))
                 .collect::<Vec<_>>()
                 .join(" | ")
         };
-        let rows: [(&str, &Row); 5] = [
-            ("**passed**", &|a| {
-                format!(
-                    "**{}/{}**",
-                    a.iter().filter(|a| a.passed()).count(),
-                    a.len()
-                )
-            }),
-            ("cost", &|a| {
-                dollars(
-                    a.iter()
-                        .try_fold(0_i64, |sum, a| sum.checked_add(a.cost_micros?)),
-                )
-            }),
-            ("tokens", &|a| {
-                thousands(
-                    a.iter()
-                        .map(|a| a.input_tokens.saturating_add(a.output_tokens))
-                        .sum(),
-                )
-            }),
+        let rows: [(&str, &Row); 6] = [
+            ("**passed**", &|a| format!("**{}/{}**", passes(a), a.len())),
+            ("per passed task", &|a| per_task(PerPassedTask::of(a))),
+            ("cost", &|a| dollars(spent(a))),
+            ("tokens", &|a| thousands(tokens(a))),
             ("tool calls", &|a| {
                 a.iter()
                     .map(|a| u64::from(a.tool_calls))
@@ -162,7 +211,7 @@ impl Report {
         );
         let mut notes = Vec::new();
         for attempt in probed {
-            let model = attempt.model.rsplit('/').next().unwrap_or(&attempt.model);
+            let model = short(&attempt.model);
             let name = format!("{} · {model} #{}", attempt.task, attempt.number);
             let share = (attempt.probes.as_ref()).map_or_else(String::new, |probes| {
                 let recalled: Vec<String> = probes.recalled.iter().map(u32::to_string).collect();
@@ -195,6 +244,53 @@ impl Report {
             let _ = writeln!(out, "\n{}", notes.join("\n"));
         }
     }
+}
+
+/// The attempts of `model` that ran, skipped ones left out.
+fn ran<'a>(attempts: &'a [Attempt], model: &str) -> Vec<&'a Attempt> {
+    (attempts.iter())
+        .filter(|a| a.model == model && !a.skipped)
+        .collect()
+}
+
+/// How many of `attempts` passed.
+fn passes(attempts: &[&Attempt]) -> usize {
+    attempts.iter().filter(|a| a.passed()).count()
+}
+
+/// What `attempts` cost in micros; `None` when a call reported no cost, or when all they
+/// reported is $0, as a free route reports it: that says nothing of what the model costs,
+/// so it never makes a model the cheapest.
+fn spent(attempts: &[&Attempt]) -> Option<i64> {
+    (attempts.iter())
+        .try_fold(0_i64, |sum, a| sum.checked_add(a.cost_micros?))
+        .filter(|&micros| micros != 0)
+}
+
+/// The input and output tokens `attempts` used.
+fn tokens(attempts: &[&Attempt]) -> u64 {
+    (attempts.iter())
+        .map(|a| a.input_tokens.saturating_add(a.output_tokens))
+        .sum()
+}
+
+/// What a passed task took: its cost and tokens, or a dash when none passed.
+fn per_task(per: Option<PerPassedTask>) -> String {
+    per.map_or_else(
+        || "-".to_owned(),
+        |per| {
+            let cost = per.cost_micros.map_or_else(
+                || "no cost reported".to_owned(),
+                |micros| dollars(Some(micros)),
+            );
+            format!("{cost} · {} tokens", thousands(per.tokens))
+        },
+    )
+}
+
+/// A model's name without its maker: `one` for `a/one`.
+fn short(model: &str) -> &str {
+    model.rsplit('/').next().unwrap_or(model)
 }
 
 fn cell(now: Option<Rate>, before: Option<Rate>) -> String {
@@ -288,7 +384,7 @@ pub(crate) fn line(attempt: &Attempt) -> String {
         attempt.model_calls,
         attempt.tool_calls,
         attempt.input_tokens.saturating_add(attempt.output_tokens),
-        dollars(attempt.cost_micros),
+        dollars(spent(&[attempt])),
         attempt.seconds,
     );
     if let Some(probes) = &attempt.probes {
@@ -301,139 +397,4 @@ pub(crate) fn line(attempt: &Attempt) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::memory::MemoryUse;
-    use crate::probe::Probes;
-
-    fn attempt(task: &str, model: &str, number: u32, passed: bool) -> Attempt {
-        let mut attempt = Attempt::unrun(task, model, number, false, "wrong".into());
-        if passed {
-            attempt.failures.clear();
-        }
-        attempt.cost_micros = Some(1_000);
-        attempt.input_tokens = 1_200;
-        attempt.output_tokens = 34;
-        attempt.tool_calls = 2;
-        attempt.seconds = f64::from(number);
-        attempt
-    }
-
-    fn report(attempts: Vec<Attempt>) -> Report {
-        Report {
-            started: "2026-10-08T12:00:00Z".into(),
-            provider: "openrouter".into(),
-            models: vec!["a/one".into(), "b/two".into()],
-            attempts,
-        }
-    }
-
-    #[test]
-    fn the_table_shows_rates_totals_changes_and_failures() {
-        let now = report(vec![
-            attempt("fix", "a/one", 1, true),
-            attempt("fix", "a/one", 2, true),
-            attempt("fix", "b/two", 1, false),
-            attempt("fix", "b/two", 2, true),
-        ]);
-        let before = report(vec![
-            attempt("fix", "a/one", 1, true),
-            attempt("fix", "b/two", 1, true),
-        ]);
-        let table = now.markdown(Some(&before));
-        assert!(
-            table.starts_with("| task | one | two |\n| --- | --- | --- |\n"),
-            "{table}"
-        );
-        assert!(table.contains("| fix | 2/2 | 1/2 (was 1/1) |"), "{table}");
-        assert!(
-            table.contains("| **passed** | **2/2** | **1/2** |"),
-            "{table}"
-        );
-        assert!(table.contains("| cost | $0.0020 | $0.0020 |"), "{table}");
-        assert!(table.contains("| tokens | 2,468 | 2,468 |"), "{table}");
-        assert!(table.contains("| tool calls | 4 | 4 |"), "{table}");
-        assert!(table.contains("- fix · b/two #1: wrong"), "{table}");
-        assert!(!now.passed());
-    }
-
-    #[test]
-    fn skipped_attempts_are_not_counted_and_fail_the_run() {
-        let mut skipped = Attempt::unrun("fix", "a/one", 2, true, "skipped".into());
-        skipped.seconds = 99.0;
-        let now = report(vec![attempt("fix", "a/one", 1, true), skipped]);
-        assert!(now.markdown(None).contains("| fix | 1/1 | - |"));
-        assert!(!now.passed(), "an incomplete run is not a pass");
-    }
-
-    /// An attempt at a month of threads: 9 of 10 probes, and what memory did.
-    fn month(number: u32) -> Attempt {
-        let mut month = attempt("memory-month", "a/one", number, true);
-        month.probes = Some(Probes {
-            passed: 9,
-            of: 10,
-            failed: vec!["probe 4 (thread 31): the answer does not mention \"Railway\"".into()],
-            recalled: vec![3, 9],
-        });
-        month.memory = Some(MemoryUse {
-            tidy_runs: 6,
-            tidied_away: vec!["Atlas deploys to Heroku.".into()],
-            used: [("personal".to_owned(), 870), ("project".to_owned(), 1_010)].into(),
-            in_view: vec![0, 500, 1_900],
-        });
-        month
-    }
-
-    #[test]
-    fn reports_round_trip_through_json() {
-        let now = report(vec![attempt("fix", "a/one", 1, true), month(1)]);
-        let json = serde_json::to_string(&now).unwrap();
-        assert_eq!(serde_json::from_str::<Report>(&json).unwrap(), now);
-        let plain = serde_json::to_string(&report(vec![attempt("fix", "a/one", 1, true)])).unwrap();
-        assert!(
-            !plain.contains("probes") && !plain.contains("memory"),
-            "{plain}"
-        );
-    }
-
-    #[test]
-    fn probes_and_memory_get_a_row_per_attempt_and_their_details() {
-        let mut off = month(2);
-        off.memory = None;
-        let table = report(vec![attempt("fix", "a/one", 1, true), month(1), off]).markdown(None);
-        assert!(
-            table.contains("| memory-month · one #1 | 9/10 | 3, 9 | 6 | 1 | personal 870, project 1,010 | 800 on average, 1,900 at most |"),
-            "{table}"
-        );
-        assert!(
-            table.contains("| memory-month · one #2 | 9/10 | 3, 9 | - | - | - | - |"),
-            "{table}"
-        );
-        assert!(!table.contains("| fix · one"), "{table}");
-        assert!(
-            table.contains("- memory-month · one #1: probe 4 (thread 31): the answer does not mention \"Railway\""),
-            "{table}"
-        );
-        assert!(
-            table.contains("- memory-month · one #1: tidied away \"Atlas deploys to Heroku.\""),
-            "{table}"
-        );
-        assert!(line(&month(1)).contains(" · probes 9/10"));
-        assert!(
-            !report(vec![attempt("fix", "a/one", 1, true)])
-                .markdown(None)
-                .contains("Probes")
-        );
-    }
-
-    #[test]
-    fn numbers_read_easily() {
-        assert_eq!(dollars(Some(7_731)), "$0.0077");
-        assert_eq!(dollars(Some(1_234_500)), "$1.2345");
-        assert_eq!(dollars(None), "-");
-        assert_eq!(thousands(0), "0");
-        assert_eq!(thousands(999), "999");
-        assert_eq!(thousands(1_000), "1,000");
-        assert_eq!(thousands(1_234_567), "1,234,567");
-    }
-}
+mod tests;
