@@ -155,9 +155,16 @@ export class NewProjectComponent {
   protected readonly fromRepository = computed(() => this.draft().start === 'repository');
   protected readonly connected = computed(() => this.credentials.accounts().length > 0);
   protected readonly cloning = computed(() => this.creating() && this.fromRepository());
-  protected readonly incomplete = computed(() => this.params() === null);
-  /** While it is being made, Create stays focusable but does nothing. */
-  protected readonly createBusy = computed(() => (this.creating() ? 'true' : null));
+  /**
+   * While the project can't be made yet, or is being made, Create looks and reads as
+   * unavailable and does nothing, but is never disabled: Enter in a field submits the form
+   * through Create, which the browser skips while Create is disabled, and Create's state follows
+   * the fields only when the page is next drawn. `create()` decides from the fields themselves,
+   * so Enter makes what is in them, however soon after typing it comes.
+   */
+  protected readonly createUnavailable = computed(() =>
+    this.params() === null || this.creating() ? 'true' : null,
+  );
   protected readonly createLabel = computed(() => {
     if (this.cloning()) {
       return this.copy.cloningButton;
