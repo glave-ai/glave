@@ -186,12 +186,9 @@ webauthn-rs = { version = "=0.6.1-dev", default-features = false }
 x509-parser = { version = "0.18", default-features = false }
 zeroize = "1"
 
-# Day-to-day builds: file and line numbers in backtraces, no full debug info
-# for dependencies. Roughly 40% smaller `target/` (measured on the legacy tree).
+# Day-to-day builds: no debug info. A failing assert or a panic names its file and line without
+# it, and builds and links are faster. Stepping through code takes the `debugging` profile below.
 [profile.dev]
-debug = "line-tables-only"
-
-[profile.dev.package."*"]
 debug = false
 
 # Full debug info for stepping through code: `cargo build --profile debugging`.
