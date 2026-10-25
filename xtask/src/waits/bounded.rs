@@ -66,7 +66,8 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "crates/session/src/stopping.rs",
         "let _ = finished.wait_for(|done| *done).await;",
         1,
-        "the turns a stopping server cancelled, waited for within its grace",
+        "the turns a stopping server stops: given its grace, then interrupted, when they \
+         stop at once",
     ),
     (
         "crates/session/src/turn.rs",

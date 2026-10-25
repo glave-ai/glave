@@ -208,7 +208,10 @@ async fn check_reusable(
 ) -> Result<(), ComputerError> {
     let there = Git::at(environment, dest);
     let same_repository = common_dir(&there).await.is_ok_and(|found| found == common);
-    let on = there.run(&["symbolic-ref", "--short", "-q", "HEAD"]).await;
+    // git that gives no answer says so, rather than have a good worktree taken for another.
+    let on = there
+        .ask(&["symbolic-ref", "--short", "-q", "HEAD"])
+        .await?;
     if same_repository && on.as_deref() == Ok(branch) {
         Ok(())
     } else {
