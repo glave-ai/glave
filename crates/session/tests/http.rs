@@ -2,6 +2,8 @@
 //! sign-in is required and checked, the signed-in caller is recorded and the token never is,
 //! keys are cached, the `Glave-Method` header must agree, and a retried turn runs once.
 
+use std::time::Duration;
+
 use glave_ports::testing::ManualClock;
 use glave_session::Answering;
 use glave_session::protocol::{Request, code};
@@ -289,6 +291,51 @@ fn the_signed_in_caller_is_recorded_and_the_token_never_is() {
         for event in &events {
             assert!(!event.to_string().contains(&token), "{event}");
         }
+        served.close().await;
+    });
+}
+
+#[test]
+fn a_request_whose_body_stalls_is_answered_at_its_limit() {
+    block_on!(async {
+        let issuer = Issuer::start().await;
+        let signer = Signer::es256("key-1");
+        issuer.publish(&signer);
+        let dir = folder("http-stalled");
+        let served = serve_http(server(&dir, Vec::new(), Answering::Clients).await, &issuer).await;
+        let token = signer.sign(&issuer.claims("ada"));
+        // Signed in once first, so the issuer's keys are kept and nothing more is fetched.
+        let mut web = Web::new(&served, Some(token.clone()));
+        web.call(&Request::ScheduleList {}).await;
+        // The clock jumps to each limit as soon as nothing else can run.
+        tokio::time::pause();
+        let head = |signed: &str| {
+            format!(
+                "POST / HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\n\
+                 Content-Length: 100\r\nConnection: close\r\n{signed}\r\n",
+                served.address
+            )
+        };
+        let address = served.address.to_string();
+        let started = tokio::time::Instant::now();
+        let open = glave_ports::testing::sent_in_part(&address, &head(""), b"{\"jsonrpc\"")
+            .await
+            .unwrap();
+        assert!(open.starts_with("HTTP/1.1 401"), "{open}");
+        // Seconds, not a signed-in body's minutes: the server's other timers move the paused
+        // clock too, so only the order of size is certain.
+        let waited = started.elapsed();
+        assert!(waited < Duration::from_mins(5), "{waited:?}");
+        let bearer = format!("Authorization: Bearer {token}\r\n");
+        let answered =
+            glave_ports::testing::sent_in_part(&address, &head(&bearer), b"{\"jsonrpc\"")
+                .await
+                .unwrap();
+        assert!(
+            answered.contains("what you sent did not arrive whole within 10 minutes"),
+            "{answered}"
+        );
+        tokio::time::resume();
         served.close().await;
     });
 }

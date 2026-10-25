@@ -8,11 +8,12 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use glave_computer::{
-    Identity, LocalComputers, RemoteComputers, Token, connect_tls, serve, serve_tcp, serve_tls,
+    Fingerprint, Identity, LocalComputers, RemoteComputers, Token, connect_tls, serve, serve_tcp,
+    serve_tls,
 };
 use glave_ports::computer::{ComputerError, ComputerId, Computers, Environment};
 use glave_ports::{Clock as _, SystemClock, block_on, conformance};
-use tokio::io::BufReader;
+use tokio::io::{AsyncBufReadExt as _, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 
 fn scratch(name: &str) -> (glave_ports::testing::TempDir, PathBuf, PathBuf) {
@@ -255,6 +256,60 @@ fn a_computer_over_tls_passes_the_suite_with_its_certificate_pinned() {
         let guessed = connect_tls(address, &identity.fingerprint, "guess").await;
         assert!(guessed.is_err(), "a wrong token is refused");
         serving.abort();
+    });
+}
+
+#[test]
+fn a_client_that_never_signs_in_is_told_so_and_let_go_in_seconds() {
+    let (_dir, _, copies) = scratch("tcp-silent");
+    block_on!(async {
+        // The clock jumps to each limit as soon as nothing else can run.
+        tokio::time::pause();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let serving = tokio::spawn(serve_tcp(local(&copies), listener, "s3cret".into()));
+        let mut silent = BufReader::new(TcpStream::connect(address).await.unwrap());
+        let started = tokio::time::Instant::now();
+        let mut said = String::new();
+        silent.read_line(&mut said).await.unwrap();
+        let waited = started.elapsed();
+        assert!(Duration::from_secs(10) <= waited && waited < Duration::from_secs(11));
+        assert!(
+            said.contains("no connection/authenticate came within 10 seconds"),
+            "{said}"
+        );
+        let mut rest = String::new();
+        assert_eq!(
+            silent.read_line(&mut rest).await.unwrap(),
+            0,
+            "it is closed"
+        );
+        serving.abort();
+    });
+}
+
+#[test]
+fn a_computer_that_takes_the_connection_and_says_nothing_is_given_up_in_seconds() {
+    block_on!(async {
+        tokio::time::pause();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        // It takes the connection and says nothing, as a stuck computer would.
+        let stuck = tokio::spawn(async move {
+            let _held = listener.accept().await;
+            std::future::pending::<()>().await;
+        });
+        let fingerprint = Fingerprint::parse(&"ab".repeat(32)).unwrap();
+        let started = tokio::time::Instant::now();
+        let tried = connect_tls(address, &fingerprint, "s3cret").await;
+        // On a paused clock the limit on reaching the port may pass first; either says so.
+        assert!(
+            matches!(&tried, Err(ComputerError::Unreachable(m)) if m.ends_with("within 10 seconds")),
+            "{:?}",
+            tried.err()
+        );
+        assert!(started.elapsed() < Duration::from_secs(21));
+        stuck.abort();
     });
 }
 

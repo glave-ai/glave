@@ -36,6 +36,9 @@ const MAX_BODY: usize = 16 * 1024 * 1024;
 const MAX_CONNECTIONS: usize = 1_024;
 /// How long a client may take to send a request's headers.
 const HEADER_TIMEOUT: Duration = Duration::from_secs(30);
+/// How long a signed-in client may take to send a request's body: the largest, with images,
+/// in minutes even on a slow uplink.
+const BODY_WITHIN: Duration = Duration::from_mins(10);
 
 type Answer = Response<BoxBody<Bytes, Infallible>>;
 type Mcp<L> = StreamableHttpService<Catalog<L>, LocalSessionManager>;
@@ -277,8 +280,19 @@ fn token(headers: &HeaderMap) -> Option<&str> {
         .filter(|token| !token.is_empty())
 }
 
-/// The request body, up to `MAX_BODY` bytes.
+/// The request body, up to `MAX_BODY` bytes, within [`BODY_WITHIN`].
 async fn read(body: Incoming) -> Result<Vec<u8>, Refusal> {
+    tokio::time::timeout(BODY_WITHIN, read_all(body))
+        .await
+        .unwrap_or_else(|_| {
+            Err(Refusal::invalid(format!(
+                "the request did not arrive whole within {}",
+                glave_ports::spoken(BODY_WITHIN)
+            )))
+        })
+}
+
+async fn read_all(body: Incoming) -> Result<Vec<u8>, Refusal> {
     let mut body = pin!(body);
     let mut bytes = Vec::new();
     while let Some(frame) = poll_fn(|cx| Pin::as_mut(&mut body).poll_frame(cx)).await {

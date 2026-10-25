@@ -29,11 +29,21 @@ const FIRST_WAIT: Duration = Duration::from_mins(5);
 /// The longest glave waits between failed orders.
 const LONGEST_WAIT: Duration = Duration::from_hours(6);
 
+/// How long one order may take in all: an account, proof of the name and the certificate, of
+/// which each wait for the authority's verdict has two minutes. An order still going then is
+/// tried again later, as a failed one is.
+const ORDERED_WITHIN: Duration = Duration::from_mins(10);
+
 /// Why HTTPS could not be served or kept current. Says what failed, never a key.
 #[derive(Debug, Error)]
 pub enum HttpsError {
     #[error("the certificate authority failed: {0}")]
     Authority(String),
+    #[error(
+        "the certificate authority did not finish the order within {}",
+        glave_ports::spoken(*.0)
+    )]
+    Late(Duration),
     #[error("could not keep the certificate in glave's records: {0}")]
     Keep(String),
     #[error("could not make or read a certificate: {0}")]
@@ -127,8 +137,15 @@ impl<L: EventLog> Https<L> {
         life.map(|(began, ends)| due(began, ends))
     }
 
-    /// Orders a certificate now, keeps it, and serves it from the next handshake on.
+    /// Orders a certificate now, keeps it, and serves it from the next handshake on, within
+    /// 10 minutes.
     pub async fn renew(&self) -> Result<Issued, HttpsError> {
+        tokio::time::timeout(ORDERED_WITHIN, self.ordered())
+            .await
+            .unwrap_or(Err(HttpsError::Late(ORDERED_WITHIN)))
+    }
+
+    async fn ordered(&self) -> Result<Issued, HttpsError> {
         let account = self.account().await?;
         let ordered = order(&account, &self.name, &self.resolver).await?;
         let key = certified(&ordered.chain, &ordered.key)?;

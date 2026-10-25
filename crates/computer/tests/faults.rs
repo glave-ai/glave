@@ -231,13 +231,28 @@ fn a_stalled_answer_fails_its_call_at_its_deadline_and_the_connection_lives_on()
         let late = remote.read(workspace(), "r0.txt").await;
         assert_eq!(started.elapsed(), Duration::from_secs(300));
         assert!(
-            matches!(&late, Err(ComputerError::Unreachable(m)) if m.contains("did not answer files/read within 300 s")),
+            matches!(&late, Err(ComputerError::Unreachable(m)) if m.contains("did not answer files/read within 5 minutes")),
             "{late:?}"
         );
         // The stalled answer arrives later and is dropped; the next call gets its own.
         let next = remote.read(workspace(), "r1.txt").await.unwrap();
         assert_eq!(next.as_slice(), b"seeded 1");
         assert!(remote.closed().is_none());
+    });
+}
+
+#[test]
+fn a_computer_that_does_not_say_hello_fails_in_seconds_not_minutes() {
+    paused(async {
+        let stall = at(Way::Back, 0, Fault::Stall(Duration::from_mins(7)));
+        let (remote, _link) = faulty(Arc::new(Ledger::default()), &[stall]);
+        let started = Instant::now();
+        let late = remote.check_protocol().await;
+        assert_eq!(started.elapsed(), Duration::from_secs(30));
+        assert!(
+            matches!(&late, Err(ComputerError::Unreachable(m)) if m.contains("did not answer server/discover within 30 seconds")),
+            "{late:?}"
+        );
     });
 }
 

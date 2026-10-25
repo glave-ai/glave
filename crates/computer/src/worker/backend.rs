@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use glave_ports::BoxFuture;
 use glave_ports::computer::{ComputerError, Isolation};
@@ -16,6 +17,10 @@ use crate::token::Token;
 
 /// The port glave serves on inside a worker that has a network.
 pub(crate) const PORT: u16 = 7070;
+
+/// How long copying glave into a started worker may take: seconds into a container here or
+/// through a cluster's API server, a minute or two over a slow link to one.
+pub(crate) const COPIED_WITHIN: Duration = Duration::from_mins(5);
 
 /// What one worker is started with: everything already checked against policy.
 #[derive(Debug, Clone)]

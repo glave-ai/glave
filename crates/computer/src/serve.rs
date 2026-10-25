@@ -36,7 +36,9 @@ const WRITE_AHEAD: usize = 256;
 const MAX_IN_FLIGHT: usize = 64;
 /// Connections one TCP listener serves at once.
 const MAX_CONNECTIONS: usize = 32;
-/// How long a TLS client has to finish its handshake before it is dropped.
+/// How long a client has for each part of its handshake, its TLS and then signing in, before
+/// it is dropped: a connection that never signs in would otherwise hold one of the few
+/// [`MAX_CONNECTIONS`] for good.
 const HANDSHAKE: Duration = Duration::from_secs(10);
 /// Request ids one connection remembers, so a request delivered twice runs once.
 const SEEN: usize = 4096;
@@ -53,8 +55,8 @@ struct Connection<C> {
 }
 
 /// Serves `computers` to one client until its input ends. With a `token`, the first message
-/// must be `connection/authenticate` with that token, before it expires, or the connection
-/// ends.
+/// must be `connection/authenticate` with that token, before it expires and within 10
+/// seconds, or the connection ends.
 pub async fn serve<C, R, W>(
     computers: Arc<C>,
     input: R,
@@ -159,14 +161,23 @@ async fn next_line<R: AsyncBufRead + Unpin>(input: &mut R) -> std::io::Result<Op
     Ok(Some(line))
 }
 
-/// Whether the first message carries `token`. A wrong one is answered, then the connection
-/// ends.
+/// Whether the first message carries `token`, within [`HANDSHAKE`]. A wrong one, or none in
+/// time, is answered, then the connection ends.
 async fn authenticate<R: AsyncBufRead + Unpin>(
     input: &mut R,
     lines: &mpsc::Sender<String>,
     token: &Token,
 ) -> std::io::Result<bool> {
-    let Some(line) = next_line(input).await? else {
+    let Ok(first) = tokio::time::timeout(HANDSHAKE, next_line(input)).await else {
+        let late = format!(
+            "no connection/authenticate came within {}, so the connection is closed",
+            glave_ports::spoken(HANDSHAKE)
+        );
+        let refused = wire::failure(code::UNAUTHENTICATED, &late);
+        let _ = lines.send(wire::respond(None, Err(refused))).await;
+        return Ok(false);
+    };
+    let Some(line) = first? else {
         return Ok(false);
     };
     let (id, accepted) = match wire::parse(&line) {

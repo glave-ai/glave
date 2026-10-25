@@ -293,6 +293,8 @@ WebSocket, one JSON message per text frame for clients that want one connection 
 
 A network listener never runs without authentication: there is no "add it later". Closing a streaming HTTP response stops only that stream; the turn goes on, and `thread/events` picks it up again.
 
+**Every wait has a limit** (`invariants.md`, 20). Over HTTP a request's headers have 30 seconds, and its body 30 seconds without a sign-in or 10 minutes with one; a request past either is answered and its connection closed. glave's own client gives a server 2 minutes to answer a request, and 15 for those that wait on a model, another service, a computer or a file; a turn it follows over HTTP that says nothing for a minute, through four of the server's comments, is a lost stream, and the client says so while the turn goes on in the server. Over a Unix socket a turn waiting for the person sends nothing, so there the person is the limit, and a server that goes closes the socket.
+
 ## Over the network
 
 What changes when a client is on another machine: who is calling, how a server that may restart keeps a paused turn, and how several servers share threads.

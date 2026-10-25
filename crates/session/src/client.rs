@@ -17,12 +17,27 @@ use glave_ports::auth::safe_to_send;
 use serde_json::Value;
 use tokio::io::{AsyncBufRead, AsyncWrite};
 
+use crate::http::KEEP_ALIVE;
 use crate::protocol::{ApiError, Notification, Reply, Request, code};
 use crate::rpc::{message, outcome};
 use crate::turn::TurnItem;
 
 /// How long connecting may take.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long a request waits for the server's answer: reading or changing what the store
+/// holds takes the server moments.
+const ANSWERS_WITHIN: Duration = Duration::from_mins(2);
+
+/// How long the slow requests wait: those that ask a model (compacting, checking a
+/// provider), reach another service (a git host, a connection), make a computer to work on or
+/// a folder, or send a file; and a turn to start.
+const SLOW_ANSWERS_WITHIN: Duration = Duration::from_mins(15);
+
+/// How long a turn followed over HTTP may go without a word: the server says something at
+/// least every [`KEEP_ALIVE`] while it streams, so a silence of four times that is a lost
+/// stream.
+const STREAM_IDLE: Duration = KEEP_ALIVE.saturating_mul(4);
 
 /// A session server elsewhere: over HTTP with the token that signs this client in, or over a
 /// connection of lines.
@@ -58,20 +73,63 @@ impl Remote {
         }
     }
 
-    /// Answers `request`, which must not be one that streams (`turn/start`, `goal/start`).
+    /// Answers `request`, which must not be one that streams (`turn/start`, `goal/start`),
+    /// within the time its kind may take: 2 minutes, or 15 for one that waits on a model,
+    /// another service, a computer or a file.
     pub async fn request(&self, request: &Request) -> Result<Reply, ApiError> {
-        match &self.0 {
-            Transport::Http(http) => http.request(request).await,
-            Transport::Lines(lines) => lines.request(request).await,
-        }
+        let asked = async {
+            match &self.0 {
+                Transport::Http(http) => http.request(request).await,
+                Transport::Lines(lines) => lines.request(request).await,
+            }
+        };
+        let limit = answers_within(request);
+        tokio::time::timeout(limit, asked)
+            .await
+            .unwrap_or_else(|_| Err(self.late(request, limit)))
     }
 
-    /// Starts `request` (`turn/start` or `goal/start`) and follows it.
+    /// Starts `request` (`turn/start` or `goal/start`) and follows it, once the server has
+    /// started it within 15 minutes.
     pub async fn start(&self, request: &Request) -> Result<RemoteTurn, ApiError> {
-        Ok(RemoteTurn(match &self.0 {
-            Transport::Http(http) => Following::Http(http.start(request).await?),
-            Transport::Lines(lines) => Following::Lines(lines.start(request).await?),
-        }))
+        let started = async {
+            Ok(RemoteTurn(match &self.0 {
+                Transport::Http(http) => Following::Http(http.start(request).await?),
+                Transport::Lines(lines) => Following::Lines(lines.start(request).await?),
+            }))
+        };
+        tokio::time::timeout(SLOW_ANSWERS_WITHIN, started)
+            .await
+            .unwrap_or_else(|_| Err(self.late(request, SLOW_ANSWERS_WITHIN)))
+    }
+
+    /// The server did not answer `request` within `limit`.
+    fn late(&self, request: &Request, limit: Duration) -> ApiError {
+        ApiError::new(
+            code::INTERNAL,
+            format!(
+                "{} did not answer {} within {}",
+                self.url(),
+                request.method(),
+                glave_ports::spoken(limit)
+            ),
+        )
+    }
+}
+
+/// How long `request` waits for its answer: the server bounds what it does for each, and this
+/// is for a server that has stopped answering at all.
+fn answers_within(request: &Request) -> Duration {
+    match request {
+        Request::ThreadStart { .. }
+        | Request::ThreadCompact { .. }
+        | Request::ProjectCreate { .. }
+        | Request::FileUpload { .. }
+        | Request::ProviderConnect { .. }
+        | Request::ProviderRefresh {}
+        | Request::CredentialConnect { .. }
+        | Request::ConnectionStart { .. } => SLOW_ANSWERS_WITHIN,
+        _ => ANSWERS_WITHIN,
     }
 }
 
@@ -214,7 +272,18 @@ impl HttpTurn {
                     None => continue,
                 }
             }
-            match self.response.chunk().await {
+            let Ok(chunk) = tokio::time::timeout(STREAM_IDLE, self.response.chunk()).await else {
+                break TurnItem::Ended(Err(ApiError::new(
+                    code::INTERNAL,
+                    format!(
+                        "{} sent nothing for {}, so glave stopped following the turn; it goes \
+                         on there",
+                        self.url,
+                        glave_ports::spoken(STREAM_IDLE)
+                    ),
+                )));
+            };
+            match chunk {
                 Ok(Some(chunk)) => match self.decoder.push(&chunk) {
                     Ok(events) => self.events.extend(events),
                     Err(error) => {
@@ -284,34 +353,4 @@ fn reply(text: &str) -> Result<Reply, ApiError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn only_https_or_this_computer_gets_a_sign_in() {
-        assert!(Remote::new("http://glave.example.com", "t".into()).is_err());
-        assert!(Remote::new("http://127.0.0.1:8080", "t".into()).is_ok());
-    }
-
-    #[test]
-    fn events_are_notifications_then_the_ending() {
-        let thread = glave_event::ThreadId::new(jiff::Timestamp::UNIX_EPOCH, [1; 10]).unwrap();
-        let sent = Arc::new(Notification::Live {
-            thread,
-            update: crate::protocol::Update::Text { text: "hi".into() },
-        });
-        let Some(TurnItem::Note(note)) = item(&crate::rpc::notify(&sent)) else {
-            panic!("a notification")
-        };
-        assert!(matches!(
-            note.as_ref(),
-            Notification::Live { update: crate::protocol::Update::Text { text }, .. } if text == "hi"
-        ));
-        assert!(item("not json").is_none());
-        let failed = r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"no thread"}}"#;
-        let Some(TurnItem::Ended(Err(error))) = item(failed) else {
-            panic!("an ending")
-        };
-        assert_eq!(error.code, code::NO_THREAD);
-    }
-}
+mod tests;

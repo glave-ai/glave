@@ -18,6 +18,7 @@ mod hosts;
 mod listen;
 mod site;
 
+pub(crate) use self::body::KEEP_ALIVE;
 pub use self::listen::Listeners;
 pub use self::site::{Files, NoSite, Site};
 
@@ -46,6 +47,7 @@ use crate::rpc::{Id, parse, respond};
 use crate::server::Server;
 use crate::signin::{Door, SignIn, SignInError};
 use crate::streamed::Streamed;
+use crate::words::Sentence;
 
 /// The largest request body accepted, in bytes.
 const MAX_BODY: usize = 16 * 1024 * 1024;
@@ -59,6 +61,14 @@ const MAX_CONNECTIONS: usize = 1_024;
 
 /// How long a client may take to send a request's headers.
 const HEADER_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How long a signed-in client may take to send a request's body: the largest, a file, in
+/// minutes even on a slow uplink.
+const BODY_WITHIN: Duration = Duration::from_mins(10);
+
+/// How long a body sent without a sign-in may take: a few kilobytes, a moment's sending, so a
+/// connection trickling one cannot hold one of the [`MAX_CONNECTIONS`] for long.
+const OPEN_BODY_WITHIN: Duration = HEADER_TIMEOUT;
 
 /// The header that names the method.
 const METHOD_HEADER: &str = "glave-method";
@@ -197,12 +207,12 @@ where
         },
         None => None,
     };
-    let most = if caller.is_some() {
-        MAX_BODY
+    let limits = if caller.is_some() {
+        (MAX_BODY, BODY_WITHIN)
     } else {
-        MAX_OPEN_BODY
+        (MAX_OPEN_BODY, OPEN_BODY_WITHIN)
     };
-    let (id, request) = match message(request, most).await {
+    let (id, request) = match message(request, limits).await {
         Ok(message) => message,
         // Without a sign-in, nothing is said about what was sent.
         Err(_) if caller.is_none() => return unauthorized(&SignInError::Missing),
@@ -219,18 +229,26 @@ where
     dispatch(server, &caller, id, request, asked.as_deref()).await
 }
 
-/// The JSON-RPC request `request` carries, of at most `most` bytes, or the error response
-/// saying why it is none. The `Glave-Method` header, when sent, must name its method.
+/// The JSON-RPC request `request` carries, of at most `most` bytes arriving `within`, or the
+/// error response saying why it is none. The `Glave-Method` header, when sent, must name its
+/// method.
 async fn message(
     request: HttpRequest<Incoming>,
-    most: usize,
+    (most, within): (usize, Duration),
 ) -> Result<(Option<Id>, Request), String> {
     let named = request
         .headers()
         .get(METHOD_HEADER)
         .map(|value| value.to_str().unwrap_or("").to_owned());
-    let line = read(request.into_body(), most)
+    let line = tokio::time::timeout(within, read(request.into_body(), most))
         .await
+        .unwrap_or_else(|_| {
+            let minutes = within.as_secs().div_ceil(60);
+            Err(ApiError::new(
+                code::PARSE,
+                Sentence::SentTooSlowly { minutes },
+            ))
+        })
         .map_err(|failed| respond(None, Err(&failed)))?;
     let (id, request) = parse(&line).map_err(|(id, failed)| respond(id.as_ref(), Err(&failed)))?;
     if let Some(named) = named

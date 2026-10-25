@@ -49,8 +49,11 @@ impl Default for Limits {
     }
 }
 
-/// How long a server whose input is closed has to exit before it is stopped.
-const EXITING: Duration = Duration::from_secs(3);
+/// How long a server whose input is closed has to exit before it is stopped (SIGTERM, then
+/// SIGKILL), in the order MCP's stdio transport gives: a server exits a moment after its input
+/// ends, and one run through a wrapper that outlives it (a shell, `npx`) holds every stop of
+/// glave for as long as this (3 s of a restart's 3.2 s, measured, when it was 3 s).
+const EXITING: Duration = Duration::from_secs(1);
 
 #[derive(Clone)]
 enum State {

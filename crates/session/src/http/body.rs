@@ -21,7 +21,7 @@ use crate::streamed::{Item, Streamed};
 use crate::words::{Language, translate};
 
 /// How long a stream may say nothing before it sends a comment.
-const KEEP_ALIVE: Duration = Duration::from_secs(15);
+pub(crate) const KEEP_ALIVE: Duration = Duration::from_secs(15);
 
 /// The next item of a stream, with the stream handed back for the one after.
 type Next = Pin<Box<dyn Future<Output = (Streamed, Option<Item>)> + Send>>;

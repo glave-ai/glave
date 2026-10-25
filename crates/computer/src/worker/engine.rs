@@ -4,6 +4,7 @@
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use bytes::Bytes;
 use glave_ports::computer::ComputerError;
@@ -18,6 +19,24 @@ use tokio::net::UnixStream;
 const VERSION: &str = "v1.43";
 /// The most of a response read into memory.
 const MAX_BODY: usize = 16 * 1024 * 1024;
+/// How long Docker has to answer a call (its version, making, starting, reading or removing
+/// a container, attaching to one): seconds, even on a busy machine.
+pub(crate) const ANSWERS_WITHIN: Duration = Duration::from_mins(1);
+/// How long a pull may go without a word of progress: Docker says how each layer goes as it
+/// goes, so a pull of any size on any link takes as long as it needs, and one silent this long
+/// is stuck.
+pub(crate) const PULL_QUIET: Duration = Duration::from_mins(2);
+
+/// How long Docker has for a call.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Within {
+    /// The whole call, its answer read to the end.
+    All(Duration),
+    /// Each piece of its answer after the one before, however long it takes in all, the answer
+    /// kept to its latest [`MAX_BODY`] bytes, where an error comes last: for a
+    /// call whose answer is its progress.
+    Each(Duration),
+}
 
 /// The Engine at a Unix socket.
 #[derive(Debug, Clone)]
@@ -63,12 +82,58 @@ impl Engine {
         }
     }
 
-    /// Sends one request; `body` is JSON when `kind` is `None`, else bytes of that type.
+    /// Sends one request and reads its answer whole, `within` its limit; `body` is JSON when
+    /// `kind` is `None`, else bytes of that type.
     pub(crate) async fn send(
         &self,
         method: Method,
         path: &str,
         body: Option<(Bytes, &str)>,
+        within: Within,
+    ) -> Result<Answer, ComputerError> {
+        match within {
+            Within::All(limit) => tokio::time::timeout(limit, self.asked(method, path, body, None))
+                .await
+                .unwrap_or_else(|_| Err(self.late(path, limit))),
+            Within::Each(quiet) => self.asked(method, path, body, Some(quiet)).await,
+        }
+    }
+
+    /// Docker did not answer `path` within `limit`.
+    fn late(&self, path: &str, limit: Duration) -> ComputerError {
+        ComputerError::Unreachable(format!(
+            "Docker at {} did not answer {path} within {}",
+            self.socket.display(),
+            glave_ports::spoken(limit)
+        ))
+    }
+
+    /// `step` of the call to `path`, within `quiet` when there is one.
+    async fn in_time<T>(
+        &self,
+        path: &str,
+        quiet: Option<Duration>,
+        step: impl Future<Output = T>,
+    ) -> Result<T, ComputerError> {
+        let Some(quiet) = quiet else {
+            return Ok(step.await);
+        };
+        tokio::time::timeout(quiet, step).await.map_err(|_| {
+            ComputerError::Unreachable(format!(
+                "Docker at {} went {} without a word about {path}",
+                self.socket.display(),
+                glave_ports::spoken(quiet)
+            ))
+        })
+    }
+
+    /// The call, each step of its answer within `quiet` when there is one.
+    async fn asked(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<(Bytes, &str)>,
+        quiet: Option<Duration>,
     ) -> Result<Answer, ComputerError> {
         let request = Self::request(method, path, body, false)?;
         let stream = UnixStream::connect(&self.socket)
@@ -84,24 +149,38 @@ impl Engine {
                 .map_err(|error| unreachable(&self.socket, &error))
         };
         let asking = async {
-            let response = sender
-                .send_request(request)
-                .await
+            let response = self
+                .in_time(path, quiet, sender.send_request(request))
+                .await?
                 .map_err(|error| unreachable(&self.socket, &error))?;
             let status = response.status();
-            let body = http_body_util::Limited::new(response.into_body(), MAX_BODY)
-                .collect()
-                .await
-                .map_err(|error| unreachable(&self.socket, &error))?
-                .to_bytes();
+            let mut body = response.into_body();
+            let mut bytes = Vec::new();
+            while let Some(frame) = self.in_time(path, quiet, body.frame()).await? {
+                let frame = frame.map_err(|error| unreachable(&self.socket, &error))?;
+                if let Ok(data) = frame.into_data() {
+                    bytes.extend_from_slice(&data);
+                    let over = bytes.len().saturating_sub(MAX_BODY);
+                    if over > 0 && quiet.is_none() {
+                        return Err(ComputerError::Failed(format!(
+                            "Docker's answer to {path} is longer than {MAX_BODY} bytes"
+                        )));
+                    }
+                    // An answer that is its progress keeps only its latest, where an error is.
+                    bytes.drain(..over);
+                }
+            }
             drop(sender);
-            Ok::<_, ComputerError>(Answer { status, body })
+            Ok::<_, ComputerError>(Answer {
+                status,
+                body: Bytes::from(bytes),
+            })
         };
         let (answer, _) = tokio::join!(asking, driving);
         answer
     }
 
-    /// Sends JSON and reads JSON.
+    /// Sends JSON and reads JSON, within [`ANSWERS_WITHIN`].
     pub(crate) async fn json(
         &self,
         method: Method,
@@ -109,11 +188,19 @@ impl Engine {
         body: Option<&Value>,
     ) -> Result<Answer, ComputerError> {
         let body = body.map(|value| (Bytes::from(value.to_string()), "application/json"));
-        self.send(method, path, body).await
+        self.send(method, path, body, Within::All(ANSWERS_WITHIN))
+            .await
     }
 
-    /// Asks for a connection upgraded to a raw stream (attaching to a container).
+    /// Asks for a connection upgraded to a raw stream (attaching to a container), within
+    /// [`ANSWERS_WITHIN`]; the stream then lasts as long as the worker's link.
     pub(crate) async fn upgrade(&self, path: &str) -> Result<TokioIo<Upgraded>, ComputerError> {
+        tokio::time::timeout(ANSWERS_WITHIN, self.upgraded(path))
+            .await
+            .unwrap_or_else(|_| Err(self.late(path, ANSWERS_WITHIN)))
+    }
+
+    async fn upgraded(&self, path: &str) -> Result<TokioIo<Upgraded>, ComputerError> {
         let request = Self::request(Method::POST, path, None, true)?;
         let stream = UnixStream::connect(&self.socket)
             .await
@@ -220,5 +307,101 @@ mod tests {
         stream.extend_from_slice(&[1, 0, 0, 0, 0, 0, 0, 9, b'd']);
         assert_eq!(demultiplex(&stream), (b"abcd".to_vec(), b"no".to_vec()));
         assert_eq!(query("alpine@sha256:ab/c"), "alpine%40sha256%3Aab%2Fc");
+    }
+
+    #[test]
+    fn docker_that_takes_a_call_and_never_answers_fails_it_at_its_limit() {
+        let dir = glave_ports::testing::TempDir::new("engine-silent").unwrap();
+        let socket = dir.join("docker.sock");
+        let engine = Engine::new(&socket);
+        let (asked, attached, pulled) = glave_ports::block_on!(async {
+            tokio::time::pause();
+            let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+            // It takes each connection and says nothing, as a stuck engine would.
+            let stuck = tokio::spawn(async move {
+                let mut held = Vec::new();
+                while let Ok((stream, _)) = listener.accept().await {
+                    held.push(stream);
+                }
+            });
+            let asked = engine.json(Method::GET, "/version", None).await;
+            let attached = engine.upgrade("/containers/w/attach").await;
+            let pulled = engine
+                .send(
+                    Method::POST,
+                    "/images/create",
+                    None,
+                    Within::Each(PULL_QUIET),
+                )
+                .await;
+            stuck.abort();
+            (asked, attached.map(drop), pulled.map(drop))
+        });
+        assert_eq!(
+            pulled.err().map(|e| e.to_string()),
+            Some(format!(
+                "unreachable: Docker at {} went 2 minutes without a word about /images/create",
+                socket.display()
+            ))
+        );
+        let said = |path: &str| {
+            format!(
+                "unreachable: Docker at {} did not answer {path} within 1 minute",
+                socket.display()
+            )
+        };
+        assert_eq!(asked.err().map(|e| e.to_string()), Some(said("/version")));
+        assert_eq!(
+            attached.err().map(|e| e.to_string()),
+            Some(said("/containers/w/attach"))
+        );
+    }
+
+    #[test]
+    fn a_pull_longer_than_an_answer_may_be_keeps_its_latest_progress_and_its_error() {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+        let dir = glave_ports::testing::TempDir::new("engine-long-pull").unwrap();
+        let socket = dir.join("docker.sock");
+        let engine = Engine::new(&socket);
+        let pulled = glave_ports::block_on!(async {
+            let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+            // A pull of many layers: more progress than an answer may hold, then its error.
+            let docker = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut asked = [0; 4096];
+                let _ = stream.read(&mut asked).await;
+                let head = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
+                    Connection: close\r\n\r\n";
+                stream.write_all(head.as_bytes()).await.unwrap();
+                let line = format!(
+                    "{{\"status\":\"Downloading\",\"progress\":\"{}\"}}\n",
+                    "#".repeat(1000)
+                );
+                for _ in 0..(MAX_BODY / line.len() + 100) {
+                    stream.write_all(line.as_bytes()).await.unwrap();
+                }
+                stream
+                    .write_all(b"{\"error\":\"pull access denied\"}\n")
+                    .await
+                    .unwrap();
+            });
+            let pulled = engine
+                .send(
+                    Method::POST,
+                    "/images/create",
+                    None,
+                    Within::Each(PULL_QUIET),
+                )
+                .await;
+            docker.await.unwrap();
+            pulled
+        });
+        let pulled = pulled.unwrap();
+        assert!(pulled.body.len() <= MAX_BODY);
+        assert!(
+            pulled
+                .body
+                .ends_with(b"{\"error\":\"pull access denied\"}\n")
+        );
     }
 }

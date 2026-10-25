@@ -1,8 +1,9 @@
 //! The test doubles every crate's tests share (AGENTS.md, "Testing"): the runtime they run
 //! on, a clock they move, randomness that counts, a cancellation already fired, a fake HTTP
-//! server, a fake OAuth authorization server, fake secrets, a scripted model, programs they
-//! start, stopped when they end, and folders of their own, removed when they are done. Behind
-//! the `conformance` feature, so no production build carries them.
+//! server and a client that stalls mid-request, a fake OAuth authorization server, fake
+//! secrets, a scripted model, programs they start, stopped when they end, and folders of their
+//! own, removed when they are done. Behind the `conformance` feature, so no production build
+//! carries them.
 
 mod git;
 mod http;
@@ -21,7 +22,7 @@ use crate::env::{Clock, Entropy, EntropyError};
 use crate::tools::{BoxFuture, Cancellation};
 
 pub use git::{FAKE_COMMIT, FakeGitHost, FixedGitCredentials};
-pub use http::{FakeHttp, Received};
+pub use http::{FakeHttp, Received, sent_in_part};
 pub use model::{Answer, ScriptedModel, Seen};
 pub use oauth::{FAKE_CLIENT, FakeAuthServer, Grant};
 pub use process::{HUNG, Running};

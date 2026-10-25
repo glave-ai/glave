@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use glave_ports::auth::{Auth, Outgoing};
 use http::{HeaderName, HeaderValue};
@@ -16,6 +17,12 @@ use rmcp::transport::streamable_http_client::{
 
 type Failed = StreamableHttpError<reqwest::Error>;
 
+/// How long reaching a remote server may take: moments; one that has not answered by then is
+/// down or out of reach.
+const CONNECTS_WITHIN: Duration = Duration::from_secs(10);
+/// How long a server has to answer the end of a session, as glave closes the connection.
+const ENDS_WITHIN: Duration = Duration::from_secs(3);
+
 /// rmcp's client, with `auth`'s headers on every request.
 #[derive(Clone)]
 pub(crate) struct Signed {
@@ -25,9 +32,12 @@ pub(crate) struct Signed {
 
 impl Signed {
     /// A client that follows no redirect, as rmcp's own, so what proves who is calling never
-    /// reaches another host; and keeps no idle connection, which rmcp found stalls.
+    /// reaches another host; keeps no idle connection, which rmcp found stalls; and reaches
+    /// the server within [`CONNECTS_WITHIN`]. Each call has its own limit (`connection.rs`):
+    /// a server's stream of notifications has none, since it is quiet until something changes.
     pub(crate) fn new(auth: Auth) -> Result<Self, reqwest::Error> {
         let http = reqwest::Client::builder()
+            .connect_timeout(CONNECTS_WITHIN)
             .pool_max_idle_per_host(0)
             .redirect(reqwest::redirect::Policy::none())
             .build()?;
@@ -113,9 +123,14 @@ impl StreamableHttpClient for Signed {
         custom_headers: HashMap<HeaderName, HeaderValue>,
     ) -> Result<(), Failed> {
         let headers = self.signed("DELETE", &uri, custom_headers).await?;
-        self.http
-            .delete_session(uri, session_id, auth_header, headers)
+        // Ending the session is a courtesy: one the server does not answer in time ends with
+        // the connection all the same, so closing never waits on it.
+        let ended = self
+            .http
+            .delete_session(uri, session_id, auth_header, headers);
+        tokio::time::timeout(ENDS_WITHIN, ended)
             .await
+            .unwrap_or(Ok(()))
     }
 
     async fn get_stream(
@@ -152,5 +167,29 @@ impl StreamableHttpClient for Signed {
                 max_sse_event_size,
             )
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_server_that_never_answers_the_end_of_a_session_is_left_in_seconds() {
+        // Listening, never answering: the system takes the connection and nothing reads it.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let uri: Arc<str> = format!("http://{}/mcp", listener.local_addr().unwrap()).into();
+        let signed = Signed::new(Auth::None).unwrap();
+        let (ended, waited) = glave_ports::block_on!(async {
+            // The clock jumps to the limit as soon as nothing else can run.
+            tokio::time::pause();
+            let started = tokio::time::Instant::now();
+            let ended = signed
+                .delete_session(uri, "a-session".into(), None, HashMap::new())
+                .await;
+            (ended, started.elapsed())
+        });
+        assert!(ended.is_ok(), "{ended:?}");
+        assert!(waited < Duration::from_secs(4), "{waited:?}");
     }
 }

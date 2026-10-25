@@ -163,3 +163,17 @@ pub(super) fn read(stream: &TcpStream) -> io::Result<Received> {
         body: String::from_utf8_lossy(&body).into_owned(),
     })
 }
+
+/// Sends the server at `address` the request line and headers in `head`, then `part` of the
+/// body they announce and nothing more, as a client that stalls, and returns all the server
+/// answers until it closes the connection: for a server's limit on a body that never arrives
+/// whole.
+pub async fn sent_in_part(address: &str, head: &str, part: &[u8]) -> io::Result<String> {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    let mut stream = tokio::net::TcpStream::connect(address).await?;
+    stream.write_all(head.as_bytes()).await?;
+    stream.write_all(part).await?;
+    let mut answer = Vec::new();
+    stream.read_to_end(&mut answer).await?;
+    Ok(String::from_utf8_lossy(&answer).into_owned())
+}

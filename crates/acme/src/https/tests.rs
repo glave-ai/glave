@@ -121,6 +121,36 @@ fn a_certificate_kept_for_the_name_is_served_at_once_and_another_name_s_is_not()
 }
 
 #[test]
+fn an_order_the_authority_never_answers_fails_at_its_limit() {
+    // Listening, never answering: the system takes the connection and nothing reads it.
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let directory = format!("https://{}/directory", listener.local_addr().unwrap());
+    let renewed = block_on!(async {
+        let clock = ManualClock::at_second(at("2026-10-20T09:00:00Z").as_second());
+        let https = Https::open(
+            store().log(),
+            scope(),
+            NAME,
+            &directory,
+            Box::new(clock),
+            Box::new(CountingEntropy::starting_at(1)),
+        )
+        .await
+        .unwrap();
+        // The clock jumps to the limit as soon as nothing else can run.
+        tokio::time::pause();
+        https.renew().await
+    });
+    let Err(error) = renewed else {
+        panic!("an order no one answered was issued");
+    };
+    assert_eq!(
+        error.to_string(),
+        "the certificate authority did not finish the order within 10 minutes"
+    );
+}
+
+#[test]
 fn an_account_is_kept_for_its_directory_alone() {
     block_on!(async {
         let store = store();

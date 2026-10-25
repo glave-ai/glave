@@ -181,6 +181,37 @@ fn every_call_needs_a_sign_in() {
 }
 
 #[test]
+fn a_request_whose_body_stalls_is_refused_at_its_limit() {
+    block_on!(async {
+        let world = World::start(vec![Reply::text("Hi.")], Budgets::default(), false).await;
+        let token = world.token("alice");
+        // Signed in once first, so the issuer's keys are kept and nothing more is fetched.
+        openai(&world, &token)
+            .complete(&ask("main", "hi"), &mut |_| {})
+            .await
+            .unwrap();
+        // The clock jumps to the limit as soon as nothing else can run.
+        tokio::time::pause();
+        let address = world.url.trim_start_matches("http://");
+        let head = format!(
+            "POST /v1/chat/completions HTTP/1.1\r\nHost: {address}\r\n\
+             Content-Type: application/json\r\nContent-Length: 100\r\nConnection: close\r\n\
+             Authorization: Bearer {token}\r\n\r\n"
+        );
+        let answered = glave_ports::testing::sent_in_part(address, &head, b"{\"model\"")
+            .await
+            .unwrap();
+        tokio::time::resume();
+        assert!(answered.starts_with("HTTP/1.1 400"), "{answered}");
+        assert!(
+            answered.contains("the request did not arrive whole within 10 minutes"),
+            "{answered}"
+        );
+        assert_eq!(world.upstream.received().len(), 1, "nothing more went out");
+    });
+}
+
+#[test]
 fn each_caller_is_held_to_their_own_allow_list() {
     block_on!(async {
         let world = World::start(vec![Reply::text("Judged.")], Budgets::default(), false).await;

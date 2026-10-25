@@ -43,6 +43,31 @@ fn lock(waiting: &Waiting) -> std::sync::MutexGuard<'_, Option<HashMap<u64, Wait
     waiting.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// A request's place among the waiting, given up when this drops, unless it is kept: one whose
+/// caller stopped waiting is never answered into the void.
+struct Place<'a> {
+    waiting: &'a Waiting,
+    /// None once kept.
+    id: Option<u64>,
+}
+
+impl Place<'_> {
+    /// Leaves the place for its answer to take, however late.
+    fn keep(mut self) {
+        self.id = None;
+    }
+}
+
+impl Drop for Place<'_> {
+    fn drop(&mut self) {
+        if let Some(id) = self.id
+            && let Some(waiting) = lock(self.waiting).as_mut()
+        {
+            waiting.remove(&id);
+        }
+    }
+}
+
 /// One connection to a server, reading and writing on tasks of its own, stopped when it drops.
 pub(crate) struct Lines {
     outgoing: mpsc::Sender<String>,
@@ -89,7 +114,8 @@ impl Lines {
     /// Answers `request`, which must not stream.
     pub(crate) async fn request(&self, request: &Request) -> Result<Reply, ApiError> {
         let (answer, answered) = oneshot::channel();
-        self.send(Waiter::Reply(answer), request).await?;
+        // Held while it waits: a caller that stops waiting, at its limit, leaves nothing.
+        let _place = self.send(Waiter::Reply(answer), request).await?;
         let response = answered.await.map_err(|_| self.closed())?;
         outcome(&response)
     }
@@ -105,7 +131,8 @@ impl Lines {
             missed: Arc::clone(&missed),
             end,
         };
-        self.send(Waiter::Turn(following), request).await?;
+        // Its ending comes later, as the response to the request: the place stays till then.
+        self.send(Waiter::Turn(following), request).await?.keep();
         let mut turn = LinesTurn {
             items,
             missed,
@@ -127,20 +154,21 @@ impl Lines {
     }
 
     /// Sends `request` under a new id, `waiter` waiting for its answer.
-    async fn send(&self, waiter: Waiter, request: &Request) -> Result<(), ApiError> {
+    async fn send(&self, waiter: Waiter, request: &Request) -> Result<Place<'_>, ApiError> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         match lock(&self.waiting).as_mut() {
             Some(waiting) => waiting.insert(id, waiter),
             None => return Err(self.closed()),
         };
+        let place = Place {
+            waiting: &self.waiting,
+            id: Some(id),
+        };
         let line = message(id, request).to_string();
         if self.outgoing.send(line).await.is_err() {
-            if let Some(waiting) = lock(&self.waiting).as_mut() {
-                waiting.remove(&id);
-            }
             return Err(self.closed());
         }
-        Ok(())
+        Ok(place)
     }
 
     fn closed(&self) -> ApiError {
@@ -264,5 +292,30 @@ impl LinesTurn {
         };
         self.ended = matches!(item, TurnItem::Ended(_));
         Some(item)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[test]
+    fn a_request_whose_caller_stops_waiting_leaves_no_place_behind() {
+        glave_ports::block_on!(async {
+            let (ours, _silent) = tokio::io::duplex(4096);
+            let (read, write) = tokio::io::split(ours);
+            let lines = Lines::new(tokio::io::BufReader::new(read), write, "the server".into());
+            // The clock jumps to the limit as soon as nothing else can run.
+            tokio::time::pause();
+            let asked = lines.request(&Request::Discover {});
+            assert!(
+                tokio::time::timeout(Duration::from_secs(1), asked)
+                    .await
+                    .is_err()
+            );
+            assert_eq!(lock(&lines.waiting).as_ref().map(HashMap::len), Some(0));
+        });
     }
 }
