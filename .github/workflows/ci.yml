@@ -142,11 +142,10 @@ jobs:
           exit 1
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
-      # As the release builds it: musl's standard library for the pinned toolchain, and musl's
-      # compiler wrapper for the C in glave's dependencies. Then every cargo command after this
-      # step builds for musl, with the flags dist sets for a musl target (today's defaults,
-      # which dist keeps in case they change), xtask itself and the tests among them.
-      - name: Build for musl from here on, as the release does
+      # As the release builds it: musl's standard library for the pinned toolchain, musl's
+      # compiler wrapper for the C in glave's dependencies, and the flags dist sets for a musl
+      # target (today's defaults, which dist keeps in case they change), for musl builds alone.
+      - name: Install musl's standard library and musl-gcc
         if: matrix.target
         env:
           TARGET: ${{ matrix.target }}
@@ -154,10 +153,7 @@ jobs:
           rustup target add "$TARGET"
           sudo apt-get update -q
           sudo apt-get install -y -q musl-tools
-          {
-            echo "CARGO_BUILD_TARGET=$TARGET"
-            echo "RUSTFLAGS=-Ctarget-feature=+crt-static -Clink-self-contained=yes"
-          } >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS=-Ctarget-feature=+crt-static -Clink-self-contained=yes" >> "$GITHUB_ENV"
       # Saved from main only; each build's cache under a key of its own.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -166,7 +162,11 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest,cargo-deny,cargo-machete
-      - run: cargo xtask ci --all
+      # The lint, docs and tests built for musl there, as `--target`, which the commands the
+      # tests run never see: those build for the runner, as they would anywhere.
+      - run: cargo xtask ci --all ${TARGET:+--target "$TARGET"}
+        env:
+          TARGET: ${{ matrix.target }}
       - name: Disk space after the build
         if: always()
         run: df -h /

@@ -6,13 +6,15 @@ const USAGE: &str = "\
 usage: cargo xtask <command>
 
 commands:
-  ci [--all]        the local gate: format, secrets, the dependency rule, one spawn path,
+  ci [--all] [--target <triple>]
+                    the local gate: format, secrets, the dependency rule, one spawn path,
                     lint, tests and what they leave behind, dependency audit, file sizes, and
                     the web checks, which need Node 22.22.3+ (GLAVE_SKIP_WEB=1 skips them).
                     Off CI it lints and tests only the crates a change since origin/main
                     reaches, and runs the web checks only when web/ or the API schema changed;
-                    --all, and CI always, check everything. Off CI, tests run on half the
-                    cores (GLAVE_TEST_THREADS=n sets how many)
+                    --all, and CI always, check everything. --target builds the lint, docs and
+                    tests for another target than this machine's (CI's run on musl). Off CI,
+                    tests run on half the cores (GLAVE_TEST_THREADS=n sets how many)
   deps              check the dependency rule: each crate depends only on the layers its own
                     may use (the layers are in xtask/src/deps.rs)
   file-sizes        enforce the source-file line limits
