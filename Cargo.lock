@@ -1907,6 +1907,7 @@ dependencies = [
  "glave-event",
  "glave-harness",
  "glave-keys",
+ "glave-mcp",
  "glave-memory",
  "glave-ports",
  "glave-process",
