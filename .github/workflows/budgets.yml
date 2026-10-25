@@ -35,11 +35,14 @@ env:
   # What the release builds glave for on x86-64 Linux (dist-workspace.toml, `targets`).
   TARGET: x86_64-unknown-linux-musl
 
+# Every job has a timeout of about three times its longest run (October 2026), so a hang fails
+# in minutes rather than holding the merge queue for GitHub's six hours.
 jobs:
   release:
     if: github.event_name != 'pull_request'
     # The runner the release builds x86-64 Linux on (dist's plan), so its C compiler and musl.
     runs-on: ubuntu-22.04
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain (rust-toolchain.toml), with musl's standard library
@@ -84,6 +87,7 @@ jobs:
     if: github.event_name != 'pull_request'
     # As the release's, so the same C compiler and musl.
     runs-on: ubuntu-22.04
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain (rust-toolchain.toml), with musl's standard library
@@ -118,6 +122,7 @@ jobs:
   measure:
     needs: [release, benchmark]
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     steps:
       # Each into a folder of its own name; the files lose their mode on the way.
       - uses: actions/download-artifact@v8
@@ -135,6 +140,7 @@ jobs:
     if: always()
     needs: measure
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Within budget
         env:

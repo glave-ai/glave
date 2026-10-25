@@ -23,9 +23,12 @@ env:
   # The web checks run in the `web` job; `cargo xtask ci` in the Rust jobs skips them.
   GLAVE_SKIP_WEB: "1"
 
+# Every job has a timeout of about three times its longest run (October 2026), so a hang fails
+# in minutes rather than holding the merge queue for GitHub's six hours.
 jobs:
   linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     # A real Postgres, so the Postgres store runs its conformance suites here instead of
     # skipping them.
     services:
@@ -158,6 +161,7 @@ jobs:
   # glave built with the app inside (the `web` feature) and its serving tests.
   web-checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: web
@@ -212,6 +216,7 @@ jobs:
   e2e:
     name: e2e (${{ matrix.browser }} ${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -286,6 +291,7 @@ jobs:
     if: always()
     needs: [web-checks, e2e]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: The checks and every end-to-end shard passed
         env:
@@ -303,6 +309,7 @@ jobs:
   # install script still applies to the one dist writes today.
   release-workflow:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain (rust-toolchain.toml)
@@ -328,6 +335,7 @@ jobs:
   # glave.test=<run id>, and nothing labelled may be left.
   kubernetes:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       GLAVE_TEST_KUBE: "1"
       GLAVE_TEST_KUBE_RUNTIME_CLASS: glave-test-runc
@@ -392,6 +400,7 @@ jobs:
   # run rather than skip.
   sandbox-linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       # Linking every test binary of the workspace once filled a smaller runner's disk (ld died
       # with a bus error). Today's runner starts with about 85 GB free and the build takes about
@@ -453,6 +462,7 @@ jobs:
   macos:
     if: github.event_name != 'pull_request'
     runs-on: macos-latest
+    timeout-minutes: 45
     env:
       GLAVE_REQUIRE_SANDBOX: "1"
     steps:

@@ -33,9 +33,12 @@ concurrency:
 env:
   CARGO_INCREMENTAL: "0"
 
+# Every job has a timeout of about three times its longest run (October 2026), so a hang fails
+# in minutes rather than holding the merge queue for GitHub's six hours.
 jobs:
   server:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
