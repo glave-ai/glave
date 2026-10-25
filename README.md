@@ -39,6 +39,8 @@ curl -fsSL https://raw.githubusercontent.com/glave-ai/glave/main/install/server.
 
 `--private` reaches glave through Tailscale, with no port open on the server (it sets Tailscale up if need be). `--public glave.example.com` serves glave at your domain instead, with its HTTPS certificate from Let's Encrypt. On a server that runs only containers, `--docker --origin https://glave.example.com` runs glave in Docker Compose behind a Cloudflare Tunnel of yours (its token in `TUNNEL_TOKEN`). To update glave, run the same line again. Like the lines above, it works once the first release is published.
 
+Give the server no cloud permissions of its own: on AWS, attach no IAM role; on Google Cloud, give the VM no service account, or no access scopes. Commands glave runs on the server could otherwise use them (#421).
+
 ### From source
 
 You need Rust (see `rust-toolchain.toml`) and Node 22.22.3 or later.

@@ -175,6 +175,18 @@ mod tests {
     }
 
     #[test]
+    fn the_node_s_credential_endpoints_are_on_the_list_withheld_from_the_agent() {
+        // glave's own process, not the agent, reaches them for its keys: the list is for what
+        // the agent's tools and workers reach (specs/sandbox.md, "Cloud metadata").
+        let ecs = ECS.trim_start_matches("http://");
+        for host in NODE_HOSTS.iter().copied().chain([ecs]) {
+            let bare = host.trim_start_matches('[').trim_end_matches(']');
+            let ip = bare.parse().unwrap();
+            assert!(glave_ports::host::is_cloud_metadata(ip), "{host}");
+        }
+    }
+
+    #[test]
     fn a_relative_uri_is_under_ecs_s_endpoint() {
         let env = |name: &str| {
             (name == "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI").then(|| "/v2/creds/1".to_owned())

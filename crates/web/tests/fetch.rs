@@ -114,6 +114,36 @@ mod fetch {
     }
 
     #[test]
+    fn cloud_metadata_is_refused_even_where_private_addresses_are_allowed() {
+        block_on!(async {
+            let pages = serve(&[
+                ("/", Reply::html("intranet")),
+                (
+                    "/to-metadata",
+                    Reply::Redirect("http://[fd00:42::42]/".into()),
+                ),
+            ])
+            .await;
+            let fetcher = fetcher(WebPolicy {
+                private_addresses: true,
+                ..WebPolicy::default()
+            });
+            // Private addresses are allowed, so this computer is reached.
+            let page = fetcher.fetch(&format!("{}/", pages.base())).await.unwrap();
+            assert!(page.text.contains("intranet"), "{}", page.text);
+            private(
+                fetcher
+                    .fetch(&format!("{}/to-metadata", pages.base()))
+                    .await,
+            );
+            for url in ["http://[fd00:a9fe:a9fe::1]/", "http://[::ffff:a9fe:2a2a]/"] {
+                private(fetcher.fetch(url).await);
+            }
+            assert_eq!(pages.requested(), ["/", "/to-metadata"]);
+        });
+    }
+
+    #[test]
     fn a_redirect_to_a_private_address_is_refused_at_that_hop() {
         block_on!(async {
             let pages = serve(&[

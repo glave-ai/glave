@@ -9,7 +9,7 @@ use std::sync::Arc;
 use glave_ports::settings::WebPolicy;
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 
-use crate::address::is_public;
+use crate::address::reachable;
 
 /// A host that leads only to addresses the policy refuses.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,7 +42,7 @@ impl Resolve for Guarded {
         Box::pin(async move {
             let found: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), 0))
                 .await?
-                .filter(|addr| private_ok || is_public(addr.ip()))
+                .filter(|addr| reachable(addr.ip(), private_ok))
                 .collect();
             if found.is_empty() {
                 return Err(Box::new(Refused { host }) as Box<dyn std::error::Error + Send + Sync>);
