@@ -34,6 +34,18 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         eprintln!("xtask: {} from {}", names.join(" and "), file.display());
     }
     let _guard = lock::acquire(Mode::Shared)?;
+    // The stand-in for a hosted web search the search tasks turn on, beside glave-eval.
+    let stand_in = [
+        "build",
+        "--quiet",
+        "--package",
+        "glave-mcp",
+        "--features",
+        "test-server",
+        "--bin",
+        "glave-mcp-test-server",
+    ];
+    crate::cmd::run_with("cargo", &stand_in, &[])?;
     let mut command = vec!["run", "--quiet", "--package", "glave-eval", "--"];
     command.extend(args.iter().map(String::as_str));
     crate::cmd::run_with("cargo", &command, &endpoint)

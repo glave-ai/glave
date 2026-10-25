@@ -159,3 +159,40 @@ fn a_bad_header_is_named_and_its_value_never_shown() {
         assert_eq!(why, "the value of header Authorization is not valid");
     });
 }
+
+#[test]
+fn a_hosted_search_offers_only_its_search_whose_calls_say_what_was_searched_and_are_untrusted() {
+    let listening = Served::with(&["--results", "1. Tokio: https://tokio.rs"]);
+    block_on!(async {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let processes = glave_process::Processes::unrecorded();
+        let config = at(&listening.url, &[]);
+        let none = BTreeMap::new();
+        let server = McpServer::start("search", &config, &none, dir, Limits::default(), &processes)
+            .searching_with("web_search_exa");
+        let tools = server.tools().await.unwrap();
+        let names: Vec<&str> = tools.iter().map(|tool| tool.spec.name.as_str()).collect();
+        assert_eq!(names, ["mcp__search__web_search_exa"]);
+        let told = server.instructions().unwrap();
+        assert!(told.starts_with("## search\n\nOnly use tools"), "{told}");
+        assert!(
+            told.contains("search with mcp__search__web_search_exa first, then read the pages")
+                && told.contains("with web_fetch"),
+            "{told}"
+        );
+        let asked = arguments(json!({"query": "rust async runtimes\nand more", "numResults": 3}));
+        assert_eq!(
+            server.describe("mcp__search__web_search_exa", &asked),
+            "Searched the web: rust async runtimes"
+        );
+        let found = server
+            .call("mcp__search__web_search_exa", &asked, &NeverCancelled)
+            .await;
+        assert_eq!(text(&found), "1. Tokio: https://tokio.rs");
+        assert!(
+            found.untrusted,
+            "a search reaches the open world: untrusted"
+        );
+        server.close().await;
+    });
+}

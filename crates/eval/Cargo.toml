@@ -24,6 +24,8 @@ glave-event.workspace = true
 glave-harness.workspace = true
 # Each attempt keeps its memory in a sealed store of its own, as glave does.
 glave-keys.workspace = true
+# A task's web search, its stand-in for Exa reached as the person's server reaches it.
+glave-mcp.workspace = true
 glave-memory.workspace = true
 # The secret a task's `{canary}` becomes, a fake made as it loads (`testing`).
 glave-ports = { workspace = true, features = ["conformance"] }

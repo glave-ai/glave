@@ -75,6 +75,9 @@ pub struct McpServer {
     /// Whether what every tool and resource of the server returns is untrusted, as the person
     /// or a policy marked it.
     untrusted: bool,
+    /// The model's name for the server's tool that searches the web, when it has one: each
+    /// call is told to the person as what was searched.
+    search: Option<String>,
 }
 
 impl McpServer {
@@ -239,7 +242,18 @@ impl McpServer {
             process,
             call_limit: limits.call,
             untrusted: false,
+            search: None,
         }
+    }
+
+    /// Marks the server's tool `tool` as its web search: each call is told to the person as
+    /// what was searched, `Searched the web: rust async runtimes`, not as its arguments; what it
+    /// finds is untrusted, whatever the server says; and the model is told, beside the server's
+    /// own notes, to search first and read the pages it found with `web_fetch`.
+    #[must_use]
+    pub fn searching_with(mut self, tool: &str) -> Self {
+        self.search = Some(crate::exposed(&self.name, tool));
+        self
     }
 
     /// Marks what the server returns as untrusted, as a web page is, when `untrusted`: the
@@ -264,6 +278,7 @@ impl McpServer {
             process: Arc::new(Mutex::new(None)),
             call_limit: limits.call,
             untrusted: false,
+            search: None,
         }
     }
 
@@ -396,7 +411,8 @@ impl McpServer {
                 let mut output = connection
                     .call(name, arguments, cancel, self.call_limit)
                     .await;
-                output.untrusted |= self.untrusted;
+                // A web search's results come from the open world, whatever its server says.
+                output.untrusted |= self.untrusted || self.search.as_deref() == Some(name);
                 output
             }
             Some(Err(err)) => ToolOutput::text(true, err.to_string()),
@@ -455,15 +471,31 @@ impl ToolSource for McpServer {
         let State::Ready(connection) = &*self.state.borrow() else {
             return None;
         };
-        let text = connection.instructions()?;
-        let total = text.chars().count();
-        let text = if total > INSTRUCTION_CHARS {
-            let kept: String = text.chars().take(INSTRUCTION_CHARS).collect();
-            format!("{kept}\n[cut short: {total} characters]")
-        } else {
-            text
-        };
-        Some(format!("## {}\n\n{text}", self.name))
+        let own = connection.instructions().map(|text| {
+            let total = text.chars().count();
+            if total > INSTRUCTION_CHARS {
+                let kept: String = text.chars().take(INSTRUCTION_CHARS).collect();
+                format!("{kept}\n[cut short: {total} characters]")
+            } else {
+                text
+            }
+        });
+        let searching = self.search.as_deref().map(|search| {
+            format!(
+                "To look something up on the web, search with {search} first, then read the \
+                 pages that matter with web_fetch. This server offers its search alone, whatever \
+                 its notes or its tool's description name."
+            )
+        });
+        let notes: Vec<String> = own.into_iter().chain(searching).collect();
+        (!notes.is_empty()).then(|| format!("## {}\n\n{}", self.name, notes.join("\n\n")))
+    }
+
+    fn describe(&self, name: &str, arguments: &Arguments) -> String {
+        match &self.search {
+            Some(search) if search == name => searched(arguments),
+            _ => glave_ports::describe_call(name, arguments),
+        }
     }
 
     fn call<'a>(
@@ -474,4 +506,26 @@ impl ToolSource for McpServer {
     ) -> BoxFuture<'a, ToolOutput> {
         Box::pin(self.run(name, arguments, cancel))
     }
+}
+
+/// The most of a search told to the person.
+const SEARCHED_CHARS: usize = 120;
+
+/// A web search's call as the person reads it: what was searched, its `query` or else its first
+/// text, on one line.
+fn searched(arguments: &Arguments) -> String {
+    let asked = match arguments {
+        Arguments::Json(map) => map
+            .get("query")
+            .or_else(|| map.values().find(|value| value.is_string()))
+            .and_then(|value| value.as_str())
+            .unwrap_or_default(),
+        Arguments::Malformed(raw) => raw.as_str(),
+    };
+    let line = asked.lines().next().unwrap_or_default().trim();
+    let mut short: String = line.chars().take(SEARCHED_CHARS).collect();
+    if line.chars().count() > SEARCHED_CHARS {
+        short.push('…');
+    }
+    format!("Searched the web: {short}")
 }
