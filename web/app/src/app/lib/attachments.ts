@@ -2,8 +2,8 @@ import type { AttachedFile } from '@glave/client';
 
 /**
  * The largest file the composer sends to be kept, in bytes: what a message carries on every
- * transport once the file is in base64. The server says what it takes within it (images are
- * smaller); a file past this would never reach it.
+ * transport once the file is in base64, and what the server takes. The server says which
+ * kinds it takes; a file past this would never reach it.
  */
 export const MAX_SENT = 10 * 1024 * 1024;
 

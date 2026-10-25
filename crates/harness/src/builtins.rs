@@ -124,6 +124,7 @@ impl ToolSource for Builtins {
                     let at = (&*self.workspace, &*self.commands);
                     let outcome = tool.run(arguments, at, cancel).await;
                     let mut output = ToolOutput::text(outcome.is_error, outcome.text);
+                    output.files.extend(outcome.file);
                     // What a forge's tool prints is what others wrote there, as a web page is,
                     // in the foreground or the background.
                     let script = match tool {

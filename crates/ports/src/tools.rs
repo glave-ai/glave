@@ -44,6 +44,30 @@ pub struct ToolOutput {
     /// page. The harness labels such output for the model as data, not instructions, and
     /// risky actions after it are judged knowing it was read (`specs/approvals.md`).
     pub untrusted: bool,
+    /// Files the call hands the model, such as an image it read: kept in the blob store as
+    /// the result is recorded, an image made fit to send, each a `file` part after the parts.
+    pub files: Vec<ToolFile>,
+}
+
+/// A file a call hands the model: an image or a PDF.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ToolFile {
+    /// Its name, as the model is told it.
+    pub name: String,
+    /// What it holds, such as `image/png`.
+    pub media_type: String,
+    /// Its content, whole.
+    pub bytes: Vec<u8>,
+}
+
+impl std::fmt::Debug for ToolFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ToolFile")
+            .field("name", &self.name)
+            .field("media_type", &self.media_type)
+            .field("bytes", &self.bytes.len())
+            .finish()
+    }
 }
 
 impl ToolOutput {
@@ -52,6 +76,7 @@ impl ToolOutput {
             is_error,
             parts: vec![Part::Text { text: text.into() }],
             untrusted: false,
+            files: Vec::new(),
         }
     }
 

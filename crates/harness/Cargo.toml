@@ -20,6 +20,8 @@ base64.workspace = true
 glave-event.workspace = true
 glave-ports.workspace = true
 glave-shell.workspace = true
+# Images made fit to send the model: upright, scaled down, as a JPEG.
+image.workspace = true
 # Content-free spans and metrics: turns, tool calls, commands, approvals.
 tracing.workspace = true
 jiff.workspace = true

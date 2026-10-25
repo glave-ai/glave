@@ -295,13 +295,15 @@ methods! {
     "turn/cancel" => TurnCancel { thread: ThreadId } -> [Done],
     /// Keeps a file the person added to a message they are writing, in `project` (their Chats
     /// when absent), for `turn/start` to name: kept a day unless a message is sent with it.
-    /// Images (PNG, JPEG, GIF, WebP) up to 5 MB, other files up to 10 MB; videos are refused.
+    /// Images (PNG, JPEG, GIF, WebP), PDFs and text, each up to 10 MB, kept as what they hold
+    /// says they are; anything else is refused, videos with a sentence of their own.
     "file/upload" => FileUpload {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         project: Option<ProjectId>,
         /// Its name, as the person's computer called it.
         name: String,
-        /// Its media type, such as `image/png`; `application/octet-stream` when unknown.
+        /// Its media type, such as `image/png`; `application/octet-stream` when unknown. What
+        /// it holds decides whether it is an image or a PDF; this names a text file's kind.
         media_type: String,
         /// Its content, in base64.
         data: String,

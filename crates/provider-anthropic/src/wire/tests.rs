@@ -310,44 +310,83 @@ fn vertex_takes_its_version_in_the_body_and_the_model_in_the_url() {
     assert!(body(&request).get("anthropic_version").is_none());
 }
 
+/// A file part named `name` for a blob of `media_type` holding `bytes`, and its content
+/// inline: `data`, in base64.
+fn inline(bytes: &[u8], media_type: &str, name: &str, data: &str) -> (Part, InlineFile) {
+    let blob = glave_event::BlobRef {
+        sha256: glave_ports::digest(bytes),
+        bytes: bytes.len() as u64,
+        media_type: media_type.into(),
+    };
+    let file = InlineFile {
+        sha256: blob.sha256.clone(),
+        media_type: media_type.into(),
+        data: data.into(),
+    };
+    let part = Part::File {
+        blob,
+        name: Some(name.into()),
+        resized: None,
+    };
+    (part, file)
+}
+
 #[test]
-fn an_image_is_sent_inline_beside_the_text_and_a_file_not_inline_by_name() {
-    let image = glave_event::BlobRef {
-        sha256: glave_ports::digest(b"png"),
-        bytes: 3,
-        media_type: "image/png".into(),
-    };
-    let pdf = glave_event::BlobRef {
-        sha256: glave_ports::digest(b"pdf"),
-        bytes: 3,
-        media_type: "application/pdf".into(),
-    };
+fn an_image_and_a_pdf_are_sent_inline_beside_the_text_and_a_file_not_inline_by_name() {
+    let (image, image_inline) = inline(b"png", "image/png", "shot.png", "cG5n");
+    let (pdf, pdf_inline) = inline(b"%PDF", "application/pdf", "terms.pdf", "JVBERg==");
+    let (other, _) = inline(b"old", "application/pdf", "old.pdf", "b2xk");
     let mut asked = request(vec![Message::User {
         parts: vec![
             Part::Text {
                 text: "what is this?".into(),
             },
-            Part::File {
-                blob: image.clone(),
-                name: Some("shot.png".into()),
-            },
-            Part::File {
-                blob: pdf,
-                name: Some("terms.pdf".into()),
-            },
+            image,
+            pdf,
+            other,
         ],
     }]);
-    asked.files = vec![glave_ports::InlineFile {
-        sha256: image.sha256,
-        media_type: "image/png".into(),
-        data: "cG5n".into(),
-    }];
+    asked.files = vec![image_inline, pdf_inline];
     assert_eq!(
         body(&asked)["messages"],
         json!([{"role": "user", "content": [
             {"type": "text", "text": "what is this?"},
             {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "cG5n"}},
-            {"type": "text", "text": "terms.pdf"}
+            {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": "JVBERg=="}},
+            {"type": "text", "text": "old.pdf"}
         ]}])
+    );
+}
+
+#[test]
+fn a_tool_result_holds_the_image_or_pdf_it_hands_the_model() {
+    let (image, image_inline) = inline(b"png", "image/png", "shot.png", "cG5n");
+    let (pdf, pdf_inline) = inline(b"%PDF", "application/pdf", "terms.pdf", "JVBERg==");
+    let said = Part::Text {
+        text: "shot.png is an image of 4x3 pixels.".into(),
+    };
+    let mut asked = request(vec![
+        Message::Assistant {
+            parts: Vec::new(),
+            tool_calls: vec![call("call_1", Arguments::Json(Map::new()))],
+        },
+        Message::Tool {
+            call_id: CallId::new("call_1").unwrap(),
+            is_error: false,
+            output: vec![said, image, pdf],
+        },
+        result("call_2", "plain", false),
+    ]);
+    asked.files = vec![image_inline, pdf_inline];
+    assert_eq!(
+        body(&asked)["messages"][1]["content"],
+        json!([
+            {"type": "tool_result", "tool_use_id": "call_1", "is_error": false, "content": [
+                {"type": "text", "text": "shot.png is an image of 4x3 pixels."},
+                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "cG5n"}},
+                {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": "JVBERg=="}}
+            ]},
+            {"type": "tool_result", "tool_use_id": "call_2", "is_error": false, "content": "plain"}
+        ])
     );
 }

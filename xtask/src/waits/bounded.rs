@@ -386,6 +386,13 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "a permit held for one judge call, within the provider's limits",
     ),
     (
+        "crates/harness/src/files.rs",
+        "let _permit = self.fitting.acquire().await;",
+        1,
+        "a permit held while one image is decoded and scaled, work its size bounds \
+         (MAX_SIDE, 256 MiB decoded)",
+    ),
+    (
         "crates/eval/src/suite.rs",
         "let _permit = permits.acquire_owned().await;",
         1,

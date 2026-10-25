@@ -191,6 +191,8 @@ fn read_shows_files_and_folders_and_refuses_what_it_cannot_show() {
     std::fs::write(root.join("src/main.rs"), "fn main() {}\n").unwrap();
     std::fs::write(root.join("blank.txt"), "").unwrap();
     std::fs::write(root.join("logo.png"), b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR").unwrap();
+    std::fs::write(root.join("app"), b"\x7fELF\x02\x01\x01\0").unwrap();
+    std::fs::write(root.join("terms.pdf"), b"%PDF-1.7\n").unwrap();
     std::fs::File::create(root.join("huge.log"))
         .unwrap()
         .set_len(21 * 1024 * 1024)
@@ -221,8 +223,20 @@ fn read_shows_files_and_folders_and_refuses_what_it_cannot_show() {
         s.call(Tool::Read, json!({"path": "blank.txt"})).text,
         "(empty file)"
     );
-    let binary = s.call(Tool::Read, json!({"path": "logo.png"}));
+    let binary = s.call(Tool::Read, json!({"path": "app"}));
     assert!(binary.is_error && binary.text.contains("is a binary file"));
+    // An image is handed over whole: the harness makes it fit to send as it keeps it.
+    let logo = s.call(Tool::Read, json!({"path": "logo.png"}));
+    assert_eq!(logo.text, "logo.png is an image of 16 bytes.");
+    assert_eq!(logo.file.unwrap().media_type, "image/png");
+    let pdf = s.call(Tool::Read, json!({"path": "terms.pdf"}));
+    assert_eq!(pdf.text, "terms.pdf is a PDF of 9 bytes.");
+    let handed = pdf.file.unwrap();
+    assert_eq!(
+        (handed.name.as_str(), handed.media_type.as_str()),
+        ("terms.pdf", "application/pdf")
+    );
+    assert_eq!(handed.bytes, b"%PDF-1.7\n");
     let huge = s.call(Tool::Read, json!({"path": "huge.log"}));
     assert!(huge.is_error && huge.text.contains("too large to read"));
     let missing = s.call(Tool::Read, json!({"path": "nope.md"}));

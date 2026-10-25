@@ -176,9 +176,9 @@ where
             unread(left, live);
             return recorded;
         }
-        for (_, text) in passed {
+        for (queued, text) in passed {
             thread.messages.push(Message::User {
-                parts: vec![Part::Text { text: text.clone() }],
+                parts: said(&text, &queued.files),
             });
             if !thread.delegated() {
                 thread.asked.push(text.clone());
@@ -199,7 +199,7 @@ where
         for (queued, text) in passed {
             let message = MessageAdded {
                 role: Role::User,
-                parts: vec![Part::Text { text: text.clone() }],
+                parts: said(text, &queued.files),
                 author: Self::other_than_for(thread, queued.caller.person),
             };
             self.stage_as(thread, &mut events, &message, queued.id)?;
@@ -266,6 +266,16 @@ where
 /// it.
 fn give_back(thread: &Thread, live: &mut (dyn FnMut(Live) + Send)) {
     unread(thread.inbox.end(), live);
+}
+
+/// A message read mid-turn as the person sent it: its `text`, then its `files`, as a message
+/// that starts a turn holds them.
+fn said(text: &str, files: &[Part]) -> Vec<Part> {
+    let mut parts = vec![Part::Text {
+        text: text.to_owned(),
+    }];
+    parts.extend_from_slice(files);
+    parts
 }
 
 /// Tells whoever sent each of `given` that the model will not read it.

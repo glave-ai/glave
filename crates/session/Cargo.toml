@@ -65,6 +65,8 @@ glave-store-postgres.workspace = true
 tokio-postgres.workspace = true
 # Property tests for the cron parser (AGENTS.md: parsers get property tests).
 proptest.workspace = true
+# A photo made in the test, to upload and see resized.
+image.workspace = true
 
 [lints]
 workspace = true

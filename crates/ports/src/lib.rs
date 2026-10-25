@@ -52,8 +52,8 @@ pub use in_memory::{
 pub use leases::{Holder, Lease, LeaseError, Leased, Leases, ttl_millis};
 pub use log::{EventLog, LogError, check_append};
 pub use model::{
-    Completion, Delta, InlineFile, Message, ModelProvider, ModelRequest, ProviderError, Purpose,
-    RequestedCall, Served, ToolCall, ToolChoice, ToolSpec,
+    Completion, Delta, InlineFile, Message, ModelProvider, ModelRequest, PDF, ProviderError,
+    Purpose, RequestedCall, Served, ToolCall, ToolChoice, ToolSpec, is_image, is_inline,
 };
 pub use objects::{Listed, ObjectWriter, Objects, object_name_ok};
 pub use projects::{
@@ -64,8 +64,8 @@ pub use scope::{Located, OrgId, ProjectId, Scope};
 pub use spoken::spoken;
 pub use sse::{SseDecoder, SseError};
 pub use tools::{
-    Assessment, BoxFuture, Cancellation, Effect, NeverCancelled, ToolError, ToolInfo, ToolOutput,
-    ToolSource, describe_call, unless_cancelled,
+    Assessment, BoxFuture, Cancellation, Effect, NeverCancelled, ToolError, ToolFile, ToolInfo,
+    ToolOutput, ToolSource, describe_call, unless_cancelled,
 };
 pub use view::{
     AGENT_TOOL, CallKind, OpenTurn, QUESTION_TOOL, Standing, THREAD_VIEW_VERSION, TITLE_CHARS,

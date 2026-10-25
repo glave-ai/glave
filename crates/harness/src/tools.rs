@@ -16,7 +16,7 @@ pub(crate) use background::named as command_named;
 pub(crate) use bash::outside_sandbox;
 
 use glave_event::Arguments;
-use glave_ports::ToolSpec;
+use glave_ports::{ToolFile, ToolSpec};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
@@ -31,6 +31,8 @@ use glave_ports::Cancellation;
 pub struct ToolOutcome {
     pub is_error: bool,
     pub text: String,
+    /// A file it hands the model after the text, such as an image `read` read.
+    pub file: Option<ToolFile>,
 }
 
 impl ToolOutcome {
@@ -38,6 +40,7 @@ impl ToolOutcome {
         Self {
             is_error: false,
             text: text.into(),
+            file: None,
         }
     }
 
@@ -45,6 +48,7 @@ impl ToolOutcome {
         Self {
             is_error: true,
             text: text.into(),
+            file: None,
         }
     }
 }

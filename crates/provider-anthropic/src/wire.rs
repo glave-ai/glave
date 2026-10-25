@@ -3,7 +3,7 @@
 use std::borrow::Cow;
 
 use glave_event::{Arguments, Part};
-use glave_ports::{Message, ModelRequest, ToolChoice, ToolSpec};
+use glave_ports::{InlineFile, Message, ModelRequest, ToolChoice, ToolSpec};
 use serde::Serialize;
 use serde_json::{Map, Value};
 
@@ -89,7 +89,11 @@ enum Block<'a> {
         text: &'a str,
     },
     Image {
-        source: ImageSource<'a>,
+        source: Source<'a>,
+    },
+    /// A PDF, which Claude reads as its text and an image of each page.
+    Document {
+        source: Source<'a>,
     },
     Thinking {
         thinking: &'a str,
@@ -105,15 +109,33 @@ enum Block<'a> {
     },
     ToolResult {
         tool_use_id: &'a str,
-        #[serde(skip_serializing_if = "String::is_empty")]
-        content: String,
+        #[serde(skip_serializing_if = "ToolContent::is_empty")]
+        content: ToolContent<'a>,
         is_error: bool,
     },
 }
 
-/// An image sent inline: its media type and its bytes in base64.
+/// What a tool result holds: its text, or, when it hands the model an image or a PDF, its
+/// blocks in order.
 #[derive(Debug, Serialize)]
-struct ImageSource<'a> {
+#[serde(untagged)]
+enum ToolContent<'a> {
+    Text(String),
+    Blocks(Vec<Block<'a>>),
+}
+
+impl ToolContent<'_> {
+    fn is_empty(&self) -> bool {
+        match self {
+            Self::Text(text) => text.is_empty(),
+            Self::Blocks(blocks) => blocks.is_empty(),
+        }
+    }
+}
+
+/// An image or a PDF sent inline: its media type and its bytes in base64.
+#[derive(Debug, Serialize)]
+struct Source<'a> {
     #[serde(rename = "type")]
     kind: &'static str,
     media_type: &'a str,
@@ -173,7 +195,7 @@ fn wire_tool(tool: &ToolSpec) -> WireTool<'_> {
     }
 }
 
-/// One message as a role and its content blocks: a person's images inline where `request`
+/// One message as a role and its content blocks: images and PDFs inline where `request`
 /// holds their content.
 fn blocks<'a>(
     request: &'a ModelRequest,
@@ -182,22 +204,7 @@ fn blocks<'a>(
 ) -> (Role, Vec<Block<'a>>) {
     let model = request.model.as_str();
     match message {
-        Message::User { parts } => {
-            let content = parts
-                .iter()
-                .filter_map(|part| match request.inline(part) {
-                    Some(file) => Some(Block::Image {
-                        source: ImageSource {
-                            kind: "base64",
-                            media_type: &file.media_type,
-                            data: &file.data,
-                        },
-                    }),
-                    None => texts(std::slice::from_ref(part)).next(),
-                })
-                .collect();
-            (Role::User, content)
-        }
+        Message::User { parts } => (Role::User, content(request, parts)),
         Message::Assistant { parts, tool_calls } => {
             // Thinking comes first, in its original order, then the text, then the calls.
             let mut content: Vec<Block<'a>> = parts
@@ -220,14 +227,45 @@ fn blocks<'a>(
             call_id,
             is_error,
             output,
-        } => (
-            Role::User,
-            vec![Block::ToolResult {
+        } => {
+            let content = if output.iter().any(|part| request.inline(part).is_some()) {
+                ToolContent::Blocks(content(request, output))
+            } else {
+                ToolContent::Text(text_of(output))
+            };
+            let result = Block::ToolResult {
                 tool_use_id: call_id.as_str(),
-                content: text_of(output),
+                content,
                 is_error: *is_error,
-            }],
-        ),
+            };
+            (Role::User, vec![result])
+        }
+    }
+}
+
+/// `parts` as blocks in order: each image or PDF inline where `request` holds its content,
+/// the rest as text.
+fn content<'a>(request: &'a ModelRequest, parts: &'a [Part]) -> Vec<Block<'a>> {
+    parts
+        .iter()
+        .filter_map(|part| match request.inline(part) {
+            Some(file) => Some(inline(file)),
+            None => texts(std::slice::from_ref(part)).next(),
+        })
+        .collect()
+}
+
+/// A file sent inline: an image block, or a document block for a PDF.
+fn inline(file: &InlineFile) -> Block<'_> {
+    let source = Source {
+        kind: "base64",
+        media_type: &file.media_type,
+        data: &file.data,
+    };
+    if file.is_pdf() {
+        Block::Document { source }
+    } else {
+        Block::Image { source }
     }
 }
 
