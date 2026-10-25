@@ -3,6 +3,7 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::time::Duration;
 
 use glave_process::Program;
 
@@ -46,18 +47,19 @@ pub(super) fn find(writable: &[&Path]) -> Option<PathBuf> {
         .find(|real| real.is_file() && !unsafe_places.iter().any(|place| real.starts_with(place)))
 }
 
+/// How long bubblewrap has to start an empty sandbox, which takes it milliseconds.
+const STARTS_WITHIN: Duration = Duration::from_secs(10);
+
 /// Whether `bwrap` can make the sandbox here: it cannot where unprivileged user namespaces
 /// are off, or where AppArmor stops it making them (Ubuntu 23.10 and later, without a
-/// profile for it). Blocking; says why not.
+/// profile for it). Blocking; says why not, a sandbox that did not start in time included.
 pub(super) fn starts(bwrap: &Path) -> Result<(), String> {
     let output = Program::new(bwrap)
         .args(ISOLATION)
         .args(["--unshare-net", "--ro-bind", "/", "/", "--dev", "/dev"])
         .args(["--proc", "/proc", "--", "true"])
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .output_blocking()
+        .output_blocking(STARTS_WITHIN)
         .map_err(|error| error.to_string())?;
     if output.status.success() {
         return Ok(());

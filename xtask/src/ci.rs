@@ -1,11 +1,11 @@
 //! `cargo xtask ci`: the local gate, what CI runs: the Rust checks and docs, that no tracked
 //! file holds a secret-shaped literal, that crates keep the dependency rule and start processes
-//! only through glave-process, that the tests leave nothing behind (`leftovers.rs`), then the
-//! web checks (`web.rs`), which need Node unless `GLAVE_SKIP_WEB=1` skips them. On a laptop the
-//! lint, docs and tests cover only the crates a change reaches, and the web checks run only
-//! when the web changed (`changed.rs`); `--all`, and CI always, check everything. `--target`
-//! builds the lint, docs and tests for a target other than this machine's: CI's run on musl,
-//! which glave's Linux releases are built for.
+//! only through glave-process, that every wait has a limit (`waits.rs`), that the tests leave
+//! nothing behind (`leftovers.rs`), then the web checks (`web.rs`), which need Node unless
+//! `GLAVE_SKIP_WEB=1` skips them. On a laptop the lint, docs and tests cover only the crates a
+//! change reaches, and the web checks run only when the web changed (`changed.rs`); `--all`,
+//! and CI always, check everything. `--target` builds the lint, docs and tests for a target
+//! other than this machine's: CI's run on musl, which glave's Linux releases are built for.
 
 use std::collections::BTreeSet;
 
@@ -65,6 +65,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
     step("secrets", crate::secrets::check)?;
     step("dependency rule", crate::deps::check)?;
     step("one spawn path", crate::spawns::check)?;
+    step("every wait has a limit", crate::waits::check)?;
     match &rust {
         Some(rust) => rust_checks(rust, &threads)?,
         None => println!("\n== lint, docs and tests: skipped, as no crate changed"),

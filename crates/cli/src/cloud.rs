@@ -99,12 +99,15 @@ async fn computers(
     })
 }
 
+/// How long git has to read this repository, which it does in a moment.
+const GIT_ANSWERS_WITHIN: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// Runs git in `folder`; its output, or an error saying what it said.
 async fn git(folder: &Path, args: &[&str]) -> anyhow::Result<String> {
     let output = glave_process::Program::new("git")
         .args(args)
         .current_dir(folder)
-        .output()
+        .output(GIT_ANSWERS_WITHIN)
         .await
         .context("could not run git")?;
     if !output.status.success() {

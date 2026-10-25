@@ -31,6 +31,7 @@ mod scope;
 pub mod search;
 pub mod secrets;
 pub mod settings;
+mod spoken;
 mod sse;
 pub mod stream;
 #[cfg(any(test, feature = "conformance"))]
@@ -60,6 +61,7 @@ pub use projects::{
 };
 pub use remove::remove_tree;
 pub use scope::{Located, OrgId, ProjectId, Scope};
+pub use spoken::spoken;
 pub use sse::{SseDecoder, SseError};
 pub use tools::{
     Assessment, BoxFuture, Cancellation, Effect, NeverCancelled, ToolError, ToolInfo, ToolOutput,

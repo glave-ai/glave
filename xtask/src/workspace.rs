@@ -21,7 +21,7 @@ pub(crate) fn root() -> Result<PathBuf, String> {
 
 /// What `cargo metadata` says of the workspace's own packages.
 pub(crate) fn metadata() -> Result<serde_json::Value, String> {
-    let text = crate::cmd::output("cargo", &["metadata", "--format-version", "1", "--no-deps"])?;
+    let text = crate::cmd::query("cargo", &["metadata", "--format-version", "1", "--no-deps"])?;
     serde_json::from_str(&text)
         .map_err(|err| format!("`cargo metadata` wrote something not JSON: {err}"))
 }

@@ -33,6 +33,9 @@ const START_WAIT: Duration = Duration::from_mins(5);
 const POLL: Duration = Duration::from_millis(500);
 /// Bytes sent to `tar` at a time while copying glave in.
 const CHUNK: usize = 1 << 20;
+/// How long copying glave into a running worker has: seconds through a cluster's API server,
+/// a minute or two over a slow link to it.
+const COPIED_WITHIN: Duration = Duration::from_mins(5);
 
 /// Which cluster workers run on, and the glave that goes into them.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -216,8 +219,20 @@ impl Kubernetes {
         }
     }
 
-    /// Copies `files` (a tar archive) into the running worker through the API server.
+    /// Copies `files` (a tar archive) into the running worker through the API server, within
+    /// [`COPIED_WITHIN`].
     async fn copy_in(&self, name: &str, files: &[u8]) -> Result<(), ComputerError> {
+        tokio::time::timeout(COPIED_WITHIN, self.copying(name, files))
+            .await
+            .unwrap_or_else(|_| {
+                Err(ComputerError::Failed(format!(
+                    "copying glave into the worker did not finish within {}",
+                    glave_ports::spoken(COPIED_WITHIN)
+                )))
+            })
+    }
+
+    async fn copying(&self, name: &str, files: &[u8]) -> Result<(), ComputerError> {
         let params = AttachParams::default()
             .container(objects::CONTAINER)
             .stdin(true)

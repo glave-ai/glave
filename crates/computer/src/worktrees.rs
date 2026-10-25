@@ -191,7 +191,7 @@ pub async fn remove(
         credential: None,
     };
     let path = kept.path.to_string_lossy();
-    git.must(&["worktree", "remove", "--force", &path]).await?;
+    git.work(&["worktree", "remove", "--force", &path]).await?;
     let _ = tokio::fs::remove_file(record_path(&kept.path)).await;
     Ok(())
 }

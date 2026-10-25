@@ -6,8 +6,8 @@
 
 use std::path::Path;
 use std::process::Command as Process;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 
 use crate::support::*;
 use glave_computer::{LocalComputers, RemoteComputers, serve};
@@ -15,9 +15,9 @@ use glave_event::{Body, Event, Outcome, RemovedReason, StopReason};
 use glave_harness::{AllowAll, Cancel, Place, Workers, Workspace, wip_branch};
 use glave_ports::Caller;
 use glave_ports::computer::{
-    Bytes, Command, ComputerError, ComputerId, ComputerInfo, Computers, Environment, FileWrite,
-    Finished, Glob, Globbed, Listed, Listing, Output, Save, Saved, Search, Searched, Sources, Stat,
-    WorkspaceId, WorkspaceInfo,
+    Bytes, Command, ComputerError, ComputerId, ComputerInfo, Computers, Ending, Environment,
+    FileWrite, Finished, Glob, Globbed, Listed, Listing, Output, Sandbox, SandboxLevel, Save,
+    Saved, Search, Searched, Sources, Stat, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation, InMemoryLog};
 use serde_json::json;
@@ -25,11 +25,15 @@ use tokio::io::BufReader;
 use tokio::sync::Notify;
 
 /// A computer whose calls fail as a dead connection's do, `failing` of them (all, at
-/// `u32::MAX`), and on which a command named `hang` starts and never ends.
+/// `u32::MAX`), and on which a command named `hang` starts and never ends. With
+/// `stuck_sandbox`, a command in a sandbox runs to its limit and is stopped there, as one
+/// whose sandbox waits on a named pipe does, and the limit each was given is kept.
 struct Faulty {
     inner: Arc<dyn Computers>,
     failing: AtomicU32,
     hung: Arc<Notify>,
+    stuck_sandbox: AtomicBool,
+    limits: Mutex<Vec<Option<u64>>>,
 }
 
 impl Faulty {
@@ -38,6 +42,8 @@ impl Faulty {
             inner,
             failing: AtomicU32::new(0),
             hung: Arc::new(Notify::new()),
+            stuck_sandbox: AtomicBool::new(false),
+            limits: Mutex::new(Vec::new()),
         }
     }
 
@@ -106,6 +112,14 @@ impl Computers for Faulty {
                 self.hung.notify_one();
                 std::future::pending::<()>().await;
             }
+            if command.sandbox.is_some() && self.stuck_sandbox.load(Ordering::SeqCst) {
+                self.limits.lock().unwrap().push(command.timeout_secs);
+                let after_secs = command.timeout_secs.unwrap_or(120);
+                return Ok(Finished {
+                    ending: Ending::TimedOut { after_secs },
+                    millis: after_secs * 1000,
+                });
+            }
             self.inner.run(workspace, command, output, cancel).await
         })
     }
@@ -170,6 +184,37 @@ impl Computers for Faulty {
 fn local(dir: &Path) -> Arc<LocalComputers> {
     let environment = std::env::vars_os().filter(|(name, _)| name == "PATH" || name == "HOME");
     Arc::new(LocalComputers::new(dir.join("copies"), environment))
+}
+
+#[test]
+fn a_sandbox_that_starts_no_command_is_given_up_in_seconds_saying_so() {
+    let dir = folder("faults-stuck-sandbox");
+    let computers = Arc::new(Faulty::new(local(&dir)));
+    computers.stuck_sandbox.store(true, Ordering::SeqCst);
+    let sandbox = Sandbox {
+        level: SandboxLevel::Project,
+        network: false,
+        home: None,
+        glave_home: None,
+    };
+    let tried = block_on!(async {
+        let made = computers.create(&Environment::host()).await.unwrap();
+        let path = dir.to_string_lossy().into_owned();
+        let info = computers
+            .open(made.id, &Sources::Folder { path })
+            .await
+            .unwrap();
+        let shared: Arc<dyn Computers> = Arc::clone(&computers) as Arc<dyn Computers>;
+        Workspace::new(shared, info).with_sandbox(&sandbox).await
+    });
+    let Err(error) = tried else {
+        panic!("a sandbox that ran nothing was used");
+    };
+    assert_eq!(
+        error.to_string(),
+        "failed: a command in the sandbox did not start within 10 seconds"
+    );
+    assert_eq!(*computers.limits.lock().unwrap(), [Some(10)]);
 }
 
 #[test]

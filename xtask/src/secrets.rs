@@ -28,7 +28,7 @@ const JWT_PART: usize = 19;
 /// holds one.
 pub(crate) fn check() -> Result<(), String> {
     let root = workspace::root()?;
-    let listed = cmd::output("git", &["ls-files", "-z"])?;
+    let listed = cmd::query("git", &["ls-files", "-z"])?;
     let mut problems = Vec::new();
     let mut scanned = 0_usize;
     for path in listed.split('\0').filter(|path| !path.is_empty()) {
