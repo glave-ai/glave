@@ -4,6 +4,7 @@
 
 use std::collections::BTreeMap;
 
+use glave_ports::host::{CLOUD_METADATA, Network};
 use serde_json::{Value, json};
 
 use super::super::backend::{PORT, Spec};
@@ -144,14 +145,18 @@ impl Shape<'_> {
 
     /// The worker's NetworkPolicy: nothing comes in (the harness arrives through the API
     /// server's port-forward or attach, which no policy sees), and nothing goes out unless
-    /// the worker has the network, which then reaches anywhere but link-local addresses,
-    /// where clouds serve their machines' credentials (DNS there is still allowed).
+    /// the worker has the network, which then reaches anywhere but where clouds serve their
+    /// machines' credentials ([`CLOUD_METADATA`]; DNS there is still allowed).
     pub(crate) fn network_policy(&self) -> Value {
         let egress = if self.spec.network {
+            let (v4, v6): (Vec<_>, Vec<_>) = CLOUD_METADATA.iter().partition(|n| n.is_ipv4());
+            let cidrs = |networks: Vec<&Network>| -> Vec<String> {
+                networks.iter().map(ToString::to_string).collect()
+            };
             json!([
                 {"to": [
-                    {"ipBlock": {"cidr": "0.0.0.0/0", "except": ["169.254.0.0/16"]}},
-                    {"ipBlock": {"cidr": "::/0", "except": ["fe80::/10", "fd00:ec2::254/128"]}}
+                    {"ipBlock": {"cidr": "0.0.0.0/0", "except": cidrs(v4)}},
+                    {"ipBlock": {"cidr": "::/0", "except": cidrs(v6)}}
                 ]},
                 {"ports": [{"protocol": "UDP", "port": 53}, {"protocol": "TCP", "port": 53}]}
             ])
@@ -375,8 +380,19 @@ mod tests {
         );
         let on = spec(true);
         let open = Shape { spec: &on, ..shape }.network_policy();
-        let egress = open["spec"]["egress"].to_string();
-        assert!(egress.contains("169.254.0.0/16"), "{egress}");
+        assert_eq!(
+            open["spec"]["egress"][0]["to"],
+            json!([
+                {"ipBlock": {
+                    "cidr": "0.0.0.0/0",
+                    "except": ["169.254.0.0/16", "100.100.100.200/32", "168.63.129.16/32"]
+                }},
+                {"ipBlock": {
+                    "cidr": "::/0",
+                    "except": ["fe80::/10", "fd00:ec2::254/128", "fd00:ec2::23/128", "fd20:ce::254/128"]
+                }}
+            ])
+        );
         assert_eq!(open["spec"]["ingress"], json!([]));
         let parsed: k8s_openapi::api::networking::v1::NetworkPolicy =
             serde_json::from_value(open).unwrap();

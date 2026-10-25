@@ -1,9 +1,12 @@
 //! Which addresses are on the public internet. Everything else (this computer, private
-//! networks, link-local addresses such as cloud metadata at 169.254.169.254, carrier NAT,
-//! multicast, reserved and documentation ranges) is private: a fetch reaching it could read
-//! what only the person's own network should see.
+//! networks, cloud metadata such as 169.254.169.254 (glave's one list,
+//! [`glave_ports::host::CLOUD_METADATA`]), carrier NAT, multicast, reserved and documentation
+//! ranges) is private: a fetch reaching it could read what only the person's own network, or
+//! this machine, should see.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+use glave_ports::host::is_cloud_metadata;
 
 /// Whether `ip` is a public internet address. IPv6 forms that carry an IPv4 address (mapped,
 /// compatible, NAT64 and 6to4) are judged by that address.
@@ -19,7 +22,7 @@ fn is_public_v4(ip: Ipv4Addr) -> bool {
     let private = ip.is_unspecified()
         || ip.is_loopback()
         || ip.is_private()
-        || ip.is_link_local()
+        || is_cloud_metadata(IpAddr::V4(ip))
         || ip.is_broadcast()
         || ip.is_multicast()
         || ip.is_documentation()
@@ -40,8 +43,8 @@ fn is_public_v6(ip: Ipv6Addr) -> bool {
     let private = ip.is_unspecified()
         || ip.is_loopback()
         || ip.is_multicast()
+        || is_cloud_metadata(IpAddr::V6(ip))
         || (first & 0xfe00) == 0xfc00 // unique local, fc00::/7
-        || (first & 0xffc0) == 0xfe80 // link-local, fe80::/10
         || (first & 0xffc0) == 0xfec0 // site-local (deprecated), fec0::/10
         || ip.segments().get(..2) == Some(&[0x2001, 0x0db8]) // documentation
         || (first & 0xe000) != 0x2000; // outside global unicast, 2000::/3
@@ -97,6 +100,7 @@ mod tests {
             "172.31.255.255",
             "192.168.1.1",
             "169.254.169.254",
+            "168.63.129.16",
             "100.64.0.1",
             "100.127.255.255",
             "224.0.0.1",
@@ -118,11 +122,13 @@ mod tests {
             "fe80::1",
             "fc00::1",
             "fd00:ec2::254",
+            "fd20:ce::254",
             "fec0::1",
             "ff02::1",
             "2001:db8::1",
             "::ffff:127.0.0.1",
             "::ffff:169.254.169.254",
+            "::ffff:168.63.129.16",
             "::ffff:10.0.0.1",
             "::127.0.0.1",
             "64:ff9b::a00:1",

@@ -175,6 +175,21 @@ mod tests {
     }
 
     #[test]
+    fn glave_s_own_credentials_still_come_from_the_metadata_withheld_from_the_agent() {
+        use glave_ports::host::is_cloud_metadata;
+        // Workers and `web_fetch` refuse these addresses; glave's own process is not the agent,
+        // and reaches them for its keys (specs/sandbox.md, "Cloud metadata").
+        for host in NODE_HOSTS {
+            let bare = host.trim_start_matches('[').trim_end_matches(']');
+            assert!(is_cloud_metadata(bare.parse().unwrap()), "{host}");
+            assert!(
+                checked(&format!("http://{host}/v1/credentials")).is_ok(),
+                "{host}"
+            );
+        }
+    }
+
+    #[test]
     fn a_relative_uri_is_under_ecs_s_endpoint() {
         let env = |name: &str| {
             (name == "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI").then(|| "/v2/creds/1".to_owned())
