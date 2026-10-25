@@ -13,7 +13,7 @@ commands:
                     Off CI it lints and tests only the crates a change since origin/main
                     reaches, and runs the web checks only when web/ or the API schema changed;
                     --all, and CI always, check everything. --target builds the lint, docs and
-                    tests for another target than this machine's (CI's run on musl). Off CI,
+                    tests for a target other than this machine's (CI's run on musl). Off CI,
                     tests run on half the cores (GLAVE_TEST_THREADS=n sets how many)
   deps              check the dependency rule: each crate depends only on the layers its own
                     may use (the layers are in xtask/src/deps.rs)

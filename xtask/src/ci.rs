@@ -294,10 +294,10 @@ mod tests {
     }
 
     #[test]
-    fn the_target_comes_before_what_follows_the_crates() {
+    fn the_target_follows_the_features_and_comes_before_the_commands_own_arguments() {
         let rust = Rust {
             packages: vec!["--workspace".to_owned()],
-            features: String::new(),
+            features: "glave/otlp".to_owned(),
             target: Some("x86_64-unknown-linux-musl".to_owned()),
         };
         assert_eq!(
@@ -305,6 +305,8 @@ mod tests {
             [
                 "clippy",
                 "--workspace",
+                "--features",
+                "glave/otlp",
                 "--target",
                 "x86_64-unknown-linux-musl",
                 "--",
