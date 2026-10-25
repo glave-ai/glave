@@ -16,13 +16,18 @@ use std::sync::{Arc, Mutex};
 
 use glave_event::Sha256;
 use glave_ports::computer::{
-    Bytes, Command, CommandId, ComputerError, Computers, FileWrite, Finished, GitCredentials, Glob,
-    Globbed, Listed, Listing, OnTimeout, Output, Sandbox, Search, Searched, Sources, Stat,
-    WorkspaceInfo, is_protected, is_protected_refusal, refuse_protected,
+    Bytes, Command, CommandId, ComputerError, Computers, Ending, FileWrite, Finished,
+    GitCredentials, Glob, Globbed, Listed, Listing, OnTimeout, Output, Sandbox, Search, Searched,
+    Sources, Stat, WorkspaceInfo, is_protected, is_protected_refusal, refuse_protected,
 };
 use glave_ports::{Cancellation, digest};
 
 use crate::cancel::Cancel;
+
+/// Seconds the sandbox has to run its first command, which prints one word: it starts in
+/// well under a second, and one that has not by then is stuck (on a named pipe, say), so
+/// glave says so at once rather than after a command's whole timeout.
+const SANDBOX_STARTS_WITHIN: u64 = 10;
 
 /// One workspace on one computer, the sandbox its commands run in, and what the model has
 /// seen there.
@@ -107,19 +112,26 @@ impl Workspace {
     }
 
     /// Runs every command in `sandbox`. Fails if the computer cannot enforce it, so a
-    /// requested sandbox is never quietly skipped; on success, learns the temp folder its
-    /// commands get, which the shell assessment treats as theirs to write.
+    /// requested sandbox is never quietly skipped, and fails within
+    /// [`SANDBOX_STARTS_WITHIN`] when it starts no command; on success, learns the temp
+    /// folder its commands get, which the shell assessment treats as theirs to write.
     pub async fn with_sandbox(mut self, sandbox: &Sandbox) -> Result<Self, ComputerError> {
         let mut probe = Command::new(r#"printf '%s' "$TMPDIR""#);
         probe.sandbox = Some(sandbox.clone());
+        probe.timeout_secs = Some(SANDBOX_STARTS_WITHIN);
         let temp = Collected::default();
         let finished = self
             .computers
             .run(self.info.id, &probe, &temp, &Cancel::new())
             .await?;
         let temp = temp.text();
-        if finished.ending != (glave_ports::computer::Ending::Exited { code: 0 }) || temp.is_empty()
-        {
+        if let Ending::TimedOut { after_secs } = finished.ending {
+            return Err(ComputerError::Failed(format!(
+                "a command in the sandbox did not start within {}",
+                glave_ports::spoken(std::time::Duration::from_secs(after_secs))
+            )));
+        }
+        if finished.ending != (Ending::Exited { code: 0 }) || temp.is_empty() {
             return Err(ComputerError::Failed(format!(
                 "a command in the sandbox did not run: {temp}"
             )));

@@ -8,8 +8,7 @@
 //! to skip it, as CI's Rust jobs do (its `web` job runs these).
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 /// The oldest Node the web build supports (Angular's own minimum, `web/package.json`).
 const MINIMUM: (u32, u32, u32) = (22, 22, 3);
@@ -94,7 +93,11 @@ fn stale(web: &Path) -> bool {
 
 /// The installed Node's version, if there is one.
 fn node_version() -> Option<(u32, u32, u32)> {
-    let output = Command::new("node").arg("--version").output().ok()?;
+    // It answers at once; one that does not is taken for none.
+    let output = glave_process::Program::new("node")
+        .arg("--version")
+        .output_blocking(Duration::from_secs(30))
+        .ok()?;
     parse(String::from_utf8(output.stdout).ok()?.trim())
 }
 

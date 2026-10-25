@@ -1,10 +1,11 @@
 //! A program to run, set up as `std::process::Command` sets one up, and the ways glave starts
-//! one: to run on its own ([`crate::Processes::spawn`]), waited for by its caller
-//! ([`Program::output`]), or as a glave of its own ([`Program::detach`]).
+//! one: to run on its own ([`crate::Processes::spawn`]), waited for by its caller within a
+//! limit ([`Program::output`]), or as a glave of its own ([`Program::detach`]).
 
 use std::ffi::OsStr;
 use std::path::Path;
 use std::process::{Output, Stdio};
+use std::time::Duration;
 
 use crate::error::ProcessError;
 
@@ -106,39 +107,54 @@ impl Program {
         }
     }
 
-    /// Runs it to the end, with what it printed. It is awaited where it starts and killed if
-    /// the caller stops waiting, so it ends with the call; it stays in glave's process group,
-    /// as a short helper (git, the browser's opener) is, and is not recorded in the ledger.
-    pub async fn output(&mut self) -> Result<Output, ProcessError> {
-        self.command
-            .output()
-            .await
-            .map_err(|error| self.failed(error))
+    /// It did not finish within `limit`.
+    fn late(&self, limit: Duration) -> ProcessError {
+        ProcessError::TimedOut {
+            program: self.name(),
+            limit,
+        }
+    }
+
+    /// Runs it to the end, with what it printed, within `limit`: still running then, it is
+    /// killed and the call fails, saying how long it had. It is awaited where it starts and
+    /// killed if the caller stops waiting, so it ends with the call; it stays in glave's
+    /// process group, as a short helper (git, the browser's opener) is, and is not recorded in
+    /// the ledger.
+    pub async fn output(&mut self, limit: Duration) -> Result<Output, ProcessError> {
+        match tokio::time::timeout(limit, self.command.output()).await {
+            Ok(output) => output.map_err(|error| self.failed(error)),
+            Err(_) => Err(self.late(limit)),
+        }
     }
 
     /// [`Program::output`], with `input` written to its standard input, which is then closed.
-    pub async fn output_with(&mut self, input: &[u8]) -> Result<Output, ProcessError> {
+    pub async fn output_with(
+        &mut self,
+        input: &[u8],
+        limit: Duration,
+    ) -> Result<Output, ProcessError> {
         use tokio::io::AsyncWriteExt as _;
         self.command.stdin(Stdio::piped());
         let mut child = self.command.spawn().map_err(|error| self.failed(error))?;
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin
-                .write_all(input)
-                .await
-                .map_err(|error| self.failed(error))?;
+        let ran = async {
+            if let Some(mut stdin) = child.stdin.take() {
+                stdin.write_all(input).await?;
+            }
+            child.wait_with_output().await
+        };
+        match tokio::time::timeout(limit, ran).await {
+            Ok(output) => output.map_err(|error| self.failed(error)),
+            Err(_) => Err(self.late(limit)),
         }
-        child
-            .wait_with_output()
-            .await
-            .map_err(|error| self.failed(error))
     }
 
     /// [`Program::output`], blocking, for code that runs outside the async runtime.
-    pub fn output_blocking(&mut self) -> Result<Output, ProcessError> {
-        self.command
-            .as_std_mut()
-            .output()
-            .map_err(|error| self.failed(error))
+    pub fn output_blocking(&mut self, limit: Duration) -> Result<Output, ProcessError> {
+        match crate::within::output(self.command.as_std_mut(), limit) {
+            Ok(Some(output)) => Ok(output),
+            Ok(None) => Err(self.late(limit)),
+            Err(error) => Err(self.failed(error)),
+        }
     }
 
     /// Becomes the program, replacing this process (the sandbox's helper does, once it has
@@ -164,5 +180,54 @@ impl Program {
         let child = command.spawn().map_err(|error| self.failed(error))?;
         drop(child);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const AMPLE: Duration = Duration::from_secs(30);
+
+    #[test]
+    fn a_program_that_ends_in_time_gives_what_it_printed() {
+        let printed = glave_ports::block_on!(Program::new("printf").arg("done").output(AMPLE));
+        assert_eq!(printed.unwrap().stdout, b"done");
+        let echoed = glave_ports::block_on!(
+            Program::new("cat")
+                .stdout(Stdio::piped())
+                .output_with(b"given", AMPLE)
+        );
+        assert_eq!(echoed.unwrap().stdout, b"given");
+        let blocking = Program::new("printf").arg("done").output_blocking(AMPLE);
+        assert_eq!(blocking.unwrap().stdout, b"done");
+    }
+
+    #[test]
+    fn one_still_running_at_its_limit_is_stopped_saying_how_long_it_had() {
+        let limit = Duration::from_secs(10);
+        let (waited, fed) = glave_ports::block_on!(async {
+            // The clock jumps to the limit as soon as nothing else can run.
+            tokio::time::pause();
+            let waited = Program::new("sleep").arg("300").output(limit).await;
+            let fed = Program::new("sleep")
+                .arg("300")
+                .output_with(b"unread", limit)
+                .await;
+            (waited, fed)
+        });
+        for error in [waited.unwrap_err(), fed.unwrap_err()] {
+            assert!(matches!(error, ProcessError::TimedOut { .. }), "{error:?}");
+            assert_eq!(error.to_string(), "sleep did not finish within 10 seconds");
+        }
+    }
+
+    #[test]
+    fn a_blocking_run_still_going_at_its_limit_is_killed_and_says_so() {
+        let error = Program::new("sleep")
+            .arg("300")
+            .output_blocking(Duration::from_millis(50))
+            .unwrap_err();
+        assert_eq!(error.to_string(), "sleep did not finish within 50 ms");
     }
 }

@@ -4,7 +4,12 @@
 //! listed; the processes are stopped and the folder removed either way.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::time::Duration;
+
+use glave_process::Program;
+
+/// How long `ps` and `kill` have to answer, which they do at once.
+const ANSWERS_WITHIN: Duration = Duration::from_secs(30);
 
 /// What glave keeps in the temp folder on purpose, and why: an entry's name, or the start of
 /// it followed by digits only.
@@ -56,7 +61,9 @@ impl Run {
     pub(crate) fn check(self) -> Result<(), String> {
         let processes = running(&self.folder)?;
         for (pid, _) in &processes {
-            let _ = Command::new("kill").args(["-KILL", pid]).status();
+            let _ = Program::new("kill")
+                .args(["-KILL", pid])
+                .output_blocking(ANSWERS_WITHIN);
         }
         let entries = left(&self.folder)?;
         let _ = std::fs::remove_dir_all(&self.folder);
@@ -105,9 +112,9 @@ fn running(folder: &Path) -> Result<Vec<(String, String)>, String> {
 
 /// What `ps` with `args` lists.
 fn ps(args: &[&str]) -> Result<String, String> {
-    let output = Command::new("ps")
+    let output = Program::new("ps")
         .args(args)
-        .output()
+        .output_blocking(ANSWERS_WITHIN)
         .map_err(|err| format!("could not list processes with `ps`: {err}"))?;
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }

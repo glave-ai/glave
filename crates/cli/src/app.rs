@@ -33,6 +33,10 @@ pub(crate) const URL_FILE: &str = "serve.url";
 /// The page that sends the browser to the sign-in link.
 pub(crate) const OPEN_FILE: &str = "open.html";
 
+/// How long the system's opener has to hand the page to the browser, which takes it at once;
+/// past it the person is given the link to open.
+const OPENS_WITHIN: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// Whether a browser here would show on the person's screen, on `os` with the variables `var`
 /// gives: not over SSH, and on Linux and the like only with a display.
 pub(crate) fn has_screen(os: &str, var: impl Fn(&str) -> bool) -> bool {
@@ -183,7 +187,7 @@ pub(crate) async fn show(
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
-        .output()
+        .output(OPENS_WITHIN)
         .await
         .with_context(|| format!("could not run {program} to open the browser"))?;
     anyhow::ensure!(

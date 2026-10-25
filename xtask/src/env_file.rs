@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 /// git worktree.
 pub(crate) fn nearest(root: &Path) -> Option<PathBuf> {
     nearest_from(root, || {
-        let git = crate::cmd::output("git", &["rev-parse", "--git-common-dir"]).ok()?;
+        let git = crate::cmd::query("git", &["rev-parse", "--git-common-dir"]).ok()?;
         Some(root.join(git.trim()))
     })
 }

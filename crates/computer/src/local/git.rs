@@ -5,10 +5,19 @@
 use std::ffi::OsString;
 use std::path::Path;
 use std::process::Stdio;
+use std::time::Duration;
 
 use glave_ports::computer::{ComputerError, GitCredential, Save, Saved};
 
 use super::registry::Opened;
+
+/// How long git has for work on this computer (reading a repository, a commit, a checkout or
+/// a worktree): moments as a rule, a minute or so in a very large repository.
+const LOCAL: Duration = Duration::from_mins(2);
+
+/// How long git has for a clone or a push, which move the repository across the network: as
+/// long as glave waits for a computer elsewhere to open or save a workspace.
+const NETWORK: Duration = Duration::from_mins(30);
 
 /// One git invocation: the environment it runs with, the folder, and any leading options.
 pub(crate) struct Git<'a> {
@@ -36,8 +45,15 @@ impl<'a> Git<'a> {
         }
     }
 
-    /// Runs git with `args`; its output, or what it said when it failed.
+    /// Runs git with `args` on this computer, within [`LOCAL`]; its output, or what it said
+    /// when it failed.
     pub(crate) async fn run(&self, args: &[&str]) -> Result<String, String> {
+        self.run_within(args, LOCAL).await
+    }
+
+    /// [`Git::run`], within `limit`: git still running then is stopped, and the error says
+    /// how long it had.
+    async fn run_within(&self, args: &[&str], limit: Duration) -> Result<String, String> {
         let mut command = glave_process::Program::new("git");
         if self.credential.is_some() {
             command
@@ -58,9 +74,9 @@ impl<'a> Git<'a> {
             }))
             .env("GIT_TERMINAL_PROMPT", "0")
             .stdin(Stdio::null())
-            .output()
+            .output(limit)
             .await
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| format!("git {}: {error}", args.first().unwrap_or(&"")))?;
         if output.status.success() {
             Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
         } else {
@@ -71,6 +87,14 @@ impl<'a> Git<'a> {
 
     pub(crate) async fn must(&self, args: &[&str]) -> Result<String, ComputerError> {
         self.run(args).await.map_err(ComputerError::Failed)
+    }
+
+    /// [`Git::must`] for work that moves the repository across the network, within
+    /// [`NETWORK`].
+    async fn must_across(&self, args: &[&str]) -> Result<String, ComputerError> {
+        self.run_within(args, NETWORK)
+            .await
+            .map_err(ComputerError::Failed)
     }
 }
 
@@ -110,7 +134,7 @@ pub(crate) async fn clone(
         credential,
     };
     let dest_text = dest.to_string_lossy();
-    git.must(&["clone", "--quiet", "--", url, &dest_text])
+    git.must_across(&["clone", "--quiet", "--", url, &dest_text])
         .await?;
     if let Some(at) = at {
         let inside = Git {
@@ -177,7 +201,8 @@ pub(crate) async fn save(opened: &Opened, save: &Save) -> Result<Saved, Computer
     let hash = git.must(&["rev-parse", "HEAD"]).await?;
     let pushed = if git.run(&["remote", "get-url", "origin"]).await.is_ok() {
         let refspec = format!("{reference}:{reference}");
-        git.must(&["push", "--quiet", "origin", &refspec]).await?;
+        git.must_across(&["push", "--quiet", "origin", &refspec])
+            .await?;
         true
     } else {
         false
@@ -205,4 +230,36 @@ async fn repository(opened: &Opened) -> Result<Git<'_>, ComputerError> {
         options: Vec::new(),
         credential: opened.credential.as_ref(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    use super::*;
+
+    #[test]
+    fn git_that_never_finishes_is_stopped_at_its_limit_saying_so() {
+        let dir = glave_ports::testing::TempDir::new("git-hangs").unwrap();
+        let git = dir.join("git");
+        std::fs::write(&git, "#!/bin/sh\nexec sleep 300\n").unwrap();
+        std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let environment = [(OsString::from("PATH"), dir.as_os_str().to_owned())];
+        let ran = glave_ports::block_on!(async {
+            tokio::time::pause();
+            let local = Git::at(&environment, &dir).run(&["status"]).await;
+            let across = Git::at(&environment, &dir).must_across(&["push"]).await;
+            (local, across)
+        });
+        assert_eq!(
+            ran.0.unwrap_err(),
+            "git status: git did not finish within 2 minutes"
+        );
+        assert!(
+            ran.1
+                .unwrap_err()
+                .to_string()
+                .ends_with("git push: git did not finish within 30 minutes"),
+        );
+    }
 }

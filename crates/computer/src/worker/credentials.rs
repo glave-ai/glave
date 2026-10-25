@@ -50,11 +50,12 @@ async fn fill(rest: &str) -> Result<Option<GitCredential>, ComputerError> {
         .env("GCM_INTERACTIVE", "never")
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
-    let answered = tokio::time::timeout(FILL_TIMEOUT, git.output_with(asked.as_bytes())).await;
-    let Ok(output) = answered else {
-        return Ok(None);
+    let output = match git.output_with(asked.as_bytes(), FILL_TIMEOUT).await {
+        Ok(output) => output,
+        // A helper that does not answer in time gives no credential.
+        Err(glave_process::ProcessError::TimedOut { .. }) => return Ok(None),
+        Err(error) => return Err(ComputerError::Failed(error.to_string())),
     };
-    let output = output.map_err(|error| ComputerError::Failed(error.to_string()))?;
     if !output.status.success() {
         return Ok(None);
     }

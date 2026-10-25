@@ -188,7 +188,7 @@ fn packages(metadata: &Value) -> Result<Vec<Package>, String> {
 }
 
 fn git(args: &[&str]) -> Result<String, String> {
-    crate::cmd::output("git", args)
+    crate::cmd::query("git", args)
 }
 
 fn lines(text: &str) -> Vec<String> {

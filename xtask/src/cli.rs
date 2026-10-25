@@ -6,8 +6,9 @@ const USAGE: &str = "\
 usage: cargo xtask <command>
 
 commands:
-  ci [--all]        the local gate: format, secrets, the dependency rule, one spawn path,
-                    lint, tests and what they leave behind, dependency audit, file sizes, and
+  ci [--all]        the local gate: format, secrets, the dependency rule, one spawn path, a
+                    limit on every wait, lint, tests and what they leave behind, dependency
+                    audit, file sizes, and
                     the web checks, which need Node 22.22.3+ (GLAVE_SKIP_WEB=1 skips them).
                     Off CI it lints and tests only the crates a change since origin/main
                     reaches, and runs the web checks only when web/ or the API schema changed;
@@ -20,6 +21,8 @@ commands:
                     run time)
   spawns            fail on a process started outside glave-process (crates/process), which
                     gives each one an owner
+  waits             fail on a wait (a process, a thread, a channel, a lock) with no limit on
+                    its line that xtask/src/waits.rs does not list with what bounds it
   schema            write specs/session.schema.json from the session API's Rust types, and the
                     web client's TypeScript types from it (`--check`: fail if either is out of
                     date)
@@ -54,6 +57,7 @@ fn run(args: &[String]) -> Result<(), String> {
             "file-sizes" => crate::file_sizes::check(),
             "secrets" => crate::secrets::check(),
             "spawns" => crate::spawns::check(),
+            "waits" => crate::waits::check(),
             "schema" => crate::schema::run(rest),
             "release-workflow" => crate::release_workflow::run(rest),
             "bench" => crate::bench::run(rest),

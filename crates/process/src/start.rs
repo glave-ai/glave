@@ -44,23 +44,26 @@ fn ticks(stat: &str) -> Option<&str> {
     fields.split_whitespace().nth(19)
 }
 
+/// How long `ps` has to list a few processes, which it does in milliseconds.
+#[cfg(target_os = "macos")]
+const PS_ANSWERS_WITHIN: std::time::Duration = std::time::Duration::from_secs(5);
+
 #[cfg(target_os = "macos")]
 fn platform(pids: &[i32]) -> HashMap<i32, Start> {
     let listed: Vec<String> = pids.iter().map(i32::to_string).collect();
     // Started directly rather than as a `Program`: reading a start is part of recording one.
-    let output = std::process::Command::new("/bin/ps")
-        .args(["-o", "pid=,lstart=", "-p", &listed.join(",")])
+    let mut ps = std::process::Command::new("/bin/ps");
+    ps.args(["-o", "pid=,lstart=", "-p", &listed.join(",")])
         .env_clear()
         .env("LC_ALL", "C")
         .env("TZ", "UTC0")
-        .stdin(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .output();
-    // `ps` exits 1 when some of them are gone, and still lists the rest.
-    output.map_or_else(
-        |_| HashMap::new(),
-        |output| listed_starts(&String::from_utf8_lossy(&output.stdout)),
-    )
+        .stdin(std::process::Stdio::null());
+    // `ps` exits 1 when some of them are gone, and still lists the rest. One that does not
+    // answer in time lists none, so nothing is taken for a process glave started.
+    match crate::within::output(&mut ps, PS_ANSWERS_WITHIN) {
+        Ok(Some(output)) => listed_starts(&String::from_utf8_lossy(&output.stdout)),
+        Ok(None) | Err(_) => HashMap::new(),
+    }
 }
 
 /// Each line of `ps -o pid=,lstart=`: the id, then its start.

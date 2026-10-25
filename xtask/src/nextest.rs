@@ -13,12 +13,20 @@
 //! signing them all cost about what it saved. Elsewhere the tests build and run in one go.
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
+use glave_process::Program;
 use serde_json::Value;
 
 use crate::cmd;
+
+/// How long a program's first run may wait on macOS's check of it: seconds as a rule, minutes
+/// beside other builds, as the check goes one program at a time for the whole machine.
+const CHECKED_WITHIN: Duration = Duration::from_mins(5);
+
+/// How long `codesign` has to read or sign one program, which takes it a moment.
+const SIGNED_WITHIN: Duration = Duration::from_mins(1);
 
 /// Runs the tests `build` selects (packages, features and targets, as cargo takes them), with
 /// `options` (filters, `--no-tests`) and the variables `env`.
@@ -105,13 +113,11 @@ fn sign(program: &Path) -> Result<(), String> {
 /// now rather than while a test that starts it is timing it; says so when that took a while.
 fn first_run(program: &Path) -> Result<(), String> {
     let started = Instant::now();
-    Command::new(program)
+    Program::new(program)
         .arg("--help")
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map_err(|err| format!("could not start {}: {err}", program.display()))?;
+        .output_blocking(CHECKED_WITHIN)
+        .map_err(|err| format!("could not run {}: {err}", program.display()))?;
     let waited = started.elapsed();
     if waited > Duration::from_secs(1) {
         let name = program.file_name().unwrap_or(program.as_os_str());
@@ -126,11 +132,11 @@ fn first_run(program: &Path) -> Result<(), String> {
 
 /// `codesign` with `args` on `program`, its output kept.
 fn codesign(args: &[&str], program: &Path) -> Result<std::process::Output, String> {
-    Command::new("codesign")
+    Program::new("codesign")
         .args(args)
         .arg(program)
-        .output()
-        .map_err(|err| format!("could not start `codesign`: {err}"))
+        .output_blocking(SIGNED_WITHIN)
+        .map_err(|err| format!("could not run `codesign`: {err}"))
 }
 
 /// Whether `codesign --display`'s description of a signature says only the linker signed it:

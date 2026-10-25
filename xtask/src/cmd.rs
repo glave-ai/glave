@@ -6,13 +6,22 @@
 //! group of its own with no input: a program there reading the terminal would be stopped
 //! (nextest reads keys from one it is given). Ctrl-C ends xtask, and its helper then stops
 //! what xtask ran.
+//!
+//! A program xtask only asks something of (git's listing, cargo's metadata) answers within
+//! [`QUERY_WITHIN`] ([`query`]). The steps themselves (a build, the tests, the web checks, an
+//! eval) are the work that was asked for, and take as long as the machine needs: the person at
+//! the terminal stops one with Ctrl-C, and in CI the job's own time limit does.
 
 use std::ffi::OsString;
 use std::path::Path;
 use std::process::{ExitCode, ExitStatus, Stdio};
+use std::time::Duration;
 
 use glave_process::{Processes, Program};
 use tokio::io::AsyncReadExt as _;
+
+/// How long a program xtask only asks something of has to answer: moments as a rule.
+const QUERY_WITHIN: Duration = Duration::from_mins(2);
 
 /// Runs xtask as the lifeline's helper when it was started as one, and then returns the code
 /// to exit with.
@@ -21,12 +30,22 @@ pub(crate) fn helper() -> Option<ExitCode> {
     glave_process::lifeline_helper(&args)
 }
 
-/// Runs `program` with `args` from the workspace root and returns what it wrote to standard
-/// output; standard error passes through.
+/// Runs `program` with `args` from the workspace root, within [`QUERY_WITHIN`], and returns
+/// what it wrote to standard output; standard error passes through.
 ///
-/// Fails if the program cannot start or exits unsuccessfully.
+/// Fails if the program cannot start, exits unsuccessfully or does not answer in time.
+pub(crate) fn query(program: &str, args: &[&str]) -> Result<String, String> {
+    output_within(program, args, Some(QUERY_WITHIN))
+}
+
+/// [`query`], for a step whose output xtask reads (nextest's list of the tests, which builds
+/// them; the schema, which builds its example): as long as the step takes.
 pub(crate) fn output(program: &str, args: &[&str]) -> Result<String, String> {
-    let (status, output) = tied(&crate::workspace::root()?, program, args, &[], true)?;
+    output_within(program, args, None)
+}
+
+fn output_within(program: &str, args: &[&str], limit: Option<Duration>) -> Result<String, String> {
+    let (status, output) = tied(&crate::workspace::root()?, program, args, &[], true, limit)?;
     if !status.success() {
         return Err(format!("`{program} {}` failed ({status})", args.join(" ")));
     }
@@ -57,7 +76,7 @@ pub(crate) fn run_in(
     args: &[&str],
     env: &[(&str, String)],
 ) -> Result<(), String> {
-    let (status, _) = tied(dir, program, args, env, false)?;
+    let (status, _) = tied(dir, program, args, env, false, None)?;
     if status.success() {
         Ok(())
     } else {
@@ -65,14 +84,16 @@ pub(crate) fn run_in(
     }
 }
 
-/// Runs `program` with `args` and `env` in `dir`, tied to xtask, to its end: its exit status,
-/// and what it wrote to standard output when `read` says to keep it rather than stream it.
+/// Runs `program` with `args` and `env` in `dir`, tied to xtask, to its end, or until `limit`
+/// passes, when it is stopped: its exit status, and what it wrote to standard output when
+/// `read` says to keep it rather than stream it.
 fn tied(
     dir: &Path,
     program: &str,
     args: &[&str],
     env: &[(&str, String)],
     read: bool,
+    limit: Option<Duration>,
 ) -> Result<(ExitStatus, Vec<u8>), String> {
     let failed = |err: &dyn std::fmt::Display| format!("could not run `{program}`: {err}");
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -98,14 +119,28 @@ fn tied(
             .spawn(&mut command)
             .await
             .map_err(|err| failed(&err))?;
-        let mut output = Vec::new();
-        if let Some(mut stdout) = child.stdout.take() {
-            stdout
-                .read_to_end(&mut output)
-                .await
-                .map_err(|err| failed(&err))?;
-        }
-        let status = child.wait().await.map_err(|err| failed(&err))?;
+        let ran = async {
+            let mut output = Vec::new();
+            if let Some(mut stdout) = child.stdout.take() {
+                stdout.read_to_end(&mut output).await?;
+            }
+            Ok::<_, std::io::Error>((child.wait().await?, output))
+        };
+        let ran = match limit {
+            None => ran.await,
+            Some(limit) => match tokio::time::timeout(limit, ran).await {
+                Ok(ran) => ran,
+                Err(_) => {
+                    child.stop().await;
+                    return Err(format!(
+                        "`{program} {}` did not finish within {}",
+                        args.join(" "),
+                        glave_ports::spoken(limit)
+                    ));
+                }
+            },
+        };
+        let (status, output) = ran.map_err(|err| failed(&err))?;
         // What it left running in its group goes with it.
         child.stop_left().await;
         Ok((status, output))

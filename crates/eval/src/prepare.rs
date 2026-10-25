@@ -127,8 +127,8 @@ pub(crate) async fn script(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    match tokio::time::timeout(SCRIPT_TIMEOUT, script.output()).await {
-        Ok(Ok(output)) => Ok(Output {
+    match script.output(SCRIPT_TIMEOUT).await {
+        Ok(output) => Ok(Output {
             success: output.status.success(),
             text: format!(
                 "{}{}",
@@ -136,13 +136,13 @@ pub(crate) async fn script(
                 String::from_utf8_lossy(&output.stderr)
             ),
         }),
-        Ok(Err(err)) => Err(EvalError::io("run a script in", dir)(
-            std::io::Error::other(err),
-        )),
-        Err(_) => Ok(Output {
+        Err(glave_process::ProcessError::TimedOut { .. }) => Ok(Output {
             success: false,
             text: format!("stopped after {}s", SCRIPT_TIMEOUT.as_secs()),
         }),
+        Err(err) => Err(EvalError::io("run a script in", dir)(
+            std::io::Error::other(err),
+        )),
     }
 }
 
