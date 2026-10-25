@@ -15,6 +15,7 @@ use rustls::crypto::{CryptoProvider, WebPkiSupportedAlgorithms, aws_lc_rs};
 use rustls::pki_types::pem::PemObject as _;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime};
 use rustls::{ClientConfig, DigitallySignedStruct, ServerConfig, SignatureScheme};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
@@ -194,6 +195,33 @@ pub async fn connect_tls(
     fingerprint: &Fingerprint,
     token: &str,
 ) -> Result<RemoteComputers, ComputerError> {
+    let stream = tokio::time::timeout(CONNECTS_WITHIN, TcpStream::connect(address))
+        .await
+        .map_err(|_| {
+            ComputerError::Unreachable(format!(
+                "{NOT_LISTENING} {address}: no answer within {}",
+                glave_ports::spoken(CONNECTS_WITHIN)
+            ))
+        })?
+        .map_err(|error| {
+            ComputerError::Unreachable(format!("{NOT_LISTENING} {address}: {error}"))
+        })?;
+    let _ = stream.set_nodelay(true);
+    let stream = handshake(stream, &address.to_string(), fingerprint).await?;
+    let (read, write) = tokio::io::split(stream);
+    let remote = RemoteComputers::connect(read, write);
+    remote.authenticate(token).await?;
+    remote.check_protocol().await?;
+    Ok(remote)
+}
+
+/// The TLS handshake over `stream` with the computer at `address`, trusting only the
+/// certificate with `fingerprint`, within [`CONNECTS_WITHIN`].
+async fn handshake<S: AsyncRead + AsyncWrite + Unpin>(
+    stream: S,
+    address: &str,
+    fingerprint: &Fingerprint,
+) -> Result<tokio_rustls::client::TlsStream<S>, ComputerError> {
     let provider = provider();
     let pinned = Pinned {
         fingerprint: fingerprint.clone(),
@@ -205,34 +233,38 @@ pub async fn connect_tls(
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(pinned))
         .with_no_client_auth();
-    let late = glave_ports::spoken(CONNECTS_WITHIN);
-    let stream = tokio::time::timeout(CONNECTS_WITHIN, TcpStream::connect(address))
-        .await
-        .map_err(|_| {
-            ComputerError::Unreachable(format!(
-                "{NOT_LISTENING} {address}: no answer within {late}"
-            ))
-        })?
-        .map_err(|error| {
-            ComputerError::Unreachable(format!("{NOT_LISTENING} {address}: {error}"))
-        })?;
-    let _ = stream.set_nodelay(true);
     let name = ServerName::try_from(NAME)
         .map_err(|error| ComputerError::Failed(format!("{NAME} is not a server name: {error}")))?;
     let handshake = TlsConnector::from(Arc::new(config)).connect(name, stream);
-    let stream = tokio::time::timeout(CONNECTS_WITHIN, handshake)
+    tokio::time::timeout(CONNECTS_WITHIN, handshake)
         .await
         .map_err(|_| {
             ComputerError::Unreachable(format!(
-                "{NO_HANDSHAKE} {address} did not end within {late}"
+                "{NO_HANDSHAKE} {address} did not end within {}",
+                glave_ports::spoken(CONNECTS_WITHIN)
             ))
         })?
         .map_err(|error| {
             ComputerError::Unreachable(format!("{NO_HANDSHAKE} {address} failed: {error}"))
-        })?;
-    let (read, write) = tokio::io::split(stream);
-    let remote = RemoteComputers::connect(read, write);
-    remote.authenticate(token).await?;
-    remote.check_protocol().await?;
-    Ok(remote)
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_handshake_the_other_end_never_answers_is_given_up_in_seconds() {
+        let fingerprint = Fingerprint::parse(&"ab".repeat(32)).unwrap();
+        let shook = glave_ports::block_on!(async {
+            // The clock jumps to the limit as soon as nothing else can run.
+            tokio::time::pause();
+            let (ours, _silent) = tokio::io::duplex(4096);
+            handshake(ours, "the worker", &fingerprint).await.map(drop)
+        });
+        assert_eq!(
+            shook.err().map(|error| error.to_string()).as_deref(),
+            Some("unreachable: the TLS handshake with the worker did not end within 10 seconds")
+        );
+    }
 }

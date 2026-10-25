@@ -17,6 +17,7 @@ use glave_ports::auth::safe_to_send;
 use serde_json::Value;
 use tokio::io::{AsyncBufRead, AsyncWrite};
 
+use crate::http::KEEP_ALIVE;
 use crate::protocol::{ApiError, Notification, Reply, Request, code};
 use crate::rpc::{message, outcome};
 use crate::turn::TurnItem;
@@ -34,8 +35,9 @@ const ANSWERS_WITHIN: Duration = Duration::from_mins(2);
 const SLOW_ANSWERS_WITHIN: Duration = Duration::from_mins(15);
 
 /// How long a turn followed over HTTP may go without a word: the server says something at
-/// least every 15 seconds while it streams, so a silence of four times that is a lost stream.
-const STREAM_IDLE: Duration = Duration::from_mins(1);
+/// least every [`KEEP_ALIVE`] while it streams, so a silence of four times that is a lost
+/// stream.
+const STREAM_IDLE: Duration = KEEP_ALIVE.saturating_mul(4);
 
 /// A session server elsewhere: over HTTP with the token that signs this client in, or over a
 /// connection of lines.

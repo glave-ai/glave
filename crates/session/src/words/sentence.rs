@@ -143,6 +143,8 @@ sentences! {
         "this file is larger than { $megabytes } MB: add a smaller one, or the part that matters",
     FilesNotForTasks = "files-not-for-tasks"
         "files are added to a message someone follows, not to a task: send it without background",
+    SentTooSlowly { minutes: u64 } = "sent-too-slowly"
+        "what you sent did not arrive whole within { $minutes } minutes: send it again, on a steadier connection",
 
     // Projects and their folders.
     NoProject { project: String } = "no-project" "no project { $project } here",

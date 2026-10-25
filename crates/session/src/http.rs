@@ -18,6 +18,7 @@ mod hosts;
 mod listen;
 mod site;
 
+pub(crate) use self::body::KEEP_ALIVE;
 pub use self::listen::Listeners;
 pub use self::site::{Files, NoSite, Site};
 
@@ -46,6 +47,7 @@ use crate::rpc::{Id, parse, respond};
 use crate::server::Server;
 use crate::signin::{Door, SignIn, SignInError};
 use crate::streamed::Streamed;
+use crate::words::Sentence;
 
 /// The largest request body accepted, in bytes.
 const MAX_BODY: usize = 16 * 1024 * 1024;
@@ -241,12 +243,10 @@ async fn message(
     let line = tokio::time::timeout(within, read(request.into_body(), most))
         .await
         .unwrap_or_else(|_| {
+            let minutes = within.as_secs().div_ceil(60);
             Err(ApiError::new(
                 code::PARSE,
-                format!(
-                    "the request did not arrive whole within {}",
-                    glave_ports::spoken(within)
-                ),
+                Sentence::SentTooSlowly { minutes },
             ))
         })
         .map_err(|failed| respond(None, Err(&failed)))?;

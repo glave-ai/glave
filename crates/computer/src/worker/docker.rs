@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
 use super::backend::{Backend, COPIED_WITHIN, Link, PORT, Spec, Started};
-use super::engine::{ANSWERS_WITHIN, Engine, PULLS_WITHIN, demultiplex, query};
+use super::engine::{ANSWERS_WITHIN, Engine, PULL_QUIET, Within, demultiplex, query};
 use super::tar::{Entry, archive};
 use crate::token::Token;
 
@@ -127,7 +127,7 @@ impl Docker {
         );
         let pulled = self
             .engine
-            .send(Method::POST, &path, None, PULLS_WITHIN)
+            .send(Method::POST, &path, None, Within::Each(PULL_QUIET))
             .await?;
         let failed = String::from_utf8_lossy(&pulled.body)
             .lines()
@@ -280,7 +280,7 @@ impl Docker {
                 Method::PUT,
                 &format!("/containers/{name}/archive?path=/"),
                 Some((files, "application/x-tar")),
-                COPIED_WITHIN,
+                Within::All(COPIED_WITHIN),
             )
             .await?;
         if !put.status.is_success() {
@@ -349,7 +349,7 @@ impl Docker {
         let path = format!("/containers/{name}/logs?stdout=1&stderr=1&tail=20");
         match self
             .engine
-            .send(Method::GET, &path, None, ANSWERS_WITHIN)
+            .send(Method::GET, &path, None, Within::All(ANSWERS_WITHIN))
             .await
         {
             Ok(answer) if answer.status == StatusCode::OK => {
@@ -456,7 +456,7 @@ impl Backend for Docker {
                     Method::PUT,
                     &format!("/containers/{name}/archive?path=/"),
                     Some((files, "application/x-tar")),
-                    ANSWERS_WITHIN,
+                    Within::All(ANSWERS_WITHIN),
                 )
                 .await?;
             if put.status.is_success() {

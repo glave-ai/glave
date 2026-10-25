@@ -240,17 +240,17 @@ impl WorkerComputers {
                 fingerprint,
                 forward,
             } => {
-                let mut waited = Duration::ZERO;
+                // Tried again until a minute from now, however long each try takes.
+                let until = tokio::time::Instant::now() + START_WAIT;
                 let remote = loop {
                     match connect_tls(address, &fingerprint, token.secret()).await {
                         Ok(remote) => break remote,
                         Err(ComputerError::Unreachable(why))
                             if (why.starts_with(NOT_LISTENING)
                                 || why.starts_with(NO_HANDSHAKE))
-                                && waited < START_WAIT =>
+                                && tokio::time::Instant::now() < until =>
                         {
                             tokio::time::sleep(RETRY).await;
-                            waited = waited.saturating_add(RETRY);
                         }
                         Err(error) => {
                             if let Some(forward) = &forward {

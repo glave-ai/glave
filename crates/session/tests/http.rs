@@ -332,7 +332,7 @@ fn a_request_whose_body_stalls_is_answered_at_its_limit() {
                 .await
                 .unwrap();
         assert!(
-            answered.contains("the request did not arrive whole within 10 minutes"),
+            answered.contains("what you sent did not arrive whole within 10 minutes"),
             "{answered}"
         );
         tokio::time::resume();

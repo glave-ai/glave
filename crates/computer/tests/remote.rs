@@ -289,7 +289,7 @@ fn a_client_that_never_signs_in_is_told_so_and_let_go_in_seconds() {
 }
 
 #[test]
-fn a_computer_that_never_finishes_its_handshake_is_given_up_in_seconds() {
+fn a_computer_that_takes_the_connection_and_says_nothing_is_given_up_in_seconds() {
     block_on!(async {
         tokio::time::pause();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

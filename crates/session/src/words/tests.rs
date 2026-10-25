@@ -101,14 +101,13 @@ fn the_notice_of_a_folder_gone_is_written_again_in_a_list_of_projects() {
 /// The words of its own the session crate writes in English, by file and what they say: about
 /// the message itself, for whoever writes a client (JSON-RPC's own codes), what a client reads
 /// of a server's answer, and misuse of the API in process.
-const FOR_CLIENT_WRITERS: [(&str, &str); 9] = [
+const FOR_CLIENT_WRITERS: [(&str, &str); 8] = [
     ("rpc.rs", "a message is longer than"),
     ("rpc.rs", "a watch the connection does not hold"),
     ("rpc.rs", "the server failed:"),
     ("rpc.rs", "the server's page of events"),
     ("rpc.rs", "the server's answer is not one"),
     ("http.rs", "the Glave-Method header says"),
-    ("http.rs", "the request did not arrive whole within"),
     ("dispatch.rs", "is followed with Server::watch"),
     ("dispatch.rs", "answered at once: only a turn"),
 ];
