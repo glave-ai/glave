@@ -32,7 +32,8 @@ pub(crate) const PULL_QUIET: Duration = Duration::from_mins(2);
 pub(crate) enum Within {
     /// The whole call, its answer read to the end.
     All(Duration),
-    /// Each piece of its answer after the one before, however long it takes in all: for a
+    /// Each piece of its answer after the one before, however long it takes in all, the answer
+    /// kept to its latest [`MAX_BODY`] bytes, where an error comes last: for a
     /// call whose answer is its progress.
     Each(Duration),
 }
@@ -119,7 +120,7 @@ impl Engine {
         };
         tokio::time::timeout(quiet, step).await.map_err(|_| {
             ComputerError::Unreachable(format!(
-                "Docker at {} said nothing more about {path} for {}",
+                "Docker at {} went {} without a word about {path}",
                 self.socket.display(),
                 glave_ports::spoken(quiet)
             ))
@@ -158,12 +159,15 @@ impl Engine {
             while let Some(frame) = self.in_time(path, quiet, body.frame()).await? {
                 let frame = frame.map_err(|error| unreachable(&self.socket, &error))?;
                 if let Ok(data) = frame.into_data() {
-                    if bytes.len().saturating_add(data.len()) > MAX_BODY {
+                    bytes.extend_from_slice(&data);
+                    let over = bytes.len().saturating_sub(MAX_BODY);
+                    if over > 0 && quiet.is_none() {
                         return Err(ComputerError::Failed(format!(
                             "Docker's answer to {path} is longer than {MAX_BODY} bytes"
                         )));
                     }
-                    bytes.extend_from_slice(&data);
+                    // An answer that is its progress keeps only its latest, where an error is.
+                    bytes.drain(..over);
                 }
             }
             drop(sender);
@@ -336,7 +340,7 @@ mod tests {
         assert_eq!(
             pulled.err().map(|e| e.to_string()),
             Some(format!(
-                "unreachable: Docker at {} said nothing more about /images/create for 2 minutes",
+                "unreachable: Docker at {} went 2 minutes without a word about /images/create",
                 socket.display()
             ))
         );
@@ -350,6 +354,54 @@ mod tests {
         assert_eq!(
             attached.err().map(|e| e.to_string()),
             Some(said("/containers/w/attach"))
+        );
+    }
+
+    #[test]
+    fn a_pull_longer_than_an_answer_may_be_keeps_its_latest_progress_and_its_error() {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+        let dir = glave_ports::testing::TempDir::new("engine-long-pull").unwrap();
+        let socket = dir.join("docker.sock");
+        let engine = Engine::new(&socket);
+        let pulled = glave_ports::block_on!(async {
+            let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+            // A pull of many layers: more progress than an answer may hold, then its error.
+            let docker = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut asked = [0; 4096];
+                let _ = stream.read(&mut asked).await;
+                let head = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
+                    Connection: close\r\n\r\n";
+                stream.write_all(head.as_bytes()).await.unwrap();
+                let line = format!(
+                    "{{\"status\":\"Downloading\",\"progress\":\"{}\"}}\n",
+                    "#".repeat(1000)
+                );
+                for _ in 0..(MAX_BODY / line.len() + 100) {
+                    stream.write_all(line.as_bytes()).await.unwrap();
+                }
+                stream
+                    .write_all(b"{\"error\":\"pull access denied\"}\n")
+                    .await
+                    .unwrap();
+            });
+            let pulled = engine
+                .send(
+                    Method::POST,
+                    "/images/create",
+                    None,
+                    Within::Each(PULL_QUIET),
+                )
+                .await;
+            docker.await.unwrap();
+            pulled
+        });
+        let pulled = pulled.unwrap();
+        assert!(pulled.body.len() <= MAX_BODY);
+        assert!(
+            pulled
+                .body
+                .ends_with(b"{\"error\":\"pull access denied\"}\n")
         );
     }
 }
