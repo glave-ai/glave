@@ -36,6 +36,7 @@ Glaze (`@glave/glaze`) is an Angular 22 component library: standalone, zoneless,
 - Custom controls: `glz-checkbox` (`[(checked)]`), `glz-radio-group` with `glz-radio`. Each works with reactive forms (`formControlName`), `ngModel`, signal forms (`[formField]`) and two-way `model()` binding. A radio's `hint` is a muted line under its label, which describes it to screen readers; `cards` on the group draws each choice as a card, for a few choices that each need that line to tell them apart.
 - Wrap every control in `<glz-form-field label="…" hint="…">`: it labels it, describes it and shows errors once it is invalid and touched. Reactive forms: project `<glz-error>` per error under `@if`. Signal forms: give validators a `message`; the field shows it.
 - Grow a textarea with its text by CSS: Glaze's composer does; elsewhere use `field-sizing: content` and a `max-height`.
+- A form's submit button is never `disabled` for what its fields hold: `aria-disabled="true"` draws it unavailable, and the submit handler decides from the values. Enter in a field submits through that button, the browser skips it while it is disabled, and its state follows the fields only at the next change detection, so Enter soon after typing would do nothing.
 
 ## The conversation
 
