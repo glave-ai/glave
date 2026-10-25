@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { THREAD, fakeApi } from './fake-api';
-import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './support';
+import { SIGNED_IN, byTestId, expectAccessible, hold, watchForProblems } from './support';
 
 /** A one-pixel PNG, as a screenshot would come. */
 const PNG = Buffer.from(
@@ -71,15 +71,22 @@ for (const colorScheme of ['light', 'dark'] as const) {
     const input = byTestId(page, 'thread-composer-input');
     await expect(input).toBeVisible();
 
+    // On their way, the files are shown and the message waits for them.
+    const uploading = await hold(page, '/', 'file/upload');
     await input.evaluate(pasteScreenshotAndPdf);
+    await uploading.sent;
     const chips = byTestId(page, 'thread-composer-file');
     await expect(chips).toHaveCount(2);
     await expect(chips.first()).toContainText('screenshot.png');
     await expect(chips.first().locator('img')).toHaveJSProperty('naturalWidth', 640);
     await expect(chips.last()).toContainText('terms.pdf');
+    await expect(chips.first()).toHaveAttribute('aria-busy', 'true');
+    await input.fill('What do these say?');
+    await expect(byTestId(page, 'thread-composer-send')).toBeDisabled();
+    uploading.letGo();
+    await expect(byTestId(page, 'thread-composer-send')).toBeEnabled();
     await expectAccessible(page);
 
-    await input.fill('What do these say?');
     await input.press('Enter');
     await expect(chips).toHaveCount(0);
     // Each is sent as soon as it is read, so the smaller may go first.
