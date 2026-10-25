@@ -3,6 +3,7 @@
 # (glave_ports::testing::HUNG), so a hang there fails sooner and says why.
 [profile.default]
 slow-timeout = { period = "60s", terminate-after = 5 }
+fail-fast = false
 
 # The offline cargo build inside the sandbox can run long on a busy machine: allow 10 min.
 [[profile.default.overrides]]
