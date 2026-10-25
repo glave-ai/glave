@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
+use std::num::NonZeroU64;
 
 use glave_event::{Currency, Money};
 use glave_memory::BUDGET_TOKENS;
@@ -18,33 +19,31 @@ pub struct Report {
     /// The provider's short name, such as `openrouter`.
     pub provider: String,
     pub models: Vec<String>,
-    /// What a passed task took on each model, the run's headline; `None` for a model that
-    /// passed none. Absent from reports written before it, which still read as baselines.
+    /// What a passed task took on each model, for readers of `report.json`; `None` where none
+    /// passed. Reports written before it lack it and still read as baselines.
     #[serde(default)]
-    pub(crate) per_passed_task: BTreeMap<String, Option<PerPassedTask>>,
+    per_passed_task: BTreeMap<String, Option<PerPassedTask>>,
     pub attempts: Vec<Attempt>,
 }
 
 /// What a passed task took on one model: everything its attempts spent, the failed ones
 /// too, over the attempts that passed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct PerPassedTask {
+struct PerPassedTask {
     /// Micros of the reported currency; `None` when no cost was reported (see `spent`).
-    pub(crate) cost_micros: Option<i64>,
+    cost_micros: Option<i64>,
     /// Input and output tokens.
-    pub(crate) tokens: u64,
+    tokens: u64,
 }
 
 impl PerPassedTask {
     /// What a passed task took over one model's `attempts`; `None` when none passed.
     fn of(attempts: &[&Attempt]) -> Option<Self> {
-        let passed = attempts.iter().filter(|a| a.passed()).count();
-        let tokens = tokens(attempts).checked_div(u64::try_from(passed).ok()?)?;
-        let cost_micros =
-            spent(attempts).and_then(|micros| micros.checked_div(i64::try_from(passed).ok()?));
+        let passed = NonZeroU64::new(as_u64(passes(attempts)))?;
+        let divisor = i64::try_from(passed.get()).ok()?;
         Some(Self {
-            cost_micros,
-            tokens,
+            cost_micros: spent(attempts).map(|micros| micros / divisor),
+            tokens: tokens(attempts) / passed,
         })
     }
 }
@@ -138,59 +137,55 @@ impl Report {
         out
     }
 
-    /// What a passed task took on `model`; `None` when none passed.
-    fn per_passed(&self, model: &str) -> Option<PerPassedTask> {
-        self.per_passed_task.get(model).copied().flatten()
-    }
-
-    /// The headline: the model whose passed tasks cost least, of those that reported a cost.
+    /// The headline: the model cheapest per passed task (the first listed on a tie) and how
+    /// many it passed, then the models left out for reporting no cost.
     fn cheapest(&self) -> String {
-        let priced = self.models.iter().filter_map(|model| {
-            let per = self.per_passed(model)?;
-            Some((model, per, per.cost_micros?))
-        });
-        match priced.min_by_key(|(_, _, micros)| *micros) {
-            Some((model, per, _)) => format!(
-                "Cheapest per passed task: {}, {}.",
-                short(model),
-                per_task(Some(per))
+        let (priced, unpriced): (Vec<_>, Vec<_>) = (self.models.iter())
+            .filter_map(|model| {
+                let ran = ran(&self.attempts, model);
+                Some((short(model), PerPassedTask::of(&ran)?, ran))
+            })
+            .partition(|(_, per, _)| per.cost_micros.is_some());
+        let mut line = match priced.iter().min_by_key(|(_, per, _)| per.cost_micros) {
+            Some((model, per, ran)) => format!(
+                "Cheapest per passed task: {model}, {}, {}/{} passed.",
+                per_task(Some(*per)),
+                passes(ran),
+                ran.len()
             ),
             None => "Cheapest per passed task: none, as no model passed a task with its cost \
                      reported."
                 .to_owned(),
+        };
+        if !unpriced.is_empty() {
+            let names: Vec<&str> = unpriced.iter().map(|(model, ..)| *model).collect();
+            let _ = write!(line, " No cost reported: {}.", names.join(", "));
         }
+        line
     }
 
     /// Rows of totals per model: passed, what a passed task took, cost, tokens, tool calls,
     /// median time.
     fn totals(&self, out: &mut String) {
-        let per_model = |row: &Row<'_>| -> String {
+        let per_model = |row: &Row| -> String {
             self.models
                 .iter()
-                .map(|model| row(model, &ran(&self.attempts, model)))
+                .map(|model| row(&ran(&self.attempts, model)))
                 .collect::<Vec<_>>()
                 .join(" | ")
         };
-        let rows: [(&str, &Row<'_>); 6] = [
-            ("**passed**", &|_, a| {
-                format!(
-                    "**{}/{}**",
-                    a.iter().filter(|a| a.passed()).count(),
-                    a.len()
-                )
-            }),
-            ("per passed task", &|model, _| {
-                per_task(self.per_passed(model))
-            }),
-            ("cost", &|_, a| dollars(spent(a))),
-            ("tokens", &|_, a| thousands(tokens(a))),
-            ("tool calls", &|_, a| {
+        let rows: [(&str, &Row); 6] = [
+            ("**passed**", &|a| format!("**{}/{}**", passes(a), a.len())),
+            ("per passed task", &|a| per_task(PerPassedTask::of(a))),
+            ("cost", &|a| dollars(spent(a))),
+            ("tokens", &|a| thousands(tokens(a))),
+            ("tool calls", &|a| {
                 a.iter()
                     .map(|a| u64::from(a.tool_calls))
                     .sum::<u64>()
                     .to_string()
             }),
-            ("median time", &|_, a| median_seconds(a)),
+            ("median time", &|a| median_seconds(a)),
         ];
         for (name, row) in rows {
             let _ = writeln!(out, "| {name} | {} |", per_model(row));
@@ -256,6 +251,11 @@ fn ran<'a>(attempts: &'a [Attempt], model: &str) -> Vec<&'a Attempt> {
     (attempts.iter())
         .filter(|a| a.model == model && !a.skipped)
         .collect()
+}
+
+/// How many of `attempts` passed.
+fn passes(attempts: &[&Attempt]) -> usize {
+    attempts.iter().filter(|a| a.passed()).count()
 }
 
 /// What `attempts` cost in micros; `None` when a call reported no cost, or when all they
@@ -342,8 +342,8 @@ fn median_seconds(attempts: &[&Attempt]) -> String {
         .map_or_else(|| "-".to_owned(), |s| format!("{s:.1} s"))
 }
 
-/// One row of totals: a model and its attempts in, a cell out.
-type Row<'a> = dyn Fn(&str, &[&Attempt]) -> String + 'a;
+/// One row of totals: a model's attempts in, a cell out.
+type Row = dyn Fn(&[&Attempt]) -> String;
 
 /// Tokens in force per scope: `personal 870, project 1,010`.
 fn used(used: &BTreeMap<String, usize>) -> String {
@@ -384,7 +384,7 @@ pub(crate) fn line(attempt: &Attempt) -> String {
         attempt.model_calls,
         attempt.tool_calls,
         attempt.input_tokens.saturating_add(attempt.output_tokens),
-        dollars(attempt.cost_micros),
+        dollars(spent(&[attempt])),
         attempt.seconds,
     );
     if let Some(probes) = &attempt.probes {

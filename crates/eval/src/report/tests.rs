@@ -107,7 +107,7 @@ fn the_headline_names_the_cheapest_model_per_passed_task() {
     assert_eq!(
         table,
         "\
-Cheapest per passed task: cheap, $0.0010 · 1,234 tokens.
+Cheapest per passed task: cheap, $0.0010 · 1,234 tokens, 2/2 passed. No cost reported: free.
 
 | task | dear | cheap | free | failing |
 | --- | --- | --- | --- | --- |
@@ -126,14 +126,26 @@ Not passed:
 - fix · lab/failing #2: wrong
 "
     );
-    let unpriced = run(&["lab/free"], vec![costing("lab/free", 1, true, Some(0))]);
+    let headline = |attempts| run(&["lab/one", "lab/two"], attempts).markdown(None);
+    // Unpriced, and as the attempt's own line shows it.
+    let free = costing("lab/one", 1, true, Some(0));
+    assert!(!line(&free).contains('$'), "{}", line(&free));
+    let table = headline(vec![free]);
     assert!(
-        unpriced.markdown(None).starts_with(
+        table.starts_with(
             "Cheapest per passed task: none, as no model passed a task with its cost \
-             reported.\n\n"
+             reported. No cost reported: one.\n\n"
         ),
-        "{}",
-        unpriced.markdown(None)
+        "{table}"
+    );
+    // A tie goes to the model listed first.
+    let tied = headline(vec![
+        costing("lab/one", 1, true, Some(1_000)),
+        costing("lab/two", 1, true, Some(1_000)),
+    ]);
+    assert!(
+        tied.starts_with("Cheapest per passed task: one, $0.0010"),
+        "{tied}"
     );
 }
 

@@ -19,8 +19,8 @@ what changed since an earlier run.
 
 The report leads with the model cheapest per passed task: everything a model's attempts spent,
 the failed ones too, over the attempts that passed, with the tokens beside it. A model whose
-route reports no cost, or only $0 as a free route does, shows "no cost reported", so it is never
-taken for the cheapest.
+route reports no cost, or only $0 as a free route does, shows "no cost reported" (and a dash for
+its cost), is named as left out, and is never taken for the cheapest.
 
 ## A task
 
