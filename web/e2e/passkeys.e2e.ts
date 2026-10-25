@@ -7,6 +7,7 @@ import {
   PASSKEYS_ORIGIN,
   byTestId,
   expectAccessible,
+  newTab,
   served,
   setupCode,
   signInCode,
@@ -224,6 +225,7 @@ interface Device {
  * Opens tabs on one device, each able to make and use its passkeys, those `carried` from
  * another browser first: in Chromium a virtual authenticator per tab, holding the passkeys the
  * tabs before it made; in WebKit the script, whose key every tab reads from the same storage.
+ * Each tab after the first is opened from the one before it (`newTab`).
  */
 function oneDevice(
   context: BrowserContext,
@@ -233,7 +235,7 @@ function oneDevice(
   let before: Virtual | null = null;
   let last: Page | null = null;
   const tab = async (): Promise<Page> => {
-    const page = await context.newPage();
+    const page = last === null ? await context.newPage() : await newTab(last);
     last = page;
     if (browserName !== 'chromium') {
       await page.addInitScript(scriptedAuthenticator);
