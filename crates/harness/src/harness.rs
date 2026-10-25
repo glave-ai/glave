@@ -108,6 +108,9 @@ pub struct Thread {
     /// The person's own messages, oldest first: what the judge reads as their say-so. A
     /// subagent's thread holds its parent's, never the brief the parent's agent wrote.
     pub(crate) asked: Vec<String>,
+    /// How many turns it has begun, as its log's `turn.started` count them: a title follows
+    /// the first (`title.rs`).
+    pub(crate) turns: u64,
     /// The threads that started this one, nearest first: empty unless this is a subagent's
     /// thread, whose prompts an agent, not the person, writes.
     pub(crate) above: Vec<ThreadId>,
@@ -509,6 +512,7 @@ where
             measured: None,
             request: None,
             asked: Vec::new(),
+            turns: 0,
             above: parent.iter().map(|call| call.thread).collect(),
             goal: None,
             note: bound.as_ref().and_then(crate::worker::note),

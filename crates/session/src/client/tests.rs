@@ -68,7 +68,9 @@ fn a_turn_whose_stream_goes_quiet_is_no_longer_followed_saying_so() {
             std::future::pending::<()>().await;
         });
         let remote = Remote::new(&url, "t".into()).unwrap();
-        let mut turn = remote.start(&Request::Discover {}).await.unwrap();
+        let Ok(Sent::Started(mut turn)) = remote.start(&Request::Discover {}).await else {
+            panic!("a turn followed");
+        };
         tokio::time::pause();
         let ended = turn.next().await;
         quiet.abort();

@@ -165,7 +165,7 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "crates/session/src/client/lines.rs",
-        "Some(item) = self.items.recv() => item,",
+        "Some(item) = self.items.recv() => Came::Item(item),",
         1,
         "a turn followed on this computer's socket: a turn waiting for the person sends \
          nothing, and a server that goes closes the socket, which ends it",

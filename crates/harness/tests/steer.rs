@@ -1,8 +1,9 @@
 //! Steering a running turn against a scripted model: what the person sends while a tool runs
 //! reaches the model at its next call, after the tool's result, recorded under the id it was
 //! queued with; several arrive together, in order; what arrives after the model's last call
-//! starts the next turn; a stopped turn reads nothing more and gives back what waited; a hook
-//! can stop a message as it can a prompt; and the log alone rebuilds what the model saw.
+//! starts the next turn; a stopped turn reads nothing more and gives back what waited, even
+//! what passed its hooks as it was stopped, and never records what it gives back; a hook can
+//! stop a message as it can a prompt; and the log alone rebuilds what the model saw.
 
 use glave_event::{
     Body, Event, EventId, HookPoint, Outcome, Part, PrincipalKind, Role, StopReason,
@@ -282,9 +283,8 @@ fn a_stopped_turn_reads_nothing_more_and_gives_back_what_waited() {
     });
 }
 
-#[test]
-fn a_hook_stops_a_message_sent_mid_turn_as_it_stops_a_prompt() {
-    let dir = folder("steer-hook");
+/// A `UserPromptSubmit` hook that stops anything mentioning a secret.
+fn secret_guard() -> Hooks {
     let guard = "grep -q secret && { echo 'that looks like a secret'; exit 2; }; exit 0";
     let hook = Hook {
         point: HookPoint::UserPromptSubmit,
@@ -292,6 +292,12 @@ fn a_hook_stops_a_message_sent_mid_turn_as_it_stops_a_prompt() {
         matcher: None,
         timeout_secs: None,
     };
+    Hooks::new(vec![hook]).unwrap()
+}
+
+#[test]
+fn a_hook_stops_a_message_sent_mid_turn_as_it_stops_a_prompt() {
+    let dir = folder("steer-hook");
     block_on!(async {
         let answers = vec![
             answer(
@@ -303,7 +309,7 @@ fn a_hook_stops_a_message_sent_mid_turn_as_it_stops_a_prompt() {
         ];
         let (harness, seen) =
             harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
-        let harness = harness.with_hooks(Hooks::new(vec![hook]).unwrap());
+        let harness = harness.with_hooks(secret_guard());
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let (blocked, passed) = (queued(1, "my secret is 42"), queued(2, "go on"));
         let inbox = thread.inbox().clone();
@@ -330,6 +336,72 @@ fn a_hook_stops_a_message_sent_mid_turn_as_it_stops_a_prompt() {
         assert_eq!(
             after_tools(&seen[1]),
             [("tool", "one".to_owned()), ("person", "go on".to_owned())]
+        );
+    });
+}
+
+#[test]
+fn a_stop_while_the_hooks_run_records_none_and_gives_back_what_they_passed() {
+    let dir = folder("steer-stop-hooks");
+    block_on!(async {
+        let answers = vec![
+            answer(
+                None,
+                vec![("bash", json!({"command": "echo one"}))],
+                StopReason::ToolUse,
+            ),
+            answer(Some("never"), vec![], StopReason::EndTurn),
+        ];
+        let (harness, seen) =
+            harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
+        let harness = harness.with_hooks(secret_guard());
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let (passed, blocked) = (queued(1, "go on"), queued(2, "my secret is 42"));
+        let inbox = thread.inbox().clone();
+        let cancel = Cancel::new();
+        let stopper = cancel.clone();
+        let mut sent = Some(vec![passed.clone(), blocked.clone()]);
+        let mut unread = Vec::new();
+        // Stop is pressed as the second message's hook stops it: after the first passed its
+        // hook, before it is recorded.
+        let mut live = |live| match live {
+            Live::ToolFinished { .. } => {
+                for message in sent.take().unwrap_or_default() {
+                    inbox.push(message).unwrap();
+                }
+            }
+            Live::Unread { id, reason } => {
+                stopper.cancel();
+                unread.push((id, reason));
+            }
+            _ => {}
+        };
+        let ran = harness
+            .run_turn(&mut thread, "start", &cancel, &mut live)
+            .await;
+        assert_eq!(ran.as_ref().unwrap().outcome, Outcome::Cancelled);
+        let total = harness
+            .run_queued(&mut thread, ran, &cancel, &mut live)
+            .await
+            .unwrap();
+        assert_eq!(total.outcome, Outcome::Cancelled);
+        assert_eq!(
+            unread,
+            [
+                (blocked.id, Some("that looks like a secret".to_owned())),
+                (passed.id, None),
+            ],
+            "each given back once"
+        );
+        assert_eq!(
+            seen.lock().unwrap().len(),
+            1,
+            "the model was not asked again"
+        );
+        let events = events(harness.log(), thread.id).await;
+        assert!(
+            said(&events).iter().all(|(id, _)| *id != passed.id),
+            "given back, so never recorded"
         );
     });
 }

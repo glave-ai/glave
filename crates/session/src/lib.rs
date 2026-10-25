@@ -67,6 +67,7 @@ pub use projects::PERSONAL_NAME;
 pub use providers::{Models, NewProvider, Providers, Refreshed};
 pub use reread::{Apply, Changed, Rereads, Runs};
 pub use server::{OnWorkers, Server, Wiring};
+pub use steer::Sent;
 pub use tasks::TaskLimits;
 pub use trust::ProjectTrust;
 pub use turn::{TurnItem, TurnStream};

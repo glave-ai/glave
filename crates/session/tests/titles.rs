@@ -2,7 +2,8 @@
 //! `thread.renamed` by glave once the turn has answered, with the call's usage counted in the
 //! thread. A title the person gave is never replaced; `titles = false` keeps the first line of
 //! the first message; a failed call records nothing; a thread past its first exchange keeps
-//! the title it has; and a turn started while the title is recorded runs.
+//! the title it has; a first turn the person steered is titled from its first message; and a
+//! turn started while the title is recorded runs.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -10,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use glave_event::{Body, PrincipalKind, RawEvent, Seq, ThreadId, decode};
 use glave_ports::{Completion, EventLog, Located, LogError, Scope};
 use glave_session::protocol::{Reply, Request, ThreadSummary};
-use serde_json::Value;
+use serde_json::{Value, json};
 use tokio::sync::Notify;
 
 use crate::support::*;
@@ -167,6 +168,48 @@ fn a_thread_past_its_first_exchange_keeps_its_title() {
         assert_eq!(purposes(&seen), ["main"]);
         assert_eq!(renames(&after, thread).await, []);
         assert_eq!(summary(&after, thread).await.title.as_deref(), Some(ASKED));
+    });
+}
+
+#[test]
+fn a_first_turn_steered_while_it_ran_is_titled_from_its_first_message() {
+    let dir = folder("titles-steered");
+    block_on!(async {
+        let answers = vec![
+            answer(None, Some(("bash", json!({"command": "echo one"})))),
+            answer(Some("Install it with Homebrew."), None),
+            answer(Some("\"Postgres setup on macOS.\""), None),
+        ];
+        let gate = Arc::new(Notify::new());
+        let mut setup = setup(answers, true);
+        setup.gate = Some(Arc::clone(&gate));
+        let (server, seen) = setup.build(&dir).await;
+        let thread = start(&server, false).await;
+        let mut first = stream_turn(&server, thread, ASKED, None).await.unwrap();
+        asked(&seen, 1).await;
+        let steered = server
+            .request(turn_start(thread, "with Postgres 17", None))
+            .await;
+        assert!(matches!(steered, Ok(Reply::Queued { .. })), "{steered:?}");
+        // The command's call, the reply that read the message, then the title.
+        for calls in [2, 3] {
+            gate.notify_one();
+            asked(&seen, calls).await;
+        }
+        gate.notify_one();
+        first.finish().await.unwrap();
+        server.shutdown().await;
+        assert_eq!(purposes(&seen), ["main", "main", "title"]);
+        let titling = json(&seen)[2].clone();
+        assert!(titling.contains(ASKED), "{titling}");
+        assert!(!titling.contains("with Postgres 17"), "{titling}");
+        assert_eq!(
+            renames(&server, thread).await,
+            [(
+                Some(PrincipalKind::Glave),
+                "Postgres setup on macOS".to_owned()
+            )]
+        );
     });
 }
 

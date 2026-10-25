@@ -37,9 +37,9 @@ impl ApiError {
         }
     }
 
-    /// For a client that follows only turns it starts: its message was queued to a turn
-    /// already running, which it cannot follow.
-    pub fn queued_elsewhere() -> Self {
+    /// For a client following a turn on a connection that carries another turn's notifications
+    /// too: its message was queued to a turn already running, which it cannot follow.
+    pub(crate) fn queued_elsewhere() -> Self {
         Self::new(code::TURN_RUNNING, Sentence::QueuedElsewhere)
     }
 }

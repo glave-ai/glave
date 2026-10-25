@@ -1,8 +1,9 @@
 //! The Rust client of a session server elsewhere (`glave_session::client`), against the real
 //! HTTP transport and a connection of lines, as on the person's Unix socket: requests
 //! answered, a turn followed as the same items as in-process, an approval asked in the stream
-//! and answered with a second request while it waits, and a wrong token refused saying how to
-//! sign in. A client that leaves a connection of lines mid-turn stops nothing.
+//! and answered with a second request while it waits, a message sent while a turn runs answered
+//! as queued, and a wrong token refused saying how to sign in. A client that leaves a
+//! connection of lines mid-turn stops nothing.
 
 use std::sync::Arc;
 
@@ -11,7 +12,7 @@ use glave_ports::Caller;
 use glave_session::client::Remote;
 use glave_session::protocol::{Answer, Meta, Notification, Reply, Request, TurnResult, code};
 use glave_session::signin::{LocalToken, SignIn};
-use glave_session::{Answering, TurnItem, Watched};
+use glave_session::{Answering, Sent, TurnItem, Watched};
 use serde_json::json;
 use tokio::io::BufReader;
 use tokio::sync::Notify;
@@ -65,10 +66,9 @@ fn turn_saying(thread: glave_event::ThreadId, prompt: &str) -> Request {
 /// Follows a turn through `remote` to its end, allowing each approval it asks with a second
 /// request while it waits; how it ended, and how many asked.
 async fn follow_allowing(remote: &Remote, thread: glave_event::ThreadId) -> (TurnResult, usize) {
-    let mut turn = remote
-        .start(&turn_saying(thread, "touch it"))
-        .await
-        .unwrap();
+    let Ok(Sent::Started(mut turn)) = remote.start(&turn_saying(thread, "touch it")).await else {
+        panic!("a turn of its own");
+    };
     let mut asked = 0;
     let ended = loop {
         match turn.next().await.unwrap() {
@@ -163,6 +163,43 @@ fn a_turn_over_a_connection_of_lines_is_followed_and_answered_as_over_http() {
 }
 
 #[test]
+fn a_message_sent_while_a_turn_runs_is_answered_as_queued_over_http_and_lines() {
+    block_on!(async {
+        let dir = folder("remote-queued");
+        let gate = Arc::new(Notify::new());
+        let answers = vec![answer(Some("First."), None), answer(Some("Then."), None)];
+        let mut setup = Setup::new(answers);
+        setup.gate = Some(Arc::clone(&gate));
+        let (server, seen) = setup.build(&dir).await;
+        let token = LocalToken::new([9; 32]);
+        let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
+        let web = serve_with(server.clone(), signin, None).await;
+        let http = Remote::new(&web.url, token.reveal().to_owned()).unwrap();
+        let (lines, serving) = over_lines(&server);
+        let thread = thread_through(&http).await;
+        let mut running = stream_turn(&server, thread, "one", None).await.unwrap();
+        asked(&seen, 1).await;
+        let mut ids = Vec::new();
+        for remote in [&http, &lines] {
+            match remote.start(&turn_saying(thread, "and this")).await {
+                Ok(Sent::Queued(queued)) => ids.push(queued.id),
+                Ok(Sent::Started(_)) => panic!("queued, not a turn of its own"),
+                Err(error) => panic!("queued, not refused: {error}"),
+            }
+        }
+        assert_ne!(ids.first(), ids.last(), "two messages, each its own id");
+        // Too late for the turn's one call, they start the next.
+        gate.notify_one();
+        asked(&seen, 2).await;
+        gate.notify_one();
+        assert_eq!(running.finish().await.unwrap().outcome, Outcome::Completed);
+        drop((http, lines));
+        web.close().await;
+        serving.await.unwrap().unwrap();
+    });
+}
+
+#[test]
 fn a_client_that_leaves_mid_turn_stops_nothing_and_the_turn_finishes() {
     block_on!(async {
         let dir = folder("remote-leaves");
@@ -172,7 +209,9 @@ fn a_client_that_leaves_mid_turn_stops_nothing_and_the_turn_finishes() {
         let server = setup.build(&dir).await.0;
         let (remote, serving) = over_lines(&server);
         let thread = thread_through(&remote).await;
-        let mut turn = remote.start(&turn_saying(thread, "go")).await.unwrap();
+        let Ok(Sent::Started(mut turn)) = remote.start(&turn_saying(thread, "go")).await else {
+            panic!("a turn of its own");
+        };
         assert!(matches!(turn.next().await, Some(TurnItem::Note(_))));
         let mut watched = server
             .watch(&Caller::default(), thread, None)

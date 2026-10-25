@@ -2,8 +2,9 @@
 //! `glave --server` from another with nothing of its own, signed in with the server's token.
 //! The turn runs there and shows here, `--continue` continues it there, and nothing is kept
 //! on the client's side. Without a token, it says how to sign in; a model it names goes to
-//! the server, which refuses one it does not run. An approval is answered once it waits, never
-//! when the judge already let its action run.
+//! the server, which refuses one it does not run. A message sent while a turn runs there is
+//! queued to it, and said to be. An approval is answered once it waits, never when the judge
+//! already let its action run.
 
 use std::process::{Command, Stdio};
 
@@ -14,8 +15,14 @@ use serde_json::json;
 use crate::http::serve_http;
 use crate::support::*;
 
-/// `glave` in a home of its own with `args`, as a client of the server at `url`.
+/// `glave` in a home of its own with `args`, as a client of the server at `url`, run to its
+/// end.
 fn client(place: &Place, args: &[&str], token: Option<&str>) -> std::process::Output {
+    client_command(place, args, token).output().unwrap()
+}
+
+/// `glave` in a home of its own with `args`, as a client of the server at `url`, to run.
+fn client_command(place: &Place, args: &[&str], token: Option<&str>) -> Command {
     let home = place.project.join("../client-home");
     let mut command = Command::new(env!("CARGO_BIN_EXE_glave"));
     command
@@ -31,7 +38,7 @@ fn client(place: &Place, args: &[&str], token: Option<&str>) -> std::process::Ou
         Some(token) => command.env("GLAVE_SERVER_TOKEN", token),
         None => command.env_remove("GLAVE_SERVER_TOKEN"),
     };
-    command.output().unwrap()
+    command
 }
 
 #[test]
@@ -87,6 +94,44 @@ fn a_turn_runs_on_the_server_and_shows_here() {
         "{}",
         text(&unknown)
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_message_sent_while_a_turn_runs_there_is_queued_and_said_to_be() {
+    let place = place("remote-queued");
+    let model = FakeServer::start(vec![Reply::Stall]).unwrap();
+    let (_served, url) = serve_http(&place, &model, &["--model", "fake-model"]);
+    let token = std::fs::read_to_string(place.home.join("serve.token")).unwrap();
+    let first = client_command(&place, &["--server", &url, "think hard"], Some(&token))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let first = Running::new(first);
+    assert!(
+        model.wait_for_requests(1, glave_ports::testing::HUNG),
+        "the model was asked"
+    );
+
+    let args = ["--server", &url, "--continue", "and keep it short"];
+    let sent = client(&place, &args, Some(&token));
+    let shown = text(&sent);
+    assert!(sent.status.success(), "{shown}");
+    assert!(
+        shown.contains("queued to the turn running in this thread"),
+        "{shown}"
+    );
+    assert!(!shown.contains("error"), "{shown}");
+
+    // Ctrl-C there stops the turn the message waited for.
+    let stopped = Command::new("kill")
+        .args(["-INT", &first.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(stopped.success());
+    let output = first.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(130), "{}", text(&output));
 }
 
 /// `glave serve --http` where commands run as the person and only cautions ask, the judge

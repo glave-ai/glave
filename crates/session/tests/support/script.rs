@@ -15,6 +15,17 @@ pub(crate) fn json(seen: &Seen) -> Vec<String> {
         .collect()
 }
 
+/// Lets the server's work run until the model has been asked `calls` times.
+pub(crate) async fn asked(seen: &Seen, calls: usize) {
+    for _ in 0..100_000 {
+        if seen.lock().unwrap().len() >= calls {
+            return;
+        }
+        tokio::task::yield_now().await;
+    }
+    panic!("the model was never asked {calls} times");
+}
+
 /// An answer saying `text`, or calling a tool with arguments.
 pub(crate) fn answer(text: Option<&str>, call: Option<(&str, serde_json::Value)>) -> Completion {
     Completion {

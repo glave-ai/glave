@@ -65,9 +65,9 @@ where
     B: BlobStore,
     A: Approver,
 {
-    /// What to title `thread` from, right after its first exchange: its one message from the
-    /// person, and the first reply. `None` when titles are off, at any other time (a later
-    /// turn, a conversation compacted), and in a subagent's thread. Its project's choice is
+    /// What to title `thread` from, right after its first turn: the person's first message and
+    /// the first reply, however many messages they sent while it ran. `None` when titles are
+    /// off, after any later turn, and in a subagent's thread. Its project's choice is
     /// nearer than the harness's.
     pub fn title_case(&self, thread: &Thread) -> Option<TitleCase> {
         let titles = thread
@@ -75,19 +75,10 @@ where
             .settled
             .titles
             .unwrap_or(thread.defaults.titles);
-        if !titles || !thread.above.is_empty() {
+        if !titles || !thread.above.is_empty() || thread.turns != 1 {
             return None;
         }
-        let mut asked = thread.messages.iter().filter_map(|message| match message {
-            Message::User { parts } => Some(parts),
-            _ => None,
-        });
-        let first = asked.next()?;
-        if asked.next().is_some() {
-            return None;
-        }
-        // What the person wrote is the last text part: the project's instructions come first.
-        let wrote = texts(first).next_back()?.trim();
+        let wrote = thread.asked.first()?.trim();
         if wrote.is_empty() {
             return None;
         }

@@ -1,6 +1,7 @@
 //! Steering a running turn over the session API: `turn/start` while a turn runs is answered at
 //! once as queued, and the model reads the message at its next call, recorded under the id the
-//! reply gave; a message sent during the model's last call starts the next turn in the same
+//! reply gave; a retry with the same idempotency key is answered with that id and queues
+//! nothing more; a message sent during the model's last call starts the next turn in the same
 //! stream; the queue is bounded; a message chooses no model; Stop gives back what waited, and a
 //! message sent once it is stopped starts the next turn.
 
@@ -8,7 +9,7 @@ use std::sync::Arc;
 
 use glave_event::{Body, EventId, Outcome, Role, ThreadId, decode};
 use glave_ports::Caller;
-use glave_session::protocol::{Notification, Reply, Request, Update, code};
+use glave_session::protocol::{IdempotencyKey, Notification, Reply, Request, Update, code};
 use glave_session::{Answered, Answering, TurnItem, TurnStream};
 use serde_json::json;
 use tokio::sync::Notify;
@@ -39,17 +40,6 @@ async fn queue(server: &Tested, thread: ThreadId, prompt: &str) -> EventId {
         Answered::Stream(_) => panic!("queued, not a turn of its own"),
         Answered::Watch(_) | Answered::List(_) => panic!("queued, not a watch"),
     }
-}
-
-/// Lets the server's work run until the model has been asked `calls` times.
-async fn asked(seen: &Seen, calls: usize) {
-    for _ in 0..100_000 {
-        if seen.lock().unwrap().len() >= calls {
-            return;
-        }
-        tokio::task::yield_now().await;
-    }
-    panic!("the model was never asked {calls} times");
 }
 
 /// Follows `stream` to its end: the ids of the person's messages it carried, those given back
@@ -124,6 +114,45 @@ fn a_message_sent_while_a_turn_runs_is_read_at_the_models_next_call() {
         );
         let turns = kinds(&server, thread).await;
         assert_eq!(turns.iter().filter(|k| *k == "turn.started").count(), 1);
+    });
+}
+
+#[test]
+fn a_retried_message_is_answered_with_its_first_answer_and_read_once() {
+    let dir = folder("steer-retried");
+    block_on!(async {
+        let answers = vec![
+            answer(None, Some(("bash", json!({"command": "echo one"})))),
+            answer(Some("Done."), None),
+        ];
+        let (server, seen, gate) = gated(&dir, answers).await;
+        let thread = start(&server, false).await;
+        let mut first = stream_turn(&server, thread, "go", None).await.unwrap();
+        asked(&seen, 1).await;
+        let key = IdempotencyKey::new("message-1").unwrap();
+        let mut ids = Vec::new();
+        // Sent, then sent again as a client retries when it got no answer.
+        for _ in 0..2 {
+            let sent = server
+                .request(turn_start(thread, "and this", Some(key.clone())))
+                .await;
+            let Ok(Reply::Queued { queued }) = sent else {
+                panic!("queued, not {sent:?}")
+            };
+            ids.push(queued.id);
+        }
+        assert_eq!(
+            ids[0], ids[1],
+            "the retry is answered as the first send was"
+        );
+        gate.notify_one();
+        asked(&seen, 2).await;
+        gate.notify_one();
+        let (read, unread, ended) = follow(&mut first).await;
+        assert_eq!(ended, Ok(Outcome::Completed));
+        assert_eq!(unread, []);
+        assert_eq!(read.iter().filter(|id| **id == ids[0]).count(), 1);
+        assert_eq!(person_said(&seen, 1), ["go", "and this"], "read once");
     });
 }
 

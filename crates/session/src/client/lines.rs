@@ -14,8 +14,9 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt as _, AsyncWrite, AsyncWriteExt as
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
-use crate::protocol::{ApiError, Reply, Request, code};
+use crate::protocol::{ApiError, QueuedMessage, Reply, Request, code};
 use crate::rpc::{message, outcome};
+use crate::steer::Sent;
 use crate::turn::TurnItem;
 
 /// Lines written ahead of the server.
@@ -29,11 +30,19 @@ enum Waiter {
     Turn(Following),
 }
 
-/// What a followed turn is sent: its notifications, how many it missed, then its ending.
+/// What a followed turn is sent: its notifications, how many it missed, then its ending, or
+/// the message it sent queued to a turn already running.
 struct Following {
     notes: mpsc::Sender<TurnItem>,
     missed: Arc<AtomicU64>,
-    end: oneshot::Sender<TurnItem>,
+    end: oneshot::Sender<Came>,
+}
+
+/// What came for a followed turn: an item, or, as the server's answer to its request, its
+/// message queued to a turn already running.
+enum Came {
+    Item(TurnItem),
+    Queued(QueuedMessage),
 }
 
 /// The requests waiting for an answer, by id; none once the connection has closed.
@@ -121,8 +130,8 @@ impl Lines {
     }
 
     /// Starts `request` (`turn/start` or `goal/start`) and follows it; refused, as over HTTP,
-    /// when the server answers before the turn starts.
-    pub(crate) async fn start(&self, request: &Request) -> Result<LinesTurn, ApiError> {
+    /// when the server answers before the turn starts, or queued to a turn already running.
+    pub(crate) async fn start(&self, request: &Request) -> Result<Sent<LinesTurn>, ApiError> {
         let (notes, items) = mpsc::channel(FOLLOW_AHEAD);
         let (end, ending) = oneshot::channel();
         let missed = Arc::new(AtomicU64::new(0));
@@ -141,13 +150,14 @@ impl Lines {
             ended: false,
             name: self.name.clone(),
         };
-        match turn.next().await {
-            Some(TurnItem::Ended(Err(refused))) => Err(refused),
-            Some(first) => {
+        match turn.next_or_queued().await {
+            Some(Came::Queued(queued)) => Ok(Sent::Queued(queued)),
+            Some(Came::Item(TurnItem::Ended(Err(refused)))) => Err(refused),
+            Some(Came::Item(first)) => {
                 // Given again by the first `next`.
                 turn.first = Some(first);
                 turn.ended = false;
-                Ok(turn)
+                Ok(Sent::Started(turn))
             }
             None => Err(self.closed()),
         }
@@ -236,25 +246,25 @@ fn notify(waiting: &Waiting, note: &TurnItem) {
     }
 }
 
-/// How a turn ended, from its response.
-fn ended(response: &Value) -> TurnItem {
-    TurnItem::Ended(match outcome(response) {
+/// How a turn ended, from its response; or its message, queued to a turn already running, as
+/// HTTP answers it with JSON.
+fn ended(response: &Value) -> Came {
+    Came::Item(TurnItem::Ended(match outcome(response) {
         Ok(Reply::Turn { turn }) => Ok(turn),
-        // Queued to a turn already running, as HTTP answers it with JSON.
-        Ok(Reply::Queued { .. }) => Err(ApiError::queued_elsewhere()),
+        Ok(Reply::Queued { queued }) => return Came::Queued(queued),
         Ok(other) => Err(ApiError::new(
             code::INTERNAL,
             format!("the turn ended with {other:?}"),
         )),
         Err(error) => Err(error),
-    })
+    }))
 }
 
 /// A turn followed over a connection of lines.
 pub(crate) struct LinesTurn {
     items: mpsc::Receiver<TurnItem>,
     missed: Arc<AtomicU64>,
-    ending: oneshot::Receiver<TurnItem>,
+    ending: oneshot::Receiver<Came>,
     /// The item `start` read to know the turn started.
     first: Option<TurnItem>,
     ended: bool,
@@ -264,34 +274,44 @@ pub(crate) struct LinesTurn {
 impl LinesTurn {
     /// The next item, or `None` after the ending.
     pub(crate) async fn next(&mut self) -> Option<TurnItem> {
+        // Queued after another turn's notifications came on the connection: this one cannot
+        // be followed.
+        match self.next_or_queued().await? {
+            Came::Item(item) => Some(item),
+            Came::Queued(_) => Some(TurnItem::Ended(Err(ApiError::queued_elsewhere()))),
+        }
+    }
+
+    /// The next item, or the message queued to a turn already running; `None` after either.
+    async fn next_or_queued(&mut self) -> Option<Came> {
         if self.ended {
             return None;
         }
         if let Some(first) = self.first.take() {
             self.ended = matches!(first, TurnItem::Ended(_));
-            return Some(first);
+            return Some(Came::Item(first));
         }
         // Notifications come before the response that ends the turn, so they are taken first.
-        let item = if let Ok(item) = self.items.try_recv() {
-            item
+        let next = if let Ok(item) = self.items.try_recv() {
+            Came::Item(item)
         } else {
             let missed = self.missed.swap(0, Ordering::Relaxed);
             if missed > 0 {
-                return Some(TurnItem::Missed(missed));
+                return Some(Came::Item(TurnItem::Missed(missed)));
             }
             tokio::select! {
                 biased;
-                Some(item) = self.items.recv() => item,
+                Some(item) = self.items.recv() => Came::Item(item),
                 ending = &mut self.ending => ending.unwrap_or_else(|_| {
-                    TurnItem::Ended(Err(ApiError::new(
+                    Came::Item(TurnItem::Ended(Err(ApiError::new(
                         code::INTERNAL,
                         format!("{} closed the connection before the turn ended", self.name),
-                    )))
+                    ))))
                 }),
             }
         };
-        self.ended = matches!(item, TurnItem::Ended(_));
-        Some(item)
+        self.ended = !matches!(next, Came::Item(TurnItem::Note(_) | TurnItem::Missed(_)));
+        Some(next)
     }
 }
 

@@ -557,6 +557,7 @@ where
             None => self.stage(thread, &mut events, &message)?,
         }
         self.commit(thread, events).await?;
+        thread.turns = thread.turns.saturating_add(1);
         thread.messages.push(Message::User { parts });
         if by_glave {
             return Ok(());

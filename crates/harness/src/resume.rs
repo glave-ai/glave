@@ -68,6 +68,7 @@ where
             measured: None,
             request: latest_request(&events),
             asked: asked(&events),
+            turns: turns_begun(&events),
             above: above(&events),
             goal: crate::goal::latest(&events).map(crate::goal::Pursuit::of),
             workspace,
@@ -223,6 +224,15 @@ fn asked(events: &[Event]) -> Vec<String> {
             _ => None,
         })
         .collect()
+}
+
+/// How many turns `events` begin.
+fn turns_begun(events: &[Event]) -> u64 {
+    let begun = events
+        .iter()
+        .filter(|event| matches!(event.body, Body::TurnStarted(_)))
+        .count();
+    u64::try_from(begun).unwrap_or(u64::MAX)
 }
 
 /// The person a thread is for, as `thread.started` records it; `None` when it records none,

@@ -10,6 +10,7 @@ use std::process::{Command, Stdio};
 use glave_ports::testing::{FakeAuthServer, FakeGitHost, Grant, Running, fake_secret};
 
 use glave_provider_openai::fake::{FakeServer, Reply};
+use glave_session::Sent;
 use glave_session::client::Remote;
 use glave_session::protocol::Request;
 use serde_json::{Value, json};
@@ -75,7 +76,9 @@ impl Api {
     fn turn(&self, thread: &Value, prompt: &str) {
         let request = request("turn/start", json!({"thread": thread, "prompt": prompt}));
         self.runtime.block_on(async {
-            let mut turn = self.remote.start(&request).await.unwrap();
+            let Ok(Sent::Started(mut turn)) = self.remote.start(&request).await else {
+                panic!("a turn of its own");
+            };
             while turn.next().await.is_some() {}
         });
     }
