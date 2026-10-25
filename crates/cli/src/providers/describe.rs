@@ -2,8 +2,8 @@
 //! "One entry per model"): one entry per model whichever services run it, its maker's own API
 //! tried before an aggregator, before any other server; its name, context, output limit,
 //! images, price and reasoning levels as the catalogs give them, the price from the service
-//! tried first, and the level that service is sent unasked; and what the gateway checks a
-//! request against, prices it at and sends it with.
+//! tried first, the levels too where that service has some, and the level it is sent unasked;
+//! and what the gateway checks a request against, prices it at and sends it with.
 
 use glave_event::{Catalog, CatalogModel, Currency, ProviderKind, Reasoning};
 use glave_gateway::{Capabilities, Price, Target};
@@ -118,8 +118,9 @@ pub(super) fn cards_for<'a>(
 }
 
 /// The entry for `id`, served by `providers` in order, as `cards` describe it, the first
-/// first; named `name` when the settings name it. Its reasoning's default is the level
-/// `target`, the one tried first, is sent when a thread chooses none, if any.
+/// first; named `name` when the settings name it. Its reasoning is `target`'s, the one tried
+/// first, where it has one (a cloud contract's Claude has one and no card), else the cards';
+/// its default is the level `target` is sent when a thread chooses none, if any.
 pub(super) fn info(
     id: &str,
     cards: &[&CatalogModel],
@@ -144,12 +145,12 @@ pub(super) fn info(
         images: cards.iter().find_map(|card| card.images),
         // The price is the first service's: the one a call goes to.
         price: cards.first().and_then(|card| card.price),
-        reasoning: cards
-            .iter()
-            .find_map(|card| card.reasoning.clone())
+        reasoning: target
+            .and_then(Target::reasoning)
+            .or_else(|| cards.iter().find_map(|card| card.reasoning.as_ref()))
             .map(|reasoning| Reasoning {
                 default: unasked.map(str::to_owned),
-                ..reasoning
+                ..reasoning.clone()
             }),
         ..ModelInfo::new(id)
     }
@@ -237,6 +238,60 @@ mod tests {
         );
         let unasked = named.reasoning.and_then(|reasoning| reasoning.default);
         assert_eq!(unasked.as_deref(), Some("high"), "what the first is sent");
+    }
+
+    #[test]
+    fn claude_through_anthropic_offers_the_levels_its_listing_names_over_another_service_s() {
+        let listing = serde_json::json!({"id": "claude-haiku-5-5", "capabilities": {
+            "effort": {"supported": true, "max": {"supported": true}, "xhigh": {"supported": true},
+                       "high": {"supported": true}, "medium": {"supported": true},
+                       "low": {"supported": true}},
+            "thinking": {"supported": true, "types": {"adaptive": {"supported": true}}},
+        }});
+        let own = super::super::card::described("claude-haiku-5-5", &listing);
+        let anthropic = Catalog {
+            kind: ProviderKind::Anthropic,
+            url: None,
+            listed: At::from(jiff::Timestamp::UNIX_EPOCH),
+            models: vec![own.clone()],
+        };
+        let model = Arc::new(ScriptedModel::new(Vec::new()));
+        let target = Target::new(model, "anthropic", "claude-haiku-5-5");
+        let target = described(target, Some((&own, &anthropic)));
+        let reference = card();
+        let providers = vec!["Anthropic".to_owned(), "OpenRouter".to_owned()];
+        let info = info(
+            "claude-haiku-5-5",
+            &[&own, &reference],
+            providers,
+            None,
+            Some(&target),
+        );
+        let reasoning = info.reasoning.unwrap();
+        assert_eq!(reasoning.efforts, ["max", "xhigh", "high", "medium", "low"]);
+        assert_eq!(
+            reasoning.default, None,
+            "sent none: the picker says Default"
+        );
+    }
+
+    #[test]
+    fn a_target_with_no_card_offers_the_levels_it_is_sent_over_another_service_s() {
+        let documented = Reasoning {
+            efforts: vec!["max".into(), "low".into()],
+            default: None,
+            mandatory: false,
+        };
+        let cloud = target(None).with_reasoning(&documented);
+        let reference = card();
+        let info = info(
+            "claude-haiku-5-5",
+            &[&reference],
+            Vec::new(),
+            None,
+            Some(&cloud),
+        );
+        assert_eq!(info.reasoning, Some(documented));
     }
 
     #[test]

@@ -20,7 +20,7 @@ use glave_ports::{
 };
 
 use crate::config::Endpoint;
-use crate::model::Model;
+use crate::model::{Model, documented_reasoning};
 use crate::providers::{identity, service_name};
 use glave_config::policy::{Constraints, ModelEntry, Source, check_model};
 use glave_session::protocol::ModelInfo;
@@ -38,8 +38,8 @@ pub(crate) struct Allowed<'a> {
 /// The gateway over `provider` at `endpoint`, with the judge's model, when `judge` names one
 /// other than the main one, and each of `offered` as choices. Fails when `allowed` refuses any
 /// of them. Then each of `accounts` the policy allows: after the main model, when it serves
-/// the same one, in its place when it is the very same; else a choice, unless a model of the
-/// same id already is.
+/// the same one; in the place of the main model or a choice that is the very same; else a
+/// choice, unless a model of the same id already is.
 pub(crate) fn gateway(
     provider: Model,
     endpoint: &Endpoint,
@@ -51,8 +51,14 @@ pub(crate) fn gateway(
     let handle: Arc<dyn glave_gateway::Model> = Arc::new(provider);
     let name = &endpoint.provider.provider;
     let service = service_name(name);
-    let at =
-        |model: &str| Target::new(Arc::clone(&handle), name.clone(), model).at_service(&service);
+    // No catalog describes these: Claude among them reasons as Anthropic documents.
+    let at = |model: &str| {
+        let target = Target::new(Arc::clone(&handle), name.clone(), model).at_service(&service);
+        match documented_reasoning(endpoint, model) {
+            Some(reasoning) => target.with_reasoning(&reasoning),
+            None => target,
+        }
+    };
     let mut main = at(&endpoint.model);
     let chosen = allowed.main.unwrap_or(&Source::Default);
     // A gateway elsewhere keeps the policy's models itself, for each caller.
@@ -90,6 +96,9 @@ pub(crate) fn gateway(
             main = target;
         } else if target.same_model.as_ref() == Some(&same) || target.model == endpoint.model {
             fallbacks.push(target);
+        } else if let Some(choice) = choices.iter_mut().find(|c| c.name == target.name) {
+            // Its own service's description, levels too, wins over the settings' bare name.
+            *choice = target;
         } else if !choices.iter().any(|c| c.model == target.model) {
             choices.push(target);
         }
@@ -255,6 +264,43 @@ pub(crate) mod tests {
         let listed = offered_models(&gateway, |group| ModelInfo::new(&group[0].model));
         let ids: Vec<&str> = listed.iter().map(|m| m.id.as_str()).collect();
         assert_eq!(ids, ["big", "small", "hope-12b"]);
+    }
+
+    #[test]
+    fn claude_the_settings_choose_takes_the_documented_levels_unless_its_account_lists_some() {
+        let mut claude = endpoint();
+        claude.provider = Config::for_url("https://api.anthropic.com", None).unwrap();
+        "anthropic".clone_into(&mut claude.provider.provider);
+        claude.model = "claude-opus-5-5".into();
+        let constraints = Constraints::default();
+        let allowed = Allowed {
+            constraints: &constraints,
+            main: None,
+            judge: &Source::Default,
+            models: &Source::Default,
+        };
+        let listed = glave_event::Reasoning {
+            efforts: vec!["high".into()],
+            default: None,
+            mandatory: false,
+        };
+        let scripted = Arc::new(glave_ports::testing::ScriptedModel::new(Vec::new()));
+        let account =
+            Target::new(scripted, "anthropic", "claude-haiku-4-5").with_reasoning(&listed);
+        let offered = [entry("claude-haiku-4-5", None)];
+        let provider = Model::for_endpoint(&claude).unwrap();
+        let gateway = gateway(provider, &claude, None, &offered, vec![account], &allowed).unwrap();
+        let main = &gateway.routes().targets(Purpose::Main)[0];
+        let documented = main.reasoning().map(|reasoning| reasoning.efforts.len());
+        assert_eq!(
+            documented,
+            Some(5),
+            "no listing: Anthropic's documented levels"
+        );
+        let haiku = &gateway.routes().choices()[0];
+        assert_eq!(haiku.reasoning(), Some(&listed), "its account's listing");
+        let other = built(None, &constraints).unwrap();
+        assert_eq!(other.routes().targets(Purpose::Main)[0].reasoning(), None);
     }
 
     #[test]

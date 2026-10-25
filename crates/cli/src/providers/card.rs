@@ -1,9 +1,10 @@
 //! One model as a service's model list describes it: whatever the listing says of its context,
 //! output limit, images, price and reasoning, read the same way from every service, so nothing
-//! about a model is written into glave. OpenRouter says all of it; vLLM says its context
-//! (`max_model_len`); most services say little beyond the id.
+//! about a model is written into glave. OpenRouter says all of it; Anthropic its effort levels
+//! (`capabilities`); vLLM its context (`max_model_len`); most services little beyond the id.
 
 use glave_event::{CatalogModel, Reasoning, TokenPrice};
+use glave_provider_anthropic::EFFORTS;
 use serde_json::Value;
 
 /// The longest name kept, in bytes.
@@ -34,7 +35,7 @@ pub(super) fn described(id: &str, model: &Value) -> CatalogModel {
         images: modalities(model, "input_modalities")
             .map(|input| input.iter().any(|modality| modality == "image")),
         price: price(model.get("pricing")),
-        reasoning: reasoning(model.get("reasoning")),
+        reasoning: reasoning(model.get("reasoning")).or_else(|| efforts(model)),
     }
 }
 
@@ -96,17 +97,7 @@ fn micros(text: &str) -> Option<u64> {
 /// `none` also says.
 fn reasoning(reasoning: Option<&Value>) -> Option<Reasoning> {
     let reasoning = reasoning.filter(|value| value.is_object())?;
-    let level = |value: &Value| {
-        value
-            .as_str()
-            .map(str::trim)
-            .filter(|level| {
-                !level.is_empty()
-                    && level.len() <= LONGEST_EFFORT
-                    && level.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-            })
-            .map(str::to_owned)
-    };
+    let level = |value: &Value| value.as_str().and_then(plain);
     let mut efforts: Vec<String> = Vec::new();
     for effort in reasoning
         .get("supported_efforts")
@@ -134,6 +125,52 @@ fn reasoning(reasoning: Option<&Value>) -> Option<Reasoning> {
         efforts,
         mandatory,
     })
+}
+
+/// How Anthropic's listing says the model reasons (`capabilities`): the effort levels it marks
+/// supported, highest first as Anthropic documents them, or none when the model takes no
+/// effort or no adaptive thinking, which glave asks for with every level. It names no default,
+/// since a request that sends no level gets the model's own.
+fn efforts(model: &Value) -> Option<Reasoning> {
+    let capabilities = model
+        .get("capabilities")
+        .filter(|value| value.is_object())?;
+    let supported = |path: &[&str]| {
+        path_in(capabilities, path).and_then(|capability| capability.get("supported"))
+            == Some(&Value::Bool(true))
+    };
+    let mut efforts: Vec<String> = Vec::new();
+    if supported(&["effort"]) && supported(&["thinking", "types", "adaptive"]) {
+        let listed = path_in(capabilities, &["effort"]).and_then(Value::as_object);
+        efforts = listed
+            .into_iter()
+            .flatten()
+            .filter(|(_, level)| level.get("supported") == Some(&Value::Bool(true)))
+            .filter_map(|(level, _)| plain(level))
+            .collect();
+        // A level Anthropic adds after these goes last.
+        efforts.sort_by_key(|level| {
+            EFFORTS
+                .iter()
+                .position(|known| known == level)
+                .unwrap_or(EFFORTS.len())
+        });
+        efforts.truncate(MOST_EFFORTS);
+    }
+    Some(Reasoning {
+        efforts,
+        default: None,
+        mandatory: false,
+    })
+}
+
+/// A level's name, when it is a plain word of letters, digits and underscores, not too long.
+fn plain(level: &str) -> Option<String> {
+    let level = level.trim();
+    let plain = !level.is_empty()
+        && level.len() <= LONGEST_EFFORT
+        && level.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    plain.then(|| level.to_owned())
 }
 
 #[cfg(test)]
@@ -180,6 +217,51 @@ mod tests {
         );
         assert_eq!(reasoning.default.as_deref(), Some("medium"));
         assert!(!reasoning.mandatory);
+    }
+
+    #[test]
+    fn anthropic_says_which_effort_levels_a_model_takes_and_names_no_default() {
+        // As Anthropic's `GET /v1/models` describes a model, cut to what decides.
+        let model = |effort: Value, adaptive: bool| {
+            json!({"id": "claude", "capabilities": {
+                "effort": effort,
+                "thinking": {"supported": true, "types": {
+                    "adaptive": {"supported": adaptive}, "enabled": {"supported": !adaptive},
+                }},
+            }})
+        };
+        let levels = |xhigh: Value| {
+            json!({
+                "supported": true, "ultra": {"supported": true},
+                "high": {"supported": true}, "low": {"supported": true},
+                "max": {"supported": true}, "medium": {"supported": true}, "xhigh": xhigh,
+            })
+        };
+        let all = described(
+            "claude-opus-5-5",
+            &model(levels(json!({"supported": true})), true),
+        );
+        let reasoning = all.reasoning.unwrap();
+        assert_eq!(
+            reasoning.efforts,
+            ["max", "xhigh", "high", "medium", "low", "ultra"],
+            "Anthropic's order, a level glave does not know last"
+        );
+        assert_eq!(reasoning.default, None, "the listing names none");
+        let no_xhigh = described("claude-sonnet-4-6", &model(levels(Value::Null), true));
+        assert_eq!(
+            no_xhigh.reasoning.map(|reasoning| reasoning.efforts.len()),
+            Some(5)
+        );
+        // Said to take no level, so none is offered here, whatever another service offers.
+        let offered = |model: &Value| described("claude", model).reasoning.map(|r| r.efforts);
+        let extended_only = model(levels(json!({"supported": false})), false);
+        assert_eq!(offered(&extended_only), Some(Vec::new()));
+        let no_effort = model(
+            json!({"supported": false, "low": {"supported": false}}),
+            true,
+        );
+        assert_eq!(offered(&no_effort), Some(Vec::new()));
     }
 
     #[test]

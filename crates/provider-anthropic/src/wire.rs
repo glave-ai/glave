@@ -19,8 +19,14 @@ pub(crate) const SIGNATURE: &str = "signature";
 /// The kind of [`glave_event::Opaque`] that holds a redacted thinking block's data.
 pub(crate) const REDACTED_THINKING: &str = "redacted_thinking";
 
-/// A streaming Messages request. Neither `thinking` nor `temperature` is sent: current models
-/// choose their own thinking, and several refuse sampling settings.
+/// The effort levels Anthropic documents for `output_config.effort`, highest first: what glave
+/// offers for Claude where no listing says which a model takes, as Bedrock and Vertex AI list
+/// none. Not every model takes every level, and the API refuses one a model does not
+/// (<https://platform.claude.com/docs/en/build-with-claude/effort>, read 2026-10-25).
+pub const EFFORTS: [&str; 5] = ["max", "xhigh", "high", "medium", "low"];
+
+/// A streaming Messages request. `temperature` is never sent, since several models refuse
+/// sampling settings; `thinking` only with an effort level.
 #[derive(Debug, Serialize)]
 pub(crate) struct MessagesRequest<'a> {
     /// The model, unless the URL names it (Vertex AI).
@@ -38,6 +44,13 @@ pub(crate) struct MessagesRequest<'a> {
     /// `none` when the model must answer in text; the tools stay listed.
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_choice: Option<Kind>,
+    /// `adaptive` beside an effort level, so the level sets how much the model thinks: Claude
+    /// Opus 4.6 to 4.8 and Sonnet 4.6 think only when asked, the later models already do.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<Kind>,
+    /// The effort level asked for, in Anthropic's names, such as `{"effort": "high"}`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_config: Option<OutputConfig<'a>>,
     /// Automatic prompt caching: the cache point moves forward as the conversation grows, so
     /// each call pays full price only for what is new.
     cache_control: Kind,
@@ -49,6 +62,11 @@ pub(crate) struct MessagesRequest<'a> {
 struct Kind {
     #[serde(rename = "type")]
     kind: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct OutputConfig<'a> {
+    effort: &'a str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -130,6 +148,7 @@ pub(crate) fn messages_request<'a>(
             _ => messages.push(WireMessage { role, content }),
         }
     }
+    let effort = request.effort.as_deref();
     MessagesRequest {
         model: api.model_in_body().then_some(request.model.as_str()),
         anthropic_version: api.version_in_body(),
@@ -139,6 +158,8 @@ pub(crate) fn messages_request<'a>(
         tools: request.tools.iter().map(wire_tool).collect(),
         tool_choice: (request.tool_choice == ToolChoice::None && !request.tools.is_empty())
             .then_some(Kind { kind: "none" }),
+        thinking: effort.map(|_| Kind { kind: "adaptive" }),
+        output_config: effort.map(|effort| OutputConfig { effort }),
         cache_control: Kind { kind: "ephemeral" },
         stream: true,
     }

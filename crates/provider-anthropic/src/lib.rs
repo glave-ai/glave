@@ -1,7 +1,8 @@
 //! A glave model provider for Anthropic's native Messages API, spoken over plain HTTP and
 //! server-sent events.
 //!
-//! It translates glave's neutral request into the Messages format, streams the response,
+//! It translates glave's neutral request into the Messages format, an effort level as
+//! adaptive thinking at that effort ([`EFFORTS`] names Anthropic's), streams the response,
 //! forwards live text and readable thinking, and returns one finished answer: tool calls
 //! assembled, thinking kept with its signature so it can be sent back, usage normalized to
 //! inclusive totals, and stop reasons mapped. It speaks Anthropic's own API (and Amazon
@@ -19,3 +20,4 @@ mod wire;
 
 pub use api::Api;
 pub use client::{Anthropic, Config, DEFAULT_BASE_URL, IDLE_TIMEOUT};
+pub use wire::EFFORTS;
