@@ -8,7 +8,7 @@ use glave_event::{At, ThreadId};
 use glave_ports::{Caller, ProjectId};
 use glave_session::protocol::{Answer, Notification, Request, Update};
 use glave_session::signin::{LocalToken, SignIn};
-use glave_session::{Answering, ListWatch, TurnItem, TurnStream, Watch, Watched, rpc};
+use glave_session::{Answering, ListWatch, Sent, TurnItem, TurnStream, Watch, Watched, rpc};
 use serde_json::{Value, json};
 use tokio::io::{
     AsyncBufReadExt as _, AsyncRead, AsyncWrite, AsyncWriteExt as _, BufReader, Lines,
@@ -241,7 +241,10 @@ impl Watcher {
         match self {
             Self::InProcess(server, following) => {
                 let caller = Caller::default();
-                let stream = server.start_streaming(&caller, request).await.unwrap();
+                let Ok(Sent::Started(stream)) = server.start_streaming(&caller, request).await
+                else {
+                    panic!("a turn of its own");
+                };
                 *following = Some(InProcess::Turn(stream));
             }
             Self::Lines(lines) => lines.watching = Some(lines.send(&request).await),

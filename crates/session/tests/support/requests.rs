@@ -5,10 +5,10 @@ use std::path::Path;
 
 use glave_event::{Body, Opened, RawEvent, ThreadId, decode};
 use glave_ports::{Caller, EventLog, ProjectId};
-use glave_session::TurnStream;
 use glave_session::protocol::{
     ApiError, IdempotencyKey, Meta, NewFolder, Reply, Request, TaskInfo, TaskStatus,
 };
+use glave_session::{Sent, TurnStream};
 
 use super::setup::{Tested, scope};
 
@@ -134,7 +134,8 @@ pub(crate) fn turn_start(thread: ThreadId, prompt: &str, key: Option<Idempotency
 }
 
 /// Starts a turn saying `prompt` and streams it, through the entry every transport uses. With
-/// `key`, a turn already started under it is followed instead.
+/// `key`, a turn already started under it is followed instead. It starts one: a message queued
+/// to a turn already running fails the test.
 pub(crate) async fn stream_turn<L: EventLog + 'static>(
     server: &Tested<L>,
     thread: ThreadId,
@@ -142,7 +143,10 @@ pub(crate) async fn stream_turn<L: EventLog + 'static>(
     key: Option<IdempotencyKey>,
 ) -> Result<TurnStream, ApiError> {
     let request = turn_start(thread, prompt, key);
-    server.start_streaming(&Caller::default(), request).await
+    match server.start_streaming(&Caller::default(), request).await? {
+        Sent::Started(stream) => Ok(stream),
+        Sent::Queued(queued) => panic!("a turn of its own, not queued as {queued:?}"),
+    }
 }
 
 /// The thread's events, checked to be numbered 1, 2, 3, ... with no gap or repeat.

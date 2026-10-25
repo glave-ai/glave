@@ -93,17 +93,10 @@ impl Inbox {
         waiting.queued.drain(..).collect()
     }
 
-    /// What waits, oldest first, left in place until it is recorded.
-    fn waiting(&self) -> Vec<Queued> {
-        self.lock().queued.iter().cloned().collect()
-    }
-
-    /// Lets go of the oldest `read`, once recorded: messages are only added behind them, so
-    /// they are the ones read.
-    fn read(&self, read: usize) {
-        let mut waiting = self.lock();
-        let read = read.min(waiting.queued.len());
-        waiting.queued.drain(..read);
+    /// Takes what waits, oldest first, for the model's next call: from then on the turn that
+    /// took it records it or gives it back, and nothing else can give it back meanwhile.
+    fn take(&self) -> VecDeque<Queued> {
+        std::mem::take(&mut self.lock().queued)
     }
 
     /// The oldest message, for a turn of its own; with none, ends the inbox in the same step,
@@ -133,44 +126,56 @@ where
 {
     /// Gives the model what the person sent while the turn ran, oldest first, recorded together
     /// as their messages. Each passes the `UserPromptSubmit` hooks first, as a prompt does; one
-    /// a hook stops is never sent, and is given back with the hook's reason.
+    /// a hook stops is never sent, and is given back with the hook's reason. What waits is
+    /// taken at once, so each message is recorded or given back, never both: stopped before
+    /// they are recorded, the turn takes none of them, and every one a hook did not stop is
+    /// given back, as it is when this fails.
     pub(crate) async fn read_queued(
         &self,
         thread: &mut Thread,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<(), HarnessError> {
-        let waiting = thread.inbox.waiting();
+        let mut waiting = thread.inbox.take();
         if waiting.is_empty() {
             return Ok(());
         }
         let mut passed = Vec::with_capacity(waiting.len());
-        for queued in &waiting {
+        let mut hooks = Ok(());
+        // Once stopped, no more hooks run.
+        while hooks.is_ok()
+            && !cancel.is_cancelled()
+            && let Some(queued) = waiting.pop_front()
+        {
             let text = self.expand(&queued.text).into_owned();
             let blocked = if thread.delegated() {
-                None
+                Ok(None)
             } else {
-                self.on_prompt(thread, &text, cancel).await?
+                self.on_prompt(thread, &text, cancel).await
             };
             match blocked {
-                Some(reason) => live(Live::Unread {
+                Ok(Some(reason)) => live(Live::Unread {
                     id: queued.id,
                     reason: Some(reason),
                 }),
-                None => passed.push((queued, text)),
+                Ok(None) => passed.push((queued, text)),
+                Err(error) => {
+                    waiting.push_front(queued);
+                    hooks = Err(error);
+                }
             }
         }
-        let mut events = Vec::with_capacity(passed.len());
-        for (queued, text) in &passed {
-            let message = MessageAdded {
-                role: Role::User,
-                parts: vec![Part::Text { text: text.clone() }],
-                author: Self::other_than_for(thread, queued.caller.person),
-            };
-            self.stage_as(thread, &mut events, &message, queued.id)?;
+        // Stopped, the turn takes none of them.
+        let stopped = hooks.is_ok() && cancel.is_cancelled();
+        let recorded = match hooks {
+            Ok(()) if !stopped => self.record_read(thread, &passed).await,
+            hooks => hooks,
+        };
+        if stopped || recorded.is_err() {
+            let left = passed.into_iter().map(|(queued, _)| queued).chain(waiting);
+            unread(left, live);
+            return recorded;
         }
-        self.commit(thread, events).await?;
-        thread.inbox.read(waiting.len());
         for (_, text) in passed {
             thread.messages.push(Message::User {
                 parts: vec![Part::Text { text: text.clone() }],
@@ -181,6 +186,25 @@ where
             thread.request = Some(text);
         }
         Ok(())
+    }
+
+    /// Records the messages that `passed` their hooks as the person's, in one append, each
+    /// under the id it was queued with.
+    async fn record_read(
+        &self,
+        thread: &mut Thread,
+        passed: &[(Queued, String)],
+    ) -> Result<(), HarnessError> {
+        let mut events = Vec::with_capacity(passed.len());
+        for (queued, text) in passed {
+            let message = MessageAdded {
+                role: Role::User,
+                parts: vec![Part::Text { text: text.clone() }],
+                author: Self::other_than_for(thread, queued.caller.person),
+            };
+            self.stage_as(thread, &mut events, &message, queued.id)?;
+        }
+        self.commit(thread, events).await
     }
 
     /// Runs what the person sent too late for the turn that just ended (`ran`): a turn for the
@@ -241,7 +265,12 @@ where
 /// Ends the thread's inbox, telling whoever sent what still waits that the model will not read
 /// it.
 fn give_back(thread: &Thread, live: &mut (dyn FnMut(Live) + Send)) {
-    for queued in thread.inbox.end() {
+    unread(thread.inbox.end(), live);
+}
+
+/// Tells whoever sent each of `given` that the model will not read it.
+fn unread(given: impl IntoIterator<Item = Queued>, live: &mut (dyn FnMut(Live) + Send)) {
+    for queued in given {
         live(Live::Unread {
             id: queued.id,
             reason: None,
@@ -270,13 +299,14 @@ mod tests {
             sender.push(queued(n)).unwrap();
         }
         assert_eq!(sender.push(queued(20)), Err(NotQueued::Full));
-        let waiting = inbox.waiting();
-        assert_eq!(waiting.len(), MAX_QUEUED, "clones share what waits");
-        assert_eq!(waiting.first(), Some(&queued(0)));
-        inbox.read(2);
-        assert_eq!(inbox.waiting().first(), Some(&queued(2)));
+        let taken = inbox.take();
+        assert_eq!(taken.len(), MAX_QUEUED, "clones share what waits");
+        assert_eq!(taken.front(), Some(&queued(0)));
+        assert_eq!(taken.back(), Some(&queued(19)));
+        // Taken, they no longer count: as many more may wait while they are read.
         sender.push(queued(20)).unwrap();
-        assert_eq!(inbox.waiting().last(), Some(&queued(20)));
+        assert_eq!(inbox.take(), [queued(20)]);
+        assert_eq!(inbox.end(), [], "nothing taken is given back again");
     }
 
     #[test]
@@ -293,6 +323,6 @@ mod tests {
         inbox.push(queued(4)).unwrap();
         assert_eq!(inbox.end(), [queued(3), queued(4)]);
         assert_eq!(inbox.push(queued(5)), Err(NotQueued::Ending));
-        assert_eq!(inbox.waiting(), []);
+        assert_eq!(inbox.take(), []);
     }
 }

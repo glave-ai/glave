@@ -18,7 +18,7 @@ use glave_ports::Caller;
 use glave_session::client::{Remote, RemoteTurn};
 use glave_session::protocol::Meta;
 use glave_session::protocol::{Answer, ApiError, ErrorData, Notification, Reply, Request, Update};
-use glave_session::{Server, TurnItem, TurnStream};
+use glave_session::{Sent, Server, TurnItem, TurnStream};
 
 use crate::asking;
 use crate::config::{self, Endpoint};
@@ -33,6 +33,10 @@ pub(crate) type Glave = Server<GatewaySwitch, DataLog, DataBlobs>;
 
 /// The approvals a turn requested, by thread and call, until each is pending or decided.
 type Requested = HashMap<(ThreadId, CallId), ApprovalRequested>;
+
+/// What the terminal says of a message queued to a turn already running in its thread,
+/// which it does not follow.
+const QUEUED: &str = "· queued to the turn running in this thread";
 
 /// The session API the terminal is a client of: the server in this process, or one elsewhere
 /// over HTTP. The terminal uses the same requests and follows turns the same way with either.
@@ -52,15 +56,16 @@ impl Session<'_> {
         }
     }
 
-    /// Starts `request`, a turn or a goal, and follows it.
-    pub(crate) async fn start(&self, request: Request) -> Result<Following, ApiError> {
+    /// Starts `request`, a turn or a goal, and follows it; a message sent while a turn runs in
+    /// its thread is queued to that turn instead.
+    pub(crate) async fn start(&self, request: Request) -> Result<Sent<Following>, ApiError> {
         match self {
             Self::Here(server) => Box::pin(server.start_streaming(&Caller::default(), request))
                 .await
-                .map(Following::Here),
+                .map(|sent| sent.map(Following::Here)),
             Self::Elsewhere(remote) => Box::pin(remote.start(&request))
                 .await
-                .map(Following::Elsewhere),
+                .map(|sent| sent.map(Following::Elsewhere)),
         }
     }
 }
@@ -154,15 +159,20 @@ impl Client<'_> {
         }
     }
 
-    /// Follows a started turn, or a goal's turns, to the end, cancelling it on `interrupt`.
+    /// Follows a started turn, or a goal's turns, to the end, cancelling it on `interrupt`. A
+    /// message queued to a turn already running is said to be, and is no failure.
     async fn follow(
         &self,
-        started: Result<Following, ApiError>,
+        started: Result<Sent<Following>, ApiError>,
         interrupt: &Cancel,
         printer: &mut Printer,
     ) -> ExitCode {
         let mut stream = match started {
-            Ok(stream) => stream,
+            Ok(Sent::Started(stream)) => stream,
+            Ok(Sent::Queued(_)) => {
+                printer.status(QUEUED);
+                return ExitCode::SUCCESS;
+            }
             Err(error) => {
                 self.show_error(printer, &error);
                 return ExitCode::FAILURE;

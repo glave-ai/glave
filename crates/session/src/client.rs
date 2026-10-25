@@ -20,6 +20,7 @@ use tokio::io::{AsyncBufRead, AsyncWrite};
 use crate::http::KEEP_ALIVE;
 use crate::protocol::{ApiError, Notification, Reply, Request, code};
 use crate::rpc::{message, outcome};
+use crate::steer::Sent;
 use crate::turn::TurnItem;
 
 /// How long connecting may take.
@@ -90,13 +91,20 @@ impl Remote {
     }
 
     /// Starts `request` (`turn/start` or `goal/start`) and follows it, once the server has
-    /// started it within 15 minutes.
-    pub async fn start(&self, request: &Request) -> Result<RemoteTurn, ApiError> {
+    /// started it within 15 minutes; a message sent while a turn runs in its thread is queued
+    /// to that turn instead, which this does not follow.
+    pub async fn start(&self, request: &Request) -> Result<Sent<RemoteTurn>, ApiError> {
         let started = async {
-            Ok(RemoteTurn(match &self.0 {
-                Transport::Http(http) => Following::Http(http.start(request).await?),
-                Transport::Lines(lines) => Following::Lines(lines.start(request).await?),
-            }))
+            Ok(match &self.0 {
+                Transport::Http(http) => http
+                    .start(request)
+                    .await?
+                    .map(|turn| RemoteTurn(Following::Http(turn))),
+                Transport::Lines(lines) => lines
+                    .start(request)
+                    .await?
+                    .map(|turn| RemoteTurn(Following::Lines(turn))),
+            })
         };
         tokio::time::timeout(SLOW_ANSWERS_WITHIN, started)
             .await
@@ -171,7 +179,7 @@ impl Http {
         reply(&text)
     }
 
-    async fn start(&self, request: &Request) -> Result<HttpTurn, ApiError> {
+    async fn start(&self, request: &Request) -> Result<Sent<HttpTurn>, ApiError> {
         let response = self.send(request).await?;
         let streams = response
             .headers()
@@ -181,19 +189,22 @@ impl Http {
         if !streams {
             // Refused before it started, or queued to a turn already running: a JSON answer.
             let text = response.text().await.map_err(|e| self.unreachable(&e))?;
-            return Err(match reply(&text) {
-                Ok(Reply::Queued { .. }) => ApiError::queued_elsewhere(),
-                Ok(_) => ApiError::new(code::INTERNAL, "the server did not stream the turn"),
-                Err(refused) => refused,
-            });
+            return match reply(&text) {
+                Ok(Reply::Queued { queued }) => Ok(Sent::Queued(queued)),
+                Ok(_) => Err(ApiError::new(
+                    code::INTERNAL,
+                    "the server did not stream the turn",
+                )),
+                Err(refused) => Err(refused),
+            };
         }
-        Ok(HttpTurn {
+        Ok(Sent::Started(HttpTurn {
             response,
             decoder: SseDecoder::default(),
             events: VecDeque::new(),
             ended: false,
             url: self.url.clone(),
-        })
+        }))
     }
 
     /// Posts `request` as JSON-RPC; an HTTP failure becomes the error it carries.

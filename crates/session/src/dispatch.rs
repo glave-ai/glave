@@ -9,7 +9,7 @@ use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 use crate::choice::Choice;
 use crate::credentials::NewCredential;
 use crate::lists::ListWatch;
-use crate::protocol::{ApiError, QueuedMessage, Reply, Request, ServerInfo, code};
+use crate::protocol::{ApiError, Reply, Request, ServerInfo, code};
 use crate::providers::NewProvider;
 use crate::schedule::NewSchedule;
 use crate::server::Server;
@@ -64,17 +64,18 @@ where
         self.request_as(&Caller::default(), request).await
     }
 
-    /// Starts `request`, a turn or a goal someone follows, and streams it. Any other request
-    /// is answered at once, so it is refused here.
+    /// Starts `request`, a turn or a goal someone follows, and streams it; a message sent
+    /// while a turn runs in its thread is queued to that turn instead, which this does not
+    /// follow. Any other request is answered at once, so it is refused here.
     pub async fn start_streaming(
         &self,
         caller: &Caller,
         request: Request,
-    ) -> Result<TurnStream, ApiError> {
+    ) -> Result<Sent<TurnStream>, ApiError> {
         let method = request.method();
         match self.call(caller, request).await {
-            Answered::Stream(stream) => Ok(stream),
-            Answered::Reply(Ok(Reply::Queued { .. })) => Err(ApiError::queued_elsewhere()),
+            Answered::Stream(stream) => Ok(Sent::Started(stream)),
+            Answered::Reply(Ok(Reply::Queued { queued })) => Ok(Sent::Queued(queued)),
             Answered::Watch(_) | Answered::List(_) => Err(ApiError::new(
                 code::INVALID_PARAMS,
                 format!("{method} is followed with Server::watch or Server::watch_list"),
@@ -256,9 +257,7 @@ where
                 let sent = self.start_turn_with(traced, thread, message, key).await;
                 return match sent {
                     Ok(Sent::Started(stream)) => Answered::Stream(stream),
-                    Ok(Sent::Queued(id)) => Answered::Reply(Ok(Reply::Queued {
-                        queued: QueuedMessage { id },
-                    })),
+                    Ok(Sent::Queued(queued)) => Answered::Reply(Ok(Reply::Queued { queued })),
                     Err(refused) => Answered::Reply(Err(refused)),
                 };
             }

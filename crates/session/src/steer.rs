@@ -11,9 +11,8 @@ use tokio::sync::watch;
 
 use crate::choice::Choice;
 use crate::held::{Slot, busy};
-use crate::protocol::{ApiError, AttachedFile, code};
+use crate::protocol::{ApiError, AttachedFile, QueuedMessage, code};
 use crate::server::Server;
-use crate::turn::TurnStream;
 use crate::words::Sentence;
 
 /// A message the person sends a thread with `turn/start`.
@@ -29,17 +28,28 @@ pub(crate) struct Message<'a> {
     pub(crate) unattended: bool,
 }
 
-/// What sending a message did.
-pub(crate) enum Sent {
-    /// It started a turn, followed here.
-    Started(TurnStream),
-    /// It was queued to the turn running in its thread, under this id (`QueuedMessage`).
-    Queued(EventId),
+/// What sending a message did, for whoever follows the turns they start: it started a turn,
+/// followed with `T` (a [`TurnStream`](crate::TurnStream) here, a
+/// [`RemoteTurn`](crate::client::RemoteTurn) from a server elsewhere), or it was queued to the
+/// turn already running in its thread, which that does not follow.
+pub enum Sent<T> {
+    Started(T),
+    Queued(QueuedMessage),
+}
+
+impl<T> Sent<T> {
+    /// The same answer, a turn it started followed with what `follow` makes of it.
+    pub fn map<U>(self, follow: impl FnOnce(T) -> U) -> Sent<U> {
+        match self {
+            Self::Started(turn) => Sent::Started(follow(turn)),
+            Self::Queued(queued) => Sent::Queued(queued),
+        }
+    }
 }
 
 /// What queueing a message found.
 pub(crate) enum Queue {
-    Queued(EventId),
+    Queued(QueuedMessage),
     /// Nothing runs in the thread: the message starts a turn.
     Idle,
     /// The running work was stopped, or has made its last call and is ending: the message
@@ -121,7 +131,7 @@ where
             caller: caller.clone(),
         };
         match (inbox.push(queued), finished) {
-            (Ok(()), _) => Ok(Queue::Queued(id)),
+            (Ok(()), _) => Ok(Queue::Queued(QueuedMessage { id })),
             (Err(NotQueued::Ending), Some(finished)) => Ok(Queue::Ending(finished.clone())),
             (Err(NotQueued::Ending), None) => Ok(Queue::Idle),
             (Err(full @ NotQueued::Full), _) => {

@@ -1,19 +1,20 @@
 //! Starting a turn and following it as it runs: its notifications in order, then how it ended.
 //! A turn started with an idempotency key can be followed again by a retry with the same key.
-//! While one runs, a message is queued to it instead (`steer.rs`).
+//! While one runs, a message is queued to it instead (`steer.rs`), and a retry with its key is
+//! answered with the same id.
 
 use std::future::pending;
 use std::sync::Arc;
 
 use glave_event::ThreadId;
 use glave_harness::{Cancel, HarnessError, Live, Said, Thread, TurnSummary};
-use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
+use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider, Scope};
 use tokio::sync::watch;
 
 use crate::choice::Choice;
 use crate::held::{Finish, Use, busy, finished};
 use crate::hub::Hub;
-use crate::keyed::Done;
+use crate::keyed::{Claimed, Done, Kept};
 use crate::protocol::{ApiError, IdempotencyKey, Notification, TurnResult, Update, code};
 use crate::server::{Ended, Inner, Server};
 use crate::steer::{Message, Queue, Sent};
@@ -160,17 +161,17 @@ where
     /// Sends `caller`'s `message` to `thread`: it starts a turn, streamed, first choosing for
     /// the thread the model and preset the message names, when it does: this turn and
     /// the thread's later ones go to it and ask that much. While a turn runs there, a message
-    /// that may be queued is queued to it instead, for the model's next call. With `key`, a
-    /// turn `caller` already started in `thread` with the same key is followed instead of starting
-    /// another. The model the turn would go to must be one this server runs (`-32021`), and its
-    /// mode one the policy leaves (`-32012`).
+    /// that may be queued is queued to it instead, for the model's next call. With `key`, what
+    /// `caller` already sent to `thread` with the same key answers instead: the turn it started,
+    /// followed, or the id it queued its message under. The model the turn would go to must be
+    /// one this server runs (`-32021`), and its mode one the policy leaves (`-32012`).
     pub(crate) async fn start_turn_with(
         &self,
         caller: &Caller,
         thread: ThreadId,
         message: Message<'_>,
         key: Option<&IdempotencyKey>,
-    ) -> Result<Sent, ApiError> {
+    ) -> Result<Sent<TurnStream>, ApiError> {
         let Message {
             prompt,
             files,
@@ -188,19 +189,15 @@ where
         }
         let files = self.attach(&scope, thread, files, &model).await?;
         let (finish, done) = watch::channel(None);
-        if let Some(key) = key
-            && let Some(started) = self.inner.keyed.claim(caller.person, thread, key, &done)
-        {
-            let running = started.borrow().is_none();
-            let watch = if running {
-                Some(self.watch_from_now(scope, thread).await?)
-            } else {
-                None
-            };
-            return Ok(Sent::Started(TurnStream::new(
-                model, thread, watch, started,
-            )));
-        }
+        // Held until this says what it did: on any way out before that, the key is let go.
+        let claimed = key.map(|key| self.inner.keyed.claim(caller.person, thread, key, &done));
+        let claim = match claimed {
+            Some(Claimed::Before(kept)) => {
+                return self.sent_before(scope, thread, model, kept).await;
+            }
+            Some(Claimed::Mine(claim)) => Some(claim),
+            None => None,
+        };
         if queue {
             // Read in, so a turn that waits for an answer takes the message for when it goes on.
             self.load(thread).await?;
@@ -208,7 +205,7 @@ where
         let sent = loop {
             if queue {
                 match self.queue(caller, thread, prompt, &files, &choice) {
-                    Ok(Queue::Queued(id)) => break Ok(Sent::Queued(id)),
+                    Ok(Queue::Queued(queued)) => break Ok(Sent::Queued(queued)),
                     // Started again once it has ended; never, if its work went without ending.
                     Ok(Queue::Ending(mut ending)) => match ending.wait_for(|ended| *ended).await {
                         Ok(_) => continue,
@@ -241,15 +238,39 @@ where
                 Err(failed) => break Err(failed),
             }
         };
-        // The key names no turn when none started.
-        if !matches!(sent, Ok(Sent::Started(_)))
-            && let Some(key) = key
-        {
-            self.inner
-                .keyed
-                .release(caller.person, thread, key, &finish.subscribe());
+        // A retry with the key is answered as this was; refused, this lets the key go.
+        if let Some(claim) = claim {
+            match &sent {
+                Ok(Sent::Started(_)) => claim.started(),
+                Ok(Sent::Queued(queued)) => claim.queued(*queued),
+                Err(_) => drop(claim),
+            }
         }
         sent
+    }
+
+    /// What a send to `thread` with a key already did, `kept`, for a retry with the same key:
+    /// the turn it started, to `model`, followed again, or the id it queued its message under.
+    async fn sent_before(
+        &self,
+        scope: Scope,
+        thread: ThreadId,
+        model: String,
+        kept: Kept,
+    ) -> Result<Sent<TurnStream>, ApiError> {
+        let started = match kept {
+            Kept::Turn(started) => started,
+            Kept::Queued(queued) => return Ok(Sent::Queued(queued)),
+        };
+        let running = started.borrow().is_none();
+        let watch = if running {
+            Some(self.watch_from_now(scope, thread).await?)
+        } else {
+            None
+        };
+        Ok(Sent::Started(TurnStream::new(
+            model, thread, watch, started,
+        )))
     }
 }
 

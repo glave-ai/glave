@@ -8,10 +8,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use glave_event::{Body, Outcome, Verdict, decode};
-use glave_session::Answering;
+use glave_ports::Caller;
 use glave_session::protocol::{
     Answer, IdempotencyKey, Meta, Notification, Reply, Request, Status, Update, code,
 };
+use glave_session::{Answering, Sent};
 use jiff::Timestamp;
 use serde_json::json;
 use tokio::sync::Notify;
@@ -36,8 +37,10 @@ fn one_turn_runs_at_a_time_and_cancel_ends_it() {
         let second = server.request(turn_start(thread, "again", None)).await;
         assert!(matches!(second, Ok(Reply::Queued { .. })), "{second:?}");
         // A client that follows only turns it starts is told so.
-        let followed = stream_turn(&server, thread, "and again", None).await;
-        assert_eq!(followed.err().map(|e| e.code), Some(code::TURN_RUNNING));
+        let followed = server
+            .start_streaming(&Caller::default(), turn_start(thread, "and again", None))
+            .await;
+        assert!(matches!(followed, Ok(Sent::Queued(_))));
         match server.request(Request::ThreadGet { thread }).await.unwrap() {
             Reply::Thread { thread } => assert_eq!(thread.status, Status::Running),
             other => panic!("{other:?}"),
