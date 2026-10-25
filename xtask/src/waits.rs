@@ -143,6 +143,11 @@ fn unquoted(code: &str) -> String {
         match (quoted, escaped, c) {
             (true, false, '\\') => escaped = true,
             (true, true, _) => escaped = false,
+            // A quote as a char, `'"'`, which opens no string.
+            (false, _, '\'') if chars.peek() == Some(&'"') => {
+                kept.push(c);
+                chars.next();
+            }
             (_, _, '"') => {
                 quoted = !quoted;
                 kept.push(c);
@@ -195,6 +200,8 @@ mod tests {
         let quoted = "let _ = rx.recv().await.context(\"timeout(\");\n";
         assert_eq!(unbounded("crates/a/src/b.rs", quoted).len(), 1);
         assert_eq!(unquoted("a.wait(); // b // c"), "a.wait(); ");
+        let after_a_quote_char = "if c == '\"' { let _ = rx.recv().await; }\n";
+        assert_eq!(unbounded("crates/a/src/b.rs", after_a_quote_char).len(), 1);
         assert_eq!(
             unquoted(r#"x("http://a") // c"#),
             r#"x("")"#.to_owned() + " "

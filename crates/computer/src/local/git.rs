@@ -59,7 +59,7 @@ impl<'a> Git<'a> {
     }
 
     /// [`Git::ask`], no answer counting as a failure: for a question whose unknown answer
-    /// counts against what it would allow (removing a worktree, reusing a folder).
+    /// counts against what it would allow (removing a worktree).
     pub(crate) async fn run(&self, args: &[&str]) -> Said {
         self.said(args, READS_WITHIN).await.unwrap_or_else(Err)
     }
