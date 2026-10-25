@@ -39,8 +39,8 @@ pub(crate) fn home_secrets(home: &Path) -> impl Iterator<Item = PathBuf> + '_ {
 /// other Unix sockets (`docker.sock` is root on the machine; the ssh agent signs as the person).
 const NETWORK_RULES: &str = r#"; network: allowed
 (allow network-outbound (remote ip))
-; Seatbelt accepts only `*` or `localhost` as a host here, so the cloud metadata address
-; (169.254.169.254) cannot be singled out: blocking it needs a proxy (specs/sandbox.md).
+; Seatbelt names a remote host only as `*` or `localhost`, so cloud metadata (169.254.169.254)
+; cannot be withheld here: that needs the outbound proxy (specs/sandbox.md, "Cloud metadata").
 (allow network-inbound (local ip))
 (allow network-bind (local ip))
 (allow network-outbound (remote unix-socket (literal "/private/var/run/mDNSResponder")))

@@ -12,7 +12,7 @@ use reqwest::header::{ACCEPT, CONTENT_TYPE, LOCATION};
 use reqwest::{Client, Url, redirect};
 use thiserror::Error;
 
-use crate::address::is_public;
+use crate::address::reachable;
 use crate::cache::Cache;
 use crate::resolve::{Guarded, Refused};
 use crate::text::{kind, readable};
@@ -197,8 +197,7 @@ impl Fetcher {
             _ => None,
         };
         if let Some(ip) = address
-            && !is_public(ip)
-            && !self.policy.private_ok(host)
+            && !reachable(ip, self.policy.private_ok(host))
         {
             return Err(FetchError::Private(format!(
                 "{ip} is a private address (this computer, a local network or cloud metadata), \
