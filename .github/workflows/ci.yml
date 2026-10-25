@@ -1,232 +1,42 @@
 name: ci
 
+# Diagnostic run for #699 only (this branch is never merged): New project's Enter test,
+# repeated in WebKit in Playwright's image as CI runs it, with half the processors kept busy,
+# before the fix (the dialog as main has it) and after, and a directed check in both browsers.
 on:
-  push:
-    branches: [main]
-  pull_request:
-  merge_group:
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# A new push to a pull request cancels its run still going; pushes to main always finish.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-# Incremental data is never reused across runs, so writing it only costs time. Build caches
-# (the registry and dependencies, not workspace crates) are saved from main only, and pull
-# requests restore them: per-PR copies pushed the repository past its 10 GB cache limit.
 env:
   CARGO_INCREMENTAL: "0"
-  # The web checks run in the `web` job; `cargo xtask ci` in the Rust jobs skips them.
-  GLAVE_SKIP_WEB: "1"
 
 jobs:
-  linux:
-    runs-on: ubuntu-latest
-    # A real Postgres, so the Postgres store runs its conformance suites here instead of
-    # skipping them.
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_PASSWORD: glave
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 15
-    # The runner's own Docker, so the Docker worker backend runs its tests here too (a small
-    # alpine image pinned by digest, a stub in glave's place). Everything they make is
-    # labelled glave.test=<run id>, which this job sweeps, and glave.test.case=<id> per test,
-    # which each test checks so it never sees the containers of a test running beside it.
-    env:
-      GLAVE_TEST_POSTGRES_URL: postgres://postgres:glave@localhost:5432/postgres
-      # The S3-compatible bucket a step below starts, so the bucket's suites run here too.
-      GLAVE_TEST_S3_URL: s3://glave-test
-      GLAVE_TEST_S3_ENDPOINT: http://localhost:8333
-      GLAVE_TEST_DOCKER: "1"
-      # A real worker too: the glave this job builds (Linux, the runner's processor), in an
-      # image with bash and git whose glibc is the runner's (Ubuntu 24.04), pinned.
-      GLAVE_TEST_WORKER_GLAVE: ${{ github.workspace }}/target/debug/glave
-      GLAVE_TEST_WORKER_IMAGE: buildpack-deps:noble-scm@sha256:4163ac2c58660c533f3cf3d178551287ddd0ac18269ef84f3a382d0698c89254
-    steps:
-      # Linking every test binary of the workspace once filled a smaller runner's disk (ld died
-      # with a bus error). Today's runner starts with about 85 GB free and the build takes about
-      # 8, so the toolchains it ships that glave never uses (about 30 GB, and minutes to remove)
-      # go only when less than 40 GB is free, five times what the build needs.
-      - name: Free disk space, if the runner is short of it
-        run: |
-          df -h /
-          free="$(df -BG --output=avail / | awk 'NR == 2 { print int($1) }')"
-          if [ "$free" -ge 40 ]; then
-            echo "$free GB free, enough: nothing removed"
-            exit 0
-          fi
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium
-          sudo docker image prune --all --force >/dev/null
-          df -h /
-      - uses: actions/checkout@v7
-      # Every shell script the repository tracks: each `.sh`, and each file whose first line runs
-      # sh, bash, dash or ksh. Not the files an eval task starts from (evals/tasks/*/environment),
-      # which the model is given as they are, flaws and all.
-      - name: Shellcheck every shell script
-        run: |
-          git ls-files -z | xargs -0 awk 'FNR == 1 { if ((FILENAME ~ /\.sh$/ || $0 ~ /^#!.*[\/ ](ba|da|k)?sh( |$)/) && FILENAME !~ /^evals\/tasks\/[^\/]+\/environment\//) print FILENAME; nextfile }' >"$RUNNER_TEMP/scripts"
-          echo "$(wc -l <"$RUNNER_TEMP/scripts") shell scripts"
-          xargs -d '\n' shellcheck <"$RUNNER_TEMP/scripts"
-      # SeaweedFS (Apache-2.0) as an S3-compatible bucket, pinned by digest. A service container
-      # cannot be given its command (`server -s3`), so a step starts it, and makes the tests'
-      # bucket once it answers. It keeps no keys, so the tests send their requests unsigned.
-      - name: Start an S3-compatible bucket
-        run: |
-          image=chrislusf/seaweedfs@sha256:08d516132314207d10c8e37cbffc1f32b147d870169688734cc61c6231625b62
-          .github/pull-image.sh "$image"
-          docker run -d --name seaweedfs -p 8333:8333 "$image" server -s3
-          for _ in $(seq 1 60); do
-            if curl -sf -o /dev/null -X PUT http://localhost:8333/glave-test; then exit 0; fi
-            sleep 1
-          done
-          docker logs seaweedfs
-          exit 1
-      # Pebble (MPL-2.0), Let's Encrypt's ACME test server, pinned by digest, so glave gets a
-      # real certificate here: it checks glave.test, this runner, over TLS-ALPN-01 on port 5001.
-      # Its directory is served under a root of its own, which the test hands to glave alone.
-      - name: Start an ACME test server
-        run: |
-          image=ghcr.io/letsencrypt/pebble:2.10.1@sha256:ddf230642b1a584f519f32e347de1b05a6e4c1f6c35c1863b33effeab5f78199
-          .github/pull-image.sh "$image"
-          docker run -d --name pebble -p 14000:14000 -p 15000:15000 \
-            --add-host glave.test:host-gateway -e PEBBLE_VA_NOSLEEP=1 -e PEBBLE_WFE_NONCEREJECT=0 \
-            "$image"
-          docker cp pebble:/test/certs/pebble.minica.pem "$RUNNER_TEMP/pebble.minica.pem"
-          {
-            echo "GLAVE_TEST_ACME_DIRECTORY=https://localhost:14000/dir"
-            echo "GLAVE_TEST_ACME_ROOT=$RUNNER_TEMP/pebble.minica.pem"
-            echo "GLAVE_TEST_ACME_ROOTS=https://localhost:15000/roots/0"
-            echo "GLAVE_TEST_ACME_PORT=5001"
-          } >> "$GITHUB_ENV"
-          for _ in $(seq 1 60); do
-            if curl -sf --cacert "$RUNNER_TEMP/pebble.minica.pem" -o /dev/null https://localhost:14000/dir; then exit 0; fi
-            sleep 1
-          done
-          docker logs pebble
-          exit 1
-      - name: Install the pinned toolchain (rust-toolchain.toml)
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest,cargo-deny,cargo-machete
-      - run: cargo xtask ci --all
-      - name: Disk space after the build
-        if: always()
-        run: df -h /
-      - name: Nothing the Docker tests made is left behind
-        if: always()
-        run: |
-          label="label=glave.test=${{ github.run_id }}"
-          left="$(docker ps -aq --filter "$label")$(docker ps -aq --filter label=glave.worker)$(docker volume ls -q --filter "$label")$(docker network ls -q --filter "$label")"
-          # The worker image is shared by two tests running at once, so it is removed here.
-          docker image rm "$GLAVE_TEST_WORKER_IMAGE" >/dev/null 2>&1 || true
-          if docker image inspect "$GLAVE_TEST_WORKER_IMAGE" >/dev/null 2>&1; then
-            echo "the worker image is left behind"
-            exit 1
-          fi
-          if [ -n "$left" ]; then
-            echo "left behind: $left"
-            exit 1
-          fi
-          if docker image inspect "alpine@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507" >/dev/null 2>&1; then
-            echo "the test image is left behind"
-            exit 1
-          fi
-
-  # web/: the session API's TypeScript client, Glaze and the app, in jobs side by side: the
-  # checks, and the end-to-end tests in four shards. `web`, below them, passes only when every
-  # one did; it is the check the `main` ruleset requires.
-  #
-  # The checks: format, lint (eslint and stylelint), type-check, the licences and audit of
-  # what ships, the app's messages against its source and every language, unit tests with axe,
-  # the library, app and showcase builds, every release archive's third-party notices, and
-  # glave built with the app inside (the `web` feature) and its serving tests.
-  web-checks:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install the pinned toolchain (rust-toolchain.toml)
-        run: rustup toolchain install
-        working-directory: .
-      # One build cache for the web jobs: this job saves it (from main), the shards restore it.
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          shared-key: web
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      # cargo-about at the version .github/third-party-notices.sh names, as a release binary, so
-      # the script needn't build it.
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest,cargo-about@0.9.2
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - run: npm ci
-      - run: npm run format:check
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm run licenses
-      - run: npm run audit
-      - run: npm run i18n:check
-      - run: npm test
-      - run: npm run build:glaze
-      - run: npm run build
-      # Written by the script the release writes them with, for every target it builds at once:
-      # a crate whose licence cargo-about can't find or about.toml doesn't accept, or an npm
-      # package that ships no licence text, fails here rather than in a release.
-      - name: Every release archive's third-party notices
-        run: sh .github/third-party-notices.sh
-        working-directory: .
-      - run: npm run build:showcase
-      - name: Build glave with the app inside, and test that it serves it
-        run: cargo nextest run -p glave --features web --test cli -E 'test(/^serve::/)'
-        working-directory: .
-
-  # End-to-end tests in Chromium and WebKit with axe in light and dark, against the real
-  # `glave serve --http --web` and its Content Security Policy: each browser's tests split in
-  # two shards, each on a runner of its own, with the app, the showcase and glave built there.
-  # The tests run in Playwright's own image, which carries the browsers and every system
-  # package they need, so no run installs them (installing them with `--with-deps` took
-  # minutes, and once 35). The builds stay on the runner, with its toolchain and caches, and
-  # what they make runs in the image: Ubuntu 24.04, as the runner is.
-  e2e:
-    name: e2e (${{ matrix.browser }} ${{ matrix.shard }}/2)
+  e2e-diag:
+    name: e2e diag (${{ matrix.code }} ${{ matrix.run }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        browser: [chromium, webkit]
-        shard: [1, 2]
+        code: [before, after]
+        run: [1, 2, 3, 4, 5]
     defaults:
       run:
         working-directory: web
     env:
       GLAVE_BIN: ${{ github.workspace }}/target/debug/glave
-      # At the Playwright version web/ uses (package-lock.json), pinned by digest. When web/
-      # moves to another, the tests fail at once and name the image they need.
       PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 3
+      - name: Before the fix, the dialog as main has it
+        if: matrix.code == 'before'
+        run: >-
+          git checkout HEAD~2 --
+          app/src/app/components/new-project/new-project.component.ts
+          app/src/app/components/new-project/new-project.component.html
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
         working-directory: .
@@ -242,9 +52,6 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run build:showcase
-      # Built as the checks build it for its serving tests, so the cache they save serves it,
-      # and the MCP test server beside it, which the tests sign in to. Playwright's image is
-      # pulled meanwhile, which takes about as long.
       - name: Build glave with the app inside, and pull Playwright's image
         run: |
           .github/pull-image.sh "$PLAYWRIGHT_IMAGE" &
@@ -252,212 +59,41 @@ jobs:
           cargo build -p glave-mcp --features test-server --bin=glave-mcp-test-server
           wait $!
         working-directory: .
-      # The scripts look for the browsers in node_modules (PLAYWRIGHT_BROWSERS_PATH=0), and the
-      # image keeps them in /ms-playwright: a link to there, which resolves in the image.
       - name: The image's browsers, where the scripts look for them
         run: ln -s /ms-playwright node_modules/playwright-core/.local-browsers
-      # In the image, the workspace is at its path on the runner, so GLAVE_BIN and every other
-      # path are the same there. As Playwright's docs run it: with an init process, which reaps
-      # what a killed runner leaves, and the runner's shared memory, which Chromium needs.
-      - name: npm run e2e -- --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/2
-        run: >-
-          docker run --rm --init --ipc=host -e CI -e GLAVE_BIN
-          -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE"
-          npm run e2e -- --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/2
-      # A runner killed outright leaves nothing it started (#558): once, on one shard.
-      - name: npm run e2e:killed
-        if: matrix.browser == 'chromium' && matrix.shard == 1
-        run: >-
-          docker run --rm --init --ipc=host -e CI -e GLAVE_BIN
-          -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE"
-          npm run e2e:killed
-
-  web:
-    if: always()
-    needs: [web-checks, e2e]
-    runs-on: ubuntu-latest
-    steps:
-      - name: The checks and every end-to-end shard passed
-        env:
-          CHECKS: ${{ needs.web-checks.result }}
-          E2E: ${{ needs.e2e.result }}
+      # Half the processors kept busy meanwhile, as on a runner beside busy others.
+      - name: the Enter test 300 times in WebKit, and the directed check, the machine kept busy
         run: |
-          echo "checks: $CHECKS, end-to-end: $E2E"
-          test "$CHECKS" = success
-          test "$E2E" = success
-
-  # The release workflow is dist's with two changes (`cargo xtask release-workflow`): every job's
-  # token read-only but the publishing job's, and the install script made to check every
-  # archive. dist doesn't check a workflow its config says is edited by hand, so this job does:
-  # what the xtask writes from today's config is what's checked in, and the change to the
-  # install script still applies to the one dist writes today.
-  release-workflow:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install the pinned toolchain (rust-toolchain.toml)
-        run: rustup toolchain install
-      - name: Install dist, the version dist-workspace.toml names
-        shell: bash
-        run: |
-          version="$(sed -n 's/^cargo-dist-version = "\(.*\)"$/\1/p' dist-workspace.toml)"
-          curl --proto '=https' --tlsv1.2 -LsSf "https://github.com/axodotdev/cargo-dist/releases/download/v${version}/cargo-dist-installer.sh" | sh
-      - run: cargo xtask release-workflow
-      - name: release.yml is what the xtask writes
-        run: git diff --exit-code
-      # With no archives built, the script dist writes carries no checksums, but its check is
-      # the same.
-      - name: The install script dist writes takes the change that makes it check every archive
-        run: |
-          dist build --artifacts=global --output-format=json >/dev/null
-          sh .github/install-script-checksums.sh target/distrib/glave-installer.sh
-
-  # Workers on Kubernetes: a kind cluster on the runner, and the Kubernetes backend's tests
-  # against it (a stub in glave's place, then the glave this job builds in real workers, over
-  # TLS through port-forward and over attach). Everything they make is labelled
-  # glave.test=<run id>, and nothing labelled may be left.
-  kubernetes:
-    runs-on: ubuntu-latest
-    env:
-      GLAVE_TEST_KUBE: "1"
-      GLAVE_TEST_KUBE_RUNTIME_CLASS: glave-test-runc
-      GLAVE_TEST_WORKER_GLAVE: ${{ github.workspace }}/target/debug/glave
-      GLAVE_TEST_WORKER_IMAGE: buildpack-deps:noble-scm@sha256:4163ac2c58660c533f3cf3d178551287ddd0ac18269ef84f3a382d0698c89254
-    steps:
-      # Linking every test binary of the workspace once filled a smaller runner's disk (ld died
-      # with a bus error). Today's runner starts with about 85 GB free and the build takes about
-      # 8, so the toolchains it ships that glave never uses (about 30 GB, and minutes to remove)
-      # go only when less than 40 GB is free, five times what the build needs.
-      - name: Free disk space, if the runner is short of it
-        run: |
-          df -h /
-          free="$(df -BG --output=avail / | awk 'NR == 2 { print int($1) }')"
-          if [ "$free" -ge 40 ]; then
-            echo "$free GB free, enough: nothing removed"
-            exit 0
-          fi
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium
-          sudo docker image prune --all --force >/dev/null
-          df -h /
-      - uses: actions/checkout@v7
-      - name: Install the pinned toolchain (rust-toolchain.toml)
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest
-      - uses: helm/kind-action@v1.15.1
-        with:
-          version: v0.33.0
-          cluster_name: glave
-      # A runtime class on kind's own runc, so the real workers run under one (gVisor in kind
-      # is a follow-up): the class is set on the Pod and the VM-isolation policy accepts it.
-      - name: A runtime class for the real workers
-        run: |
-          kubectl apply -f - <<'EOF'
-          apiVersion: node.k8s.io/v1
-          kind: RuntimeClass
-          metadata:
-            name: glave-test-runc
-          handler: runc
-          EOF
-      - run: cargo build -p glave
-      - run: cargo nextest run -p glave-computer --all-features -E 'test(/^worker::kubernetes::/)'
-      - name: Disk space after the build
+          set +e
+          burners=""
+          for i in $(seq $(( $(nproc) / 2 ))); do
+            sh -c 'while :; do :; done' &
+            burners="$burners $!"
+          done
+          docker run --rm --init --ipc=host -e CI -e GLAVE_BIN \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE" \
+            npm run e2e -- --project=webkit e2e/new-project.e2e.ts:156 --repeat-each=300 \
+            --reporter=line --output=test-results/enter > enter.log 2>&1
+          docker run --rm --init --ipc=host -e CI -e GLAVE_BIN \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE" \
+            npm run e2e -- e2e/zz-diag-enter.e2e.ts --repeat-each=20 \
+            --reporter=line --output=test-results/diag > diag.log 2>&1
+          kill $burners
+          tail -20 enter.log diag.log
+          {
+            echo "### ${{ matrix.code }} ${{ matrix.run }}"
+            echo "Enter test, WebKit:"
+            grep -E '^ +[0-9]+ (passed|failed|flaky|interrupted|did not run)' enter.log
+            echo "Directed check, both browsers:"
+            grep -E '^ +[0-9]+ (passed|failed|flaky|interrupted|did not run)' diag.log
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+      - uses: actions/upload-artifact@v7
         if: always()
-        run: df -h /
-      - name: Nothing the Kubernetes tests made is left behind
-        if: always()
-        run: |
-          left="$(kubectl get pods,networkpolicies,secrets -A -l "glave.test=${{ github.run_id }}" -o name)$(kubectl get pods -A -l glave.worker -o name)"
-          if [ -n "$left" ]; then
-            echo "left behind: $left"
-            exit 1
-          fi
-
-  # The sandbox on Linux, for real: first Landlock, the fallback, with bubblewrap absent (glave
-  # itself is the helper), then bubblewrap and seccomp, with every sandbox test required to
-  # run rather than skip.
-  sandbox-linux:
-    runs-on: ubuntu-latest
-    steps:
-      # Linking every test binary of the workspace once filled a smaller runner's disk (ld died
-      # with a bus error). Today's runner starts with about 85 GB free and the build takes about
-      # 8, so the toolchains it ships that glave never uses (about 30 GB, and minutes to remove)
-      # go only when less than 40 GB is free, five times what the build needs.
-      - name: Free disk space, if the runner is short of it
-        run: |
-          df -h /
-          free="$(df -BG --output=avail / | awk 'NR == 2 { print int($1) }')"
-          if [ "$free" -ge 40 ]; then
-            echo "$free GB free, enough: nothing removed"
-            exit 0
-          fi
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium
-          sudo docker image prune --all --force >/dev/null
-          df -h /
-      - uses: actions/checkout@v7
-      - name: Install the pinned toolchain (rust-toolchain.toml)
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest
-      - run: cargo build -p glave
-      # The MCP server the binary's tests start, killed with glave in orphans.rs.
-      - run: cargo build -p glave-mcp --features test-server
-      - name: Landlock, without bubblewrap
-        env:
-          GLAVE_REQUIRE_LANDLOCK: "1"
-          GLAVE_TEST_SANDBOX_HELPER: ${{ github.workspace }}/target/debug/glave
-        run: |
-          sudo apt-get remove -y bubblewrap >/dev/null 2>&1 || true
-          if command -v bwrap; then echo "bubblewrap is still installed"; exit 1; fi
-          cargo nextest run -p glave-computer -E 'test(/landlock/)'
-          cargo nextest run -p glave --test cli -E 'test(/landlock/)'
-      # Ubuntu 23.10 and later let only programs AppArmor allows create user namespaces; this
-      # is the profile the person adds too (specs/sandbox.md).
-      - name: Install bubblewrap, with an AppArmor profile that lets it make user namespaces
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q bubblewrap
-          if [ -d /etc/apparmor.d ]; then
-            printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile bwrap /usr/bin/bwrap flags=(unconfined) {\n  userns,\n  include if exists <local/bwrap>\n}\n' | sudo tee /etc/apparmor.d/bwrap >/dev/null
-            sudo apparmor_parser -r /etc/apparmor.d/bwrap
-          fi
-          bwrap --version
-      - name: bubblewrap and seccomp
-        env:
-          GLAVE_REQUIRE_SANDBOX: "1"
-        run: cargo nextest run -p glave-computer -p glave-harness -p glave -E 'test(/sandbox/)'
-      - name: Disk space after the build
-        if: always()
-        run: df -h /
-
-  # macOS runs once per change, in the merge queue, then on main (and on demand). Pull
-  # requests skip it, and a skipped job counts as passing.
-  macos:
-    if: github.event_name != 'pull_request'
-    runs-on: macos-latest
-    env:
-      GLAVE_REQUIRE_SANDBOX: "1"
-    steps:
-      - uses: actions/checkout@v7
-      # macOS's /bin/sh is bash 3.2, which reads some scripts otherwise than dash and shellcheck
-      # do: a heredoc inside $(…) whose text holds a `)` ends early there, and what follows runs
-      # as commands. The scripts in .github run on macOS in a release, or by a maintainer's hand.
-      - name: The scripts in .github parse under macOS's /bin/sh
-        run: for script in .github/*.sh; do /bin/sh -n "$script"; done
-      - name: Install the pinned toolchain (rust-toolchain.toml)
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest,cargo-deny,cargo-machete
-      - run: cargo xtask ci --all
+          name: results-${{ matrix.code }}-${{ matrix.run }}
+          path: |
+            web/test-results
+            web/enter.log
+            web/diag.log
+          if-no-files-found: ignore
