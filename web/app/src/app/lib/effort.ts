@@ -27,14 +27,6 @@ export function levelName(level: string): string {
 }
 
 /**
- * What happens when no level is chosen: marking the level sent then, or, where none is sent,
- * saying the model reasons as its maker set it.
- */
-export function defaultLabel(): string {
-  return $localize`:@@effort.default:Default`;
-}
-
-/**
  * The levels of reasoning `model` offers, as its provider lists them, the one sent when none
  * is chosen marked: none when it offers no choice.
  */
@@ -42,7 +34,8 @@ export function effortOptions(model: ModelInfo | undefined): readonly GlzMenuOpt
   const reasoning = model?.reasoning ?? null;
   const efforts = reasoning?.efforts ?? [];
   const fallback = reasoning?.default ?? null;
-  const hint = defaultLabel();
+  // What marks the level sent when none is chosen.
+  const hint = $localize`:@@effort.default:Default`;
   return efforts.map((level) => ({
     value: level,
     label: levelName(level),

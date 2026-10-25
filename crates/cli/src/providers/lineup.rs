@@ -140,8 +140,7 @@ impl Lineup {
             let id = first.map_or("", |target| target.model.as_str());
             let entry = self.entries.iter().find(|entry| entry.id.trim() == id);
             let name = entry.and_then(|e| e.name.as_deref());
-            let unasked = first.and_then(|target| target.effort_for(None));
-            describe::info(id, &cards, providers, name, unasked)
+            describe::info(id, &cards, providers, name, first.copied())
         };
         let models = Models {
             default: Some((endpoint.model.clone(), endpoint.provider.provider.clone())),

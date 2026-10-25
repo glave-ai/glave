@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, model } from '@angular/core';
 import { GlzMenuSelectComponent } from '@glave/glaze';
 
-import { defaultEffort, defaultLabel, effortOptions } from '../../lib/effort';
+import { defaultEffort, effortOptions } from '../../lib/effort';
 import { ModelsService } from '../../services/models.service';
 
 /**
@@ -30,7 +30,8 @@ export class EffortPickerComponent {
 
   protected readonly copy = {
     label: $localize`:@@effortPicker.label:Reasoning`,
-    unasked: defaultLabel(),
+    // The button when no level is sent: the model reasons as its maker set it.
+    unasked: $localize`:@@effortPicker.unasked:Default`,
   } as const;
   private readonly models = inject(ModelsService);
   private readonly info = computed(() => {

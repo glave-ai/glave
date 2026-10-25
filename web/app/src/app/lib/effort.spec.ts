@@ -1,14 +1,7 @@
 import type { ModelInfo } from '@glave/client';
 
 import { event } from '../testing/fixtures';
-import {
-  chosenEffort,
-  defaultEffort,
-  defaultLabel,
-  effortOptions,
-  effortToSend,
-  levelName,
-} from './effort';
+import { chosenEffort, defaultEffort, effortOptions, effortToSend, levelName } from './effort';
 
 const REASONS: ModelInfo = {
   id: 'openai/gpt-6-luna',
@@ -36,7 +29,6 @@ describe('effort', () => {
     const unsent: ModelInfo = { id: 'm', default: false, reasoning: { efforts: ['high', 'low'] } };
     expect(effortOptions(unsent).some((option) => option.hint !== undefined)).toBe(false);
     expect(defaultEffort(unsent)).toBeNull();
-    expect(defaultLabel()).toBe('Default');
   });
 
   it('reads the thread’s latest choice', () => {

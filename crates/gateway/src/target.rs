@@ -4,6 +4,7 @@
 use std::fmt;
 use std::sync::Arc;
 
+use glave_event::Reasoning;
 use glave_ports::{BoxFuture, Completion, Delta, ModelProvider, ModelRequest, ProviderError};
 
 use crate::price::Price;
@@ -131,19 +132,22 @@ impl Target {
         self
     }
 
-    /// The target, offering the reasoning levels `efforts`, its model using `default` when
-    /// asked for none; a default it does not offer is not known.
+    /// The target, reasoning as its own service's catalog says: offering its levels, its
+    /// model using its default when asked for none. A default it does not offer is not known.
     #[must_use]
-    pub fn with_efforts(mut self, efforts: Vec<String>, default: Option<String>) -> Self {
-        self.default_effort = default.filter(|default| efforts.contains(default));
-        self.efforts = efforts;
+    pub fn with_reasoning(mut self, reasoning: &Reasoning) -> Self {
+        self.efforts.clone_from(&reasoning.efforts);
+        self.default_effort = reasoning
+            .default
+            .clone()
+            .filter(|default| self.efforts.contains(default));
         self
     }
 
     /// The reasoning level a request asking for `asked` is sent to this target with: that
-    /// level when the target offers it, else the one its model uses unasked, sent so the
-    /// model reasons alike at every service; none when neither is known, which leaves it to
-    /// the model's maker.
+    /// level when the target offers it, else the one its catalog says its model uses unasked,
+    /// sent explicitly rather than left to whichever provider serves it; none when neither is
+    /// known, which leaves it to the model's maker.
     pub fn effort_for<'a>(&'a self, asked: Option<&'a str>) -> Option<&'a str> {
         asked
             .filter(|asked| self.efforts.iter().any(|offered| offered == asked))
@@ -192,9 +196,16 @@ mod tests {
         Target::new(Arc::new(ScriptedModel::new(Vec::new())), "p", "m")
     }
 
+    fn reasoning(efforts: &[&str], default: Option<&str>) -> Reasoning {
+        Reasoning {
+            efforts: efforts.iter().map(|level| (*level).to_owned()).collect(),
+            default: default.map(str::to_owned),
+            mandatory: false,
+        }
+    }
+
     fn reasons(default: Option<&str>) -> Target {
-        let levels = ["high", "medium", "low"].map(str::to_owned).to_vec();
-        plain().with_efforts(levels, default.map(str::to_owned))
+        plain().with_reasoning(&reasoning(&["high", "medium", "low"], default))
     }
 
     #[test]
@@ -221,7 +232,7 @@ mod tests {
         );
         assert_eq!(reasons(None).effort_for(Some("max")), None);
         assert_eq!(plain().effort_for(Some("high")), None, "it offers none");
-        let odd = plain().with_efforts(vec!["high".into()], Some("max".into()));
+        let odd = plain().with_reasoning(&reasoning(&["high"], Some("max")));
         assert_eq!(odd.effort_for(None), None, "a default it does not offer");
     }
 

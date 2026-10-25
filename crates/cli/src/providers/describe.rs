@@ -88,13 +88,11 @@ pub(super) fn described(target: Target, card: Option<(&CatalogModel, &Catalog)>)
     let Some((card, catalog)) = card else {
         return target;
     };
-    let (efforts, default) = card.reasoning.as_ref().map_or_else(
-        || (Vec::new(), None),
-        |reasoning| (reasoning.efforts.clone(), reasoning.default.clone()),
-    );
-    let target = target
-        .with_capabilities(capabilities(card))
-        .with_efforts(efforts, default);
+    let target = target.with_capabilities(capabilities(card));
+    let target = match &card.reasoning {
+        Some(reasoning) => target.with_reasoning(reasoning),
+        None => target,
+    };
     match price(card, catalog) {
         Some(price) => target.with_price(price),
         None => target,
@@ -120,15 +118,16 @@ pub(super) fn cards_for<'a>(
 }
 
 /// The entry for `id`, served by `providers` in order, as `cards` describe it, the first
-/// first; named `name` when the settings name it. Its reasoning's default is `unasked`, the
-/// level its first target is sent when a thread chooses none, if any.
+/// first; named `name` when the settings name it. Its reasoning's default is the level
+/// `target`, the one tried first, is sent when a thread chooses none, if any.
 pub(super) fn info(
     id: &str,
     cards: &[&CatalogModel],
     providers: Vec<String>,
     name: Option<&str>,
-    unasked: Option<&str>,
+    target: Option<&Target>,
 ) -> ModelInfo {
+    let unasked = target.and_then(|target| target.effort_for(None));
     let first = |pick: fn(&CatalogModel) -> Option<u64>| cards.iter().find_map(|card| pick(card));
     let listed = cards.iter().find_map(|card| card.name.as_deref());
     let (maker, own) = match listed.map(|listed| listed.split_once(": ")) {
@@ -195,17 +194,31 @@ mod tests {
         }
     }
 
+    /// A target described by `card`, its own service's, or by none.
+    fn target(card: Option<&CatalogModel>) -> Target {
+        let openrouter = Catalog {
+            kind: ProviderKind::Openrouter,
+            url: None,
+            listed: At::from(jiff::Timestamp::UNIX_EPOCH),
+            models: Vec::new(),
+        };
+        let model = Arc::new(ScriptedModel::new(Vec::new()));
+        let target = Target::new(model, "openrouter", "anthropic/claude-haiku-5.5");
+        described(target, card.map(|card| (card, &openrouter)))
+    }
+
     #[test]
     fn an_entry_takes_its_name_and_maker_from_the_listing_and_its_price_from_the_first_service() {
         let reference = card();
         let direct = CatalogModel::new("claude-haiku-5-5");
         let providers = vec!["Anthropic".to_owned(), "OpenRouter".to_owned()];
+        let cards = [&direct, &reference];
         let info = info(
             "claude-haiku-5-5",
-            &[&direct, &reference],
+            &cards,
             providers,
             None,
-            None,
+            Some(&target(None)),
         );
         assert_eq!(info.name.as_deref(), Some("Claude Haiku 5.5"));
         assert_eq!(info.maker.as_deref(), Some("Anthropic"));
@@ -213,45 +226,27 @@ mod tests {
         assert_eq!(info.price, None, "the service tried first says no price");
         let reasoning = info.reasoning.unwrap();
         assert_eq!(reasoning.efforts.len(), 2);
-        assert_eq!(
-            reasoning.default, None,
-            "the service tried first is sent none"
-        );
+        assert_eq!(reasoning.default, None, "the first is sent none");
         assert_eq!(info.providers, ["Anthropic", "OpenRouter"]);
-        let named = super::info("m", &[&reference], Vec::new(), Some("Mine"), Some("high"));
+        let own = target(Some(&reference));
+        let named = super::info("m", &[&reference], Vec::new(), Some("Mine"), Some(&own));
         assert_eq!(
             named.name.as_deref(),
             Some("Mine"),
             "the settings' name wins"
         );
-        assert_eq!(
-            named.reasoning.and_then(|r| r.default).as_deref(),
-            Some("high")
-        );
+        let unasked = named.reasoning.and_then(|reasoning| reasoning.default);
+        assert_eq!(unasked.as_deref(), Some("high"), "what the first is sent");
     }
 
     #[test]
-    fn a_target_takes_its_levels_and_their_default_from_its_own_service_alone() {
-        let openrouter = Catalog {
-            kind: ProviderKind::Openrouter,
-            url: None,
-            listed: At::from(jiff::Timestamp::UNIX_EPOCH),
-            models: vec![card()],
-        };
-        let handle = || {
-            let model = Arc::new(ScriptedModel::new(Vec::new()));
-            Target::new(model, "openrouter", "anthropic/claude-haiku-5.5")
-        };
-        let own = described(handle(), Some((&card(), &openrouter)));
+    fn a_target_is_sent_the_levels_and_default_of_its_own_card_and_none_without_one() {
+        let own = target(Some(&card()));
         assert_eq!(own.effort_for(None), Some("high"));
         assert_eq!(own.effort_for(Some("low")), Some("low"));
-        let elsewhere = described(handle(), None);
-        assert_eq!(
-            elsewhere.effort_for(None),
-            None,
-            "another service's card says it"
-        );
-        assert_eq!(elsewhere.effort_for(Some("low")), None);
+        let bare = target(None);
+        assert_eq!(bare.effort_for(None), None);
+        assert_eq!(bare.effort_for(Some("low")), None);
     }
 
     #[test]
