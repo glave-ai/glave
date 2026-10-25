@@ -10,9 +10,9 @@ import {
 
 /**
  * Keeps a scrolling container at its bottom while its content grows, as a streaming reply
- * does, or as something in it opens, but only while the person is already there: scrolling up
- * to read stops it, scrolling back down starts it again. `atBottom` tells whether they are
- * there, for a "Jump to latest" button, and `scrollToBottom()` takes them there.
+ * does, but only while the person is already there: scrolling up to read stops it, scrolling
+ * back down starts it again. `atBottom` tells whether they are there, for a "Jump to latest"
+ * button, and `scrollToBottom()` takes them there.
  *
  * ```html
  * <div class="thread" glzStickToBottom #stick="glzStickToBottom" [(atBottom)]="atBottom">…</div>
@@ -34,42 +34,17 @@ export class GlzStickToBottomDirective {
 
   constructor() {
     const view = this.element.ownerDocument.defaultView;
-    if (view === null || typeof view.MutationObserver !== 'function') {
-      return;
+    if (view !== null && typeof view.MutationObserver === 'function') {
+      const observer = new view.MutationObserver(() => {
+        if (this.atBottom()) {
+          this.scrollToBottom();
+        }
+      });
+      observer.observe(this.element, { childList: true, subtree: true, characterData: true });
+      inject(DestroyRef).onDestroy(() => {
+        observer.disconnect();
+      });
     }
-    const follow = (): void => {
-      if (this.atBottom()) {
-        this.scrollToBottom();
-      }
-    };
-    // What only a size records: a <details> opening, a fold sliding open, an image loading,
-    // the container made shorter. Unfollowed, it would leave the person short of a bottom they
-    // still seem to be at, and their next scroll, however small, would show them away from it.
-    const sizes = new view.ResizeObserver(follow);
-    sizes.observe(this.element);
-    // Content added, removed or rewritten is followed at once, as it changes: sizes are reported
-    // only after the frame's scroll events, and by then content swapped out and in again may
-    // have pulled the scroll up with it, which would read as the person leaving the bottom.
-    const changes = new view.MutationObserver((records) => {
-      for (const record of records.filter((each) => each.target === this.element)) {
-        for (const node of Array.from(record.removedNodes)) {
-          if (node instanceof view.Element) {
-            sizes.unobserve(node);
-          }
-        }
-        for (const node of Array.from(record.addedNodes)) {
-          if (node instanceof view.Element) {
-            sizes.observe(node);
-          }
-        }
-      }
-      follow();
-    });
-    changes.observe(this.element, { childList: true, subtree: true, characterData: true });
-    inject(DestroyRef).onDestroy(() => {
-      changes.disconnect();
-      sizes.disconnect();
-    });
   }
 
   /** Scrolls to the bottom, and sticks there again. */
