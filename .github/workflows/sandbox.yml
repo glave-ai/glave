@@ -26,9 +26,12 @@ concurrency:
 env:
   CARGO_INCREMENTAL: "0"
 
+# Every job has a timeout of about three times its longest run (October 2026), so a hang fails
+# in minutes rather than holding the merge queue for GitHub's six hours.
 jobs:
   macos:
     runs-on: macos-latest
+    timeout-minutes: 20
     env:
       # Fail, never skip, if the sandbox is unavailable on the runner.
       GLAVE_REQUIRE_SANDBOX: "1"
