@@ -188,6 +188,40 @@ export function builtChunk(holds: (code: string) => boolean): string {
   return found;
 }
 
+/** What a test holds on its way (`hold`) until it lets it go. */
+export interface Held {
+  /** Settles once the page has sent the first of it. */
+  readonly sent: Promise<void>;
+  /** Lets it go on to what answers it, and holds nothing after. */
+  readonly letGo: () => void;
+}
+
+/**
+ * Holds what `page` sends to `url` (a pattern, as `page.route` takes), or only its calls of the
+ * session API's `method` there, on its way until the test lets it go, as a busy server or a
+ * slow network would: so the test sees what the page shows meanwhile for as long as it looks,
+ * with no timer to race. A route added later runs first, so this holds a request before the
+ * fake, or the glave, that answers it.
+ */
+export async function hold(page: Page, url: string, method?: string): Promise<Held> {
+  let sent = (): void => undefined;
+  const sending = new Promise<void>((resolve) => {
+    sent = resolve;
+  });
+  let letGo = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    letGo = resolve;
+  });
+  await page.route(url, async (route) => {
+    if (method === undefined || route.request().headers()['glave-method'] === method) {
+      sent();
+      await held;
+    }
+    await route.fallback();
+  });
+  return { sent: sending, letGo };
+}
+
 /** Elements end-to-end tests use, by their `data-testid` (AGENTS.md, "Test hooks"). */
 export function byTestId(page: Page, testId: string): ReturnType<Page['getByTestId']> {
   return page.getByTestId(testId);

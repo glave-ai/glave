@@ -9,14 +9,7 @@ import type {
 } from '@glave/client';
 import type { Page, Route } from '@playwright/test';
 
-import {
-  type Commands,
-  SERVING,
-  SERVING_HISTORY,
-  STOP_MS,
-  background,
-  docsRunning,
-} from './fake-commands';
+import { type Commands, SERVING, SERVING_HISTORY, background, docsRunning } from './fake-commands';
 import { type Awake, keptAwake } from './fake-awake';
 import { keptFile } from './fake-files';
 import { HOME, listFolders } from './fake-folders';
@@ -311,9 +304,6 @@ const GITHUB: CredentialInfo = {
 
 /** The repository the fake host does not have, which a clone fails on. */
 export const MISSING_REPOSITORY = 'https://github.com/acme/missing';
-
-/** How long a clone takes, so the page shows it under way. */
-const CLONE_MS = 400;
 
 /**
  * Makes a project as `project/create` does: a name taken among the person's projects gets the
@@ -665,13 +655,6 @@ export async function fakeApi(
       await route.fulfill({ contentType: 'text/event-stream', body: turn(message) });
       await lists.tell(String(message.params['thread']));
       return;
-    }
-    const folder = message.params['folder'] as { kind: string } | null | undefined;
-    if (message.method === 'project/create' && folder?.kind === 'repository') {
-      await new Promise((resolve) => setTimeout(resolve, CLONE_MS));
-    }
-    if (message.method === 'command/stop') {
-      await new Promise((resolve) => setTimeout(resolve, STOP_MS));
     }
     const answered = refused ?? answer(message.method, message.params, known);
     const reply =

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import { fakeApi } from './fake-api';
 import { DOCS_COMMAND, DOCS_SERVER, SERVING } from './fake-commands';
-import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './support';
+import { SIGNED_IN, byTestId, expectAccessible, hold, watchForProblems } from './support';
 
 for (const colorScheme of ['light', 'dark'] as const) {
   test(`the tools show what a thread runs in the background, and Stop ends it (${colorScheme})`, async ({
@@ -31,8 +31,11 @@ for (const colorScheme of ['light', 'dark'] as const) {
 
     const stop = byTestId(page, 'command-stop');
     await expect(stop).toHaveAccessibleName(`Stop ${DOCS_SERVER}`);
+    // It stays stopping until the test has seen it.
+    const stopping = await hold(page, '/', 'command/stop');
     await stop.click();
     await expect(stop).toHaveText('Stopping…');
+    stopping.letGo();
     await expect(byTestId(page, 'command')).toHaveCount(0);
     await expect(byTestId(page, 'commands-empty')).toContainText(
       'Nothing running in the background',

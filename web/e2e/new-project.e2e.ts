@@ -3,7 +3,14 @@ import { type Page, expect, test } from '@playwright/test';
 import { MISSING_REPOSITORY, type Request, fakeApi } from './fake-api';
 import { HOME_REFUSED } from './fake-folders';
 import { SIGNED_IN_ELSEWHERE } from './fake-signin';
-import { SIGNED_IN, byTestId, expectAccessible, shownOpacity, watchForProblems } from './support';
+import {
+  SIGNED_IN,
+  byTestId,
+  expectAccessible,
+  hold,
+  shownOpacity,
+  watchForProblems,
+} from './support';
 
 /** Words New project never says (AGENTS.md, "Keeping principle 4"). */
 const NOT_SAID = /\bspaces?\b|workspace|policy|organization|member|admin|config\.toml|GLAVE_/iu;
@@ -106,10 +113,13 @@ test('a repository clones while it shows, and a refusal is told in the server’
   );
   await byTestId(page, 'new-project-url').fill(MISSING_REPOSITORY);
   await expect(byTestId(page, 'new-project-name')).toHaveValue('missing');
+  // The clone stays under way until the test has seen it.
+  const clone = await hold(page, '/', 'project/create');
   await byTestId(page, 'new-project-create').click();
   await expect(byTestId(page, 'new-project-cloning')).toBeVisible();
   await expect(byTestId(page, 'new-project-create')).toHaveText('Cloning…');
   await expectAccessible(page);
+  clone.letGo();
   await expect(byTestId(page, 'new-project-problem')).toHaveText(
     `Could not clone ${MISSING_REPOSITORY}: remote: Repository not found. If the repository is private, connect its git host first.`,
   );

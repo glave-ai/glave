@@ -2,7 +2,15 @@ import { expect, test } from '@playwright/test';
 import axe, { type Result } from 'axe-core';
 
 import { fakeApi } from './fake-api';
-import { SIGNED_IN, WCAG, builtChunk, byTestId, described, expectAccessible } from './support';
+import {
+  SIGNED_IN,
+  WCAG,
+  builtChunk,
+  byTestId,
+  described,
+  expectAccessible,
+  hold,
+} from './support';
 
 /** What axe found the moment the side nav's ⋯ appeared, and whether it was bound by then. */
 interface Appeared {
@@ -22,22 +30,10 @@ test('the side nav’s ⋯, loaded late, is never in the page unnamed: axe passe
   // way, as on a busy computer, until the test lets it come. It is known by the component it
   // defines, in the build glave serves.
   const chunk = builtChunk((code) => /selectors:\[\[["'`]app-nav-list-menu["'`]\]\]/u.test(code));
-  let asked: () => void = () => undefined;
-  const requested = new Promise<void>((resolve) => {
-    asked = resolve;
-  });
-  let release: () => void = () => undefined;
-  const released = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await page.route(`**/${chunk}`, async (route) => {
-    asked();
-    await released;
-    await route.fallback();
-  });
+  const held = await hold(page, `**/${chunk}`);
   await page.goto(`/${SIGNED_IN}`);
   await expect(byTestId(page, 'home-composer-input')).toBeVisible();
-  await requested;
+  await held.sent;
 
   // Angular puts a deferred block in the page as soon as its code is in, and binds it (names,
   // test hooks) at its next change detection, the page's next task. So axe runs as the block
@@ -77,7 +73,7 @@ test('the side nav’s ⋯, loaded late, is never in the page unnamed: axe passe
       observer.observe(document.body, { childList: true, subtree: true });
     });
   }, WCAG);
-  release();
+  held.letGo();
   const appeared = await page.evaluate(() => (window as unknown as Watched).appeared);
   // Axe looked before the block was bound, and found nothing wrong.
   expect(appeared?.bound).toBe(false);
