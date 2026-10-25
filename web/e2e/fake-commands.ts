@@ -9,6 +9,8 @@ import { Refusal, bound, call, done, event } from './fake-records';
 export const SERVING = '01900000-0000-7000-8000-000000000108';
 export const DOCS_SERVER = 'npm run docs -- --port 4321 --host 127.0.0.1 --open --watch';
 export const DOCS_COMMAND = '01900000-0000-7000-8000-0000000000d1';
+/** When the docs site started, in its thread's turn. */
+export const DOCS_STARTED = '2026-10-11T10:00:05.000Z';
 
 /** The serving thread's history: it started the docs site, which still runs. */
 export const SERVING_HISTORY = [
@@ -28,6 +30,7 @@ export const SERVING_HISTORY = [
     'command.started',
     { command: DOCS_COMMAND, call_id: 'call_1', script: DOCS_SERVER },
     SERVING,
+    DOCS_STARTED,
   ),
   event(
     8,
@@ -44,14 +47,15 @@ export const SERVING_HISTORY = [
 /** Whether the docs site still runs, while the fake runs: until the person stops it. */
 export interface Commands {
   running: boolean;
-  /** When it started: two minutes and five seconds before the fake began. */
-  readonly startedAt: string;
 }
 
-/** The docs site running, as a fake begins. */
-export function docsRunning(): Commands {
-  return { running: true, startedAt: new Date(Date.now() - 125_000).toISOString() };
-}
+/** The docs site, as `command/list` lists it. */
+const DOCS: RunningCommand = {
+  id: DOCS_COMMAND,
+  command: DOCS_SERVER,
+  started_at: DOCS_STARTED,
+  summary: 'Still running: the agent started it, and it runs until it ends or someone stops it.',
+};
 
 /**
  * The answer to a call about a thread's commands in the background, else `undefined`: only the
@@ -65,7 +69,7 @@ export function background(
   const running = params['thread'] === SERVING && commands?.running === true ? commands : null;
   switch (method) {
     case 'command/list':
-      return { commands: running === null ? [] : [docsServer(running.startedAt)] };
+      return { commands: running === null ? [] : [DOCS] };
     case 'command/stop':
       if (running === null || params['command'] !== DOCS_COMMAND) {
         return new Refusal(-32027, 'that command is not running in this thread');
@@ -75,14 +79,4 @@ export function background(
     default:
       return undefined;
   }
-}
-
-/** The docs site, as `command/list` lists it. */
-function docsServer(startedAt: string): RunningCommand {
-  return {
-    id: DOCS_COMMAND,
-    command: DOCS_SERVER,
-    started_at: startedAt,
-    summary: 'Still running: the agent started it, and it runs until it ends or someone stops it.',
-  };
 }

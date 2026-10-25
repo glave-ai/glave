@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 
 import { HISTORY } from './fake-api';
+import { type Gated, gates } from './fake-gate';
 import { THREAD } from './fake-records';
 
 /** What the person asks in a turn that thinks first (`thinkingTurn`). */
@@ -14,33 +15,22 @@ export const THINKING = ['The lock is taken ', 'twice on the same thread.\n\n'];
 /** What it answers, in the pieces it streams. */
 export const ANSWER = ['The lock ', 'is taken twice.'];
 
-/** The steps of a thinking turn the test lets happen, one at a time, in order. */
-export type ThinkingStep = 'start' | 'tool' | 'think' | 'answer';
-
 /**
  * Makes the page's next turn in `THREAD` one that runs a tool, then thinks before it answers, a
- * step at a time as the test lets it (`letThink`): `start` records the turn (at `STARTED`) and
- * the person's message, `tool` writes `src/lock.rs` (the server saying `STEP` as it begins),
- * `think` ends it and streams the model's reasoning, and `answer` streams its reply, records it
- * with its reasoning, and ends the turn. Until `start`, the server has recorded nothing, as when
- * a model call is slow to begin. The page's own `fetch` answers, as in `streamReply`.
+ * step at a time, each at a gate the test lets go (`letGo`), in order: `start` records the turn
+ * (at `STARTED`) and the person's message, `tool` writes `src/lock.rs` (the server saying `STEP`
+ * as it begins), `think` ends it and streams the model's reasoning, and `answer` streams its
+ * reply, records it with its reasoning, and ends the turn. Until `start`, the server has
+ * recorded nothing, as when a model call is slow to begin. The page's own `fetch` answers, as in
+ * `streamReply`.
  */
 export async function thinkingTurn(page: Page): Promise<void> {
+  await gates(page);
   await page.addInitScript(
     ({ after, thread, started, step, thinking, answer }) => {
       const real = window.fetch.bind(window);
       const encoder = new TextEncoder();
-      const gates = new Map<string, () => void>();
-      const passed = new Map<string, Promise<void>>();
-      for (const gate of ['start', 'tool', 'think', 'answer']) {
-        passed.set(
-          gate,
-          new Promise<void>((resolve) => {
-            gates.set(gate, resolve);
-          }),
-        );
-      }
-      Object.assign(window, { glaveThinking: (gate: string) => gates.get(gate)?.() });
+      const { passed } = (window as unknown as Gated).glaveGates;
       const stored = (seq: number, type: string, data: unknown): string =>
         JSON.stringify({
           jsonrpc: '2.0',
@@ -73,7 +63,7 @@ export async function thinkingTurn(page: Page): Promise<void> {
             const send = (message: string): void => {
               controller.enqueue(encoder.encode(`data: ${message}\n\n`));
             };
-            await passed.get('start');
+            await passed('start');
             send(stored(after + 1, 'turn.started', {}));
             send(
               stored(after + 2, 'message.added', {
@@ -82,7 +72,7 @@ export async function thinkingTurn(page: Page): Promise<void> {
               }),
             );
             send(live({ kind: 'waiting' }));
-            await passed.get('tool');
+            await passed('tool');
             send(
               stored(after + 3, 'tool.call.requested', {
                 ...call,
@@ -91,7 +81,7 @@ export async function thinkingTurn(page: Page): Promise<void> {
               }),
             );
             send(live({ kind: 'tool_started', summary: step }));
-            await passed.get('think');
+            await passed('think');
             send(live({ kind: 'tool_finished', summary: step, is_error: false }));
             send(
               stored(after + 4, 'tool.call.completed', {
@@ -104,7 +94,7 @@ export async function thinkingTurn(page: Page): Promise<void> {
             for (const piece of thinking) {
               send(live({ kind: 'reasoning', text: piece }));
             }
-            await passed.get('answer');
+            await passed('answer');
             for (const piece of answer) {
               send(live({ kind: 'text', text: piece }));
             }
@@ -136,11 +126,4 @@ export async function thinkingTurn(page: Page): Promise<void> {
       answer: ANSWER,
     },
   );
-}
-
-/** Lets the thinking turn take its next `step`. */
-export async function letThink(page: Page, step: ThinkingStep): Promise<void> {
-  await page.evaluate((step) => {
-    (window as unknown as { glaveThinking: (step: string) => void }).glaveThinking(step);
-  }, step);
 }

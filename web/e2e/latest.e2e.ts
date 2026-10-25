@@ -1,6 +1,7 @@
 import { type Locator, type Page, expect, test } from '@playwright/test';
 
 import { MARKDOWN_PROMPT, MARKDOWN_REPLY, THREAD, fakeApi, streamReply } from './fake-api';
+import { letGo } from './fake-gate';
 import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './support';
 
 /** A window short enough that the thread, with its markdown reply, scrolls. */
@@ -58,7 +59,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
     await page.setViewportSize(SHORT);
     await fakeApi(page);
-    await streamReply(page, MARKDOWN_REPLY, 0);
+    await streamReply(page, MARKDOWN_REPLY, { delay: 0 });
     await askForMarkdown(page);
     await expect(byTestId(page, 'thread-message').last()).toContainText('Document the change');
     const latest = byTestId(page, 'thread-latest');
@@ -96,12 +97,14 @@ test('while the person is at the end, a streaming reply keeps its last line in v
 }) => {
   await page.setViewportSize(SHORT);
   await fakeApi(page);
-  await streamReply(page);
+  await streamReply(page, MARKDOWN_REPLY, { heldAfter: 'Document the change' });
   await askForMarkdown(page);
-  // Partway through, the line being written shows, and nothing offers to jump.
+  // Partway through, held after its task list, the line being written shows, and nothing
+  // offers to jump.
   await expect(byTestId(page, 'thread-reply').locator('th').first()).toBeVisible();
-  expect(await bottomShows(page, 'thread-reply')).toBe(true);
+  await expect.poll(() => bottomShows(page, 'thread-reply')).toBe(true);
   await expect(byTestId(page, 'thread-latest')).toBeHidden();
+  await letGo(page, 'reply');
   // And once it ends, its last line still does.
   await expect(byTestId(page, 'thread-message').last()).toContainText('evil.example/pixel.png');
   await expect.poll(() => bottomShows(page, 'thread-message')).toBe(true);
