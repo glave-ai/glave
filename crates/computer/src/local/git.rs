@@ -244,7 +244,10 @@ mod tests {
         let git = dir.join("git");
         std::fs::write(&git, "#!/bin/sh\nexec sleep 300\n").unwrap();
         std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let environment = [(OsString::from("PATH"), dir.as_os_str().to_owned())];
+        // This git first, and the system's own folders after it, where `sleep` is.
+        let mut path = dir.as_os_str().to_owned();
+        path.push(":/usr/bin:/bin");
+        let environment = [(OsString::from("PATH"), path)];
         let ran = glave_ports::block_on!(async {
             tokio::time::pause();
             let local = Git::at(&environment, &dir).run(&["status"]).await;
