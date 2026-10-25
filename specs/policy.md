@@ -100,7 +100,7 @@ name = "Hope"                                 # each is checked against [models]
 fetch = true                                  # default true; false turns web_fetch off
 allow = ["docs.rs", "*.example.com"]          # hosts it may fetch; every host when absent
 deny = ["*.internal.example.com"]             # hosts it never fetches; a deny wins
-private_addresses = false                     # default false; a host allow names exactly may be private anyway
+private_addresses = false                     # default false; a host allow names exactly may be private anyway; cloud metadata never
 
 [gateway]                                     # the person's file only: the organization's gateway
 url = "https://gateway.example.com"           # model calls and the tool catalog go through it

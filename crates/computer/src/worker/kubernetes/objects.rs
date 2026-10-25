@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use glave_ports::host::{CLOUD_METADATA, Network};
+use glave_ports::host::CLOUD_METADATA;
 use serde_json::{Value, json};
 
 use super::super::backend::{PORT, Spec};
@@ -149,14 +149,17 @@ impl Shape<'_> {
     /// machines' credentials ([`CLOUD_METADATA`]; DNS there is still allowed).
     pub(crate) fn network_policy(&self) -> Value {
         let egress = if self.spec.network {
-            let (v4, v6): (Vec<_>, Vec<_>) = CLOUD_METADATA.iter().partition(|n| n.is_ipv4());
-            let cidrs = |networks: Vec<&Network>| -> Vec<String> {
-                networks.iter().map(ToString::to_string).collect()
+            let except = |v4: bool| -> Vec<String> {
+                CLOUD_METADATA
+                    .iter()
+                    .filter(|network| network.is_ipv4() == v4)
+                    .map(ToString::to_string)
+                    .collect()
             };
             json!([
                 {"to": [
-                    {"ipBlock": {"cidr": "0.0.0.0/0", "except": cidrs(v4)}},
-                    {"ipBlock": {"cidr": "::/0", "except": cidrs(v6)}}
+                    {"ipBlock": {"cidr": "0.0.0.0/0", "except": except(true)}},
+                    {"ipBlock": {"cidr": "::/0", "except": except(false)}}
                 ]},
                 {"ports": [{"protocol": "UDP", "port": 53}, {"protocol": "TCP", "port": 53}]}
             ])
@@ -389,7 +392,14 @@ mod tests {
                 }},
                 {"ipBlock": {
                     "cidr": "::/0",
-                    "except": ["fe80::/10", "fd00:ec2::254/128", "fd00:ec2::23/128", "fd20:ce::254/128"]
+                    "except": [
+                        "fe80::/10",
+                        "fd00:ec2::254/128",
+                        "fd00:ec2::23/128",
+                        "fd20:ce::254/128",
+                        "fd00:a9fe:a9fe::1/128",
+                        "fd00:42::42/128"
+                    ]
                 }}
             ])
         );

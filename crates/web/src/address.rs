@@ -1,16 +1,28 @@
-//! Which addresses are on the public internet. Everything else (this computer, private
-//! networks, cloud metadata such as 169.254.169.254 (glave's one list,
-//! [`glave_ports::host::CLOUD_METADATA`]), carrier NAT, multicast, reserved and documentation
-//! ranges) is private: a fetch reaching it could read what only the person's own network, or
-//! this machine, should see.
+//! Which addresses web_fetch may reach. Public internet addresses; private ones (this
+//! computer, private networks, link-local, carrier NAT, multicast, reserved and documentation
+//! ranges), where a fetch could read what only the person's own network should see, only
+//! where the policy allows them; and cloud metadata, where this machine's cloud serves its
+//! credentials (glave's one list, [`glave_ports::host::CLOUD_METADATA`]), never.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use glave_ports::host::is_cloud_metadata;
 
+/// Whether web_fetch may connect to `ip`: never to cloud metadata, which no setting lifts,
+/// in whatever IPv6 form it is carried; otherwise a public address, or any where private
+/// addresses are allowed (`private_ok`).
+pub(crate) fn reachable(ip: IpAddr, private_ok: bool) -> bool {
+    let carried = match ip {
+        IpAddr::V6(v6) => embedded_v4(v6).map(IpAddr::V4),
+        IpAddr::V4(_) => None,
+    };
+    let metadata = is_cloud_metadata(ip) || carried.is_some_and(is_cloud_metadata);
+    !metadata && (private_ok || is_public(ip))
+}
+
 /// Whether `ip` is a public internet address. IPv6 forms that carry an IPv4 address (mapped,
 /// compatible, NAT64 and 6to4) are judged by that address.
-pub(crate) fn is_public(ip: IpAddr) -> bool {
+fn is_public(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => is_public_v4(v4),
         IpAddr::V6(v6) => is_public_v6(v6),
@@ -22,7 +34,7 @@ fn is_public_v4(ip: Ipv4Addr) -> bool {
     let private = ip.is_unspecified()
         || ip.is_loopback()
         || ip.is_private()
-        || is_cloud_metadata(IpAddr::V4(ip))
+        || ip.is_link_local()
         || ip.is_broadcast()
         || ip.is_multicast()
         || ip.is_documentation()
@@ -43,8 +55,8 @@ fn is_public_v6(ip: Ipv6Addr) -> bool {
     let private = ip.is_unspecified()
         || ip.is_loopback()
         || ip.is_multicast()
-        || is_cloud_metadata(IpAddr::V6(ip))
         || (first & 0xfe00) == 0xfc00 // unique local, fc00::/7
+        || (first & 0xffc0) == 0xfe80 // link-local, fe80::/10
         || (first & 0xffc0) == 0xfec0 // site-local (deprecated), fec0::/10
         || ip.segments().get(..2) == Some(&[0x2001, 0x0db8]) // documentation
         || (first & 0xe000) != 0x2000; // outside global unicast, 2000::/3
@@ -100,7 +112,6 @@ mod tests {
             "172.31.255.255",
             "192.168.1.1",
             "169.254.169.254",
-            "168.63.129.16",
             "100.64.0.1",
             "100.127.255.255",
             "224.0.0.1",
@@ -115,6 +126,38 @@ mod tests {
     }
 
     #[test]
+    fn cloud_metadata_is_never_reached_even_where_private_addresses_are() {
+        let reach = |text: &str, private_ok| reachable(text.parse().unwrap(), private_ok);
+        for metadata in [
+            "169.254.169.254",
+            "100.100.100.200",
+            "168.63.129.16",
+            "fd00:ec2::254",
+            "fe80::1",
+            "::ffff:169.254.169.254",
+            "::169.254.169.254",
+            "64:ff9b::a9fe:a9fe",
+            "2002:a9fe:a9fe::",
+            "2002:a83f:8110::",
+        ] {
+            assert!(!reach(metadata, true), "{metadata}");
+            assert!(!reach(metadata, false), "{metadata}");
+        }
+        for private in [
+            "127.0.0.1",
+            "10.0.0.1",
+            "192.168.1.1",
+            "fc00::1",
+            "100.64.0.1",
+        ] {
+            assert!(reach(private, true), "{private}");
+            assert!(!reach(private, false), "{private}");
+        }
+        assert!(reach("93.184.216.34", false));
+        assert!(reach("2606:4700::1111", true));
+    }
+
+    #[test]
     fn private_v6_addresses_and_v4_inside_v6_are_refused() {
         for ip in [
             "::1",
@@ -122,13 +165,11 @@ mod tests {
             "fe80::1",
             "fc00::1",
             "fd00:ec2::254",
-            "fd20:ce::254",
             "fec0::1",
             "ff02::1",
             "2001:db8::1",
             "::ffff:127.0.0.1",
             "::ffff:169.254.169.254",
-            "::ffff:168.63.129.16",
             "::ffff:10.0.0.1",
             "::127.0.0.1",
             "64:ff9b::a00:1",

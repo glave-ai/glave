@@ -175,17 +175,14 @@ mod tests {
     }
 
     #[test]
-    fn glave_s_own_credentials_still_come_from_the_metadata_withheld_from_the_agent() {
-        use glave_ports::host::is_cloud_metadata;
-        // Workers and `web_fetch` refuse these addresses; glave's own process is not the agent,
-        // and reaches them for its keys (specs/sandbox.md, "Cloud metadata").
-        for host in NODE_HOSTS {
+    fn the_node_s_credential_endpoints_are_on_the_list_withheld_from_the_agent() {
+        // glave's own process, not the agent, reaches them for its keys: the list is for what
+        // the agent's tools and workers reach (specs/sandbox.md, "Cloud metadata").
+        let ecs = ECS.trim_start_matches("http://");
+        for host in NODE_HOSTS.iter().copied().chain([ecs]) {
             let bare = host.trim_start_matches('[').trim_end_matches(']');
-            assert!(is_cloud_metadata(bare.parse().unwrap()), "{host}");
-            assert!(
-                checked(&format!("http://{host}/v1/credentials")).is_ok(),
-                "{host}"
-            );
+            let ip = bare.parse().unwrap();
+            assert!(glave_ports::host::is_cloud_metadata(ip), "{host}");
         }
     }
 

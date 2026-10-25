@@ -95,8 +95,9 @@ pub struct WebPolicy {
     pub allow: Vec<Domain>,
     /// Hosts that may never be fetched. A deny wins over an allow.
     pub deny: Vec<Domain>,
-    /// Whether any host may lead to a private address (this computer, the local network,
-    /// cloud metadata). Off, only a host `allow` names exactly, with no `*`, may.
+    /// Whether any host may lead to a private address (this computer, the local network),
+    /// though never to cloud metadata. Off, only a host `allow` names exactly, with no `*`,
+    /// may.
     pub private_addresses: bool,
 }
 
