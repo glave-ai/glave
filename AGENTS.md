@@ -108,6 +108,7 @@ cargo build --release -p glave --features web   # the binary as it ships, the we
 
 The bar is code a careful reader admires: every line earns its place, and each idea lives in one spot. Lints catch unsafe code. These rules are about what lints can't catch:
 
+- **Every change earns its place.** A pull request's description opens with three answers: the problem it solves, who has that problem today, and what it removes or replaces. With no one who has the problem today, it waits. Before a milestone closes, a subtraction pass asks of each feature: is it needed, is it duplicated, is this its simplest form?
 - **One PR, one change.** A second feature, or a new workspace dependency, goes in its own PR. A PR over 40 files or 1,500 lines is split, or says in its description why it can't be.
 - **One concept, one definition.** A type that crosses crates is defined once, in the lowest crate that needs it (`glave-event` or `glave-ports`). Two enums with the same variants and a `From` between them is a defect.
 - **Search before writing.** Before adding a helper, parser, URL check, error mapper or storage wrapper, `git grep` for one. Where a second copy would go, share the first instead.
