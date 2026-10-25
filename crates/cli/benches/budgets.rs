@@ -18,7 +18,7 @@ mod allocator;
 
 use std::io::{BufRead as _, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, bail};
@@ -43,6 +43,11 @@ const RESUMES: usize = 10;
 const BINARY_MB: f64 = 50.0;
 /// The environment variable naming the glave program to measure: in CI, the build that ships.
 const BINARY: &str = "GLAVE_BUDGETS_BINARY";
+/// How long glave has to start serving, to answer a command, and to stop once told: guards
+/// against a hang, not speed limits.
+const STARTS_WITHIN: Duration = Duration::from_secs(20);
+const ANSWERS_WITHIN: Duration = Duration::from_secs(20);
+const STOPS_WITHIN: Duration = Duration::from_secs(30);
 
 fn main() -> anyhow::Result<()> {
     let dir = std::env::temp_dir().join(format!("glave-budgets-{}", std::process::id()));
@@ -110,7 +115,9 @@ fn measure(dir: &Path) -> anyhow::Result<()> {
 }
 
 /// Times a command the person's server answers while it runs (`glave tasks`, a client of its
-/// socket), from launch to exit; the server is started first, and stopped after.
+/// socket), from launch to exit; the server is started first, and stopped after. Each wait is
+/// bounded: a server that does not start, answer or stop fails the benchmark with what it
+/// said, instead of holding it forever.
 fn answered(binary: &Path, dir: &Path) -> anyhow::Result<Vec<Duration>> {
     let home = dir.join("home");
     std::fs::create_dir_all(&home)?;
@@ -128,26 +135,44 @@ fn answered(binary: &Path, dir: &Path) -> anyhow::Result<Vec<Duration>> {
         .context("could not start glave serve")?;
     let said = server.stderr.take().context("glave serve's output")?;
     let (ready, serving) = std::sync::mpsc::channel();
-    // What it says is read to its end, so it never blocks writing.
+    // What it says is read to its end, so it never blocks writing, and kept for a failure.
     let reading = std::thread::spawn(move || {
+        let mut lines = Vec::new();
         for line in BufReader::new(said).lines().map_while(Result::ok) {
             if line.starts_with("glave: serving you on ") {
                 let _ = ready.send(());
             }
+            lines.push(line);
         }
+        lines
     });
     let timed = serving
-        .recv_timeout(Duration::from_secs(20))
-        .context("glave serve did not start")
+        .recv_timeout(STARTS_WITHIN)
+        .with_context(|| format!("glave serve did not start within {STARTS_WITHIN:?}"))
         .and_then(|()| tasks(binary, dir, &home));
-    let _ = Command::new(binary)
-        .args(["server", "stop"])
-        .env("GLAVE_HOME", &home)
-        .stdout(Stdio::null())
-        .status();
-    let _ = server.wait();
-    let _ = reading.join();
-    timed
+    let stopped = timed.is_ok() && {
+        let _ = Command::new(binary)
+            .args(["server", "stop"])
+            .env("GLAVE_HOME", &home)
+            .stdout(Stdio::null())
+            .status();
+        ended(&mut server, STOPS_WITHIN)?.is_some()
+    };
+    if !stopped {
+        let _ = server.kill();
+        server.wait()?;
+    }
+    let said = reading
+        .join()
+        .map_err(|_| anyhow::anyhow!("glave serve's output could not be read"))?
+        .join("\n");
+    let answers = timed.with_context(|| format!("glave serve said:\n{said}"))?;
+    if !stopped {
+        bail!(
+            "glave serve did not stop within {STOPS_WITHIN:?} of being told to; it said:\n{said}"
+        );
+    }
+    Ok(answers)
 }
 
 /// Times `glave tasks` against the server running for `home`, `ANSWERS` times.
@@ -155,21 +180,41 @@ fn tasks(binary: &Path, dir: &Path, home: &Path) -> anyhow::Result<Vec<Duration>
     let mut times = Vec::with_capacity(ANSWERS);
     for _ in 0..ANSWERS {
         let started = Instant::now();
-        let status = Command::new(binary)
+        let mut glave = Command::new(binary)
             .arg("tasks")
             .current_dir(dir)
             .env("GLAVE_HOME", home)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .status()
+            .spawn()
             .context("could not start glave")?;
+        let Some(status) = ended(&mut glave, ANSWERS_WITHIN)? else {
+            let _ = glave.kill();
+            glave.wait()?;
+            bail!("glave tasks did not answer within {ANSWERS_WITHIN:?}");
+        };
         times.push(started.elapsed());
         if !status.success() {
             bail!("glave tasks exited with {status}");
         }
     }
     Ok(times)
+}
+
+/// How `child` exited, or none if it still runs after `within`. It is looked at every tenth
+/// of a millisecond, finer than anything measured with it.
+fn ended(child: &mut Child, within: Duration) -> anyhow::Result<Option<ExitStatus>> {
+    let started = Instant::now();
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Ok(Some(status));
+        }
+        if started.elapsed() > within {
+            return Ok(None);
+        }
+        std::thread::sleep(Duration::from_micros(100));
+    }
 }
 
 fn turns() -> usize {
