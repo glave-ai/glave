@@ -25,6 +25,12 @@ describe('effort', () => {
     expect(levelName('turbo')).toBe('Turbo');
   });
 
+  it('marks no level where none is sent unasked, which is the model maker’s default', () => {
+    const unsent: ModelInfo = { id: 'm', default: false, reasoning: { efforts: ['high', 'low'] } };
+    expect(effortOptions(unsent).some((option) => option.hint !== undefined)).toBe(false);
+    expect(defaultEffort(unsent)).toBeNull();
+  });
+
   it('reads the thread’s latest choice', () => {
     expect(chosenEffort([])).toBeNull();
     expect(

@@ -92,7 +92,7 @@ pub struct Reasoning {
     /// `none` where reasoning can be turned off. Empty when it offers no choice.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub efforts: Vec<String>,
-    /// The level it uses when none is asked for.
+    /// The level it uses when none is asked for, one of `efforts`, when its service says.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<String>,
     /// Whether it always reasons.

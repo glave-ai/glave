@@ -44,8 +44,10 @@ pub struct ModelRequest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub threads: Vec<ThreadId>,
     /// How much the model is asked to reason: a level its provider names, such as `high` or
-    /// `none`, one the model offers. None leaves it to the model. A gateway leaves out a level
-    /// a target does not offer; a provider that has no way to send it leaves it out.
+    /// `none`, one the model offers. None leaves it to the model. A gateway sends each target
+    /// only a level it offers, and one asked for none, or for a level it does not offer, the
+    /// level its model uses unasked when its catalog says; a provider that has no way to send
+    /// it leaves it out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
     /// The content of the images the messages hold, for the provider to send inline where a
@@ -205,6 +207,7 @@ impl Completion {
             target: served.map(|served| served.target.clone()),
             service: served.and_then(|served| served.service.clone()),
             upstream: self.upstream.clone(),
+            effort: served.and_then(|served| served.effort.clone()),
             reasoning_stripped: served.is_some_and(|served| served.reasoning_stripped),
         }
     }
@@ -220,6 +223,9 @@ pub struct Served {
     /// The service the target is at, in a person's words, such as `OpenRouter`, when the
     /// gateway knows it.
     pub service: Option<String>,
+    /// The reasoning level the target was sent, if any: the one asked for, or its model's
+    /// default.
+    pub effort: Option<String>,
     /// True when opaque reasoning was left out of the request because the target that
     /// answered could not accept it.
     pub reasoning_stripped: bool,

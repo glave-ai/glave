@@ -2,9 +2,10 @@
 //! "One entry per model"): one entry per model whichever services run it, its maker's own API
 //! tried before an aggregator, before any other server; its name, context, output limit,
 //! images, price and reasoning levels as the catalogs give them, the price from the service
-//! tried first; and what the gateway checks a request against and prices it at.
+//! tried first, and the level that service is sent unasked; and what the gateway checks a
+//! request against, prices it at and sends it with.
 
-use glave_event::{Catalog, CatalogModel, Currency, ProviderKind};
+use glave_event::{Catalog, CatalogModel, Currency, ProviderKind, Reasoning};
 use glave_gateway::{Capabilities, Price, Target};
 use glave_session::protocol::ModelInfo;
 
@@ -78,20 +79,20 @@ pub(super) fn price(card: &CatalogModel, catalog: &Catalog) -> Option<Price> {
 }
 
 /// A target with what `card`, its service's own description of it, says, if there is one,
-/// known everywhere by its [`identity`].
+/// known everywhere by its [`identity`]. Its reasoning levels and the one its model uses
+/// unasked are its own service's alone: another service's names for them may not be what
+/// this one takes.
 pub(super) fn described(target: Target, card: Option<(&CatalogModel, &Catalog)>) -> Target {
     let same = identity(&target.model);
     let target = target.serving(same);
     let Some((card, catalog)) = card else {
         return target;
     };
-    let efforts = card
-        .reasoning
-        .as_ref()
-        .map_or_else(Vec::new, |reasoning| reasoning.efforts.clone());
-    let target = target
-        .with_capabilities(capabilities(card))
-        .with_efforts(efforts);
+    let target = target.with_capabilities(capabilities(card));
+    let target = match &card.reasoning {
+        Some(reasoning) => target.with_reasoning(reasoning),
+        None => target,
+    };
     match price(card, catalog) {
         Some(price) => target.with_price(price),
         None => target,
@@ -117,13 +118,16 @@ pub(super) fn cards_for<'a>(
 }
 
 /// The entry for `id`, served by `providers` in order, as `cards` describe it, the first
-/// first; named `name` when the settings name it.
+/// first; named `name` when the settings name it. Its reasoning's default is the level
+/// `target`, the one tried first, is sent when a thread chooses none, if any.
 pub(super) fn info(
     id: &str,
     cards: &[&CatalogModel],
     providers: Vec<String>,
     name: Option<&str>,
+    target: Option<&Target>,
 ) -> ModelInfo {
+    let unasked = target.and_then(|target| target.effort_for(None));
     let first = |pick: fn(&CatalogModel) -> Option<u64>| cards.iter().find_map(|card| pick(card));
     let listed = cards.iter().find_map(|card| card.name.as_deref());
     let (maker, own) = match listed.map(|listed| listed.split_once(": ")) {
@@ -140,14 +144,23 @@ pub(super) fn info(
         images: cards.iter().find_map(|card| card.images),
         // The price is the first service's: the one a call goes to.
         price: cards.first().and_then(|card| card.price),
-        reasoning: cards.iter().find_map(|card| card.reasoning.clone()),
+        reasoning: cards
+            .iter()
+            .find_map(|card| card.reasoning.clone())
+            .map(|reasoning| Reasoning {
+                default: unasked.map(str::to_owned),
+                ..reasoning
+            }),
         ..ModelInfo::new(id)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use glave_event::{At, Reasoning, TokenPrice};
+    use std::sync::Arc;
+
+    use glave_event::{At, TokenPrice};
+    use glave_ports::testing::ScriptedModel;
 
     use super::*;
 
@@ -181,24 +194,59 @@ mod tests {
         }
     }
 
+    /// A target described by `card`, its own service's, or by none.
+    fn target(card: Option<&CatalogModel>) -> Target {
+        let openrouter = Catalog {
+            kind: ProviderKind::Openrouter,
+            url: None,
+            listed: At::from(jiff::Timestamp::UNIX_EPOCH),
+            models: Vec::new(),
+        };
+        let model = Arc::new(ScriptedModel::new(Vec::new()));
+        let target = Target::new(model, "openrouter", "anthropic/claude-haiku-5.5");
+        described(target, card.map(|card| (card, &openrouter)))
+    }
+
     #[test]
     fn an_entry_takes_its_name_and_maker_from_the_listing_and_its_price_from_the_first_service() {
         let reference = card();
         let direct = CatalogModel::new("claude-haiku-5-5");
         let providers = vec!["Anthropic".to_owned(), "OpenRouter".to_owned()];
-        let info = info("claude-haiku-5-5", &[&direct, &reference], providers, None);
+        let cards = [&direct, &reference];
+        let info = info(
+            "claude-haiku-5-5",
+            &cards,
+            providers,
+            None,
+            Some(&target(None)),
+        );
         assert_eq!(info.name.as_deref(), Some("Claude Haiku 5.5"));
         assert_eq!(info.maker.as_deref(), Some("Anthropic"));
         assert_eq!(info.context, Some(1_000_000), "from the reference");
         assert_eq!(info.price, None, "the service tried first says no price");
-        assert_eq!(info.reasoning.map(|r| r.efforts.len()), Some(2));
+        let reasoning = info.reasoning.unwrap();
+        assert_eq!(reasoning.efforts.len(), 2);
+        assert_eq!(reasoning.default, None, "the first is sent none");
         assert_eq!(info.providers, ["Anthropic", "OpenRouter"]);
-        let named = super::info("m", &[&reference], Vec::new(), Some("Mine"));
+        let own = target(Some(&reference));
+        let named = super::info("m", &[&reference], Vec::new(), Some("Mine"), Some(&own));
         assert_eq!(
             named.name.as_deref(),
             Some("Mine"),
             "the settings' name wins"
         );
+        let unasked = named.reasoning.and_then(|reasoning| reasoning.default);
+        assert_eq!(unasked.as_deref(), Some("high"), "what the first is sent");
+    }
+
+    #[test]
+    fn a_target_is_sent_the_levels_and_default_of_its_own_card_and_none_without_one() {
+        let own = target(Some(&card()));
+        assert_eq!(own.effort_for(None), Some("high"));
+        assert_eq!(own.effort_for(Some("low")), Some("low"));
+        let bare = target(None);
+        assert_eq!(bare.effort_for(None), None);
+        assert_eq!(bare.effort_for(Some("low")), None);
     }
 
     #[test]

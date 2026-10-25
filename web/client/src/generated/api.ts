@@ -272,7 +272,12 @@ export type ModelInfo = {
    * one before fails.
    */
   readonly providers?: readonly (string)[];
-  /** How it reasons, when it can: the levels of effort it offers, in its provider's names. */
+  /**
+   * How it reasons, when it can: the levels of effort it offers, in its provider's names,
+   * and as `default` the level its first provider is sent when a thread chooses none, the
+   * one that provider's catalog says the model uses unasked. No `default` when glave sends
+   * none, and the model reasons as its maker set it.
+   */
   readonly reasoning?: Reasoning | null;
 };
 
@@ -430,7 +435,7 @@ export type RawEvent = {
 
 /** How a model reasons: the levels of effort it offers, in its service's own names. */
 export type Reasoning = {
-  /** The level it uses when none is asked for. */
+  /** The level it uses when none is asked for, one of `efforts`, when its service says. */
   readonly default?: string | null;
   /**
    * The levels it offers, as its service lists them, such as `high`, `medium`, `low`, and
