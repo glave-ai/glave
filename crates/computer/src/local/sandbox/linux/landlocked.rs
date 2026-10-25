@@ -10,12 +10,14 @@
 //! kernel can (ABI 4), on top of seccomp; signals and abstract Unix sockets stay inside the
 //! sandbox where it can (ABI 6).
 
+use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};
 
 use landlock::{
-    ABI, Access, AccessFs, AccessNet, BitFlags, CompatLevel, Compatible, PathBeneath, PathFd,
-    Ruleset, RulesetAttr, RulesetCreatedAttr, RulesetStatus, Scope,
+    ABI, Access, AccessFs, AccessNet, BitFlags, CompatLevel, Compatible, PathBeneath, Ruleset,
+    RulesetAttr, RulesetCreatedAttr, RulesetStatus, Scope,
 };
+use rustix::fs::{Mode, OFlags};
 use serde::{Deserialize, Serialize};
 
 /// The newest Landlock this code knows; older kernels get what they support of it...
@@ -72,7 +74,7 @@ pub(super) fn restrict(plan: &Plan) -> Result<(), String> {
     }
     let mut created = ruleset.create().map_err(|error| failed(&error))?;
     for (path, access) in rules {
-        let Ok(fd) = PathFd::new(&path) else {
+        let Ok(fd) = named(&path) else {
             // Gone since it was listed: nothing there to grant.
             continue;
         };
@@ -85,6 +87,15 @@ pub(super) fn restrict(plan: &Plan) -> Result<(), String> {
         return Err("Landlock is not enforced on this computer".into());
     }
     Ok(())
+}
+
+/// `path`, opened only to name it in a rule (`O_PATH`), which never waits on what is there:
+/// opening a named pipe to read waits until something writes to it, so a pipe in a folder
+/// the rules list (`/tmp` has them) would hold the command forever. Not through the standard
+/// library, whose `custom_flags` drop `O_PATH` on musl (glave's static Linux builds), where it
+/// counts as part of the access mode; nor landlock's `PathFd`, which goes through it.
+fn named(path: &Path) -> rustix::io::Result<OwnedFd> {
+    rustix::fs::open(path, OFlags::PATH | OFlags::CLOEXEC, Mode::empty())
 }
 
 /// Each path to grant, and what.
@@ -197,5 +208,19 @@ mod tests {
             &except,
             &again
         ));
+    }
+
+    #[test]
+    fn a_named_pipe_is_named_without_waiting_for_a_writer() {
+        let dir = glave_ports::testing::TempDir::new("landlock-pipe").unwrap();
+        let pipe = dir.join("pipe");
+        let made = std::process::Command::new("mkfifo")
+            .arg(&pipe)
+            .status()
+            .unwrap();
+        assert!(made.success());
+        // Opened to read, it would wait here for a writer that never comes.
+        let fd = named(&pipe).unwrap();
+        assert!(rustix::fs::fcntl_getfl(&fd).unwrap().contains(OFlags::PATH));
     }
 }

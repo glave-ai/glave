@@ -1,12 +1,12 @@
 import { Service, computed, inject, signal } from '@angular/core';
-import type { ApprovalMode, ServerInfo } from '@glave/client';
+import type { Permissions, ServerInfo } from '@glave/client';
 
 import { SessionService } from './session.service';
 
 /**
  * What the glave that served the app says about itself (`server/discover`): its name and
- * version, the approval mode a thread runs in when it chooses none, and the modes a thread may
- * choose. Read once, when first asked.
+ * version, the preset a thread runs with when it chooses none, the presets a thread may choose,
+ * and, where no sandbox can run, the sentence saying so. Read once, when first asked.
  */
 @Service()
 export class ServerService {
@@ -16,10 +16,12 @@ export class ServerService {
 
   /** The server's answer, or `null` until it has given one. */
   readonly info = this.read.asReadonly();
-  /** How much the server asks before acting, or `null` until it has said. */
-  readonly approval = computed<ApprovalMode | null>(() => this.info()?.approval ?? null);
-  /** The modes a thread may choose, cautious first; none until the server has said. */
-  readonly approvals = computed<readonly ApprovalMode[]>(() => this.info()?.approvals ?? []);
+  /** What the agent may do where nothing chose, or `null` until the server has said. */
+  readonly permissions = computed<Permissions | null>(() => this.info()?.permissions ?? null);
+  /** The presets a thread may choose, the most cautious first; none until the server has said. */
+  readonly presets = computed<readonly Permissions[]>(() => this.info()?.presets ?? []);
+  /** Why Read-only and Workspace ask before everything here, in the server's words, if they do. */
+  readonly unsandboxed = computed<string | null>(() => this.info()?.unsandboxed ?? null);
 
   /** Asks the server about itself, once; a failed ask is tried again next time. */
   load(): Promise<void> {

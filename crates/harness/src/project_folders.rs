@@ -96,8 +96,8 @@ where
 {
     /// Takes the harness's defaults as they are now, and reads again what `thread`'s project
     /// chooses and turns on, at the start of a turn; then gives its commands on this computer
-    /// the sandbox that follows: none where the project turned it off, else the defaults' as
-    /// the project narrows it. A thread with no project of its own here gets nothing of a
+    /// the sandbox that follows from its preset, within the most a sandbox here allows, and
+    /// without the network where the project takes it. A thread with no project of its own here gets nothing of a
     /// project, and so does another person's thread than the one the harness works for, who
     /// trusted the project: no settings, no tools, no hooks.
     pub(crate) async fn bring(&self, thread: &mut Thread) -> Result<(), HarnessError> {
@@ -112,10 +112,9 @@ where
         // A worker's own container or virtual machine is its wall: only this computer's
         // commands run in the sandbox.
         if workspace.info().computer == self.workspace.info().computer {
-            let wanted = brought
-                .settled
-                .protections
-                .sandbox(thread.defaults.sandbox.as_ref());
+            let protections = brought.settled.protections;
+            let preset = thread.defaults.permissions(protections, thread.permissions);
+            let wanted = protections.sandbox(preset, thread.defaults.sandbox.as_ref());
             let asks = thread.defaults.ask_network;
             if workspace.sandbox() != wanted.as_ref() || workspace.asks_network() != asks {
                 let within = workspace.within(wanted.as_ref()).await?;

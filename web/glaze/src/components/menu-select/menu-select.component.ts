@@ -41,13 +41,46 @@ interface ShownOption {
   readonly checked: boolean;
 }
 
-/** Where the menu opens: above the button first (a composer sits at the foot of the page). */
-const POSITIONS: readonly ConnectedPosition[] = [
-  { originX: 'end', originY: 'top', overlayX: 'end', overlayY: 'bottom', offsetY: -4 },
-  { originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top', offsetY: 4 },
-  { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom', offsetY: -4 },
-  { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top', offsetY: 4 },
-];
+/** Which edge of the button the menu lines up with. */
+type GlzMenuAlign = 'start' | 'end';
+
+const END_ABOVE: ConnectedPosition = {
+  originX: 'end',
+  originY: 'top',
+  overlayX: 'end',
+  overlayY: 'bottom',
+  offsetY: -4,
+};
+const END_BELOW: ConnectedPosition = {
+  originX: 'end',
+  originY: 'bottom',
+  overlayX: 'end',
+  overlayY: 'top',
+  offsetY: 4,
+};
+const START_ABOVE: ConnectedPosition = {
+  originX: 'start',
+  originY: 'top',
+  overlayX: 'start',
+  overlayY: 'bottom',
+  offsetY: -4,
+};
+const START_BELOW: ConnectedPosition = {
+  originX: 'start',
+  originY: 'bottom',
+  overlayX: 'start',
+  overlayY: 'top',
+  offsetY: 4,
+};
+
+/**
+ * Where the menu opens: above the button first (a composer sits at the foot of the page), lined
+ * up with the `align` edge, and with the other edge only where that doesn't fit.
+ */
+const POSITIONS: Readonly<Record<GlzMenuAlign, readonly ConnectedPosition[]>> = {
+  end: [END_ABOVE, END_BELOW, START_ABOVE, START_BELOW],
+  start: [START_ABOVE, START_BELOW, END_ABOVE, END_BELOW],
+};
 
 /**
  * A compact choice among a few options: a quiet button that shows the current one and opens
@@ -60,7 +93,7 @@ const POSITIONS: readonly ConnectedPosition[] = [
  * ```html
  * <glz-menu-select label="Model" [options]="models" [(value)]="model" />
  * <glz-menu-select label="Where" outlined [options]="places" [(value)]="place" />
- * <glz-menu-select label="Approvals" quiet [options]="modes" [(value)]="mode" />
+ * <glz-menu-select label="Permissions" quiet align="start" [options]="presets" [(value)]="preset" />
  * ```
  */
 @Component({
@@ -103,8 +136,14 @@ export class GlzMenuSelectComponent {
   readonly outlined = input(false, { transform: booleanAttribute });
   /** Whether the button is small, muted text, as in a status line. */
   readonly quiet = input(false, { transform: booleanAttribute });
+  /**
+   * Which edge of the button the menu lines up with: `end` for a button at the end of a row,
+   * as a composer's model picker is; `start` for one at its start, so the menu spreads over
+   * the row rather than past its edge onto what is beside it.
+   */
+  readonly align = input<GlzMenuAlign>('end');
 
-  protected readonly positions = POSITIONS;
+  protected readonly positions = computed(() => POSITIONS[this.align()]);
   /** What the button is for, before the choice, for screen readers: "Model: ". */
   protected readonly prefix = computed(() => `${this.label()}: `);
   protected readonly icons = { open: ChevronDown, check: Check };

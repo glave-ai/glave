@@ -88,21 +88,6 @@
       ],
       "type": "object"
     },
-    "ApprovalMode": {
-      "description": "How much glave asks the person before acting (`specs/approvals.md`, \"Modes\"). Secret files\nask in every mode.",
-      "oneOf": [
-        {
-          "const": "ask",
-          "description": "The cautious mode: ask before every change and every command.",
-          "type": "string"
-        },
-        {
-          "const": "auto",
-          "description": "Changes and commands go through: in the sandbox when it is on, as the person when not;\nrisky ones still ask. glave chooses it by default only where commands run in the\nsandbox.",
-          "type": "string"
-        }
-      ]
-    },
     "At": {
       "description": "When an event was recorded, in UTC at millisecond precision. For people only: events are\nordered by [`Seq`]. Always written with three fractional digits, such as\n`2026-10-07T21:14:01.250Z`, so every instant has exactly one spelling.",
       "type": "string"
@@ -959,6 +944,26 @@
       "minimum": 0,
       "type": "integer"
     },
+    "Permissions": {
+      "description": "What the agent may do without asking the person (`specs/approvals.md`, \"Permissions\"): the\none choice a person makes about it, of three presets, the most cautious first. Each comes to\na sandbox and how much asks wherever it runs (`glave-harness`); risky actions ask in every\npreset.",
+      "oneOf": [
+        {
+          "const": "read-only",
+          "description": "The agent looks: commands run in a sandbox that writes nothing of the project, and\nevery change asks first.",
+          "type": "string"
+        },
+        {
+          "const": "workspace",
+          "description": "The agent changes the project, or the chat's folder: commands run in the sandbox and\nnothing inside it asks; risky actions ask or go to the judge. Where no sandbox can run,\nevery change and command asks instead.",
+          "type": "string"
+        },
+        {
+          "const": "full-access",
+          "description": "No sandbox, and nothing asks but the risky actions: for work the person fully trusts.",
+          "type": "string"
+        }
+      ]
+    },
     "Principal": {
       "additionalProperties": false,
       "description": "A reference to a principal: `{\"kind\": \"person\", \"id\": \"…\"}`. Every kind but `glave` has an\nid.",
@@ -1390,17 +1395,6 @@
     "ServerInfo": {
       "description": "What the server is.",
       "properties": {
-        "approval": {
-          "$ref": "#/$defs/ApprovalMode",
-          "description": "How much this server asks before acting in a thread that chose no mode: `--approval` or\n`approval` in `config.toml` (`specs/approvals.md`)."
-        },
-        "approvals": {
-          "description": "The modes a thread may choose (`approval` on `thread/start` and `turn/start`): those\nthe policy leaves, cautious first.",
-          "items": {
-            "$ref": "#/$defs/ApprovalMode"
-          },
-          "type": "array"
-        },
         "here": {
           "description": "Where a browser on this computer makes and signs in with passkeys, when the server\nmakes them here rather than at a public origin: `http://localhost:<port>`.",
           "type": [
@@ -1425,6 +1419,17 @@
             "null"
           ]
         },
+        "permissions": {
+          "$ref": "#/$defs/Permissions",
+          "description": "What the agent may do in a thread that, and whose project, chose no preset:\n`--permissions` or `permissions` in `config.toml` (`specs/approvals.md`, \"Permissions\")."
+        },
+        "presets": {
+          "description": "The presets a thread may choose (`permissions` on `thread/start` and `turn/start`):\nthose the policy leaves, the most cautious first.",
+          "items": {
+            "$ref": "#/$defs/Permissions"
+          },
+          "type": "array"
+        },
         "protocols": {
           "description": "The protocol versions spoken.",
           "items": {
@@ -1439,6 +1444,13 @@
           },
           "type": "array"
         },
+        "unsandboxed": {
+          "description": "Why Workspace asks before every change and command here, in a sentence, when it does:\nno sandbox can run on this computer (Read-only then asks so too), or only one that keeps\nfiles as they are.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "version": {
           "type": "string"
         }
@@ -1447,8 +1459,8 @@
         "name",
         "version",
         "protocols",
-        "approval",
-        "approvals"
+        "permissions",
+        "presets"
       ],
       "type": "object"
     },
@@ -1670,10 +1682,6 @@
     "ThreadSummary": {
       "description": "A thread, as a list shows it: from the threads view, with what it is doing now.",
       "properties": {
-        "approval": {
-          "$ref": "#/$defs/ApprovalMode",
-          "description": "How much its turns ask before acting: the mode last chosen for it, else its project's,\nelse the server's; never auto where its project runs commands without the sandbox and\nauto was chosen nowhere."
-        },
         "cost": {
           "anyOf": [
             {
@@ -1727,6 +1735,10 @@
           ],
           "description": "The thread whose call started this one, for a subagent's."
         },
+        "permissions": {
+          "$ref": "#/$defs/Permissions",
+          "description": "What the agent may do in its next turn: the preset last chosen for it, else its\nproject's, else the server's."
+        },
         "project": {
           "$ref": "#/$defs/ProjectId"
         },
@@ -1772,7 +1784,7 @@
         "project",
         "status",
         "standing",
-        "approval",
+        "permissions",
         "origin",
         "created_at",
         "updated_at",
@@ -4631,17 +4643,6 @@
     "thread/start": {
       "params": {
         "properties": {
-          "approval": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/ApprovalMode"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "How much the thread's turns ask before acting, one of the server's `approvals`;\nthe server's own mode when absent."
-          },
           "background": {
             "description": "For a thread that runs as a task: in a project with a folder it works on a copy\nof its own, a worktree (or a worker, where every thread works on one), never in\nthe folder itself, so `worktree: false` is refused.",
             "type": "boolean"
@@ -4670,6 +4671,17 @@
               "string",
               "null"
             ]
+          },
+          "permissions": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Permissions"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the agent may do in the thread's turns, one of the server's `presets`; its\nproject's, else the server's own, when absent."
           },
           "project": {
             "anyOf": [
@@ -4833,17 +4845,6 @@
           "_meta": {
             "$ref": "#/$defs/Meta"
           },
-          "approval": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/ApprovalMode"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "How much this turn, and the thread's turns after it, ask before acting: one of the\nserver's `approvals`. The thread's latest choice when absent, else the server's.\nNot while a turn runs."
-          },
           "background": {
             "description": "Runs the turn as a task, with no one attached: answered at once with the task.",
             "type": "boolean"
@@ -4877,6 +4878,17 @@
               "string",
               "null"
             ]
+          },
+          "permissions": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Permissions"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the agent may do in this turn, and the thread's turns after it: one of the\nserver's `presets`. The thread's latest choice when absent, else its project's, else\nthe server's. Not while a turn runs."
           },
           "prompt": {
             "type": "string"

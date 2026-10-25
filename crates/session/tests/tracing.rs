@@ -14,7 +14,7 @@ fn turn_with(thread: glave_event::ThreadId, traceparent: &str) -> Request {
         budget: None,
         unattended: false,
         model: None,
-        approval: None,
+        permissions: None,
         files: Vec::new(),
         effort: None,
         thread,

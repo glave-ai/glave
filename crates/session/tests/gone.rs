@@ -53,7 +53,7 @@ fn start_request(project: ProjectId, worktree: Option<bool>) -> Request {
         background: false,
         computer: None,
         model: None,
-        approval: None,
+        permissions: None,
         effort: None,
     }
 }

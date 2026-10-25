@@ -1,12 +1,11 @@
-//! Asking the person before acting: how much to ask (the approval mode), and always before the
-//! model sees a file that usually holds secrets. See `specs/approvals.md`.
+//! Asking the person before acting: how much to ask (the mode a thread's preset comes to), and
+//! always before the model sees a file that usually holds secrets. See `specs/approvals.md`.
 
 use std::future::{Future, ready};
 use std::path::Path;
 
 use glave_event::{
-    ApprovalMode, ApprovalRequested, Arguments, CallId, Lifted, OutsideSandbox, PrincipalId,
-    ThreadId,
+    ApprovalRequested, Arguments, CallId, Lifted, OutsideSandbox, PrincipalId, ThreadId,
 };
 use glave_ports::Effect;
 
@@ -72,11 +71,26 @@ pub(crate) fn sentence(reason: &str) -> String {
     sentence
 }
 
-/// Whether a tool with `effect` needs the person's approval in `mode`.
-pub(crate) fn asks_for(mode: ApprovalMode, effect: Effect) -> bool {
-    match effect {
-        Effect::Reads => false,
-        Effect::Changes | Effect::Runs => mode == ApprovalMode::Ask,
+/// How much asks before acting, as a thread's preset comes to it where its commands run
+/// (`specs/approvals.md`, "Modes"): it is never chosen itself, only the preset is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ApprovalMode {
+    /// Every change and command asks first.
+    Ask,
+    /// Read-only in its sandbox: commands go through, since the sandbox keeps them from
+    /// changing the project, and every change and every other tool that acts asks first.
+    Look,
+    /// Changes and commands go through; only risky ones ask, or go to the judge.
+    Auto,
+}
+
+/// Whether a tool with `effect` needs the person's approval in `mode`; `confined` when it is
+/// a command that runs in the thread's sandbox.
+pub(crate) fn asks_for(mode: ApprovalMode, effect: Effect, confined: bool) -> bool {
+    match (effect, mode) {
+        (Effect::Reads, _) | (_, ApprovalMode::Auto) => false,
+        (Effect::Runs, ApprovalMode::Look) => !confined,
+        (Effect::Changes, ApprovalMode::Look) | (_, ApprovalMode::Ask) => true,
     }
 }
 
@@ -203,7 +217,7 @@ pub(crate) fn no_one_there(request: &ApprovalRequest) -> String {
         "No one is available to approve this action: glave is running without anyone at the \
          keyboard, in a mode that needs approval for it. Do not retry it or do the same thing \
          another way. Finish what you can without it, and say at the end what still needs a \
-         person (or that it can be run with --approval auto)."
+         person (or that it can run once the person chooses wider permissions)."
             .to_owned()
     }
 }
@@ -282,10 +296,28 @@ mod tests {
 
     #[test]
     fn each_mode_asks_for_exactly_what_it_should() {
-        use ApprovalMode::{Ask, Auto};
-        assert!(!asks_for(Ask, Effect::Reads) && !asks_for(Auto, Effect::Reads));
-        assert!(asks_for(Ask, Effect::Changes) && !asks_for(Auto, Effect::Changes));
-        assert!(asks_for(Ask, Effect::Runs) && !asks_for(Auto, Effect::Runs));
+        use ApprovalMode::{Ask, Auto, Look};
+        for confined in [false, true] {
+            for mode in [Ask, Look, Auto] {
+                assert!(!asks_for(mode, Effect::Reads, confined), "reads never ask");
+            }
+            assert!(asks_for(Ask, Effect::Changes, confined));
+            assert!(asks_for(Ask, Effect::Runs, confined));
+            assert!(
+                asks_for(Look, Effect::Changes, confined),
+                "changes ask in Read-only"
+            );
+            assert!(!asks_for(Auto, Effect::Changes, confined));
+            assert!(!asks_for(Auto, Effect::Runs, confined));
+        }
+        assert!(
+            !asks_for(Look, Effect::Runs, true),
+            "a command in the sandbox goes"
+        );
+        assert!(
+            asks_for(Look, Effect::Runs, false),
+            "any other tool that acts asks"
+        );
     }
 
     #[test]

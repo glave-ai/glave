@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use glave_event::ApprovalMode;
+use glave_event::Permissions;
 use glave_ports::block_on;
 use glave_ports::testing::TempDir;
 
@@ -40,7 +40,11 @@ fn undecided(project: &Project, record: &Record, rules: &Constraints) -> usize {
 #[test]
 fn a_repository_with_nothing_that_runs_commands_never_asks() {
     let dir = scratch("nothing");
-    let project = repository(&dir, "", Some("model = \"m\"\napproval = \"ask\"\n"));
+    let project = repository(
+        &dir,
+        "",
+        Some("model = \"m\"\npermissions = \"read-only\"\n"),
+    );
     let assessment = assess(project, &Record::default(), &Constraints::default());
     assert_eq!(assessment.items.len(), 0);
     let outcome = assessment.apply(Answer::NoOne);
@@ -51,23 +55,30 @@ fn a_repository_with_nothing_that_runs_commands_never_asks() {
         Some("m"),
         "applied without a question"
     );
-    assert_eq!(config.approval, Some(ApprovalMode::Ask));
+    assert_eq!(config.permissions, Some(Permissions::ReadOnly));
 }
 
 #[test]
 fn settings_that_loosen_wait_for_trust_and_the_rest_apply_at_once() {
     let dir = scratch("loosen");
-    let text = "model = \"m\"\napproval = \"auto\"\nsandbox = \"off\"\n";
+    let text = "model = \"m\"\npermissions = \"full-access\"\n";
     let project = repository(&dir, "", Some(text));
     let assessment = assess(project, &Record::default(), &Constraints::default());
     let outcome = assessment.clone().apply(Answer::NoOne);
     let config = outcome.config.unwrap();
     assert_eq!(config.model.as_deref(), Some("m"));
-    assert_eq!((config.approval, config.sandbox), (None, None));
+    assert_eq!(config.permissions, None);
     assert_eq!(outcome.withheld.len(), 1);
-    assert!(outcome.withheld[0].contains("approval = \"auto\", sandbox = \"off\""));
+    assert!(outcome.withheld[0].contains("permissions = \"full-access\""));
     let trusted = assessment.apply(Answer::Yes).config.unwrap();
-    assert_eq!(trusted.approval, Some(ApprovalMode::Auto));
+    assert_eq!(trusted.permissions, Some(Permissions::FullAccess));
+    let workspace = repository(&dir, "", Some("permissions = \"workspace\"\n"));
+    let assessment = assess(workspace, &Record::default(), &Constraints::default());
+    assert_eq!(
+        assessment.items.len(),
+        0,
+        "Workspace narrows or keeps: never asks"
+    );
 }
 
 #[test]
@@ -171,7 +182,7 @@ fn an_app_is_shown_each_thing_in_plain_words_and_until_it_answers_they_stay_off(
     let rules = Constraints::default();
     let servers = r#""docs": {"command": "npx", "args": ["@acme/mcp"], "env": {"ACME_TOKEN": "${ACME_TOKEN}"}}, "web": {"url": "https://mcp.example.com/mcp", "headers": {"Authorization": "Bearer ${WEB_TOKEN}"}}"#;
     let config = format!(
-        "approval = \"auto\"\nsandbox = \"off\"\njudge_model = \"lenient\"\n{GUARD}\n\
+        "permissions = \"full-access\"\njudge_model = \"lenient\"\n{GUARD}\n\
          [[hooks.Stop]]\ncommand = \"./done.sh\"\n"
     );
     let project = repository(&dir, servers, Some(&config));
@@ -194,8 +205,7 @@ fn an_app_is_shown_each_thing_in_plain_words_and_until_it_answers_they_stay_off(
             ),
             ("Runs a hook before each command", Some("./guard.sh")),
             ("Runs a hook when glave finishes a reply", Some("./done.sh")),
-            ("Lets glave approve actions without asking", None),
-            ("Turns off the sandbox", None),
+            ("Lets glave work outside the sandbox without asking", None),
             ("Chooses which model judges risky actions", Some("lenient")),
         ]
     );
@@ -207,14 +217,18 @@ fn an_app_is_shown_each_thing_in_plain_words_and_until_it_answers_they_stay_off(
         later.withheld
     );
     let config = later.config.unwrap();
-    assert_eq!((config.approval, config.sandbox), (None, None));
+    assert_eq!(config.permissions, None);
 }
 
 #[test]
 fn on_another_person_s_thread_every_server_and_setting_is_off_however_trusted() {
     let dir = scratch("all-off");
     let rules = Constraints::default();
-    let project = repository(&dir, DOCS, Some(&format!("approval = \"auto\"\n{GUARD}")));
+    let project = repository(
+        &dir,
+        DOCS,
+        Some(&format!("permissions = \"full-access\"\n{GUARD}")),
+    );
     let mut record = Record::default();
     let yes = assess(project.clone(), &record, &rules).apply(Answer::Yes);
     record.take(Record::deciding(&project, yes.decisions.unwrap()));
@@ -223,7 +237,7 @@ fn on_another_person_s_thread_every_server_and_setting_is_off_however_trusted() 
         off,
         [
             "MCP server docs (docs-mcp --fast) is off: not theirs",
-            "settings (approval = \"auto\") is off: not theirs",
+            "settings (permissions = \"full-access\") is off: not theirs",
         ],
         "never the hook: the model never calls one"
     );
@@ -280,14 +294,17 @@ fn trusting_what_was_shown_is_kept_as_a_yes_and_a_change_since_trusts_nothing() 
 #[test]
 fn policy_can_trust_a_project_or_forbid_its_servers() {
     let dir = scratch("policy");
-    let project = repository(&dir, DOCS, Some("approval = \"auto\"\n"));
+    let project = repository(&dir, DOCS, Some("permissions = \"full-access\"\n"));
     let record = Record::default();
     let glob = format!("{}/*", project.root.parent().unwrap().display());
     let trusting = constraints(&format!("version = 1\n[projects]\ntrusted = [{glob:?}]\n"));
     assert_eq!(undecided(&project, &record, &trusting), 0);
     let outcome = assess(project.clone(), &record, &trusting).apply(Answer::NoOne);
     assert_eq!(outcome.servers.len(), 1);
-    assert_eq!(outcome.config.unwrap().approval, Some(ApprovalMode::Auto));
+    assert_eq!(
+        outcome.config.unwrap().permissions,
+        Some(Permissions::FullAccess)
+    );
     assert!(outcome.rows[0][1].contains("trusted by [projects] trusted"));
     // A project outside the globs is asked about as usual.
     let elsewhere = constraints("version = 1\n[projects]\ntrusted = [\"/srv/*\"]\n");
@@ -304,7 +321,7 @@ fn policy_can_trust_a_project_or_forbid_its_servers() {
         outcome.withheld
     );
     assert!(
-        outcome.config.unwrap().approval.is_some(),
+        outcome.config.unwrap().permissions.is_some(),
         "settings are not servers"
     );
 }

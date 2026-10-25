@@ -42,7 +42,7 @@ pub(crate) async fn start_for_tasks<L: EventLog + 'static>(
         worktree: None,
         computer: None,
         model: None,
-        approval: None,
+        permissions: None,
         effort: None,
     };
     match server.request(started).await? {
@@ -83,7 +83,7 @@ pub(crate) async fn start<L: EventLog + 'static>(server: &Tested<L>, worktree: b
         worktree: worktree.then_some(true),
         computer: None,
         model: None,
-        approval: None,
+        permissions: None,
         effort: None,
     };
     match server.request(started).await.unwrap() {
@@ -106,7 +106,7 @@ pub(crate) async fn turn<L: EventLog + 'static>(
             prompt: prompt.into(),
             meta: Meta::default(),
             model: None,
-            approval: None,
+            permissions: None,
             effort: None,
             unattended: false,
             files: Vec::new(),
@@ -127,7 +127,7 @@ pub(crate) fn turn_start(thread: ThreadId, prompt: &str, key: Option<Idempotency
             ..Meta::default()
         },
         model: None,
-        approval: None,
+        permissions: None,
         files: Vec::new(),
         effort: None,
     }
@@ -198,7 +198,7 @@ pub(crate) async fn background<L: EventLog + 'static>(
         budget,
         meta: Meta::default(),
         model: None,
-        approval: None,
+        permissions: None,
         effort: None,
         unattended: false,
         files: Vec::new(),

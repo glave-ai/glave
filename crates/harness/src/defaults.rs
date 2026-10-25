@@ -5,9 +5,9 @@
 
 use std::sync::{Arc, PoisonError};
 
-use glave_event::ApprovalMode;
+use glave_event::Permissions;
 use glave_ports::computer::Sandbox;
-use glave_ports::settings::{Hooks, Judge};
+use glave_ports::settings::{Hooks, Judge, Protections};
 use glave_ports::{BlobStore, EventLog, ModelProvider, ToolSource};
 
 use crate::approval::Approver;
@@ -16,13 +16,18 @@ use crate::harness::Harness;
 /// The person's choices every thread runs with unless it, or its project, chooses otherwise.
 #[derive(Clone)]
 pub struct Defaults {
-    /// How much a thread's turns ask before acting, when it chose no mode.
-    pub approval: ApprovalMode,
-    /// Who judges flagged actions in auto mode: its model must be one the provider serves.
+    /// What the agent may do in a thread that, and whose project, chose no preset.
+    pub permissions: Permissions,
+    /// The most any thread may run with, whatever it or its project chose: the policy's cap,
+    /// which holds from each thread's next turn, and in a turn that goes on after a wait.
+    pub highest: Permissions,
+    /// Who judges flagged actions where nothing else asks: its model must be one the provider
+    /// serves.
     pub judge: Judge,
     /// Whether a model titles each thread after its first exchange.
     pub titles: bool,
-    /// The sandbox commands on this computer run in; none runs them unconfined.
+    /// The most a sandbox on this computer allows, which each thread's preset narrows: the
+    /// project, or only reading where nothing else can run; none where no sandbox can.
     pub sandbox: Option<Sandbox>,
     /// Whether a command whose sandbox has no network may ask to run with it, or outside the
     /// sandbox: not where the organization's policy forbids it. Each turn gives it to its
@@ -38,7 +43,8 @@ pub struct Defaults {
 impl std::fmt::Debug for Defaults {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Defaults")
-            .field("approval", &self.approval)
+            .field("permissions", &self.permissions)
+            .field("highest", &self.highest)
             .field("judge", &self.judge)
             .field("titles", &self.titles)
             .field("sandbox", &self.sandbox)
@@ -46,6 +52,17 @@ impl std::fmt::Debug for Defaults {
             .field("hooks", &self.hooks)
             .field("web", &self.web.is_some())
             .finish()
+    }
+}
+
+impl Defaults {
+    /// What the agent may do in a thread that chose `chosen`, in a project that changes it as
+    /// `project` says: the thread's own, else its project's, else these defaults', never above
+    /// the cap.
+    pub fn permissions(&self, project: Protections, chosen: Option<Permissions>) -> Permissions {
+        project
+            .permissions(chosen, self.permissions)
+            .min(self.highest)
     }
 }
 

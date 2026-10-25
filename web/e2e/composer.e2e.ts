@@ -76,7 +76,7 @@ for (const width of [1440, 390]) {
   });
 }
 
-test('the status line keeps the approval mode at its start and the model at its end', async ({
+test('the status line keeps the permissions at its start and the model at its end', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -86,8 +86,8 @@ test('the status line keeps the approval mode at its start and the model at its 
   // Each end lines up with what the box holds above it: the + and send.
   const [start] = await edges(page, 'thread-composer-attach');
   const [, end] = await edges(page, 'thread-composer-send');
-  const [approval] = await edges(page, 'approval-mode-trigger');
-  expect(approval).toBe(start);
+  const [permissions] = await edges(page, 'permissions-trigger');
+  expect(permissions).toBe(start);
   // The default model reasons its own way: it alone is at the end.
   const [model, modelEnd] = await edges(page, 'model-picker-trigger');
   expect(modelEnd).toBe(end);

@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, PoisonError, RwLock};
 
 use glave_event::{
-    ApprovalMode, At, EventId, Header, Origin, OriginKind, ParentCall, Part, Payload, Principal,
+    At, EventId, Header, Origin, OriginKind, ParentCall, Part, Payload, Permissions, Principal,
     PrincipalId, Producer, RawEvent, Seq, ThreadId, ThreadStarted, WorkspaceBound, encode,
 };
 use glave_ports::memories::Memory;
@@ -141,8 +141,9 @@ pub struct Thread {
     pub(crate) for_: Option<PrincipalId>,
     /// The model chosen for the thread (`chosen.rs`); the harness's own when `None`.
     pub(crate) model: Option<String>,
-    /// The approval mode chosen for the thread (`chosen.rs`); the harness's own when `None`.
-    pub(crate) approval: Option<ApprovalMode>,
+    /// The preset chosen for the thread (`chosen.rs`); its project's, else the harness's own,
+    /// when `None`.
+    pub(crate) permissions: Option<Permissions>,
     /// How much its model is asked to reason (`chosen.rs`); the model's own way when `None`.
     pub(crate) effort: Option<String>,
     /// The instructions the thread opens with, and the judge reads as the project's rules:
@@ -270,7 +271,8 @@ where
                 commands: Arc::default(),
             })],
             defaults: RwLock::new(Arc::new(Defaults {
-                approval: settings.approval,
+                permissions: settings.permissions,
+                highest: settings.highest,
                 judge: settings.judge.clone(),
                 titles: settings.titles,
                 sandbox: workspace.sandbox().cloned(),
@@ -438,7 +440,7 @@ where
         &self.blobs
     }
 
-    /// What the harness was set up with: the default model and the approval mode among them,
+    /// What the harness was set up with: the default model and the preset among them,
     /// as it started. Those now are [`Harness::default_model`] and [`Harness::defaults`].
     pub fn settings(&self) -> &Settings {
         &self.settings
@@ -519,7 +521,7 @@ where
             memory: MemoryState::default(),
             for_,
             model: None,
-            approval: None,
+            permissions: None,
             effort: None,
             instructions,
             project,

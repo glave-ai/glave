@@ -3,8 +3,7 @@
 //! glave's own defaults give way, to the value the policy leaves.
 
 use crate::error::refuse;
-use glave_event::ApprovalMode;
-use glave_ports::computer::SandboxLevel;
+use glave_event::Permissions;
 use glave_ports::settings::Judge;
 
 use crate::policy::choices::{Choices, Chosen, Source};
@@ -17,27 +16,25 @@ pub(super) fn settle(mut choices: Choices, constraints: &Constraints) -> crate::
     if let Some((rule, why)) = constraints.not_enforced().first() {
         refuse!("glave will not run under {rule}: it is not enforced yet ({why})");
     }
-    choices.approval = approval(choices.approval, constraints)?;
+    choices.permissions = permissions(choices.permissions, constraints)?;
     choices.judge = judge(choices.judge, constraints)?;
-    choices.sandbox = sandbox(choices.sandbox, constraints)?;
     choices.network = network(choices.network, constraints)?;
     crate::policy::memory::settle(&choices, constraints)?;
-    let choices = crate::policy::placement::settle(choices, constraints)?;
-    Ok(asks_unconfined(choices, constraints))
+    crate::policy::placement::settle(choices, constraints)
 }
 
 /// `choices` within `constraints` for a server that already runs, and so cannot refuse to
-/// start: an approval mode, a judge, a sandbox or memory a rule refuses gives way as glave's
-/// default would, each said in a sentence. A constraint added while it runs narrows its next
-/// turn whatever the person's file says. Anything else outside them still fails.
+/// start: a preset, a judge, the network or memory a rule refuses gives way as glave's default
+/// would, each said in a sentence. A constraint added while it runs narrows its next turn
+/// whatever the person's file says. Anything else outside them still fails.
 pub fn give_way(
     mut choices: Choices,
     constraints: &Constraints,
 ) -> crate::Result<(Choices, Vec<String>)> {
     let mut aside = Vec::new();
-    if let Err(refused) = approval(choices.approval.clone(), constraints) {
+    if let Err(refused) = permissions(choices.permissions.clone(), constraints) {
         aside.push(refused.to_string());
-        choices.approval.from = Source::Default;
+        choices.permissions.from = Source::Default;
     }
     if let Err(refused) = judge(choices.judge.clone(), constraints) {
         aside.push(refused.to_string());
@@ -45,10 +42,6 @@ pub fn give_way(
             value: Judge::Main,
             from: Source::Default,
         };
-    }
-    if let Err(refused) = sandbox(choices.sandbox.clone(), constraints) {
-        aside.push(refused.to_string());
-        choices.sandbox.from = Source::Default;
     }
     if let Err(refused) = network(choices.network.clone(), constraints) {
         aside.push(refused.to_string());
@@ -62,73 +55,23 @@ pub fn give_way(
     Ok((settle(choices, constraints)?, aside))
 }
 
-/// `choices` once glave's default sandbox turned out not to run here, for the reason `why`:
-/// no sandbox, and commands asking unless someone chose otherwise. A sandbox someone chose,
-/// or a policy requires, never gets here: without it glave refuses to run commands.
-pub fn unsandboxed(mut choices: Choices, why: &str, constraints: &Constraints) -> Choices {
-    if choices.sandbox.from == Source::Default {
-        choices.sandbox = Chosen {
-            value: None,
-            from: Source::Unavailable(why.to_owned()),
-        };
-    }
-    asks_unconfined(choices, constraints)
-}
-
-/// Auto approval runs commands without asking, which is safe inside the sandbox. Outside it,
-/// a command would run as the person with no one asked, so only someone who chose both
-/// `sandbox = "off"` and `approval = "auto"` gets that, or a policy that leaves only `auto`.
-/// Otherwise approval becomes `ask`.
-fn asks_unconfined(mut choices: Choices, constraints: &Constraints) -> Choices {
-    let chosen = |from: &Source| matches!(from, Source::Flag(_) | Source::File(_));
-    let unconfined_by_choice = chosen(&choices.sandbox.from) && chosen(&choices.approval.from);
-    let (allowed, _) = constraints.approval_modes();
-    if choices.sandbox.value.is_none()
-        && choices.approval.value == ApprovalMode::Auto
-        && !unconfined_by_choice
-        && allowed.contains(&ApprovalMode::Ask)
-    {
-        choices.approval = Chosen {
-            value: ApprovalMode::Ask,
-            from: Source::Unsandboxed,
-        };
-    }
-    choices
-}
-
-/// The approval modes a thread may choose (`approval` in the session API): those the policy
-/// leaves, cautious first. Auto runs only behind a wall: without the sandbox, a thread may
-/// choose it only when glave already runs in auto (someone chose both, or the policy left only
-/// auto).
-pub fn thread_modes(choices: &Choices, constraints: &Constraints) -> Vec<ApprovalMode> {
-    let (allowed, _) = constraints.approval_modes();
-    let walled = choices.sandbox.value.is_some() || choices.approval.value == ApprovalMode::Auto;
-    allowed
-        .into_iter()
-        .filter(|mode| *mode != ApprovalMode::Auto || walled)
-        .collect()
-}
-
-fn approval(
-    chosen: Chosen<ApprovalMode>,
+/// The preset within `constraints`: glave's default gives way to the highest a rule leaves,
+/// and choosing one above it is refused.
+fn permissions(
+    chosen: Chosen<Permissions>,
     constraints: &Constraints,
-) -> crate::Result<Chosen<ApprovalMode>> {
-    let (allowed, narrowing) = constraints.approval_modes();
-    if allowed.contains(&chosen.value) {
+) -> crate::Result<Chosen<Permissions>> {
+    let (highest, Some(rule)) = constraints.highest_permissions() else {
         return Ok(chosen);
-    }
-    let rules: Vec<String> = narrowing.iter().map(ToString::to_string).collect();
-    let rules = rules.join(", and ");
-    match (allowed.first(), &chosen.from) {
-        (None, _) => refuse!("no approval mode is left: {rules}"),
-        (Some(mode), Source::Default) => Ok(Chosen {
-            value: *mode,
-            from: narrowing
-                .first()
-                .map_or(Source::Default, |rule| Source::Narrowed(rule.from.clone())),
+    };
+    match (chosen.value <= highest, &chosen.from) {
+        (true, _) => Ok(chosen),
+        (false, Source::Default) => Ok(Chosen {
+            value: highest,
+            from: Source::Narrowed(rule.from.clone()),
         }),
-        (Some(_), from) => refuse!(
-            "approval {} (from {from}) is not allowed: {rules}",
+        (false, from) => refuse!(
+            "permissions {} (from {from}) is not allowed: {rule}",
             chosen.value.name()
         ),
     }
@@ -156,28 +99,6 @@ fn judge(chosen: Chosen<Judge>, constraints: &Constraints) -> crate::Result<Chos
             rule.name(),
             path.display()
         ),
-    }
-}
-
-fn sandbox(
-    chosen: Chosen<Option<SandboxLevel>>,
-    constraints: &Constraints,
-) -> crate::Result<Chosen<Option<SandboxLevel>>> {
-    let Some(rule) = constraints.sandbox_required() else {
-        return Ok(chosen);
-    };
-    match (chosen.value, &chosen.from) {
-        // The default sandbox is now the policy's: it may not give way when it cannot run.
-        (Some(level), Source::Default) => Ok(Chosen {
-            value: Some(level),
-            from: Source::Narrowed(rule.from.clone()),
-        }),
-        (Some(_), _) => Ok(chosen),
-        (None, Source::Default) => Ok(Chosen {
-            value: Some(SandboxLevel::Project),
-            from: Source::Narrowed(rule.from.clone()),
-        }),
-        (None, from) => refuse!("sandbox off (from {from}) is not allowed: {rule}"),
     }
 }
 

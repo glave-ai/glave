@@ -27,14 +27,14 @@ pub use payload::{
     AcmeRegistered, AwakeSet, CertificateIssued, Grouping, GroupingSet, LanguageSet,
 };
 pub use payload::{
-    ApprovalDecided, ApprovalMode, ApprovalModeChosen, ApprovalRequested, Arguments, Auth,
-    AuthMethod, Cost, EffortChosen, ForkPoint, GatewayToolCalled, GoalEnded, GoalReason,
-    GoalResumed, GoalSet, HookPoint, HookRan, HookResult, Lifted, MemoryEdited, MemoryForgotten,
-    MemoryRestored, MemorySaved, MemoryScope, MemorySource, MemoryTidied, MessageAdded,
-    ModelChosen, ModelRef, ModelResponded, Opaque, Origin, OriginKind, Outcome, OutsideSandbox,
-    ParentCall, Part, Principal, PrincipalKind, Producer, Role, StopReason, ThreadArchived,
-    ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived, TokenCounts,
-    ToolCallCompleted, ToolCallRequested, TraceId, TurnEnded, TurnStarted, Usage, Verdict,
+    ApprovalDecided, ApprovalRequested, Arguments, Auth, AuthMethod, Cost, EffortChosen, ForkPoint,
+    GatewayToolCalled, GoalEnded, GoalReason, GoalResumed, GoalSet, HookPoint, HookRan, HookResult,
+    Lifted, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryScope, MemorySource,
+    MemoryTidied, MessageAdded, ModelChosen, ModelRef, ModelResponded, Opaque, Origin, OriginKind,
+    Outcome, OutsideSandbox, ParentCall, Part, Permissions, PermissionsChosen, Principal,
+    PrincipalKind, Producer, Role, StopReason, ThreadArchived, ThreadCompacted, ThreadDeleted,
+    ThreadRenamed, ThreadStarted, ThreadUnarchived, TokenCounts, ToolCallCompleted,
+    ToolCallRequested, TraceId, TurnEnded, TurnStarted, Usage, Verdict,
 };
 pub use payload::{BrowserSignedIn, BrowserSignedOut, BrowserUsed, Decision, TrustDecided};
 pub use payload::{Catalog, CatalogModel, CatalogRefreshed, Reasoning, TokenPrice};

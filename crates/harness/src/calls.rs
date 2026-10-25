@@ -4,8 +4,8 @@
 use std::sync::Arc;
 
 use glave_event::{
-    ApprovalDecided, ApprovalMode, ApprovalRequested, CallId, Lifted, Outcome, Principal,
-    ToolCallCompleted, Verdict,
+    ApprovalDecided, ApprovalRequested, CallId, Lifted, Outcome, Principal, ToolCallCompleted,
+    Verdict,
 };
 use glave_ports::settings::Judge;
 use glave_ports::{
@@ -13,7 +13,7 @@ use glave_ports::{
     ToolSource,
 };
 
-use crate::approval::{ApprovalRequest, Approver, asks_for, no_one_there, sentence};
+use crate::approval::{ApprovalMode, ApprovalRequest, Approver, asks_for, no_one_there, sentence};
 use crate::builtins::BUILTINS;
 use crate::cancel::Cancel;
 use crate::children::Ran;
@@ -22,6 +22,7 @@ use crate::hooks::ToolHook;
 use crate::judge::{JudgeCase, Ruling, judge};
 use crate::question::{self, QuestionRequest};
 use crate::sandbox::{self, Asks};
+use crate::tools::Tool;
 use crate::turn::{Live, Step, TurnSummary, absorb, tally};
 use crate::waits::{Answered, verdict_of};
 
@@ -364,9 +365,14 @@ where
                 Judged::Cancelled => return Ok(Some(ToolOutput::text(true, NOT_RUN))),
             }
         }
+        // A command that stays in the thread's sandbox, which Read-only lets run: `bash` is
+        // always the built-in, the first source that names a tool keeping it.
+        let confined = request.tool == Tool::Bash.name()
+            && request.outside_sandbox.is_none()
+            && self.workspace_for(thread).sandbox().is_some();
         // A caution asks even when the tool was allowed for the rest of the thread.
         let asks = cautioned
-            || (asks_for(self.approval_for(thread), request.effect)
+            || (asks_for(self.approval_for(thread), request.effect, confined)
                 && !thread.allowed.contains(&request.tool));
         if !asks {
             return Ok(None);

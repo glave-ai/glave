@@ -11,7 +11,7 @@ use glave_config::policy::{self, Choices};
 use glave_config::trust::Asking;
 use glave_harness::{AGENTS_MD, Settings, Workspace, agents_md};
 use glave_memory::Tidier;
-use glave_ports::computer::GitCredentials;
+use glave_ports::computer::{GitCredentials, Sandbox};
 use glave_ports::settings::Hooks;
 use glave_ports::{ProjectId, SystemClock};
 use glave_process::Processes;
@@ -48,6 +48,8 @@ pub(crate) struct Wired {
     pub(crate) root: PathBuf,
     /// The settings in use, for the banner and receipts.
     pub(crate) choices: Choices,
+    /// The most a sandbox here allows, which each preset narrows: for the banner and receipts.
+    pub(crate) sandbox: Option<Sandbox>,
     /// The workers threads work on, with `--on cloud`.
     pub(crate) workers: Option<Arc<WorkerComputers>>,
     /// Memory, when it is on.
@@ -116,10 +118,8 @@ pub(crate) async fn wire(
     let folder = std::env::current_dir()?;
     let mut setup = Setup::load(args, &folder).await?;
     let telemetry = crate::telemetry::start_for(args.log.as_deref(), &setup.choices)?;
-    let database = home::database().await?;
     let processes = home::reaped().await?;
-    let workspace =
-        crate::sandboxing::workspace(&folder, &mut setup, &database, &processes).await?;
+    let workspace = crate::sandboxing::workspace(&folder, &mut setup, &processes).await?;
     let choices = &setup.choices;
     let (remote, configured) = crate::providers::endpoint(choices)?;
     let store = store(&setup).await?;
@@ -129,7 +129,7 @@ pub(crate) async fn wire(
     let lined = line_up(args, lineup, &store, identity.person, remote.is_some()).await?;
     let (workspace, hosts, connected) =
         signed(args, &store, identity.person, choices, workspace).await?;
-    let mut settings = settings_for(args, choices, &lined, identity, workspace.root()).await?;
+    let mut settings = settings_for(args, &setup, &lined, identity, workspace.root()).await?;
     let root = workspace.root().to_owned();
     settings.commands = crate::commands::find(&root).await?;
     let servers = mcp_servers(&setup, remote.as_ref(), &processes, connected.as_ref()).await?;
@@ -143,9 +143,8 @@ pub(crate) async fn wire(
     tidy(memory.as_ref(), &lined.switch, settings.model.clone());
     let wiring = Wiring {
         // Before the lineup's parts move into the rest.
-        rereads: Some(rereading(args, &folder, choices, &lined, &servers, &projects).await?),
+        rereads: Some(rereading(args, &folder, &setup, &lined, &servers, &projects).await?),
         models: lined.built.models.offered,
-        modes: policy::thread_modes(choices, &setup.loaded.constraints),
         providers: lined.accounts.map(|kept| kept as Arc<dyn Providers>),
         git_hosts: hosts.map(|hosts| hosts as Arc<dyn GitHosts>),
         connections: connected.map(|connected| connected as Arc<dyn Connections>),
@@ -184,6 +183,7 @@ pub(crate) async fn wire(
         project: scope.project(),
         root,
         choices: setup.choices,
+        sandbox: setup.sandbox,
         workers,
         memory,
         log: store.log(),
@@ -241,7 +241,7 @@ async fn keep_here(server: &Glave, project: ProjectId, root: &Path) -> anyhow::R
 async fn rereading(
     args: &Args,
     folder: &Path,
-    start: &Choices,
+    start: &Setup,
     lined: &Lined,
     servers: &Arc<Servers>,
     projects: &Arc<ProjectFolders>,
@@ -250,7 +250,8 @@ async fn rereading(
         args: args.clone(),
         folder: folder.to_owned(),
         home: home::folder()?,
-        start: start.clone(),
+        start: start.choices.clone(),
+        here: start.sandbox.as_ref().map(|sandbox| sandbox.level),
         accounts: lined.accounts.clone(),
         switch: lined.switch.clone(),
         servers: Arc::clone(servers),
@@ -313,15 +314,17 @@ fn projects_for(
 /// no folder of its own here (a worker's, what `root` opens with), and the choices.
 async fn settings_for(
     args: &Args,
-    choices: &Choices,
+    setup: &Setup,
     lined: &Lined,
     identity: identity::Identity,
     root: &Path,
 ) -> anyhow::Result<Settings> {
+    let choices = &setup.choices;
     let (model, named) = lined.built.models.default.clone().unwrap_or_default();
     let mut settings = Settings::new(model, named);
     settings.instructions = opening(root).await?;
-    settings.approval = choices.approval.value;
+    settings.permissions = choices.permissions.value;
+    settings.highest = setup.loaded.constraints.highest_permissions().0;
     settings.max_steps = args.max_steps;
     settings.subagents = true; // As Claude Code, Codex and OpenCode offer it.
     // As Claude.ai, ChatGPT and OpenCode title chats; a one-shot prompt turns them off (its

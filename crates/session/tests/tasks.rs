@@ -10,7 +10,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use glave_event::{Opened, Outcome};
-use glave_harness::ApprovalMode;
+use glave_harness::Permissions;
 use glave_ports::testing::TempDir;
 use glave_ports::{Caller, InMemoryLog, Leases};
 use glave_session::protocol::{Notification, Reply, Request, TaskStatus, code};
@@ -202,7 +202,7 @@ fn a_task_never_works_in_a_folder_itself() {
                 worktree: Some(false),
                 computer: None,
                 model: None,
-                approval: None,
+                permissions: None,
                 effort: None,
             })
             .await
@@ -217,7 +217,7 @@ fn a_task_never_works_in_a_folder_itself() {
                 budget: None,
                 meta: glave_session::protocol::Meta::default(),
                 model: None,
-                approval: None,
+                permissions: None,
                 effort: None,
                 unattended: false,
                 files: Vec::new(),
@@ -241,7 +241,7 @@ fn approvals_in_a_task_are_answered_no_one_there_and_the_model_is_sent_the_same(
         };
         // Asks for every command, with a client that could answer.
         let mut setup = Setup::new(go());
-        setup.settings.approval = ApprovalMode::Ask;
+        setup.settings.permissions = Permissions::ReadOnly;
         let (server, seen, repo, _dir) = in_repository("task-unattended", setup).await;
         let thread = task_thread(&server).await;
         background(&server, thread, None).await;
@@ -259,7 +259,7 @@ fn approvals_in_a_task_are_answered_no_one_there_and_the_model_is_sent_the_same(
         // The same turn followed by no one, in the folder itself, from a server that never
         // has anyone to ask.
         let mut followed = Setup::new(go());
-        followed.settings.approval = ApprovalMode::Ask;
+        followed.settings.permissions = Permissions::ReadOnly;
         followed.answering = Answering::NoOne;
         let (plain, plain_seen) = followed.build(&repo).await;
         let other = start(&plain, false).await;
@@ -271,7 +271,7 @@ fn approvals_in_a_task_are_answered_no_one_there_and_the_model_is_sent_the_same(
                 budget: None,
                 meta: glave_session::protocol::Meta::default(),
                 model: None,
-                approval: None,
+                permissions: None,
                 effort: None,
                 unattended: false,
                 files: Vec::new(),
@@ -384,7 +384,7 @@ fn a_turn_stops_at_its_budget() {
                 budget: Some(5),
                 meta: glave_session::protocol::Meta::default(),
                 model: None,
-                approval: None,
+                permissions: None,
                 effort: None,
                 unattended: false,
                 files: Vec::new(),
@@ -412,7 +412,7 @@ fn policy_limits_how_many_tasks_run_at_once() {
                 budget: None,
                 meta: glave_session::protocol::Meta::default(),
                 model: None,
-                approval: None,
+                permissions: None,
                 effort: None,
                 unattended: false,
                 files: Vec::new(),

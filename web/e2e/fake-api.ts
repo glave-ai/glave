@@ -75,7 +75,7 @@ function thread(
     status,
     standing: 'active',
     title,
-    approval: 'auto',
+    permissions: 'workspace',
     origin: { kind: 'web' },
     created_at: '2026-10-11T10:00:00.000Z',
     updated_at: '2026-10-11T10:05:00.000Z',
@@ -208,8 +208,7 @@ export const TRUST_ASK: TrustAsk = {
   items: [
     { text: 'Runs a tool server', detail: 'npx @acme/mcp' },
     { text: 'Runs a hook before each command', detail: './scripts/check.sh' },
-    { text: 'Lets glave approve actions without asking' },
-    { text: 'Turns off the sandbox' },
+    { text: 'Lets glave work outside the sandbox without asking' },
   ],
 };
 
@@ -567,8 +566,8 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
         name: 'glave',
         version: '0.0.0',
         protocols: ['2026-10'],
-        approval: 'auto',
-        approvals: ['ask', 'auto'],
+        permissions: 'workspace',
+        presets: ['read-only', 'workspace', 'full-access'],
         id: FAKE_SERVER,
       };
     default:

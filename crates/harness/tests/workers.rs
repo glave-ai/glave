@@ -2,7 +2,8 @@
 //! machine stands in for Docker. A worker thread clones the repository, gets its attachments,
 //! is told its sources in one paragraph, and on release hands back its files, pushes unpushed
 //! work to `glave/wip/<thread>` and is destroyed. With workers configured but unused, the
-//! model is sent exactly what it was before.
+//! model is sent exactly what it was before. A worker's own container is its wall, so there
+//! Workspace asks only before risky actions, and Read-only before every change.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -11,7 +12,7 @@ use std::sync::Arc;
 use crate::support::*;
 use glave_computer::LocalComputers;
 use glave_event::{Body, ComputerKind, Event, Opened, RemovedReason, StopReason};
-use glave_harness::{AllowAll, Cancel, HarnessError, Place, Workers, wip_branch};
+use glave_harness::{AllowAll, Cancel, HarnessError, NoOneToAsk, Place, Workers, wip_branch};
 use glave_ports::Caller;
 use glave_ports::computer::{Bytes, Environment, FileWrite, Sources};
 use glave_ports::{Completion, EventLog as _, InMemoryLog, Standing, ThreadQuery};
@@ -355,4 +356,41 @@ fn without_workers_a_worker_thread_is_refused_and_nothing_is_recorded() {
         let listed = harness.log().thread_views(&scope(), &query).await.unwrap();
         assert_eq!(listed, []);
     });
+}
+
+#[test]
+fn on_a_worker_workspace_changes_without_asking_and_read_only_asks() {
+    for (settings, lands) in [(in_the_sandbox(), true), (asking(), false)] {
+        let dir = folder(&format!("workers-preset-{lands}"));
+        let origin = origin(&dir);
+        let here = dir.join("here");
+        std::fs::create_dir_all(&here).unwrap();
+        block_on!(async {
+            let (harness, _) = harness_with(
+                workspace(&here).await,
+                script(),
+                NoOneToAsk,
+                InMemoryLog::new(),
+                1,
+                settings,
+            );
+            let harness = harness.with_workers(workers(&dir, &origin));
+            let place = Place::Worker(Environment::host());
+            let mut thread = harness
+                .start_thread_in(scope(), &Caller::default(), place)
+                .await
+                .unwrap();
+            harness
+                .run_turn(&mut thread, "do it", &Cancel::new(), &mut |_| {})
+                .await
+                .unwrap();
+            let recorded = events(harness.log(), thread.id).await;
+            let root = recorded.iter().find_map(|event| match &event.body {
+                Body::WorkspaceBound(bound) => Some(PathBuf::from(&bound.root)),
+                _ => None,
+            });
+            let wrote = root.unwrap().join("notes.txt").exists();
+            assert_eq!(wrote, lands, "no sandbox here, yet the worker is a wall");
+        });
+    }
 }

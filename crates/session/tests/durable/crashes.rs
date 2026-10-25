@@ -301,7 +301,7 @@ async fn stopped_after(
             worktree: None,
             computer: None,
             model: None,
-            approval: None,
+            permissions: None,
             effort: None,
         })
         .await;

@@ -122,6 +122,7 @@ jobs:
   measure:
     needs: [release, benchmark]
     runs-on: ubuntu-22.04
+    # It takes seconds; the benchmark bounds its own waits, and this the rest.
     timeout-minutes: 10
     steps:
       # Each into a folder of its own name; the files lose their mode on the way.

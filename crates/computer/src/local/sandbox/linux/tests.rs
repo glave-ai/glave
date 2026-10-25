@@ -250,6 +250,35 @@ fn landlock_confines_read_only_commands() {
 }
 
 #[test]
+fn landlock_runs_with_named_pipes_beside_what_it_hides() {
+    let Some(helper) = landlock() else {
+        return;
+    };
+    let dir = scratch("landlock-pipes");
+    let project = dir.join("project");
+    // Each folder holding something hidden has its entries granted one by one, a pipe too.
+    std::fs::create_dir_all(dir.join(".ssh")).unwrap();
+    std::fs::write(project.join(".env"), "canary-env\n").unwrap();
+    std::fs::write(project.join("notes.md"), "notes-ok\n").unwrap();
+    for pipe in [dir.join("pipe"), project.join("pipe")] {
+        let made = Process::new("mkfifo").arg(&pipe).status().unwrap();
+        assert!(made.success());
+    }
+    let (ending, said) = run(
+        &dir,
+        Some((SandboxLevel::ReadOnly, false)),
+        Some(&helper),
+        "cat notes.md .env",
+    )
+    .unwrap();
+    assert!(
+        said.contains("notes-ok") && !said.contains("canary"),
+        "{said}"
+    );
+    assert!(!matches!(ending, Ending::TimedOut { .. }), "{said}");
+}
+
+#[test]
 fn landlock_refuses_the_project_level_and_says_what_to_install() {
     let Some(helper) = landlock() else {
         return;

@@ -32,7 +32,7 @@ fn a_thread_works_in_the_folder_unless_it_asks_for_a_worktree() {
                 worktree: Some(true),
                 computer: None,
                 model: None,
-                approval: None,
+                permissions: None,
                 effort: None,
             })
             .await

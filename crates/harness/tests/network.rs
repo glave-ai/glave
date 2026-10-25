@@ -89,7 +89,7 @@ fn one_turn<A: Approver>(
     block_on!(async {
         let workspace = walled(base, network).await.asking_network(asks);
         let log = InMemoryLog::new();
-        let (harness, seen) = harness_with(workspace, answers, approver, log, 1, settings());
+        let (harness, seen) = harness_with(workspace, answers, approver, log, 1, in_the_sandbox());
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let turn = harness
             .run_turn(
@@ -257,8 +257,14 @@ fn an_answer_given_before_the_network_was_taken_never_gives_a_command_the_networ
         return;
     };
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    // Asked as any command is in `ask` mode, with the network on: nothing to let out then.
-    let answers = making(vec![connect(&base, "a.txt", &listener, true)]);
+    // Asked for its push, with the network on: nothing to let out then.
+    let (tool, mut arguments) = connect(&base, "a.txt", &listener, true);
+    let command = format!(
+        "git push origin main; {}",
+        arguments["command"].as_str().unwrap()
+    );
+    arguments["command"] = command.into();
+    let answers = making(vec![(tool, arguments)]);
     block_on!(async {
         let workspace = walled(&base, true).await;
         let (harness, _) = harness_with(
@@ -267,7 +273,7 @@ fn an_answer_given_before_the_network_was_taken_never_gives_a_command_the_networ
             InTheLog,
             InMemoryLog::new(),
             1,
-            asking(),
+            in_the_sandbox(),
         );
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let stopped = harness

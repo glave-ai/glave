@@ -16,10 +16,10 @@ use glave_event::{
 use glave_harness::Goal;
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope, title_from};
 
+use crate::choice::Choice;
 use crate::held::{Slot, busy};
 use crate::leased::Repaired;
 use crate::ledger::Recorded;
-use crate::modes::Choice;
 use crate::protocol::{
     ApiError, Notification, Reply, TaskInfo, TaskKind, TaskStatus, TurnResult, code,
 };
@@ -38,7 +38,7 @@ pub struct TaskLimits {
 
 /// What a task does.
 pub(crate) enum Work {
-    /// One turn with this prompt, with the model and approval mode chosen with it, if any.
+    /// One turn with this prompt, with the model and preset chosen with it, if any.
     Turn(String, Choice),
     /// A goal's turns: a new goal, or the thread's active or paused one.
     Goal(Option<Goal>),
