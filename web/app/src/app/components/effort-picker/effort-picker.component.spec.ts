@@ -67,6 +67,8 @@ describe('EffortPickerComponent', () => {
     fixture.componentRef.setInput('current', 'none');
     await fixture.whenStable();
     expect(trigger(root)?.textContent).not.toContain('Off');
+    // No level is sent, so the model reasons as its maker set it.
+    expect(trigger(root)?.textContent).toContain('Default');
     fixture.componentRef.setInput('model', 'plain');
     await fixture.whenStable();
     expect(trigger(root)).toBeNull();

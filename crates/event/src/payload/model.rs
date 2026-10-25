@@ -47,6 +47,10 @@ pub struct ModelResponded {
     /// as `Anthropic`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub upstream: Option<String>,
+    /// The reasoning level the gateway sent the target that answered, if any, in its
+    /// provider's names: the one the thread chose, or its model's default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
     /// True when the gateway left opaque reasoning out of the request because the target
     /// that answered could not accept it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]

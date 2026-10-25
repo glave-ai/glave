@@ -110,6 +110,7 @@ fn responded() -> Result<ModelResponded, String> {
         service: None,
         reasoning_stripped: false,
         upstream: None,
+        effort: None,
     })
 }
 

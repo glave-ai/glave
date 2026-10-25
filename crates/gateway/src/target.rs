@@ -76,9 +76,10 @@ pub struct Target {
     /// The model it serves, by a name it shares with targets at other providers that serve the
     /// same one: a thread that chooses any of them is sent to them all, tried in order.
     pub same_model: Option<String>,
-    /// The reasoning levels it offers, in its provider's names: a request asking for another
-    /// is sent without one, so the model reasons its own way.
-    pub efforts: Vec<String>,
+    /// The reasoning levels it offers, in its provider's names.
+    efforts: Vec<String>,
+    /// The one of `efforts` its model uses when asked for none, as its service's catalog says.
+    default_effort: Option<String>,
     pub(crate) handle: Arc<dyn Model>,
 }
 
@@ -100,6 +101,7 @@ impl Target {
             service: None,
             same_model: None,
             efforts: Vec::new(),
+            default_effort: None,
             handle,
         }
     }
@@ -129,11 +131,23 @@ impl Target {
         self
     }
 
-    /// The target, offering the reasoning levels `efforts`.
+    /// The target, offering the reasoning levels `efforts`, its model using `default` when
+    /// asked for none; a default it does not offer is not known.
     #[must_use]
-    pub fn with_efforts(mut self, efforts: Vec<String>) -> Self {
+    pub fn with_efforts(mut self, efforts: Vec<String>, default: Option<String>) -> Self {
+        self.default_effort = default.filter(|default| efforts.contains(default));
         self.efforts = efforts;
         self
+    }
+
+    /// The reasoning level a request asking for `asked` is sent to this target with: that
+    /// level when the target offers it, else the one its model uses unasked, sent so the
+    /// model reasons alike at every service; none when neither is known, which leaves it to
+    /// the model's maker.
+    pub fn effort_for<'a>(&'a self, asked: Option<&'a str>) -> Option<&'a str> {
+        asked
+            .filter(|asked| self.efforts.iter().any(|offered| offered == asked))
+            .or(self.default_effort.as_deref())
     }
 
     /// The target at the service people know as `service`.
@@ -162,6 +176,58 @@ impl fmt::Debug for Target {
             .field("service", &self.service)
             .field("same_model", &self.same_model)
             .field("efforts", &self.efforts)
+            .field("default_effort", &self.default_effort)
             .finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use glave_ports::testing::ScriptedModel;
+
+    use super::*;
+
+    /// A target these tests only ask what it would be sent.
+    fn plain() -> Target {
+        Target::new(Arc::new(ScriptedModel::new(Vec::new())), "p", "m")
+    }
+
+    fn reasons(default: Option<&str>) -> Target {
+        let levels = ["high", "medium", "low"].map(str::to_owned).to_vec();
+        plain().with_efforts(levels, default.map(str::to_owned))
+    }
+
+    #[test]
+    fn a_target_is_sent_its_model_s_default_when_asked_for_none() {
+        assert_eq!(reasons(Some("medium")).effort_for(None), Some("medium"));
+    }
+
+    #[test]
+    fn the_level_asked_for_wins_over_the_default() {
+        assert_eq!(
+            reasons(Some("medium")).effort_for(Some("high")),
+            Some("high")
+        );
+        assert_eq!(reasons(None).effort_for(Some("low")), Some("low"));
+    }
+
+    #[test]
+    fn a_level_the_target_does_not_offer_is_never_sent() {
+        let target = reasons(Some("medium"));
+        assert_eq!(
+            target.effort_for(Some("max")),
+            Some("medium"),
+            "its default"
+        );
+        assert_eq!(reasons(None).effort_for(Some("max")), None);
+        assert_eq!(plain().effort_for(Some("high")), None, "it offers none");
+        let odd = plain().with_efforts(vec!["high".into()], Some("max".into()));
+        assert_eq!(odd.effort_for(None), None, "a default it does not offer");
+    }
+
+    #[test]
+    fn a_target_whose_default_is_unknown_is_sent_none() {
+        assert_eq!(reasons(None).effort_for(None), None);
+        assert_eq!(plain().effort_for(None), None);
     }
 }

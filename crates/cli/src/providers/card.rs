@@ -89,8 +89,10 @@ fn micros(text: &str) -> Option<u64> {
 }
 
 /// How the listing says the model reasons: OpenRouter's `reasoning`, with the levels it
-/// offers (`supported_efforts`), the one it uses unasked (`default_effort`), and whether it
-/// always reasons (`mandatory`).
+/// offers (`supported_efforts`), whether it always reasons (`mandatory`), and the level it
+/// uses unasked, known only where the listing says whether it reasons unasked: the level
+/// reasoning starts at (`default_effort`) when it always reasons or does by default
+/// (`default_enabled`), and `none` when it does not by default.
 fn reasoning(reasoning: Option<&Value>) -> Option<Reasoning> {
     let reasoning = reasoning.filter(|value| value.is_object())?;
     let level = |value: &Value| {
@@ -116,17 +118,20 @@ fn reasoning(reasoning: Option<&Value>) -> Option<Reasoning> {
             efforts.push(effort);
         }
     }
-    let default = reasoning
-        .get("default_effort")
-        .and_then(level)
-        .filter(|default| efforts.contains(default));
+    let mandatory = reasoning
+        .get("mandatory")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let unasked = match reasoning.get("default_enabled").and_then(Value::as_bool) {
+        Some(true) => reasoning.get("default_effort").and_then(level),
+        _ if mandatory => reasoning.get("default_effort").and_then(level),
+        Some(false) => Some("none".to_owned()),
+        None => None,
+    };
     Some(Reasoning {
+        default: unasked.filter(|default| efforts.contains(default)),
         efforts,
-        default,
-        mandatory: reasoning
-            .get("mandatory")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
+        mandatory,
     })
 }
 
@@ -149,6 +154,7 @@ mod tests {
             "top_provider": {"context_length": 1_000_000, "max_completion_tokens": 128_000},
             "reasoning": {
                 "mandatory": false,
+                "default_enabled": true,
                 "supported_efforts": ["max", "xhigh", "high", "medium", "low", "none"],
                 "default_effort": "medium",
             },
@@ -216,5 +222,37 @@ mod tests {
         let on_off = described("m", &json!({"reasoning": {"mandatory": false}}));
         assert_eq!(on_off.reasoning.map(|r| r.efforts.len()), Some(0));
         assert_eq!(described("m", &json!({"reasoning": null})).reasoning, None);
+    }
+
+    #[test]
+    fn the_level_used_unasked_is_known_only_where_the_listing_says_whether_it_reasons_unasked() {
+        let unasked = |mandatory: bool, enabled: Option<bool>| {
+            let mut reasoning = json!({
+                "mandatory": mandatory,
+                "supported_efforts": ["high", "medium", "low", "none"],
+                "default_effort": "medium",
+            });
+            if let (Some(fields), Some(enabled)) = (reasoning.as_object_mut(), enabled) {
+                fields.insert("default_enabled".into(), json!(enabled));
+            }
+            described("m", &json!({ "reasoning": reasoning }))
+                .reasoning
+                .and_then(|reasoning| reasoning.default)
+        };
+        assert_eq!(unasked(false, Some(true)).as_deref(), Some("medium"));
+        assert_eq!(unasked(true, None).as_deref(), Some("medium"));
+        assert_eq!(unasked(false, Some(false)).as_deref(), Some("none"));
+        assert_eq!(
+            unasked(false, None),
+            None,
+            "medium is where reasoning starts"
+        );
+        let cannot_turn_off = json!({"reasoning": {
+            "default_enabled": false,
+            "supported_efforts": ["high", "low"],
+            "default_effort": "low",
+        }});
+        let reasoning = described("m", &cannot_turn_off).reasoning.unwrap();
+        assert_eq!(reasoning.default, None, "none is not offered");
     }
 }

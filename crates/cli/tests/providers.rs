@@ -140,7 +140,8 @@ fn each_model_is_listed_once_as_its_services_describe_it_and_falls_back_between_
                 "architecture": {"input_modalities": ["text", "image"]},
                 "pricing": {"prompt": price, "completion": "0.000004"},
                 "top_provider": {"max_completion_tokens": 16_000},
-                "reasoning": {"supported_efforts": ["high", "low", "none"], "default_effort": "low"},
+                "reasoning": {"supported_efforts": ["high", "low", "none"], "default_effort": "low",
+                              "default_enabled": true},
             }]})
             .to_string(),
         )
@@ -174,10 +175,9 @@ fn each_model_is_listed_once_as_its_services_describe_it_and_falls_back_between_
         model["price"],
         json!({"input": 1_000_000, "output": 4_000_000})
     );
-    assert_eq!(
-        model["reasoning"]["efforts"],
-        json!(["high", "low", "none"])
-    );
+    // The levels, and the one the first service is sent unasked.
+    let reasoning = json!({"efforts": ["high", "low", "none"], "default": "low"});
+    assert_eq!(model["reasoning"], reasoning);
 
     let thread = served.call("thread/start", &json!({}))["result"]["thread"]["id"].clone();
     let turn = served.call("turn/start", &json!({"thread": thread, "prompt": "hi"}));
@@ -187,6 +187,9 @@ fn each_model_is_listed_once_as_its_services_describe_it_and_falls_back_between_
         tried[1].body["model"], "rocket-1-5",
         "the second, once the first failed"
     );
+    // Each service is sent its own listing's default: the second's names none.
+    let sent = |server: &FakeServer| server.received()[1].body.get("reasoning_effort").cloned();
+    assert_eq!((sent(&first), sent(&second)), (Some(json!("low")), None));
     // The record says where the turn ran, and what it cost by the service's own numbers.
     let events = served.call("thread/events", &json!({"thread": thread}));
     let responded = events["result"]["events"]
@@ -198,6 +201,7 @@ fn each_model_is_listed_once_as_its_services_describe_it_and_falls_back_between_
     assert_eq!(responded["data"]["service"], "Local server", "{responded}");
     assert_eq!(responded["data"]["upstream"], "Fireworks");
     assert_eq!(responded["data"]["cost"]["amount"]["micros"], 420);
+    assert!(responded["data"].get("effort").is_none(), "none was sent");
     served.end();
 }
 

@@ -796,7 +796,7 @@
               "type": "null"
             }
           ],
-          "description": "How it reasons, when it can: the levels of effort it offers, in its provider's names."
+          "description": "How it reasons, when it can: the levels of effort it offers, in its provider's names,\nand as `default` the level its first provider is sent when a thread chooses none, the\none that provider's catalog says the model uses unasked. No `default` when glave sends\nnone, and the model reasons as its maker set it."
         }
       },
       "required": [
@@ -1207,7 +1207,7 @@
       "description": "How a model reasons: the levels of effort it offers, in its service's own names.",
       "properties": {
         "default": {
-          "description": "The level it uses when none is asked for.",
+          "description": "The level it uses when none is asked for, one of `efforts`, when its service says.",
           "type": [
             "string",
             "null"

@@ -212,17 +212,28 @@ fn a_target_that_takes_no_reasoning_back_is_not_sticky() {
 }
 
 #[test]
-fn a_reasoning_level_goes_only_to_a_target_that_offers_it() {
+fn each_target_is_sent_the_level_it_takes_and_the_answer_records_it() {
     let fake = Fake::new("p");
+    let levels = || vec!["high".to_owned(), "low".to_owned()];
+    let offers = || {
+        fake.target("reasons")
+            .with_efforts(levels(), Some("low".into()))
+    };
     let mut asked = request(Purpose::Main);
-    asked.effort = Some("high".into());
-    let offers = fake
-        .target("reasons")
-        .with_efforts(vec!["high".into(), "low".into()]);
-    serve(vec![offers], &asked).unwrap();
-    serve(vec![fake.target("unknown")], &asked).unwrap();
-    let only_low = fake.target("low-only").with_efforts(vec!["low".into()]);
-    serve(vec![only_low], &asked).unwrap();
+    let mut recorded = Vec::new();
+    for (target, effort) in [
+        (offers(), Some("high")),
+        (offers(), None),
+        (fake.target("unknown"), Some("high")),
+        (fake.target("no-default").with_efforts(levels(), None), None),
+    ] {
+        asked.effort = effort.map(str::to_owned);
+        let gateway = Gateway::new(Routes::new(vec![target]).unwrap());
+        let answer = block_on!(gateway.complete(&asked, &mut |_| {})).unwrap();
+        recorded.push(answer.served.and_then(|served| served.effort));
+    }
     let sent: Vec<Option<String>> = fake.seen().into_iter().map(|r| r.effort).collect();
-    assert_eq!(sent, [Some("high".to_owned()), None, None]);
+    let expected = [Some("high".to_owned()), Some("low".to_owned()), None, None];
+    assert_eq!(sent, expected);
+    assert_eq!(recorded, expected, "each answer records the level sent");
 }

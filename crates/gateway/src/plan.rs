@@ -103,8 +103,8 @@ fn accepts(target: &Target, opaque: &Opaque) -> bool {
 }
 
 /// `request` as `target` is sent it: under the target's model name, without opaque reasoning
-/// the target cannot accept, and without a reasoning level it does not offer. True when
-/// reasoning was stripped. Borrowed when nothing changes.
+/// the target cannot accept, and at the reasoning level [`Target::effort_for`] gives. True
+/// when reasoning was stripped. Borrowed when nothing changes.
 pub(crate) fn prepare<'r>(
     request: &'r ModelRequest,
     target: &Target,
@@ -115,16 +115,13 @@ pub(crate) fn prepare<'r>(
             Message::Assistant { parts, .. } => parts.iter().any(|part| is_foreign(part, target)),
             _ => false,
         });
-    let effort = request
-        .effort
-        .as_ref()
-        .filter(|effort| target.efforts.contains(effort));
-    if !foreign && request.model == target.model && effort == request.effort.as_ref() {
+    let effort = target.effort_for(request.effort.as_deref());
+    if !foreign && request.model == target.model && effort == request.effort.as_deref() {
         return (Cow::Borrowed(request), false);
     }
     let mut sent = request.clone();
     sent.model.clone_from(&target.model);
-    sent.effort = effort.cloned();
+    sent.effort = effort.map(str::to_owned);
     if foreign {
         for message in &mut sent.messages {
             if let Message::Assistant { parts, .. } = message {
