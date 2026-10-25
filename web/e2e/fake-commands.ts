@@ -41,9 +41,6 @@ export const SERVING_HISTORY = [
   event(9, 'turn.ended', { outcome: 'completed' }, SERVING, '2026-10-11T10:00:06.000Z'),
 ];
 
-/** How long stopping a command takes, so the page shows it stopping. */
-export const STOP_MS = 400;
-
 /** Whether the docs site still runs, while the fake runs: until the person stops it. */
 export interface Commands {
   running: boolean;
