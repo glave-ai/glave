@@ -88,13 +88,14 @@ mod tests {
         let dir = glave_ports::testing::TempDir::new("xtask-lock").unwrap();
         let path = dir.join("bench.lock");
         let held = take(&path, Mode::Exclusive, WAITS_WITHIN).unwrap();
-        let waited = take(&path, Mode::Shared, Duration::from_millis(20)).unwrap_err();
+        // A limit of nothing has passed by the first try, with no clock to wait on.
+        let waited = take(&path, Mode::Shared, Duration::ZERO).unwrap_err();
         assert_eq!(
             waited,
-            "another test or benchmark run held the lock for 20 ms; stop it, or try again once \
-             it ends"
+            "another test or benchmark run held the lock for 0 ms; stop it, or try again once it \
+             ends"
         );
         drop(held);
-        assert!(take(&path, Mode::Shared, Duration::from_millis(20)).is_ok());
+        assert!(take(&path, Mode::Shared, Duration::ZERO).is_ok());
     }
 }

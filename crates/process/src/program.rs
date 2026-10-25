@@ -148,7 +148,9 @@ impl Program {
         }
     }
 
-    /// [`Program::output`], blocking, for code that runs outside the async runtime.
+    /// [`Program::output`], blocking, for code that runs outside the async runtime: in a
+    /// process group of its own, killed whole at the limit, and whatever it leaves running
+    /// there killed as it ends.
     pub fn output_blocking(&mut self, limit: Duration) -> Result<Output, ProcessError> {
         match crate::within::output(self.command.as_std_mut(), limit) {
             Ok(Some(output)) => Ok(output),
@@ -224,10 +226,21 @@ mod tests {
 
     #[test]
     fn a_blocking_run_still_going_at_its_limit_is_killed_and_says_so() {
+        // A limit of nothing has passed by the first look, with no clock to wait on.
         let error = Program::new("sleep")
             .arg("300")
-            .output_blocking(Duration::from_millis(50))
+            .output_blocking(Duration::ZERO)
             .unwrap_err();
-        assert_eq!(error.to_string(), "sleep did not finish within 50 ms");
+        assert_eq!(error.to_string(), "sleep did not finish within 0 ms");
+    }
+
+    #[test]
+    fn a_blocking_run_ends_with_what_its_program_left_holding_its_output() {
+        // The shell ends at once; the sleep it leaves holds its output open.
+        let output = Program::new("sh")
+            .args(["-c", "sleep 300 & echo left"])
+            .output_blocking(AMPLE)
+            .unwrap();
+        assert_eq!(output.stdout, b"left\n");
     }
 }

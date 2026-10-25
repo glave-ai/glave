@@ -120,15 +120,15 @@ pub(crate) async fn open(
     let folder = paths::folder(path).await?;
     not_an_option("the branch", branch)?;
     let git = Git::at(environment, &folder);
-    let Ok(top) = git.run(&["rev-parse", "--show-toplevel"]).await else {
+    let Ok(top) = git.ask(&["rev-parse", "--show-toplevel"]).await? else {
         return Err(ComputerError::Refused(format!(
             "{path} is not in a git repository, so it cannot have a worktree. Turn the worktree \
              option off to work in the folder itself, or make it a repository with a commit."
         )));
     };
     if git
-        .run(&["rev-parse", "--verify", "--quiet", "HEAD"])
-        .await
+        .ask(&["rev-parse", "--verify", "--quiet", "HEAD"])
+        .await?
         .is_err()
     {
         return Err(ComputerError::Refused(format!(
@@ -137,8 +137,8 @@ pub(crate) async fn open(
         )));
     }
     if git
-        .run(&["check-ref-format", "--branch", branch])
-        .await
+        .ask(&["check-ref-format", "--branch", branch])
+        .await?
         .is_err()
     {
         return Err(ComputerError::Refused(format!(
@@ -231,14 +231,14 @@ async fn add(git: &Git<'_>, dest: &Path, branch: &str) -> Result<(), ComputerErr
     let dest = dest.to_string_lossy();
     let reference = format!("refs/heads/{branch}");
     let exists = git
-        .run(&["rev-parse", "--verify", "--quiet", &reference])
-        .await
+        .ask(&["rev-parse", "--verify", "--quiet", &reference])
+        .await?
         .is_ok();
     if exists {
-        git.must(&["worktree", "add", "--quiet", &dest, branch])
+        git.work(&["worktree", "add", "--quiet", &dest, branch])
             .await?;
     } else {
-        git.must(&["worktree", "add", "--quiet", "-b", branch, &dest, "HEAD"])
+        git.work(&["worktree", "add", "--quiet", "-b", branch, &dest, "HEAD"])
             .await?;
     }
     Ok(())
