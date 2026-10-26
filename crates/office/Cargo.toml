@@ -1,0 +1,29 @@
+[package]
+name = "glave-office"
+description = "glave's office files: workbooks read (calamine) and written (rust_xlsxwriter) for `glave doc`, with the built-in skill that teaches it"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+# The tests are one program, tests/main.rs, not one per file.
+autotests = false
+
+[[test]]
+name = "office"
+path = "tests/main.rs"
+
+[dependencies]
+calamine.workspace = true
+rust_xlsxwriter.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+glave-ports = { workspace = true, features = ["conformance"] }
+proptest.workspace = true
+
+[lints]
+workspace = true

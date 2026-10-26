@@ -44,6 +44,8 @@ mod judging {
             "grep -r TODO . && echo done",
             "cd src; ls",
             "cat .env.example",
+            "glave doc read sales.xlsx --sheet Summary",
+            "glave doc csv sales.xlsx | sort",
         ] {
             assert_eq!(verdict(script), Verdict::ReadOnly, "{script}");
         }
@@ -76,6 +78,9 @@ mod judging {
             "chmod -R u+w target",
             "curl -o page.html https://example.com",
             "bash -c 'cargo build'",
+            "glave doc write report.xlsx report.json",
+            "glave doc csv sales.xlsx > sales.csv",
+            "glave search on",
             "",
         ] {
             assert_eq!(verdict(script), Verdict::Unknown, "{script}");

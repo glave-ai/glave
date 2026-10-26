@@ -69,6 +69,9 @@ aws-lc-rs = { version = "1", default-features = false, features = ["aws-lc-sys",
 # jsonwebtoken and kube).
 base64 = "0.23"
 bytes = "1"
+# Workbooks read for `glave doc` (glave-office): xlsx, xlsm, xlsb, xls and ods, each cell's value
+# and formula, in pure Rust on zip and quick-xml. The Rust reader most used (16 million downloads).
+calamine = "0.37"
 chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
 deadpool-postgres = { version = "0.14", default-features = false, features = ["rt_tokio_1"] }
 # The session API's own sentences in the caller's language: Mozilla's Fluent, the message format
@@ -92,6 +95,7 @@ glave-identity = { path = "crates/identity" }
 glave-keys = { path = "crates/keys" }
 glave-mcp = { path = "crates/mcp" }
 glave-memory = { path = "crates/memory" }
+glave-office = { path = "crates/office" }
 glave-ports = { path = "crates/ports" }
 glave-process = { path = "crates/process" }
 glave-provider-anthropic = { path = "crates/provider-anthropic" }
@@ -158,6 +162,9 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls", "h
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
 rustls-platform-verifier = "0.7"
 rusqlite = { version = "0.40", default-features = false, features = ["bundled", "cache"] }
+# New workbooks for `glave doc write` (glave-office): values, formulas, number formats and native
+# charts, in pure Rust on zip; its files are tested against ones Excel saved.
+rust_xlsxwriter = "0.101"
 # Files opened one name at a time from a folder handle (openat), for confinement.
 rustix = { version = "1.1", default-features = false, features = ["fs", "std"] }
 # The Linux sandbox's seccomp filter, built and compiled to BPF in safe Rust (Firecracker's).

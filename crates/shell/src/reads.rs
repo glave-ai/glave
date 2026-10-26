@@ -30,6 +30,8 @@ pub(crate) fn reads_only(command: &Command) -> bool {
         "rg" => !args
             .iter()
             .any(|a| a.starts_with("--pre") || a.starts_with("--hostname-bin")),
+        // Reading a spreadsheet; `glave doc write` makes one.
+        "glave" => matches!(args.as_slice(), ["doc", "read" | "csv", ..]),
         "find" => !args.iter().any(|a| {
             matches!(
                 *a,
