@@ -87,6 +87,7 @@ cargo xtask ci          # the gate; on a laptop it checks only the crates a chan
 cargo xtask ci --all    # the full gate, everything, as CI runs it; must pass before anything is "done"
 cargo xtask deps        # the dependency rule: each crate depends only on the layers its own may use
 cargo xtask file-sizes  # line limits only
+cargo xtask duplicates  # no new copy-paste: 6 lines of code alike in two places fail, unless xtask/src/duplicates/baseline.txt lists them (it only shrinks)
 cargo xtask secrets     # no secret-shaped literal in a tracked file
 cargo xtask spawns      # every process glave starts goes through glave-process
 cargo xtask waits       # every wait has a limit on its line, or a reason in xtask/src/waits/bounded.rs
@@ -105,7 +106,7 @@ cargo build --release -p glave --features web   # the binary as it ships, the we
 
 ## Definition of done
 
-`cargo xtask ci` passes: format, no secret-shaped literals (`cargo xtask secrets`), the dependency rule (`cargo xtask deps`), a caller outside its crate for everything public (`cargo xtask unused-pub`), clippy with `-D warnings`, docs with `-D warnings`, all tests, with nothing left behind (no process they started still running, no `glave-*` entry in their temp folder but what glave keeps there), `cargo deny`, no unused dependencies (`cargo machete`), file sizes. New behavior has tests. User-visible numbers stay within budget. The change is small, focused and reviewed through a pull request.
+`cargo xtask ci` passes: format, no secret-shaped literals (`cargo xtask secrets`), the dependency rule (`cargo xtask deps`), a caller outside its crate for everything public (`cargo xtask unused-pub`), clippy with `-D warnings`, docs with `-D warnings`, all tests, with nothing left behind (no process they started still running, no `glave-*` entry in their temp folder but what glave keeps there), `cargo deny`, no unused dependencies (`cargo machete`), file sizes, no new copy-paste (`cargo xtask duplicates`). New behavior has tests. User-visible numbers stay within budget. The change is small, focused and reviewed through a pull request.
 
 ## Quality
 
@@ -114,7 +115,7 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - **Every change earns its place.** A pull request's description opens with three answers: the problem it solves, who has that problem today, and what it removes or replaces. With no one who has the problem today, it waits. Before a milestone closes, a subtraction pass asks of each feature: is it needed, is it duplicated, is this its simplest form?
 - **One PR, one change.** A second feature, or a new workspace dependency, goes in its own PR. A PR over 40 files or 1,500 lines is split, or says in its description why it can't be.
 - **One concept, one definition.** A type that crosses crates is defined once, in the lowest crate that needs it (`glave-event` or `glave-ports`). Two enums with the same variants and a `From` between them is a defect.
-- **Search before writing.** Before adding a helper, parser, URL check, error mapper or storage wrapper, `git grep` for one. Where a second copy would go, share the first instead.
+- **Search before writing.** Before adding a helper, parser, URL check, error mapper or storage wrapper, `git grep` for one. Where a second copy would go, share the first instead; `cargo xtask duplicates` fails on a new one.
 - **Nothing before its second user.** A trait needs two real implementations, and a config key two values that both work today. Anything `pub` needs a caller outside its crate (`cargo xtask unused-pub`; tests count). Code whose last caller goes is deleted with it.
 - **Specs hold decisions and invariants,** never method tables, field lists or crate descriptions; the generated schema is the reference. A PR that changes a type rereads the spec section that describes it. A spec's Status is a list, one line per piece built or pull request, so a change edits only the line it owns, never a paragraph another pull request is also rewriting.
 - **Invariants keep their tests.** A change that touches one of `specs/invariants.md` says so in its pull request and keeps the test that proves it; one that closes a gap updates the entry.
