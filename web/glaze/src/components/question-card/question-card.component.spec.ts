@@ -20,14 +20,14 @@ const QUESTIONS: readonly GlzQuestion[] = [
   template: `
     <glz-question-card
       testId="question"
-      [questions]="questions"
+      [questions]="questions()"
       [answered]="answered()"
       (answer)="answers.push($event)"
     />
   `,
 })
 class HostComponent {
-  readonly questions = QUESTIONS;
+  readonly questions = signal<readonly GlzQuestion[]>(QUESTIONS);
   readonly answered = signal<readonly string[] | null>(null);
   readonly answers: (readonly string[])[] = [];
 }
@@ -63,6 +63,38 @@ describe('GlzQuestionCardComponent', () => {
     expect(fixture.componentInstance.answers).toEqual([
       ['Postgres', 'Lint, Tests', 'Keep it small'],
     ]);
+  });
+
+  it('keeps what was picked and typed when the same questions come again, not new ones', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    root.querySelectorAll<HTMLInputElement>('[data-testid="question-choice"] input')[0]?.click();
+    const own = root.querySelectorAll<HTMLInputElement>('[data-testid="question-own"]')[2];
+    if (own) {
+      own.value = 'Keep it small';
+      own.dispatchEvent(new Event('input'));
+    }
+    await fixture.whenStable();
+    const picked = (): readonly boolean[] =>
+      Array.from(
+        root.querySelectorAll<HTMLInputElement>('[data-testid="question-choice"] input'),
+        (choice) => choice.checked,
+      );
+    const typed = (): readonly string[] =>
+      Array.from(
+        root.querySelectorAll<HTMLInputElement>('[data-testid="question-own"]'),
+        (input) => input.value,
+      );
+    // The same questions, read again as the thread rebuilds.
+    fixture.componentInstance.questions.set(structuredClone(QUESTIONS));
+    await fixture.whenStable();
+    expect(picked()).toEqual([true, false, false, false]);
+    expect(typed()).toEqual(['', '', 'Keep it small']);
+    await expectAccessible(root);
+    fixture.componentInstance.questions.set([{ question: 'Which port?' }]);
+    await fixture.whenStable();
+    expect(typed()).toEqual(['']);
   });
 
   it('shows the answers in place once answered', async () => {

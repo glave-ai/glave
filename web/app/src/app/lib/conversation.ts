@@ -335,13 +335,21 @@ export function stepsAfter(steps: readonly string[], update: Update): readonly s
   }
 }
 
-/** `events` with `more` added, each `seq` once, in `seq` order. */
+/**
+ * `events` with `more` added, each `seq` once, in `seq` order: `events` itself when `more`
+ * holds none it lacks, so nothing drawn from them is drawn again.
+ */
 export function mergeEvents(
   events: readonly RawEvent[],
   more: readonly RawEvent[],
 ): readonly RawEvent[] {
+  const known = new Set(events.map((event) => event.seq));
+  const added = more.filter((event) => !known.has(event.seq));
+  if (added.length === 0) {
+    return events;
+  }
   const bySeq = new Map<number, RawEvent>();
-  for (const event of [...events, ...more]) {
+  for (const event of [...events, ...added]) {
     bySeq.set(event.seq, event);
   }
   return [...bySeq.values()].sort((a, b) => a.seq - b.seq);
