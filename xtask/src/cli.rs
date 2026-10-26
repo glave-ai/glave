@@ -9,7 +9,7 @@ commands:
   ci [--all] [--target <triple>]
                     the local gate: format, secrets, the dependency rule, one spawn path, a
                     limit on every wait, lint, tests and what they leave behind, dependency
-                    audit, file sizes, and the web checks, which need Node 22.22.3+
+                    audit, package ages, file sizes, and the web checks, which need Node 22.22.3+
                     (GLAVE_SKIP_WEB=1 skips them).
                     Off CI it lints and tests only the crates a change since origin/main
                     reaches, and runs the web checks only when web/ or the API schema changed;
@@ -19,6 +19,11 @@ commands:
   deps              check the dependency rule: each crate depends only on the layers its own
                     may use (the layers are in xtask/src/deps.rs)
   file-sizes        enforce the source-file line limits
+  package-age       fail on a package version new in Cargo.lock or web/package-lock.json since
+                    the change's base that was published less than 7 days ago, unless
+                    xtask/src/package_age/allowed.rs lets it in with its reason (asks crates.io
+                    and the npm registry with curl; off CI, warns and passes when they can't
+                    be reached)
   secrets           fail on a secret-shaped literal in a tracked file (tests make their fakes at
                     run time)
   spawns            fail on a process started outside glave-process (crates/process), which
@@ -57,6 +62,7 @@ fn run(args: &[String]) -> Result<(), String> {
             "ci" => crate::ci::run(rest),
             "deps" => crate::deps::check(),
             "file-sizes" => crate::file_sizes::check(),
+            "package-age" => crate::package_age::check(),
             "secrets" => crate::secrets::check(),
             "spawns" => crate::spawns::check(),
             "waits" => crate::waits::check(),
