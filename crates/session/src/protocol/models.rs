@@ -2,6 +2,8 @@
 //! each model once, whichever services can run it, with what its provider says it can do and
 //! costs.
 
+mod names;
+
 use glave_event::{Reasoning, TokenPrice};
 use serde::{Deserialize, Serialize};
 
@@ -10,11 +12,11 @@ use serde::{Deserialize, Serialize};
 pub struct ModelInfo {
     /// What `thread/start` and `turn/start` take as `model`: the name the gateway knows it by.
     pub id: String,
-    /// Its own name, without its maker's, such as `Claude Haiku 5.5`, when its provider or the
-    /// settings give one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    /// Who made it, such as `Anthropic`, when its provider says.
+    /// Its own name, without its maker's, such as `Claude Haiku 5.5`: the settings', else its
+    /// provider's, else written from its id as its maker writes it.
+    pub name: String,
+    /// Who made it, such as `Anthropic`: as its provider says, else from its id's prefix
+    /// (`anthropic/…`); absent when neither says.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub maker: Option<String>,
     /// Whether threads that choose no model use this one. Exactly one model is the default.
@@ -45,12 +47,13 @@ pub struct ModelInfo {
 }
 
 impl ModelInfo {
-    /// `id`, with nothing else known, not the default.
+    /// `id`, named from it, with nothing else known, not the default.
     pub fn new(id: impl Into<String>) -> Self {
+        let id = id.into();
         Self {
-            id: id.into(),
-            name: None,
-            maker: None,
+            name: names::own_name(&id),
+            maker: names::maker_of(&id),
+            id,
             default: false,
             providers: Vec::new(),
             context: None,
@@ -59,5 +62,21 @@ impl ModelInfo {
             price: None,
             reasoning: None,
         }
+    }
+
+    /// Named `name`, as a provider's listing or the settings give it: one that says its maker
+    /// first (`Anthropic: Claude Haiku 5.5`) names both; a blank one changes nothing.
+    #[must_use]
+    pub fn named(mut self, name: &str) -> Self {
+        let name = name.trim();
+        match name.split_once(": ") {
+            Some((maker, own)) if !maker.trim().is_empty() && !own.trim().is_empty() => {
+                self.maker = Some(maker.trim().to_owned());
+                own.trim().clone_into(&mut self.name);
+            }
+            _ if !name.is_empty() => name.clone_into(&mut self.name),
+            _ => {}
+        }
+        self
     }
 }

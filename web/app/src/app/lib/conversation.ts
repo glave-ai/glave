@@ -41,6 +41,13 @@ export interface ApprovalItem extends Placed {
   readonly tool: string;
   /** What would run, never why it asks. */
   readonly summary: string;
+  /**
+   * What it asks, in the server's sentence ("Run this command?"); for a request recorded before
+   * the server said one, its summary.
+   */
+  readonly ask: string;
+  /** What would run, as the server gives it apart from its sentence: `cargo test`. */
+  readonly detail: string;
   /** Why it asks whatever the mode, in the server's sentences; empty when only the mode asks. */
   readonly caution: string;
   /**
@@ -274,6 +281,8 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
           approval,
           tool: text(data['tool']),
           summary: text(data['summary']),
+          ask: text(data['ask']) || text(data['summary']),
+          detail: text(data['detail']),
           caution: text(data['caution']),
           outsideSandbox: isRecord(outside),
           withNetwork: isRecord(outside) && outside['lifted'] === 'network',

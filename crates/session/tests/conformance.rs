@@ -573,7 +573,7 @@ fn models_are_listed_and_one_the_server_does_not_run_is_refused() {
             let listed = client.call(Request::ModelList {}).await.unwrap();
             assert_eq!(
                 listed,
-                json!({"models": [{"id": "test-model", "default": true}]})
+                json!({"models": [{"id": "test-model", "name": "Test Model", "default": true}]})
             );
             let refused = client
                 .call(Request::ThreadStart {

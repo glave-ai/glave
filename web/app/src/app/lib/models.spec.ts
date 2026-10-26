@@ -3,23 +3,19 @@ import type { ModelInfo } from '@glave/client';
 import { event } from '../testing/fixtures';
 import {
   chosenModel,
-  companyName,
   displayName,
   contextText,
   modelHint,
   modelOptions,
   orderedOptions,
   priceText,
-  shortName,
-  slugWords,
   toRecent,
   withRecent,
 } from './models';
 
 const MODELS: readonly ModelInfo[] = [
-  { id: 'gpt-6-luna', default: true },
+  { id: 'openai/gpt-6-luna', name: 'GPT-6 Luna', maker: 'OpenAI', default: true },
   { id: 'hope-12b', name: 'Hope', default: false },
-  { id: 'hope-lookalike', name: '  ', default: false },
 ];
 
 describe('models', () => {
@@ -35,47 +31,23 @@ describe('models', () => {
     expect(chosenModel([event(1, 'model.chosen', { model: '' })])).toBeNull();
   });
 
-  it('names models Company · Model, from the name or the id, never as a slug', () => {
-    expect(displayName({ id: 'anthropic/claude-haiku-5.5' })).toBe('Anthropic · Claude Haiku 5.5');
-    expect(displayName({ id: 'openai/gpt-6-luna' })).toBe('OpenAI · GPT-6 Luna');
-    expect(displayName({ id: 'deepseek/deepseek-v4.1-flash' })).toBe(
-      'DeepSeek · DeepSeek V4.1 Flash',
-    );
-    expect(displayName({ id: 'anthropic/claude-haiku-5.5', name: 'Claude Haiku 5.5' })).toBe(
+  it('names models Maker · Model as the server names them, never from their ids', () => {
+    expect(displayName({ name: 'Claude Haiku 5.5', maker: 'Anthropic' })).toBe(
       'Anthropic · Claude Haiku 5.5',
     );
-    expect(displayName({ id: 'x', name: 'Anthropic: Claude Haiku 5.5' })).toBe(
-      'Anthropic · Claude Haiku 5.5',
-    );
-    expect(displayName({ id: 'acme-labs/rocket-2:free' })).toBe('Acme Labs · Rocket 2 (Free)');
-    expect(displayName({ id: 'openrouter/meta-llama/llama-4-scout' })).toBe('Meta · Llama 4 Scout');
-    expect(displayName({ id: 'hope-12b', name: 'Hope' })).toBe('Hope');
-    expect(displayName({ id: 'rocket-1-5', name: 'Rocket 1.5', maker: 'Acme' })).toBe(
-      'Acme · Rocket 1.5',
-    );
-    expect(displayName({ id: 'gpt-6-luna', name: '  ' })).toBe('GPT-6 Luna');
+    expect(displayName({ name: 'Rocket 1.5', maker: '' })).toBe('Rocket 1.5');
+    expect(displayName({ name: 'Hope' })).toBe('Hope');
   });
 
-  it('writes slugs and companies as their makers do', () => {
-    expect(slugWords('gpt-6')).toBe('GPT-6');
-    expect(slugWords('gpt-oss-120b')).toBe('GPT OSS 120b');
-    expect(slugWords('qwen3_vl')).toBe('Qwen3 VL');
-    expect(companyName('x-ai')).toBe('xAI');
-    expect(companyName('MoonshotAI')).toBe('Moonshot AI');
-    expect(companyName('some-lab')).toBe('Some Lab');
-  });
-
-  it('names a model alone, with no company, for a button', () => {
-    expect(shortName({ id: 'anthropic/claude-haiku-5.5' })).toBe('Claude Haiku 5.5');
-    expect(shortName({ id: 'x', name: 'Anthropic: Claude Haiku 5.5' })).toBe('Claude Haiku 5.5');
-    expect(shortName({ id: 'hope-12b', name: 'Hope' })).toBe('Hope');
-  });
-
-  it('offers each model by its display name, marking the default, Hope as any other', () => {
+  it('offers each model by the server’s names, marking the default, Hope as any other', () => {
     expect(modelOptions(MODELS, 'en-US')).toEqual([
-      { value: 'gpt-6-luna', label: 'GPT-6 Luna', short: 'GPT-6 Luna', hint: 'Default' },
+      {
+        value: 'openai/gpt-6-luna',
+        label: 'OpenAI · GPT-6 Luna',
+        short: 'GPT-6 Luna',
+        hint: 'Default',
+      },
       { value: 'hope-12b', label: 'Hope', short: 'Hope' },
-      { value: 'hope-lookalike', label: 'Hope Lookalike', short: 'Hope Lookalike' },
     ]);
   });
 
@@ -108,7 +80,7 @@ describe('models', () => {
       '$0.038 in, $0.15 out per 1M tokens',
     );
     expect(priceText({ input: 0, output: 0 }, 'en-US')).toBe('Free');
-    expect(modelHint({ id: 'm', default: true }, 'en-US')).toBe('Default');
+    expect(modelHint({ id: 'm', name: 'M', default: true }, 'en-US')).toBe('Default');
   });
 
   it('reads back the recent models’ ids only, at most five', () => {

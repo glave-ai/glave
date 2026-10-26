@@ -265,10 +265,10 @@ async fn trust(
 /// The name of the model threads that choose none go to, for the answers' label.
 async fn default_model(session: Session<'_>) -> String {
     match session.request(Request::ModelList {}).await {
-        Ok(Reply::Models { models }) => models.into_iter().find(|model| model.default).map_or_else(
-            || "glave".to_owned(),
-            |model| model.name.unwrap_or(model.id),
-        ),
+        Ok(Reply::Models { models }) => models
+            .into_iter()
+            .find(|model| model.default)
+            .map_or_else(|| "glave".to_owned(), |model| model.name),
         _ => "glave".to_owned(),
     }
 }
