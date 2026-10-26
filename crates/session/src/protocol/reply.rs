@@ -3,7 +3,7 @@
 
 use glave_event::{
     At, EventId, Money, Origin, Outcome, Principal, RawEvent, Secret, Seq, ThreadId, TokenCounts,
-    TurnResult,
+    TurnResult, WorkspaceBound,
 };
 use glave_harness::{GoalProgress, RunningCommand};
 use glave_ports::memories::Remembered;
@@ -98,9 +98,50 @@ pub struct ThreadSummary {
     pub outcome: Option<Outcome>,
     /// Tokens its own model calls used.
     pub tokens: TokenCounts,
-    /// What they cost, when every call reported a cost.
+    /// What they cost, when every call reported a cost; absent when one did not: the cost is
+    /// not reported.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost: Option<Money>,
+    /// True when a usage count in `tokens`, and so `cost`, was estimated: a stream ended before
+    /// its provider reported it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub estimated: bool,
+    /// Where it works, once it has a workspace, as its latest `workspace.bound` records it: the
+    /// computer (the one the server runs on, or a worker), the folder its tools act in, and how
+    /// it got it (its project's folder in place, a worktree on a branch of its own, a clone, or
+    /// a scratch folder).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<Box<WorkspaceBound>>,
+    /// How full its context is, as compaction measures it; absent before its first model call
+    /// and since it was compacted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<ContextUse>,
+}
+
+/// How full a thread's context is: what its conversation last sent and got back, of the window
+/// compaction aims for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ContextUse {
+    /// The tokens its latest call sent and got back.
+    pub tokens: u64,
+    /// The window compaction aims for, in tokens: the configured one, or a smaller one the
+    /// model stated.
+    pub window: u64,
+    /// `tokens` of `window`, in whole percent, at most 100. A turn compacts before a request
+    /// past its threshold (80 unless set).
+    pub percent: u8,
+}
+
+impl ContextUse {
+    /// `tokens` of a `window` of tokens.
+    pub(crate) fn of(tokens: u64, window: u64) -> Self {
+        let share = tokens.saturating_mul(100) / window.max(1);
+        Self {
+            tokens,
+            window,
+            percent: u8::try_from(share.min(100)).unwrap_or(100),
+        }
+    }
 }
 
 /// What a thread is doing.

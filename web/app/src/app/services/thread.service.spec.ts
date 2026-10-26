@@ -488,6 +488,28 @@ describe('ThreadService', () => {
     expect(service.summary()?.title).toBe('Launch plan');
   });
 
+  it('says where the thread runs as its summary says, never from its events', async () => {
+    const workspace = {
+      workspace: 'workspace-1',
+      computer: { id: 'computer-1', kind: 'worker' },
+      opened: { kind: 'scratch', path: '/w' },
+      root: '/w',
+    } as const;
+    const bound = event(2, 'workspace.bound', {
+      ...workspace,
+      computer: { id: 'computer-1', kind: 'local' },
+    });
+    const fake = new FakeSession()
+      .answer('thread/events', { events: [event(1, 'thread.started', {}), bound] })
+      .answer('thread/get', { thread: thread('thread-1', 'Plan') });
+    const service = make(fake);
+    await service.open('thread-1');
+    expect(service.place()).toBeNull();
+    fake.answer('thread/get', { thread: thread('thread-1', 'Plan', { workspace }) });
+    await service.open('thread-1');
+    expect(service.place()).toBe('on another computer');
+  });
+
   it('follows the thread live once read: a turn another tab started, its progress and its approval', async () => {
     const watch = new FakeTurn();
     const fake = new FakeSession()

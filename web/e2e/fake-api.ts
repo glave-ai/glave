@@ -26,7 +26,7 @@ import {
   refusedTurn,
 } from './fake-gone';
 import { DEFAULT_MODEL, MODELS } from './fake-models';
-import { Refusal, THREAD, bound, call, done, event } from './fake-records';
+import { Refusal, THREAD, WORKSPACE, bound, call, done, event } from './fake-records';
 import { FAKE_SERVER, signIn } from './fake-signin';
 import { RESEARCH, RESEARCH_HISTORY, sourcesOf } from './fake-sources';
 
@@ -77,6 +77,7 @@ function thread(
     updated_at: '2026-10-11T10:05:00.000Z',
     turns: 1,
     tokens: TOKENS,
+    workspace: WORKSPACE,
     ...more,
   };
 }
