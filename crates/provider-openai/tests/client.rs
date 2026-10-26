@@ -5,7 +5,9 @@
 mod over_http {
     use glave_event::{Arguments, Part, StopReason};
     use glave_ports::testing::fake_secret;
-    use glave_ports::{Message, ModelProvider, ModelRequest, ProviderError, ToolChoice, block_on};
+    use glave_ports::{
+        Failure, Message, ModelProvider, ModelRequest, ProviderError, ToolChoice, block_on,
+    };
     use glave_provider_openai::fake::{FakeServer, Reply};
     use glave_provider_openai::{Config, IDLE_TIMEOUT, OpenAiCompatible};
     use serde_json::json;
@@ -208,7 +210,7 @@ mod over_http {
             glave_ports::auth::Auth::Changing(Arc::new(Missing)),
         );
         let error = ask(&missing).0.unwrap_err();
-        assert_eq!(error.failure(), glave_ports::Failure::Refused);
+        assert_eq!(error.failure(), Failure::Refused);
         assert!(error.to_string().contains("token file"), "{error}");
         assert_eq!(
             server.received().len(),
@@ -292,6 +294,29 @@ mod over_http {
     }
 
     #[test]
+    fn a_connection_that_never_opens_is_the_provider_unreached_not_silent() {
+        // A listener that never accepts: the system completes the TCP handshake and nothing
+        // answers TLS's, so the connection never opens. The paused clock jumps to the limit.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let provider = provider(
+            &format!("https://{}/v1", listener.local_addr().unwrap()),
+            None,
+        );
+        let result = block_on!(async {
+            tokio::time::pause();
+            provider.complete(&request(), &mut |_| {}).await
+        });
+        let error = result.unwrap_err();
+        assert_eq!(error.failure(), Failure::Unreachable, "{error:?}");
+        assert!(
+            error
+                .to_string()
+                .ends_with("no connection to 127.0.0.1 within 10 seconds"),
+            "says what was waited for and how long: {error}"
+        );
+    }
+
+    #[test]
     fn a_stream_that_never_finishes_is_not_a_finished_answer() {
         let server = FakeServer::start(vec![Reply::Stream(vec![json!(
             {"choices": [{"index": 0, "delta": {"content": "half an ans"}}]}
@@ -327,7 +352,7 @@ mod over_http {
         let models = block_on!(provider.get("models")).unwrap();
         assert_eq!(models["data"][0]["id"], "gpt-test");
         let refused = block_on!(provider.get("/models")).unwrap_err();
-        assert_eq!(refused.failure(), glave_ports::Failure::Refused);
+        assert_eq!(refused.failure(), Failure::Refused);
         let received = server.received();
         assert_eq!(received[0].line, "GET /v1/models");
         let bearer = format!("Bearer {key}");

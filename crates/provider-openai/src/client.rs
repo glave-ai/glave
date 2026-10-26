@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use glave_ports::auth::{Auth, Outgoing, redact_credentials};
 use glave_ports::host::is_this_computer;
-use glave_ports::{Completion, Delta, ModelProvider, ModelRequest, ProviderError};
+use glave_ports::{Completion, Delta, ModelProvider, ModelRequest, ProviderError, spoken};
 use reqwest::header::{CONTENT_TYPE, HeaderName, HeaderValue};
 
 use crate::assemble::Assembler;
@@ -36,6 +36,9 @@ pub struct Config {
 /// The default idle timeout, as Codex sets it: long enough for a local model to read a long
 /// prompt before its first token.
 pub const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// The longest a connection to the provider may take to open, its TLS handshake included.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 impl Config {
     /// The endpoint at `base_url`, with `api_key` as a bearer token when there is one, named
@@ -97,7 +100,7 @@ pub struct OpenAiCompatible {
 impl OpenAiCompatible {
     pub fn new(config: Config) -> Result<Self, ProviderError> {
         let http = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(10))
+            .connect_timeout(CONNECT_TIMEOUT)
             // Each read may wait this long: for the first token, and between the rest.
             .read_timeout(config.idle_timeout)
             .build()
@@ -202,9 +205,20 @@ impl OpenAiCompatible {
             .map_err(|e| ProviderError::Protocol(format!("{url} did not answer with JSON: {e}")))
     }
 
-    /// What a failed request means: a silence past the idle timeout, or a broken connection.
+    /// What a failed request means: no connection in time, a silence past the idle timeout, or a
+    /// broken connection. A connection that never opened sent nothing, so it is the provider
+    /// unreached, not silent.
     fn failed(&self, error: reqwest::Error) -> ProviderError {
-        if error.is_timeout() {
+        if error.is_connect() && error.is_timeout() {
+            let host = error
+                .url()
+                .and_then(reqwest::Url::host_str)
+                .unwrap_or("the provider");
+            ProviderError::Transport(format!(
+                "no connection to {host} within {}",
+                spoken(CONNECT_TIMEOUT)
+            ))
+        } else if error.is_timeout() {
             ProviderError::Timeout {
                 seconds: self.idle_timeout.as_secs(),
             }
