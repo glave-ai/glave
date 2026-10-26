@@ -62,7 +62,7 @@ describe('PermissionsComponent', () => {
   });
 
   it('offers only what the server allows', async () => {
-    const fixture = await render({ ...SERVER, presets: ['auto', 'ask'] });
+    const fixture = await render({ ...SERVER, modes: ['auto', 'ask'] });
     trigger(fixture.nativeElement as HTMLElement)?.click();
     await fixture.whenStable();
     expect(options().map((option) => option.textContent)).toEqual([
@@ -82,7 +82,7 @@ describe('PermissionsComponent', () => {
   });
 
   it('shows the one mode the server allows, without a menu', async () => {
-    const fixture = await render({ ...SERVER, permissions: 'ask', presets: ['ask'] });
+    const fixture = await render({ ...SERVER, permissions: 'ask', modes: ['ask'] });
     const root: HTMLElement = fixture.nativeElement;
     const shown = root.querySelector('[data-testid="permissions"]');
     expect(shown?.textContent).toContain('Ask first');

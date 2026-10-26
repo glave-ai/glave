@@ -23,7 +23,7 @@ interface Shown {
  * The composer's mode for its next turn, what the agent may do without asking, quiet in its
  * status line: its icon and its word, the shape and the word saying it, never a colour. The
  * person's pick, else the thread's own (`current`, from its summary), else the server's. A
- * choice among the modes the server lets a thread choose (`server/discover`'s `presets`), in the
+ * choice among the modes the server lets a thread choose (`server/discover`'s `modes`), in the
  * server's order, each with a line saying what it means, Auto named as recommended; where the
  * server says Auto asks before everything (no sandbox there), its line is the server's sentence.
  * Shown without a menu when the server lets only one. `value` is the person's pick, `null` until
@@ -73,9 +73,9 @@ export class PermissionsComponent {
     () => this.value() ?? this.current() ?? this.server.permissions(),
   );
   protected readonly shown = computed<string | null>(() => this.shownMode());
-  protected readonly choosable = computed(() => this.server.presets().length > 1);
+  protected readonly choosable = computed(() => this.server.modes().length > 1);
   protected readonly options = computed<readonly GlzMenuOption[]>(() =>
-    this.server.presets().map((mode) => {
+    this.server.modes().map((mode) => {
       const shown = this.modes[mode];
       return {
         value: mode,
@@ -106,7 +106,7 @@ export class PermissionsComponent {
   }
 
   protected pick(value: string | null): void {
-    const mode = this.server.presets().find((each) => each === value);
+    const mode = this.server.modes().find((each) => each === value);
     if (mode !== undefined) {
       this.value.set(mode);
     }

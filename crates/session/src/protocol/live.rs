@@ -21,8 +21,8 @@ pub enum Update {
         summary: String,
         is_error: bool,
     },
-    /// An action that did not run. `summary` is what would have run; `caution`, why it asked
-    /// whatever the mode, in sentences the person reads, when a caution did.
+    /// An action that did not run. `summary` is what would have run; `caution`, why it asked,
+    /// in sentences the person reads, when a caution did.
     ToolDeclined {
         summary: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]

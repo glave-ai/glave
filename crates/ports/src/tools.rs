@@ -141,8 +141,8 @@ pub enum Assessment {
     AsDeclared,
     /// This call only reads, whatever the tool may do.
     Reads,
-    /// This call needs the person whatever the mode, for `reason`. `secret` when it would show
-    /// the model a file that usually holds secrets. Unless `firm`, a judge that finds the
+    /// This call needs the person in any mode that asks, for `reason`. `secret` when it would
+    /// show the model a secret, as a file that usually holds one does. Unless `firm`, a judge that finds the
     /// person's say-so in what they asked may let it run in auto mode.
     Caution {
         reason: String,
@@ -162,7 +162,7 @@ pub trait ToolSource: Send + Sync {
     }
 
     /// What this one call does, when the source can tell more than its tool's effect: a
-    /// command that only reads, or one that needs the person whatever the mode, such as a read
+    /// command that only reads, or one that needs the person in any mode that asks, such as a read
     /// of a file that usually holds secrets. The check runs where the files are.
     fn assess<'a>(&'a self, name: &'a str, arguments: &'a Arguments) -> BoxFuture<'a, Assessment> {
         let _ = (name, arguments);

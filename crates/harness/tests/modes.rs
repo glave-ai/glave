@@ -275,17 +275,17 @@ fn full_access_runs_a_risky_command_unasked_and_unjudged_with_or_without_someone
 /// What `.env` holds in the secret test: it must never reach the model.
 const CANARY: &str = "glave-canary-full-access";
 
-/// Runs a turn in Full access in which the model reads `.env`: the thread's messages, what the
-/// model was sent, and the log.
-async fn reading_dotenv<A: Approver>(approver: A) -> (Vec<Message>, String, Vec<Event>) {
+/// Runs a turn in Full access in which the model makes `call`, which would show it a secret,
+/// in a folder whose `.env` holds the canary: the thread's messages, what the model was sent,
+/// and the log.
+async fn showing_a_secret<A: Approver>(
+    call: (&'static str, serde_json::Value),
+    approver: A,
+) -> (Vec<Message>, String, Vec<Event>) {
     let dir = folder("full-secret");
     std::fs::write(dir.join(".env"), format!("TOKEN={CANARY}\n")).unwrap();
     let answers = vec![
-        answer(
-            None,
-            vec![("read", json!({ "path": ".env" }))],
-            StopReason::ToolUse,
-        ),
+        answer(None, vec![call], StopReason::ToolUse),
         answer(Some("Done."), vec![], StopReason::EndTurn),
     ];
     let (harness, seen) =
@@ -302,38 +302,49 @@ async fn reading_dotenv<A: Approver>(approver: A) -> (Vec<Message>, String, Vec<
 
 #[test]
 fn full_access_declines_a_secret_at_once_as_glave_with_or_without_someone_there() {
+    let calls = [
+        ("read", json!({ "path": ".env" })),
+        ("bash", json!({ "command": "gh auth token" })),
+        // glave's own credential helper, which would hand out a token.
+        (
+            "bash",
+            json!({ "command": "cat /tmp/glave-credentials-1/git-credential-glave" }),
+        ),
+    ];
     block_on!(async {
-        let person = Person::answering(Decision::AllowOnce);
-        let (messages, sent, events) = reading_dotenv(person.clone()).await;
-        assert!(
-            person.asked().is_empty(),
-            "no one is asked, so no one can allow it"
-        );
-        let said = results(&messages);
-        assert!(
-            said[0].starts_with("Declined: this would show you secrets"),
-            "{said:?}"
-        );
-        assert!(!sent.contains(CANARY), "the secret never reaches the model");
-        let asked = events.iter().find_map(|event| match &event.body {
-            Body::ApprovalRequested(asked) => Some(asked.clone()),
-            _ => None,
-        });
-        assert!(asked.is_some_and(|asked| asked.secret));
-        let decided = events.iter().find_map(|event| match &event.body {
-            Body::ApprovalDecided(decided) => Some(decided.clone()),
-            _ => None,
-        });
-        let decided = decided.unwrap();
-        assert_eq!(decided.decision, Verdict::Deny);
-        assert_eq!(
-            decided.by,
-            Some(Principal::glave()),
-            "glave declined it, not the person"
-        );
+        for call in calls {
+            let person = Person::answering(Decision::AllowOnce);
+            let (messages, sent, events) = showing_a_secret(call.clone(), person.clone()).await;
+            assert!(person.asked().is_empty(), "no one is asked: {call:?}");
+            let said = results(&messages);
+            assert!(
+                said[0].starts_with("Declined: this would show you secrets"),
+                "{said:?}"
+            );
+            assert!(!sent.contains(CANARY), "the secret never reaches the model");
+            let asked = events.iter().find_map(|event| match &event.body {
+                Body::ApprovalRequested(asked) => Some(asked.clone()),
+                _ => None,
+            });
+            let asked = asked.unwrap();
+            assert!(asked.secret, "{call:?}");
+            assert!(
+                asked.caution.is_some_and(|caution| caution.ends_with(
+                    "Declined without asking: Full access never shows the model a secret."
+                )),
+                "the person reads why no one was asked"
+            );
+            let decided = events.iter().find_map(|event| match &event.body {
+                Body::ApprovalDecided(decided) => Some(decided.clone()),
+                _ => None,
+            });
+            let decided = decided.unwrap();
+            assert_eq!(decided.decision, Verdict::Deny);
+            assert_eq!(decided.by, Some(Principal::glave()), "glave declined it");
 
-        let (messages, sent, _) = reading_dotenv(NoOneToAsk).await;
-        assert!(results(&messages)[0].starts_with("Declined: this would show you secrets"));
-        assert!(!sent.contains(CANARY));
+            let (messages, sent, _) = showing_a_secret(call, NoOneToAsk).await;
+            assert!(results(&messages)[0].starts_with("Declined: this would show you secrets"));
+            assert!(!sent.contains(CANARY));
+        }
     });
 }

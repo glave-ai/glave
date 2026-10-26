@@ -28,10 +28,11 @@ pub struct ApprovalRequest {
     pub effect: Effect,
     /// What would run: `bash: cargo test`. Never why it asks.
     pub summary: String,
-    /// The model would see a file that usually holds secrets, such as `.env`. With no one to
-    /// ask, these requests are declined.
+    /// The model would see a secret: a file that usually holds one, such as `.env`, or what a
+    /// command prints. With no one to ask, and in Full access, which asks no one, these requests
+    /// are declined.
     pub secret: bool,
-    /// Why the call needs the person whatever the mode, when it does, as the model and the
+    /// Why the call needs the person in any mode that asks, when it does, as the model and the
     /// judge are told it: "it deletes ~/x". The person reads it as a sentence (`sentence`).
     pub caution: Option<String>,
     /// The command would run outside the sandbox, or in it with the network, as the model

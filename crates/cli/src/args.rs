@@ -99,8 +99,8 @@ Options:
                      something risky), ask (it asks before every change; its commands
                      change nothing) or full-access (no sandbox and no limits: it can
                      change anything on this computer and never asks). Where the sandbox
-                     cannot run, auto and ask ask before every change and command. With
-                     no one at the keyboard, anything that would ask is declined
+                     cannot run, every change and command asks in auto and ask alike.
+                     With no one at the keyboard, anything that would ask is declined
   --worktree         work in a new worktree of this repository, on a branch glave/<id>,
                      kept under GLAVE_HOME/worktrees, rather than in this folder itself
   --events <file>    save the thread's events to this file as JSON Lines

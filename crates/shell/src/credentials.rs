@@ -1,7 +1,8 @@
-//! Commands that print a credential: a token, a password or a key, from a credential helper,
-//! a forge's or cloud's command-line tool, the keychain or a password manager. What they
-//! print would reach the model, so they are secrets cautions, which always ask: no judge
-//! clears them, and with no one there they are not run.
+//! Commands that print a credential, or could: a token, a password or a key, from a credential
+//! helper (glave's own, or one a command gives git), a forge's or cloud's command-line tool,
+//! the keychain or a password manager. What they print would reach the model, so they are
+//! secrets cautions: no judge clears them, with no one there they are not run, and Full
+//! access, which asks no one, declines them.
 
 use crate::judge::{Caution, Kind};
 use crate::parse::Word;
@@ -12,13 +13,13 @@ pub(crate) fn prints_credential(name: &str, words: &[Word]) -> Option<Caution> {
     let helper = |word: &Word| GLAVE_HELPER.iter().any(|part| word.text().contains(part));
     if words.iter().any(helper) {
         return Some(Caution {
-            kind: Kind::Credentials,
+            kind: Kind::Secrets,
             reason: "it reaches glave's credential helper, which hands out tokens".to_owned(),
         });
     }
     if name == "git" && configures_credentials(&args) {
         return Some(Caution {
-            kind: Kind::Credentials,
+            kind: Kind::Secrets,
             reason: "it changes how git keeps credentials, which could show one".to_owned(),
         });
     }
@@ -217,7 +218,7 @@ mod tests {
     }
 
     #[test]
-    fn git_given_a_credential_helper_of_the_command_s_own_always_asks() {
+    fn git_given_a_credential_helper_of_the_command_s_own_is_a_secret() {
         for script in [
             "git -c credential.helper=store push",
             "git -c Credential.https://github.com.helper='store --file=x' fetch",
@@ -229,7 +230,7 @@ mod tests {
             "git -C . -c credential.helper=cache push",
         ] {
             match verdict(script) {
-                Verdict::Caution(caution) if caution.kind == Kind::Credentials => {
+                Verdict::Caution(caution) if caution.kind == Kind::Secrets => {
                     assert!(caution.kind.firm(), "{script}");
                 }
                 other => panic!("{script}: {other:?}"),
@@ -237,7 +238,7 @@ mod tests {
         }
         for script in ["git -c user.name=me commit -m x", "git push origin main"] {
             assert!(
-                !matches!(verdict(script), Verdict::Caution(ref c) if c.kind == Kind::Credentials),
+                !matches!(verdict(script), Verdict::Caution(ref c) if c.kind == Kind::Secrets),
                 "{script}"
             );
         }

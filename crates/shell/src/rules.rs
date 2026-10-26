@@ -1,4 +1,4 @@
-//! The commands that need the person whatever the mode: removing what cannot be got back,
+//! The commands that need the person in any mode that asks: removing what cannot be got back,
 //! discarding uncommitted work, running fetched code, acting as the administrator, planting
 //! something that runs later, and reading secrets. Each says why in plain words.
 

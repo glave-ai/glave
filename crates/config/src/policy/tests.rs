@@ -495,7 +495,7 @@ fn no_choices() -> Choices {
 
 #[test]
 fn a_choice_outside_the_constraints_is_an_error_naming_rule_and_source() {
-    let read_only = [policy_at(
+    let ask_only = [policy_at(
         ORG,
         "version = 1\n[permissions]\nhighest = \"ask\"\n",
     )];
@@ -504,7 +504,7 @@ fn a_choice_outside_the_constraints_is_an_error_naming_rule_and_source() {
         ConfigFile::default(),
         vec![file(PERSON, "permissions = \"auto\"\n")],
     );
-    let error = settle(&chosen, &read_only).unwrap_err().to_string();
+    let error = settle(&chosen, &ask_only).unwrap_err().to_string();
     assert_eq!(
         error,
         format!(

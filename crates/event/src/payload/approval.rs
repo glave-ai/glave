@@ -19,9 +19,10 @@ pub struct ApprovalRequested {
     pub tool: String,
     /// What would run, as the person is shown it: `bash: rm -rf ~/notes`. Never why it asks.
     pub summary: String,
-    /// Whether the call would show the model a file that usually holds secrets.
+    /// Whether the call would show the model a secret: a file that usually holds one, or a
+    /// command that prints one or could.
     pub secret: bool,
-    /// Why the call needs the person whatever the mode, when a caution says so, in sentences
+    /// Why the call needs the person in any mode that asks, when a caution says so, in sentences
     /// the person reads: "It deletes /home/ana/notes, outside the project."
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub caution: Option<String>,

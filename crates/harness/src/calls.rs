@@ -466,8 +466,7 @@ where
 
     /// Asks the person about `request`, recording the question and the answer. `None` when the
     /// call may go ahead; otherwise the result the model is given instead. Full access asks no
-    /// one: the call goes ahead, unless it would show the model a secret, which only a person's
-    /// yes does, so glave declines it at once, recorded as its own decision.
+    /// one: the call goes ahead, unless it would show the model a secret ([`Self::unasked`]).
     pub(crate) async fn ask(
         &self,
         thread: &mut Thread,
@@ -475,38 +474,11 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Option<ToolOutput>, HarnessError> {
-        let never = self.approval_for(thread) == ApprovalMode::Never;
-        if never && !request.secret {
-            return Ok(None);
+        if self.approval_for(thread) == ApprovalMode::Never {
+            return self.unasked(thread, request, live).await;
         }
         let asked = request.asked();
         self.record(thread, &asked).await?;
-        let (verdict, by) = if never {
-            (Verdict::Deny, Some(Principal::glave()))
-        } else {
-            self.put_to_person(thread, request, cancel, live).await?
-        };
-        crate::telemetry::approval(&request.tool, verdict);
-        let decided = ApprovalDecided {
-            call_id: request.call_id.clone(),
-            decision: verdict,
-            by,
-        };
-        self.record(thread, &decided).await?;
-        let no_one = (verdict == Verdict::NoOneThere).then(|| no_one_there(request));
-        Ok(settle(thread, &asked, verdict, no_one, live))
-    }
-
-    /// Puts `request`, recorded, to the person and waits for their answer: what they decided,
-    /// and who decided when it was not the thread's `for`. Where answers come to the log, the
-    /// turn stops here instead (`HarnessError::Waits`).
-    async fn put_to_person(
-        &self,
-        thread: &Thread,
-        request: &ApprovalRequest,
-        cancel: &Cancel,
-        live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<(Verdict, Option<Principal>), HarnessError> {
         if self.approver.waits(thread.id) {
             // The turn stops here: the answer comes to the log, and the turn goes on from it.
             live(Live::ApprovalPending {
@@ -533,7 +505,47 @@ where
         } else {
             Self::other_than_for(thread, person)
         };
-        Ok((verdict, by))
+        crate::telemetry::approval(&request.tool, verdict);
+        let decided = ApprovalDecided {
+            call_id: request.call_id.clone(),
+            decision: verdict,
+            by,
+        };
+        self.record(thread, &decided).await?;
+        let no_one = (verdict == Verdict::NoOneThere).then(|| no_one_there(request));
+        Ok(settle(thread, &asked, verdict, no_one, live))
+    }
+
+    /// What Full access does where another mode would ask about `request`: nothing, so the call
+    /// goes ahead, unless it would show the model a secret, which only a person's yes does. Then
+    /// glave declines it at once, saying so, its question and answer written together so that
+    /// no stop between them can leave the thread waiting for anyone.
+    async fn unasked(
+        &self,
+        thread: &mut Thread,
+        request: &ApprovalRequest,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Result<Option<ToolOutput>, HarnessError> {
+        if !request.secret {
+            return Ok(None);
+        }
+        let mut asked = request.asked();
+        let why = sentence("declined without asking: Full access never shows the model a secret");
+        asked.caution = Some(match asked.caution.take() {
+            Some(caution) => format!("{caution} {why}"),
+            None => why,
+        });
+        let decided = ApprovalDecided {
+            call_id: request.call_id.clone(),
+            decision: Verdict::Deny,
+            by: Some(Principal::glave()),
+        };
+        crate::telemetry::approval(&request.tool, Verdict::Deny);
+        let mut events = Vec::new();
+        self.stage(thread, &mut events, &asked)?;
+        self.stage(thread, &mut events, &decided)?;
+        self.commit(thread, events).await?;
+        Ok(settle(thread, &asked, Verdict::Deny, None, live))
     }
 
     /// Takes in the answer to the approval a turn going on from the log stopped at: the one

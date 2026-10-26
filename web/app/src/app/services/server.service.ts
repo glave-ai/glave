@@ -19,7 +19,7 @@ export class ServerService {
   /** What the agent may do where nothing chose, or `null` until the server has said. */
   readonly permissions = computed<Permissions | null>(() => this.info()?.permissions ?? null);
   /** The modes a thread may choose, in the order they are offered; none until the server has said. */
-  readonly presets = computed<readonly Permissions[]>(() => this.info()?.presets ?? []);
+  readonly modes = computed<readonly Permissions[]>(() => this.info()?.modes ?? []);
   /** Why Auto and Ask first ask before everything here, in the server's words, if they do. */
   readonly unsandboxed = computed<string | null>(() => this.info()?.unsandboxed ?? null);
 

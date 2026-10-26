@@ -1409,6 +1409,13 @@
             "null"
           ]
         },
+        "modes": {
+          "description": "The modes a thread may choose (`permissions` on `thread/start` and `turn/start`):\nthose the policy leaves, in the order a person is offered them, the recommended first.",
+          "items": {
+            "$ref": "#/$defs/Permissions"
+          },
+          "type": "array"
+        },
         "name": {
           "type": "string"
         },
@@ -1422,13 +1429,6 @@
         "permissions": {
           "$ref": "#/$defs/Permissions",
           "description": "What the agent may do in a thread that, and whose project, chose no mode:\n`--permissions` or `permissions` in `config.toml` (`specs/approvals.md`, \"Modes\")."
-        },
-        "presets": {
-          "description": "The modes a thread may choose (`permissions` on `thread/start` and `turn/start`):\nthose the policy leaves, in the order a person is offered them, the recommended first.",
-          "items": {
-            "$ref": "#/$defs/Permissions"
-          },
-          "type": "array"
         },
         "protocols": {
           "description": "The protocol versions spoken.",
@@ -1460,7 +1460,7 @@
         "version",
         "protocols",
         "permissions",
-        "presets"
+        "modes"
       ],
       "type": "object"
     },
@@ -2068,7 +2068,7 @@
           "type": "object"
         },
         {
-          "description": "An action that did not run. `summary` is what would have run; `caution`, why it asked\nwhatever the mode, in sentences the person reads, when a caution did.",
+          "description": "An action that did not run. `summary` is what would have run; `caution`, why it asked,\nin sentences the person reads, when a caution did.",
           "properties": {
             "caution": {
               "type": [
@@ -4681,7 +4681,7 @@
                 "type": "null"
               }
             ],
-            "description": "What the agent may do in the thread's turns, one of the server's `presets`; its\nproject's, else the server's own, when absent."
+            "description": "What the agent may do in the thread's turns, one of the server's `modes`; its\nproject's, else the server's own, when absent."
           },
           "project": {
             "anyOf": [
@@ -4888,7 +4888,7 @@
                 "type": "null"
               }
             ],
-            "description": "What the agent may do in this turn, and the thread's turns after it: one of the\nserver's `presets`. The thread's latest choice when absent, else its project's, else\nthe server's. Not while a turn runs."
+            "description": "What the agent may do in this turn, and the thread's turns after it: one of the\nserver's `modes`. The thread's latest choice when absent, else its project's, else\nthe server's. Not while a turn runs."
           },
           "prompt": {
             "type": "string"

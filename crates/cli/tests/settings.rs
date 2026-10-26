@@ -214,7 +214,8 @@ fn turning_the_network_off_applies_to_the_next_turn_s_commands() {
 #[test]
 fn the_judge_follows_the_models_it_names_when_they_change() {
     // The judge decides in Auto behind the sandbox's wall.
-    if !glave_computer::sandbox_available() {
+    let required = std::env::var_os("GLAVE_REQUIRE_SANDBOX").is_some();
+    if !glave_computer::sandbox_available() && !required {
         return;
     }
     let place = place("settings-judge");

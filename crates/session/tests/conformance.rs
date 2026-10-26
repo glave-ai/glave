@@ -600,7 +600,7 @@ fn a_thread_chooses_its_mode_and_its_summary_shows_it() {
         over_each_transport!("permissions", Vec::new(), |client, dir| {
             let info = client.call(Request::Discover {}).await.unwrap();
             assert_eq!(info["permissions"], json!("ask"));
-            assert_eq!(info["presets"], json!(["auto", "ask", "full-access"]));
+            assert_eq!(info["modes"], json!(["auto", "ask", "full-access"]));
             assert_eq!(
                 info["unsandboxed"],
                 json!(

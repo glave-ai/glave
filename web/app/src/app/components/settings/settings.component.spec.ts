@@ -13,7 +13,7 @@ const SERVER = {
   version: '0.1.0',
   protocols: ['2026-10'],
   permissions: 'auto',
-  presets: ['auto', 'ask', 'full-access'],
+  modes: ['auto', 'ask', 'full-access'],
 } as const;
 import { SettingsComponent } from './settings.component';
 

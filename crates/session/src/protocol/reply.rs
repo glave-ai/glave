@@ -27,7 +27,7 @@ pub struct ServerInfo {
     pub permissions: Permissions,
     /// The modes a thread may choose (`permissions` on `thread/start` and `turn/start`):
     /// those the policy leaves, in the order a person is offered them, the recommended first.
-    pub presets: Vec<Permissions>,
+    pub modes: Vec<Permissions>,
     /// Why Auto asks before every change and command here, in a sentence, when it does:
     /// no sandbox can run on this computer (Ask first then asks so too), or only one that keeps
     /// files as they are.

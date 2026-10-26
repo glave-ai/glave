@@ -57,7 +57,7 @@ pub enum Live {
         is_error: bool,
     },
     /// An action that did not run: the person said no, or no one was there to ask. `caution`
-    /// is why it asked whatever the mode, as the person reads it, when a caution did.
+    /// is why it asked, as the person reads it, when a caution did.
     ToolDeclined {
         summary: String,
         caution: Option<String>,

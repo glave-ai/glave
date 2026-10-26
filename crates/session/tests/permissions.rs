@@ -134,7 +134,7 @@ fn a_chosen_mode_holds_for_the_turns_after_it_and_a_restart() {
             panic!("server info");
         };
         assert_eq!(info.permissions, FullAccess);
-        assert_eq!(info.presets, all);
+        assert_eq!(info.modes, all);
         let thread = started(&server, Some(Ask)).await;
         assert_eq!(shown(&server, thread).await, Ask);
         // In Ask first the write asks, and with no one there it does not run.
@@ -184,7 +184,7 @@ fn a_mode_the_policy_does_not_leave_is_refused_in_plain_words() {
         let Reply::Server(info) = server.request(Request::Discover {}).await.unwrap() else {
             panic!("server info");
         };
-        assert_eq!(info.presets, capped, "only what a thread may choose");
+        assert_eq!(info.modes, capped, "only what a thread may choose");
         let refused = start_in(&server, Some(FullAccess)).await.unwrap_err();
         assert_eq!(refused.code, code::NOT_ALLOWED, "{refused:?}");
         assert_eq!(

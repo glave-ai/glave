@@ -514,6 +514,11 @@ export type ServerInfo = {
    * browser's session must name before the browser presents it.
    */
   readonly id?: string | null;
+  /**
+   * The modes a thread may choose (`permissions` on `thread/start` and `turn/start`):
+   * those the policy leaves, in the order a person is offered them, the recommended first.
+   */
+  readonly modes: readonly (Permissions)[];
   readonly name: string;
   /** Where people reach the server from elsewhere, if they do: its public origin. */
   readonly origin?: string | null;
@@ -522,11 +527,6 @@ export type ServerInfo = {
    * `--permissions` or `permissions` in `config.toml` (`specs/approvals.md`, "Modes").
    */
   readonly permissions: Permissions;
-  /**
-   * The modes a thread may choose (`permissions` on `thread/start` and `turn/start`):
-   * those the policy leaves, in the order a person is offered them, the recommended first.
-   */
-  readonly presets: readonly (Permissions)[];
   /** The protocol versions spoken. */
   readonly protocols: readonly (string)[];
   /**
@@ -1541,7 +1541,7 @@ export type ThreadStartParams = {
    */
   readonly model?: string | null;
   /**
-   * What the agent may do in the thread's turns, one of the server's `presets`; its
+   * What the agent may do in the thread's turns, one of the server's `modes`; its
    * project's, else the server's own, when absent.
    */
   readonly permissions?: Permissions | null;
@@ -1627,7 +1627,7 @@ export type TurnStartParams = {
   readonly model?: string | null;
   /**
    * What the agent may do in this turn, and the thread's turns after it: one of the
-   * server's `presets`. The thread's latest choice when absent, else its project's, else
+   * server's `modes`. The thread's latest choice when absent, else its project's, else
    * the server's. Not while a turn runs.
    */
   readonly permissions?: Permissions | null;

@@ -9,7 +9,7 @@ const INFO = {
   version: '0.1.0',
   protocols: ['2026-10'],
   permissions: 'ask',
-  presets: ['ask'],
+  modes: ['ask'],
 } as const;
 
 describe('ServerService', () => {
@@ -18,12 +18,12 @@ describe('ServerService', () => {
     TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
     const server = TestBed.inject(ServerService);
     expect(server.permissions()).toBeNull();
-    expect(server.presets()).toEqual([]);
+    expect(server.modes()).toEqual([]);
     expect(server.unsandboxed()).toBeNull();
     await Promise.all([server.load(), server.load()]);
     expect(server.info()).toEqual(INFO);
     expect(server.permissions()).toBe('ask');
-    expect(server.presets()).toEqual(['ask']);
+    expect(server.modes()).toEqual(['ask']);
     expect(fake.paramsOf('server/discover')).toHaveLength(1);
   });
 
