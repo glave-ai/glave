@@ -5,10 +5,10 @@
 
 use glave_event::{Body, Part, StopReason, Verdict};
 use glave_harness::{Cancel, HarnessError, NoOneToAsk, Permissions};
+use glave_ports::testing::FaultyLog;
 use glave_ports::{InMemoryLog, Message};
 use serde_json::json;
 
-use crate::failing::FailingLog;
 use crate::outside_sandbox::{judged, sandboxed, walled};
 use crate::support::*;
 
@@ -124,7 +124,7 @@ fn a_cleared_action_is_asked_and_decided_in_one_write() {
                 StopReason::EndTurn,
             ),
         ];
-        let log = FailingLog::default();
+        let log = FaultyLog::default();
         let (harness, _) = harness_with(
             walled(&base, false).await,
             answers,

@@ -16,14 +16,12 @@
 1ac3c9675aa75ba5 7 crates/session/tests/gone.rs crates/session/tests/projects.rs
 1bc560fe8419ed5b 8 crates/identity/src/signin/browsers/passkeys/tests.rs crates/identity/src/signin/browsers/tests.rs
 1c3c0adb8bac6fcc 7 crates/session/tests/turn_streams.rs crates/session/tests/turn_streams.rs
-1d40668b03e6bf41 23 crates/session/src/hub.rs crates/session/tests/titles.rs
 1eec4e496643ce94 9 crates/harness/tests/workers.rs crates/harness/tests/worktrees.rs
 21324c4068197f18 7 crates/harness/src/resume.rs crates/harness/src/waits.rs
 237d79407a4200b6 7 web/e2e/attachments.e2e.ts web/e2e/attachments.e2e.ts
 23b41c206c1cac43 10 crates/session/tests/server.rs crates/session/tests/server.rs
 25a502a12f8d717f 6 crates/cli/src/worktrees/cleanup/tests.rs crates/computer/src/worktrees/tests.rs
 29419502c19f6cd3 12 crates/provider-openai/src/wire/tests.rs crates/provider-openai/src/wire/tests.rs
-2bb0ef123549209a 15 crates/session/src/hub.rs crates/session/tests/titles.rs
 2c034a06f99c2592 6 crates/harness/tests/compaction.rs crates/harness/tests/instructions.rs
 2e3ce5bbc0e838ca 7 crates/session/src/http/body/tests.rs crates/session/src/http/body/tests.rs
 2efd93b7f3eedc0e 10 crates/session/tests/outside.rs crates/session/tests/outside.rs
@@ -46,7 +44,6 @@
 65794a92795cf8f4 9 crates/aws/tests/anthropic.rs crates/cli/src/model.rs crates/google/src/adc/tests/gemini.rs
 66d6a8c6cb6d316f 15 crates/event/src/id.rs crates/event/src/id.rs crates/event/src/id.rs crates/event/src/id.rs
 6b61e6143887a11d 8 crates/cli/src/computer.rs crates/cli/src/gateway/serve.rs crates/cli/src/threads.rs crates/cli/src/worktrees.rs
-6c49188a9133da1b 17 crates/session/tests/conformance.rs crates/session/tests/conformance.rs
 6d62123d0df40415 8 crates/mcp/tests/http.rs crates/mcp/tests/server.rs
 6e88cd02a8308b96 10 crates/computer/src/worktrees/tests.rs crates/computer/src/worktrees/tests.rs
 6feffa977d39e179 7 crates/harness/tests/computers.rs crates/harness/tests/worktrees.rs
@@ -74,7 +71,7 @@
 98f24eff20f113f2 8 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
 9917f56ff024635e 7 crates/computer/src/local/credentials/tests.rs crates/computer/src/local/sandbox/linux/tests.rs crates/computer/src/local/sandbox/tests.rs
 9a55ffbd3709ee1f 12 crates/memory/tests/safety.rs crates/memory/tests/safety.rs
-9b355e43cd2e040a 24 crates/harness/tests/support/failing.rs crates/session/tests/durable/crashes.rs
+9b355e43cd2e040a 24 crates/ports/src/testing/faulty.rs crates/session/tests/durable/crashes.rs
 9e0deedec0a616b8 11 crates/cli/src/memory.rs crates/cli/src/threads.rs
 a0516b39583ad5d6 7 web/e2e/languages.e2e.ts web/e2e/support.ts
 a2cc55aeef3d089c 11 crates/gateway-service/src/http.rs crates/session/src/http.rs

@@ -5,9 +5,6 @@
 #[path = "support/script.rs"]
 mod support;
 
-#[path = "support/failing.rs"]
-mod failing;
-
 mod actors;
 mod approvals;
 mod background;

@@ -6,10 +6,10 @@
 
 use glave_event::{Body, CallId, CommandEnding, Event, Outcome, StopReason};
 use glave_harness::{Cancel, Decision, HarnessError, NoOneToAsk};
+use glave_ports::testing::FaultyLog;
 use glave_ports::{Caller, Message};
 use serde_json::json;
 
-use crate::failing::FailingLog;
 use crate::network::InTheLog;
 use crate::support::*;
 
@@ -40,9 +40,9 @@ fn calls(events: &[Event]) -> (Vec<CallId>, Vec<CallId>) {
 /// when it goes on; its harness on `log`, and the call it waits on.
 async fn waiting(
     dir: &std::path::Path,
-    log: &FailingLog,
+    log: &FaultyLog,
 ) -> (
-    glave_harness::Harness<ScriptedModel, FailingLog, glave_ports::InMemoryBlobs, InTheLog>,
+    glave_harness::Harness<ScriptedModel, FaultyLog, glave_ports::InMemoryBlobs, InTheLog>,
     glave_harness::Thread,
     CallId,
 ) {
@@ -85,7 +85,7 @@ async fn waiting(
 fn a_turn_that_failed_between_a_call_and_its_result_is_closed_by_the_next() {
     let dir = folder("log-fails-mid-call");
     block_on!(async {
-        let log = FailingLog::default();
+        let log = FaultyLog::default();
         let answers = vec![
             answer(
                 None,
@@ -156,7 +156,7 @@ fn a_turn_that_failed_between_a_call_and_its_result_is_closed_by_the_next() {
 fn an_answer_whose_turn_could_not_go_on_leaves_the_thread_to_its_next_prompt() {
     let dir = folder("log-fails-going-on");
     block_on!(async {
-        let log = FailingLog::default();
+        let log = FaultyLog::default();
         let (harness, mut thread, asked) = waiting(&dir, &log).await;
         harness
             .decide(scope(), thread.id, &asked, Decision::AllowOnce, None)
@@ -189,7 +189,7 @@ fn an_answer_whose_turn_could_not_go_on_leaves_the_thread_to_its_next_prompt() {
 fn a_stop_whose_turn_could_not_go_on_leaves_it_waiting() {
     let dir = folder("log-fails-stopping");
     block_on!(async {
-        let log = FailingLog::default();
+        let log = FaultyLog::default();
         let (harness, mut thread, _) = waiting(&dir, &log).await;
         let stop = Cancel::new();
         stop.cancel();
