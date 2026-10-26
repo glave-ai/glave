@@ -156,9 +156,9 @@ export class ThreadService {
   readonly chosen = computed(() => chosenModel(this.events()));
   /** How much the thread chose its model reasons, or `null` for the model's own way. */
   readonly chosenEffort = computed(() => chosenEffort(this.events()));
-  /** Where the thread's tools act, in plain words, once it has a workspace. */
+  /** Where the thread's tools act, in plain words, once its summary says it has a workspace. */
   readonly place = computed(() =>
-    placeOf(this.events(), { local: this.session.local(), mac: this.mac }),
+    placeOf(this.summary()?.workspace ?? null, { local: this.session.local(), mac: this.mac }),
   );
 
   /** A first turn the server refused, saying why: back in the box, as one sent here goes. */

@@ -18,7 +18,7 @@ pub use turn::{AGENT_TOOL, CallKind, OpenTurn, QUESTION_TOOL, Unfinished, Wait, 
 
 /// The version of [`ThreadView`]'s folding. Stores rebuild every view when the version they
 /// built with is older.
-pub const THREAD_VIEW_VERSION: u32 = 3;
+pub const THREAD_VIEW_VERSION: u32 = 4;
 
 /// The longest title taken from a thread's first message, in characters.
 pub const TITLE_CHARS: usize = 80;
@@ -89,11 +89,36 @@ pub struct ThreadView {
     /// True once a call reported no cost, or one in another currency: the cost is unknown.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unpriced: bool,
+    /// True once a call's usage was estimated, because its stream ended before the provider
+    /// reported it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub estimated: bool,
+    /// Its latest `workspace.bound`: where it works, read from that event as the title is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_seq: Option<Seq>,
+    /// What its conversation last sent and got back: its latest call that was the
+    /// conversation's own (the judge's, a title's and a summary's are not); none before its
+    /// first and since it was compacted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<LastCall>,
     /// Its turn still open: running, waiting, or left open by a glave that stopped without
     /// ending it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn: Option<OpenTurn>,
 }
+
+/// A conversation's latest model call, as the threads view keeps it: its tokens in and out,
+/// which is the context the next call starts from, and the model that answered.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LastCall {
+    pub tokens: u64,
+    pub model: String,
+}
+
+/// The gateway routes whose calls are a thread's conversation: its own model's, and a
+/// subagent's; none when no gateway was in between.
+const CONVERSATION_ROUTES: [&str; 2] = ["main", "subagent"];
 
 impl ThreadView {
     /// The person whose work it is, when its `for` was recorded: the person it was started for.
@@ -143,6 +168,9 @@ impl ThreadView {
             tokens: TokenCounts::default(),
             cost: None,
             unpriced: false,
+            estimated: false,
+            workspace_seq: None,
+            context: None,
             turn: None,
         })
     }
@@ -155,6 +183,8 @@ impl ThreadView {
             "thread.unarchived" => self.standing = Standing::Active,
             "thread.deleted" => self.standing = Standing::Deleted,
             "thread.renamed" => self.title_seq = Some(event.seq),
+            "workspace.bound" => self.workspace_seq = Some(event.seq),
+            "thread.compacted" => self.context = None,
             "turn.started" => {
                 self.turns = self.turns.saturating_add(1);
                 self.turn = Some(OpenTurn::at(event.seq));
@@ -183,7 +213,16 @@ impl ThreadView {
                 self.turn = None;
             }
             Body::ModelResponded(responded) => {
-                self.tokens += responded.usage.counts();
+                let counts = responded.usage.counts();
+                self.tokens += counts;
+                self.estimated |= responded.usage.estimated();
+                let route = responded.route.as_deref();
+                if route.is_none_or(|route| CONVERSATION_ROUTES.contains(&route)) {
+                    self.context = Some(LastCall {
+                        tokens: counts.input.saturating_add(counts.output),
+                        model: responded.model.name,
+                    });
+                }
                 let cost = responded.cost.map(|cost| cost.amount);
                 // Without a cost and not unpriced, no response has been counted yet.
                 self.cost = match (self.unpriced, self.cost, cost) {

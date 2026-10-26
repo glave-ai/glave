@@ -1,4 +1,4 @@
-import type { RawEvent } from '@glave/client';
+import type { WorkspaceBound } from '@glave/client';
 
 /** What the app knows about where it runs: on this computer or not, and whether a Mac. */
 export interface Here {
@@ -9,24 +9,22 @@ export interface Here {
 }
 
 /**
- * Where a thread's tools act, in plain words, from its latest `workspace.bound`: on the
- * computer glave runs on (this one, a Mac by name, when glave is local; else the server), or on
- * another computer glave made for it. `null` before the thread has a workspace.
+ * Where a thread's tools act, in plain words relative to the reader, from where its summary says
+ * it works: on the computer glave runs on (this one, a Mac by name, when glave is local; else the
+ * server), or on another computer glave made for it. `null` before the thread has a workspace.
  */
-export function placeOf(events: readonly RawEvent[], here: Here): string | null {
-  const bound = events.filter((event) => event.type === 'workspace.bound').at(-1);
-  const computer = bound?.data['computer'];
-  const kind =
-    typeof computer === 'object' && computer !== null && 'kind' in computer
-      ? computer.kind
-      : undefined;
-  if (kind === 'local') {
-    if (!here.local) {
-      return $localize`:@@place.server:on the server`;
-    }
-    return here.mac
-      ? $localize`:@@place.mac:on your Mac`
-      : $localize`:@@place.computer:on this computer`;
+export function placeOf(workspace: WorkspaceBound | null, here: Here): string | null {
+  switch (workspace?.computer.kind) {
+    case 'local':
+      if (!here.local) {
+        return $localize`:@@place.server:on the server`;
+      }
+      return here.mac
+        ? $localize`:@@place.mac:on your Mac`
+        : $localize`:@@place.computer:on this computer`;
+    case 'worker':
+      return $localize`:@@place.worker:on another computer`;
+    case undefined:
+      return null;
   }
-  return kind === 'worker' ? $localize`:@@place.worker:on another computer` : null;
 }

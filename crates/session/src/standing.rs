@@ -4,7 +4,7 @@
 //! server that holds the thread, so it never conflicts with a thread open in that server. A
 //! thread archived or deleted lets go of its worktrees on the host's computer.
 
-use glave_event::{Seq, ThreadId};
+use glave_event::{Body, Event, RawEvent, Seq, ThreadId, decode};
 use glave_harness::{Change, standing_of};
 use glave_ports::settings::Protections;
 use glave_ports::{
@@ -15,7 +15,7 @@ use tokio::sync::watch;
 
 use crate::choice::Choice;
 use crate::held::{Slot, Use, finished};
-use crate::protocol::{ApiError, Reply, Show, ThreadSummary, code};
+use crate::protocol::{ApiError, ContextUse, Reply, Show, ThreadSummary, code};
 use crate::server::{MAX_PAGE, Server, no_thread};
 use crate::words::Sentence;
 
@@ -253,19 +253,26 @@ where
         } else {
             Protections::default()
         };
-        let title = match view.title_seq {
-            Some(seq) => {
-                let before = Seq::new(seq.get().saturating_sub(1)).ok();
-                let read = self
-                    .inner
-                    .harness
-                    .log()
-                    .read(&scope, view.thread, before, 1)
-                    .await?;
-                read.first().and_then(title_of)
-            }
+        let title = match self.event_at(&scope, view.thread, view.title_seq).await? {
+            Some(event) => title_of(&event),
             None => None,
         };
+        let workspace = match self
+            .event_at(&scope, view.thread, view.workspace_seq)
+            .await?
+        {
+            Some(event) => match decode(event) {
+                Ok(Event {
+                    body: Body::WorkspaceBound(bound),
+                    ..
+                }) => Some(Box::new(bound)),
+                _ => None,
+            },
+            None => None,
+        };
+        let context = view.context.as_ref().map(|last| {
+            ContextUse::of(last.tokens, self.inner.harness.context_window(&last.model))
+        });
         Ok(ThreadSummary {
             id: view.thread,
             project: scope.project(),
@@ -285,7 +292,31 @@ where
             outcome: view.outcome,
             tokens: view.tokens,
             cost: if view.unpriced { None } else { view.cost },
+            estimated: view.estimated,
+            workspace,
+            context,
         })
+    }
+
+    /// `thread`'s event at `seq`, when there is one: the one a summary reads its title, or where
+    /// it works, from.
+    async fn event_at(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+        seq: Option<Seq>,
+    ) -> Result<Option<RawEvent>, ApiError> {
+        let Some(seq) = seq else {
+            return Ok(None);
+        };
+        let before = Seq::new(seq.get().saturating_sub(1)).ok();
+        let read = self
+            .inner
+            .harness
+            .log()
+            .read(scope, thread, before, 1)
+            .await?;
+        Ok(read.into_iter().next().filter(|event| event.seq == seq))
     }
 
     /// Whether `thread` is shown, from memory when the server holds it, else from the log.
