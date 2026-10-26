@@ -1,6 +1,7 @@
 //! Skills end to end: a repository set up for Claude Code brings its skills unchanged, `glave
-//! skills` lists them, the model is offered `skill` and loads one, and a broken one is skipped
-//! with a warning naming its file.
+//! skills` lists them with glave's own after, the model is offered `skill` and loads one, a
+//! broken one is skipped with a warning naming its file, and `glave doc`, which glave's own
+//! spreadsheets skill teaches, reads a workbook.
 
 use std::process::{Command, Output, Stdio};
 
@@ -55,6 +56,11 @@ fn glave_skills_lists_them_and_warns_about_the_broken_one() {
         stdout.starts_with("greet\n  How to greet people"),
         "{shown}"
     );
+    assert!(
+        stdout.contains("\nglave:spreadsheets\n  Read and analyze spreadsheets")
+            && stdout.contains("\n  built into glave"),
+        "glave's own come after: {shown}"
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("broken/SKILL.md") && stderr.contains("frontmatter"),
@@ -85,4 +91,34 @@ fn the_model_is_offered_skill_and_loads_one() {
     assert!(!description.contains("broken"), "{description}");
     let results = said(&received[1].body, "tool");
     assert!(results[0].contains("Say ahoy."), "{results:?}");
+}
+
+#[test]
+fn glave_doc_reads_a_workbook_as_the_built_in_skill_says_and_leaves_glaves_folder_alone() {
+    let place = project("skills-doc");
+    let model = FakeServer::start(vec![]).unwrap();
+    let workbook = concat!(env!("CARGO_MANIFEST_DIR"), "/../office/tests/workbook.xlsx");
+    let csv = run(
+        &place,
+        &model,
+        &["doc", "csv", workbook, "--sheet", "Sales"],
+    );
+    assert!(csv.status.success(), "{}", text(&csv));
+    let stdout = String::from_utf8_lossy(&csv.stdout);
+    assert!(
+        stdout.starts_with("Day,Region,Units,Price,Revenue\n2026-01-05,North,120,19.5,2340\n"),
+        "{stdout}"
+    );
+    let wrong = run(&place, &model, &["doc", "open", workbook]);
+    assert_eq!(wrong.status.code(), Some(2), "{}", text(&wrong));
+    assert!(
+        text(&wrong).contains("glave doc read <file>"),
+        "{}",
+        text(&wrong)
+    );
+    assert!(
+        !place.home.exists(),
+        "glave doc keeps out of glave's own folder"
+    );
+    assert!(model.received().is_empty(), "no model is asked");
 }

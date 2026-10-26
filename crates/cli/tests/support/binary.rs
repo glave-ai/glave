@@ -233,8 +233,7 @@ pub(crate) fn terminal_with(
     args: &[&str],
     env: &[(&str, &str)],
 ) -> Running {
-    let spawn = "import pty, sys; sys.exit(pty.spawn(sys.argv[1:]) >> 8)";
-    let python = [&["-c", spawn, env!("CARGO_BIN_EXE_glave")][..], args].concat();
+    let python = [&["-c", IN_TERMINAL, env!("CARGO_BIN_EXE_glave")][..], args].concat();
     std::fs::create_dir_all(&place.home).unwrap();
     let child = Command::new("python3")
         .args(python)
@@ -255,6 +254,21 @@ pub(crate) fn terminal_with(
         .unwrap();
     Running::new(child)
 }
+
+/// A Python program that runs the command its arguments name in a terminal of its own and exits
+/// with its status. An empty read of the terminal ends it: macOS gives one when the command ends,
+/// and the `pty.spawn` of Python 3.9, the `python3` macOS ships, would wait on it forever.
+pub(crate) const IN_TERMINAL: &str = "\
+import os, pty, sys
+
+def read(fd):
+    data = os.read(fd, 1024)
+    if not data:
+        raise OSError('the terminal closed')
+    return data
+
+sys.exit(pty.spawn(sys.argv[1:], read) >> 8)
+";
 
 /// Types `keys` at the terminal `running` is in.
 pub(crate) fn typed(running: &mut Running, keys: &str) {
