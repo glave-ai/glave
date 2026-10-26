@@ -166,11 +166,17 @@ fn a_changed_mode_holds_from_the_next_turn_and_a_running_turn_keeps_its_own() {
         );
         "allow_once"
     });
-    assert_eq!(asked, 2, "the push and the change asked: the running turn kept Ask first");
+    assert_eq!(
+        asked, 2,
+        "the push and the change asked: the running turn kept Ask first"
+    );
     assert!(!result(&model, 2).contains("Not run"), "it ran");
 
     let asked = turn_in(&mut served, &thread, |_| "allow_once");
-    assert_eq!(asked, 0, "the next turn runs in full access, which never asks");
+    assert_eq!(
+        asked, 0,
+        "the next turn runs in full access, which never asks"
+    );
     served.end();
 }
 
