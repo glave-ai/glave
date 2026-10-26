@@ -47,6 +47,7 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::GoalSet(_)
         | Body::GoalEnded(_)
         | Body::GoalResumed(_)
+        | Body::PlanUpdated(_)
         | Body::WorkspaceBound(_)
         | Body::WorkspaceRemoved(_)
         | Body::CommandStarted(_)

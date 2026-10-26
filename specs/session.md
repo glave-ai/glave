@@ -254,6 +254,16 @@ What a reply drew on from the web shows under it (#677): the pages the agent rea
 - **Drawn by each client.** A client asks once a thread has called `web_fetch` and a turn has ended since (the web app once it has read the thread's history, not page by page), and draws a link to each page under its reply: its title, and where it is, opening in a new tab. The terminal prints them after the reply, one line each. A title is the page's own words, shown as text, never as markup: its control characters and the invisible ones that only change how text around them is laid out (bidirectional overrides among them) are dropped, and it is cut at 200 characters.
 - **Not yet:** the pages a subagent read for the reply, which its own thread holds.
 
+## Plans
+
+A thread's plan is the steps of its work: state the harness keeps for the thread and the server says, apart from the conversation, as Codex's `update_plan` reaches its clients as a plan update rather than a message, never text a client parses (owner direction, #92).
+
+- **One plan, and it is the checklist.** A thread has at most one current plan: its steps, each to do, doing or done (`pending`, `in_progress`, `completed`). The model keeps it with `update_plan` (Codex's name and shape, sending the whole plan each time), which replaced glave's `todo` tool: one list, rather than a plan and a checklist beside it. Every change is a `plan.updated` (`events.md`), recorded with the call's result; the latest is the plan, so it survives a restart and any server reads it.
+- **On by default.** `update_plan` is offered in every turn, as Codex's `update_plan` and Claude Code's todo list are, and always in a thread that has a plan, so a plan being built can be kept current; a subagent is never offered it, since the plan is its parent's. Library users choose (`Settings::plans`); `cargo xtask eval --no-plan` measures without it.
+- **Read from the log.** `thread/plan` gives the thread's plan, its latest `plan.updated`, read as the latest of that kind rather than the whole history: its steps in order, each with its status, and one sentence in the caller's language ("Plan: 2 of 3 steps done"); `null` when it has none. Nothing more is recorded for it, so a resumed thread, another server and every client read the same.
+- **Drawn by each client.** A client shows the server's sentence, never one of its own about the plan. The terminal shows each `update_plan` call as it shows any call, with how far the plan has come (`update_plan 2/5 done, now: run the tests`).
+- **Not yet:** the web app drawing the plan, and plan mode, which proposes a plan for the person to build (both #92).
+
 ## Attachments
 
 Files and images a person adds to a message (#235), and those the agent reads (#729).

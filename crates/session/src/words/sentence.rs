@@ -225,6 +225,10 @@ sentences! {
     Sources { pages: u64 } = "sources"
         "Sources: { $pages ->\n    [1] 1 page\n   *[other] { $pages } pages\n }",
 
+    // A thread's plan.
+    PlanProgress { done: u64, steps: u64 } = "plan-progress"
+        "Plan: { $done } of { $steps ->\n    [1] 1 step\n   *[other] { $steps } steps\n } done",
+
     // Memory.
     MemoryOff = "memory-off" "memory is off for this server",
     ForgetWhat = "forget-what" "memory/forget takes `memory`, or `all: true` with a `scope`",

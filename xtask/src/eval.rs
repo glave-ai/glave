@@ -80,8 +80,14 @@ mod tests {
     #[test]
     fn env_file_is_taken_out_and_the_rest_passed_on() {
         assert_eq!(
-            env_file_option(&words(&["--repeat", "3", "--env-file", "e.env", "--todo"])),
-            Ok((Some("e.env".into()), words(&["--repeat", "3", "--todo"])))
+            env_file_option(&words(&[
+                "--repeat",
+                "3",
+                "--env-file",
+                "e.env",
+                "--no-plan"
+            ])),
+            Ok((Some("e.env".into()), words(&["--repeat", "3", "--no-plan"])))
         );
         assert_eq!(
             env_file_option(&words(&["judge", "--wrong"])),

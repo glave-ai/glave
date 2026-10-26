@@ -21,6 +21,31 @@ const MEMORY_RULE: &str = "\n\nMemory: before your final answer, save with remem
      a preference or correction they gave, and anything about this project you had to discover \
      the hard way (such as a step a command needs first). Skip what is already written down.";
 
+/// One of glave's own tools, which the harness runs itself, offered in some turns only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Own {
+    /// `question`: only when someone can answer.
+    Question,
+    /// `agent`.
+    Agent,
+    /// `update_goal`: only in a goal's turns.
+    Goal,
+    /// `update_plan`: where plans are on, and in a thread that has a plan.
+    Plan,
+}
+
+impl Own {
+    /// The tool's name.
+    fn name(self) -> &'static str {
+        match self {
+            Self::Question => crate::question::QUESTION,
+            Self::Agent => crate::subagent::AGENT,
+            Self::Goal => crate::goal::UPDATE_GOAL,
+            Self::Plan => crate::plan::UPDATE_PLAN,
+        }
+    }
+}
+
 /// The tools of one turn.
 #[derive(Clone)]
 pub(crate) struct ToolSet {
@@ -30,12 +55,8 @@ pub(crate) struct ToolSet {
     by_name: HashMap<String, (usize, ToolInfo)>,
     /// Sources that could not list their tools, with why.
     pub(crate) missing: Vec<String>,
-    /// Whether `question` is on offer: only when someone can answer.
-    pub(crate) questions: bool,
-    /// Whether `agent` is on offer.
-    pub(crate) subagents: bool,
-    /// Whether `update_goal` is on offer: only in a goal's turns.
-    pub(crate) goal: bool,
+    /// glave's own tools on offer this turn, which the harness runs itself.
+    own: Vec<Own>,
     /// The memory tools on offer, by name: only where the thread reads memory.
     pub(crate) memory: Vec<String>,
 }
@@ -47,9 +68,7 @@ impl ToolSet {
             system: system.to_owned(),
             by_name: HashMap::new(),
             missing: Vec::new(),
-            questions: false,
-            subagents: false,
-            goal: false,
+            own: Vec::new(),
             memory: Vec::new(),
         };
         for (index, source) in sources.iter().enumerate() {
@@ -77,26 +96,35 @@ impl ToolSet {
         set
     }
 
+    /// Offers `own`, told as `spec`, after the tools before it.
+    fn offer(&mut self, own: Own, spec: ToolSpec) {
+        self.own.push(own);
+        self.specs.push(spec);
+    }
+
+    /// Whether `name` is `own`'s, while it is on offer.
+    fn offers(&self, own: Own, name: &str) -> bool {
+        self.own.contains(&own) && name.trim().eq_ignore_ascii_case(own.name())
+    }
+
     /// Offers `question` too, after every other tool.
     pub(crate) fn offer_question(&mut self) {
-        self.questions = true;
-        self.specs.push(crate::question::spec());
+        self.offer(Own::Question, crate::question::spec());
     }
 
     /// Whether `name` is `question`, while it is on offer.
     pub(crate) fn is_question(&self, name: &str) -> bool {
-        self.questions && name.trim().eq_ignore_ascii_case(crate::question::QUESTION)
+        self.offers(Own::Question, name)
     }
 
     /// Offers `agent` too.
     pub(crate) fn offer_agent(&mut self) {
-        self.subagents = true;
-        self.specs.push(crate::subagent::spec());
+        self.offer(Own::Agent, crate::subagent::spec());
     }
 
     /// Whether `name` is `agent`, while it is on offer.
     pub(crate) fn is_agent(&self, name: &str) -> bool {
-        self.subagents && name.trim().eq_ignore_ascii_case(crate::subagent::AGENT)
+        self.offers(Own::Agent, name)
     }
 
     /// Offers memory's tools too: `remember`, `edit`, `forget` and `recall`. First-party, so the
@@ -123,17 +151,26 @@ impl ToolSet {
 
     /// Offers `update_goal` too.
     pub(crate) fn offer_goal(&mut self) {
-        self.goal = true;
-        self.specs.push(crate::goal::spec());
+        self.offer(Own::Goal, crate::goal::spec());
     }
 
     /// Whether `name` is `update_goal`, while it is on offer.
     pub(crate) fn is_goal(&self, name: &str) -> bool {
-        self.goal && name.trim().eq_ignore_ascii_case(crate::goal::UPDATE_GOAL)
+        self.offers(Own::Goal, name)
     }
 
-    /// The tools a subagent has: these, less `agent` and `question`, and for an explorer
-    /// only those that read.
+    /// Offers `update_plan` too. A subagent never gets it: the plan is its parent's.
+    pub(crate) fn offer_plan(&mut self) {
+        self.offer(Own::Plan, crate::plan::spec());
+    }
+
+    /// Whether `name` is `update_plan`, while it is on offer.
+    pub(crate) fn is_plan(&self, name: &str) -> bool {
+        self.offers(Own::Plan, name)
+    }
+
+    /// The tools a subagent has: these, less glave's own (`agent`, `question`, `update_goal`,
+    /// `update_plan` and memory's), and for an explorer only those that read.
     pub(crate) fn for_child(&self, kind: SubagentType) -> Self {
         let keeps = |info: &ToolInfo| kind == SubagentType::General || info.effect == Effect::Reads;
         let by_name: HashMap<String, (usize, ToolInfo)> = self
@@ -157,9 +194,7 @@ impl ToolSet {
                 .to_owned(),
             by_name,
             missing: self.missing.clone(),
-            questions: false,
-            subagents: false,
-            goal: false,
+            own: Vec::new(),
             memory: Vec::new(),
         }
     }

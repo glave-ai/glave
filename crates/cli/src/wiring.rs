@@ -331,6 +331,7 @@ async fn settings_for(
     settings.highest = setup.loaded.constraints.highest_permissions().0;
     settings.max_steps = args.max_steps;
     settings.subagents = true; // As Claude Code, Codex and OpenCode offer it.
+    settings.plans = true; // As Codex's update_plan and Claude Code's todo list are offered.
     // As Claude.ai, ChatGPT and OpenCode title chats; a one-shot prompt turns them off (its
     // flags, `setup.rs`).
     settings.titles = choices.titles.value;
