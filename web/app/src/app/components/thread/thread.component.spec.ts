@@ -513,7 +513,8 @@ describe('ThreadComponent', () => {
     expect(root.querySelector('[data-testid="permissions-trigger"]')?.textContent).toContain(
       'Auto',
     );
-    await mode(1);
+    // Ask first, after Auto and Plan.
+    await mode(2);
     await type(root, 'Careful now');
     await mode(0);
     await type(root, 'Go ahead');

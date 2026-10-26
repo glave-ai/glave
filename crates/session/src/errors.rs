@@ -150,6 +150,13 @@ impl From<&HarnessError> for ApiError {
             HarnessError::Archived(_) => Self::new(code::ARCHIVED, error.to_string()),
             HarnessError::Cancelled => Self::new(code::CANCELLED, Sentence::Cancelled),
             HarnessError::NoGoal(_) => Self::new(code::NO_GOAL, error.to_string()),
+            HarnessError::NoPlan(thread) => Self::new(
+                code::NO_PLAN,
+                Sentence::NoPlan {
+                    thread: thread.to_string(),
+                },
+            ),
+            HarnessError::GoalInPlan(_) => Self::new(code::NOT_ALLOWED, Sentence::GoalInPlan),
             HarnessError::Workspace(_) => Self::new(code::WORKSPACE, error.to_string()),
             HarnessError::PromptBlocked(_) => Self::new(code::PROMPT_BLOCKED, error.to_string()),
             HarnessError::Invalid(_) => Self::new(code::INVALID_PARAMS, error.to_string()),

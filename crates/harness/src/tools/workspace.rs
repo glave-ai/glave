@@ -39,6 +39,9 @@ pub struct Workspace {
     /// Whether a command whose sandbox has no network may ask the person to run with it, or
     /// outside the sandbox, which has it; on by default.
     asks_network: bool,
+    /// Whether its commands work for a plan (plan mode): they may never ask to leave the
+    /// sandbox, whatever it has. Off by default.
+    planning: bool,
     /// Where commands' git and forge tools ask for credentials, at each use; none by default.
     credentials: Option<Arc<dyn GitCredentials>>,
     temp: Option<PathBuf>,
@@ -65,6 +68,7 @@ impl Workspace {
             info: workspace,
             sandbox: None,
             asks_network: true,
+            planning: false,
             credentials: None,
             reads: Mutex::new(HashMap::new()),
         }
@@ -84,6 +88,19 @@ impl Workspace {
         self.asks_network
     }
 
+    /// The same binding for a thread in plan mode, or not (`planning`): there no command may
+    /// ask to leave the sandbox.
+    #[must_use]
+    pub(crate) fn planning(mut self, planning: bool) -> Self {
+        self.planning = planning;
+        self
+    }
+
+    /// Whether its commands work for a plan, and may never ask to leave the sandbox.
+    pub(crate) fn plans(&self) -> bool {
+        self.planning
+    }
+
     /// Lets every command's git and forge tools ask `credentials` for a credential each time
     /// they need one (`specs/computers.md`, rule 8), as do the worktrees and scratch folders
     /// made from this workspace.
@@ -98,11 +115,12 @@ impl Workspace {
         self.credentials.as_ref()
     }
 
-    /// The same binding's credentials, and whether its commands may ask for the network, given
-    /// to `other`, made from it.
+    /// The same binding's credentials, and what its commands may ask for, given to `other`,
+    /// made from it.
     fn sharing(&self, other: Self) -> Self {
         let other = Self {
             asks_network: self.asks_network,
+            planning: self.planning,
             ..other
         };
         match &self.credentials {

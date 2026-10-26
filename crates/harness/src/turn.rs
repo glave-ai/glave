@@ -163,6 +163,8 @@ pub(crate) struct Step {
     /// The approval a turn going on from the log stopped at, with its answer once one came:
     /// for its call, the first the turn runs (`going_on.rs`).
     pub(crate) answered: Option<Answered>,
+    /// Whether the model proposed a plan in this turn, in plan mode: the turn ends with it.
+    pub(crate) proposed: bool,
 }
 
 /// The version of the turn configuration blob.
@@ -315,6 +317,7 @@ where
             repeats: Repeats::default(),
             summary: TurnSummary::started(),
             answered: None,
+            proposed: false,
         };
         self.steps(thread, step, &[], cancel, live).await
     }
@@ -342,6 +345,10 @@ where
         step.summary.outcome = loop {
             if cancel.is_cancelled() {
                 break cancel.outcome();
+            }
+            // In plan mode the turn ends with the plan it proposed: the person decides next.
+            if step.proposed {
+                break Outcome::Completed;
             }
             if self.capped(step.summary.model_calls) {
                 break Outcome::LimitReached;

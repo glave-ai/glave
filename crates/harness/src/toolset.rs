@@ -30,7 +30,7 @@ enum Own {
     Agent,
     /// `update_goal`: only in a goal's turns.
     Goal,
-    /// `update_plan`: where plans are on, and in a thread that has a plan.
+    /// `update_plan`: where plans are on, in plan mode, and in a thread that has a plan.
     Plan,
 }
 
@@ -186,11 +186,13 @@ impl ToolSet {
                 .filter(|spec| by_name.contains_key(&spec.name))
                 .cloned()
                 .collect(),
-            // A child neither reads nor writes memory.
-            system: self
-                .system
-                .strip_suffix(MEMORY_RULE)
-                .unwrap_or(&self.system)
+            // A child neither reads nor writes memory, and proposes no plan: in plan mode its
+            // tools are refused as its parent's are.
+            system: [crate::plan::PLAN_MODE, MEMORY_RULE]
+                .iter()
+                .fold(self.system.as_str(), |system, rule| {
+                    system.strip_suffix(rule).unwrap_or(system)
+                })
                 .to_owned(),
             by_name,
             missing: self.missing.clone(),

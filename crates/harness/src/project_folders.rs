@@ -11,6 +11,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use glave_event::Permissions;
 use glave_ports::settings::{Hooks, Judge, Protections};
 use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider, ProjectId, ToolSource};
 
@@ -109,17 +110,25 @@ where
             _ => Brought::default(),
         };
         let workspace = self.workspace_for(thread);
+        let protections = brought.settled.protections;
+        let mode = thread.defaults.permissions(protections, thread.permissions);
+        let planning = mode == Permissions::Plan;
         // A worker's own container or virtual machine is its wall: only this computer's
         // commands run in the sandbox.
         if workspace.info().computer == self.workspace.info().computer {
-            let protections = brought.settled.protections;
-            let mode = thread.defaults.permissions(protections, thread.permissions);
             let wanted = protections.sandbox(mode, thread.defaults.sandbox.as_ref());
             let asks = thread.defaults.ask_network;
-            if workspace.sandbox() != wanted.as_ref() || workspace.asks_network() != asks {
+            if workspace.sandbox() != wanted.as_ref()
+                || workspace.asks_network() != asks
+                || workspace.plans() != planning
+            {
                 let within = workspace.within(wanted.as_ref()).await?;
-                thread.workspace = Some(Arc::new(within.asking_network(asks)));
+                let within = within.asking_network(asks).planning(planning);
+                thread.workspace = Some(Arc::new(within));
             }
+        } else if workspace.plans() != planning {
+            let same = workspace.within(workspace.sandbox()).await?;
+            thread.workspace = Some(Arc::new(same.planning(planning)));
         }
         thread.brought = Arc::new(brought);
         Ok(())

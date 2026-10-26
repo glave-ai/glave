@@ -2,7 +2,7 @@
 //! to resume a thread: nothing the model needs lives anywhere else. A compaction restarts the
 //! conversation from its summary; the events before it stay in the log.
 
-use glave_event::{Body, Event, Role, ToolCallRequested};
+use glave_event::{Body, Event, MessageAdded, Role, ToolCallRequested};
 use glave_ports::{Message, ToolCall};
 
 /// The conversation recorded in `events`, in order, from the latest compaction on.
@@ -17,21 +17,19 @@ pub fn conversation(events: &[Event]) -> Vec<Message> {
 /// Takes one event into the conversation built so far.
 pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
     match &event.body {
-        Body::MessageAdded(added) => messages.push(match added.role {
-            Role::User => Message::User {
-                parts: added.parts.clone(),
-            },
-            Role::Assistant => Message::Assistant {
-                parts: added.parts.clone(),
-                tool_calls: Vec::new(),
-            },
-        }),
+        Body::MessageAdded(added) => messages.push(message(added)),
         Body::ToolCallRequested(requested) => call(messages, requested),
         Body::ToolCallCompleted(completed) => messages.push(Message::Tool {
             call_id: completed.call_id.clone(),
             is_error: completed.is_error,
             output: completed.output.clone(),
         }),
+        // The person's edit of the plan, told as a note of glave's; the model's own is its call.
+        Body::PlanUpdated(updated) => {
+            if let Some(parts) = crate::plan::told(updated) {
+                messages.push(Message::User { parts });
+            }
+        }
         Body::ThreadCompacted(compacted) => {
             messages.clear();
             messages.push(Message::User {
@@ -47,7 +45,7 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::GoalSet(_)
         | Body::GoalEnded(_)
         | Body::GoalResumed(_)
-        | Body::PlanUpdated(_)
+        | Body::PlanApproved(_)
         | Body::WorkspaceBound(_)
         | Body::WorkspaceRemoved(_)
         | Body::CommandStarted(_)
@@ -92,6 +90,19 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::LanguageSet(_)
         | Body::GroupingSet(_)
         | Body::Unknown(_) => {}
+    }
+}
+
+/// A message as the model is sent it.
+fn message(added: &MessageAdded) -> Message {
+    match added.role {
+        Role::User => Message::User {
+            parts: added.parts.clone(),
+        },
+        Role::Assistant => Message::Assistant {
+            parts: added.parts.clone(),
+            tool_calls: Vec::new(),
+        },
     }
 }
 

@@ -43,20 +43,27 @@ describe('PermissionsComponent', () => {
     expect(trigger(root)?.textContent).toContain('Ask first');
   });
 
-  it('lists Auto, recommended, then Ask first and Full access, each with its line', async () => {
+  it('lists Auto, recommended, then Plan, Ask first and Full access, each with its line', async () => {
     const fixture = await render(SERVER);
     trigger(fixture.nativeElement as HTMLElement)?.click();
     await fixture.whenStable();
     const labels = options().map((option) => option.querySelector('.label')?.textContent.trim());
-    expect(labels).toEqual(['Auto · Recommended', 'Ask first', 'Full access']);
+    expect(labels).toEqual(['Auto · Recommended', 'Plan', 'Ask first', 'Full access']);
     const lines = options().map((option) => option.querySelector('.hint')?.textContent.trim());
     expect(lines).toEqual([
       'Works on its own in this project. Asks only before something risky.',
+      'Looks around and proposes a plan. Changes nothing until you approve it.',
       'Asks you before every change.',
       'No limits: can change anything on this computer, and never asks.',
     ]);
     await expectAccessible(document.body);
-    options()[2]?.click();
+    options()[1]?.click();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.value()).toBe('plan');
+    expect(trigger(fixture.nativeElement as HTMLElement)?.textContent).toContain('Plan');
+    trigger(fixture.nativeElement as HTMLElement)?.click();
+    await fixture.whenStable();
+    options()[3]?.click();
     await fixture.whenStable();
     expect(fixture.componentInstance.value()).toBe('full-access');
   });

@@ -41,8 +41,18 @@ pub(crate) fn choosable(own: Permissions, highest: Permissions) -> Vec<Permissio
 pub(crate) fn label(mode: Permissions) -> &'static str {
     match mode {
         Permissions::Auto => "Auto",
+        Permissions::Plan => "Plan",
         Permissions::Ask => "Ask first",
         Permissions::FullAccess => "Full access",
+    }
+}
+
+/// `names` as a person reads a choice among them: "Auto, Plan or Ask first".
+fn either(names: &[&str]) -> String {
+    match names.split_last() {
+        Some((last, [])) => (*last).to_owned(),
+        Some((last, rest)) => format!("{} or {last}", rest.join(", ")),
+        None => String::new(),
     }
 }
 
@@ -88,7 +98,7 @@ where
             code::NOT_ALLOWED,
             Sentence::PermissionsNotAllowed {
                 mode: label(mode).to_owned(),
-                left: left.join(" or "),
+                left: either(&left),
             },
         ))
     }
@@ -153,19 +163,29 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use Permissions::{Ask, Auto, FullAccess};
+    use Permissions::{Ask, Auto, FullAccess, Plan};
 
     #[test]
     fn a_thread_may_choose_what_the_cap_leaves_and_the_servers_own_as_offered() {
-        assert_eq!(choosable(Auto, FullAccess), [Auto, Ask, FullAccess]);
-        assert_eq!(choosable(Auto, Auto), [Auto, Ask]);
-        assert_eq!(choosable(Ask, Ask), [Ask]);
-        assert_eq!(choosable(FullAccess, Ask), [Ask, FullAccess]);
+        assert_eq!(choosable(Auto, FullAccess), [Auto, Plan, Ask, FullAccess]);
+        assert_eq!(choosable(Auto, Auto), [Auto, Plan, Ask]);
+        assert_eq!(choosable(Ask, Ask), [Plan, Ask]);
+        assert_eq!(choosable(FullAccess, Ask), [Plan, Ask, FullAccess]);
+    }
+
+    #[test]
+    fn a_choice_reads_as_a_person_says_it() {
+        assert_eq!(
+            either(&["Auto", "Plan", "Ask first"]),
+            "Auto, Plan or Ask first"
+        );
+        assert_eq!(either(&["Plan", "Ask first"]), "Plan or Ask first");
+        assert_eq!(either(&["Plan"]), "Plan");
     }
 
     #[test]
     fn each_mode_reads_as_the_picker_names_it() {
         let labels: Vec<&str> = Permissions::ALL.into_iter().map(label).collect();
-        assert_eq!(labels, ["Auto", "Ask first", "Full access"]);
+        assert_eq!(labels, ["Auto", "Plan", "Ask first", "Full access"]);
     }
 }

@@ -1,0 +1,7 @@
+[task]
+name = "glave/plan-changes-nothing"
+description = "In plan mode the model looks around and proposes a plan for the fix, and changes nothing: no file, by a tool or a command."
+
+[glave]
+permissions = "plan"
+checks = ["unchanged", { recorded = "plan.updated" }, { sent = '"proposed":true' }]

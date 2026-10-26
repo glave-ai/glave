@@ -226,8 +226,8 @@ methods! {
     /// What a thread's replies drew on from the web, read from its log: for each reply whose
     /// turn read pages with `web_fetch` before it, those pages, in order.
     "thread/sources" => ThreadSources { thread: ThreadId } -> [Sources],
-    /// The thread's plan, read from its log: its steps, each with its status; `null` when it
-    /// has none.
+    /// The thread's plan, read from its log: its steps, each with its status, and whether it
+    /// waits for the person's approval; `null` when it has none.
     "thread/plan" => ThreadPlan { thread: ThreadId } -> [Plan],
     /// Follows a thread: its events after `after` from the log, then its events as they are
     /// recorded and its live updates, its subagents' with them, each event once and in order.
@@ -358,6 +358,18 @@ methods! {
     } -> [Turn, Task],
     /// Stops the thread's active goal, cancelling its running turn.
     "goal/stop" => GoalStop { thread: ThreadId } -> [Done],
+    /// Replaces the steps of the thread's proposed plan with the person's, each to do, and
+    /// answers with the plan: the model is told at its next turn, and builds from them. Only
+    /// while a plan waits for approval, and not while a turn runs.
+    "plan/edit" => PlanEdit {
+        thread: ThreadId,
+        /// The steps, in order: 1 to 64, each a line of up to 1,000 characters.
+        steps: Vec<String>,
+    } -> [Plan],
+    /// Builds the thread's proposed plan: records the approval, runs the thread in Auto from
+    /// now on (or the highest mode the policy leaves, if lower), and starts the turn that
+    /// builds it from the plan as it is, streamed as `turn/start` streams one.
+    "plan/build" => PlanBuild { thread: ThreadId } -> [Turn],
     /// The thread's latest goal and how far it has come.
     "goal/get" => GoalGet { thread: ThreadId } -> [Goal],
     /// Tasks running and recently finished in every project the caller owns, running first,
@@ -573,6 +585,8 @@ impl Request {
             | Self::ThreadEvents { thread, .. }
             | Self::ThreadSources { thread }
             | Self::ThreadPlan { thread }
+            | Self::PlanEdit { thread, .. }
+            | Self::PlanBuild { thread }
             | Self::ThreadWatch { thread, .. }
             | Self::ThreadUnwatch { thread }
             | Self::TurnStart { thread, .. }
