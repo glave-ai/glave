@@ -110,7 +110,7 @@ impl Assembler {
     }
 
     /// Whether anything has been shown or asked for yet: text, reasoning or a tool call.
-    fn has_output(&self) -> bool {
+    pub(crate) fn has_output(&self) -> bool {
         !self.parts.is_empty() || !self.calls.is_empty()
     }
 

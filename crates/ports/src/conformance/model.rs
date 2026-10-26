@@ -1,7 +1,8 @@
 //! What every model provider must do (`ModelProvider`), run against a fake server that speaks
 //! its wire format: live deltas that add up to the finished answer, `NoOutput` only while
-//! nothing has been shown (so asking again is safe), usage marked estimated when the provider
-//! reported none, a timeout after a silence, and no secret in an error.
+//! nothing has been shown (so asking again is safe), `AfterOutput` for any error once something
+//! has been (so nobody asks again), usage marked estimated when the provider reported none, a
+//! timeout after a silence, and no secret in an error.
 
 use glave_event::{Part, StopReason};
 use tokio::runtime::{Handle, RuntimeFlavor};
@@ -27,6 +28,9 @@ pub enum Script {
     ErrorFirst,
     /// Text, then an error of a kind the protocol does not name.
     ErrorAfter { text: &'static str },
+    /// Text, then a failure that would be worth another try had nothing come yet: the server
+    /// overloaded, where its protocol can say so mid-stream, or else the connection dropping.
+    TransientAfter { text: &'static str },
     /// Nothing: the request is held open and never answered.
     Silence,
     /// A refusal, HTTP 401, whose message repeats the key it was sent, as some providers' do.
@@ -96,7 +100,7 @@ where
     silence(&play).await
 }
 
-/// `NoOutput` before any output, and never after it.
+/// `NoOutput` before any output, and `AfterOutput` after it, whatever the error.
 async fn errors<F, Fut>(ask: &F) -> Verdict
 where
     F: Fn(Script) -> Fut,
@@ -110,19 +114,22 @@ where
     ensure(deltas.is_empty(), "deltas were shown before NoOutput")?;
 
     let text = "Half an ans";
-    let (result, deltas) = ask(Script::ErrorAfter { text }).await?;
-    ensure(
-        result.is_err(),
-        "an error after output still gave a finished answer",
-    )?;
-    ensure(
-        !matches!(result, Err(ProviderError::NoOutput(_))),
-        "an error after output was NoOutput, so asking again would repeat what was shown",
-    )?;
-    ensure(
-        runs(&deltas) == [(Kind::Text, text.to_owned())],
-        &format!("the output before the error was not shown live: {deltas:?}"),
-    )
+    for script in [Script::ErrorAfter { text }, Script::TransientAfter { text }] {
+        let (result, deltas) = ask(script).await?;
+        ensure(
+            matches!(result, Err(ProviderError::AfterOutput(_))),
+            &format!("{script:?} did not end in AfterOutput: {result:?}"),
+        )?;
+        ensure(
+            !result.as_ref().is_err_and(ProviderError::is_transient),
+            &format!("{script:?} was transient, so asking again would repeat what was shown"),
+        )?;
+        ensure(
+            runs(&deltas) == [(Kind::Text, text.to_owned())],
+            &format!("the output before {script:?} was not shown live: {deltas:?}"),
+        )?;
+    }
+    Ok(())
 }
 
 /// A key the server repeats never shows in the error.

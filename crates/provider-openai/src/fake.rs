@@ -13,6 +13,9 @@ use serde_json::{Value, json};
 pub enum Reply {
     /// A streamed completion: each item is one `data:` payload; `[DONE]` follows.
     Stream(Vec<Value>),
+    /// A stream that breaks off after these payloads: the connection closes before the
+    /// response's end.
+    Broken(Vec<Value>),
     /// An error status with this body.
     Status(u16, String),
     /// No answer at all: the request is held open until the client hangs up, like a model
@@ -43,19 +46,23 @@ impl Reply {
 
     /// The reply as it goes on the wire.
     fn written(self) -> Written {
-        match self {
-            Self::Stream(chunks) => {
-                let mut body = String::new();
-                for chunk in chunks {
-                    let _ = write!(body, "data: {chunk}\n\n");
-                }
-                body.push_str("data: [DONE]\n\n");
-                Written::Whole {
-                    status: 200,
-                    content_type: "text/event-stream",
-                    body,
-                }
+        let events = |chunks: Vec<Value>| {
+            let mut body = String::new();
+            for chunk in chunks {
+                let _ = write!(body, "data: {chunk}\n\n");
             }
+            body
+        };
+        match self {
+            Self::Stream(chunks) => Written::Whole {
+                status: 200,
+                content_type: "text/event-stream",
+                body: events(chunks) + "data: [DONE]\n\n",
+            },
+            Self::Broken(chunks) => Written::Broken {
+                content_type: "text/event-stream",
+                body: events(chunks),
+            },
             Self::Status(status, body) => Written::Whole {
                 status,
                 content_type: "application/json",

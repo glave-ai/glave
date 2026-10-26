@@ -8,7 +8,7 @@ use glave_ports::auth::error_line;
 use crate::events::WireError;
 
 /// An `error` event that arrived after the response began. A known error type becomes the
-/// status Anthropic answers it with, so an overload mid-stream is retried like a 529.
+/// status Anthropic answers it with, so an overload before any output is retried like a 529.
 pub(crate) fn mid_stream(error: &WireError) -> ProviderError {
     match status_of(&error.kind) {
         Some(status) => ProviderError::Http {

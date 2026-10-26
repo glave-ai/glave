@@ -52,15 +52,17 @@ impl ProviderError {
             Self::Transport(_) => Failure::Unreachable,
             Self::Timeout { .. } => Failure::Silent,
             Self::NoOutput(_) => Failure::Unavailable,
+            Self::AfterOutput(error) => error.failure(),
             Self::Protocol(_) => Failure::Malformed,
             Self::Unserved { failure, .. } => *failure,
             Self::OverBudget { .. } => Failure::OverBudget,
         }
     }
 
-    /// Whether trying again may work; see [`Failure::is_transient`].
+    /// Whether trying again may work; see [`Failure::is_transient`]. An answer that broke off
+    /// after output never is, whatever broke it: asking again would show that output twice.
     pub fn is_transient(&self) -> bool {
-        self.failure().is_transient()
+        !matches!(self, Self::AfterOutput(_)) && self.failure().is_transient()
     }
 }
 
@@ -167,6 +169,21 @@ mod tests {
             detail: "x".into(),
         };
         assert_eq!(over.failure(), Failure::OverBudget);
+    }
+
+    #[test]
+    fn an_answer_that_broke_off_says_why_and_is_never_tried_again() {
+        let overloaded = ProviderError::Http {
+            status: 529,
+            body: "Overloaded".into(),
+        };
+        assert!(overloaded.is_transient());
+        let broke = ProviderError::AfterOutput(Box::new(overloaded));
+        assert_eq!(broke.failure(), Failure::Unavailable);
+        assert!(
+            !broke.is_transient(),
+            "asking again would repeat what was shown"
+        );
     }
 
     #[test]

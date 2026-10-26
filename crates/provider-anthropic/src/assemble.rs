@@ -65,6 +65,11 @@ impl Assembler {
         self.stopped
     }
 
+    /// Whether anything has come yet: text, thinking or a tool call.
+    pub(crate) fn has_output(&self) -> bool {
+        !self.blocks.is_empty()
+    }
+
     /// Applies one event's data, forwarding live text and thinking to `on_delta`.
     pub(crate) fn apply(
         &mut self,
@@ -100,7 +105,7 @@ impl Assembler {
             StreamEvent::Error { error } => {
                 return Err(match mid_stream(&error) {
                     // An error nobody can classify, before any output, is safe to ask again.
-                    ProviderError::Protocol(reason) if self.blocks.is_empty() => {
+                    ProviderError::Protocol(reason) if !self.has_output() => {
                         ProviderError::NoOutput(reason)
                     }
                     other => other,

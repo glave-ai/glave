@@ -15,7 +15,9 @@ use crate::failure::Failure;
 /// A model that can answer a conversation.
 pub trait ModelProvider: Send + Sync {
     /// Sends one request and streams the answer. Live fragments go to `on_delta` as they
-    /// arrive and are never stored; the finished answer is returned.
+    /// arrive and are never stored; the finished answer is returned. An error once any output
+    /// came (text, reasoning or a tool call) is [`ProviderError::AfterOutput`], so nobody
+    /// asks again and shows a second answer after the first one's start.
     fn complete(
         &self,
         request: &ModelRequest,
@@ -283,6 +285,10 @@ pub enum ProviderError {
     /// shown or run, so asking again is safe.
     #[error("the model provider ended the response in an error before any output: {0}")]
     NoOutput(String),
+    /// The response broke off, for the reason inside, after text, reasoning or a tool call had
+    /// come: never transient, since asking again would show that output twice.
+    #[error("the model provider's answer broke off partway: {0}")]
+    AfterOutput(Box<ProviderError>),
     /// The provider sent nothing for this long, before or during its answer.
     #[error("the model provider sent nothing for {seconds} s")]
     Timeout { seconds: u64 },
