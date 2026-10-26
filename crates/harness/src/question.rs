@@ -6,7 +6,7 @@
 use std::fmt::Write as _;
 
 use glave_event::{Arguments, CallId, ThreadId};
-use glave_ports::ToolSpec;
+use glave_ports::{ToolOutput, ToolSpec};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -87,18 +87,32 @@ pub(crate) fn questions(arguments: &Arguments) -> Result<Vec<Question>, String> 
     }
 }
 
-/// What the model is told: each question with the person's answer.
-pub(crate) fn answered(questions: &[Question], answers: &[String]) -> String {
+/// The call's result once the person answered: the model is told each question with their
+/// answer; clients read the answers apart from that text, never parsed from it, in its
+/// `structured` result under `answers`, one for each question in order, empty for none.
+pub(crate) fn answered(questions: &[Question], answers: &[String]) -> ToolOutput {
+    let given: Vec<&str> = (0..questions.len())
+        .map(|index| {
+            answers
+                .get(index)
+                .map(String::as_str)
+                .filter(|answer| !answer.trim().is_empty())
+                .unwrap_or_default()
+        })
+        .collect();
     let mut text = String::from("The person answered:");
-    for (index, question) in questions.iter().enumerate() {
-        let answer = answers
-            .get(index)
-            .map(String::as_str)
-            .filter(|answer| !answer.trim().is_empty())
-            .unwrap_or("(no answer)");
+    for (question, answer) in questions.iter().zip(&given) {
+        let answer = if answer.is_empty() {
+            "(no answer)"
+        } else {
+            answer
+        };
         let _ = write!(text, "\n- {} → {answer}", question.question);
     }
-    text
+    ToolOutput {
+        structured: Some(json!({ "answers": given })),
+        ..ToolOutput::text(false, text)
+    }
 }
 
 #[cfg(test)]
@@ -125,9 +139,35 @@ mod tests {
         assert_eq!(questions.len(), 2);
         assert_eq!(questions[0].options[1].label, "SQLite");
         assert!(!questions[0].multiple);
+        // The model reads the text, exactly as it always has; clients read the answers apart.
+        let output = answered(&questions, &["Postgres".to_owned(), "  ".to_owned()]);
+        assert!(!output.is_error);
         assert_eq!(
-            answered(&questions, &["Postgres".to_owned(), String::new()]),
-            "The person answered:\n- Which database? → Postgres\n- Anything else? → (no answer)"
+            output.parts,
+            vec![glave_event::Part::Text {
+                text: "The person answered:\n- Which database? → Postgres\n- Anything else? → \
+                       (no answer)"
+                    .to_owned()
+            }]
+        );
+        assert_eq!(
+            output.structured,
+            Some(json!({"answers": ["Postgres", ""]}))
+        );
+    }
+
+    #[test]
+    fn answers_that_would_garble_the_text_are_kept_whole_for_clients() {
+        let asked = arguments(json!({"questions": [
+            {"question": "Rename a → b?"},
+            {"question": "Why?"},
+            {"question": "Unanswered?"}
+        ]}));
+        let questions = questions(&asked).unwrap();
+        let answers = ["Yes → do it".to_owned(), "Two\nlines".to_owned()];
+        assert_eq!(
+            answered(&questions, &answers).structured,
+            Some(json!({"answers": ["Yes → do it", "Two\nlines", ""]}))
         );
     }
 

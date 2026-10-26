@@ -30,6 +30,18 @@ async fn results(server: &Tested, thread: ThreadId) -> Vec<String> {
         .collect()
 }
 
+/// What every tool result in the thread recorded for clients alone.
+async fn recorded(server: &Tested, thread: ThreadId) -> Vec<Option<serde_json::Value>> {
+    events(server, thread)
+        .await
+        .into_iter()
+        .filter_map(|raw| match decode(raw).unwrap().body {
+            Body::ToolCallCompleted(done) => Some(done.structured),
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
 fn a_client_answers_the_models_questions_and_the_turn_goes_on() {
     let dir = folder("questions-answered");
@@ -81,6 +93,11 @@ fn a_client_answers_the_models_questions_and_the_turn_goes_on() {
         assert_eq!(
             results(&server, thread).await,
             ["The person answered:\n- Which database? → Postgres\n- Anything else? → (no answer)"]
+        );
+        // Clients read the answers as data, never from the text the model read.
+        assert_eq!(
+            recorded(&server, thread).await,
+            [Some(json!({"answers": ["Postgres", ""]}))]
         );
         let stale = Request::QuestionAnswer {
             thread,

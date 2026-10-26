@@ -258,7 +258,7 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
             return { ...item, status: data['is_error'] === true ? 'failed' : 'done', output };
           }
           if (item.kind === 'question') {
-            return { ...item, answers: answersFrom(output) };
+            return { ...item, answers: answersOf(data['structured']) };
           }
           return item;
         });
@@ -355,11 +355,14 @@ export function mergeEvents(
   return [...bySeq.values()].sort((a, b) => a.seq - b.seq);
 }
 
-/** The person's answers, read back from what a `question` call's result told the model. */
-export function answersFrom(output: string): readonly string[] {
-  return output
-    .split('\n')
-    .slice(1)
-    .map((line) => line.split(' → ').slice(1).join(' → '))
-    .map((answer) => (answer === '(no answer)' ? '' : answer));
+/**
+ * The person's answers to a `question` call, one for each question, empty for none, as its
+ * result records them for clients (`structured`, under `answers`); none when it records none,
+ * as when the call was not answered.
+ */
+export function answersOf(structured: unknown): readonly string[] {
+  const answers = isRecord(structured) ? structured['answers'] : undefined;
+  return Array.isArray(answers)
+    ? answers.map((answer: unknown) => (typeof answer === 'string' ? answer : ''))
+    : [];
 }

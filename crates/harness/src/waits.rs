@@ -7,8 +7,8 @@
 use std::collections::{HashMap, HashSet};
 
 use glave_event::{
-    ApprovalDecided, ApprovalRequested, Body, CallId, Event, Lifted, Outcome, ParentCall, Part,
-    Payload, Principal, PrincipalId, Seq, ThreadId, ToolCallCompleted, Verdict, decode,
+    ApprovalDecided, ApprovalRequested, Body, CallId, Event, Lifted, Outcome, ParentCall, Payload,
+    Principal, PrincipalId, Seq, ThreadId, ToolCallCompleted, Verdict, decode,
 };
 use glave_ports::{
     BlobStore, CallKind, EventLog, LogError, ModelProvider, Scope, Standing, ThreadQuery,
@@ -302,14 +302,13 @@ where
             return Err(refused());
         };
         let questions = crate::question::questions(&asked.arguments).map_err(|_| refused())?;
+        let answered = crate::question::answered(&questions, answers);
         let completed = ToolCallCompleted {
             call_id: call.clone(),
-            is_error: false,
-            output: vec![Part::Text {
-                text: crate::question::answered(&questions, answers),
-            }],
-            structured: None,
-            untrusted: false,
+            is_error: answered.is_error,
+            output: answered.parts,
+            structured: answered.structured,
+            untrusted: answered.untrusted,
         };
         self.answer_with(scope, id, &view, &completed, refused)
             .await
