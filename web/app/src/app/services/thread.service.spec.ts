@@ -242,6 +242,37 @@ describe('ThreadService', () => {
     expect(service.error()).toContain('The server is stopping');
   });
 
+  it('keeps a message that got no answer, to send again with its key, until it shows recorded', async () => {
+    const cut = new FakeTurn();
+    cut.fail(new TypeError('Load failed'));
+    const watch = new FakeTurn();
+    const fake = new FakeSession()
+      .answer('thread/events', { events: [] })
+      .turn(cut)
+      .turn(new FakeTurn())
+      .watch(new FakeTurn())
+      .watch(watch);
+    const service = make(fake);
+    await service.open('thread-1');
+    service.composer.set('and then');
+    await service.send('go');
+    // The server may have started the turn: the message stays the person's, not back in the box.
+    expect([service.composer(), service.error(), service.starting()]).toEqual([
+      'and then',
+      null,
+      'go',
+    ]);
+    expect(service.firstTurn()?.failed).toBe('lost');
+    service.sendAgain();
+    await settled();
+    const [first, again] = fake.paramsOf('turn/start');
+    expect(again).toEqual(first);
+    // Once the thread shows it recorded, it is the server's.
+    watch.send(said(1, 'go'));
+    await settled();
+    expect([service.starting(), service.firstTurn()]).toEqual([null, null]);
+  });
+
   it('puts a message the server refused back in the box at once, saying why', async () => {
     const first = new FakeTurn();
     const full = new ApiError({
