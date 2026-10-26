@@ -1,35 +1,11 @@
-//! What an error from the API means: its message on one readable line, and an error reported
-//! mid-stream as the status the same error has as a response, so it is classified the same.
+//! What an error the API reports mid-stream means: the status the same error has as a
+//! response, so it is classified the same. A response's own error is
+//! `ProviderError::from_response`'s, as every provider's is.
 
 use glave_ports::ProviderError;
+use glave_ports::auth::error_line;
 
 use crate::events::WireError;
-
-/// How much of an error message to keep.
-const ERROR_CHARS: usize = 500;
-
-/// The message in an error body, `error.message` as Anthropic and Google send it (Vertex AI
-/// sometimes in a one-element array), or the body itself, on one line and cut short, rather
-/// than raw JSON.
-pub(crate) fn message_of(body: &str) -> String {
-    let parsed: Option<serde_json::Value> = serde_json::from_str(body).ok();
-    let message = parsed.as_ref().and_then(|value| {
-        [
-            value.pointer("/error/message"),
-            value.pointer("/0/error/message"),
-            value.get("message"),
-        ]
-        .into_iter()
-        .flatten()
-        .find_map(serde_json::Value::as_str)
-    });
-    one_line(message.unwrap_or(body))
-}
-
-fn one_line(text: &str) -> String {
-    let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    line.chars().take(ERROR_CHARS).collect()
-}
 
 /// An `error` event that arrived after the response began. A known error type becomes the
 /// status Anthropic answers it with, so an overload mid-stream is retried like a 529.
@@ -37,9 +13,9 @@ pub(crate) fn mid_stream(error: &WireError) -> ProviderError {
     match status_of(&error.kind) {
         Some(status) => ProviderError::Http {
             status,
-            body: one_line(&error.message),
+            body: error_line(&error.message),
         },
-        None => ProviderError::Protocol(one_line(&format!(
+        None => ProviderError::Protocol(error_line(&format!(
             "error mid-stream: {}: {}",
             error.kind, error.message
         ))),
@@ -77,28 +53,6 @@ mod tests {
     }
 
     #[test]
-    fn error_bodies_become_one_readable_line() {
-        assert_eq!(
-            message_of(
-                r#"{"type":"error","error":{"type":"not_found_error","message":"model: claude-nope"},"request_id":"req_1"}"#
-            ),
-            "model: claude-nope"
-        );
-        assert_eq!(
-            message_of("<html>\n  <body>Bad Gateway</body>\n</html>"),
-            "<html> <body>Bad Gateway</body> </html>"
-        );
-        assert_eq!(
-            message_of(
-                r#"[{"error":{"code":404,"message":"Publisher Model claude-nope not found.","status":"NOT_FOUND"}}]"#
-            ),
-            "Publisher Model claude-nope not found.",
-            "Vertex AI's error, in an array"
-        );
-        assert_eq!(message_of(&"x".repeat(900)).len(), ERROR_CHARS);
-    }
-
-    #[test]
     fn errors_mid_stream_are_classified_like_responses() {
         let overloaded = mid_stream(&wire("overloaded_error", "Overloaded"));
         assert_eq!(
@@ -132,10 +86,7 @@ mod tests {
 
     #[test]
     fn response_statuses_are_classified_as_the_port_says() {
-        let http = |status, body: &str| ProviderError::Http {
-            status,
-            body: message_of(body),
-        };
+        let http = |status, body: &str| ProviderError::from_response(status, body.as_bytes(), &[]);
         let too_long = r#"{"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long: 201000 tokens > 200000 maximum"}}"#;
         assert_eq!(http(400, too_long).failure(), Failure::TooLong);
         assert_eq!(http(413, "").failure(), Failure::TooLong);

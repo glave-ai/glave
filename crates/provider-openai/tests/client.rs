@@ -243,6 +243,11 @@ mod over_http {
                 r#"{"error":{"message":"Missing Authentication header","code":401}}"#.into(),
             ),
             Reply::Status(500, long),
+            // Vertex AI's, for Gemini there.
+            Reply::Status(
+                404,
+                r#"[{"error":{"code":404,"message":"Publisher Model gemini-nope not found.","status":"NOT_FOUND"}}]"#.into(),
+            ),
         ])
         .unwrap();
         let provider = provider(server.url(), None);
@@ -260,6 +265,14 @@ mod over_http {
             }
             other => panic!("expected HTTP 500, got {other:?}"),
         }
+        assert_eq!(
+            ask(&provider).0.unwrap_err(),
+            ProviderError::Http {
+                status: 404,
+                body: "Publisher Model gemini-nope not found.".into()
+            },
+            "not raw JSON"
+        );
     }
 
     #[test]
