@@ -122,7 +122,7 @@ where
                     signin: self.signin_ways(),
                 }))
             }
-            Request::AwakeGet {} => Ok(self.awake()),
+            Request::AwakeGet {} => Ok(self.awake().await),
             Request::AwakeSet { on } => self.set_awake(caller, on).await,
             Request::LanguageGet {} => self.language(caller).await,
             Request::LanguageSet { language } => self.set_language(caller, language).await,

@@ -262,6 +262,12 @@ where
         R: Send + Sync + 'static,
     {
         let scope = self.scope_of(thread).await?;
+        // Work keeps the computer awake as the person chose: read before anything is held.
+        if purpose != Use::Manage
+            && let Some(awake) = &self.inner.awake
+        {
+            self.read_choice(awake).await;
+        }
         // Nothing but changing whether it is shown runs where its project's folder was.
         let folder = match purpose {
             Use::Manage => None,

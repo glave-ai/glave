@@ -166,7 +166,7 @@ pub(crate) async fn wire(
         browsers: crate::serving::browsers(args, choices, &store, identity.person).await?,
         origin: choices.origin.as_ref().map(|origin| origin.value.clone()),
         leases: Some(store.leases()),
-        awake: crate::awake::for_server(args, choices, &processes, &store, identity.person).await?,
+        awake: crate::awake::for_server(args, choices, &processes),
         ..Wiring::new(
             lined.switch,
             store.log(),
