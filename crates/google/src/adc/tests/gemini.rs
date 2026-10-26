@@ -32,7 +32,6 @@ fn gemini_is_asked_with_the_workload_s_token() {
         tool_choice: ToolChoice::Auto,
         max_output_tokens: None,
         purpose: glave_ports::Purpose::Main,
-        threads: Vec::new(),
         files: Vec::new(),
         effort: None,
     };

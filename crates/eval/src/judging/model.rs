@@ -80,7 +80,6 @@ pub(crate) async fn decide_all<P: ModelProvider + 'static>(
                     untrusted,
                     outside_sandbox: None,
                 },
-                Vec::new(),
             )
             .await;
             let label = match ruling.0 {
