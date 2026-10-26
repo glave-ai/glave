@@ -141,6 +141,8 @@ where
             return self.put_questions(thread, call, cancel, live).await;
         } else if step.toolset.is_goal(&call.tool) {
             return Ok(crate::goal::update(thread, &call.arguments));
+        } else if step.toolset.is_plan(&call.tool) {
+            return Ok(crate::plan::update_plan(thread, call, cancel, live));
         } else if step.toolset.is_memory(&call.tool) {
             return self.call_memory(thread, call, step, cancel, live).await;
         }
@@ -587,8 +589,18 @@ where
         let mut events = Vec::new();
         // A command the call started or moved to the background, or saw end, first.
         self.stage_commands(thread, &mut events)?;
+        // The plan the call set, with its result.
+        let plan = thread.plan.staged.take();
+        if let Some(plan) = &plan {
+            self.stage(thread, &mut events, plan)?;
+        }
         self.stage(thread, &mut events, &completed)?;
         self.commit(thread, events).await?;
+        if let Some(plan) = &plan {
+            // Glave's own record: call ids do not count it, so the model is sent the same.
+            thread.unnumbered = thread.unnumbered.saturating_add(1);
+            thread.plan.recorded(plan);
+        }
         thread.untrusted |= completed.untrusted;
         thread.messages.push(Message::Tool {
             call_id: completed.call_id,

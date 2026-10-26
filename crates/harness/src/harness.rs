@@ -26,6 +26,7 @@ use crate::defaults::Defaults;
 use crate::goal::{GoalProgress, Pursuit};
 use crate::inbox::Inbox;
 use crate::memory::MemoryState;
+use crate::plan::Planning;
 use crate::project_folders::{Brought, ProjectFolders};
 use crate::room::LearnedWindows;
 use crate::tools::workspace::Workspace;
@@ -121,6 +122,8 @@ pub struct Thread {
     pub(crate) above: Vec<ThreadId>,
     /// The thread's latest goal, active or ended; `None` until one is set.
     pub(crate) goal: Option<Pursuit>,
+    /// The thread's plan (`plan.rs`). A subagent's thread keeps none.
+    pub(crate) plan: Planning,
     /// The workspace the thread's tools act on when it is not the harness's own, such as its
     /// worktree. A subagent's thread shares its parent's.
     pub(crate) workspace: Option<Arc<Workspace>>,
@@ -433,6 +436,10 @@ where
         if self.settings.subagents {
             set.offer_agent();
         }
+        // A thread with a plan keeps it current whatever the settings say.
+        if self.settings.plans || thread.plan.plan.is_some() {
+            set.offer_plan();
+        }
         set
     }
 
@@ -522,6 +529,7 @@ where
             turns: 0,
             above: parent.iter().map(|call| call.thread).collect(),
             goal: None,
+            plan: Planning::default(),
             note: bound.as_ref().and_then(crate::worker::note),
             workspace,
             unnumbered: u64::from(bound.is_some()),

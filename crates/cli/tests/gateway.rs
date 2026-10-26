@@ -227,7 +227,8 @@ fn without_a_gateway_url_glave_reaches_the_model_directly_as_before() {
             "bash",
             "command_output",
             "web_fetch",
-            "agent"
+            "agent",
+            "update_plan"
         ],
         "no catalog, no gateway"
     );

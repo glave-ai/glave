@@ -44,7 +44,7 @@ options:
   --max-cost <dollars> start nothing new once this much is spent (default 2)
   --baseline <file>    an earlier report.json to compare with
   --tasks <folder>     where the tasks are (default evals/tasks)
-  --todo               offer the model the todo list
+  --no-plan            leave update_plan out, to measure the model without it
   --subagents          let the model hand work to child threads with task
   --memory <on|off>    memory on or off for every task (default: each task's own [glave] memory)";
 
@@ -59,7 +59,7 @@ struct Options {
     max_cost_micros: i64,
     baseline: Option<PathBuf>,
     tasks: PathBuf,
-    todo: bool,
+    plans: bool,
     subagents: bool,
     memory: Option<bool>,
 }
@@ -127,7 +127,7 @@ fn run(options: &Options) -> Result<bool, String> {
     let setup = Arc::new(Setup {
         endpoint,
         environment: std::env::vars_os().collect(),
-        todo: options.todo,
+        plans: options.plans,
         subagents: options.subagents,
         memory: options.memory,
         processes,
@@ -267,7 +267,7 @@ fn options(args: &[String]) -> Result<Options, String> {
         max_cost_micros: 2_000_000,
         baseline: None,
         tasks: PathBuf::from("evals/tasks"),
-        todo: false,
+        plans: true,
         subagents: false,
         memory: None,
     };
@@ -297,7 +297,7 @@ fn options(args: &[String]) -> Result<Options, String> {
             "--max-cost" => options.max_cost_micros = micros(&value()?)?,
             "--baseline" => options.baseline = Some(PathBuf::from(value()?)),
             "--tasks" => options.tasks = PathBuf::from(value()?),
-            "--todo" => options.todo = true,
+            "--no-plan" => options.plans = false,
             "--subagents" => options.subagents = true,
             "--memory" => {
                 options.memory = match value()?.as_str() {
@@ -349,6 +349,7 @@ mod tests {
         assert_eq!(options.tier, Some(Tier::Fast));
         assert_eq!(options.repeat, 1);
         assert_eq!(options.max_cost_micros, 2_000_000);
+        assert!(options.plans, "as glave runs");
     }
 
     #[test]
@@ -372,7 +373,7 @@ mod tests {
             "old.json",
             "--tasks",
             "t",
-            "--todo",
+            "--no-plan",
             "--subagents",
             "--memory",
             "on",
@@ -389,7 +390,7 @@ mod tests {
                 max_cost_micros: 500_000,
                 baseline: Some("old.json".into()),
                 tasks: "t".into(),
-                todo: true,
+                plans: false,
                 subagents: true,
                 memory: Some(true),
             }

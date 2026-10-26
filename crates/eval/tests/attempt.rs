@@ -46,7 +46,7 @@ fn setup(server: &FakeServer) -> Setup {
     Setup {
         endpoint: Config::for_url(server.url(), Some(KEY.to_owned())).unwrap(),
         environment,
-        todo: false,
+        plans: false,
         subagents: false,
         memory: None,
         processes: glave_process::Processes::unrecorded(),

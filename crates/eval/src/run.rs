@@ -9,7 +9,7 @@ use std::time::Instant;
 
 use glave_computer::LocalComputers;
 use glave_harness::{
-    Cancel, Change, DEFAULT_BUDGET, Goal, Harness, Live, NoOneToAsk, Parts, Settings, Skills, Todo,
+    Cancel, Change, DEFAULT_BUDGET, Goal, Harness, Live, NoOneToAsk, Parts, Settings, Skills,
     Workspace, agents_md, change_standing, find_skills, skill_folders,
 };
 use glave_memory::Tidier;
@@ -45,8 +45,9 @@ pub struct Setup {
     pub endpoint: Config,
     /// The environment commands start from, before the task's own and minus secrets.
     pub environment: Vec<(OsString, OsString)>,
-    /// Whether the model is offered the todo list, to measure what it does.
-    pub todo: bool,
+    /// Whether the model keeps the thread's plan with `update_plan`, as glave runs; off, to
+    /// measure what it does without.
+    pub plans: bool,
     /// Whether the model may hand work to child threads with `task`, to measure what it does.
     pub subagents: bool,
     /// Memory on or off for every task, to measure what it does; each task's own when `None`.
@@ -271,6 +272,7 @@ async fn wire(
         .map(|loaded| loaded.text);
     settings.permissions = task.permissions;
     settings.subagents = setup.subagents;
+    settings.plans = setup.plans;
     settings.person = Some(crate::memory::person()?);
     // As the CLI runs it: the model under test also judges flagged actions where nothing else
     // asks.
@@ -314,9 +316,6 @@ async fn wire(
     }
     if let Some(skills) = Skills::offer(skills.skills) {
         tools.push(Arc::new(skills));
-    }
-    if setup.todo {
-        tools.push(Arc::new(Todo));
     }
     let memory = remembering
         .memory

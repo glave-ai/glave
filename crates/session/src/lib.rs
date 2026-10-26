@@ -32,6 +32,7 @@ mod lists;
 mod memory;
 mod models;
 mod never;
+mod plan;
 mod projects;
 pub mod protocol;
 mod providers;

@@ -14,13 +14,13 @@ use crate::payload::{
     EffortChosen, GatewayToolCalled, GoalEnded, GoalResumed, GoalSet, GroupingSet, HookRan,
     LanguageSet, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryTidied,
     MessageAdded, ModelChosen, ModelResponded, PasskeyAdded, PasskeyRemoved, PasskeyUsed,
-    PermissionsChosen, ProjectFolderSet, ProjectRemoved, ProviderConnected, ProviderRemoved,
-    ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted,
-    ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted,
-    ToolCallRequested, TrustDecided, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved,
-    approval, awake, browser, catalog, certificate, chosen, command, connection, credential,
-    gateway, goal, grouping, hook, language, memory, message, model, passkey, project, provider,
-    standing, task, thread, tool, trust, turn, workspace,
+    PermissionsChosen, PlanUpdated, ProjectFolderSet, ProjectRemoved, ProviderConnected,
+    ProviderRemoved, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, ThreadArchived,
+    ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived,
+    ToolCallCompleted, ToolCallRequested, TrustDecided, TurnEnded, TurnStarted, WorkspaceBound,
+    WorkspaceRemoved, approval, awake, browser, catalog, certificate, chosen, command, connection,
+    credential, gateway, goal, grouping, hook, language, memory, message, model, passkey, plan,
+    project, provider, standing, task, thread, tool, trust, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -54,6 +54,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (goal::SET, 1),
     (goal::ENDED, 1),
     (goal::RESUMED, 1),
+    (plan::UPDATED, 1),
     (workspace::BOUND, 1),
     (workspace::REMOVED, 1),
     (command::STARTED, 1),
@@ -122,6 +123,7 @@ pub enum Body {
     GoalSet(GoalSet),
     GoalEnded(GoalEnded),
     GoalResumed(GoalResumed),
+    PlanUpdated(PlanUpdated),
     WorkspaceBound(WorkspaceBound),
     WorkspaceRemoved(WorkspaceRemoved),
     CommandStarted(CommandStarted),
@@ -305,6 +307,7 @@ impl Event {
             Body::GoalSet(payload) => encode(header, payload),
             Body::GoalEnded(payload) => encode(header, payload),
             Body::GoalResumed(payload) => encode(header, payload),
+            Body::PlanUpdated(payload) => encode(header, payload),
             Body::WorkspaceBound(payload) => encode(header, payload),
             Body::WorkspaceRemoved(payload) => encode(header, payload),
             Body::CommandStarted(payload) => encode(header, payload),
@@ -355,8 +358,8 @@ impl Event {
     }
 }
 
-/// Decodes commands in the background, the choices made for a thread, and the memory, accounts
-/// and project ledgers' types;
+/// Decodes commands in the background, the choices made for a thread, its plan, and the
+/// memory, accounts and project ledgers' types;
 /// `None` for any type that is not one of them.
 fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json::Result<Body>> {
     match kind {
@@ -369,6 +372,7 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         chosen::PERMISSIONS => {
             chosen::decode_permissions(version, data).map(|r| r.map(Body::PermissionsChosen))
         }
+        plan::UPDATED => plan::decode_updated(version, data).map(|r| r.map(Body::PlanUpdated)),
         memory::SAVED => memory::decode_saved(version, data).map(|r| r.map(Body::MemorySaved)),
         memory::EDITED => memory::decode_edited(version, data).map(|r| r.map(Body::MemoryEdited)),
         memory::FORGOTTEN => {

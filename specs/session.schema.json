@@ -975,6 +975,54 @@
         }
       ]
     },
+    "PlanInfo": {
+      "description": "A thread's plan: its latest `plan.updated`.",
+      "properties": {
+        "sentence": {
+          "description": "How far it has come, in a sentence: \"Plan: 2 of 5 steps done\".",
+          "type": "string"
+        },
+        "steps": {
+          "description": "The steps, in order, each with its status.",
+          "items": {
+            "$ref": "#/$defs/PlanStep"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "steps",
+        "sentence"
+      ],
+      "type": "object"
+    },
+    "PlanStatus": {
+      "description": "How far a step has come: to do, doing, done.",
+      "enum": [
+        "pending",
+        "in_progress",
+        "completed"
+      ],
+      "type": "string"
+    },
+    "PlanStep": {
+      "additionalProperties": false,
+      "description": "One step of a plan.",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/PlanStatus"
+        },
+        "step": {
+          "description": "What to do, in a line.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "step",
+        "status"
+      ],
+      "type": "object"
+    },
     "Principal": {
       "additionalProperties": false,
       "description": "A reference to a principal: `{\"kind\": \"person\", \"id\": \"…\"}`. Every kind but `glave` has an\nid.",
@@ -4791,6 +4839,36 @@
         "type": "object"
       },
       "streams": true
+    },
+    "thread/plan": {
+      "params": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "The thread's plan, or `null`.",
+        "properties": {
+          "plan": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PlanInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "streams": false
     },
     "thread/rename": {
       "params": {

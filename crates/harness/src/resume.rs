@@ -71,6 +71,7 @@ where
             turns: turns_begun(&events),
             above: above(&events),
             goal: crate::goal::latest(&events).map(crate::goal::Pursuit::of),
+            plan: crate::plan::Planning::of(&events),
             workspace,
             unnumbered: crate::bind::own_records(&events),
             note: None,
