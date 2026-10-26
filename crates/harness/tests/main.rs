@@ -5,9 +5,6 @@
 #[path = "support/script.rs"]
 mod support;
 
-#[path = "support/failing.rs"]
-mod failing;
-
 #[path = "support/worker.rs"]
 mod worker;
 
