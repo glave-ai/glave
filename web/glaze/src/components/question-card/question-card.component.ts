@@ -10,7 +10,13 @@ import {
 } from '@angular/core';
 
 import { injectId } from '../../tokens/ids';
-import { type GlzQuestion, composeAnswer, replaceAt, togglePick } from '../../lib/questions';
+import {
+  type GlzQuestion,
+  composeAnswer,
+  replaceAt,
+  sameQuestions,
+  togglePick,
+} from '../../lib/questions';
 import { GlzButtonComponent } from '../button/button.component';
 import { GlzCheckboxComponent } from '../checkbox/checkbox.component';
 import { GlzRadioComponent } from '../radio/radio.component';
@@ -128,10 +134,13 @@ export class GlzQuestionCardComponent {
     () => this.busy() || this.answers().some((answer) => answer === ''),
   );
 
+  /** What the questions ask: a new array of the same questions asks nothing new. */
+  private readonly asked = computed(() => this.questions(), { equal: sameQuestions });
+
   constructor() {
-    // New questions start with nothing picked.
+    // New questions start with nothing picked; the same ones again keep what was picked and typed.
     effect(() => {
-      const count = this.questions().length;
+      const count = this.asked().length;
       this.picks.set(Array.from({ length: count }, () => []));
       this.ownWords.set(Array.from({ length: count }, () => ''));
     });

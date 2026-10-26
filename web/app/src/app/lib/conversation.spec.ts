@@ -300,4 +300,10 @@ describe('conversation', () => {
     const three = event('c', {}, 3);
     expect(mergeEvents([one, three], [two, three]).map((e) => e.seq)).toEqual([1, 2, 3]);
   });
+
+  it('keeps the events it has when nothing is new, so nothing drawn from them is redrawn', () => {
+    const events = [event('a', {}, 1), event('b', {}, 2)];
+    expect(mergeEvents(events, [])).toBe(events);
+    expect(mergeEvents(events, [event('b', {}, 2)])).toBe(events);
+  });
 });

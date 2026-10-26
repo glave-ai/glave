@@ -27,6 +27,34 @@ export function togglePick(
   return on ? [...without, label] : without;
 }
 
+/** Whether `a` and `b` ask the same: the same questions, kinds and choices, in order. */
+export function sameQuestions(a: readonly GlzQuestion[], b: readonly GlzQuestion[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((question, index) => {
+      const other = b[index];
+      return (
+        question.question === other?.question &&
+        (question.multiple === true) === (other.multiple === true) &&
+        sameChoices(question.options ?? [], other.options ?? [])
+      );
+    })
+  );
+}
+
+function sameChoices(a: readonly GlzChoice[], b: readonly GlzChoice[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((choice, index) => {
+      const other = b[index];
+      return (
+        choice.label === other?.label &&
+        (choice.description ?? null) === (other.description ?? null)
+      );
+    })
+  );
+}
+
 /** A copy of `list` with `index` set to `value`. */
 export function replaceAt<T>(list: readonly T[], index: number, value: T): readonly T[] {
   return list.map((item, at) => (at === index ? value : item));
