@@ -1,3 +1,5 @@
+import { listFormat, numberFormat } from './intl';
+
 /** An exact amount of money: `micros` millionths of one unit of `currency` (ISO 4217). */
 export interface GlzMoney {
   readonly micros: number;
@@ -11,7 +13,7 @@ export interface GlzMoney {
 export function formatMoney(money: GlzMoney, locale?: string): string {
   const amount = money.micros / 1_000_000;
   const small = amount !== 0 && Math.abs(amount) < 0.01;
-  return new Intl.NumberFormat(locale, {
+  return numberFormat(locale, {
     style: 'currency',
     currency: money.currency,
     ...(small
@@ -22,7 +24,7 @@ export function formatMoney(money: GlzMoney, locale?: string): string {
 
 /** A token count, short: `950`, `12.3k`, `4.1M`. */
 export function formatTokens(tokens: number, locale?: string): string {
-  return new Intl.NumberFormat(locale, {
+  return numberFormat(locale, {
     notation: 'compact',
     maximumFractionDigits: 1,
   }).format(tokens);
@@ -34,7 +36,7 @@ export function formatTokens(tokens: number, locale?: string): string {
  */
 export function formatDuration(ms: number, locale?: string): string {
   const unit = (value: number, name: string, digits = 1): string =>
-    new Intl.NumberFormat(locale, {
+    numberFormat(locale, {
       style: 'unit',
       unit: name,
       unitDisplay: 'narrow',
@@ -48,7 +50,7 @@ export function formatDuration(ms: number, locale?: string): string {
     return unit(seconds, 'second');
   }
   const minutes = Math.floor(seconds / 60);
-  const both = new Intl.ListFormat(locale, { style: 'narrow', type: 'unit' });
+  const both = listFormat(locale, { style: 'narrow', type: 'unit' });
   if (minutes < 60) {
     return both.format([unit(minutes, 'minute'), unit(seconds % 60, 'second', 2)]);
   }

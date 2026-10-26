@@ -1,5 +1,5 @@
 import type { Outcome, ReplySources, TurnResult } from '@glave/client';
-import { type GlzRunStatus, formatDuration, formatMoney } from '@glave/glaze';
+import { type GlzRunStatus, formatDuration, formatMoney, listFormat } from '@glave/glaze';
 
 import type { ApprovalItem, Draft, MessageItem, QuestionItem, ThreadItem } from './conversation';
 import type { ChangedFile } from './files';
@@ -164,7 +164,7 @@ function outsideSandbox(result: TurnResult, locale: string): readonly string[] {
 /** The server's result of a turn, in words for `locale`: its cost, where it ran, what ran outside. */
 function resultFacts(result: TurnResult, locale: string): readonly string[] {
   const via = result.via ?? [];
-  const routes = new Intl.ListFormat(locale, { style: 'short', type: 'unit' }).format(via);
+  const routes = listFormat(locale, { style: 'short', type: 'unit' }).format(via);
   return [
     spent(result, locale),
     ...(via.length === 0 ? [] : [$localize`:@@results.via:via ${routes}:ROUTES:`]),

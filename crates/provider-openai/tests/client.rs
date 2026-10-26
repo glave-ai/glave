@@ -433,6 +433,8 @@ mod conformance {
                 chunks.push(mystery());
                 Reply::Stream(chunks)
             }
+            // The protocol has no word for an overload mid-stream: the connection drops.
+            Script::TransientAfter { text: said } => Reply::Broken(text(&[said])),
             Script::Silence => Reply::Stall,
             Script::Refusal => Reply::Status(
                 401,

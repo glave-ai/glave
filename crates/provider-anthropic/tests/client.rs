@@ -386,6 +386,12 @@ mod conformance {
                 events.push(mystery());
                 events
             }
+            Script::TransientAfter { text: said } => {
+                let mut events = vec![start(true)];
+                events.extend(text(0, &[said]));
+                events.push(json!({"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}));
+                events
+            }
             Script::Silence => return Reply::Stall,
             Script::Refusal => {
                 let message = format!("invalid x-api-key: {key}");

@@ -137,18 +137,36 @@ impl ModelProvider for OpenAiCompatible {
             let (name, value) = header_pair(&header.name, header.value.expose())?;
             call = call.header(name, value);
         }
-        let mut response = call.body(body).send().await.map_err(|e| self.failed(e))?;
+        let response = call.body(body).send().await.map_err(|e| self.failed(e))?;
         let status = response.status();
         if !status.is_success() {
             let body = error_body(response).await;
             return Err(ProviderError::from_response(status.as_u16(), &body, &sent));
         }
-        let mut decoder = SseDecoder::default();
         let mut assembler = Assembler::new(&self.provider, &request.model);
-        'stream: while let Some(bytes) = response.chunk().await.map_err(|e| self.failed(e))? {
+        match self.stream(response, &mut assembler, on_delta).await {
+            Ok(()) => assembler.finish(),
+            Err(error) if assembler.has_output() => {
+                Err(ProviderError::AfterOutput(Box::new(error)))
+            }
+            Err(error) => Err(error),
+        }
+    }
+}
+
+impl OpenAiCompatible {
+    /// Reads the response's events into `assembler`, until `[DONE]` or the end of the body.
+    async fn stream(
+        &self,
+        mut response: reqwest::Response,
+        assembler: &mut Assembler,
+        on_delta: &mut (dyn FnMut(Delta) + Send),
+    ) -> Result<(), ProviderError> {
+        let mut decoder = SseDecoder::default();
+        while let Some(bytes) = response.chunk().await.map_err(|e| self.failed(e))? {
             for data in decoder.push(&bytes)? {
                 if data == "[DONE]" {
-                    break 'stream;
+                    return Ok(());
                 }
                 assembler.apply(&data, on_delta)?;
             }
@@ -156,11 +174,9 @@ impl ModelProvider for OpenAiCompatible {
         if let Some(data) = decoder.finish().filter(|data| data != "[DONE]") {
             assembler.apply(&data, on_delta)?;
         }
-        assembler.finish()
+        Ok(())
     }
-}
 
-impl OpenAiCompatible {
     /// A `GET` of `path` under the API, asked with the endpoint's credentials, its JSON
     /// answer: what the API lists beside chat completions, such as its models (`models`), so
     /// a key can be checked when a person adds it. An answer over 8 MiB is refused.

@@ -161,31 +161,34 @@ export class ThreadComponent {
   protected readonly panelShortcut = this.panel.ariaShortcut;
   protected readonly panelHint = $localize`:@@thread.hint:Drag or use the arrow keys to resize; Enter collapses. Show or hide: ${this.panel.shortcut}:SHORTCUT:`;
   /**
-   * The turns, results first; the reply being written and the step taken now go to the last,
-   * which runs. A turn the person just asked for shows at once, before the server records it,
-   * and carries on as the turn it records.
+   * The thread's turns. A turn the person just asked for shows at once, before the server
+   * records it, and carries on as the turn it records.
    */
-  protected readonly turns = computed<readonly TurnResults[]>(() => {
-    const live = this.service.hasReply() ? this.service.reply() : null;
-    const step = this.service.step();
+  private readonly asked = computed(() =>
+    askedTurns(this.service.turns(), this.service.askedAfter(), this.service.starting()),
+  );
+  /** Every turn but the last, results first: what streams into the last never redraws them. */
+  private readonly settled = computed(() => {
     const sourced = this.sources.byReply();
-    const turns = askedTurns(
-      this.service.turns(),
-      this.service.askedAfter(),
-      this.service.starting(),
-    );
-    const last = turns.length - 1;
-    return turns.map((turn, index) =>
-      turnResults(
-        turn,
-        index === last ? live : null,
-        index === last ? step : null,
-        index === last && this.service.busy(),
-        this.locale,
-        sourced,
-      ),
-    );
+    return this.asked()
+      .slice(0, -1)
+      .map((turn) => turnResults(turn, null, null, false, this.locale, sourced));
   });
+  /** The last turn, results first, which runs: the reply being written and the step taken now. */
+  private readonly latest = computed(() => {
+    const turn = this.asked().at(-1);
+    const live = this.service.hasReply() ? this.service.reply() : null;
+    const [step, busy, sourced] = [
+      this.service.step(),
+      this.service.busy(),
+      this.sources.byReply(),
+    ];
+    return turn === undefined ? [] : [turnResults(turn, live, step, busy, this.locale, sourced)];
+  });
+  protected readonly turns = computed<readonly TurnResults[]>(() => [
+    ...this.settled(),
+    ...this.latest(),
+  ]);
   protected readonly title = computed(() => {
     const summary = this.service.summary();
     return summary === null ? '' : threadTitle(summary);
