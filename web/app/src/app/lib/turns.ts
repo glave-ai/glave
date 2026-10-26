@@ -1,7 +1,7 @@
-import type { RawEvent } from '@glave/client';
+import type { RawEvent, ThreadSummary } from '@glave/client';
 import type { GlzMoney } from '@glave/glaze';
 
-import { type ThreadItem, threadItems } from './conversation';
+import { type ThreadItem, byGlave, threadItems } from './conversation';
 import { type ChangedFile, changedFiles } from './files';
 
 /** How a turn ended, as its `turn.ended` says. */
@@ -49,8 +49,14 @@ function isOutcome(value: unknown): value is TurnOutcome {
   return typeof value === 'string' && OUTCOMES.includes(value);
 }
 
+/** Whether `event` records a message of the person's own, not a note glave wrote on their side. */
 function byPerson(event: RawEvent): boolean {
-  return event.type === 'message.added' && event.data['role'] === 'user';
+  return event.type === 'message.added' && event.data['role'] === 'user' && !byGlave(event.data);
+}
+
+/** Whether `event` is the person asking for work: their message, or their Build it of a plan. */
+export function asks(event: RawEvent): boolean {
+  return byPerson(event) || event.type === 'plan.approved';
 }
 
 /** Events that put something in the conversation besides the person's message. */
@@ -61,15 +67,16 @@ const WORK: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Whether `event` starts a new turn after `turn`'s events: a person's message after anything
- * but a bare `turn.started`, or a `turn.started` after anything but the person's message alone
- * (glave records the start just before the message; older threads, just after).
+ * Whether `event` starts a new turn after `turn`'s events: the person asking (`asks`) after
+ * anything but a bare `turn.started`, or a `turn.started` after anything but the person's
+ * asking alone (glave records the start just before the message, and just after a Build it;
+ * older threads, just after the message).
  */
 function starts(event: RawEvent, turn: readonly RawEvent[]): boolean {
   const started = turn.some((each) => each.type === 'turn.started');
-  const asked = turn.some(byPerson);
+  const asked = turn.some(asks);
   const worked = turn.some((each) => WORK.has(each.type) && !byPerson(each));
-  if (byPerson(event)) {
+  if (asks(event)) {
     return asked || worked;
   }
   return event.type === 'turn.started' && (started || worked);
@@ -214,6 +221,25 @@ export function turnRuns(events: readonly RawEvent[]): boolean {
     }
   }
   return false;
+}
+
+/**
+ * Whether a turn runs in the thread, as the server's summary of it says, with its events read
+ * before: one does, or waits for the person (not a project's ask, which waits with no turn).
+ */
+export function summaryRuns(summary: ThreadSummary, events: readonly RawEvent[]): boolean {
+  return summary.status === 'running' || (summary.status === 'waiting' && turnRuns(events));
+}
+
+/** The `seq` of the latest turn's start, if a turn ever started. */
+export function latestStart(events: readonly RawEvent[]): number | null {
+  for (let at = events.length - 1; at >= 0; at -= 1) {
+    const event = events[at];
+    if (event?.type === 'turn.started') {
+      return event.seq;
+    }
+  }
+  return null;
 }
 
 /** The key of a turn a view asked for after the event `seq` `after`, from asking on. */

@@ -581,6 +581,40 @@ describe('ThreadComponent', () => {
     await expectAccessible(root);
   });
 
+  it('shows a proposed plan as a card: Change it goes to the composer, Edit saves, Build it builds', async () => {
+    const plan = {
+      steps: [
+        { step: 'Read how flags are parsed', status: 'pending' },
+        { step: 'Add --verbose', status: 'pending' },
+      ],
+      proposed: true,
+      sentence: 'Proposed plan: 2 steps',
+    } as const;
+    const edited = { ...plan, steps: [plan.steps[1]], sentence: 'Proposed plan: 1 step' };
+    const proposed = [...ANSWERED, event(4, 'plan.updated', { steps: [], proposed: true })];
+    const fake = session(proposed)
+      .answer('thread/plan', { plan })
+      .answer('plan/edit', { plan: edited });
+    const { root, fixture } = await open(fake);
+    const card = root.querySelector('[data-testid="thread-plan"]');
+    expect(card?.textContent).toContain('Proposed plan: 2 steps');
+    await expectAccessible(root);
+    const click = async (testId: string): Promise<void> => {
+      root.querySelector<HTMLButtonElement>(`[data-testid="${testId}"]`)?.click();
+      await settle();
+      await fixture.whenStable();
+    };
+    await click('thread-plan-change');
+    expect(document.activeElement?.getAttribute('data-testid')).toBe('thread-composer-input');
+    await click('thread-plan-edit');
+    await click('thread-plan-remove');
+    await click('thread-plan-save');
+    expect(fake.paramsOf('plan/edit')).toEqual([{ thread: 'thread-1', steps: ['Add --verbose'] }]);
+    expect(card?.textContent).toContain('Proposed plan: 1 step');
+    await click('thread-plan-build');
+    expect(fake.paramsOf('plan/build')).toEqual([{ thread: 'thread-1' }]);
+  });
+
   it('renames the thread through the dialog', async () => {
     const fake = session([]);
     const { root, fixture } = await open(fake);

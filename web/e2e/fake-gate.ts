@@ -1,10 +1,10 @@
 import type { Page } from '@playwright/test';
 
 /**
- * The gates the fakes' streams wait at: `streamReply`'s `reply`, `steerTurn`'s `read`, and
- * `thinkingTurn`'s steps.
+ * The gates the fakes' streams wait at: `streamReply`'s `reply`, `steerTurn`'s `read`,
+ * `thinkingTurn`'s steps, and `planServer`'s `step`.
  */
-export type Gate = 'reply' | 'read' | 'start' | 'tool' | 'think' | 'answer';
+export type Gate = 'reply' | 'read' | 'start' | 'tool' | 'think' | 'answer' | 'step';
 
 /**
  * A page with gates in it (`gates`), as a fake's page script sees `window`. The order the page's

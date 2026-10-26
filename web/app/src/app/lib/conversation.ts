@@ -17,6 +17,8 @@ export interface MessageItem extends Placed {
   readonly steered: boolean;
   /** The files sent with it, in order. */
   readonly files: readonly SentFile[];
+  /** Whether it is the person's Build it of a proposed plan (`plan.approved`), with no text. */
+  readonly built?: boolean;
 }
 
 /** A file a message was sent with: its name, and its size in bytes. */
@@ -170,7 +172,7 @@ function isDecision(value: unknown): value is GlzDecision {
 }
 
 /** Whether glave wrote a message the person's side of the conversation holds, such as a note. */
-function byGlave(data: Data): boolean {
+export function byGlave(data: Data): boolean {
   const author = data['author'];
   return isRecord(author) && author['kind'] === 'glave';
 }
@@ -186,6 +188,9 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
   // Whether a turn runs at this point of the log, and whether the person has asked in it.
   let running = false;
   let asked = false;
+  // Whether the person just approved the plan, so glave's next message is the prompt that
+  // builds it, which their Build it stands for.
+  let approved = false;
   const index = new Map<string, number>();
   const put = (item: ThreadItem): void => {
     index.set(item.key, items.length);
@@ -208,9 +213,29 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
       case 'turn.ended':
         running = false;
         break;
+      case 'plan.approved':
+        put({
+          kind: 'message',
+          key: `plan-approved-${String(event.seq)}`,
+          seq: event.seq,
+          from: 'person',
+          text: '',
+          reasoning: '',
+          steered: false,
+          files: [],
+          built: true,
+        });
+        approved = true;
+        break;
       case 'message.added': {
         const person = data['role'] === 'user';
         const theirs = person && !byGlave(data);
+        if (approved && person && !theirs) {
+          // Glave's prompt to build the plan: the person asked for it with their Build it.
+          approved = false;
+          asked = true;
+          break;
+        }
         const parts = partsText(data['parts']);
         put({
           kind: 'message',
@@ -223,6 +248,7 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
           files: filesOf(data['parts']),
         });
         asked ||= theirs;
+        approved = false;
         break;
       }
       case 'tool.call.requested': {

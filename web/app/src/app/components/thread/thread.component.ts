@@ -19,6 +19,7 @@ import {
   GlzIconComponent,
   GlzMessageComponent,
   GlzPanelLayoutComponent,
+  GlzPlanCardComponent,
   GlzStickToBottomDirective,
   type GlzTrustAnswer,
   GlzTrustCardComponent,
@@ -32,6 +33,7 @@ import { AttachmentsService } from '../../services/attachments.service';
 import { effortToSend } from '../../lib/effort';
 import { CommandsService } from '../../services/commands.service';
 import { ModelsService } from '../../services/models.service';
+import { PlanService } from '../../services/plan.service';
 import { ProjectsService } from '../../services/projects.service';
 import { SearchService } from '../../services/search.service';
 import { SourcesService } from '../../services/sources.service';
@@ -68,6 +70,7 @@ import { TurnComponent } from '../turn/turn.component';
     GlzIconComponent,
     GlzMessageComponent,
     GlzPanelLayoutComponent,
+    GlzPlanCardComponent,
     GlzStickToBottomDirective,
     GlzTrustCardComponent,
     MessageTextComponent,
@@ -79,7 +82,7 @@ import { TurnComponent } from '../turn/turn.component';
     TurnComponent,
     EffortPickerComponent,
   ],
-  providers: [ThreadService, CommandsService, SourcesService, AttachmentsService],
+  providers: [ThreadService, CommandsService, SourcesService, PlanService, AttachmentsService],
   templateUrl: './thread.component.html',
   styleUrl: './thread.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -114,13 +117,19 @@ export class ThreadComponent {
   /** Whether the agent may search the web, which the composer shows while it may. */
   protected readonly searching = inject(SearchService).on;
   protected readonly service = inject(ThreadService);
+  /** The thread's plan, and the person's edit of it. */
+  protected readonly plans = inject(PlanService);
+  /** Whether the plan's buttons wait: an edit or an answer on its way, or a turn running. */
+  protected readonly planBusy = computed(
+    () => this.plans.busy() || this.service.sending() || this.service.busy(),
+  );
   /** The files added to the message being written, kept in the thread's project. */
   protected readonly attachments = inject(AttachmentsService);
   private readonly projects = inject(ProjectsService);
   private readonly locale = inject(LOCALE_ID);
   /** What went wrong last, in the server's words. */
   protected readonly problem = computed(() => {
-    const error = this.service.error();
+    const error = this.service.error() ?? this.plans.error();
     return error === null
       ? null
       : $localize`:@@thread.failed:Something went wrong: ${error}:ERROR:`;
@@ -130,6 +139,7 @@ export class ThreadComponent {
   private readonly panel = inject(ToolsPanelService);
   private readonly sources = inject(SourcesService);
   private readonly stick = viewChild.required(GlzStickToBottomDirective);
+  private readonly composer = viewChild.required(GlzComposerComponent);
   /** The composer's draft, which a message the model never read comes back to. */
   protected readonly draft = this.service.composer;
   protected readonly atBottom = signal(true);
@@ -254,6 +264,21 @@ export class ThreadComponent {
 
   protected trust(answer: GlzTrustAnswer): void {
     void this.service.answerTrust(answer);
+  }
+
+  /** Builds the proposed plan: the thread runs in Auto from now on, as the server says. */
+  protected build(): void {
+    this.pickedPermissions.set(null);
+    void this.service.build();
+  }
+
+  /** The person wants the plan changed: their words go in the composer, in plan mode still. */
+  protected revise(): void {
+    this.composer().focus();
+  }
+
+  protected edit(steps: readonly string[]): void {
+    void this.plans.edit(steps);
   }
 
   protected jumpToLatest(): void {
