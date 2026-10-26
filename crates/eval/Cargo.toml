@@ -27,6 +27,8 @@ glave-keys.workspace = true
 # A task's web search, its stand-in for Exa reached as the person's server reaches it.
 glave-mcp.workspace = true
 glave-memory.workspace = true
+# glave's own skills, offered beside a task's as the CLI offers them.
+glave-office.workspace = true
 # The secret a task's `{canary}` becomes, a fake made as it loads (`testing`).
 glave-ports = { workspace = true, features = ["conformance"] }
 # Setup scripts, run to the end, and the lifeline that ties the model's commands to the eval.

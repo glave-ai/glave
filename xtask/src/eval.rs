@@ -46,6 +46,8 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "glave-mcp-test-server",
     ];
     crate::cmd::run_with("cargo", &stand_in, &[])?;
+    // glave itself, beside glave-eval, first on the tasks' PATH: their `glave doc`.
+    crate::cmd::run_with("cargo", &["build", "--quiet", "--package", "glave"], &[])?;
     let mut command = vec!["run", "--quiet", "--package", "glave-eval", "--"];
     command.extend(args.iter().map(String::as_str));
     crate::cmd::run_with("cargo", &command, &endpoint)

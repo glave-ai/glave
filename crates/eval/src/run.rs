@@ -9,8 +9,8 @@ use std::time::Instant;
 
 use glave_computer::LocalComputers;
 use glave_harness::{
-    Cancel, Change, DEFAULT_BUDGET, Goal, Harness, Live, NoOneToAsk, Parts, Settings, Skills, Todo,
-    Workspace, agents_md, change_standing, find_skills, skill_folders,
+    Cancel, Change, DEFAULT_BUDGET, Goal, Harness, Live, NoOneToAsk, Parts, Settings, Skill,
+    Skills, Todo, Workspace, agents_md, change_standing, find_skills, skill_folders,
 };
 use glave_memory::Tidier;
 use glave_ports::computer::{Sandbox, SandboxLevel};
@@ -307,8 +307,14 @@ async fn wire(
     // The person's own servers follow glave's tools, as the CLI offers them.
     let searching = crate::search::connection(task, pages, root, &setup.processes).await?;
     tools.extend(searching.map(|server| Arc::new(server) as Arc<dyn ToolSource>));
-    // The project's skills, as the CLI finds them; the person's own are not part of a task.
-    let skills = find_skills(&skill_folders(root, &[])).await;
+    // The project's skills, as the CLI finds them, then glave's own; the person's own are not
+    // part of a task.
+    let mut skills = find_skills(&skill_folders(root, &[])).await;
+    for text in glave_office::SKILLS {
+        skills
+            .skills
+            .push(Skill::built_in(text).map_err(EvalError::Setup)?);
+    }
     if let Some(warning) = skills.warnings.first() {
         return Err(EvalError::Setup(format!("{}: skill {warning}", task.name)));
     }
