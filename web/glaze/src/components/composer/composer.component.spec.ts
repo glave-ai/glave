@@ -80,8 +80,12 @@ describe('GlzComposerComponent', () => {
     await fixture.whenStable();
     const input = find<HTMLTextAreaElement>(fixture.nativeElement, 'composer-input');
     type(input, 'にほん');
-    enter(input, { isComposing: true });
+    expect(enter(input, { isComposing: true }).defaultPrevented).toBe(false);
+    // Safari ends the composition first: the Enter that picks the candidate has key code 229.
+    expect(enter(input, { keyCode: 229 }).defaultPrevented).toBe(false);
     expect(fixture.componentInstance.sent).toEqual([]);
+    expect(enter(input).defaultPrevented).toBe(true);
+    expect(fixture.componentInstance.sent).toEqual(['にほん']);
   });
 
   it('shows Stop while busy, stops on click or Escape, and keeps the draft', async () => {
