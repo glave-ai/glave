@@ -1,8 +1,7 @@
 //! The caller's settings ledger (`specs/events.md`, "The settings ledger"), in their personal
 //! project: the latest of one kind of their choices, and keeping a new one after the ledger's
-//! last event, whatever that chose. The session API keeps the language they read glave in and
-//! how their threads are grouped through it; whether their computer stays awake is the host's
-//! to keep.
+//! last event, whatever that chose. The session API keeps the language they read glave in, how
+//! their threads are grouped, and whether their computer stays awake through it.
 
 use glave_event::{At, Body, EventId, Header, Payload, Seq, decode, encode};
 use glave_ports::stream::{Reserved, SETTINGS, append_retrying};

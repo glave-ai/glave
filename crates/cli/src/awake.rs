@@ -4,7 +4,8 @@
 //! assertion against idle sleep; on Linux `systemd-inhibit --what=idle:sleep`, where systemd
 //! is; elsewhere nothing, which Settings says. Each waits on glave itself, so neither outlives
 //! a glave that ends without stopping it. The screen may still sleep, and closing the lid still
-//! sleeps. The person turns it off in Settings, a choice kept in the store (`choice.rs`).
+//! sleeps. The person turns it off in Settings, a choice the session keeps in their settings
+//! ledger.
 //!
 //! Only the person's server keeps it, and only on their own computer: never where people reach
 //! glave from elsewhere (`[serve]`'s origin or domain) or sign in through an identity provider
@@ -12,22 +13,16 @@
 //! sleep. Those are the server's own settings, so the choice follows its configuration rather
 //! than guessing at the machine.
 
-mod choice;
-
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 
 use glave_config::policy::Choices;
-use glave_event::PrincipalId;
 use glave_ports::BoxFuture;
 use glave_process::{Child, ProcessError, Processes, Program};
 use glave_session::KeepAwake;
-use glave_session::protocol::{ApiError, code};
 
 use crate::args::Args;
-use crate::data::Data;
-use choice::Choice;
 
 /// What holds the computer awake while it runs: a program, by its absolute path, and its
 /// arguments.
@@ -37,37 +32,26 @@ struct Holder {
     args: Vec<String>,
 }
 
-/// Keeps the computer awake by running its [`Holder`] while held, as the person chooses.
+/// Keeps the computer awake by running its [`Holder`] while held.
 struct Inhibitor {
     processes: Processes,
     /// None where the system has nothing to keep the computer awake with.
     holder: Option<Holder>,
-    choice: Choice,
-    /// The person's choice when the server started.
-    on: bool,
 }
 
 /// What keeps this computer awake while the person's server works on it, when `args` serve as
-/// the person's server on their own computer (`keeps`: `choices` give it no public origin), as
-/// `person` chooses in `store`.
-pub(crate) async fn for_server(
+/// the person's server on their own computer (`keeps`: `choices` give it no public origin).
+pub(crate) fn for_server(
     args: &Args,
     choices: &Choices,
     processes: &Processes,
-    store: &Data,
-    person: PrincipalId,
-) -> anyhow::Result<Option<Arc<dyn KeepAwake>>> {
-    if !keeps(args, choices.origin.is_some()) {
-        return Ok(None);
-    }
-    let choice = Choice::open(store, person).await?;
-    let on = choice.on().await?;
-    Ok(Some(Arc::new(Inhibitor {
-        processes: processes.clone(),
-        holder: holder(std::process::id()),
-        choice,
-        on,
-    })))
+) -> Option<Arc<dyn KeepAwake>> {
+    keeps(args, choices.origin.is_some()).then(|| {
+        Arc::new(Inhibitor {
+            processes: processes.clone(),
+            holder: holder(std::process::id()),
+        }) as Arc<dyn KeepAwake>
+    })
 }
 
 /// Whether `args` serve as the person's server on their own computer: not `reached` from
@@ -106,22 +90,6 @@ impl KeepAwake for Inhibitor {
 
     fn cannot(&self) -> Option<String> {
         self.holder.is_none().then(|| CANNOT.to_owned())
-    }
-
-    fn chosen(&self) -> bool {
-        self.on
-    }
-
-    fn choose(&self, on: bool) -> BoxFuture<'_, Result<(), ApiError>> {
-        Box::pin(async move {
-            self.choice.keep(on).await.map_err(|error| {
-                tracing::warn!(error = format!("{error:#}"), "the choice was not kept");
-                ApiError::new(
-                    code::INTERNAL,
-                    "your choice could not be kept; try again in a moment",
-                )
-            })
-        })
     }
 }
 

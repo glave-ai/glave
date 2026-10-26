@@ -2,12 +2,14 @@
 //! (`specs/one-server.md`, owner decision 10): from when the first turn, task or compaction
 //! starts until the last one ends, whatever ends it, the host holds the computer awake; then
 //! it lets go. The screen may still sleep, and closing the lid still sleeps. The person turns it
-//! off and on in Settings (`awake/get`, `awake/set`); it is on until they do.
+//! off and on in Settings (`awake/get`, `awake/set`); it is on until they do. Their choice is
+//! kept in their settings ledger (`awake.set`), so every server on one store reads the same.
 
 use std::sync::{Arc, Mutex, PoisonError};
 
+use glave_event::{AwakeSet, Body};
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
-use tokio::sync::watch;
+use tokio::sync::{OnceCell, watch};
 use tokio::task::JoinHandle;
 
 use crate::protocol::{ApiError, AwakeInfo, Reply, code};
@@ -15,8 +17,7 @@ use crate::providers::local;
 use crate::server::Server;
 use crate::words::Sentence;
 
-/// How the host keeps its computer awake (a power assertion on macOS, an inhibitor on Linux),
-/// and where it keeps the person's choice of it.
+/// How the host keeps its computer awake: a power assertion on macOS, an inhibitor on Linux.
 pub trait KeepAwake: Send + Sync {
     /// Keeps the computer from sleeping on its own until what it answers is dropped; nothing,
     /// when it could not, which it says in the log.
@@ -25,13 +26,6 @@ pub trait KeepAwake: Send + Sync {
     /// Why the host cannot keep this computer awake, in a sentence, when it has nothing to
     /// keep it with.
     fn cannot(&self) -> Option<String>;
-
-    /// Whether the person wants it kept awake, as they had chosen when the host started: yes
-    /// until they choose.
-    fn chosen(&self) -> bool;
-
-    /// Keeps the person's choice, for the servers that start after this one too.
-    fn choose(&self, on: bool) -> BoxFuture<'_, Result<(), ApiError>>;
 }
 
 /// How many pieces of work run now, and whether the person wants the computer kept awake.
@@ -48,6 +42,8 @@ pub(crate) struct Awake {
     state: Arc<watch::Sender<State>>,
     /// What holds the computer awake while work runs, started with the first.
     keeper: Mutex<Option<JoinHandle<()>>>,
+    /// Set once the person's choice was read from their settings ledger.
+    read: OnceCell<()>,
 }
 
 /// A piece of work running: the computer stays awake until the last one is dropped.
@@ -55,12 +51,16 @@ pub(crate) struct Awake {
 pub(crate) struct Working(Arc<watch::Sender<State>>);
 
 impl Awake {
+    /// Awake while work runs, until the person's choice is read.
     pub(crate) fn new(keep: Arc<dyn KeepAwake>) -> Self {
-        let on = keep.chosen();
         Self {
             keep,
-            state: Arc::new(watch::Sender::new(State { working: 0, on })),
+            state: Arc::new(watch::Sender::new(State {
+                working: 0,
+                on: true,
+            })),
             keeper: Mutex::new(None),
+            read: OnceCell::new(),
         }
     }
 
@@ -86,15 +86,11 @@ impl Awake {
         }
     }
 
-    /// Keeps the person's choice, and follows it at once: let go when it is off, held when it
-    /// is on and work runs.
-    async fn choose(&self, on: bool) -> Result<AwakeInfo, ApiError> {
-        if let AwakeInfo::Cannot { reason } = self.info() {
-            return Err(ApiError::new(code::NOT_AVAILABLE, reason));
-        }
-        self.keep.choose(on).await?;
+    /// Follows the person's choice at once: let go when it is off, held when it is on and work
+    /// runs.
+    fn choose(&self, on: bool) -> AwakeInfo {
         self.state.send_modify(|state| state.on = on);
-        Ok(self.info())
+        self.info()
     }
 }
 
@@ -141,13 +137,34 @@ where
     B: BlobStore + 'static,
 {
     /// Answers `awake/get`.
-    pub(crate) fn awake(&self) -> Reply {
-        let awake = self
-            .inner
-            .awake
-            .as_ref()
-            .map_or(AwakeInfo::Never, Awake::info);
-        Reply::Awake { awake }
+    pub(crate) async fn awake(&self) -> Reply {
+        let Some(awake) = &self.inner.awake else {
+            return Reply::Awake {
+                awake: AwakeInfo::Never,
+            };
+        };
+        self.read_choice(awake).await;
+        Reply::Awake {
+            awake: awake.info(),
+        }
+    }
+
+    /// Reads the person's choice from their settings ledger, the first time it is needed:
+    /// awake with none, or one this glave cannot read. One that could not be read is read again
+    /// next time.
+    pub(crate) async fn read_choice(&self, awake: &Awake) {
+        let read = awake.read.get_or_try_init(|| async {
+            // Glave's own read, for the person on this computer, whose computer it is.
+            let on = match self.setting::<AwakeSet>(&Caller::default()).await? {
+                Some(Body::AwakeSet(set)) => set.on,
+                _ => true,
+            };
+            awake.state.send_modify(|state| state.on = on);
+            Ok::<_, ApiError>(())
+        });
+        if let Err(error) = read.await {
+            tracing::warn!(%error, "could not read whether the person keeps this computer awake");
+        }
     }
 
     /// Answers `awake/set`, for the person on this computer, where it is theirs to choose.
@@ -158,8 +175,14 @@ where
         if !local(caller) {
             return Err(ApiError::new(code::NOT_ALLOWED, Sentence::AwakeOnlyHere));
         }
+        if let AwakeInfo::Cannot { reason } = awake.info() {
+            return Err(ApiError::new(code::NOT_AVAILABLE, reason));
+        }
+        // Read first, so a read of the ledger from before this choice never overrides it.
+        self.read_choice(awake).await;
+        self.keep_setting(caller, &AwakeSet { on }).await?;
         Ok(Reply::Awake {
-            awake: awake.choose(on).await?,
+            awake: awake.choose(on),
         })
     }
 }
@@ -168,12 +191,11 @@ where
 mod tests {
     use super::*;
 
-    /// A host that records each hold and each letting go, and keeps the choice it is given.
+    /// A host that records each hold and each letting go.
     #[derive(Default)]
     struct Recorded {
         seen: Arc<Mutex<Vec<&'static str>>>,
         held: watch::Sender<usize>,
-        chosen: Mutex<Vec<bool>>,
     }
 
     /// What a [`Recorded`] hold answers: it lets go when dropped.
@@ -204,15 +226,6 @@ mod tests {
 
         fn cannot(&self) -> Option<String> {
             None
-        }
-
-        fn chosen(&self) -> bool {
-            true
-        }
-
-        fn choose(&self, on: bool) -> BoxFuture<'_, Result<(), ApiError>> {
-            self.chosen.lock().unwrap().push(on);
-            Box::pin(async { Ok(()) })
         }
     }
 
@@ -254,14 +267,13 @@ mod tests {
             assert_eq!(awake.info(), AwakeInfo::Chosen { on: true });
             let working = awake.hold();
             held.wait_for(|held| *held == 1).await.unwrap();
-            let off = awake.choose(false).await.unwrap();
+            let off = awake.choose(false);
             assert_eq!(off, AwakeInfo::Chosen { on: false });
             held.wait_for(|held| *held == 0).await.unwrap();
-            awake.choose(true).await.unwrap();
+            awake.choose(true);
             held.wait_for(|held| *held == 1).await.unwrap();
             drop(working);
             held.wait_for(|held| *held == 0).await.unwrap();
-            assert_eq!(*host.chosen.lock().unwrap(), [false, true]);
             assert_eq!(
                 *host.seen.lock().unwrap(),
                 ["held", "let go", "held", "let go"]

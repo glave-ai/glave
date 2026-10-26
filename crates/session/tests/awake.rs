@@ -6,20 +6,18 @@
 use std::sync::{Arc, Mutex};
 
 use glave_event::{Auth, AuthMethod, Outcome};
-use glave_ports::{BoxFuture, Caller};
-use glave_session::protocol::{ApiError, AwakeInfo, Reply, Request, code};
+use glave_ports::{BoxFuture, Caller, EventLog};
+use glave_session::protocol::{AwakeInfo, Reply, Request, code};
 use glave_session::{Answering, KeepAwake};
 use tokio::sync::{Notify, watch};
 
 use crate::support::*;
 
-/// A computer that counts how often it was held and how many holds it keeps now, and keeps
-/// the person's choices.
+/// A computer that counts how often it was held and how many holds it keeps now.
 #[derive(Default)]
 struct Computer {
     holds: Mutex<usize>,
     held: watch::Sender<usize>,
-    chosen: Mutex<Vec<bool>>,
 }
 
 /// What a hold of [`Computer`] answers: it lets go when dropped.
@@ -42,15 +40,6 @@ impl KeepAwake for Computer {
 
     fn cannot(&self) -> Option<String> {
         None
-    }
-
-    fn chosen(&self) -> bool {
-        true
-    }
-
-    fn choose(&self, on: bool) -> BoxFuture<'_, Result<(), ApiError>> {
-        self.chosen.lock().unwrap().push(on);
-        Box::pin(async { Ok(()) })
     }
 }
 
@@ -156,7 +145,7 @@ fn a_turn_the_person_stops_lets_it_go_too() {
 }
 
 /// Whether `server` keeps its computer awake, as Settings asks.
-async fn awake(server: &Tested) -> AwakeInfo {
+async fn awake<L: EventLog + 'static>(server: &Tested<L>) -> AwakeInfo {
     match server.request(Request::AwakeGet {}).await.unwrap() {
         Reply::Awake { awake } => awake,
         other => panic!("whether it keeps awake, not {other:?}"),
@@ -168,9 +157,10 @@ fn the_person_turns_it_off_and_on_and_no_one_else_does() {
     let dir = folder("awake-chosen");
     block_on!(async {
         let computer = Arc::new(Computer::default());
+        let log = Shared::default();
         let mut setup = Setup::asking(Vec::new(), Answering::NoOne);
         setup.awake = Some(Arc::clone(&computer) as Arc<dyn KeepAwake>);
-        let (server, _) = setup.build(&dir).await;
+        let (server, _) = setup.build_on(&dir, log.clone()).await;
         assert_eq!(awake(&server).await, AwakeInfo::Chosen { on: true });
         let off = server.request(Request::AwakeSet { on: false }).await;
         assert!(matches!(
@@ -198,7 +188,20 @@ fn the_person_turns_it_off_and_on_and_no_one_else_does() {
             refused.err().map(|error| error.code),
             Some(code::NOT_ALLOWED)
         );
-        assert_eq!(*computer.chosen.lock().unwrap(), [false]);
+
+        // Kept in the person's settings: a server started later on the same store reads it,
+        // and its turns leave the computer as it is.
+        let mut next = Setup::asking(vec![answer(Some("Hi."), None)], Answering::NoOne);
+        next.seed = 2;
+        next.settings.person = server.person();
+        next.projects = Some(Arc::clone(server.projects()));
+        next.awake = Some(Arc::clone(&computer) as Arc<dyn KeepAwake>);
+        let (again, _) = next.build_on(&dir, log).await;
+        let thread = start(&again, false).await;
+        turn(&again, thread, "hi").await.unwrap();
+        settle().await;
+        assert_eq!(*computer.holds.lock().unwrap(), 0, "never held");
+        assert_eq!(awake(&again).await, AwakeInfo::Chosen { on: false });
     });
 }
 
