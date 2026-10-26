@@ -48,6 +48,8 @@ function approval(seq: number, decided: boolean): ApprovalItem {
     approval: `c${String(seq)}`,
     tool: 'bash',
     summary: 'bash: git push',
+    ask: 'Run this command?',
+    detail: 'git push',
     caution: 'It pushes to a remote.',
     outsideSandbox: false,
     withNetwork: false,

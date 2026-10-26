@@ -6,7 +6,7 @@ use std::future::{Future, ready};
 use std::path::Path;
 
 use glave_event::{
-    ApprovalRequested, Arguments, CallId, Lifted, OutsideSandbox, PrincipalId, ThreadId,
+    ApprovalRequested, Arguments, CallId, Lifted, OutsideSandbox, PrincipalId, ThreadId, WebPage,
 };
 use glave_ports::Effect;
 
@@ -48,11 +48,37 @@ impl ApprovalRequest {
             call_id: self.call_id.clone(),
             tool: self.tool.clone(),
             summary: self.summary.clone(),
+            ask: ask_of(&self.tool).to_owned(),
+            detail: detail_of(&self.tool, &self.summary).to_owned(),
             secret: self.secret,
             caution: self.caution.as_deref().map(sentence),
             outside_sandbox: self.outside_sandbox.clone(),
         }
     }
+}
+
+/// What an approval for `tool` asks the person, in a sentence: by what the tool does, for the
+/// harness's own tools and `web_fetch`, else a sentence for any tool.
+fn ask_of(tool: &str) -> &'static str {
+    match Tool::named(tool) {
+        Some(Tool::Bash) => "Run this command?",
+        Some(Tool::Edit) => "Edit this file?",
+        Some(Tool::Write) => "Write this file?",
+        Some(Tool::Read) => "Read this file?",
+        _ if tool == WebPage::TOOL => "Open this page?",
+        _ => "Allow this?",
+    }
+}
+
+/// What would run, apart from the sentence that says what it is: `summary`, which every tool
+/// source writes as the tool's name then what it acts on (`bash: cargo test`, `edit
+/// src/main.rs`), without that name. A summary that does not start with it is all detail.
+fn detail_of<'a>(tool: &str, summary: &'a str) -> &'a str {
+    summary
+        .strip_prefix(tool)
+        .filter(|_| !tool.is_empty())
+        .and_then(|rest| rest.strip_prefix(": ").or_else(|| rest.strip_prefix(' ')))
+        .unwrap_or(summary)
 }
 
 /// A caution's reason as the person reads it, a sentence of its own: "it deletes ~/x" is
@@ -325,6 +351,41 @@ mod tests {
             asks_for(Changes, Effect::Runs, false),
             "any other tool that acts asks"
         );
+    }
+
+    #[test]
+    fn an_approval_asks_by_what_would_run_with_what_would_run_apart() {
+        fn asked<'a>(tool: &str, summary: &'a str) -> (&'static str, &'a str) {
+            (ask_of(tool), detail_of(tool, summary))
+        }
+        assert_eq!(
+            asked("bash", "bash: git push -u origin fix/x"),
+            ("Run this command?", "git push -u origin fix/x")
+        );
+        assert_eq!(
+            asked("edit", "edit src/main.rs"),
+            ("Edit this file?", "src/main.rs")
+        );
+        assert_eq!(
+            asked("write", "write notes.md (3 lines)"),
+            ("Write this file?", "notes.md (3 lines)")
+        );
+        assert_eq!(asked("read", "read .env"), ("Read this file?", ".env"));
+        assert_eq!(
+            asked("web_fetch", "web_fetch https://tokio.rs"),
+            ("Open this page?", "https://tokio.rs")
+        );
+        assert_eq!(
+            asked("remember", r#"remember {"text":"x"}"#),
+            ("Allow this?", r#"{"text":"x"}"#)
+        );
+        assert_eq!(
+            asked("search", "Searched the web: tokio"),
+            ("Allow this?", "Searched the web: tokio"),
+            "a summary that does not start with its tool's name is all detail"
+        );
+        assert_eq!(asked("bashful", "bash: ls").1, "bash: ls");
+        assert_eq!(asked("", "x").1, "x");
     }
 
     #[test]

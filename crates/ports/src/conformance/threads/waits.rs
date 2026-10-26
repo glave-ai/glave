@@ -131,6 +131,8 @@ async fn approval<L: EventLog>(
         call_id: call("call_6")?,
         tool: "bash".into(),
         summary: "bash: make".into(),
+        ask: "Run this command?".into(),
+        detail: "make".into(),
         secret: false,
         caution: None,
         outside_sandbox: None,

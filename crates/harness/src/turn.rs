@@ -630,7 +630,6 @@ where
             } else {
                 Purpose::Main
             },
-            threads: thread.lineage(),
             files,
             effort: thread.effort.clone(),
         };

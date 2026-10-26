@@ -204,6 +204,8 @@ const WAITING_HISTORY = [
       call_id: 'call_2',
       tool: 'bash',
       summary: 'bash: git push -u origin docs/release-notes',
+      ask: 'Run this command?',
+      detail: 'git push -u origin docs/release-notes',
       secret: false,
       caution: 'It pushes to a remote.',
     },

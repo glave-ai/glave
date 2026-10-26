@@ -107,6 +107,11 @@ fn each_question_and_its_answer_are_recorded_before_the_result() {
         };
         assert_eq!(requested.tool, "bash");
         assert_eq!(requested.summary, "bash: touch a");
+        assert_eq!(
+            (requested.ask.as_str(), requested.detail.as_str()),
+            ("Run this command?", "touch a"),
+            "what it asks, in the server's sentence, and what would run"
+        );
         assert_eq!(requested.caution, None, "only the mode asks");
         let asked = harness_asked(&harness);
         assert_eq!(asked[0].thread, thread.id, "the approver knows the thread");

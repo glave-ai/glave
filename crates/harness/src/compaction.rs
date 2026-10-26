@@ -249,7 +249,6 @@ where
             tools: offer.specs.clone(),
             tool_choice: ToolChoice::None,
             purpose: Purpose::Summary,
-            threads: thread.lineage(),
             files: Vec::new(),
             effort: None,
         };

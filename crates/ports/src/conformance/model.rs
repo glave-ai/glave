@@ -207,7 +207,6 @@ fn request() -> ModelRequest {
         tool_choice: crate::model::ToolChoice::Auto,
         max_output_tokens: None,
         purpose: crate::model::Purpose::Main,
-        threads: Vec::new(),
         files: Vec::new(),
         effort: None,
     }

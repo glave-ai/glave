@@ -51,6 +51,8 @@ mod judging {
             "uniq -c names.txt",
             "uniq -f 1 names.txt",
             "tree -L 2 src",
+            "file -b src/main.rs",
+            "file -FC names.txt",
         ] {
             assert_eq!(verdict(script), Verdict::ReadOnly, "{script}");
         }
@@ -87,6 +89,9 @@ mod judging {
             "tree -o listing.txt",
             "tree -ao listing.txt src",
             "tree -R -L 2 -H . src",
+            "file -C -m magic",
+            "file -bC -m magic",
+            "file --compile -m magic",
             "find . -name '*.o' -delete",
             "chmod -R u+w target",
             "curl -o page.html https://example.com",
@@ -460,12 +465,14 @@ mod judging {
             ),
             trees in "[adfglpsuDFC]{0,2}",
             writes in proptest::sample::select(vec!['o', 'R']),
+            files in "[bdhikLnNsz]{0,3}",
         ) {
             let detached = if attached.is_empty() { " sorted.txt" } else { "" };
             let sort = format!("sort -{sorts}o{attached}{detached} names.txt");
             let uniq = format!("uniq {} names.txt unique.txt", uniqs.join(" "));
             let tree = format!("tree -{trees}{writes} listing.txt");
-            for script in [sort, uniq, tree] {
+            let file = format!("file -{files}C -m magic");
+            for script in [sort, uniq, tree, file] {
                 prop_assert_ne!(verdict(&script), Verdict::ReadOnly, "{}", script);
             }
         }

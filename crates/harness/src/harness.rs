@@ -246,14 +246,6 @@ impl Thread {
     pub(crate) fn delegated(&self) -> bool {
         !self.above.is_empty()
     }
-
-    /// This thread, then the threads that started it: whose budgets its model calls count in.
-    pub(crate) fn lineage(&self) -> Vec<ThreadId> {
-        let mut threads = Vec::with_capacity(self.above.len().saturating_add(1));
-        threads.push(self.id);
-        threads.extend_from_slice(&self.above);
-        threads
-    }
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
