@@ -444,14 +444,20 @@ struct EventsPage {
 }
 
 /// What a JSON-RPC response says, as a client reads it: the reply in its `result`, or its
-/// `error`.
+/// `error`. One with neither is not a reply: replies are read by their shape, and an empty
+/// one would read as one.
 pub fn outcome(response: &Value) -> Result<Reply, ApiError> {
     if let Some(error) = response.get("error") {
         return Err(serde_json::from_value(error.clone()).unwrap_or_else(|_| {
             ApiError::new(code::INTERNAL, format!("the server failed: {error}"))
         }));
     }
-    let result = response.get("result").cloned().unwrap_or_else(|| json!({}));
+    let Some(result) = response.get("result").cloned() else {
+        return Err(ApiError::new(
+            code::INTERNAL,
+            "the server's answer is not one glave knows: it holds neither a result nor an error",
+        ));
+    };
     if result.get("events").is_some() {
         // Events hold their payloads as raw JSON, which a reply read by its shape cannot
         // give them, so a page of events is read as itself, from text.
@@ -536,6 +542,26 @@ mod tests {
         };
         assert_eq!(next, None);
         assert_eq!(events[0].data.get(), r#"{"title":"Garden"}"#);
+    }
+
+    #[test]
+    fn a_response_with_neither_result_nor_error_is_no_reply() {
+        // Read by its shape, it was "no goal".
+        let empty = outcome(&json!({"jsonrpc": "2.0", "id": 1}));
+        assert!(
+            matches!(
+                empty,
+                Err(ApiError {
+                    code: code::INTERNAL,
+                    ..
+                })
+            ),
+            "{empty:?}"
+        );
+        assert!(
+            outcome(&json!({"jsonrpc": "2.0", "id": 1, "result": {}})).is_ok(),
+            "an empty result is still a reply"
+        );
     }
 
     #[test]

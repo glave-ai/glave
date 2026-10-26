@@ -168,9 +168,10 @@ where
 
     /// Closes what a turn left open in `thread`, as [`Harness::repair`] does, and reads its
     /// conversation again after: before any work on it, which only the holder of its lease
-    /// runs. A turn that waits is left to go on ([`Harness::go_on`]).
+    /// runs. A turn that waits is left to go on ([`Harness::go_on`]), and the work is refused
+    /// (`HarnessError::Waits`).
     pub(crate) async fn close_left_open(&self, thread: &mut Thread) -> Result<(), HarnessError> {
-        if !matches!(thread.opened, Some(Opened::LeftOpen(_))) {
+        if !matches!(thread.opened, Some(Opened::LeftOpen)) {
             return Ok(());
         }
         self.repair(thread.scope, thread.id).await?;
@@ -183,6 +184,9 @@ where
             .ok_or_else(|| HarnessError::Event(format!("thread {} is full", thread.id)))?;
         thread.messages = conversation(&events);
         thread.opened = self.opened(&thread.scope, thread.id, &events).await?;
+        if thread.waits() {
+            return Err(HarnessError::Waits(thread.id));
+        }
         Ok(())
     }
 }

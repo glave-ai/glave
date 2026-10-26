@@ -207,9 +207,10 @@ impl Thread {
     }
 
     /// Whether its log, as it was read, ends in a turn a glave left open, running elsewhere or
-    /// stopped without ending it: work on the thread repairs it first ([`Harness::repair`]).
+    /// stopped without ending it, or may since work on its turn here failed: work on the thread
+    /// repairs it first ([`Harness::repair`]).
     pub fn left_open(&self) -> bool {
-        matches!(self.opened, Some(Opened::LeftOpen(_)))
+        matches!(self.opened, Some(Opened::LeftOpen))
     }
 
     /// Whether its log, as it was read, has its turn waiting for an answer, or answered and

@@ -18,6 +18,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use anyhow::{Context as _, bail};
+use glave_session::protocol::{PROTOCOL, Reply, Request};
 
 use crate::home;
 use crate::socket::{self, Connection};
@@ -117,15 +118,42 @@ pub(crate) async fn connect() -> anyhow::Result<Option<Connection>> {
 }
 
 /// The person's server: the one running, or one started now when someone is at the terminal;
-/// none when no one is and none runs.
+/// none when no one is and none runs. One that another version of glave runs, started before
+/// glave was updated, is used when it speaks this glave's protocol, saying how to move to this
+/// version, and refused when it does not, as its answers would be misread.
 pub(crate) async fn connect_or_start() -> anyhow::Result<Option<Connection>> {
     if let Some(server) = connect().await? {
+        let Reply::Server(info) = server.request(Request::Discover {}).await? else {
+            bail!("glave answered server/discover with something else");
+        };
+        if let Some(updated) = updated(&info.version, &info.protocols)? {
+            eprintln!("glave: {updated}");
+        }
         return Ok(Some(server));
     }
     if !at_terminal() {
         return Ok(None);
     }
     start().await.map(Some)
+}
+
+/// What to say when the person's server runs glave `running`, speaking `protocols`, rather than
+/// this glave: nothing for this glave, a line beside the work for one that speaks its protocol,
+/// and an error for one that does not.
+fn updated(running: &str, protocols: &[String]) -> anyhow::Result<Option<String>> {
+    let here = env!("CARGO_PKG_VERSION");
+    if running == here {
+        return Ok(None);
+    }
+    let updated =
+        format!("glave was updated to {here}, but the glave running for you is {running}");
+    if protocols.iter().any(|spoken| spoken == PROTOCOL) {
+        Ok(Some(format!(
+            "{updated}: glave server restart moves to {here}"
+        )))
+    } else {
+        bail!("{updated}, which this one cannot use: restart it with glave server restart")
+    }
 }
 
 /// Starts the person's server apart from this command and its terminal, from this shell and
@@ -194,6 +222,28 @@ pub(crate) async fn claim(args: &mut crate::args::Args) -> anyhow::Result<Option
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_server_another_glave_runs_is_used_only_when_it_speaks_this_protocol() {
+        let here = env!("CARGO_PKG_VERSION");
+        let spoken = [PROTOCOL.to_owned()];
+        assert_eq!(updated(here, &spoken).unwrap(), None);
+        assert_eq!(
+            updated("0.0.0-before", &spoken).unwrap(),
+            Some(format!(
+                "glave was updated to {here}, but the glave running for you is 0.0.0-before: \
+                 glave server restart moves to {here}"
+            ))
+        );
+        let refused = updated("0.0.0-before", &["2020-01".to_owned()]).unwrap_err();
+        assert_eq!(
+            refused.to_string(),
+            format!(
+                "glave was updated to {here}, but the glave running for you is 0.0.0-before, \
+                 which this one cannot use: restart it with glave server restart"
+            )
+        );
+    }
 
     #[test]
     fn a_port_is_free_here_only_when_free_at_both_loopback_addresses() {

@@ -325,7 +325,8 @@ where
     /// A turn's steps: first `pending`, the rest of a response's calls when the turn goes on
     /// from its log at them (`going_on.rs`), then a model call and its tools' calls after
     /// another until the turn ends, which it records. One that stops at a wait records
-    /// nothing more (`HarnessError::Waits`).
+    /// nothing more (`HarnessError::Waits`); one that fails otherwise leaves the turn open in
+    /// the log, which the next work on the thread closes first.
     pub(crate) async fn steps(
         &self,
         thread: &mut Thread,
@@ -334,6 +335,8 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
+        // Open until the turn ends or stops at a wait, whatever fails between.
+        thread.opened = Some(Opened::LeftOpen);
         if !pending.is_empty() {
             let ran = self
                 .run_calls(thread, pending, &mut step, cancel, live)
@@ -685,9 +688,10 @@ where
     /// Records `turn.ended`.
     async fn end(&self, thread: &mut Thread, outcome: Outcome) -> Result<(), HarnessError> {
         let mut events = Vec::new();
-        self.stage_commands(thread, &mut events)?;
+        let staged = self.stage_commands(thread, &mut events)?;
         self.stage(thread, &mut events, &TurnEnded { outcome })?;
         self.commit(thread, events).await?;
+        staged.recorded(thread);
         // Nothing is open any more, whatever was when the thread was read.
         thread.opened = None;
         Ok(())
