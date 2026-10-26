@@ -138,6 +138,8 @@ describe('conversation', () => {
         call_id: 'c1',
         tool: 'bash',
         summary: 'bash: rm -rf build',
+        ask: 'Run this command?',
+        detail: 'rm -rf build',
         caution: 'It deletes build.',
       }),
       event('approval.decided', { call_id: 'c1', decision: 'deny' }),
@@ -184,6 +186,8 @@ describe('conversation', () => {
       approval: 'c1',
       decision: 'deny',
       summary: 'bash: rm -rf build',
+      ask: 'Run this command?',
+      detail: 'rm -rf build',
       caution: 'It deletes build.',
     });
     expect(items[3]).toMatchObject({ status: 'failed', output: 'no such file' });
@@ -226,10 +230,13 @@ describe('conversation', () => {
       event('approval.requested', { call_id: 'c1', tool: 'bash', summary: 'x' }),
     ]);
     expect(items[0]).toMatchObject({ status: 'running' });
-    // Only the mode asks: no caution of its own.
+    // Only the mode asks: no caution of its own. Recorded before the server said its sentence,
+    // it asks with its summary.
     expect(items[1]).toMatchObject({
       decision: null,
       caution: '',
+      ask: 'x',
+      detail: '',
       outsideSandbox: false,
       modelReason: '',
     });

@@ -257,15 +257,18 @@ export type ModelInfo = {
   readonly id: string;
   /** Whether it reads images. */
   readonly images?: boolean | null;
-  /** Who made it, such as `Anthropic`, when its provider says. */
+  /**
+   * Who made it, such as `Anthropic`: as its provider says, else from its id's prefix
+   * (`anthropic/…`); absent when neither says.
+   */
   readonly maker?: string | null;
   /** The longest answer it gives, in tokens. */
   readonly max_output?: number | null;
   /**
-   * Its own name, without its maker's, such as `Claude Haiku 5.5`, when its provider or the
-   * settings give one.
+   * Its own name, without its maker's, such as `Claude Haiku 5.5`: the settings', else its
+   * provider's, else written from its id as its maker writes it.
    */
-  readonly name?: string | null;
+  readonly name: string;
   /** What its tokens cost at the first of its providers. */
   readonly price?: TokenPrice | null;
   /**

@@ -8,11 +8,17 @@ import { EffortPickerComponent } from './effort-picker.component';
 const MODELS: readonly ModelInfo[] = [
   {
     id: 'openai/gpt-6-luna',
+    name: 'GPT-6 Luna',
     default: true,
     reasoning: { efforts: ['xhigh', 'high', 'medium', 'low', 'none'], default: 'medium' },
   },
-  { id: 'anthropic/claude-haiku-5.5', default: false, reasoning: { efforts: ['high', 'low'] } },
-  { id: 'plain', default: false },
+  {
+    id: 'anthropic/claude-haiku-5.5',
+    name: 'Claude Haiku 5.5',
+    default: false,
+    reasoning: { efforts: ['high', 'low'] },
+  },
+  { id: 'plain', name: 'Plain', default: false },
 ];
 
 async function render(): Promise<

@@ -131,14 +131,7 @@ pub(super) fn info(
     let unasked = target.and_then(|target| target.effort_for(None));
     let first = |pick: fn(&CatalogModel) -> Option<u64>| cards.iter().find_map(|card| pick(card));
     let listed = cards.iter().find_map(|card| card.name.as_deref());
-    let (maker, own) = match listed.map(|listed| listed.split_once(": ")) {
-        Some(Some((maker, own))) => (Some(maker.trim()), Some(own.trim())),
-        Some(None) => (None, listed),
-        None => (None, None),
-    };
-    ModelInfo {
-        name: name.or(own).map(str::to_owned),
-        maker: maker.filter(|maker| !maker.is_empty()).map(str::to_owned),
+    let info = ModelInfo {
         providers,
         context: first(|card| card.context),
         max_output: first(|card| card.max_output),
@@ -153,7 +146,12 @@ pub(super) fn info(
                 ..reasoning.clone()
             }),
         ..ModelInfo::new(id)
-    }
+    };
+    // The listing's name, then the settings' over it.
+    [listed, name]
+        .into_iter()
+        .flatten()
+        .fold(info, ModelInfo::named)
 }
 
 #[cfg(test)]
@@ -221,7 +219,7 @@ mod tests {
             None,
             Some(&target(None)),
         );
-        assert_eq!(info.name.as_deref(), Some("Claude Haiku 5.5"));
+        assert_eq!(info.name, "Claude Haiku 5.5");
         assert_eq!(info.maker.as_deref(), Some("Anthropic"));
         assert_eq!(info.context, Some(1_000_000), "from the reference");
         assert_eq!(info.price, None, "the service tried first says no price");
@@ -231,10 +229,11 @@ mod tests {
         assert_eq!(info.providers, ["Anthropic", "OpenRouter"]);
         let own = target(Some(&reference));
         let named = super::info("m", &[&reference], Vec::new(), Some("Mine"), Some(&own));
+        assert_eq!(named.name, "Mine", "the settings' name wins");
         assert_eq!(
-            named.name.as_deref(),
-            Some("Mine"),
-            "the settings' name wins"
+            named.maker.as_deref(),
+            Some("Anthropic"),
+            "the listing's maker stays"
         );
         let unasked = named.reasoning.and_then(|reasoning| reasoning.default);
         assert_eq!(unasked.as_deref(), Some("high"), "what the first is sent");
