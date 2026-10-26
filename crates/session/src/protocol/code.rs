@@ -49,5 +49,6 @@ codes! {
     NO_FILE = -32030, "No such file here: never kept in this project, or no message used it within a day";
     NO_IMAGES = -32031, "The thread's model does not read images";
     NO_SERVER = -32032, "No remote server of the person's settings goes by that name or address";
+    NO_PLAN = -32033, "The thread has no plan waiting for the person's approval";
     NO_FOLDER = -32029, "The project's folder isn't there anymore: give it its new place (`project/folder/set`) or remove the project (`project/remove`)";
 }

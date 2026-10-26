@@ -29,6 +29,9 @@ use crate::waits::{Answered, verdict_of};
 /// The result of a tool call the turn never ran because the person cancelled it.
 pub(crate) const NOT_RUN: &str = "Not run: the person cancelled the turn.";
 
+/// What a call refused in plan mode shows, after its summary.
+const NOT_IN_PLAN: &str = "not run in plan mode";
+
 const NO_ANSWER: &str = "No one answered. Choose what seems best, go on, and say what you \
      assumed.";
 
@@ -142,7 +145,7 @@ where
         } else if step.toolset.is_goal(&call.tool) {
             return Ok(crate::goal::update(thread, &call.arguments));
         } else if step.toolset.is_plan(&call.tool) {
-            return Ok(crate::plan::update_plan(thread, call, cancel, live));
+            return Ok(self.update_plan(thread, call, step, cancel, live));
         } else if step.toolset.is_memory(&call.tool) {
             return self.call_memory(thread, call, step, cancel, live).await;
         }
@@ -232,10 +235,12 @@ where
         summary: &str,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Option<ToolOutput> {
-        let forbidden = Asks::of(self.workspace_for(thread)) == Asks::Nothing;
+        let asks = Asks::of(self.workspace_for(thread));
         let (refused, why) = if lifted.is_some() && lifted != asked {
             (sandbox::CHANGED, "not run: the sandbox changed")
-        } else if lifted.is_some() && forbidden {
+        } else if lifted.is_some() && asks == Asks::Never {
+            (sandbox::PLAN_STAYS, NOT_IN_PLAN)
+        } else if lifted.is_some() && asks == Asks::Nothing {
             (sandbox::NOT_ALLOWED, "not allowed here")
         } else {
             return None;
@@ -372,10 +377,11 @@ where
         let confined = request.tool == Tool::Bash.name()
             && request.outside_sandbox.is_none()
             && self.workspace_for(thread).sandbox().is_some();
-        // A caution asks even when the tool was allowed for the rest of the thread.
+        // A caution asks even when the tool was allowed for the rest of the thread; in plan
+        // mode, where it is refused, nothing allowed before counts.
+        let allowed = thread.allowed.contains(&request.tool) && !self.planning(thread);
         let asks = cautioned
-            || (asks_for(self.approval_for(thread), request.effect, confined)
-                && !thread.allowed.contains(&request.tool));
+            || (asks_for(self.approval_for(thread), request.effect, confined) && !allowed);
         if !asks {
             return Ok(None);
         }
@@ -473,6 +479,8 @@ where
     /// Asks the person about `request`, recording the question and the answer. `None` when the
     /// call may go ahead; otherwise the result the model is given instead. Full access asks no
     /// one: the call goes ahead, unless it would show the model a secret ([`Self::unasked`]).
+    /// Plan mode asks no one either: what would ask is refused, since nothing changes until
+    /// the person approves the plan.
     pub(crate) async fn ask(
         &self,
         thread: &mut Thread,
@@ -482,6 +490,13 @@ where
     ) -> Result<Option<ToolOutput>, HarnessError> {
         if self.approval_for(thread) == ApprovalMode::Never {
             return self.unasked(thread, request, live).await;
+        }
+        if self.planning(thread) {
+            live(Live::ToolFinished {
+                summary: format!("{} ({NOT_IN_PLAN})", request.summary),
+                is_error: true,
+            });
+            return Ok(Some(ToolOutput::text(true, crate::plan::refused(request))));
         }
         let asked = request.asked();
         self.record(thread, &asked).await?;

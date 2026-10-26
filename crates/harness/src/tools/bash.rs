@@ -47,7 +47,7 @@ pub(crate) fn spec(asks: Asks) -> ToolSpec {
         "background".into(),
         json!({"type": "boolean", "description": "Start it in the background and answer at once with its number"}),
     );
-    if asks != Asks::Nothing {
+    if !matches!(asks, Asks::Nothing | Asks::Never) {
         description.push_str(
             " If it blocked a command the task needs, run that same command again with \
              outside_sandbox and a reason: the person is asked to allow it.",
@@ -79,6 +79,13 @@ pub(crate) fn spec(asks: Asks) -> ToolSpec {
             description.push_str(
                 " They have no network here, and none may ask for it or to run outside the \
                  sandbox: do the task without the internet, or tell the person what needs it.",
+            );
+            None
+        }
+        Asks::Never => {
+            description.push_str(
+                " In plan mode the sandbox keeps every file as it is, and no command may leave \
+                 it: look around with commands that only read.",
             );
             None
         }

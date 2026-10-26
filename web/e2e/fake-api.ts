@@ -600,7 +600,7 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
         version: '0.0.0',
         protocols: ['2026-10'],
         permissions: 'auto',
-        modes: ['auto', 'ask', 'full-access'],
+        modes: ['auto', 'plan', 'ask', 'full-access'],
         id: FAKE_SERVER,
       };
     default:

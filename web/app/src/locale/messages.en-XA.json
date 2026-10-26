@@ -269,6 +269,8 @@
     "permissions.fullAccessAbout": "[Ñö ļîɱîţš: çåñ çĥåñĝé åñýţĥîñĝ öñ ţĥîš çöɱþûţéŕ, åñð ñéṽéŕ åšķš. one two three four]",
     "permissions.label": "[Ṁöðé one]",
     "permissions.onlyOne": "[{$ABOUT} Ţĥé öñļý çĥöîçé ţĥîš šéŕṽéŕ åļļöŵš. one two three]",
+    "permissions.plan": "[Þļåñ one]",
+    "permissions.planAbout": "[Ļööķš åŕöûñð åñð þŕöþöšéš å þļåñ. Çĥåñĝéš ñöţĥîñĝ ûñţîļ ýöû åþþŕöṽé îţ. one two three four]",
     "permissions.prefix": "[Ṁöðé: one]",
     "permissions.recommended": "[{$MODE} · Ŕéçöɱɱéñðéð one]",
     "person.settings": "[Šéţţîñĝš one]",

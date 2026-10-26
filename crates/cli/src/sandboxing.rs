@@ -74,10 +74,11 @@ pub(crate) async fn workspace(
         Err(_) => open_here(folder, processes, asks).await?,
     };
     // Auto asks before everything here; Ask first does too where no sandbox runs at all.
+    // Plan asks nothing: what would ask is refused.
     let asks_all = match setup.choices.permissions.value {
         Permissions::Auto => true,
         Permissions::Ask => setup.sandbox.is_none(),
-        Permissions::FullAccess => false,
+        Permissions::Plan | Permissions::FullAccess => false,
     };
     if asks_all && setup.choices.on.value != On::Cloud {
         eprintln!("glave: {}", unsandboxed_notice(&why));

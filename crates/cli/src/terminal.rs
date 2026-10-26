@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use glave_event::{Currency, GoalReason, Money, Outcome, OutsideSandbox};
 use glave_harness::Question;
-use glave_session::protocol::{TurnResult, Update};
+use glave_session::protocol::{PlanInfo, TurnResult, Update};
 
 const GREEN: &str = "\x1b[32m";
 const CYAN: &str = "\x1b[36m";
@@ -188,6 +188,14 @@ impl Printer {
         outside: Option<&OutsideSandbox>,
     ) {
         print!("{}", approval_prompt(self.color, summary, caution, outside));
+        self.speaking = false;
+        flush();
+    }
+
+    /// A plan a turn proposed, as the server says it, a line for each step; with `asks`, the
+    /// question after it, whose answer is typed next.
+    pub(crate) fn plan(&mut self, plan: &PlanInfo, asks: bool) {
+        print!("{}", crate::client::plan::shown(self.color, plan, asks));
         self.speaking = false;
         flush();
     }

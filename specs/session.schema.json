@@ -959,6 +959,11 @@
       "description": "What the agent may do without asking the person (`specs/approvals.md`, \"Modes\"): the one\nchoice a person makes about it, its mode. Ordered by caution, the most cautious least, so a\npolicy's cap is the highest mode it allows. Each comes to a sandbox and how much asks\nwherever it runs (`glave-harness`). The names from before the modes were renamed (#739),\n`read-only` and `workspace`, still read as `ask` and `auto`, so logs and files written then\nstill open; only the new names are written.",
       "oneOf": [
         {
+          "const": "plan",
+          "description": "Plan: the agent looks around and proposes a plan, and changes nothing until the person\napproves it: commands run in the sandbox that writes nothing of the project, and what\nAsk first would ask about is refused instead.",
+          "type": "string"
+        },
+        {
           "const": "ask",
           "description": "Ask first: commands run in a sandbox that writes nothing of the project, and every\nchange asks first.",
           "type": "string"
@@ -976,10 +981,14 @@
       ]
     },
     "PlanInfo": {
-      "description": "A thread's plan: its latest `plan.updated`.",
+      "description": "A thread's plan: its latest `plan.updated`, by the model or the person.",
       "properties": {
+        "proposed": {
+          "description": "Whether it waits for the person: proposed in plan mode and not approved yet, to build\n(`plan/build`), edit (`plan/edit`) or change with a message.",
+          "type": "boolean"
+        },
         "sentence": {
-          "description": "How far it has come, in a sentence: \"Plan: 2 of 5 steps done\".",
+          "description": "What it is, in a sentence: \"Proposed plan: 5 steps\", \"Plan: 2 of 5 steps done\".",
           "type": "string"
         },
         "steps": {
@@ -992,6 +1001,7 @@
       },
       "required": [
         "steps",
+        "proposed",
         "sentence"
       ],
       "type": "object"
@@ -2626,6 +2636,10 @@
       "code": -32021,
       "message": "No such model here, or not one this server may run"
     },
+    "NO_PLAN": {
+      "code": -32033,
+      "message": "The thread has no plan waiting for the person's approval"
+    },
     "NO_PROJECT": {
       "code": -32019,
       "message": "No such project"
@@ -3888,6 +3902,69 @@
         "type": "object"
       },
       "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "plan/build": {
+      "params": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "turn": {
+            "$ref": "#/$defs/TurnResult"
+          }
+        },
+        "required": [
+          "turn"
+        ],
+        "type": "object"
+      },
+      "streams": true
+    },
+    "plan/edit": {
+      "params": {
+        "properties": {
+          "steps": {
+            "description": "The steps, in order: 1 to 64, each a line of up to 1,000 characters.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread",
+          "steps"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "The thread's plan, or `null`.",
+        "properties": {
+          "plan": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PlanInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
         "type": "object"
       },
       "streams": false

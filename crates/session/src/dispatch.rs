@@ -208,6 +208,10 @@ where
             } => self.events(thread, after, limit).await,
             Request::ThreadSources { thread } => self.sources(thread).await,
             Request::ThreadPlan { thread } => self.plan(thread).await,
+            Request::PlanEdit { thread, steps } => self.edit_plan(caller, thread, steps).await,
+            Request::PlanBuild { thread } => {
+                return streamed(self.build_plan(traced, thread).await);
+            }
             Request::ThreadWatch { thread, after } => {
                 return match self.watch(caller, thread, after).await {
                     Ok(watch) => Answered::Watch(watch),

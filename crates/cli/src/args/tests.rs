@@ -147,7 +147,10 @@ fn modes_parse() {
         assert_eq!(chosen.permissions, Some(mode));
     }
     let unknown = parse_words(&["--permissions", "workspace"]).unwrap_err();
-    assert!(unknown.contains("auto, ask or full-access"), "{unknown}");
+    assert!(
+        unknown.contains("auto, plan, ask or full-access"),
+        "{unknown}"
+    );
     assert!(
         parse_words(&["--approval", "ask"]).is_err(),
         "part of the mode now"
