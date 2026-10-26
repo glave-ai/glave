@@ -22,8 +22,8 @@ pub struct InMemoryBlobs {
 /// Every blob, by scope and hash.
 type Held = BTreeMap<(Scope, Sha256), Kept>;
 
-/// One blob: what it is, its bytes, the threads that refer to it, whether one ever did, and
-/// when it was last uploaded with none.
+/// One blob: what it is, its bytes, the threads that refer to it, whether one did since it was
+/// last uploaded with none, and when that was.
 #[derive(Debug)]
 struct Kept {
     reference: BlobRef,
@@ -94,12 +94,12 @@ impl BlobStore for InMemoryBlobs {
                 referred: false,
                 uploaded_ms: now,
             });
-            match thread {
-                Some(thread) => {
-                    kept.threads.insert(thread);
-                    kept.referred = true;
-                }
-                None => kept.uploaded_ms = now,
+            // An upload is kept a day from now, however a thread used it before.
+            kept.referred = thread.is_some();
+            if let Some(thread) = thread {
+                kept.threads.insert(thread);
+            } else {
+                kept.uploaded_ms = now;
             }
             Ok(kept.reference.clone())
         }

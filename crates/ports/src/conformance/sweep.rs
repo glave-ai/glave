@@ -19,6 +19,7 @@ pub(super) async fn sweeping<B: BlobStore>(
 ) -> Verdict {
     released(blobs).await?;
     uploads(blobs, clock).await?;
+    used_then_uploaded(blobs, clock).await?;
     referred_or_swept_first(blobs, clock).await?;
     if let Some(objects) = objects {
         orphans(blobs, clock, objects).await?;
@@ -139,6 +140,30 @@ async fn uploads<B: BlobStore>(blobs: &B, clock: &ManualClock) -> Verdict {
             .await?
             .is_some(),
         "an upload a thread refers to must stay",
+    )
+}
+
+/// Content a thread used, uploaded again (a screenshot attached to a draft once more), is kept
+/// a day from the upload like any other, though the thread lets go of it meanwhile.
+async fn used_then_uploaded<B: BlobStore>(blobs: &B, clock: &ManualClock) -> Verdict {
+    let here = scope(10);
+    let bytes = b"a screenshot used before";
+    let used = put(blobs, &here, thread(10)?, Pieces::from(bytes.to_vec())).await?;
+    upload(blobs, &here, bytes).await?;
+    blobs
+        .release(&here, thread(10)?)
+        .await
+        .map_err(|e| e.to_string())?;
+    sweep(blobs, here).await?;
+    ensure(
+        read(blobs, &here, &used.sha256).await?.is_some(),
+        "content uploaded again must be kept a day from then, though a thread used it before",
+    )?;
+    clock.advance_millis(UNREFERENCED_FOR_MS + 1);
+    sweep(blobs, here).await?;
+    ensure(
+        read(blobs, &here, &used.sha256).await?.is_none(),
+        "content uploaded again that no thread referred to within a day must be swept",
     )
 }
 
