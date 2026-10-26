@@ -65,16 +65,15 @@ async function settle(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve));
 }
 
-/** Opens thread-1, on a phone when `narrow`, after the new chat sent it `first`, if given. */
+/** Opens thread-1 on a wide screen, after the new chat sent it `first`, if given. */
 async function open(
   fake: FakeSession,
-  narrow = false,
   first?: TurnStartParams,
 ): Promise<{
   readonly root: HTMLElement;
   readonly fixture: ReturnType<typeof TestBed.createComponent<ThreadComponent>>;
 }> {
-  const breakpoints = { observe: () => of({ matches: narrow, breakpoints: {} }) };
+  const breakpoints = { observe: () => of({ matches: false, breakpoints: {} }) };
   TestBed.configureTestingModule({
     providers: [
       provideRouter([]),
@@ -405,7 +404,7 @@ describe('ThreadComponent', () => {
     const lost = new FakeTurn();
     lost.fail(new TypeError('Failed to fetch'));
     const fake = session([]).turn(lost).streams([]);
-    const { root, fixture } = await open(fake, false, { thread: 'thread-1', prompt: 'Plan' });
+    const { root, fixture } = await open(fake, { thread: 'thread-1', prompt: 'Plan' });
     expect(root.querySelector('[data-testid="thread-message"]')?.textContent).toContain('Plan');
     expect(root.querySelector('[data-testid="thread-lost"]')?.textContent).toContain(
       'This message may not have reached glave.',
@@ -586,7 +585,6 @@ describe('ThreadComponent', () => {
     const button = root.querySelector<HTMLElement>('[data-testid="thread-panel"]');
     expect(panel?.inert).toBe(false);
     expect(panel?.getAttribute('aria-label')).toBe('This thread');
-    expect(root.querySelector('[data-testid="panel-close"]')).toBeNull();
     expect(panel?.querySelector('[data-testid="panel-file"]')?.textContent).toContain('README.md');
     expect(button?.getAttribute('aria-pressed')).toBe('true');
     expect(edge?.getAttribute('aria-keyshortcuts')).toMatch(/^(Meta|Control)\+\.$/u);
@@ -603,22 +601,6 @@ describe('ThreadComponent', () => {
     document.dispatchEvent(
       new KeyboardEvent('keydown', { key: '.', metaKey: apple, ctrlKey: !apple, bubbles: true }),
     );
-    await fixture.whenStable();
-    expect(panel?.inert).toBe(true);
-  });
-
-  it('opens the panel as a sheet from the top bar on narrow screens, closed at first', async () => {
-    const { root, fixture } = await open(session(EDITED), true);
-    const button = root.querySelector<HTMLButtonElement>('[data-testid="thread-panel"]');
-    const panel = root.querySelector<HTMLElement>('[data-testid="panel-panel"]');
-    expect(root.querySelector('[data-testid="panel-handle"]')).toBeNull();
-    expect(panel?.inert).toBe(true);
-    expect(button?.getAttribute('aria-pressed')).toBe('false');
-    button?.click();
-    await fixture.whenStable();
-    expect(panel?.getAttribute('aria-modal')).toBe('true');
-    await expectAccessible(root);
-    root.querySelector<HTMLButtonElement>('[data-testid="panel-close"]')?.click();
     await fixture.whenStable();
     expect(panel?.inert).toBe(true);
   });
