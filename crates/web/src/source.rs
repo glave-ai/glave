@@ -17,7 +17,7 @@ use serde_json::json;
 
 use crate::fetch::{FetchError, Fetcher, Limits, Page};
 
-pub const WEB_FETCH: &str = "web_fetch";
+pub const WEB_FETCH: &str = WebPage::TOOL;
 
 /// How `web_fetch` is set up.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

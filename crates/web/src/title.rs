@@ -15,11 +15,15 @@ pub(crate) fn title(html: &str) -> Option<String> {
         return None;
     }
     let end = start.saturating_add(lower.get(start..)?.find("</title")?);
-    let words: Vec<String> = references(html.get(start..end)?)
-        .split_whitespace()
-        .map(|word| word.chars().filter(|c| !c.is_control()).collect())
+    let text: String = references(html.get(start..end)?)
+        .chars()
+        .filter_map(|c| match c {
+            c if c.is_whitespace() => Some(' '),
+            c if hidden(c) => None,
+            c => Some(c),
+        })
         .collect();
-    let title = words.join(" ");
+    let title = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if title.is_empty() {
         return None;
     }
@@ -28,6 +32,25 @@ pub(crate) fn title(html: &str) -> Option<String> {
         return Some(format!("{}…", kept.trim_end()));
     }
     Some(title)
+}
+
+/// Whether `c` shows nothing of its own: a control character, or one that only changes how the
+/// text around it is laid out (the marks and overrides of bidirectional text, and the other
+/// invisible format characters), which could make an address shown beside the title read as
+/// another.
+fn hidden(c: char) -> bool {
+    c.is_control()
+        || matches!(
+            c,
+            '\u{00AD}'
+                | '\u{061C}'
+                | '\u{180E}'
+                | '\u{200B}'..='\u{200F}'
+                | '\u{202A}'..='\u{202E}'
+                | '\u{2060}'..='\u{206F}'
+                | '\u{FEFF}'
+                | '\u{FFF9}'..='\u{FFFB}'
+        )
 }
 
 /// Where the text of the first `<title>` tag in `lower` starts: just after its `>`.
@@ -141,8 +164,11 @@ mod tests {
     }
 
     #[test]
-    fn control_characters_never_reach_the_title() {
+    fn control_and_layout_characters_never_reach_the_title() {
         let html = "<title>Safe\u{7}\u{1b}[31m page</title>";
         assert_eq!(title(html).as_deref(), Some("Safe[31m page"));
+        // An override left open would turn the address shown after it round.
+        let turned = "<title>Bank \u{202E}moc.elpmaxe\u{2066} \u{200B} login&#x202C;</title>";
+        assert_eq!(title(turned).as_deref(), Some("Bank moc.elpmaxe login"));
     }
 }

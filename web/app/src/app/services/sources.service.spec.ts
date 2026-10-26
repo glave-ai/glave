@@ -12,11 +12,10 @@ import { event } from '../testing/fixtures';
 import { SourcesService } from './sources.service';
 import { ThreadService } from './thread.service';
 
-const READ = event(5, 'tool.call.completed', {
+const READ = event(5, 'tool.call.requested', {
   call_id: 'c1',
-  is_error: false,
-  output: [],
-  structured: { page: { url: 'https://tokio.rs/blog', title: 'Tokio blog' } },
+  tool: 'web_fetch',
+  arguments: { json: { url: 'https://tokio.rs/blog' } },
 });
 
 const SOURCED: ReplySources = {
@@ -76,6 +75,25 @@ describe('SourcesService', () => {
     await thread.send('And since?');
     await settle();
     expect(fake.paramsOf('thread/sources')).toHaveLength(2);
+  });
+
+  it('asks once for a history read in pages, after the last', async () => {
+    const pages = [
+      { events: [READ, event(7, 'turn.ended', {})], next: 7 },
+      { events: [event(8, 'turn.started', {}), event(9, 'turn.ended', {})] },
+    ];
+    const fake = new FakeSession().answer('thread/events', (params) =>
+      (params as { readonly after?: number }).after === undefined ? pages[0] : pages[1],
+    );
+    const { thread } = make(fake);
+    const opened = thread.open('thread-1');
+    // While the first page is in and the second on its way, nothing is asked.
+    await Promise.resolve();
+    TestBed.tick();
+    await opened;
+    await settle();
+    expect(fake.paramsOf('thread/events')).toHaveLength(2);
+    expect(fake.paramsOf('thread/sources')).toEqual([{ thread: 'thread-1' }]);
   });
 
   it('shows none when they cannot be read', async () => {

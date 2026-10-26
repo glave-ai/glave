@@ -410,9 +410,12 @@ fn a_reply_shows_the_pages_it_read_under_it() {
             shown.contains(&format!("Release notes · {notes}")),
             "{shown}"
         );
+        // The page that failed to load shows only as its step, before the reply.
+        let listed = shown.get(sources..).unwrap_or_default();
+        assert!(!listed.contains(&gone), "a page that failed: {shown}");
         assert!(
-            !shown.contains(&format!("{gone} ·")),
-            "a page that failed: {shown}"
+            shown.get(..reply).unwrap_or_default().contains(&gone),
+            "{shown}"
         );
     });
 }

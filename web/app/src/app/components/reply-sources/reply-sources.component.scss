@@ -37,12 +37,15 @@
   text-decoration: none;
 }
 
-.link:hover .title {
-  text-decoration: underline;
-}
-
 .title {
   color: var(--glz-accent-text);
+}
+
+// What names the page reads as a link, as one in a reply does: its title, else its address.
+.title,
+.address:first-child {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 
 // An address reads left to right in any page.

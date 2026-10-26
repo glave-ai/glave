@@ -28,8 +28,6 @@ test('a reply shows the pages it drew on from the web under it, each a link', as
   await expect(links.nth(1)).toHaveAccessibleName(
     'docs.rs/tokio/latest/tokio/ (opens in a new tab)',
   );
-  // The page that failed to load is none.
-  await expect(sources).not.toContainText('missing');
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
     await expectAccessible(page);

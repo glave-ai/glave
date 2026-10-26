@@ -34,9 +34,10 @@ import { RESEARCH, RESEARCH_HISTORY, sourcesOf } from './fake-sources';
  * thread's history (a turn on this computer that ran a command, edited a file and wrote a new
  * one, and replied from the default model, which the picker shows; how long it took and what
  * it cost), another waiting for the person to allow a push, a chat that read pages on the web
- * and what its reply drew on, the models, the tasks, one memory, what a turn streams, the folders on the person's computer, and the projects made
- * while it runs; and when a test asks, a project that asks to be trusted, a thread that keeps
- * the docs site running in the background, and a connected GitHub account.
+ * and what its reply drew on, the models, the tasks, one memory, what a turn streams, the
+ * folders on the person's computer, and the projects made while it runs; and when a test asks,
+ * a project that asks to be trusted, a thread that keeps the docs site running in the
+ * background, a chat among the person's own that read pages, and a connected GitHub account.
  */
 const OWNER = { kind: 'person', id: '01900000-0000-7000-8000-0000000000aa' } as const;
 

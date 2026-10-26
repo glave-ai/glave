@@ -204,7 +204,7 @@ impl Client<'_> {
                                 cancelling = self.cancel().await;
                             }
                         }
-                        Some(TurnItem::Missed(_)) => {}
+                        Some(TurnItem::Missed(_)) => followed.missed(),
                         None => return None,
                     }
                 }

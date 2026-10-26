@@ -14,5 +14,6 @@ pub struct ReplySources {
     pub reply: Seq,
     /// What they are, in a sentence: "Sources: 3 pages".
     pub sentence: Told,
+    /// The pages, in the order the turn first read each.
     pub pages: Vec<WebPage>,
 }

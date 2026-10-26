@@ -3,24 +3,21 @@ import type { RawEvent } from '@glave/client';
 import { event } from '../testing/fixtures';
 import { lastSourcing, shortAddress, sourceLinks } from './sources';
 
-const PAGE = { page: { url: 'https://tokio.rs/blog', title: 'Tokio blog' } };
-
-function completed(seq: number, data: Record<string, unknown>): RawEvent {
-  return event(seq, 'tool.call.completed', {
+function requested(seq: number, tool: string): RawEvent {
+  return event(seq, 'tool.call.requested', {
     call_id: `c${String(seq)}`,
-    is_error: false,
-    output: [],
-    ...data,
+    tool,
+    arguments: { json: {} },
   });
 }
 
 describe('lastSourcing', () => {
-  it('is the end of the latest turn once a page was read', () => {
+  it('is the end of the latest turn once the thread asked to read a page', () => {
     const events = [
       event(1, 'turn.started', {}),
       event(2, 'turn.ended', { outcome: 'completed' }),
       event(3, 'turn.started', {}),
-      completed(4, { structured: PAGE }),
+      requested(4, 'web_fetch'),
       event(5, 'turn.ended', { outcome: 'completed' }),
       event(6, 'turn.started', {}),
       event(7, 'turn.ended', { outcome: 'completed' }),
@@ -31,12 +28,11 @@ describe('lastSourcing', () => {
     expect(lastSourcing(events)).toBe(7);
   });
 
-  it('counts no page from a call that failed, or recorded none', () => {
+  it('asks nothing after other tools, a search among them', () => {
     const events = [
-      completed(1, { is_error: true, structured: PAGE }),
-      completed(2, {}),
-      completed(3, { structured: { from_memory: true } }),
-      event(4, 'turn.ended', { outcome: 'completed' }),
+      requested(1, 'mcp__search__web_search_exa'),
+      requested(2, 'read'),
+      event(3, 'turn.ended', { outcome: 'completed' }),
     ];
     expect(lastSourcing(events)).toBeNull();
   });

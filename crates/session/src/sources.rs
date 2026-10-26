@@ -3,7 +3,9 @@
 //! (`glave_event::WebPage`), and a turn's pages are its last reply's sources, those read before
 //! it, each once.
 
-use glave_event::{Body, Part, RawEvent, Role, Seq, ThreadId, WebPage, decode};
+use std::collections::HashSet;
+
+use glave_event::{Body, CallId, Part, RawEvent, Role, Seq, ThreadId, WebPage, decode};
 use glave_ports::{BlobStore, EventLog, ModelProvider};
 
 use crate::protocol::{ApiError, Reply, ReplySources};
@@ -36,27 +38,33 @@ where
     }
 }
 
-/// A thread's log read so far, in order: the sources of the turns it has passed, and the turn
-/// it is in.
+/// A thread's log read so far, in order: the sources of the turns that ended, and the turn it
+/// is in.
 #[derive(Default)]
-pub(crate) struct Reading {
+struct Reading {
     sources: Vec<ReplySources>,
     turn: Turn,
 }
 
-/// What one turn read, each page with the `seq` that recorded it, and its latest reply.
+/// What one turn read so far: its `web_fetch` calls, each page they read with the `seq` that
+/// recorded it, and its latest reply.
 #[derive(Default)]
 struct Turn {
+    fetches: HashSet<CallId>,
     pages: Vec<(Seq, WebPage)>,
     reply: Option<Seq>,
 }
 
 impl Reading {
     /// Reads the next event of the log.
-    pub(crate) fn read(&mut self, event: RawEvent) {
+    fn read(&mut self, event: RawEvent) {
         if !matches!(
             event.kind.as_str(),
-            "turn.started" | "tool.call.completed" | "message.added"
+            "turn.started"
+                | "turn.ended"
+                | "tool.call.requested"
+                | "tool.call.completed"
+                | "message.added"
         ) {
             return;
         }
@@ -65,11 +73,19 @@ impl Reading {
             return;
         };
         match event.body {
-            Body::TurnStarted(_) => {
+            // What a turn read is known once it ended; one that never did is left out.
+            Body::TurnStarted(_) => self.turn = Turn::default(),
+            Body::TurnEnded(_) => {
                 let ended = std::mem::take(&mut self.turn);
                 self.sources.extend(ended.sources());
             }
-            Body::ToolCallCompleted(done) if !done.is_error => {
+            // Only glave's own `web_fetch` reads a page, whatever another tool records.
+            Body::ToolCallRequested(requested) if requested.tool == WebPage::TOOL => {
+                self.turn.fetches.insert(requested.call_id);
+            }
+            Body::ToolCallCompleted(done)
+                if !done.is_error && self.turn.fetches.contains(&done.call_id) =>
+            {
                 if let Some(page) = done.structured.as_ref().and_then(WebPage::read) {
                     self.turn.pages.push((seq, page));
                 }
@@ -83,9 +99,8 @@ impl Reading {
         }
     }
 
-    /// The sources of every reply read, in order, the turn it is in last.
-    pub(crate) fn done(mut self) -> Vec<ReplySources> {
-        self.sources.extend(self.turn.sources());
+    /// The sources of every reply of a turn that ended, in order.
+    fn done(self) -> Vec<ReplySources> {
         self.sources
     }
 }

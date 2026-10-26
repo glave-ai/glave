@@ -1,5 +1,5 @@
 //! What the replies of a turn the terminal follows drew on from the web, shown once it ends as
-//! the server says it (`thread/sources`), asked for only when the turn read a page.
+//! the server says it (`thread/sources`), asked for only when the turn may have read a page.
 
 use glave_event::{Body, Seq, ThreadId, WebPage, decode};
 use glave_session::protocol::{Notification, Reply, Request};
@@ -8,7 +8,7 @@ use super::Session;
 use crate::terminal::Printer;
 
 /// What the terminal saw of the turns it follows in a thread: where their events began, and
-/// whether they read a page.
+/// whether they may have read a page.
 #[derive(Default)]
 pub(crate) struct Followed {
     since: Option<Seq>,
@@ -25,13 +25,18 @@ impl Followed {
             return;
         }
         self.since.get_or_insert(event.seq);
-        if event.kind.as_str() == "tool.call.completed"
+        // What a call read is the server's to say; the terminal only asks after one may have.
+        if event.kind.as_str() == "tool.call.requested"
             && let Ok(decoded) = decode(event.clone())
-            && let Body::ToolCallCompleted(done) = decoded.body
-            && !done.is_error
+            && let Body::ToolCallRequested(requested) = decoded.body
         {
-            self.read |= done.structured.as_ref().and_then(WebPage::read).is_some();
+            self.read |= requested.tool == WebPage::TOOL;
         }
+    }
+
+    /// Notes that notifications were missed: one may have been a page's read.
+    pub(crate) fn missed(&mut self) {
+        self.read = true;
     }
 
     /// Shows what the replies written since the terminal began following drew on.

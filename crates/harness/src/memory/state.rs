@@ -39,8 +39,6 @@ pub(crate) struct MemoryState {
     pub(crate) known: BTreeMap<MemoryId, Remembered>,
     /// The contradictions the model was told to ask the person about.
     pub(crate) questions: Vec<[MemoryId; 2]>,
-    /// What the memory call being recorded records in its `tool.call.completed` ([`recorded`]).
-    pub(crate) structured: Option<serde_json::Value>,
 }
 
 impl MemoryState {

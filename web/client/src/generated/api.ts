@@ -467,6 +467,7 @@ export type Remembered = {
  * did not read.
  */
 export type ReplySources = {
+  /** The pages, in the order the turn first read each. */
   readonly pages: readonly (WebPage)[];
   /** The `seq` of the reply's `message.added`: the last words of its turn. */
   readonly reply: Seq;

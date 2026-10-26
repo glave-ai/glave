@@ -1,32 +1,23 @@
 import type { RawEvent, ReplySources } from '@glave/client';
 
-type Data = Readonly<Record<string, unknown>>;
+/** The tool that reads pages, the one whose calls can make a reply's sources. */
+const WEB_FETCH = 'web_fetch';
 
-function isRecord(value: unknown): value is Data {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+/** Whether `event` asks to read a page: a call of `web_fetch`, which may or may not load it. */
+function fetches(event: RawEvent): boolean {
+  return event.type === 'tool.call.requested' && event.data['tool'] === WEB_FETCH;
 }
 
 /**
- * Whether `event` records a page a call read: a `tool.call.completed` that did not fail, its
- * `structured` result holding the `page` (`web_fetch`'s).
- */
-function readsPage(event: RawEvent): boolean {
-  if (event.type !== 'tool.call.completed' || event.data['is_error'] === true) {
-    return false;
-  }
-  const structured = event.data['structured'];
-  return isRecord(structured) && isRecord(structured['page']);
-}
-
-/**
- * The `seq` of the latest end of a turn once a page was read, or `null` while none was: when it
- * changes, a reply may have drawn on pages it had not, and the sources are read again.
+ * The `seq` of the latest end of a turn once the thread asked to read a page, or `null` while it
+ * had not: when it changes, a reply may have drawn on pages it had not, and the sources are read
+ * again. What a call read, if anything, is the server's to say.
  */
 export function lastSourcing(events: readonly RawEvent[]): number | null {
   let read = false;
   let last: number | null = null;
   for (const event of events) {
-    read ||= readsPage(event);
+    read ||= fetches(event);
     if (read && event.type === 'turn.ended') {
       last = event.seq;
     }

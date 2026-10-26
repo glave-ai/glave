@@ -1292,6 +1292,7 @@
       "description": "The pages one reply drew on: each one its turn read with `web_fetch` before it, once, in the\norder first read. A page that failed to load is none, nor is a search's result the agent\ndid not read.",
       "properties": {
         "pages": {
+          "description": "The pages, in the order the turn first read each.",
           "items": {
             "$ref": "#/$defs/WebPage"
           },

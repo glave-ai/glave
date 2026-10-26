@@ -113,8 +113,8 @@ where
         if let Some(change) = &change {
             live(shown(change));
         }
-        let output = self.after_tool(thread, &hooked, output, cancel).await?;
-        thread.memory.structured = Some(recorded(change.as_ref()));
+        let mut output = self.after_tool(thread, &hooked, output, cancel).await?;
+        output.structured = Some(recorded(change.as_ref()));
         Ok(output)
     }
 }

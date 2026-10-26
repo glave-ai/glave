@@ -76,6 +76,10 @@ pub struct WebPage {
 }
 
 impl WebPage {
+    /// The tool that reads pages and records them: glave's own `web_fetch`. Another tool's
+    /// result is never taken for a page read, whatever it records.
+    pub const TOOL: &'static str = "web_fetch";
+
     /// The `structured` result of a call that read this page.
     pub fn structured(&self) -> Value {
         serde_json::json!({ "page": self })
