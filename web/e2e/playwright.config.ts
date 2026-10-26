@@ -144,9 +144,21 @@ const SITES: readonly { site: Site; web: string; env: Record<string, string> }[]
 ];
 
 /**
+ * Whether the run includes WebKit: always in CI and off a Mac, and on a Mac only when asked
+ * (`GLAVE_E2E_WEBKIT=1`). On macOS, Playwright's headless WebKit keeps painting while the display
+ * sleeps, and its GPU processes grew to several GB each until the Mac ran out of memory (#757).
+ * CI's WebKit runs on Linux, with the same layout engine.
+ */
+const WEBKIT =
+  process.env['CI'] !== undefined ||
+  process.platform !== 'darwin' ||
+  process.env['GLAVE_E2E_WEBKIT'] === '1';
+
+/**
  * End-to-end smoke tests: the production builds (`npm run build`, `npm run build:showcase`)
  * served by the real `glave serve --http --web`, with glave's own Content Security Policy and
- * headers, in Chromium and in WebKit, Safari's engine, headless. Every test runs in both, so a
+ * headers, in Chromium and in WebKit, Safari's engine, headless (WebKit on a Mac only when
+ * asked, above). Every test runs in both, so a
  * screen Safari alone gets wrong fails here first; the few that skip WebKit say why. The
  * session API's calls are answered by each test's fake (fake-api.ts), so no model is needed;
  * the first run's are the real server's, with a fake model service (first-run.e2e.ts). Build
@@ -174,13 +186,17 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    {
-      name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
-      // These two change a real glave (its first model, a connected account), which the
-      // Chromium run owns: run twice, they would race on its state.
-      testIgnore: ['first-run.e2e.ts', 'accounts.e2e.ts'],
-    },
+    ...(WEBKIT
+      ? [
+          {
+            name: 'webkit',
+            use: { ...devices['Desktop Safari'] },
+            // These two change a real glave (its first model, a connected account), which the
+            // Chromium run owns: run twice, they would race on its state.
+            testIgnore: ['first-run.e2e.ts', 'accounts.e2e.ts'],
+          },
+        ]
+      : []),
   ],
   // Each glave listens on a port the system picks (port 0), so two runs on one machine, such as
   // two `cargo xtask ci` side by side, never meet. It is ready once it says where it serves,

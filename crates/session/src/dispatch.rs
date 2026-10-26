@@ -207,6 +207,7 @@ where
                 limit,
             } => self.events(thread, after, limit).await,
             Request::ThreadSources { thread } => self.sources(thread).await,
+            Request::ThreadPlan { thread } => self.plan(thread).await,
             Request::ThreadWatch { thread, after } => {
                 return match self.watch(caller, thread, after).await {
                     Ok(watch) => Answered::Watch(watch),

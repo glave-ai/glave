@@ -1,16 +1,13 @@
 //! What the person sees in the terminal: the answer as it streams, approval prompts, and the
 //! receipt that closes each turn. Every status starts with a word; color only reinforces it.
 
-use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::{IsTerminal as _, Write as _};
 use std::time::Duration;
 
-use glave_event::{Currency, GoalReason, Money, Outcome, OutsideSandbox, ThreadId};
+use glave_event::{Currency, GoalReason, Money, Outcome, OutsideSandbox};
 use glave_harness::Question;
-use glave_session::protocol::{ReplySources, TurnResult, Update};
-
-use crate::waiting::Waiting;
+use glave_session::protocol::{TurnResult, Update};
 
 const GREEN: &str = "\x1b[32m";
 const CYAN: &str = "\x1b[36m";
@@ -35,50 +32,30 @@ pub(crate) fn flush() {
     let _ = std::io::stdout().flush();
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Showing {
-    Nothing,
-    Text,
-    Reasoning,
-}
-
-/// Prints live progress and receipts.
+/// Prints each item of a turn as it comes, approval prompts, and the receipt that closes it.
 pub(crate) struct Printer {
     color: bool,
-    showing: Showing,
+    /// Whether the model's words are being printed, so the next of them follow on.
+    speaking: bool,
     /// Who the answers come from: the model's own name, never one it is not.
     speaker: String,
     /// The protections in force, such as `permissions: auto · sandbox: project`.
     protections: String,
-    waiting: Waiting,
-    /// The subagents running now, by their thread, with what each is for.
-    subagents: HashMap<ThreadId, String>,
 }
 
 impl Printer {
     pub(crate) fn new(model: &str, protections: String) -> Self {
-        let color = color_enabled();
-        let speaker = speaker(model).to_owned();
         Self {
-            color,
-            showing: Showing::Nothing,
-            waiting: Waiting::new(color, &speaker),
-            subagents: HashMap::new(),
-            speaker,
+            color: color_enabled(),
+            speaking: false,
+            speaker: speaker(model).to_owned(),
             protections,
         }
     }
 
-    /// The line that counts the seconds while the model has not answered, for a clock to
-    /// update.
-    pub(crate) fn waiting(&self) -> Waiting {
-        self.waiting.clone()
-    }
-
+    /// One item of the turn, on a line of its own; the model's words follow on as they come.
     pub(crate) fn update(&mut self, update: Update) {
-        self.waiting.stop();
         match update {
-            Update::Waiting => self.waiting.start(),
             Update::Retrying {
                 retry,
                 of,
@@ -91,23 +68,16 @@ impl Printer {
                 self.note(YELLOW, "retrying", &detail);
             }
             Update::Text { text } => {
-                if self.showing != Showing::Text {
+                if !self.speaking {
                     print!("\n{} ", paint(self.color, GREEN, &self.speaker));
-                    self.showing = Showing::Text;
+                    self.speaking = true;
                 }
                 print!("{text}");
-            }
-            Update::Reasoning { text } => {
-                if self.showing != Showing::Reasoning {
-                    println!();
-                    self.showing = Showing::Reasoning;
-                }
-                print!("{}", paint(self.color, DIM, &text));
             }
             Update::ToolStarted { summary } => {
                 println!();
                 print!("  {} ", paint(self.color, DIM, &format!("{summary} …")));
-                self.showing = Showing::Nothing;
+                self.speaking = false;
             }
             Update::ToolDeclined {
                 summary,
@@ -116,7 +86,7 @@ impl Printer {
             } => {
                 let caution = caution.as_deref();
                 print!("{}", declined(self.color, &summary, caution, no_one_there));
-                self.showing = Showing::Nothing;
+                self.speaking = false;
             }
             Update::Compacted {
                 before_tokens,
@@ -132,15 +102,25 @@ impl Printer {
             Update::CompactionFailed { error } => {
                 self.note(YELLOW, "could not compact the conversation:", &error);
             }
-            // Shown by the client, which answers it; one that sends nothing mid-turn has
-            // nothing given back.
-            Update::Asked { .. } | Update::ApprovalPending { .. } | Update::Unread { .. } => {}
             Update::Memory {
                 change,
                 memory,
                 text,
             } => self.memory(&change, memory, text),
-            Update::SubagentStarted { .. } | Update::SubagentEnded { .. } => self.subagent(update),
+            Update::SubagentStarted { description, .. } => {
+                println!();
+                println!("  {} {description}", paint(self.color, CYAN, "agent"));
+                self.speaking = false;
+            }
+            Update::SubagentEnded { ok, .. } => {
+                let (color, word) = if ok {
+                    (CYAN, "agent done")
+                } else {
+                    (RED, "agent failed")
+                };
+                println!("  {}", paint(self.color, color, word));
+                self.speaking = false;
+            }
             Update::ToolFinished { is_error, .. } => {
                 if is_error {
                     println!("{}", paint(self.color, RED, "error"));
@@ -148,6 +128,13 @@ impl Printer {
                     println!("{}", paint(self.color, CYAN, "done"));
                 }
             }
+            // The client answers questions and approvals; reasoning, the wait for the model
+            // and a message given back show nothing.
+            Update::Asked { .. }
+            | Update::ApprovalPending { .. }
+            | Update::Unread { .. }
+            | Update::Reasoning { .. }
+            | Update::Waiting => {}
         }
         flush();
     }
@@ -169,28 +156,11 @@ impl Printer {
             paint(self.color, color, word),
             paint(self.color, DIM, detail)
         );
-        self.showing = Showing::Nothing;
-    }
-
-    /// What a reply drew on from the web: the server's sentence, then each page on a line of
-    /// its own, its title and where it is.
-    pub(crate) fn sources(&mut self, sourced: &ReplySources) {
-        self.waiting.stop();
-        print!("\n\n  {}", paint(self.color, DIM, &sourced.sentence));
-        for page in &sourced.pages {
-            let line = match &page.title {
-                Some(title) => format!("{title} · {}", page.url),
-                None => page.url.clone(),
-            };
-            print!("\n    {}", paint(self.color, DIM, &line));
-        }
-        self.showing = Showing::Nothing;
-        flush();
+        self.speaking = false;
     }
 
     /// The receipt that closes a turn: what happened and what it cost.
     pub(crate) fn receipt(&mut self, summary: &TurnResult, local: bool) {
-        self.waiting.stop();
         let (word, color) = match summary.outcome {
             Outcome::Completed => ("done", CYAN),
             Outcome::LimitReached => ("stopped at a limit", YELLOW),
@@ -204,7 +174,7 @@ impl Printer {
             paint(self.color, color, word),
             paint(self.color, DIM, &format!("· {line}"))
         );
-        self.showing = Showing::Nothing;
+        self.speaking = false;
         flush();
     }
 
@@ -217,81 +187,15 @@ impl Printer {
         caution: Option<&str>,
         outside: Option<&OutsideSandbox>,
     ) {
-        self.waiting.stop();
         print!("{}", approval_prompt(self.color, summary, caution, outside));
-        self.showing = Showing::Nothing;
+        self.speaking = false;
         flush();
-    }
-
-    /// A subagent starting or ending.
-    fn subagent(&mut self, update: Update) {
-        match update {
-            Update::SubagentStarted {
-                subagent,
-                description,
-            } => {
-                println!();
-                println!("  {} {description}", paint(self.color, CYAN, "agent"));
-                self.subagents.insert(subagent, description);
-            }
-            Update::SubagentEnded { subagent, ok } => {
-                let description = self.subagents.remove(&subagent).unwrap_or_default();
-                let (color, word) = if ok {
-                    (CYAN, "agent done")
-                } else {
-                    (RED, "agent failed")
-                };
-                println!("  {} {description}", paint(self.color, color, word));
-            }
-            _ => {}
-        }
-        self.showing = Showing::Nothing;
-    }
-
-    /// What a subagent did, one finished step per line under its description. Its words go
-    /// to the parent, not here.
-    pub(crate) fn child(&mut self, subagent: ThreadId, update: Update) {
-        let Some(label) = self.subagents.get(&subagent) else {
-            return;
-        };
-        let step = match update {
-            Update::ToolFinished { summary, is_error } => {
-                format!("{summary} · {}", if is_error { "error" } else { "done" })
-            }
-            Update::ToolDeclined {
-                summary,
-                no_one_there,
-                ..
-            } => format!("{summary} · {}", not_run(no_one_there)),
-            Update::Retrying { retry, of, .. } => format!("retrying ({retry} of {of})"),
-            Update::Compacted { .. } => "compacted its conversation".to_owned(),
-            _ => return,
-        };
-        self.waiting.stop();
-        if self.showing != Showing::Nothing {
-            println!();
-        }
-        println!(
-            "    {}",
-            paint(self.color, DIM, &format!("↳ {label} · {step}"))
-        );
-        self.showing = Showing::Nothing;
-        flush();
-    }
-
-    /// `summary` with the subagent it comes from, when a subagent asks.
-    pub(crate) fn labeled(&self, subagent: ThreadId, summary: &str) -> String {
-        match self.subagents.get(&subagent) {
-            Some(label) => format!("[{label}] {summary}"),
-            None => summary.to_owned(),
-        }
     }
 
     /// One of the model's questions; the answer is typed next.
     pub(crate) fn ask_question(&mut self, question: &Question) {
-        self.waiting.stop();
         print!("{}", crate::asking::shown(self.color, question));
-        self.showing = Showing::Nothing;
+        self.speaking = false;
         flush();
     }
 
@@ -303,7 +207,6 @@ impl Printer {
 
     /// How a goal ended, the tokens its turns used, and, when paused, what the model needs.
     pub(crate) fn goal_ended(&mut self, reason: GoalReason, tokens: u64, note: Option<&str>) {
-        self.waiting.stop();
         let (word, color, why) = match reason {
             GoalReason::Met => ("goal met", CYAN, "the model checked it is done"),
             GoalReason::Paused => ("goal paused", YELLOW, note.unwrap_or("the model needs you")),
@@ -333,9 +236,8 @@ impl Printer {
     }
 
     pub(crate) fn error(&mut self, message: &str) {
-        self.waiting.stop();
         println!("\n\n{} {message}", paint(self.color, RED, "error"));
-        self.showing = Showing::Nothing;
+        self.speaking = false;
         flush();
     }
 }

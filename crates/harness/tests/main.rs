@@ -22,6 +22,7 @@ mod judge;
 mod modes;
 mod network;
 mod outside_sandbox;
+mod plan;
 mod project_folders;
 mod purposes;
 mod retry;

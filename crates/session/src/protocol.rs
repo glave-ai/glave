@@ -10,6 +10,7 @@ mod files;
 mod live;
 mod models;
 mod passkeys;
+mod plans;
 mod projects;
 mod providers;
 mod reply;
@@ -35,6 +36,7 @@ pub use glave_event::{Grouping, Permissions};
 pub use live::Update;
 pub use models::ModelInfo;
 pub use passkeys::{AcceptedPasskeys, PasskeySummary, SignInWay, UnknownPasskey};
+pub use plans::PlanInfo;
 pub use projects::{GoneFolder, NewFolder, ProjectFolder};
 pub use providers::{ProviderInfo, hint};
 pub use reply::{AwakeInfo, QueuedMessage, Reply, ServerInfo, Status, ThreadSummary, TurnResult};
@@ -224,6 +226,9 @@ methods! {
     /// What a thread's replies drew on from the web, read from its log: for each reply whose
     /// turn read pages with `web_fetch` before it, those pages, in order.
     "thread/sources" => ThreadSources { thread: ThreadId } -> [Sources],
+    /// The thread's plan, read from its log: its steps, each with its status; `null` when it
+    /// has none.
+    "thread/plan" => ThreadPlan { thread: ThreadId } -> [Plan],
     /// Follows a thread: its events after `after` from the log, then its events as they are
     /// recorded and its live updates, its subagents' with them, each event once and in order.
     /// Streams as `turn/start` does, until the client ends the watch (`thread/unwatch`, or
@@ -567,6 +572,7 @@ impl Request {
             | Self::ThreadGet { thread }
             | Self::ThreadEvents { thread, .. }
             | Self::ThreadSources { thread }
+            | Self::ThreadPlan { thread }
             | Self::ThreadWatch { thread, .. }
             | Self::ThreadUnwatch { thread }
             | Self::TurnStart { thread, .. }

@@ -341,6 +341,24 @@ export type PayloadVersion = number;
  */
 export type Permissions = "ask" | "auto" | "full-access";
 
+/** A thread's plan: its latest `plan.updated`. */
+export type PlanInfo = {
+  /** How far it has come, in a sentence: "Plan: 2 of 5 steps done". */
+  readonly sentence: string;
+  /** The steps, in order, each with its status. */
+  readonly steps: readonly (PlanStep)[];
+};
+
+/** How far a step has come: to do, doing, done. */
+export type PlanStatus = "pending" | "in_progress" | "completed";
+
+/** One step of a plan. */
+export type PlanStep = {
+  readonly status: PlanStatus;
+  /** What to do, in a line. */
+  readonly step: string;
+};
+
 /**
  * A reference to a principal: `{"kind": "person", "id": "…"}`. Every kind but `glave` has an
  * id.
@@ -1582,6 +1600,15 @@ export type ThreadListWatchResult = {
   readonly ended: WatchEnd;
 };
 
+export type ThreadPlanParams = {
+  readonly thread: ThreadId;
+};
+
+/** The thread's plan, or `null`. */
+export type ThreadPlanResult = {
+  readonly plan?: PlanInfo | null;
+};
+
 export type ThreadRenameParams = {
   readonly thread: ThreadId;
   readonly title: string;
@@ -1804,6 +1831,7 @@ export interface Methods {
   readonly "thread/list": { readonly params: ThreadListParams; readonly result: ThreadListResult };
   readonly "thread/list/unwatch": { readonly params: ThreadListUnwatchParams; readonly result: ThreadListUnwatchResult };
   readonly "thread/list/watch": { readonly params: ThreadListWatchParams; readonly result: ThreadListWatchResult };
+  readonly "thread/plan": { readonly params: ThreadPlanParams; readonly result: ThreadPlanResult };
   readonly "thread/rename": { readonly params: ThreadRenameParams; readonly result: ThreadRenameResult };
   readonly "thread/sources": { readonly params: ThreadSourcesParams; readonly result: ThreadSourcesResult };
   readonly "thread/start": { readonly params: ThreadStartParams; readonly result: ThreadStartResult };

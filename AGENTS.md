@@ -250,7 +250,7 @@ Two owner decisions: the release binary was raised from 30 to 40 MB on 2026-10-1
 - Every word the app writes is a `$localize` message with a stable id (`@@area.key`), read where it is used, never at a module's top level; numbers, dates and times go through `Intl` in `LOCALE_ID`. One build holds every language; `web/README.md`, "Languages", says how.
 - Test hooks: every element an end-to-end test needs has a `data-testid` (`showcase-open-dialog`); end-to-end tests select only by these. Glaze never names hooks itself: its components take a `testId` input and give their parts `<testId>-<part>` (`testId="thread-composer"` gives `thread-composer-send`).
 - Linted and formatted: angular-eslint (recommended, template and accessibility), typescript-eslint strict and stylistic type-checked, stylelint for SCSS and CSS, Prettier across `web/`. CI checks all of it.
-- Tested: unit tests (Vitest) for every component, directive, service and `lib/` function, with axe on what they render; end-to-end smoke tests with axe in light and dark, in Chromium and in WebKit (Safari's engine).
+- Tested: unit tests (Vitest) for every component, directive, service and `lib/` function, with axe on what they render; end-to-end smoke tests with axe in light and dark, in Chromium and in WebKit (Safari's engine; on a Mac, WebKit only with `GLAVE_E2E_WEBKIT=1`, since it grows to GBs while the display sleeps, #757).
 - Accessibility: WCAG 2.2 AA, passes axe.
 - A Glaze component, directive or input ships in the same PR as the app screen that uses it. The showcase demonstrates Glaze; it never justifies a piece.
 - The app is served under a strict Content Security Policy: no inline script; inline styles only with each load's nonce.

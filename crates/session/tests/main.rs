@@ -34,6 +34,7 @@ mod outside;
 mod passkeys;
 mod permissions;
 mod placement;
+mod plans;
 mod projects;
 mod providers;
 mod questions;

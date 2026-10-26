@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     AcceptedPasskeys, ConnectionInfo, CredentialInfo, DeviceCode, FileInfo, GoneFolder, Grouping,
-    ModelInfo, PasskeySummary, Permissions, ProjectFolder, ProviderInfo, ReplySources,
+    ModelInfo, PasskeySummary, Permissions, PlanInfo, ProjectFolder, ProviderInfo, ReplySources,
     ScheduleInfo, SearchInfo, SignInLink, SignInWay, TaskInfo, Told, TrustAsk, WatchEnd,
 };
 
@@ -324,11 +324,14 @@ pub enum Reply {
     /// What a thread's replies drew on from the web.
     #[schemars(title = "Sources")]
     Sources { sources: Vec<ReplySources> },
-    // After every reply with a field of its own, since a missing `goal` reads as `null`;
-    // before `Done`, which takes any object.
+    // After every reply with a field of its own, since a missing `goal` or `plan` reads as
+    // `null`; before `Done`, which takes any object.
     /// The thread's latest goal, or `null`.
     #[schemars(title = "Goal")]
     Goal { goal: Option<GoalProgress> },
+    /// The thread's plan, or `null`.
+    #[schemars(title = "Plan")]
+    Plan { plan: Option<PlanInfo> },
     #[schemars(title = "Done")]
     Done {},
 }
