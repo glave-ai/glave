@@ -11,13 +11,11 @@ use std::future::{Future, ready};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use glave_event::{
-    Arguments, CallId, ModelRef, Part, Reasoning, StopReason, ThreadId, TokenCounts, Usage,
-};
+use glave_event::{Arguments, CallId, ModelRef, Part, Reasoning, StopReason, TokenCounts, Usage};
 use glave_gateway::{Gateway, Model, Routes, Target};
 use glave_ports::{
-    Clock as _, Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError, Purpose,
-    SystemClock, ToolCall, ToolChoice, ToolSpec,
+    Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError, Purpose, ToolCall,
+    ToolChoice, ToolSpec,
 };
 
 /// Calls timed each way.
@@ -171,7 +169,6 @@ fn request() -> Result<ModelRequest> {
             }],
         });
     }
-    let thread = ThreadId::new(SystemClock.now(), [7; 10])?;
     Ok(ModelRequest {
         model: "bench-model".into(),
         system: "You are a careful coding agent. ".repeat(250),
@@ -180,7 +177,6 @@ fn request() -> Result<ModelRequest> {
         tool_choice: ToolChoice::Auto,
         max_output_tokens: Some(8_192),
         purpose: Purpose::Main,
-        threads: vec![thread],
         files: Vec::new(),
         effort: None,
     })

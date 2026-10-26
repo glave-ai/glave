@@ -89,7 +89,6 @@ pub(crate) fn parse(body: &[u8]) -> Result<Parsed, Refusal> {
             tool_choice,
             max_output_tokens,
             purpose: glave_ports::Purpose::Main,
-            threads: Vec::new(),
             files: Vec::new(),
             effort: None,
         },

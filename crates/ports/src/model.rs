@@ -4,7 +4,7 @@
 use std::future::Future;
 
 use glave_event::{
-    Arguments, CallId, Cost, ModelRef, ModelResponded, Part, Sha256, StopReason, ThreadId, Usage,
+    Arguments, CallId, Cost, ModelRef, ModelResponded, Part, Sha256, StopReason, Usage,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -39,10 +39,6 @@ pub struct ModelRequest {
     /// What the call is for, so a gateway can choose the model for it. Providers ignore it.
     #[serde(default, skip_serializing_if = "Purpose::is_main")]
     pub purpose: Purpose,
-    /// The thread the call is made for, then the threads that started it, innermost first:
-    /// whose budgets it counts against. Providers ignore it.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub threads: Vec<ThreadId>,
     /// How much the model is asked to reason: a level its provider names, such as `high` or
     /// `none`, one the model offers. None leaves it to the model. A gateway sends each target
     /// only a level it offers, and one asked for none, or for a level it does not offer, the

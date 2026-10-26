@@ -45,7 +45,6 @@ fn a_request_has_the_chat_completions_shape() {
         tool_choice: ToolChoice::Auto,
         max_output_tokens: Some(1024),
         purpose: glave_ports::Purpose::Main,
-        threads: Vec::new(),
         effort: None,
         files: Vec::new(),
     };
@@ -95,7 +94,6 @@ fn consecutive_user_messages_are_sent_as_one() {
         tool_choice: ToolChoice::Auto,
         max_output_tokens: None,
         purpose: glave_ports::Purpose::Main,
-        threads: Vec::new(),
         effort: None,
         files: Vec::new(),
     };
@@ -126,7 +124,6 @@ fn no_request_turns_on_a_provider_s_own_web_search() {
         tool_choice: ToolChoice::Auto,
         max_output_tokens: None,
         purpose: glave_ports::Purpose::Main,
-        threads: Vec::new(),
         effort: Some("high".into()),
         files: Vec::new(),
     };
@@ -162,7 +159,6 @@ fn text_only_requests_keep_their_tools_and_say_none() {
         tool_choice: ToolChoice::None,
         max_output_tokens: None,
         purpose: glave_ports::Purpose::Main,
-        threads: Vec::new(),
         effort: None,
         files: Vec::new(),
     };
@@ -198,7 +194,6 @@ fn automatic_caching_is_asked_for_only_where_it_works() {
         tool_choice: ToolChoice::Auto,
         max_output_tokens: None,
         purpose: glave_ports::Purpose::Main,
-        threads: Vec::new(),
         effort: None,
         files: Vec::new(),
     };
@@ -221,7 +216,6 @@ fn openrouter_is_told_not_to_cut_a_long_prompt() {
         tool_choice: ToolChoice::Auto,
         max_output_tokens: None,
         purpose: glave_ports::Purpose::Main,
-        threads: Vec::new(),
         effort: None,
         files: Vec::new(),
     };
@@ -244,7 +238,6 @@ fn openrouter_keeps_prompts_private_and_every_parameter_used() {
         tool_choice: ToolChoice::Auto,
         max_output_tokens: None,
         purpose: glave_ports::Purpose::Main,
-        threads: Vec::new(),
         effort: None,
         files: Vec::new(),
     };
@@ -271,7 +264,6 @@ fn a_reasoning_level_is_sent_as_each_service_takes_it() {
         tool_choice: ToolChoice::Auto,
         max_output_tokens: None,
         purpose: glave_ports::Purpose::Main,
-        threads: Vec::new(),
         effort: Some("high".into()),
         files: Vec::new(),
     };
@@ -316,7 +308,6 @@ fn asking(messages: Vec<Message>, files: Vec<InlineFile>) -> ModelRequest {
         tool_choice: ToolChoice::Auto,
         max_output_tokens: None,
         purpose: glave_ports::Purpose::Main,
-        threads: Vec::new(),
         effort: None,
         files,
     }

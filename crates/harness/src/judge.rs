@@ -8,7 +8,7 @@
 
 use std::fmt::Write as _;
 
-use glave_event::{Lifted, Part, ThreadId};
+use glave_event::{Lifted, Part};
 use glave_ports::{Completion, Message, ModelProvider, ModelRequest, Purpose, ToolChoice};
 use serde::Deserialize;
 
@@ -69,14 +69,12 @@ pub enum Ruling {
     Ask { reason: String },
 }
 
-/// Asks `model` at `provider` to rule on `case`, as a `judge` call for `threads` (the thread
-/// the action is in, then the threads above it). Any failure is a ruling to ask. The answer
-/// comes back too, when there was one, so its usage can be recorded.
+/// Asks `model` at `provider` to rule on `case`, as a `judge` call. Any failure is a ruling to
+/// ask. The answer comes back too, when there was one, so its usage can be recorded.
 pub async fn judge<P: ModelProvider>(
     provider: &P,
     model: &str,
     case: &JudgeCase<'_>,
-    threads: Vec<ThreadId>,
 ) -> (Ruling, Option<Completion>) {
     let request = ModelRequest {
         model: model.to_owned(),
@@ -88,7 +86,6 @@ pub async fn judge<P: ModelProvider>(
         tool_choice: ToolChoice::None,
         max_output_tokens: Some(MOST_OUTPUT_TOKENS),
         purpose: Purpose::Judge,
-        threads,
         files: Vec::new(),
         effort: None,
     };

@@ -122,7 +122,6 @@ pub(crate) fn request(purpose: Purpose) -> ModelRequest {
         tool_choice: ToolChoice::Auto,
         max_output_tokens: Some(100),
         purpose,
-        threads: Vec::new(),
         files: Vec::new(),
         effort: None,
     }
