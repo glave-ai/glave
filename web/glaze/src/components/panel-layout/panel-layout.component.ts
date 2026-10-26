@@ -6,11 +6,9 @@ import {
   afterRenderEffect,
   booleanAttribute,
   computed,
-  effect,
   inject,
   input,
   model,
-  untracked,
   viewChild,
 } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -19,6 +17,7 @@ import { map, switchMap } from 'rxjs';
 import { GlzSplitterDirective } from '../../directives/splitter.directive';
 import { GlzTooltipDirective } from '../../directives/tooltip.directive';
 import { testIds } from '../../lib/test-ids';
+import { closedWhileNarrow } from '../../lib/narrow';
 import { injectId } from '../../tokens/ids';
 import { glzText } from '../../lib/words';
 
@@ -115,21 +114,7 @@ export class GlzPanelLayoutComponent {
   });
 
   constructor() {
-    // The sheet starts closed whenever the screen becomes narrow; back on a wide screen the
-    // panel is as the person left it there.
-    let wideOpen: boolean | null = null;
-    effect(() => {
-      const narrow = this.narrow();
-      untracked(() => {
-        if (narrow && wideOpen === null) {
-          wideOpen = this.open();
-          this.open.set(false);
-        } else if (!narrow && wideOpen !== null) {
-          this.open.set(wideOpen);
-          wideOpen = null;
-        }
-      });
-    });
+    closedWhileNarrow(this.narrow, this.open);
     // A sheet takes focus as it opens, so the keyboard is where the person is looking.
     afterRenderEffect(() => {
       if (this.modal()) {

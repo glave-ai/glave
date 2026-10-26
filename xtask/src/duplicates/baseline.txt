@@ -30,7 +30,6 @@
 3a6f88c56187a776 9 crates/eval/tests/attempt.rs crates/eval/tests/attempt.rs
 3b6e34fd48a5a87f 29 crates/store-postgres/src/blobs.rs crates/store-sqlite/src/blobs.rs
 3e673752818820ab 11 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
-3eb8d8248d96b2c6 7 web/glaze/src/components/panel-layout/panel-layout.component.ts web/glaze/src/components/sidenav-layout/sidenav-layout.component.ts
 44a392879170b883 55 crates/provider-anthropic/src/client.rs crates/provider-openai/src/client.rs
 46a00e6b7dbe1997 6 crates/computer/src/local/sandbox/linux/tests.rs crates/harness/src/sandbox/tests.rs
 4cea69ea751e317b 9 crates/computer/src/worker/docker.rs crates/computer/src/worker/kubernetes/objects.rs
@@ -42,6 +41,7 @@
 5fe577bbc9625d1a 16 crates/computer/src/worker/docker.rs crates/computer/src/worker/kubernetes.rs
 60d594e864795957 8 crates/harness/tests/faults.rs crates/harness/tests/workers.rs
 6169c33d6ed6a047 12 crates/computer/src/worker/docker.rs crates/computer/src/worker/kubernetes/objects.rs
+63c34a36a7cde1ad 7 web/glaze/src/components/panel-layout/panel-layout.component.ts web/glaze/src/components/sidenav-layout/sidenav-layout.component.ts
 64cbc3c021cadead 6 crates/computer/src/local/confinement_tests.rs crates/computer/tests/remote.rs
 65794a92795cf8f4 9 crates/aws/tests/anthropic.rs crates/cli/src/model.rs crates/google/src/adc/tests/gemini.rs
 66d6a8c6cb6d316f 15 crates/event/src/id.rs crates/event/src/id.rs crates/event/src/id.rs crates/event/src/id.rs
