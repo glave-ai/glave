@@ -333,7 +333,9 @@ export type PayloadVersion = number;
  * What the agent may do without asking the person (`specs/approvals.md`, "Modes"): the one
  * choice a person makes about it, its mode. Ordered by caution, the most cautious least, so a
  * policy's cap is the highest mode it allows. Each comes to a sandbox and how much asks
- * wherever it runs (`glave-harness`).
+ * wherever it runs (`glave-harness`). The names from before the modes were renamed (#739),
+ * `read-only` and `workspace`, still read as `ask` and `auto`, so logs and files written then
+ * still open; only the new names are written.
  */
 export type Permissions = "ask" | "auto" | "full-access";
 

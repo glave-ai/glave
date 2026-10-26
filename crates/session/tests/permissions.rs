@@ -3,12 +3,13 @@
 //! run with that mode from then on, across restarts; choosing the mode a thread already
 //! has records nothing; a thread that chooses none runs with the server's; the summary shows
 //! the mode; one above the policy's cap is refused with `-32012`, in plain words; one
-//! chosen before a cap came runs capped; and Full access never waits for anyone.
+//! chosen before a cap came runs capped; Full access never waits for anyone; and a log from
+//! before the modes were renamed opens with the new names.
 
 use std::path::Path;
 
 use Permissions::{Ask, Auto, FullAccess};
-use glave_event::{Body, ThreadId, decode};
+use glave_event::{Body, RawEvent, ThreadId, decode};
 use glave_ports::Completion;
 use glave_session::Answering;
 use glave_session::protocol::{ApiError, Meta, Permissions, Reply, Request, code};
@@ -262,4 +263,60 @@ fn full_access_never_waits_where_clients_answer_nor_where_no_one_does() {
             assert!(!beside.join("gone").exists(), "it ran: {answering:?}");
         });
     }
+}
+
+/// Appends to `thread` in `log`, after what it holds, a `permissions.chosen` naming `old`, as a
+/// glave from before the modes were renamed wrote it, with the event id `id`.
+async fn chosen_before_the_rename(
+    server: &Tested<Shared>,
+    log: &Shared,
+    thread: ThreadId,
+    id: &str,
+    old: &str,
+) {
+    let Reply::Events { events, .. } = server
+        .request(Request::ThreadEvents {
+            thread,
+            after: None,
+            limit: None,
+        })
+        .await
+        .unwrap()
+    else {
+        panic!("events");
+    };
+    let seq = events.last().map_or(1, |event| event.seq.get() + 1);
+    let stored = format!(
+        r#"{{"glave":1,"id":"{id}","thread":"{thread}","seq":{seq},"at":"2026-10-24T10:00:00.000Z","type":"permissions.chosen","v":1,"data":{{"permissions":"{old}"}}}}"#
+    );
+    let raw = RawEvent::from_json(&stored).unwrap();
+    glave_ports::EventLog::append(log, &scope(), &[raw])
+        .await
+        .unwrap();
+}
+
+#[test]
+fn a_log_from_before_the_modes_were_renamed_opens_with_the_new_ones() {
+    let dir = folder("permissions-old-names");
+    let log = Shared::default();
+    block_on!(async {
+        let server = serve(&dir, writes("a.txt"), &log, FullAccess, FullAccess).await;
+        let thread = started(&server, None).await;
+        let first = "0192f5c2-7000-7000-8000-0000000000e1";
+        chosen_before_the_rename(&server, &log, thread, first, "workspace").await;
+        assert_eq!(
+            shown(&server, thread).await,
+            Auto,
+            "workspace reads as auto"
+        );
+        let second = "0192f5c2-7000-7000-8000-0000000000e2";
+        chosen_before_the_rename(&server, &log, thread, second, "read-only").await;
+        assert_eq!(shown(&server, thread).await, Ask, "read-only reads as ask");
+        // It runs with that mode: the write asks, and with no one there it does not run.
+        turn_in(&server, thread, None).await.unwrap();
+        assert_eq!(
+            recorded(&server, thread).await,
+            ["chose auto", "chose ask", "asked: NoOneThere"]
+        );
+    });
 }

@@ -212,6 +212,20 @@ fn unknown_keys_are_refused_naming_the_file_and_the_key() {
 }
 
 #[test]
+fn files_from_before_the_modes_were_renamed_read_with_the_new_names() {
+    for (old, mode) in [
+        ("read-only", Permissions::Ask),
+        ("workspace", Permissions::Auto),
+    ] {
+        let config = files::config(&format!("permissions = \"{old}\"\n"), Path::new(PERSON));
+        assert_eq!(config.unwrap().permissions, Some(mode), "{old}");
+        let capped = format!("version = 1\n[permissions]\nhighest = \"{old}\"\n");
+        let (highest, _) = Constraints::of(&[policy_at(ORG, &capped)]).highest_permissions();
+        assert_eq!(highest, mode, "{old}");
+    }
+}
+
+#[test]
 fn a_policy_names_its_version_and_its_globs_compile() {
     assert!(format!("{:#}", files::policy("", Path::new(ORG)).unwrap_err()).contains("version"));
     let future = files::policy("version = 2\n", Path::new(ORG)).unwrap_err();

@@ -60,7 +60,9 @@ pub(crate) fn decode_effort(
 /// What the agent may do without asking the person (`specs/approvals.md`, "Modes"): the one
 /// choice a person makes about it, its mode. Ordered by caution, the most cautious least, so a
 /// policy's cap is the highest mode it allows. Each comes to a sandbox and how much asks
-/// wherever it runs (`glave-harness`).
+/// wherever it runs (`glave-harness`). The names from before the modes were renamed (#739),
+/// `read-only` and `workspace`, still read as `ask` and `auto`, so logs and files written then
+/// still open; only the new names are written.
 #[derive(
     Debug,
     Clone,
@@ -79,11 +81,13 @@ pub(crate) fn decode_effort(
 pub enum Permissions {
     /// Ask first: commands run in a sandbox that writes nothing of the project, and every
     /// change asks first.
+    #[serde(alias = "read-only")]
     Ask,
     /// The agent works on its own in the project, or the chat's folder: commands run in the
     /// sandbox and nothing inside it asks; risky actions ask or go to the judge. Where no
     /// sandbox can run, every change and command asks instead.
     #[default]
+    #[serde(alias = "workspace")]
     Auto,
     /// No sandbox, and nothing ever asks, risky actions included; what would show the model a
     /// secret is declined instead. For work the person fully trusts.
@@ -152,5 +156,25 @@ mod tests {
         }
         assert!(Permissions::Ask < Permissions::Auto);
         assert!(Permissions::Auto < Permissions::FullAccess);
+    }
+
+    #[test]
+    fn a_choice_stored_under_an_old_name_reads_as_its_mode_and_is_written_anew() {
+        for (old, mode) in [
+            ("read-only", Permissions::Ask),
+            ("workspace", Permissions::Auto),
+        ] {
+            let stored = format!(
+                r#"{{"glave":1,"id":"0192f5c2-7000-7000-8000-000000000013","thread":"0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c13","seq":13,"at":"2026-11-09T11:07:00.000Z","type":"permissions.chosen","v":1,"data":{{"permissions":"{old}"}}}}"#
+            );
+            let event = crate::decode(crate::RawEvent::from_json(&stored).unwrap()).unwrap();
+            let crate::Body::PermissionsChosen(chosen) = &event.body else {
+                panic!("{old}: {:?}", event.body);
+            };
+            assert_eq!(chosen.permissions, mode, "{old}");
+            let written = event.to_raw().unwrap().to_json().unwrap();
+            let named = format!(r#""permissions":"{}""#, mode.name());
+            assert!(written.contains(&named), "{written}");
+        }
     }
 }

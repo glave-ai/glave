@@ -945,7 +945,7 @@
       "type": "integer"
     },
     "Permissions": {
-      "description": "What the agent may do without asking the person (`specs/approvals.md`, \"Modes\"): the one\nchoice a person makes about it, its mode. Ordered by caution, the most cautious least, so a\npolicy's cap is the highest mode it allows. Each comes to a sandbox and how much asks\nwherever it runs (`glave-harness`).",
+      "description": "What the agent may do without asking the person (`specs/approvals.md`, \"Modes\"): the one\nchoice a person makes about it, its mode. Ordered by caution, the most cautious least, so a\npolicy's cap is the highest mode it allows. Each comes to a sandbox and how much asks\nwherever it runs (`glave-harness`). The names from before the modes were renamed (#739),\n`read-only` and `workspace`, still read as `ask` and `auto`, so logs and files written then\nstill open; only the new names are written.",
       "oneOf": [
         {
           "const": "ask",
