@@ -214,6 +214,39 @@
       "format": "uuid",
       "type": "string"
     },
+    "ComputerKind": {
+      "description": "What kind of computer it is.",
+      "oneOf": [
+        {
+          "const": "local",
+          "description": "The machine glave runs on.",
+          "type": "string"
+        },
+        {
+          "const": "worker",
+          "description": "A computer glave made elsewhere, such as a cloud worker.",
+          "type": "string"
+        }
+      ]
+    },
+    "ComputerRef": {
+      "additionalProperties": false,
+      "description": "The computer a workspace is on.",
+      "properties": {
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ComputerKind"
+        }
+      },
+      "required": [
+        "id",
+        "kind"
+      ],
+      "type": "object"
+    },
     "ConnectionInfo": {
       "description": "A connection's sign-in to its remote MCP server, or a server that asks for one.",
       "properties": {
@@ -268,6 +301,36 @@
           "type": "string"
         }
       ]
+    },
+    "ContextUse": {
+      "description": "How full a thread's context is: what its conversation last sent and got back, of the window\ncompaction aims for.",
+      "properties": {
+        "percent": {
+          "description": "`tokens` of `window`, in whole percent, at most 100. A turn compacts before a request\npast its threshold (80 unless set).",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tokens": {
+          "description": "The tokens its latest call sent and got back.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "window": {
+          "description": "The window compaction aims for, in tokens: the configured one, or a smaller one the\nmodel stated.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tokens",
+        "window",
+        "percent"
+      ],
+      "type": "object"
     },
     "CredentialId": {
       "description": "Identifies one sign-in a person keeps, sealed under a key of its own: a git host\n(`credential.connected`) or a connection (`connection.connected`).",
@@ -864,6 +927,93 @@
           },
           "required": [
             "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Opened": {
+      "description": "How the workspace was opened.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "A folder worked on in place.",
+          "properties": {
+            "kind": {
+              "const": "folder",
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A git worktree of the repository at `repository`, on its own `branch`.",
+          "properties": {
+            "branch": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "worktree",
+              "type": "string"
+            },
+            "repository": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "repository",
+            "branch"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A repository cloned into a new copy, at a branch, tag or commit (its default branch\nwhen absent).",
+          "properties": {
+            "at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "const": "clone",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "url"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A folder of the thread's own, for a thread with no project.",
+          "properties": {
+            "kind": {
+              "const": "scratch",
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
           ],
           "type": "object"
         }
@@ -1828,6 +1978,17 @@
     "ThreadSummary": {
       "description": "A thread, as a list shows it: from the threads view, with what it is doing now.",
       "properties": {
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContextUse"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How full its context is, as compaction measures it; absent before its first model call\nand since it was compacted."
+        },
         "cost": {
           "anyOf": [
             {
@@ -1837,10 +1998,14 @@
               "type": "null"
             }
           ],
-          "description": "What they cost, when every call reported a cost."
+          "description": "What they cost, when every call reported a cost; absent when one did not: the cost is\nnot reported."
         },
         "created_at": {
           "$ref": "#/$defs/At"
+        },
+        "estimated": {
+          "description": "True when a usage count in `tokens`, and so `cost`, was estimated: a stream ended before\nits provider reported it.",
+          "type": "boolean"
         },
         "for": {
           "anyOf": [
@@ -1923,6 +2088,17 @@
         },
         "updated_at": {
           "$ref": "#/$defs/At"
+        },
+        "workspace": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkspaceBound"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where it works, once it has a workspace, as its latest `workspace.bound` records it: the\ncomputer (the one the server runs on, or a worker), the folder its tools act in, and how\nit got it (its project's folder in place, a worktree on a branch of its own, a clone, or\na scratch folder)."
         }
       },
       "required": [
@@ -2064,7 +2240,8 @@
       "type": "object"
     },
     "TurnResult": {
-      "description": "How a turn ended and what it cost.",
+      "additionalProperties": false,
+      "description": "A turn ended (`turn.ended`): how, and what it did and cost, its subagents' work included.\nIt is what a client that ran the turn is answered with too, so every client reads the same.\nA turn recorded before it held more than `outcome` reads with nothing counted.",
       "properties": {
         "cost": {
           "anyOf": [
@@ -2074,14 +2251,16 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "What its model calls cost, when every one of them reported a cost in one currency;\nabsent when one did not: the cost is not reported."
         },
         "estimated": {
           "default": false,
-          "description": "True when a usage count was estimated, not reported.",
+          "description": "True when a usage count was estimated, because a stream ended before the provider\nreported it.",
           "type": "boolean"
         },
         "model_calls": {
+          "default": 0,
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
@@ -2097,12 +2276,27 @@
           "type": "integer"
         },
         "tokens": {
-          "$ref": "#/$defs/TokenCounts"
+          "$ref": "#/$defs/TokenCounts",
+          "default": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0
+          }
         },
         "tool_calls": {
+          "default": 0,
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
+        },
+        "via": {
+          "description": "Where its model calls ran, once each in the order they first did, in a person's words:\nthe service, and the provider a service that routes calls passed them on to\n(`OpenRouter (Anthropic)`).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "with_network": {
           "default": 0,
@@ -2113,10 +2307,7 @@
         }
       },
       "required": [
-        "outcome",
-        "model_calls",
-        "tool_calls",
-        "tokens"
+        "outcome"
       ],
       "type": "object"
     },
@@ -2546,6 +2737,34 @@
           "type": "object"
         }
       ]
+    },
+    "WorkspaceBound": {
+      "additionalProperties": false,
+      "description": "The thread's tools act in this workspace from now on.",
+      "properties": {
+        "computer": {
+          "$ref": "#/$defs/ComputerRef"
+        },
+        "opened": {
+          "$ref": "#/$defs/Opened"
+        },
+        "root": {
+          "description": "The workspace root, an absolute path as the computer names it. Tool output and glave's\nown fields use paths relative to it.",
+          "type": "string"
+        },
+        "workspace": {
+          "description": "The workspace's id, as its computer named it.",
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspace",
+        "computer",
+        "opened",
+        "root"
+      ],
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",

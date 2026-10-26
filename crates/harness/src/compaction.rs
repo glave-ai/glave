@@ -4,7 +4,7 @@
 
 use std::fmt::Write as _;
 
-use glave_event::{Arguments, Part, Seq, ThreadCompacted};
+use glave_event::{Arguments, Part, Seq, ThreadCompacted, TurnResult};
 
 use glave_ports::{
     BlobStore, Completion, EventLog, Failure, Message, ModelProvider, ModelRequest, ProviderError,
@@ -16,7 +16,7 @@ use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::room::{stated_window, trim_oldest};
 use crate::toolset::ToolSet;
-use crate::turn::{Live, TurnSummary, tally};
+use crate::turn::Live;
 
 /// When to compact a thread.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -159,12 +159,12 @@ where
         &self,
         thread: &mut Thread,
         offer: &ToolSet,
-        summary: &mut TurnSummary,
+        summary: &mut TurnResult,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<(), HarnessError> {
         let at_percent = self.settings.compaction.at_percent;
-        let window_tokens = self.window_tokens(&self.model_for(thread));
+        let window_tokens = self.context_window(&self.model_for(thread));
         let tokens = next_request_tokens(thread, offer);
         let full =
             tokens.saturating_mul(100) >= window_tokens.saturating_mul(u64::from(at_percent));
@@ -174,7 +174,7 @@ where
         match self.compact_with(thread, offer, cancel, live).await {
             Ok(compacted) => {
                 summary.model_calls = summary.model_calls.saturating_add(1);
-                tally(summary, &compacted.completion);
+                summary.take_in(&compacted.completion.responded());
                 Ok(())
             }
             Err(HarnessError::Provider(error)) => {
@@ -187,9 +187,9 @@ where
         }
     }
 
-    /// The context window compaction aims for with `model`: the configured one, or the
-    /// model's real one if a refusal has stated a smaller one.
-    fn window_tokens(&self, model: &str) -> u64 {
+    /// The context window compaction aims for with `model`, in tokens: the configured one, or
+    /// the model's real one if a refusal has stated a smaller one.
+    pub fn context_window(&self, model: &str) -> u64 {
         let configured = self.settings.compaction.window_tokens;
         self.learned_windows
             .of(model)
@@ -199,7 +199,7 @@ where
     /// The longest summary to ask `model` for: at most a quarter of its window, since servers
     /// count the answer's room against the window too.
     fn summary_tokens(&self, model: &str) -> u32 {
-        let quarter = u32::try_from(self.window_tokens(model) / 4).unwrap_or(u32::MAX);
+        let quarter = u32::try_from(self.context_window(model) / 4).unwrap_or(u32::MAX);
         SUMMARY_TOKENS.min(quarter)
     }
 

@@ -222,7 +222,7 @@ impl Client<'_> {
         };
         let code = match ended {
             Some(Ok(turn)) => {
-                printer.receipt(&turn, self.endpoint.is_some_and(|endpoint| endpoint.local));
+                printer.receipt(&turn);
                 match turn.outcome {
                     Outcome::Completed => ExitCode::SUCCESS,
                     // As shells report a program stopped by Ctrl-C.

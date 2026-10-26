@@ -89,6 +89,15 @@ export type CommandId = string;
 /** Identifies a computer, unique everywhere (UUID v7, minted by the adapter that made it). */
 export type ComputerId = string;
 
+/** What kind of computer it is. */
+export type ComputerKind = "local" | "worker";
+
+/** The computer a workspace is on. */
+export type ComputerRef = {
+  readonly id: string;
+  readonly kind: ComputerKind;
+};
+
 /** A connection's sign-in to its remote MCP server, or a server that asks for one. */
 export type ConnectionInfo = {
   /** What the person's settings call the server at that address, when they name one. */
@@ -102,6 +111,25 @@ export type ConnectionInfo = {
 
 /** Whether the person is signed in, and the sign-in still works. */
 export type ConnectionStatus = "signed_in" | "expired" | "signed_out";
+
+/**
+ * How full a thread's context is: what its conversation last sent and got back, of the window
+ * compaction aims for.
+ */
+export type ContextUse = {
+  /**
+   * `tokens` of `window`, in whole percent, at most 100. A turn compacts before a request
+   * past its threshold (80 unless set).
+   */
+  readonly percent: number;
+  /** The tokens its latest call sent and got back. */
+  readonly tokens: number;
+  /**
+   * The window compaction aims for, in tokens: the configured one, or a smaller one the
+   * model stated.
+   */
+  readonly window: number;
+};
 
 /**
  * Identifies one sign-in a person keeps, sealed under a key of its own: a git host
@@ -304,6 +332,23 @@ export type NewFolder = {
   readonly url: string;
 } | {
   readonly kind: "empty";
+};
+
+/** How the workspace was opened. */
+export type Opened = {
+  readonly kind: "folder";
+  readonly path: string;
+} | {
+  readonly branch: string;
+  readonly kind: "worktree";
+  readonly repository: string;
+} | {
+  readonly at?: string | null;
+  readonly kind: "clone";
+  readonly url: string;
+} | {
+  readonly kind: "scratch";
+  readonly path: string;
 };
 
 /** What started a thread, and who. */
@@ -660,9 +705,22 @@ export type ThreadId = string;
 
 /** A thread, as a list shows it: from the threads view, with what it is doing now. */
 export type ThreadSummary = {
-  /** What they cost, when every call reported a cost. */
+  /**
+   * How full its context is, as compaction measures it; absent before its first model call
+   * and since it was compacted.
+   */
+  readonly context?: ContextUse | null;
+  /**
+   * What they cost, when every call reported a cost; absent when one did not: the cost is
+   * not reported.
+   */
   readonly cost?: Money | null;
   readonly created_at: At;
+  /**
+   * True when a usage count in `tokens`, and so `cost`, was estimated: a stream ended before
+   * its provider reported it.
+   */
+  readonly estimated?: boolean;
   /** Whose work it is; absent in threads from before it was recorded (the local person). */
   readonly for?: Principal | null;
   readonly id: ThreadId;
@@ -690,6 +748,13 @@ export type ThreadSummary = {
   readonly trust?: TrustAsk | null;
   readonly turns: number;
   readonly updated_at: At;
+  /**
+   * Where it works, once it has a workspace, as its latest `workspace.bound` records it: the
+   * computer (the one the server runs on, or a worker), the folder its tools act in, and how
+   * it got it (its project's folder in place, a worktree on a branch of its own, a clone, or
+   * a scratch folder).
+   */
+  readonly workspace?: WorkspaceBound | null;
 };
 
 /**
@@ -742,17 +807,34 @@ export type TrustItem = {
   readonly text: string;
 };
 
-/** How a turn ended and what it cost. */
+/**
+ * A turn ended (`turn.ended`): how, and what it did and cost, its subagents' work included.
+ * It is what a client that ran the turn is answered with too, so every client reads the same.
+ * A turn recorded before it held more than `outcome` reads with nothing counted.
+ */
 export type TurnResult = {
+  /**
+   * What its model calls cost, when every one of them reported a cost in one currency;
+   * absent when one did not: the cost is not reported.
+   */
   readonly cost?: Money | null;
-  /** True when a usage count was estimated, not reported. */
+  /**
+   * True when a usage count was estimated, because a stream ended before the provider
+   * reported it.
+   */
   readonly estimated?: boolean;
-  readonly model_calls: number;
+  readonly model_calls?: number;
   readonly outcome: Outcome;
   /** The commands that ran outside the sandbox, each one allowed. */
   readonly outside_sandbox?: number;
-  readonly tokens: TokenCounts;
-  readonly tool_calls: number;
+  readonly tokens?: TokenCounts;
+  readonly tool_calls?: number;
+  /**
+   * Where its model calls ran, once each in the order they first did, in a person's words:
+   * the service, and the provider a service that routes calls passed them on to
+   * (`OpenRouter (Anthropic)`).
+   */
+  readonly via?: readonly (string)[];
   /**
    * The commands that ran with the network the sandbox otherwise kept from them, each one
    * allowed.
@@ -869,6 +951,19 @@ export type When = {
   readonly at: At;
 } | {
   readonly cron: string;
+};
+
+/** The thread's tools act in this workspace from now on. */
+export type WorkspaceBound = {
+  readonly computer: ComputerRef;
+  readonly opened: Opened;
+  /**
+   * The workspace root, an absolute path as the computer names it. Tool output and glave's
+   * own fields use paths relative to it.
+   */
+  readonly root: string;
+  /** The workspace's id, as its computer named it. */
+  readonly workspace: string;
 };
 
 /** A JSON-RPC error object, as any failed request answers. */

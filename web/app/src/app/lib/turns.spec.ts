@@ -11,11 +11,6 @@ const ASK = (seq: number, text: string): RawEvent =>
   event(seq, 'message.added', { role: 'user', parts: [{ type: 'text', text }] });
 const SAY = (seq: number, text: string): RawEvent =>
   event(seq, 'message.added', { role: 'assistant', parts: [{ type: 'text', text }] });
-const COST = (seq: number, micros: number, currency = 'USD'): RawEvent =>
-  event(seq, 'model.responded', {
-    model: { provider: 'p', name: 'm' },
-    cost: { amount: { micros, currency }, price_list: 'x' },
-  });
 
 describe('turns', () => {
   it('splits a thread into turns at each of the person’s messages', () => {
@@ -30,8 +25,13 @@ describe('turns', () => {
       }),
       event(5, 'tool.call.completed', { call_id: 'c1', is_error: false, output: [] }),
       SAY(6, 'Done'),
-      COST(7, 1500),
-      at(8, 'turn.ended', { outcome: 'completed' }, '2026-10-11T10:04:02.000Z'),
+      event(7, 'model.responded', { model: { provider: 'p', name: 'm' } }),
+      at(
+        8,
+        'turn.ended',
+        { outcome: 'completed', tool_calls: 1, cost: { micros: 1500, currency: 'USD' } },
+        '2026-10-11T10:04:02.000Z',
+      ),
       at(9, 'turn.started', {}, '2026-10-11T10:05:00.000Z'),
       ASK(10, 'Thanks'),
       at(11, 'message.added', { role: 'assistant', parts: [] }, '2026-10-11T10:05:12.000Z'),
@@ -44,16 +44,18 @@ describe('turns', () => {
     expect(first).toMatchObject({
       took: 242_000,
       started: '2026-10-11T10:00:00.000Z',
-      outcome: 'completed',
-      cost: { micros: 1500, currency: 'USD' },
+      result: {
+        outcome: 'completed',
+        tool_calls: 1,
+        cost: { micros: 1500, currency: 'USD' },
+      },
     });
     expect(first?.files.map((file) => [file.path, file.added])).toEqual([['a.rs', 2]]);
-    // Still going: no end, its time so far, no cost said.
+    // Still going: no end, its time so far, no result yet.
     expect(second).toMatchObject({
       took: 12_000,
       started: '2026-10-11T10:05:00.000Z',
-      outcome: null,
-      cost: null,
+      result: null,
       files: [],
     });
   });
@@ -99,29 +101,46 @@ describe('turns', () => {
     ]);
   });
 
-  it('says where a turn’s model calls ran, once each, as their records name them', () => {
-    const ran = (data: Readonly<Record<string, unknown>>, seq: number): RawEvent =>
-      event(seq, 'model.responded', data);
-    const routes = (events: readonly RawEvent[]): unknown =>
-      threadTurns([ASK(1, 'x'), ...events])[0]?.routes;
+  it('reads a turn’s result as the server recorded it at its end, never from its calls', () => {
+    const result = (ended: Readonly<Record<string, unknown>>): unknown =>
+      threadTurns([
+        ASK(1, 'x'),
+        event(2, 'model.responded', {
+          service: 'OpenRouter',
+          cost: { amount: { micros: 900, currency: 'USD' }, price_list: 'x' },
+        }),
+        event(3, 'turn.ended', ended),
+      ])[0]?.result;
     expect(
-      routes([
-        ran({ service: 'OpenRouter', upstream: 'Anthropic' }, 2),
-        ran({ service: 'OpenRouter', upstream: 'Anthropic' }, 3),
-        ran({ service: 'Anthropic' }, 4),
-        ran({}, 5),
-      ]),
-    ).toEqual(['OpenRouter (Anthropic)', 'Anthropic']);
-    expect(routes([])).toEqual([]);
-  });
-
-  it('says what a turn cost only when every response said, in one currency', () => {
-    const cost = (events: readonly RawEvent[]): unknown =>
-      threadTurns([ASK(1, 'x'), ...events])[0]?.cost;
-    expect(cost([COST(2, 100), COST(3, 250)])).toEqual({ micros: 350, currency: 'USD' });
-    expect(cost([COST(2, 100), event(3, 'model.responded', {})])).toBeNull();
-    expect(cost([COST(2, 100), COST(3, 100, 'EUR')])).toBeNull();
-    expect(cost([])).toBeNull();
+      result({
+        outcome: 'completed',
+        model_calls: 2,
+        tool_calls: 3,
+        outside_sandbox: 1,
+        with_network: 0,
+        cost: { micros: 350, currency: 'USD' },
+        estimated: true,
+        via: ['OpenRouter (Anthropic)'],
+      }),
+    ).toEqual({
+      outcome: 'completed',
+      model_calls: 2,
+      tool_calls: 3,
+      outside_sandbox: 1,
+      with_network: 0,
+      cost: { micros: 350, currency: 'USD' },
+      estimated: true,
+      via: ['OpenRouter (Anthropic)'],
+    });
+    // Recorded before it held more than its outcome: nothing counted, its cost not reported.
+    expect(result({ outcome: 'failed' })).toMatchObject({
+      outcome: 'failed',
+      tool_calls: 0,
+      cost: null,
+      estimated: false,
+      via: [],
+    });
+    expect(result({})).toBeNull();
   });
 
   it('makes no turn of events that put nothing in the conversation', () => {
@@ -136,7 +155,7 @@ describe('turns', () => {
     expect(asking.at(-1)?.items).toEqual([
       expect.objectContaining({ kind: 'message', from: 'person', text: 'Fix the flaky test' }),
     ]);
-    expect(asking.at(-1)?.outcome).toBeNull();
+    expect(asking.at(-1)?.result).toBeNull();
     // A choice and the turn's start recorded, not yet the message: still the turn asked for.
     const started = [
       ...[ASK(1, 'Hi'), SAY(2, 'Hello')],

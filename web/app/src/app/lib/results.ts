@@ -1,10 +1,10 @@
-import type { ReplySources } from '@glave/client';
+import type { Outcome, ReplySources, TurnResult } from '@glave/client';
 import { type GlzRunStatus, formatDuration, formatMoney, listFormat } from '@glave/glaze';
 
 import type { ApprovalItem, Draft, MessageItem, QuestionItem, ThreadItem } from './conversation';
 import type { ChangedFile } from './files';
 import { plural } from './plural';
-import type { Turn, TurnOutcome } from './turns';
+import type { Turn } from './turns';
 
 /** What waits for the person in a turn: an approval not yet decided, a question not answered. */
 export type Waiting = ApprovalItem | QuestionItem;
@@ -13,8 +13,10 @@ export type Waiting = ApprovalItem | QuestionItem;
 export interface Receipt {
   readonly status: GlzRunStatus;
   /**
-   * The time it took (so far, while it has not ended, unless the working line counts it) and
-   * what it cost, as far as known, and how many commands ran outside the sandbox, when any did.
+   * The time it took (so far, while it has not ended, unless the working line counts it); and,
+   * once it has ended, the server's result: what it cost, or that the cost was not reported,
+   * whether that was estimated, where its model calls ran, and how many commands ran outside
+   * the sandbox or with the network, when any did.
    */
   readonly facts: readonly string[];
   /** How many steps, in words: "4 steps". */
@@ -64,7 +66,7 @@ export interface TurnResults {
   readonly waiting: readonly Waiting[];
 }
 
-const STOPPED: readonly TurnOutcome[] = ['cancelled', 'interrupted', 'limit_reached'];
+const STOPPED: readonly Outcome[] = ['cancelled', 'interrupted', 'limit_reached'];
 
 function waits(item: ThreadItem): item is Waiting {
   return (
@@ -99,18 +101,19 @@ function workingOn(
 ): Working | null {
   const last = turn.items.at(-1);
   const answered = last?.kind === 'message' && last.from === 'model';
-  const idle = !running || turn.outcome !== null || live !== null || waiting > 0 || answered;
+  const idle = !running || turn.result !== null || live !== null || waiting > 0 || answered;
   return idle ? null : { step: calling(turn) ? step : null, since: turn.started };
 }
 
 function statusOf(turn: Turn, waiting: readonly Waiting[], running: boolean): GlzRunStatus {
-  if (turn.outcome === 'completed') {
+  const outcome = turn.result?.outcome ?? null;
+  if (outcome === 'completed') {
     return 'done';
   }
-  if (turn.outcome === 'failed') {
+  if (outcome === 'failed') {
     return 'failed';
   }
-  if (turn.outcome !== null && STOPPED.includes(turn.outcome)) {
+  if (outcome !== null && STOPPED.includes(outcome)) {
     return 'stopped';
   }
   if (waiting.length > 0) {
@@ -119,19 +122,25 @@ function statusOf(turn: Turn, waiting: readonly Waiting[], running: boolean): Gl
   return running || calling(turn) ? 'running' : 'done';
 }
 
+/** What the turn's model calls cost, as the server says: estimated, or not reported. */
+function spent(result: TurnResult, locale: string): string {
+  const cost = result.cost ?? null;
+  const said =
+    cost === null
+      ? $localize`:@@results.costNotReported:cost not reported`
+      : formatMoney(cost, locale);
+  return result.estimated === true
+    ? $localize`:@@results.estimated:${said}:COST: (estimated)`
+    : said;
+}
+
 /**
- * How many commands the person let run outside the sandbox, and in it with the network, in
- * words, when any were.
+ * How many commands ran outside the sandbox, and in it with the network, as the server counted
+ * them, in words, when any did.
  */
-function outsideSandbox(items: readonly ThreadItem[], locale: string): readonly string[] {
-  const allowed = items.filter(
-    (item): item is ApprovalItem =>
-      item.kind === 'approval' &&
-      item.outsideSandbox &&
-      (item.decision === 'allow_once' || item.decision === 'allow_for_thread'),
-  );
-  const network = allowed.filter((item) => item.withNetwork).length;
-  const ran = allowed.length - network;
+function outsideSandbox(result: TurnResult, locale: string): readonly string[] {
+  const ran = result.outside_sandbox ?? 0;
+  const network = result.with_network ?? 0;
   return [
     ...(ran === 0
       ? []
@@ -149,6 +158,17 @@ function outsideSandbox(items: readonly ThreadItem[], locale: string): readonly 
             locale,
           ),
         ]),
+  ];
+}
+
+/** The server's result of a turn, in words for `locale`: its cost, where it ran, what ran outside. */
+function resultFacts(result: TurnResult, locale: string): readonly string[] {
+  const via = result.via ?? [];
+  const routes = listFormat(locale, { style: 'short', type: 'unit' }).format(via);
+  return [
+    spent(result, locale),
+    ...(via.length === 0 ? [] : [$localize`:@@results.via:via ${routes}:ROUTES:`]),
+    ...outsideSandbox(result, locale),
   ];
 }
 
@@ -177,15 +197,12 @@ export function turnResults(
   const along = others.filter((item) => item !== reply);
   const calls = rest.filter(isCall).length;
   const worked = calls > 0;
-  const routes = listFormat(locale, { style: 'short', type: 'unit' }).format(turn.routes);
   const working = workingOn(turn, live, step, running, waiting.length);
   // While the working line counts the turn's time, the receipt leaves it to it.
   const timed = turn.took !== null && turn.took !== 0 && working === null;
   const facts = [
     ...(timed ? [formatDuration(turn.took, locale)] : []),
-    ...(turn.cost === null ? [] : [formatMoney(turn.cost, locale)]),
-    ...(turn.routes.length === 0 ? [] : [$localize`:@@results.via:via ${routes}:ROUTES:`]),
-    ...outsideSandbox(rest, locale),
+    ...(turn.result === null ? [] : resultFacts(turn.result, locale)),
   ];
   return {
     key: turn.key,

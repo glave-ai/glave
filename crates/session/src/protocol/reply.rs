@@ -3,8 +3,9 @@
 
 use glave_event::{
     At, EventId, Money, Origin, Outcome, Principal, RawEvent, Secret, Seq, ThreadId, TokenCounts,
+    TurnResult, WorkspaceBound,
 };
-use glave_harness::{GoalProgress, RunningCommand, TurnSummary};
+use glave_harness::{GoalProgress, RunningCommand};
 use glave_ports::memories::Remembered;
 use glave_ports::{Project, ProjectId, Standing};
 use serde::{Deserialize, Serialize};
@@ -97,9 +98,50 @@ pub struct ThreadSummary {
     pub outcome: Option<Outcome>,
     /// Tokens its own model calls used.
     pub tokens: TokenCounts,
-    /// What they cost, when every call reported a cost.
+    /// What they cost, when every call reported a cost; absent when one did not: the cost is
+    /// not reported.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost: Option<Money>,
+    /// True when a usage count in `tokens`, and so `cost`, was estimated: a stream ended before
+    /// its provider reported it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub estimated: bool,
+    /// Where it works, once it has a workspace, as its latest `workspace.bound` records it: the
+    /// computer (the one the server runs on, or a worker), the folder its tools act in, and how
+    /// it got it (its project's folder in place, a worktree on a branch of its own, a clone, or
+    /// a scratch folder).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<Box<WorkspaceBound>>,
+    /// How full its context is, as compaction measures it; absent before its first model call
+    /// and since it was compacted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<ContextUse>,
+}
+
+/// How full a thread's context is: what its conversation last sent and got back, of the window
+/// compaction aims for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ContextUse {
+    /// The tokens its latest call sent and got back.
+    pub tokens: u64,
+    /// The window compaction aims for, in tokens: the configured one, or a smaller one the
+    /// model stated.
+    pub window: u64,
+    /// `tokens` of `window`, in whole percent, at most 100. A turn compacts before a request
+    /// past its threshold (80 unless set).
+    pub percent: u8,
+}
+
+impl ContextUse {
+    /// `tokens` of a `window` of tokens.
+    pub(crate) fn of(tokens: u64, window: u64) -> Self {
+        let share = tokens.saturating_mul(100) / window.max(1);
+        Self {
+            tokens,
+            window,
+            percent: u8::try_from(share.min(100)).unwrap_or(100),
+        }
+    }
 }
 
 /// What a thread is doing.
@@ -111,42 +153,6 @@ pub enum Status {
     /// A turn is paused until someone answers an approval or a question, or the thread's
     /// project asks the person to trust it.
     Waiting,
-}
-
-/// How a turn ended and what it cost.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct TurnResult {
-    pub outcome: Outcome,
-    pub model_calls: u32,
-    pub tool_calls: u32,
-    /// The commands that ran outside the sandbox, each one allowed.
-    #[serde(default)]
-    pub outside_sandbox: u32,
-    /// The commands that ran with the network the sandbox otherwise kept from them, each one
-    /// allowed.
-    #[serde(default)]
-    pub with_network: u32,
-    pub tokens: TokenCounts,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cost: Option<Money>,
-    /// True when a usage count was estimated, not reported.
-    #[serde(default)]
-    pub estimated: bool,
-}
-
-impl From<TurnSummary> for TurnResult {
-    fn from(summary: TurnSummary) -> Self {
-        Self {
-            outcome: summary.outcome,
-            model_calls: summary.model_calls,
-            tool_calls: summary.tool_calls,
-            outside_sandbox: summary.outside_sandbox,
-            with_network: summary.with_network,
-            tokens: summary.tokens,
-            cost: summary.cost,
-            estimated: summary.estimated,
-        }
-    }
 }
 
 /// A message queued to the turn running in its thread, for the model's next call.

@@ -2,10 +2,11 @@
 //! and equal to what a rebuild from the log makes.
 
 use glave_event::{
-    At, Cost, Currency, EventId, Header, MessageAdded, ModelRef, ModelResponded, Money, Origin,
-    OriginKind, Outcome, Part, Payload, Principal, PrincipalId, Producer, RawEvent, Role, Seq,
-    StopReason, ThreadArchived, ThreadId, ThreadRenamed, ThreadStarted, TokenCounts, TurnEnded,
-    TurnStarted, Usage, encode,
+    At, ComputerKind, ComputerRef, Cost, Currency, EventId, Header, MessageAdded, ModelRef,
+    ModelResponded, Money, Opened, Origin, OriginKind, Outcome, Part, Payload, Principal,
+    PrincipalId, Producer, RawEvent, Role, Seq, StopReason, ThreadArchived, ThreadCompacted,
+    ThreadId, ThreadRenamed, ThreadStarted, TokenCounts, TurnResult, TurnStarted, Usage,
+    WorkspaceBound, encode,
 };
 
 use super::{Verdict, ensure, scope, thread, uuid_v7};
@@ -135,8 +136,9 @@ fn turn(writer: &mut Writer, from: u64) -> Result<Vec<RawEvent>, String> {
         writer.next(from + 2, &responded()?)?,
         writer.next(
             from + 3,
-            &TurnEnded {
+            &TurnResult {
                 outcome: Outcome::Completed,
+                ..TurnResult::begun()
             },
         )?,
     ])
@@ -200,8 +202,9 @@ pub async fn thread_views<L: EventLog>(log: &L) -> Verdict {
             ledger,
             vec![Writer::new(ledger).next(
                 8,
-                &TurnEnded {
+                &TurnResult {
                     outcome: Outcome::Failed,
+                    ..TurnResult::begun()
                 },
             )?],
         ),
@@ -255,7 +258,75 @@ pub async fn thread_views<L: EventLog>(log: &L) -> Verdict {
     rebuilding(log, &here, &[a, b, c]).await?;
     opening_messages(log, &here, thread(15)?).await?;
     open_turns(log, &here, thread(16)?).await?;
+    where_and_how_full(log, &here, thread(19)?).await?;
     waits::waits(log, &here).await
+}
+
+/// A view says where its thread works, its latest `workspace.bound`, and what its conversation
+/// last sent and got back: the latest call of its own, never the judge's, none once it was
+/// compacted; and whether any call's usage was estimated.
+async fn where_and_how_full<L: EventLog>(log: &L, here: &Scope, id: ThreadId) -> Verdict {
+    let mut writer = Writer::new(id);
+    let bound = WorkspaceBound {
+        workspace: uuid_v7(17),
+        computer: ComputerRef {
+            id: uuid_v7(18),
+            kind: ComputerKind::Local,
+        },
+        opened: Opened::Folder {
+            path: "/work".into(),
+        },
+        root: "/work".into(),
+    };
+    let estimated = ModelResponded {
+        usage: Usage::new(
+            TokenCounts {
+                input: 2_000,
+                output: 50,
+                ..TokenCounts::default()
+            },
+            true,
+            None,
+        )
+        .map_err(|e| e.to_string())?,
+        route: Some("main".into()),
+        ..responded()?
+    };
+    let judged = ModelResponded {
+        route: Some("judge".into()),
+        ..responded()?
+    };
+    let events = vec![
+        writer.next(40, &started()?)?,
+        writer.next(41, &bound)?,
+        writer.next(42, &estimated)?,
+        writer.next(43, &judged)?,
+    ];
+    log.append(here, &events).await.map_err(|e| e.to_string())?;
+    let view = log.thread_view(here, id).await.map_err(|e| e.to_string())?;
+    ensure(
+        view.as_ref().is_some_and(|view| {
+            view.workspace_seq == Seq::new(2).ok()
+                && view.estimated
+                && view
+                    .context
+                    .as_ref()
+                    .is_some_and(|last| last.tokens == 2_050 && last.model == "model")
+        }),
+        "a view must say where its thread works, that a usage was estimated, and what its own \
+         latest call sent and got back, not the judge's",
+    )?;
+    let compacted = ThreadCompacted {
+        through: Seq::new(4).map_err(|e| e.to_string())?,
+        parts: Vec::new(),
+    };
+    let more = vec![writer.next(44, &compacted)?];
+    log.append(here, &more).await.map_err(|e| e.to_string())?;
+    let view = log.thread_view(here, id).await.map_err(|e| e.to_string())?;
+    ensure(
+        view.is_some_and(|view| view.context.is_none() && view.workspace_seq.is_some()),
+        "a compacted thread's view must say nothing of its context until its next call",
+    )
 }
 
 /// A turn started and not ended is open: the view says where it started, and only such threads

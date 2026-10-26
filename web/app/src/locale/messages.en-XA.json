@@ -311,6 +311,8 @@
     "renameDialog.threadHeading": "[Ŕéñåɱé ţĥé ţĥŕéåð one two]",
     "renameDialog.threadLabel": "[Ţîţļé one]",
     "replySources.newTab": "[(öþéñš îñ å ñéŵ ţåƀ) one two]",
+    "results.costNotReported": "[çöšţ ñöţ ŕéþöŕţéð one two]",
+    "results.estimated": "[{$COST} (éšţîɱåţéð) one]",
     "results.outsideSandbox": "[{{$COUNT}, plural, one {# çöɱɱåñð} other {# çöɱɱåñðš}} öûţšîðé ţĥé šåñðƀöẋ one two three]",
     "results.steps": "[{{$COUNT}, plural, one {# šţéþ} other {# šţéþš}} one]",
     "results.via": "[ṽîå {$ROUTES} one]",

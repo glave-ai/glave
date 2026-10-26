@@ -17,7 +17,7 @@ use crate::payload::{
     PermissionsChosen, PlanApproved, PlanUpdated, ProjectFolderSet, ProjectRemoved,
     ProviderConnected, ProviderRemoved, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted,
     ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived,
-    ToolCallCompleted, ToolCallRequested, TrustDecided, TurnEnded, TurnStarted, WorkspaceBound,
+    ToolCallCompleted, ToolCallRequested, TrustDecided, TurnResult, TurnStarted, WorkspaceBound,
     WorkspaceRemoved, approval, awake, browser, catalog, certificate, chosen, command, connection,
     credential, gateway, goal, grouping, hook, language, memory, message, model, passkey, plan,
     project, provider, standing, task, thread, tool, trust, turn, workspace,
@@ -118,7 +118,7 @@ pub enum Body {
     ModelChosen(ModelChosen),
     PermissionsChosen(PermissionsChosen),
     EffortChosen(EffortChosen),
-    TurnEnded(TurnEnded),
+    TurnEnded(TurnResult),
     ApprovalRequested(ApprovalRequested),
     ApprovalDecided(ApprovalDecided),
     GoalSet(GoalSet),
@@ -462,17 +462,11 @@ mod tests {
     }
 
     fn line(kind: &str, v: u32, data: &str) -> String {
-        let raw = encode(
-            header(),
-            &TurnEnded {
-                outcome: Outcome::Completed,
-            },
-        )
-        .unwrap();
-        raw.to_json().unwrap().replace(
-            r#""type":"turn.ended","v":1,"data":{"outcome":"completed"}"#,
-            &format!(r#""type":"{kind}","v":{v},"data":{data}"#),
-        )
+        let raw = encode(header(), &TurnResult::begun()).unwrap();
+        let ended = format!(r#""type":"turn.ended","v":1,"data":{}"#, raw.data.get());
+        raw.to_json()
+            .unwrap()
+            .replace(&ended, &format!(r#""type":"{kind}","v":{v},"data":{data}"#))
     }
 
     #[test]
@@ -519,8 +513,9 @@ mod tests {
     fn unknown_envelope_versions_are_rejected() {
         let mut raw = encode(
             header(),
-            &TurnEnded {
+            &TurnResult {
                 outcome: Outcome::Failed,
+                ..TurnResult::begun()
             },
         )
         .unwrap();

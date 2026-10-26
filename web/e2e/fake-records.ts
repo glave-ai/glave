@@ -1,4 +1,4 @@
-import type { RawEvent } from '@glave/client';
+import type { RawEvent, WorkspaceBound } from '@glave/client';
 
 /**
  * What the fake server's threads record and how it refuses, as the session API shapes them:
@@ -45,10 +45,17 @@ export function done(seq: number, callId: string, text: string, id = THREAD): Ra
   );
 }
 
-/** The thread's workspace: a folder on the computer glave runs on. */
+/** Where the fake threads work: the project's folder, on the computer glave runs on. */
+export const WORKSPACE: WorkspaceBound = {
+  workspace: '01900000-0000-7000-8000-0000000000d1',
+  computer: { id: '01900000-0000-7000-8000-0000000000c1', kind: 'local' },
+  opened: { kind: 'folder', path: '/work/glave' },
+  root: '/work/glave',
+};
+
+/** The thread's workspace, as its summary says it too. */
 export function bound(seq: number, id = THREAD): RawEvent {
-  const computer = { id: '01900000-0000-7000-8000-0000000000c1', kind: 'local' };
-  return event(seq, 'workspace.bound', { computer, root: '/work/glave' }, id);
+  return event(seq, 'workspace.bound', { ...WORKSPACE }, id);
 }
 
 /** What a server refuses a call with. */

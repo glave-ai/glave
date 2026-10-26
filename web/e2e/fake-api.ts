@@ -26,7 +26,7 @@ import {
   refusedTurn,
 } from './fake-gone';
 import { DEFAULT_MODEL, MODELS } from './fake-models';
-import { Refusal, THREAD, bound, call, done, event } from './fake-records';
+import { Refusal, THREAD, WORKSPACE, bound, call, done, event } from './fake-records';
 import { FAKE_SERVER, signIn } from './fake-signin';
 import { PLANNING, PLANNING_HISTORY, type Planned, planned } from './fake-plan';
 import { RESEARCH, RESEARCH_HISTORY, sourcesOf } from './fake-sources';
@@ -78,6 +78,7 @@ function thread(
     updated_at: '2026-10-11T10:05:00.000Z',
     turns: 1,
     tokens: TOKENS,
+    workspace: WORKSPACE,
     ...more,
   };
 }
@@ -154,7 +155,22 @@ export const HISTORY = [
     stop: 'end_turn',
     cost: { amount: { micros: 4200, currency: 'USD' }, price_list: 'e2e' },
   }),
-  event(15, 'turn.ended', { outcome: 'completed' }, THREAD, '2026-10-11T10:02:05.000Z'),
+  event(
+    15,
+    'turn.ended',
+    {
+      outcome: 'completed',
+      model_calls: 5,
+      tool_calls: 4,
+      outside_sandbox: 0,
+      with_network: 0,
+      tokens: { input: 9000, cache_read: 0, cache_write: 0, output: 600, reasoning: 0 },
+      cost: { micros: 4200, currency: 'USD' },
+      estimated: false,
+    },
+    THREAD,
+    '2026-10-11T10:02:05.000Z',
+  ),
 ];
 
 /** The waiting thread's history: it tidied a file and waits to push it. */
