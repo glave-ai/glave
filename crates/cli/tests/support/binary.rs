@@ -18,7 +18,7 @@ pub(crate) struct Place {
     pub lifeline: Lifeline,
     /// The folder both are in, removed when the place drops; none for a place made of
     /// another's folders.
-    pub _folder: Option<TempDir>,
+    pub folder: Option<TempDir>,
 }
 
 pub(crate) fn place(name: &str) -> Place {
@@ -31,7 +31,23 @@ pub(crate) fn place(name: &str) -> Place {
         project,
         home: dir.join("home"),
         lifeline: Lifeline::new(&dir),
-        _folder: Some(dir),
+        folder: Some(dir),
+    }
+}
+
+/// The folder goes with the place, and the test fails, unless it fails already, when it could
+/// not be removed, most likely as something the test started still wrote there. So a test
+/// stops and waits for every program it starts for a place before the place goes: declared
+/// after it, or before it in a struct. The lifeline goes after the folder: it still ends a
+/// glave a test left running, but too late to keep it from writing there.
+impl Drop for Place {
+    fn drop(&mut self) {
+        if let Some(folder) = self.folder.take()
+            && let Err(error) = folder.remove()
+            && !std::thread::panicking()
+        {
+            panic!("{error}; something the test started may still write there");
+        }
     }
 }
 

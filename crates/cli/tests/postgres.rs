@@ -112,7 +112,7 @@ fn two_homes_on_one_database_read_one_trust_record() {
         project: first.project.clone(),
         home: first.home.with_file_name("second-home"),
         lifeline: first.lifeline.clone(),
-        _folder: None,
+        folder: None,
     };
     let explain = |place: &Place| {
         let output = Command::new(env!("CARGO_BIN_EXE_glave"))

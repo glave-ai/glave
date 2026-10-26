@@ -141,16 +141,19 @@ fn offered_whose(body: &Value) -> bool {
 /// The person's server, in a fresh home whose `mcp.json` names the remote server `docs`, which
 /// asks for a sign-in at a fake authorization server granting `grants`, and lets in their
 /// tokens; with a model answering `replies`.
+///
+/// Fields drop in the order they are declared, so the place goes last: the server is killed
+/// and waited for before its folder is removed.
 struct World {
-    place: Place,
-    auth: FakeAuthServer,
+    api: Api,
+    _served: Running,
+    said: crate::http::Said,
+    url: String,
+    model: FakeServer,
     _remote: Running,
     address: String,
-    model: FakeServer,
-    _served: Running,
-    url: String,
-    said: crate::http::Said,
-    api: Api,
+    auth: FakeAuthServer,
+    place: Place,
 }
 
 impl World {
@@ -168,15 +171,15 @@ impl World {
         let (served, url, said) = serve_http_with(&place, &model, &["--model", "m"], &[]);
         let api = Api::new(&place, &url);
         Self {
-            place,
-            auth,
+            api,
+            _served: served,
+            said,
+            url,
+            model,
             _remote: remote,
             address,
-            model,
-            _served: served,
-            url,
-            said,
-            api,
+            auth,
+            place,
         }
     }
 

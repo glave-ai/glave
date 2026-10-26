@@ -9,10 +9,11 @@ import type {
 } from '@glave/client';
 import type { Page, Route } from '@playwright/test';
 
-import { type Commands, SERVING, SERVING_HISTORY, background, docsRunning } from './fake-commands';
+import { type Commands, SERVING, SERVING_HISTORY, background } from './fake-commands';
 import { type Awake, keptAwake } from './fake-awake';
 import { keptFile } from './fake-files';
 import { HOME, listFolders } from './fake-folders';
+import { type Gated, gates } from './fake-gate';
 import { type Grouped, keptGrouping } from './fake-grouping';
 import { FakeLists } from './fake-lists';
 import {
@@ -425,16 +426,40 @@ export const MARKDOWN_REPLY = [
   '<img src="https://evil.example/pixel.png">',
 ].join('\n');
 
+/** `text` in the pieces a model streams it in, a few characters each. */
+function piecesOf(text: string): readonly string[] {
+  return text.match(/[\s\S]{1,6}/gu) ?? [];
+}
+
+/** Where `words` end in `reply`; fails when it never says them. */
+function endOf(reply: string, words: string): number {
+  const at = reply.indexOf(words);
+  if (at < 0) {
+    throw new Error(`the reply never says ${words}`);
+  }
+  return at + words.length;
+}
+
 /**
  * Makes the page's next turn stream `reply` to `THREAD` a few characters at a time, as a model
  * would: the page's own `fetch` answers `turn/start` with a stream that sends each piece on its
- * own, `delay` milliseconds apart, so the page renders the reply as it grows.
+ * own, `delay` milliseconds apart, so the page renders the reply as it grows. Given `heldAfter`,
+ * words of the reply, the stream waits once it has sent them, at the gate `reply`, until the
+ * test lets it go (`letGo`): so the test sees the reply partway for as long as it looks.
  */
-export async function streamReply(page: Page, reply = MARKDOWN_REPLY, delay = 15): Promise<void> {
-  const pieces = reply.match(/[\s\S]{1,6}/gu) ?? [];
-  const notes = turnNotes(THREAD, MARKDOWN_PROMPT, pieces, 0);
+export async function streamReply(
+  page: Page,
+  reply = MARKDOWN_REPLY,
+  { delay = 15, heldAfter }: { readonly delay?: number; readonly heldAfter?: string } = {},
+): Promise<void> {
+  const end = heldAfter === undefined ? reply.length : endOf(reply, heldAfter);
+  const first = piecesOf(reply.slice(0, end));
+  const notes = turnNotes(THREAD, MARKDOWN_PROMPT, [...first, ...piecesOf(reply.slice(end))], 0);
+  // It waits after the person's message and the reply up to those words.
+  const held = heldAfter === undefined ? null : 1 + first.length;
+  await gates(page);
   await page.addInitScript(
-    ({ notes, delay }) => {
+    ({ notes, delay, held }) => {
       const real = window.fetch.bind(window);
       window.fetch = async (input, init) => {
         const body = typeof init?.body === 'string' ? init.body : '';
@@ -445,7 +470,10 @@ export async function streamReply(page: Page, reply = MARKDOWN_REPLY, delay = 15
         const encoder = new TextEncoder();
         const stream = new ReadableStream<Uint8Array>({
           async start(controller) {
-            for (const note of notes) {
+            for (const [index, note] of notes.entries()) {
+              if (index === held) {
+                await (window as unknown as Gated).glaveGates.passed('reply');
+              }
               const message = 'result' in note ? { ...note, id } : note;
               controller.enqueue(encoder.encode(`data: ${JSON.stringify(message)}\n\n`));
               await new Promise((resolve) => setTimeout(resolve, delay));
@@ -456,7 +484,7 @@ export async function streamReply(page: Page, reply = MARKDOWN_REPLY, delay = 15
         return new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } });
       };
     },
-    { notes, delay },
+    { notes, delay, held },
   );
 }
 
@@ -619,7 +647,7 @@ export async function fakeApi(
     started: [],
     made: [],
     trust: trust ? { asking: true } : null,
-    commands: commands ? docsRunning() : null,
+    commands: commands ? { running: true } : null,
     credentials: account ? [GITHUB] : [],
     touched: new Set(),
     gone: gone ? folderGone() : null,
