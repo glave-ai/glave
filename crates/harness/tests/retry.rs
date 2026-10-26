@@ -180,24 +180,28 @@ fn a_response_that_errors_after_output_is_not_tried_again() {
 
 #[test]
 fn a_failure_that_will_not_pass_ends_the_turn_at_once() {
-    block_on!(async {
-        let refused = ProviderError::Http {
-            status: 401,
-            body: "bad key".into(),
-        };
-        let dir = folder("retry");
-        let harness = harness(&dir, vec![refused.clone()], Duration::ZERO).await;
-        let mut thread = harness.start_thread(scope()).await.unwrap();
-        let mut shown = Vec::new();
-        let error = harness
-            .run_turn(&mut thread, "hi", &Cancel::new(), &mut |live| {
-                shown.push(live);
-            })
-            .await
-            .unwrap_err();
-        assert!(matches!(error, HarnessError::Provider(e) if e == refused));
-        assert_eq!(retries(&shown), []);
-    });
+    let refused = ProviderError::Http {
+        status: 401,
+        body: "bad key".into(),
+    };
+    // An overload after output: asking again would show it twice.
+    let broke = ProviderError::AfterOutput(Box::new(unavailable()));
+    for failed in [refused, broke] {
+        block_on!(async {
+            let dir = folder("retry");
+            let harness = harness(&dir, vec![failed.clone()], Duration::ZERO).await;
+            let mut thread = harness.start_thread(scope()).await.unwrap();
+            let mut shown = Vec::new();
+            let error = harness
+                .run_turn(&mut thread, "hi", &Cancel::new(), &mut |live| {
+                    shown.push(live);
+                })
+                .await
+                .unwrap_err();
+            assert!(matches!(error, HarnessError::Provider(e) if e == failed));
+            assert_eq!(retries(&shown), []);
+        });
+    }
 }
 
 #[test]

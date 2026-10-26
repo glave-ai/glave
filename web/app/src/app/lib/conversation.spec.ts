@@ -2,7 +2,7 @@ import type { RawEvent } from '@glave/client';
 
 import {
   NO_DRAFT,
-  answersFrom,
+  answersOf,
   applyUpdate,
   argumentsSummary,
   mergeEvents,
@@ -96,11 +96,33 @@ describe('conversation', () => {
     expect(questionsOf({ json: {} })).toEqual([]);
   });
 
-  it('reads the answers back from what the model was told', () => {
-    expect(answersFrom('The person answered:\n- Which? → A\n- Why? → (no answer)')).toEqual([
-      'A',
-      '',
+  it('reads the answers as the result records them, never from what the model was told', () => {
+    const answers = ['Rename a → b', 'Two\nlines', ''];
+    const items = threadItems([
+      event('tool.call.requested', {
+        call_id: 'q1',
+        tool: 'question',
+        arguments: {
+          json: {
+            questions: [{ question: 'What → where?' }, { question: 'Why?' }, { question: 'And?' }],
+          },
+        },
+      }),
+      event('tool.call.completed', {
+        call_id: 'q1',
+        is_error: false,
+        output: [
+          {
+            type: 'text',
+            text: 'The person answered:\n- What → where? → Rename a → b\n- Why? → Two\nlines\n- And? → (no answer)',
+          },
+        ],
+        structured: { answers },
+      }),
     ]);
+    expect(items).toMatchObject([{ kind: 'question', answers }]);
+    expect(answersOf(undefined)).toEqual([]);
+    expect(answersOf({ answers: ['A', 7] })).toEqual(['A', '']);
   });
 
   it('builds the thread: messages, calls with results, approvals, questions', () => {
@@ -116,6 +138,8 @@ describe('conversation', () => {
         call_id: 'c1',
         tool: 'bash',
         summary: 'bash: rm -rf build',
+        ask: 'Run this command?',
+        detail: 'rm -rf build',
         caution: 'It deletes build.',
       }),
       event('approval.decided', { call_id: 'c1', decision: 'deny' }),
@@ -138,6 +162,7 @@ describe('conversation', () => {
         call_id: 'c3',
         is_error: false,
         output: [{ type: 'text', text: 'The person answered:\n- Which? → B' }],
+        structured: { answers: ['B'] },
       }),
       event('message.added', {
         role: 'assistant',
@@ -161,6 +186,8 @@ describe('conversation', () => {
       approval: 'c1',
       decision: 'deny',
       summary: 'bash: rm -rf build',
+      ask: 'Run this command?',
+      detail: 'rm -rf build',
       caution: 'It deletes build.',
     });
     expect(items[3]).toMatchObject({ status: 'failed', output: 'no such file' });
@@ -228,10 +255,13 @@ describe('conversation', () => {
       event('approval.requested', { call_id: 'c1', tool: 'bash', summary: 'x' }),
     ]);
     expect(items[0]).toMatchObject({ status: 'running' });
-    // Only the mode asks: no caution of its own.
+    // Only the mode asks: no caution of its own. Recorded before the server said its sentence,
+    // it asks with its summary.
     expect(items[1]).toMatchObject({
       decision: null,
       caution: '',
+      ask: 'x',
+      detail: '',
       outsideSandbox: false,
       modelReason: '',
     });

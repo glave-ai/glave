@@ -18,7 +18,6 @@ import {
   GlzReceiptComponent,
 } from '@glave/glaze';
 
-import { type Ask, askOf } from '../../lib/approvals';
 import { sizeOf } from '../../lib/attachments';
 import type {
   ApprovalItem,
@@ -49,12 +48,7 @@ interface ShownCall extends CallItem {
   readonly icon: GlzIconData;
 }
 
-/** An approval as the thread shows it: what it asks, in a sentence. */
-interface ShownApproval extends ApprovalItem {
-  readonly ask: Ask;
-}
-
-type ShownItem = ShownMessage | ShownCall | ShownApproval | QuestionItem;
+type ShownItem = ShownMessage | ShownCall | ApprovalItem | QuestionItem;
 
 /** `item` as the thread shows it, its sizes written for `locale`. */
 function shown(item: ThreadItem, locale: string): ShownItem {
@@ -75,7 +69,6 @@ function shown(item: ThreadItem, locale: string): ShownItem {
     case 'call':
       return { ...item, icon: toolIcon(item.tool) };
     case 'approval':
-      return { ...item, ask: askOf(item.tool, item.summary) };
     case 'question':
       return item;
   }

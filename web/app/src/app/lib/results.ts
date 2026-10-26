@@ -1,5 +1,5 @@
 import type { ReplySources } from '@glave/client';
-import { type GlzRunStatus, formatDuration, formatMoney } from '@glave/glaze';
+import { type GlzRunStatus, formatDuration, formatMoney, listFormat } from '@glave/glaze';
 
 import type { ApprovalItem, Draft, MessageItem, QuestionItem, ThreadItem } from './conversation';
 import type { ChangedFile } from './files';
@@ -177,7 +177,7 @@ export function turnResults(
   const along = others.filter((item) => item !== reply);
   const calls = rest.filter(isCall).length;
   const worked = calls > 0;
-  const routes = new Intl.ListFormat(locale, { style: 'short', type: 'unit' }).format(turn.routes);
+  const routes = listFormat(locale, { style: 'short', type: 'unit' }).format(turn.routes);
   const working = workingOn(turn, live, step, running, waiting.length);
   // While the working line counts the turn's time, the receipt leaves it to it.
   const timed = turn.took !== null && turn.took !== 0 && working === null;

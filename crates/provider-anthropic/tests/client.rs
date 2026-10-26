@@ -37,7 +37,6 @@ mod over_http {
             tool_choice: ToolChoice::Auto,
             max_output_tokens: None,
             purpose: glave_ports::Purpose::Main,
-            threads: Vec::new(),
             files: Vec::new(),
             effort: None,
         }
@@ -384,6 +383,12 @@ mod conformance {
                 let mut events = vec![start(true)];
                 events.extend(text(0, &[said]));
                 events.push(mystery());
+                events
+            }
+            Script::TransientAfter { text: said } => {
+                let mut events = vec![start(true)];
+                events.extend(text(0, &[said]));
+                events.push(json!({"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}));
                 events
             }
             Script::Silence => return Reply::Stall,

@@ -21,6 +21,12 @@ pub enum Written {
         content_type: &'static str,
         body: String,
     },
+    /// An answer that breaks off: status 200 and this body, the connection closing a byte
+    /// before the length it promised.
+    Broken {
+        content_type: &'static str,
+        body: String,
+    },
     /// No answer at all: the request is held open until the client hangs up, like a model
     /// that never starts.
     Stall,
@@ -148,24 +154,27 @@ fn serve(stream: &TcpStream, answers: &Mutex<VecDeque<Written>>, received: &Log)
         .push(request);
     arrived.notify_all();
     let mut stream = stream;
-    match answer {
+    // A broken answer promises a byte more than it sends.
+    let (status, content_type, body, missing) = match answer {
         Written::Whole {
             status,
             content_type,
             body,
-        } => {
-            write!(
-                stream,
-                "HTTP/1.1 {status} FAKE\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\n\
-                 connection: close\r\n\r\n{body}",
-                body.len()
-            )?;
-            stream.flush()
-        }
+        } => (status, content_type, body, 0),
+        Written::Broken { content_type, body } => (200, content_type, body, 1),
         Written::Stall => {
             // Waits for the client to hang up: a read of nothing means it did.
             let _ = stream.read(&mut [0_u8; 1]);
-            Ok(())
+            return Ok(());
         }
-    }
+    };
+    write!(
+        stream,
+        "HTTP/1.1 {status} FAKE\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\n\
+         connection: close\r\n\r\n{body}",
+        body.len() + missing
+    )?;
+    stream.flush()?;
+    // Hung up as `connection: close` says, though the server keeps a clone to close on drop.
+    stream.shutdown(Shutdown::Write)
 }

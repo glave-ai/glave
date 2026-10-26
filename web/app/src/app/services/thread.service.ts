@@ -37,7 +37,7 @@ import { lastSourcing } from '../lib/sources';
 import { type Start, built, promptOf, sent, withFiles } from '../lib/starts';
 import { lastPlanning } from '../lib/plans';
 import { asks, latestStart, summaryRuns, threadTurns, turnRuns } from '../lib/turns';
-import { FIRST_RETRY_MS, LAST_RETRY_MS, cutOff, pause } from '../lib/watching';
+import { FIRST_RETRY_MS, LAST_RETRY_MS, cutOff, pause, refused } from '../lib/watching';
 import { FirstTurnService } from './first-turn.service';
 import { SessionService } from './session.service';
 import { ProjectsService } from './projects.service';
@@ -395,8 +395,9 @@ export class ThreadService {
         this.stopWatching();
       }
     }
+    const key = idempotencyKey();
     try {
-      const turn = this.started(start, controller.signal);
+      const turn = this.started(start, key, controller.signal);
       let next = await turn.next();
       if (!next.done) {
         if (!own) {
@@ -416,10 +417,20 @@ export class ThreadService {
         this.keepWaiting(queued, prompt, result.queued.id);
       }
     } catch (error: unknown) {
+      const aborted = controller.signal.aborted;
       if (folderGone(error)) {
         // The project's folder went since the lists were read: they say so in its place.
         void this.projects.refresh();
-      } else if (!controller.signal.aborted) {
+      } else if (
+        !aborted &&
+        queued === null &&
+        start.method === 'turn/start' &&
+        this.asking() !== null &&
+        !refused(error)
+      ) {
+        // No answer came, but it may have started: sent again with its key, as a first turn is.
+        this.firstTurns.lost(start.params, key);
+      } else if (!aborted) {
         const said = error instanceof Error ? error.message : String(error);
         this.failed.set(said);
         // Refused, as when too many wait: back in the box at once, saying why.
@@ -447,15 +458,16 @@ export class ThreadService {
     }
   }
 
-  /** The stream of the turn `start` starts: a message's, keyed so a retry starts no second. */
+  /** The stream of the turn `start` starts: a message's, under `key` so a retry starts no second. */
   private started(
     start: Start,
+    key: string,
     signal: AbortSignal,
   ): AsyncGenerator<Notification, TurnStartResult | PlanBuildResult, void> {
     if (start.method === 'plan/build') {
       return this.session.stream('plan/build', start.params, signal);
     }
-    const keyed = { ...start.params, _meta: { idempotency_key: idempotencyKey() } };
+    const keyed = { ...start.params, _meta: { idempotency_key: key } };
     return this.session.stream('turn/start', keyed, signal);
   }
 
@@ -496,8 +508,9 @@ export class ThreadService {
       if (drawn && event.type === 'message.added') {
         this.forgetLive();
       }
+      // A turn this view did not follow ended: its draft goes.
       if (added && event.type === 'turn.ended' && this.streaming() === 0) {
-        this.endedElsewhere();
+        this.forgetLive();
       }
     } else if (note.method === 'turn/live' && drawn) {
       const update = note.params.update;
@@ -512,11 +525,6 @@ export class ThreadService {
         this.doing.update((steps) => stepsAfter(steps, update));
       }
     }
-  }
-
-  /** A turn this view did not follow ended: its draft goes. */
-  private endedElsewhere(): void {
-    this.forgetLive();
   }
 
   /** What a turn showed live goes, the reply being written and the steps it took: never kept. */

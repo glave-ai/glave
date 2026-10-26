@@ -7,9 +7,9 @@ use crate::paths::basename;
 /// Programs that only read, whatever their arguments.
 const READERS: &[&str] = &[
     "ls", "cat", "head", "tail", "wc", "pwd", "echo", "printf", "grep", "egrep", "fgrep", "stat",
-    "file", "du", "df", "which", "whereis", "uname", "whoami", "id", "date", "cut", "tr", "diff",
-    "cmp", "basename", "dirname", "realpath", "readlink", "true", "false", "seq", "nl", "tac",
-    "rev", "column", "jq", "cd", "test", "[",
+    "du", "df", "which", "whereis", "uname", "whoami", "id", "date", "cut", "tr", "diff", "cmp",
+    "basename", "dirname", "realpath", "readlink", "true", "false", "seq", "nl", "tac", "rev",
+    "column", "jq", "cd", "test", "[",
 ];
 
 /// Whether `command` only reads.
@@ -34,6 +34,15 @@ pub(crate) fn reads_only(command: &Command) -> bool {
         }
         // A second operand is the file it writes.
         "uniq" => given(&args, &['f', 's', 'w']).operands.len() < 2,
+        // Compiling a magic file (`-C`, in a cluster too: `-bC`) writes a `.mgc` file.
+        "file" => {
+            let given = given(&args, &['e', 'f', 'F', 'm', 'M', 'P']);
+            !given.short.contains(&'C')
+                && !given
+                    .long
+                    .iter()
+                    .any(|long| abbreviates(long, &["compile"]))
+        }
         // Each letter of a cluster is an option of its own: `-o` writes the listing to a file,
         // and `-R` one into every folder it lists.
         "tree" => !args.iter().any(|a| {

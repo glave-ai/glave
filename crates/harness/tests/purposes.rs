@@ -1,19 +1,17 @@
-//! Every model call says what it is for and whose budgets it counts in, so a gateway can route
-//! and meter it; and `model.responded` records the route and target that served it. The
-//! judge's calls are recorded in the thread whose action they judged.
+//! Every model call says what it is for, so a gateway can route it; and `model.responded`
+//! records the route and target that served it. The judge's calls are recorded in the thread
+//! whose action they judged.
 
-use glave_event::{Body, ModelResponded, StopReason, ThreadId};
+use glave_event::{Body, ModelResponded, StopReason};
 use glave_harness::{Cancel, NoOneToAsk};
-use glave_ports::{InMemoryLog, ModelRequest, Purpose, Served};
+use glave_ports::{InMemoryLog, Purpose, Served};
 use serde_json::json;
 
 use crate::support::*;
 
-fn asked(seen: &Seen) -> Vec<(Purpose, Vec<ThreadId>)> {
-    let seen: Vec<ModelRequest> = seen.lock().unwrap().clone();
-    seen.into_iter()
-        .map(|request| (request.purpose, request.threads))
-        .collect()
+fn asked(seen: &Seen) -> Vec<Purpose> {
+    let seen = seen.lock().unwrap();
+    seen.iter().map(|request| request.purpose).collect()
 }
 
 fn responses(events: &[glave_event::Event]) -> Vec<ModelResponded> {
@@ -62,13 +60,7 @@ fn a_turn_and_its_summary_say_what_they_are_for_and_who_served_them() {
             .compact(&mut thread, &Cancel::new(), &mut |_| {})
             .await
             .unwrap();
-        assert_eq!(
-            asked(&seen),
-            [
-                (Purpose::Main, vec![thread.id]),
-                (Purpose::Summary, vec![thread.id])
-            ]
-        );
+        assert_eq!(asked(&seen), [Purpose::Main, Purpose::Summary]);
         let recorded = responses(&events(harness.log(), thread.id).await);
         let routes: Vec<_> = recorded
             .iter()
@@ -91,7 +83,7 @@ fn a_turn_and_its_summary_say_what_they_are_for_and_who_served_them() {
 }
 
 #[test]
-fn a_subagent_calls_as_a_subagent_within_its_parents_budget() {
+fn a_subagent_calls_as_a_subagent() {
     let dir = folder("purposes-subagent");
     block_on!(async {
         let answers = vec![
@@ -115,14 +107,10 @@ fn a_subagent_calls_as_a_subagent_within_its_parents_budget() {
             .run_turn(&mut thread, "look around", &Cancel::new(), &mut |_| {})
             .await
             .unwrap();
-        let calls = asked(&seen);
-        assert_eq!(calls[0], (Purpose::Main, vec![thread.id]));
-        let (purpose, threads) = &calls[1];
-        assert_eq!(*purpose, Purpose::Subagent);
-        assert_eq!(threads.len(), 2);
-        assert_ne!(threads[0], thread.id, "the child's own thread first");
-        assert_eq!(threads[1], thread.id, "then its parent's");
-        assert_eq!(calls[2], (Purpose::Main, vec![thread.id]));
+        assert_eq!(
+            asked(&seen),
+            [Purpose::Main, Purpose::Subagent, Purpose::Main]
+        );
     });
 }
 
@@ -162,7 +150,7 @@ fn the_judges_call_is_recorded_and_counted_in_the_thread_it_judged() {
             .run_turn(&mut thread, "push to main", &Cancel::new(), &mut |_| {})
             .await
             .unwrap();
-        assert_eq!(asked(&seen)[1], (Purpose::Judge, vec![thread.id]));
+        assert_eq!(asked(&seen)[1], Purpose::Judge);
         let recorded = responses(&events(harness.log(), thread.id).await);
         let routes: Vec<_> = recorded.iter().map(|r| r.route.as_deref()).collect();
         assert_eq!(routes, [None, Some("judge"), None]);

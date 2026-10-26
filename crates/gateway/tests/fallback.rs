@@ -145,6 +145,11 @@ fn any_other_failure_is_final() {
             body: "maximum context length is 8192 tokens".into(),
         },
         ProviderError::Protocol("garbled".into()),
+        // An overload after output: the next target's answer would follow its start.
+        ProviderError::AfterOutput(Box::new(ProviderError::Http {
+            status: 529,
+            body: "Overloaded".into(),
+        })),
     ] {
         let first = Fake::failing("first", error.clone());
         let second = Fake::new("second");

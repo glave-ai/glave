@@ -346,9 +346,7 @@ where
         Ok(match cancel.run(waiting).await {
             None => ToolOutput::text(true, NOT_RUN),
             Some(None) => ToolOutput::text(true, NO_ANSWER),
-            Some(Some(answers)) => {
-                ToolOutput::text(false, question::answered(&request.questions, &answers))
-            }
+            Some(Some(answers)) => question::answered(&request.questions, &answers),
         })
     }
 
@@ -442,7 +440,7 @@ where
             untrusted: thread.untrusted,
             outside_sandbox: request.outside_sandbox.as_ref().map(|o| o.lifted),
         };
-        let asking = judge(&self.provider, &model, &case, thread.lineage());
+        let asking = judge(&self.provider, &model, &case);
         let Some((ruling, answer)) = cancel.run(asking).await else {
             return Ok(Judged::Cancelled);
         };

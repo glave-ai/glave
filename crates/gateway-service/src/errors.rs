@@ -107,7 +107,8 @@ impl Refusal {
             ProviderError::OverBudget { .. } => Self::new(Kind::Budget, message),
             ProviderError::Transport(_)
             | ProviderError::Protocol(_)
-            | ProviderError::NoOutput(_) => Self::new(Kind::Upstream, message),
+            | ProviderError::NoOutput(_)
+            | ProviderError::AfterOutput(_) => Self::new(Kind::Upstream, message),
         }
     }
 

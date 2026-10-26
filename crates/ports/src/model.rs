@@ -4,7 +4,7 @@
 use std::future::Future;
 
 use glave_event::{
-    Arguments, CallId, Cost, ModelRef, ModelResponded, Part, Sha256, StopReason, ThreadId, Usage,
+    Arguments, CallId, Cost, ModelRef, ModelResponded, Part, Sha256, StopReason, Usage,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -15,7 +15,9 @@ use crate::failure::Failure;
 /// A model that can answer a conversation.
 pub trait ModelProvider: Send + Sync {
     /// Sends one request and streams the answer. Live fragments go to `on_delta` as they
-    /// arrive and are never stored; the finished answer is returned.
+    /// arrive and are never stored; the finished answer is returned. An error once any output
+    /// came (text, reasoning or a tool call) is [`ProviderError::AfterOutput`], so nobody
+    /// asks again and shows a second answer after the first one's start.
     fn complete(
         &self,
         request: &ModelRequest,
@@ -39,10 +41,6 @@ pub struct ModelRequest {
     /// What the call is for, so a gateway can choose the model for it. Providers ignore it.
     #[serde(default, skip_serializing_if = "Purpose::is_main")]
     pub purpose: Purpose,
-    /// The thread the call is made for, then the threads that started it, innermost first:
-    /// whose budgets it counts against. Providers ignore it.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub threads: Vec<ThreadId>,
     /// How much the model is asked to reason: a level its provider names, such as `high` or
     /// `none`, one the model offers. None leaves it to the model. A gateway sends each target
     /// only a level it offers, and one asked for none, or for a level it does not offer, the
@@ -283,6 +281,10 @@ pub enum ProviderError {
     /// shown or run, so asking again is safe.
     #[error("the model provider ended the response in an error before any output: {0}")]
     NoOutput(String),
+    /// The response broke off, for the reason inside, after text, reasoning or a tool call had
+    /// come: never transient, since asking again would show that output twice.
+    #[error("the model provider's answer broke off partway: {0}")]
+    AfterOutput(Box<ProviderError>),
     /// The provider sent nothing for this long, before or during its answer.
     #[error("the model provider sent nothing for {seconds} s")]
     Timeout { seconds: u64 },

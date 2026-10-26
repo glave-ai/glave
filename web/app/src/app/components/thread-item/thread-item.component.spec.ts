@@ -131,6 +131,8 @@ describe('ThreadItemComponent', () => {
       approval: 'c1',
       tool: 'bash',
       summary: 'bash: cargo test --workspace',
+      ask: 'Run this command?',
+      detail: 'cargo test --workspace',
       caution: '',
       outsideSandbox: false,
       withNetwork: false,
@@ -151,6 +153,28 @@ describe('ThreadItemComponent', () => {
     ]);
   });
 
+  it('asks in the server’s sentence and shows what would run as it gives it', async () => {
+    const { root } = await render({
+      kind: 'approval',
+      key: 'a',
+      seq: 1,
+      approval: 'c1',
+      tool: 'mcp__tracker__close',
+      summary: 'mcp__tracker__close {"issue":12}',
+      ask: 'Close this issue?',
+      detail: 'Issue 12',
+      caution: '',
+      outsideSandbox: false,
+      withNetwork: false,
+      modelReason: '',
+      decision: null,
+    });
+    const card = root.querySelector('[data-testid="thread-approval"]');
+    expect(card?.querySelector('.summary')?.textContent).toContain('Close this issue?');
+    expect(card?.querySelector('.detail')?.textContent).toBe('Issue 12');
+    await expectAccessible(root);
+  });
+
   it('says why a risky command asks in a sentence of its own, never inside the command', async () => {
     const { root } = await render({
       kind: 'approval',
@@ -159,6 +183,8 @@ describe('ThreadItemComponent', () => {
       approval: 'c1',
       tool: 'bash',
       summary: 'bash: git push -u origin fix/worktree-race',
+      ask: 'Run this command?',
+      detail: 'git push -u origin fix/worktree-race',
       caution: 'It pushes to a remote.',
       outsideSandbox: false,
       withNetwork: false,
@@ -183,6 +209,8 @@ describe('ThreadItemComponent', () => {
       approval: 'c1',
       tool: 'bash',
       summary: 'bash: cargo add serde',
+      ask: 'Run this command?',
+      detail: 'cargo add serde',
       caution: 'It runs outside the sandbox, where it can read and change any file you can.',
       outsideSandbox: true,
       withNetwork: false,

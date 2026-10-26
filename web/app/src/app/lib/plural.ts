@@ -1,3 +1,5 @@
+import { numberFormat, pluralRules } from '@glave/glaze';
+
 /** A plural: its number, as `$localize` put it in, then its cases, each in braces. */
 const PLURAL =
   /\{\s*(-?\d+(?:\.\d+)?)\s*,\s*plural\s*,((?:\s*(?:=\d+|zero|one|two|few|many|other)\s*\{[^{}]*\})+)\s*\}/gu;
@@ -15,8 +17,8 @@ const CASE = /(=\d+|zero|one|two|few|many|other)\s*\{([^{}]*)\}/gu;
  * put in before the plural is read.
  */
 export function plural(message: string, locale: string): string {
-  const rules = new Intl.PluralRules(locale);
-  const numbers = new Intl.NumberFormat(locale);
+  const rules = pluralRules(locale);
+  const numbers = numberFormat(locale);
   return message.replace(PLURAL, (_plural, number: string, body: string) => {
     const count = Number(number);
     const cases = new Map([...body.matchAll(CASE)].map(([, name, words]) => [name, words]));

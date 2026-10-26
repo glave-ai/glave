@@ -1,8 +1,9 @@
 import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { BreakpointObserver } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
-import type { TurnStartParams } from '@glave/client';
+import type { Notification, TurnStartParams } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 import { of } from 'rxjs';
 
@@ -11,6 +12,8 @@ import { ProjectsService } from '../../services/projects.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
 import { FakeSession, FakeTurn, provideFakeSession } from '../../testing/fake-session';
 import { MODELS, SERVER, event, record, thread } from '../../testing/fixtures';
+import type { TurnResults } from '../../lib/results';
+import { TurnComponent } from '../turn/turn.component';
 import { ThreadComponent } from './thread.component';
 
 const HISTORY = [
@@ -353,6 +356,36 @@ describe('ThreadComponent', () => {
     await type(root, 'Go');
     expect(fake.paramsOf('turn/start')).toMatchObject([{ thread: 'thread-1', prompt: 'Go' }]);
     expect(root.textContent).toContain('Done.');
+  });
+
+  it('streams a reply into the last turn alone, never drawing the turns before it again', async () => {
+    const turn = new FakeTurn();
+    const fake = session(ANSWERED).turn(turn);
+    const { root, fixture } = await open(fake);
+    await type(root, 'And now?');
+    const drawn = (): readonly TurnResults[] =>
+      fixture.debugElement
+        .queryAll(By.directive(TurnComponent))
+        .map((each) => (each.componentInstance as TurnComponent).turn());
+    const word = (text: string): Notification => ({
+      jsonrpc: '2.0',
+      method: 'turn/live',
+      params: { thread: 'thread-1', update: { kind: 'text', text } },
+    });
+    turn.send(word('Look'));
+    await settle();
+    await fixture.whenStable();
+    const before = drawn();
+    turn.send(word('ing'));
+    await settle();
+    await fixture.whenStable();
+    const after = drawn();
+    expect(after).toHaveLength(2);
+    expect(after[0]).toBe(before[0]);
+    expect(after[1]).not.toBe(before[1]);
+    expect(root.textContent).toContain('Looking');
+    await expectAccessible(root);
+    turn.end();
   });
 
   it('shows the first message the new chat sent, and sends it again when no answer came', async () => {
