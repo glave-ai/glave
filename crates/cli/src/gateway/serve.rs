@@ -11,7 +11,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use anyhow::{Context as _, bail};
-use glave_gateway::{Budgets, Limit};
+use glave_gateway::Budgets;
 use glave_gateway_service::{Policy, Service, Wiring};
 use glave_mcp::{Limits, McpServer};
 use glave_ports::settings::mcp::ServerConfig;
@@ -146,8 +146,7 @@ impl Policy for Organization {
 /// The budgets the policy keeps for each person.
 fn budgets(constraints: &Constraints) -> Budgets {
     Budgets {
-        person: constraints.person_per_day().map(Limit::Money),
-        ..Budgets::default()
+        person: constraints.person_per_day(),
     }
 }
 

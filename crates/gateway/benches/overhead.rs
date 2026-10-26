@@ -1,6 +1,6 @@
 //! The gateway's overhead per request, in-process (budget: under 1 ms at p99): the same
 //! request sent straight to a fake provider and through the gateway, with two routes,
-//! fallback targets, budgets on and a default reasoning level to send, timed call by call. Fails when the gateway adds 1 ms or
+//! fallback targets and a default reasoning level to send, timed call by call. Fails when the gateway adds 1 ms or
 //! more at p99. Run it through `cargo xtask bench`, alone on an idle machine, since these are
 //! wall-clock numbers.
 
@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use glave_event::{
     Arguments, CallId, ModelRef, Part, Reasoning, StopReason, ThreadId, TokenCounts, Usage,
 };
-use glave_gateway::{Budgets, Gateway, Limit, Model, Routes, Target};
+use glave_gateway::{Gateway, Model, Routes, Target};
 use glave_ports::{
     Clock as _, Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError, Purpose,
     SystemClock, ToolCall, ToolChoice, ToolSpec,
@@ -114,9 +114,9 @@ impl ModelProvider for Fake {
     }
 }
 
-/// Main with a fallback target, a judge route of its own, and every budget on. Main's
-/// catalog names its reasoning levels and default, as most of OpenRouter's do, so a call that
-/// asks for none is sent the default.
+/// Main with a fallback target and a judge route of its own; in process, no budget counts.
+/// Main's catalog names its reasoning levels and default, as most of OpenRouter's do, so a call
+/// that asks for none is sent the default.
 fn gateway(fake: &Arc<Fake>) -> Result<Gateway> {
     let handle: Arc<dyn Model> = Arc::clone(fake) as Arc<dyn Model>;
     let target = |model: &str| Target::new(Arc::clone(&handle), "bench", model);
@@ -130,12 +130,7 @@ fn gateway(fake: &Arc<Fake>) -> Result<Gateway> {
     let main = target("bench-model").with_reasoning(&reasoning);
     let routes = Routes::new(vec![main, target("fallback")])?
         .with_route(Purpose::Judge, vec![target("judge")])?;
-    let plenty = Some(Limit::Tokens(u64::MAX / 4));
-    Ok(Gateway::new(routes).with_budgets(Budgets {
-        organization: plenty,
-        person: plenty,
-        thread: plenty,
-    }))
+    Ok(Gateway::new(routes))
 }
 
 /// A mid-sized coding turn: a long system prompt, ten tools and sixty messages.

@@ -98,7 +98,7 @@ What today's code doesn't do yet, so no one takes it as built.
 1. The folder the server was started in still gives every conversation its skills and commands, and only that folder's project can send its work to fresh machines (`session.md`, "Where a thread works"). Everywhere else, a project's settings and tools reach only its own conversations.
 2. A company's server turns away people's own model accounts, and glave uses one cloud provider at a time. Using several, with glave picking the route for each model, comes with #289 and #290.
 3. The gateway, when it runs as a service of its own, takes its settings from its own environment rather than the server's files (`gateway.md`, "Surfaces"). It will become part of the server.
-4. There are no roles or groups yet, so everyone in a company gets the same access, and spending limits reset when the server restarts (#645, #662).
+4. There are no roles or groups yet, so everyone in a company gets the same access, and the only spending limit is each person's per day, kept by the gateway when it runs as a service of its own (`gateway.md`, "Budgets"); the monthly budget groups set waits for them (#645, #662).
 5. There are no admin screens or admin methods yet; they come as "Admin" describes (#222).
 6. There is no theme yet: no organization name, logo or accent, and no choosing an accent or the assistant's name (#283, #287).
 7. On Glave Cloud there is no way yet to sign in without a company's identity provider, as from a phone. On a person's own server a passkey already works (`deployments.md`, "Sign-in").

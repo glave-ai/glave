@@ -1,47 +1,30 @@
-//! Budgets, reserve then settle: before a call is sent its worst case is held against every
-//! budget it counts in, and when it ends the hold becomes what it really cost. A call that
-//! could exceed a budget is refused before it is sent, so calls side by side never overshoot.
+//! Budgets, reserve then settle: before a signed-in caller's call is sent its worst case is
+//! held against their budget, and when it ends the hold becomes what it really cost. A call
+//! that could exceed it is refused before it is sent, so calls side by side never overshoot.
+//! One kind is kept, the one a deployment sets: each caller's money in each period, a UTC day
+//! (`[budget] person_per_day_usd`), by a gateway serving many.
 
 use std::collections::BTreeMap;
-use std::fmt;
 use std::sync::{Mutex, PoisonError};
 
-use glave_event::{Currency, Money, PrincipalId, ThreadId};
+use glave_event::{Currency, Money, PrincipalId};
 use glave_ports::ProviderError;
 use thiserror::Error;
-
-/// Thread accounts kept at once. Past this, the oldest thread with nothing in flight is
-/// forgotten; its spending stays in the log.
-const MOST_THREADS: usize = 10_000;
 
 /// Callers' accounts kept at once. Past this, an account with nothing in flight from the
 /// earliest period is forgotten; its spending stays in the log, from which it is read again.
 const MOST_CALLERS: usize = 100_000;
 
-/// How much a budget allows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Limit {
-    /// Tokens in and out.
-    Tokens(u64),
-    /// Money. Only calls with a known cost count: a configured price before sending, the
-    /// provider's reported cost or that price after.
-    Money(Money),
-}
-
-/// The budgets every call counts in. A call counts in its thread's budget and in the budgets
-/// of every thread above it, so a subagent spends from its parent's budget too.
+/// The budgets calls count in.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Budgets {
-    pub organization: Option<Limit>,
-    /// The person's: the one person of a gateway in glave, or each signed-in caller of a
-    /// gateway serving many, in each period (see [`BudgetKey`]).
-    pub person: Option<Limit>,
-    /// Each thread's, its subagents' calls included.
-    pub thread: Option<Limit>,
+    /// Each signed-in caller's, in each period (see [`BudgetKey`]). Only calls with a known
+    /// cost count: a configured price before sending, the provider's reported cost or that
+    /// price after.
+    pub person: Option<Money>,
 }
 
-/// The key of a signed-in caller's budget on a gateway serving many people: the person and
-/// one period of their budget.
+/// The key of a signed-in caller's budget: the person and one period of their budget.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BudgetKey {
     pub person: PrincipalId,
@@ -50,35 +33,13 @@ pub struct BudgetKey {
     pub period: u32,
 }
 
-/// One budget.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Budget {
-    Organization,
-    /// The person of a gateway in glave.
-    Person,
-    /// A signed-in caller's person budget, in one period.
-    Caller(BudgetKey),
-    Thread(ThreadId),
-}
-
-impl fmt::Display for Budget {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Organization => f.write_str("organization"),
-            Self::Person => f.write_str("person"),
-            Self::Caller(caller) => write!(f, "person {}", caller.person),
-            Self::Thread(id) => write!(f, "thread {id}"),
-        }
-    }
-}
-
-/// A call refused because it could exceed `budget`. Amounts are in the limit's unit: tokens,
-/// or millionths of its currency.
+/// A call refused because it could exceed `caller`'s budget. Amounts are in millionths of
+/// the limit's currency.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("the {budget} budget would be exceeded: {}", self.detail())]
+#[error("the person {} budget would be exceeded: {}", self.caller.person, self.detail())]
 pub struct OverBudget {
-    pub budget: Budget,
-    pub limit: Limit,
+    pub caller: BudgetKey,
+    pub limit: Money,
     /// Spent, plus held for calls in flight.
     pub committed: u64,
     /// The most this call could cost.
@@ -87,13 +48,12 @@ pub struct OverBudget {
 
 impl OverBudget {
     fn detail(&self) -> String {
-        let (limit, unit) = match self.limit {
-            Limit::Tokens(tokens) => (tokens, "tokens".to_owned()),
-            Limit::Money(money) => (allowed(money), format!("millionths of {}", money.currency)),
-        };
         format!(
-            "{} of {limit} {unit} committed, and this call could need {} more",
-            self.committed, self.needed
+            "{} of {} millionths of {} committed, and this call could need {} more",
+            self.committed,
+            allowed(self.limit),
+            self.limit.currency,
+            self.needed
         )
     }
 }
@@ -101,26 +61,22 @@ impl OverBudget {
 impl From<OverBudget> for ProviderError {
     fn from(over: OverBudget) -> Self {
         Self::OverBudget {
-            budget: over.budget.to_string(),
+            budget: format!("person {}", over.caller.person),
             detail: over.detail(),
         }
     }
 }
 
-/// What a call costs, or could: tokens, and money when known.
+/// What a call costs, or could: in millionths of a currency, when known.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct Charge {
-    pub(crate) tokens: u64,
-    pub(crate) money: Option<(u64, Currency)>,
-}
+pub(crate) struct Charge(pub(crate) Option<(u64, Currency)>);
 
 impl Charge {
-    /// The charge in `limit`'s unit; money in another currency, or unknown, counts as none.
-    fn against(self, limit: Limit) -> u64 {
-        match (limit, self.money) {
-            (Limit::Tokens(_), _) => self.tokens,
-            (Limit::Money(cap), Some((micros, currency))) if currency == cap.currency => micros,
-            (Limit::Money(_), _) => 0,
+    /// The charge in `limit`'s currency; in another, or unknown, it counts as none.
+    fn against(self, limit: Money) -> u64 {
+        match self.0 {
+            Some((micros, currency)) if currency == limit.currency => micros,
+            _ => 0,
         }
     }
 }
@@ -129,32 +85,17 @@ fn allowed(money: Money) -> u64 {
     u64::try_from(money.micros).unwrap_or(0)
 }
 
-fn cap(limit: Limit) -> u64 {
-    match limit {
-        Limit::Tokens(tokens) => tokens,
-        Limit::Money(money) => allowed(money),
-    }
-}
-
 #[derive(Debug, Clone, Copy, Default)]
 struct Account {
     spent: u64,
     held: u64,
 }
 
-#[derive(Debug, Default)]
-struct Accounts {
-    organization: Account,
-    person: Account,
-    callers: BTreeMap<BudgetKey, Account>,
-    threads: BTreeMap<ThreadId, Account>,
-}
-
-/// Every budget's account.
+/// Every caller's account.
 #[derive(Debug, Default)]
 pub(crate) struct Ledger {
     limits: Budgets,
-    accounts: Mutex<Accounts>,
+    accounts: Mutex<BTreeMap<BudgetKey, Account>>,
 }
 
 impl Ledger {
@@ -169,137 +110,72 @@ impl Ledger {
         self.limits
     }
 
-    fn none(&self) -> bool {
-        self.limits == Budgets::default()
-    }
-
-    /// The budgets a call by `caller` for `threads` counts in, with their limits.
-    fn applying(&self, caller: Option<BudgetKey>, threads: &[ThreadId]) -> Vec<(Budget, Limit)> {
-        let mut budgets = Vec::new();
-        if let Some(limit) = self.limits.organization {
-            budgets.push((Budget::Organization, limit));
-        }
-        if let Some(limit) = self.limits.person {
-            let person = caller.map_or(Budget::Person, Budget::Caller);
-            budgets.push((person, limit));
-        }
-        if let Some(limit) = self.limits.thread {
-            for (n, id) in threads.iter().enumerate() {
-                if !threads.iter().take(n).any(|seen| seen == id) {
-                    budgets.push((Budget::Thread(*id), limit));
-                }
-            }
-        }
-        budgets
-    }
-
-    /// Holds `worst` in every budget the call counts in, or refuses it, holding nothing.
+    /// Holds `worst` in `caller`'s budget, or refuses it, holding nothing. A call for no one
+    /// signed in counts in none.
     pub(crate) fn reserve(
         &self,
         caller: Option<BudgetKey>,
-        threads: &[ThreadId],
         worst: Charge,
     ) -> Result<Hold<'_>, OverBudget> {
-        if self.none() {
+        let (Some(caller), Some(limit)) = (caller, self.limits.person) else {
             return Ok(Hold::empty(self));
-        }
-        let budgets = self.applying(caller, threads);
+        };
+        let needed = worst.against(limit);
         let mut accounts = self.accounts.lock().unwrap_or_else(PoisonError::into_inner);
-        for (budget, limit) in &budgets {
-            let account = accounts.get(*budget);
-            let committed = account.spent.saturating_add(account.held);
-            let needed = worst.against(*limit);
-            if committed.saturating_add(needed) > cap(*limit) {
-                return Err(OverBudget {
-                    budget: *budget,
-                    limit: *limit,
-                    committed,
-                    needed,
-                });
-            }
+        let account = accounts.get(&caller).copied().unwrap_or_default();
+        let committed = account.spent.saturating_add(account.held);
+        if committed.saturating_add(needed) > allowed(limit) {
+            return Err(OverBudget {
+                caller,
+                limit,
+                committed,
+                needed,
+            });
         }
-        for (budget, limit) in &budgets {
-            let account = accounts.entry(*budget);
-            account.held = account.held.saturating_add(worst.against(*limit));
-        }
+        let account = entry(&mut accounts, caller);
+        account.held = account.held.saturating_add(needed);
         Ok(Hold {
             ledger: self,
-            budgets,
-            worst,
+            held: Some((caller, limit, needed)),
         })
     }
 
-    /// What `budget` has spent, in its limit's unit: settled calls only.
-    pub(crate) fn spent(&self, budget: Budget) -> u64 {
+    /// What `caller` has spent, in millionths of the limit's currency: settled calls only.
+    pub(crate) fn spent(&self, caller: BudgetKey) -> u64 {
         let accounts = self.accounts.lock().unwrap_or_else(PoisonError::into_inner);
-        accounts.get(budget).spent
+        accounts.get(&caller).map_or(0, |account| account.spent)
     }
 
-    /// Counts `amount`, in the budget's limit's unit, as already spent in `budget`: spending
-    /// read back from the log after a restart.
-    pub(crate) fn add_spent(&self, budget: Budget, amount: u64) {
+    /// Counts `amount`, in millionths of the limit's currency, as already spent by `caller`:
+    /// spending read back from the log after a restart.
+    pub(crate) fn add_spent(&self, caller: BudgetKey, amount: u64) {
         let mut accounts = self.accounts.lock().unwrap_or_else(PoisonError::into_inner);
-        let account = accounts.entry(budget);
+        let account = entry(&mut accounts, caller);
         account.spent = account.spent.saturating_add(amount);
     }
 
-    fn release(&self, budgets: &[(Budget, Limit)], worst: Charge, actual: Charge) {
-        if budgets.is_empty() {
-            return;
-        }
+    fn release(&self, caller: BudgetKey, held: u64, spent: u64) {
         let mut accounts = self.accounts.lock().unwrap_or_else(PoisonError::into_inner);
-        for (budget, limit) in budgets {
-            let account = accounts.entry(*budget);
-            account.held = account.held.saturating_sub(worst.against(*limit));
-            account.spent = account.spent.saturating_add(actual.against(*limit));
-        }
+        let account = entry(&mut accounts, caller);
+        account.held = account.held.saturating_sub(held);
+        account.spent = account.spent.saturating_add(spent);
     }
 }
 
-impl Accounts {
-    fn get(&self, budget: Budget) -> Account {
-        match budget {
-            Budget::Organization => self.organization,
-            Budget::Person => self.person,
-            Budget::Caller(caller) => self.callers.get(&caller).copied().unwrap_or_default(),
-            Budget::Thread(id) => self.threads.get(&id).copied().unwrap_or_default(),
+/// `caller`'s account, made when it has none; past [`MOST_CALLERS`], one with nothing in
+/// flight from the earliest period is forgotten first.
+fn entry(accounts: &mut BTreeMap<BudgetKey, Account>, caller: BudgetKey) -> &mut Account {
+    if accounts.len() >= MOST_CALLERS && !accounts.contains_key(&caller) {
+        let idle = accounts
+            .iter()
+            .filter(|(_, account)| account.held == 0)
+            .min_by_key(|(caller, _)| caller.period)
+            .map(|(caller, _)| *caller);
+        if let Some(idle) = idle {
+            accounts.remove(&idle);
         }
     }
-
-    fn entry(&mut self, budget: Budget) -> &mut Account {
-        match budget {
-            Budget::Organization => &mut self.organization,
-            Budget::Person => &mut self.person,
-            Budget::Caller(caller) => {
-                if self.callers.len() >= MOST_CALLERS && !self.callers.contains_key(&caller) {
-                    let idle = self
-                        .callers
-                        .iter()
-                        .filter(|(_, account)| account.held == 0)
-                        .min_by_key(|(caller, _)| caller.period)
-                        .map(|(caller, _)| *caller);
-                    if let Some(idle) = idle {
-                        self.callers.remove(&idle);
-                    }
-                }
-                self.callers.entry(caller).or_default()
-            }
-            Budget::Thread(id) => {
-                if self.threads.len() >= MOST_THREADS && !self.threads.contains_key(&id) {
-                    // Thread ids are time-ordered, so the first idle one is the oldest.
-                    let idle = self
-                        .threads
-                        .iter()
-                        .find(|(_, account)| account.held == 0)
-                        .map(|(id, _)| *id);
-                    if let Some(idle) = idle {
-                        self.threads.remove(&idle);
-                    }
-                }
-                self.threads.entry(id).or_default()
-            }
-        }
-    }
+    accounts.entry(caller).or_default()
 }
 
 /// A call's worst case, held until it settles. Dropped unsettled (the call failed or was
@@ -307,29 +183,27 @@ impl Accounts {
 #[derive(Debug)]
 pub(crate) struct Hold<'a> {
     ledger: &'a Ledger,
-    budgets: Vec<(Budget, Limit)>,
-    worst: Charge,
+    /// Whose budget, its limit, and what is held in it; none when the call counts in none.
+    held: Option<(BudgetKey, Money, u64)>,
 }
 
 impl<'a> Hold<'a> {
     fn empty(ledger: &'a Ledger) -> Self {
-        Self {
-            ledger,
-            budgets: Vec::new(),
-            worst: Charge::default(),
-        }
+        Self { ledger, held: None }
     }
 
     /// Turns the hold into what the call really cost.
     pub(crate) fn settle(mut self, actual: Charge) {
-        let budgets = std::mem::take(&mut self.budgets);
-        self.ledger.release(&budgets, self.worst, actual);
+        if let Some((caller, limit, held)) = self.held.take() {
+            self.ledger.release(caller, held, actual.against(limit));
+        }
     }
 }
 
 impl Drop for Hold<'_> {
     fn drop(&mut self) {
-        let budgets = std::mem::take(&mut self.budgets);
-        self.ledger.release(&budgets, self.worst, Charge::default());
+        if let Some((caller, _, held)) = self.held.take() {
+            self.ledger.release(caller, held, 0);
+        }
     }
 }

@@ -16,7 +16,7 @@ Decided by the owner, 2026-10-19 (#392): **OpenAI's API is the one default seam 
 
 Each piece built has one line, which the pull requests that change it edit.
 
-- **In process** (`crates/gateway`): routes by purpose, capability-checked and reasoning-sticky fallback, reserve-then-settle budgets held in memory (organization, person, and each thread within the threads above it), and `model.responded` version 2 recording the route, the target and any reasoning stripped. The harness sends every call with its purpose and the threads it counts in; the judge's calls are recorded in the thread whose action they judged. The CLI builds the gateway from `GLAVE_MODEL` (`main`) and `GLAVE_JUDGE_MODEL` (when it names another model, a choice the judge's calls ask for by name, so a project's own judge is asked for the same way), with no budgets, so nothing changes by default.
+- **In process** (`crates/gateway`): routes by purpose, capability-checked and reasoning-sticky fallback, and `model.responded` version 2 recording the route, the target and any reasoning stripped; in process it keeps no budget ("Budgets"). The harness sends every call with its purpose and the threads it is for; the judge's calls are recorded in the thread whose action they judged. The CLI builds the gateway from `GLAVE_MODEL` (`main`) and `GLAVE_JUDGE_MODEL` (when it names another model, a choice the judge's calls ask for by name, so a project's own judge is asked for the same way), with no budgets, so nothing changes by default.
 - **As a service** (`crates/gateway-service`, `glave gateway serve`): the OpenAI and Anthropic surfaces below, streamed or whole; every request signed in with the session API's OIDC verifier (`session.md`, "Signing in"); each caller held to the organization's policy on every call (`[models]`) and to a budget of their own per UTC day (`[budget] person_per_day_usd`, read back from their stream after a restart); every call recorded, content-free, in the caller's stream; and the tool catalog at `/mcp`. glave reaches a gateway elsewhere with `[gateway] url` ("Client mode").
 - **Catalogs** (#290): each model account's service's own model list, kept in the store and listed again daily and on demand ("Catalogs", below); the accounts' models follow it.
 - **Reasoning effort** (#243): a thread's level goes to each target that offers it, as its service takes it: OpenRouter's `reasoning.effort`, OpenAI's and the servers that copy it `reasoning_effort`; a target that does not offer it gets its model's default where its catalog says one (#703), else none. For Anthropic's Messages API, see "Claude's effort".
@@ -96,7 +96,8 @@ Decided by the owner, 2026-10-24 (#703): when a model's default level is known, 
 
 ## Budgets
 
-- Stacked: organization ⊇ project ⊇ person ⊇ thread ⊇ worker, matching "a worker's budget is within its parent's".
+- **One kind is kept, the one a deployment sets:** each signed-in caller's spending per UTC day, in money (`[budget] person_per_day_usd`), by a gateway serving many. Only calls with a known cost count: a configured price before sending, the provider's reported cost or that price after. glave in process keeps none.
+- **The others wait for the first organization that needs them:** an organization's, a project's, a thread's within the threads above it, a worker's, and limits in tokens. Each will be read back from the log after a restart, as the daily budget is.
 - **Reserve, then settle.** Before sending, reserve the worst case (input tokens plus the output limit, at the target's price); when the call ends, settle to the actual cost. Parallel calls can therefore never overshoot a limit.
 - A call that would exceed a budget is refused before it is sent, as a typed error naming the budget.
 
