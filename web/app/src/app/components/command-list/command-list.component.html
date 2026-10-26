@@ -1,43 +1,32 @@
 @if (service.error(); as error) {
   <p class="error" role="alert" data-testid="commands-error">{{ error }}</p>
 }
-<div class="list">
+<ul class="list">
   @for (row of rows(); track row.id) {
-    <glz-card data-testid="command" [attr.aria-busy]="row.ariaBusy">
-      <code
-        glzCardHeader
-        class="command"
-        tabindex="0"
-        data-testid="command-text"
-        [glzTooltip]="row.command"
-        >{{ row.command }}</code
-      >
-      <p class="summary">{{ row.summary }}</p>
-      @if (row.refusal; as refusal) {
-        <p class="error" role="alert" data-testid="command-refusal">{{ refusal }}</p>
-      }
-      <div glzCardFooter class="footer">
+    <li class="command" data-testid="command" [attr.aria-busy]="row.ariaBusy">
+      <div class="row">
+        <glz-icon class="glz-spin mark" [icon]="icons.running" />
+        <code class="text" tabindex="0" data-testid="command-text" [glzTooltip]="row.command">{{
+          row.command
+        }}</code>
         @if (row.time; as time) {
           <span class="time" data-testid="command-time">{{ time }}</span>
         }
         <button
-          glzButton
+          glzIconButton
           size="sm"
-          variant="danger"
+          variant="secondary"
           data-testid="command-stop"
+          [label]="row.actionLabel"
           [disabled]="row.busy"
-          [attr.aria-label]="row.actionLabel"
           (click)="stop(row.id)"
         >
-          {{ row.action }}
+          <glz-icon [icon]="icons.stop" />
         </button>
       </div>
-    </glz-card>
-  } @empty {
-    @if (service.loaded()) {
-      <glz-empty-state data-testid="commands-empty" [heading]="copy.emptyHeading" [icon]="icon">{{
-        copy.emptyText
-      }}</glz-empty-state>
-    }
+      @if (row.refusal; as refusal) {
+        <p class="error" role="alert" data-testid="command-refusal">{{ refusal }}</p>
+      }
+    </li>
   }
-</div>
+</ul>

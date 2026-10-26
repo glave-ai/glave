@@ -10,7 +10,13 @@ import { GlzPanelLayoutComponent } from './panel-layout.component';
   imports: [GlzPanelLayoutComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <glz-panel-layout testId="tools" label="Tools" [(open)]="open" [(width)]="width">
+    <glz-panel-layout
+      testId="tools"
+      label="Tools"
+      [empty]="empty()"
+      [(open)]="open"
+      [(width)]="width"
+    >
       <main>Content</main>
       <section glzPanel aria-label="Files"><a href="/a">A file</a></section>
     </glz-panel-layout>
@@ -20,6 +26,7 @@ class HostComponent {
   readonly layout = viewChild.required(GlzPanelLayoutComponent);
   readonly open = signal(false);
   readonly width = signal<number | null>(null);
+  readonly empty = signal(false);
 }
 
 class FakeBreakpoints {
@@ -159,6 +166,7 @@ describe('GlzPanelLayoutComponent', () => {
   it('becomes a modal sheet on narrow screens, closed by Escape or the scrim', async () => {
     const fixture = TestBed.createComponent(HostComponent);
     breakpoints.matches.next({ matches: true, breakpoints: {} });
+    await fixture.whenStable();
     fixture.componentInstance.open.set(true);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
@@ -175,6 +183,41 @@ describe('GlzPanelLayoutComponent', () => {
     part(root, 'scrim').click();
     await fixture.whenStable();
     expect(fixture.componentInstance.open()).toBe(false);
+  });
+
+  it('starts the sheet closed on a narrow screen, and is as it was back on a wide one', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    fixture.componentInstance.open.set(true);
+    await fixture.whenStable();
+    breakpoints.matches.next({ matches: true, breakpoints: {} });
+    await fixture.whenStable();
+    expect(fixture.componentInstance.open()).toBe(false);
+    breakpoints.matches.next({ matches: false, breakpoints: {} });
+    await fixture.whenStable();
+    expect(fixture.componentInstance.open()).toBe(true);
+  });
+
+  it('with nothing in its panel, is its content alone: no panel, edge or sheet', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    fixture.componentInstance.open.set(true);
+    fixture.componentInstance.empty.set(true);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(part(root, 'panel').inert).toBe(true);
+    expect(getComputedStyle(part(root, 'panel')).display).toBe('none');
+    expect(root.querySelector('[data-testid="tools-handle"]')).toBeNull();
+    breakpoints.matches.next({ matches: true, breakpoints: {} });
+    await fixture.whenStable();
+    fixture.componentInstance.open.set(true);
+    await fixture.whenStable();
+    expect(part(root, 'panel').getAttribute('aria-modal')).toBeNull();
+    expect(root.querySelector('[data-testid="tools-scrim"]')).toBeNull();
+    expect(root.querySelector<HTMLElement>('.content')?.inert).toBe(false);
+    await expectAccessible(root);
+    // Something to show, and it is there as the person left it.
+    fixture.componentInstance.empty.set(false);
+    await fixture.whenStable();
+    expect(part(root, 'panel').getAttribute('aria-modal')).toBe('true');
   });
 
   it('leaves Escape alone beside the content', async () => {

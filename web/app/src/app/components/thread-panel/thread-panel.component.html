@@ -1,0 +1,133 @@
+@if (narrow()) {
+  <div class="header">
+    <h2 class="heading">{{ copy.heading }}</h2>
+    <button glzIconButton data-testid="panel-close" [label]="copy.close" (click)="close()">
+      <glz-icon [icon]="icons.close" />
+    </button>
+  </div>
+}
+<div class="facts" data-testid="panel-facts">
+  @if (where(); as where) {
+    <ul class="where" data-testid="panel-where" [attr.aria-label]="copy.where">
+      @for (part of where; track part.key) {
+        <li class="part" data-testid="panel-where-part" [attr.title]="part.title">
+          <glz-icon [icon]="part.icon" [label]="part.label" />
+          <span class="text">{{ part.text }}</span>
+        </li>
+      }
+    </ul>
+  }
+  @if (changes(); as changes) {
+    <section class="section" data-testid="panel-changes" [attr.aria-labelledby]="ids.changes">
+      <div class="head">
+        <h2 class="title" [id]="ids.changes">{{ copy.changes }}</h2>
+        <span class="detail">{{ changes.count }}</span>
+        <span class="counts end" aria-hidden="true"
+          ><span class="plus">{{ changes.total.added }}</span
+          ><span class="minus">{{ changes.total.removed }}</span></span
+        >
+        <span class="glz-visually-hidden">{{ changes.total.label }}</span>
+      </div>
+      <ul class="rows">
+        @for (row of changes.rows; track row.path) {
+          <li>
+            <button type="button" class="row" data-testid="panel-file" (click)="review(row.path)">
+              <span class="path">{{ row.path }}</span>
+              <span class="counts" aria-hidden="true"
+                ><span class="plus">{{ row.added }}</span
+                ><span class="minus">{{ row.removed }}</span></span
+              >
+              <span class="glz-visually-hidden">{{ row.label }}</span>
+            </button>
+          </li>
+        }
+      </ul>
+      <div class="foot">
+        <button glzButton size="sm" data-testid="panel-review" (click)="review(null)">
+          {{ copy.review }}
+        </button>
+      </div>
+    </section>
+  }
+  @if (running(); as count) {
+    <section class="section" data-testid="panel-running" [attr.aria-labelledby]="ids.running">
+      <div class="head">
+        <h2 class="title" [id]="ids.running">{{ copy.running }}</h2>
+        <span class="detail">{{ count }}</span>
+      </div>
+      <app-command-list />
+    </section>
+  }
+  @if (sources(); as sources) {
+    <section class="section" data-testid="panel-sources" [attr.aria-labelledby]="ids.sources">
+      <div class="head">
+        <h2 class="title" [id]="ids.sources">{{ copy.sources }}</h2>
+      </div>
+      <ul class="rows">
+        @for (page of sources.pages; track page.href) {
+          <li>
+            <a
+              class="row"
+              data-testid="panel-page"
+              target="_blank"
+              rel="noopener noreferrer"
+              [href]="page.href"
+              [attr.title]="page.href"
+            >
+              <glz-icon class="mark" [icon]="icons.page" />
+              @if (page.title; as title) {
+                <span class="name" dir="auto">{{ title }}</span
+                >&ngsp;
+              } @else {
+                <span class="name">{{ page.address }}</span
+                >&ngsp;
+              }
+              <span class="detail">{{ page.host }}</span
+              >&ngsp;
+              <span class="glz-visually-hidden">{{ copy.newTab }}</span>
+            </a>
+          </li>
+        }
+        @for (file of sources.attached; track file.key) {
+          <li class="row" data-testid="panel-attached">
+            <glz-icon class="mark" [icon]="icons.file" />
+            <span class="name" dir="auto">{{ file.name }}</span
+            >&ngsp;
+            <span class="detail">{{ copy.attached }}</span>
+          </li>
+        }
+      </ul>
+    </section>
+  }
+  @if (spent(); as spent) {
+    <section class="section" data-testid="panel-spent" [attr.aria-labelledby]="ids.spent">
+      <div class="head">
+        <h2 class="title" [id]="ids.spent">{{ copy.spent }}</h2>
+      </div>
+      <div class="lines">
+        @if (spent.context; as context) {
+          <div class="line">
+            <span>{{ copy.context }}</span>
+            <span class="detail" data-testid="panel-context">{{ context.used }}</span>
+          </div>
+          <div
+            class="meter"
+            role="meter"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            data-testid="panel-meter"
+            [attr.aria-valuenow]="context.percent"
+            [attr.aria-valuetext]="context.used"
+            [attr.aria-label]="copy.context"
+          >
+            <div class="fill"></div>
+          </div>
+        }
+        <div class="line">
+          <span>{{ copy.cost }}</span>
+          <span class="detail" data-testid="panel-cost">{{ spent.cost }}</span>
+        </div>
+      </div>
+    </section>
+  }
+</div>

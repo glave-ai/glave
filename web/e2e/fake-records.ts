@@ -53,6 +53,13 @@ export const WORKSPACE: WorkspaceBound = {
   root: '/work/glave',
 };
 
+/** Where a chat works: a scratch folder of its own. */
+export const SCRATCH: WorkspaceBound = {
+  ...WORKSPACE,
+  opened: { kind: 'scratch', path: '/home/.glave/scratch/chat' },
+  root: '/home/.glave/scratch/chat',
+};
+
 /** The thread's workspace, as its summary says it too. */
 export function bound(seq: number, id = THREAD): RawEvent {
   return event(seq, 'workspace.bound', { ...WORKSPACE }, id);

@@ -10,7 +10,7 @@ import { injectId } from '@glave/glaze';
 
 import { type ChangedFile, lineCounts } from '../../lib/files';
 import { plural } from '../../lib/plural';
-import { ToolsPanelService } from '../../services/tools-panel.service';
+import { ThreadPanelService } from '../../services/thread-panel.service';
 
 /** How many rows a narrow card shows before it says how many more there are. */
 const NARROW_ROWS = 2;
@@ -18,8 +18,8 @@ const NARROW_ROWS = 2;
 /**
  * What a turn changed, after its reply: a card with how many files and lines added and removed
  * (each in its colour, the words read by screen readers), then a row for each file, its path in
- * monospace, cut short at the end when it is long, and its own counts. A row opens the tools
- * panel on the thread's changes. On a narrow card the counts give way to the paths, and after
+ * monospace, cut short at the end when it is long, and its own counts. A row opens that file's
+ * changes in full, and the last row, when there are more, every file's. On a narrow card the counts give way to the paths, and after
  * two rows a last one says how many more files there are.
  */
 @Component({
@@ -33,7 +33,7 @@ export class TurnChangesComponent {
 
   protected readonly copy = { heading: $localize`:@@turnChanges.heading:What changed` } as const;
   protected readonly headingId = injectId('app-turn-changes');
-  private readonly panel = inject(ToolsPanelService);
+  private readonly panel = inject(ThreadPanelService);
   private readonly locale = inject(LOCALE_ID);
   protected readonly count = computed(() => {
     const count = this.files().length;
@@ -66,7 +66,8 @@ export class TurnChangesComponent {
       : null;
   });
 
-  protected show(): void {
-    this.panel.showChanges();
+  /** Shows the changes in full: the file at `path`, or every file's with `null`. */
+  protected show(path: string | null): void {
+    this.panel.showChanges(path);
   }
 }

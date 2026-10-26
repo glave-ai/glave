@@ -1,7 +1,7 @@
 import { Service, effect } from '@angular/core';
 import { GLZ_NARROW } from '@glave/glaze';
 
-import { type PaneState, SIDE_NAV_DEFAULT, toPaneState } from '../lib/panel';
+import { SIDE_NAV_DEFAULT, toPaneState } from '../lib/panel';
 import { SHORTCUTS } from '../lib/shortcuts';
 import { PaneService } from './pane.service';
 
@@ -12,7 +12,7 @@ import { PaneService } from './pane.service';
  * ⌘B or Ctrl+B (`SHORTCUTS.nav`) shows or hides it.
  */
 @Service()
-export class NavService extends PaneService<PaneState> {
+export class NavService extends PaneService {
   constructor() {
     super({
       key: 'glave-side-nav',

@@ -11,7 +11,7 @@
   <ul class="rows">
     @for (row of rows(); track row.path) {
       <li class="file">
-        <button type="button" class="row" data-testid="turn-changes-file" (click)="show()">
+        <button type="button" class="row" data-testid="turn-changes-file" (click)="show(row.path)">
           <span class="path">{{ row.path }}</span>
           <span class="counts" aria-hidden="true"
             ><span class="plus">{{ row.added }}</span
@@ -23,7 +23,7 @@
     }
   </ul>
   @if (more(); as more) {
-    <button type="button" class="more" data-testid="turn-changes-more" (click)="show()">
+    <button type="button" class="more" data-testid="turn-changes-more" (click)="show(null)">
       {{ more }}
     </button>
   }

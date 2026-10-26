@@ -49,24 +49,27 @@ test('the side nav resizes and collapses from its edge by keyboard', async ({ pa
   await expect.poll(() => widthOf(page, 'workspace-nav')).toBe(before + 16);
 });
 
-test('the tools panel resizes and collapses from its edge by keyboard', async ({ page }) => {
-  const panel = byTestId(page, 'tools-panel');
-  await tabTo(page, 'tools-handle');
-  await page.keyboard.press('Enter');
+test('the thread’s panel resizes and collapses from its edge by keyboard', async ({ page }) => {
+  const panel = byTestId(page, 'panel-panel');
   await expect(panel).toBeVisible();
-  const before = await widthOf(page, 'tools-panel');
+  await tabTo(page, 'panel-handle');
+  const before = await widthOf(page, 'panel-panel');
   await page.keyboard.press('ArrowLeft');
-  await expect.poll(() => widthOf(page, 'tools-panel')).toBe(before + 16);
+  await expect.poll(() => widthOf(page, 'panel-panel')).toBe(before + 16);
   await page.keyboard.press('Home');
-  await expect.poll(() => widthOf(page, 'tools-panel')).toBe(280);
+  await expect.poll(() => widthOf(page, 'panel-panel')).toBe(280);
   await expectAccessible(page);
   await page.keyboard.press('Enter');
   await expect(panel).toBeHidden();
+  await page.keyboard.press('Enter');
+  await expect(panel).toBeVisible();
 });
 
-test('⌘B or Ctrl+B shows and hides the side nav, ⌘. or Ctrl+. the tools', async ({ page }) => {
+test('⌘B or Ctrl+B shows and hides the side nav, ⌘. or Ctrl+. the thread’s panel', async ({
+  page,
+}) => {
   const nav = byTestId(page, 'workspace-nav');
-  const panel = byTestId(page, 'tools-panel');
+  const panel = byTestId(page, 'panel-panel');
   await expect(byTestId(page, 'workspace-handle')).toHaveAttribute(
     'aria-keyshortcuts',
     /^(Meta|Control)\+B$/u,
@@ -76,10 +79,11 @@ test('⌘B or Ctrl+B shows and hides the side nav, ⌘. or Ctrl+. the tools', as
   await page.keyboard.press('ControlOrMeta+b');
   await expect(nav).toBeVisible();
   await byTestId(page, 'thread-composer-input').focus();
-  await page.keyboard.press('ControlOrMeta+.');
   await expect(panel).toBeVisible();
   await page.keyboard.press('ControlOrMeta+.');
   await expect(panel).toBeHidden();
+  await page.keyboard.press('ControlOrMeta+.');
+  await expect(panel).toBeVisible();
 });
 
 test('a message is written and sent by keyboard alone', async ({ page }) => {

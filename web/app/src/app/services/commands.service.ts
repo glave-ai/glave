@@ -5,7 +5,7 @@ import { alreadyEnded, commandProblem } from '../lib/commands';
 import { clock } from './clock';
 import { SessionService } from './session.service';
 import { ThreadService } from './thread.service';
-import { ToolsPanelService } from './tools-panel.service';
+import { PanelService } from './panel.service';
 
 /** What is known of the open thread's commands in the background. */
 interface State {
@@ -35,16 +35,17 @@ function without<K, V>(map: ReadonlyMap<K, V>, key: K): ReadonlyMap<K, V> {
 /**
  * The open thread's commands running in the background (`command/list`), and stopping one
  * (`command/stop`): the row shows it stopping, then goes; a command that had already ended goes
- * too, and any other refusal stays on its row in the server's words. Read again whenever the
- * thread records one starting or ending, and when the tools panel opens on them; no timer
- * reads them, since the thread's events say when they change. While they show, a clock moves
- * on each second for how long each has run. Each thread view provides its own.
+ * too, and any other refusal stays on its row in the server's words. Read once the thread has
+ * recorded one starting, again whenever it records one starting or ending, and each time its
+ * panel is shown again; no timer reads them, since the thread's events say when they change.
+ * While the panel shows, a clock moves on each second for how long each has run. Each thread
+ * view provides its own.
  */
 @Service({ autoProvided: false })
 export class CommandsService {
   private readonly session = inject(SessionService);
   private readonly thread = inject(ThreadService);
-  private readonly panel = inject(ToolsPanelService);
+  private readonly panel = inject(PanelService);
   /** Starts again from nothing in each thread. */
   private readonly state = linkedSignal<ThreadId | null, State>({
     source: this.thread.thread,
@@ -64,7 +65,7 @@ export class CommandsService {
     this.commands().some((command) => typeof command.started_at === 'string'),
   );
   /** Now, in milliseconds since the epoch, moving on each second while the commands show. */
-  readonly now = clock(() => this.panel.commandsShown() && this.timed());
+  readonly now = clock(() => this.panel.open() && this.timed());
 
   constructor() {
     // The thread's history says when a command started or ended, live while a turn streams in.
@@ -75,11 +76,14 @@ export class CommandsService {
         untracked(() => void this.refresh());
       }
     });
+    // Shown again, the panel reads them again: one may have ended with nothing recorded yet.
+    let shown = untracked(this.panel.open);
     effect(() => {
-      const thread = this.thread.thread();
-      if (thread !== null && this.panel.commandsShown()) {
+      const open = this.panel.open();
+      if (open && !shown && untracked(this.thread.commandChange) !== null) {
         untracked(() => void this.refresh());
       }
+      shown = open;
     });
   }
 

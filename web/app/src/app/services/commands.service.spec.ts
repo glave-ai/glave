@@ -6,7 +6,7 @@ import { command, event } from '../testing/fixtures';
 import { TICK_MS } from './clock';
 import { CommandsService } from './commands.service';
 import { ThreadService } from './thread.service';
-import { ToolsPanelService } from './tools-panel.service';
+import { PanelService } from './panel.service';
 
 const STARTED = event(1, 'command.started', { command: 'c1', script: 'npm run dev' });
 
@@ -17,7 +17,7 @@ function recorded(raw: RawEvent): Notification {
 function make(fake: FakeSession): {
   readonly commands: CommandsService;
   readonly thread: ThreadService;
-  readonly panel: ToolsPanelService;
+  readonly panel: PanelService;
 } {
   TestBed.configureTestingModule({
     providers: [...provideFakeSession(fake), ThreadService, CommandsService],
@@ -25,7 +25,7 @@ function make(fake: FakeSession): {
   return {
     commands: TestBed.inject(CommandsService),
     thread: TestBed.inject(ThreadService),
-    panel: TestBed.inject(ToolsPanelService),
+    panel: TestBed.inject(PanelService),
   };
 }
 
@@ -67,19 +67,25 @@ describe('CommandsService', () => {
     expect([commands.loaded(), commands.error()]).toEqual([true, null]);
   });
 
-  it('reads what runs when the tools panel opens on the commands', async () => {
+  it('reads what runs again each time the panel is shown again, once the thread kept one', async () => {
     const fake = new FakeSession().answer('thread/events', { events: [] });
     const { commands, thread, panel } = make(fake);
     await thread.open('thread-1');
-    panel.tab.set('commands');
     await settle();
-    expect(fake.paramsOf('command/list')).toHaveLength(0);
+    panel.open.set(false);
+    await settle();
     panel.open.set(true);
     await settle();
-    expect(fake.paramsOf('command/list')).toEqual([{ thread: 'thread-1' }]);
+    // Nothing kept in the background, nothing to ask about.
+    expect(fake.paramsOf('command/list')).toHaveLength(0);
+    fake.answer('thread/events', { events: [STARTED] });
+    await thread.open('thread-2');
+    await settle();
+    expect(fake.paramsOf('command/list')).toEqual([{ thread: 'thread-2' }]);
     expect(commands.loaded()).toBe(true);
     panel.open.set(false);
     await settle();
+    expect(fake.paramsOf('command/list')).toHaveLength(1);
     panel.open.set(true);
     await settle();
     expect(fake.paramsOf('command/list')).toHaveLength(2);
@@ -188,7 +194,7 @@ describe('CommandsService', () => {
     expect([commands.loaded(), commands.error()]).toEqual([true, 'The computer did not answer.']);
   });
 
-  it('moves its clock on each second while the commands show, and not after', async () => {
+  it('moves its clock on each second while the panel shows, and not after', async () => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     try {
       vi.setSystemTime(Date.parse('2026-10-11T10:02:05.000Z'));
@@ -197,8 +203,6 @@ describe('CommandsService', () => {
         .answer('command/list', { commands: [command('c1', 'npm run dev')] });
       const { commands, thread, panel } = make(fake);
       await thread.open('thread-1');
-      panel.tab.set('commands');
-      panel.open.set(true);
       await settle();
       const shown = commands.now();
       expect(shown).toBe(Date.parse('2026-10-11T10:02:05.000Z'));

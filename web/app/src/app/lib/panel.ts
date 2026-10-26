@@ -1,7 +1,3 @@
-/** The tabs of the thread's tools panel, in order. */
-export const TOOL_TABS = ['tasks', 'changes', 'commands'] as const;
-export type ToolTab = (typeof TOOL_TABS)[number];
-
 /** How the person left a side panel: open or collapsed, and its width. */
 export interface PaneState {
   readonly open: boolean;
@@ -9,18 +5,13 @@ export interface PaneState {
   readonly width: number | null;
 }
 
-/** How the person left the tools panel: also its tab. */
-export interface PanelState extends PaneState {
-  readonly tab: ToolTab;
-}
-
 /** Open, at the default width: how the side nav starts for someone new. */
 export const SIDE_NAV_DEFAULT: PaneState = { open: true, width: null };
 
-/** Closed, at the default width, on its first tab: how the panel starts for someone new. */
-export const PANEL_DEFAULT: PanelState = { open: false, width: null, tab: 'tasks' };
+/** Open, at the default width: how a thread's panel starts for someone new. */
+export const PANEL_DEFAULT: PaneState = { open: true, width: null };
 
-function fields(value: unknown): Partial<Record<keyof PanelState, unknown>> {
+function fields(value: unknown): Partial<Record<keyof PaneState, unknown>> {
   return typeof value === 'object' && value !== null ? value : {};
 }
 
@@ -35,10 +26,4 @@ export function toPaneState(value: unknown, fallback: PaneState): PaneState {
         ? Math.round(width)
         : fallback.width,
   };
-}
-
-/** A stored tools panel state, read back: whatever is missing or wrong is the default's. */
-export function toPanelState(value: unknown): PanelState {
-  const tab = TOOL_TABS.find((each) => each === fields(value).tab);
-  return { ...toPaneState(value, PANEL_DEFAULT), tab: tab ?? PANEL_DEFAULT.tab };
 }

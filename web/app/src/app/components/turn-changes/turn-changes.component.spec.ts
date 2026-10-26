@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import type { ChangedFile } from '../../lib/files';
-import { ToolsPanelService } from '../../services/tools-panel.service';
+import { ThreadPanelService } from '../../services/thread-panel.service';
 import { TurnChangesComponent } from './turn-changes.component';
 
 const FILES: readonly ChangedFile[] = [
@@ -11,8 +11,19 @@ const FILES: readonly ChangedFile[] = [
   { path: 'crates/harness/tests/worktrees.rs', changes: [], added: 2, removed: 2 },
 ];
 
+/** What the turn's card asked to show in full, in order. */
+let shown: (string | null)[] = [];
+
 async function render(files: readonly ChangedFile[]): Promise<HTMLElement> {
-  localStorage.clear();
+  shown = [];
+  TestBed.configureTestingModule({
+    providers: [
+      {
+        provide: ThreadPanelService,
+        useValue: { showChanges: (path: string | null) => shown.push(path) },
+      },
+    ],
+  });
   const fixture = TestBed.createComponent(TurnChangesComponent);
   fixture.componentRef.setInput('files', files);
   await fixture.whenStable();
@@ -42,11 +53,11 @@ describe('TurnChangesComponent', () => {
     await expectAccessible(root);
   });
 
-  it('opens the tools panel on the changes from a file', async () => {
+  it('shows a file’s changes in full from its row, and every file’s from the last', async () => {
     const root = await render(FILES);
-    root.querySelector<HTMLButtonElement>('[data-testid="turn-changes-file"]')?.click();
-    const panel = TestBed.inject(ToolsPanelService);
-    expect([panel.open(), panel.tab()]).toEqual([true, 'changes']);
+    root.querySelectorAll<HTMLButtonElement>('[data-testid="turn-changes-file"]')[1]?.click();
+    root.querySelector<HTMLButtonElement>('[data-testid="turn-changes-more"]')?.click();
+    expect(shown).toEqual(['crates/computer/src/local/worktree/lock.rs', null]);
   });
 
   it('says nothing of more files when they all fit', async () => {

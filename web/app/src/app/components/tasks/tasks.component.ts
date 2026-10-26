@@ -5,7 +5,7 @@ import { TasksService } from '../../services/tasks.service';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 import { TaskListComponent } from '../task-list/task-list.component';
 
-/** The Tasks page: the background tasks, as the thread's tools panel shows them too. */
+/** The Tasks page: the background tasks. */
 @Component({
   selector: 'app-tasks',
   imports: [GlzButtonComponent, PageHeaderComponent, TaskListComponent],

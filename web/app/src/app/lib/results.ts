@@ -122,8 +122,11 @@ function statusOf(turn: Turn, waiting: readonly Waiting[], running: boolean): Gl
   return running || calling(turn) ? 'running' : 'done';
 }
 
-/** What the turn's model calls cost, as the server says: estimated, or not reported. */
-function spent(result: TurnResult, locale: string): string {
+/**
+ * What model calls cost, as the server says of a turn or a thread: estimated, or not reported,
+ * written for `locale`.
+ */
+export function spent(result: Pick<TurnResult, 'cost' | 'estimated'>, locale: string): string {
   const cost = result.cost ?? null;
   const said =
     cost === null

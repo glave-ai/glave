@@ -114,3 +114,8 @@
   flex: none;
   color: var(--glz-color-text-muted);
 }
+
+// A file's changes in full want room for their lines.
+.changes {
+  --glz-dialog-width: 56rem;
+}

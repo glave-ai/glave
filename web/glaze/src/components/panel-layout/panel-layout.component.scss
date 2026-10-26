@@ -31,7 +31,8 @@
   outline: none;
 }
 
-:host(:not(.open)) .panel {
+:host(:not(.open)) .panel,
+:host(.empty) .panel {
   display: none;
 }
 

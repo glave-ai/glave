@@ -5,7 +5,7 @@ import { SHORTCUTS, ariaShortcut, onApple, pressed, shortcutLabel } from './shor
 describe('shortcuts', () => {
   it('reads as ⌘ on Apple platforms and Ctrl elsewhere', () => {
     expect(shortcutLabel(SHORTCUTS.nav, true)).toBe('⌘B');
-    expect(shortcutLabel(SHORTCUTS.tools, true)).toBe('⌘.');
+    expect(shortcutLabel(SHORTCUTS.panel, true)).toBe('⌘.');
     expect(shortcutLabel(SHORTCUTS.nav, false)).toBe('Ctrl+B');
     expect(shortcutLabel('mod+shift+alt+k', true)).toBe('⌥⇧⌘K');
     expect(shortcutLabel('mod+shift+alt+k', false)).toBe('Ctrl+Alt+Shift+K');
@@ -13,7 +13,7 @@ describe('shortcuts', () => {
 
   it('names the keys for aria-keyshortcuts', () => {
     expect(ariaShortcut(SHORTCUTS.nav, true)).toBe('Meta+B');
-    expect(ariaShortcut(SHORTCUTS.tools, false)).toBe('Control+.');
+    expect(ariaShortcut(SHORTCUTS.panel, false)).toBe('Control+.');
     expect(ariaShortcut('shift+alt+escape', false)).toBe('Alt+Shift+escape');
   });
 
@@ -23,7 +23,7 @@ describe('shortcuts', () => {
     expect(pressed(cmdB, SHORTCUTS.nav, true)).toBe(true);
     expect(pressed(cmdB, SHORTCUTS.nav, false)).toBe(false);
     expect(pressed(ctrlB, SHORTCUTS.nav, false)).toBe(true);
-    expect(pressed(ctrlB, SHORTCUTS.tools, false)).toBe(false);
+    expect(pressed(ctrlB, SHORTCUTS.panel, false)).toBe(false);
   });
 
   it('knows the platform from the page', () => {

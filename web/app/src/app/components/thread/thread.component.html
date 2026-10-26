@@ -1,10 +1,11 @@
 <glz-panel-layout
   class="layout"
-  testId="tools"
-  [label]="copy.tools"
+  testId="panel"
+  [label]="copy.panel"
   [resizeLabel]="copy.resize"
   [resizeHint]="panelHint"
   [shortcut]="panelShortcut"
+  [empty]="noFacts()"
   [(open)]="panelOpen"
   [(width)]="panelWidth"
 >
@@ -12,8 +13,7 @@
     <app-thread-header
       [title]="title()"
       [project]="project()"
-      [place]="service.place()"
-      [changes]="changes()"
+      [panel]="facts.shown()"
       (rename)="startRename()"
     />
     <section
@@ -125,6 +125,17 @@
       </div>
     </div>
   </div>
-  <app-tools-panel glzPanel />
+  <app-thread-panel glzPanel />
 </glz-panel-layout>
 <app-rename-dialog [title]="title()" [(open)]="renaming" (renamed)="rename($event)" />
+<glz-dialog
+  class="changes"
+  testId="changes"
+  [heading]="copy.changes"
+  [open]="facts.reviewing()"
+  (openChange)="facts.setReviewing($event)"
+>
+  @if (facts.reviewing()) {
+    <app-thread-files [path]="facts.reviewed()" />
+  }
+</glz-dialog>

@@ -26,7 +26,15 @@ import {
   refusedTurn,
 } from './fake-gone';
 import { DEFAULT_MODEL, MODELS } from './fake-models';
-import { Refusal, THREAD, WORKSPACE, bound, call, done, event } from './fake-records';
+import {
+  DINNER,
+  DINNER_HISTORY,
+  VERBOSE,
+  VERBOSE_HISTORY,
+  VERBOSE_SUMMARY,
+  aboutVerbose,
+} from './fake-panel';
+import { Refusal, SCRATCH, THREAD, WORKSPACE, bound, call, done, event } from './fake-records';
 import { FAKE_SERVER, signIn } from './fake-signin';
 import { RESEARCH, RESEARCH_HISTORY, sourcesOf } from './fake-sources';
 
@@ -77,7 +85,8 @@ function thread(
     updated_at: '2026-10-11T10:05:00.000Z',
     turns: 1,
     tokens: TOKENS,
-    workspace: WORKSPACE,
+    // A chat works in a scratch folder of its own.
+    workspace: inProject.kind === 'personal' ? SCRATCH : WORKSPACE,
     ...more,
   };
 }
@@ -111,10 +120,14 @@ const THREADS: Readonly<Record<string, readonly ThreadSummary[]>> = {
       updated_at: '2026-10-11T10:06:00.000Z',
     }),
   ],
-  [PERSONAL.id]: [
-    thread('01900000-0000-7000-8000-000000000105', 'Dinner ideas for Saturday', 'idle', PERSONAL),
-  ],
+  [PERSONAL.id]: [thread(DINNER, 'Dinner ideas for Saturday', 'idle', PERSONAL)],
 };
+
+/** The coding thread with something in every section of its panel, when a test asks. */
+const VERBOSE_THREAD = thread(VERBOSE, 'Add a --verbose flag to the CLI', 'idle', PROJECT, {
+  ...VERBOSE_SUMMARY,
+  updated_at: '2026-10-11T10:08:00.000Z',
+});
 
 export const HISTORY = [
   event(1, 'thread.started', {}),
@@ -278,6 +291,8 @@ const HISTORIES: Readonly<Record<string, readonly RawEvent[]>> = {
   [SERVING]: SERVING_HISTORY,
   [RESEARCH]: RESEARCH_HISTORY,
   [LOST]: LOST_HISTORY,
+  [VERBOSE]: VERBOSE_HISTORY,
+  [DINNER]: DINNER_HISTORY,
 };
 
 const TASKS: readonly TaskInfo[] = [
@@ -526,6 +541,8 @@ interface Known {
   readonly commands: Commands | null;
   /** Whether the person's chats list the research chat. */
   readonly research: boolean;
+  /** Whether the project lists the coding thread with something in every part of its panel. */
+  readonly panel: boolean;
   /** The git hosts the person connected. */
   readonly credentials: readonly CredentialInfo[];
   /** The threads given a message, which are then the latest. */
@@ -544,6 +561,10 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
     if (asked !== undefined) {
       return asked;
     }
+  }
+  const verbose = known.panel ? aboutVerbose(method, params) : undefined;
+  if (verbose !== undefined) {
+    return verbose;
   }
   const ran =
     background(method, params, commands) ??
@@ -568,17 +589,21 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
       const serving =
         commands !== null && project === PROJECT.id ? [thread(SERVING, 'Preview the docs')] : [];
       const research = known.research && project === PERSONAL.id ? [RESEARCHING] : [];
-      const threads = [...fresh, ...serving, ...research, ...(THREADS[project] ?? [])];
+      const verbose = known.panel && project === PROJECT.id ? [VERBOSE_THREAD] : [];
+      const threads = [...fresh, ...serving, ...research, ...verbose, ...(THREADS[project] ?? [])];
       return {
         threads: threads.map((each) =>
           touched.has(each.id) ? { ...each, updated_at: LATER } : each,
         ),
       };
     }
-    case 'thread/get':
-      return params['thread'] === RESEARCH
-        ? { thread: RESEARCHING }
-        : { thread: thread(String(params['thread']), 'Make the tests pass') };
+    case 'thread/get': {
+      const id = String(params['thread']);
+      const listed = [RESEARCHING, VERBOSE_THREAD, ...Object.values(THREADS).flat()].find(
+        (each) => each.id === id,
+      );
+      return { thread: listed ?? thread(id, 'Make the tests pass') };
+    }
     case 'thread/sources':
       return sourcesOf(params);
     case 'thread/events':
@@ -655,7 +680,8 @@ function trusted(method: string, params: Record<string, unknown>, trust: Trust):
  * Answers the session API's calls the app makes, as JSON-RPC over POST /. With `trust`, the
  * person also has acme, a project that asks to be trusted; with `commands`, a thread in the
  * project that keeps the docs site running in the background; with `research`, a chat that read
- * pages on the web among the person's chats; with `account`, a GitHub account connected; with
+ * pages on the web among the person's chats; with `panel`, a coding thread in the project with
+ * something in every section of its panel; with `account`, a GitHub account connected; with
  * `gone`, playground, a project whose folder isn't there anymore. How the person's threads are
  * grouped is kept in `grouped`, which two pages share as one server.
  */
@@ -665,6 +691,7 @@ export async function fakeApi(
     trust = false,
     commands = false,
     research = false,
+    panel = false,
     account = false,
     gone = false,
     grouped = { grouping: 'project' },
@@ -672,6 +699,7 @@ export async function fakeApi(
     readonly trust?: boolean;
     readonly commands?: boolean;
     readonly research?: boolean;
+    readonly panel?: boolean;
     readonly account?: boolean;
     readonly gone?: boolean;
     readonly grouped?: Grouped;
@@ -685,6 +713,7 @@ export async function fakeApi(
     trust: trust ? { asking: true } : null,
     commands: commands ? { running: true } : null,
     research,
+    panel,
     credentials: account ? [GITHUB] : [],
     touched: new Set(),
     gone: gone ? folderGone() : null,

@@ -5,39 +5,45 @@
 .list {
   display: flex;
   flex-direction: column;
-  gap: var(--glz-space-3);
+  gap: var(--glz-space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.command {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-1);
+}
+
+// A turning ring, what it runs, how long it has run, then Stop at the end.
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-2);
+}
+
+.mark {
+  flex: none;
 }
 
 // What it runs: one line of monospace, cut short; all of it shows on hover or focus.
-.command {
-  display: block;
+.text {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
-  padding: var(--glz-space-half) var(--glz-space-2);
-  border-radius: var(--glz-radius-mark);
-  background: var(--glz-surface-sunken);
+  font-size: var(--glz-text-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.summary,
 .time {
+  flex: none;
   color: var(--glz-color-text-muted);
   font-size: var(--glz-text-sm);
 }
 
-// How long it has run at the start of the line, Stop at its end.
-.footer {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--glz-space-2);
-}
-
-.time {
-  margin-inline-end: auto;
-}
-
 .error {
   color: var(--glz-color-danger);
+  font-size: var(--glz-text-sm);
 }

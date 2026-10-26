@@ -1,23 +1,9 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, model } from '@angular/core';
 import type { Permissions } from '@glave/client';
-import {
-  GlzIconComponent,
-  type GlzIconData,
-  type GlzMenuOption,
-  GlzMenuSelectComponent,
-} from '@glave/glaze';
-import { ClipboardList, Hand, ShieldCheck, ShieldOff } from 'lucide';
+import { GlzIconComponent, type GlzMenuOption, GlzMenuSelectComponent } from '@glave/glaze';
 
+import { modes } from '../../lib/modes';
 import { ServerService } from '../../services/server.service';
-
-/** How a mode is shown: its word, the line saying what it means, and its icon. */
-interface Shown {
-  readonly text: string;
-  readonly about: string;
-  readonly icon: GlzIconData;
-  /** Whether the picker names it as the one glave recommends. */
-  readonly recommended: boolean;
-}
 
 /**
  * The composer's mode for its next turn, what the agent may do without asking, quiet in its
@@ -47,32 +33,7 @@ export class PermissionsComponent {
     prefix: $localize`:@@permissions.prefix:Mode:`,
   } as const;
   /** How each mode is shown. */
-  private readonly modes: Readonly<Record<Permissions, Shown>> = {
-    auto: {
-      text: $localize`:@@permissions.auto:Auto`,
-      about: $localize`:@@permissions.autoAbout:Works on its own in this project. Asks only before something risky.`,
-      icon: ShieldCheck,
-      recommended: true,
-    },
-    plan: {
-      text: $localize`:@@permissions.plan:Plan`,
-      about: $localize`:@@permissions.planAbout:Looks around and proposes a plan. Changes nothing until you approve it.`,
-      icon: ClipboardList,
-      recommended: false,
-    },
-    ask: {
-      text: $localize`:@@permissions.ask:Ask first`,
-      about: $localize`:@@permissions.askAbout:Asks you before every change.`,
-      icon: Hand,
-      recommended: false,
-    },
-    'full-access': {
-      text: $localize`:@@permissions.fullAccess:Full access`,
-      about: $localize`:@@permissions.fullAccessAbout:No limits: can change anything on this computer, and never asks.`,
-      icon: ShieldOff,
-      recommended: false,
-    },
-  };
+  private readonly modes = modes();
   private readonly server = inject(ServerService);
   /** The mode the next turn runs with. */
   private readonly shownMode = computed(

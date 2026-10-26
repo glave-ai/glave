@@ -16,6 +16,7 @@ import {
   GlzAttachmentComponent,
   GlzButtonComponent,
   GlzComposerComponent,
+  GlzDialogComponent,
   GlzIconComponent,
   GlzMessageComponent,
   GlzPanelLayoutComponent,
@@ -36,7 +37,8 @@ import { ProjectsService } from '../../services/projects.service';
 import { SearchService } from '../../services/search.service';
 import { SourcesService } from '../../services/sources.service';
 import { ThreadService } from '../../services/thread.service';
-import { ToolsPanelService } from '../../services/tools-panel.service';
+import { PanelService } from '../../services/panel.service';
+import { ThreadPanelService } from '../../services/thread-panel.service';
 import { FolderGoneComponent } from '../folder-gone/folder-gone.component';
 import { MessageTextComponent } from '../message-text/message-text.component';
 import { EffortPickerComponent } from '../effort-picker/effort-picker.component';
@@ -44,19 +46,22 @@ import { ModelPickerComponent } from '../model-picker/model-picker.component';
 import { PermissionsComponent } from '../permissions/permissions.component';
 import { RenameDialogComponent } from '../rename-dialog/rename-dialog.component';
 import { ThreadHeaderComponent } from '../thread-header/thread-header.component';
-import { ToolsPanelComponent } from '../tools-panel/tools-panel.component';
+import { ThreadFilesComponent } from '../thread-files/thread-files.component';
+import { ThreadPanelComponent } from '../thread-panel/thread-panel.component';
 import { TurnComponent } from '../turn/turn.component';
 
 /**
- * One thread: its bar across the top (title, project and where it runs, its changes); its
+ * One thread: its bar across the top (title, project, the panel's button); its
  * conversation in a reading column, turn by turn, results first (the reply, what changed, the
  * receipt that opens to the steps, then what waits for the person), and after them what its
  * project asks the person to trust, while it asks; the reply streaming in as
  * markdown as a turn runs, and after it what the person sent meanwhile, waiting until the
  * model reads it; the composer pinned below it, usable while a turn runs, with what the agent
  * may do and the model in its quiet line, or in its place, when the project's folder isn't there
- * anymore, what the server says of it and what can be done; and the tools panel beside it, resized and collapsed by its edge and shown
- * or hidden by ⌘. or Ctrl+. anywhere in the thread.
+ * anymore, what the server says of it and what can be done; and beside it, when the thread has
+ * any, its panel of facts, resized and collapsed by its edge and shown or hidden by ⌘. or Ctrl+.
+ * anywhere in the thread, from which, as from a turn's card of what changed, its changes open in
+ * full over it.
  */
 @Component({
   selector: 'app-thread',
@@ -65,6 +70,7 @@ import { TurnComponent } from '../turn/turn.component';
     GlzAttachmentComponent,
     GlzButtonComponent,
     GlzComposerComponent,
+    GlzDialogComponent,
     GlzIconComponent,
     GlzMessageComponent,
     GlzPanelLayoutComponent,
@@ -74,12 +80,19 @@ import { TurnComponent } from '../turn/turn.component';
     ModelPickerComponent,
     PermissionsComponent,
     RenameDialogComponent,
+    ThreadFilesComponent,
     ThreadHeaderComponent,
-    ToolsPanelComponent,
+    ThreadPanelComponent,
     TurnComponent,
     EffortPickerComponent,
   ],
-  providers: [ThreadService, CommandsService, SourcesService, AttachmentsService],
+  providers: [
+    ThreadService,
+    CommandsService,
+    SourcesService,
+    AttachmentsService,
+    ThreadPanelService,
+  ],
   templateUrl: './thread.component.html',
   styleUrl: './thread.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -101,8 +114,9 @@ export class ThreadComponent {
     attach: $localize`:@@thread.attach:Add files or photos`,
     placeholder: $localize`:@@thread.placeholder:Reply`,
     conversation: $localize`:@@thread.conversation:Conversation`,
-    tools: $localize`:@@thread.tools:Tools`,
-    resize: $localize`:@@thread.resize:Resize the tools`,
+    panel: $localize`:@@thread.panel:This thread`,
+    resize: $localize`:@@thread.resize:Resize the panel`,
+    changes: $localize`:@@thread.changes:Changes`,
     trust: $localize`:@@thread.trust:This project brings its own tools and settings`,
     you: $localize`:@@thread.you:You`,
     queued: $localize`:@@thread.queued:Waiting to be read`,
@@ -127,7 +141,11 @@ export class ThreadComponent {
   });
   /** Whether the thread's first message, sent from the new chat, got no answer: it may go again. */
   protected readonly lost = computed(() => this.service.firstTurn()?.failed === 'lost');
-  private readonly panel = inject(ToolsPanelService);
+  private readonly panel = inject(PanelService);
+  /** What the thread's panel shows, if anything, and its changes shown in full. */
+  protected readonly facts = inject(ThreadPanelService);
+  /** Whether the thread has nothing for its panel, so the page is its conversation alone. */
+  protected readonly noFacts = computed(() => !this.facts.shown());
   private readonly sources = inject(SourcesService);
   private readonly stick = viewChild.required(GlzStickToBottomDirective);
   /** The composer's draft, which a message the model never read comes back to. */
@@ -203,7 +221,6 @@ export class ThreadComponent {
     const project = id === null ? undefined : this.projects.project(id);
     return project?.kind === 'project' ? project.name : null;
   });
-  protected readonly changes = computed(() => this.service.files().length);
   /** When the thread's project folder isn't there anymore: the project, and what the server says. */
   protected readonly gone = computed(() => {
     const project = this.projectId();
@@ -271,8 +288,11 @@ export class ThreadComponent {
     void this.service.rename(title);
   }
 
+  /** The panel's shortcut, in a thread that has one. */
   protected keydown(event: KeyboardEvent): void {
-    this.panel.keydown(event);
+    if (this.facts.shown()) {
+      this.panel.keydown(event);
+    }
   }
 
   protected pressed(event: PointerEvent): void {
