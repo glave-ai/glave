@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use super::{
     AcceptedPasskeys, ConnectionInfo, CredentialInfo, DeviceCode, FileInfo, GoneFolder, Grouping,
     ModelInfo, PasskeySummary, Permissions, ProjectFolder, ProviderInfo, ReplySources,
-    ScheduleInfo, SignInLink, SignInWay, TaskInfo, Told, TrustAsk, WatchEnd,
+    ScheduleInfo, SearchInfo, SignInLink, SignInWay, TaskInfo, Told, TrustAsk, WatchEnd,
 };
 
 /// What the server is.
@@ -318,6 +318,9 @@ pub enum Reply {
     /// Whether the computer is kept awake while glave works.
     #[schemars(title = "Awake")]
     Awake { awake: AwakeInfo },
+    /// Whether the person's agent may search the web.
+    #[schemars(title = "Search")]
+    Search { search: SearchInfo },
     /// What a thread's replies drew on from the web.
     #[schemars(title = "Sources")]
     Sources { sources: Vec<ReplySources> },

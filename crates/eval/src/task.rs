@@ -7,7 +7,7 @@
 //!   environment/     the files the agent starts with
 //!   tests/test.sh    optional: run in the workspace afterwards; exit 0 means it passed
 //!   web/             optional, glave's own: pages served on 127.0.0.1 at `{web}` (`web.rs`)
-//!   search.md        optional, glave's own: the search glave suggests, on, answering every
+//!   search.md        optional, glave's own: web search, on, answering every
 //!                    query with this text (`search.rs`)
 //! ```
 //!
@@ -190,7 +190,7 @@ impl Task {
         Some(self.dir.join("web")).filter(|path| path.is_dir())
     }
 
-    /// What the search glave suggests finds while the task runs, when the task turns it on
+    /// What web search finds while the task runs, when the task turns it on
     /// (`search.rs`).
     pub fn search_results(&self) -> Option<PathBuf> {
         Some(self.dir.join("search.md")).filter(|path| path.is_file())

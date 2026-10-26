@@ -7,7 +7,7 @@
 use glave_event::Secret;
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 
-use crate::protocol::{ApiError, ConnectionInfo, Reply, SignInLink, code};
+use crate::protocol::{ApiError, ConnectionInfo, Reply, SearchInfo, SignInLink, Told, code};
 use crate::providers::theirs;
 use crate::server::Server;
 use crate::words::Sentence;
@@ -68,12 +68,26 @@ pub trait Connections: Send + Sync {
     fn finish(&self, returned: Returned) -> BoxFuture<'_, String>;
 
     /// The connections signed in to, then the person's remote servers that ask them to sign
-    /// in and are not signed in to.
+    /// in and are not signed in to; never the web search's.
     fn list(&self) -> BoxFuture<'_, Result<Vec<ConnectionInfo>, ApiError>>;
 
     /// Removes the sign-in to `server`, by its name in the person's settings or its address,
     /// destroying its tokens.
     fn remove(&self, server: String) -> BoxFuture<'_, Result<(), ApiError>>;
+
+    /// Whether the person's agent searches the web: none where it is not theirs to choose.
+    fn search(&self) -> BoxFuture<'_, Result<Option<Searching>, ApiError>>;
+
+    /// Turns web search on or off in the person's own settings: how it is then.
+    fn set_search(&self, on: bool) -> BoxFuture<'_, Result<Option<Searching>, ApiError>>;
+}
+
+/// Whether the person's agent searches the web, as their own settings say.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Searching {
+    pub on: bool,
+    /// What their settings call its server, which its calls are counted by.
+    pub name: String,
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -126,15 +140,54 @@ where
     ) -> Result<Reply, ApiError> {
         let connections = self.connections_for(caller)?;
         Ok(match connections.poll(flow.clone()).await? {
-            Some(connection) => Reply::Connection { connection },
+            Some(mut connection) => {
+                self.used(caller, std::slice::from_mut(&mut connection))
+                    .await;
+                Reply::Connection { connection }
+            }
             None => Reply::Waiting { flow },
         })
     }
 
     /// Answers `connection/list`.
     pub(crate) async fn list_connections(&self, caller: &Caller) -> Result<Reply, ApiError> {
-        let connections = self.connections_for(caller)?.list().await?;
+        let mut connections = self.connections_for(caller)?.list().await?;
+        self.used(caller, &mut connections).await;
         Ok(Reply::Connections { connections })
+    }
+
+    /// Web search's keeper, when it is `caller`'s to choose: the person on this computer, where
+    /// this server keeps connections of theirs.
+    fn search_for(&self, caller: &Caller) -> Result<&dyn Connections, ApiError> {
+        let connections = self.inner.connections.as_deref();
+        let elsewhere = Sentence::SearchOnItsComputer;
+        theirs(caller, connections, Sentence::SearchNotHere, elsewhere)
+    }
+
+    /// Answers `search/get`, counting this month's searches when `usage` asks: never the
+    /// caller's to choose, with why, where `search/set` would refuse them.
+    pub(crate) async fn get_search(&self, caller: &Caller, usage: bool) -> Result<Reply, ApiError> {
+        let never = |reason: Told| Reply::Search {
+            search: SearchInfo::Never { reason },
+        };
+        let connections = match self.search_for(caller) {
+            Ok(connections) => connections,
+            Err(refused) => return Ok(never(refused.message)),
+        };
+        let Some(searching) = connections.search().await? else {
+            return Ok(never(Sentence::SearchNotHere.into()));
+        };
+        let search = self.search_info(caller, searching, usage).await;
+        Ok(Reply::Search { search })
+    }
+
+    /// Answers `search/set`, with this month's searches, for Settings, which turned it.
+    pub(crate) async fn set_search(&self, caller: &Caller, on: bool) -> Result<Reply, ApiError> {
+        let Some(searching) = self.search_for(caller)?.set_search(on).await? else {
+            return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::SearchNotHere));
+        };
+        let search = self.search_info(caller, searching, true).await;
+        Ok(Reply::Search { search })
     }
 
     /// Answers `connection/remove`.

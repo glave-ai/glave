@@ -1,0 +1,7 @@
+@use '../page';
+
+// Its card alone takes a place in the page's column, so where search is not the person's to
+// choose it takes none.
+:host {
+  display: contents;
+}

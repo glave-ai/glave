@@ -398,6 +398,8 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
             "connection/remove",
             vec![json!({"server": "https://mcp.example.com/mcp"})],
         ),
+        ("search/get", vec![json!({}), json!({"usage": true})]),
+        ("search/set", vec![json!({"on": true})]),
     ]
 }
 

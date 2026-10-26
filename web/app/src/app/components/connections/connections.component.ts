@@ -47,6 +47,8 @@ interface Row {
   readonly busy: boolean;
   /** The line under its name. */
   readonly detail: string;
+  /** How often it was called this month, in the server's words. */
+  readonly usage: string | null;
   /** The sign-in's page, to open while it waits, once the server gave it, and the link's word. */
   readonly link: string | null;
   readonly linkText: string;
@@ -328,7 +330,8 @@ export class ConnectionsComponent {
     const waited = ready ? undefined : this.waiting().get(url);
     const busy = this.removing().has(url);
     const problem = this.problems().get(url) ?? null;
-    const base = { url, name, ready, busy, problem, link: waited?.link ?? null };
+    const usage = connection.usage?.sentence ?? null;
+    const base = { url, name, ready, busy, problem, usage, link: waited?.link ?? null };
     if (ready) {
       return {
         ...base,

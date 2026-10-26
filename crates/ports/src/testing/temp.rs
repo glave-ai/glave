@@ -14,7 +14,9 @@ const ATTEMPTS: u32 = 1_000;
 /// It sits alone in a folder made for it, `glave-<name>-<pid>-<n>/<name>`, so what a test
 /// makes beside it (`dir.with_extension("other")`) is removed with it too.
 pub struct TempDir {
-    outer: PathBuf,
+    /// The folder made for it, which holds it: taken as it is removed, by
+    /// [`TempDir::remove`] or the drop.
+    outer: Option<PathBuf>,
     path: PathBuf,
 }
 
@@ -41,7 +43,10 @@ impl TempDir {
                 Ok(()) => {
                     let path = outer.join(name);
                     // Owned from here on, so a failure below still removes `outer`.
-                    let made = Self { outer, path };
+                    let made = Self {
+                        outer: Some(outer),
+                        path,
+                    };
                     std::fs::create_dir(&made.path)?;
                     return Ok(made);
                 }
@@ -57,6 +62,18 @@ impl TempDir {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Removes it now, with everything in it, saying why when it cannot: what a test started
+    /// may still be writing there. Dropping it removes it too, but cannot fail the test.
+    pub fn remove(mut self) -> std::io::Result<()> {
+        let Some(outer) = self.outer.take() else {
+            return Ok(());
+        };
+        remove_tree(&outer).map_err(|error| {
+            let said = format!("could not remove {}: {error}", outer.display());
+            std::io::Error::new(error.kind(), said)
+        })
     }
 }
 
@@ -90,8 +107,10 @@ impl AsRef<std::ffi::OsStr> for TempDir {
 
 impl Drop for TempDir {
     fn drop(&mut self) {
-        // Best effort: a test that is done cannot act on a folder it could not remove.
-        let _ = remove_tree(&self.outer);
+        // Best effort: a drop cannot fail the test. One that must know calls `remove`.
+        if let Some(outer) = self.outer.take() {
+            let _ = remove_tree(&outer);
+        }
     }
 }
 
@@ -111,7 +130,20 @@ mod tests {
         std::fs::create_dir(&beside).unwrap();
         let (kept, other) = (first.to_path_buf(), second.to_path_buf());
         drop(first);
-        drop(second);
+        second.remove().unwrap();
         assert!(!kept.exists() && !beside.exists() && !other.exists());
+    }
+
+    #[test]
+    fn a_folder_it_cannot_remove_is_said() {
+        let dir = TempDir::new("temp-test").unwrap();
+        let outer = dir.outer.clone().unwrap();
+        // A file where its folder was, which no removal of a folder takes.
+        crate::remove_tree(&outer).unwrap();
+        std::fs::write(&outer, "not a folder").unwrap();
+        let error = dir.remove().unwrap_err();
+        std::fs::remove_file(&outer).unwrap();
+        let said = format!("could not remove {}: ", outer.display());
+        assert!(error.to_string().starts_with(&said), "{error}");
     }
 }

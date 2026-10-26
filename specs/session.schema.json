@@ -230,6 +230,17 @@
         "url": {
           "description": "The MCP server's address: `https://mcp.example.com/mcp`.",
           "type": "string"
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Usage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How much it was used, once it is in the person's settings."
         }
       },
       "required": [
@@ -1408,6 +1419,59 @@
       ],
       "type": "object"
     },
+    "SearchInfo": {
+      "description": "Whether the person's agent may search the web (`specs/session.md`, \"Web search\").",
+      "oneOf": [
+        {
+          "description": "Not the caller's to choose here, and `reason`, why: their organization chooses its\nsearch among its approved connections, this server keeps no connections of the\nperson's own, or only the person on its computer chooses.",
+          "properties": {
+            "kind": {
+              "const": "never",
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The person's to turn on or off: on when `on`; `detail` says who searches and what it\ncosts; `usage`, while it is on and when asked for, how much it searched this month.",
+          "properties": {
+            "detail": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "chosen",
+              "type": "string"
+            },
+            "on": {
+              "type": "boolean"
+            },
+            "usage": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Usage"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "on",
+            "detail"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "Secret": {
       "description": "A key or token: sent once, never shown again.",
       "type": "string"
@@ -2340,6 +2404,26 @@
           "type": "object"
         }
       ]
+    },
+    "Usage": {
+      "description": "How much a connection was used since this month began (UTC).",
+      "properties": {
+        "calls": {
+          "description": "The calls the person's agent asked of its tools, refused ones too.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sentence": {
+          "description": "The calls, as the person reads them: \"412 calls this month\", or for web search \"412\nsearches this month\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "calls",
+        "sentence"
+      ],
+      "type": "object"
     },
     "WatchEnd": {
       "description": "Why a watch ended (`thread/watch`, `thread/list/watch`).",
@@ -4222,6 +4306,57 @@
         },
         "required": [
           "schedules"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "search/get": {
+      "params": {
+        "properties": {
+          "usage": {
+            "default": false,
+            "description": "Also how much it searched this month, which reads the month's threads: for\nSettings, not for a client that only shows whether it is on.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "result": {
+        "description": "Whether the person's agent may search the web.",
+        "properties": {
+          "search": {
+            "$ref": "#/$defs/SearchInfo"
+          }
+        },
+        "required": [
+          "search"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "search/set": {
+      "params": {
+        "properties": {
+          "on": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "on"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "Whether the person's agent may search the web.",
+        "properties": {
+          "search": {
+            "$ref": "#/$defs/SearchInfo"
+          }
+        },
+        "required": [
+          "search"
         ],
         "type": "object"
       },

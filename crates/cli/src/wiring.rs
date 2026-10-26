@@ -23,7 +23,7 @@ use crate::args::Args;
 use crate::catalogs::Catalogs;
 use crate::client::Glave;
 use crate::config::{self, Endpoint};
-use crate::connected::Connected;
+use crate::connected::{Connected, WebSearch};
 use crate::credentials::Hosts;
 use crate::data::Data;
 use crate::gateway::GatewaySwitch;
@@ -35,6 +35,10 @@ use crate::reread::Rereading;
 use crate::setup::{self, Setup};
 use crate::trust::Trust;
 use crate::{home, identity};
+
+/// The variable that puts a stand-in in place of Exa's server for web search, for tests, which
+/// must never reach Exa: every glave a test starts is given one.
+const SEARCH_STAND_IN: &str = "GLAVE_SEARCH_URL";
 
 /// The server for this folder, and what the terminal needs to show it.
 pub(crate) struct Wired {
@@ -128,7 +132,7 @@ pub(crate) async fn wire(
     let lineup = Lineup::new(&setup, configured);
     let lined = line_up(args, lineup, &store, identity.person, remote.is_some()).await?;
     let (workspace, hosts, connected) =
-        signed(args, &store, identity.person, choices, workspace).await?;
+        signed(args, &store, identity.person, &setup, workspace).await?;
     let mut settings = settings_for(args, &setup, &lined, identity, workspace.root()).await?;
     let root = workspace.root().to_owned();
     settings.commands = crate::commands::find(&root).await?;
@@ -339,18 +343,22 @@ async fn settings_for(
 
 /// The git hosts `person` connected, when they may connect them here, and `workspace` with
 /// every thread's commands asking them for credentials at each use; and the remote servers they
-/// sign in to, likewise.
+/// sign in to, likewise, with web search where they may add servers of their own.
 async fn signed(
     args: &Args,
     store: &Data,
     person: glave_event::PrincipalId,
-    choices: &Choices,
+    setup: &Setup,
     workspace: Workspace,
 ) -> anyhow::Result<(Workspace, Option<Arc<Hosts>>, Option<Arc<Connected>>)> {
     let others_sign_in = !args.issuers.is_empty();
-    let github = choices.github.as_ref().map(|github| &github.value);
+    let github = setup.choices.github.as_ref().map(|github| &github.value);
     let hosts = Hosts::for_person(store, person, github, others_sign_in).await?;
-    let connected = Connected::for_person(store, person, &home::folder()?, others_sign_in).await?;
+    // Web search is the person's to turn on where they may add servers of their own.
+    let forbidden = setup.loaded.constraints.own_mcp_forbidden().is_some();
+    let search = (!forbidden).then(|| WebSearch::at(std::env::var(SEARCH_STAND_IN).ok()));
+    let home = home::folder()?;
+    let connected = Connected::for_person(store, person, &home, others_sign_in, search).await?;
     Ok(match hosts {
         Some(hosts) => {
             let asked = Arc::clone(&hosts) as Arc<dyn GitCredentials>;

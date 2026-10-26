@@ -1,0 +1,16 @@
+@if (shown()) {
+  <glz-card data-testid="web-search">
+    <h2 glzCardHeader>{{ copy.heading }}</h2>
+    <glz-form-field [label]="copy.label" [hint]="detail()">
+      <glz-checkbox testId="web-search-on" [checked]="on()" (checkedChange)="set($event)">{{
+        copy.search
+      }}</glz-checkbox>
+    </glz-form-field>
+    @if (usage(); as usage) {
+      <p class="details" data-testid="web-search-usage">{{ usage }}</p>
+    }
+    @if (problem(); as problem) {
+      <p class="error" role="alert" data-testid="web-search-problem">{{ problem }}</p>
+    }
+  </glz-card>
+}

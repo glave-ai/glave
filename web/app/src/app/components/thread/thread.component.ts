@@ -16,12 +16,14 @@ import {
   GlzAttachmentComponent,
   GlzButtonComponent,
   GlzComposerComponent,
+  GlzIconComponent,
   GlzMessageComponent,
   GlzPanelLayoutComponent,
   GlzStickToBottomDirective,
   type GlzTrustAnswer,
   GlzTrustCardComponent,
 } from '@glave/glaze';
+import { Globe } from 'lucide';
 
 import { type TurnResults, turnResults } from '../../lib/results';
 import { threadTitle } from '../../lib/threads';
@@ -31,6 +33,7 @@ import { effortToSend } from '../../lib/effort';
 import { CommandsService } from '../../services/commands.service';
 import { ModelsService } from '../../services/models.service';
 import { ProjectsService } from '../../services/projects.service';
+import { SearchService } from '../../services/search.service';
 import { SourcesService } from '../../services/sources.service';
 import { ThreadService } from '../../services/thread.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
@@ -62,6 +65,7 @@ import { TurnComponent } from '../turn/turn.component';
     GlzAttachmentComponent,
     GlzButtonComponent,
     GlzComposerComponent,
+    GlzIconComponent,
     GlzMessageComponent,
     GlzPanelLayoutComponent,
     GlzStickToBottomDirective,
@@ -104,7 +108,11 @@ export class ThreadComponent {
     queued: $localize`:@@thread.queued:Waiting to be read`,
     again: $localize`:@@thread.again:Send again`,
     lost: $localize`:@@thread.lost:This message may not have reached glave.`,
+    searching: $localize`:@@thread.searching:Web search is on`,
   } as const;
+  protected readonly globe = Globe;
+  /** Whether the agent may search the web, which the composer shows while it may. */
+  protected readonly searching = inject(SearchService).on;
   protected readonly service = inject(ThreadService);
   /** The files added to the message being written, kept in the thread's project. */
   protected readonly attachments = inject(AttachmentsService);

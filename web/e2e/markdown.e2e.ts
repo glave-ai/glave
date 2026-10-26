@@ -1,6 +1,7 @@
 import { type Page, expect, test } from '@playwright/test';
 
-import { MARKDOWN_PROMPT, THREAD, fakeApi, streamReply } from './fake-api';
+import { MARKDOWN_PROMPT, MARKDOWN_REPLY, THREAD, fakeApi, streamReply } from './fake-api';
+import { letGo } from './fake-gate';
 import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './support';
 
 /** What the streaming reply showed: how many states, and any with markup in them. */
@@ -53,7 +54,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
     await page.setViewportSize({ width: 1440, height: 900 });
     await fakeApi(page);
-    await streamReply(page);
+    await streamReply(page, MARKDOWN_REPLY, { heldAfter: '**empty input' });
     const response = await page.goto(`/t/${THREAD}${SIGNED_IN}`);
     // Images come from the app, and from files the person adds (`blob:`), under Trusted Types.
     const policy = response?.headers()['content-security-policy'] ?? '';
@@ -64,9 +65,11 @@ for (const colorScheme of ['light', 'dark'] as const) {
     const composer = byTestId(page, 'thread-composer-input');
     await composer.fill(MARKDOWN_PROMPT);
     await composer.press('Enter');
-    // While it streams, the reply is markdown: bold as it is written, never its asterisks.
+    // While it streams, held halfway through the bold, the reply is markdown: bold as it is
+    // written, never its asterisks.
     const live = byTestId(page, 'thread-reply');
     await expect(live.locator('strong', { hasText: 'empty input' })).toBeVisible();
+    await letGo(page, 'reply');
     const reply = byTestId(page, 'thread-message').last();
     await expect(reply).toContainText('Document the change');
     await expect(live).toHaveCount(0);
@@ -101,7 +104,7 @@ test('a code block’s copy button copies its code', async ({ page, context, bro
   test.skip(browserName === 'webkit', "Playwright's WebKit cannot be granted the clipboard");
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await fakeApi(page);
-  await streamReply(page, '```sh\ncargo test --workspace\n```', 0);
+  await streamReply(page, '```sh\ncargo test --workspace\n```', { delay: 0 });
   await page.goto(`/t/${THREAD}${SIGNED_IN}`);
   const composer = byTestId(page, 'thread-composer-input');
   await composer.fill(MARKDOWN_PROMPT);

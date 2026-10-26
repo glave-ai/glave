@@ -18,7 +18,7 @@ pub(crate) struct Place {
     pub lifeline: Lifeline,
     /// The folder both are in, removed when the place drops; none for a place made of
     /// another's folders.
-    pub _folder: Option<TempDir>,
+    pub folder: Option<TempDir>,
 }
 
 pub(crate) fn place(name: &str) -> Place {
@@ -31,7 +31,23 @@ pub(crate) fn place(name: &str) -> Place {
         project,
         home: dir.join("home"),
         lifeline: Lifeline::new(&dir),
-        _folder: Some(dir),
+        folder: Some(dir),
+    }
+}
+
+/// The folder goes with the place, and the test fails, unless it fails already, when it could
+/// not be removed, most likely as something the test started still wrote there. So a test
+/// stops and waits for every program it starts for a place before the place goes: declared
+/// after it, or before it in a struct. The lifeline goes after the folder: it still ends a
+/// glave a test left running, but too late to keep it from writing there.
+impl Drop for Place {
+    fn drop(&mut self) {
+        if let Some(folder) = self.folder.take()
+            && let Err(error) = folder.remove()
+            && !std::thread::panicking()
+        {
+            panic!("{error}; something the test started may still write there");
+        }
     }
 }
 
@@ -144,6 +160,13 @@ pub(crate) fn glave(place: &Place, server: &FakeServer, args: &[&str], stdin: &s
     child.wait_with_output().unwrap()
 }
 
+/// In place of web search's server, Exa's, an address nothing listens on (the discard port),
+/// given to every glave a test starts, so none reaches Exa; a test may give its own.
+pub(crate) const SEARCH_STAND_IN: (&str, &str) = (
+    "GLAVE_SEARCH_URL",
+    "http://127.0.0.1:9/mcp?tools=web_search_exa",
+);
+
 /// `glave` started with `args`, still running, and stopped when dropped.
 pub(crate) fn start(place: &Place, server: &FakeServer, args: &[&str]) -> Running {
     start_with(place, server, args, &[])
@@ -160,6 +183,7 @@ pub(crate) fn start_with(
     let child = Command::new(env!("CARGO_BIN_EXE_glave"))
         .args(args)
         .env(Lifeline::VARIABLE, &place.lifeline.path)
+        .env(SEARCH_STAND_IN.0, SEARCH_STAND_IN.1)
         .envs(env.iter().copied())
         .current_dir(&place.project)
         .env("GLAVE_BASE_URL", server.url())
