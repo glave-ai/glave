@@ -46,8 +46,8 @@ describe('ProjectsService', () => {
     expect(projects.home()).toBe('me');
     expect(projects.thread('t1')?.title).toBe('Plan');
     expect(projects.thread('nope')).toBeUndefined();
-    expect(projects.projectOf('t1')?.name).toBe('glave');
-    expect(projects.projectOf('nope')).toBeUndefined();
+    expect(projects.project('p1')?.name).toBe('glave');
+    expect(projects.project('nope')).toBeUndefined();
     expect(projects.loaded()).toBe(true);
   });
 

@@ -3,7 +3,8 @@ import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode, type Notification, type RawEvent, type Update } from '@glave/client';
 
 import { FakeSession, FakeTurn, provideFakeSession } from '../testing/fake-session';
-import { event, thread } from '../testing/fixtures';
+import { event, record, thread } from '../testing/fixtures';
+import { ProjectsService } from './projects.service';
 import { ThreadService } from './thread.service';
 
 function make(fake: FakeSession): ThreadService {
@@ -466,6 +467,25 @@ describe('ThreadService', () => {
     );
     await service.rename('Again');
     expect(service.error()).toBe('a turn is running');
+  });
+
+  it('keeps the thread’s own summary, or the lists’ copy once that one is newer', async () => {
+    const own = thread('thread-1', 'Plan', { updated_at: '2026-10-11T10:05:00.000Z' });
+    let listed = thread('thread-1', 'Old plan', { updated_at: '2026-10-11T10:00:00.000Z' });
+    const fake = new FakeSession()
+      .answer('thread/events', { events: [] })
+      .answer('thread/get', { thread: own })
+      .answer('project/list', { projects: [record('project-1', 'glave')] })
+      .answer('thread/list', () => ({ threads: [listed] }));
+    const service = make(fake);
+    const projects = TestBed.inject(ProjectsService);
+    await projects.refresh();
+    await service.open('thread-1');
+    expect(service.summary()?.title).toBe('Plan');
+    // Renamed elsewhere: the side nav hears of it first.
+    listed = thread('thread-1', 'Launch plan', { updated_at: '2026-10-11T10:09:00.000Z' });
+    await projects.refresh();
+    expect(service.summary()?.title).toBe('Launch plan');
   });
 
   it('follows the thread live once read: a turn another tab started, its progress and its approval', async () => {
