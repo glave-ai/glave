@@ -1,5 +1,6 @@
 # Weekly, grouped: at most one pull request per group per week, titled chore(deps): ... so it
-# passes the title check. A version update waits until the release is 7 days old (`cooldown`),
+# passes the title check. A group takes minor and patch updates only; a major version comes in a
+# pull request of its own, since it can break the build and is a change to make on purpose. A version update waits until the release is 7 days old (`cooldown`),
 # the age `cargo xtask package-age` requires of every new version. The cooldown holds the
 # packages an update names, not the versions they bring with them, so an update can fail the
 # check until those are 7 days old too, and pass when run again then. Security updates come
@@ -18,6 +19,7 @@ updates:
     groups:
       cargo:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
     open-pull-requests-limit: 2
   - package-ecosystem: github-actions
     directory: /
@@ -38,6 +40,7 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
     open-pull-requests-limit: 2
   # The web app, Glaze and the client: one npm package (web/package.json).
   - package-ecosystem: npm
@@ -57,4 +60,5 @@ updates:
       npm:
         patterns: ["*"]
         exclude-patterns: ["@playwright/test"]
+        update-types: ["minor", "patch"]
     open-pull-requests-limit: 2
