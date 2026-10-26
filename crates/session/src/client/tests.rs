@@ -31,6 +31,42 @@ fn events_are_notifications_then_the_ending() {
 }
 
 #[test]
+fn an_answer_from_what_stands_in_front_of_the_server_says_its_status_and_how_it_starts() {
+    let proxy = glave_ports::testing::FakeHttp::start(vec![
+        (
+            502,
+            "<html>\n  <body>Bad gateway: the origin is down</body>\n</html>".into(),
+        ),
+        // Read by its shape, as a reply.
+        (500, r#"{"message":"Internal error"}"#.into()),
+    ])
+    .unwrap();
+    let remote = Remote::new(&proxy.url, "t".into()).unwrap();
+    let said = || {
+        let answered = glave_ports::block_on!(remote.request(&Request::Discover {}));
+        answered.err().map(|error| error.message.to_string())
+    };
+    let check = "instead of glave: check that glave is running there and can be reached";
+    assert_eq!(
+        said(),
+        Some(format!(
+            "{} answered with HTTP 502 Bad Gateway {check} (it said: <html> <body>Bad gateway: \
+             the origin is down</body> </html>)",
+            proxy.url
+        ))
+    );
+    assert_eq!(
+        said(),
+        Some(format!(
+            "{} answered with HTTP 500 Internal Server Error {check} (it said: \
+             {{\"message\":\"Internal error\"}})",
+            proxy.url
+        ))
+    );
+    assert_eq!(proxy.received().len(), 2);
+}
+
+#[test]
 fn a_server_that_never_answers_a_request_is_given_up_at_its_limit() {
     let (asked, slow) = glave_ports::block_on!(async {
         // The clock jumps to each limit as soon as nothing else can run.

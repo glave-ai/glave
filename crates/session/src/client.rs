@@ -40,6 +40,9 @@ const SLOW_ANSWERS_WITHIN: Duration = Duration::from_mins(15);
 /// stream.
 const STREAM_IDLE: Duration = KEEP_ALIVE.saturating_mul(4);
 
+/// How much of an answer that is not the server's own is shown.
+const SHOWN_CHARS: usize = 200;
+
 /// A session server elsewhere: over HTTP with the token that signs this client in, or over a
 /// connection of lines.
 pub struct Remote(Transport);
@@ -207,7 +210,9 @@ impl Http {
         }))
     }
 
-    /// Posts `request` as JSON-RPC; an HTTP failure becomes the error it carries.
+    /// Posts `request` as JSON-RPC; an HTTP failure becomes the error it carries. The server
+    /// answers every request with success but a refused sign-in, so any other status is from
+    /// whatever stands in front of it, such as a proxy or a tunnel to a server that is down.
     async fn send(&self, request: &Request) -> Result<reqwest::Response, ApiError> {
         let message = message(self.next_id.fetch_add(1, Ordering::Relaxed), request);
         let response = self
@@ -228,6 +233,23 @@ impl Http {
                     "{} did not accept your sign-in{}: set GLAVE_SERVER_TOKEN to a current token",
                     self.url,
                     said.map(|said| format!(" ({said})")).unwrap_or_default()
+                ),
+            ));
+        }
+        let status = response.status();
+        if !status.is_success() {
+            let said = start_of(response).await;
+            return Err(ApiError::new(
+                code::INTERNAL,
+                format!(
+                    "{} answered with HTTP {status} instead of glave: check that glave is running \
+                     there and can be reached{}",
+                    self.url,
+                    if said.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" (it said: {said})")
+                    }
                 ),
             ));
         }
@@ -350,6 +372,20 @@ fn item(data: &str) -> Option<TurnItem> {
         Err(error) => Err(error),
     };
     Some(TurnItem::Ended(ended))
+}
+
+/// How `response`'s body starts, on one line: read no further than is shown.
+async fn start_of(mut response: reqwest::Response) -> String {
+    let mut body = Vec::new();
+    // Four bytes a character at most.
+    while body.len() < SHOWN_CHARS * 4
+        && let Ok(Some(bytes)) = response.chunk().await
+    {
+        body.extend_from_slice(&bytes);
+    }
+    let text = String::from_utf8_lossy(&body);
+    let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    line.chars().take(SHOWN_CHARS).collect()
 }
 
 /// The reply in a JSON-RPC response's text, or its error.
