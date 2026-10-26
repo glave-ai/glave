@@ -85,6 +85,16 @@
           (stop)="stop()"
           (attach)="attachments.add($event)"
         >
+          @if (searching()) {
+            <glz-icon
+              glzComposerStart
+              class="searching"
+              data-testid="thread-searching"
+              [icon]="globe"
+              [label]="copy.searching"
+              [attr.title]="copy.searching"
+            />
+          }
           @for (chip of attachments.chips(); track chip.key) {
             <glz-attachment
               glzComposerAttachments

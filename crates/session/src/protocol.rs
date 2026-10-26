@@ -25,7 +25,7 @@ use glave_ports::ProjectId;
 use glave_ports::computer::{CommandId, ComputerId};
 use serde::{Deserialize, Serialize};
 
-pub use connections::{ConnectionInfo, ConnectionStatus, SignInLink};
+pub use connections::{ConnectionInfo, ConnectionStatus, SearchInfo, SignInLink, Usage};
 pub use credentials::{Ability, CredentialInfo, DeviceCode};
 pub use error::{ApiError, ErrorData};
 pub use files::{AttachedFile, FileInfo};
@@ -521,13 +521,25 @@ methods! {
     /// glave in the browser; else the flow again, to ask again.
     "connection/poll" => ConnectionPoll { flow: String } -> [Connection, Waiting],
     /// The connections signed in to here, then the person's remote servers that ask them to
-    /// sign in and are not signed in to.
+    /// sign in and are not signed in to: each with how much it was used this month, once it
+    /// is in the person's settings. Web search is not among them (`search/get`).
     "connection/list" => ConnectionList {} -> [Connections],
     /// Removes a connection's sign-in, destroying its tokens.
     "connection/remove" => ConnectionRemove {
         /// What the person's `mcp.json` calls the server, or its address.
         server: String,
     } -> [Done],
+    /// Whether the person's agent may search the web, and, never theirs to choose, why.
+    "search/get" => SearchGet {
+        /// Also how much it searched this month, which reads the month's threads: for
+        /// Settings, not for a client that only shows whether it is on.
+        #[serde(default)]
+        usage: bool,
+    } -> [Search],
+    /// Turns web search on or off for the person: on, its server joins their own settings,
+    /// `mcp.json` in glave's folder, and their threads may search from the next turn; off, it
+    /// leaves them, unless they set it up there themselves. Only the person on this computer.
+    "search/set" => SearchSet { on: bool } -> [Search],
 }
 
 #[expect(

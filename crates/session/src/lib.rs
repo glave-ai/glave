@@ -50,13 +50,14 @@ mod titles;
 mod trace;
 mod trust;
 mod turn;
+mod usage;
 mod watch;
 mod words;
 
 pub use accounts::{AccountLedger, Accounts, AccountsError};
 pub use approvals::Answering;
 pub use awake::KeepAwake;
-pub use connections::{Connections, Returned};
+pub use connections::{Connections, Returned, Searching};
 pub use credentials::{GitHosts, NewCredential};
 pub use dispatch::Answered;
 pub use glave_identity::signin;

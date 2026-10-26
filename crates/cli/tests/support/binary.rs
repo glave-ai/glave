@@ -160,6 +160,13 @@ pub(crate) fn glave(place: &Place, server: &FakeServer, args: &[&str], stdin: &s
     child.wait_with_output().unwrap()
 }
 
+/// In place of web search's server, Exa's, an address nothing listens on (the discard port),
+/// given to every glave a test starts, so none reaches Exa; a test may give its own.
+pub(crate) const SEARCH_STAND_IN: (&str, &str) = (
+    "GLAVE_SEARCH_URL",
+    "http://127.0.0.1:9/mcp?tools=web_search_exa",
+);
+
 /// `glave` started with `args`, still running, and stopped when dropped.
 pub(crate) fn start(place: &Place, server: &FakeServer, args: &[&str]) -> Running {
     start_with(place, server, args, &[])
@@ -176,6 +183,7 @@ pub(crate) fn start_with(
     let child = Command::new(env!("CARGO_BIN_EXE_glave"))
         .args(args)
         .env(Lifeline::VARIABLE, &place.lifeline.path)
+        .env(SEARCH_STAND_IN.0, SEARCH_STAND_IN.1)
         .envs(env.iter().copied())
         .current_dir(&place.project)
         .env("GLAVE_BASE_URL", server.url())

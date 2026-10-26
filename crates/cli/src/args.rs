@@ -89,6 +89,7 @@ Usage:
                                 tool sign in as you (glave connect --help)
   glave connections [remove <id> | <name>]
                                 list your connections and git hosts, or remove one
+  glave search [on | off]       whether glave may search the web for you, or turn it on or off
 
 Options:
   --model <name>     the model to use: one glave runs (default: its default model)

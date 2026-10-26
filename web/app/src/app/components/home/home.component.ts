@@ -20,7 +20,7 @@ import {
   type GlzMenuOption,
   GlzMenuSelectComponent,
 } from '@glave/glaze';
-import { Folder, Lock, MessageCircle } from 'lucide';
+import { Folder, Globe, Lock, MessageCircle } from 'lucide';
 
 import { AttachmentsService } from '../../services/attachments.service';
 import { FirstTurnService } from '../../services/first-turn.service';
@@ -29,6 +29,7 @@ import { ModelsService } from '../../services/models.service';
 import { NavService } from '../../services/nav.service';
 import { SessionService } from '../../services/session.service';
 import { ProjectsService } from '../../services/projects.service';
+import { SearchService } from '../../services/search.service';
 import { EffortPickerComponent } from '../effort-picker/effort-picker.component';
 import { ModelPickerComponent } from '../model-picker/model-picker.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
@@ -73,8 +74,12 @@ export class HomeComponent {
     where: $localize`:@@home.where:Where`,
     chat: $localize`:@@home.chat:A chat`,
     private: $localize`:@@home.private:Private on this computer. Only the model you pick sees what you send.`,
+    searching: $localize`:@@home.searching:Web search is on`,
   } as const;
   protected readonly lock = Lock;
+  protected readonly globe = Globe;
+  /** Whether the agent may search the web, which the composer shows while it may. */
+  protected readonly searching = inject(SearchService).on;
   protected readonly draft = signal('');
   protected readonly starting = signal(false);
   /** Why the thread could not start, as the server says, until the next try. */

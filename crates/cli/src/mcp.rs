@@ -8,9 +8,11 @@
 //! The organization's catalog (`[mcp] catalog`) comes from its gateway when `[gateway] url` is
 //! set: one source, first, so a catalog tool wins over a server of the person's with the same
 //! name. Without a gateway, the servers of `mcp.json` the catalog names are the catalog's, and
-//! only the others are the person's own, which `[mcp] own = false` forbids.
+//! only the others are the person's own, which `[mcp] own = false` forbids. glave writes to
+//! `mcp.json` only when the person turns web search on, or off (`written.rs`).
 
 mod own;
+mod written;
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -24,6 +26,7 @@ use glave_ports::settings::mcp::ServerConfig;
 use glave_process::{Owner, Processes};
 
 pub(crate) use own::{Servers, wanted};
+pub(crate) use written::{Removed, Writer};
 
 /// The settings file, in glave's folder.
 pub(crate) const FILE: &str = "mcp.json";

@@ -39,3 +39,9 @@
 .error {
   color: var(--glz-color-danger);
 }
+
+// While the agent may search the web: a quiet globe at the composer's start, beside its controls.
+.searching {
+  flex: none;
+  color: var(--glz-color-text-muted);
+}

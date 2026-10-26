@@ -316,6 +316,16 @@ describe('ConnectionsComponent', () => {
     expect(said.at(-1)).toBe('docs, Disconnected');
   });
 
+  it('shows how often each connection was called this month, in the server’s words', async () => {
+    const used = { ...DOCS, usage: { calls: 2, sentence: '2 calls this month' } };
+    const fake = new FakeSession().answer('connection/list', { connections: [used] });
+    const { root } = await page(fake);
+    expect(rows(root, 'connections-ready')).toEqual([
+      'D docs Connected 2 calls this month Disconnect',
+    ]);
+    await expectAccessible(root);
+  });
+
   it('says when there is nothing to connect, and why the list could not be read', async () => {
     const fake = new FakeSession().answer('connection/list', { connections: [] });
     const { root } = await page(fake);

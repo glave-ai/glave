@@ -96,6 +96,8 @@ export type ConnectionInfo = {
   readonly status: ConnectionStatus;
   /** The MCP server's address: `https://mcp.example.com/mcp`. */
   readonly url: string;
+  /** How much it was used, once it is in the person's settings. */
+  readonly usage?: Usage | null;
 };
 
 /** Whether the person is signed in, and the sign-in still works. */
@@ -493,6 +495,17 @@ export type ScheduleInfo = {
   readonly when: When;
 };
 
+/** Whether the person's agent may search the web (`specs/session.md`, "Web search"). */
+export type SearchInfo = {
+  readonly kind: "never";
+  readonly reason: string;
+} | {
+  readonly detail: string;
+  readonly kind: "chosen";
+  readonly on: boolean;
+  readonly usage?: Usage | null;
+};
+
 /** A key or token: sent once, never shown again. */
 export type Secret = string;
 
@@ -782,6 +795,17 @@ export type Update = {
   readonly kind: "memory";
   readonly memory: MemoryId;
   readonly text?: string | null;
+};
+
+/** How much a connection was used since this month began (UTC). */
+export type Usage = {
+  /** The calls the person's agent asked of its tools, refused ones too. */
+  readonly calls: number;
+  /**
+   * The calls, as the person reads them: "412 calls this month", or for web search "412
+   * searches this month".
+   */
+  readonly sentence: string;
 };
 
 /** Why a watch ended (`thread/watch`, `thread/list/watch`). */
@@ -1371,6 +1395,28 @@ export type ScheduleListResult = {
   readonly schedules: readonly (ScheduleInfo)[];
 };
 
+export type SearchGetParams = {
+  /**
+   * Also how much it searched this month, which reads the month's threads: for
+   * Settings, not for a client that only shows whether it is on.
+   */
+  readonly usage?: boolean;
+};
+
+/** Whether the person's agent may search the web. */
+export type SearchGetResult = {
+  readonly search: SearchInfo;
+};
+
+export type SearchSetParams = {
+  readonly on: boolean;
+};
+
+/** Whether the person's agent may search the web. */
+export type SearchSetResult = {
+  readonly search: SearchInfo;
+};
+
 export type ServerDiscoverParams = Readonly<Record<string, never>>;
 
 export type ServerDiscoverResult = ServerInfo;
@@ -1704,6 +1750,8 @@ export interface Methods {
   readonly "schedule/create": { readonly params: ScheduleCreateParams; readonly result: ScheduleCreateResult };
   readonly "schedule/delete": { readonly params: ScheduleDeleteParams; readonly result: ScheduleDeleteResult };
   readonly "schedule/list": { readonly params: ScheduleListParams; readonly result: ScheduleListResult };
+  readonly "search/get": { readonly params: SearchGetParams; readonly result: SearchGetResult };
+  readonly "search/set": { readonly params: SearchSetParams; readonly result: SearchSetResult };
   readonly "server/discover": { readonly params: ServerDiscoverParams; readonly result: ServerDiscoverResult };
   readonly "signin/end": { readonly params: SigninEndParams; readonly result: SigninEndResult };
   readonly "signin/end_others": { readonly params: SigninEndOthersParams; readonly result: SigninEndOthersResult };

@@ -1,9 +1,9 @@
-//! A task's web search: the search connection glave suggests (#677), turned on, as the
-//! person's server runs it, when the task has a `search.md`. Its server is a stand-in for Exa's, never Exa itself: the
-//! MCP test server built beside this program (`cargo xtask eval` builds it), answering every
-//! query with the file's text, `{web}` in it filled with the task's pages' address. Named and
-//! labelled as the suggestion is: `search`, its one tool `web_search_exa`, what it returns
-//! untrusted, each call told as what was searched.
+//! A task's web search (#677), turned on, as the person's server runs it, when the task has a
+//! `search.md`. Its server is a stand-in for Exa's, never Exa itself: the MCP test server built
+//! beside this program (`cargo xtask eval` builds it), answering every query with the file's
+//! text, `{web}` in it filled with the task's pages' address. Named and labelled as web search
+//! is: `search`, its one tool `web_search_exa`, what it returns untrusted, each call told as
+//! what was searched.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -15,7 +15,7 @@ use glave_process::Processes;
 use crate::error::EvalError;
 use crate::task::Task;
 
-/// The name the person's settings give the search glave suggests.
+/// The name the person's settings give web search once it is on.
 const NAME: &str = "search";
 /// Its one tool.
 const TOOL: &str = "web_search_exa";

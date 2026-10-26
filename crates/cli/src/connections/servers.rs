@@ -1,6 +1,7 @@
 //! Connections from the terminal: one of the person's MCP servers signed in to in the browser, by
-//! its name or its address, listed with whether the sign-in still works, and removed. An
-//! address none of their servers is at is a git host's, connected with a token.
+//! its name or its address, listed with whether the sign-in still works and how often it was
+//! called this month, and removed. An address none of their servers is at is a git host's,
+//! connected with a token.
 
 use anyhow::bail;
 use glave_session::protocol::{
@@ -64,6 +65,9 @@ pub(super) async fn list(server: &mut Reached) -> anyhow::Result<()> {
     }
     for connection in &connections {
         println!("{}", shown(connection));
+        if let Some(usage) = &connection.usage {
+            println!("  {}", usage.sentence);
+        }
         let named = connection.name.as_ref().unwrap_or(&connection.url);
         match connection.status {
             ConnectionStatus::SignedIn => {}

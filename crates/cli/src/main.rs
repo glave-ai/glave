@@ -42,6 +42,7 @@ mod reach;
 mod remote;
 mod reread;
 mod sandboxing;
+mod search;
 mod server;
 mod serving;
 mod session;

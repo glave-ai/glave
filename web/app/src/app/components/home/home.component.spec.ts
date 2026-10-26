@@ -175,6 +175,20 @@ describe('HomeComponent', () => {
     ).toBeNull();
   });
 
+  it('shows a globe in the composer while web search is on, and none while it is off', async () => {
+    const off = await render(session());
+    expect(off.querySelector('[data-testid="home-searching"]')).toBeNull();
+    TestBed.resetTestingModule();
+    const on = session().answer('search/get', {
+      search: { kind: 'chosen', on: true, detail: 'Uses Exa, free. Your searches go to Exa.' },
+    });
+    const root = await render(on);
+    const globe = root.querySelector('[data-testid="home-searching"]');
+    expect(globe?.getAttribute('aria-label')).toBe('Web search is on');
+    expect(globe?.closest('[data-testid="home-composer-box"]')).not.toBeNull();
+    await expectAccessible(root);
+  });
+
   it('keeps the draft and says why when the thread cannot start', async () => {
     const fake = session().answer(
       'thread/start',

@@ -30,6 +30,16 @@
         (remove)="attachments.remove(chip.key)"
       />
     }
+    @if (searching()) {
+      <glz-icon
+        glzComposerStart
+        class="searching"
+        data-testid="home-searching"
+        [icon]="globe"
+        [label]="copy.searching"
+        [attr.title]="copy.searching"
+      />
+    }
     @if (whereInBox()) {
       <glz-menu-select
         glzComposerStart

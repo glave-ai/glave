@@ -27,6 +27,8 @@ glave-event.workspace = true
 glave-harness.workspace = true
 # Sign-in on network transports, and who is calling.
 glave-identity.workspace = true
+# The names MCP tools reach the model by, to count each connection's calls (usage.rs).
+glave-mcp.workspace = true
 glave-ports.workspace = true
 # Each web page's CSP nonce, straight from the operating system (http/site.rs).
 getrandom.workspace = true

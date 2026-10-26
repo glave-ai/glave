@@ -10,9 +10,9 @@ use std::process::{Command, Stdio};
 use glave_ports::testing::{FakeAuthServer, FakeGitHost, Grant, Running, fake_secret};
 
 use glave_provider_openai::fake::{FakeServer, Reply};
-use glave_session::Sent;
 use glave_session::client::Remote;
 use glave_session::protocol::Request;
+use glave_session::{Sent, TurnItem};
 use serde_json::{Value, json};
 
 use crate::http::{only_the_server_answers, serve_http_with};
@@ -30,7 +30,7 @@ fn remote_server(issuer: &str, tokens: &[&str]) -> (Running, String) {
 }
 
 /// The test server over HTTP with `args`, and its address.
-fn serving(args: &[&str]) -> (Running, String) {
+pub(crate) fn serving(args: &[&str]) -> (Running, String) {
     let child = Command::new(crate::mcp::test_server())
         .arg("--http")
         .args(args)
@@ -49,13 +49,13 @@ fn serving(args: &[&str]) -> (Running, String) {
 }
 
 /// The session API of the person's server at `url`, signed in with its local token.
-struct Api {
+pub(crate) struct Api {
     remote: Remote,
     runtime: tokio::runtime::Runtime,
 }
 
 impl Api {
-    fn new(place: &Place, url: &str) -> Self {
+    pub(crate) fn new(place: &Place, url: &str) -> Self {
         let token = std::fs::read_to_string(place.home.join("serve.token")).unwrap();
         Self {
             remote: Remote::new(url, token.trim().to_owned()).unwrap(),
@@ -64,7 +64,7 @@ impl Api {
     }
 
     /// `method` with `params`: its result, or its error, as JSON.
-    fn call(&self, method: &str, params: Value) -> Value {
+    pub(crate) fn call(&self, method: &str, params: Value) -> Value {
         let request = request(method, params);
         match self.runtime.block_on(self.remote.request(&request)) {
             Ok(reply) => json!({"result": reply}),
@@ -72,15 +72,21 @@ impl Api {
         }
     }
 
-    /// Runs a turn of `thread` to its end.
-    fn turn(&self, thread: &Value, prompt: &str) {
+    /// Runs a turn of `thread` to its end: what it sent while it ran, as JSON.
+    pub(crate) fn turn(&self, thread: &Value, prompt: &str) -> Vec<String> {
         let request = request("turn/start", json!({"thread": thread, "prompt": prompt}));
         self.runtime.block_on(async {
             let Ok(Sent::Started(mut turn)) = self.remote.start(&request).await else {
                 panic!("a turn of its own");
             };
-            while turn.next().await.is_some() {}
-        });
+            let mut sent = Vec::new();
+            while let Some(item) = turn.next().await {
+                if let TurnItem::Note(note) = item {
+                    sent.push(serde_json::to_string(&*note).unwrap());
+                }
+            }
+            sent
+        })
     }
 
     /// What the browser opening `page` is sent to next.
@@ -110,6 +116,17 @@ fn request(method: &str, params: Value) -> Request {
     let message =
         serde_json::Map::from_iter([("method".into(), method.into()), ("params".into(), params)]);
     serde_json::from_value(Value::Object(message)).unwrap()
+}
+
+/// The connections `listed` answered, without how often each was called.
+fn theirs(listed: &Value) -> Value {
+    let connections = listed["result"]["connections"].as_array().unwrap();
+    let bare = connections.iter().map(|it| {
+        let mut it = it.clone();
+        it.as_object_mut().unwrap().remove("usage");
+        it
+    });
+    Value::Array(bare.collect())
 }
 
 /// Whether the model was offered the remote server's `whose` in `body`.
@@ -221,7 +238,7 @@ fn a_connection_signed_in_in_the_browser_signs_the_server_in_renewed_until_remov
 
     let asking = api.call("connection/list", json!({}));
     let signed_out = json!([{"url": world.address, "name": "docs", "status": "signed_out"}]);
-    assert_eq!(asking["result"]["connections"], signed_out, "{asking}");
+    assert_eq!(theirs(&asking), signed_out, "{asking}");
 
     let elsewhere = json!({"server": "https://elsewhere.example.com/mcp"});
     let refused = api.call("connection/start", elsewhere);
@@ -272,7 +289,7 @@ fn a_connection_signed_in_in_the_browser_signs_the_server_in_renewed_until_remov
     let removed = api.call("connection/remove", json!({"server": world.address}));
     assert!(removed["error"].is_null(), "{removed}");
     let again = api.call("connection/list", json!({}));
-    assert_eq!(again["result"]["connections"], signed_out, "{again}");
+    assert_eq!(theirs(&again), signed_out, "{again}");
     api.turn(&thread, "still there?");
     assert!(!offered_whose(&world.model.received()[3].body));
 
@@ -423,7 +440,7 @@ fn only_the_servers_that_ask_for_a_sign_in_are_listed_before_one() {
     std::fs::write(world.place.home.join("mcp.json"), servers.to_string()).unwrap();
     let listed = world.api.call("connection/list", json!({}));
     assert_eq!(
-        listed["result"]["connections"],
+        theirs(&listed),
         json!([{"url": world.address, "name": "docs", "status": "signed_out"}]),
         "not one that asks no one, has a key, can't be reached or runs here: {listed}"
     );

@@ -103,6 +103,7 @@ export class FakeTurn {
  * watch, and every call recorded. An answer that is an `ApiError` is thrown. Unanswered,
  * `thread/get` answers the thread as the fixtures make one, idle and asking nothing;
  * `command/list`, nothing running; `awake/get`, a server, which keeps no computer awake;
+ * `search/get`, web search not the person's to choose;
  * `grouping/get`, by project, and `grouping/set`, the grouping asked for; a watch, of a thread
  * or of the lists, sends nothing until it is stopped; any other method, `{}`.
  */
@@ -208,6 +209,14 @@ function unanswered(method: Method, params: unknown): Answer {
   }
   if (method === 'awake/get') {
     return { awake: { kind: 'never' } };
+  }
+  if (method === 'search/get') {
+    return {
+      search: {
+        kind: 'never',
+        reason: 'web search is set up by whoever runs this server, not from here',
+      },
+    };
   }
   if (method === 'grouping/get') {
     return { grouping: 'project' };

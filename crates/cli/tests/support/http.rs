@@ -8,7 +8,7 @@ use std::sync::mpsc::{Receiver, channel};
 use glave_ports::testing::{FAKE_SECRET, Running};
 use glave_provider_openai::fake::FakeServer;
 
-use crate::support::{Lifeline, Place};
+use crate::support::{Lifeline, Place, SEARCH_STAND_IN};
 
 /// `glave serve --http` for `place` with `args`, talking only to `server`, stopped when
 /// dropped, and the address it serves on, once it answers on its socket too.
@@ -42,6 +42,7 @@ pub(crate) fn serve_http_with(
         .args(["serve", "--http", "127.0.0.1:0"])
         .args(args)
         .env(Lifeline::VARIABLE, &place.lifeline.path)
+        .env(SEARCH_STAND_IN.0, SEARCH_STAND_IN.1)
         .envs(env.iter().copied())
         .current_dir(&place.project)
         .env("GLAVE_BASE_URL", server.url())
