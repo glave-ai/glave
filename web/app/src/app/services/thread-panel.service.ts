@@ -3,6 +3,7 @@ import type { ContextUse, Money, Opened, Permissions } from '@glave/client';
 
 import { type SourceLink, sourceLinks } from '../lib/sources';
 import { CommandsService } from './commands.service';
+import { PanelService } from './panel.service';
 import { PlanService } from './plan.service';
 import { SourcesService } from './sources.service';
 import { ThreadService } from './thread.service';
@@ -78,7 +79,7 @@ function hostOf(link: SourceLink): string {
  * of a project; a chat's scratch folder is nowhere the person chose), its plan, the files it
  * changed, its commands running in the background, the pages its replies drew on and the files
  * the person attached, and what it has cost. Whether it shows anything at all, so a plain chat
- * has no panel; and the changes shown in full, one file's or all of them. Each thread view
+ * has no panel, and whether it shows now; and the changes shown in full, one file's or all of them. Each thread view
  * provides its own.
  */
 @Service({ autoProvided: false })
@@ -87,6 +88,7 @@ export class ThreadPanelService {
   private readonly commands = inject(CommandsService);
   private readonly sources = inject(SourcesService);
   private readonly plans = inject(PlanService);
+  private readonly panel = inject(PanelService);
   /** Whether the changes show in full, and whose: a file's path, or `null` for all of them. */
   private readonly review = signal<{ readonly path: string | null } | null>(null);
 
@@ -153,6 +155,11 @@ export class ThreadPanelService {
       this.pages().length > 0 ||
       this.attached().length > 0,
   );
+  /**
+   * Whether the panel shows now: the thread has one, and it is open, beside the page or, on a
+   * narrow screen, as a sheet over it.
+   */
+  readonly visible = computed(() => this.shown() && this.panel.open());
   /** Whether the changes show in full. */
   readonly reviewing = computed(() => this.review() !== null);
   /** Whose changes show in full: a file's path, or `null` for every file's. */

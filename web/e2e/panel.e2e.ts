@@ -32,6 +32,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
     ]);
     await expect(byTestId(page, 'panel-plan')).toContainText('Plan: 1 of 4 steps done');
     await expect(byTestId(page, 'panel-plan-step')).toHaveCount(4);
+    // The plan being built is the panel's to show: the conversation has no card of it.
+    await expect(byTestId(page, 'thread-plan')).toHaveCount(0);
     await expect(byTestId(page, 'panel-changes')).toContainText('2 files');
     await expect(byTestId(page, 'panel-file')).toHaveCount(2);
     await expect(byTestId(page, 'command-text')).toHaveText('cargo test');
@@ -54,15 +56,18 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await page.keyboard.press('Escape');
     await expect(byTestId(page, 'changes')).toBeHidden();
 
-    // Hidden from the header, and still hidden after a reload.
+    // Hidden from the header, and still hidden after a reload; the conversation's card shows
+    // the plan meanwhile.
     await byTestId(page, 'thread-panel').click();
     await expect(byTestId(page, 'panel-panel')).toBeHidden();
+    await expect(byTestId(page, 'thread-plan')).toContainText('Plan: 1 of 4 steps done');
     await page.reload();
     await expect(byTestId(page, 'thread-message').last()).toBeVisible();
     await expect(byTestId(page, 'thread-panel')).toHaveAttribute('aria-pressed', 'false');
     await expect(byTestId(page, 'panel-panel')).toBeHidden();
     await byTestId(page, 'thread-panel').click();
     await expect(byTestId(page, 'panel-panel')).toBeVisible();
+    await expect(byTestId(page, 'thread-plan')).toHaveCount(0);
     expect(problems()).toEqual([]);
   });
 }

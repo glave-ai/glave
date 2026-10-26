@@ -29,6 +29,7 @@ import { Globe } from 'lucide';
 
 import { type TurnResults, turnResults } from '../../lib/results';
 import { threadTitle } from '../../lib/threads';
+import { chatPlan } from '../../lib/plans';
 import { askedTurns } from '../../lib/turns';
 import { AttachmentsService } from '../../services/attachments.service';
 import { effortToSend } from '../../lib/effort';
@@ -156,6 +157,8 @@ export class ThreadComponent {
   protected readonly facts = inject(ThreadPanelService);
   /** Whether the thread has nothing for its panel, so the page is its conversation alone. */
   protected readonly noFacts = computed(() => !this.facts.shown());
+  /** The plan's card in the conversation: a proposal, or the plan while the panel is hidden. */
+  protected readonly chatPlan = computed(() => chatPlan(this.plans.plan(), this.facts.visible()));
   private readonly sources = inject(SourcesService);
   private readonly stick = viewChild.required(GlzStickToBottomDirective);
   private readonly composer = viewChild.required(GlzComposerComponent);

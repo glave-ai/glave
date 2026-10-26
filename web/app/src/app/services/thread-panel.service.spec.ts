@@ -4,6 +4,7 @@ import type { Opened, WorkspaceBound } from '@glave/client';
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
 import { command, event, thread } from '../testing/fixtures';
 import { CommandsService } from './commands.service';
+import { PanelService } from './panel.service';
 import { PlanService } from './plan.service';
 import { SourcesService } from './sources.service';
 import { ThreadPanelService } from './thread-panel.service';
@@ -99,6 +100,8 @@ describe('ThreadPanelService', () => {
       turns: 1,
     });
     expect(panel.shown()).toBe(false);
+    // Open as the person left it, it still shows nothing.
+    expect([TestBed.inject(PanelService).open(), panel.visible()]).toEqual([true, false]);
   });
 
   it('lists the pages its replies drew on once each, and the files the person attached', async () => {
@@ -139,7 +142,9 @@ describe('ThreadPanelService', () => {
     const panel = await make(fake, [
       event(1, 'command.started', { command: 'c1', script: 'npm run dev' }),
     ]);
-    expect([panel.running(), panel.shown()]).toEqual([1, true]);
+    expect([panel.running(), panel.shown(), panel.visible()]).toEqual([1, true, true]);
+    TestBed.inject(PanelService).open.set(false);
+    expect(panel.visible()).toBe(false);
     expect([panel.reviewing(), panel.reviewed()]).toEqual([false, null]);
     panel.showChanges('src/main.rs');
     expect([panel.reviewing(), panel.reviewed()]).toEqual([true, 'src/main.rs']);
