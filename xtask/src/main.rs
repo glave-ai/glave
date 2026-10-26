@@ -20,6 +20,7 @@ mod file_sizes;
 mod leftovers;
 mod lock;
 mod nextest;
+mod package_age;
 mod parallel;
 mod release_workflow;
 mod schema;
