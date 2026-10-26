@@ -3,6 +3,6 @@ name = "glave/web-lookup"
 description = "The answer is only on a web page: the model fetches it and reports what it says."
 
 [glave]
-permissions = "workspace"
+permissions = "auto"
 # The codename exists only on the served page, so only a fetch can find it.
 checks = [{ answer_contains = "Velvet Okapi" }, { sent = "[Untrusted content follows" }]

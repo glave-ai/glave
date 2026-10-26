@@ -121,12 +121,12 @@ sentences! {
         "{ $model } offers no choice of how much it reasons: start without a level",
     NoSuchEffort { model: String, effort: String, efforts: String } = "no-such-effort"
         "{ $model } does not offer the reasoning level \"{ $effort }\": choose one of { $efforts }",
-    PermissionsNotAllowed { preset: String, left: String } = "permissions-not-allowed"
-        "{ $preset } isn't allowed here: choose { $left }",
+    PermissionsNotAllowed { mode: String, left: String } = "permissions-not-allowed"
+        "{ $mode } isn't allowed here: choose { $left }",
     Unsandboxed = "unsandboxed"
-        "This computer can't run the sandbox, so Read-only and Workspace ask before every change and command.",
+        "This computer can't run the sandbox, so Auto and Ask first both ask before every change and command.",
     OnlyReadOnlySandbox = "only-read-only-sandbox"
-        "This computer can only run the sandbox that keeps files as they are, so Workspace asks before every change and command.",
+        "This computer can only run the sandbox that keeps files as they are, so Auto asks before every change and command.",
 
     // Files sent with a message.
     FileName { most: usize } = "file-name" "a file's name is 1 to { $most } characters",

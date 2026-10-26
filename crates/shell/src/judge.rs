@@ -33,9 +33,9 @@ impl Context<'_> {
 pub enum Verdict {
     /// It only reads.
     ReadOnly,
-    /// It needs the person, whatever the mode, for this reason.
+    /// It needs the person in any mode that asks, for this reason.
     Caution(Caution),
-    /// Neither: the preset decides.
+    /// Neither: the mode decides.
     Unknown,
 }
 
@@ -60,7 +60,7 @@ pub enum Kind {
     System,
     /// Plants something that runs later on its own.
     Persists,
-    /// Reads a file that usually holds secrets.
+    /// Would show the model a secret: reads a file that usually holds one, or prints one.
     Secrets,
     /// Acts beyond this computer: publishes, pushes, deploys, or changes shared systems.
     Remote,
@@ -72,10 +72,10 @@ pub enum Kind {
 }
 
 impl Kind {
-    /// Whether a caution of this kind always needs the person. The others may be cleared by a
-    /// judge that finds the person's say-so in what they asked: secrets must never reach the
-    /// model without the person, credentials never change without them, and an unreadable
-    /// command cannot be judged.
+    /// Whether a caution of this kind needs the person wherever one is asked, never a judge.
+    /// The others may be cleared by a judge that finds the person's say-so in what they asked:
+    /// secrets must never reach the model without the person, credentials never change without
+    /// them, and an unreadable command cannot be judged.
     pub fn firm(self) -> bool {
         matches!(self, Self::Secrets | Self::Credentials | Self::Unreadable)
     }

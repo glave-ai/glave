@@ -61,12 +61,12 @@ where
                 .ok_or_else(|| HarnessError::Event(format!("thread {} is full", thread.id)))?;
             thread.messages = crate::conversation::conversation(&events);
             let turn = events.get(open.started..).unwrap_or_default();
-            // It keeps the model and preset it started with, whatever the settings say now,
-            // and its sandbox with the preset, so before the thread's own is brought.
-            let (model, preset) = self.kept_by(thread, turn).await;
+            // It keeps the model and mode it started with, whatever the settings say now,
+            // and its sandbox with the mode, so before the thread's own is brought.
+            let (model, mode) = self.kept_by(thread, turn).await;
             let chosen = (thread.model.clone(), thread.permissions);
             thread.model = model.or_else(|| chosen.0.clone());
-            thread.permissions = preset.or(chosen.1);
+            thread.permissions = mode.or(chosen.1);
             let carried = async {
                 self.reopen_removed(thread).await?;
                 let mut toolset = if let Some(tools) = tools {
@@ -110,7 +110,7 @@ where
         })
     }
 
-    /// The model the turn whose events are `turn` was sent to and the preset it ran with, as
+    /// The model the turn whose events are `turn` was sent to and the mode it ran with, as
     /// its `turn.started` and its configuration recorded them.
     async fn kept_by(
         &self,
@@ -120,14 +120,14 @@ where
         let Some(Body::TurnStarted(started)) = turn.first().map(|event| &event.body) else {
             return (None, None);
         };
-        let preset = async {
+        let mode = async {
             let found = self.blobs.get(&thread.scope, &started.config.sha256).await;
             let mut blob = found.ok()??;
             let bytes = read_all(blob.bytes.as_mut(), CONFIG_LIMIT).await.ok()?;
             serde_json::from_slice::<Kept>(&bytes).ok()
         };
-        let preset = preset.await.map(|kept| kept.permissions);
-        (Some(started.model.name.clone()), preset)
+        let mode = mode.await.map(|kept| kept.permissions);
+        (Some(started.model.name.clone()), mode)
     }
 }
 

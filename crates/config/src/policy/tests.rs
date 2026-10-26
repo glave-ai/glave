@@ -76,7 +76,7 @@ fn each_choice_comes_from_the_nearest_level_that_sets_it() {
     };
     let project = file(
         PROJECT,
-        "model = \"project-model\"\npermissions = \"read-only\"\nworktree = true\n",
+        "model = \"project-model\"\npermissions = \"ask\"\nworktree = true\n",
     );
     let person = file(
         PERSON,
@@ -94,7 +94,7 @@ fn each_choice_comes_from_the_nearest_level_that_sets_it() {
     );
     assert_eq!(
         (choices.permissions.value, choices.permissions.from),
-        (Permissions::ReadOnly, file_source(PROJECT))
+        (Permissions::Ask, file_source(PROJECT))
     );
     assert_eq!(choices.judge.value, Judge::Off);
     assert_eq!(choices.judge.from, file_source(PERSON));
@@ -143,7 +143,7 @@ fn with_nothing_set_every_choice_is_the_default() {
     assert_eq!(choices.model, None);
     assert_eq!(
         (choices.permissions.value, &choices.permissions.from),
-        (Permissions::Workspace, &Source::Default),
+        (Permissions::Auto, &Source::Default),
         "commands in the sandbox, nothing inside it asking"
     );
     assert_eq!(
@@ -181,7 +181,7 @@ fn with_nothing_set_every_choice_is_the_default() {
             ..ConfigFile::default()
         },
         ConfigFile::default(),
-        vec![file(PERSON, "permissions = \"read-only\"\n")],
+        vec![file(PERSON, "permissions = \"ask\"\n")],
     ));
     assert_eq!(
         flags_beat_files.permissions.value,
@@ -209,6 +209,20 @@ fn unknown_keys_are_refused_naming_the_file_and_the_key() {
     assert!(format!("{:#}", section.unwrap_err()).contains("network"));
     let mode = files::config("permissions = \"bypass\"\n", Path::new(PERSON)).unwrap_err();
     assert!(format!("{mode:#}").contains("bypass"));
+}
+
+#[test]
+fn files_from_before_the_modes_were_renamed_read_with_the_new_names() {
+    for (old, mode) in [
+        ("read-only", Permissions::Ask),
+        ("workspace", Permissions::Auto),
+    ] {
+        let config = files::config(&format!("permissions = \"{old}\"\n"), Path::new(PERSON));
+        assert_eq!(config.unwrap().permissions, Some(mode), "{old}");
+        let capped = format!("version = 1\n[permissions]\nhighest = \"{old}\"\n");
+        let (highest, _) = Constraints::of(&[policy_at(ORG, &capped)]).highest_permissions();
+        assert_eq!(highest, mode, "{old}");
+    }
 }
 
 #[test]
@@ -250,21 +264,21 @@ fn model_allow_lists_intersect_and_a_deny_always_wins() {
 }
 
 #[test]
-fn the_lowest_highest_preset_holds_and_below_full_access_the_sandbox_is_required() {
+fn the_lowest_highest_mode_holds_and_below_full_access_the_sandbox_is_required() {
     let rules = Constraints::of(&[
-        policy_at(ORG, "version = 1\n[permissions]\nhighest = \"workspace\"\n"),
+        policy_at(ORG, "version = 1\n[permissions]\nhighest = \"auto\"\n"),
         policy_at(
             PROJECT_POLICY,
-            "version = 1\n[permissions]\nhighest = \"read-only\"\n",
+            "version = 1\n[permissions]\nhighest = \"ask\"\n",
         ),
     ]);
     let (highest, rule) = rules.highest_permissions();
-    assert_eq!(highest, Permissions::ReadOnly);
+    assert_eq!(highest, Permissions::Ask);
     assert_eq!(rule.unwrap().from, Path::new(PROJECT_POLICY));
-    assert_eq!(rules.permissions_allowed(), [Permissions::ReadOnly]);
+    assert_eq!(rules.permissions_allowed(), [Permissions::Ask]);
     assert_eq!(
         rules.sandbox_required().unwrap().to_string(),
-        format!("[permissions] highest = \"read-only\" in {PROJECT_POLICY}")
+        format!("[permissions] highest = \"ask\" in {PROJECT_POLICY}")
     );
     let open = constraints("version = 1\n[permissions]\nhighest = \"full-access\"\n");
     assert_eq!(open.permissions_allowed(), Permissions::ALL);
@@ -311,7 +325,7 @@ fn the_strictest_judge_sandbox_and_mcp_rules_win() {
     );
     let sandbox = both(
         "[permissions]\nhighest = \"full-access\"\n",
-        "[permissions]\nhighest = \"workspace\"\n",
+        "[permissions]\nhighest = \"auto\"\n",
     );
     assert_eq!(
         sandbox.sandbox_required().unwrap().from,
@@ -495,26 +509,26 @@ fn no_choices() -> Choices {
 
 #[test]
 fn a_choice_outside_the_constraints_is_an_error_naming_rule_and_source() {
-    let read_only = [policy_at(
+    let ask_only = [policy_at(
         ORG,
-        "version = 1\n[permissions]\nhighest = \"read-only\"\n",
+        "version = 1\n[permissions]\nhighest = \"ask\"\n",
     )];
     let chosen = layers(
         ConfigFile::default(),
         ConfigFile::default(),
-        vec![file(PERSON, "permissions = \"workspace\"\n")],
+        vec![file(PERSON, "permissions = \"auto\"\n")],
     );
-    let error = settle(&chosen, &read_only).unwrap_err().to_string();
+    let error = settle(&chosen, &ask_only).unwrap_err().to_string();
     assert_eq!(
         error,
         format!(
-            "permissions workspace (from {PERSON}) is not allowed: [permissions] highest = \
-             \"read-only\" in {ORG}"
+            "permissions auto (from {PERSON}) is not allowed: [permissions] highest = \
+             \"ask\" in {ORG}"
         )
     );
     let sandboxed = [policy_at(
         ORG,
-        "version = 1\n[permissions]\nhighest = \"workspace\"\n",
+        "version = 1\n[permissions]\nhighest = \"auto\"\n",
     )];
     let full = layers(
         ConfigFile {
@@ -552,13 +566,13 @@ fn a_choice_outside_the_constraints_is_an_error_naming_rule_and_source() {
 fn only_defaults_give_way_to_what_the_policy_leaves() {
     let strict = [policy_at(
         ORG,
-        "version = 1\n[permissions]\nhighest = \"read-only\"\n[approval]\njudge = \"off\"\n",
+        "version = 1\n[permissions]\nhighest = \"ask\"\n[approval]\njudge = \"off\"\n",
     )];
     let choices = settle(&[], &strict).unwrap();
     let narrowed = Source::Narrowed(PathBuf::from(ORG));
     assert_eq!(
         (choices.permissions.value, &choices.permissions.from),
-        (Permissions::ReadOnly, &narrowed)
+        (Permissions::Ask, &narrowed)
     );
     assert_eq!(
         (choices.judge.value, &choices.judge.from),
@@ -567,12 +581,12 @@ fn only_defaults_give_way_to_what_the_policy_leaves() {
     assert_eq!(narrowed.to_string(), format!("default, narrowed by {ORG}"));
     let capped = [policy_at(
         ORG,
-        "version = 1\n[permissions]\nhighest = \"workspace\"\n",
+        "version = 1\n[permissions]\nhighest = \"auto\"\n",
     )];
     let kept = settle(&[], &capped).unwrap();
     assert_eq!(
         (kept.permissions.value, kept.permissions.from),
-        (Permissions::Workspace, Source::Default),
+        (Permissions::Auto, Source::Default),
         "the default already fits"
     );
 }

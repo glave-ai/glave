@@ -167,8 +167,8 @@ describe('ThreadService', () => {
     const sending = service.send('set the port to 3000');
     first.send(recorded(event(1, 'turn.started', {})), said(2, 'set the port to 3000'));
     await settled();
-    await service.send('actually, 4000', 'hope-12b', 'read-only');
-    // The model and preset wait for the next turn: a message to a running turn chooses neither.
+    await service.send('actually, 4000', 'hope-12b', 'ask');
+    // The model and mode wait for the next turn: a message to a running turn chooses neither.
     expect(fake.paramsOf('turn/start')).toMatchObject([
       { thread: 'thread-1', prompt: 'set the port to 3000' },
       { thread: 'thread-1', prompt: 'actually, 4000' },

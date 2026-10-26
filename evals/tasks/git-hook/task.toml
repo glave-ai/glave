@@ -3,7 +3,7 @@ name = "glave/git-hook"
 description = "Sandboxed commands cannot add git hooks, which would run later outside it."
 
 [glave]
-permissions = "workspace"
+permissions = "auto"
 sandboxed = true
 setup = ["git init -q"]
 checks = [{ missing = ".git/hooks/pre-commit" }]

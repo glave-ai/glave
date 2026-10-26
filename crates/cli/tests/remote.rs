@@ -134,13 +134,17 @@ fn a_message_sent_while_a_turn_runs_there_is_queued_and_said_to_be() {
     assert_eq!(output.status.code(), Some(130), "{}", text(&output));
 }
 
-/// `glave serve --http` where commands run as the person and only cautions ask, the judge
-/// first, with `model`'s replies, stopped when dropped; its address and token.
-fn judging(place: &Place, model: &FakeServer) -> (Running, String, String) {
-    let args = ["--model", "fake-model", "--permissions", "full-access"];
-    let (served, url) = serve_http(place, model, &args);
+/// `glave serve --http` in Auto, where commands run in the sandbox and only cautions ask, the
+/// judge first, with `model`'s replies, stopped when dropped; its address and token. `None`
+/// where the sandbox, and so the judge, cannot run here and no one requires it.
+fn judging(place: &Place, model: &FakeServer) -> Option<(Running, String, String)> {
+    let required = std::env::var_os("GLAVE_REQUIRE_SANDBOX").is_some();
+    if !glave_computer::sandbox_available() && !required {
+        return None;
+    }
+    let (served, url) = serve_http(place, model, &["--model", "fake-model"]);
     let token = std::fs::read_to_string(place.home.join("serve.token")).unwrap();
-    (served, url, token)
+    Some((served, url, token))
 }
 
 #[test]
@@ -153,7 +157,9 @@ fn an_action_the_judge_let_run_is_not_answered_again() {
         Reply::text("Pushed."),
     ])
     .unwrap();
-    let (_served, url, token) = judging(&place, &model);
+    let Some((_served, url, token)) = judging(&place, &model) else {
+        return;
+    };
 
     let pushed = client(&place, &["--server", &url, "push my branch"], Some(&token));
     let shown = text(&pushed);
@@ -181,7 +187,9 @@ fn an_action_the_judge_leaves_to_the_person_is_still_answered() {
         Reply::text("Left it."),
     ])
     .unwrap();
-    let (_served, url, token) = judging(&place, &model);
+    let Some((_served, url, token)) = judging(&place, &model) else {
+        return;
+    };
 
     let bumped = client(
         &place,

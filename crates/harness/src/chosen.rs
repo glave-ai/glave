@@ -40,7 +40,7 @@ impl Thread {
         self.model.as_deref()
     }
 
-    /// The preset chosen for this thread, when someone chose one: its turns run with it
+    /// The mode chosen for this thread, when someone chose one: its turns run with it
     /// instead of its project's or the harness's own.
     pub fn permissions(&self) -> Option<Permissions> {
         self.permissions
@@ -172,31 +172,31 @@ where
     }
 
     /// What the agent may do in `thread`: its own choice, else its project's, else the
-    /// harness's preset, never above the policy's cap ([`crate::Defaults::permissions`]).
+    /// harness's mode, never above the policy's cap ([`crate::Defaults::permissions`]).
     pub fn permissions_for(&self, thread: &Thread) -> Permissions {
         let protections = thread.brought.settled.protections;
         thread.defaults.permissions(protections, thread.permissions)
     }
 
-    /// How much `thread`'s turns ask before acting, as its preset comes to it where its
-    /// commands run. Full access asks only before risky actions. Read-only lets commands run
-    /// in its read-only sandbox and asks before every change, as Codex's does; Workspace asks
-    /// only before risky actions behind a wall (the sandbox, or a worker's own container).
-    /// Without a wall, both ask before every change and command.
+    /// How much `thread`'s turns ask before acting, as its mode comes to it where its
+    /// commands run. Full access never asks. Ask first lets commands run in its read-only
+    /// sandbox and asks before every change, as Codex's Read Only does; Auto asks only before
+    /// risky actions behind a wall (the sandbox, or a worker's own container). Without a wall,
+    /// both ask before every change and command.
     pub(crate) fn approval_for(&self, thread: &Thread) -> ApprovalMode {
         let workspace = self.workspace_for(thread);
         let sandboxed = workspace.sandbox().is_some();
         let worker = workspace.info().computer != self.workspace.info().computer;
         match self.permissions_for(thread) {
-            Permissions::FullAccess => ApprovalMode::Auto,
-            Permissions::ReadOnly if sandboxed => ApprovalMode::Look,
-            Permissions::Workspace if sandboxed || worker => ApprovalMode::Auto,
-            Permissions::ReadOnly | Permissions::Workspace => ApprovalMode::Ask,
+            Permissions::FullAccess => ApprovalMode::Never,
+            Permissions::Ask if sandboxed => ApprovalMode::Changes,
+            Permissions::Auto if sandboxed || worker => ApprovalMode::Risky,
+            Permissions::Ask | Permissions::Auto => ApprovalMode::Everything,
         }
     }
 
     /// Runs `thread`'s turns with `permissions` from now on, recorded as `permissions.chosen`
-    /// for `caller`. Choosing the preset already chosen records nothing. Whether the preset is
+    /// for `caller`. Choosing the mode already chosen records nothing. Whether the mode is
     /// allowed is the caller's to check, against the policy.
     pub async fn choose_permissions(
         &self,
@@ -260,7 +260,7 @@ pub(crate) fn effort_in(events: &[Event]) -> Option<String> {
     })
 }
 
-/// The preset the latest `permissions.chosen` in `events` names, if any.
+/// The mode the latest `permissions.chosen` in `events` names, if any.
 pub(crate) fn permissions_in(events: &[Event]) -> Option<Permissions> {
     events.iter().rev().find_map(|event| match &event.body {
         Body::PermissionsChosen(chosen) => Some(chosen.permissions),

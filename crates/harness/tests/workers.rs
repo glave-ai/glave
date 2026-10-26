@@ -3,7 +3,7 @@
 //! is told its sources in one paragraph, and on release hands back its files, pushes unpushed
 //! work to `glave/wip/<thread>` and is destroyed. With workers configured but unused, the
 //! model is sent exactly what it was before. A worker's own container is its wall, so there
-//! Workspace asks only before risky actions, and Read-only before every change.
+//! Auto asks only before risky actions, and Ask first before every change.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -359,9 +359,9 @@ fn without_workers_a_worker_thread_is_refused_and_nothing_is_recorded() {
 }
 
 #[test]
-fn on_a_worker_workspace_changes_without_asking_and_read_only_asks() {
+fn on_a_worker_auto_changes_without_asking_and_ask_first_asks() {
     for (settings, lands) in [(in_the_sandbox(), true), (asking(), false)] {
-        let dir = folder(&format!("workers-preset-{lands}"));
+        let dir = folder(&format!("workers-mode-{lands}"));
         let origin = origin(&dir);
         let here = dir.join("here");
         std::fs::create_dir_all(&here).unwrap();

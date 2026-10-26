@@ -229,7 +229,7 @@ fn nearest<T>(
     })
 }
 
-/// The preset a project's `config.toml` gives its threads where the levels other than the
+/// The mode a project's `config.toml` gives its threads where the levels other than the
 /// project's choose `own`, under the policy's cap `highest`: a narrower one, or the same, at
 /// once; full access only when it is there at all, since it stays out of a project's file until
 /// the person trusts the project (`trust::Project::config_without_trust`), and then no higher
@@ -240,6 +240,6 @@ pub(crate) fn project_permissions(
     highest: Permissions,
 ) -> Option<Permissions> {
     project
-        .filter(|preset| *preset == Permissions::FullAccess || *preset <= own)
-        .map(|preset| preset.min(highest))
+        .filter(|mode| *mode == Permissions::FullAccess || *mode <= own)
+        .map(|mode| mode.min(highest))
 }

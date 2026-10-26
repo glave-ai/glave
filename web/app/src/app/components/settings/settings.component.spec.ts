@@ -12,8 +12,8 @@ const SERVER = {
   name: 'glave',
   version: '0.1.0',
   protocols: ['2026-10'],
-  permissions: 'workspace',
-  presets: ['read-only', 'workspace', 'full-access'],
+  permissions: 'auto',
+  modes: ['auto', 'ask', 'full-access'],
 } as const;
 import { SettingsComponent } from './settings.component';
 

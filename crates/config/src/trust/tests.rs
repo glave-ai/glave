@@ -40,11 +40,7 @@ fn undecided(project: &Project, record: &Record, rules: &Constraints) -> usize {
 #[test]
 fn a_repository_with_nothing_that_runs_commands_never_asks() {
     let dir = scratch("nothing");
-    let project = repository(
-        &dir,
-        "",
-        Some("model = \"m\"\npermissions = \"read-only\"\n"),
-    );
+    let project = repository(&dir, "", Some("model = \"m\"\npermissions = \"ask\"\n"));
     let assessment = assess(project, &Record::default(), &Constraints::default());
     assert_eq!(assessment.items.len(), 0);
     let outcome = assessment.apply(Answer::NoOne);
@@ -55,7 +51,7 @@ fn a_repository_with_nothing_that_runs_commands_never_asks() {
         Some("m"),
         "applied without a question"
     );
-    assert_eq!(config.permissions, Some(Permissions::ReadOnly));
+    assert_eq!(config.permissions, Some(Permissions::Ask));
 }
 
 #[test]
@@ -72,12 +68,12 @@ fn settings_that_loosen_wait_for_trust_and_the_rest_apply_at_once() {
     assert!(outcome.withheld[0].contains("permissions = \"full-access\""));
     let trusted = assessment.apply(Answer::Yes).config.unwrap();
     assert_eq!(trusted.permissions, Some(Permissions::FullAccess));
-    let workspace = repository(&dir, "", Some("permissions = \"workspace\"\n"));
-    let assessment = assess(workspace, &Record::default(), &Constraints::default());
+    let auto = repository(&dir, "", Some("permissions = \"auto\"\n"));
+    let assessment = assess(auto, &Record::default(), &Constraints::default());
     assert_eq!(
         assessment.items.len(),
         0,
-        "Workspace narrows or keeps: never asks"
+        "Auto narrows or keeps: never asks"
     );
 }
 

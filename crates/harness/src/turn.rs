@@ -57,7 +57,7 @@ pub enum Live {
         is_error: bool,
     },
     /// An action that did not run: the person said no, or no one was there to ask. `caution`
-    /// is why it asked whatever the mode, as the person reads it, when a caution did.
+    /// is why it asked, as the person reads it, when a caution did.
     ToolDeclined {
         summary: String,
         caution: Option<String>,
@@ -181,7 +181,7 @@ struct TurnConfig<'a> {
     system: &'a str,
     tools: &'a [ToolSpec],
     max_output_tokens: Option<u32>,
-    /// What the agent could do without asking: the thread's preset.
+    /// What the agent could do without asking: the thread's mode.
     permissions: Permissions,
     /// The sandbox commands ran in; absent when there was none.
     #[serde(skip_serializing_if = "Option::is_none")]

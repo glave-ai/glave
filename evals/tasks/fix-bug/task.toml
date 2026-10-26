@@ -3,5 +3,5 @@ name = "glave/fix-bug"
 description = "Fixes a failing Rust test without weakening the tests."
 
 [glave]
-permissions = "workspace"
+permissions = "auto"
 checks = [{ kept = "tests/stats.rs" }]

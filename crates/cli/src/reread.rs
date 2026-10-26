@@ -1,7 +1,7 @@
 //! The person's own settings, read again (`specs/one-server.md`, "Its settings"): a server that
 //! runs for days looks at its `config.toml`, the policy and `mcp.json` at the start of each
 //! turn, and when their content's hash changed, reads them again. From the next turn, threads
-//! run with what they choose: the models (and the judge, with the models it names), the preset,
+//! run with what they choose: the models (and the judge, with the models it names), the mode,
 //! the network, hooks, `[web]`, titles and memory; a new thread takes
 //! `worktree`; and the person's own servers are reconciled: an added one starts, a removed one
 //! stops, a changed one starts again, and so does a remote one the person signs in to or whose
@@ -179,7 +179,7 @@ fn kept(chosen: &Judge, last: Judge) -> Judge {
 
 /// The person's settings at `locations` as a server that started with `start` runs them
 /// from now on: within the constraints as they are now. Where no sandbox runs, a rule that now
-/// requires one leaves every command asking: the preset is narrowed below full access.
+/// requires one leaves every command asking: the mode is narrowed below full access.
 async fn reloaded(args: &Args, locations: &Locations, start: &Choices) -> anyhow::Result<Setup> {
     let (mut setup, aside) = Setup::reload(args, locations).await?;
     for line in aside {

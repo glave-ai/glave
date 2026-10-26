@@ -1,5 +1,5 @@
 //! Where commands run on this computer (`specs/sandbox.md`): the workspace, in the most a
-//! sandbox here allows, which each thread's preset narrows, and the choices that follow where
+//! sandbox here allows, which each thread's mode narrows, and the choices that follow where
 //! none can run. A server that reads the person's settings again sandboxes its next turns the
 //! same way.
 
@@ -31,9 +31,9 @@ pub(crate) fn sandbox_at(
 
 /// The workspace in `folder`, in the most a sandbox here allows: the project; else only
 /// reading, where only that can run (Landlock without bubblewrap); its commands asking for the
-/// network unless the policy forbids it. Where the project's sandbox cannot run, Workspace asks
-/// as Read-only does and the choices say why, said once here; a policy that requires the
-/// sandbox refuses to start instead.
+/// network unless the policy forbids it. Where the project's sandbox cannot run, Auto asks
+/// before every change and command and the choices say why, said once here; a policy that
+/// requires the sandbox refuses to start instead.
 pub(crate) async fn workspace(
     folder: &Path,
     setup: &mut Setup,
@@ -73,10 +73,10 @@ pub(crate) async fn workspace(
         }
         Err(_) => open_here(folder, processes, asks).await?,
     };
-    // Workspace asks before everything here; Read-only does too where no sandbox runs at all.
+    // Auto asks before everything here; Ask first does too where no sandbox runs at all.
     let asks_all = match setup.choices.permissions.value {
-        Permissions::Workspace => true,
-        Permissions::ReadOnly => setup.sandbox.is_none(),
+        Permissions::Auto => true,
+        Permissions::Ask => setup.sandbox.is_none(),
         Permissions::FullAccess => false,
     };
     if asks_all && setup.choices.on.value != On::Cloud {
@@ -101,7 +101,7 @@ async fn open_here(folder: &Path, processes: &Processes, asks: bool) -> anyhow::
     Ok(Workspace::new(computers, here).asking_network(asks))
 }
 
-/// What the person is told, once at startup, when the sandbox their preset needs cannot run
+/// What the person is told, once at startup, when the sandbox their mode needs cannot run
 /// here.
 fn unsandboxed_notice(why: &str) -> String {
     format!(

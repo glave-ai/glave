@@ -103,7 +103,7 @@ describe('HomeComponent', () => {
     navigate.mockRestore();
   });
 
-  it('starts in the project the link names, on the model and with the preset picked', async () => {
+  it('starts in the project the link names, on the model and with the mode picked', async () => {
     const fake = session();
     const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
     const root = await render(fake, 'p2');
@@ -117,11 +117,11 @@ describe('HomeComponent', () => {
     document.querySelectorAll<HTMLElement>('[data-testid="model-picker-option"]')[1]?.click();
     root.querySelector<HTMLButtonElement>('[data-testid="permissions-trigger"]')?.click();
     await new Promise((resolve) => setTimeout(resolve));
-    document.querySelectorAll<HTMLElement>('[data-testid="permissions-option"]')[0]?.click();
+    document.querySelectorAll<HTMLElement>('[data-testid="permissions-option"]')[1]?.click();
     await send(root, 'Plant tomatoes');
     await new Promise((resolve) => setTimeout(resolve));
     expect(fake.paramsOf('thread/start')).toEqual([
-      { project: 'p2', model: 'hope-12b', permissions: 'read-only' },
+      { project: 'p2', model: 'hope-12b', permissions: 'ask' },
     ]);
     navigate.mockRestore();
   });

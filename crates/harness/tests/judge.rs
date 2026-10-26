@@ -1,19 +1,15 @@
-//! The judge in auto mode: a soft caution the person asked for runs, recorded as an approval
-//! glave decided; one they didn't ask for still asks; a firm caution never reaches the judge;
-//! and in the cautious mode the judge is never consulted.
+//! The judge in Auto, behind the sandbox's wall, the one place it decides: a soft caution the
+//! person asked for runs, recorded as an approval glave decided; one they didn't ask for still
+//! asks; a firm caution never reaches the judge; and where every change asks the judge is never
+//! consulted.
 
 use glave_event::{Body, Part, StopReason, Verdict};
-use glave_harness::{Cancel, NoOneToAsk, Permissions, Settings};
+use glave_harness::{Cancel, NoOneToAsk, Permissions};
 use glave_ports::{InMemoryLog, Message};
 use serde_json::json;
 
+use crate::outside_sandbox::{judged, sandboxed, walled};
 use crate::support::*;
-
-fn judged() -> Settings {
-    let mut settings = settings();
-    settings.judge = glave_ports::settings::Judge::Main;
-    settings
-}
 
 fn bash(command: &str) -> Vec<(&'static str, serde_json::Value)> {
     vec![("bash", json!({ "command": command }))]
@@ -54,7 +50,9 @@ fn deciders(events: &[glave_event::Event]) -> Vec<Option<glave_event::Principal>
 
 #[test]
 fn an_action_the_person_asked_for_runs_and_the_judge_is_on_record() {
-    let dir = folder("judge-run");
+    let Some(base) = sandboxed("judge-run") else {
+        return;
+    };
     block_on!(async {
         let answers = vec![
             answer(None, bash("git push origin main"), StopReason::ToolUse),
@@ -65,7 +63,15 @@ fn an_action_the_person_asked_for_runs_and_the_judge_is_on_record() {
             ),
             answer(Some("Pushed."), vec![], StopReason::EndTurn),
         ];
-        let harness = harness_on(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, judged()).await;
+        let workspace = walled(&base, false).await;
+        let (harness, _) = harness_with(
+            workspace,
+            answers,
+            NoOneToAsk,
+            InMemoryLog::new(),
+            1,
+            judged(),
+        );
         let mut thread = harness.start_thread(scope()).await.unwrap();
         harness
             .run_turn(
@@ -105,7 +111,9 @@ fn an_action_the_person_asked_for_runs_and_the_judge_is_on_record() {
 
 #[test]
 fn an_action_the_person_did_not_ask_for_still_asks() {
-    let dir = folder("judge-ask");
+    let Some(base) = sandboxed("judge-ask") else {
+        return;
+    };
     block_on!(async {
         let answers = vec![
             answer(None, bash("npm publish"), StopReason::ToolUse),
@@ -116,7 +124,15 @@ fn an_action_the_person_did_not_ask_for_still_asks() {
             ),
             answer(Some("Left it."), vec![], StopReason::EndTurn),
         ];
-        let harness = harness_on(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, judged()).await;
+        let workspace = walled(&base, false).await;
+        let (harness, _) = harness_with(
+            workspace,
+            answers,
+            NoOneToAsk,
+            InMemoryLog::new(),
+            1,
+            judged(),
+        );
         let mut thread = harness.start_thread(scope()).await.unwrap();
         harness
             .run_turn(
@@ -137,15 +153,25 @@ fn an_action_the_person_did_not_ask_for_still_asks() {
 
 #[test]
 fn a_firm_caution_never_reaches_the_judge() {
-    let dir = folder("judge-firm");
-    std::fs::write(dir.join(".env"), "KEY=canary\n").unwrap();
+    let Some(base) = sandboxed("judge-firm") else {
+        return;
+    };
+    std::fs::write(base.join("project/.env"), "KEY=canary\n").unwrap();
     block_on!(async {
         // Had the judge been asked, it would have taken the final answer below.
         let answers = vec![
             answer(None, bash("cat .env"), StopReason::ToolUse),
             answer(Some("I did not read it."), vec![], StopReason::EndTurn),
         ];
-        let harness = harness_on(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, judged()).await;
+        let workspace = walled(&base, false).await;
+        let (harness, _) = harness_with(
+            workspace,
+            answers,
+            NoOneToAsk,
+            InMemoryLog::new(),
+            1,
+            judged(),
+        );
         let mut thread = harness.start_thread(scope()).await.unwrap();
         harness
             .run_turn(
@@ -172,7 +198,7 @@ fn where_every_change_asks_the_judge_is_never_consulted() {
             answer(Some("Waiting for you."), vec![], StopReason::EndTurn),
         ];
         let mut settings = judged();
-        settings.permissions = Permissions::ReadOnly;
+        settings.permissions = Permissions::Ask;
         let harness = harness_on(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
         harness

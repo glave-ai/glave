@@ -38,7 +38,7 @@ pub struct TaskLimits {
 
 /// What a task does.
 pub(crate) enum Work {
-    /// One turn with this prompt, with the model and preset chosen with it, if any.
+    /// One turn with this prompt, with the model and mode chosen with it, if any.
     Turn(String, Choice),
     /// A goal's turns: a new goal, or the thread's active or paused one.
     Goal(Option<Goal>),

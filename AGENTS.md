@@ -223,7 +223,7 @@ Two owner decisions: the release binary was raised from 30 to 40 MB on 2026-10-1
 - No prompt or message content in logs by default. Usage events are content-free.
 - Data at rest is encrypted: the whole local database (key in the OS keychain); per-space keys via a KMS plug for organizations. Deleting a project's key erases it.
 - Scope is enforced by the data store on every query, never by the model.
-- Content from the web is labeled untrusted. Risky actions after reading it need approval.
+- Content from the web is labeled untrusted. Risky actions after reading it need approval in every mode that asks; Full access, which the person chose, asks nothing.
 
 ## Models and training data
 

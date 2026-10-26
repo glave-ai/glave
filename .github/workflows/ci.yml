@@ -513,10 +513,12 @@ jobs:
             sudo apparmor_parser -r /etc/apparmor.d/bwrap
           fi
           bwrap --version
+      # The judge's tests and the modes' too: the judge decides only in Auto behind the
+      # sandbox's wall, and Ask first is its read-only sandbox.
       - name: bubblewrap and seccomp
         env:
           GLAVE_REQUIRE_SANDBOX: "1"
-        run: cargo nextest run -p glave-computer -p glave-harness -p glave -E 'test(/sandbox/)'
+        run: cargo nextest run -p glave-computer -p glave-harness -p glave-memory -p glave -E 'test(/sandbox|judge|modes::/)'
       - name: Disk space after the build
         if: always()
         run: df -h /

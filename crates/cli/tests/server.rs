@@ -182,7 +182,7 @@ fn a_socket_in_a_folder_others_may_open_is_refused() {
 /// server, which `model` answers: `None` when the sandbox cannot run here and no one requires
 /// it.
 fn ran(place: &Place, model: &FakeServer, permissions: &str) -> Option<String> {
-    // Where the sandbox cannot run, Workspace leaves every command asking, and this turn has
+    // Where the sandbox cannot run, Auto leaves every command asking, and this turn has
     // no one to answer: nothing would run to prove anything.
     let required = std::env::var_os("GLAVE_REQUIRE_SANDBOX").is_some();
     if permissions != "full-access" && !glave_computer::sandbox_available() && !required {
@@ -224,7 +224,7 @@ fn a_sandboxed_command_reaches_neither_the_socket_nor_the_token_or_keys() {
     ])
     .unwrap();
     let (_served, _) = crate::http::serve_http(&place, &model, &["--model", "m"]);
-    let Some(confined) = ran(&place, &model, "workspace") else {
+    let Some(confined) = ran(&place, &model, "auto") else {
         return;
     };
     assert!(confined.contains("ran"), "{confined}");

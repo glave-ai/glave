@@ -22,14 +22,14 @@ pub struct ServerInfo {
     pub version: String,
     /// The protocol versions spoken.
     pub protocols: Vec<String>,
-    /// What the agent may do in a thread that, and whose project, chose no preset:
-    /// `--permissions` or `permissions` in `config.toml` (`specs/approvals.md`, "Permissions").
+    /// What the agent may do in a thread that, and whose project, chose no mode:
+    /// `--permissions` or `permissions` in `config.toml` (`specs/approvals.md`, "Modes").
     pub permissions: Permissions,
-    /// The presets a thread may choose (`permissions` on `thread/start` and `turn/start`):
-    /// those the policy leaves, the most cautious first.
-    pub presets: Vec<Permissions>,
-    /// Why Workspace asks before every change and command here, in a sentence, when it does:
-    /// no sandbox can run on this computer (Read-only then asks so too), or only one that keeps
+    /// The modes a thread may choose (`permissions` on `thread/start` and `turn/start`):
+    /// those the policy leaves, in the order a person is offered them, the recommended first.
+    pub modes: Vec<Permissions>,
+    /// Why Auto asks before every change and command here, in a sentence, when it does:
+    /// no sandbox can run on this computer (Ask first then asks so too), or only one that keeps
     /// files as they are.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unsandboxed: Option<Told>,
@@ -75,7 +75,7 @@ pub struct ThreadSummary {
     /// The title the person gave it, else the first line of their first message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
-    /// What the agent may do in its next turn: the preset last chosen for it, else its
+    /// What the agent may do in its next turn: the mode last chosen for it, else its
     /// project's, else the server's.
     pub permissions: Permissions,
     /// What its project asks the person on this computer to trust, once the thread was opened

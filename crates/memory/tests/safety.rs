@@ -1,7 +1,7 @@
 //! Memory's safety rules through the harness: after untrusted content a save is a soft caution
-//! (the judge lets it run only when the person asked; with no one there nothing is saved; in ask
-//! mode the person is asked), the judge never sees memory, secrets are never saved, and
-//! subagents neither read nor write memory.
+//! (in Auto the judge lets it run only when the person asked; with no one there nothing is
+//! saved; in Ask first the person is asked; Full access saves), the judge never sees memory,
+//! secrets are never saved, and subagents neither read nor write memory.
 
 use std::sync::Arc;
 
@@ -75,8 +75,10 @@ fn after_untrusted_content_with_no_one_there_nothing_is_saved_and_the_model_is_t
         let kit = Kit::new();
         let memory = kit.memory(rules(), 1).await;
         let dir = folder("untrusted-no-one");
+        let mut auto = settings();
+        auto.permissions = Permissions::Auto;
         let (harness, seen) = kit
-            .harness(&dir, planted_save(), NoOneToAsk, Some(memory), settings())
+            .harness(&dir, planted_save(), NoOneToAsk, Some(memory), auto)
             .await;
         let harness = harness.with_tools(vec![Arc::new(Page)]);
         let mut thread = harness.start_thread(shared()).await.unwrap();
@@ -124,10 +126,12 @@ fn after_untrusted_content_the_judge_lets_a_save_through_only_on_the_persons_wor
             said(r#"{"decision": "run", "reason": "the person asked to remember it"}"#),
         );
         let mut judged = settings();
+        judged.permissions = Permissions::Auto;
         judged.judge = glave_ports::settings::Judge::Main;
-        let (harness, seen) = kit
-            .harness(&dir, answers, NoOneToAsk, Some(memory), judged)
-            .await;
+        let walled = kit.walled_harness(&dir, answers, NoOneToAsk, Some(memory), judged);
+        let Some((harness, seen)) = walled.await else {
+            return;
+        };
         let harness = harness.with_tools(vec![Arc::new(Page)]);
         let mut thread = harness.start_thread(shared()).await.unwrap();
         harness
@@ -167,13 +171,13 @@ fn after_untrusted_content_the_judge_lets_a_save_through_only_on_the_persons_wor
 }
 
 #[test]
-fn in_read_only_a_save_after_untrusted_content_asks_the_person() {
+fn in_ask_first_a_save_after_untrusted_content_asks_the_person() {
     block_on!(async {
         let kit = Kit::new();
         let memory = kit.memory(rules(), 1).await;
         let dir = folder("untrusted-ask");
         let mut asking = settings();
-        asking.permissions = Permissions::ReadOnly;
+        asking.permissions = Permissions::Ask;
         let (harness, _) = kit
             .harness(&dir, planted_save(), Yes, Some(memory), asking)
             .await;
@@ -194,6 +198,41 @@ fn in_read_only_a_save_after_untrusted_content_asks_the_person() {
             "the person was asked"
         );
         assert_eq!(ledger_texts(&kit).await.len(), 1, "and said yes");
+    });
+}
+
+#[test]
+fn in_full_access_a_save_after_untrusted_content_is_made_unasked_and_says_so() {
+    block_on!(async {
+        let kit = Kit::new();
+        let memory = kit.memory(rules(), 1).await;
+        let dir = folder("untrusted-full");
+        let (harness, _) = kit
+            .harness(&dir, planted_save(), NoOneToAsk, Some(memory), settings())
+            .await;
+        let harness = harness.with_tools(vec![Arc::new(Page)]);
+        let mut thread = harness.start_thread(shared()).await.unwrap();
+        harness
+            .run_turn(&mut thread, "go", &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+        let events = format!(
+            "{:?}",
+            glave_ports::EventLog::read(&kit.store.log(), &shared(), thread.id, None, 1000)
+                .await
+                .unwrap()
+        );
+        assert!(!events.contains("approval.requested"), "no one was asked");
+        let saved = kit
+            .memories(rules(), 81)
+            .list_as(Some(person()), shared(), Some(MemoryScope::Project))
+            .await
+            .unwrap();
+        assert_eq!(saved.len(), 1, "it was saved");
+        assert!(
+            saved[0].untrusted_read,
+            "and says it came after untrusted content"
+        );
     });
 }
 

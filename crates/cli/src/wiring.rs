@@ -52,7 +52,7 @@ pub(crate) struct Wired {
     pub(crate) root: PathBuf,
     /// The settings in use, for the banner and receipts.
     pub(crate) choices: Choices,
-    /// The most a sandbox here allows, which each preset narrows: for the banner and receipts.
+    /// The most a sandbox here allows, which each mode narrows: for the banner and receipts.
     pub(crate) sandbox: Option<Sandbox>,
     /// The workers threads work on, with `--on cloud`.
     pub(crate) workers: Option<Arc<WorkerComputers>>,

@@ -30,7 +30,7 @@ pub(crate) struct Setup {
     /// The hooks that run for the person's threads everywhere: their own. A project's trusted
     /// hooks run for its own threads alone, in its own folder (`project_folders.rs`).
     pub hooks: Vec<Hook>,
-    /// The most a sandbox on this computer allows, which each preset narrows, once the
+    /// The most a sandbox on this computer allows, which each mode narrows, once the
     /// workspace found it (`sandboxing.rs`); none where none can run, or before it looked.
     pub sandbox: Option<Sandbox>,
 }

@@ -48,7 +48,7 @@ pub(crate) struct Printer {
     showing: Showing,
     /// Who the answers come from: the model's own name, never one it is not.
     speaker: String,
-    /// The protections in force, such as `permissions: workspace · sandbox: project`.
+    /// The protections in force, such as `permissions: auto · sandbox: project`.
     protections: String,
     waiting: Waiting,
     /// The subagents running now, by their thread, with what each is for.
@@ -519,22 +519,22 @@ mod tests {
             cost: None,
             estimated: false,
         };
-        let protections = "permissions: workspace · sandbox: project + network";
+        let protections = "permissions: auto · sandbox: project + network";
         assert_eq!(
             receipt_line(protections, &turn, true),
-            "permissions: workspace · sandbox: project + network · 2 model calls · 1 tool call · 1,234 \
+            "permissions: auto · sandbox: project + network · 2 model calls · 1 tool call · 1,234 \
              tokens · $0.00, on this computer"
         );
         turn.outside_sandbox = 1;
         assert_eq!(
             receipt_line(protections, &turn, true),
-            "permissions: workspace · sandbox: project + network · 1 command outside the sandbox · 2 \
+            "permissions: auto · sandbox: project + network · 1 command outside the sandbox · 2 \
              model calls · 1 tool call · 1,234 tokens · $0.00, on this computer"
         );
         (turn.outside_sandbox, turn.with_network) = (0, 2);
         assert_eq!(
-            receipt_line("permissions: workspace · sandbox: project", &turn, true),
-            "permissions: workspace · sandbox: project · 2 commands with the network · 2 model calls · \
+            receipt_line("permissions: auto · sandbox: project", &turn, true),
+            "permissions: auto · sandbox: project · 2 commands with the network · 2 model calls · \
              1 tool call · 1,234 tokens · $0.00, on this computer"
         );
     }

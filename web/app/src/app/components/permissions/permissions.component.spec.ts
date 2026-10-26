@@ -31,29 +31,30 @@ describe('PermissionsComponent', () => {
     document.body.click();
   });
 
-  it('offers the presets the server lets a thread choose, showing the server’s at first', async () => {
+  it('offers the modes the server lets a thread choose, showing the server’s at first', async () => {
     const fixture = await render(SERVER);
     const root: HTMLElement = fixture.nativeElement;
-    expect(trigger(root)?.textContent).toContain('Permissions:');
-    expect(trigger(root)?.textContent).toContain('Workspace');
+    expect(trigger(root)?.textContent).toContain('Mode:');
+    expect(trigger(root)?.textContent).toContain('Auto');
+    expect(trigger(root)?.textContent).not.toContain('Recommended');
     await expectAccessible(root);
-    fixture.componentRef.setInput('current', 'read-only');
+    fixture.componentRef.setInput('current', 'ask');
     await fixture.whenStable();
-    expect(trigger(root)?.textContent).toContain('Read-only');
+    expect(trigger(root)?.textContent).toContain('Ask first');
   });
 
-  it('says what each means in a plain line, and takes the person’s pick', async () => {
+  it('lists Auto, recommended, then Ask first and Full access, each with its line', async () => {
     const fixture = await render(SERVER);
     trigger(fixture.nativeElement as HTMLElement)?.click();
     await fixture.whenStable();
-    expect(options().map((option) => option.textContent)).toEqual([
-      expect.stringContaining('Read-only'),
-      expect.stringContaining('Workspace'),
-      expect.stringContaining('Full access'),
+    const labels = options().map((option) => option.querySelector('.label')?.textContent.trim());
+    expect(labels).toEqual(['Auto · Recommended', 'Ask first', 'Full access']);
+    const lines = options().map((option) => option.querySelector('.hint')?.textContent.trim());
+    expect(lines).toEqual([
+      'Works on its own in this project. Asks only before something risky.',
+      'Asks you before every change.',
+      'No limits: can change anything on this computer, and never asks.',
     ]);
-    expect(options()[0]?.textContent).toContain('asks before changing your files');
-    expect(options()[1]?.textContent).toContain('asks before risky actions');
-    expect(options()[2]?.textContent).toContain('for work you fully trust');
     await expectAccessible(document.body);
     options()[2]?.click();
     await fixture.whenStable();
@@ -61,30 +62,30 @@ describe('PermissionsComponent', () => {
   });
 
   it('offers only what the server allows', async () => {
-    const fixture = await render({ ...SERVER, presets: ['read-only', 'workspace'] });
+    const fixture = await render({ ...SERVER, modes: ['auto', 'ask'] });
     trigger(fixture.nativeElement as HTMLElement)?.click();
     await fixture.whenStable();
     expect(options().map((option) => option.textContent)).toEqual([
-      expect.stringContaining('Read-only'),
-      expect.stringContaining('Workspace'),
+      expect.stringContaining('Auto'),
+      expect.stringContaining('Ask first'),
     ]);
   });
 
-  it('gives the server’s sentence where Workspace asks as Read-only does', async () => {
+  it('gives the server’s sentence where Auto asks before everything', async () => {
     const unsandboxed =
-      'This computer can’t run the sandbox, so Read-only and Workspace ask before every change and command.';
+      'This computer can’t run the sandbox, so Auto and Ask first both ask before every change and command.';
     const fixture = await render({ ...SERVER, unsandboxed });
     trigger(fixture.nativeElement as HTMLElement)?.click();
     await fixture.whenStable();
-    expect(options()[1]?.textContent).toContain(unsandboxed);
-    expect(options()[1]?.textContent).not.toContain('risky');
+    expect(options()[0]?.textContent).toContain(unsandboxed);
+    expect(options()[0]?.textContent).not.toContain('risky');
   });
 
-  it('shows the one preset the server allows, read-only', async () => {
-    const fixture = await render({ ...SERVER, permissions: 'read-only', presets: ['read-only'] });
+  it('shows the one mode the server allows, without a menu', async () => {
+    const fixture = await render({ ...SERVER, permissions: 'ask', modes: ['ask'] });
     const root: HTMLElement = fixture.nativeElement;
     const shown = root.querySelector('[data-testid="permissions"]');
-    expect(shown?.textContent).toContain('Read-only');
+    expect(shown?.textContent).toContain('Ask first');
     expect(shown?.getAttribute('title')).toContain('only choice');
     expect(root.querySelector('button')).toBeNull();
     await expectAccessible(root);

@@ -20,7 +20,7 @@ pub struct Settings {
     /// The project's instructions (see [`crate::agents_md`]), sent at the start of every new
     /// thread and again after a compaction.
     pub instructions: Option<String>,
-    /// What the agent may do without asking, in threads that chose no preset.
+    /// What the agent may do without asking, in threads that chose no mode.
     pub permissions: Permissions,
     /// The most any thread may run with, whatever it or its project chose: the policy's cap.
     /// Full access, no cap, by default.

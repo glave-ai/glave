@@ -57,10 +57,12 @@ pub(crate) fn decode_effort(
     (version == 1).then(|| parse(data))
 }
 
-/// What the agent may do without asking the person (`specs/approvals.md`, "Permissions"): the
-/// one choice a person makes about it, of three presets, the most cautious first. Each comes to
-/// a sandbox and how much asks wherever it runs (`glave-harness`); risky actions ask in every
-/// preset.
+/// What the agent may do without asking the person (`specs/approvals.md`, "Modes"): the one
+/// choice a person makes about it, its mode. Ordered by caution, the most cautious least, so a
+/// policy's cap is the highest mode it allows. Each comes to a sandbox and how much asks
+/// wherever it runs (`glave-harness`). The names from before the modes were renamed (#739),
+/// `read-only` and `workspace`, still read as `ask` and `auto`, so logs and files written then
+/// still open; only the new names are written.
 #[derive(
     Debug,
     Clone,
@@ -77,38 +79,41 @@ pub(crate) fn decode_effort(
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum Permissions {
-    /// The agent looks: commands run in a sandbox that writes nothing of the project, and
-    /// every change asks first.
-    ReadOnly,
-    /// The agent changes the project, or the chat's folder: commands run in the sandbox and
-    /// nothing inside it asks; risky actions ask or go to the judge. Where no sandbox can run,
-    /// every change and command asks instead.
+    /// Ask first: commands run in a sandbox that writes nothing of the project, and every
+    /// change asks first.
+    #[serde(alias = "read-only")]
+    Ask,
+    /// The agent works on its own in the project, or the chat's folder: commands run in the
+    /// sandbox and nothing inside it asks; risky actions ask or go to the judge. Where no
+    /// sandbox can run, every change and command asks instead.
     #[default]
-    Workspace,
-    /// No sandbox, and nothing asks but the risky actions: for work the person fully trusts.
+    #[serde(alias = "workspace")]
+    Auto,
+    /// No sandbox, and nothing ever asks, risky actions included; what would show the model a
+    /// secret is declined instead. For work the person fully trusts.
     FullAccess,
 }
 
 impl Permissions {
-    /// Every preset, the most cautious first.
-    pub const ALL: [Self; 3] = [Self::ReadOnly, Self::Workspace, Self::FullAccess];
+    /// Every mode, in the order a person is offered them: the recommended one first.
+    pub const ALL: [Self; 3] = [Self::Auto, Self::Ask, Self::FullAccess];
 
-    /// The preset `name` names, as config and the API write it.
+    /// The mode `name` names, as config and the API write it.
     pub fn named(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|preset| preset.name() == name)
+        Self::ALL.into_iter().find(|mode| mode.name() == name)
     }
 
-    /// The preset's name, as config and the API write it.
+    /// The mode's name, as config and the API write it.
     pub fn name(self) -> &'static str {
         match self {
-            Self::ReadOnly => "read-only",
-            Self::Workspace => "workspace",
+            Self::Ask => "ask",
+            Self::Auto => "auto",
             Self::FullAccess => "full-access",
         }
     }
 }
 
-/// The thread's turns run with `permissions` from now on, until another preset is chosen.
+/// The thread's turns run with `permissions` from now on, until another mode is chosen.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PermissionsChosen {
@@ -135,14 +140,41 @@ mod tests {
     use super::Permissions;
 
     #[test]
-    fn presets_are_named_as_config_and_the_api_write_them_most_cautious_first() {
-        assert_eq!(Permissions::default(), Permissions::Workspace);
-        assert_eq!(Permissions::named("auto"), None);
-        for preset in Permissions::ALL {
-            assert_eq!(Permissions::named(preset.name()), Some(preset));
-            assert_eq!(serde_json::to_value(preset).unwrap(), preset.name());
+    fn modes_are_named_as_config_and_the_api_write_them_and_ordered_by_caution() {
+        assert_eq!(Permissions::default(), Permissions::Auto);
+        assert_eq!(
+            Permissions::ALL[0],
+            Permissions::Auto,
+            "the default is offered first"
+        );
+        for retired in ["workspace", "read-only"] {
+            assert_eq!(Permissions::named(retired), None);
         }
-        assert!(Permissions::ReadOnly < Permissions::Workspace);
-        assert!(Permissions::Workspace < Permissions::FullAccess);
+        for mode in Permissions::ALL {
+            assert_eq!(Permissions::named(mode.name()), Some(mode));
+            assert_eq!(serde_json::to_value(mode).unwrap(), mode.name());
+        }
+        assert!(Permissions::Ask < Permissions::Auto);
+        assert!(Permissions::Auto < Permissions::FullAccess);
+    }
+
+    #[test]
+    fn a_choice_stored_under_an_old_name_reads_as_its_mode_and_is_written_anew() {
+        for (old, mode) in [
+            ("read-only", Permissions::Ask),
+            ("workspace", Permissions::Auto),
+        ] {
+            let stored = format!(
+                r#"{{"glave":1,"id":"0192f5c2-7000-7000-8000-000000000013","thread":"0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c13","seq":13,"at":"2026-11-09T11:07:00.000Z","type":"permissions.chosen","v":1,"data":{{"permissions":"{old}"}}}}"#
+            );
+            let event = crate::decode(crate::RawEvent::from_json(&stored).unwrap()).unwrap();
+            let crate::Body::PermissionsChosen(chosen) = &event.body else {
+                panic!("{old}: {:?}", event.body);
+            };
+            assert_eq!(chosen.permissions, mode, "{old}");
+            let written = event.to_raw().unwrap().to_json().unwrap();
+            let named = format!(r#""permissions":"{}""#, mode.name());
+            assert!(written.contains(&named), "{written}");
+        }
     }
 }

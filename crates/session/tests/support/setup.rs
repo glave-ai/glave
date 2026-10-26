@@ -143,12 +143,12 @@ impl Setup {
         }
     }
 
-    /// A server answering `answers` in Read-only, so changes and commands ask, with
+    /// A server answering `answers` in Ask first, so changes and commands ask, with
     /// `answering` to ask.
     pub(crate) fn asking(answers: Vec<Completion>, answering: Answering) -> Self {
         let mut setup = Self::new(answers);
         setup.answering = answering;
-        setup.settings.permissions = Permissions::ReadOnly;
+        setup.settings.permissions = Permissions::Ask;
         setup
     }
 

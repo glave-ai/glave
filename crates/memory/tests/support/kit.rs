@@ -9,6 +9,7 @@ use glave_harness::{ApprovalRequest, Approver, Decision, Harness, Parts, Setting
 use glave_keys::{InMemoryRoot, KeySettings};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules};
 pub(crate) use glave_ports::block_on;
+use glave_ports::computer::{Sandbox, SandboxLevel};
 use glave_ports::memories::ProjectMemory;
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
 pub(crate) use glave_ports::testing::{ScriptedModel, Seen};
@@ -122,9 +123,45 @@ impl Kit {
         memory: Option<Arc<GlaveMemory<SqliteLog>>>,
         settings: Settings,
     ) -> (Harness<ScriptedModel, SqliteLog, SqliteBlobs, A>, Seen) {
-        let (computers, info) = glave_computer::LocalComputers::here(dir, std::env::vars_os())
-            .await
-            .unwrap();
+        let workspace = here(dir).await;
+        self.harness_in(workspace, answers, approver, memory, settings)
+    }
+
+    /// Like [`Kit::harness`], its commands in this computer's sandbox, as Auto runs them, the
+    /// one place the judge decides; `None` where no sandbox can run here.
+    pub(crate) async fn walled_harness<A: Approver>(
+        &self,
+        dir: &std::path::Path,
+        answers: Vec<Completion>,
+        approver: A,
+        memory: Option<Arc<GlaveMemory<SqliteLog>>>,
+        settings: Settings,
+    ) -> Option<(Harness<ScriptedModel, SqliteLog, SqliteBlobs, A>, Seen)> {
+        if !glave_computer::sandbox_available() {
+            assert!(
+                std::env::var_os("GLAVE_REQUIRE_SANDBOX").is_none(),
+                "GLAVE_REQUIRE_SANDBOX is set but the sandbox is not available here"
+            );
+            return None;
+        }
+        let sandbox = Sandbox {
+            level: SandboxLevel::Project,
+            network: false,
+            home: None,
+            glave_home: None,
+        };
+        let workspace = here(dir).await.with_sandbox(&sandbox).await.unwrap();
+        Some(self.harness_in(workspace, answers, approver, memory, settings))
+    }
+
+    fn harness_in<A: Approver>(
+        &self,
+        workspace: Workspace,
+        answers: Vec<Completion>,
+        approver: A,
+        memory: Option<Arc<GlaveMemory<SqliteLog>>>,
+        settings: Settings,
+    ) -> (Harness<ScriptedModel, SqliteLog, SqliteBlobs, A>, Seen) {
         let provider = ScriptedModel::new(answers);
         let seen = provider.seen();
         let parts = Parts {
@@ -134,7 +171,7 @@ impl Kit {
             approver,
             clock: Box::new(self.clock.clone()),
             entropy: Box::new(CountingEntropy::starting_at(7 << 40)),
-            workspace: Workspace::new(computers, info),
+            workspace,
         };
         let mut harness = Harness::new(parts, settings);
         if let Some(memory) = memory {
@@ -144,9 +181,17 @@ impl Kit {
     }
 }
 
+/// `dir` on this machine as the tools' workspace.
+async fn here(dir: &std::path::Path) -> Workspace {
+    let (computers, info) = glave_computer::LocalComputers::here(dir, std::env::vars_os())
+        .await
+        .unwrap();
+    Workspace::new(computers, info)
+}
+
 pub(crate) fn settings() -> Settings {
     let mut settings = Settings::new("test-model", "script");
-    // No sandbox in these tests: nothing asks but the risky actions.
+    // No sandbox in these tests: nothing asks.
     settings.permissions = glave_harness::Permissions::FullAccess;
     settings.person = Some(person());
     settings.agent = Some(agent());

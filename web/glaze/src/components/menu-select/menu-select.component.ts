@@ -93,7 +93,7 @@ const POSITIONS: Readonly<Record<GlzMenuAlign, readonly ConnectedPosition[]>> = 
  * ```html
  * <glz-menu-select label="Model" [options]="models" [(value)]="model" />
  * <glz-menu-select label="Where" outlined [options]="places" [(value)]="place" />
- * <glz-menu-select label="Permissions" quiet align="start" [options]="presets" [(value)]="preset" />
+ * <glz-menu-select label="Mode" quiet align="start" [options]="modes" [(value)]="mode" />
  * ```
  */
 @Component({

@@ -595,19 +595,16 @@ fn models_are_listed_and_one_the_server_does_not_run_is_refused() {
 }
 
 #[test]
-fn a_thread_chooses_its_preset_and_its_summary_shows_it() {
+fn a_thread_chooses_its_mode_and_its_summary_shows_it() {
     block_on!(async {
         over_each_transport!("permissions", Vec::new(), |client, dir| {
             let info = client.call(Request::Discover {}).await.unwrap();
-            assert_eq!(info["permissions"], json!("read-only"));
-            assert_eq!(
-                info["presets"],
-                json!(["read-only", "workspace", "full-access"])
-            );
+            assert_eq!(info["permissions"], json!("ask"));
+            assert_eq!(info["modes"], json!(["auto", "ask", "full-access"]));
             assert_eq!(
                 info["unsandboxed"],
                 json!(
-                    "This computer can't run the sandbox, so Read-only and Workspace ask before \
+                    "This computer can't run the sandbox, so Auto and Ask first both ask before \
                      every change and command."
                 ),
                 "the server says why both ask here"

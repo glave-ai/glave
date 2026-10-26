@@ -345,9 +345,9 @@ where
         })
     }
 
-    /// Asks the person about a call when it needs them: for its caution in every mode, unless
-    /// the judge clears it, or for the mode. `None` when the call may run; otherwise the result
-    /// the model is given instead.
+    /// Asks the person about a call when it needs them: for its caution, unless the judge clears
+    /// it, or for the mode; Full access asks no one ([`Self::ask`]). `None` when the call may run;
+    /// otherwise the result the model is given instead.
     async fn approve(
         &self,
         thread: &mut Thread,
@@ -365,7 +365,7 @@ where
                 Judged::Cancelled => return Ok(Some(ToolOutput::text(true, NOT_RUN))),
             }
         }
-        // A command that stays in the thread's sandbox, which Read-only lets run: `bash` is
+        // A command that stays in the thread's sandbox, which Ask first lets run: `bash` is
         // always the built-in, the first source that names a tool keeping it.
         let confined = request.tool == Tool::Bash.name()
             && request.outside_sandbox.is_none()
@@ -422,7 +422,7 @@ where
         let Some(model) = self.judge_for(thread) else {
             return Ok(Judged::Ask);
         };
-        if self.approval_for(thread) != ApprovalMode::Auto {
+        if self.approval_for(thread) != ApprovalMode::Risky {
             return Ok(Judged::Ask);
         }
         let case = JudgeCase {
@@ -465,7 +465,8 @@ where
     }
 
     /// Asks the person about `request`, recording the question and the answer. `None` when the
-    /// call may go ahead; otherwise the result the model is given instead.
+    /// call may go ahead; otherwise the result the model is given instead. Full access asks no
+    /// one: the call goes ahead, unless it would show the model a secret ([`Self::unasked`]).
     pub(crate) async fn ask(
         &self,
         thread: &mut Thread,
@@ -473,6 +474,9 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Option<ToolOutput>, HarnessError> {
+        if self.approval_for(thread) == ApprovalMode::Never {
+            return self.unasked(thread, request, live).await;
+        }
         let asked = request.asked();
         self.record(thread, &asked).await?;
         if self.approver.waits(thread.id) {
@@ -510,6 +514,38 @@ where
         self.record(thread, &decided).await?;
         let no_one = (verdict == Verdict::NoOneThere).then(|| no_one_there(request));
         Ok(settle(thread, &asked, verdict, no_one, live))
+    }
+
+    /// What Full access does where another mode would ask about `request`: nothing, so the call
+    /// goes ahead, unless it would show the model a secret, which only a person's yes does. Then
+    /// glave declines it at once, saying so, its question and answer written together so that
+    /// no stop between them can leave the thread waiting for anyone.
+    async fn unasked(
+        &self,
+        thread: &mut Thread,
+        request: &ApprovalRequest,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Result<Option<ToolOutput>, HarnessError> {
+        if !request.secret {
+            return Ok(None);
+        }
+        let mut asked = request.asked();
+        let why = sentence("declined without asking: Full access never shows the model a secret");
+        asked.caution = Some(match asked.caution.take() {
+            Some(caution) => format!("{caution} {why}"),
+            None => why,
+        });
+        let decided = ApprovalDecided {
+            call_id: request.call_id.clone(),
+            decision: Verdict::Deny,
+            by: Some(Principal::glave()),
+        };
+        crate::telemetry::approval(&request.tool, Verdict::Deny);
+        let mut events = Vec::new();
+        self.stage(thread, &mut events, &asked)?;
+        self.stage(thread, &mut events, &decided)?;
+        self.commit(thread, events).await?;
+        Ok(settle(thread, &asked, Verdict::Deny, None, live))
     }
 
     /// Takes in the answer to the approval a turn going on from the log stopped at: the one

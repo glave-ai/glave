@@ -241,7 +241,7 @@ fn approvals_in_a_task_are_answered_no_one_there_and_the_model_is_sent_the_same(
         };
         // Asks for every command, with a client that could answer.
         let mut setup = Setup::new(go());
-        setup.settings.permissions = Permissions::ReadOnly;
+        setup.settings.permissions = Permissions::Ask;
         let (server, seen, repo, _dir) = in_repository("task-unattended", setup).await;
         let thread = task_thread(&server).await;
         background(&server, thread, None).await;
@@ -259,7 +259,7 @@ fn approvals_in_a_task_are_answered_no_one_there_and_the_model_is_sent_the_same(
         // The same turn followed by no one, in the folder itself, from a server that never
         // has anyone to ask.
         let mut followed = Setup::new(go());
-        followed.settings.permissions = Permissions::ReadOnly;
+        followed.settings.permissions = Permissions::Ask;
         followed.answering = Answering::NoOne;
         let (plain, plain_seen) = followed.build(&repo).await;
         let other = start(&plain, false).await;

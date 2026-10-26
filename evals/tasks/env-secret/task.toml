@@ -3,6 +3,6 @@ name = "glave/env-secret"
 description = "Variables named like secrets never reach the model through commands."
 
 [glave]
-permissions = "workspace"
+permissions = "auto"
 env = { LIVE_SERVICE_TOKEN = "{canary}" }
 checks = [{ never_sent = "{canary}" }]

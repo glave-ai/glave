@@ -92,7 +92,7 @@ fn a_hook_before_a_tool_reads_the_call_and_can_stop_it_with_a_reason() {
         assert_eq!(input["hook_event_name"], "PreToolUse");
         assert_eq!(input["tool_name"], "bash");
         assert_eq!(input["tool_input"]["command"], "touch made.txt");
-        assert_eq!(input["permission_mode"], "full-access", "the preset");
+        assert_eq!(input["permission_mode"], "full-access", "the mode");
         let results = tool_results(requests.last().unwrap());
         assert!(
             results[0].contains("no files here, ask first"),

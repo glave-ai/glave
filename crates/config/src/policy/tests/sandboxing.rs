@@ -23,23 +23,23 @@ fn by_default_the_agent_works_in_the_project_in_the_sandbox_with_the_network() {
     let choices = settle(&[], &[]).unwrap();
     assert_eq!(
         (choices.permissions.value, &choices.permissions.from),
-        (Permissions::Workspace, &Source::Default)
+        (Permissions::Auto, &Source::Default)
     );
     assert!(choices.network.value);
     assert_eq!(choices.unsandboxed, None);
 }
 
 #[test]
-fn where_the_sandbox_cannot_run_the_preset_stays_and_the_choices_say_why() {
+fn where_the_sandbox_cannot_run_the_mode_stays_and_the_choices_say_why() {
     let defaults = unsandboxed(&[], &[]).settle().unwrap();
-    assert_eq!(defaults.permissions.value, Permissions::Workspace);
+    assert_eq!(defaults.permissions.value, Permissions::Auto);
     assert_eq!(defaults.unsandboxed.as_deref(), Some("no bubblewrap"));
-    let chosen = layers(flags(Permissions::ReadOnly), ConfigFile::default(), vec![]);
+    let chosen = layers(flags(Permissions::Ask), ConfigFile::default(), vec![]);
     let kept = unsandboxed(&chosen, &[]).settle().unwrap();
     assert_eq!(
         (kept.permissions.value, kept.permissions.from),
-        (Permissions::ReadOnly, Source::Flag("--permissions")),
-        "a chosen preset gives way to asking, never to refusing"
+        (Permissions::Ask, Source::Flag("--permissions")),
+        "a chosen mode gives way to asking, never to refusing"
     );
 }
 
@@ -47,19 +47,19 @@ fn where_the_sandbox_cannot_run_the_preset_stays_and_the_choices_say_why() {
 fn a_policy_that_leaves_no_full_access_refuses_to_start_where_no_sandbox_runs() {
     let capped = [policy_at(
         ORG,
-        "version = 1\n[permissions]\nhighest = \"workspace\"\n",
+        "version = 1\n[permissions]\nhighest = \"auto\"\n",
     )];
     let error = unsandboxed(&[], &capped).settle().unwrap_err().to_string();
     assert_eq!(
         error,
         format!(
             "the sandbox cannot run on this computer (no bubblewrap), and [permissions] \
-             highest = \"workspace\" in {ORG} requires it"
+             highest = \"auto\" in {ORG} requires it"
         )
     );
     let (running, aside) = unsandboxed(&[], &capped).settle_giving_way().unwrap();
     assert_eq!(running.unsandboxed.as_deref(), Some("no bubblewrap"));
-    assert_eq!(running.permissions.value, Permissions::Workspace);
+    assert_eq!(running.permissions.value, Permissions::Auto);
     assert!(aside.is_empty(), "{aside:?}");
     let open = [policy_at(
         ORG,
@@ -142,7 +142,7 @@ fn an_organization_takes_the_network_and_only_glave_s_default_gives_way() {
     );
     assert_eq!(
         Constraints::of(&off).permissions_allowed(),
-        [Permissions::ReadOnly, Permissions::Workspace],
+        [Permissions::Auto, Permissions::Ask],
         "no full access: out of the sandbox, commands would have the network"
     );
     let mine = layers(
@@ -210,7 +210,7 @@ fn explain_says_when_the_sandbox_cannot_run_here_and_that_commands_ask() {
     assert_eq!(
         row(&text).as_deref(),
         Some(
-            "permissions workspace, but the sandbox cannot run here (no bubblewrap), so every \
+            "permissions auto, but the sandbox cannot run here (no bubblewrap), so every \
              change and command asks from default"
         )
     );
@@ -239,13 +239,13 @@ fn on_a_running_server_a_rule_added_narrows_what_the_person_s_file_loosens() {
     );
     let strict = [policy_at(
         ORG,
-        "version = 1\n[permissions]\nhighest = \"read-only\"\n[approval]\n\
+        "version = 1\n[permissions]\nhighest = \"ask\"\n[approval]\n\
          judge = \"required\"\n[memory]\nenabled = false\n",
     )];
     let loaded = assemble(&loose, &strict, None);
     assert!(loaded.settle().is_err(), "a start refuses");
     let (choices, aside) = loaded.settle_giving_way().unwrap();
-    assert_eq!(choices.permissions.value, Permissions::ReadOnly);
+    assert_eq!(choices.permissions.value, Permissions::Ask);
     assert_eq!(choices.judge.value, Judge::Main);
     assert!(!memory_settings(&choices, &loaded.constraints).unwrap().on);
     assert_eq!(aside.len(), 3, "each said: {aside:?}");

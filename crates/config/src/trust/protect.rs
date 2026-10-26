@@ -1,8 +1,8 @@
 //! How a project's settings change what its threads may do in a server that serves many
-//! projects (`specs/policy.md`, "Project trust"): its preset, and its network. What only
-//! narrows applies at once: a preset no wider than the server's own, and `network = false`.
+//! projects (`specs/policy.md`, "Project trust"): its mode, and its network. What only
+//! narrows applies at once: a mode no wider than the server's own, and `network = false`.
 //! Full access needs the person's trust, and the policy must leave it. A flag is nearer than a
-//! project, as in the terminal, where the same rule settles a project's preset
+//! project, as in the terminal, where the same rule settles a project's mode
 //! ([`crate::policy::project_permissions`]).
 
 use glave_ports::settings::Protections;
@@ -31,7 +31,7 @@ pub fn protections(outcome: &Outcome, choices: &Choices, constraints: &Constrain
 mod tests {
     use std::path::PathBuf;
 
-    use glave_event::Permissions::{self, FullAccess, ReadOnly, Workspace};
+    use glave_event::Permissions::{self, Ask, Auto, FullAccess};
 
     use super::*;
     use crate::policy::tests::{constraints, defaults};
@@ -53,27 +53,22 @@ mod tests {
         }
     }
 
-    /// A server's choices: Workspace by default, unless `change` says.
+    /// A server's choices: Auto by default, unless `change` says.
     fn server(change: impl FnOnce(&mut Choices)) -> Choices {
         let mut choices = defaults();
         change(&mut choices);
         choices
     }
 
-    fn chose(preset: Permissions, from: Source) -> impl FnOnce(&mut Choices) {
-        move |choices| {
-            choices.permissions = Chosen {
-                value: preset,
-                from,
-            }
-        }
+    fn chose(mode: Permissions, from: Source) -> impl FnOnce(&mut Choices) {
+        move |choices| choices.permissions = Chosen { value: mode, from }
     }
 
     fn mine() -> Source {
         Source::File(PathBuf::from("/home/ada/.glave/config.toml"))
     }
 
-    fn preset(outcome: &Outcome, choices: &Choices, rules: &Constraints) -> Option<Permissions> {
+    fn mode(outcome: &Outcome, choices: &Choices, rules: &Constraints) -> Option<Permissions> {
         protections(outcome, choices, rules).permissions
     }
 
@@ -81,31 +76,31 @@ mod tests {
     fn a_project_narrows_its_threads_at_once_and_never_widens_them_without_full_access() {
         let none = Constraints::default();
         assert_eq!(
-            preset(&project(Some(ReadOnly), None), &server(|_| {}), &none),
-            Some(ReadOnly)
+            mode(&project(Some(Ask), None), &server(|_| {}), &none),
+            Some(Ask)
         );
         assert_eq!(
-            preset(
-                &project(Some(Workspace), None),
+            mode(
+                &project(Some(Auto), None),
                 &server(chose(FullAccess, mine())),
                 &none
             ),
-            Some(Workspace),
+            Some(Auto),
             "narrower than the person's"
         );
         assert_eq!(
-            preset(
-                &project(Some(Workspace), None),
-                &server(chose(ReadOnly, mine())),
+            mode(
+                &project(Some(Auto), None),
+                &server(chose(Ask, mine())),
                 &none
             ),
             None,
             "wider than the person's: ignored"
         );
         assert_eq!(
-            preset(
+            mode(
                 &project(Some(FullAccess), None),
-                &server(chose(ReadOnly, mine())),
+                &server(chose(Ask, mine())),
                 &none
             ),
             Some(FullAccess),
@@ -113,7 +108,7 @@ mod tests {
         );
         let untrusted = Outcome {
             config: None,
-            ..project(Some(ReadOnly), Some(false))
+            ..project(Some(Ask), Some(false))
         };
         assert_eq!(
             protections(&untrusted, &server(|_| {}), &none),
@@ -129,19 +124,19 @@ mod tests {
             choices.network.from = Source::Flag("--network or --no-network");
         });
         assert_eq!(
-            protections(&project(Some(ReadOnly), Some(false)), &flagged, &none),
+            protections(&project(Some(Ask), Some(false)), &flagged, &none),
             Protections::default(),
             "a flag is nearer"
         );
-        let capped = constraints("version = 1\n[permissions]\nhighest = \"workspace\"\n");
+        let capped = constraints("version = 1\n[permissions]\nhighest = \"auto\"\n");
         assert_eq!(
-            preset(&project(Some(FullAccess), None), &server(|_| {}), &capped),
-            Some(Workspace)
+            mode(&project(Some(FullAccess), None), &server(|_| {}), &capped),
+            Some(Auto)
         );
         let offline = constraints("version = 1\n[sandbox]\nnetwork = false\n");
         assert_eq!(
-            preset(&project(Some(FullAccess), None), &server(|_| {}), &offline),
-            Some(Workspace),
+            mode(&project(Some(FullAccess), None), &server(|_| {}), &offline),
+            Some(Auto),
             "out of the sandbox it would have the network"
         );
         assert_eq!(

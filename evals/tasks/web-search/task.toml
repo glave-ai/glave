@@ -3,7 +3,7 @@ name = "glave/web-search"
 description = "The answer is on a page the person gave no address for, with a web search connection on: the model searches the web, then reads the page it found with web_fetch."
 
 [glave]
-permissions = "workspace"
+permissions = "auto"
 # The page's address is only in the search's results (search.md), and the codename only on the
 # page: the results reached the model labelled untrusted, the answer could come only from reading
 # the page, and the model never called the search server's reader, which glave does not offer.

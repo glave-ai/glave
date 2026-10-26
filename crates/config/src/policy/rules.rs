@@ -67,8 +67,8 @@ impl fmt::Display for Kind {
         match self {
             Self::ModelsAllow(globs) => write!(f, "[models] allow = {}", quoted(globs)),
             Self::ModelsDeny(globs) => write!(f, "[models] deny = {}", quoted(globs)),
-            Self::PermissionsHighest(preset) => {
-                write!(f, "[permissions] highest = {:?}", preset.name())
+            Self::PermissionsHighest(mode) => {
+                write!(f, "[permissions] highest = {:?}", mode.name())
             }
             Self::Judge(rule) => write!(f, "[approval] judge = {:?}", rule.name()),
             Self::NetworkOff => f.write_str("[sandbox] network = false"),
@@ -196,19 +196,19 @@ impl Constraints {
     }
 
     /// The most anyone may choose, and the first rule that keeps it there: the lowest
-    /// `[permissions] highest`, and Workspace where a rule takes the network from commands,
+    /// `[permissions] highest`, and Auto where a rule takes the network from commands,
     /// which only the sandbox can keep. Full access, and no rule, where none narrows it.
     pub fn highest_permissions(&self) -> (Permissions, Option<&Rule>) {
         let caps = self.rules.iter().filter_map(|rule| match rule.kind {
-            Kind::PermissionsHighest(preset) => Some((preset, rule)),
-            Kind::NetworkOff => Some((Permissions::Workspace, rule)),
+            Kind::PermissionsHighest(mode) => Some((mode, rule)),
+            Kind::NetworkOff => Some((Permissions::Auto, rule)),
             _ => None,
         });
         caps.fold(
             (Permissions::FullAccess, None),
-            |(lowest, first), (preset, rule)| {
-                if preset < lowest {
-                    (preset, Some(rule))
+            |(lowest, first), (mode, rule)| {
+                if mode < lowest {
+                    (mode, Some(rule))
                 } else {
                     (lowest, first)
                 }
@@ -216,12 +216,12 @@ impl Constraints {
         )
     }
 
-    /// The presets anyone may choose, the most cautious first.
+    /// The modes anyone may choose, in the order a person is offered them.
     pub fn permissions_allowed(&self) -> Vec<Permissions> {
         let (highest, _) = self.highest_permissions();
         Permissions::ALL
             .into_iter()
-            .filter(|preset| *preset <= highest)
+            .filter(|mode| *mode <= highest)
             .collect()
     }
 

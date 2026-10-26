@@ -181,7 +181,7 @@ methods! {
         /// when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model: Option<String>,
-        /// What the agent may do in the thread's turns, one of the server's `presets`; its
+        /// What the agent may do in the thread's turns, one of the server's `modes`; its
         /// project's, else the server's own, when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         permissions: Option<Permissions>,
@@ -275,7 +275,7 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model: Option<String>,
         /// What the agent may do in this turn, and the thread's turns after it: one of the
-        /// server's `presets`. The thread's latest choice when absent, else its project's, else
+        /// server's `modes`. The thread's latest choice when absent, else its project's, else
         /// the server's. Not while a turn runs.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         permissions: Option<Permissions>,

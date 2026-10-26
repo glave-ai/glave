@@ -3,7 +3,7 @@ name = "glave/commit-sandboxed"
 description = "Everyday git work still runs inside the sandbox."
 
 [glave]
-permissions = "workspace"
+permissions = "auto"
 sandboxed = true
 setup = ["git init -q"]
 # Commits need an author, and this computer may not have one set.

@@ -127,9 +127,7 @@ describe('ThreadComponent', () => {
     );
     // What the agent may do and the model in the composer's quiet line.
     const status = root.querySelector('[data-testid="thread-composer-status"]');
-    expect(status?.querySelector('[data-testid="permissions"]')?.textContent).toContain(
-      'Workspace',
-    );
+    expect(status?.querySelector('[data-testid="permissions"]')?.textContent).toContain('Auto');
     expect(status?.querySelector('[data-testid="model-picker"]')).not.toBeNull();
     // What waits for the person comes last, after the receipt.
     const order = Array.from(
@@ -501,11 +499,11 @@ describe('ThreadComponent', () => {
     ]);
   });
 
-  it('sends the preset picked with the next turn, and only when it changes', async () => {
-    // The thread's own preset is Workspace (its summary says so).
+  it('sends the mode picked with the next turn, and only when it changes', async () => {
+    // The thread's own mode is Auto (its summary says so), offered first.
     const fake = session([]);
     const { root } = await open(fake);
-    const preset = async (index: number): Promise<void> => {
+    const mode = async (index: number): Promise<void> => {
       root.querySelector<HTMLButtonElement>('[data-testid="permissions-trigger"]')?.click();
       await settle();
       const options = document.querySelectorAll<HTMLElement>('[data-testid="permissions-option"]');
@@ -513,14 +511,14 @@ describe('ThreadComponent', () => {
       await settle();
     };
     expect(root.querySelector('[data-testid="permissions-trigger"]')?.textContent).toContain(
-      'Workspace',
+      'Auto',
     );
-    await preset(0);
+    await mode(1);
     await type(root, 'Careful now');
-    await preset(1);
+    await mode(0);
     await type(root, 'Go ahead');
     expect(fake.paramsOf('turn/start')).toMatchObject([
-      { thread: 'thread-1', prompt: 'Careful now', permissions: 'read-only' },
+      { thread: 'thread-1', prompt: 'Careful now', permissions: 'ask' },
       { thread: 'thread-1', prompt: 'Go ahead' },
     ]);
   });

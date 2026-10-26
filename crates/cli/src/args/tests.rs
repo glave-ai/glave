@@ -6,17 +6,9 @@ fn parse_words(words: &[&str]) -> Result<Args, String> {
 
 #[test]
 fn prompt_words_join_and_flags_parse() {
-    let words = [
-        "--permissions",
-        "read-only",
-        "fix",
-        "the",
-        "--model",
-        "m",
-        "test",
-    ];
+    let words = ["--permissions", "ask", "fix", "the", "--model", "m", "test"];
     let args = parse_words(&words).unwrap();
-    assert_eq!(args.permissions, Some(Permissions::ReadOnly));
+    assert_eq!(args.permissions, Some(Permissions::Ask));
     assert_eq!(args.model.as_deref(), Some("m"));
     assert_eq!(args.prompt, "fix the test");
 }
@@ -24,8 +16,8 @@ fn prompt_words_join_and_flags_parse() {
 #[test]
 fn the_network_is_a_choice_of_its_own_in_the_sandbox() {
     let serve = |words: &[&str]| parse_words(&[&["serve"], words].concat());
-    let args = serve(&["--permissions", "workspace", "--network"]).unwrap();
-    assert_eq!(args.permissions, Some(Permissions::Workspace));
+    let args = serve(&["--permissions", "auto", "--network"]).unwrap();
+    assert_eq!(args.permissions, Some(Permissions::Auto));
     assert_eq!(args.network, Some(true));
     let offline = serve(&["--no-network"]).unwrap();
     assert_eq!(offline.network, Some(false));
@@ -36,7 +28,7 @@ fn the_network_is_a_choice_of_its_own_in_the_sandbox() {
     );
     assert!(
         serve(&["--sandbox", "off"]).is_err(),
-        "part of the preset now"
+        "part of the mode now"
     );
 }
 
@@ -148,20 +140,17 @@ fn serving_over_http_needs_sign_in() {
 }
 
 #[test]
-fn presets_parse() {
+fn modes_parse() {
     assert_eq!(parse_words(&["hi"]).unwrap().permissions, None);
-    for preset in Permissions::ALL {
-        let chosen = parse_words(&["--permissions", preset.name(), "hi"]).unwrap();
-        assert_eq!(chosen.permissions, Some(preset));
+    for mode in Permissions::ALL {
+        let chosen = parse_words(&["--permissions", mode.name(), "hi"]).unwrap();
+        assert_eq!(chosen.permissions, Some(mode));
     }
-    let unknown = parse_words(&["--permissions", "auto"]).unwrap_err();
-    assert!(
-        unknown.contains("read-only, workspace or full-access"),
-        "{unknown}"
-    );
+    let unknown = parse_words(&["--permissions", "workspace"]).unwrap_err();
+    assert!(unknown.contains("auto, ask or full-access"), "{unknown}");
     assert!(
         parse_words(&["--approval", "ask"]).is_err(),
-        "part of the preset now"
+        "part of the mode now"
     );
     assert!(
         parse_words(&["--yes", "hi"]).is_err(),
@@ -205,9 +194,9 @@ fn skills_is_a_command_only_as_the_first_word() {
 
 #[test]
 fn policy_explain_is_a_command_that_takes_the_choice_flags() {
-    let explain = parse_words(&["policy", "explain", "--permissions", "read-only"]).unwrap();
+    let explain = parse_words(&["policy", "explain", "--permissions", "ask"]).unwrap();
     assert_eq!(explain.action, Action::Explain);
-    assert_eq!(explain.permissions, Some(Permissions::ReadOnly));
+    assert_eq!(explain.permissions, Some(Permissions::Ask));
     assert!(parse_words(&["policy"]).is_err());
     assert!(parse_words(&["policy", "show"]).is_err());
     assert!(parse_words(&["policy", "explain", "why"]).is_err());

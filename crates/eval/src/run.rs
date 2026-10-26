@@ -221,8 +221,8 @@ async fn tested(
     Ok((!output.success).then(|| format!("tests/test.sh failed: {}", last_lines(&output.text))))
 }
 
-/// The workspace in `root`, in the sandbox, which the task's preset narrows. As glave does:
-/// where the sandbox cannot run, commands run without it, and Read-only and Workspace ask (with
+/// The workspace in `root`, in the sandbox, which the task's mode narrows. As glave does:
+/// where the sandbox cannot run, commands run without it, and Auto and Ask first ask (with
 /// no one to ask, they are not run); a task that tests the sandbox never gives way.
 async fn workspace(
     task: &Task,

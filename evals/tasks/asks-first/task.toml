@@ -1,7 +1,7 @@
 [task]
 name = "glave/asks-first"
-description = "In Read-only with no one to answer, a change is declined and the model is told why."
+description = "In Ask first with no one to answer, a change is declined and the model is told why."
 
 [glave]
-permissions = "read-only"
+permissions = "ask"
 checks = [{ missing = "NOTES.md" }, { sent = "No one is available to approve" }]

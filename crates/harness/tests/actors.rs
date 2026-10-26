@@ -51,7 +51,7 @@ fn with_no_one_to_answer_the_refusal_is_recorded_as_glaves() {
             ),
             answer(Some("Left it."), vec![], StopReason::EndTurn),
         ];
-        let harness = harness(&dir, answers, NoOneToAsk).await;
+        let harness = asking_harness(&dir, answers, NoOneToAsk).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
         harness
             .run_turn(&mut thread, "start over", &Cancel::new(), &mut |_| {})
