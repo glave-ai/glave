@@ -27,7 +27,8 @@ pub use self::browsers::{
     AcceptedPasskeys, BrowserError, Browsers, Ceremony, PasskeyInfo, Proof, Session, UnknownPasskey,
 };
 use self::keys::Keys;
-pub use self::local::{LOCAL_BYTES, LOCAL_PREFIX, LocalToken};
+use self::local::LOCAL_PREFIX;
+pub use self::local::{LOCAL_BYTES, LocalToken};
 
 /// How far the clocks of the server and the identity provider may disagree, in seconds.
 const SKEW: f64 = 60.0;

@@ -27,7 +27,7 @@ pub(super) fn settle(mut choices: Choices, constraints: &Constraints) -> crate::
 /// start: a mode, a judge, the network or memory a rule refuses gives way as glave's default
 /// would, each said in a sentence. A constraint added while it runs narrows its next turn
 /// whatever the person's file says. Anything else outside them still fails.
-pub fn give_way(
+pub(crate) fn give_way(
     mut choices: Choices,
     constraints: &Constraints,
 ) -> crate::Result<(Choices, Vec<String>)> {

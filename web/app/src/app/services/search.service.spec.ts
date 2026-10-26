@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode, type SearchInfo } from '@glave/client';
 
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
+import { ChangesService } from './changes.service';
 import { SearchService } from './search.service';
 
 const OFF: SearchInfo = { kind: 'chosen', on: false, detail: 'Uses Exa, free.' };
@@ -25,6 +26,47 @@ describe('SearchService', () => {
     expect(fake.paramsOf('search/set')).toEqual([{ on: true }]);
     expect(search.on()).toBe(true);
     expect(search.problem()).toBeNull();
+  });
+
+  it('reads it again when the server says it changed elsewhere, as from the terminal', async () => {
+    const fake = new FakeSession().answer('search/get', { search: OFF });
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const search = TestBed.inject(SearchService);
+    await settled();
+    fake.answer('search/get', { search: ON });
+    TestBed.inject(ChangesService).tell('search');
+    TestBed.tick();
+    await settled();
+    expect(search.on()).toBe(true);
+    expect(fake.paramsOf('search/get')).toHaveLength(2);
+  });
+
+  it('leaves a switch on its way to say what is so, rather than read it again meanwhile', async () => {
+    let answer: (value: { search: SearchInfo }) => void = () => undefined;
+    const fake = new FakeSession().answer('search/get', { search: OFF }).answer(
+      'search/set',
+      () =>
+        new Promise<{ search: SearchInfo }>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const search = TestBed.inject(SearchService);
+    await search.load(true);
+    const switched = search.set(true);
+    await settled();
+    // The server says it changed, as it does for this very switch.
+    TestBed.inject(ChangesService).tell('search');
+    TestBed.tick();
+    expect(fake.paramsOf('search/get')).toHaveLength(2);
+    answer({ search: { ...ON, usage: { calls: 0, sentence: 'No searches this month' } } });
+    await switched;
+    expect(search.on()).toBe(true);
+    expect(search.search()).toMatchObject({ usage: { sentence: 'No searches this month' } });
+    // Once it is answered, a change read again asks how often it searched, as Settings did.
+    TestBed.inject(ChangesService).tell('search');
+    TestBed.tick();
+    expect(fake.paramsOf('search/get').at(-1)).toEqual({ usage: true });
   });
 
   it('reads only whether it is on as it starts, and the month’s searches when asked', async () => {

@@ -11,8 +11,7 @@ mod projects;
 mod worktrees;
 
 pub use confinement::{
-    Confinement, confinement_case, confinement_escapes, confinement_fixture, confinement_paths,
-    confinement_targets, confinement_untouched,
+    Confinement, confinement_case, confinement_escapes, confinement_fixture, confinement_untouched,
 };
 use helpers::{Collect, Trip, failed, files, run, run_quietly};
 

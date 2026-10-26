@@ -1,11 +1,13 @@
 import { Service, computed, inject, signal } from '@angular/core';
 import type { ModelInfo } from '@glave/client';
 
+import { onChange } from './changes.service';
 import { SessionService } from './session.service';
 
 /**
  * The models this server runs (`model/list`), the default first: what the composer's picker
- * offers. Read once, when first asked, and again when the model accounts change.
+ * offers. Read once, when first asked, and again when the model accounts change, here or, as
+ * the server says, anywhere else.
  */
 @Service()
 export class ModelsService {
@@ -23,6 +25,10 @@ export class ModelsService {
   });
   /** Whether there is a choice to make: more than one model. */
   readonly choosable = computed(() => this.list().length > 1);
+
+  constructor() {
+    onChange('providers', () => void this.reload());
+  }
 
   /** Reads the list, once; a failed read is tried again next time. */
   load(): Promise<void> {

@@ -32,8 +32,10 @@ const BASELINE: &str = "xtask/src/duplicates/baseline.txt";
 pub(crate) fn check() -> Result<(), String> {
     let root = workspace::root()?;
     let listed = cmd::query("git", &["ls-files", "-z", "--", "crates", "xtask", "web"])?;
+    // Once each: a file with a merge's conflict is listed once for each side.
+    let paths: BTreeSet<&str> = listed.split('\0').filter(|path| scanned(path)).collect();
     let mut sources = Vec::new();
-    for path in listed.split('\0').filter(|path| scanned(path)) {
+    for path in paths {
         match std::fs::read_to_string(root.join(path)) {
             Ok(text) => sources.push((path.to_owned(), text)),
             // A file deleted but not yet staged holds no code.

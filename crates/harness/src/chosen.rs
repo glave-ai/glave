@@ -61,7 +61,7 @@ where
 {
     /// The model `thread`'s turns are sent to: its own choice, else its project's, else the
     /// default now.
-    pub fn model_for(&self, thread: &Thread) -> String {
+    pub(crate) fn model_for(&self, thread: &Thread) -> String {
         thread
             .model
             .clone()

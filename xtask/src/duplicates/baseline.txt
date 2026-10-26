@@ -78,6 +78,7 @@
 9e0deedec0a616b8 11 crates/cli/src/memory.rs crates/cli/src/threads.rs
 a0516b39583ad5d6 7 web/e2e/languages.e2e.ts web/e2e/support.ts
 a2cc55aeef3d089c 11 crates/gateway-service/src/http.rs crates/session/src/http.rs
+a2cf4b2ad208ace5 7 web/app/src/app/services/projects.service.spec.ts web/app/src/app/services/projects.service.spec.ts web/app/src/app/services/projects.service.spec.ts
 a3d85a8380144aef 12 crates/harness/tests/support/script.rs crates/memory/tests/support/kit.rs
 a3e4b5de28fa9b4d 12 crates/cli/src/worktrees/cleanup/tests.rs crates/computer/src/worktrees/tests.rs
 a4ace85663d85cab 7 web/glaze/src/components/menu-button/menu-button.component.spec.ts web/glaze/src/components/menu-select/menu-select.component.spec.ts
@@ -117,6 +118,7 @@ dcd08cbeaad9afab 9 crates/harness/tests/goals.rs crates/harness/tests/purposes.r
 e1d48ef27705b0c9 10 crates/event/src/payload/catalog.rs crates/session/src/protocol/models.rs
 e66140a31a471c6c 7 crates/ports/src/view.rs crates/session/src/protocol/reply.rs
 e666c1db0c11e33b 7 crates/session/tests/listing.rs crates/session/tests/standing.rs
+eb913c6c9b694494 7 crates/session/tests/list_watching.rs crates/session/tests/list_watching.rs
 eeb1d8f93c66e218 10 crates/session/src/rpc.rs crates/session/src/rpc.rs
 f0f2255634f0374f 9 crates/harness/tests/faults.rs crates/harness/tests/workers.rs
 f14ba448c17548d3 6 crates/computer/src/worker/tests/reconnect.rs crates/computer/src/worker/tests/reconnect.rs

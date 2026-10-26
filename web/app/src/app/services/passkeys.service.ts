@@ -4,6 +4,7 @@ import { ApiError, type PasskeySummary } from '@glave/client';
 
 import { type Authenticator, made, used } from '../lib/passkeys';
 import { type PlatformAuthenticator, platformAuthenticator } from '../lib/platform';
+import { onChange } from './changes.service';
 import { signalUnknown, unknownPasskey } from '../lib/passkey-signals';
 import { unreached } from '../lib/text';
 import { type Began, PASSKEY_SIGNALS, SessionService } from './session.service';
@@ -67,6 +68,10 @@ export class PasskeysService {
   readonly passkeys = this.listed.asReadonly();
   /** This computer's own authenticator, as its system names it, where glave knows it. */
   readonly platform: PlatformAuthenticator = platformAuthenticator(inject(PLATFORM));
+
+  constructor() {
+    onChange('passkeys', () => void this.load());
+  }
 
   /** Makes a passkey on this device with the tab's setup link, and signs the browser in. */
   async make(): Promise<string | null> {

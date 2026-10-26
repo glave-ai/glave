@@ -9,11 +9,11 @@ use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use glave_event::{Body, Event, RawEvent, Seq, ThreadId, decode};
+use glave_event::{Body, Event, PrincipalId, RawEvent, Seq, ThreadId, decode};
 use glave_ports::{EventLog, Located, LogError, ProjectId, Scope};
 use tokio::sync::broadcast;
 
-use crate::protocol::Notification;
+use crate::protocol::{Notification, Setting};
 
 /// Notifications held for a slow watcher before it is told it fell behind.
 const BACKLOG: usize = 1_024;
@@ -27,8 +27,9 @@ pub(crate) struct Hub {
     channels: Mutex<Channels>,
     /// Each running subagent's parent: its notifications go to the parent's watchers too.
     parents: Mutex<HashMap<ThreadId, ThreadId>>,
-    /// Each thread that changed, in its project, for the watches of lists.
-    changes: broadcast::Sender<Changed>,
+    /// Each thread that changed, in its project, and each person's setting, for the watches
+    /// of lists.
+    changes: broadcast::Sender<Change>,
 }
 
 impl Default for Hub {
@@ -47,6 +48,18 @@ impl Default for Hub {
 pub(crate) struct Changed {
     pub(crate) project: ProjectId,
     pub(crate) thread: ThreadId,
+}
+
+/// What the watches of lists hear of: a thread whose summary may have changed, or a person's
+/// own setting that did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Change {
+    Thread(Changed),
+    /// `setting` changed through this server for `person`, `None` for the local person.
+    Setting {
+        person: Option<PrincipalId>,
+        setting: Setting,
+    },
 }
 
 #[derive(Default)]
@@ -82,9 +95,16 @@ impl Hub {
         (notes, published)
     }
 
-    /// Starts hearing which threads change, from now on.
-    pub(crate) fn changes(&self) -> broadcast::Receiver<Changed> {
+    /// Starts hearing which threads and settings change, from now on.
+    pub(crate) fn changes(&self) -> broadcast::Receiver<Change> {
         self.changes.subscribe()
+    }
+
+    /// Tells the watches of lists that `person`'s `setting` changed (`None`: the local
+    /// person's).
+    pub(crate) fn setting_changed(&self, person: Option<PrincipalId>, setting: Setting) {
+        // Only fails when no list is watched, which is fine.
+        let _ = self.changes.send(Change::Setting { person, setting });
     }
 
     /// Tells the watches of lists that `thread`, in `project`, changed. Glave's own streams
@@ -92,7 +112,9 @@ impl Hub {
     pub(crate) fn changed(&self, project: ProjectId, thread: ThreadId) {
         if glave_ports::stream::Reserved::of(thread).is_none() {
             // Only fails when no list is watched, which is fine.
-            let _ = self.changes.send(Changed { project, thread });
+            let _ = self
+                .changes
+                .send(Change::Thread(Changed { project, thread }));
         }
     }
 

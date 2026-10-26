@@ -24,7 +24,8 @@ use glave_ports::settings::Hook;
 
 pub(crate) use choices::project_permissions;
 pub use choices::{Choices, Chosen, Layer, Level, Source};
-pub use effective::{check_model, check_own_servers, give_way};
+use effective::give_way;
+pub use effective::{check_model, check_own_servers};
 pub use explain::explain;
 pub use files::{
     ConfigFile, GithubFile, HooksFile, ModelEntry, PolicyFile, ServeFile, ServerFile, StoreFile,
@@ -118,7 +119,7 @@ impl Loaded {
         Ok(choices)
     }
 
-    /// The choices within the constraints for a server that already runs ([`give_way`]),
+    /// The choices within the constraints for a server that already runs (`give_way`),
     /// and what gave way, one sentence each. Where no sandbox can run here, a rule that
     /// requires one leaves every command asking: Full access is not left to choose.
     pub fn settle_giving_way(&self) -> crate::Result<(Choices, Vec<String>)> {
