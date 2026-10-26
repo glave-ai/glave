@@ -2,7 +2,8 @@
 //! frontmatter gives a `name` and a `description`, and whose body tells the model how to do one
 //! kind of task, with any scripts and files beside it. The model sees only names and
 //! descriptions until a task needs one; then `skill` loads its body. Scripts a skill mentions
-//! run only through bash, asked about like any other command.
+//! run only through bash, asked about like any other command. glave's own skills are built in,
+//! named `glave:<name>` (`specs/model.md`, "Configuration is files").
 
 pub(crate) mod frontmatter;
 mod tool;
@@ -37,14 +38,43 @@ const MAX_DESCRIPTION: usize = 1024;
 pub struct Skill {
     pub name: String,
     pub description: String,
-    /// Its SKILL.md.
-    pub file: PathBuf,
+    pub source: SkillSource,
 }
 
+/// Where a skill's SKILL.md is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SkillSource {
+    /// In a folder, read again each time the skill loads.
+    File(PathBuf),
+    /// Built into glave: the text itself.
+    BuiltIn(&'static str),
+}
+
+/// The name glave's own skills start with, so none stands in for a project's or the person's.
+const BUILT_IN: &str = "glave:";
+
 impl Skill {
-    /// The skill's folder, which its body's paths are relative to.
-    pub fn folder(&self) -> &Path {
-        self.file.parent().unwrap_or(&self.file)
+    /// One of glave's own skills, from its SKILL.md's text, named `glave:` and its name.
+    pub fn built_in(text: &'static str) -> Result<Self, String> {
+        let document = frontmatter::parse(text)?;
+        let name = text_field(&document, "name")?.ok_or("its frontmatter has no name")?;
+        check_name(&name, &name)?;
+        let description =
+            text_field(&document, "description")?.ok_or("its frontmatter has no description")?;
+        check_description(&description)?;
+        Ok(Self {
+            name: format!("{BUILT_IN}{name}"),
+            description,
+            source: SkillSource::BuiltIn(text),
+        })
+    }
+
+    /// The skill's folder, which its body's paths are relative to; a built-in skill has none.
+    pub fn folder(&self) -> Option<&Path> {
+        match &self.source {
+            SkillSource::File(file) => Some(file.parent().unwrap_or(file)),
+            SkillSource::BuiltIn(_) => None,
+        }
     }
 
     /// How much of the listing this skill takes.
@@ -106,7 +136,7 @@ pub async fn find_skills(folders: &[PathBuf]) -> Found {
                 ));
                 continue;
             }
-            names.insert(skill.name.clone(), skill.file.clone());
+            names.insert(skill.name.clone(), file.clone());
             let after = listed.saturating_add(skill.listed());
             if found.skills.len() >= MAX_SKILLS || after > MAX_LISTED {
                 left_out.push(skill.name);
@@ -174,12 +204,7 @@ async fn read(file: &Path) -> Result<Option<Skill>, String> {
         .await
         .map_err(|err| err.to_string())?;
     let document = frontmatter::parse(&text)?;
-    let text_field = |key: &str| match document.fields.get(key) {
-        Some(Value::Text(text)) => Ok(Some(text.trim().to_owned())),
-        Some(Value::Other) => Err(format!("{key} must be text")),
-        None => Ok(None),
-    };
-    if text_field("disable-model-invocation")?.as_deref() == Some("true") {
+    if text_field(&document, "disable-model-invocation")?.as_deref() == Some("true") {
         return Ok(None);
     }
     let folder = file
@@ -188,15 +213,25 @@ async fn read(file: &Path) -> Result<Option<Skill>, String> {
         .and_then(|name| name.to_str())
         .unwrap_or_default();
     // Without a name, the folder names it, as Claude Code and Codex read it.
-    let name = text_field("name")?.unwrap_or_else(|| folder.to_owned());
+    let name = text_field(&document, "name")?.unwrap_or_else(|| folder.to_owned());
     check_name(&name, folder)?;
-    let description = text_field("description")?.ok_or("its frontmatter has no description")?;
+    let description =
+        text_field(&document, "description")?.ok_or("its frontmatter has no description")?;
     check_description(&description)?;
     Ok(Some(Skill {
         name,
         description,
-        file: file.to_path_buf(),
+        source: SkillSource::File(file.to_path_buf()),
     }))
+}
+
+/// A frontmatter field that must be text, trimmed; `None` when it is not there.
+fn text_field(document: &frontmatter::Document, key: &str) -> Result<Option<String>, String> {
+    match document.fields.get(key) {
+        Some(Value::Text(text)) => Ok(Some(text.trim().to_owned())),
+        Some(Value::Other) => Err(format!("{key} must be text")),
+        None => Ok(None),
+    }
 }
 
 /// A name is 1 to 64 lowercase letters, digits and single hyphens, neither first nor last,

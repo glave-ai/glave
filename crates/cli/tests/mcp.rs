@@ -64,6 +64,7 @@ fn a_servers_tools_reach_the_model_and_its_calls_run() {
             "bash",
             "command_output",
             "web_fetch",
+            "skill",
             "mcp__tests__echo",
             "mcp__tests__fail",
             "mcp__tests__slow",

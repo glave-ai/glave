@@ -10,7 +10,7 @@ use std::process::{Command, Output, Stdio};
 use glave_ports::testing::Running;
 use glave_provider_openai::fake::FakeServer;
 
-use crate::support::{Lifeline, Place, Stopped, place, text};
+use crate::support::{IN_TERMINAL, Lifeline, Place, Stopped, place, text};
 
 /// `glave` with `args` in `place`, with nothing from the person's own setup, still running.
 fn start(place: &Place, args: &[&str]) -> Running {
@@ -43,8 +43,7 @@ fn run(place: &Place, args: &[&str]) -> Output {
 /// its home, so `glave` alone opens the person's Chats with nothing to ask.
 fn in_terminal(place: &Place, args: &[&str]) -> Running {
     let glave = env!("CARGO_BIN_EXE_glave");
-    let spawn = "import pty, sys; sys.exit(pty.spawn(sys.argv[1:]) >> 8)";
-    let python = [&["-c", spawn, glave][..], args].concat();
+    let python = [&["-c", IN_TERMINAL, glave][..], args].concat();
     std::fs::create_dir_all(&place.home).unwrap();
     let child = Command::new("python3")
         .args(python)
