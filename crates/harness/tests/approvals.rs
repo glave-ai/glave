@@ -1,45 +1,12 @@
 //! Approvals in the log: every question to the person is recorded with its answer, the person
 //! is told which call and thread it is about, and "allow for this thread" survives resuming.
 
-use std::future::{Future, ready};
-use std::sync::Mutex;
-
 use glave_event::{Body, StopReason, Verdict};
-use glave_harness::{ApprovalRequest, Approver, Cancel, Decision, NoOneToAsk};
+use glave_harness::{Decision, NoOneToAsk};
 use glave_ports::InMemoryLog;
 use serde_json::json;
 
 use crate::support::*;
-
-/// Answers with each decision in turn, and remembers what it was asked.
-struct Answers {
-    decisions: Mutex<Vec<Decision>>,
-    asked: Mutex<Vec<ApprovalRequest>>,
-}
-
-impl Answers {
-    fn new(decisions: &[Decision]) -> Self {
-        let mut decisions = decisions.to_vec();
-        decisions.reverse();
-        Self {
-            decisions: Mutex::new(decisions),
-            asked: Mutex::new(Vec::new()),
-        }
-    }
-}
-
-impl Approver for Answers {
-    fn decide(&self, request: &ApprovalRequest) -> impl Future<Output = Decision> + Send {
-        self.asked.lock().unwrap().push(request.clone());
-        ready(
-            self.decisions
-                .lock()
-                .unwrap()
-                .pop()
-                .unwrap_or(Decision::Deny),
-        )
-    }
-}
 
 fn touch(name: &str) -> Vec<(&'static str, serde_json::Value)> {
     vec![("bash", json!({"command": format!("touch {name}")}))]
@@ -70,10 +37,7 @@ fn each_question_and_its_answer_are_recorded_before_the_result() {
         let approver = Answers::new(&[Decision::AllowOnce, Decision::Deny]);
         let harness = asking_harness(&dir, answers, approver).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "touch two files", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "touch two files").await;
         assert!(dir.join("a").exists() && !dir.join("b").exists());
 
         let events = events(harness.log(), thread.id).await;
@@ -113,16 +77,10 @@ fn each_question_and_its_answer_are_recorded_before_the_result() {
             "what it asks, in the server's sentence, and what would run"
         );
         assert_eq!(requested.caution, None, "only the mode asks");
-        let asked = harness_asked(&harness);
+        let asked = harness.approver().asked();
         assert_eq!(asked[0].thread, thread.id, "the approver knows the thread");
         assert_eq!(asked[0].call_id.as_str(), decided[0].0, "and the call");
     });
-}
-
-fn harness_asked<L: glave_ports::EventLog>(
-    harness: &glave_harness::Harness<ScriptedModel, L, glave_ports::InMemoryBlobs, Answers>,
-) -> Vec<ApprovalRequest> {
-    harness.approver().asked.lock().unwrap().clone()
 }
 
 #[test]
@@ -139,20 +97,14 @@ fn allow_for_thread_survives_resuming_the_thread() {
         let approver = Answers::new(&[Decision::AllowForThread]);
         let harness = harness_on(&dir, answers, approver, InMemoryLog::new(), 1, asking()).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "first", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "first").await;
         let mut resumed = harness.resume_thread(scope(), thread.id).await.unwrap();
-        harness
-            .run_turn(&mut resumed, "second", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut resumed, "second").await;
         assert!(
             dir.join("second").exists(),
             "not asked again after resuming"
         );
-        assert_eq!(harness_asked(&harness).len(), 1);
+        assert_eq!(harness.approver().asked().len(), 1);
     });
 }
 
@@ -166,10 +118,7 @@ fn no_one_there_is_recorded_as_such() {
         ];
         let harness = asking_harness(&dir, answers, NoOneToAsk).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "touch x", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "touch x").await;
         let events = events(harness.log(), thread.id).await;
         assert_eq!(verdicts(&events)[0].1, Verdict::NoOneThere);
     });

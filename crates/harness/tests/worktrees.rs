@@ -8,11 +8,12 @@ use std::process::Command;
 use std::sync::Arc;
 
 use crate::support::*;
-use glave_computer::{LocalComputers, RemoteComputers, serve_tcp};
+use crate::wire::across_the_wire;
+use glave_computer::LocalComputers;
 use glave_event::{Body, Event, Opened, StopReason, WorkspaceBound};
-use glave_harness::{AllowAll, Cancel, HarnessError, Place, Workspace, branch_for};
+use glave_harness::{AllowAll, HarnessError, Place, Workspace, branch_for};
 use glave_ports::Caller;
-use glave_ports::computer::{ComputerError, Computers, Environment, Sources, WorkspaceId};
+use glave_ports::computer::{ComputerError, Computers, WorkspaceId};
 use glave_ports::testing::TempDir;
 use glave_ports::{Completion, EventLog, InMemoryLog, Standing, ThreadQuery};
 use serde_json::json;
@@ -80,50 +81,13 @@ fn bound(events: &[Event]) -> Vec<&WorkspaceBound> {
 #[test]
 fn by_default_the_model_is_sent_exactly_what_it_was_before() {
     let dir = folder("worktrees-default");
-    std::fs::write(dir.join("a.txt"), "hi\n").unwrap();
-    let script = || {
-        vec![
-            answer(
-                None,
-                vec![("read", json!({"path": "a.txt"}))],
-                StopReason::ToolUse,
-            ),
-            answer(Some("Done."), vec![], StopReason::EndTurn),
-        ]
-    };
     block_on!(async {
-        let (before, seen_before) = harness_with(
-            workspace(&dir).await,
-            script(),
-            AllowAll,
-            InMemoryLog::new(),
-            1,
-            settings(),
-        );
-        let mut thread = before.start_thread(scope()).await.unwrap();
-        before
-            .run_turn(&mut thread, "read it", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        let before = sent_reading(&dir).await;
+        let (now, seen) = reading(&dir).await;
+        let mut thread = thread_in(&now, Place::Folder(at(&dir))).await;
+        turn(&now, &mut thread, "read it").await;
 
-        let (now, seen_now) = harness_with(
-            workspace(&dir).await,
-            script(),
-            AllowAll,
-            InMemoryLog::new(),
-            1,
-            settings(),
-        );
-        let mut thread = now
-            .start_thread_in(scope(), &Caller::default(), Place::Folder(at(&dir)))
-            .await
-            .unwrap();
-        now.run_turn(&mut thread, "read it", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
-
-        let before = format!("{:?}", seen_before.lock().unwrap());
-        let now_sent = format!("{:?}", seen_now.lock().unwrap());
+        let now_sent = format!("{:?}", seen.lock().unwrap());
         assert_eq!(now_sent, before, "byte for byte the same requests");
         let events = events(now.log(), thread.id).await;
         let recorded = bound(&events);
@@ -151,13 +115,8 @@ fn a_worktree_thread_works_on_its_own_branch_and_resumes_there() {
             1,
             settings(),
         );
-        let mut thread = here
-            .start_thread_in(scope(), &Caller::default(), Place::Folder(at(&elsewhere)))
-            .await
-            .unwrap();
-        here.run_turn(&mut thread, "add notes", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        let mut thread = thread_in(&here, Place::Folder(at(&elsewhere))).await;
+        turn(&here, &mut thread, "add notes").await;
 
         let answers = [writes("notes.txt", "one\n"), writes("more.txt", "two\n")].concat();
         let (harness, seen) = harness_with(
@@ -168,14 +127,8 @@ fn a_worktree_thread_works_on_its_own_branch_and_resumes_there() {
             1,
             settings(),
         );
-        let mut thread = harness
-            .start_thread_in(scope(), &Caller::default(), Place::Worktree(at(&repo)))
-            .await
-            .unwrap();
-        harness
-            .run_turn(&mut thread, "add notes", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        let mut thread = thread_in(&harness, Place::Worktree(at(&repo))).await;
+        turn(&harness, &mut thread, "add notes").await;
         let sent_here = format!("{:?}", seen_here.lock().unwrap());
         let sent = format!("{:?}", seen.lock().unwrap());
         assert_eq!(sent, sent_here, "only where the tools act changes");
@@ -208,10 +161,7 @@ fn a_worktree_thread_works_on_its_own_branch_and_resumes_there() {
         assert_eq!(String::from_utf8_lossy(&on.stdout).trim(), branch);
 
         let mut resumed = harness.resume_thread(scope(), thread.id).await.unwrap();
-        harness
-            .run_turn(&mut resumed, "add more", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut resumed, "add more").await;
         assert_eq!(
             std::fs::read_to_string(root.join("more.txt")).unwrap(),
             "two\n"
@@ -239,14 +189,8 @@ fn a_scratch_thread_works_in_its_own_folder_and_resumes_there_never_in_the_proje
             1,
             settings(),
         );
-        let mut thread = harness
-            .start_thread_in(scope(), &Caller::default(), Place::Scratch)
-            .await
-            .unwrap();
-        harness
-            .run_turn(&mut thread, "add notes", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        let mut thread = thread_in(&harness, Place::Scratch).await;
+        turn(&harness, &mut thread, "add notes").await;
         let events = events(harness.log(), thread.id).await;
         let recorded = bound(&events);
         let [bound] = &recorded[..] else {
@@ -262,10 +206,7 @@ fn a_scratch_thread_works_in_its_own_folder_and_resumes_there_never_in_the_proje
         );
         assert!(root.join("notes.txt").exists());
         let mut resumed = harness.resume_thread(scope(), thread.id).await.unwrap();
-        harness
-            .run_turn(&mut resumed, "add more", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut resumed, "add more").await;
         assert!(root.join("more.txt").exists(), "resumed in its own folder");
         assert!(!repo.join("notes.txt").exists() && !repo.join("more.txt").exists());
     });
@@ -339,34 +280,17 @@ fn a_computer_across_the_wire_makes_the_worktree_through_the_port() {
         let computers = Arc::new(
             LocalComputers::new(base.with_extension("copies"), environment()).with_worktrees(&base),
         );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let server = tokio::spawn(serve_tcp(computers, listener, "token".into()));
-        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
-        let (read, write) = stream.into_split();
-        let remote = RemoteComputers::connect(read, write);
-        remote.authenticate("token").await.unwrap();
-        let computer = remote.create(&Environment::host()).await.unwrap();
-        let sources = Sources::Folder {
-            path: repo.to_string_lossy().into_owned(),
-        };
-        let info = remote.open(computer.id, &sources).await.unwrap();
+        let (remote, server) = across_the_wire(computers, &repo).await;
         let (harness, _) = harness_with(
-            Workspace::new(Arc::new(remote), info),
+            remote,
             writes("remote.txt", "far\n"),
             AllowAll,
             InMemoryLog::new(),
             1,
             settings(),
         );
-        let mut thread = harness
-            .start_thread_in(scope(), &Caller::default(), Place::Worktree(at(&repo)))
-            .await
-            .unwrap();
-        harness
-            .run_turn(&mut thread, "write", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        let mut thread = thread_in(&harness, Place::Worktree(at(&repo))).await;
+        turn(&harness, &mut thread, "write").await;
         server.abort();
         let events = events(harness.log(), thread.id).await;
         let root = PathBuf::from(&bound(&events)[0].root);
@@ -436,14 +360,8 @@ fn a_thread_let_go_closes_its_workspace_once_its_commands_are_gone() {
         );
         let in_folder = || Place::Folder(at(&repo));
         let opened = |events: &[Event]| WorkspaceId::from_uuid(bound(events)[0].workspace);
-        let mut running = harness
-            .start_thread_in(scope(), &Caller::default(), in_folder())
-            .await
-            .unwrap();
-        harness
-            .run_turn(&mut running, "start it", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        let mut running = thread_in(&harness, in_folder()).await;
+        turn(&harness, &mut running, "start it").await;
         let first = opened(&events(harness.log(), running.id).await);
         harness.let_go(running).await;
         // Its command outlives the thread being held, so its workspace stays open for it.

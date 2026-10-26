@@ -4,7 +4,7 @@
 //! is dropped so the thread stays valid.
 
 use glave_event::{Outcome, Part, StopReason};
-use glave_harness::{AllowAll, Cancel};
+use glave_harness::AllowAll;
 use glave_ports::{InMemoryLog, Message, ToolChoice};
 use serde_json::json;
 
@@ -46,15 +46,7 @@ fn with_no_limit_a_turn_runs_until_the_model_is_done() {
         let (harness, seen) =
             harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        let summary = harness
-            .run_turn(
-                &mut thread,
-                "read them over and over",
-                &Cancel::new(),
-                &mut |_| {},
-            )
-            .await
-            .unwrap();
+        let summary = turn(&harness, &mut thread, "read them over and over").await;
         assert_eq!(summary.outcome, Outcome::Completed);
         assert_eq!(summary.model_calls, 60);
         assert_eq!(summary.tool_calls, 59);
@@ -73,11 +65,7 @@ fn the_last_step_reports_in_text_with_tools_off() {
     std::fs::write(dir.join("README.md"), "# notes\n").unwrap();
     block_on!(async {
         let answers = vec![
-            answer(
-                None,
-                vec![("read", json!({"path": "README.md"}))],
-                StopReason::ToolUse,
-            ),
+            reads("README.md"),
             answer(
                 Some("I reached the step limit. I read README.md; the rest is left."),
                 vec![("read", json!({"path": "README.md"}))],
@@ -89,10 +77,7 @@ fn the_last_step_reports_in_text_with_tools_off() {
         let (harness, seen) =
             harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        let summary = harness
-            .run_turn(&mut thread, "read everything", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        let summary = turn(&harness, &mut thread, "read everything").await;
         assert_eq!(summary.outcome, Outcome::LimitReached);
         assert_eq!(summary.model_calls, 2);
         assert_eq!(summary.tool_calls, 1, "the last step's call never ran");
@@ -144,10 +129,7 @@ fn a_limit_of_one_answers_in_text_at_once() {
         let (harness, seen) =
             harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        let summary = harness
-            .run_turn(&mut thread, "go", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        let summary = turn(&harness, &mut thread, "go").await;
         assert_eq!(summary.outcome, Outcome::LimitReached);
         assert_eq!(seen.lock().unwrap()[0].tool_choice, ToolChoice::None);
     });

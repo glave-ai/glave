@@ -5,7 +5,7 @@
 use std::future::{Future, pending};
 use std::time::{Duration, Instant};
 
-use glave_event::{Outcome, Part, StopReason};
+use glave_event::{Outcome, StopReason};
 use glave_harness::{AllowAll, ApprovalRequest, Approver, Cancel, Decision, Harness, Parts};
 use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{
@@ -18,21 +18,6 @@ use crate::support::*;
 
 /// The model told to the next turn after a cancel.
 const NOTE: &str = "[The person cancelled this turn on purpose.";
-
-fn texts(message: &Message) -> String {
-    let parts = match message {
-        Message::User { parts }
-        | Message::Tool { output: parts, .. }
-        | Message::Assistant { parts, .. } => parts,
-    };
-    parts
-        .iter()
-        .filter_map(|part| match part {
-            Part::Text { text } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect()
-}
 
 /// A model that cancels the turn as soon as it is asked, then never answers.
 struct Stalls(Cancel);
@@ -87,13 +72,10 @@ fn a_turn_cancelled_before_it_starts_asks_nothing_and_the_next_turn_carries_on()
             ]
         );
 
-        let summary = harness
-            .run_turn(&mut thread, "second", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        let summary = turn(&harness, &mut thread, "second").await;
         assert_eq!(summary.outcome, Outcome::Completed);
         let sent = seen.lock().unwrap().clone();
-        let said: Vec<String> = sent[0].messages.iter().map(texts).collect();
+        let said: Vec<String> = sent[0].messages.iter().map(text_of).collect();
         assert_eq!(said.len(), 3, "{said:?}");
         assert_eq!(said[0], "first");
         assert!(said[1].starts_with(NOTE), "{said:?}");
@@ -125,7 +107,7 @@ fn a_model_that_never_answers_is_abandoned() {
             .unwrap();
         assert_eq!(summary.outcome, Outcome::Cancelled);
         let last = thread.messages().last().unwrap();
-        assert!(texts(last).starts_with(NOTE));
+        assert!(text_of(last).starts_with(NOTE));
         let recorded = kinds(&events(harness.log(), thread.id).await);
         assert_eq!(recorded.last(), Some(&"turn.ended"));
         assert!(
@@ -179,7 +161,7 @@ fn a_running_command_stops_with_what_it_started_and_later_calls_do_not_run() {
             .messages()
             .iter()
             .filter(|message| matches!(message, Message::Tool { .. }))
-            .map(texts)
+            .map(text_of)
             .collect();
         assert_eq!(results.len(), 2, "every call has a result: {results:?}");
         assert!(

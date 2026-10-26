@@ -11,14 +11,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use glave_event::{Body, HookPoint, StopReason};
 use glave_harness::{
-    AllowAll, Brought, Cancel, NoOneToAsk, Permissions, Place, ProjectFolders, Settled,
+    AllowAll, Approver, Brought, Cancel, Harness, NoOneToAsk, Permissions, Place, ProjectFolders,
+    Settled, Thread,
 };
 use glave_ports::Caller;
 use glave_ports::computer::{Sandbox, SandboxLevel};
 use glave_ports::settings::{Hook, Hooks, Judge, Protections};
 use glave_ports::{
-    BoxFuture, Effect, InMemoryLog, InMemoryTools, ProjectId, Purpose, ToolInfo, ToolOutput,
-    ToolSpec,
+    BoxFuture, Effect, InMemoryBlobs, InMemoryLog, InMemoryTools, ProjectId, Purpose, ToolInfo,
+    ToolOutput, ToolSpec,
 };
 use serde_json::json;
 
@@ -86,6 +87,23 @@ impl ProjectFolders for Project {
     }
 }
 
+/// `harness` with `project` as the project of every folder, and a thread started in
+/// `project_dir`.
+async fn in_project<A: Approver>(
+    harness: Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, A>,
+    project: &Arc<Project>,
+    project_dir: &Path,
+) -> (
+    Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, A>,
+    Thread,
+) {
+    let harness =
+        harness.with_project_folders(Some(Arc::clone(project) as Arc<dyn ProjectFolders>));
+    let place = Place::Folder(project_dir.to_string_lossy().into_owned());
+    let thread = thread_in(&harness, place).await;
+    (harness, thread)
+}
+
 /// A tool `name` that answers every call with `says`.
 fn tool(name: &str, says: &str) -> InMemoryTools {
     let info = ToolInfo {
@@ -141,18 +159,9 @@ fn a_project_s_tools_hooks_and_mode_are_on_from_the_turn_after_it_is_trusted() {
         ];
         let (harness, seen) =
             harness_seeing(&dir, answers, Refuse, InMemoryLog::new(), 1, asking()).await;
-        let harness =
-            harness.with_project_folders(Some(Arc::clone(&project) as Arc<dyn ProjectFolders>));
-        let place = Place::Folder(project_dir.to_string_lossy().into_owned());
-        let mut thread = harness
-            .start_thread_in(scope(), &Caller::default(), place)
-            .await
-            .unwrap();
+        let (harness, mut thread) = in_project(harness, &project, &project_dir).await;
         assert_eq!(harness.settled(&project_dir).await, Settled::default());
-        harness
-            .run_turn(&mut thread, "write before", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "write before").await;
         assert!(!tool_names(&seen, 0).contains(&"mcp__docs__search".to_owned()));
         let refused = !project_dir.join("before.txt").exists();
         assert!(refused, "Ask first asked, and it was refused");
@@ -163,15 +172,7 @@ fn a_project_s_tools_hooks_and_mode_are_on_from_the_turn_after_it_is_trusted() {
             harness.settled(&project_dir).await.protections.permissions,
             Some(Permissions::FullAccess)
         );
-        harness
-            .run_turn(
-                &mut thread,
-                "search, then write",
-                &Cancel::new(),
-                &mut |_| {},
-            )
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "search, then write").await;
         assert!(tool_names(&seen, 2).contains(&"mcp__docs__search".to_owned()));
         assert!(
             project_dir.join("after.txt").exists(),
@@ -351,25 +352,11 @@ fn a_project_s_model_judge_titles_and_web_reach_its_threads_alone() {
             .with_project_folders(Some(Arc::new(Choosing) as Arc<dyn ProjectFolders>))
             .with_web(Some(Arc::new(tool("web_fetch", "the harness's web"))));
         let place = Place::Folder(project_dir.to_string_lossy().into_owned());
-        let mut thread = harness
-            .start_thread_in(scope(), &Caller::default(), place)
-            .await
-            .unwrap();
-        harness
-            .run_turn(
-                &mut thread,
-                "read it, then push",
-                &Cancel::new(),
-                &mut |_| {},
-            )
-            .await
-            .unwrap();
+        let mut thread = thread_in(&harness, place).await;
+        turn(&harness, &mut thread, "read it, then push").await;
         // A thread in no project here: the harness's own of each.
         let mut chat = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut chat, "read it", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut chat, "read it").await;
         let asked: Vec<(Purpose, String)> = seen
             .lock()
             .unwrap()
@@ -447,23 +434,11 @@ fn a_project_that_gives_full_access_runs_its_commands_without_the_sandbox_once_t
             1,
             in_the_sandbox(),
         );
-        let harness =
-            harness.with_project_folders(Some(Arc::clone(&project) as Arc<dyn ProjectFolders>));
-        let place = Place::Folder(project_dir.to_string_lossy().into_owned());
-        let mut thread = harness
-            .start_thread_in(scope(), &Caller::default(), place)
-            .await
-            .unwrap();
-        harness
-            .run_turn(&mut thread, "write outside", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        let (harness, mut thread) = in_project(harness, &project, &project_dir).await;
+        turn(&harness, &mut thread, "write outside").await;
         assert!(!base.join("before.txt").exists(), "the sandbox held");
         project.trust();
-        harness
-            .run_turn(&mut thread, "write outside", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "write outside").await;
         assert!(base.join("after.txt").exists(), "full access: no sandbox");
     });
     let _ = std::fs::remove_dir_all(&base);
@@ -505,18 +480,9 @@ fn a_project_that_takes_the_network_offers_its_commands_the_ask_for_it() {
             1,
             in_the_sandbox(),
         );
-        let harness =
-            harness.with_project_folders(Some(Arc::clone(&project) as Arc<dyn ProjectFolders>));
-        let place = Place::Folder(project_dir.to_string_lossy().into_owned());
-        let mut thread = harness
-            .start_thread_in(scope(), &Caller::default(), place)
-            .await
-            .unwrap();
+        let (harness, mut thread) = in_project(harness, &project, &project_dir).await;
         for prompt in ["before", "after"] {
-            harness
-                .run_turn(&mut thread, prompt, &Cancel::new(), &mut |_| {})
-                .await
-                .unwrap();
+            turn(&harness, &mut thread, prompt).await;
             project.trust();
         }
         let network = |request: usize| {

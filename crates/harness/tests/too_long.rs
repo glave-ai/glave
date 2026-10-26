@@ -10,7 +10,6 @@ use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{
     Completion, Failure, InMemoryBlobs, InMemoryLog, Message, ModelRequest, ProviderError,
 };
-use serde_json::json;
 
 use crate::support::*;
 
@@ -29,14 +28,7 @@ fn text(said: &str) -> Completion {
 
 /// A first turn that reads a big file.
 fn first_turn() -> Vec<Result<Completion, ProviderError>> {
-    vec![
-        Ok(answer(
-            None,
-            vec![("read", json!({"path": "big.txt"}))],
-            StopReason::ToolUse,
-        )),
-        Ok(text("Read it.")),
-    ]
+    vec![Ok(reads("big.txt")), Ok(text("Read it."))]
 }
 
 /// A harness whose model gives `answers` in turn, in a folder holding a big file.

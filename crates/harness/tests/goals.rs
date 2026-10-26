@@ -152,15 +152,9 @@ fn the_model_pauses_with_a_reason_and_the_person_resumes_the_goal() {
         assert!(!harness.stop_goal(&mut thread, &caller).await.unwrap());
 
         // The person answers in a plain turn, which looks like any turn without a goal.
-        harness
-            .run_turn(&mut thread, "Use 8080.", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "Use 8080.").await;
         let mut fresh = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut fresh, "hello", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut fresh, "hello").await;
         {
             let seen = seen.lock().unwrap();
             let (plain, other) = (seen.get(2).unwrap(), seen.get(3).unwrap());
@@ -398,10 +392,7 @@ fn the_goal_tool_is_offered_only_in_a_goals_turns() {
         )
         .await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "hello").await;
         let seen = seen.lock().unwrap();
         let request = seen.first().unwrap();
         assert!(!offers(request, UPDATE_GOAL));

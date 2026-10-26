@@ -5,8 +5,8 @@
 use std::path::Path;
 use std::time::Duration;
 
-use glave_event::{Outcome, StopReason};
-use glave_harness::{AllowAll, Cancel, Harness, HarnessError, Live, Parts, Retries};
+use glave_event::{Outcome, StopReason, TurnResult};
+use glave_harness::{AllowAll, Cancel, Harness, HarnessError, Live, Parts, Retries, Thread};
 use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{InMemoryBlobs, InMemoryLog, ProviderError};
 
@@ -48,6 +48,21 @@ async fn harness(
     Harness::new(parts, settings)
 }
 
+/// A turn on "hi" in a new thread of `harness`: the thread, how the turn went, and what it
+/// showed.
+async fn tried(
+    harness: &Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, AllowAll>,
+) -> (Thread, Result<TurnResult, HarnessError>, Vec<Live>) {
+    let mut thread = harness.start_thread(scope()).await.unwrap();
+    let mut shown = Vec::new();
+    let ran = harness
+        .run_turn(&mut thread, "hi", &Cancel::new(), &mut |live| {
+            shown.push(live);
+        })
+        .await;
+    (thread, ran, shown)
+}
+
 fn retries(shown: &[Live]) -> Vec<(u32, u32)> {
     shown
         .iter()
@@ -68,14 +83,8 @@ fn failures_that_may_pass_are_tried_again_and_shown() {
         ];
         let dir = folder("retry");
         let harness = harness(&dir, failures, Duration::ZERO).await;
-        let mut thread = harness.start_thread(scope()).await.unwrap();
-        let mut shown = Vec::new();
-        let summary = harness
-            .run_turn(&mut thread, "hi", &Cancel::new(), &mut |live| {
-                shown.push(live);
-            })
-            .await
-            .unwrap();
+        let (thread, ran, shown) = tried(&harness).await;
+        let summary = ran.unwrap();
         assert_eq!(summary.outcome, Outcome::Completed);
         assert_eq!(retries(&shown), [(1, 4), (2, 4), (3, 4)]);
         assert!(
@@ -111,14 +120,8 @@ fn a_response_that_errors_before_any_output_is_tried_again() {
     block_on!(async {
         let dir = folder("retry");
         let harness = harness(&dir, vec![empty_error()], Duration::ZERO).await;
-        let mut thread = harness.start_thread(scope()).await.unwrap();
-        let mut shown = Vec::new();
-        let summary = harness
-            .run_turn(&mut thread, "hi", &Cancel::new(), &mut |live| {
-                shown.push(live);
-            })
-            .await
-            .unwrap();
+        let (_, ran, shown) = tried(&harness).await;
+        let summary = ran.unwrap();
         assert_eq!(summary.outcome, Outcome::Completed);
         assert_eq!(retries(&shown), [(1, 4)]);
     });
@@ -129,13 +132,7 @@ fn a_response_that_errors_before_any_output_every_time_fails_after_the_limit() {
     block_on!(async {
         let dir = folder("retry");
         let harness = harness(&dir, vec![empty_error(); 5], Duration::ZERO).await;
-        let mut thread = harness.start_thread(scope()).await.unwrap();
-        let mut shown = Vec::new();
-        let result = harness
-            .run_turn(&mut thread, "hi", &Cancel::new(), &mut |live| {
-                shown.push(live);
-            })
-            .await;
+        let (_, result, shown) = tried(&harness).await;
         assert!(matches!(result, Err(HarnessError::Provider(_))));
         assert_eq!(retries(&shown).len(), 4);
     });
@@ -165,14 +162,8 @@ fn a_response_that_errors_after_output_is_not_tried_again() {
             workspace: workspace(&dir).await,
         };
         let harness = Harness::new(parts, settings);
-        let mut thread = harness.start_thread(scope()).await.unwrap();
-        let mut shown = Vec::new();
-        let summary = harness
-            .run_turn(&mut thread, "hi", &Cancel::new(), &mut |live| {
-                shown.push(live);
-            })
-            .await
-            .unwrap();
+        let (_, ran, shown) = tried(&harness).await;
+        let summary = ran.unwrap();
         assert_eq!(summary.outcome, Outcome::Failed);
         assert_eq!(retries(&shown), []);
     });
@@ -190,14 +181,8 @@ fn a_failure_that_will_not_pass_ends_the_turn_at_once() {
         block_on!(async {
             let dir = folder("retry");
             let harness = harness(&dir, vec![failed.clone()], Duration::ZERO).await;
-            let mut thread = harness.start_thread(scope()).await.unwrap();
-            let mut shown = Vec::new();
-            let error = harness
-                .run_turn(&mut thread, "hi", &Cancel::new(), &mut |live| {
-                    shown.push(live);
-                })
-                .await
-                .unwrap_err();
+            let (_, ran, shown) = tried(&harness).await;
+            let error = ran.unwrap_err();
             assert!(matches!(error, HarnessError::Provider(e) if e == failed));
             assert_eq!(retries(&shown), []);
         });
@@ -209,13 +194,7 @@ fn after_four_retries_the_turn_fails() {
     block_on!(async {
         let dir = folder("retry");
         let harness = harness(&dir, vec![unavailable(); 5], Duration::ZERO).await;
-        let mut thread = harness.start_thread(scope()).await.unwrap();
-        let mut shown = Vec::new();
-        let result = harness
-            .run_turn(&mut thread, "hi", &Cancel::new(), &mut |live| {
-                shown.push(live);
-            })
-            .await;
+        let (thread, result, shown) = tried(&harness).await;
         assert!(result.is_err());
         assert_eq!(retries(&shown).len(), 4);
         let recorded = kinds(&events(harness.log(), thread.id).await);

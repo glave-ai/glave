@@ -10,36 +10,21 @@ use std::process::Command;
 use std::sync::Arc;
 
 use crate::support::*;
+use crate::worker::{branches, hands_back, origin};
 use glave_computer::LocalComputers;
 use glave_event::{Body, ComputerKind, Event, Opened, RemovedReason, StopReason};
-use glave_harness::{AllowAll, Cancel, HarnessError, NoOneToAsk, Place, Workers, wip_branch};
+use glave_harness::{
+    AllowAll, Approver, Cancel, Harness, HarnessError, NoOneToAsk, Place, Thread, Workers,
+    wip_branch,
+};
 use glave_ports::Caller;
 use glave_ports::computer::{Bytes, Environment, FileWrite, Sources};
-use glave_ports::{Completion, EventLog as _, InMemoryLog, Standing, ThreadQuery};
-use serde_json::json;
+use glave_ports::{EventLog as _, InMemoryBlobs, InMemoryLog, Standing, ThreadQuery};
 
 fn environment() -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
     std::env::vars_os()
         .filter(|(name, _)| name == "PATH" || name == "HOME")
         .collect()
-}
-
-/// A bare repository with one commit on `main`, as a worker clones it.
-fn origin(dir: &Path) -> PathBuf {
-    let origin = dir.join("origin.git");
-    let script = format!(
-        "git init -q --bare {o} && git init -q src && cd src && echo hi > a.txt && \
-             git add a.txt && git -c user.name=t -c user.email=t@example.com commit -q -m one \
-             && git push -q {o} HEAD:refs/heads/main",
-        o = origin.display()
-    );
-    let made = Command::new("bash")
-        .args(["-c", &script])
-        .current_dir(dir)
-        .status()
-        .unwrap();
-    assert!(made.success());
-    origin
 }
 
 fn workers(dir: &Path, origin: &Path) -> Workers {
@@ -53,30 +38,20 @@ fn workers(dir: &Path, origin: &Path) -> Workers {
     }
 }
 
-fn script() -> Vec<Completion> {
-    vec![
-        answer(
-            None,
-            vec![
-                ("write", json!({"path": "notes.txt", "content": "work\n"})),
-                (
-                    "write",
-                    json!({"path": ".glave/out/report.md", "content": "done\n"}),
-                ),
-            ],
-            StopReason::ToolUse,
-        ),
-        answer(Some("Done."), vec![], StopReason::EndTurn),
-    ]
-}
-
-fn branches(origin: &Path) -> String {
-    let listed = Command::new("git")
-        .args(["for-each-ref", "--format=%(refname:short)"])
-        .current_dir(origin)
-        .output()
-        .unwrap();
-    String::from_utf8_lossy(&listed.stdout).into_owned()
+/// `harness` with this machine's workers on `origin`, and a thread on one of them after a turn
+/// on "do it".
+async fn on_a_worker<A: Approver>(
+    harness: Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, A>,
+    dir: &Path,
+    origin: &Path,
+) -> (
+    Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, A>,
+    Thread,
+) {
+    let harness = harness.with_workers(workers(dir, origin));
+    let mut thread = thread_in(&harness, Place::Worker(Environment::host())).await;
+    turn(&harness, &mut thread, "do it").await;
+    (harness, thread)
 }
 
 /// A file at a revision of `origin`, if it is there.
@@ -96,54 +71,15 @@ fn shown(origin: &Path, revision: &str) -> Option<String> {
 fn with_workers_configured_but_unused_the_model_is_sent_exactly_what_it_was() {
     let dir = folder("workers-unused");
     let origin = origin(&dir);
-    std::fs::write(dir.join("a.txt"), "hi\n").unwrap();
-    let read = || {
-        vec![
-            answer(
-                None,
-                vec![("read", json!({"path": "a.txt"}))],
-                StopReason::ToolUse,
-            ),
-            answer(Some("Done."), vec![], StopReason::EndTurn),
-        ]
-    };
     block_on!(async {
-        let (before, seen_before) = harness_with(
-            workspace(&dir).await,
-            read(),
-            AllowAll,
-            InMemoryLog::new(),
-            1,
-            settings(),
-        );
-        let mut thread = before.start_thread(scope()).await.unwrap();
-        before
-            .run_turn(&mut thread, "read it", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
-        let (now, seen_now) = harness_with(
-            workspace(&dir).await,
-            read(),
-            AllowAll,
-            InMemoryLog::new(),
-            1,
-            settings(),
-        );
+        let before = sent_reading(&dir).await;
+        let (now, seen) = reading(&dir).await;
         let now = now.with_workers(workers(&dir, &origin));
-        let mut thread = now
-            .start_thread_in(
-                scope(),
-                &Caller::default(),
-                Place::Folder(dir.to_string_lossy().into_owned()),
-            )
-            .await
-            .unwrap();
-        now.run_turn(&mut thread, "read it", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        let mut thread = thread_in(&now, Place::Folder(dir.to_string_lossy().into_owned())).await;
+        turn(&now, &mut thread, "read it").await;
         assert_eq!(
-            format!("{:?}", seen_now.lock().unwrap()),
-            format!("{:?}", seen_before.lock().unwrap()),
+            format!("{:?}", seen.lock().unwrap()),
+            before,
             "byte for byte the same requests"
         );
         assert_eq!(now.release_worker(&mut thread).await.unwrap(), None);
@@ -159,25 +95,13 @@ fn a_worker_thread_is_told_its_sources_and_released_with_its_work_kept() {
     block_on!(async {
         let (harness, seen) = harness_with(
             workspace(&here).await,
-            script(),
+            hands_back(),
             AllowAll,
             InMemoryLog::new(),
             1,
             settings(),
         );
-        let harness = harness.with_workers(workers(&dir, &origin));
-        let mut thread = harness
-            .start_thread_in(
-                scope(),
-                &Caller::default(),
-                Place::Worker(Environment::host()),
-            )
-            .await
-            .unwrap();
-        harness
-            .run_turn(&mut thread, "do it", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        let (harness, mut thread) = on_a_worker(harness, &dir, &origin).await;
         let sent = format!("{:?}", seen.lock().unwrap().first().unwrap().messages);
         assert!(sent.contains("You are working on a cloud worker"), "{sent}");
         assert!(sent.contains(".glave/out/"), "{sent}");
@@ -247,14 +171,7 @@ fn a_worker_with_nothing_unpushed_pushes_nothing() {
             attachments: Vec::new(),
             ..workers(&dir, &origin)
         });
-        let mut thread = harness
-            .start_thread_in(
-                scope(),
-                &Caller::default(),
-                Place::Worker(Environment::host()),
-            )
-            .await
-            .unwrap();
+        let mut thread = thread_in(&harness, Place::Worker(Environment::host())).await;
         let released = harness.release_worker(&mut thread).await.unwrap().unwrap();
         assert_eq!(released.branch, None);
         assert!(!branches(&origin).contains("glave/wip"));
@@ -268,12 +185,8 @@ fn a_released_worker_does_not_shift_the_call_ids_the_model_sees() {
     let here = dir.join("here");
     std::fs::create_dir_all(&here).unwrap();
     block_on!(async {
-        let mut answers = script();
-        answers.push(answer(
-            None,
-            vec![("read", json!({"path": "a.txt"}))],
-            StopReason::ToolUse,
-        ));
+        let mut answers = hands_back();
+        answers.push(reads("a.txt"));
         answers.push(answer(Some("Read it."), vec![], StopReason::EndTurn));
         let (harness, _) = harness_with(
             workspace(&here).await,
@@ -283,19 +196,7 @@ fn a_released_worker_does_not_shift_the_call_ids_the_model_sees() {
             1,
             settings(),
         );
-        let harness = harness.with_workers(workers(&dir, &origin));
-        let mut thread = harness
-            .start_thread_in(
-                scope(),
-                &Caller::default(),
-                Place::Worker(Environment::host()),
-            )
-            .await
-            .unwrap();
-        harness
-            .run_turn(&mut thread, "do it", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        let (harness, mut thread) = on_a_worker(harness, &dir, &origin).await;
         harness.release_worker(&mut thread).await.unwrap().unwrap();
         // The next tool call after the release is numbered by the in-memory thread. A
         // fresh resume numbers from the log, where each binding and removal is a record
@@ -368,22 +269,13 @@ fn on_a_worker_auto_changes_without_asking_and_ask_first_asks() {
         block_on!(async {
             let (harness, _) = harness_with(
                 workspace(&here).await,
-                script(),
+                hands_back(),
                 NoOneToAsk,
                 InMemoryLog::new(),
                 1,
                 settings,
             );
-            let harness = harness.with_workers(workers(&dir, &origin));
-            let place = Place::Worker(Environment::host());
-            let mut thread = harness
-                .start_thread_in(scope(), &Caller::default(), place)
-                .await
-                .unwrap();
-            harness
-                .run_turn(&mut thread, "do it", &Cancel::new(), &mut |_| {})
-                .await
-                .unwrap();
+            let (harness, thread) = on_a_worker(harness, &dir, &origin).await;
             let recorded = events(harness.log(), thread.id).await;
             let root = recorded.iter().find_map(|event| match &event.body {
                 Body::WorkspaceBound(bound) => Some(PathBuf::from(&bound.root)),

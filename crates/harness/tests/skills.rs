@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use glave_event::{Part, StopReason};
-use glave_harness::{Cancel, NoOneToAsk, Skills, find_skills, skill_folders};
+use glave_harness::{NoOneToAsk, Skills, find_skills, skill_folders};
 use glave_ports::{InMemoryLog, Message, ModelRequest, ToolSource};
 use serde_json::json;
 
@@ -31,10 +31,7 @@ async fn first_request(dir: &Path, with_skills: bool) -> ModelRequest {
         harness
     };
     let mut thread = harness.start_thread(scope()).await.unwrap();
-    harness
-        .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
-        .await
-        .unwrap();
+    turn(&harness, &mut thread, "hello").await;
     seen.lock().unwrap().remove(0)
 }
 
@@ -72,10 +69,7 @@ fn with_skills_only_the_skill_tool_is_added_and_loading_one_never_asks() {
             harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, asking()).await;
         let harness = harness.with_tools(skill_sources(&dir).await);
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "style?", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "style?").await;
         let after = seen.lock().unwrap().remove(0);
         assert_eq!(
             after.system, before.system,
