@@ -1,8 +1,8 @@
 //! `cargo xtask ci`: the local gate, what CI runs: the Rust checks and docs, that no tracked
 //! file holds a secret-shaped literal, that crates keep the dependency rule and start processes
 //! only through glave-process, that every wait has a limit (`waits.rs`), that the tests leave
-//! nothing behind (`leftovers.rs`), that every package version a change brings in is 7 days
-//! old (`package_age.rs`), then the web checks (`web.rs`), which need Node unless
+//! nothing behind (`leftovers.rs`), that every package version a change brings in is at least
+//! 7 days old (`package_age.rs`), then the web checks (`web.rs`), which need Node unless
 //! `GLAVE_SKIP_WEB=1` skips them. On a laptop the lint, docs and tests cover only the crates a
 //! change reaches, and the web checks run only when the web changed (`changed.rs`); `--all`,
 //! and CI always, check everything. `--target` builds the lint, docs and tests for a target

@@ -11,8 +11,11 @@
 
 use super::locked::Registry;
 
-/// The registry, the package, its version, and why it can't wait.
-pub(super) const ALLOWED: &[(Registry, &str, &str, &str)] = &[];
+/// An entry: the registry, the package, its version, and why it can't wait.
+pub(super) type Entry = (Registry, &'static str, &'static str, &'static str);
+
+/// The versions let in early.
+pub(super) const ALLOWED: &[Entry] = &[];
 
 #[cfg(test)]
 mod tests {

@@ -127,10 +127,12 @@ fn package_lock(packages: &Value) -> String {
     .to_string()
 }
 
+/// An entry for `version` of `name` from the npm registry, as npm writes it.
 fn from_npm(name: &str, version: &str) -> Value {
+    let file = name.rsplit('/').next().unwrap();
     serde_json::json!({
         "version": version,
-        "resolved": format!("https://registry.npmjs.org/{name}/-/{name}-{version}.tgz"),
+        "resolved": format!("https://registry.npmjs.org/{name}/-/{file}-{version}.tgz"),
         "dev": true,
     })
 }
@@ -157,6 +159,8 @@ fn an_npm_package_added_or_updated_is_new_wherever_it_is_installed() {
             "version": "11.12.0",
             "resolved": "https://registry.npmjs.org/highlight.js/-/highlight.js-11.12.0.tgz",
         },
+        // Inside another's tarball, with no download of its own: dated by its name and version.
+        "node_modules/a/node_modules/inside": {"version": "1.2.3", "inBundle": true},
     }));
     let change = change(&npm(&base).unwrap(), &npm(&head).unwrap());
     assert_eq!(
@@ -164,6 +168,7 @@ fn an_npm_package_added_or_updated_is_new_wherever_it_is_installed() {
         [
             ("@angular/core", "22.2.2", vec![]),
             ("highlight.js", "11.12.0", vec![]),
+            ("inside", "1.2.3", vec![]),
             ("marked", "18.0.14", vec!["18.0.13"]),
             ("rxjs", "7.8.3", vec![]),
         ]
@@ -204,10 +209,40 @@ fn an_npm_package_from_another_registry_or_a_broken_lockfile_is_refused() {
     }));
     let err = npm(&other).unwrap_err();
     assert!(
-        err.contains("x 1.0.0 from https://example.com/x-1.0.0.tgz"),
+        err.contains(
+            "is x 1.0.0, and downloads it from https://example.com/x-1.0.0.tgz, not \
+                      from https://registry.npmjs.org/x/-/x-1.0.0.tgz"
+        ),
         "{err}"
     );
     assert!(npm("{").is_err());
     let old = npm(r#"{"lockfileVersion": 1, "dependencies": {}}"#).unwrap_err();
     assert!(old.contains("lists no `packages`"), "{old}");
+}
+
+#[test]
+fn an_npm_entry_whose_download_is_another_package_or_version_is_refused() {
+    // An old, well-known name and version over a new package's download would be dated as
+    // the old one while npm installs the new.
+    for (path, entry) in [
+        (
+            "node_modules/x",
+            serde_json::json!({
+                "name": "lodash",
+                "version": "4.17.21",
+                "resolved": "https://registry.npmjs.org/evil/-/evil-0.0.1.tgz",
+            }),
+        ),
+        (
+            "node_modules/marked",
+            serde_json::json!({
+                "version": "18.0.13",
+                "resolved": "https://registry.npmjs.org/marked/-/marked-18.0.15.tgz",
+            }),
+        ),
+    ] {
+        let lock = package_lock(&serde_json::json!({ path: entry }));
+        let err = npm(&lock).unwrap_err();
+        assert!(err.contains(&format!("says {path} is")), "{path}: {err}");
+    }
 }

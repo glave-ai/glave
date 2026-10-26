@@ -5,8 +5,8 @@ fn now() -> Timestamp {
     "2026-10-26T12:00:00Z".parse().unwrap()
 }
 
-fn package(name: &str, version: &str) -> Package {
-    Package {
+fn package(name: &str, version: &str) -> Pinned {
+    Pinned {
         name: name.to_owned(),
         version: version.to_owned(),
     }
@@ -199,7 +199,13 @@ fn every_version_new_or_allowed_is_asked_about_once_per_package() {
         new(Registry::Npm, "rxjs", "8.0.0", &[]),
         new(Registry::Crates, "rxjs", "0.1.0", &[]),
     ];
-    let wanted = wanted(&new);
+    let allowed = [(
+        Registry::Npm,
+        "rxjs",
+        "8.0.1",
+        "a fix that can't wait for its week",
+    )];
+    let wanted = wanted(&new, &allowed);
     let versions = |registry, name: &str| {
         wanted
             .get(&(registry, name.to_owned()))
@@ -207,10 +213,10 @@ fn every_version_new_or_allowed_is_asked_about_once_per_package() {
     };
     assert_eq!(
         versions(Registry::Npm, "rxjs"),
-        Some(vec!["7.8.2", "8.0.0"])
+        Some(vec!["7.8.2", "8.0.0", "8.0.1"])
     );
     assert_eq!(versions(Registry::Crates, "rxjs"), Some(vec!["0.1.0"]));
-    assert_eq!(wanted.len(), 2 + allowed::ALLOWED.len());
+    assert_eq!(wanted.len(), 2);
 }
 
 #[test]

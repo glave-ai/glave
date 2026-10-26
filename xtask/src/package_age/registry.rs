@@ -98,10 +98,6 @@ fn get(registry: Registry, url: &str, about: &str) -> Result<Option<String>, Unk
             "--location",
             "--proto",
             "=https",
-            // A request that may pass next time (a timeout, a 429, a 5xx) is tried twice more,
-            // as cargo tries its own downloads again.
-            "--retry",
-            "2",
             "--max-time",
             "30",
             "--user-agent",

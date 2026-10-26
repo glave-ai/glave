@@ -58,12 +58,12 @@ impl Registry {
 
 /// A package at one version.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) struct Package {
+pub(super) struct Pinned {
     pub(super) name: String,
     pub(super) version: String,
 }
 
-impl Package {
+impl Pinned {
     fn new(name: &str, version: &str) -> Self {
         Self {
             name: name.to_owned(),
@@ -94,15 +94,15 @@ impl Elsewhere {
 /// What a lockfile names: the versions from its registry, and those from elsewhere.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(super) struct Locked {
-    registry: BTreeSet<Package>,
-    elsewhere: BTreeMap<Package, Elsewhere>,
+    registry: BTreeSet<Pinned>,
+    elsewhere: BTreeMap<Pinned, Elsewhere>,
 }
 
 /// A version from the registry a change brings in, and the versions of the same package it
 /// replaces, if any.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Added {
-    pub(super) package: Package,
+    pub(super) package: Pinned,
     pub(super) replaces: Vec<String>,
 }
 
@@ -112,7 +112,7 @@ pub(super) struct Change {
     /// The versions from the registry, each to be dated.
     pub(super) added: Vec<Added>,
     /// The versions from elsewhere, which no registry dates.
-    pub(super) skipped: Vec<(Package, Elsewhere)>,
+    pub(super) skipped: Vec<(Pinned, Elsewhere)>,
 }
 
 /// What the lockfile `head` names that `base` did not; what it no longer names is not asked
@@ -153,7 +153,7 @@ fn cargo(text: &str) -> Result<Locked, String> {
         let name = field("name").ok_or("Cargo.lock names a package without its name")?;
         let version =
             field("version").ok_or_else(|| format!("Cargo.lock gives {name} no version"))?;
-        let package = Package::new(name, version);
+        let package = Pinned::new(name, version);
         match field("source") {
             None => {
                 locked.elsewhere.insert(package, Elsewhere::Path);
@@ -176,9 +176,10 @@ fn cargo(text: &str) -> Result<Locked, String> {
 }
 
 /// What `web/package-lock.json`, the text of one, names: each entry of its `packages` under a
-/// `node_modules` folder, from the npm registry unless it was resolved to a path or to git. A
-/// folder of the project's own (the root, a workspace) is from a path, and a link to one adds
-/// nothing, as the folder is listed itself.
+/// `node_modules` folder, from the npm registry unless it was resolved to a path or to git,
+/// and refused unless it downloads the very version it names. A folder of the project's own
+/// (the root, a workspace) is from a path, and a link to one adds nothing, as the folder is
+/// listed itself.
 fn npm(text: &str) -> Result<Locked, String> {
     let lock: Value = serde_json::from_str(text)
         .map_err(|err| format!("web/package-lock.json is not JSON: {err}"))?;
@@ -201,22 +202,34 @@ fn npm(text: &str) -> Result<Locked, String> {
         let Some(name) = field("name").or(installed) else {
             continue;
         };
-        let package = Package::new(name, version);
-        let resolved = field("resolved").unwrap_or(NPM_REGISTRY);
+        let pinned = Pinned::new(name, version);
+        // npm installs what `resolved` names; with none, the registry's own for the version.
+        let tarball = tarball(name, version);
+        let resolved = field("resolved").unwrap_or(tarball.as_str());
         if installed.is_none() || resolved.starts_with("file:") {
-            locked.elsewhere.insert(package, Elsewhere::Path);
+            locked.elsewhere.insert(pinned, Elsewhere::Path);
         } else if GIT.iter().any(|git| resolved.starts_with(git)) {
-            locked.elsewhere.insert(package, Elsewhere::Git);
-        } else if resolved.starts_with(NPM_REGISTRY) {
-            locked.registry.insert(package);
+            locked.elsewhere.insert(pinned, Elsewhere::Git);
+        } else if resolved == tarball {
+            locked.registry.insert(pinned);
         } else {
+            // A name and version the download doesn't match would date another package than
+            // the one npm installs.
             return Err(format!(
-                "web/package-lock.json takes {name} {version} from {resolved}, which this check \
-                 can't ask; glave takes npm packages from {NPM_REGISTRY} alone"
+                "web/package-lock.json says {path} is {name} {version}, and downloads it from \
+                 {resolved}, not from {tarball}, where the npm registry keeps it; this check \
+                 dates only what npm installs"
             ));
         }
     }
     Ok(locked)
+}
+
+/// Where the npm registry keeps `version` of the package `name`: `@angular/core` 22.2.2 at
+/// `…/@angular/core/-/core-22.2.2.tgz`.
+fn tarball(name: &str, version: &str) -> String {
+    let file = name.rsplit_once('/').map_or(name, |(_, file)| file);
+    format!("{NPM_REGISTRY}{name}/-/{file}-{version}.tgz")
 }
 
 #[cfg(test)]

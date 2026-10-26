@@ -23,8 +23,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use glave_ports::{Clock as _, SystemClock};
 use jiff::{SignedDuration, Timestamp};
 
+use allowed::{ALLOWED, Entry};
 use base::Base;
-use locked::{Added, Elsewhere, Package, Registry};
+use locked::{Added, Elsewhere, Pinned, Registry};
 use registry::{Registries, Unknown};
 
 /// How old a package version must be before it comes in.
@@ -46,7 +47,7 @@ struct BroughtIn {
     /// Each version from a registry, to be dated.
     new: Vec<New>,
     /// Each version from elsewhere, which no registry dates.
-    skipped: Vec<(Package, Elsewhere)>,
+    skipped: Vec<(Pinned, Elsewhere)>,
 }
 
 /// What the age rule says.
@@ -118,10 +119,10 @@ pub(crate) fn check() -> Result<(), String> {
     let mut registries = Registries::default();
     let mut published = BTreeMap::new();
     let mut undated = Vec::new();
-    for ((registry, name), versions) in wanted(&new) {
+    for ((registry, name), versions) in wanted(&new, ALLOWED) {
         match registries.published(registry, &name, &versions) {
             Ok(dates) => published.extend(dates.into_iter().map(|(version, at)| {
-                let package = Package {
+                let package = Pinned {
                     name: name.clone(),
                     version,
                 };
@@ -131,7 +132,7 @@ pub(crate) fn check() -> Result<(), String> {
             Err(Unknown::Unanswered(why)) => return unanswered(&why),
         }
     }
-    let verdict = judged(&new, allowed::ALLOWED, &published, SystemClock.now());
+    let verdict = judged(&new, ALLOWED, &published, SystemClock.now());
     if !skipped.is_empty() {
         let named: Vec<String> = skipped
             .iter()
@@ -184,8 +185,8 @@ fn brought_in(base: &Base) -> Result<BroughtIn, String> {
 }
 
 /// Each package to ask its registry about, with its versions: each version `new` brings in,
-/// and each the allow-list names, to see whether it is old enough now.
-fn wanted(new: &[New]) -> BTreeMap<(Registry, String), BTreeSet<String>> {
+/// and each `allowed` names, to see whether it is old enough now.
+fn wanted(new: &[New], allowed: &[Entry]) -> BTreeMap<(Registry, String), BTreeSet<String>> {
     let mut wanted: BTreeMap<_, BTreeSet<String>> = BTreeMap::new();
     let added = new.iter().map(|new| {
         let package = &new.added.package;
@@ -195,7 +196,7 @@ fn wanted(new: &[New]) -> BTreeMap<(Registry, String), BTreeSet<String>> {
             package.version.as_str(),
         )
     });
-    let allowed = allowed::ALLOWED
+    let allowed = allowed
         .iter()
         .map(|(registry, name, version, _)| (*registry, *name, *version));
     for (registry, name, version) in added.chain(allowed) {
@@ -212,12 +213,12 @@ fn wanted(new: &[New]) -> BTreeMap<(Registry, String), BTreeSet<String>> {
 /// isn't is a problem of its own.
 fn judged(
     new: &[New],
-    allowed: &[(Registry, &str, &str, &str)],
-    published: &BTreeMap<(Registry, Package), Timestamp>,
+    allowed: &[Entry],
+    published: &BTreeMap<(Registry, Pinned), Timestamp>,
     now: Timestamp,
 ) -> Verdict {
     let mut verdict = Verdict::default();
-    let is_allowed = |registry: Registry, package: &Package| {
+    let is_allowed = |registry: Registry, package: &Pinned| {
         allowed.iter().any(|(r, name, version, _)| {
             (*r, *name, *version) == (registry, &package.name, &package.version)
         })
@@ -250,7 +251,7 @@ fn judged(
         ));
     }
     for (registry, name, version, _) in allowed {
-        let package = Package {
+        let package = Pinned {
             name: (*name).to_owned(),
             version: (*version).to_owned(),
         };
@@ -314,7 +315,8 @@ fn days() -> i64 {
     OLD_ENOUGH.as_hours() / 24
 }
 
-/// How long ago something `age` old was, in its largest whole unit: "2 days ago".
+/// How long ago something `age` old was, in its largest unit, rounded down: "2 days ago" for
+/// two and a half.
 fn ago(age: SignedDuration) -> String {
     let (count, unit) = match age.as_secs() {
         secs if secs >= 86_400 => (secs / 86_400, "day"),

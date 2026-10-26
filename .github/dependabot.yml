@@ -1,8 +1,9 @@
-# Weekly, grouped: at most one pull request per ecosystem per week, titled chore(deps): ... so
-# it passes the title check. A version update waits until its release is 7 days old
-# (`cooldown`), the age `cargo xtask package-age` requires of every new version, so the check
-# passes it. Security updates come separately, as soon as an advisory lands; the cooldown
-# doesn't hold them.
+# Weekly, grouped: at most one pull request per group per week, titled chore(deps): ... so it
+# passes the title check. A version update waits until the release is 7 days old (`cooldown`),
+# the age `cargo xtask package-age` requires of every new version. The cooldown holds the
+# packages an update names, not the versions they bring with them, so an update can fail the
+# check until those are 7 days old too, and pass when run again then. Security updates come
+# separately, as soon as an advisory lands; the cooldown doesn't hold them.
 version: 2
 updates:
   - package-ecosystem: cargo
@@ -38,8 +39,7 @@ updates:
       actions:
         patterns: ["*"]
     open-pull-requests-limit: 2
-  # The web app, Glaze and the client: one npm package (web/package.json). When Playwright
-  # moves, ci.yml's e2e image moves with it by hand: the tests name the one they need.
+  # The web app, Glaze and the client: one npm package (web/package.json).
   - package-ecosystem: npm
     directory: /web
     schedule:
@@ -50,6 +50,11 @@ updates:
       prefix: chore
       include: scope
     groups:
+      # Playwright alone: ci.yml's e2e image moves with it, by hand in its pull request (the
+      # tests name the image they need), so the rest of the week's updates stay green.
+      playwright:
+        patterns: ["@playwright/test"]
       npm:
         patterns: ["*"]
+        exclude-patterns: ["@playwright/test"]
     open-pull-requests-limit: 2
