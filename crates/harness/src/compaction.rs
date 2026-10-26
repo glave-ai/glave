@@ -4,7 +4,7 @@
 
 use std::fmt::Write as _;
 
-use glave_event::{Arguments, Part, Seq, ThreadCompacted};
+use glave_event::{Arguments, Part, Seq, ThreadCompacted, TurnResult};
 
 use glave_ports::{
     BlobStore, Completion, EventLog, Failure, Message, ModelProvider, ModelRequest, ProviderError,
@@ -16,7 +16,7 @@ use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::room::{stated_window, trim_oldest};
 use crate::toolset::ToolSet;
-use crate::turn::{Live, TurnSummary, tally};
+use crate::turn::Live;
 
 /// When to compact a thread.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -159,7 +159,7 @@ where
         &self,
         thread: &mut Thread,
         offer: &ToolSet,
-        summary: &mut TurnSummary,
+        summary: &mut TurnResult,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<(), HarnessError> {
@@ -174,7 +174,7 @@ where
         match self.compact_with(thread, offer, cancel, live).await {
             Ok(compacted) => {
                 summary.model_calls = summary.model_calls.saturating_add(1);
-                tally(summary, &compacted.completion);
+                summary.take_in(&compacted.completion.responded());
                 Ok(())
             }
             Err(HarnessError::Provider(error)) => {

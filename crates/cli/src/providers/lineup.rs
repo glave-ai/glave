@@ -14,7 +14,7 @@ use glave_session::Models;
 
 use crate::config::Endpoint;
 use crate::gateway::remote::Remote;
-use crate::gateway::{Allowed, gateway, offered};
+use crate::gateway::{Allowed, free_if_here, gateway, offered};
 use crate::model::Model;
 use crate::setup::Setup;
 
@@ -101,7 +101,8 @@ impl Lineup {
                     Some((card, catalog))
                 });
                 about.insert(target.name.clone(), (catalog, service_name(provider)));
-                targets.push((rank(account.kind), describe::described(target, card)));
+                let target = free_if_here(describe::described(target, card), &endpoint);
+                targets.push((rank(account.kind), target));
             }
             first.get_or_insert(endpoint);
         }

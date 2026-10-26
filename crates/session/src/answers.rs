@@ -9,8 +9,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use glave_event::{CallId, ParentCall, ThreadId};
-use glave_harness::{Decision, HarnessError, TurnSummary};
+use glave_event::{CallId, ParentCall, ThreadId, TurnResult};
+use glave_harness::{Decision, HarnessError};
 use glave_ports::{
     BlobStore, BoxFuture, CallKind, Caller, EventLog, ModelProvider, Scope, Standing, ThreadQuery,
     ThreadView, WaitKind,
@@ -30,11 +30,11 @@ const FOLLOWED: usize = 4_096;
 /// Where each waiting turn sends how it ends: to whoever started or retried it, kept while the
 /// turn waits, since the work that ran it has ended.
 #[derive(Default)]
-pub(crate) struct Followed(Mutex<HashMap<ThreadId, Finish<TurnSummary>>>);
+pub(crate) struct Followed(Mutex<HashMap<ThreadId, Finish<TurnResult>>>);
 
 impl Followed {
     /// Keeps `finish`, where `thread`'s turn sends how it ends, while the turn waits.
-    pub(crate) fn keep(&self, thread: ThreadId, finish: Finish<TurnSummary>) {
+    pub(crate) fn keep(&self, thread: ThreadId, finish: Finish<TurnResult>) {
         let mut kept = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         kept.retain(|_, finish| finish.receiver_count() > 0);
         if kept.len() < FOLLOWED || kept.contains_key(&thread) {
@@ -44,7 +44,7 @@ impl Followed {
 
     /// Where `thread`'s turn sends how it ends, now that it goes on: the one kept for whoever
     /// follows it, else a new one.
-    fn take(&self, thread: ThreadId) -> Finish<TurnSummary> {
+    fn take(&self, thread: ThreadId) -> Finish<TurnResult> {
         let kept = self
             .0
             .lock()
@@ -68,7 +68,7 @@ type GoingOn<P, L, B> = Box<
             glave_harness::Thread,
             glave_harness::Cancel,
         )
-            -> BoxFuture<'static, (glave_harness::Thread, Result<TurnSummary, HarnessError>)>
+            -> BoxFuture<'static, (glave_harness::Thread, Result<TurnResult, HarnessError>)>
         + Send,
 >;
 
@@ -324,7 +324,7 @@ fn going_on<P, L, B>(
     thread: ThreadId,
     first: Option<(Record<P, L, B>, Told)>,
     caller: Caller,
-    finish: Finish<TurnSummary>,
+    finish: Finish<TurnResult>,
     stop: bool,
 ) -> GoingOn<P, L, B>
 where

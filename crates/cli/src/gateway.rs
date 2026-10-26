@@ -14,7 +14,8 @@ pub(crate) mod serve;
 
 use std::sync::{Arc, PoisonError, RwLock};
 
-use glave_gateway::{Gateway, Routes, Target};
+use glave_event::Currency;
+use glave_gateway::{Gateway, Price, Routes, Target};
 use glave_ports::{
     Completion, Delta, Failure, ModelProvider, ModelRequest, ProviderError, Purpose,
 };
@@ -24,6 +25,28 @@ use crate::model::{Model, documented_reasoning};
 use crate::providers::{identity, service_name};
 use glave_config::policy::{Constraints, ModelEntry, Source, check_model};
 use glave_session::protocol::ModelInfo;
+
+/// What a model on this computer costs, called straight rather than through a gateway
+/// elsewhere: nothing, so its calls report $0.00 as any other's report their cost.
+fn free_here() -> Price {
+    Price {
+        list: "this computer".to_owned(),
+        currency: Currency::USD,
+        input_per_mtok: 0,
+        cache_read_per_mtok: 0,
+        output_per_mtok: 0,
+    }
+}
+
+/// `target` at `endpoint`, priced at nothing when it runs on this computer and nothing else
+/// prices it.
+pub(crate) fn free_if_here(target: Target, endpoint: &Endpoint) -> Target {
+    if endpoint.local && endpoint.gateway.is_none() && target.price.is_none() {
+        target.with_price(free_here())
+    } else {
+        target
+    }
+}
 
 /// Which models a policy allows, and where the main and judge models were chosen.
 pub(crate) struct Allowed<'a> {
@@ -54,6 +77,7 @@ pub(crate) fn gateway(
     // No catalog describes these: Claude among them reasons as Anthropic documents.
     let at = |model: &str| {
         let target = Target::new(Arc::clone(&handle), name.clone(), model).at_service(&service);
+        let target = free_if_here(target, endpoint);
         match documented_reasoning(endpoint, model) {
             Some(reasoning) => target.with_reasoning(&reasoning),
             None => target,
@@ -301,6 +325,26 @@ pub(crate) mod tests {
         assert_eq!(haiku.reasoning(), Some(&listed), "its account's listing");
         let other = built(None, &constraints).unwrap();
         assert_eq!(other.routes().targets(Purpose::Main)[0].reasoning(), None);
+    }
+
+    #[test]
+    fn a_model_on_this_computer_costs_nothing_and_one_elsewhere_its_price() {
+        let mut here = endpoint();
+        here.provider = Config::for_url("http://localhost:11434/v1", None).unwrap();
+        here.local = here.provider.is_local();
+        let constraints = Constraints::default();
+        let allowed = Allowed {
+            constraints: &constraints,
+            main: None,
+            judge: &Source::Default,
+            models: &Source::Default,
+        };
+        let provider = Model::for_endpoint(&here).unwrap();
+        let gateway = gateway(provider, &here, None, &[], Vec::new(), &allowed).unwrap();
+        let price = gateway.routes().targets(Purpose::Main)[0].price.as_ref();
+        assert_eq!(price, Some(&free_here()), "its calls report $0.00");
+        let elsewhere = built(None, &constraints).unwrap();
+        assert_eq!(elsewhere.routes().targets(Purpose::Main)[0].price, None);
     }
 
     #[test]

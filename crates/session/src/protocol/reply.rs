@@ -3,8 +3,9 @@
 
 use glave_event::{
     At, EventId, Money, Origin, Outcome, Principal, RawEvent, Secret, Seq, ThreadId, TokenCounts,
+    TurnResult,
 };
-use glave_harness::{GoalProgress, RunningCommand, TurnSummary};
+use glave_harness::{GoalProgress, RunningCommand};
 use glave_ports::memories::Remembered;
 use glave_ports::{Project, ProjectId, Standing};
 use serde::{Deserialize, Serialize};
@@ -111,42 +112,6 @@ pub enum Status {
     /// A turn is paused until someone answers an approval or a question, or the thread's
     /// project asks the person to trust it.
     Waiting,
-}
-
-/// How a turn ended and what it cost.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct TurnResult {
-    pub outcome: Outcome,
-    pub model_calls: u32,
-    pub tool_calls: u32,
-    /// The commands that ran outside the sandbox, each one allowed.
-    #[serde(default)]
-    pub outside_sandbox: u32,
-    /// The commands that ran with the network the sandbox otherwise kept from them, each one
-    /// allowed.
-    #[serde(default)]
-    pub with_network: u32,
-    pub tokens: TokenCounts,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cost: Option<Money>,
-    /// True when a usage count was estimated, not reported.
-    #[serde(default)]
-    pub estimated: bool,
-}
-
-impl From<TurnSummary> for TurnResult {
-    fn from(summary: TurnSummary) -> Self {
-        Self {
-            outcome: summary.outcome,
-            model_calls: summary.model_calls,
-            tool_calls: summary.tool_calls,
-            outside_sandbox: summary.outside_sandbox,
-            with_network: summary.with_network,
-            tokens: summary.tokens,
-            cost: summary.cost,
-            estimated: summary.estimated,
-        }
-    }
 }
 
 /// A message queued to the turn running in its thread, for the model's next call.

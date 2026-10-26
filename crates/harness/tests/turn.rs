@@ -82,6 +82,10 @@ fn a_turn_writes_a_file_and_records_every_step() {
         let seqs: Vec<u64> = events.iter().map(|e| e.header.seq.get()).collect();
         assert_eq!(seqs, (1..=9).collect::<Vec<_>>());
         assert_eq!(conversation(&events), thread.messages());
+        assert!(
+            matches!(&events[8].body, Body::TurnEnded(ended) if *ended == summary),
+            "the turn's end records what it answered with"
+        );
     });
 }
 
@@ -392,8 +396,15 @@ fn repairing_closes_a_turn_left_open_once() {
         let events = events(harness.log(), id).await;
         let closed = [LEFT.as_slice(), &["tool.call.completed", "turn.ended"]].concat();
         assert_eq!(kinds(&events), closed);
-        assert!(matches!(events.last().map(|e| &e.body),
-                Some(Body::TurnEnded(ended)) if ended.outcome == Outcome::Interrupted));
+        let Some(Body::TurnEnded(ended)) = events.last().map(|e| &e.body) else {
+            panic!("the turn ends");
+        };
+        assert_eq!(ended.outcome, Outcome::Interrupted);
+        assert_eq!(
+            (ended.model_calls, ended.tokens.input),
+            (1, 100),
+            "what it did before the crash, from its log"
+        );
         let resumed = harness.resume_thread(scope(), id).await.unwrap();
         assert!(!resumed.left_open());
         assert!(matches!(

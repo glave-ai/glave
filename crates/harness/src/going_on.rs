@@ -5,7 +5,7 @@
 //! goes on to the goal's next turns. Nothing of the turn is kept in memory meanwhile: what it did
 //! so far is read from the log.
 
-use glave_event::{Body, Event, Permissions};
+use glave_event::{Body, Event, Permissions, TurnResult};
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider, read_all};
 use serde::Deserialize;
 
@@ -14,7 +14,7 @@ use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::repeats::Repeats;
 use crate::toolset::ToolSet;
-use crate::turn::{CONFIG_LIMIT, Live, Step, TurnSummary};
+use crate::turn::{CONFIG_LIMIT, Live, Step};
 use crate::waits::{Opened, open_turn};
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -35,7 +35,7 @@ where
         caller: &Caller,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<TurnSummary, HarnessError> {
+    ) -> Result<TurnResult, HarnessError> {
         self.go_on_with(thread, None, caller, cancel, live).await
     }
 
@@ -48,7 +48,7 @@ where
         caller: &'a Caller,
         cancel: &'a Cancel,
         live: &'a mut (dyn FnMut(Live) + Send),
-    ) -> BoxFuture<'a, Result<TurnSummary, HarnessError>> {
+    ) -> BoxFuture<'a, Result<TurnResult, HarnessError>> {
         Box::pin(async move {
             // What fails before the turn's steps leave it ended, or at a wait again, leaves it
             // as its log has it: still waiting, when nothing was answered; else open, which the

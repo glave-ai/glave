@@ -742,17 +742,34 @@ export type TrustItem = {
   readonly text: string;
 };
 
-/** How a turn ended and what it cost. */
+/**
+ * A turn ended (`turn.ended`): how, and what it did and cost, its subagents' work included.
+ * It is what a client that ran the turn is answered with too, so every client reads the same.
+ * A turn recorded before it held more than `outcome` reads with nothing counted.
+ */
 export type TurnResult = {
+  /**
+   * What its model calls cost, when every one of them reported a cost in one currency;
+   * absent when one did not: the cost is not reported.
+   */
   readonly cost?: Money | null;
-  /** True when a usage count was estimated, not reported. */
+  /**
+   * True when a usage count was estimated, because a stream ended before the provider
+   * reported it.
+   */
   readonly estimated?: boolean;
-  readonly model_calls: number;
+  readonly model_calls?: number;
   readonly outcome: Outcome;
   /** The commands that ran outside the sandbox, each one allowed. */
   readonly outside_sandbox?: number;
-  readonly tokens: TokenCounts;
-  readonly tool_calls: number;
+  readonly tokens?: TokenCounts;
+  readonly tool_calls?: number;
+  /**
+   * Where its model calls ran, once each in the order they first did, in a person's words:
+   * the service, and the provider a service that routes calls passed them on to
+   * (`OpenRouter (Anthropic)`).
+   */
+  readonly via?: readonly (string)[];
   /**
    * The commands that ran with the network the sandbox otherwise kept from them, each one
    * allowed.

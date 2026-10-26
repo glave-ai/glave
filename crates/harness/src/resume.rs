@@ -4,7 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use glave_event::{Body, CallId, Event, Outcome, Part, Seq, ThreadId, TurnEnded, Verdict, decode};
+use glave_event::{Body, CallId, Event, Outcome, Part, Seq, ThreadId, TurnResult, Verdict, decode};
 use glave_ports::{BlobStore, CallKind, EventLog, ModelProvider, Scope, ToolCall, ToolOutput};
 
 use crate::approval::Approver;
@@ -157,8 +157,14 @@ where
             self.stage_next(id, next, &mut staged, &completed)?;
         }
         if open.is_some() {
-            let ended = TurnEnded {
+            let started = events
+                .iter()
+                .rposition(|event| matches!(event.body, Body::TurnStarted(_)))
+                .unwrap_or(0);
+            let turn = events.get(started..).unwrap_or_default();
+            let ended = TurnResult {
                 outcome: Outcome::Interrupted,
+                ..self.tallies(&scope, id, turn).await?
             };
             self.stage_next(id, next, &mut staged, &ended)?;
         }

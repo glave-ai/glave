@@ -2,14 +2,14 @@
 //! approval, runs the thread in Auto from then on (or the highest mode the policy leaves, if
 //! lower), and starts a turn at once whose prompt, glave's, is the plan as approved.
 
-use glave_event::{Permissions, PlanApproved, PlanStatus, PlanUpdated};
+use glave_event::{Permissions, PlanApproved, PlanStatus, PlanUpdated, TurnResult};
 use glave_ports::{BlobStore, Caller, EventLog, Message, ModelProvider};
 
 use super::{checked, listed, told};
 use crate::approval::Approver;
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
-use crate::turn::{Live, Prompt, TurnSummary};
+use crate::turn::{Live, Prompt};
 
 /// The prompt of the turn that builds an approved plan, before its steps.
 const BUILD: &str = "The person approved this plan. Build it now, step by step, keeping it \
@@ -72,7 +72,7 @@ where
         caller: &Caller,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<TurnSummary, HarnessError> {
+    ) -> Result<TurnResult, HarnessError> {
         self.close_left_open(thread).await?;
         let Some(plan) = thread.plan.proposed().cloned() else {
             return Err(HarnessError::NoPlan(thread.id));
