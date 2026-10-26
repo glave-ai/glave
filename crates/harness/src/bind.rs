@@ -1,10 +1,11 @@
 //! Where a thread works: a folder worked on in place, such as its project's, a git worktree
 //! of its own of one on a `glave/<thread>` branch, a worker, or a scratch folder. The binding
 //! is recorded as `workspace.bound`, and resuming the thread reads it to find the workspace
-//! again, and the instructions it opens with.
+//! again, and the instructions it opens with. A thread let go of closes the workspace opened
+//! for it, once nothing of its commands is left there.
 
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 
 use glave_event::{Body, ComputerKind, ComputerRef, Event, Opened, ThreadId, WorkspaceBound};
 use glave_ports::computer::{ComputerError, ComputerId, Environment, Sources};
@@ -15,6 +16,10 @@ use crate::builtins::{BUILTINS, Builtins};
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::removed::owner_label;
 use crate::tools::workspace::Workspace;
+
+/// The most workspaces kept open for the commands in them after their threads were let go:
+/// more than a computer keeps commands in the background for, across its workspaces.
+const LINGERING: usize = 256;
 
 /// Where a new thread works.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -251,6 +256,53 @@ where
         };
         let trusting = self.trusting(person);
         reader.for_folder(workspace.root(), project, trusting).await
+    }
+
+    /// Lets go of `thread`, which its host holds no more: the workspace opened for it here is
+    /// closed, and reading the thread again opens it again. One where a command of its still
+    /// runs in the background, or ended unread, stays open for it, since commands outlive the
+    /// thread being held (`specs/session.md`, "Commands in the background"); a later let-go
+    /// closes it once its computer has nothing left there.
+    pub async fn let_go(&self, thread: Thread) {
+        self.close_workspace(thread.workspace).await;
+    }
+
+    /// Closes `workspace`, a thread's no more, when it was opened for the thread on this
+    /// harness's computer (neither the harness's own nor a worker's) and its computer has no
+    /// commands left there; then those kept open before, whose commands are gone now.
+    pub(crate) async fn close_workspace(&self, workspace: Option<Arc<Workspace>>) {
+        let own = self.workspace.info();
+        let mut open = std::mem::take(
+            &mut *self
+                .lingering
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner),
+        );
+        if let Some(info) = workspace.as_deref().map(Workspace::info)
+            && info.computer == own.computer
+            && info.id != own.id
+            && !open.contains(&info.id)
+        {
+            open.push(info.id);
+        }
+        let computers = self.workspace.computers();
+        let mut kept = Vec::new();
+        for id in open {
+            match computers.commands(id).await {
+                Ok(listed) if listed.is_empty() => match computers.close(id).await {
+                    Ok(()) | Err(ComputerError::NotFound(_)) => {}
+                    Err(error) => tracing::warn!(%error, %id, "could not close a workspace"),
+                },
+                Err(ComputerError::NotFound(_)) => {}
+                _ => kept.push(id),
+            }
+        }
+        let mut lingering = self
+            .lingering
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        lingering.extend(kept);
+        lingering.truncate(LINGERING);
     }
 
     /// The workspace `thread`'s tools act on.
