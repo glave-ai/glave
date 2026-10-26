@@ -108,7 +108,7 @@ fn a_turn_that_failed_between_a_call_and_its_result_is_closed_by_the_next() {
             settings(),
         );
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        log.fail_write_of("tool.call.completed");
+        log.fail_with("tool.call.completed");
         let failed = harness
             .run_turn(&mut thread, "start the server", &Cancel::new(), &mut |_| {})
             .await;
@@ -162,7 +162,8 @@ fn an_answer_whose_turn_could_not_go_on_leaves_the_thread_to_its_next_prompt() {
             .decide(scope(), thread.id, &asked, Decision::AllowOnce, None)
             .await
             .unwrap();
-        log.fail_read();
+        // Going on reads the answer first, and that read fails.
+        log.fail_with("approval.decided");
         let failed = harness
             .go_on(&mut thread, &Caller::default(), &Cancel::new(), &mut |_| {})
             .await;
@@ -192,7 +193,8 @@ fn a_stop_whose_turn_could_not_go_on_leaves_it_waiting() {
         let (harness, mut thread, _) = waiting(&dir, &log).await;
         let stop = Cancel::new();
         stop.cancel();
-        log.fail_read();
+        // Going on reads what the turn waits for first, and that read fails.
+        log.fail_with("approval.requested");
         let failed = harness
             .go_on(&mut thread, &Caller::default(), &stop, &mut |_| {})
             .await;

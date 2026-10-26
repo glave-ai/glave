@@ -1,8 +1,7 @@
-//! A log in memory that fails when told, as a store that blips does, writing or reading
-//! nothing then: the next write holding an event of a given kind, and the next read.
+//! A log in memory that fails when told, as a store that blips does: the next write or read
+//! holding an event of a given kind fails, writing or reading nothing.
 
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use glave_event::{RawEvent, Seq, ThreadId};
@@ -13,20 +12,21 @@ use glave_ports::{EventLog, InMemoryLog, Located, LogError, Scope, ThreadQuery, 
 #[derive(Clone, Default)]
 pub(crate) struct FailingLog {
     log: Arc<InMemoryLog>,
-    write: Arc<Mutex<Option<&'static str>>>,
-    read: Arc<AtomicBool>,
+    /// The kind of event whose next write or read fails, until one does.
+    fails: Arc<Mutex<Option<&'static str>>>,
 }
 
 impl FailingLog {
-    /// Fails the next write that holds an event of `kind`.
-    pub(crate) fn fail_write_of(&self, kind: &'static str) {
-        *self.write.lock().unwrap() = Some(kind);
+    /// Fails the next write or read that holds an event of `kind`.
+    pub(crate) fn fail_with(&self, kind: &'static str) {
+        *self.fails.lock().unwrap() = Some(kind);
     }
+}
 
-    /// Fails the next read.
-    pub(crate) fn fail_read(&self) {
-        self.read.store(true, Ordering::SeqCst);
-    }
+/// Whether `events` hold an event of the kind `fails` names, which no longer fails if so.
+fn strikes(fails: &Mutex<Option<&'static str>>, events: &[RawEvent]) -> bool {
+    let holds = |kind: &mut &'static str| events.iter().any(|event| event.kind.as_str() == *kind);
+    fails.lock().unwrap().take_if(holds).is_some()
 }
 
 fn blipped() -> LogError {
@@ -40,12 +40,7 @@ impl EventLog for FailingLog {
         scope: &Scope,
         events: &[RawEvent],
     ) -> impl Future<Output = Result<(), LogError>> + Send {
-        let fails = {
-            let mut write = self.write.lock().unwrap();
-            let holds = |kind: &str| events.iter().any(|event| event.kind.as_str() == kind);
-            write.take_if(|kind| holds(kind)).is_some()
-        };
-        let appended = (!fails).then(|| self.log.append(scope, events));
+        let appended = (!strikes(&self.fails, events)).then(|| self.log.append(scope, events));
         async move {
             match appended {
                 Some(appended) => appended.await,
@@ -61,13 +56,14 @@ impl EventLog for FailingLog {
         after: Option<Seq>,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send {
-        let fails = self.read.swap(false, Ordering::SeqCst);
-        let read = (!fails).then(|| self.log.read(scope, thread, after, limit));
+        let read = self.log.read(scope, thread, after, limit);
+        let fails = Arc::clone(&self.fails);
         async move {
-            match read {
-                Some(read) => read.await,
-                None => Err(blipped()),
+            let events = read.await?;
+            if strikes(&fails, &events) {
+                return Err(blipped());
             }
+            Ok(events)
         }
     }
 
