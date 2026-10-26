@@ -167,7 +167,7 @@ export class GlzComposerComponent {
       this.stop.emit();
       return;
     }
-    if (event.key !== 'Enter' || event.isComposing) {
+    if (event.key !== 'Enter' || composing(event)) {
       return;
     }
     const view = this.textarea().nativeElement.ownerDocument.defaultView;
@@ -238,4 +238,13 @@ export class GlzComposerComponent {
 /** Whether what is dragged holds files, rather than text or a link. */
 function carriesFiles(event: DragEvent): boolean {
   return event.dataTransfer?.types.includes('Files') ?? false;
+}
+
+/**
+ * Whether a key went to an input method, as the Enter that picks a candidate does: Safari ends
+ * the composition before that Enter's keydown, so only its key code, 229, says so there.
+ */
+function composing(event: KeyboardEvent): boolean {
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- Safari's only sign, above.
+  return event.isComposing || event.keyCode === 229;
 }
