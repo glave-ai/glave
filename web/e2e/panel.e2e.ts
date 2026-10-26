@@ -30,6 +30,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
       'glave',
       'Auto',
     ]);
+    await expect(byTestId(page, 'panel-plan')).toContainText('Plan: 1 of 4 steps done');
+    await expect(byTestId(page, 'panel-plan-step')).toHaveCount(4);
     await expect(byTestId(page, 'panel-changes')).toContainText('2 files');
     await expect(byTestId(page, 'panel-file')).toHaveCount(2);
     await expect(byTestId(page, 'command-text')).toHaveText('cargo test');

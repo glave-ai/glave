@@ -4,6 +4,7 @@ import type { Opened, WorkspaceBound } from '@glave/client';
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
 import { command, event, thread } from '../testing/fixtures';
 import { CommandsService } from './commands.service';
+import { PlanService } from './plan.service';
 import { SourcesService } from './sources.service';
 import { ThreadPanelService } from './thread-panel.service';
 import { ThreadService } from './thread.service';
@@ -40,6 +41,7 @@ async function make(
       ThreadService,
       CommandsService,
       SourcesService,
+      PlanService,
       ThreadPanelService,
     ],
   });
@@ -108,11 +110,25 @@ describe('ThreadPanelService', () => {
       ],
     });
     const panel = await make(fake, READ);
-    expect(panel.pages().map((each) => [each.title, each.host])).toEqual([
+    expect(panel.pages().map((each) => [each.name, each.host])).toEqual([
       ['Tokio blog', 'tokio.rs'],
-      [null, 'not a url'],
+      ['not a url', 'not a url'],
     ]);
     expect(panel.attached().map((each) => each.name)).toEqual(['notes.md']);
+    expect(panel.shown()).toBe(true);
+  });
+
+  it('shows the plan the server reads, once the thread has one', async () => {
+    const plan = {
+      proposed: false,
+      sentence: 'Plan: 0 of 1 step done',
+      steps: [{ step: 'Run the tests', status: 'pending' }],
+    } as const;
+    const fake = new FakeSession().answer('thread/plan', { plan });
+    const panel = await make(fake, [
+      event(1, 'plan.updated', { steps: plan.steps, call_id: 'c1' }),
+    ]);
+    expect(panel.plan()).toEqual(plan);
     expect(panel.shown()).toBe(true);
   });
 

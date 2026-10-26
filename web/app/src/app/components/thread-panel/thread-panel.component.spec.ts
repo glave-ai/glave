@@ -5,6 +5,7 @@ import { of } from 'rxjs';
 
 import { CommandsService } from '../../services/commands.service';
 import { PanelService } from '../../services/panel.service';
+import { PlanService } from '../../services/plan.service';
 import { SourcesService } from '../../services/sources.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
 import { ThreadService } from '../../services/thread.service';
@@ -40,8 +41,9 @@ const WORKED = [
   }),
   event(7, 'tool.call.completed', { call_id: 'c3', is_error: false, output: [] }),
   event(8, 'command.started', { command: 'd1', script: 'npm run dev' }),
-  event(9, 'message.added', { role: 'assistant', parts: [{ type: 'text', text: 'Done.' }] }),
-  event(10, 'turn.ended', { outcome: 'completed' }),
+  event(9, 'plan.updated', { steps: [], call_id: 'c4' }),
+  event(10, 'message.added', { role: 'assistant', parts: [{ type: 'text', text: 'Done.' }] }),
+  event(11, 'turn.ended', { outcome: 'completed' }),
 ];
 
 const WORKSPACE = {
@@ -64,6 +66,7 @@ async function render(
       ThreadService,
       CommandsService,
       SourcesService,
+      PlanService,
       ThreadPanelService,
       { provide: BreakpointObserver, useValue: { observe: () => of({ matches: narrow }) } },
     ],
@@ -93,10 +96,20 @@ function worked(): FakeSession {
       }),
     })
     .answer('command/list', { commands: [command('d1', 'npm run dev')] })
+    .answer('thread/plan', {
+      plan: {
+        proposed: false,
+        sentence: 'Plan: 1 of 2 steps done',
+        steps: [
+          { step: 'Read how flags are parsed', status: 'completed' },
+          { step: 'Add --verbose', status: 'in_progress' },
+        ],
+      },
+    })
     .answer('thread/sources', {
       sources: [
         {
-          reply: 9,
+          reply: 10,
           sentence: 'Sources: 1 page',
           pages: [{ url: 'https://docs.rs/clap', title: 'clap: Arg::action' }],
         },
@@ -121,6 +134,9 @@ describe('ThreadPanelComponent', () => {
       'Branch',
       'Mode',
     ]);
+    const plan = root.querySelector('[data-testid="panel-plan"]');
+    expect(plan?.textContent).toContain('Plan: 1 of 2 steps done');
+    expect(texts(root, 'panel-plan-step')).toEqual(['Read how flags are parsed', 'Add --verbose']);
     const changes = root.querySelector('[data-testid="panel-changes"]');
     expect(changes?.querySelector('h2')?.textContent).toBe('Changes');
     expect(changes?.textContent).toContain('2 files');
@@ -163,7 +179,13 @@ describe('ThreadPanelComponent', () => {
     });
     const root = await render(fake, []);
     expect(texts(root, 'panel-where-part')).toEqual(['Another computer', 'glave', 'Auto']);
-    for (const section of ['panel-changes', 'panel-running', 'panel-sources', 'panel-context']) {
+    for (const section of [
+      'panel-plan',
+      'panel-changes',
+      'panel-running',
+      'panel-sources',
+      'panel-context',
+    ]) {
       expect(root.querySelector(`[data-testid="${section}"]`)).toBeNull();
     }
     expect(texts(root, 'panel-cost')).toEqual(['$1.25 (estimated) · 1 turn']);

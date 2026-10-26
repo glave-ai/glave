@@ -4,6 +4,7 @@ import {
   GlzIconButtonComponent,
   GlzIconComponent,
   type GlzIconData,
+  GlzPlanCardComponent,
   injectId,
 } from '@glave/glaze';
 import { File, Folder, GitBranch, Globe, Laptop, X } from 'lucide';
@@ -35,8 +36,9 @@ interface Fullness {
 
 /**
  * One column of the open thread's facts, beside it: a line saying where it works (the computer,
- * the folder, the branch, the mode), then each section only when it has something: the files it
- * changed with the lines added and removed, each opening its changes in full; its commands
+ * the folder, the branch, the mode), then each section only when it has something: its plan, in
+ * the server's sentence, its steps ticking off (the conversation's card is where it is built);
+ * the files it changed with the lines added and removed, each opening its changes in full; its commands
  * running in the background, each with Stop; the pages its replies drew on, each opening in a
  * new tab, and the files the person attached; and how full its context is and what it has
  * cost. As a sheet on a narrow screen it has a heading and a close button; beside the page, its
@@ -44,7 +46,13 @@ interface Fullness {
  */
 @Component({
   selector: 'app-thread-panel',
-  imports: [CommandListComponent, GlzButtonComponent, GlzIconButtonComponent, GlzIconComponent],
+  imports: [
+    CommandListComponent,
+    GlzButtonComponent,
+    GlzIconButtonComponent,
+    GlzIconComponent,
+    GlzPlanCardComponent,
+  ],
   templateUrl: './thread-panel.component.html',
   styleUrl: './thread-panel.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -104,6 +112,8 @@ export class ThreadPanelComponent {
       ...part('mode', mode.icon, this.copy.mode, mode.text),
     ];
   });
+  /** Its plan, as the server says it. */
+  protected readonly plan = this.facts.plan;
   protected readonly changes = computed(() => {
     const files = this.facts.files();
     if (files.length === 0) {

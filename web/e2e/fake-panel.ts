@@ -1,10 +1,10 @@
-import type { ReplySources, RunningCommand, ThreadSummary } from '@glave/client';
+import type { PlanInfo, ReplySources, RunningCommand, ThreadSummary } from '@glave/client';
 
 import { bound, call, done, event } from './fake-records';
 
 /**
  * A coding thread with something in every section of its panel (`fakeApi`'s `panel`): it read
- * a page, was given a screenshot, changed two files and keeps the tests running.
+ * a page, was given a screenshot, changed two files, builds a plan and keeps the tests running.
  */
 export const VERBOSE = '01900000-0000-7000-8000-000000000131';
 
@@ -27,6 +27,18 @@ export const VERBOSE_SUMMARY: Partial<ThreadSummary> = {
   turns: 2,
   cost: { micros: 12_000, currency: 'USD' },
   context: { percent: 39, tokens: 49_920, window: 128_000 },
+};
+
+/** Its plan, being built: a step done, one doing, two to do. */
+const PLAN: PlanInfo = {
+  proposed: false,
+  sentence: 'Plan: 1 of 4 steps done',
+  steps: [
+    { step: 'Read how src/args.rs parses flags', status: 'completed' },
+    { step: 'Add --verbose and -v to Args, printing each step it takes', status: 'in_progress' },
+    { step: 'Run cargo test', status: 'pending' },
+    { step: 'Say what --verbose does in the README', status: 'pending' },
+  ],
 };
 
 const ARGS_BEFORE = 'pub struct Args {\n    pub path: PathBuf,\n}';
@@ -84,14 +96,15 @@ export const VERBOSE_HISTORY = [
   done(10, 'call_3', 'Edited src/main.rs', VERBOSE),
   call(11, 'call_4', 'bash', { command: TESTS.command, background: true }, VERBOSE),
   done(12, 'call_4', 'Running in the background as command 1.', VERBOSE),
+  event(13, 'plan.updated', { steps: PLAN.steps, call_id: 'call_5' }, VERBOSE),
   event(
-    13,
+    14,
     'command.started',
     { command: TESTS.id, call_id: 'call_4', script: TESTS.command },
     VERBOSE,
   ),
   event(
-    14,
+    15,
     'message.added',
     {
       role: 'assistant',
@@ -101,11 +114,11 @@ export const VERBOSE_HISTORY = [
     },
     VERBOSE,
   ),
-  event(15, 'turn.ended', { outcome: 'completed' }, VERBOSE, '2026-10-11T10:04:05.000Z'),
+  event(16, 'turn.ended', { outcome: 'completed' }, VERBOSE, '2026-10-11T10:04:05.000Z'),
 ];
 
 const SOURCES: readonly ReplySources[] = [
-  { reply: 14, sentence: 'Sources: 1 page', pages: [PAGE] },
+  { reply: 15, sentence: 'Sources: 1 page', pages: [PAGE] },
 ];
 
 /** The answer to a call about the coding thread, else `undefined`. */
@@ -118,6 +131,8 @@ export function aboutVerbose(method: string, params: Record<string, unknown>): u
       return { sources: SOURCES };
     case 'command/list':
       return { commands: [TESTS] };
+    case 'thread/plan':
+      return { plan: PLAN };
     default:
       return undefined;
   }

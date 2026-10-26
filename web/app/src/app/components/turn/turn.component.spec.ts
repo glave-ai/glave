@@ -4,6 +4,7 @@ import { expectAccessible } from '@glave/glaze/testing';
 
 import type { TurnResults } from '../../lib/results';
 import { CommandsService } from '../../services/commands.service';
+import { PlanService } from '../../services/plan.service';
 import { SourcesService } from '../../services/sources.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
 import { ThreadService } from '../../services/thread.service';
@@ -11,7 +12,13 @@ import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { TurnComponent } from './turn.component';
 
 /** What a thread view provides, which a turn's cards reach. */
-const THREAD_VIEW = [ThreadService, CommandsService, SourcesService, ThreadPanelService];
+const THREAD_VIEW = [
+  ThreadService,
+  CommandsService,
+  SourcesService,
+  PlanService,
+  ThreadPanelService,
+];
 
 const RESULTS: TurnResults = {
   key: 't',

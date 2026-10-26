@@ -17,6 +17,9 @@
       }
     </ul>
   }
+  @if (plan(); as plan) {
+    <glz-plan-card testId="panel-plan" size="sm" [summary]="plan.sentence" [steps]="plan.steps" />
+  }
   @if (changes(); as changes) {
     <section class="section" data-testid="panel-changes" [attr.aria-labelledby]="ids.changes">
       <div class="head">
@@ -75,14 +78,8 @@
               [attr.title]="page.href"
             >
               <glz-icon class="mark" [icon]="icons.page" />
-              @if (page.title; as title) {
-                <span class="name" dir="auto">{{ title }}</span
-                >&ngsp;
-              } @else {
-                <span class="name">{{ page.address }}</span
-                >&ngsp;
-              }
-              <span class="detail">{{ page.host }}</span
+              <span class="name" dir="auto">{{ page.name }}</span
+              >&ngsp; <span class="detail">{{ page.host }}</span
               >&ngsp;
               <span class="glz-visually-hidden">{{ copy.newTab }}</span>
             </a>

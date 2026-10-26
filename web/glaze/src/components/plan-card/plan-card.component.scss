@@ -58,3 +58,17 @@
   flex: 1;
   min-width: 0;
 }
+
+// Small, in a column of facts beside a page: tighter, its sentence a heading there, its steps
+// quieter.
+:host(.glz-plan-card--sm) {
+  gap: var(--glz-space-2);
+  padding: var(--glz-space-3) var(--glz-inset-card-inline);
+  font-size: var(--glz-text-sm);
+  line-height: var(--glz-leading-tight);
+}
+
+:host(.glz-plan-card--sm) .summary {
+  font-size: var(--glz-text-md);
+  font-weight: var(--glz-weight-bold);
+}

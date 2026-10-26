@@ -3,6 +3,7 @@ import type { ContextUse, Money, Opened, Permissions } from '@glave/client';
 
 import { type SourceLink, sourceLinks } from '../lib/sources';
 import { CommandsService } from './commands.service';
+import { PlanService } from './plan.service';
 import { SourcesService } from './sources.service';
 import { ThreadService } from './thread.service';
 
@@ -18,8 +19,9 @@ export interface Where {
   readonly mode: Permissions;
 }
 
-/** A page a reply drew on, and the site it is on. */
+/** A page a reply drew on: its title, else where it is, and the site it is on. */
 export interface Page extends SourceLink {
+  readonly name: string;
   readonly host: string;
 }
 
@@ -84,6 +86,7 @@ export class ThreadPanelService {
   private readonly thread = inject(ThreadService);
   private readonly commands = inject(CommandsService);
   private readonly sources = inject(SourcesService);
+  private readonly plans = inject(PlanService);
   /** Whether the changes show in full, and whose: a file's path, or `null` for all of them. */
   private readonly review = signal<{ readonly path: string | null } | null>(null);
 
@@ -97,6 +100,8 @@ export class ThreadPanelService {
     }
     return { computer, ...folder, mode: summary.permissions };
   });
+  /** Its plan, as the server reads it. */
+  readonly plan = this.plans.plan;
   readonly files = this.thread.files;
   readonly running = this.commands.count;
   /** The pages its replies drew on, each once, in the order first read. */
@@ -108,7 +113,7 @@ export class ThreadPanelService {
         return [];
       }
       seen.add(link.href);
-      return [{ ...link, host: hostOf(link) }];
+      return [{ ...link, name: link.title ?? link.address, host: hostOf(link) }];
     });
   });
   /** The files the person attached to their messages, in the order they sent them. */
@@ -142,6 +147,7 @@ export class ThreadPanelService {
   readonly shown = computed(
     () =>
       this.where() !== null ||
+      this.plan() !== null ||
       this.files().length > 0 ||
       this.running() > 0 ||
       this.pages().length > 0 ||
