@@ -12,7 +12,7 @@ pub(crate) const BOUND: &str = "workspace.bound";
 pub(crate) const REMOVED: &str = "workspace.removed";
 
 /// The thread's tools act in this workspace from now on.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct WorkspaceBound {
     /// The workspace's id, as its computer named it.
@@ -25,7 +25,7 @@ pub struct WorkspaceBound {
 }
 
 /// The computer a workspace is on.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ComputerRef {
     pub id: Uuid,
@@ -33,7 +33,7 @@ pub struct ComputerRef {
 }
 
 /// What kind of computer it is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ComputerKind {
     /// The machine glave runs on.
@@ -43,7 +43,7 @@ pub enum ComputerKind {
 }
 
 /// How the workspace was opened.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Opened {
     /// A folder worked on in place.

@@ -2,7 +2,7 @@
 //! first, with titles from the person's first message or a rename, and what each thread's
 //! turns used; and renaming, which changes nothing the model is sent.
 
-use glave_event::{Outcome, ThreadId};
+use glave_event::{ComputerKind, Outcome, ThreadId, TokenCounts, Usage};
 use glave_ports::{EventLog, OrgId, ProjectId, Scope, Standing};
 use glave_session::Answering;
 use glave_session::protocol::{Reply, Request, Status, ThreadSummary, code};
@@ -75,6 +75,48 @@ fn lists_come_a_page_at_a_time_with_titles_and_usage() {
         };
         let refused = server.request(bad).await.unwrap_err();
         assert_eq!(refused.code, code::INVALID_PARAMS);
+    });
+}
+
+#[test]
+fn a_summary_says_where_its_thread_works_how_full_its_context_is_and_what_was_estimated() {
+    let dir = folder("listing-facts");
+    block_on!(async {
+        let mut answered = costing(answer(Some("Hi."), None), 12_800, 0, 5);
+        answered.usage = Usage::new(
+            TokenCounts {
+                input: 12_800,
+                ..TokenCounts::default()
+            },
+            true,
+            None,
+        )
+        .unwrap();
+        let server = server(&dir, vec![answered], Answering::NoOne).await;
+        let thread = start(&server, false).await;
+        let summary = |reply| match reply {
+            Reply::Thread { thread } => thread,
+            other => panic!("a thread, not {other:?}"),
+        };
+        let fresh = summary(server.request(Request::ThreadGet { thread }).await.unwrap());
+        assert_eq!(fresh.context, None, "no call yet");
+        turn(&server, thread, "go").await.unwrap();
+        let worked = summary(server.request(Request::ThreadGet { thread }).await.unwrap());
+        let Some(workspace) = &worked.workspace else {
+            panic!("it works somewhere: {worked:?}");
+        };
+        assert_eq!(workspace.computer.kind, ComputerKind::Local);
+        assert_ne!(workspace.root, "", "the folder its tools act in");
+        let context = worked.context.unwrap();
+        assert_eq!((context.tokens, context.window), (12_800, 128_000));
+        assert_eq!(context.percent, 10, "as compaction measures it");
+        assert!(worked.estimated, "its one call's usage was estimated");
+        assert_eq!(worked.cost.map(|cost| cost.micros), Some(5));
+        let json = serde_json::to_value(&worked).unwrap();
+        assert_eq!(
+            json["context"],
+            json!({"tokens": 12_800, "window": 128_000, "percent": 10})
+        );
     });
 }
 

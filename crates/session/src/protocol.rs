@@ -39,7 +39,7 @@ pub use passkeys::{AcceptedPasskeys, PasskeySummary, SignInWay, UnknownPasskey};
 pub use plans::PlanInfo;
 pub use projects::{GoneFolder, NewFolder, ProjectFolder};
 pub use providers::{ProviderInfo, hint};
-pub use reply::{AwakeInfo, QueuedMessage, Reply, ServerInfo, Status, ThreadSummary};
+pub use reply::{AwakeInfo, ContextUse, QueuedMessage, Reply, ServerInfo, Status, ThreadSummary};
 pub use sources::ReplySources;
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 pub use told::Told;

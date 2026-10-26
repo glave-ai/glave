@@ -292,7 +292,7 @@ fn views_rebuilt_from_the_log_equal_the_kept_ones() {
         assert_eq!(conformance::thread_views(&store.log()).await, Ok(()));
         drop(store);
         let kept = views(&path);
-        assert_eq!(kept.len(), 7);
+        assert_eq!(kept.len(), 8);
 
         // As if no fold had built them: no views, and no version recorded.
         let connection = rusqlite::Connection::open(&path).unwrap();
