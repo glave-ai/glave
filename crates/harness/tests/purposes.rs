@@ -52,10 +52,7 @@ fn a_turn_and_its_summary_say_what_they_are_for_and_who_served_them() {
         )
         .await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "hello").await;
         harness
             .compact(&mut thread, &Cancel::new(), &mut |_| {})
             .await
@@ -103,10 +100,7 @@ fn a_subagent_calls_as_a_subagent() {
         let (harness, seen) =
             harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "look around", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "look around").await;
         assert_eq!(
             asked(&seen),
             [Purpose::Main, Purpose::Subagent, Purpose::Main]
@@ -146,10 +140,7 @@ fn the_judges_call_is_recorded_and_counted_in_the_thread_it_judged() {
             judged,
         );
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        let summary = harness
-            .run_turn(&mut thread, "push to main", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        let summary = turn(&harness, &mut thread, "push to main").await;
         assert_eq!(asked(&seen)[1], Purpose::Judge);
         let recorded = responses(&events(harness.log(), thread.id).await);
         let routes: Vec<_> = recorded.iter().map(|r| r.route.as_deref()).collect();

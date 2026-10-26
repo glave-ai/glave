@@ -103,10 +103,7 @@ fn a_declined_action_is_reported_to_the_model() {
         ];
         let harness = asking_harness(&dir, answers, Refuse).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "clean up", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "clean up").await;
         let declined = thread.messages().iter().any(|m| {
                 matches!(m,
                 glave_ports::Message::Tool { is_error: true, output, .. }
@@ -143,10 +140,7 @@ fn the_mode_decides_what_asks() {
             settings.permissions = mode;
             let harness = harness_on(&dir, answers, Refuse, InMemoryLog::new(), 1, settings).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
-            harness
-                .run_turn(&mut thread, "go", &Cancel::new(), &mut |_| {})
-                .await
-                .unwrap();
+            turn(&harness, &mut thread, "go").await;
         });
         assert_eq!(dir.join("notes.md").exists(), wrote, "{mode:?} write");
         assert_eq!(dir.join("ran.txt").exists(), ran, "{mode:?} command");
@@ -171,11 +165,7 @@ fn read_before_edit_and_edits_land() {
                 )],
                 StopReason::ToolUse,
             ),
-            answer(
-                None,
-                vec![("read", json!({"path": "main.rs"}))],
-                StopReason::ToolUse,
-            ),
+            reads("main.rs"),
             answer(
                 None,
                 vec![(
@@ -188,10 +178,7 @@ fn read_before_edit_and_edits_land() {
         ];
         let harness = harness(&dir, answers, AllowAll).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "say hello", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "say hello").await;
         assert!(
             std::fs::read_to_string(dir.join("main.rs"))
                 .unwrap()
@@ -227,10 +214,7 @@ fn bash_reports_output_and_exit_code() {
         ];
         let harness = harness(&dir, answers, AllowAll).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "run it", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "run it").await;
         let Some(glave_ports::Message::Tool {
             is_error, output, ..
         }) = thread.messages().get(2)
@@ -265,10 +249,7 @@ fn a_model_stuck_repeating_itself_is_stopped() {
         ];
         let harness = harness(&dir, answers, AllowAll).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "loop", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "loop").await;
         let errors = thread
             .messages()
             .iter()
@@ -285,10 +266,7 @@ fn a_resumed_thread_continues_where_it_left_off() {
         let first = vec![answer(Some("Hello."), vec![], StopReason::EndTurn)];
         let harness = harness(&dir, first, AllowAll).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "hi", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "hi").await;
 
         let raw = harness
             .log()
@@ -305,10 +283,7 @@ fn a_resumed_thread_continues_where_it_left_off() {
             .unwrap();
         assert_eq!(resumed.messages(), thread.messages());
 
-        resumed_harness
-            .run_turn(&mut resumed, "again", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&resumed_harness, &mut resumed, "again").await;
         let events = events(resumed_harness.log(), thread.id).await;
         let seqs: Vec<u64> = events.iter().map(|e| e.header.seq.get()).collect();
         assert_eq!(
@@ -332,10 +307,7 @@ async fn crashed_mid_call(dir: &std::path::Path) -> (InMemoryLog, glave_event::T
     ];
     let harness = harness(dir, answers, AllowAll).await;
     let mut thread = harness.start_thread(scope()).await.unwrap();
-    harness
-        .run_turn(&mut thread, "go", &Cancel::new(), &mut |_| {})
-        .await
-        .unwrap();
+    turn(&harness, &mut thread, "go").await;
     let raw = harness
         .log()
         .read(&scope(), thread.id, None, usize::MAX)
@@ -368,10 +340,7 @@ fn resuming_after_a_crash_records_nothing_and_the_next_turn_closes_what_was_left
         let read = events(resumed_harness.log(), id).await;
         assert_eq!(kinds(&read), LEFT, "reading the thread records nothing");
 
-        resumed_harness
-            .run_turn(&mut resumed, "again", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&resumed_harness, &mut resumed, "again").await;
         let events = events(resumed_harness.log(), id).await;
         let closed = [LEFT.as_slice(), &["tool.call.completed", "turn.ended"]].concat();
         assert_eq!(kinds(&events).get(..7), Some(closed.as_slice()));

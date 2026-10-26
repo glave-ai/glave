@@ -5,9 +5,9 @@
 use std::path::Path;
 
 use glave_event::{Body, Event, HookPoint, HookRan, HookResult, Part, StopReason};
-use glave_harness::{Cancel, HarnessError, NoOneToAsk};
+use glave_harness::{Cancel, Harness, HarnessError, NoOneToAsk};
 use glave_ports::settings::{Hook, Hooks};
-use glave_ports::{InMemoryLog, Message, ModelRequest};
+use glave_ports::{InMemoryBlobs, InMemoryLog, Message, ModelRequest};
 use serde_json::{Value, json};
 
 use crate::support::*;
@@ -71,10 +71,7 @@ async fn bash_turn(
     let (harness, seen) = harness_seeing(dir, answers, Refuse, log, 1, settings).await;
     let harness = harness.with_hooks(Hooks::new(hooks).unwrap());
     let mut thread = harness.start_thread(scope()).await.unwrap();
-    harness
-        .run_turn(&mut thread, "go", &Cancel::new(), &mut |_| {})
-        .await
-        .unwrap();
+    turn(&harness, &mut thread, "go").await;
     let requests = seen.lock().unwrap().clone();
     (requests, events(harness.log(), thread.id).await)
 }
@@ -168,10 +165,7 @@ fn a_prompt_hook_can_stop_the_prompt_before_the_model_sees_it() {
     let guard = "grep -q secret && { echo 'that looks like a secret'; exit 2; }; exit 0";
     let hooks = Hooks::new(vec![hook(HookPoint::UserPromptSubmit, None, guard)]).unwrap();
     block_on!(async {
-        let answers = vec![answer(Some("Hi."), vec![], StopReason::EndTurn)];
-        let (harness, seen) =
-            harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings()).await;
-        let harness = harness.with_hooks(hooks);
+        let (harness, seen) = greeting(&dir, hooks).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let refused = harness
             .run_turn(&mut thread, "my secret is 42", &Cancel::new(), &mut |_| {})
@@ -186,10 +180,7 @@ fn a_prompt_hook_can_stop_the_prompt_before_the_model_sees_it() {
         assert_eq!(thread.messages().len(), 0);
         let events = events(harness.log(), thread.id).await;
         assert_eq!(kinds(&events), ["thread.started", "hook.ran"]);
-        harness
-            .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "hello").await;
         assert_eq!(seen.lock().unwrap().len(), 1);
     });
 }
@@ -200,15 +191,9 @@ fn a_stop_hook_runs_once_the_turn_has_ended_and_cannot_keep_it_going() {
     let note = "cat > stopped.json; echo '{\"decision\":\"block\",\"reason\":\"more\"}'";
     let hooks = Hooks::new(vec![hook(HookPoint::Stop, None, note)]).unwrap();
     block_on!(async {
-        let answers = vec![answer(Some("Hi."), vec![], StopReason::EndTurn)];
-        let (harness, seen) =
-            harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings()).await;
-        let harness = harness.with_hooks(hooks);
+        let (harness, seen) = greeting(&dir, hooks).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "hello").await;
         assert_eq!(seen.lock().unwrap().len(), 1, "the turn was not kept going");
         let input: Value =
             serde_json::from_str(&std::fs::read_to_string(dir.join("stopped.json")).unwrap())
@@ -222,14 +207,24 @@ fn a_stop_hook_runs_once_the_turn_has_ended_and_cannot_keep_it_going() {
     });
 }
 
+/// A harness under `hooks` whose model says "Hi.", and what the model is sent.
+async fn greeting(
+    dir: &Path,
+    hooks: Hooks,
+) -> (
+    Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, NoOneToAsk>,
+    Seen,
+) {
+    let answers = vec![answer(Some("Hi."), vec![], StopReason::EndTurn)];
+    let (harness, seen) =
+        harness_seeing(dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings()).await;
+    (harness.with_hooks(hooks), seen)
+}
+
 /// Every request of a turn that reads a file, under `hooks`.
 async fn reading_turn(dir: &Path, hooks: Option<Vec<Hook>>) -> String {
     let answers = vec![
-        answer(
-            None,
-            vec![("read", json!({"path": "notes.txt"}))],
-            StopReason::ToolUse,
-        ),
+        reads("notes.txt"),
         answer(Some("Done."), vec![], StopReason::EndTurn),
     ];
     let (harness, seen) =
@@ -239,10 +234,7 @@ async fn reading_turn(dir: &Path, hooks: Option<Vec<Hook>>) -> String {
         None => harness,
     };
     let mut thread = harness.start_thread(scope()).await.unwrap();
-    harness
-        .run_turn(&mut thread, "read the notes", &Cancel::new(), &mut |_| {})
-        .await
-        .unwrap();
+    turn(&harness, &mut thread, "read the notes").await;
     serde_json::to_string(&*seen.lock().unwrap()).unwrap()
 }
 

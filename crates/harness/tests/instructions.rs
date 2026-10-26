@@ -7,9 +7,7 @@ use std::sync::Arc;
 
 use glave_event::{Part, StopReason};
 use glave_harness::{AllowAll, Cancel, Compaction, Place, ProjectFolders, Settings, agents_md};
-use glave_ports::Caller;
 use glave_ports::{BoxFuture, InMemoryLog, Message, ModelRequest};
-use serde_json::json;
 
 use crate::support::*;
 
@@ -52,19 +50,10 @@ fn a_new_thread_opens_with_the_instructions_once() {
         let (harness, seen) =
             harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, with_rules()).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
-        harness
-            .run_turn(&mut thread, "and again", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "hello").await;
+        turn(&harness, &mut thread, "and again").await;
         let mut resumed = harness.resume_thread(scope(), thread.id).await.unwrap();
-        harness
-            .run_turn(&mut resumed, "back", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut resumed, "back").await;
 
         let sent = requests(&seen);
         assert_eq!(
@@ -96,10 +85,7 @@ fn no_instructions_means_the_prompt_alone() {
         let (harness, seen) =
             harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "hello").await;
         assert_eq!(texts(&requests(&seen)[0].messages[0]), ["hello"]);
     });
 }
@@ -110,11 +96,7 @@ fn a_compacted_thread_opens_with_the_instructions_again() {
     std::fs::write(dir.join("big.txt"), "marigold\n".repeat(1_000)).unwrap();
     block_on!(async {
         let answers = vec![
-            answer(
-                None,
-                vec![("read", json!({"path": "big.txt"}))],
-                StopReason::ToolUse,
-            ),
+            reads("big.txt"),
             answer(
                 Some("big.txt repeats marigold."),
                 vec![],
@@ -130,15 +112,7 @@ fn a_compacted_thread_opens_with_the_instructions_again() {
         let (harness, seen) =
             harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(
-                &mut thread,
-                "what is in big.txt?",
-                &Cancel::new(),
-                &mut |_| {},
-            )
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "what is in big.txt?").await;
         let sent = requests(&seen);
         assert_eq!(sent.len(), 3, "the read, the summary, the answer");
         let restart = texts(&sent[2].messages[0]);
@@ -166,10 +140,7 @@ fn the_workspace_files_reach_the_model() {
         let (harness, seen) =
             harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "hello").await;
         let first = texts(&requests(&seen)[0].messages[0]);
         assert!(first[0].contains("Always answer in French."), "{first:?}");
     });
@@ -203,14 +174,8 @@ fn a_thread_in_a_folder_opens_with_that_folder_s_instructions_and_keeps_them() {
             harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, with_rules()).await;
         let harness = harness.with_project_folders(Some(Arc::new(Told)));
         let place = Place::Folder(other.to_string_lossy().into_owned());
-        let mut thread = harness
-            .start_thread_in(scope(), &Caller::default(), place)
-            .await
-            .unwrap();
-        harness
-            .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        let mut thread = thread_in(&harness, place).await;
+        turn(&harness, &mut thread, "hello").await;
         let told = format!("Rules of Some({other:?}) at {}", other.display());
         let first = texts(&requests(&seen)[0].messages[0]);
         assert_eq!(

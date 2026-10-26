@@ -1,23 +1,65 @@
-//! Shared helpers for the harness's integration tests: scripted answers, and a harness wired
-//! to the scripted model, a ticking clock and counting entropy over a real temporary folder.
+//! Shared helpers for the harness's integration tests: scripted answers, a harness wired to the
+//! scripted model, a ticking clock and counting entropy over a real temporary folder, its
+//! threads' turns, and what they said.
 
 use std::future::{Future, ready};
+use std::sync::Mutex;
 
 use glave_event::{
-    Arguments, Body, Event, ModelRef, Part, RawEvent, StopReason, TokenCounts, Usage, decode,
+    Arguments, Body, Event, ModelRef, Part, RawEvent, StopReason, TokenCounts, TurnResult, Usage,
+    decode,
 };
-use glave_harness::{ApprovalRequest, Approver, Decision, Harness, Parts, Settings, Workspace};
+use glave_harness::{
+    AllowAll, ApprovalRequest, Approver, Cancel, Decision, Harness, Parts, Place, Settings, Thread,
+    Workspace,
+};
 pub(crate) use glave_ports::block_on;
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
 pub(crate) use glave_ports::testing::{ScriptedModel, Seen};
 use glave_ports::{
-    Completion, EventLog, InMemoryBlobs, InMemoryLog, OrgId, ProjectId, RequestedCall, Scope,
+    BlobStore, Caller, Completion, EventLog, InMemoryBlobs, InMemoryLog, Message, ModelProvider,
+    OrgId, ProjectId, RequestedCall, Scope,
 };
 
 pub(crate) struct Refuse;
 impl Approver for Refuse {
     fn decide(&self, _request: &ApprovalRequest) -> impl Future<Output = Decision> + Send {
         ready(Decision::Deny)
+    }
+}
+
+/// Answers with each decision in turn, and remembers what it was asked.
+pub(crate) struct Answers {
+    decisions: Mutex<Vec<Decision>>,
+    asked: Mutex<Vec<ApprovalRequest>>,
+}
+
+impl Answers {
+    pub(crate) fn new(decisions: &[Decision]) -> Self {
+        let mut decisions = decisions.to_vec();
+        decisions.reverse();
+        Self {
+            decisions: Mutex::new(decisions),
+            asked: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// What it was asked, in order.
+    pub(crate) fn asked(&self) -> Vec<ApprovalRequest> {
+        self.asked.lock().unwrap().clone()
+    }
+}
+
+impl Approver for Answers {
+    fn decide(&self, request: &ApprovalRequest) -> impl Future<Output = Decision> + Send {
+        self.asked.lock().unwrap().push(request.clone());
+        ready(
+            self.decisions
+                .lock()
+                .unwrap()
+                .pop()
+                .unwrap_or(Decision::Deny),
+        )
     }
 }
 
@@ -58,6 +100,15 @@ pub(crate) fn answer(
         served: None,
         upstream: None,
     }
+}
+
+/// An answer that reads `path`.
+pub(crate) fn reads(path: &str) -> Completion {
+    answer(
+        None,
+        vec![("read", serde_json::json!({ "path": path }))],
+        StopReason::ToolUse,
+    )
 }
 
 pub(crate) fn folder(name: &str) -> TempDir {
@@ -113,6 +164,31 @@ pub(crate) async fn asking_harness<A: Approver>(
     approver: A,
 ) -> Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, A> {
     harness_on(dir, answers, approver, InMemoryLog::new(), 1, asking()).await
+}
+
+/// A harness on `dir` that allows everything, whose model reads `a.txt` there and says
+/// "Done.", and what the model is sent: the plain one a test compares another with.
+pub(crate) async fn reading(
+    dir: &std::path::Path,
+) -> (
+    Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, AllowAll>,
+    Seen,
+) {
+    std::fs::write(dir.join("a.txt"), "hi\n").unwrap();
+    let answers = vec![
+        reads("a.txt"),
+        answer(Some("Done."), vec![], StopReason::EndTurn),
+    ];
+    harness_seeing(dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await
+}
+
+/// What the model of [`reading`]'s harness is sent over a turn in a new thread: what another
+/// harness, configured some other way, must send byte for byte.
+pub(crate) async fn sent_reading(dir: &std::path::Path) -> String {
+    let (harness, seen) = reading(dir).await;
+    let mut thread = harness.start_thread(scope()).await.unwrap();
+    turn(&harness, &mut thread, "read it").await;
+    format!("{:?}", seen.lock().unwrap())
 }
 
 /// A harness on a given log. `seed` keeps ids distinct between harnesses sharing a log.
@@ -172,9 +248,71 @@ pub(crate) async fn workspace(dir: &std::path::Path) -> Workspace {
     Workspace::new(computers, info)
 }
 
+/// A new thread on `harness` for the person, started where `place` says.
+pub(crate) async fn thread_in<P, L, B, A>(harness: &Harness<P, L, B, A>, place: Place) -> Thread
+where
+    P: ModelProvider,
+    L: EventLog,
+    B: BlobStore,
+    A: Approver,
+{
+    harness
+        .start_thread_in(scope(), &Caller::default(), place)
+        .await
+        .unwrap()
+}
+
+/// Runs one turn of `thread` on `prompt`, with nothing to cancel it and nothing watching.
+pub(crate) async fn turn<P, L, B, A>(
+    harness: &Harness<P, L, B, A>,
+    thread: &mut Thread,
+    prompt: &str,
+) -> TurnResult
+where
+    P: ModelProvider,
+    L: EventLog,
+    B: BlobStore,
+    A: Approver,
+{
+    harness
+        .run_turn(thread, prompt, &Cancel::new(), &mut |_| {})
+        .await
+        .unwrap()
+}
+
 pub(crate) async fn events<L: EventLog>(log: &L, thread: glave_event::ThreadId) -> Vec<Event> {
     let raw: Vec<RawEvent> = log.read(&scope(), thread, None, usize::MAX).await.unwrap();
     raw.into_iter().map(|e| decode(e).unwrap()).collect()
+}
+
+/// The first text of each tool result in `messages`, in order.
+pub(crate) fn results(messages: &[Message]) -> Vec<String> {
+    messages
+        .iter()
+        .filter_map(|message| match message {
+            Message::Tool { output, .. } => output.iter().find_map(|part| match part {
+                Part::Text { text } => Some(text.clone()),
+                _ => None,
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The text of `message`, its parts' text joined.
+pub(crate) fn text_of(message: &Message) -> String {
+    let parts = match message {
+        Message::User { parts }
+        | Message::Tool { output: parts, .. }
+        | Message::Assistant { parts, .. } => parts,
+    };
+    parts
+        .iter()
+        .filter_map(|part| match part {
+            Part::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect()
 }
 
 pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {

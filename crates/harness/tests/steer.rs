@@ -8,13 +8,32 @@
 use glave_event::{
     Body, Event, EventId, HookPoint, Outcome, Part, PrincipalKind, Role, StopReason,
 };
-use glave_harness::{AllowAll, Cancel, Inbox, Live, NotQueued, Queued, conversation};
+use glave_harness::{AllowAll, Cancel, Harness, Inbox, Live, NotQueued, Queued, conversation};
 use glave_ports::Caller;
 use glave_ports::settings::{Hook, Hooks};
-use glave_ports::{InMemoryLog, Message, ModelRequest};
+use glave_ports::{InMemoryBlobs, InMemoryLog, Message, ModelRequest};
 use serde_json::json;
 
 use crate::support::*;
+
+/// A harness whose model runs `echo one`, then says `then`, and what the model is sent.
+async fn echoing(
+    dir: &std::path::Path,
+    then: &str,
+) -> (
+    Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, AllowAll>,
+    Seen,
+) {
+    let answers = vec![
+        answer(
+            None,
+            vec![("bash", json!({"command": "echo one"}))],
+            StopReason::ToolUse,
+        ),
+        answer(Some(then), vec![], StopReason::EndTurn),
+    ];
+    harness_seeing(dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await
+}
 
 fn queued(n: u8, text: &str) -> Queued {
     Queued {
@@ -23,22 +42,6 @@ fn queued(n: u8, text: &str) -> Queued {
         files: Vec::new(),
         caller: Caller::default(),
     }
-}
-
-/// The text of a message the model was sent.
-fn text(message: &Message) -> String {
-    let parts = match message {
-        Message::User { parts }
-        | Message::Tool { output: parts, .. }
-        | Message::Assistant { parts, .. } => parts,
-    };
-    parts
-        .iter()
-        .filter_map(|part| match part {
-            Part::Text { text } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect()
 }
 
 /// What the model was sent in `request` from its last tool result on.
@@ -52,9 +55,9 @@ fn after_tools(request: &ModelRequest) -> Vec<(&'static str, String)> {
         .iter()
         .map(|message| match message {
             // A command's output, without the line of how it exited.
-            Message::Tool { .. } => ("tool", text(message).lines().next().unwrap().to_owned()),
-            Message::User { .. } => ("person", text(message)),
-            Message::Assistant { .. } => ("model", text(message)),
+            Message::Tool { .. } => ("tool", text_of(message).lines().next().unwrap().to_owned()),
+            Message::User { .. } => ("person", text_of(message)),
+            Message::Assistant { .. } => ("model", text_of(message)),
         })
         .collect()
 }
@@ -227,16 +230,7 @@ fn what_is_sent_after_the_last_call_starts_the_next_turn() {
 fn a_stopped_turn_reads_nothing_more_and_gives_back_what_waited() {
     let dir = folder("steer-stopped");
     block_on!(async {
-        let answers = vec![
-            answer(
-                None,
-                vec![("bash", json!({"command": "echo one"}))],
-                StopReason::ToolUse,
-            ),
-            answer(Some("never"), vec![], StopReason::EndTurn),
-        ];
-        let (harness, seen) =
-            harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
+        let (harness, seen) = echoing(&dir, "never").await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let waiting = queued(1, "and then this");
         let inbox = thread.inbox().clone();
@@ -299,16 +293,7 @@ fn secret_guard() -> Hooks {
 fn a_hook_stops_a_message_sent_mid_turn_as_it_stops_a_prompt() {
     let dir = folder("steer-hook");
     block_on!(async {
-        let answers = vec![
-            answer(
-                None,
-                vec![("bash", json!({"command": "echo one"}))],
-                StopReason::ToolUse,
-            ),
-            answer(Some("Done."), vec![], StopReason::EndTurn),
-        ];
-        let (harness, seen) =
-            harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
+        let (harness, seen) = echoing(&dir, "Done.").await;
         let harness = harness.with_hooks(secret_guard());
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let (blocked, passed) = (queued(1, "my secret is 42"), queued(2, "go on"));
@@ -344,16 +329,7 @@ fn a_hook_stops_a_message_sent_mid_turn_as_it_stops_a_prompt() {
 fn a_stop_while_the_hooks_run_records_none_and_gives_back_what_they_passed() {
     let dir = folder("steer-stop-hooks");
     block_on!(async {
-        let answers = vec![
-            answer(
-                None,
-                vec![("bash", json!({"command": "echo one"}))],
-                StopReason::ToolUse,
-            ),
-            answer(Some("never"), vec![], StopReason::EndTurn),
-        ];
-        let (harness, seen) =
-            harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
+        let (harness, seen) = echoing(&dir, "never").await;
         let harness = harness.with_hooks(secret_guard());
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let (passed, blocked) = (queued(1, "go on"), queued(2, "my secret is 42"));

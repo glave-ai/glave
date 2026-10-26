@@ -8,6 +8,12 @@ mod support;
 #[path = "support/failing.rs"]
 mod failing;
 
+#[path = "support/worker.rs"]
+mod worker;
+
+#[path = "support/wire.rs"]
+mod wire;
+
 mod actors;
 mod approvals;
 mod background;

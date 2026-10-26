@@ -3,9 +3,9 @@
 //! for anyone; one they didn't ask for still asks; a firm caution never reaches the judge; and
 //! where every change asks the judge is never consulted.
 
-use glave_event::{Body, Part, StopReason, Verdict};
+use glave_event::{Body, StopReason, Verdict};
 use glave_harness::{Cancel, HarnessError, NoOneToAsk, Permissions};
-use glave_ports::{InMemoryLog, Message};
+use glave_ports::{Completion, InMemoryLog};
 use serde_json::json;
 
 use crate::failing::FailingLog;
@@ -16,17 +16,16 @@ fn bash(command: &str) -> Vec<(&'static str, serde_json::Value)> {
     vec![("bash", json!({ "command": command }))]
 }
 
-fn results(messages: &[Message]) -> Vec<String> {
-    messages
-        .iter()
-        .filter_map(|message| match message {
-            Message::Tool { output, .. } => output.iter().find_map(|part| match part {
-                Part::Text { text } => Some(text.clone()),
-                _ => None,
-            }),
-            _ => None,
-        })
-        .collect()
+/// A `git push` the person asked for, and the judge's ruling that it runs.
+fn cleared_push() -> Vec<Completion> {
+    vec![
+        answer(None, bash("git push origin main"), StopReason::ToolUse),
+        answer(
+            Some(r#"{"decision":"run","reason":"the person asked to push"}"#),
+            vec![],
+            StopReason::EndTurn,
+        ),
+    ]
 }
 
 fn verdicts(events: &[glave_event::Event]) -> Vec<Verdict> {
@@ -55,15 +54,8 @@ fn an_action_the_person_asked_for_runs_and_the_judge_is_on_record() {
         return;
     };
     block_on!(async {
-        let answers = vec![
-            answer(None, bash("git push origin main"), StopReason::ToolUse),
-            answer(
-                Some(r#"{"decision":"run","reason":"the person asked to push"}"#),
-                vec![],
-                StopReason::EndTurn,
-            ),
-            answer(Some("Pushed."), vec![], StopReason::EndTurn),
-        ];
+        let mut answers = cleared_push();
+        answers.push(answer(Some("Pushed."), vec![], StopReason::EndTurn));
         let workspace = walled(&base, false).await;
         let (harness, _) = harness_with(
             workspace,
@@ -74,15 +66,7 @@ fn an_action_the_person_asked_for_runs_and_the_judge_is_on_record() {
             judged(),
         );
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(
-                &mut thread,
-                "push my commits to main",
-                &Cancel::new(),
-                &mut |_| {},
-            )
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "push my commits to main").await;
         let said = results(thread.messages());
         assert!(!said[0].starts_with("Not run"), "{said:?}");
         let recorded = events(harness.log(), thread.id).await;
@@ -116,14 +100,7 @@ fn a_cleared_action_is_asked_and_decided_in_one_write() {
         return;
     };
     block_on!(async {
-        let answers = vec![
-            answer(None, bash("git push origin main"), StopReason::ToolUse),
-            answer(
-                Some(r#"{"decision":"run","reason":"the person asked to push"}"#),
-                vec![],
-                StopReason::EndTurn,
-            ),
-        ];
+        let answers = cleared_push();
         let log = FailingLog::default();
         let (harness, _) = harness_with(
             walled(&base, false).await,
@@ -181,15 +158,7 @@ fn an_action_the_person_did_not_ask_for_still_asks() {
             judged(),
         );
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(
-                &mut thread,
-                "bump the version to 1.4.0",
-                &Cancel::new(),
-                &mut |_| {},
-            )
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "bump the version to 1.4.0").await;
         let said = results(thread.messages());
         assert!(
             said[0].starts_with("Not run, because it publishes a package"),
@@ -220,15 +189,7 @@ fn a_firm_caution_never_reaches_the_judge() {
             judged(),
         );
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(
-                &mut thread,
-                "show me what's in .env",
-                &Cancel::new(),
-                &mut |_| {},
-            )
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "show me what's in .env").await;
         assert_eq!(
             verdicts(&events(harness.log(), thread.id).await),
             [Verdict::NoOneThere]
@@ -248,10 +209,7 @@ fn where_every_change_asks_the_judge_is_never_consulted() {
         settings.permissions = Permissions::Ask;
         let harness = harness_on(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "push my commits", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "push my commits").await;
         assert_eq!(
             verdicts(&events(harness.log(), thread.id).await),
             [Verdict::NoOneThere]
