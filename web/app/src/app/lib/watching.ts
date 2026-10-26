@@ -13,6 +13,16 @@ export function cutOff(error: unknown): boolean {
   return !(error instanceof ApiError && (error.signedOut || error.code === ErrorCode.NO_THREAD));
 }
 
+/**
+ * Whether a request that failed with `error` was refused, the server saying why: not cut short,
+ * nor answered with what could not be read, which may have reached it all the same.
+ */
+export function refused(error: unknown): error is ApiError {
+  return (
+    error instanceof ApiError && error.code !== ErrorCode.INTERNAL && error.code !== ErrorCode.PARSE
+  );
+}
+
 /** Waits `ms` milliseconds, or until `signal` aborts. */
 export function pause(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {

@@ -33,7 +33,7 @@ import { type Waiting, named, notRead, together } from '../lib/queued';
 import { onApple } from '../lib/shortcuts';
 import { lastSourcing } from '../lib/sources';
 import { threadTurns, turnRuns } from '../lib/turns';
-import { FIRST_RETRY_MS, LAST_RETRY_MS, cutOff, pause } from '../lib/watching';
+import { FIRST_RETRY_MS, LAST_RETRY_MS, cutOff, pause, refused } from '../lib/watching';
 import { FirstTurnService } from './first-turn.service';
 import { SessionService } from './session.service';
 import { ProjectsService } from './projects.service';
@@ -381,8 +381,9 @@ export class ThreadService {
         this.stopWatching();
       }
     }
+    const key = idempotencyKey();
     try {
-      const keyed = { ...params, _meta: { idempotency_key: idempotencyKey() } };
+      const keyed = { ...params, _meta: { idempotency_key: key } };
       const turn = this.session.stream('turn/start', keyed, controller.signal);
       let next = await turn.next();
       if (!next.done) {
@@ -403,10 +404,14 @@ export class ThreadService {
         this.keepWaiting(queued, params.prompt, result.queued.id);
       }
     } catch (error: unknown) {
+      const aborted = controller.signal.aborted;
       if (folderGone(error)) {
         // The project's folder went since the lists were read: they say so in its place.
         void this.projects.refresh();
-      } else if (!controller.signal.aborted) {
+      } else if (!aborted && queued === null && this.asking() !== null && !refused(error)) {
+        // No answer came, but it may have started: sent again with its key, as a first turn is.
+        this.firstTurns.lost(params, key);
+      } else if (!aborted) {
         const said = error instanceof Error ? error.message : String(error);
         this.failed.set(said);
         // Refused, as when too many wait: back in the box at once, saying why.
@@ -471,8 +476,9 @@ export class ThreadService {
       if (drawn && event.type === 'message.added') {
         this.forgetLive();
       }
+      // A turn this view did not follow ended: its draft goes.
       if (added && event.type === 'turn.ended' && this.streaming() === 0) {
-        this.endedElsewhere();
+        this.forgetLive();
       }
     } else if (note.method === 'turn/live' && drawn) {
       const update = note.params.update;
@@ -487,11 +493,6 @@ export class ThreadService {
         this.doing.update((steps) => stepsAfter(steps, update));
       }
     }
-  }
-
-  /** A turn this view did not follow ended: its draft goes. */
-  private endedElsewhere(): void {
-    this.forgetLive();
   }
 
   /** What a turn showed live goes, the reply being written and the steps it took: never kept. */

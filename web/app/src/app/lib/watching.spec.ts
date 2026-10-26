@@ -1,6 +1,6 @@
 import { ApiError, ErrorCode } from '@glave/client';
 
-import { cutOff, pause } from './watching';
+import { cutOff, pause, refused } from './watching';
 
 describe('watching', () => {
   it('comes back from a watch cut off, not once signed out or with nothing to watch', () => {
@@ -10,6 +10,13 @@ describe('watching', () => {
     );
     expect(cutOff(new ApiError({ code: ErrorCode.NO_SIGN_IN, message: 'signed out' }))).toBe(false);
     expect(cutOff(new ApiError({ code: ErrorCode.NO_THREAD, message: 'no thread' }))).toBe(false);
+  });
+
+  it('tells a refusal, where the server said why, from an answer that never came', () => {
+    expect(refused(new ApiError({ code: ErrorCode.QUEUE_FULL, message: 'too many' }))).toBe(true);
+    expect(refused(new ApiError({ code: ErrorCode.INTERNAL, message: 'cut off' }))).toBe(false);
+    expect(refused(new ApiError({ code: ErrorCode.PARSE, message: 'not JSON-RPC' }))).toBe(false);
+    expect(refused(new TypeError('Load failed'))).toBe(false);
   });
 
   it('waits its time, or until it is stopped', async () => {
