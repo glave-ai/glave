@@ -1,11 +1,13 @@
 //! `web_fetch` as a tool source, offered while fetching is on. What it returns is marked
 //! untrusted, so the harness labels it for the model and judges risky actions after it knowing
-//! it was read. Search is not built in: it comes from remote tools, such as an MCP server.
+//! it was read; the page it read, its address and title, is recorded apart from its text, for
+//! the person to see what a reply drew on. Search is not built in: it comes from remote tools,
+//! such as an MCP server.
 
 use std::fmt::Write as _;
 use std::future::ready;
 
-use glave_event::Arguments;
+use glave_event::{Arguments, WebPage};
 use glave_ports::settings::WebPolicy;
 use glave_ports::{
     BoxFuture, Cancellation, Effect, ToolError, ToolInfo, ToolOutput, ToolSource, ToolSpec,
@@ -49,16 +51,31 @@ impl Web {
             return ToolOutput::text(true, "web_fetch is off.");
         };
         match fetcher.fetch(url).await {
-            Ok(page) => ToolOutput::untrusted(page_text(&page, fetcher.limits().max_chars)),
+            // What the reply drew on is recorded apart from the text, for the person to see.
+            Ok(page) => ToolOutput {
+                structured: Some(
+                    WebPage {
+                        url: page.url.clone(),
+                        title: page.title.clone(),
+                    }
+                    .structured(),
+                ),
+                ..ToolOutput::untrusted(page_text(&page, fetcher.limits().max_chars))
+            },
             Err(err) => ToolOutput::text(true, format!("Not fetched: {err}.")),
         }
     }
 }
 
-/// A page as the model reads it: where it was found, then its text, cut to `most` characters.
+/// A page as the model reads it: where it was found and its title, then its text, cut to
+/// `most` characters.
 fn page_text(page: &Page, most: usize) -> String {
     let total = page.text.chars().count();
-    let mut text = format!("URL: {}\n\n", page.url);
+    let mut text = format!("URL: {}\n", page.url);
+    if let Some(title) = &page.title {
+        let _ = writeln!(text, "Title: {title}");
+    }
+    text.push('\n');
     text.extend(page.text.chars().take(most));
     if total > most {
         let _ = write!(

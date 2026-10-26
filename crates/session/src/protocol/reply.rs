@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     AcceptedPasskeys, ConnectionInfo, CredentialInfo, DeviceCode, FileInfo, GoneFolder, Grouping,
-    ModelInfo, PasskeySummary, Permissions, ProjectFolder, ProviderInfo, ScheduleInfo, SignInLink,
-    SignInWay, TaskInfo, Told, TrustAsk, WatchEnd,
+    ModelInfo, PasskeySummary, Permissions, ProjectFolder, ProviderInfo, ReplySources,
+    ScheduleInfo, SignInLink, SignInWay, TaskInfo, Told, TrustAsk, WatchEnd,
 };
 
 /// What the server is.
@@ -318,6 +318,9 @@ pub enum Reply {
     /// Whether the computer is kept awake while glave works.
     #[schemars(title = "Awake")]
     Awake { awake: AwakeInfo },
+    /// What a thread's replies drew on from the web.
+    #[schemars(title = "Sources")]
+    Sources { sources: Vec<ReplySources> },
     // After every reply with a field of its own, since a missing `goal` reads as `null`;
     // before `Done`, which takes any object.
     /// The thread's latest goal, or `null`.

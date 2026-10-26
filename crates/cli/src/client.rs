@@ -2,6 +2,8 @@
 //! the terminal, compacting, and showing what failed with what to fix. It uses nothing a
 //! remote client could not.
 
+mod sources;
+
 use std::collections::HashMap;
 use std::future::{Future, poll_fn};
 use std::path::Path;
@@ -20,6 +22,7 @@ use glave_session::protocol::Meta;
 use glave_session::protocol::{Answer, ApiError, ErrorData, Notification, Reply, Request, Update};
 use glave_session::{Sent, Server, TurnItem, TurnStream};
 
+use self::sources::Followed;
 use crate::asking;
 use crate::config::{self, Endpoint};
 use crate::data::{DataBlobs, DataLog};
@@ -179,6 +182,7 @@ impl Client<'_> {
             }
         };
         let waiting = printer.waiting();
+        let mut followed = Followed::default();
         let ended = ticking(
             async {
                 let mut cancelling = false;
@@ -195,6 +199,7 @@ impl Client<'_> {
                     match item {
                         Some(TurnItem::Ended(ended)) => return Some(ended),
                         Some(TurnItem::Note(note)) => {
+                            followed.note(self.thread, &note);
                             if self.note(&note, &mut requested, printer, interrupt).await {
                                 cancelling = self.cancel().await;
                             }
@@ -209,6 +214,7 @@ impl Client<'_> {
         .await;
         match ended {
             Some(Ok(turn)) => {
+                followed.show(self.server, self.thread, printer).await;
                 printer.receipt(&turn, self.endpoint.is_some_and(|endpoint| endpoint.local));
                 match turn.outcome {
                     Outcome::Completed => ExitCode::SUCCESS,

@@ -1,11 +1,13 @@
 //! The real `glave` binary, end to end, against a fake model server on 127.0.0.1: one-shot
 //! runs, what a person sees, what reaches the model, and what lands on disk.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 
 use glave_ports::testing::FAKE_SECRET;
 use glave_provider_openai::fake::{FakeServer, Reply};
+use glave_web::pages::{Pages, Reply as Served};
 use serde_json::{Value, json};
 
 use crate::support::*;
@@ -349,4 +351,68 @@ fn the_data_folder_is_private_and_holds_the_database() {
     let mode = std::fs::metadata(&place.home).unwrap().permissions().mode();
     assert_eq!(mode & 0o777, 0o700, "tightened even though it existed");
     assert!(Path::new(&place.home).join("glave.db").exists());
+}
+
+/// Runs `run` with a page titled "Release notes" served at `<base>/notes` on 127.0.0.1, given
+/// `base`; the page server ends with it, even when it fails.
+fn with_page<T>(run: impl FnOnce(String) -> T) -> T {
+    let (found, base) = std::sync::mpsc::channel();
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    std::thread::scope(|scope| {
+        scope.spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            runtime.block_on(async move {
+                let page = "<title>Release notes</title><p>The codename is Juniper.</p>";
+                let replies = HashMap::from([("/notes".to_owned(), Served::html(page))]);
+                let pages = Pages::serve(replies).await.unwrap();
+                found.send(pages.base()).unwrap();
+                // Until `run` is done, or has failed: either drops `stop`.
+                let _ = stopped.await;
+            });
+        });
+        let base = base.recv().unwrap();
+        let ran = run(base);
+        drop(stop);
+        ran
+    })
+}
+
+#[test]
+fn a_reply_shows_the_pages_it_read_under_it() {
+    let place = place("sources");
+    choose(&place, "web", "{ allow = [\"127.0.0.1\"] }");
+    with_page(|base| {
+        let notes = format!("{base}/notes");
+        let gone = format!("{base}/gone");
+        let server = FakeServer::start(vec![
+            Reply::tool_call("toolu_1", "web_fetch", &json!({ "url": gone })),
+            Reply::tool_call("toolu_2", "web_fetch", &json!({ "url": notes })),
+            Reply::text("The codename is Juniper."),
+        ])
+        .unwrap();
+        let args = [
+            "--model",
+            "m",
+            "--permissions",
+            "full-access",
+            "what is the codename?",
+        ];
+        let output = glave(&place, &server, &args, "");
+        let shown = text(&output);
+        assert!(output.status.success(), "{shown}");
+        let reply = shown.find("The codename is Juniper.").unwrap();
+        let sources = shown.find("Sources: 1 page").unwrap();
+        assert!(reply < sources, "{shown}");
+        assert!(
+            shown.contains(&format!("Release notes · {notes}")),
+            "{shown}"
+        );
+        assert!(
+            !shown.contains(&format!("{gone} ·")),
+            "a page that failed: {shown}"
+        );
+    });
 }

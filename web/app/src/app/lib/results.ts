@@ -1,3 +1,4 @@
+import type { ReplySources } from '@glave/client';
 import { type GlzRunStatus, formatDuration, formatMoney } from '@glave/glaze';
 
 import type { ApprovalItem, Draft, MessageItem, QuestionItem, ThreadItem } from './conversation';
@@ -45,6 +46,8 @@ export interface TurnResults {
   readonly before: readonly ThreadItem[];
   /** The last thing it said, unless a reply is being written. */
   readonly reply: MessageItem | null;
+  /** What that reply drew on from the web, as the server says, when it drew on any. */
+  readonly sources: ReplySources | null;
   /** The reply being written, in the turn that runs. */
   readonly live: Draft | null;
   /**
@@ -153,7 +156,8 @@ function outsideSandbox(items: readonly ThreadItem[], locale: string): readonly 
  * `turn` results first, its facts written for `locale`. `live` is the reply being written, for
  * the turn that runs now (`running`); it takes the reply's place, and what was the reply goes
  * back among what was said along the way. `step` is the step that turn takes now, in the
- * server's words, as it said while a tool runs.
+ * server's words, as it said while a tool runs. `sourced` holds what replies drew on, by the
+ * `seq` of each reply.
  */
 export function turnResults(
   turn: Turn,
@@ -161,6 +165,7 @@ export function turnResults(
   step: string | null,
   running: boolean,
   locale: string,
+  sourced: ReadonlyMap<number, ReplySources> = new Map(),
 ): TurnResults {
   const [first, ...after] = turn.items;
   const asked = first?.kind === 'message' && first.from === 'person';
@@ -187,6 +192,7 @@ export function turnResults(
     prompt,
     before: worked ? [] : along,
     reply,
+    sources: reply === null ? null : (sourced.get(reply.seq) ?? null),
     live,
     working,
     files: turn.files,

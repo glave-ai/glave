@@ -11,6 +11,7 @@ pub mod pages;
 mod resolve;
 mod source;
 mod text;
+mod title;
 
 pub use fetch::{FetchError, Fetcher, Limits, Page};
 pub use source::{WEB_FETCH, Web, WebSettings};

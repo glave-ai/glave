@@ -231,6 +231,15 @@ The model can keep a command running while it goes on: `bash` with `background` 
 - **A server that stops** starts no new work: a turn, task or compaction asked for meanwhile is refused with `-32022`. Running turns get the stop's grace (10 seconds for the person's server, none for a program's own) to end on their own; the rest are stopped and end `interrupted`, not `cancelled`, since the person did not stop them, and so do the tasks they ran. A turn waiting for an approval or an answer holds nothing and is not among them: it stays waiting, and the answer goes on with it in whichever server receives it ("Turns that outlive a server").
 - If the server dies mid-turn, the log ends without `turn.ended`. Reading the thread records nothing; once no live server's lease holds it, the next work on the thread, or the person's server as it starts (`one-server.md`, "After a restart"), gives every unanswered tool call the interrupted result and ends the turn `interrupted`, so the thread continues.
 
+## Sources
+
+What a reply drew on from the web shows under it (#677): the pages the agent read with glave's own `web_fetch` in its turn, before the reply.
+
+- **Read, not skimmed.** A source is a page `web_fetch` loaded, whose `tool.call.completed` records it in `structured` (`events.md`): where it was found, after redirects, and the title it gives itself. The results of a search the agent only skimmed are none, nor is a page that failed to load; a page read with no search first is one. Each page counts once, in the order first read.
+- **Read from the log, by the server.** `thread/sources` gives, for each reply whose turn read pages before it, the reply's `seq`, the pages, and one sentence in the caller's language ("Sources: 3 pages"). The reply is its turn's last assistant `message.added` with words; pages read after it drew on nothing, and a turn with no reply has no sources. Nothing more is recorded for them, so a resumed thread, another server and every client read the same.
+- **Drawn by each client.** The web app asks once a thread has read a page, and again as each turn after one ends, and draws a link to each page under its reply: its title, and where it is, opening in a new tab. The terminal prints them after the reply, one line each. A title is the page's own words, shown as text, never as markup, its control characters dropped and cut at 200 characters.
+- **Not yet:** the pages a subagent read for the reply, which its own thread holds.
+
 ## Attachments
 
 Files and images a person adds to a message (#235), and those the agent reads (#729).

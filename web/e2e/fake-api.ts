@@ -27,13 +27,14 @@ import {
 import { DEFAULT_MODEL, MODELS } from './fake-models';
 import { Refusal, THREAD, bound, call, done, event } from './fake-records';
 import { FAKE_SERVER, signIn } from './fake-signin';
+import { RESEARCH, RESEARCH_HISTORY, sourcesOf } from './fake-sources';
 
 /**
  * What the fake server knows: a project and the person's own project with their threads, one
  * thread's history (a turn on this computer that ran a command, edited a file and wrote a new
  * one, and replied from the default model, which the picker shows; how long it took and what
- * it cost), another waiting for the person to allow a push, the models, the tasks, one
- * memory, what a turn streams, the folders on the person's computer, and the projects made
+ * it cost), another waiting for the person to allow a push, a chat that read pages on the web
+ * and what its reply drew on, the models, the tasks, one memory, what a turn streams, the folders on the person's computer, and the projects made
  * while it runs; and when a test asks, a project that asks to be trusted, a thread that keeps
  * the docs site running in the background, and a connected GitHub account.
  */
@@ -87,6 +88,11 @@ export const NEW_THREAD = '01900000-0000-7000-8000-000000000102';
 export const WAITING = '01900000-0000-7000-8000-000000000103';
 /** The thread an agent call in `THREAD` started. */
 export const SUBAGENT = '01900000-0000-7000-8000-000000000109';
+
+/** The chat that read pages on the web, as the person's chats and `thread/get` show it. */
+const RESEARCHING = thread(RESEARCH, 'What changed in Tokio 2.0?', 'idle', PERSONAL, {
+  updated_at: '2026-10-11T10:07:00.000Z',
+});
 
 const THREADS: Readonly<Record<string, readonly ThreadSummary[]>> = {
   [PROJECT.id]: [
@@ -250,6 +256,7 @@ const HISTORIES: Readonly<Record<string, readonly RawEvent[]>> = {
   [WAITING]: WAITING_HISTORY,
   [TRUSTING]: TRUSTING_HISTORY,
   [SERVING]: SERVING_HISTORY,
+  [RESEARCH]: RESEARCH_HISTORY,
   [LOST]: LOST_HISTORY,
 };
 
@@ -470,6 +477,8 @@ interface Known {
   readonly trust: Trust | null;
   /** The serving thread's commands, when the test has it. */
   readonly commands: Commands | null;
+  /** Whether the person's chats list the research chat. */
+  readonly research: boolean;
   /** The git hosts the person connected. */
   readonly credentials: readonly CredentialInfo[];
   /** The threads given a message, which are then the latest. */
@@ -511,7 +520,8 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
       const fresh = started.filter((each) => each.project === project);
       const serving =
         commands !== null && project === PROJECT.id ? [thread(SERVING, 'Preview the docs')] : [];
-      const threads = [...fresh, ...serving, ...(THREADS[project] ?? [])];
+      const research = known.research && project === PERSONAL.id ? [RESEARCHING] : [];
+      const threads = [...fresh, ...serving, ...research, ...(THREADS[project] ?? [])];
       return {
         threads: threads.map((each) =>
           touched.has(each.id) ? { ...each, updated_at: LATER } : each,
@@ -519,7 +529,11 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
       };
     }
     case 'thread/get':
-      return { thread: thread(String(params['thread']), 'Make the tests pass') };
+      return params['thread'] === RESEARCH
+        ? { thread: RESEARCHING }
+        : { thread: thread(String(params['thread']), 'Make the tests pass') };
+    case 'thread/sources':
+      return sourcesOf(params);
     case 'thread/events':
       return { events: HISTORIES[String(params['thread'])] ?? [] };
     case 'thread/start': {
@@ -593,21 +607,24 @@ function trusted(method: string, params: Record<string, unknown>, trust: Trust):
 /**
  * Answers the session API's calls the app makes, as JSON-RPC over POST /. With `trust`, the
  * person also has acme, a project that asks to be trusted; with `commands`, a thread in the
- * project that keeps the docs site running in the background; with `account`, a GitHub account
- * connected; with `gone`, playground, a project whose folder isn't there anymore. How the
- * person's threads are grouped is kept in `grouped`, which two pages share as one server.
+ * project that keeps the docs site running in the background; with `research`, a chat that read
+ * pages on the web among the person's chats; with `account`, a GitHub account connected; with
+ * `gone`, playground, a project whose folder isn't there anymore. How the person's threads are
+ * grouped is kept in `grouped`, which two pages share as one server.
  */
 export async function fakeApi(
   page: Page,
   {
     trust = false,
     commands = false,
+    research = false,
     account = false,
     gone = false,
     grouped = { grouping: 'project' },
   }: {
     readonly trust?: boolean;
     readonly commands?: boolean;
+    readonly research?: boolean;
     readonly account?: boolean;
     readonly gone?: boolean;
     readonly grouped?: Grouped;
@@ -620,6 +637,7 @@ export async function fakeApi(
     made: [],
     trust: trust ? { asking: true } : null,
     commands: commands ? docsRunning() : null,
+    research,
     credentials: account ? [GITHUB] : [],
     touched: new Set(),
     gone: gone ? folderGone() : null,

@@ -149,7 +149,7 @@ where
                 }
                 _ => ToolOutput::text(true, INTERRUPTED),
             };
-            let completed = crate::calls::completed(call.call_id, output, None);
+            let completed = crate::calls::completed(call.call_id, output);
             self.stage_next(id, next, &mut staged, &completed)?;
         }
         if open.is_some() {

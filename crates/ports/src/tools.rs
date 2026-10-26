@@ -47,6 +47,9 @@ pub struct ToolOutput {
     /// Files the call hands the model, such as an image it read: kept in the blob store as
     /// the result is recorded, an image made fit to send, each a `file` part after the parts.
     pub files: Vec<ToolFile>,
+    /// What the call did, for its record and never for the model, such as the page a
+    /// `web_fetch` read (`glave_event::WebPage`): its `tool.call.completed`'s `structured`.
+    pub structured: Option<serde_json::Value>,
 }
 
 /// A file a call hands the model: an image or a PDF.
@@ -77,6 +80,7 @@ impl ToolOutput {
             parts: vec![Part::Text { text: text.into() }],
             untrusted: false,
             files: Vec::new(),
+            structured: None,
         }
     }
 

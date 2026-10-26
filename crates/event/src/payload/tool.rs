@@ -64,6 +64,29 @@ pub struct ToolCallCompleted {
     pub untrusted: bool,
 }
 
+/// A web page a call read (`web_fetch`), as its `tool.call.completed` records it in
+/// `structured`, under `page`: what a reply drew on, kept apart from the text the model saw.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct WebPage {
+    /// Where it was found, after redirects.
+    pub url: String,
+    /// The title the page gives itself, when it gives one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+}
+
+impl WebPage {
+    /// The `structured` result of a call that read this page.
+    pub fn structured(&self) -> Value {
+        serde_json::json!({ "page": self })
+    }
+
+    /// The page a call's `structured` result says it read, when it says it read one.
+    pub fn read(structured: &Value) -> Option<Self> {
+        Self::deserialize(structured.get("page")?).ok()
+    }
+}
+
 impl Payload for ToolCallCompleted {
     const TYPE: &'static str = COMPLETED;
     const VERSION: u32 = 1;
@@ -82,6 +105,25 @@ pub(crate) fn decode_completed(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_page_read_is_recorded_under_page_and_read_back() {
+        let page = WebPage {
+            url: "https://example.com/a".into(),
+            title: Some("A".into()),
+        };
+        let structured = page.structured();
+        assert_eq!(
+            structured,
+            serde_json::json!({"page": {"url": "https://example.com/a", "title": "A"}})
+        );
+        assert_eq!(WebPage::read(&structured), Some(page));
+        assert_eq!(
+            WebPage::read(&serde_json::json!({"from_memory": true})),
+            None
+        );
+        assert_eq!(WebPage::read(&serde_json::json!({"page": "a"})), None);
+    }
 
     #[test]
     fn arguments_say_whether_they_parsed() {

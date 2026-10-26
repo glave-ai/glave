@@ -117,6 +117,22 @@ describe('results', () => {
     expect(shown.waiting).toEqual([]);
   });
 
+  it('gives the reply what it drew on, by its seq, and a reply being written none', () => {
+    const sourced = {
+      reply: 4,
+      sentence: 'Sources: 1 page',
+      pages: [{ url: 'https://tokio.rs/blog', title: 'Tokio blog' }],
+    };
+    const bySeq = new Map([[4, sourced]]);
+    const items = [ask, say(2, 'Looking'), call(3), say(4, 'Here')];
+    const shown = turnResults(turn(items), null, null, false, 'en-US', bySeq);
+    expect(shown.sources).toBe(sourced);
+    const earlier = turnResults(turn(items.slice(0, 3)), null, null, false, 'en-US', bySeq);
+    expect(earlier.sources).toBeNull();
+    const live = { text: 'Writ', reasoning: '' };
+    expect(turnResults(turn(items), live, null, true, 'en-US', bySeq).sources).toBeNull();
+  });
+
   it('counts the commands that ran outside the sandbox in the receipt, not those declined', () => {
     const shown = turnResults(
       turn([ask, call(2), outside(3, 'allow_once'), call(4), outside(5, 'deny'), say(6, 'Added')], {

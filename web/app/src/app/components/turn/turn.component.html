@@ -7,6 +7,9 @@
 @if (turn().reply; as reply) {
   <app-thread-item [item]="reply" />
 }
+@if (turn().sources; as sources) {
+  <app-reply-sources [sources]="sources" />
+}
 @if (turn().working; as working) {
   <glz-working
     testId="thread-working"

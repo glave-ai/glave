@@ -20,12 +20,13 @@ import { trimBlankLines } from '../../lib/conversation';
 import type { TurnResults } from '../../lib/results';
 import { runningFor } from '../../lib/when';
 import { clock } from '../../services/clock';
+import { ReplySourcesComponent } from '../reply-sources/reply-sources.component';
 import { ThreadItemComponent } from '../thread-item/thread-item.component';
 import { TurnChangesComponent } from '../turn-changes/turn-changes.component';
 
 /**
  * One turn, results first: the person's message; the reply (streaming in as markdown while it
- * is written); what changed; the receipt, a sunken line with how it went, how long it took and
+ * is written), and under it the pages it drew on from the web; what changed; the receipt, a sunken line with how it went, how long it took and
  * what it cost, which opens to the steps; and last, what waits for the person. A turn that did
  * no work is its messages in order.
  *
@@ -44,6 +45,7 @@ import { TurnChangesComponent } from '../turn-changes/turn-changes.component';
     GlzReasoningComponent,
     GlzStepsComponent,
     GlzWorkingComponent,
+    ReplySourcesComponent,
     ThreadItemComponent,
     TurnChangesComponent,
   ],

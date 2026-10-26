@@ -34,7 +34,7 @@ pub use payload::{
     Outcome, OutsideSandbox, ParentCall, Part, Permissions, PermissionsChosen, Principal,
     PrincipalKind, Producer, Role, StopReason, ThreadArchived, ThreadCompacted, ThreadDeleted,
     ThreadRenamed, ThreadStarted, ThreadUnarchived, TokenCounts, ToolCallCompleted,
-    ToolCallRequested, TraceId, TurnEnded, TurnStarted, Usage, Verdict,
+    ToolCallRequested, TraceId, TurnEnded, TurnStarted, Usage, Verdict, WebPage,
 };
 pub use payload::{BrowserSignedIn, BrowserSignedOut, BrowserUsed, Decision, TrustDecided};
 pub use payload::{Catalog, CatalogModel, CatalogRefreshed, Reasoning, TokenPrice};

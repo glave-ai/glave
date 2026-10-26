@@ -205,6 +205,7 @@ pub(super) async fn snapshot<L: EventLog + Clone + 'static>(world: &World<L>) ->
         for thread in person.ids.get(&Kind::Thread).into_iter().flatten() {
             call("thread/get", json!({"thread": thread})).await;
             call("thread/events", json!({"thread": thread})).await;
+            call("thread/sources", json!({"thread": thread})).await;
             call("goal/get", json!({"thread": thread})).await;
         }
         for project in person.ids.get(&Kind::Project).into_iter().flatten() {

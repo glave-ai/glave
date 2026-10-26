@@ -546,10 +546,12 @@ where
         call_id: CallId,
         outcome: ToolOutput,
     ) -> Result<(), HarnessError> {
-        let outcome = self.keep_files(thread, outcome).await;
-        // Only a memory call records anything here: that it is memory's, which memory, at which
-        // version.
-        let completed = completed(call_id, outcome, thread.memory.structured.take());
+        let mut outcome = self.keep_files(thread, outcome).await;
+        // A memory call records that it is memory's, which memory, at which version.
+        if let Some(memory) = thread.memory.structured.take() {
+            outcome.structured = Some(memory);
+        }
+        let completed = completed(call_id, outcome);
         let mut events = Vec::new();
         // A command the call started or moved to the background, or saw end, first.
         self.stage_commands(thread, &mut events)?;
@@ -567,11 +569,7 @@ where
 
 /// The result of call `call_id` as it is recorded, from what it gave: content that came back
 /// from outside labelled untrusted (an error is glave's own words, never labelled).
-pub(crate) fn completed(
-    call_id: CallId,
-    outcome: ToolOutput,
-    structured: Option<serde_json::Value>,
-) -> ToolCallCompleted {
+pub(crate) fn completed(call_id: CallId, outcome: ToolOutput) -> ToolCallCompleted {
     let untrusted = outcome.untrusted && !outcome.is_error;
     let output = if untrusted {
         crate::untrusted::label(outcome.parts)
@@ -582,7 +580,7 @@ pub(crate) fn completed(
         call_id,
         is_error: outcome.is_error,
         output,
-        structured,
+        structured: outcome.structured,
         untrusted,
     }
 }
