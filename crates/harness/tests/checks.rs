@@ -3,58 +3,11 @@
 //! a risky command. Every risky command here would be harmless if it ran: the folder is not a
 //! git repository.
 
-use std::future::{Future, ready};
-use std::sync::Mutex;
-
-use glave_event::{Body, Part, StopReason};
-use glave_harness::{ApprovalRequest, Approver, Cancel, Decision, NoOneToAsk};
-use glave_ports::Message;
+use glave_event::{Body, StopReason};
+use glave_harness::{Decision, NoOneToAsk};
 use serde_json::json;
 
 use crate::support::*;
-
-/// Answers with each decision in turn, and remembers what it was asked.
-struct Answers {
-    decisions: Mutex<Vec<Decision>>,
-    asked: Mutex<Vec<ApprovalRequest>>,
-}
-
-impl Answers {
-    fn new(decisions: &[Decision]) -> Self {
-        let mut decisions = decisions.to_vec();
-        decisions.reverse();
-        Self {
-            decisions: Mutex::new(decisions),
-            asked: Mutex::new(Vec::new()),
-        }
-    }
-}
-
-impl Approver for Answers {
-    fn decide(&self, request: &ApprovalRequest) -> impl Future<Output = Decision> + Send {
-        self.asked.lock().unwrap().push(request.clone());
-        ready(
-            self.decisions
-                .lock()
-                .unwrap()
-                .pop()
-                .unwrap_or(Decision::Deny),
-        )
-    }
-}
-
-fn results(messages: &[Message]) -> Vec<String> {
-    messages
-        .iter()
-        .filter_map(|message| match message {
-            Message::Tool { output, .. } => output.iter().find_map(|part| match part {
-                Part::Text { text } => Some(text.clone()),
-                _ => None,
-            }),
-            _ => None,
-        })
-        .collect()
-}
 
 fn bash(command: &str) -> (&'static str, serde_json::Value) {
     ("bash", json!({ "command": command }))
@@ -70,10 +23,7 @@ fn a_risky_command_with_no_one_there_is_not_run_and_the_model_learns_why() {
         ];
         let harness = asking_harness(&dir, answers, NoOneToAsk).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "start over", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "start over").await;
         let said = results(thread.messages());
         assert!(
             said[0].starts_with("Not run, because it discards uncommitted changes"),
@@ -98,13 +48,10 @@ fn in_ask_mode_a_command_that_only_reads_runs_without_asking() {
         let approver = Answers::new(&[Decision::Deny]);
         let harness = asking_harness(&dir, answers, approver).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "read and touch", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "read and touch").await;
         let said = results(thread.messages());
         assert!(said[0].contains("hello"), "{said:?}");
-        let asked = harness.approver().asked.lock().unwrap();
+        let asked = harness.approver().asked();
         assert_eq!(
             asked.len(),
             1,
@@ -127,11 +74,8 @@ fn allowing_bash_for_the_thread_never_silences_a_risky_command() {
         let approver = Answers::new(&[Decision::AllowForThread, Decision::Deny]);
         let harness = asking_harness(&dir, answers, approver).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "tidy up", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
-        let asked = harness.approver().asked.lock().unwrap().clone();
+        turn(&harness, &mut thread, "tidy up").await;
+        let asked = harness.approver().asked();
         assert_eq!(asked.len(), 2, "the risky command asked again");
         assert_eq!(asked[1].summary, "bash: git clean -fdx");
         assert_eq!(

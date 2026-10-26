@@ -1,0 +1,100 @@
+@if (waits()) {
+  <p class="label" [id]="labelId"><span class="dot" aria-hidden="true"></span>{{ label() }}</p>
+}
+<p class="summary" tabindex="-1" #summaryText [id]="summaryId">{{ summary() }}</p>
+@if (editing()) {
+  <ol class="fields">
+    @for (field of fields(); track $index) {
+      <li class="field">
+        <input
+          #stepField
+          glzInput
+          type="text"
+          dir="auto"
+          [value]="field.text"
+          [attr.aria-label]="field.label"
+          [attr.data-testid]="ids().input"
+          (input)="write($index, $event)"
+        />
+        <span class="glz-visually-hidden" [id]="field.id">{{ field.text }}</span>
+        <button
+          glzIconButton
+          size="sm"
+          [label]="removeLabel()"
+          [attr.aria-describedby]="field.id"
+          [attr.data-testid]="ids().remove"
+          (click)="remove($index)"
+        >
+          <glz-icon [icon]="removeIcon" />
+        </button>
+      </li>
+    }
+  </ol>
+  <div class="actions">
+    <button #addButton glzButton [attr.data-testid]="ids().add" (click)="add()">
+      <glz-icon [icon]="addIcon" />{{ addLabel() }}
+    </button>
+  </div>
+  <div class="actions">
+    <button
+      glzButton
+      variant="primary"
+      [attr.data-testid]="ids().save"
+      [disabled]="busy()"
+      (click)="save()"
+    >
+      {{ saveLabel() }}
+    </button>
+    <button glzButton [attr.data-testid]="ids().cancel" (click)="cancel()">
+      {{ cancelLabel() }}
+    </button>
+  </div>
+} @else {
+  <ol class="steps">
+    @for (step of shown(); track $index) {
+      <li
+        class="step"
+        [class.doing]="step.doing"
+        [class.done]="step.done"
+        [attr.data-testid]="ids().step"
+      >
+        <glz-icon
+          class="mark"
+          [class.glz-spin]="step.doing"
+          [icon]="step.icon"
+          [label]="step.mark"
+        />
+        <span class="words" dir="auto">{{ step.step }}</span>
+      </li>
+    }
+  </ol>
+  @if (waits()) {
+    <div class="actions">
+      <button
+        glzButton
+        variant="primary"
+        [attr.data-testid]="ids().build"
+        [disabled]="busy()"
+        (click)="build.emit()"
+      >
+        {{ buildLabel() }}
+      </button>
+      <button
+        glzButton
+        [attr.data-testid]="ids().change"
+        [disabled]="busy()"
+        (click)="revise.emit()"
+      >
+        {{ changeLabel() }}
+      </button>
+      <button
+        glzButton
+        [attr.data-testid]="ids().edit"
+        [disabled]="busy()"
+        (click)="startEditing()"
+      >
+        {{ editLabel() }}
+      </button>
+    </div>
+  }
+}

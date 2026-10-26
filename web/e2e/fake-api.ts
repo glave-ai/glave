@@ -36,6 +36,7 @@ import {
 } from './fake-panel';
 import { Refusal, SCRATCH, THREAD, WORKSPACE, bound, call, done, event } from './fake-records';
 import { FAKE_SERVER, signIn } from './fake-signin';
+import { PLANNING, PLANNING_HISTORY, type Planned, planned } from './fake-plan';
 import { RESEARCH, RESEARCH_HISTORY, sourcesOf } from './fake-sources';
 
 /**
@@ -293,7 +294,16 @@ const HISTORIES: Readonly<Record<string, readonly RawEvent[]>> = {
   [LOST]: LOST_HISTORY,
   [VERBOSE]: VERBOSE_HISTORY,
   [DINNER]: DINNER_HISTORY,
+  [PLANNING]: PLANNING_HISTORY,
 };
+
+/** The thread that proposed a plan, as the lists show it: in Plan until it is built. */
+function planning(plan: Planned): ThreadSummary {
+  return thread(PLANNING, 'Add a --verbose flag to the CLI', 'idle', PROJECT, {
+    permissions: plan.built ? 'auto' : 'plan',
+    updated_at: '2026-10-11T10:08:00.000Z',
+  });
+}
 
 const TASKS: readonly TaskInfo[] = [
   {
@@ -543,6 +553,8 @@ interface Known {
   readonly research: boolean;
   /** Whether the project lists the coding thread with something in every part of its panel. */
   readonly panel: boolean;
+  /** The thread that proposed a plan, and its plan, when the test has it. */
+  readonly plan: Planned | null;
   /** The git hosts the person connected. */
   readonly credentials: readonly CredentialInfo[];
   /** The threads given a message, which are then the latest. */
@@ -568,7 +580,8 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
   }
   const ran =
     background(method, params, commands) ??
-    (gone === null ? undefined : aboutGone(method, params, gone));
+    (gone === null ? undefined : aboutGone(method, params, gone)) ??
+    (known.plan === null ? undefined : planned(method, params, known.plan));
   if (ran !== undefined) {
     return ran;
   }
@@ -590,7 +603,11 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
         commands !== null && project === PROJECT.id ? [thread(SERVING, 'Preview the docs')] : [];
       const research = known.research && project === PERSONAL.id ? [RESEARCHING] : [];
       const verbose = known.panel && project === PROJECT.id ? [VERBOSE_THREAD] : [];
-      const threads = [...fresh, ...serving, ...research, ...verbose, ...(THREADS[project] ?? [])];
+      const plans = known.plan !== null && project === PROJECT.id ? [planning(known.plan)] : [];
+      const threads = [
+        ...[...fresh, ...serving, ...research, ...verbose, ...plans],
+        ...(THREADS[project] ?? []),
+      ];
       return {
         threads: threads.map((each) =>
           touched.has(each.id) ? { ...each, updated_at: LATER } : each,
@@ -599,10 +616,11 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
     }
     case 'thread/get': {
       const id = String(params['thread']);
-      const listed = [RESEARCHING, VERBOSE_THREAD, ...Object.values(THREADS).flat()].find(
-        (each) => each.id === id,
-      );
-      return { thread: listed ?? thread(id, 'Make the tests pass') };
+      if (id === PLANNING && known.plan !== null) {
+        return { thread: planning(known.plan) };
+      }
+      const listed = [RESEARCHING, VERBOSE_THREAD, ...Object.values(THREADS).flat()];
+      return { thread: listed.find((each) => each.id === id) ?? thread(id, 'Make the tests pass') };
     }
     case 'thread/sources':
       return sourcesOf(params);
@@ -680,8 +698,9 @@ function trusted(method: string, params: Record<string, unknown>, trust: Trust):
  * Answers the session API's calls the app makes, as JSON-RPC over POST /. With `trust`, the
  * person also has acme, a project that asks to be trusted; with `commands`, a thread in the
  * project that keeps the docs site running in the background; with `research`, a chat that read
- * pages on the web among the person's chats; with `panel`, a coding thread in the project with
- * something in every section of its panel; with `account`, a GitHub account connected; with
+ * pages on the web among the person's chats; with `plan`, a thread in the project that proposed a
+ * plan, whose plan the page answers (`planServer`); with `panel`, a coding thread in the project
+ * with something in every section of its panel; with `account`, a GitHub account connected; with
  * `gone`, playground, a project whose folder isn't there anymore. How the person's threads are
  * grouped is kept in `grouped`, which two pages share as one server.
  */
@@ -691,6 +710,7 @@ export async function fakeApi(
     trust = false,
     commands = false,
     research = false,
+    plan = false,
     panel = false,
     account = false,
     gone = false,
@@ -699,6 +719,7 @@ export async function fakeApi(
     readonly trust?: boolean;
     readonly commands?: boolean;
     readonly research?: boolean;
+    readonly plan?: boolean;
     readonly panel?: boolean;
     readonly account?: boolean;
     readonly gone?: boolean;
@@ -713,6 +734,7 @@ export async function fakeApi(
     trust: trust ? { asking: true } : null,
     commands: commands ? { running: true } : null,
     research,
+    plan: plan ? { built: false, steps: [] } : null,
     panel,
     credentials: account ? [GITHUB] : [],
     touched: new Set(),
@@ -759,7 +781,7 @@ export async function fakeApi(
       contentType: 'application/json',
       body: JSON.stringify({ jsonrpc: '2.0', id: message.id, ...reply }),
     });
-    if (message.method === 'trust/answer') {
+    if (message.method === 'trust/answer' || message.method === 'plan/build') {
       await lists.tell(String(message.params['thread']));
     }
   });

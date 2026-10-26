@@ -1,0 +1,60 @@
+@use '../../styles/needs-you';
+@include needs-you.card;
+
+// A plan being built, or done, needs no one: it rests on the plain line, with no lift.
+:host(:not(.glz-plan-card--proposed)) {
+  border-color: var(--glz-color-border);
+  box-shadow: var(--glz-elevation-0);
+}
+
+// The steps, one to a line, each after its mark.
+.steps,
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--glz-space-2);
+}
+
+.mark {
+  flex: none;
+  color: var(--glz-color-text-muted);
+}
+
+// The step being worked on stands out; one done steps back, its check in the success tone.
+.doing .words {
+  font-weight: var(--glz-weight-bold);
+}
+
+.done .words {
+  color: var(--glz-color-text-secondary);
+}
+
+.done .mark {
+  color: var(--glz-color-success);
+}
+
+.words {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+// A step being written: its field, then the button that takes it out.
+.field {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-2);
+}
+
+.field input {
+  flex: 1;
+  min-width: 0;
+}

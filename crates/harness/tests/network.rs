@@ -15,7 +15,7 @@ use glave_ports::computer::Sandbox;
 use glave_ports::{Caller, Completion, InMemoryLog, ModelRequest};
 use serde_json::json;
 
-use crate::outside_sandbox::{Person, decided, outside, results, sandboxed, walled};
+use crate::outside_sandbox::{Person, decided, outside, sandboxed, walled};
 use crate::support::*;
 
 const REASON: &str = "it downloads the packages the project needs";

@@ -17,7 +17,9 @@ import {
   type ThreadSummary,
   type TrustAsk,
   type TrustChoice,
+  type PlanBuildResult,
   type TurnStartParams,
+  type TurnStartResult,
 } from '@glave/client';
 import type { GlzDecision } from '@glave/glaze';
 
@@ -32,7 +34,9 @@ import { folderGone } from '../lib/projects';
 import { type Waiting, named, notRead, together } from '../lib/queued';
 import { onApple } from '../lib/shortcuts';
 import { lastSourcing } from '../lib/sources';
-import { threadTurns, turnRuns } from '../lib/turns';
+import { type Start, built, promptOf, sent, withFiles } from '../lib/starts';
+import { lastPlanning } from '../lib/plans';
+import { asks, latestStart, summaryRuns, threadTurns, turnRuns } from '../lib/turns';
 import { FIRST_RETRY_MS, LAST_RETRY_MS, cutOff, pause, refused } from '../lib/watching';
 import { FirstTurnService } from './first-turn.service';
 import { SessionService } from './session.service';
@@ -124,6 +128,8 @@ export class ThreadService {
    * `web_fetch`), if it did; `null` while the thread opens, until its history is read.
    */
   readonly sourcing = computed(() => (this.opening() ? null : lastSourcing(this.events())));
+  /** The `seq` of the latest change to the thread's plan, if any; `null` while the thread opens. */
+  readonly planning = computed(() => (this.opening() ? null : lastPlanning(this.events())));
   readonly reply = this.draft.asReadonly();
   /** The step the running turn takes now, in the server's words, while one runs and it said so. */
   readonly step = computed(() => this.doing().at(-1) ?? null);
@@ -229,7 +235,7 @@ export class ThreadService {
     if (this.id() !== thread) {
       return;
     }
-    this.running.set(summary !== null && runs(summary, this.events()));
+    this.running.set(summary !== null && summaryRuns(summary, this.events()));
     if (this.document.visibilityState !== 'hidden') {
       void this.watch(thread, true);
     }
@@ -283,7 +289,7 @@ export class ThreadService {
       this.sentWhileRunning += 1;
       const key = `queued-${String(this.sentWhileRunning)}`;
       this.waiting.update((waiting) => [...waiting, { key, text: prompt, id: null }]);
-      await this.follow(thread, { thread, prompt, ...withFiles(files) }, key);
+      await this.follow(thread, sent({ thread, prompt, ...withFiles(files) }), key);
       return;
     }
     const params: TurnStartParams = {
@@ -294,7 +300,18 @@ export class ThreadService {
       ...(permissions === null ? {} : { permissions }),
       ...(effort === null ? {} : { effort }),
     };
-    await this.follow(thread, params, null);
+    await this.follow(thread, sent(params), null);
+  }
+
+  /**
+   * Builds the thread's proposed plan: the server records the approval, runs the thread in Auto
+   * and starts the turn that builds it, followed as a turn sent from here is.
+   */
+  async build(): Promise<void> {
+    const thread = this.id();
+    if (thread !== null && !this.busy()) {
+      await this.follow(thread, built(thread), null);
+    }
   }
 
   /** Sends the thread's first message again, with its key, when it got no answer. */
@@ -357,15 +374,12 @@ export class ThreadService {
   }
 
   /**
-   * Sends `params` and follows what comes back: a turn of its own, streamed, or for `queued`,
-   * a message the server queued to the turn already running, answered at once with the id it
-   * will be recorded under.
+   * Starts a turn as `start` says and follows what comes back: a turn of its own, streamed, or
+   * for `queued`, a message the server queued to the turn already running, answered at once
+   * with the id it will be recorded under.
    */
-  private async follow(
-    thread: ThreadId,
-    params: TurnStartParams,
-    queued: string | null,
-  ): Promise<void> {
+  private async follow(thread: ThreadId, start: Start, queued: string | null): Promise<void> {
+    const prompt = promptOf(start);
     const controller = new AbortController();
     this.controllers.add(controller);
     this.following.update((streams) => streams + 1);
@@ -374,7 +388,7 @@ export class ThreadService {
     // message is likely to be queued to a turn already running.
     let own = queued === null;
     if (own) {
-      this.asking.set(params.prompt);
+      this.asking.set(prompt);
       this.afters.update((afters) => [...afters, this.events().at(-1)?.seq ?? 0]);
       this.streaming.update((streams) => streams + 1);
       if (!this.running()) {
@@ -383,8 +397,7 @@ export class ThreadService {
     }
     const key = idempotencyKey();
     try {
-      const keyed = { ...params, _meta: { idempotency_key: key } };
-      const turn = this.session.stream('turn/start', keyed, controller.signal);
+      const turn = this.started(start, key, controller.signal);
       let next = await turn.next();
       if (!next.done) {
         if (!own) {
@@ -400,17 +413,18 @@ export class ThreadService {
         next = await turn.next();
       }
       const result = next.value;
-      if ('queued' in result) {
-        this.keepWaiting(queued, params.prompt, result.queued.id);
+      if ('queued' in result && prompt !== null) {
+        this.keepWaiting(queued, prompt, result.queued.id);
       }
     } catch (error: unknown) {
       const aborted = controller.signal.aborted;
+      const lost = start.method === 'turn/start' && this.asking() !== null;
       if (folderGone(error)) {
         // The project's folder went since the lists were read: they say so in its place.
         void this.projects.refresh();
-      } else if (!aborted && queued === null && this.asking() !== null && !refused(error)) {
+      } else if (!aborted && queued === null && lost && !refused(error)) {
         // No answer came, but it may have started: sent again with its key, as a first turn is.
-        this.firstTurns.lost(params, key);
+        this.firstTurns.lost(start.params, key);
       } else if (!aborted) {
         const said = error instanceof Error ? error.message : String(error);
         this.failed.set(said);
@@ -437,6 +451,19 @@ export class ThreadService {
         }
       }
     }
+  }
+
+  /** The stream of the turn `start` starts: a message's, under `key` so a retry starts no second. */
+  private started(
+    start: Start,
+    key: string,
+    signal: AbortSignal,
+  ): AsyncGenerator<Notification, TurnStartResult | PlanBuildResult, void> {
+    if (start.method === 'plan/build') {
+      return this.session.stream('plan/build', start.params, signal);
+    }
+    const keyed = { ...start.params, _meta: { idempotency_key: key } };
+    return this.session.stream('turn/start', keyed, signal);
   }
 
   /**
@@ -513,7 +540,7 @@ export class ThreadService {
     }
     if (this.stopped && this.stoppedAt === latestStart(this.events())) {
       this.stopped = false;
-      void this.follow(thread, { thread, prompt: together(unread) }, null);
+      void this.follow(thread, sent({ thread, prompt: together(unread) }), null);
     } else {
       this.composer.update((draft) => together([...unread, draft].filter(Boolean)));
     }
@@ -601,7 +628,7 @@ export class ThreadService {
       return;
     }
     // The server's word first; a turn's start or end read after it says more.
-    this.running.set(runs(summary, this.events()));
+    this.running.set(summaryRuns(summary, this.events()));
     await this.readAll(thread, this.events().at(-1)?.seq, true);
     if (this.following() > 0 || this.id() !== thread) {
       return;
@@ -658,7 +685,7 @@ export class ThreadService {
       return;
     }
     if (stopped) {
-      void this.follow(thread, { thread, prompt: together(unread) }, null);
+      void this.follow(thread, sent({ thread, prompt: together(unread) }), null);
     } else {
       this.composer.update((draft) => together([...unread, draft].filter(Boolean)));
     }
@@ -726,7 +753,7 @@ export class ThreadService {
       }
     } else if (event.type === 'turn.ended') {
       this.running.set(false);
-    } else if (byPerson(event)) {
+    } else if (asks(event)) {
       this.asking.set(null);
       this.firstTurns.forget(event.thread);
     }
@@ -746,7 +773,7 @@ export class ThreadService {
           return;
         }
         this.events.update((events) => mergeEvents(events, page.events));
-        if (page.events.some(byPerson)) {
+        if (page.events.some(asks)) {
           this.firstTurns.forget(thread);
         }
         const turns = page.events.some(
@@ -766,33 +793,4 @@ export class ThreadService {
       }
     }
   }
-}
-
-/**
- * Whether a turn runs in the thread, as the server's summary of it says, with its events read
- * before: one does, or waits for the person (not a project's ask, which waits with no turn).
- */
-function runs(summary: ThreadSummary, events: readonly RawEvent[]): boolean {
-  return summary.status === 'running' || (summary.status === 'waiting' && turnRuns(events));
-}
-
-/** Whether `event` records a message of the person's. */
-function byPerson(event: RawEvent): boolean {
-  return event.type === 'message.added' && event.data['role'] === 'user';
-}
-
-/** The `seq` of the latest turn's start, if a turn ever started. */
-function latestStart(events: readonly RawEvent[]): number | null {
-  for (let at = events.length - 1; at >= 0; at -= 1) {
-    const event = events[at];
-    if (event?.type === 'turn.started') {
-      return event.seq;
-    }
-  }
-  return null;
-}
-
-/** `files` as `turn/start` takes them: left out when there are none. */
-function withFiles(files: readonly AttachedFile[]): Pick<TurnStartParams, 'files'> {
-  return files.length === 0 ? {} : { files };
 }

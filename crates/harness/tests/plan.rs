@@ -7,11 +7,11 @@
 use std::path::Path;
 
 use glave_event::{Body, Event, Outcome, Part, Permissions, PlanStatus, StopReason};
-use glave_harness::{Cancel, Decision, HarnessError, NoOneToAsk, Settings};
-use glave_ports::{Caller, Completion, InMemoryLog, Message, ModelRequest};
+use glave_harness::{Cancel, Decision, Harness, HarnessError, NoOneToAsk, Settings, Thread};
+use glave_ports::{Caller, Completion, InMemoryBlobs, InMemoryLog, Message, ModelRequest};
 use serde_json::json;
 
-use crate::outside_sandbox::{Person, results, sandboxed, walled};
+use crate::outside_sandbox::{Person, sandboxed, walled};
 use crate::support::*;
 
 /// Settings for plan mode.
@@ -183,15 +183,7 @@ fn with_no_one_there_and_no_sandbox_the_plan_is_the_answer_and_nothing_changes()
         let log = InMemoryLog::new();
         let harness = harness_on(&dir, answers, NoOneToAsk, log, 1, planning()).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(
-                &mut thread,
-                "add a --verbose flag",
-                &Cancel::new(),
-                &mut |_| {},
-            )
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "add a --verbose flag").await;
         assert!(!dir.join("notes.md").exists() && !dir.join("made.txt").exists());
         let results = results(thread.messages());
         for refused in &results[..2] {
@@ -227,6 +219,23 @@ fn edited() -> [String; 3] {
         "Add --verbose to the parser".to_owned(),
         "Run the tests".to_owned(),
     ]
+}
+
+/// A harness in plan mode playing `answers`, a thread of it after a first turn on "add a
+/// --verbose flag", and what the model is sent.
+async fn proposed(
+    dir: &Path,
+    answers: Vec<Completion>,
+) -> (
+    Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, NoOneToAsk>,
+    Thread,
+    Seen,
+) {
+    let log = InMemoryLog::new();
+    let (harness, seen) = harness_seeing(dir, answers, NoOneToAsk, log, 1, planning()).await;
+    let mut thread = harness.start_thread(scope()).await.unwrap();
+    turn(&harness, &mut thread, "add a --verbose flag").await;
+    (harness, thread, seen)
 }
 
 /// The proposal, then the build: the model marks its steps as it goes, then is done.
@@ -266,15 +275,8 @@ fn built_from_the_edit(build: &ModelRequest) {
 fn a_proposed_plan_survives_a_resume_is_edited_and_is_built_from_the_edit_in_auto() {
     let dir = folder("plan-build");
     block_on!(async {
-        let log = InMemoryLog::new();
-        let answers = proposed_then_built();
-        let (harness, seen) = harness_seeing(&dir, answers, NoOneToAsk, log, 1, planning()).await;
-        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let (harness, thread, seen) = proposed(&dir, proposed_then_built()).await;
         let cancel = Cancel::new();
-        harness
-            .run_turn(&mut thread, "add a --verbose flag", &cancel, &mut |_| {})
-            .await
-            .unwrap();
         let mut thread = harness.resume_thread(scope(), thread.id).await.unwrap();
         assert!(
             harness
@@ -339,14 +341,8 @@ fn changing_it_after_an_edit_tells_the_model_the_plan_first_and_proposes_again()
         calls(vec![plan(&[("Read the parser", "pending")])]),
     ];
     block_on!(async {
-        let log = InMemoryLog::new();
-        let (harness, seen) = harness_seeing(&dir, answers, NoOneToAsk, log, 1, planning()).await;
-        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let (harness, mut thread, seen) = proposed(&dir, answers).await;
         let cancel = Cancel::new();
-        harness
-            .run_turn(&mut thread, "add a --verbose flag", &cancel, &mut |_| {})
-            .await
-            .unwrap();
         let edited = ["Read the parser".to_owned(), "Add -v too".to_owned()];
         harness
             .edit_plan(&mut thread, &Caller::default(), &edited)
@@ -483,10 +479,7 @@ fn checklist(plans: bool) -> (bool, Vec<String>, usize, Option<glave_harness::Pl
         let log = InMemoryLog::new();
         let (harness, seen) = harness_seeing(&dir, answers, NoOneToAsk, log, 1, settings).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "fix it", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "fix it").await;
         let sent = sent(&seen);
         let offered = sent[0].tools.iter().any(|tool| tool.name == "update_plan");
         let events = events(harness.log(), thread.id).await;

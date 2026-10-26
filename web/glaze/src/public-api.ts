@@ -29,6 +29,7 @@ export * from './components/nav-list/nav-list.component';
 export * from './components/page-header/page-header.component';
 export * from './components/panel-layout/panel-layout.component';
 export * from './components/picker/picker.component';
+export * from './components/plan-card/plan-card.component';
 export * from './components/popover/popover.component';
 export * from './components/question-card/question-card.component';
 export * from './components/radio-group/radio-group.component';

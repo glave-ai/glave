@@ -55,6 +55,24 @@ describe('ThreadItemComponent', () => {
     expect(root.querySelector('[data-testid="message-copy"]')).toBeNull();
   });
 
+  it('shows the approval of a plan as the person’s Build it', async () => {
+    const { root } = await render({
+      kind: 'message',
+      files: [],
+      key: 'm',
+      seq: 1,
+      from: 'person',
+      text: '',
+      reasoning: '',
+      steered: false,
+      built: true,
+    });
+    const message = root.querySelector('[data-testid="thread-message"]');
+    expect(message?.getAttribute('aria-label')).toBe('You');
+    expect(message?.textContent.trim()).toBe('Build it');
+    await expectAccessible(root);
+  });
+
   it('says the model read a message the person sent while it worked', async () => {
     const message = {
       kind: 'message',

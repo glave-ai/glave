@@ -33,6 +33,18 @@
             <p class="caption">{{ copy.queued }}</p>
           </glz-message>
         }
+        @if (plans.plan(); as plan) {
+          <glz-plan-card
+            testId="thread-plan"
+            [summary]="plan.sentence"
+            [steps]="plan.steps"
+            [proposed]="plan.proposed"
+            [busy]="planBusy()"
+            (build)="build()"
+            (revise)="revise()"
+            (edit)="edit($event)"
+          />
+        }
         @if (service.trust(); as ask) {
           <glz-trust-card
             testId="thread-trust"

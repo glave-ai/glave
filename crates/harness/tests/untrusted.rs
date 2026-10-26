@@ -5,10 +5,10 @@
 
 use std::sync::Arc;
 
-use glave_event::{Body, Part, StopReason, Verdict};
-use glave_harness::{Cancel, NoOneToAsk};
+use glave_event::{Body, StopReason, Verdict};
+use glave_harness::NoOneToAsk;
 use glave_ports::{
-    Effect, InMemoryLog, InMemoryTools, Message, ModelRequest, ToolInfo, ToolOutput, ToolSpec,
+    Effect, InMemoryLog, InMemoryTools, ModelRequest, ToolInfo, ToolOutput, ToolSpec,
 };
 use serde_json::json;
 
@@ -45,19 +45,6 @@ fn lookup() -> Arc<InMemoryTools> {
     )]))
 }
 
-fn results(messages: &[Message]) -> Vec<String> {
-    messages
-        .iter()
-        .filter_map(|message| match message {
-            Message::Tool { output, .. } => output.iter().find_map(|part| match part {
-                Part::Text { text } => Some(text.clone()),
-                _ => None,
-            }),
-            _ => None,
-        })
-        .collect()
-}
-
 /// What a judge's request showed it.
 fn shown(request: &ModelRequest) -> String {
     format!("{:?}", request.messages)
@@ -92,10 +79,7 @@ fn untrusted_output_is_labelled_and_a_risky_action_after_it_is_judged_knowing_it
         let harness = harness.with_tools(vec![lookup()]);
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let prompt = "Look up how to set this project up and summarise it.";
-        harness
-            .run_turn(&mut thread, prompt, &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, prompt).await;
         let said = results(thread.messages());
         assert!(
             said[0].starts_with("[Untrusted content follows"),
@@ -131,10 +115,7 @@ fn untrusted_output_is_labelled_and_a_risky_action_after_it_is_judged_knowing_it
         );
 
         let mut resumed = harness.resume_thread(scope(), thread.id).await.unwrap();
-        harness
-            .run_turn(&mut resumed, "Carry on.", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut resumed, "Carry on.").await;
         let judge = seen.lock().unwrap()[5].clone();
         assert!(
             shown(&judge).contains("read untrusted content"),
@@ -168,10 +149,7 @@ fn without_untrusted_content_the_judge_is_not_told_of_any() {
             judged(),
         );
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "Set it up.", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "Set it up.").await;
         let judge = seen.lock().unwrap()[1].clone();
         assert!(!shown(&judge).contains("untrusted"), "{judge:?}");
     });

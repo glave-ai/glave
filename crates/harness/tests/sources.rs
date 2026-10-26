@@ -3,15 +3,15 @@
 
 use std::sync::Arc;
 
-use glave_event::{Part, StopReason};
+use glave_event::StopReason;
 use std::future::{Future, ready};
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use glave_event::Arguments;
-use glave_harness::{ApprovalRequest, Approver, Cancel, Decision, NoOneToAsk};
+use glave_harness::{ApprovalRequest, Approver, Decision, NoOneToAsk};
 use glave_ports::{
-    BoxFuture, Cancellation, Effect, InMemoryLog, InMemoryTools, Message, ToolError, ToolInfo,
-    ToolOutput, ToolSource, ToolSpec,
+    BoxFuture, Cancellation, Effect, InMemoryLog, InMemoryTools, ToolError, ToolInfo, ToolOutput,
+    ToolSource, ToolSpec,
 };
 use serde_json::json;
 
@@ -59,19 +59,6 @@ impl Approver for ForThreadOnce {
     }
 }
 
-fn results(messages: &[Message]) -> Vec<String> {
-    messages
-        .iter()
-        .filter_map(|message| match message {
-            Message::Tool { output, .. } => output.iter().find_map(|part| match part {
-                Part::Text { text } => Some(text.clone()),
-                _ => None,
-            }),
-            _ => None,
-        })
-        .collect()
-}
-
 #[test]
 fn other_tools_are_offered_after_the_built_ins_and_called_through_the_harness() {
     let dir = folder("sources-offered");
@@ -89,10 +76,7 @@ fn other_tools_are_offered_after_the_built_ins_and_called_through_the_harness() 
             harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings()).await;
         let harness = harness.with_tools(vec![Arc::<InMemoryTools>::clone(&tools)]);
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "how do I set up?", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "how do I set up?").await;
         let offered: Vec<String> = seen.lock().unwrap()[0]
             .tools
             .iter()
@@ -136,10 +120,7 @@ fn a_tool_that_runs_things_asks_like_a_command() {
             .await
             .with_tools(vec![Arc::<InMemoryTools>::clone(&tools)]);
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "file it", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "file it").await;
         assert!(tools.calls().is_empty(), "with no one to ask, it never ran");
         let said = results(thread.messages());
         assert!(
@@ -165,10 +146,7 @@ fn allowed_for_the_thread_by_name() {
             .await
             .with_tools(vec![Arc::<InMemoryTools>::clone(&tools)]);
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "file two", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "file two").await;
         assert_eq!(tools.calls().len(), 2, "both ran");
         assert_eq!(harness.approver().0.load(Ordering::SeqCst), 1, "asked once");
     });
@@ -207,10 +185,7 @@ fn what_a_source_says_about_its_tools_follows_the_system_prompt() {
         let plain = settings().system_prompt;
         let harness = harness.with_tools(vec![Arc::new(Noted(extra()))]);
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "hello").await;
         let system = seen.lock().unwrap()[0].system.clone();
         assert_eq!(
             system,
@@ -232,10 +207,7 @@ fn without_notes_the_system_prompt_is_glaves_own() {
             harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings()).await;
         let harness = harness.with_tools(vec![extra()]);
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "hello").await;
         assert_eq!(seen.lock().unwrap()[0].system, settings().system_prompt);
     });
 }
@@ -256,10 +228,7 @@ fn an_unknown_tool_names_every_tool_on_offer() {
             .await
             .with_tools(vec![extra()]);
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "go", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "go").await;
         let said = results(thread.messages());
         assert!(said[0].contains("mcp__docs__search"), "{said:?}");
     });

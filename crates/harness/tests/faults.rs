@@ -5,15 +5,14 @@
 //! returned, never dropped silently.
 
 use std::path::Path;
-use std::process::Command as Process;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::support::*;
+use crate::worker::{branches, hands_back, origin};
 use glave_computer::{LocalComputers, RemoteComputers, serve};
 use glave_event::{Body, Event, Outcome, RemovedReason, StopReason};
 use glave_harness::{AllowAll, Cancel, Place, Workers, Workspace, wip_branch};
-use glave_ports::Caller;
 use glave_ports::computer::{
     Bytes, Command, ComputerError, ComputerId, ComputerInfo, Computers, Ending, Environment,
     FileWrite, Finished, Glob, Globbed, Listed, Listing, Output, Sandbox, SandboxLevel, Save,
@@ -261,11 +260,11 @@ fn a_computer_that_dies_mid_command_fails_the_tool_and_the_turn_ends_cleanly() {
         };
         let cancel = Cancel::new();
         let mut on_event = |_| {};
-        let (turn, ()) = tokio::join!(
+        let (ran, ()) = tokio::join!(
             harness.run_turn(&mut thread, "run it", &cancel, &mut on_event),
             kill
         );
-        turn.unwrap();
+        ran.unwrap();
 
         let recorded = events(harness.log(), thread.id).await;
         let failed = recorded.iter().find_map(|event: &Event| match &event.body {
@@ -282,10 +281,7 @@ fn a_computer_that_dies_mid_command_fails_the_tool_and_the_turn_ends_cleanly() {
         assert!(sent.contains("may or may not have done it"), "{sent}");
 
         let mut resumed = harness.resume_thread(scope(), thread.id).await.unwrap();
-        harness
-            .run_turn(&mut resumed, "and now?", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut resumed, "and now?").await;
         let after = events(harness.log(), thread.id).await;
         let endings = after
             .iter()
@@ -293,33 +289,6 @@ fn a_computer_that_dies_mid_command_fails_the_tool_and_the_turn_ends_cleanly() {
             .count();
         assert_eq!(endings, 2);
     });
-}
-
-/// A bare repository with one commit on `main`, as a worker clones it.
-fn origin(dir: &Path) -> std::path::PathBuf {
-    let origin = dir.join("origin.git");
-    let script = format!(
-        "git init -q --bare {o} && git init -q src && cd src && echo hi > a.txt && \
-             git add a.txt && git -c user.name=t -c user.email=t@example.com commit -q -m one \
-             && git push -q {o} HEAD:refs/heads/main",
-        o = origin.display()
-    );
-    let made = Process::new("bash")
-        .args(["-c", &script])
-        .current_dir(dir)
-        .status()
-        .unwrap();
-    assert!(made.success());
-    origin
-}
-
-fn branches(origin: &Path) -> String {
-    let listed = Process::new("git")
-        .args(["for-each-ref", "--format=%(refname:short)"])
-        .current_dir(origin)
-        .output()
-        .unwrap();
-    String::from_utf8_lossy(&listed.stdout).into_owned()
 }
 
 /// A thread on a worker that wrote a file and handed one back, its computers `faulty`.
@@ -331,23 +300,9 @@ async fn worked(
     glave_harness::Harness<ScriptedModel, InMemoryLog, glave_ports::InMemoryBlobs, AllowAll>,
     glave_harness::Thread,
 ) {
-    let answers = vec![
-        answer(
-            None,
-            vec![
-                ("write", json!({"path": "notes.txt", "content": "work\n"})),
-                (
-                    "write",
-                    json!({"path": ".glave/out/report.md", "content": "done\n"}),
-                ),
-            ],
-            StopReason::ToolUse,
-        ),
-        answer(Some("Done."), vec![], StopReason::EndTurn),
-    ];
     let (harness, _) = harness_with(
         workspace(dir).await,
-        answers,
+        hands_back(),
         AllowAll,
         InMemoryLog::new(),
         1,
@@ -362,14 +317,8 @@ async fn worked(
         attachments: Vec::new(),
     });
     let place = Place::Worker(Environment::host());
-    let mut thread = harness
-        .start_thread_in(scope(), &Caller::default(), place)
-        .await
-        .unwrap();
-    harness
-        .run_turn(&mut thread, "do it", &Cancel::new(), &mut |_| {})
-        .await
-        .unwrap();
+    let mut thread = thread_in(&harness, place).await;
+    turn(&harness, &mut thread, "do it").await;
     (harness, thread)
 }
 

@@ -75,6 +75,32 @@ describe('turns', () => {
     expect(turns.map((turn) => turn.items.length)).toEqual([2, 1]);
   });
 
+  it('starts the turn that builds a plan at the person’s Build it, glave’s prompt in it', () => {
+    const turns = threadTurns([
+      event(1, 'turn.started', {}),
+      ASK(2, 'Add a flag'),
+      SAY(3, 'Here is the plan'),
+      event(4, 'turn.ended', { outcome: 'completed' }),
+      event(5, 'plan.approved', {}),
+      event(6, 'permissions.chosen', { permissions: 'auto' }),
+      event(7, 'turn.started', {}),
+      event(8, 'message.added', {
+        role: 'user',
+        parts: [{ type: 'text', text: 'The person approved this plan. Build it now.' }],
+        author: { kind: 'glave' },
+      }),
+      SAY(9, 'Built'),
+    ]);
+    expect(
+      turns.map((turn) =>
+        turn.items.map((item) => (item.kind === 'message' ? item.built === true : item.kind)),
+      ),
+    ).toEqual([
+      [false, false],
+      [true, false],
+    ]);
+  });
+
   it('reads a turn’s result as the server recorded it at its end, never from its calls', () => {
     const result = (ended: Readonly<Record<string, unknown>>): unknown =>
       threadTurns([
