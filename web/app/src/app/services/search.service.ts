@@ -2,6 +2,7 @@ import { Service, computed, inject, signal } from '@angular/core';
 import { ApiError, type SearchInfo } from '@glave/client';
 
 import { sentence, unreached } from '../lib/text';
+import { onChange } from './changes.service';
 import { SessionService } from './session.service';
 
 /**
@@ -20,6 +21,10 @@ export class SearchService {
   private asked = 0;
   /** The switches on their way, each sent once the one before it is answered. */
   private sending: Promise<unknown> = Promise.resolve();
+  /** How many switches are on their way: the answer to the last says what is so now. */
+  private switching = 0;
+  /** Whether anything here has asked how often it searched, which a read again asks too. */
+  private counting = false;
 
   /** What the server last said; none until it has. */
   readonly search = this.said.asReadonly();
@@ -33,6 +38,12 @@ export class SearchService {
 
   constructor() {
     void this.load();
+    // Changed elsewhere, or by this tab: a switch on its way here is answered with what is so.
+    onChange('search', () => {
+      if (this.switching === 0) {
+        void this.load(this.counting);
+      }
+    });
   }
 
   /**
@@ -40,6 +51,7 @@ export class SearchService {
    * reads from the month's threads; one that cannot be read leaves what was read before.
    */
   async load(usage = false): Promise<void> {
+    this.counting ||= usage;
     this.asked += 1;
     const asked = this.asked;
     this.failed.set(null);
@@ -59,6 +71,7 @@ export class SearchService {
     const asked = this.asked;
     const answered = this.sending.then(() => this.session.call('search/set', { on }));
     this.sending = answered.catch(() => undefined);
+    this.switching += 1;
     try {
       const { search } = await answered;
       if (asked === this.asked) {
@@ -69,6 +82,8 @@ export class SearchService {
       if (asked === this.asked) {
         this.failed.set(error instanceof ApiError ? sentence(error.message) : unreached());
       }
+    } finally {
+      this.switching -= 1;
     }
   }
 }

@@ -1,5 +1,5 @@
 import type { Signal, WritableSignal } from '@angular/core';
-import type { Notification } from '@glave/client';
+import type { Notification, Setting } from '@glave/client';
 
 import { newestUpdate, withSummary } from '../lib/lists';
 import type { ProjectWithThreads } from '../lib/nav';
@@ -29,6 +29,8 @@ export interface ListsHost {
   reread(): Promise<void>;
   /** The read under way, if any. */
   reading(): Promise<void> | null;
+  /** Takes the server's word that the person's `setting` changed. */
+  heard(setting: Setting): void;
 }
 
 /** Following the lists, once started. */
@@ -147,11 +149,16 @@ async function watchLists(
 }
 
 /**
- * Takes a thread's summary as the server says it is now, into the lists, and again once a read
+ * Takes what the person's own setting the server says changed to whoever shows it; and a
+ * thread's summary as the server says it is now, into the lists, and again once a read
  * under way has read them, since that read began before it. A new thread in a project the lists
  * lack, as one made elsewhere, reads them again, once for each such project.
  */
 function take(host: ListsHost, note: Notification, lacked: Set<string>): void {
+  if (note.method === 'settings/changed') {
+    host.heard(note.params.setting);
+    return;
+  }
   if (note.method !== 'thread/changed') {
     return;
   }

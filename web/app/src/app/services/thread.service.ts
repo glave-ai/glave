@@ -461,7 +461,7 @@ export class ThreadService {
    * turn of its own, else the watch; a message recorded there takes its place.
    */
   private take(thread: ThreadId, note: Notification, from: 'turn' | 'watch'): void {
-    if (note.params.thread !== thread) {
+    if (!('thread' in note.params) || note.params.thread !== thread) {
       return;
     }
     const drawn = from === 'turn' || this.streaming() === 0;
