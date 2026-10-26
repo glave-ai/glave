@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 
 import { HISTORY } from './fake-api';
+import { type Gate, type Gated, gates } from './fake-gate';
 import { THREAD } from './fake-records';
 
 /** The id the fake answers a message sent while its turn runs with (`steerTurn`). */
@@ -14,23 +15,21 @@ interface Steering {
 
 /**
  * Makes the page's next turn in `THREAD` one the person steers: it starts on their message and
- * runs a command, then waits until the test lets the model read (`window.glaveSteer.read()`).
+ * runs a command, then waits at the gate `read` until the test lets the model read (`letGo`).
  * A message sent meanwhile is answered at once as queued; once read, it is recorded where the
  * model saw it, and the model answers it. The page's own `fetch` answers, as in `streamReply`.
  */
 export async function steerTurn(page: Page): Promise<void> {
   const after = HISTORY.length;
+  await gates(page);
   await page.addInitScript(
     ({ after, thread, queuedId }) => {
       const real = window.fetch.bind(window);
       const encoder = new TextEncoder();
-      let read: () => void = () => undefined;
-      const reading = new Promise<void>((resolve) => {
-        read = resolve;
-      });
+      const passed = (gate: Gate): Promise<void> =>
+        (window as unknown as Gated).glaveGates.passed(gate);
       let sent = '';
       let turns = 0;
-      Object.assign(window, { glaveSteer: { read } });
       const at = '2026-10-11T10:10:00.000Z';
       const stored = (seq: number, type: string, data: unknown, id?: string): string =>
         JSON.stringify({
@@ -101,7 +100,7 @@ export async function steerTurn(page: Page): Promise<void> {
                 output: [{ type: 'text', text: '' }],
               }),
             );
-            await reading;
+            await passed('read');
             send(steering.said(after + 5, sent, queuedId));
             send(live('Using 4000 instead.'));
             send(

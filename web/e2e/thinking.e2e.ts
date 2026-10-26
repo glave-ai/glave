@@ -1,15 +1,8 @@
 import { type Locator, type Page, expect, test } from '@playwright/test';
 
 import { THREAD, fakeApi } from './fake-api';
-import {
-  ANSWER,
-  STARTED,
-  STEP,
-  THINKING,
-  THINKING_PROMPT,
-  letThink,
-  thinkingTurn,
-} from './fake-thinking';
+import { letGo } from './fake-gate';
+import { ANSWER, STARTED, STEP, THINKING, THINKING_PROMPT, thinkingTurn } from './fake-thinking';
 import {
   SIGNED_IN,
   byTestId,
@@ -113,19 +106,19 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expectAccessible(page);
 
     // Recorded: how long the turn has worked, from the server's start.
-    await letThink(page, 'start');
+    await letGo(page, 'start');
     await expect(elapsed).toHaveText('7s');
     await expect(label).toHaveText(SMITHY);
 
     // A tool runs: the step in the server's own words.
-    await letThink(page, 'tool');
+    await letGo(page, 'tool');
     await expect(label).toHaveText(STEP);
     await expect(elapsed).toHaveText('7s');
     await expectAccessible(page);
 
     // The model's reasoning streams in, open, in the working line's place, rising into it; what
     // the tool changed settles in.
-    await letThink(page, 'think');
+    await letGo(page, 'think');
     const live = byTestId(page, 'thread-reply');
     const reasoning = live.getByTestId('thread-reasoning');
     await expect(reasoning.getByText(THINKING.join(''))).toBeVisible();
@@ -137,7 +130,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expectAccessible(page);
 
     // The answer folds it away; once recorded, what was thought can still be opened.
-    await letThink(page, 'answer');
+    await letGo(page, 'answer');
     const reply = byTestId(page, 'thread-message').last();
     await expect(reply).toContainText(ANSWER.join(''));
     await expect(byTestId(page, 'thread-composer-stop')).toHaveCount(0);
@@ -187,19 +180,19 @@ test('nothing moves when the person asks for less motion, though the words still
   // The words are not motion: they change all the same.
   const first = (await label.textContent()) ?? '';
   await expect(label).not.toHaveText(first);
-  await letThink(page, 'start');
-  await letThink(page, 'tool');
+  await letGo(page, 'start');
+  await letGo(page, 'tool');
   await expect(label).toHaveText(STEP);
   expect(await moving(page)).toBe(0);
 
   // The reply and what changed arrive in place, still.
-  await letThink(page, 'think');
+  await letGo(page, 'think');
   const live = byTestId(page, 'thread-reply');
   await expect(live.getByTestId('thread-reasoning')).toBeVisible();
   expect(await animationOf(live)).toBe('none');
   expect(await settling(page)).toBe('none');
   expect(await moving(page)).toBe(0);
-  await letThink(page, 'answer');
+  await letGo(page, 'answer');
   await expect(byTestId(page, 'thread-message').last()).toContainText(ANSWER.join(''));
 
   // The steps open and shut at once.
@@ -239,16 +232,16 @@ test('opened, the thinking, the steps and a step’s output sit evenly in their 
   await fakeApi(page);
   await thinkingTurn(page);
   await ask(page);
-  await letThink(page, 'start');
-  await letThink(page, 'tool');
+  await letGo(page, 'start');
+  await letGo(page, 'tool');
 
   // The model's thinking ends in a blank line, which its rule does not run on beside, as it
   // streams and once recorded.
-  await letThink(page, 'think');
+  await letGo(page, 'think');
   const live = byTestId(page, 'thread-reply').getByTestId('thread-reasoning-text');
   await expect(live).toHaveText(THINKING.join(''));
   await expectEven(live);
-  await letThink(page, 'answer');
+  await letGo(page, 'answer');
   await expect(byTestId(page, 'thread-composer-stop')).toHaveCount(0);
   const reply = byTestId(page, 'thread-message').last();
   await reply.getByTestId('thread-reasoning-summary').click();

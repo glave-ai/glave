@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { THREAD, fakeApi } from './fake-api';
+import { letGo } from './fake-gate';
 import { steerTurn } from './fake-steer';
 import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './support';
 
@@ -30,9 +31,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(stop).toBeVisible();
     await expectAccessible(page);
     // The model reads it at its next step: it moves into the conversation, read.
-    await page.evaluate(() => {
-      (window as unknown as { glaveSteer: { read: () => void } }).glaveSteer.read();
-    });
+    await letGo(page, 'read');
     await expect(waiting).toHaveCount(0);
     const read = byTestId(page, 'thread-message-read');
     await expect(read).toHaveText('Read while working');
