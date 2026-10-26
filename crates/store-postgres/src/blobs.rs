@@ -49,7 +49,8 @@ impl PostgresBlobs {
 
     /// Records `record` under `name`, `thread` referring to it when given, unless content of
     /// the same name is kept already: then that is kept and `thread` refers to it. An upload
-    /// (no thread) is kept a day from now. The record kept. Its row is locked until the
+    /// (no thread) is kept a day from now, as one no thread referred to since, even when one
+    /// did before. The record kept. Its row is locked until the
     /// reference is in, so a sweep running at once either sees the reference or deletes the
     /// record first.
     async fn record(
@@ -73,7 +74,7 @@ impl PostgresBlobs {
                      (org, project, name, media_type, size, key_id, object, referred, uploaded)
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                  ON CONFLICT (org, project, name) DO UPDATE
-                 SET referred = blobs.referred OR excluded.referred,
+                 SET referred = excluded.referred,
                      uploaded = CASE WHEN excluded.referred THEN blobs.uploaded
                                      ELSE excluded.uploaded END
                  RETURNING object, media_type, size, key_id",

@@ -49,7 +49,8 @@ impl SqliteBlobs {
 
     /// Records `record` under `name`, `thread` referring to it when given, unless content of
     /// the same name is kept already: then that is kept and `thread` refers to it. An upload
-    /// (no thread) is kept a day from now. The record kept.
+    /// (no thread) is kept a day from now, as one no thread referred to since, even when one
+    /// did before. The record kept.
     async fn record(
         &self,
         scope: Scope,
@@ -68,7 +69,7 @@ impl SqliteBlobs {
                          (org, project, name, media_type, size, key_id, object, referred, uploaded)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                      ON CONFLICT (org, project, name) DO UPDATE
-                     SET referred = max(blobs.referred, excluded.referred),
+                     SET referred = excluded.referred,
                          uploaded = CASE WHEN excluded.referred = 1 THEN blobs.uploaded
                                          ELSE excluded.uploaded END
                      RETURNING object, media_type, size, key_id",
