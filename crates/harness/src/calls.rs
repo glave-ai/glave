@@ -410,7 +410,8 @@ where
 
     /// In auto mode with a judge, asks it whether a soft caution may run because the person
     /// asked for it. The judge's call is recorded and counted in the turn, as model usage this
-    /// thread caused; a cleared action is recorded as an approval glave decided.
+    /// thread caused; a cleared action is recorded as an approval glave decided, its question
+    /// and answer in one write.
     pub(crate) async fn judged(
         &self,
         thread: &mut Thread,
@@ -456,13 +457,16 @@ where
             caution: Some(format!("{} {cleared}", sentence(reason))),
             ..request.asked()
         };
-        self.record(thread, &asked).await?;
         let decided = ApprovalDecided {
             call_id: request.call_id.clone(),
             decision: Verdict::AllowOnce,
             by: Some(Principal::glave()),
         };
-        self.record(thread, &decided).await?;
+        // Written together, so that no stop between them can leave it waiting for anyone.
+        let mut events = Vec::new();
+        self.stage(thread, &mut events, &asked)?;
+        self.stage(thread, &mut events, &decided)?;
+        self.commit(thread, events).await?;
         Ok(Judged::Cleared)
     }
 
@@ -588,7 +592,7 @@ where
         let completed = completed(call_id, outcome);
         let mut events = Vec::new();
         // A command the call started or moved to the background, or saw end, first.
-        self.stage_commands(thread, &mut events)?;
+        let staged = self.stage_commands(thread, &mut events)?;
         // The plan the call set, with its result.
         let plan = thread.plan.staged.take();
         if let Some(plan) = &plan {
@@ -596,6 +600,7 @@ where
         }
         self.stage(thread, &mut events, &completed)?;
         self.commit(thread, events).await?;
+        staged.recorded(thread);
         if let Some(plan) = &plan {
             // Glave's own record: call ids do not count it, so the model is sent the same.
             thread.unnumbered = thread.unnumbered.saturating_add(1);

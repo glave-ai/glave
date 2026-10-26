@@ -17,7 +17,7 @@ serde_json.workspace = true
 
 [features]
 # A fake Messages API server on 127.0.0.1, for tests in this and other crates.
-fake-server = []
+fake-server = ["glave-ports/conformance"]
 
 [dev-dependencies]
 glave-ports = { workspace = true, features = ["conformance"] }

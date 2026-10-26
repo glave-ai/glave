@@ -63,6 +63,7 @@ pub(crate) const RUNNING: &str =
     "Still running: the agent started it, and it runs until it ends or someone stops it.";
 
 /// A change waiting to be recorded.
+#[derive(Clone)]
 pub(crate) enum Change {
     Started(u32, CommandStarted),
     Ended(CommandEnded),
@@ -193,9 +194,18 @@ impl Commands {
         self.inner().all.iter().any(|entry| entry.ended.is_none())
     }
 
-    /// The changes waiting to be recorded, taken in order.
+    /// The changes waiting to be recorded, in order. They wait until [`Commands::recorded`]
+    /// says they were.
     pub(crate) fn unrecorded(&self) -> Vec<Change> {
-        std::mem::take(&mut self.inner().unrecorded)
+        self.inner().unrecorded.clone()
+    }
+
+    /// Forgets the first `count` changes waiting to be recorded, which are now. Any noted since
+    /// they were read wait on behind them.
+    pub(crate) fn recorded(&self, count: usize) {
+        let mut inner = self.inner();
+        let count = count.min(inner.unrecorded.len());
+        inner.unrecorded.drain(..count);
     }
 }
 

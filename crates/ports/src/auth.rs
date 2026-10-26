@@ -258,12 +258,54 @@ pub fn redact<'a>(text: &str, secrets: impl IntoIterator<Item = &'a str>) -> Str
 /// `text` with the credentials of `sent` redacted: each header's whole value, and each word
 /// of it, such as the token after `Bearer`. For a provider's error, since some repeat the key
 /// they were sent.
-pub fn redact_credentials(text: &str, sent: &[Header]) -> String {
+fn redact_credentials(text: &str, sent: &[Header]) -> String {
     let values = sent.iter().map(|header| header.value.expose());
     redact(
         text,
         values.flat_map(|value| std::iter::once(value).chain(value.split_whitespace())),
     )
+}
+
+/// The most of a provider's error body read: far more than any message, never all of a page
+/// a proxy or a failing server may send.
+pub const ERROR_BODY_BYTES: usize = 64 << 10;
+
+/// How much of an error's message is kept, in characters.
+const ERROR_CHARS: usize = 500;
+
+impl ProviderError {
+    /// A provider's answer with the error status `status`, its body `body` (at most
+    /// [`ERROR_BODY_BYTES`] of it read), to a request that `sent` credentials: the message in
+    /// the fields OpenAI, OpenRouter, Ollama, Anthropic and Google send it in (Vertex AI's
+    /// sometimes in a one-element array), or else the body itself, on one line, cut short,
+    /// and with the credentials redacted, since some providers repeat the key they were sent.
+    pub fn from_response(status: u16, body: &[u8], sent: &[Header]) -> Self {
+        let body = String::from_utf8_lossy(body.get(..ERROR_BODY_BYTES).unwrap_or(body));
+        let body = redact_credentials(&body, sent);
+        let parsed: Option<serde_json::Value> = serde_json::from_str(&body).ok();
+        let message = parsed.as_ref().and_then(|value| {
+            [
+                value.pointer("/error/message"),
+                value.pointer("/0/error/message"),
+                value.get("error"),
+                value.get("message"),
+                value.get("detail"),
+            ]
+            .into_iter()
+            .flatten()
+            .find_map(serde_json::Value::as_str)
+        });
+        Self::Http {
+            status,
+            body: error_line(message.unwrap_or(&body)),
+        }
+    }
+}
+
+/// A provider's error message on one readable line, cut short.
+pub fn error_line(text: &str) -> String {
+    let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    line.chars().take(ERROR_CHARS).collect()
 }
 
 impl From<AuthError> for ProviderError {
@@ -379,6 +421,50 @@ mod tests {
             "bad [redacted]"
         );
         assert_eq!(redact("short key", ["short"]), "short key");
+    }
+
+    #[test]
+    fn an_error_response_is_its_message_on_one_line_with_no_key_in_it() {
+        let message = |body: &str| match ProviderError::from_response(400, body.as_bytes(), &[]) {
+            ProviderError::Http { status: 400, body } => body,
+            other => panic!("not HTTP 400: {other:?}"),
+        };
+        let said = [
+            // OpenAI's, OpenRouter's and Anthropic's.
+            r#"{"error":{"message":"nosuch/x is not a valid model ID","code":400},"user_id":"u_1"}"#,
+            // Vertex AI's, Gemini's as much as Claude's.
+            r#"[{"error":{"code":404,"message":"nosuch/x is not a valid model ID","status":"NOT_FOUND"}}]"#,
+            // Ollama's, then others'.
+            r#"{"error":"nosuch/x is not a valid model ID"}"#,
+            r#"{"message":"nosuch/x is not a valid model ID"}"#,
+            r#"{"detail":"nosuch/x is not a valid model ID"}"#,
+        ];
+        for body in said {
+            assert_eq!(message(body), "nosuch/x is not a valid model ID", "{body}");
+        }
+        assert_eq!(
+            message("<html>\n  <body>Bad Gateway</body>\n</html>"),
+            "<html> <body>Bad Gateway</body> </html>"
+        );
+        assert_eq!(message(&"x".repeat(900)).len(), ERROR_CHARS);
+        let past = format!(
+            r#"{{"padding":"{}","error":{{"message":"never read"}}}}"#,
+            " ".repeat(ERROR_BODY_BYTES)
+        );
+        assert_eq!(
+            message(&past),
+            r#"{"padding":""#,
+            "read no further than the most"
+        );
+        let sent = block_on!(Auth::bearer(Some(FAKE_SECRET.into())).headers(&REQUEST)).unwrap();
+        let repeated = format!(r#"{{"error":{{"message":"Incorrect API key: {FAKE_SECRET}"}}}}"#);
+        assert_eq!(
+            ProviderError::from_response(401, repeated.as_bytes(), &sent),
+            ProviderError::Http {
+                status: 401,
+                body: "Incorrect API key: [redacted]".into()
+            }
+        );
     }
 
     #[test]

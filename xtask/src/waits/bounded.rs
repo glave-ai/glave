@@ -405,17 +405,4 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "a query within QUERY_WITHIN; a step (a build, the tests, an eval) is the work asked \
          for, stopped by Ctrl-C at the terminal and by the job's time limit in CI",
     ),
-    // Test doubles compiled outside tests, behind a feature tests turn on.
-    (
-        "crates/provider-openai/src/fake.rs",
-        "let _ = thread.join();",
-        1,
-        "the fake server's thread, which its drop has just told to stop",
-    ),
-    (
-        "crates/provider-anthropic/src/fake.rs",
-        "let _ = thread.join();",
-        1,
-        "the fake server's thread, which its drop has just told to stop",
-    ),
 ];

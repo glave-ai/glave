@@ -1,5 +1,6 @@
 //! The verdicts on a table of commands, and properties that must hold for any command: reading
-//! never panics, and a risky command stays risky however it is wrapped or nested.
+//! never panics, a reader told where to write is never read-only however its options are
+//! written, and a risky command stays risky however it is wrapped or nested.
 
 #[cfg(test)]
 mod judging {
@@ -44,6 +45,12 @@ mod judging {
             "grep -r TODO . && echo done",
             "cd src; ls",
             "cat .env.example",
+            "sort -u names.txt",
+            "sort -t o -k 2 names.txt",
+            "sort -to names.txt",
+            "uniq -c names.txt",
+            "uniq -f 1 names.txt",
+            "tree -L 2 src",
         ] {
             assert_eq!(verdict(script), Verdict::ReadOnly, "{script}");
         }
@@ -72,6 +79,14 @@ mod judging {
             "cd src && rm -rf gen",
             "mkdir -p a && touch a/b",
             "sort -o sorted.txt names.txt",
+            "sort -uo sorted.txt names.txt",
+            "sort --out=sorted.txt names.txt",
+            "sort --compress-program=gzip names.txt",
+            "uniq names.txt unique.txt",
+            "uniq -c -- names.txt counts.txt",
+            "tree -o listing.txt",
+            "tree -ao listing.txt src",
+            "tree -R -L 2 -H . src",
             "find . -name '*.o' -delete",
             "chmod -R u+w target",
             "curl -o page.html https://example.com",
@@ -433,6 +448,26 @@ mod judging {
         #[test]
         fn any_text_is_read_without_panicking(script in ".{0,200}") {
             let _ = verdict(&script);
+        }
+
+        #[test]
+        fn a_reader_told_where_to_write_is_never_read_only(
+            sorts in "[bdfgiMnrsu]{0,3}",
+            attached in "(sorted\\.txt)?",
+            uniqs in proptest::sample::subsequence(
+                vec!["-c", "-d", "-u", "-i", "-f 1", "-s 2", "-w 3", "-cd", "--"],
+                0..4,
+            ),
+            trees in "[adfglpsuDFC]{0,2}",
+            writes in proptest::sample::select(vec!['o', 'R']),
+        ) {
+            let detached = if attached.is_empty() { " sorted.txt" } else { "" };
+            let sort = format!("sort -{sorts}o{attached}{detached} names.txt");
+            let uniq = format!("uniq {} names.txt unique.txt", uniqs.join(" "));
+            let tree = format!("tree -{trees}{writes} listing.txt");
+            for script in [sort, uniq, tree] {
+                prop_assert_ne!(verdict(&script), Verdict::ReadOnly, "{}", script);
+            }
         }
 
         #[test]

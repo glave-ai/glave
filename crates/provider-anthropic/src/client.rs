@@ -3,13 +3,12 @@
 
 use std::time::Duration;
 
-use glave_ports::auth::{Auth, KeyHeader, Outgoing, redact_credentials};
+use glave_ports::auth::{Auth, ERROR_BODY_BYTES, KeyHeader, Outgoing};
 use glave_ports::{Completion, Delta, ModelProvider, ModelRequest, ProviderError, spoken};
 use reqwest::header::{CONTENT_TYPE, HeaderName, HeaderValue};
 
 use crate::api::Api;
 use crate::assemble::Assembler;
-use crate::error::message_of;
 use crate::wire::messages_request;
 use glave_ports::SseDecoder;
 
@@ -122,11 +121,8 @@ impl ModelProvider for Anthropic {
         let response = call.body(body).send().await.map_err(|e| self.failed(e))?;
         let status = response.status();
         if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
-            return Err(ProviderError::Http {
-                status: status.as_u16(),
-                body: message_of(&redact_credentials(&body, &sent)),
-            });
+            let body = error_body(response).await;
+            return Err(ProviderError::from_response(status.as_u16(), &body, &sent));
         }
         let mut assembler = Assembler::new(&self.provider, &request.model);
         match self.stream(response, &mut assembler, on_delta).await {
@@ -191,6 +187,10 @@ impl Anthropic {
         }
         let mut response = call.send().await.map_err(|e| self.failed(e))?;
         let status = response.status();
+        if !status.is_success() {
+            let body = error_body(response).await;
+            return Err(ProviderError::from_response(status.as_u16(), &body, &sent));
+        }
         let mut body = Vec::new();
         while let Some(bytes) = response.chunk().await.map_err(|e| self.failed(e))? {
             if body.len().saturating_add(bytes.len()) > MOST_LISTED {
@@ -199,12 +199,6 @@ impl Anthropic {
                 )));
             }
             body.extend_from_slice(&bytes);
-        }
-        if !status.is_success() {
-            return Err(ProviderError::Http {
-                status: status.as_u16(),
-                body: message_of(&redact_credentials(&String::from_utf8_lossy(&body), &sent)),
-            });
         }
         serde_json::from_slice(&body)
             .map_err(|e| ProviderError::Protocol(format!("{url} did not answer with JSON: {e}")))
@@ -243,6 +237,18 @@ fn header_pair(name: &str, value: &str) -> Result<(HeaderName, HeaderValue), Pro
     })?;
     value.set_sensitive(true);
     Ok((name, value))
+}
+
+/// The start of an error response's body: as much as [`ProviderError::from_response`] reads,
+/// and no more.
+async fn error_body(mut response: reqwest::Response) -> Vec<u8> {
+    let mut body = Vec::new();
+    while body.len() < ERROR_BODY_BYTES
+        && let Ok(Some(bytes)) = response.chunk().await
+    {
+        body.extend_from_slice(&bytes);
+    }
+    body
 }
 
 /// What went wrong underneath a failed request, such as `Connection refused (os error 61)`:

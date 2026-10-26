@@ -20,6 +20,28 @@ use crate::harness::{Harness, HarnessError, Thread};
 pub use record::{Commands, RunningCommand};
 pub(crate) use record::{Entry, ending_of};
 
+/// What a batch staged of a thread's command changes: how many, and when each command it
+/// records as started started.
+#[derive(Debug, Default)]
+#[must_use = "the changes are recorded only once `recorded` says so"]
+pub(crate) struct Staged {
+    count: usize,
+    started: Vec<(u32, glave_event::At)>,
+}
+
+impl Staged {
+    /// Notes that the batch these changes were staged in was written: they wait no more, and
+    /// count among glave's own records.
+    pub(crate) fn recorded(self, thread: &mut Thread) {
+        thread.commands.recorded(self.count);
+        for (number, at) in self.started {
+            thread.commands.started_at(number, at);
+        }
+        let count = u64::try_from(self.count).unwrap_or(u64::MAX);
+        thread.unnumbered = thread.unnumbered.saturating_add(count);
+    }
+}
+
 impl Commands {
     /// The record `events` leave, its commands reached through `computers`.
     pub(crate) fn rebuilt(events: &[Event], computers: &Arc<dyn Computers>) -> Self {
@@ -176,32 +198,36 @@ where
     A: Approver,
 {
     /// Stages what the thread's commands are waiting to have recorded, in order, as glave's
-    /// own records, which call ids do not count.
+    /// own records, which call ids do not count. They wait still until the batch is written
+    /// ([`Staged::recorded`]), so one that is not loses none.
     pub(crate) fn stage_commands(
         &self,
-        thread: &mut Thread,
+        thread: &Thread,
         events: &mut Vec<glave_event::RawEvent>,
-    ) -> Result<(), HarnessError> {
+    ) -> Result<Staged, HarnessError> {
+        let mut staged = Staged::default();
         for change in thread.commands.unrecorded() {
             match change {
                 record::Change::Started(number, started) => {
                     self.stage(thread, events, &started)?;
                     if let Some(at) = events.last().map(|event| event.at) {
-                        thread.commands.started_at(number, at);
+                        staged.started.push((number, at));
                     }
                 }
                 record::Change::Ended(ended) => self.stage(thread, events, &ended)?,
             }
-            thread.unnumbered = thread.unnumbered.saturating_add(1);
+            staged.count = staged.count.saturating_add(1);
         }
-        Ok(())
+        Ok(staged)
     }
 
     /// Records what the thread's commands are waiting to have recorded, now.
     pub async fn record_commands(&self, thread: &mut Thread) -> Result<(), HarnessError> {
         let mut events = Vec::new();
-        self.stage_commands(thread, &mut events)?;
-        self.commit(thread, events).await
+        let staged = self.stage_commands(thread, &mut events)?;
+        self.commit(thread, events).await?;
+        staged.recorded(thread);
+        Ok(())
     }
 
     /// Asks the computers how the thread's commands in the background are, and records what

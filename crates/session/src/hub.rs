@@ -51,7 +51,8 @@ pub(crate) struct Changed {
 
 #[derive(Default)]
 struct Channels {
-    /// The broadcast of each thread someone watches.
+    /// The broadcast of each thread someone watches; one whose watchers all went is dropped
+    /// when the next watch begins.
     open: HashMap<ThreadId, broadcast::Sender<Arc<Notification>>>,
     /// The `seq` of each thread's latest event published, watched or not, for the threads
     /// published to most recently, and when, by the count of publishes.
@@ -69,6 +70,9 @@ impl Hub {
         thread: ThreadId,
     ) -> (broadcast::Receiver<Arc<Notification>>, Option<Seq>) {
         let mut channels = self.channels();
+        channels
+            .open
+            .retain(|_, sender| sender.receiver_count() > 0);
         let notes = channels
             .open
             .entry(thread)
@@ -96,8 +100,7 @@ impl Hub {
         self.channels.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Sends `notification` to everyone watching `thread` or a thread it is a child of,
-    /// forgetting threads no one watches.
+    /// Sends `notification` to everyone watching `thread` or a thread it is a child of.
     pub(crate) fn publish(&self, thread: ThreadId, notification: Notification) {
         let notification = Arc::new(notification);
         let mut to = Some(thread);
@@ -125,12 +128,8 @@ impl Hub {
             channels.published(thread, event.seq);
         }
         if let Some(sender) = channels.open.get(&thread) {
-            if sender.receiver_count() == 0 {
-                channels.open.remove(&thread);
-            } else {
-                // Only fails when no one is listening, which is fine.
-                let _ = sender.send(Arc::clone(notification));
-            }
+            // Only fails when no one is listening, which is fine.
+            let _ = sender.send(Arc::clone(notification));
         }
     }
 
@@ -303,6 +302,28 @@ impl<L: EventLog> EventLog for Observed<L> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocol::Update;
+
+    #[test]
+    fn a_thread_no_one_watches_after_its_turn_keeps_no_broadcast() {
+        let hub = Hub::default();
+        for n in 0..3 {
+            // Watched while its turn runs, as a turn's own stream watches it, then let go.
+            let (notes, _) = hub.watch(thread(n));
+            let update = Update::Text { text: "Hi".into() };
+            hub.publish(
+                thread(n),
+                Notification::Live {
+                    thread: thread(n),
+                    update,
+                },
+            );
+            drop(notes);
+        }
+        let (_watching, _) = hub.watch(thread(3));
+        let open: Vec<ThreadId> = hub.channels().open.keys().copied().collect();
+        assert_eq!(open, [thread(3)], "only the thread watched now");
+    }
 
     fn thread(n: u16) -> ThreadId {
         let mut random = [3; 10];

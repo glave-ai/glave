@@ -235,7 +235,7 @@ fn where_the_organization_forbids_asking_no_command_asks_for_the_network_or_to_l
 }
 
 /// Waits for every answer in the log, as a server does.
-struct InTheLog;
+pub(crate) struct InTheLog;
 
 impl Approver for InTheLog {
     fn decide(&self, _request: &ApprovalRequest) -> impl Future<Output = Decision> + Send {

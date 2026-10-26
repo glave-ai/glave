@@ -5,6 +5,9 @@
 #[path = "support/script.rs"]
 mod support;
 
+#[path = "support/failing.rs"]
+mod failing;
+
 mod actors;
 mod approvals;
 mod background;
@@ -19,6 +22,7 @@ mod goals;
 mod hooks;
 mod instructions;
 mod judge;
+mod log_failures;
 mod modes;
 mod network;
 mod outside_sandbox;

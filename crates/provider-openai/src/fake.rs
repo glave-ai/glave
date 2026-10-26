@@ -1,16 +1,11 @@
 //! A fake OpenAI-compatible server for tests: it listens on `127.0.0.1` only, answers each
-//! request with the next scripted reply, and records what it was asked. Enabled by the
-//! `fake-server` feature.
+//! request with the next scripted reply in chat completions' wire format, and records what it
+//! was asked. Enabled by the `fake-server` feature; glave-ports' `ScriptedHttp` serves it.
 
-use std::collections::VecDeque;
 use std::fmt::Write as _;
-use std::io::{BufRead as _, BufReader, Read as _, Write as IoWrite};
-use std::net::{Shutdown, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
-use std::thread::JoinHandle;
 use std::time::Duration;
 
+use glave_ports::testing::{Received as Asked, ScriptedHttp, Written};
 use serde_json::{Value, json};
 
 /// One scripted answer.
@@ -48,6 +43,34 @@ impl Reply {
                    "usage": {"prompt_tokens": 100, "completion_tokens": 10}}),
         ])
     }
+
+    /// The reply as it goes on the wire.
+    fn written(self) -> Written {
+        let events = |chunks: Vec<Value>| {
+            let mut body = String::new();
+            for chunk in chunks {
+                let _ = write!(body, "data: {chunk}\n\n");
+            }
+            body
+        };
+        match self {
+            Self::Stream(chunks) => Written::Whole {
+                status: 200,
+                content_type: "text/event-stream",
+                body: events(chunks) + "data: [DONE]\n\n",
+            },
+            Self::Broken(chunks) => Written::Broken {
+                content_type: "text/event-stream",
+                body: events(chunks),
+            },
+            Self::Status(status, body) => Written::Whole {
+                status,
+                content_type: "application/json",
+                body,
+            },
+            Self::Stall => Written::Stall,
+        }
+    }
 }
 
 /// A request the server received.
@@ -55,7 +78,7 @@ impl Reply {
 pub struct Received {
     /// The `Authorization` header, if any.
     pub authorization: Option<String>,
-    /// Every header, its name in lower case, in the order sent.
+    /// Every header, its name in lower case, in the order of their names.
     pub headers: Vec<(String, String)>,
     /// The request's method and path, such as `POST /chat/completions`.
     pub line: String,
@@ -63,59 +86,31 @@ pub struct Received {
     pub body: Value,
 }
 
-type Shared<T> = Arc<Mutex<T>>;
-
-/// The requests received so far, and a signal for each new one.
-type Log = Arc<(Mutex<Vec<Received>>, Condvar)>;
+impl From<Asked> for Received {
+    fn from(asked: Asked) -> Self {
+        Self {
+            authorization: asked.headers.get("authorization").cloned(),
+            line: format!("{} {}", asked.method, asked.path),
+            body: serde_json::from_str(&asked.body).unwrap_or(Value::Null),
+            headers: asked.headers.into_iter().collect(),
+        }
+    }
+}
 
 /// The running server. Dropping it stops the server and waits for its thread.
 pub struct FakeServer {
     url: String,
-    received: Log,
-    stop: Arc<AtomicBool>,
-    /// Every connection taken, closed when the server stops, so a client still waiting
-    /// on one, as it waits on a stall, is let go.
-    open: Shared<Vec<TcpStream>>,
-    address: std::net::SocketAddr,
-    thread: Option<JoinHandle<()>>,
+    server: ScriptedHttp,
 }
 
 impl FakeServer {
     /// Starts a server that answers with `replies`, in order. After the last one, every request
     /// gets a 500 saying the script ran out.
     pub fn start(replies: Vec<Reply>) -> std::io::Result<Self> {
-        let listener = TcpListener::bind("127.0.0.1:0")?;
-        let address = listener.local_addr()?;
-        let replies: Shared<VecDeque<Reply>> = Arc::new(Mutex::new(replies.into()));
-        let received: Log = Arc::new((Mutex::new(Vec::new()), Condvar::new()));
-        let stop = Arc::new(AtomicBool::new(false));
-        let open: Shared<Vec<TcpStream>> = Arc::default();
-        let thread = {
-            let (replies, received, stop) = (replies, Arc::clone(&received), Arc::clone(&stop));
-            let taken = Arc::clone(&open);
-            std::thread::spawn(move || {
-                for stream in listener.incoming() {
-                    let Ok(stream) = stream else { continue };
-                    let Ok(mut taken) = taken.lock() else { break };
-                    if stop.load(Ordering::SeqCst) {
-                        break;
-                    }
-                    if let Ok(held) = stream.try_clone() {
-                        taken.push(held);
-                    }
-                    drop(taken);
-                    // A broken exchange only fails the test that caused it.
-                    let _ = serve(stream, &replies, &received);
-                }
-            })
-        };
+        let server = ScriptedHttp::start(replies.into_iter().map(Reply::written).collect())?;
         Ok(Self {
-            url: format!("http://{address}/v1"),
-            received,
-            stop,
-            open,
-            address,
-            thread: Some(thread),
+            url: format!("{}/v1", server.url()),
+            server,
         })
     }
 
@@ -126,131 +121,15 @@ impl FakeServer {
 
     /// The requests received so far, in order.
     pub fn received(&self) -> Vec<Received> {
-        self.received
-            .0
-            .lock()
-            .map(|received| received.clone())
-            .unwrap_or_default()
+        self.server
+            .received()
+            .into_iter()
+            .map(Received::from)
+            .collect()
     }
 
     /// Waits until `count` requests have arrived, or `limit` has passed; whether they did.
     pub fn wait_for_requests(&self, count: usize, limit: Duration) -> bool {
-        let (requests, arrived) = &*self.received;
-        let Ok(guard) = requests.lock() else {
-            return false;
-        };
-        arrived
-            .wait_timeout_while(guard, limit, |requests| requests.len() < count)
-            .is_ok_and(|(requests, _)| requests.len() >= count)
+        self.server.wait_for_requests(count, limit)
     }
-}
-
-impl Drop for FakeServer {
-    fn drop(&mut self) {
-        self.stop.store(true, Ordering::SeqCst);
-        // The flag is set before the lock is taken, so a connection is either closed here or
-        // never served.
-        if let Ok(open) = self.open.lock() {
-            for stream in open.iter() {
-                let _ = stream.shutdown(Shutdown::Both);
-            }
-        }
-        // Wake the accept loop so it sees the flag.
-        let _ = TcpStream::connect(self.address);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
-    }
-}
-
-fn serve(
-    stream: TcpStream,
-    replies: &Shared<VecDeque<Reply>>,
-    received: &Log,
-) -> std::io::Result<()> {
-    let mut reader = BufReader::new(stream.try_clone()?);
-    let mut length = 0_usize;
-    let mut authorization = None;
-    let mut headers = Vec::new();
-    let mut first = String::new();
-    if reader.read_line(&mut first)? == 0 {
-        return Ok(());
-    }
-    let line = first
-        .split_whitespace()
-        .take(2)
-        .collect::<Vec<_>>()
-        .join(" ");
-    loop {
-        let mut line = String::new();
-        if reader.read_line(&mut line)? == 0 {
-            return Ok(());
-        }
-        let line = line.trim_end();
-        if line.is_empty() {
-            break;
-        }
-        if let Some((name, value)) = line.split_once(':') {
-            let name = name.trim().to_ascii_lowercase();
-            match name.as_str() {
-                "content-length" => length = value.trim().parse().unwrap_or(0),
-                "authorization" => authorization = Some(value.trim().to_owned()),
-                _ => {}
-            }
-            headers.push((name, value.trim().to_owned()));
-        }
-    }
-    let mut body = vec![0_u8; length];
-    reader.read_exact(&mut body)?;
-    let reply = replies
-        .lock()
-        .ok()
-        .and_then(|mut replies| replies.pop_front())
-        .unwrap_or_else(|| Reply::Status(500, "the fake server ran out of replies".into()));
-    let (requests, arrived) = &**received;
-    if let Ok(mut requests) = requests.lock() {
-        requests.push(Received {
-            authorization,
-            headers,
-            line,
-            body: serde_json::from_slice(&body).unwrap_or(Value::Null),
-        });
-        arrived.notify_all();
-    }
-    if matches!(reply, Reply::Stall) {
-        // Wait for the client to hang up; a read of nothing means it did.
-        let _ = reader.read(&mut [0_u8; 1]);
-        return Ok(());
-    }
-    respond(stream, &reply)
-}
-
-fn respond(mut stream: TcpStream, reply: &Reply) -> std::io::Result<()> {
-    let events = |chunks: &[Value]| {
-        let mut body = String::new();
-        for chunk in chunks {
-            let _ = write!(body, "data: {chunk}\n\n");
-        }
-        body
-    };
-    // A broken stream promises a byte more than it sends.
-    let (status, content_type, body, missing) = match reply {
-        Reply::Stream(chunks) => {
-            let body = events(chunks) + "data: [DONE]\n\n";
-            (200, "text/event-stream", body, 0)
-        }
-        Reply::Broken(chunks) => (200, "text/event-stream", events(chunks), 1),
-        Reply::Status(status, body) => (*status, "application/json", body.clone(), 0),
-        Reply::Stall => return Ok(()),
-    };
-    IoWrite::write_fmt(
-        &mut stream,
-        format_args!(
-            "HTTP/1.1 {status} FAKE\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-            body.len() + missing
-        ),
-    )?;
-    IoWrite::flush(&mut stream)?;
-    // Hung up as `connection: close` says, though the server keeps a clone to close on drop.
-    stream.shutdown(Shutdown::Write)
 }
