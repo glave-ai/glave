@@ -1,5 +1,6 @@
 //! `glave worktrees`: the worktrees threads made on this machine (with `worktree = true` or
-//! `--worktree`), and cleaning them up: by hand with `prune`, and once a day when glave starts.
+//! `--worktree`), and cleaning them up: by hand with `prune`, once a day when glave starts,
+//! and as the server archives or deletes their thread.
 
 mod cleanup;
 
@@ -11,7 +12,7 @@ use std::process::ExitCode;
 use glave_computer::worktrees::{self, Kept, Trash};
 use glave_event::{Body, Opened, ThreadId, decode};
 use glave_ports::secrets::without_secrets;
-use glave_ports::{Clock as _, EventLog, OsEntropy, Scope, SystemClock};
+use glave_ports::{BoxFuture, Clock as _, EventLog, OsEntropy, Scope, SystemClock};
 use glave_session::protocol::{Reply, Request};
 use jiff::{SignedDuration, Timestamp};
 
@@ -136,9 +137,26 @@ async fn run(prune: bool, forced: &[String]) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// This machine's worktrees as the server lets go of them, with what its log holds; it says
+/// what became of each on standard error, as the daily check does.
+pub(crate) struct OnThisMachine<L>(pub L);
+
+impl<L: EventLog> glave_session::Worktrees for OnThisMachine<L> {
+    fn release(&self, scope: Scope, thread: ThreadId) -> BoxFuture<'_, ()> {
+        Box::pin(async move {
+            match release_archived(&self.0, scope, thread).await {
+                Ok(lines) => lines.iter().for_each(|line| eprintln!("glave: {line}")),
+                Err(error) => eprintln!(
+                    "glave: thread {thread}'s worktree, if it has one, is kept: {error:#}"
+                ),
+            }
+        })
+    }
+}
+
 /// Releases the worktrees of `thread` in `scope`, which was just archived or deleted, with
 /// what `log` holds: one line for each, saying what became of it.
-pub(crate) async fn release_archived<L: EventLog>(
+async fn release_archived<L: EventLog>(
     log: &L,
     scope: Scope,
     thread: ThreadId,

@@ -45,24 +45,6 @@ pub(crate) fn never_a_project(folder: &Path) -> bool {
     .is_some()
 }
 
-/// The scope of the project `folder` leads to, for `person`, making nothing: the person's
-/// Chats where the folder is never a project ([`never_a_project`]); else the project found by
-/// its path or the repository's `origin` remote; else none.
-pub(crate) async fn found(
-    store: &Data,
-    folder: &Path,
-    person: PrincipalId,
-) -> anyhow::Result<Option<Scope>> {
-    if never_a_project(folder) {
-        return personal(store, person).await.map(Some);
-    }
-    let org = org(store).await?;
-    let (_, keys) = keys(folder).await;
-    let project = store.projects().find_folder(org, &keys).await?;
-    // Glave's own: the host opens the project of the folder it runs in, for its person.
-    Ok(project.map(|project| Scope::glaves_own(org, project.id)))
-}
-
 /// The scope of the project `folder` leads to, for `person`: found by its path, else by
 /// the repository's `origin` remote, else made as theirs.
 pub(crate) async fn here(

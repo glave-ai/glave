@@ -167,6 +167,7 @@ pub(crate) async fn wire(
         origin: choices.origin.as_ref().map(|origin| origin.value.clone()),
         leases: Some(store.leases()),
         awake: crate::awake::for_server(args, choices, &processes, &store, identity.person).await?,
+        worktrees: Some(Arc::new(crate::worktrees::OnThisMachine(store.log()))),
         ..Wiring::new(
             lined.switch,
             store.log(),
