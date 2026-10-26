@@ -96,10 +96,8 @@ export class ThreadService {
 
   readonly thread = this.id.asReadonly();
   /**
-   * The thread's summary (its title, project and mode): its own, as the server answered it
-   * here, or the side nav's copy when that one is newer, as it hears of a rename or a turn
-   * elsewhere; the side nav's alone while the thread opens; `null` until either has it. The side
-   * nav holds only each project's newest threads, so an older one has its own alone.
+   * The thread's summary: its own, as the server answered it here, or the side nav's copy when
+   * newer (a rename or a turn elsewhere), the only one as it opens; `null` before either.
    */
   readonly summary = computed(() => {
     const thread = this.id();
@@ -690,10 +688,7 @@ export class ThreadService {
     }
   }
 
-  /**
-   * Reads the thread's summary, which raises its project's ask, and keeps it, showing the ask:
-   * the summary.
-   */
+  /** Reads and keeps the thread's summary, which raises its project's ask, and shows the ask. */
   private async readAsk(thread: ThreadId, quiet = false): Promise<ThreadSummary | null> {
     try {
       const { thread: summary } = await this.session.call('thread/get', { thread });
