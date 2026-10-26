@@ -1,7 +1,7 @@
 //! Memory on this computer (`specs/memory.md`): glave's memory server over the local store,
 //! started when the person's `memory` choice is on and the policy allows it, and `glave memory`,
-//! which lists, edits, moves and forgets memories from the terminal: through the person's server
-//! when it runs (or a terminal starts it) and keeps memory on, otherwise in the store itself.
+//! which lists, edits, moves and forgets memories from the terminal, through the person's
+//! server (`reach.rs`), as the app does.
 
 use std::fmt::Write as _;
 use std::process::ExitCode;
@@ -10,14 +10,12 @@ use std::sync::Arc;
 use anyhow::Context as _;
 use glave_event::{MemoryId, MemoryScope, PrincipalId};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules, Tidier};
-use glave_ports::memories::{Access, Control, Memory, Remembered};
+use glave_ports::memories::{Control, Memory, Remembered};
 use glave_ports::{ModelProvider, OsEntropy, ProjectId, Scope, SystemClock};
-use glave_session::protocol::{ApiError, Reply, Request, code};
+use glave_session::protocol::{Reply, Request};
 
-use crate::args::Args;
 use crate::data::{Data, DataLog};
-use crate::identity;
-use crate::reach::Reached;
+use crate::reach::{self, Reached};
 use crate::setup::Setup;
 use crate::turns::{Here, no_project};
 use glave_config::policy::MemorySettings;
@@ -196,24 +194,10 @@ pub(crate) fn main(arguments: &[String]) -> ExitCode {
 }
 
 async fn run(command: Command) -> anyhow::Result<()> {
-    if let Some(server) = crate::server::connect_or_start().await? {
-        match through(&mut Reached::Server(server), &command).await {
-            // With memory off, the person still sees and forgets what was kept, here.
-            Err(error) if is_off(&error) => {}
-            ran => return ran,
-        }
-    }
-    in_the_store(command).await
+    reach::with(async |server| through(server, &command).await).await
 }
 
-/// Whether the server said memory is off.
-fn is_off(error: &anyhow::Error) -> bool {
-    error
-        .downcast_ref::<ApiError>()
-        .is_some_and(|refused| refused.code == code::MEMORY_OFF)
-}
-
-/// `command` through the person's server, in this folder's project.
+/// `command` through the server reached, in this folder's project.
 async fn through(server: &mut Reached, command: &Command) -> anyhow::Result<()> {
     let project = match crate::turns::found(server.session(), &std::env::current_dir()?).await? {
         Here::Project(project) => Some(project),
@@ -290,57 +274,6 @@ fn verb(control: &Control) -> &'static str {
         Control::Move { .. } => "moved",
         _ => "forgot",
     }
-}
-
-/// `command` in the store itself, with memory on for it.
-async fn in_the_store(command: Command) -> anyhow::Result<()> {
-    let folder = std::env::current_dir()?;
-    let setup = Setup::load(&Args::default(), &folder).await?;
-    let settings =
-        glave_config::policy::memory_settings(&setup.choices, &setup.loaded.constraints)?;
-    let store = Data::chosen(&setup.choices).await?;
-    let person = identity::load_or_make(&store).await?.person;
-    let Some(scope) = crate::projects::found(&store, &folder, person).await? else {
-        return no_project(command == Command::List);
-    };
-    let on = MemorySettings {
-        on: true,
-        ..settings
-    };
-    let Some(running) = start(&store, &on, person, scope).await? else {
-        return Ok(());
-    };
-    if !settings.on {
-        eprintln!(
-            "glave: memory is off for new threads (memory = \"on\" in config.toml turns it on)"
-        );
-    }
-    let access = Access { person, scope };
-    match command {
-        Command::List => {
-            let memories = running
-                .memory
-                .control(&access, Control::List { scope: None })
-                .await?;
-            if memories.is_empty() {
-                println!("no memories here");
-            }
-            for memory in &memories {
-                println!("{}", line(memory));
-            }
-        }
-        Command::Run(controls) => {
-            for control in controls {
-                let verb = verb(&control);
-                for memory in running.memory.control(&access, control).await? {
-                    println!("{verb} {}", line(&memory));
-                }
-            }
-        }
-    }
-    running.housekeep().await;
-    running.memory.close().await;
-    Ok(())
 }
 
 /// One memory as listed: id, scope, dates, where it came from, and the text.

@@ -1,6 +1,7 @@
 //! Where a thread works, as the session API offers it: `thread/start` with a `computer` (a
 //! person's own laptop dialled in, later) is refused with `-32022` until computers can dial
-//! in, and no thread starts. A summary says nothing that assumes a worker.
+//! in, and no thread starts. A summary says nothing that assumes a worker. A thread the server
+//! lets go of closes its workspace, so threads started one after another never run out of them.
 
 use glave_ports::computer::ComputerId;
 use glave_session::Answering;
@@ -48,5 +49,18 @@ fn a_thread_on_a_computer_of_one_s_own_is_not_available_yet() {
         };
         let shown = serde_json::to_string(&thread).unwrap();
         assert!(!shown.contains("worker"), "{shown}");
+    });
+}
+
+#[test]
+fn threads_started_one_after_another_never_run_out_of_workspaces() {
+    let dir = folder("session-many-workspaces");
+    block_on!(async {
+        let server = server(&dir, Vec::new(), Answering::NoOne).await;
+        // More than the 1024 a computer here keeps open at once: each beyond the 256 threads
+        // held idle lets the least recently used go, and its workspace with it.
+        for _ in 0..1100 {
+            start(&server, false).await;
+        }
     });
 }

@@ -75,11 +75,19 @@ where
             .await
             .map_err(|error| ApiError::from(&error))?;
         if resumed.standing() == Standing::Deleted {
+            self.let_go_of(vec![Box::new(resumed)]).await;
             return Err(no_thread(thread));
         }
-        if !self.lock().contains_key(&thread) {
-            self.keep(thread, resumed);
-        }
+        let now = self.inner.harness.clock().now();
+        let gone = {
+            let mut threads = self.lock();
+            if threads.contains_key(&thread) {
+                vec![Box::new(resumed)]
+            } else {
+                hold_idle(&mut threads, thread, Box::new(resumed), now)
+            }
+        };
+        self.let_go_of(gone).await;
         Ok(())
     }
 
@@ -204,24 +212,39 @@ where
             .await
             .map_err(|error| ApiError::from(&error))?;
         let now = self.inner.harness.clock().now();
-        let mut threads = self.lock();
-        if let Some(Slot::Idle { thread: held, .. }) = threads.get(&thread) {
-            fresh.keep_inbox_of(held);
-            hold_idle(&mut threads, thread, Box::new(fresh), now);
-        }
+        let gone = {
+            let mut threads = self.lock();
+            match threads.get(&thread) {
+                Some(Slot::Idle { thread: held, .. }) => {
+                    fresh.keep_inbox_of(held);
+                    hold_idle(&mut threads, thread, Box::new(fresh), now)
+                }
+                _ => vec![Box::new(fresh)],
+            }
+        };
+        self.let_go_of(gone).await;
         Ok(())
     }
 
     /// Holds `thread` idle, letting go of others idle too long or beyond the cap.
-    pub(crate) fn keep(&self, id: ThreadId, thread: Thread) {
+    pub(crate) async fn keep(&self, id: ThreadId, thread: Thread) {
         let now = self.inner.harness.clock().now();
-        hold_idle(&mut self.lock(), id, Box::new(thread), now);
+        let gone = hold_idle(&mut self.lock(), id, Box::new(thread), now);
+        self.let_go_of(gone).await;
     }
 
     /// Lets go of the threads idle for 30 minutes, for a tick to call.
-    pub(crate) fn let_go_stale(&self) {
+    pub(crate) async fn let_go_stale(&self) {
         let now = self.inner.harness.clock().now();
-        let_go_idle(&mut self.lock(), IDLE_THREADS, now);
+        let gone = let_go_idle(&mut self.lock(), IDLE_THREADS, now);
+        self.let_go_of(gone).await;
+    }
+
+    /// Lets go of `threads`, held here no more: what the harness opened for each is closed.
+    async fn let_go_of(&self, threads: Gone) {
+        for thread in threads {
+            self.inner.harness.let_go(*thread).await;
+        }
     }
 
     pub(crate) fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<ThreadId, Slot>> {
@@ -305,19 +328,20 @@ where
             // Let go while the thread is still busy here, so no work of this server's starts
             // on it under a lease about to go.
             server.let_go(&lease).await;
-            let mut threads = inner.threads.lock().unwrap_or_else(PoisonError::into_inner);
             // Ended with the thread made idle, so a message sent from now on starts a turn:
             // anything still waiting, which only work that ended early leaves, is given back.
             // A turn that stopped at a wait keeps what was sent to it for when it goes on.
             let waits = matches!(result, Err(HarnessError::Waits(_)));
-            let unread = if matches!(purpose, Use::Steered | Use::Answer) && !waits {
-                held.inbox().end()
-            } else {
-                Vec::new()
+            let (unread, gone) = {
+                let mut threads = inner.threads.lock().unwrap_or_else(PoisonError::into_inner);
+                let unread = if matches!(purpose, Use::Steered | Use::Answer) && !waits {
+                    held.inbox().end()
+                } else {
+                    Vec::new()
+                };
+                let now = inner.harness.clock().now();
+                (unread, leave(&mut threads, thread, held, &result, now))
             };
-            let now = inner.harness.clock().now();
-            leave(&mut threads, thread, held, &result, now);
-            drop(threads);
             inner.hub.changed(project, thread);
             for queued in unread {
                 let id = queued.id;
@@ -326,6 +350,7 @@ where
             let _ = finish.send(true);
             // Kept even when no one is following any more: a retry may still ask for it.
             done.send_replace(Some(Arc::new(result)));
+            server.let_go_of(gone).await;
         });
         let mut tasks = self
             .inner
@@ -338,42 +363,50 @@ where
     }
 }
 
+/// Threads taken out of those held, for the harness to let go of once their lock is released.
+type Gone = Vec<Box<Thread>>;
+
 /// After work on `id` ends at `now` with `result`: held idle again, or, archived or deleted
 /// from outside while held, let go, since the work stopped where it was and the thread is read
-/// again from the log next time, which closes what it left open.
+/// again from the log next time, which closes what it left open. Answers the threads let go.
 fn leave<R>(
     threads: &mut HashMap<ThreadId, Slot>,
     id: ThreadId,
     held: Thread,
     result: &Result<R, HarnessError>,
     now: Timestamp,
-) {
+) -> Gone {
     if matches!(
         result,
         Err(HarnessError::Archived(_) | HarnessError::NotFound(_))
     ) {
         threads.remove(&id);
+        vec![Box::new(held)]
     } else {
-        hold_idle(threads, id, Box::new(held), now);
+        hold_idle(threads, id, Box::new(held), now)
     }
 }
 
-/// Holds `thread` idle in `threads` as used at `now`, letting go of others idle too long or
-/// beyond the cap.
+/// Holds `thread` idle in `threads` as used at `now`, in place of any held before it, letting
+/// go of others idle too long or beyond the cap. Answers the threads let go.
 fn hold_idle(
     threads: &mut HashMap<ThreadId, Slot>,
     id: ThreadId,
     thread: Box<Thread>,
     now: Timestamp,
-) {
-    threads.remove(&id);
-    let_go_idle(threads, IDLE_THREADS.saturating_sub(1), now);
+) -> Gone {
+    let mut gone = match threads.remove(&id) {
+        Some(Slot::Idle { thread: before, .. }) => vec![before],
+        _ => Vec::new(),
+    };
+    gone.extend(let_go_idle(threads, IDLE_THREADS.saturating_sub(1), now));
     threads.insert(id, Slot::Idle { thread, since: now });
+    gone
 }
 
 /// Lets go of every idle thread in `threads` unused for 30 minutes at `now`, and of the least
-/// recently used beyond `room`. Busy threads stay.
-fn let_go_idle(threads: &mut HashMap<ThreadId, Slot>, room: usize, now: Timestamp) {
+/// recently used beyond `room`, answering them. Busy threads stay.
+fn let_go_idle(threads: &mut HashMap<ThreadId, Slot>, room: usize, now: Timestamp) -> Gone {
     let idle = threads.iter().map(|(id, slot)| {
         let since = match slot {
             Slot::Idle { since, .. } => Some(*since),
@@ -381,9 +414,13 @@ fn let_go_idle(threads: &mut HashMap<ThreadId, Slot>, room: usize, now: Timestam
         };
         (*id, since)
     });
-    for id in to_let_go(idle, room, now) {
-        threads.remove(&id);
-    }
+    to_let_go(idle, room, now)
+        .into_iter()
+        .filter_map(|id| match threads.remove(&id) {
+            Some(Slot::Idle { thread, .. }) => Some(thread),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Of the threads `held`, each with when it was last used if it is idle, those to let go at

@@ -1,5 +1,5 @@
-//! Subagents in the terminal: the real binary hands work to a child thread, shows the child's
-//! steps under its description, and the model gets the child's report.
+//! Subagents in the terminal: the real binary hands work to a child thread, says when it
+//! starts and ends, each on a line of its own, and the model gets the child's report.
 
 use glave_provider_openai::fake::{FakeServer, Reply};
 use serde_json::json;
@@ -7,7 +7,7 @@ use serde_json::json;
 use crate::support::*;
 
 #[test]
-fn a_subagent_shows_its_steps_and_its_report_reaches_the_model() {
+fn a_subagent_shows_as_it_starts_and_ends_and_its_report_reaches_the_model() {
     let place = place("subagents");
     let model = FakeServer::start(vec![
             Reply::tool_call(
@@ -28,12 +28,13 @@ fn a_subagent_shows_its_steps_and_its_report_reaches_the_model() {
     );
     let shown = text(&output);
     assert!(output.status.success(), "{shown}");
-    assert!(shown.contains("agent read the readme"), "{shown}");
+    let lines: Vec<&str> = shown.lines().map(str::trim).collect();
+    assert!(lines.contains(&"agent read the readme"), "{shown}");
+    assert!(lines.contains(&"agent done"), "{shown}");
     assert!(
-        shown.contains("↳ read the readme · read README.md"),
-        "{shown}"
+        !shown.contains("README.md says"),
+        "its words are its own: {shown}"
     );
-    assert!(shown.contains("agent done read the readme"), "{shown}");
     assert!(shown.contains("The readme is a one-line demo."), "{shown}");
     let received = model.received();
     assert_eq!(received.len(), 4);

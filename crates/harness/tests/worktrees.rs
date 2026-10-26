@@ -1,6 +1,7 @@
 //! Where a thread works: in the folder itself by default, sending the model exactly what it was
 //! sent before bindings were recorded; or in a worktree of its own, on its own branch outside
 //! the repository, found again on resume, on this machine or on a computer across the wire.
+//! A thread let go of closes its workspace, once nothing of its commands is left there.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -11,7 +12,7 @@ use glave_computer::{LocalComputers, RemoteComputers, serve_tcp};
 use glave_event::{Body, Event, Opened, StopReason, WorkspaceBound};
 use glave_harness::{AllowAll, Cancel, HarnessError, Place, Workspace, branch_for};
 use glave_ports::Caller;
-use glave_ports::computer::{Computers, Environment, Sources};
+use glave_ports::computer::{ComputerError, Computers, Environment, Sources, WorkspaceId};
 use glave_ports::testing::TempDir;
 use glave_ports::{Completion, EventLog, InMemoryLog, Standing, ThreadQuery};
 use serde_json::json;
@@ -407,5 +408,70 @@ fn a_thread_on_a_computer_that_dialled_in_is_not_available_yet() {
         };
         let listed = harness.log().thread_views(&scope(), &query).await.unwrap();
         assert!(listed.is_empty(), "nothing is recorded");
+    });
+}
+
+#[test]
+fn a_thread_let_go_closes_its_workspace_once_its_commands_are_gone() {
+    let (_dir, repo, _) = repository("worktrees-let-go");
+    block_on!(async {
+        let (computers, info) = LocalComputers::here(&repo, environment()).await.unwrap();
+        let computers: Arc<dyn Computers> = computers;
+        let background = answer(
+            None,
+            vec![("bash", json!({"command": "sleep 30", "background": true}))],
+            StopReason::ToolUse,
+        );
+        let answers = vec![
+            background,
+            answer(Some("Running."), vec![], StopReason::EndTurn),
+        ];
+        let (harness, _) = harness_with(
+            Workspace::new(Arc::clone(&computers), info.clone()),
+            answers,
+            AllowAll,
+            InMemoryLog::new(),
+            1,
+            settings(),
+        );
+        let in_folder = || Place::Folder(at(&repo));
+        let opened = |events: &[Event]| WorkspaceId::from_uuid(bound(events)[0].workspace);
+        let mut running = harness
+            .start_thread_in(scope(), &Caller::default(), in_folder())
+            .await
+            .unwrap();
+        harness
+            .run_turn(&mut running, "start it", &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+        let first = opened(&events(harness.log(), running.id).await);
+        harness.let_go(running).await;
+        // Its command outlives the thread being held, so its workspace stays open for it.
+        let listed = computers.commands(first).await.unwrap();
+        assert_eq!(listed.len(), 1, "{listed:?}");
+        computers.stop(first, listed[0].id).await.unwrap();
+
+        let quiet = harness
+            .start_thread_in(scope(), &Caller::default(), in_folder())
+            .await
+            .unwrap();
+        let second = opened(&events(harness.log(), quiet.id).await);
+        harness.let_go(quiet).await;
+        for closed in [first, second] {
+            assert!(
+                matches!(
+                    computers.commands(closed).await,
+                    Err(ComputerError::NotFound(_))
+                ),
+                "closed"
+            );
+        }
+        let own = harness.start_thread(scope()).await.unwrap();
+        harness.let_go(own).await;
+        assert_eq!(
+            computers.commands(info.id).await.unwrap(),
+            [],
+            "the harness's own stays"
+        );
     });
 }

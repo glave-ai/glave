@@ -38,6 +38,7 @@ use crate::projects::Places;
 use crate::protocol::{ApiError, ModelInfo, Reply, code};
 use crate::providers::Providers;
 use crate::reread::Rereads;
+use crate::standing::Worktrees;
 use crate::tasks::{TaskLimits, Tasks};
 use crate::trust::{Asks, ProjectTrust};
 use crate::words::Sentence;
@@ -113,6 +114,9 @@ pub struct Wiring<P, L, B> {
     /// What keeps the computer from sleeping on its own while work runs: only on a person's
     /// own computer, never on a server, which does not sleep.
     pub awake: Option<Arc<dyn KeepAwake>>,
+    /// What lets go of a thread's worktrees on the host's computer once it is archived or
+    /// deleted; none where the host keeps none.
+    pub worktrees: Option<Arc<dyn Worktrees>>,
 }
 
 impl<P, L, B> Wiring<P, L, B> {
@@ -120,10 +124,10 @@ impl<P, L, B> Wiring<P, L, B> {
     /// and projects, and the workspace on the computer its threads work on. Everything else
     /// starts off or empty: the system clock and the operating system's randomness; no
     /// `web_fetch`, other tools, hooks, workers, memory, model accounts, git hosts, connections,
-    /// rereading, project folders, trust or browsers; no limit on tasks; only the settings' own
-    /// model and mode; threads in their project's folder rather than a worktree; reached only on
-    /// its own computer, which it does not keep awake; leases in its own memory. An embedder
-    /// names only what it changes: `Wiring { hooks, ..Wiring::new(...) }`.
+    /// rereading, project folders, trust, browsers or worktrees to let go of; no limit on tasks;
+    /// only the settings' own model and mode; threads in their project's folder rather than a
+    /// worktree; reached only on its own computer, which it does not keep awake; leases in its
+    /// own memory. An embedder names only what it changes: `Wiring { hooks, ..Wiring::new(...) }`.
     pub fn new(
         provider: P,
         log: L,
@@ -158,6 +162,7 @@ impl<P, L, B> Wiring<P, L, B> {
             origin: None,
             leases: None,
             awake: None,
+            worktrees: None,
         }
     }
 }
@@ -248,6 +253,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) followed: Followed,
     /// The computer held awake while work runs, where it is.
     pub(crate) awake: Option<Awake>,
+    /// What lets go of a thread's worktrees once it is put away, where the host keeps them.
+    pub(crate) worktrees: Option<Arc<dyn Worktrees>>,
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -327,6 +334,7 @@ where
                 scheduling: Mutex::new(None),
                 followed: Followed::default(),
                 awake: wiring.awake.map(Awake::new),
+                worktrees: wiring.worktrees,
             }),
         }
     }
@@ -454,7 +462,7 @@ where
             .map_err(|error| ApiError::from(&error))?;
         let id = thread.id;
         self.place(id, scope);
-        self.keep(id, thread);
+        self.keep(id, thread).await;
         Ok(id)
     }
 

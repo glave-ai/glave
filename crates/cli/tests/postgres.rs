@@ -76,7 +76,10 @@ fn history_goes_to_the_database_the_store_url_names() {
         .unwrap();
     let shown = text(&listed);
     assert!(listed.status.success(), "{shown}");
-    assert_eq!(shown.lines().count(), 1, "{shown}");
+    // One thread on standard output; a server in the command's own process may say more on
+    // standard error, such as that the sandbox cannot run here.
+    let ids = String::from_utf8_lossy(&listed.stdout);
+    assert_eq!(ids.lines().count(), 1, "{shown}");
     execute(&url, &format!("DROP SCHEMA {schema} CASCADE;"));
 }
 

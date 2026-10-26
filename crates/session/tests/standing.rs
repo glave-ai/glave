@@ -1,11 +1,14 @@
 //! Archiving and deleting threads through the session API: lists hide what is archived or
 //! deleted, a change is the thread's next event, a deleted thread is gone from every method
-//! but the list of deleted ones, and none of it changes what the model is sent.
+//! but the list of deleted ones, the host lets go of its worktrees, and none of it changes what
+//! the model is sent.
+
+use std::sync::{Arc, Mutex};
 
 use glave_event::ThreadId;
-use glave_ports::EventLog;
-use glave_session::Answering;
+use glave_ports::{BoxFuture, EventLog, Scope};
 use glave_session::protocol::{Reply, Request, Show, code};
+use glave_session::{Answering, Worktrees};
 use serde_json::json;
 
 use crate::support::*;
@@ -151,5 +154,44 @@ fn archiving_changes_nothing_the_model_is_sent() {
         let changed = run(true).await;
         assert_eq!(plain.len(), 4);
         assert_eq!(plain, changed);
+    });
+}
+
+/// The threads whose worktrees the server let go of, in order, with the scope it named.
+#[derive(Default)]
+struct Released(Mutex<Vec<(Scope, ThreadId)>>);
+
+impl Worktrees for Released {
+    fn release(&self, scope: Scope, thread: ThreadId) -> BoxFuture<'_, ()> {
+        self.0.lock().unwrap().push((scope, thread));
+        Box::pin(async {})
+    }
+}
+
+#[test]
+fn archiving_or_deleting_a_thread_lets_go_of_its_worktrees_and_unarchiving_does_not() {
+    let dir = folder("release");
+    block_on!(async {
+        let released = Arc::new(Released::default());
+        let mut setup = Setup::asking(Vec::new(), Answering::NoOne);
+        setup.release = Some(Arc::clone(&released) as Arc<dyn Worktrees>);
+        let (server, _) = setup.build(&dir).await;
+        let (a, b) = (start(&server, false).await, start(&server, false).await);
+        for request in [
+            Request::ThreadArchive { thread: a },
+            Request::ThreadUnarchive { thread: a },
+            Request::ThreadDelete { thread: b },
+        ] {
+            server.request(request).await.unwrap();
+        }
+        let released = released.0.lock().unwrap().clone();
+        let home = scope();
+        assert_eq!(
+            released,
+            [
+                (Scope::glaves_own(home.org(), home.project()), a),
+                (Scope::glaves_own(home.org(), home.project()), b)
+            ]
+        );
     });
 }

@@ -1,9 +1,10 @@
-//! Memory end to end through the binary: off when the person chooses it (the model is offered no memory tool),
-//! on by the person's choice, a save shown at once, the next thread opening with it, and
-//! `glave memory` listing and forgetting it, in the store itself and through the person's
-//! server, in the project of the folder it runs in.
+//! Memory end to end through the binary: off when the person chooses it (the model is offered no
+//! memory tool, and `glave memory` says it is off), on by the person's choice, a save shown at
+//! once, the next thread opening with it, and `glave memory` listing and forgetting it, through
+//! a server in its own process where none runs and through the person's server, in the project
+//! of the folder it runs in.
 
-use std::process::Command;
+use std::process::{Command, Output};
 
 use glave_provider_openai::fake::{FakeServer, Reply};
 use serde_json::json;
@@ -11,15 +12,20 @@ use serde_json::json;
 use crate::http::{only_the_server_answers, serve_http};
 use crate::support::*;
 
-fn memory_cli(place: &Place, args: &[&str]) -> String {
-    let output = Command::new(env!("CARGO_BIN_EXE_glave"))
+/// `glave memory` with `args` in `place`'s project folder, with no one at the terminal.
+fn memory_run(place: &Place, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_glave"))
         .arg("memory")
         .args(args)
         .current_dir(&place.project)
         .env("GLAVE_HOME", &place.home)
         .env("NO_COLOR", "1")
         .output()
-        .unwrap();
+        .unwrap()
+}
+
+fn memory_cli(place: &Place, args: &[&str]) -> String {
+    let output = memory_run(place, args);
     let shown = text(&output);
     assert!(output.status.success(), "{shown}");
     shown
@@ -35,6 +41,11 @@ fn off_by_the_persons_choice_the_model_is_offered_no_memory_tool() {
     assert!(output.status.success(), "{}", text(&output));
     let tools = model.received()[0].body["tools"].to_string();
     assert!(!tools.contains("mcp__memory__"), "{tools}");
+    // `glave memory` says so, as the app does.
+    let listed = memory_run(&place, &[]);
+    let shown = text(&listed);
+    assert!(!listed.status.success(), "{shown}");
+    assert!(shown.contains("memory is off"), "{shown}");
 }
 
 #[test]
