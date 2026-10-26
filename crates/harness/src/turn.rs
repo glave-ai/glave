@@ -356,13 +356,8 @@ where
             if self.capped(step.summary.model_calls) {
                 break Outcome::LimitReached;
             }
-            if let Some(compaction) = self
-                .compact_if_needed(thread, &step.toolset, cancel, live)
-                .await?
-            {
-                step.summary.model_calls = step.summary.model_calls.saturating_add(1);
-                tally(&mut step.summary, &compaction);
-            }
+            self.compact_if_needed(thread, &step.toolset, &mut step.summary, cancel, live)
+                .await?;
             self.read_queued(thread, cancel, live).await?;
             let last = self.last_step(thread, &step.summary);
             let choice = self.choice(thread, last).await?;

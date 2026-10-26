@@ -16,7 +16,7 @@ use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::room::{stated_window, trim_oldest};
 use crate::toolset::ToolSet;
-use crate::turn::Live;
+use crate::turn::{Live, TurnSummary, tally};
 
 /// When to compact a thread.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -152,32 +152,37 @@ where
     B: BlobStore,
     A: Approver,
 {
-    /// Compacts now if the next request would pass the threshold. A thread with nothing yet to
-    /// summarize is left alone. A summary the provider fails to give is reported and the turn
-    /// goes on: the request may still fit.
+    /// Compacts now if the next request would pass the threshold, counting the summary's
+    /// model call in `summary`. A thread with nothing yet to summarize is left alone. A summary
+    /// the provider fails to give is reported and the turn goes on: the request may still fit.
     pub(crate) async fn compact_if_needed(
         &self,
         thread: &mut Thread,
         offer: &ToolSet,
+        summary: &mut TurnSummary,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<Option<Completion>, HarnessError> {
+    ) -> Result<(), HarnessError> {
         let at_percent = self.settings.compaction.at_percent;
         let window_tokens = self.window_tokens(&self.model_for(thread));
         let tokens = next_request_tokens(thread, offer);
         let full =
             tokens.saturating_mul(100) >= window_tokens.saturating_mul(u64::from(at_percent));
         if !full || thread.messages.len() < 3 {
-            return Ok(None);
+            return Ok(());
         }
         match self.compact_with(thread, offer, cancel, live).await {
-            Ok(compacted) => Ok(Some(compacted.completion)),
+            Ok(compacted) => {
+                summary.model_calls = summary.model_calls.saturating_add(1);
+                tally(summary, &compacted.completion);
+                Ok(())
+            }
             Err(HarnessError::Provider(error)) => {
                 live(Live::CompactionFailed(error.to_string()));
-                Ok(None)
+                Ok(())
             }
             // The turn sees the cancel itself and stops.
-            Err(HarnessError::Cancelled) => Ok(None),
+            Err(HarnessError::Cancelled) => Ok(()),
             Err(error) => Err(error),
         }
     }
