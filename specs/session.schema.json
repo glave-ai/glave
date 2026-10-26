@@ -2240,7 +2240,8 @@
       "type": "object"
     },
     "TurnResult": {
-      "description": "How a turn ended and what it cost.",
+      "additionalProperties": false,
+      "description": "A turn ended (`turn.ended`): how, and what it did and cost, its subagents' work included.\nIt is what a client that ran the turn is answered with too, so every client reads the same.\nA turn recorded before it held more than `outcome` reads with nothing counted.",
       "properties": {
         "cost": {
           "anyOf": [
@@ -2250,14 +2251,16 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "What its model calls cost, when every one of them reported a cost in one currency;\nabsent when one did not: the cost is not reported."
         },
         "estimated": {
           "default": false,
-          "description": "True when a usage count was estimated, not reported.",
+          "description": "True when a usage count was estimated, because a stream ended before the provider\nreported it.",
           "type": "boolean"
         },
         "model_calls": {
+          "default": 0,
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
@@ -2273,12 +2276,27 @@
           "type": "integer"
         },
         "tokens": {
-          "$ref": "#/$defs/TokenCounts"
+          "$ref": "#/$defs/TokenCounts",
+          "default": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0
+          }
         },
         "tool_calls": {
+          "default": 0,
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
+        },
+        "via": {
+          "description": "Where its model calls ran, once each in the order they first did, in a person's words:\nthe service, and the provider a service that routes calls passed them on to\n(`OpenRouter (Anthropic)`).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "with_network": {
           "default": 0,
@@ -2289,10 +2307,7 @@
         }
       },
       "required": [
-        "outcome",
-        "model_calls",
-        "tool_calls",
-        "tokens"
+        "outcome"
       ],
       "type": "object"
     },

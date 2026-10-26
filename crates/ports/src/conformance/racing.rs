@@ -5,7 +5,7 @@ use std::future::{Future, poll_fn};
 use std::pin::Pin;
 use std::task::Poll;
 
-use glave_event::{At, EventId, Header, Outcome, Seq, TurnEnded, encode};
+use glave_event::{At, EventId, Header, Outcome, Seq, TurnResult, encode};
 
 use super::{Verdict, ensure, scope, thread, uuid_v7};
 use crate::log::{EventLog, LogError};
@@ -53,7 +53,14 @@ pub(super) async fn racing_appends<L: EventLog>(log: &L) -> Verdict {
             at: At::try_from("2026-10-07T21:14:03.512Z".to_owned()).map_err(|e| e.to_string())?,
         };
         let outcome = Outcome::Completed;
-        let event = encode(header, &TurnEnded { outcome }).map_err(|e| e.to_string())?;
+        let event = encode(
+            header,
+            &TurnResult {
+                outcome,
+                ..TurnResult::begun()
+            },
+        )
+        .map_err(|e| e.to_string())?;
         writers.push(async move { (writer, log.append(&here, &[event]).await) });
     }
     let results = together(writers).await;

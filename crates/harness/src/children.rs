@@ -5,7 +5,7 @@
 
 use std::sync::{Mutex, PoisonError};
 
-use glave_event::{Outcome, ParentCall, ThreadId};
+use glave_event::{Outcome, ParentCall, ThreadId, TurnResult};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ThreadView, ToolCall, ToolOutput};
 
 use crate::approval::Approver;
@@ -15,7 +15,7 @@ use crate::harness::{Harness, HarnessError, Thread};
 use crate::join::{Running, all};
 use crate::subagent::{self, AT_ONCE, Asked};
 use crate::toolset::ToolSet;
-use crate::turn::{Live, Prompt, TurnSummary};
+use crate::turn::{Live, Prompt};
 
 /// What the person sees, shared by children running side by side.
 type Shared<'a, 'b> = &'a Mutex<&'b mut (dyn FnMut(Live) + Send)>;
@@ -23,7 +23,7 @@ type Shared<'a, 'b> = &'a Mutex<&'b mut (dyn FnMut(Live) + Send)>;
 /// How a subagent's call came out.
 pub(crate) enum Ran {
     /// Its result, with what its child's turn did when it ran.
-    Done(ToolOutput, Option<TurnSummary>),
+    Done(ToolOutput, Option<TurnResult>),
     /// Its child's turn waits for the person, so its parent's waits too.
     Waits,
 }
@@ -195,7 +195,7 @@ where
         tools: ToolSet,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<TurnSummary, HarnessError> {
+    ) -> Result<TurnResult, HarnessError> {
         let brief = subagent::brief(asked);
         // The parent's agent writes the brief: the child's `for` is implied, as for any prompt.
         let caller = Caller::default();
@@ -224,7 +224,7 @@ fn inherit(child: &mut Thread, parent: &Thread) {
 }
 
 /// What a subagent's call returns once its turn in `child` ended as `ran` says.
-fn result_of(child: &Thread, ran: Result<TurnSummary, HarnessError>) -> Ran {
+fn result_of(child: &Thread, ran: Result<TurnResult, HarnessError>) -> Ran {
     match ran {
         Ok(summary) => {
             let failed = summary.outcome != Outcome::Completed;

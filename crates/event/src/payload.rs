@@ -65,7 +65,7 @@ pub use thread::{
 };
 pub use tool::{Arguments, ToolCallCompleted, ToolCallRequested, WebPage};
 pub use trust::{Decision, TrustDecided};
-pub use turn::{Auth, AuthMethod, Outcome, TraceId, TurnEnded, TurnStarted};
+pub use turn::{Auth, AuthMethod, Outcome, TraceId, TurnResult, TurnStarted};
 pub use workspace::{
     ComputerKind, ComputerRef, Opened, RemovedReason, WorkspaceBound, WorkspaceRemoved,
 };

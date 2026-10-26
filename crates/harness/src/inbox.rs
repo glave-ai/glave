@@ -7,14 +7,14 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use glave_event::{EventId, MessageAdded, Part, Role};
+use glave_event::{EventId, MessageAdded, Part, Role, TurnResult};
 use glave_ports::{BlobStore, Caller, EventLog, Message, ModelProvider};
 use thiserror::Error;
 
 use crate::approval::Approver;
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
-use crate::turn::{Live, Prompt, TurnSummary, absorb};
+use crate::turn::{Live, Prompt};
 
 /// The most messages that wait for the model at once; one more is refused.
 pub const MAX_QUEUED: usize = 20;
@@ -214,10 +214,10 @@ where
     pub async fn run_queued(
         &self,
         thread: &mut Thread,
-        ran: Result<TurnSummary, HarnessError>,
+        ran: Result<TurnResult, HarnessError>,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<TurnSummary, HarnessError> {
+    ) -> Result<TurnResult, HarnessError> {
         let mut total = match ran {
             Ok(total) => total,
             // A turn that waits keeps what was sent to it for when it goes on.
@@ -245,7 +245,7 @@ where
             let ran = self.run_prompt(thread, prompt, cancel, live).await;
             match ran {
                 Ok(turn) => {
-                    absorb(&mut total, &turn);
+                    total.absorb(&turn);
                     total.outcome = turn.outcome;
                 }
                 Err(HarnessError::PromptBlocked(reason)) => live(Live::Unread {

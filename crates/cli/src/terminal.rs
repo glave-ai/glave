@@ -160,7 +160,7 @@ impl Printer {
     }
 
     /// The receipt that closes a turn: what happened and what it cost.
-    pub(crate) fn receipt(&mut self, summary: &TurnResult, local: bool) {
+    pub(crate) fn receipt(&mut self, summary: &TurnResult) {
         let (word, color) = match summary.outcome {
             Outcome::Completed => ("done", CYAN),
             Outcome::LimitReached => ("stopped at a limit", YELLOW),
@@ -168,7 +168,7 @@ impl Printer {
             Outcome::Cancelled => ("cancelled", YELLOW),
             Outcome::Failed => ("failed", RED),
         };
-        let line = receipt_line(&self.protections, summary, local);
+        let line = receipt_line(&self.protections, summary);
         println!(
             "\n\n{} {}",
             paint(self.color, color, word),
@@ -253,9 +253,10 @@ impl Printer {
 /// The most of an error shown on a retry line.
 const ERROR_CHARS: usize = 200;
 
-/// What a turn did and cost, after the protections it ran under: the commands that ran outside
-/// the sandbox or with its network, if any, then the calls, the tokens and the cost.
-fn receipt_line(protections: &str, summary: &TurnResult, local: bool) -> String {
+/// What a turn did and cost, as the server says, after the protections it ran under: the
+/// commands that ran outside the sandbox or with its network, if any, then the calls, the
+/// tokens and the cost.
+fn receipt_line(protections: &str, summary: &TurnResult) -> String {
     let tokens = &summary.tokens;
     let mut line = format!("{protections} · ");
     let let_out = [
@@ -277,11 +278,9 @@ fn receipt_line(protections: &str, summary: &TurnResult, local: bool) -> String 
     if tokens.cache_read > 0 {
         let _ = write!(line, " ({} cached)", thousands(tokens.cache_read));
     }
-    let cost = match summary.cost {
-        Some(money) if money.micros > 0 || !local => format_money(money),
-        Some(_) | None if local => "$0.00, on this computer".to_owned(),
-        _ => "cost not reported".to_owned(),
-    };
+    let cost = summary
+        .cost
+        .map_or_else(|| "cost not reported".to_owned(), format_money);
     let _ = write!(line, " · {cost}");
     if summary.estimated {
         line.push_str(" (estimated)");
@@ -365,7 +364,7 @@ fn format_money(money: Money) -> String {
     let micros = money.micros.unsigned_abs();
     let whole = micros / 1_000_000;
     let fraction = micros % 1_000_000;
-    let amount = if micros < 10_000 {
+    let amount = if micros < 10_000 && micros > 0 {
         format!("{whole}.{:04}", fraction / 100)
     } else {
         format!("{whole}.{:02}", fraction / 10_000)
@@ -442,26 +441,36 @@ mod tests {
                 output: 34,
                 reasoning: 0,
             },
-            cost: None,
+            cost: Some(Money {
+                micros: 0,
+                currency: Currency::USD,
+            }),
             estimated: false,
+            via: Vec::new(),
         };
         let protections = "permissions: auto · sandbox: project + network";
         assert_eq!(
-            receipt_line(protections, &turn, true),
+            receipt_line(protections, &turn),
             "permissions: auto · sandbox: project + network · 2 model calls · 1 tool call · 1,234 \
-             tokens · $0.00, on this computer"
+             tokens · $0.00"
         );
         turn.outside_sandbox = 1;
         assert_eq!(
-            receipt_line(protections, &turn, true),
+            receipt_line(protections, &turn),
             "permissions: auto · sandbox: project + network · 1 command outside the sandbox · 2 \
-             model calls · 1 tool call · 1,234 tokens · $0.00, on this computer"
+             model calls · 1 tool call · 1,234 tokens · $0.00"
         );
         (turn.outside_sandbox, turn.with_network) = (0, 2);
         assert_eq!(
-            receipt_line("permissions: auto · sandbox: project", &turn, true),
+            receipt_line("permissions: auto · sandbox: project", &turn),
             "permissions: auto · sandbox: project · 2 commands with the network · 2 model calls · \
-             1 tool call · 1,234 tokens · $0.00, on this computer"
+             1 tool call · 1,234 tokens · $0.00"
+        );
+        (turn.with_network, turn.cost, turn.estimated) = (0, None, true);
+        assert_eq!(
+            receipt_line("permissions: auto · sandbox: project", &turn),
+            "permissions: auto · sandbox: project · 2 model calls · 1 tool call · 1,234 tokens · \
+             cost not reported (estimated)"
         );
     }
 
@@ -490,7 +499,7 @@ mod tests {
         };
         assert_eq!(format_money(usd(4_200)), "$0.0042");
         assert_eq!(format_money(usd(1_230_000)), "$1.23");
-        assert_eq!(format_money(usd(0)), "$0.0000");
+        assert_eq!(format_money(usd(0)), "$0.00");
         let eur = Money {
             micros: 2_500_000,
             currency: Currency::new("EUR").unwrap(),

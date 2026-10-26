@@ -6,7 +6,7 @@
 
 use std::io::Cursor;
 
-use glave_event::{BlobRef, Body, EventId, Part, StopReason};
+use glave_event::{BlobRef, Body, EventId, Part, StopReason, TurnResult};
 use glave_harness::{AllowAll, Cancel, Live, Queued, Said};
 use glave_ports::{BlobStore as _, Caller, InMemoryLog, Message, Pieces};
 use serde_json::json;
@@ -126,7 +126,7 @@ fn an_image_and_a_pdf_go_inline_and_a_text_file_as_text() {
 async fn ask_about<P: glave_ports::ModelProvider>(
     harness: &glave_harness::Harness<P, InMemoryLog, glave_ports::InMemoryBlobs, AllowAll>,
     files: &[Part],
-) -> glave_harness::TurnSummary {
+) -> TurnResult {
     let mut thread = harness.start_thread(scope()).await.unwrap();
     let said = Said {
         text: "what is this?",
