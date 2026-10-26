@@ -4,6 +4,7 @@ import type { GlzDecisionLabels } from '../components/approval-card/approval-car
 import type { GlzReceiptStatus } from '../components/receipt/receipt.component';
 import type { GlzRunStatusLabels } from '../components/steps/steps.component';
 import type { GlzTrustAnswerLabels } from '../components/trust-card/trust-card.component';
+import type { GlzPlanStatusLabels } from '../components/plan-card/plan-card.component';
 import type { GlzMarkdownLabels } from '../lib/markdown-html';
 
 /**
@@ -38,6 +39,18 @@ export interface GlzText {
   readonly markdown: GlzMarkdownLabels;
   readonly menuSelect: { readonly placeholder: string };
   readonly panelLayout: { readonly label: string; readonly resizeLabel: string };
+  readonly planCard: {
+    readonly label: string;
+    readonly buildLabel: string;
+    readonly changeLabel: string;
+    readonly editLabel: string;
+    readonly stepLabel: string;
+    readonly removeLabel: string;
+    readonly addLabel: string;
+    readonly saveLabel: string;
+    readonly cancelLabel: string;
+    readonly statusLabels: GlzPlanStatusLabels;
+  };
   readonly picker: {
     readonly placeholder: string;
     readonly searchLabel: string;

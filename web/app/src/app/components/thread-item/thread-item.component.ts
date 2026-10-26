@@ -57,6 +57,8 @@ function shown(item: ThreadItem, locale: string): ShownItem {
       const person = item.from === 'person';
       return {
         ...item,
+        // The person's approval of a plan reads as what they pressed.
+        text: item.built === true ? $localize`:@@threadItem.built:Build it` : item.text,
         author: person ? $localize`:@@threadItem.you:You` : $localize`:@@threadItem.reply:Reply`,
         files: item.files.map((file) => ({ name: file.name, size: sizeOf(file.bytes, locale) })),
         markdown: !person,

@@ -224,6 +224,31 @@ describe('conversation', () => {
     ]);
   });
 
+  it('draws the approval of a plan as the person’s Build it, and not glave’s prompt for it', () => {
+    const glaves = (text: string): RawEvent =>
+      event('message.added', {
+        role: 'user',
+        parts: [{ type: 'text', text }],
+        author: { kind: 'glave' },
+      });
+    const items = threadItems([
+      event('plan.approved', {}),
+      event('turn.started', {}),
+      glaves('The person approved this plan. Build it now.'),
+      event('turn.ended', { outcome: 'cancelled' }),
+      glaves('[The person cancelled this turn on purpose.]'),
+    ]);
+    const built = items.flatMap((item) =>
+      item.kind === 'message'
+        ? [[item.from, item.text.slice(0, 15), item.built === true] as const]
+        : [],
+    );
+    expect(built).toEqual([
+      ['person', '', true],
+      ['person', '[The person can', false],
+    ]);
+  });
+
   it('keeps a call running and an approval waiting until they are answered', () => {
     const items = threadItems([
       event('tool.call.requested', { call_id: 'c1', tool: 'bash', arguments: { json: {} } }),

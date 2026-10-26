@@ -73,10 +73,26 @@ export function glazeText(): GlzText {
   };
 }
 
-/** The words of the cards that need the person: an approval, questions, a project's trust. */
-function cards(): Pick<GlzText, 'approvalCard' | 'questionCard' | 'trustCard'> {
+/** The words of the cards that need the person: an approval, questions, a project's trust, a plan. */
+function cards(): Pick<GlzText, 'approvalCard' | 'questionCard' | 'trustCard' | 'planCard'> {
   const needsYou = $localize`:@@glaze.needsYou:Needs you`;
   return {
+    planCard: {
+      label: needsYou,
+      buildLabel: $localize`:@@glaze.plan.build:Build it`,
+      changeLabel: $localize`:@@glaze.plan.change:Change it`,
+      editLabel: $localize`:@@glaze.plan.edit:Edit`,
+      stepLabel: $localize`:@@glaze.plan.step:Step`,
+      removeLabel: $localize`:@@glaze.plan.remove:Remove step`,
+      addLabel: $localize`:@@glaze.plan.add:Add a step`,
+      saveLabel: $localize`:@@glaze.plan.save:Save`,
+      cancelLabel: $localize`:@@glaze.plan.cancel:Cancel`,
+      statusLabels: {
+        pending: $localize`:@@glaze.plan.pending:To do`,
+        in_progress: $localize`:@@glaze.plan.doing:Doing`,
+        completed: $localize`:@@glaze.plan.done:Done`,
+      },
+    },
     approvalCard: {
       label: needsYou,
       reasonLabel: $localize`:@@glaze.approval.reason:The model says`,

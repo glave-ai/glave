@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 
 import { HISTORY } from './fake-api';
+import { type Storing, storedEvents } from './fake-events';
 import { type Gate, type Gated, gates } from './fake-gate';
 import { THREAD } from './fake-records';
 
@@ -26,6 +27,7 @@ export const ANSWER = ['The lock ', 'is taken twice.'];
  */
 export async function thinkingTurn(page: Page): Promise<void> {
   await gates(page);
+  await storedEvents(page);
   await page.addInitScript(
     ({ after, thread, started, step, thinking, answer }) => {
       const real = window.fetch.bind(window);
@@ -33,23 +35,7 @@ export async function thinkingTurn(page: Page): Promise<void> {
       const passed = (gate: Gate): Promise<void> =>
         (window as unknown as Gated).glaveGates.passed(gate);
       const stored = (seq: number, type: string, data: unknown): string =>
-        JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'thread/event',
-          params: {
-            thread,
-            event: {
-              glave: 1,
-              id: `01900000-0000-7000-8000-${String(seq).padStart(12, '0')}`,
-              thread,
-              seq,
-              at: started,
-              type,
-              v: 1,
-              data,
-            },
-          },
-        });
+        (window as unknown as Storing).glaveStored(thread, seq, started, type, data);
       const live = (update: unknown): string =>
         JSON.stringify({ jsonrpc: '2.0', method: 'turn/live', params: { thread, update } });
       const call = { call_id: 'call_test' };
