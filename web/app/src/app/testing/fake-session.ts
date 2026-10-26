@@ -101,7 +101,8 @@ export class FakeTurn {
 /**
  * A session API in memory for tests: answers by method, notifications for a turn and for a
  * watch, and every call recorded. An answer that is an `ApiError` is thrown. Unanswered,
- * `thread/get` answers the thread as the fixtures make one, idle and asking nothing;
+ * `thread/get` answers the thread as the fixtures make one, idle and asking nothing, and
+ * `thread/rename` the same thread with its new title, updated since;
  * `thread/sources`, no reply drew on the web;
  * `command/list`, nothing running; `awake/get`, a server, which keeps no computer awake;
  * `search/get`, web search not the person's to choose;
@@ -199,11 +200,18 @@ export class FakeSession implements SessionClient {
   }
 }
 
+/** When a thread the fake renames was updated: after the fixtures' threads were. */
+const RENAMED_AT = '2026-10-11T10:06:00.000Z';
+
 /** What the fake answers a method no test answered. */
 function unanswered(method: Method, params: unknown): Answer {
   if (method === 'thread/get') {
     const { thread: id } = params as { readonly thread: string };
     return { thread: thread(id, null) };
+  }
+  if (method === 'thread/rename') {
+    const { thread: id, title } = params as { readonly thread: string; readonly title: string };
+    return { thread: thread(id, title, { updated_at: RENAMED_AT }) };
   }
   if (method === 'thread/sources') {
     return { sources: [] };

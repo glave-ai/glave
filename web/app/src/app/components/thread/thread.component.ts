@@ -186,24 +186,26 @@ export class ThreadComponent {
       ),
     );
   });
-  protected readonly summary = computed(() => this.projects.thread(this.thread()));
   protected readonly title = computed(() => {
-    const summary = this.summary();
-    return summary === undefined ? '' : threadTitle(summary);
+    const summary = this.service.summary();
+    return summary === null ? '' : threadTitle(summary);
   });
   /** The thread's own mode, from its summary, or `null` until it is read. */
-  protected readonly permissions = computed(() => this.summary()?.permissions ?? null);
+  protected readonly permissions = computed(() => this.service.summary()?.permissions ?? null);
+  /** The id of the project the thread is in, once its summary is read. */
+  private readonly projectId = computed(() => this.service.summary()?.project ?? null);
   /** The project the thread is in, by name; `null` for a chat. */
   protected readonly project = computed(() => {
-    const project = this.projects.projectOf(this.thread());
+    const id = this.projectId();
+    const project = id === null ? undefined : this.projects.project(id);
     return project?.kind === 'project' ? project.name : null;
   });
   protected readonly changes = computed(() => this.service.files().length);
   /** When the thread's project folder isn't there anymore: the project, and what the server says. */
   protected readonly gone = computed(() => {
-    const project = this.projects.projectOf(this.thread());
-    const message = project === undefined ? null : this.projects.gone(project.id);
-    return project === undefined || message === null ? null : { project: project.id, message };
+    const project = this.projectId();
+    const message = project === null ? null : this.projects.gone(project);
+    return project === null || message === null ? null : { project, message };
   });
   protected readonly folderGone = computed(() => this.gone() !== null);
 
@@ -224,7 +226,7 @@ export class ThreadComponent {
   });
   /** Files added go to the thread's project. */
   protected readonly keeping = effect(() => {
-    const project = this.projects.projectOf(this.thread())?.id ?? null;
+    const project = this.projectId();
     untracked(() => {
       this.attachments.keepIn(project);
     });

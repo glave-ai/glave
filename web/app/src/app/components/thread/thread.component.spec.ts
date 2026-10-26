@@ -42,7 +42,7 @@ function session(events: readonly unknown[]): FakeSession {
     .answer('schedule/list', { schedules: [] })
     .answer('tasks/list', { tasks: [] })
     .answer('project/list', { projects: [record('p1', 'glave')] })
-    .answer('thread/list', { threads: [thread('thread-1', 'Tidy the repo')] });
+    .answer('thread/list', { threads: [thread('thread-1', 'Tidy the repo', { project: 'p1' })] });
 }
 
 async function settle(): Promise<void> {
@@ -597,6 +597,40 @@ describe('ThreadComponent', () => {
     expect(fake.paramsOf('thread/rename')).toEqual([
       { thread: 'thread-1', title: 'Spring cleaning' },
     ]);
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="thread-title"]')?.textContent.trim()).toBe(
+      'Spring cleaning',
+    );
+  });
+
+  it('shows a thread older than the side nav lists by its own title, mode and project', async () => {
+    const older = thread('thread-1', 'Old release notes', {
+      project: 'p1',
+      permissions: 'ask',
+      updated_at: '2026-09-01T10:00:00.000Z',
+    });
+    const fake = session([])
+      .answer('thread/list', { threads: [] })
+      .answer('thread/get', { thread: older })
+      .answer('file/upload', {
+        file: { sha256: 'a'.repeat(64), name: 'notes.txt', media_type: 'text/plain', bytes: 5 },
+      });
+    const { root, fixture } = await open(fake);
+    expect(root.querySelector('[data-testid="thread-title"]')?.textContent.trim()).toBe(
+      'Old release notes',
+    );
+    expect(root.querySelector('[data-testid="thread-meta"]')?.textContent.trim()).toBe('glave');
+    expect(root.querySelector('[data-testid="permissions-trigger"]')?.textContent).toContain('Ask');
+    await expectAccessible(root);
+    // A file added to a message in it is kept in its project.
+    const picker = root.querySelector<HTMLInputElement>('[data-testid="thread-composer-picker"]');
+    const file = new File(['notes'], 'notes.txt', { type: 'text/plain' });
+    Object.defineProperty(picker, 'files', { configurable: true, value: [file] });
+    picker?.dispatchEvent(new Event('change'));
+    await vi.waitFor(() => {
+      expect(fake.paramsOf('file/upload')).toMatchObject([{ name: 'notes.txt', project: 'p1' }]);
+    });
+    await fixture.whenStable();
   });
 });
 
