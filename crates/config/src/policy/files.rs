@@ -147,7 +147,7 @@ impl ServeFile {
     pub const LETS_ENCRYPT: &str = "https://acme-v02.api.letsencrypt.org/directory";
 
     /// Where people reach glave from elsewhere: its origin, or its domain over HTTPS.
-    pub fn public_origin(&self) -> Option<PublicOrigin> {
+    pub(crate) fn public_origin(&self) -> Option<PublicOrigin> {
         match (&self.origin, &self.domain) {
             (Some(origin), None) => PublicOrigin::parse(origin),
             (None, Some(domain)) => Self::named(domain),
@@ -281,7 +281,7 @@ pub struct HooksFile {
     #[serde(rename = "PostToolUse", default)]
     pub post_tool_use: Vec<HookEntry>,
     #[serde(rename = "UserPromptSubmit", default)]
-    pub user_prompt_submit: Vec<HookEntry>,
+    pub(crate) user_prompt_submit: Vec<HookEntry>,
     #[serde(rename = "Stop", default)]
     pub stop: Vec<HookEntry>,
 }

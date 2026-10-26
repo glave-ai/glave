@@ -272,7 +272,8 @@ impl Watch {
             Notification::Live { thread, .. } if self.stale.contains_key(thread) => return None,
             Notification::Live { .. }
             | Notification::TaskFinished { .. }
-            | Notification::Changed { .. } => {
+            | Notification::Changed { .. }
+            | Notification::SettingsChanged { .. } => {
                 return Some(Watched::Note(note));
             }
         };

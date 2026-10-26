@@ -17,7 +17,7 @@ pub(crate) const AT_ONCE: usize = 6;
 /// What a subagent may do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
-pub enum SubagentType {
+pub(crate) enum SubagentType {
     /// Every tool the parent has, except starting subagents and asking the person.
     #[default]
     General,

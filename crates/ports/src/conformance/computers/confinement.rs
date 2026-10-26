@@ -175,7 +175,7 @@ pub(super) async fn confinement<C: Computers>(
 }
 
 /// Every link of the fixture followed by every suffix, in a fixed order.
-pub fn confinement_targets() -> Vec<String> {
+fn confinement_targets() -> Vec<String> {
     LINKS
         .iter()
         .flat_map(|link| SUFFIXES.iter().map(move |suffix| format!("{link}{suffix}")))
@@ -183,7 +183,7 @@ pub fn confinement_targets() -> Vec<String> {
 }
 
 /// Paths from a fixed seed: `count` of them, the same on every run.
-pub fn confinement_paths(seed: u64, count: usize) -> Vec<String> {
+fn confinement_paths(seed: u64, count: usize) -> Vec<String> {
     let mut state = seed | 1;
     let mut next = move || {
         state ^= state << 13;

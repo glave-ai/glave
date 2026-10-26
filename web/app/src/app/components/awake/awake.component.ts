@@ -11,6 +11,7 @@ import { ApiError, type AwakeInfo } from '@glave/client';
 import { GlzCardComponent, GlzCheckboxComponent, GlzFormFieldComponent } from '@glave/glaze';
 
 import { sentence, unreached } from '../../lib/text';
+import { onChange } from '../../services/changes.service';
 import { SessionService } from '../../services/session.service';
 
 /**
@@ -55,7 +56,9 @@ export class AwakeComponent {
   protected readonly problem = signal<string | null>(null);
 
   constructor() {
-    void this.ask(() => this.session.call('awake/get', {}));
+    const read = (): void => void this.ask(() => this.session.call('awake/get', {}));
+    read();
+    onChange('awake', read);
   }
 
   /** Turns keeping the computer awake on or off; the server's answer is what stays. */

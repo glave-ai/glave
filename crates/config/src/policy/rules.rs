@@ -255,7 +255,7 @@ impl Constraints {
     }
 
     /// The first rule that takes the network from commands.
-    pub fn network_off(&self) -> Option<&Rule> {
+    pub(crate) fn network_off(&self) -> Option<&Rule> {
         self.first(|kind| matches!(kind, Kind::NetworkOff))
     }
 
@@ -292,7 +292,7 @@ impl Constraints {
     /// The first rule that trusts the project at `root` without asking. Unlike the others
     /// this one lifts a question rather than adding a limit, so any file may add to it; it
     /// never lifts a deny.
-    pub fn trusts_project(&self, root: &str) -> Option<&Rule> {
+    pub(crate) fn trusts_project(&self, root: &str) -> Option<&Rule> {
         self.rules.iter().find(|rule| match &rule.kind {
             Kind::ProjectsTrusted(globs) => globs
                 .iter()
@@ -343,7 +343,7 @@ impl Constraints {
 
     /// The rules glave cannot enforce yet, with why. glave refuses to run under any of them,
     /// rather than quietly not keeping them.
-    pub fn not_enforced(&self) -> Vec<(&Rule, &'static str)> {
+    pub(crate) fn not_enforced(&self) -> Vec<(&Rule, &'static str)> {
         let budget = self.person_per_day_usd().map(|rule| {
             (
                 rule,

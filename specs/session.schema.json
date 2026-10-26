@@ -1760,6 +1760,46 @@
       ],
       "type": "object"
     },
+    "Setting": {
+      "description": "A person's own settings or connections, by what a client reads to show them.",
+      "oneOf": [
+        {
+          "const": "providers",
+          "description": "Their model accounts (`provider/list`), and so the models threads may choose\n(`model/list`).",
+          "type": "string"
+        },
+        {
+          "const": "credentials",
+          "description": "Their git hosts (`credential/list`).",
+          "type": "string"
+        },
+        {
+          "const": "connections",
+          "description": "Their sign-ins to connections (`connection/list`).",
+          "type": "string"
+        },
+        {
+          "const": "search",
+          "description": "Whether their agent may search the web (`search/get`).",
+          "type": "string"
+        },
+        {
+          "const": "grouping",
+          "description": "How their clients group their threads (`grouping/get`).",
+          "type": "string"
+        },
+        {
+          "const": "awake",
+          "description": "Whether the computer is kept awake while glave works (`awake/get`).",
+          "type": "string"
+        },
+        {
+          "const": "passkeys",
+          "description": "Their passkeys (`passkey/list`).",
+          "type": "string"
+        }
+      ]
+    },
     "Show": {
       "description": "Which threads `thread/list` shows.",
       "oneOf": [
@@ -5531,6 +5571,17 @@
     }
   },
   "notifications": {
+    "settings/changed": {
+      "properties": {
+        "setting": {
+          "$ref": "#/$defs/Setting"
+        }
+      },
+      "required": [
+        "setting"
+      ],
+      "type": "object"
+    },
     "task/finished": {
       "properties": {
         "task": {

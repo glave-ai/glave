@@ -136,7 +136,7 @@ impl<S: KeyStorage> Keys<S> {
     /// Rotates the project key when a data key was destroyed under the one in use: the surviving
     /// data keys are re-wrapped under a new version and the old versions destroyed, so
     /// backups lose every destroyed key. Returns whether it rotated.
-    pub async fn rotate_project_key(&self, scope: &Scope) -> Result<bool, KeyError> {
+    pub(crate) async fn rotate_project_key(&self, scope: &Scope) -> Result<bool, KeyError> {
         for _ in 0..ATTEMPTS {
             let (revision, mut record) = self.load(scope).await?;
             if !record.rotation_due() {

@@ -66,7 +66,7 @@ impl Endpoint {
     }
 
     /// The service name requests here are signed for.
-    pub fn signing_name(self) -> &'static str {
+    pub(crate) fn signing_name(self) -> &'static str {
         match self {
             Self::Runtime => "bedrock",
             Self::Mantle => "bedrock-mantle",

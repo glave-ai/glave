@@ -22,7 +22,7 @@ use crate::suite::{self, Plan};
 use crate::task::{self, Task, Tier};
 
 /// The models every change is measured on: one each from three labs, all cheap and quick.
-pub const DEFAULT_MODELS: [&str; 3] = [
+pub(crate) const DEFAULT_MODELS: [&str; 3] = [
     "anthropic/claude-haiku-5.5",
     "openai/gpt-6-luna",
     "deepseek/deepseek-v4.1-flash",

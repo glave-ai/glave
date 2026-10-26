@@ -51,12 +51,12 @@ impl Plain {
 
 impl Item {
     /// Whether this is an MCP server, which a policy may forbid.
-    pub fn is_server(&self) -> bool {
+    pub(crate) fn is_server(&self) -> bool {
         self.id.starts_with("mcp:")
     }
 
     /// Whether this is a hook, which a policy may forbid.
-    pub fn is_hook(&self) -> bool {
+    pub(crate) fn is_hook(&self) -> bool {
         self.id.starts_with(HOOK)
     }
 

@@ -2,6 +2,7 @@ import { Service, inject, signal } from '@angular/core';
 import type { ConnectionInfo, SignInLink } from '@glave/client';
 
 import { connectionProblem } from '../lib/connections';
+import { onChange } from './changes.service';
 import { SessionService } from './session.service';
 
 /**
@@ -20,6 +21,10 @@ export class ConnectionsService {
   readonly connections = this.list.asReadonly();
   /** Why they could not be listed last, in the server's words. */
   readonly problem = this.failure.asReadonly();
+
+  constructor() {
+    onChange('connections', () => void this.load());
+  }
 
   /**
    * Lists the connections; a list that fails keeps what was listed before, and says why. A

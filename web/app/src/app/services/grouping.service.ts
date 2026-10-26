@@ -2,14 +2,16 @@ import { Service, inject, signal } from '@angular/core';
 import { ApiError, type Grouping } from '@glave/client';
 
 import { sentence, unreached } from '../lib/text';
+import { onChange } from './changes.service';
 import { SessionService } from './session.service';
 
 /**
  * How the side nav groups the person's threads: by project until they choose, their choice kept
  * by the server (`grouping/get`, `grouping/set`), so it follows them to every browser. The side
- * nav reads it as it opens, signed in. A choice shows at once and is sent after the ones before
- * it, so the server keeps the person's last; the server's answer is what stays, and when it
- * keeps none, what it last kept comes back, with why.
+ * nav reads it as it opens, signed in, and again when the server says it changed elsewhere. A
+ * choice shows at once and is sent after the ones before it, so the server keeps the person's
+ * last; the server's answer is what stays, and when it keeps none, what it last kept comes
+ * back, with why.
  */
 @Service()
 export class GroupingService {
@@ -30,6 +32,10 @@ export class GroupingService {
   readonly grouping = this.chosen.asReadonly();
   /** Why the last choice was not kept, until the next, or the next read. */
   readonly problem = this.failed.asReadonly();
+
+  constructor() {
+    onChange('grouping', () => void this.read());
+  }
 
   /** Reads the person's choice; one that cannot be read leaves the threads as they are. */
   async read(): Promise<void> {

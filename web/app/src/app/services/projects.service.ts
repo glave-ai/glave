@@ -10,6 +10,7 @@ import type {
 
 import type { ProjectWithThreads } from '../lib/nav';
 import type { Following, ListsHost } from './lists-feed';
+import { ChangesService } from './changes.service';
 import { SessionService } from './session.service';
 
 /** How many of each project's threads the lists hold: the newest. */
@@ -24,6 +25,7 @@ const LIMIT = 30;
 @Service()
 export class ProjectsService {
   private readonly session = inject(SessionService);
+  private readonly changes = inject(ChangesService);
   private readonly document = inject(DOCUMENT);
   /** The read under way, which a second asks join rather than start another. */
   private pending: Promise<void> | null = null;
@@ -45,6 +47,9 @@ export class ProjectsService {
     refresh: () => this.refresh(),
     reread: () => this.reread(),
     reading: () => this.pending,
+    heard: (setting) => {
+      this.changes.tell(setting);
+    },
   };
 
   /** Projects first, then the personal project; each with its threads, newest first. */

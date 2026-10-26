@@ -6565,6 +6565,7 @@ dependencies = [
  "glave-process",
  "jiff",
  "serde_json",
+ "syn 3.0.6",
  "tokio",
  "toml",
 ]

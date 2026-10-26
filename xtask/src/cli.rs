@@ -8,8 +8,9 @@ usage: cargo xtask <command>
 commands:
   ci [--all] [--target <triple>]
                     the local gate: format, secrets, the dependency rule, one spawn path, a
-                    limit on every wait, lint, tests and what they leave behind, dependency
-                    audit, package ages, file sizes, and the web checks, which need Node 22.22.3+
+                    limit on every wait, a caller for what is public, lint, tests and what they
+                    leave behind, dependency audit, package ages, file sizes, no new
+                    copy-paste, and the web checks, which need Node 22.22.3+
                     (GLAVE_SKIP_WEB=1 skips them).
                     Off CI it lints and tests only the crates a change since origin/main
                     reaches, and runs the web checks only when web/ or the API schema changed;
@@ -19,6 +20,9 @@ commands:
   deps              check the dependency rule: each crate depends only on the layers its own
                     may use (the layers are in xtask/src/deps.rs)
   file-sizes        enforce the source-file line limits
+  duplicates        fail on code copied anew: 6 lines of code alike in two places, 70 tokens
+                    or more, that xtask/src/duplicates/baseline.txt does not list, and on a
+                    listed copy no longer found
   package-age       fail on a package version new in Cargo.lock or web/package-lock.json since
                     the change's base that was published less than 7 days ago, unless
                     xtask/src/package_age/allowed.rs lets it in with its reason (asks crates.io
@@ -30,6 +34,8 @@ commands:
                     gives each one an owner
   waits             fail on a wait (a process, a thread, a channel, a lock) with no limit on
                     its line that xtask/src/waits/bounded.rs does not list with what bounds it
+  unused-pub        fail on an item a library crate exports that no other crate, binary or
+                    test names, nor the interface of an exported item that is named
   schema            write specs/session.schema.json from the session API's Rust types, and the
                     web client's TypeScript types from it (`--check`: fail if either is out of
                     date)
@@ -62,10 +68,12 @@ fn run(args: &[String]) -> Result<(), String> {
             "ci" => crate::ci::run(rest),
             "deps" => crate::deps::check(),
             "file-sizes" => crate::file_sizes::check(),
+            "duplicates" => crate::duplicates::check(),
             "package-age" => crate::package_age::check(),
             "secrets" => crate::secrets::check(),
             "spawns" => crate::spawns::check(),
             "waits" => crate::waits::check(),
+            "unused-pub" => crate::unused_pub::check(),
             "schema" => crate::schema::run(rest),
             "release-workflow" => crate::release_workflow::run(rest),
             "bench" => crate::bench::run(rest),
