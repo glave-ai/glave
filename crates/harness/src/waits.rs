@@ -58,8 +58,9 @@ pub(crate) enum Opened {
     /// Its wait was answered, its call not yet run: the work that goes on with it runs it. As
     /// a server starts, one is a crash's leftover, and is closed as one left open is.
     Answered,
-    /// Its log, as read up to this event, ends in a turn no one ended.
-    LeftOpen(Seq),
+    /// Its log ends in a turn no one ended, as it was read, or may since work on the turn here
+    /// failed: the next work on the thread closes it first.
+    LeftOpen,
 }
 
 /// The turn `events` leave open, if they do.
@@ -141,9 +142,7 @@ where
         id: ThreadId,
         events: &[Event],
     ) -> Result<Option<Opened>, HarnessError> {
-        let left = events
-            .last()
-            .map(|event| Opened::LeftOpen(event.header.seq));
+        let left = (!events.is_empty()).then_some(Opened::LeftOpen);
         let Some(open) = open_turn(events) else {
             return Ok(left.filter(|_| dangling(events)));
         };

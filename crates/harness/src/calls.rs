@@ -588,7 +588,7 @@ where
         let completed = completed(call_id, outcome);
         let mut events = Vec::new();
         // A command the call started or moved to the background, or saw end, first.
-        self.stage_commands(thread, &mut events)?;
+        let staged = self.stage_commands(thread, &mut events)?;
         // The plan the call set, with its result.
         let plan = thread.plan.staged.take();
         if let Some(plan) = &plan {
@@ -596,6 +596,7 @@ where
         }
         self.stage(thread, &mut events, &completed)?;
         self.commit(thread, events).await?;
+        staged.recorded(thread);
         if let Some(plan) = &plan {
             // Glave's own record: call ids do not count it, so the model is sent the same.
             thread.unnumbered = thread.unnumbered.saturating_add(1);

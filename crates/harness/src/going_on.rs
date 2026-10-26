@@ -15,7 +15,7 @@ use crate::harness::{Harness, HarnessError, Thread};
 use crate::repeats::Repeats;
 use crate::toolset::ToolSet;
 use crate::turn::{CONFIG_LIMIT, Live, Step, TurnSummary};
-use crate::waits::open_turn;
+use crate::waits::{Opened, open_turn};
 
 impl<P, L, B, A> Harness<P, L, B, A>
 where
@@ -50,7 +50,14 @@ where
         live: &'a mut (dyn FnMut(Live) + Send),
     ) -> BoxFuture<'a, Result<TurnSummary, HarnessError>> {
         Box::pin(async move {
+            // What fails before the turn's steps leave it ended, or at a wait again, leaves it
+            // as its log has it: still waiting, when nothing was answered; else open, which the
+            // next work on the thread closes first, reading the log again.
+            thread.opened = Some(Opened::LeftOpen);
             let events = self.load(&thread.scope, thread.id).await?;
+            if self.opened(&thread.scope, thread.id, &events).await? == Some(Opened::Waits) {
+                thread.opened = Some(Opened::Waits);
+            }
             let open = open_turn(&events).ok_or(HarnessError::NoTurn(thread.id))?;
             // What was recorded since the thread was read, its answer among it, comes in.
             let last = events.last().ok_or(HarnessError::NotFound(thread.id))?;
