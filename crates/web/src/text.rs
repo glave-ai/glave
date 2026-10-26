@@ -61,6 +61,14 @@ pub(crate) fn readable(kind: Kind, body: &[u8]) -> String {
     }
 }
 
+/// The title a body of `kind` gives itself: an HTML page's, when it gives one.
+pub(crate) fn title(kind: Kind, body: &[u8]) -> Option<String> {
+    match kind {
+        Kind::Html => crate::title::title(&String::from_utf8_lossy(body)),
+        Kind::Text => None,
+    }
+}
+
 /// HTML as Markdown, or as its text with tags dropped when it cannot be converted.
 fn markdown(html: &str) -> String {
     let converter = htmd::HtmlToMarkdown::builder()

@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
 
-use glave_event::{Body, PrincipalId, Seq, ThreadId, decode};
+use glave_event::{Body, PrincipalId, RawEvent, Seq, ThreadId, decode};
 use glave_harness::{
     Harness, HarnessError, Parts, Place, ProjectFolders, ReleasedWorker, Settings, TurnSummary,
     Workers, Workspace,
@@ -483,6 +483,18 @@ where
         after: Option<Seq>,
         limit: Option<usize>,
     ) -> Result<Reply, ApiError> {
+        let (events, next) = self.page(thread, after, limit).await?;
+        Ok(Reply::Events { events, next })
+    }
+
+    /// A page of `thread`'s events after `after`, at most `limit` (500 when absent), and the
+    /// `seq` the next page follows, when there may be one.
+    pub(crate) async fn page(
+        &self,
+        thread: ThreadId,
+        after: Option<Seq>,
+        limit: Option<usize>,
+    ) -> Result<(Vec<RawEvent>, Option<Seq>), ApiError> {
         let limit = limit.unwrap_or(500).clamp(1, MAX_PAGE);
         if Reserved::of(thread).is_some() {
             return Err(no_thread(thread));
@@ -501,7 +513,7 @@ where
         let next = (events.len() == limit)
             .then(|| events.last().map(|event| event.seq))
             .flatten();
-        Ok(Reply::Events { events, next })
+        Ok((events, next))
     }
 
     pub(crate) async fn cancel(&self, thread: ThreadId) -> Result<Reply, ApiError> {

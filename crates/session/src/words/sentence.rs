@@ -221,6 +221,10 @@ sentences! {
     ScheduleNotKept = "schedule-not-kept" "the schedule was not kept",
     NoSchedule { schedule: String } = "no-schedule" "no schedule { $schedule } here",
 
+    // What replies drew on.
+    Sources { pages: u64 } = "sources"
+        "Sources: { $pages ->\n    [1] 1 page\n   *[other] { $pages } pages\n }",
+
     // Memory.
     MemoryOff = "memory-off" "memory is off for this server",
     ForgetWhat = "forget-what" "memory/forget takes `memory`, or `all: true` with a `scope`",

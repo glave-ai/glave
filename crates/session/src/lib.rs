@@ -41,6 +41,7 @@ mod schedule;
 pub mod schema;
 mod server;
 mod settings;
+mod sources;
 mod standing;
 mod steer;
 mod stopping;

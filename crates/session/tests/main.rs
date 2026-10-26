@@ -41,6 +41,7 @@ mod remote;
 mod schedules;
 mod server;
 mod site;
+mod sources;
 mod standing;
 mod steer;
 mod subagents;

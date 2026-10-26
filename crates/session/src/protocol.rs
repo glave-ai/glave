@@ -13,6 +13,7 @@ mod passkeys;
 mod projects;
 mod providers;
 mod reply;
+mod sources;
 mod tasks;
 mod told;
 mod trust;
@@ -37,6 +38,7 @@ pub use passkeys::{AcceptedPasskeys, PasskeySummary, SignInWay, UnknownPasskey};
 pub use projects::{GoneFolder, NewFolder, ProjectFolder};
 pub use providers::{ProviderInfo, hint};
 pub use reply::{AwakeInfo, QueuedMessage, Reply, ServerInfo, Status, ThreadSummary, TurnResult};
+pub use sources::ReplySources;
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 pub use told::Told;
 pub use trust::{TrustAsk, TrustChoice, TrustItem};
@@ -219,6 +221,9 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<usize>,
     } -> [Events],
+    /// What a thread's replies drew on from the web, read from its log: for each reply whose
+    /// turn read pages with `web_fetch` before it, those pages, in order.
+    "thread/sources" => ThreadSources { thread: ThreadId } -> [Sources],
     /// Follows a thread: its events after `after` from the log, then its events as they are
     /// recorded and its live updates, its subagents' with them, each event once and in order.
     /// Streams as `turn/start` does, until the client ends the watch (`thread/unwatch`, or
@@ -561,6 +566,7 @@ impl Request {
             | Self::ThreadRename { thread, .. }
             | Self::ThreadGet { thread }
             | Self::ThreadEvents { thread, .. }
+            | Self::ThreadSources { thread }
             | Self::ThreadWatch { thread, .. }
             | Self::ThreadUnwatch { thread }
             | Self::TurnStart { thread, .. }

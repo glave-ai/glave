@@ -109,7 +109,6 @@ where
             notes: notes.collect(),
             questions: among(&trace.questions, &known),
             known: known.into_iter().map(|m| (m.memory, m)).collect(),
-            structured: None,
         };
     }
 

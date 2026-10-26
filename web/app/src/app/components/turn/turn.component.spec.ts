@@ -30,6 +30,7 @@ const RESULTS: TurnResults = {
     reasoning: '',
     steered: false,
   },
+  sources: null,
   live: null,
   working: null,
   files: [{ path: 'src/lock.rs', changes: [], added: 16, removed: 0 }],
@@ -99,7 +100,7 @@ function line(root: HTMLElement): readonly (string | undefined)[] {
 function blocks(root: HTMLElement): readonly string[] {
   return Array.from(
     root.querySelectorAll(
-      ':scope > app-thread-item > [data-testid], :scope > [data-testid], :scope > app-turn-changes > [data-testid]',
+      ':scope > app-thread-item > [data-testid], :scope > [data-testid], :scope > app-turn-changes > [data-testid], :scope > app-reply-sources > [data-testid]',
     ),
   ).map((each) => each.getAttribute('data-testid') ?? '');
 }
@@ -119,6 +120,22 @@ describe('TurnComponent', () => {
     expect(steps?.querySelectorAll('[data-testid="thread-receipt"]')).toHaveLength(1);
     expect(root.querySelector('[data-testid="thread-steps-summary"]')?.textContent).toContain(
       '1 step',
+    );
+    await expectAccessible(root);
+  });
+
+  it('shows the pages the reply drew on from the web under it', async () => {
+    const root = await render({
+      ...RESULTS,
+      sources: {
+        reply: 9,
+        sentence: 'Sources: 1 page',
+        pages: [{ url: 'https://tokio.rs/blog', title: 'Tokio blog' }],
+      },
+    });
+    expect(blocks(root).slice(0, 3)).toEqual(['thread-message', 'thread-message', 'reply-sources']);
+    expect(root.querySelector('[data-testid="reply-sources-sentence"]')?.textContent).toBe(
+      'Sources: 1 page',
     );
     await expectAccessible(root);
   });

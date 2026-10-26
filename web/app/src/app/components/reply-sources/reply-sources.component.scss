@@ -1,0 +1,66 @@
+:host {
+  display: block;
+}
+
+// A quiet list under the reply: the server's sentence, then a link to each page.
+.sources {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-1);
+  line-height: var(--glz-leading-tight);
+}
+
+.heading {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+  font-weight: var(--glz-weight-regular);
+}
+
+.links {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0;
+  list-style: none;
+}
+
+// The title, then where it is, wrapping under it on a narrow column.
+.link {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--glz-space-2);
+  min-height: var(--glz-control-height-sm);
+  border-radius: var(--glz-radius-mark);
+  color: var(--glz-color-text-secondary);
+  font-size: var(--glz-text-sm);
+  text-decoration: none;
+}
+
+.title {
+  color: var(--glz-accent-text);
+}
+
+// What names the page reads as a link, as one in a reply does: its title, else its address.
+.title,
+.address:first-child {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+// An address reads left to right in any page.
+.address {
+  direction: ltr;
+  unicode-bidi: isolate;
+  color: var(--glz-color-text-muted);
+  font-family: var(--glz-font-mono);
+  font-size: var(--glz-text-xs);
+  overflow-wrap: anywhere;
+}
+
+// On a phone, each link is a finger's size.
+@media (width <= 48rem) {
+  .link {
+    min-height: var(--glz-control-height-touch);
+  }
+}

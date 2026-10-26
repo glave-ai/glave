@@ -98,6 +98,29 @@ fn the_notice_of_a_folder_gone_is_written_again_in_a_list_of_projects() {
     assert!(gone[0].message.starts_with("[Ţĥîš þŕöĵéçţ'š ƒöļðéŕ"));
 }
 
+#[test]
+fn what_replies_drew_on_is_written_again_in_their_sources() {
+    let sourced = crate::protocol::ReplySources {
+        reply: glave_event::Seq::new(4).unwrap(),
+        sentence: Sentence::Sources { pages: 3 }.into(),
+        pages: Vec::new(),
+    };
+    assert_eq!(&*sourced.sentence, "Sources: 3 pages");
+    let mut listed: Result<Reply, ApiError> = Ok(Reply::Sources {
+        sources: vec![sourced],
+    });
+    assert!(says(&listed));
+    translate(&mut listed, Language::Accented);
+    let Ok(Reply::Sources { sources }) = listed else {
+        panic!("sources")
+    };
+    assert!(
+        sources[0].sentence.starts_with("[Šöûŕçéš: 3 þåĝéš"),
+        "{}",
+        &*sources[0].sentence
+    );
+}
+
 /// The words of its own the session crate writes in English, by file and what they say: about
 /// the message itself, for whoever writes a client (JSON-RPC's own codes), what a client reads
 /// of a server's answer, and misuse of the API in process.

@@ -15,7 +15,7 @@ use thiserror::Error;
 use crate::address::reachable;
 use crate::cache::Cache;
 use crate::resolve::{Guarded, Refused};
-use crate::text::{kind, readable};
+use crate::text::{kind, readable, title};
 
 /// How much a fetch may take.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,6 +48,8 @@ impl Default for Limits {
 pub struct Page {
     /// Where the page was found, after redirects.
     pub url: String,
+    /// The title it gives itself, when it gives one.
+    pub title: Option<String>,
     pub text: String,
     /// The body was longer than the size limit, and only its start was read.
     pub cut: bool,
@@ -228,11 +230,13 @@ impl Fetcher {
         let kind = kind(content_type.as_deref(), &body).ok_or_else(|| {
             FetchError::NotText(content_type.unwrap_or_else(|| "binary".to_owned()))
         })?;
-        let text = tokio::task::spawn_blocking(move || readable(kind, &body))
-            .await
-            .map_err(|e| FetchError::Failed(e.to_string()))?;
+        let (text, title) =
+            tokio::task::spawn_blocking(move || (readable(kind, &body), title(kind, &body)))
+                .await
+                .map_err(|e| FetchError::Failed(e.to_string()))?;
         Ok(Page {
             url: url.to_string(),
+            title,
             text,
             cut,
         })

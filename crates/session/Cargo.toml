@@ -62,6 +62,8 @@ glave-keys.workspace = true
 glave-memory.workspace = true
 glave-ports = { workspace = true, features = ["conformance"] }
 glave-store-sqlite.workspace = true
+# web_fetch reading a local page, for the sources a reply drew on.
+glave-web = { workspace = true, features = ["pages"] }
 # The isolation suite on Postgres too, when a test database is given.
 glave-store-postgres.workspace = true
 tokio-postgres.workspace = true

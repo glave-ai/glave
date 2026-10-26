@@ -31,6 +31,7 @@ import { placeOf } from '../lib/place';
 import { folderGone } from '../lib/projects';
 import { type Waiting, named, notRead, together } from '../lib/queued';
 import { onApple } from '../lib/shortcuts';
+import { lastSourcing } from '../lib/sources';
 import { threadTurns, turnRuns } from '../lib/turns';
 import { FIRST_RETRY_MS, LAST_RETRY_MS, cutOff, pause } from '../lib/watching';
 import { FirstTurnService } from './first-turn.service';
@@ -51,6 +52,8 @@ export class ThreadService {
   private readonly firstTurns = inject(FirstTurnService);
   private readonly id = signal<ThreadId | null>(null);
   private readonly events = signal<readonly RawEvent[]>([]);
+  /** Whether the thread is being opened, its history read page by page. */
+  private readonly opening = signal(false);
   private readonly draft = signal<Draft>(NO_DRAFT);
   /** The steps the running turn takes now, in the server's words, as its live updates say. */
   private readonly doing = signal<readonly string[]>([]);
@@ -101,6 +104,11 @@ export class ThreadService {
   readonly files = computed(() => changedFiles(this.events()));
   /** The `seq` of the latest start or end of a command in the background it recorded, if any. */
   readonly commandChange = computed(() => lastCommandChange(this.events()));
+  /**
+   * The `seq` of the latest end of a turn once the thread may have read a page (it called
+   * `web_fetch`), if it did; `null` while the thread opens, until its history is read.
+   */
+  readonly sourcing = computed(() => (this.opening() ? null : lastSourcing(this.events())));
   readonly reply = this.draft.asReadonly();
   /** The step the running turn takes now, in the server's words, while one runs and it said so. */
   readonly step = computed(() => this.doing().at(-1) ?? null);
@@ -194,7 +202,11 @@ export class ThreadService {
     this.failed.set(null);
     this.asked.set(null);
     this.trustAnswered.set(null);
+    this.opening.set(true);
     await this.readAll(thread);
+    if (this.id() === thread) {
+      this.opening.set(false);
+    }
     // Read after the events: a turn they leave open runs only when the server says so, not
     // when glave stopped in the middle of it.
     const summary = await this.readAsk(thread);

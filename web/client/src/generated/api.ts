@@ -466,6 +466,20 @@ export type Remembered = {
 };
 
 /**
+ * The pages one reply drew on: each one its turn read with `web_fetch` before it, once, in the
+ * order first read. A page that failed to load is none, nor is a search's result the agent
+ * did not read.
+ */
+export type ReplySources = {
+  /** The pages, in the order the turn first read each. */
+  readonly pages: readonly (WebPage)[];
+  /** The `seq` of the reply's `message.added`: the last words of its turn. */
+  readonly reply: Seq;
+  /** What they are, in a sentence: "Sources: 3 pages". */
+  readonly sentence: string;
+};
+
+/**
  * A command a thread keeps running in the background, as a client lists it: what it runs,
  * since when, and a sentence saying so (`command/list`).
  */
@@ -812,6 +826,17 @@ export type Usage = {
 
 /** Why a watch ended (`thread/watch`, `thread/list/watch`). */
 export type WatchEnd = "unwatched" | "deleted";
+
+/**
+ * A web page a call read (`web_fetch`), as its `tool.call.completed` records it in
+ * `structured`, under `page`: what a reply drew on, kept apart from the text the model saw.
+ */
+export type WebPage = {
+  /** The title the page gives itself, when it gives one. */
+  readonly title?: string | null;
+  /** Where it was found, after redirects. */
+  readonly url: string;
+};
 
 /** When a schedule runs. */
 export type When = {
@@ -1566,6 +1591,15 @@ export type ThreadRenameResult = {
   readonly thread: ThreadSummary;
 };
 
+export type ThreadSourcesParams = {
+  readonly thread: ThreadId;
+};
+
+/** What a thread's replies drew on from the web. */
+export type ThreadSourcesResult = {
+  readonly sources: readonly (ReplySources)[];
+};
+
 export type ThreadStartParams = {
   /**
    * For a thread that runs as a task: in a project with a folder it works on a copy
@@ -1771,6 +1805,7 @@ export interface Methods {
   readonly "thread/list/unwatch": { readonly params: ThreadListUnwatchParams; readonly result: ThreadListUnwatchResult };
   readonly "thread/list/watch": { readonly params: ThreadListWatchParams; readonly result: ThreadListWatchResult };
   readonly "thread/rename": { readonly params: ThreadRenameParams; readonly result: ThreadRenameResult };
+  readonly "thread/sources": { readonly params: ThreadSourcesParams; readonly result: ThreadSourcesResult };
   readonly "thread/start": { readonly params: ThreadStartParams; readonly result: ThreadStartResult };
   readonly "thread/unarchive": { readonly params: ThreadUnarchiveParams; readonly result: ThreadUnarchiveResult };
   readonly "thread/unwatch": { readonly params: ThreadUnwatchParams; readonly result: ThreadUnwatchResult };

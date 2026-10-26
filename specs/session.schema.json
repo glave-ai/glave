@@ -1299,6 +1299,32 @@
       ],
       "type": "object"
     },
+    "ReplySources": {
+      "description": "The pages one reply drew on: each one its turn read with `web_fetch` before it, once, in the\norder first read. A page that failed to load is none, nor is a search's result the agent\ndid not read.",
+      "properties": {
+        "pages": {
+          "description": "The pages, in the order the turn first read each.",
+          "items": {
+            "$ref": "#/$defs/WebPage"
+          },
+          "type": "array"
+        },
+        "reply": {
+          "$ref": "#/$defs/Seq",
+          "description": "The `seq` of the reply's `message.added`: the last words of its turn."
+        },
+        "sentence": {
+          "description": "What they are, in a sentence: \"Sources: 3 pages\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reply",
+        "sentence",
+        "pages"
+      ],
+      "type": "object"
+    },
     "RunningCommand": {
       "description": "A command a thread keeps running in the background, as a client lists it: what it runs,\nsince when, and a sentence saying so (`command/list`).",
       "properties": {
@@ -2413,6 +2439,26 @@
           "type": "string"
         }
       ]
+    },
+    "WebPage": {
+      "description": "A web page a call read (`web_fetch`), as its `tool.call.completed` records it in\n`structured`, under `page`: what a reply drew on, kept apart from the text the model saw.",
+      "properties": {
+        "title": {
+          "description": "The title the page gives itself, when it gives one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "description": "Where it was found, after redirects.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
     },
     "When": {
       "description": "When a schedule runs.",
@@ -4770,6 +4816,35 @@
         },
         "required": [
           "thread"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "thread/sources": {
+      "params": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "What a thread's replies drew on from the web.",
+        "properties": {
+          "sources": {
+            "items": {
+              "$ref": "#/$defs/ReplySources"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "sources"
         ],
         "type": "object"
       },

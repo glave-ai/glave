@@ -34,6 +34,7 @@ import { CommandsService } from '../../services/commands.service';
 import { ModelsService } from '../../services/models.service';
 import { ProjectsService } from '../../services/projects.service';
 import { SearchService } from '../../services/search.service';
+import { SourcesService } from '../../services/sources.service';
 import { ThreadService } from '../../services/thread.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
 import { FolderGoneComponent } from '../folder-gone/folder-gone.component';
@@ -78,7 +79,7 @@ import { TurnComponent } from '../turn/turn.component';
     TurnComponent,
     EffortPickerComponent,
   ],
-  providers: [ThreadService, CommandsService, AttachmentsService],
+  providers: [ThreadService, CommandsService, SourcesService, AttachmentsService],
   templateUrl: './thread.component.html',
   styleUrl: './thread.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -127,6 +128,7 @@ export class ThreadComponent {
   /** Whether the thread's first message, sent from the new chat, got no answer: it may go again. */
   protected readonly lost = computed(() => this.service.firstTurn()?.failed === 'lost');
   private readonly panel = inject(ToolsPanelService);
+  private readonly sources = inject(SourcesService);
   private readonly stick = viewChild.required(GlzStickToBottomDirective);
   /** The composer's draft, which a message the model never read comes back to. */
   protected readonly draft = this.service.composer;
@@ -166,6 +168,7 @@ export class ThreadComponent {
   protected readonly turns = computed<readonly TurnResults[]>(() => {
     const live = this.service.hasReply() ? this.service.reply() : null;
     const step = this.service.step();
+    const sourced = this.sources.byReply();
     const turns = askedTurns(
       this.service.turns(),
       this.service.askedAfter(),
@@ -179,6 +182,7 @@ export class ThreadComponent {
         index === last ? step : null,
         index === last && this.service.busy(),
         this.locale,
+        sourced,
       ),
     );
   });

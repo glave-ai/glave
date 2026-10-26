@@ -2172,6 +2172,7 @@ dependencies = [
  "glave-ports",
  "glave-store-postgres",
  "glave-store-sqlite",
+ "glave-web",
  "hyper",
  "hyper-util",
  "image",

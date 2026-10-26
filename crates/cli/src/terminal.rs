@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use glave_event::{Currency, GoalReason, Money, Outcome, OutsideSandbox, ThreadId};
 use glave_harness::Question;
-use glave_session::protocol::{TurnResult, Update};
+use glave_session::protocol::{ReplySources, TurnResult, Update};
 
 use crate::waiting::Waiting;
 
@@ -170,6 +170,22 @@ impl Printer {
             paint(self.color, DIM, detail)
         );
         self.showing = Showing::Nothing;
+    }
+
+    /// What a reply drew on from the web: the server's sentence, then each page on a line of
+    /// its own, its title and where it is.
+    pub(crate) fn sources(&mut self, sourced: &ReplySources) {
+        self.waiting.stop();
+        print!("\n\n  {}", paint(self.color, DIM, &sourced.sentence));
+        for page in &sourced.pages {
+            let line = match &page.title {
+                Some(title) => format!("{title} · {}", page.url),
+                None => page.url.clone(),
+            };
+            print!("\n    {}", paint(self.color, DIM, &line));
+        }
+        self.showing = Showing::Nothing;
+        flush();
     }
 
     /// The receipt that closes a turn: what happened and what it cost.

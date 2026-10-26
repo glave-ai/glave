@@ -1,0 +1,25 @@
+<section class="sources" data-testid="reply-sources" [attr.aria-labelledby]="headingId">
+  <h2 class="heading" data-testid="reply-sources-sentence" [id]="headingId">{{ sentence() }}</h2>
+  <ul class="links">
+    @for (link of links(); track link.href) {
+      <li>
+        <a
+          class="link"
+          data-testid="reply-sources-link"
+          target="_blank"
+          rel="noopener noreferrer"
+          [href]="link.href"
+          [attr.title]="link.href"
+        >
+          @if (link.title; as title) {
+            <span class="title" dir="auto">{{ title }}</span
+            >&ngsp;
+          }
+          <span class="address">{{ link.address }}</span
+          >&ngsp;
+          <span class="glz-visually-hidden">{{ copy.newTab }}</span>
+        </a>
+      </li>
+    }
+  </ul>
+</section>

@@ -61,7 +61,7 @@ pub use task::{Fired, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, 
 pub use thread::{
     ForkPoint, Origin, OriginKind, ParentCall, Producer, ThreadCompacted, ThreadStarted,
 };
-pub use tool::{Arguments, ToolCallCompleted, ToolCallRequested};
+pub use tool::{Arguments, ToolCallCompleted, ToolCallRequested, WebPage};
 pub use trust::{Decision, TrustDecided};
 pub use turn::{Auth, AuthMethod, Outcome, TraceId, TurnEnded, TurnStarted};
 pub use workspace::{

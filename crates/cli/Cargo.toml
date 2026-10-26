@@ -96,6 +96,8 @@ glave-identity = { workspace = true, features = ["fake-authenticator"] }
 glave-ports = { workspace = true, features = ["conformance"] }
 glave-provider-anthropic = { workspace = true, features = ["fake-server"] }
 glave-provider-openai = { workspace = true, features = ["fake-server"] }
+# A page on 127.0.0.1 for web_fetch to read, for the sources a reply shows.
+glave-web = { workspace = true, features = ["pages"] }
 hyper = { workspace = true, features = ["http1", "server"] }
 hyper-util = { workspace = true, features = ["tokio"] }
 tokio = { workspace = true, features = ["process"] }
