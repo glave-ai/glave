@@ -22,8 +22,8 @@ use tokio::sync::broadcast::{self, error::RecvError, error::TryRecvError};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
-use crate::hub::Changed;
-use crate::protocol::{ApiError, Notification, Status, ThreadSummary, WatchEnd, code};
+use crate::hub::{Change, Changed};
+use crate::protocol::{ApiError, Notification, Setting, Status, ThreadSummary, WatchEnd, code};
 use crate::server::Server;
 use crate::watch::Watched;
 use crate::words::Sentence;
@@ -95,6 +95,8 @@ struct Follower<P, L, B> {
     /// still to be told.
     queue: VecDeque<(ProjectId, ThreadId, u8)>,
     queued: BTreeSet<ThreadId>,
+    /// The caller's own settings that changed, to tell them of next.
+    settings: BTreeSet<Setting>,
     /// The latest update the watch was sent, or where it began.
     seen: At,
     /// When the watch had last taken every change told before then: anything it missed was
@@ -141,6 +143,7 @@ where
             statuses: BTreeMap::new(),
             queue: VecDeque::new(),
             queued: BTreeSet::new(),
+            settings: BTreeSet::new(),
             seen: after.unwrap_or(now),
             tail: now,
             out,
@@ -157,7 +160,7 @@ where
     B: BlobStore + 'static,
 {
     /// Follows until the client goes, or says why it cannot go on.
-    async fn run(mut self, mut changes: broadcast::Receiver<Changed>, after: Option<At>) {
+    async fn run(mut self, mut changes: broadcast::Receiver<Change>, after: Option<At>) {
         if let Err(failed) = self.follow(&mut changes, after).await {
             let _ = self.out.send(Watched::Ended(Err(failed))).await;
         }
@@ -167,13 +170,20 @@ where
     /// has gone, or with why the watch cannot go on.
     async fn follow(
         &mut self,
-        changes: &mut broadcast::Receiver<Changed>,
+        changes: &mut broadcast::Receiver<Change>,
         after: Option<At>,
     ) -> Result<(), ApiError> {
         if let Some(after) = after {
             self.catch_up(after).await?;
         }
         loop {
+            // The caller's settings first: a few words each, and nothing to read.
+            while let Some(setting) = self.settings.pop_first() {
+                let note = Arc::new(Notification::SettingsChanged { setting });
+                if self.out.send(Watched::Note(note)).await.is_err() {
+                    return Ok(());
+                }
+            }
             while let Some((project, thread, above)) = self.queue.pop_front() {
                 self.queued.remove(&thread);
                 let Some(summary) = self.summary(project, thread).await? else {
@@ -206,7 +216,9 @@ where
             };
             if behind {
                 // What it missed was told after it last took everything, and recorded since
-                // its time, or since the latest update it sent, whichever is earlier.
+                // its time, or since the latest update it sent, whichever is earlier; of the
+                // caller's settings, any may have changed.
+                self.settings.extend(Setting::ALL);
                 self.catch_up(self.seen.min(self.tail)).await?;
             }
         }
@@ -214,7 +226,7 @@ where
 
     /// Takes every change already waiting, so that each thread is summarised once: whether the
     /// watch fell behind meanwhile.
-    fn take_waiting(&mut self, changes: &mut broadcast::Receiver<Changed>) -> bool {
+    fn take_waiting(&mut self, changes: &mut broadcast::Receiver<Change>) -> bool {
         loop {
             match changes.try_recv() {
                 Ok(change) => self.take(change),
@@ -240,10 +252,20 @@ where
         self.statuses.insert(thread, status) != Some(status)
     }
 
-    fn take(&mut self, change: Changed) {
-        let followed = self.only.is_none_or(|only| only == change.project);
-        if followed {
-            self.push(change.project, change.thread, MOST_GENERATIONS);
+    fn take(&mut self, change: Change) {
+        match change {
+            Change::Thread(Changed { project, thread }) => {
+                if self.only.is_none_or(|only| only == project) {
+                    self.push(project, thread, MOST_GENERATIONS);
+                }
+            }
+            Change::Setting { person, setting } => {
+                // Whose it is, the local person named or not.
+                let local = self.server.person();
+                if person.or(local) == self.caller.person.or(local) {
+                    self.settings.insert(setting);
+                }
+            }
         }
     }
 

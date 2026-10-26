@@ -1,6 +1,7 @@
 import { Service, inject, signal } from '@angular/core';
 import type { ProviderConnectParams, ProviderInfo } from '@glave/client';
 
+import { onChange } from './changes.service';
 import { ModelsService } from './models.service';
 import { SessionService } from './session.service';
 
@@ -15,6 +16,10 @@ export class ProvidersService {
   private readonly list = signal<readonly ProviderInfo[]>([]);
 
   readonly accounts = this.list.asReadonly();
+
+  constructor() {
+    onChange('providers', () => void this.load());
+  }
 
   /** Reads the accounts; a failed read leaves the list as it was. */
   async load(): Promise<void> {

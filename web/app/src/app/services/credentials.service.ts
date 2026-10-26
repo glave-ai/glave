@@ -1,6 +1,7 @@
 import { Service, inject, signal } from '@angular/core';
 import type { CredentialInfo, DeviceCode } from '@glave/client';
 
+import { onChange } from './changes.service';
 import { SessionService } from './session.service';
 
 /**
@@ -20,6 +21,10 @@ export class CredentialsService {
   readonly device = this.signIn.asReadonly();
   /** GitHub's page where the person chooses which repositories glave may use, if any. */
   readonly install = this.choose.asReadonly();
+
+  constructor() {
+    onChange('credentials', () => void this.load());
+  }
 
   /** Reads the accounts; a failed read leaves the list as it was. */
   async load(): Promise<void> {

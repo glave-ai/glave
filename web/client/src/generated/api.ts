@@ -595,6 +595,9 @@ export type ServerInfo = {
   readonly version: string;
 };
 
+/** A person's own settings or connections, by what a client reads to show them. */
+export type Setting = "providers" | "credentials" | "connections" | "search" | "grouping" | "awake" | "passkeys";
+
 /** Which threads `thread/list` shows. */
 export type Show = "archived" | "active" | "deleted";
 
@@ -1876,6 +1879,10 @@ export const STREAMING = ["goal/start", "plan/build", "thread/list/watch", "thre
 
 export type StreamingMethod = (typeof STREAMING)[number];
 
+export type SettingsChangedParams = {
+  readonly setting: Setting;
+};
+
 export type TaskFinishedParams = {
   readonly task: TaskInfo;
   readonly thread: ThreadId;
@@ -1898,6 +1905,7 @@ export type TurnLiveParams = {
 
 /** What a server sends while a turn runs or a client watches. */
 export type Notification =
+  | { readonly jsonrpc: "2.0"; readonly method: "settings/changed"; readonly params: SettingsChangedParams }
   | { readonly jsonrpc: "2.0"; readonly method: "task/finished"; readonly params: TaskFinishedParams }
   | { readonly jsonrpc: "2.0"; readonly method: "thread/changed"; readonly params: ThreadChangedParams }
   | { readonly jsonrpc: "2.0"; readonly method: "thread/event"; readonly params: ThreadEventParams }

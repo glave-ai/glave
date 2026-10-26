@@ -14,6 +14,7 @@ mod plans;
 mod projects;
 mod providers;
 mod reply;
+mod settings;
 mod sources;
 mod tasks;
 mod told;
@@ -40,6 +41,7 @@ pub use plans::PlanInfo;
 pub use projects::{GoneFolder, NewFolder, ProjectFolder};
 pub use providers::{ProviderInfo, hint};
 pub use reply::{AwakeInfo, QueuedMessage, Reply, ServerInfo, Status, ThreadSummary, TurnResult};
+pub use settings::Setting;
 pub use sources::ReplySources;
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 pub use told::Told;
@@ -727,4 +729,8 @@ pub enum Notification {
         thread: ThreadId,
         summary: Box<ThreadSummary>,
     },
+    /// The watching caller's own settings or connections changed through this server: read
+    /// `setting` again. Sent on their list watches.
+    #[serde(rename = "settings/changed")]
+    SettingsChanged { setting: Setting },
 }

@@ -10,7 +10,7 @@ use glave_event::{At, Body, ThreadId, decode};
 use glave_ports::testing::ManualClock;
 use glave_ports::{Caller, ProjectId, Standing};
 use glave_session::protocol::{
-    Answer, Notification, Reply, Request, Status, ThreadSummary, Update, code,
+    Answer, Grouping, Notification, Reply, Request, Setting, Status, ThreadSummary, Update, code,
 };
 use glave_session::signin::person;
 use glave_session::{Answering, TurnItem};
@@ -36,6 +36,8 @@ async fn hear(
                     return *summary;
                 }
             }
+            // A watcher that fell behind is told every setting may have changed.
+            Said::Note(Notification::SettingsChanged { .. }) => {}
             Said::Note(other) => panic!("a list's watch sends summaries, not {other:?}"),
             Said::Answer(answer) => panic!("the watch ended: {answer}"),
         }
@@ -254,6 +256,52 @@ fn nobody_hears_of_threads_in_another_person_s_projects() {
             assert!(
                 heard.iter().all(|s| s.id != hidden && s.project != theirs),
                 "{kind:?} heard of another person's project: {heard:?}"
+            );
+            over.close().await;
+        }
+    });
+}
+
+#[test]
+fn a_person_hears_their_own_settings_change_and_nobody_else_s() {
+    block_on!(async {
+        for kind in KINDS {
+            let name = format!("list-settings-{kind:?}").to_lowercase();
+            let dir = folder(&name);
+            let server = server(&dir, Vec::new(), Answering::Clients).await;
+            let mut over = Over::new(kind, &server, &name).await;
+            let bea = Caller {
+                person: Some(person("https://id.example.com", "bea").unwrap()),
+                auth: None,
+                trace: None,
+            };
+            let mut watcher = over.watcher().await;
+            watcher.watch_list(&Caller::default(), None, None).await;
+            // Heard, so the watch follows from here.
+            let first = start(&server, false).await;
+            hear(&mut watcher, first, &mut Vec::new(), |_| true).await;
+            let grouped = || Request::GroupingSet {
+                grouping: Grouping::Status,
+            };
+            server.request_as(&bea, grouped()).await.unwrap();
+            server.request(grouped()).await.unwrap();
+            server.request(Request::GroupingGet {}).await.unwrap();
+            let second = start(&server, false).await;
+            let mut settings = Vec::new();
+            loop {
+                match watcher.next().await {
+                    Said::Note(Notification::SettingsChanged { setting }) => settings.push(setting),
+                    Said::Note(Notification::Changed { summary, .. }) if summary.id == second => {
+                        break;
+                    }
+                    Said::Note(_) => {}
+                    Said::Answer(answer) => panic!("the watch ended: {answer}"),
+                }
+            }
+            assert_eq!(
+                settings,
+                [Setting::Grouping],
+                "{kind:?}: their own change, once; not another person's, nor a read"
             );
             over.close().await;
         }

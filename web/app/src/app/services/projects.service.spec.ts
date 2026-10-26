@@ -9,6 +9,7 @@ import {
 
 import { FakeSession, FakeTurn, provideFakeSession } from '../testing/fake-session';
 import { record, thread } from '../testing/fixtures';
+import { ChangesService } from './changes.service';
 import { CLOCK_MS } from './lists-feed';
 import { ProjectsService } from './projects.service';
 import { SessionService } from './session.service';
@@ -253,6 +254,22 @@ describe('ProjectsService', () => {
     // Nothing was read again: the watch said it all.
     expect(fake.paramsOf('project/list')).toHaveLength(1);
     expect(fake.paramsOf('thread/list')).toHaveLength(1);
+  });
+
+  it('tells of a change the server says the person made to their own settings', async () => {
+    const watch = new FakeTurn();
+    const fake = new FakeSession()
+      .answer('project/list', { projects: [record('project-1', 'glave')] })
+      .answer('thread/list', { threads: [thread('t1', 'Plan')] })
+      .listWatch(watch);
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const projects = TestBed.inject(ProjectsService);
+    const changes = TestBed.inject(ChangesService);
+    await following(projects);
+    watch.send({ jsonrpc: '2.0', method: 'settings/changed', params: { setting: 'connections' } });
+    await settled();
+    expect(changes.times('connections')).toBe(1);
+    expect(projects.thread('t1')?.title).toBe('Plan');
   });
 
   it('reads the lists again when a thread turns up in a project they lack', async () => {

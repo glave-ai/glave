@@ -44,7 +44,15 @@ where
     /// project; tasks and schedules are those of the projects they own.
     pub async fn call(&self, caller: &Caller, request: Request) -> Answered {
         let span = crate::trace::span(&request);
-        tracing::Instrument::instrument(self.answer(caller, request), span).await
+        let changes = request.changes();
+        let answered = tracing::Instrument::instrument(self.answer(caller, request), span).await;
+        // A sign-in still waiting for the person has changed nothing yet.
+        if let (Some(setting), Answered::Reply(Ok(reply))) = (changes, &answered)
+            && !matches!(reply, Reply::Waiting { .. })
+        {
+            self.inner.hub.setting_changed(caller.person, setting);
+        }
+        answered
     }
 
     /// Answers one request from `caller`; a turn, or a watch, is answered once it has ended.

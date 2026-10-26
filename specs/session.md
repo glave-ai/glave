@@ -133,7 +133,7 @@ Every request that acts on a thread (`thread/get`, `thread/events`, `thread/sour
 
 ## Notifications
 
-Four kinds, sent while a turn runs or a client watches:
+Five kinds, sent while a turn runs or a client watches:
 
 | Method | Params | Kept |
 | --- | --- | --- |
@@ -141,6 +141,7 @@ Four kinds, sent while a turn runs or a client watches:
 | `turn/live` | `thread`; `update`, one of the kinds the schema lists: text or reasoning as it streams, a tool starting, finishing or declined, waiting, retrying, compaction done or failed, questions asked, an approval pending, a subagent started or ended, a memory changed | No: live updates are for showing progress, never replayed |
 | `task/finished` | `thread`; `task`, as `tasks/list` shows it | In the ledger as `task.ended` |
 | `thread/changed` | `thread`; `summary`, as `thread/list` shows it to the watching caller now | No: a list's watch sends what the threads view and the server say at that moment |
+| `settings/changed` | `setting`: which of the watching caller's own settings or connections changed, by what reads it (`providers`, `credentials`, `connections`, `search`, `grouping`, `awake`, `passkeys`) | No: a list's watch says so, and the client reads that one again |
 
 A thread's notifications include its subagents': a child thread started by an `agent` call sends its events and progress to whoever follows its parent too, each under the child's own `thread`. Its first event, `thread.started`, names the parent call, and `subagent_started` gives its description. A client answers a subagent's approval with the subagent's thread.
 
@@ -161,6 +162,7 @@ A client that only shows the conversation needs `thread/event` alone. Rebuilding
 - **`after` is the latest `updated_at` the client has.** The summaries of the threads the threads view says were updated since then come first, oldest first, at most the 5,000 most recent (a client away longer lists again), then each change as it comes. Without `after`, only what changes from now. Its place is a time, the view's own order, since the store has no order across threads but time: an event's time is taken a moment before it is recorded, so the server reads from a minute before `after`, and a thread sent twice is harmless where one missed would not be. A client that lists, then watches from the newest `updated_at` its lists hold, misses nothing recorded before the watch began, by this server or another.
 - **Falling behind.** The server tells list watches which thread changed through one bounded backlog (1,024 changes) for the whole server; a watcher that falls behind it is caught up from the threads view as `after` does, from before the first change it may have missed (the last time it had taken every change told, or the latest update it sent, whichever is earlier), so it misses no change the view records, only some in-between states. A trust ask raised or answered meanwhile, which the view does not hold, shows at that thread's next change or the next watch.
 - **What another server records.** A change another glave records on the store (a replica running a turn, an answer that goes on with a turn there, worktree cleanup) reaches a watcher only when it next reads from the view: when it falls behind, or when the client comes back with `after`. Tailing the store comes later, as for `thread/watch`.
+- **The caller's own settings.** When the person changes a setting or a connection of theirs through this server (a model account connected, refreshed or removed, a git host, a sign-in to a connection, web search, grouping, keeping awake, a passkey), each of their list watches sends `settings/changed` naming it once the request is answered, and the client reads that one again: the notification says what to read, never the value, so what a client shows always comes from the read that checks who may see it. Another person's change, a read, and a sign-in still waiting for the person send nothing. A watcher that falls behind is told every setting may have changed. One place says which requests change what (`Request::changes`), and the one dispatch tells the watches, so a new method that changes a setting is one line there. A change another server records on the store reaches no watcher here, as a thread's change does not, and nor does a catalog's daily refresh: its models show at the next read.
 - **Over a connection of lines** a list is watched once, within the connection's 64 watches (a second watch of the same list is `-32602`), and `thread/list/unwatch` with the same `project` ends it; over HTTP each summary's event carries its `updated_at` as its `id`, and closing the stream ends the watch.
 
 ## Approvals
@@ -308,7 +310,7 @@ How a person's clients group their threads is theirs to choose and the server's 
 
 - **Kept.** `grouping/set` (`project`, the default, or `status`) records `grouping.set` in their settings ledger (`events.md`), so the choice follows them to every browser and every server on one store, and `grouping/get` reads it. It is theirs alone, in every deployment: it lives in their personal project.
 - **Never grouped by the server.** What each thread is doing, and so what needs the person, is the summary's `status`; a client groups by it and writes no sentence of its own about the work.
-- **Read, not pushed.** A client reads the choice as it opens; another of the person's clients already open sees a new one at its next read.
+- **Read, then told.** A client reads the choice as it opens; another of the person's clients already open hears of a new one as `settings/changed` on its list's watch ("Watching a list"), and reads it again.
 
 ## Languages
 
@@ -383,10 +385,11 @@ Version 1: in-process (`glave-session`, used by the CLI), over stdio (`glave ser
 - **Projects** (issue #64), not yet: promoting a one-off chat into a project (`storage.md`), and the organization's policy in the check.
 - **Projects' folders** (#294), not yet: changing a project's one folder while it is still there (project settings, #267); moving a thread's worktree with a folder that moved; an archive of removed projects; checking a project out again on another computer, or after one is reset, from its source; a project's own skills and commands, which the folder the server started in still gives every thread; and telling a client, rather than the log and the terminal, which of a project's settings were set aside.
 - **Connections** (#42): signing in to a connection's remote server in the browser through the session API and from the terminal, kept sealed, renewed, and sent with every request of the person's own servers to it.
+- **Settings heard of** (#827): `settings/changed` on the person's list watches, and the web app reading again what it names: the models and accounts, git hosts, connections, web search, grouping, keeping awake and passkeys. Not yet: the language, which no client reads yet, and a change recorded by another server.
 - **The Connections page** (#664): the web app lists what is signed in to and the person's servers that ask for a sign-in, signs in to one in a new tab, and disconnects one. Not yet: glave's starter list and adding a service by its address (#679), whom a sign-in is for (#680), and a person at a company (#681).
 - **Web search** (#677): a switch in Settings and `glave search`, off until the person turns it on, a globe in the composer while it is on, each step saying what it searched, and its searches this month; each connection's calls this month on the Connections page and in `glave connections`. Not yet: as "Web search" says; the person's own servers that need no sign-in, listed with their calls; the count read in the store by event type, if a month's threads make it slow.
 - **Passkeys made again, and dead ones** (#691): the handle the root derives, and both signals in the web app. Not yet: telling the passkey manager after a passkey is removed in Settings (the next sign-in does), and a handle of each person's own where many sign in with passkeys.
-- **Grouping** (#665): the web app's side nav reads and keeps the choice. Not yet: telling the person's other open clients of a new choice, and the facts the side nav would need to say a thread is blocked or has news the person has not read.
+- **Grouping** (#665): the web app's side nav reads and keeps the choice, and reads it again when another client changes it (#827). Not yet: the facts the side nav would need to say a thread is blocked or has news the person has not read.
 - **Languages** (#374): the server's own sentences in the caller's language, with the pseudo-locales alone besides English. Not yet: a real language, the web app reading the person's choice for its own words, and the words other crates give the server to pass on.
 - Still to come from "Over the network" (issue #64): SAML and glave session tokens, idempotency keys in the log (#410), and WebSocket.
 
