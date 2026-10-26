@@ -1,3 +1,5 @@
+import type { Outcome, TurnResult } from '@glave/client';
+
 import type { ApprovalItem, CallItem, MessageItem, QuestionItem, ThreadItem } from './conversation';
 import { turnResults } from './results';
 import type { Turn } from './turns';
@@ -84,9 +86,22 @@ function turn(items: readonly ThreadItem[], more: Partial<Turn> = {}): Turn {
     files: [],
     took: null,
     started: null,
-    outcome: null,
-    cost: null,
-    routes: [],
+    result: null,
+    ...more,
+  };
+}
+
+/** A turn's result as the server records it at its end: free, nothing let out, unless `more`. */
+function ended(outcome: Outcome, more: Partial<TurnResult> = {}): TurnResult {
+  return {
+    outcome,
+    model_calls: 1,
+    tool_calls: 1,
+    outside_sandbox: 0,
+    with_network: 0,
+    cost: { micros: 0, currency: 'USD' },
+    estimated: false,
+    via: [],
     ...more,
   };
 }
@@ -96,9 +111,10 @@ describe('results', () => {
     const shown = turnResults(
       turn([ask, say(2, 'Looking'), call(3), approval(4, true), call(5), say(6, 'Fixed')], {
         took: 242_000,
-        outcome: 'completed',
-        cost: { micros: 42_000, currency: 'USD' },
-        routes: ['OpenRouter (Anthropic)'],
+        result: ended('completed', {
+          cost: { micros: 42_000, currency: 'USD' },
+          via: ['OpenRouter (Anthropic)'],
+        }),
       }),
       null,
       null,
@@ -133,35 +149,44 @@ describe('results', () => {
     expect(turnResults(turn(items), live, null, true, 'en-US', bySeq).sources).toBeNull();
   });
 
-  it('counts the commands that ran outside the sandbox in the receipt, not those declined', () => {
+  it('says how many commands ran outside the sandbox as the server counted them', () => {
+    const items = [ask, call(2), outside(3, 'allow_once'), call(4), outside(5, 'deny')];
     const shown = turnResults(
-      turn([ask, call(2), outside(3, 'allow_once'), call(4), outside(5, 'deny'), say(6, 'Added')], {
+      turn([...items, say(6, 'Added')], {
         took: 2_000,
-        outcome: 'completed',
+        result: ended('completed', { outside_sandbox: 1 }),
       }),
       null,
       null,
       false,
       'en-US',
     );
-    expect(shown.receipt?.facts).toEqual(['2s', '1 command outside the sandbox']);
-    const none = turnResults(turn([ask, call(2), outside(3, 'deny')]), null, null, false, 'en-US');
-    expect(none.receipt?.facts).toEqual([]);
+    expect(shown.receipt?.facts).toEqual(['2s', '$0.00', '1 command outside the sandbox']);
+    // Never counted from the approvals: the turn still running has no result yet.
+    const running = turnResults(turn(items), null, null, false, 'en-US');
+    expect(running.receipt?.facts).toEqual([]);
   });
 
-  it('counts the commands that ran with the network apart from those outside the sandbox', () => {
-    const items = [
-      ask,
-      withNetwork(2, 'allow_once'),
-      withNetwork(3, 'allow_once'),
-      withNetwork(4, 'deny'),
-      outside(5, 'allow_once'),
-      call(6),
-    ];
-    const shown = turnResults(turn(items), null, null, false, 'en-US');
+  it('says the commands that ran with the network apart from those outside the sandbox', () => {
+    const items = [ask, withNetwork(2, 'allow_once'), withNetwork(3, 'allow_once'), call(4)];
+    const result = ended('completed', { outside_sandbox: 1, with_network: 2 });
+    const shown = turnResults(turn(items, { result }), null, null, false, 'en-US');
     expect(shown.receipt?.facts).toEqual([
+      '$0.00',
       '1 command outside the sandbox',
       '2 commands with the network',
+    ]);
+  });
+
+  it('says a cost the server did not have is not reported, and one it estimated so', () => {
+    const facts = (result: TurnResult): unknown =>
+      turnResults(turn([ask, call(2)], { result }), null, null, false, 'en-US').receipt?.facts;
+    expect(facts(ended('completed', { cost: null }))).toEqual(['cost not reported']);
+    const guessed = ended('completed', { cost: { micros: 1_230_000, currency: 'USD' } });
+    expect(facts({ ...guessed, estimated: true })).toEqual(['$1.23 (estimated)']);
+    expect(facts(ended('completed', { via: ['Ollama', 'OpenRouter (Anthropic)'] }))).toEqual([
+      '$0.00',
+      'via Ollama, OpenRouter (Anthropic)',
     ]);
   });
 
@@ -200,9 +225,10 @@ describe('results', () => {
       running = false,
       items: readonly ThreadItem[] = [ask, call(2)],
     ): unknown => turnResults(turn(items, more), null, null, running, 'en-US').receipt?.status;
-    expect(status({ outcome: 'failed' })).toBe('failed');
-    expect(status({ outcome: 'cancelled' })).toBe('stopped');
-    expect(status({ outcome: 'limit_reached' })).toBe('stopped');
+    expect(status({ result: ended('failed') })).toBe('failed');
+    expect(status({ result: ended('cancelled') })).toBe('stopped');
+    expect(status({ result: ended('limit_reached') })).toBe('stopped');
+    expect(status({ result: ended('completed') }, true)).toBe('done');
     expect(status({}, true)).toBe('running');
     expect(status({}, false, [ask, call(2, 'running')])).toBe('running');
     expect(status({}, false, [ask, question(2)])).toBe('waiting');
@@ -231,7 +257,7 @@ describe('results', () => {
     expect(working([ask, approval(2, false)])).toBe(false);
     expect(working([ask, call(2), say(3, 'Done.')])).toBe(false);
     // Not once it ended, nor in a turn that is not running.
-    expect(working([ask], { outcome: 'failed' })).toBe(false);
+    expect(working([ask], { result: ended('failed') })).toBe(false);
     expect(turnResults(turn([ask]), null, null, false, 'en-US').working).toBeNull();
     // Not while reasoning or a reply streams: they show instead.
     expect(
@@ -265,7 +291,7 @@ describe('results', () => {
     expect(facts(true)).toEqual([]);
     // Waiting for the person, no line counts: the time so far.
     expect(facts(true, {}, [ask, call(2), approval(3, false)])).toEqual(['3s']);
-    expect(facts(true, { outcome: 'completed' })).toEqual(['3s']);
+    expect(facts(true, { result: ended('completed') })).toEqual(['3s', '$0.00']);
     expect(facts(false)).toEqual(['3s']);
   });
 });

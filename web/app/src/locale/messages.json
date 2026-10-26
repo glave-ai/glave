@@ -306,6 +306,8 @@
     "renameDialog.threadHeading": "Rename the thread",
     "renameDialog.threadLabel": "Title",
     "replySources.newTab": "(opens in a new tab)",
+    "results.costNotReported": "cost not reported",
+    "results.estimated": "{$COST} (estimated)",
     "results.outsideSandbox": "{{$COUNT}, plural, one {# command} other {# commands}} outside the sandbox",
     "results.steps": "{{$COUNT}, plural, one {# step} other {# steps}}",
     "results.via": "via {$ROUTES}",

@@ -7,10 +7,10 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
 
-use glave_event::{Body, PrincipalId, RawEvent, Seq, ThreadId, decode};
+use glave_event::{Body, PrincipalId, RawEvent, Seq, ThreadId, TurnResult, decode};
 use glave_harness::{
-    Harness, HarnessError, Parts, Place, ProjectFolders, ReleasedWorker, Settings, TurnSummary,
-    Workers, Workspace,
+    Harness, HarnessError, Parts, Place, ProjectFolders, ReleasedWorker, Settings, Workers,
+    Workspace,
 };
 use glave_identity::signin::Browsers;
 use glave_ports::computer::{ComputerError, Environment};
@@ -577,4 +577,4 @@ pub(crate) fn no_thread(thread: ThreadId) -> ApiError {
 }
 
 /// A finished turn's summary, for callers that only need the result.
-pub(crate) type Ended = Result<TurnSummary, HarnessError>;
+pub(crate) type Ended = Result<TurnResult, HarnessError>;

@@ -4,7 +4,7 @@
 
 use glave_event::{
     ApprovalDecided, ApprovalRequested, Arguments, CallId, Outcome, ParentCall, Part,
-    ToolCallCompleted, ToolCallRequested, TurnEnded, Verdict,
+    ToolCallCompleted, ToolCallRequested, TurnResult, Verdict,
 };
 
 use super::{Writer, started, turn};
@@ -101,8 +101,9 @@ pub(super) async fn waits<L: EventLog>(log: &L, here: &Scope) -> Checked {
     children(log, here, parent, child).await?;
     let ended = writer.next(
         52,
-        &TurnEnded {
+        &TurnResult {
             outcome: Outcome::Interrupted,
+            ..TurnResult::begun()
         },
     )?;
     log.append(here, &[ended])

@@ -306,6 +306,8 @@
     "renameDialog.threadHeading": "\u200f\u202eRename\u202c\u200f \u200f\u202ethe\u202c\u200f \u200f\u202ethread\u202c\u200f",
     "renameDialog.threadLabel": "\u200f\u202eTitle\u202c\u200f",
     "replySources.newTab": "\u200f\u202e(opens\u202c\u200f \u200f\u202ein\u202c\u200f \u200f\u202ea\u202c\u200f \u200f\u202enew\u202c\u200f \u200f\u202etab)\u202c\u200f",
+    "results.costNotReported": "\u200f\u202ecost\u202c\u200f \u200f\u202enot\u202c\u200f \u200f\u202ereported\u202c\u200f",
+    "results.estimated": "{$COST} \u200f\u202e(estimated)\u202c\u200f",
     "results.outsideSandbox": "{{$COUNT}, plural, one {# \u200f\u202ecommand\u202c\u200f} other {# \u200f\u202ecommands\u202c\u200f}} \u200f\u202eoutside\u202c\u200f \u200f\u202ethe\u202c\u200f \u200f\u202esandbox\u202c\u200f",
     "results.steps": "{{$COUNT}, plural, one {# \u200f\u202estep\u202c\u200f} other {# \u200f\u202esteps\u202c\u200f}}",
     "results.via": "\u200f\u202evia\u202c\u200f {$ROUTES}",

@@ -1,12 +1,10 @@
 //! One turn: the person's prompt, then model calls and tool calls until the model is done.
 
-mod summary;
-
 use std::borrow::Cow;
 
 use glave_event::{
     BlobRef, CallId, EventId, MemoryId, MessageAdded, ModelRef, Outcome, Part, Permissions,
-    Principal, Role, StopReason, ThreadId, ToolCallRequested, TurnEnded, TurnStarted,
+    Principal, Role, StopReason, ThreadId, ToolCallRequested, TurnResult, TurnStarted,
 };
 use glave_ports::{
     BlobStore, BoxFuture, Caller, Completion, Delta, EventLog, Failure, Message, ModelProvider,
@@ -31,9 +29,6 @@ use crate::telemetry;
 use crate::toolset::ToolSet;
 use crate::waits::{Answered, Opened};
 use tracing::Instrument as _;
-
-pub use summary::TurnSummary;
-pub(crate) use summary::{absorb, tally};
 
 /// What the model is told after a cancelled turn, as Codex tells it.
 const CANCELLED: &str = "[The person cancelled this turn on purpose. A command that was stopped \
@@ -159,7 +154,7 @@ impl<'a> Prompt<'a> {
 pub(crate) struct Step {
     pub(crate) toolset: ToolSet,
     pub(crate) repeats: Repeats,
-    pub(crate) summary: TurnSummary,
+    pub(crate) summary: TurnResult,
     /// The approval a turn going on from the log stopped at, with its answer once one came:
     /// for its call, the first the turn runs (`going_on.rs`).
     pub(crate) answered: Option<Answered>,
@@ -210,7 +205,7 @@ where
         prompt: &str,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<TurnSummary, HarnessError> {
+    ) -> Result<TurnResult, HarnessError> {
         self.run_turn_as(thread, prompt, &Caller::default(), cancel, live)
             .await
     }
@@ -224,7 +219,7 @@ where
         caller: &Caller,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<TurnSummary, HarnessError> {
+    ) -> Result<TurnResult, HarnessError> {
         let said = Said {
             text: prompt,
             files: &[],
@@ -243,7 +238,7 @@ where
         caller: &Caller,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<TurnSummary, HarnessError> {
+    ) -> Result<TurnResult, HarnessError> {
         let prompt = Prompt {
             files: said.files,
             ..Prompt::new(said.text, caller)
@@ -258,7 +253,7 @@ where
         prompt: Prompt<'_>,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<TurnSummary, HarnessError> {
+    ) -> Result<TurnResult, HarnessError> {
         self.bring(thread).await?;
         let toolset: ToolSet = self.tools(thread).await;
         let text = self.expand(prompt.text);
@@ -285,7 +280,7 @@ where
         toolset: ToolSet,
         cancel: &'a Cancel,
         live: &'a mut (dyn FnMut(Live) + Send),
-    ) -> BoxFuture<'a, Result<TurnSummary, HarnessError>> {
+    ) -> BoxFuture<'a, Result<TurnResult, HarnessError>> {
         Box::pin(async move {
             let span = telemetry::turn(thread.id, prompt.caller.trace.as_ref());
             let began = std::time::Instant::now();
@@ -307,7 +302,7 @@ where
         toolset: ToolSet,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<TurnSummary, HarnessError> {
+    ) -> Result<TurnResult, HarnessError> {
         self.close_left_open(thread).await?;
         self.reopen_removed(thread).await?;
         self.pass_hooks(thread, prompt, cancel).await?;
@@ -315,7 +310,7 @@ where
         let step = Step {
             toolset,
             repeats: Repeats::default(),
-            summary: TurnSummary::started(),
+            summary: TurnResult::begun(),
             answered: None,
             proposed: false,
         };
@@ -334,7 +329,7 @@ where
         pending: &[ToolCall],
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<TurnSummary, HarnessError> {
+    ) -> Result<TurnResult, HarnessError> {
         // Open until the turn ends or stops at a wait, whatever fails between.
         thread.opened = Some(Opened::LeftOpen);
         if !pending.is_empty() {
@@ -382,7 +377,8 @@ where
                     continue;
                 }
                 Err(error) => {
-                    self.end(thread, Outcome::Failed).await?;
+                    step.summary.outcome = Outcome::Failed;
+                    self.end(thread, &step.summary).await?;
                     return Err(error);
                 }
             };
@@ -391,7 +387,7 @@ where
                 // Any call the model makes anyway is ignored, so none is left without a result.
                 completion.tool_calls.clear();
             }
-            tally(&mut step.summary, &completion);
+            step.summary.take_in(&completion.responded());
             let calls = self.record_response(thread, &completion).await?;
             measure(thread, &completion);
             if last {
@@ -410,7 +406,7 @@ where
         if stopped && step.summary.outcome == Outcome::Cancelled {
             self.add_note(thread, CANCELLED).await?;
         }
-        self.end(thread, step.summary.outcome).await?;
+        self.end(thread, &step.summary).await?;
         if !thread.delegated() && !stopped {
             self.on_stop(thread, step.summary.outcome, cancel).await?;
         }
@@ -440,7 +436,7 @@ where
     }
 
     /// Why the next step is the turn's last, if it is: the step cap, or a goal's spent budget.
-    fn last_step(&self, thread: &Thread, summary: &TurnSummary) -> Option<&'static str> {
+    fn last_step(&self, thread: &Thread, summary: &TurnResult) -> Option<&'static str> {
         if self.capped(summary.model_calls.saturating_add(1)) {
             return Some(STEP_LIMIT);
         }
@@ -680,11 +676,11 @@ where
         }
     }
 
-    /// Records `turn.ended`.
-    async fn end(&self, thread: &mut Thread, outcome: Outcome) -> Result<(), HarnessError> {
+    /// Records `turn.ended`, with what the turn did and cost: its `result`.
+    async fn end(&self, thread: &mut Thread, result: &TurnResult) -> Result<(), HarnessError> {
         let mut events = Vec::new();
         let staged = self.stage_commands(thread, &mut events)?;
-        self.stage(thread, &mut events, &TurnEnded { outcome })?;
+        self.stage(thread, &mut events, result)?;
         self.commit(thread, events).await?;
         staged.recorded(thread);
         // Nothing is open any more, whatever was when the thread was read.

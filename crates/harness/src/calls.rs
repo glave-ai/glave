@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use glave_event::{
     ApprovalDecided, ApprovalRequested, CallId, Lifted, Outcome, Principal, ToolCallCompleted,
-    Verdict,
+    TurnResult, Verdict,
 };
 use glave_ports::settings::Judge;
 use glave_ports::{
@@ -23,7 +23,7 @@ use crate::judge::{JudgeCase, Ruling, judge};
 use crate::question::{self, QuestionRequest};
 use crate::sandbox::{self, Asks};
 use crate::tools::Tool;
-use crate::turn::{Live, Step, TurnSummary, absorb, tally};
+use crate::turn::{Live, Step};
 use crate::waits::{Answered, verdict_of};
 
 /// The result of a tool call the turn never ran because the person cancelled it.
@@ -121,7 +121,7 @@ where
                 continue;
             };
             if let Some(child) = child {
-                absorb(&mut step.summary, &child);
+                step.summary.absorb(&child);
             }
             step.summary.tool_calls = step.summary.tool_calls.saturating_add(1);
             self.record_result(thread, call.call_id.clone(), output)
@@ -357,7 +357,7 @@ where
         &self,
         thread: &mut Thread,
         needs: &Needs,
-        turn: &mut TurnSummary,
+        turn: &mut TurnResult,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Option<ToolOutput>, HarnessError> {
@@ -420,7 +420,7 @@ where
         &self,
         thread: &mut Thread,
         request: &ApprovalRequest,
-        turn: &mut TurnSummary,
+        turn: &mut TurnResult,
         cancel: &Cancel,
     ) -> Result<Judged, HarnessError> {
         let Some(reason) = request.caution.as_deref() else {
@@ -446,7 +446,7 @@ where
         };
         if let Some(answer) = &answer {
             turn.model_calls = turn.model_calls.saturating_add(1);
-            tally(turn, answer);
+            turn.take_in(&answer.responded());
             self.record(thread, &answer.responded()).await?;
         }
         let Ruling::Run { reason: why } = ruling else {

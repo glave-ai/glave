@@ -409,6 +409,12 @@ fn a_turn_streams_its_events_and_progress_and_they_are_in_the_log() {
                     .map(|event| event["type"].as_str().unwrap().to_owned())
                     .collect();
                 assert!(logged.ends_with(&streamed), "{logged:?}");
+                let recorded = events["events"].as_array().unwrap().last().unwrap();
+                assert_eq!(
+                    recorded["data"],
+                    serde_json::to_value(&turn).unwrap(),
+                    "every client reads the result the turn answered with in its turn.ended"
+                );
                 let listed = client
                     .call(Request::ThreadList {
                         project: None,
