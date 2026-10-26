@@ -14,6 +14,7 @@ mod ci;
 mod cli;
 mod cmd;
 mod deps;
+mod duplicates;
 mod env_file;
 mod eval;
 mod file_sizes;

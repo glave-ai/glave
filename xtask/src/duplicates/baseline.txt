@@ -1,0 +1,131 @@
+# The copies of code there were when `cargo xtask duplicates` began (#834), which it lets stand.
+# Each line: a fingerprint of the copied lines of code, how many there are, and the file of each
+# place they are in. A copy not listed here fails the check, and so does a line no longer found:
+# a change that shares a copy takes its line out, and one that edits or moves a listed copy puts
+# the line the check prints in its place. Nothing is added here but that.
+00244d63d16a6b84 34 crates/store-postgres/src/blobs.rs crates/store-sqlite/src/blobs.rs
+04879cd549cea09e 7 crates/cli/src/memory.rs crates/cli/src/threads.rs
+07eb007a21fc0e6e 6 web/app/src/app/components/settings/settings.component.spec.ts web/app/src/app/components/settings/settings.component.spec.ts
+090ee4c561993ff7 6 crates/session/tests/listing.rs crates/session/tests/standing.rs
+104f93b401311b5c 7 crates/store-postgres/src/store.rs crates/store-sqlite/src/store.rs
+111e9eda7f7fe431 9 crates/azure/src/workload/tests.rs crates/google/src/adc/tests.rs
+11a5f17bad872dba 11 crates/provider-anthropic/src/fake.rs crates/provider-openai/src/fake.rs
+12fce2f8c183f2c6 36 crates/store-postgres/src/blobs.rs crates/store-sqlite/src/blobs.rs
+164d700574459588 9 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
+19c129e6a8a15b0f 15 crates/store-sqlite/src/log.rs crates/store-sqlite/src/log.rs
+1ac3c9675aa75ba5 7 crates/session/tests/gone.rs crates/session/tests/projects.rs
+1bc560fe8419ed5b 8 crates/identity/src/signin/browsers/passkeys/tests.rs crates/identity/src/signin/browsers/tests.rs
+1c3c0adb8bac6fcc 7 crates/session/tests/turn_streams.rs crates/session/tests/turn_streams.rs
+1d40668b03e6bf41 23 crates/session/src/hub.rs crates/session/tests/titles.rs
+1eec4e496643ce94 9 crates/harness/tests/workers.rs crates/harness/tests/worktrees.rs
+21324c4068197f18 7 crates/harness/src/resume.rs crates/harness/src/waits.rs
+237d79407a4200b6 7 web/e2e/attachments.e2e.ts web/e2e/attachments.e2e.ts
+23b41c206c1cac43 10 crates/session/tests/server.rs crates/session/tests/server.rs
+25a502a12f8d717f 6 crates/cli/src/worktrees/cleanup/tests.rs crates/computer/src/worktrees/tests.rs
+29419502c19f6cd3 12 crates/provider-openai/src/wire/tests.rs crates/provider-openai/src/wire/tests.rs
+2bb0ef123549209a 15 crates/session/src/hub.rs crates/session/tests/titles.rs
+2c034a06f99c2592 6 crates/harness/tests/compaction.rs crates/harness/tests/instructions.rs
+2e3ce5bbc0e838ca 7 crates/session/src/http/body/tests.rs crates/session/src/http/body/tests.rs
+2efd93b7f3eedc0e 10 crates/session/tests/outside.rs crates/session/tests/outside.rs
+3a6f88c56187a776 9 crates/eval/tests/attempt.rs crates/eval/tests/attempt.rs
+3b6e34fd48a5a87f 29 crates/store-postgres/src/blobs.rs crates/store-sqlite/src/blobs.rs
+3e673752818820ab 11 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
+3eb8d8248d96b2c6 7 web/glaze/src/components/panel-layout/panel-layout.component.ts web/glaze/src/components/sidenav-layout/sidenav-layout.component.ts
+44a392879170b883 55 crates/provider-anthropic/src/client.rs crates/provider-openai/src/client.rs
+46a00e6b7dbe1997 6 crates/computer/src/local/sandbox/linux/tests.rs crates/harness/src/sandbox/tests.rs
+4cea69ea751e317b 9 crates/computer/src/worker/docker.rs crates/computer/src/worker/kubernetes/objects.rs
+4f2c144ca00a6f0c 10 crates/computer/src/local/confinement_tests.rs crates/harness/src/tools/workspace/tests.rs
+4fac0a7d959a48c2 13 crates/session/tests/list_watching.rs crates/session/tests/subagents.rs
+55b7dc4aa2df1119 9 crates/harness/tests/support/script.rs crates/memory/tests/support/kit.rs
+560cf54430deb382 6 web/app/src/app/components/connections/connections.component.spec.ts web/app/src/app/components/passkeys/passkeys.component.spec.ts
+5730335cee541409 6 crates/session/src/held.rs crates/session/src/held.rs
+5fe577bbc9625d1a 16 crates/computer/src/worker/docker.rs crates/computer/src/worker/kubernetes.rs
+60d594e864795957 8 crates/harness/tests/faults.rs crates/harness/tests/workers.rs
+6169c33d6ed6a047 12 crates/computer/src/worker/docker.rs crates/computer/src/worker/kubernetes/objects.rs
+64cbc3c021cadead 6 crates/computer/src/local/confinement_tests.rs crates/computer/tests/remote.rs
+65794a92795cf8f4 9 crates/aws/tests/anthropic.rs crates/cli/src/model.rs crates/google/src/adc/tests/gemini.rs
+66d6a8c6cb6d316f 15 crates/event/src/id.rs crates/event/src/id.rs crates/event/src/id.rs crates/event/src/id.rs
+6b61e6143887a11d 8 crates/cli/src/computer.rs crates/cli/src/gateway/serve.rs crates/cli/src/threads.rs crates/cli/src/worktrees.rs
+6c49188a9133da1b 17 crates/session/tests/conformance.rs crates/session/tests/conformance.rs
+6d62123d0df40415 8 crates/mcp/tests/http.rs crates/mcp/tests/server.rs
+6e88cd02a8308b96 10 crates/computer/src/worktrees/tests.rs crates/computer/src/worktrees/tests.rs
+6feffa977d39e179 7 crates/harness/tests/computers.rs crates/harness/tests/worktrees.rs
+73cc0adea85cddf5 18 crates/computer/src/worker/docker/tests.rs crates/computer/src/worker/kubernetes/tests.rs
+74c6b4f9fdf42ef9 8 crates/cli/tests/support/binary.rs crates/cli/tests/support/http.rs
+7542976e8395bedc 9 crates/session/tests/turn_streams.rs crates/session/tests/watching.rs
+7638a0902dc14256 12 crates/computer/src/worker/docker/tests.rs crates/computer/src/worker/kubernetes/tests.rs
+77d0069abbabeab9 9 crates/harness/tests/steer.rs crates/harness/tests/steer.rs
+7e042a672c377b83 7 web/app/src/app/components/thread/thread.component.spec.ts web/app/src/app/components/thread/thread.component.spec.ts
+7e3dfd09943421b7 6 crates/computer/src/local/git.rs crates/computer/src/local/worktree.rs
+7f16fbfeac3e7f67 16 crates/harness/tests/workers.rs crates/harness/tests/workers.rs
+7fac9e009813a8c7 10 crates/cli/src/computer.rs crates/cli/src/gateway/serve.rs crates/cli/src/threads.rs
+80ac27a7fe2d0afe 7 crates/harness/tests/retry.rs crates/harness/tests/retry.rs crates/harness/tests/retry.rs
+80ce2f13dabf7d85 7 crates/harness/tests/project_folders.rs crates/harness/tests/project_folders.rs crates/harness/tests/project_folders.rs
+81e2ed3cd1c45cf4 8 crates/harness/tests/project_folders.rs crates/session/tests/trust.rs
+83355f733bf6c3cb 6 crates/store-postgres/src/store.rs crates/store-sqlite/src/store.rs
+83f44584d0a6adbb 16 crates/cli/tests/gateway.rs crates/cli/tests/mcp.rs
+84c0d927e8063c4d 8 crates/harness/tests/checks.rs crates/harness/tests/judge.rs crates/harness/tests/outside_sandbox.rs crates/harness/tests/sources.rs crates/harness/tests/subagents.rs crates/harness/tests/untrusted.rs
+84cfbcc3fad7984e 6 crates/harness/tests/instructions.rs crates/harness/tests/subagents.rs
+86efb1e494bcfecd 15 crates/provider-anthropic/src/client.rs crates/provider-openai/src/client.rs
+9309e2ae0d0ce915 9 web/app/src/app/components/passkey-offer/passkey-offer.component.spec.ts web/app/src/app/components/passkeys/passkeys.component.spec.ts
+9555910be626e4a7 8 crates/store-postgres/src/leases.rs crates/store-sqlite/src/leases.rs
+960f7c5d68b6557d 7 crates/aws/src/sigv4.rs crates/google/src/adc.rs
+9686706281056062 6 crates/cli/tests/computer.rs crates/computer/src/local/background/tests.rs
+98f24eff20f113f2 8 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
+9917f56ff024635e 7 crates/computer/src/local/credentials/tests.rs crates/computer/src/local/sandbox/linux/tests.rs crates/computer/src/local/sandbox/tests.rs
+9a55ffbd3709ee1f 12 crates/memory/tests/safety.rs crates/memory/tests/safety.rs
+9b355e43cd2e040a 24 crates/harness/tests/support/failing.rs crates/session/tests/durable/crashes.rs
+9e0deedec0a616b8 11 crates/cli/src/memory.rs crates/cli/src/threads.rs
+a0516b39583ad5d6 7 web/e2e/languages.e2e.ts web/e2e/support.ts
+a2cc55aeef3d089c 11 crates/gateway-service/src/http.rs crates/session/src/http.rs
+a3d85a8380144aef 12 crates/harness/tests/support/script.rs crates/memory/tests/support/kit.rs
+a3e4b5de28fa9b4d 12 crates/cli/src/worktrees/cleanup/tests.rs crates/computer/src/worktrees/tests.rs
+a4ace85663d85cab 7 web/glaze/src/components/menu-button/menu-button.component.spec.ts web/glaze/src/components/menu-select/menu-select.component.spec.ts
+a4c6e50cee13806d 11 crates/store-postgres/src/blobs.rs crates/store-postgres/src/blobs.rs
+a51fcb28e4a5e4b6 6 crates/harness/tests/actors.rs crates/harness/tests/checks.rs
+a55f04d0fc470d9f 11 crates/session/src/answers.rs crates/session/src/turn.rs
+a8649abdfb794d0a 7 crates/harness/src/commands.rs crates/harness/src/skills.rs
+a9f65d4fb272be59 8 crates/harness/tests/project_folders.rs crates/session/tests/choices.rs
+a9f83807aaf5f97d 6 crates/harness/tests/faults.rs crates/harness/tests/workers.rs
+ad1bfdee27617df5 15 crates/store-postgres/src/blobs.rs crates/store-sqlite/src/blobs.rs
+ad3bf6956bad8629 9 crates/computer/src/worker/docker/tests.rs crates/computer/src/worker/kubernetes/tests.rs
+ae1eca8af7a448f3 7 crates/harness/tests/compaction.rs crates/harness/tests/compaction.rs crates/harness/tests/instructions.rs
+aee86ac69762c15a 6 crates/harness/tests/hooks.rs crates/harness/tests/hooks.rs
+afa24c0018395dcb 13 crates/keys/src/conformance.rs crates/ports/src/conformance.rs
+afb23fe741d3fd70 7 crates/provider-anthropic/src/fake.rs crates/provider-openai/src/fake.rs
+b2df0104c4c377a5 10 crates/harness/tests/cancel.rs crates/harness/tests/compaction.rs crates/harness/tests/steer.rs
+b325f097cdf0befa 8 web/app/src/app/components/connections/connections.component.spec.ts web/app/src/app/components/connections/connections.component.spec.ts
+b9522ac580d070fe 19 crates/harness/tests/approvals.rs crates/harness/tests/checks.rs
+bbb0d4e47b13c4ec 7 crates/session/tests/turn_streams.rs crates/session/tests/turn_streams.rs
+bbd73ee3de4c9b51 8 crates/computer/src/local/confinement_tests.rs crates/computer/src/local/confinement_tests.rs
+bd4c84ec6d6612fa 10 crates/harness/tests/outside_sandbox.rs crates/harness/tests/outside_sandbox.rs
+c12ac87a932d4b74 9 crates/provider-anthropic/src/client.rs crates/provider-openai/src/client.rs
+c17d7fe4cb135254 15 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
+c5ce221682346947 8 crates/harness/tests/retry.rs crates/harness/tests/retry.rs
+c61b951e38e1c93e 7 crates/computer/src/local/tests.rs crates/computer/src/worker/tests.rs
+c6895e6c3dee5427 8 crates/computer/src/worker/engine.rs crates/computer/src/worker/engine.rs
+c9ca8bc1ac94376a 15 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
+caeb06a87c9deb1f 7 crates/acme/src/https/tests.rs crates/identity/src/signin/browsers/passkeys/tests.rs crates/identity/src/signin/browsers/tests.rs
+cc0e2ab47194c099 8 crates/computer/src/local/sandbox/linux/tests.rs crates/computer/src/local/sandbox/tests.rs
+cdbbf59ecdc92bb4 8 crates/harness/tests/judge.rs crates/harness/tests/judge.rs
+cf68b9c62467c0fa 11 crates/harness/tests/workers.rs crates/harness/tests/worktrees.rs
+d0044aa5ac1439ca 9 crates/harness/tests/checks.rs crates/harness/tests/judge.rs crates/harness/tests/sources.rs crates/harness/tests/subagents.rs crates/harness/tests/untrusted.rs
+d0803df2a14350ec 8 web/app/src/app/services/projects.service.spec.ts web/app/src/app/services/projects.service.spec.ts
+d3fda979d3b17e38 7 crates/harness/tests/plan.rs crates/harness/tests/plan.rs
+dc77a30f335d4392 8 crates/harness/tests/compaction.rs crates/harness/tests/instructions.rs
+dcd08cbeaad9afab 9 crates/harness/tests/goals.rs crates/harness/tests/purposes.rs
+e1d48ef27705b0c9 10 crates/event/src/payload/catalog.rs crates/session/src/protocol/models.rs
+e66140a31a471c6c 7 crates/ports/src/view.rs crates/session/src/protocol/reply.rs
+e666c1db0c11e33b 7 crates/session/tests/listing.rs crates/session/tests/standing.rs
+eeb1d8f93c66e218 10 crates/session/src/rpc.rs crates/session/src/rpc.rs
+f0f2255634f0374f 9 crates/harness/tests/faults.rs crates/harness/tests/workers.rs
+f14ba448c17548d3 6 crates/computer/src/worker/tests/reconnect.rs crates/computer/src/worker/tests/reconnect.rs
+f475a4e261c10642 10 crates/harness/tests/project_folders.rs crates/harness/tests/project_folders.rs
+f528a25a3824c4f8 8 crates/cli/src/credentials/renewing/tests.rs crates/cli/src/credentials/renewing/tests.rs
+f6442d3a6aa12e12 7 crates/cli/tests/gateway.rs crates/cli/tests/support/http.rs
+f672fb39f19cbce9 8 crates/computer/src/local/sandbox/tests.rs crates/harness/src/sandbox/tests.rs
+f6b2d7515dc751fc 6 crates/gateway-service/src/anthropic.rs crates/gateway-service/src/openai.rs
+f83e6195bac059e1 10 crates/aws/tests/anthropic.rs crates/google/src/adc/tests/gemini.rs
+f8d3c4df3a63b49f 7 web/app/src/app/components/thread/thread.component.spec.ts web/app/src/app/components/thread/thread.component.spec.ts
+fd08606c160200d8 7 crates/session/tests/watching.rs crates/session/tests/watching.rs crates/session/tests/watching.rs
+fe1888a81f25f0cd 8 crates/store-postgres/src/schema.rs crates/store-sqlite/src/schema.rs

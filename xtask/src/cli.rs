@@ -9,8 +9,8 @@ commands:
   ci [--all] [--target <triple>]
                     the local gate: format, secrets, the dependency rule, one spawn path, a
                     limit on every wait, lint, tests and what they leave behind, dependency
-                    audit, package ages, file sizes, and the web checks, which need Node 22.22.3+
-                    (GLAVE_SKIP_WEB=1 skips them).
+                    audit, package ages, file sizes, no new copy-paste, and the web checks,
+                    which need Node 22.22.3+ (GLAVE_SKIP_WEB=1 skips them).
                     Off CI it lints and tests only the crates a change since origin/main
                     reaches, and runs the web checks only when web/ or the API schema changed;
                     --all, and CI always, check everything. --target builds the lint, docs and
@@ -19,6 +19,9 @@ commands:
   deps              check the dependency rule: each crate depends only on the layers its own
                     may use (the layers are in xtask/src/deps.rs)
   file-sizes        enforce the source-file line limits
+  duplicates        fail on code copied anew: 6 lines of code alike in two places, 70 tokens
+                    or more, that xtask/src/duplicates/baseline.txt does not list, and on a
+                    listed copy no longer found
   package-age       fail on a package version new in Cargo.lock or web/package-lock.json since
                     the change's base that was published less than 7 days ago, unless
                     xtask/src/package_age/allowed.rs lets it in with its reason (asks crates.io
@@ -62,6 +65,7 @@ fn run(args: &[String]) -> Result<(), String> {
             "ci" => crate::ci::run(rest),
             "deps" => crate::deps::check(),
             "file-sizes" => crate::file_sizes::check(),
+            "duplicates" => crate::duplicates::check(),
             "package-age" => crate::package_age::check(),
             "secrets" => crate::secrets::check(),
             "spawns" => crate::spawns::check(),
