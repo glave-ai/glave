@@ -1,13 +1,14 @@
 //! Whether a thread is shown, and how lists show it: `thread/archive`, `thread/unarchive`,
 //! `thread/delete` and `thread/rename`, and `thread/list` and the summaries it returns, read
 //! from the threads view a page at a time. A change is the thread's next event, appended by the
-//! server that holds the thread, so it never conflicts with a thread open in that server.
+//! server that holds the thread, so it never conflicts with a thread open in that server. A
+//! thread archived or deleted lets go of its worktrees on the host's computer.
 
 use glave_event::{Seq, ThreadId};
 use glave_harness::{Change, standing_of};
 use glave_ports::settings::Protections;
 use glave_ports::{
-    BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope, Standing, ThreadQuery,
+    BlobStore, BoxFuture, Caller, EventLog, ModelProvider, ProjectId, Scope, Standing, ThreadQuery,
     ThreadView, title_of,
 };
 use tokio::sync::watch;
@@ -17,6 +18,13 @@ use crate::held::{Slot, Use, finished};
 use crate::protocol::{ApiError, Reply, Show, ThreadSummary, code};
 use crate::server::{MAX_PAGE, Server, no_thread};
 use crate::words::Sentence;
+
+/// The worktrees threads work in on the host's computer, which the host keeps.
+pub trait Worktrees: Send + Sync {
+    /// Lets go of the worktrees of `thread`, in `scope`, just archived or deleted: each one is
+    /// removed when that loses nothing, and kept otherwise, which the host says in its log.
+    fn release(&self, scope: Scope, thread: ThreadId) -> BoxFuture<'_, ()>;
+}
 
 impl<P, L, B> Server<P, L, B>
 where
@@ -73,7 +81,8 @@ where
         })
     }
 
-    /// Archives, unarchives or deletes `thread` for `caller`.
+    /// Archives, unarchives or deletes `thread` for `caller`; archived or deleted, it lets go
+    /// of its worktrees.
     pub(crate) async fn change(
         &self,
         caller: &Caller,
@@ -99,14 +108,23 @@ where
             .await;
         match occupied {
             Err(refused) if crate::gone::is_gone(&refused) => {
-                return self.change_gone(caller, thread, change).await;
+                self.change_gone(caller, thread, change).await?;
             }
-            occupied => occupied?,
+            occupied => {
+                occupied?;
+                let ended = finished(&mut done)
+                    .await
+                    .ok_or_else(|| ApiError::new(code::INTERNAL, Sentence::ChangeStopped))?;
+                ended.as_ref().as_ref().map_err(ApiError::from)?;
+            }
         }
-        let ended = finished(&mut done)
-            .await
-            .ok_or_else(|| ApiError::new(code::INTERNAL, Sentence::ChangeStopped))?;
-        ended.as_ref().as_ref().map_err(ApiError::from)?;
+        // Its place was found to change it, so it is known by now.
+        if change != Change::Unarchive
+            && let Some(worktrees) = &self.inner.worktrees
+            && let Ok(scope) = self.scope_of(thread).await
+        {
+            worktrees.release(scope, thread).await;
+        }
         Ok(Reply::Done {})
     }
 

@@ -70,6 +70,7 @@ pub use projects::PERSONAL_NAME;
 pub use providers::{Models, NewProvider, Providers, Refreshed};
 pub use reread::{Apply, Changed, Rereads, Runs};
 pub use server::{OnWorkers, Server, Wiring};
+pub use standing::Worktrees;
 pub use steer::Sent;
 pub use tasks::TaskLimits;
 pub use trust::ProjectTrust;

@@ -1,22 +1,17 @@
 //! `glave threads`: the threads in this folder, and archiving, unarchiving and deleting them,
-//! through the person's server when it runs (or a terminal starts it). Where none runs and no
-//! one is at the terminal, a change is made straight in the log; a glave holding the thread
-//! takes it in before its next event, so the two never fight. A folder that is no project has
+//! through the person's server (`reach.rs`), as the app does. A folder that is no project has
 //! none, and is never made one.
 
 use std::process::ExitCode;
 
 use glave_event::ThreadId;
-use glave_harness::{Change, change_standing};
-use glave_ports::{
-    BlobStore, Clock as _, Entropy, EventLog, OsEntropy, Scope, Standing, SystemClock, ThreadQuery,
-};
+use glave_harness::Change;
+use glave_ports::Standing;
 use glave_session::protocol::{Reply, Request, Show};
 use uuid::Uuid;
 
-use crate::reach::Reached;
+use crate::reach::{self, Reached};
 use crate::turns::{Here, no_project};
-use crate::worktrees;
 
 pub(crate) const USAGE: &str = "\
 glave threads: the threads in this folder
@@ -29,9 +24,9 @@ Usage:
   glave threads delete <id>                 hide a thread for good and mark it for erasure
 
 Archiving or deleting a thread removes its worktree when that loses nothing (no uncommitted
-changes, every commit on a remote) and keeps it, saying why, otherwise. A thread's content is
-erased by the operator of the deployment; today's local keys cannot erase one thread alone
-(specs/storage.md), so a deleted thread stays in the database, hidden.";
+changes, every commit on a remote) and keeps it otherwise; glave worktrees says why. A
+thread's content is erased by the operator of the deployment; today's local keys cannot erase
+one thread alone (specs/storage.md), so a deleted thread stays in the database, hidden.";
 
 /// The most threads listed.
 const MOST_LISTED: usize = 1_000;
@@ -96,15 +91,12 @@ pub(crate) fn main(arguments: &[String]) -> ExitCode {
 }
 
 async fn run(command: Command) -> anyhow::Result<()> {
-    match crate::server::connect_or_start().await? {
-        Some(server) => through(&mut Reached::Server(server), command).await,
-        None => in_the_log(command).await,
-    }
+    reach::with(async |server| through(server, command).await).await
 }
 
-/// `command` through the person's server; worktrees released here, as `glave worktrees` does.
+/// `command` through the server reached.
 async fn through(server: &mut Reached, command: Command) -> anyhow::Result<()> {
-    let thread = match command {
+    match command {
         Command::List(standing) => {
             let show = match standing {
                 Standing::Active => Show::Active,
@@ -129,7 +121,6 @@ async fn through(server: &mut Reached, command: Command) -> anyhow::Result<()> {
             for thread in &threads {
                 println!("{}", thread.id);
             }
-            return Ok(());
         }
         Command::Change(change, thread) => {
             let request = match change {
@@ -139,85 +130,6 @@ async fn through(server: &mut Reached, command: Command) -> anyhow::Result<()> {
             };
             server.request(request).await?;
             println!("{} {thread}", done(change));
-            if change == Change::Unarchive {
-                return Ok(());
-            }
-            thread
-        }
-    };
-    // The change is made; a worktree that could not be looked at stays, and is said.
-    match released(thread).await {
-        Ok(lines) => lines.iter().for_each(|line| println!("{line}")),
-        Err(error) => println!("its worktree, if it has one, is kept: {error:#}"),
-    }
-    Ok(())
-}
-
-/// Releases the worktrees of `thread`, just archived or deleted: what became of each.
-async fn released(thread: ThreadId) -> anyhow::Result<Vec<String>> {
-    let store = crate::data::Data::here().await?;
-    let person = crate::identity::load_or_make(&store).await?.person;
-    let log = store.log();
-    let Some(located) = log.locate(thread).await? else {
-        return Ok(Vec::new());
-    };
-    let Some(project) = store.projects().get(located.org, located.project).await? else {
-        return Ok(Vec::new());
-    };
-    // Only a thread of a project the person here owns.
-    match Scope::of_owner(located.org, &project, person) {
-        Some(scope) => worktrees::release_archived(&log, scope, thread).await,
-        None => Ok(Vec::new()),
-    }
-}
-
-/// `command` made straight in the log.
-async fn in_the_log(command: Command) -> anyhow::Result<()> {
-    let store = crate::data::Data::here().await?;
-    let person = crate::identity::load_or_make(&store).await?.person;
-    let folder = std::env::current_dir()?;
-    let Some(scope) = crate::projects::found(&store, &folder, person).await? else {
-        return no_project(matches!(command, Command::List(_)));
-    };
-    let log = store.log();
-    match command {
-        Command::List(standing) => {
-            let query = ThreadQuery {
-                standing,
-                limit: MOST_LISTED,
-                after: None,
-                open: false,
-                parent: None,
-            };
-            for view in log.thread_views(&scope, &query).await? {
-                if glave_ports::stream::Reserved::of(view.thread).is_none() {
-                    println!("{}", view.thread);
-                }
-            }
-            Ok(())
-        }
-        Command::Change(change, thread) => apply(&log, &store.blobs(), scope, change, thread).await,
-    }
-}
-
-/// Changes `thread`, and releases its worktrees when it is archived or deleted, and its blobs
-/// when it is deleted.
-async fn apply<L: EventLog, B: BlobStore>(
-    log: &L,
-    blobs: &B,
-    scope: Scope,
-    change: Change,
-    thread: ThreadId,
-) -> anyhow::Result<()> {
-    let now = SystemClock.now();
-    change_standing(log, &scope, thread, now, OsEntropy.bytes()?, change).await?;
-    if change == Change::Delete {
-        blobs.release(&scope, thread).await?;
-    }
-    println!("{} {thread}", done(change));
-    if change != Change::Unarchive {
-        for line in worktrees::release_archived(log, scope, thread).await? {
-            println!("{line}");
         }
     }
     Ok(())
