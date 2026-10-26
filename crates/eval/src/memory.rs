@@ -87,7 +87,7 @@ pub struct MemoryReport {
     /// Every memory forgotten.
     pub forgotten: Vec<MemoryId>,
     /// Forgotten memories whose text can still be opened.
-    pub readable_forgotten: Vec<MemoryId>,
+    pub(crate) readable_forgotten: Vec<MemoryId>,
     /// The ledgers' events as stored, as JSON Lines.
     pub ledger: String,
     /// What memory held and cost, when it was on.

@@ -7,7 +7,7 @@ use std::fmt;
 use sha2::{Digest as _, Sha256};
 
 /// What every local token starts with, so it is never mistaken for an OIDC token.
-pub const LOCAL_PREFIX: &str = "glave_local_";
+pub(crate) const LOCAL_PREFIX: &str = "glave_local_";
 
 /// The random bytes a local token is made from.
 pub const LOCAL_BYTES: usize = 32;

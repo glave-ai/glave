@@ -44,7 +44,7 @@ impl WebFile {
     /// What a project's `[web]` sets that would let `web_fetch` reach further than glave's
     /// default: private addresses, or hosts named in `allow`, which may then be private. These
     /// need the person's trust in the project.
-    pub fn loosening(&self) -> Option<String> {
+    pub(crate) fn loosening(&self) -> Option<String> {
         let mut parts = Vec::new();
         if self.private_addresses == Some(true) {
             parts.push("[web] private_addresses = true".to_owned());
@@ -57,7 +57,7 @@ impl WebFile {
 
     /// This `[web]` without what needs trust.
     #[must_use]
-    pub fn without_trust(&self) -> Self {
+    pub(crate) fn without_trust(&self) -> Self {
         Self {
             allow: Vec::new(),
             private_addresses: None,

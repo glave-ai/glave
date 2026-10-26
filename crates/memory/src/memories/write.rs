@@ -247,7 +247,7 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
 
     /// Forgets every memory of `which` scope the writer may change, and erases now those glave
     /// forgot that still wait to be erased. The memories that were in force.
-    pub async fn forget_all(
+    pub(crate) async fn forget_all(
         &self,
         who: &Writer,
         which: MemoryScope,

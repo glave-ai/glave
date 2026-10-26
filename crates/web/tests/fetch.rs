@@ -240,11 +240,9 @@ mod fetch {
                 ),
             ])
             .await;
-            let limits = Limits {
-                max_bytes: 1_000,
-                timeout: Duration::from_millis(300),
-                ..Limits::default()
-            };
+            let mut limits = Limits::default();
+            limits.max_bytes = 1_000;
+            limits.timeout = Duration::from_millis(300);
             let fetcher = Fetcher::new(local(), limits).unwrap();
             let page = fetcher
                 .fetch(&format!("{}/big", pages.base()))

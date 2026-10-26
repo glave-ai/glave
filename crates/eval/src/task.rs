@@ -193,18 +193,18 @@ impl Task {
     }
 
     /// The pages served on 127.0.0.1 while the task runs, if it has any (`web.rs`).
-    pub fn web_pages(&self) -> Option<PathBuf> {
+    pub(crate) fn web_pages(&self) -> Option<PathBuf> {
         Some(self.dir.join("web")).filter(|path| path.is_dir())
     }
 
     /// What web search finds while the task runs, when the task turns it on
     /// (`search.rs`).
-    pub fn search_results(&self) -> Option<PathBuf> {
+    pub(crate) fn search_results(&self) -> Option<PathBuf> {
         Some(self.dir.join("search.md")).filter(|path| path.is_file())
     }
 
     /// The grader, if the task has one.
-    pub fn test_script(&self) -> Option<PathBuf> {
+    pub(crate) fn test_script(&self) -> Option<PathBuf> {
         Some(self.dir.join("tests").join("test.sh")).filter(|path| path.is_file())
     }
 }

@@ -127,7 +127,11 @@ impl Purpose {
         }
     }
 
-    pub fn is_main(&self) -> bool {
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "serde's `skip_serializing_if` passes the field by reference"
+    )]
+    pub(crate) fn is_main(&self) -> bool {
         *self == Self::Main
     }
 }
@@ -144,7 +148,11 @@ pub enum ToolChoice {
 }
 
 impl ToolChoice {
-    pub fn is_auto(&self) -> bool {
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "serde's `skip_serializing_if` passes the field by reference"
+    )]
+    pub(crate) fn is_auto(&self) -> bool {
         *self == Self::Auto
     }
 }

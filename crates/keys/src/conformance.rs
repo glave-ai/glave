@@ -60,7 +60,7 @@ pub fn event(thread: u64, seq: u64, month: &str) -> Result<RawEvent, String> {
 }
 
 /// A `memory.saved` event for memory `memory`, at position `seq` of the memory ledger.
-pub fn memory_event(memory: u64, seq: u64) -> Result<RawEvent, String> {
+fn memory_event(memory: u64, seq: u64) -> Result<RawEvent, String> {
     let header = Header {
         id: EventId::try_from(uuid_v7(8_000 + seq)).map_err(|e| e.to_string())?,
         thread: ThreadId::try_from(uuid_v7(9_499)).map_err(|e| e.to_string())?,
