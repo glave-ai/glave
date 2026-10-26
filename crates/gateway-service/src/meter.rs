@@ -12,10 +12,10 @@ use std::fmt::Write as _;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use glave_event::{
-    At, Body, Currency, EventId, Header, Payload, PrincipalId, RawEvent, Seq, ThreadId, decode,
-    encode,
+    At, Body, Currency, EventId, Header, Money, Payload, PrincipalId, RawEvent, Seq, ThreadId,
+    decode, encode,
 };
-use glave_gateway::{Budget, BudgetKey, Gateway, Limit};
+use glave_gateway::{BudgetKey, Gateway};
 use glave_ports::stream::{StreamError, append_retrying, catch_up};
 use glave_ports::{Clock, Entropy};
 use glave_ports::{EventLog, Scope};
@@ -35,8 +35,6 @@ struct Stream {
     next: u64,
     /// The day the totals below are for.
     day: u32,
-    /// Tokens in and out that day.
-    tokens: u64,
     /// Money spent that day, by currency, in millionths.
     money: BTreeMap<Currency, u64>,
     /// The day their budget account was given what the log says they spent before.
@@ -63,13 +61,9 @@ impl Stream {
                 if day < self.day {
                     return;
                 }
-                (self.day, self.tokens) = (day, 0);
+                self.day = day;
                 self.money.clear();
             }
-            let counts = responded.usage.counts();
-            self.tokens = self
-                .tokens
-                .saturating_add(counts.input.saturating_add(counts.output));
             if let Some(cost) = responded.cost {
                 let micros = u64::try_from(cost.amount.micros).unwrap_or(0);
                 let spent = self.money.entry(cost.amount.currency).or_default();
@@ -78,15 +72,12 @@ impl Stream {
         }
     }
 
-    /// What the stream says was spent on `day`, in `limit`'s unit.
-    fn spent(&self, day: u32, limit: Limit) -> u64 {
+    /// What the stream says was spent on `day`, in millionths of `limit`'s currency.
+    fn spent(&self, day: u32, limit: Money) -> u64 {
         if day != self.day {
             return 0;
         }
-        match limit {
-            Limit::Tokens(_) => self.tokens,
-            Limit::Money(cap) => self.money.get(&cap.currency).copied().unwrap_or(0),
-        }
+        self.money.get(&limit.currency).copied().unwrap_or(0)
     }
 }
 
@@ -199,7 +190,7 @@ impl<L: EventLog> Meter<L> {
                 person,
                 period: day,
             };
-            gateway.add_spent(Budget::Caller(caller), stream.spent(day, limit));
+            gateway.add_spent(caller, stream.spent(day, limit));
         }
         Ok(())
     }

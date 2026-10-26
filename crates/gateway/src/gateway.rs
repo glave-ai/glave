@@ -4,7 +4,7 @@
 use glave_ports::{Completion, Delta, Failure, ModelProvider, ModelRequest, ProviderError, Served};
 use tracing::Instrument as _;
 
-use crate::budget::{Budget, BudgetKey, Budgets, Charge, Ledger, OverBudget};
+use crate::budget::{BudgetKey, Budgets, Charge, Ledger, OverBudget};
 use crate::estimate::Needs;
 use crate::plan::{candidates, prepare};
 use crate::routes::Routes;
@@ -41,15 +41,16 @@ impl Gateway {
         &self.routes
     }
 
-    /// What `budget` has spent so far in this process, in its limit's unit.
-    pub fn spent(&self, budget: Budget) -> u64 {
-        self.ledger.spent(budget)
+    /// What `caller` has spent so far in this process, in millionths of their budget's
+    /// currency.
+    pub fn spent(&self, caller: BudgetKey) -> u64 {
+        self.ledger.spent(caller)
     }
 
-    /// Counts `amount`, in the budget's limit's unit, as spent in `budget` already: what a
-    /// gateway serving many reads back from its log when a caller first returns.
-    pub fn add_spent(&self, budget: Budget, amount: u64) {
-        self.ledger.add_spent(budget, amount);
+    /// Counts `amount`, in millionths of the budget's currency, as spent by `caller` already:
+    /// what a gateway serving many reads back from its log when a caller first returns.
+    pub fn add_spent(&self, caller: BudgetKey, amount: u64) {
+        self.ledger.add_spent(caller, amount);
     }
 
     /// The budgets calls count in.
@@ -82,17 +83,13 @@ impl Gateway {
         let mut failed: Option<ProviderError> = None;
         let mut over: Option<OverBudget> = None;
         for target in targets {
-            let hold =
-                match self
-                    .ledger
-                    .reserve(caller, &request.threads, worst(target, request, &needs))
-                {
-                    Ok(hold) => hold,
-                    Err(refused) => {
-                        over.get_or_insert(refused);
-                        continue;
-                    }
-                };
+            let hold = match self.ledger.reserve(caller, worst(target, request, &needs)) {
+                Ok(hold) => hold,
+                Err(refused) => {
+                    over.get_or_insert(refused);
+                    continue;
+                }
+            };
             let (sent, stripped) = prepare(request, target, &needs);
             let effort = sent.effort.clone();
             let span = telemetry::model_call(request.purpose.id(), &target.name);
@@ -158,25 +155,20 @@ fn worst(target: &Target, request: &ModelRequest, needs: &Needs<'_>) -> Charge {
         output: u64::from(output),
         ..glave_event::TokenCounts::default()
     };
-    Charge {
-        tokens: counts.input.saturating_add(counts.output),
-        money: target
+    Charge(
+        target
             .price
             .as_ref()
             .map(|price| (price.micros(&counts), price.currency)),
-    }
+    )
 }
 
-/// What a finished call cost: its reported tokens, and its cost when known.
+/// What a finished call cost, when known.
 fn actual(completion: &Completion) -> Charge {
-    let counts = completion.usage.counts();
-    Charge {
-        tokens: counts.input.saturating_add(counts.output),
-        money: completion.cost.as_ref().map(|cost| {
-            (
-                u64::try_from(cost.amount.micros).unwrap_or(0),
-                cost.amount.currency,
-            )
-        }),
-    }
+    Charge(completion.cost.as_ref().map(|cost| {
+        (
+            u64::try_from(cost.amount.micros).unwrap_or(0),
+            cost.amount.currency,
+        )
+    }))
 }

@@ -348,7 +348,7 @@ impl Constraints {
             (
                 rule,
                 "glave keeps a daily budget only as a gateway serving many (glave gateway \
-                 serve); in glave itself it keeps budgets for one run",
+                 serve)",
             )
         });
         self.rules

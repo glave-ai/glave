@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use glave_event::{Body, RawEvent, Seq, ThreadId, decode};
-use glave_gateway::{Budgets, Gateway, Model, Routes, Target};
+use glave_event::{Body, Currency, RawEvent, Seq, ThreadId, decode};
+use glave_gateway::{Budgets, Gateway, Model, Price, Routes, Target};
 use glave_gateway_service::{Policy, Service, Wiring, serve, stream_id};
 use glave_identity::signin::{SignIn, Trust, person};
 use glave_mcp::{Limits, McpServer};
@@ -185,7 +185,15 @@ impl World {
         self.halt().await;
         let config = Config::for_url(self.upstream.url(), Some(KEY.to_owned())).unwrap();
         let handle: Arc<dyn Model> = Arc::new(OpenAiCompatible::new(config).unwrap());
-        let main = vec![Target::new(Arc::clone(&handle), "acme", "big")];
+        // A dollar a million tokens, in and out, so a budget counts a token as a millionth.
+        let price = Price {
+            list: "test".into(),
+            currency: Currency::USD,
+            input_per_mtok: 1_000_000,
+            cache_read_per_mtok: 0,
+            output_per_mtok: 1_000_000,
+        };
+        let main = vec![Target::new(Arc::clone(&handle), "acme", "big").with_price(price)];
         let judge = vec![Target::new(handle, "acme", "small")];
         let routes = Routes::new(main)
             .unwrap()
