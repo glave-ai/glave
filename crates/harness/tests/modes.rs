@@ -6,13 +6,13 @@
 //! policy's cap holds from the next turn whatever a thread chose before.
 
 use glave_event::{Body, Event, Permissions, Principal, StopReason, Verdict};
-use glave_harness::{Approver, Cancel, Decision, Defaults, NoOneToAsk, Settings};
+use glave_harness::{Approver, Decision, Defaults, NoOneToAsk, Settings};
 use glave_ports::settings::Judge;
 use glave_ports::testing::TempDir;
 use glave_ports::{Caller, InMemoryLog, Message};
 use serde_json::json;
 
-use crate::outside_sandbox::{Person, judges, results, sandboxed, walled};
+use crate::outside_sandbox::{Person, judges, sandboxed, walled};
 use crate::support::*;
 
 /// A command writing `ran.txt` in the project, an edit writing `notes.md`, then the last word.
@@ -49,15 +49,7 @@ fn a_command_runs_unasked_but_changes_nothing_and_a_change_asks_first() {
             asking(),
         );
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(
-                &mut thread,
-                "look, then note it",
-                &Cancel::new(),
-                &mut |_| {},
-            )
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "look, then note it").await;
         let asked: Vec<String> = person.asked().iter().map(|a| a.tool.clone()).collect();
         assert_eq!(asked, ["write"], "only the change asked");
         let project = base.join("project");
@@ -86,10 +78,7 @@ fn with_no_one_there_ask_first_changes_nothing() {
             asking(),
         );
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "note it", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "note it").await;
         let project = base.join("project");
         assert!(!project.join("ran.txt").exists() && !project.join("notes.md").exists());
         let declined = events(harness.log(), thread.id)
@@ -130,10 +119,7 @@ fn in_ask_first_the_judge_is_never_asked_and_a_risky_command_waits_for_the_perso
             settings,
         );
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "push my branch", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "push my branch").await;
         assert!(
             judges(&seen.lock().unwrap()).is_empty(),
             "no judge in Ask first"
@@ -176,19 +162,13 @@ fn the_policy_s_cap_holds_from_the_next_turn_over_a_thread_s_own_full_access() {
             .choose_permissions(&mut thread, &Caller::default(), Permissions::FullAccess)
             .await
             .unwrap();
-        harness
-            .run_turn(&mut thread, "write beside it", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "write beside it").await;
         assert!(base.join("one.txt").exists(), "full access: no sandbox");
         // The organization caps it at Auto while the server runs.
         let mut defaults = Defaults::clone(&harness.defaults());
         defaults.highest = Permissions::Auto;
         harness.set_defaults(defaults);
-        harness
-            .run_turn(&mut thread, "again", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "again").await;
         assert_eq!(harness.permissions_for(&thread), Permissions::Auto);
         assert!(!base.join("two.txt").exists(), "in the sandbox again");
     });
@@ -223,10 +203,7 @@ async fn deleting_beside<A: Approver>(
     let project = workspace(&base.join("project")).await;
     let (harness, seen) = harness_with(project, answers, approver, InMemoryLog::new(), 1, settings);
     let mut thread = harness.start_thread(scope()).await.unwrap();
-    harness
-        .run_turn(&mut thread, "tidy up", &Cancel::new(), &mut |_| {})
-        .await
-        .unwrap();
+    turn(&harness, &mut thread, "tidy up").await;
     (events(harness.log(), thread.id).await, seen)
 }
 
@@ -291,10 +268,7 @@ async fn showing_a_secret<A: Approver>(
     let (harness, seen) =
         harness_seeing(&dir, answers, approver, InMemoryLog::new(), 1, settings()).await;
     let mut thread = harness.start_thread(scope()).await.unwrap();
-    harness
-        .run_turn(&mut thread, "check the token", &Cancel::new(), &mut |_| {})
-        .await
-        .unwrap();
+    turn(&harness, &mut thread, "check the token").await;
     let sent = format!("{:?}", seen.lock().unwrap());
     let events = events(harness.log(), thread.id).await;
     (thread.messages().to_vec(), sent, events)

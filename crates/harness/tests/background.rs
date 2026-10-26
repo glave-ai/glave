@@ -4,7 +4,7 @@
 //! by the person; and stopped when the thread is archived.
 
 use glave_event::{Body, CommandEnding, Event, Principal, PrincipalId, StopReason};
-use glave_harness::{Cancel, Change, NoOneToAsk};
+use glave_harness::{Change, NoOneToAsk};
 use glave_ports::Caller;
 use glave_ports::{EventLog as _, InMemoryLog};
 use serde_json::json;
@@ -65,15 +65,7 @@ fn a_command_is_recorded_from_the_call_that_started_it_to_the_one_that_stopped_i
         let answers = vec![start("sleep 30"), stop, done()];
         let harness = harness(&dir, answers, NoOneToAsk).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(
-                &mut thread,
-                "start it, then stop it",
-                &Cancel::new(),
-                &mut |_| {},
-            )
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "start it, then stop it").await;
         let events = events(harness.log(), thread.id).await;
         let kinds = kinds(&events);
         let first_result = kinds.iter().position(|kind| *kind == "tool.call.completed");
@@ -98,10 +90,7 @@ fn a_resumed_thread_knows_what_still_runs_and_its_next_work_records_what_ended_m
         let answers = vec![start("sleep 30"), done(), start("sleep 31"), done()];
         let harness = harness(&dir, answers, NoOneToAsk).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "start a server", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "start a server").await;
         let resumed = harness.resume_thread(scope(), thread.id).await.unwrap();
         let running = resumed.commands().running_now().await;
         assert_eq!(running.len(), 1);
@@ -120,10 +109,7 @@ fn a_resumed_thread_knows_what_still_runs_and_its_next_work_records_what_ended_m
         );
         let mut resumed = resumed;
         harness.record_commands(&mut resumed).await.unwrap();
-        harness
-            .run_turn(&mut resumed, "start another", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut resumed, "start another").await;
 
         // Another glave, on another computer, finds the second one gone.
         let log = InMemoryLog::new();
@@ -160,10 +146,7 @@ fn archiving_a_thread_stops_its_commands_first() {
     block_on!(async {
         let harness = harness(&dir, vec![start("sleep 30"), done()], NoOneToAsk).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "start a server", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "start a server").await;
         harness
             .change_standing(&mut thread, &Caller::default(), Change::Archive)
             .await

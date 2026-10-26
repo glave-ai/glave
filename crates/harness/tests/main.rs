@@ -5,6 +5,12 @@
 #[path = "support/script.rs"]
 mod support;
 
+#[path = "support/worker.rs"]
+mod worker;
+
+#[path = "support/wire.rs"]
+mod wire;
+
 mod actors;
 mod approvals;
 mod background;

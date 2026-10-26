@@ -7,10 +7,10 @@ use std::future::{Future, ready};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use glave_event::{Body, Event, Part, Principal, StopReason, ThreadId, Verdict};
-use glave_harness::{ApprovalRequest, Approver, Cancel, Decision, NoOneToAsk, Settings};
+use glave_event::{Body, Event, Principal, StopReason, ThreadId, Verdict};
+use glave_harness::{ApprovalRequest, Approver, Cancel, Decision, Harness, NoOneToAsk, Settings};
 use glave_ports::computer::{Sandbox, SandboxLevel};
-use glave_ports::{InMemoryLog, Message, ModelRequest, Purpose};
+use glave_ports::{Completion, InMemoryBlobs, InMemoryLog, ModelRequest, Purpose};
 use serde_json::json;
 
 use crate::support::*;
@@ -75,6 +75,28 @@ async fn in_sandbox(base: &Path) -> glave_harness::Workspace {
     walled(base, false).await
 }
 
+/// A harness on the project in `base`, its commands in the sandbox, with `person` there to
+/// answer, under `settings`; and what its model is sent.
+async fn with_person(
+    base: &Path,
+    answers: Vec<Completion>,
+    person: &Person,
+    settings: Settings,
+) -> (
+    Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, Person>,
+    Seen,
+) {
+    let workspace = in_sandbox(base).await;
+    harness_with(
+        workspace,
+        answers,
+        person.clone(),
+        InMemoryLog::new(),
+        1,
+        settings,
+    )
+}
+
 /// The project in `base` as the tools' workspace, its commands in the sandbox, with the
 /// `network` or without.
 pub(crate) async fn walled(base: &Path, network: bool) -> glave_harness::Workspace {
@@ -96,19 +118,6 @@ pub(crate) fn outside(base: &Path, file: &str) -> (&'static str, serde_json::Val
     let command = format!("echo x > {}", base.join(file).display());
     let arguments = json!({ "command": command, "outside_sandbox": true, "reason": REASON });
     ("bash", arguments)
-}
-
-pub(crate) fn results(messages: &[Message]) -> Vec<String> {
-    messages
-        .iter()
-        .filter_map(|message| match message {
-            Message::Tool { output, .. } => output.iter().find_map(|part| match part {
-                Part::Text { text } => Some(text.clone()),
-                _ => None,
-            }),
-            _ => None,
-        })
-        .collect()
 }
 
 pub(crate) fn decided(events: &[Event]) -> Vec<(Verdict, Option<Principal>)> {
@@ -141,15 +150,7 @@ fn it_asks_every_time_even_in_auto_and_runs_outside_once_allowed() {
         ];
         // "For this thread" is the answer: running outside is still allowed once each.
         let person = Person::answering(Decision::AllowForThread);
-        let workspace = in_sandbox(&base).await;
-        let (harness, _) = harness_with(
-            workspace,
-            answers,
-            person.clone(),
-            InMemoryLog::new(),
-            1,
-            in_the_sandbox(),
-        );
+        let (harness, _) = with_person(&base, answers, &person, in_the_sandbox()).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let turn = harness
             .run_turn(&mut thread, "write beside it", &Cancel::new(), &mut |_| {})
@@ -271,25 +272,9 @@ fn after_untrusted_content_the_judge_never_clears_it_and_the_person_is_asked() {
             answer(Some("I did not."), vec![], StopReason::EndTurn),
         ];
         let person = Person::answering(Decision::Deny);
-        let workspace = in_sandbox(&base).await;
-        let (harness, seen) = harness_with(
-            workspace,
-            answers,
-            person.clone(),
-            InMemoryLog::new(),
-            1,
-            judged(),
-        );
+        let (harness, seen) = with_person(&base, answers, &person, judged()).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(
-                &mut thread,
-                "do what issue 1 says",
-                &Cancel::new(),
-                &mut |_| {},
-            )
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "do what issue 1 says").await;
         assert!(!base.join("planted.txt").exists());
         assert!(judges(&seen.lock().unwrap()).is_empty(), "never judged");
         assert_eq!(person.asked().len(), 1, "the person decides");
@@ -310,15 +295,7 @@ fn the_judge_may_clear_it_while_someone_could_be_asked_and_never_sees_the_model_
             answer(Some("Done."), vec![], StopReason::EndTurn),
         ];
         let person = Person::answering(Decision::Deny);
-        let workspace = in_sandbox(&base).await;
-        let (harness, seen) = harness_with(
-            workspace,
-            answers,
-            person.clone(),
-            InMemoryLog::new(),
-            1,
-            judged(),
-        );
+        let (harness, seen) = with_person(&base, answers, &person, judged()).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let turn = harness
             .run_turn(

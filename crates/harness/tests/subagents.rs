@@ -5,12 +5,11 @@ use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use glave_event::{Body, Outcome, Part, StopReason};
+use glave_event::{Body, Outcome, StopReason};
 use glave_harness::{AllowAll, Cancel, Harness, Live, Parts};
 use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{
-    Completion, Delta, InMemoryBlobs, InMemoryLog, Message, ModelProvider, ModelRequest,
-    ProviderError,
+    Completion, Delta, InMemoryBlobs, InMemoryLog, ModelProvider, ModelRequest, ProviderError,
 };
 use serde_json::json;
 use tokio::sync::Barrier;
@@ -21,19 +20,6 @@ fn with_subagents() -> glave_harness::Settings {
     let mut settings = settings();
     settings.subagents = true;
     settings
-}
-
-fn results(messages: &[Message]) -> Vec<String> {
-    messages
-        .iter()
-        .filter_map(|message| match message {
-            Message::Tool { output, .. } => output.iter().find_map(|part| match part {
-                Part::Text { text } => Some(text.clone()),
-                _ => None,
-            }),
-            _ => None,
-        })
-        .collect()
 }
 
 fn names(request: &ModelRequest) -> Vec<String> {
@@ -160,10 +146,7 @@ fn a_general_child_has_the_parents_tools_but_no_subagents() {
         )
         .await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "do x", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "do x").await;
         let seen = seen.lock().unwrap();
         assert_eq!(
             names(&seen[1]),
@@ -188,10 +171,7 @@ fn without_the_setting_there_is_no_agent_tool() {
         let (harness, seen) =
             harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "hi", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "hi").await;
         assert!(!names(&seen.lock().unwrap()[0]).contains(&"agent".to_owned()));
     });
 }
@@ -259,10 +239,7 @@ fn subagents_in_one_response_run_side_by_side() {
         };
         let harness = Harness::new(parts, with_subagents());
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        let summary = harness
-            .run_turn(&mut thread, "do both", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        let summary = turn(&harness, &mut thread, "do both").await;
         assert_eq!(summary.outcome, Outcome::Completed);
         assert_eq!(
             results(thread.messages()),

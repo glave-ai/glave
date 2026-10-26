@@ -113,10 +113,7 @@ fn a_turn_that_failed_between_a_call_and_its_result_is_closed_by_the_next() {
             .run_turn(&mut thread, "start the server", &Cancel::new(), &mut |_| {})
             .await;
         assert!(matches!(failed, Err(HarnessError::Log(_))), "{failed:?}");
-        harness
-            .run_turn(&mut thread, "stop it", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "stop it").await;
 
         let events = events(harness.log(), thread.id).await;
         assert_eq!(
@@ -170,10 +167,7 @@ fn an_answer_whose_turn_could_not_go_on_leaves_the_thread_to_its_next_prompt() {
         assert!(matches!(failed, Err(HarnessError::Log(_))), "{failed:?}");
         assert!(!thread.waits(), "its answer is in the log: nothing waits");
 
-        harness
-            .run_turn(&mut thread, "go on", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "go on").await;
         let events = events(harness.log(), thread.id).await;
         assert_eq!(
             outcomes(&events),

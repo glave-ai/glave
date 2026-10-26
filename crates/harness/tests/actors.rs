@@ -53,10 +53,7 @@ fn with_no_one_to_answer_the_refusal_is_recorded_as_glaves() {
         ];
         let harness = asking_harness(&dir, answers, NoOneToAsk).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "start over", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "start over").await;
         let decided: Vec<_> = events(harness.log(), thread.id)
             .await
             .into_iter()

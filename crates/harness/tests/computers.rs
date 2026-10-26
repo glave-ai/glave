@@ -7,10 +7,10 @@ mod golden {
     use std::time::{Duration, SystemTime};
 
     use crate::support::*;
-    use glave_computer::{LocalComputers, RemoteComputers, serve_tcp};
+    use crate::wire::across_the_wire;
+    use glave_computer::LocalComputers;
     use glave_event::{Event, StopReason};
-    use glave_harness::{AllowAll, Cancel, Workspace};
-    use glave_ports::computer::{Computers, Environment, Sources};
+    use glave_harness::{AllowAll, Workspace};
     use glave_ports::{Completion, InMemoryLog};
     use serde_json::json;
 
@@ -74,7 +74,7 @@ mod golden {
     }
 
     /// Runs the scripted turn on `workspace`, returning every event and what the model saw.
-    async fn turn(workspace: Workspace) -> (Vec<Event>, String) {
+    async fn played(workspace: Workspace) -> (Vec<Event>, String) {
         let (harness, seen) = harness_with(
             workspace,
             script(),
@@ -84,10 +84,7 @@ mod golden {
             settings(),
         );
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "tidy up", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "tidy up").await;
         let events = events(harness.log(), thread.id).await;
         let last = seen.lock().unwrap().last().cloned().unwrap();
         (events, without_timings(&format!("{last:?}")))
@@ -115,26 +112,13 @@ mod golden {
         let dir = folder("computers-golden");
         block_on!(async {
             project(&dir);
-            let (local_events, local_seen) = turn(workspace(&dir).await).await;
+            let (local_events, local_seen) = played(workspace(&dir).await).await;
 
             project(&dir);
             let copies = dir.with_extension("copies");
             let computers = Arc::new(LocalComputers::new(&copies, std::env::vars_os()));
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let address = listener.local_addr().unwrap();
-            let server = tokio::spawn(serve_tcp(computers, listener, "token".into()));
-            let stream = tokio::net::TcpStream::connect(address).await.unwrap();
-            let (read, write) = stream.into_split();
-            let remote = RemoteComputers::connect(read, write);
-            remote.authenticate("token").await.unwrap();
-            remote.check_protocol().await.unwrap();
-            let computer = remote.create(&Environment::host()).await.unwrap();
-            let sources = Sources::Folder {
-                path: dir.to_string_lossy().into_owned(),
-            };
-            let info = remote.open(computer.id, &sources).await.unwrap();
-            let remote_workspace = Workspace::new(Arc::new(remote), info);
-            let (remote_events, remote_seen) = turn(remote_workspace).await;
+            let (remote_workspace, server) = across_the_wire(computers, &dir).await;
+            let (remote_events, remote_seen) = played(remote_workspace).await;
             server.abort();
 
             assert_eq!(remote_seen, local_seen);
@@ -157,7 +141,7 @@ mod credentials {
 
     use crate::support::*;
     use glave_event::{Body, StopReason};
-    use glave_harness::{AllowAll, Cancel};
+    use glave_harness::AllowAll;
     use glave_ports::InMemoryLog;
     use glave_ports::computer::{CredentialHost, Forge, GitCredential};
     use glave_ports::testing::{FAKE_COMMIT, FakeGitHost, FixedGitCredentials, fake_secret};
@@ -206,15 +190,7 @@ mod credentials {
                 settings(),
             );
             let mut thread = harness.start_thread(scope()).await.unwrap();
-            harness
-                .run_turn(
-                    &mut thread,
-                    "list the branches",
-                    &Cancel::new(),
-                    &mut |_| {},
-                )
-                .await
-                .unwrap();
+            turn(&harness, &mut thread, "list the branches").await;
             let system = seen.lock().unwrap()[0].system.clone();
             assert!(
                 system.contains("`gh` is signed in for github.com") && !system.contains(&token),

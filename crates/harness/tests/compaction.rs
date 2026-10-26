@@ -1,10 +1,9 @@
 //! Compaction against a scripted model: a thread that outgrows its window is summarized,
 //! recorded, continued from the summary, and resumed the same way; one that fits is left alone.
 
-use glave_event::{Part, StopReason};
+use glave_event::StopReason;
 use glave_harness::{AllowAll, Cancel, Compaction, Live};
-use glave_ports::{InMemoryLog, Message, ModelRequest};
-use serde_json::json;
+use glave_ports::{InMemoryLog, ModelRequest};
 
 use crate::support::*;
 
@@ -18,21 +17,6 @@ fn tiny_window() -> glave_harness::Settings {
     settings
 }
 
-fn text_of(message: &Message) -> String {
-    let parts = match message {
-        Message::User { parts }
-        | Message::Tool { output: parts, .. }
-        | Message::Assistant { parts, .. } => parts,
-    };
-    parts
-        .iter()
-        .filter_map(|part| match part {
-            Part::Text { text } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect()
-}
-
 fn requests(seen: &Seen) -> Vec<ModelRequest> {
     seen.lock().unwrap().clone()
 }
@@ -43,11 +27,7 @@ fn a_thread_that_outgrows_its_window_continues_from_a_summary() {
     std::fs::write(dir.join("big.txt"), "marigold\n".repeat(1_000)).unwrap();
     block_on!(async {
         let answers = vec![
-            answer(
-                None,
-                vec![("read", json!({"path": "big.txt"}))],
-                StopReason::ToolUse,
-            ),
+            reads("big.txt"),
             answer(
                 Some("big.txt repeats the word marigold."),
                 vec![],
@@ -126,20 +106,13 @@ fn a_thread_that_fits_is_left_alone() {
     std::fs::write(dir.join("small.txt"), "hello\n").unwrap();
     block_on!(async {
         let answers = vec![
-            answer(
-                None,
-                vec![("read", json!({"path": "small.txt"}))],
-                StopReason::ToolUse,
-            ),
+            reads("small.txt"),
             answer(Some("It says hello."), vec![], StopReason::EndTurn),
         ];
         let (harness, seen) =
             harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "read small.txt", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "read small.txt").await;
         assert_eq!(requests(&seen).len(), 2);
         let recorded = kinds(&events(harness.log(), thread.id).await);
         assert!(!recorded.contains(&"thread.compacted"), "{recorded:?}");
@@ -157,10 +130,7 @@ fn compact_on_request_restarts_from_the_summary() {
         let (harness, _) =
             harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "hello").await;
         let compacted = harness
             .compact(&mut thread, &Cancel::new(), &mut |_| {})
             .await
@@ -182,11 +152,7 @@ fn an_empty_summary_leaves_the_thread_as_it_was() {
     std::fs::write(dir.join("big.txt"), "marigold\n".repeat(1_000)).unwrap();
     block_on!(async {
         let answers = vec![
-            answer(
-                None,
-                vec![("read", json!({"path": "big.txt"}))],
-                StopReason::ToolUse,
-            ),
+            reads("big.txt"),
             answer(None, vec![], StopReason::EndTurn),
             answer(Some("It repeats marigold."), vec![], StopReason::EndTurn),
         ];

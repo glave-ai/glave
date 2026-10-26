@@ -231,25 +231,13 @@ fn reading_an_image_hands_the_model_a_copy_fit_to_send() {
     std::fs::write(dir.join("shot.png"), &shot).unwrap();
     block_on!(async {
         let answers = vec![
-            answer(
-                None,
-                vec![("read", json!({"path": "shot.png"}))],
-                StopReason::ToolUse,
-            ),
+            reads("shot.png"),
             answer(Some("A gradient."), Vec::new(), StopReason::EndTurn),
         ];
         let (harness, seen) =
             harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
-        harness
-            .run_turn(
-                &mut thread,
-                "what is in shot.png?",
-                &Cancel::new(),
-                &mut |_| {},
-            )
-            .await
-            .unwrap();
+        turn(&harness, &mut thread, "what is in shot.png?").await;
 
         let events = events(harness.log(), thread.id).await;
         let output = events
