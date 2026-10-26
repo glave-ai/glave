@@ -9,8 +9,9 @@
 //! starts, stops what a glave that is gone left running all the same, for when the helper went
 //! too; a process whose start time differs from the one recorded has the same number but is
 //! another process, and is never touched. A program its caller waits for
-//! ([`Program::output`]) ends with the call, and within the time the caller gives it; the
-//! person's server ([`Program::detach`]) is a glave of its own.
+//! ([`Program::output`]) ends with the call, and within the time the caller gives it, in a
+//! process group of its own killed whole if it does not; the person's server
+//! ([`Program::detach`]) is a glave of its own.
 
 mod child;
 mod error;
