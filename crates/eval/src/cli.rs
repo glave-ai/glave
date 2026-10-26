@@ -44,7 +44,7 @@ options:
   --max-cost <dollars> start nothing new once this much is spent (default 2)
   --baseline <file>    an earlier report.json to compare with
   --tasks <folder>     where the tasks are (default evals/tasks)
-  --no-plan            leave update_plan out, to measure the model without it
+  --no-plan            keep update_plan out of every mode but Plan, as glave does when plans are off
   --subagents          let the model hand work to child threads with task
   --memory <on|off>    memory on or off for every task (default: each task's own [glave] memory)";
 

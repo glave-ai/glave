@@ -2,6 +2,7 @@
 //! the terminal, compacting, and showing what failed with what to fix. It uses nothing a
 //! remote client could not.
 
+pub(crate) mod plan;
 mod sources;
 
 use std::collections::HashMap;
@@ -107,29 +108,44 @@ pub(crate) struct Client<'a> {
 }
 
 impl Client<'_> {
-    /// Runs one turn, which Ctrl-C cancels, printing its progress and receipt.
+    /// Runs one turn, which Ctrl-C cancels, printing its progress and receipt. When it
+    /// proposed a plan, shows it, and with someone here asks whether to build it, or what to
+    /// change, and runs that too (`plan.rs`).
     pub(crate) async fn turn(&self, prompt: &str, printer: &mut Printer) -> ExitCode {
         self.report(printer).await;
-        // Listening before the turn starts: the model may be asked before its answer arrives.
-        let interrupt = Cancel::new();
-        let _ctrl_c = CtrlC::cancels(&interrupt);
-        let started = self
-            .server
-            .start(Request::TurnStart {
-                thread: self.thread,
-                prompt: prompt.to_owned(),
-                background: false,
-                budget: None,
-                model: self.model.clone(),
-                permissions: self.permissions,
-                effort: None,
-                meta: Meta::default(),
-                // With no one here, no one answers: what would ask is declined at once.
-                unattended: !self.asks,
-                files: Vec::new(),
-            })
-            .await;
-        self.follow(started, &interrupt, printer).await
+        let mut next = self.turn_start(prompt);
+        loop {
+            // Listening before the turn starts: the model may be asked before its answer
+            // arrives.
+            let interrupt = Cancel::new();
+            let _ctrl_c = CtrlC::cancels(&interrupt);
+            let started = self.server.start(next).await;
+            let (code, proposed) = self.follow(started, &interrupt, printer, false).await;
+            if !proposed || code != ExitCode::SUCCESS {
+                return code;
+            }
+            match self.after_plan(printer, &interrupt).await {
+                Some(request) => next = request,
+                None => return code,
+            }
+        }
+    }
+
+    /// The request for a turn with `prompt`.
+    fn turn_start(&self, prompt: &str) -> Request {
+        Request::TurnStart {
+            thread: self.thread,
+            prompt: prompt.to_owned(),
+            background: false,
+            budget: None,
+            model: self.model.clone(),
+            permissions: self.permissions,
+            effort: None,
+            meta: Meta::default(),
+            // With no one here, no one answers: what would ask is declined at once.
+            unattended: !self.asks,
+            files: Vec::new(),
+        }
     }
 
     /// Works toward `goal` across turns until it ends, which Ctrl-C does too, printing every
@@ -149,7 +165,7 @@ impl Client<'_> {
                 unattended: !self.asks,
             })
             .await;
-        let code = self.follow(started, &interrupt, printer).await;
+        let (code, _) = self.follow(started, &interrupt, printer, true).await;
         let get = Request::GoalGet {
             thread: self.thread,
         };
@@ -162,23 +178,25 @@ impl Client<'_> {
         }
     }
 
-    /// Follows a started turn, or a goal's turns, to the end, cancelling it on `interrupt`. A
-    /// message queued to a turn already running is said to be, and is no failure.
+    /// Follows a started turn, or a `goal`'s turns, to the end, cancelling it on `interrupt`.
+    /// A message queued to a turn already running is said to be, and is no failure. Also says
+    /// whether it proposed a plan.
     async fn follow(
         &self,
         started: Result<Sent<Following>, ApiError>,
         interrupt: &Cancel,
         printer: &mut Printer,
-    ) -> ExitCode {
+        goal: bool,
+    ) -> (ExitCode, bool) {
         let mut stream = match started {
             Ok(Sent::Started(stream)) => stream,
             Ok(Sent::Queued(_)) => {
                 printer.status(QUEUED);
-                return ExitCode::SUCCESS;
+                return (ExitCode::SUCCESS, false);
             }
             Err(error) => {
                 self.show_error(printer, &error);
-                return ExitCode::FAILURE;
+                return (ExitCode::FAILURE, false);
             }
         };
         let waiting = printer.waiting();
@@ -200,7 +218,8 @@ impl Client<'_> {
                         Some(TurnItem::Ended(ended)) => return Some(ended),
                         Some(TurnItem::Note(note)) => {
                             followed.note(self.thread, &note);
-                            if self.note(&note, &mut requested, printer, interrupt).await {
+                            let noted = self.note(&note, &mut requested, printer, interrupt, goal);
+                            if noted.await {
                                 cancelling = self.cancel().await;
                             }
                         }
@@ -212,7 +231,7 @@ impl Client<'_> {
             &waiting,
         )
         .await;
-        match ended {
+        let code = match ended {
             Some(Ok(turn)) => {
                 followed.show(self.server, self.thread, printer).await;
                 printer.receipt(&turn, self.endpoint.is_some_and(|endpoint| endpoint.local));
@@ -228,18 +247,20 @@ impl Client<'_> {
                 ExitCode::FAILURE
             }
             None => ExitCode::FAILURE,
-        }
+        };
+        (code, followed.proposed())
     }
 
-    /// Shows one notification; answers an approval once it is pending, never one already
-    /// decided, as one the judge let run. True when the person pressed Ctrl-C instead of
-    /// answering.
+    /// Shows one notification of a turn, or of a `goal`'s; answers an approval once it is
+    /// pending, never one already decided, as one the judge let run. True when the person
+    /// pressed Ctrl-C instead of answering.
     async fn note(
         &self,
         note: &Notification,
         requested: &mut Requested,
         printer: &mut Printer,
         interrupt: &Cancel,
+        goal: bool,
     ) -> bool {
         match note {
             // A turn the terminal follows is not a task, nor a list.
@@ -282,11 +303,13 @@ impl Client<'_> {
                     Body::GoalEnded(ended) => {
                         printer.goal_ended(ended.reason, ended.tokens, ended.note.as_deref());
                     }
+                    // A goal's continuation; glave's other words are the model's to read.
                     Body::MessageAdded(added)
-                        if added
-                            .author
-                            .as_ref()
-                            .is_some_and(|author| author.kind == PrincipalKind::Glave) =>
+                        if goal
+                            && added
+                                .author
+                                .as_ref()
+                                .is_some_and(|author| author.kind == PrincipalKind::Glave) =>
                     {
                         printer.status("\n· continuing toward the goal");
                     }

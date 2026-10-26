@@ -45,8 +45,8 @@ pub struct Setup {
     pub endpoint: Config,
     /// The environment commands start from, before the task's own and minus secrets.
     pub environment: Vec<(OsString, OsString)>,
-    /// Whether the model keeps the thread's plan with `update_plan`, as glave runs; off, to
-    /// measure what it does without.
+    /// Whether the model keeps the thread's plan in every mode, as glave runs; off, only in
+    /// Plan, to measure what it does.
     pub plans: bool,
     /// Whether the model may hand work to child threads with `task`, to measure what it does.
     pub subagents: bool,
@@ -559,21 +559,56 @@ impl Talk<'_> {
                 .await;
             self.failures
                 .extend(steering.as_ref().and_then(Steering::unsent));
-            match ran {
-                Ok(_) if cancel.is_cancelled() => {
-                    let seconds = self.task.timeout.as_secs();
-                    self.failures.push(format!("took longer than {seconds}s"));
-                    break;
-                }
-                Ok(_) => {}
-                Err(err) => {
-                    self.failures
-                        .push(format!("turn {} failed: {err}", index + 1));
+            if !self.ended(ran, &cancel, &format!("turn {}", index + 1)) {
+                break;
+            }
+            if index == 0 && self.task.build {
+                thread = harness
+                    .resume_thread(scope, thread.id)
+                    .await
+                    .map_err(fail)?;
+                if !self.build(&mut thread).await {
                     break;
                 }
             }
         }
         Ok(Some(thread.id))
+    }
+
+    /// Builds the plan `thread`'s turn proposed, as the person's Build it does: false when
+    /// it could not, a failure of the attempt.
+    async fn build(&mut self, thread: &mut glave_harness::Thread) -> bool {
+        let _ = writeln!(self.transcript, "\n> (the person builds the plan)");
+        let cancel = Cancel::new();
+        let _deadline = Deadline::cancels(&cancel, self.deadline);
+        let transcript = &mut self.transcript;
+        let mut show = |live: Live| note(transcript, live);
+        let harness = self.harness;
+        let ran = harness
+            .build_plan(thread, &Caller::default(), &cancel, &mut show)
+            .await;
+        self.ended(ran, &cancel, "building the plan")
+    }
+
+    /// Whether `what` ran to its end: otherwise, why not is a failure of the attempt.
+    fn ended<T>(
+        &mut self,
+        ran: Result<T, glave_harness::HarnessError>,
+        cancel: &Cancel,
+        what: &str,
+    ) -> bool {
+        match ran {
+            Ok(_) if cancel.is_cancelled() => {
+                let seconds = self.task.timeout.as_secs();
+                self.failures.push(format!("took longer than {seconds}s"));
+                false
+            }
+            Ok(_) => true,
+            Err(err) => {
+                self.failures.push(format!("{what} failed: {err}"));
+                false
+            }
+        }
     }
 }
 

@@ -66,6 +66,7 @@ pub(crate) fn own_records(events: &[Event]) -> u64 {
                     | Body::CommandStarted(_)
                     | Body::CommandEnded(_)
                     | Body::PlanUpdated(_)
+                    | Body::PlanApproved(_)
             )
         })
         .count();

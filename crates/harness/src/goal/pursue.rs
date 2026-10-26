@@ -33,7 +33,8 @@ where
     /// Sets `goal` on the thread, replacing any goal it had, and works toward it: the
     /// objective is the first turn's prompt, then each turn ends with a continuation until
     /// the goal ends. The summary adds up every turn. Cancelling stops the goal; an error
-    /// leaves it active, to continue later with [`Harness::continue_goal`].
+    /// leaves it active, to continue later with [`Harness::continue_goal`]. Refused in plan
+    /// mode, whose turn stops at a plan for the person.
     pub async fn start_goal(
         &self,
         thread: &mut Thread,
@@ -42,6 +43,9 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
+        if self.planning(thread) {
+            return Err(HarnessError::GoalInPlan(thread.id));
+        }
         self.close_left_open(thread).await?;
         let set = GoalSet {
             objective: goal.objective.clone(),
@@ -63,7 +67,7 @@ where
 
     /// Goes on working toward the thread's goal, as after a restart, or resumes it for
     /// `caller` if the model paused it: every turn, the first included, starts with a
-    /// continuation.
+    /// continuation. Refused in plan mode, as [`Harness::start_goal`] is.
     pub async fn continue_goal(
         &self,
         thread: &mut Thread,
@@ -71,6 +75,9 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
+        if self.planning(thread) {
+            return Err(HarnessError::GoalInPlan(thread.id));
+        }
         self.close_left_open(thread).await?;
         let Some(goal) = thread.goal().filter(|goal| goal.resumable()) else {
             return Err(HarnessError::NoGoal(thread.id));
@@ -197,7 +204,8 @@ where
     }
 
     /// Runs the goal's next turn, the objective's when `opening` gives it, else a
-    /// continuation's: `None` once the goal ended or spent its budget.
+    /// continuation's: `None` once the goal ended or spent its budget, or is paused because
+    /// the thread went into plan mode while it waited.
     async fn next_turn(
         &self,
         thread: &mut Thread,
@@ -211,6 +219,11 @@ where
         };
         if goal.spent() {
             self.end_goal(thread, GoalReason::Budget, None, None)
+                .await?;
+            return Ok(None);
+        }
+        if self.planning(thread) {
+            self.end_goal(thread, GoalReason::Paused, None, None)
                 .await?;
             return Ok(None);
         }

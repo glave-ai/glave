@@ -229,6 +229,11 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         ("thread/sources", on_thread()),
         ("thread/plan", on_thread()),
         (
+            "plan/edit",
+            vec![json!({"thread": "@thread", "steps": ["mine now"]})],
+        ),
+        ("plan/build", on_thread()),
+        (
             "thread/events",
             vec![
                 json!({"thread": "@thread"}),

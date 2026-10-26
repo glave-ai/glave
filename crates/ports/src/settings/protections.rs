@@ -24,13 +24,13 @@ impl Protections {
     }
 
     /// The sandbox a thread's commands run in with `permissions`, where the most a sandbox
-    /// here allows is `here` (none where none can run): read-only for Ask first, the project
-    /// for Auto where that can run, and none for Full access. Without the network where
+    /// here allows is `here` (none where none can run): read-only for Plan and Ask first, the
+    /// project for Auto where that can run, and none for Full access. Without the network where
     /// the project takes it.
     pub fn sandbox(self, permissions: Permissions, here: Option<&Sandbox>) -> Option<Sandbox> {
         let here = here?;
         let level = match permissions {
-            Permissions::Ask => SandboxLevel::ReadOnly,
+            Permissions::Plan | Permissions::Ask => SandboxLevel::ReadOnly,
             Permissions::Auto if here.level == SandboxLevel::Project => SandboxLevel::Project,
             Permissions::Auto | Permissions::FullAccess => return None,
         };
@@ -45,7 +45,7 @@ impl Protections {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use Permissions::{Ask, Auto, FullAccess};
+    use Permissions::{Ask, Auto, FullAccess, Plan};
 
     #[test]
     fn a_thread_s_own_choice_is_nearest_then_its_project_s_then_the_harness_s() {
@@ -74,10 +74,12 @@ mod tests {
                 .map(|sandbox| (sandbox.level, sandbox.network))
         };
         let none = Protections::default();
-        assert_eq!(
-            level(none, Ask, Some(&here)),
-            Some((SandboxLevel::ReadOnly, true))
-        );
+        for cautious in [Plan, Ask] {
+            assert_eq!(
+                level(none, cautious, Some(&here)),
+                Some((SandboxLevel::ReadOnly, true))
+            );
+        }
         assert_eq!(
             level(none, Auto, Some(&here)),
             Some((SandboxLevel::Project, true))

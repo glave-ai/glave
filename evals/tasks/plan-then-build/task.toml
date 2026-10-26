@@ -1,0 +1,15 @@
+[task]
+name = "glave/plan-then-build"
+description = "In plan mode the model proposes a plan for two fixes; the person builds it, as Build it does, and the turn that builds it, in Auto, fixes both without weakening the tests."
+
+[agent]
+timeout_sec = 600
+
+[glave]
+permissions = "plan"
+build = true
+checks = [
+  { recorded = "plan.approved" },
+  { sent = '"proposed":true' },
+  { kept = "tests/stock.rs" },
+]

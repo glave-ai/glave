@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use glave_event::{Currency, GoalReason, Money, Outcome, OutsideSandbox, ThreadId};
 use glave_harness::Question;
-use glave_session::protocol::{ReplySources, TurnResult, Update};
+use glave_session::protocol::{PlanInfo, ReplySources, TurnResult, Update};
 
 use crate::waiting::Waiting;
 
@@ -285,6 +285,15 @@ impl Printer {
             Some(label) => format!("[{label}] {summary}"),
             None => summary.to_owned(),
         }
+    }
+
+    /// A plan a turn proposed, as the server says it; with `asks`, the question after it,
+    /// whose answer is typed next.
+    pub(crate) fn plan(&mut self, plan: &PlanInfo, asks: bool) {
+        self.waiting.stop();
+        print!("{}", crate::client::plan::shown(self.color, plan, asks));
+        self.showing = Showing::Nothing;
+        flush();
     }
 
     /// One of the model's questions; the answer is typed next.

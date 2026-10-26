@@ -419,3 +419,43 @@ fn a_reply_shows_the_pages_it_read_under_it() {
         );
     });
 }
+
+#[test]
+fn in_plan_mode_with_no_one_there_the_plan_is_the_answer_and_nothing_is_built() {
+    let place = place("plan");
+    let plan = json!({"plan": [
+        {"step": "Read how flags are parsed", "status": "pending"},
+        {"step": "Add --verbose", "status": "pending"}
+    ]});
+    let server = FakeServer::start(vec![
+        Reply::tool_call(
+            "toolu_1",
+            "write",
+            &json!({"path": "notes.md", "content": "hi"}),
+        ),
+        Reply::tool_call("toolu_2", "update_plan", &plan),
+    ])
+    .unwrap();
+    let args = [
+        "--model",
+        "m",
+        "--permissions",
+        "plan",
+        "add a --verbose flag",
+    ];
+    let output = glave(&place, &server, &args, "");
+    let shown = text(&output);
+    assert!(output.status.success(), "{shown}");
+    assert!(
+        shown.contains(
+            "plan Proposed plan: 2 steps\n  1. [ ] Read how flags are parsed\n  2. [ ] Add --verbose\n"
+        ),
+        "{shown}"
+    );
+    assert!(!shown.contains("build it?"), "no one here to ask: {shown}");
+    assert!(
+        !place.project.join("notes.md").exists(),
+        "plan mode changes nothing"
+    );
+    assert_eq!(server.received().len(), 2, "the turn ended with the plan");
+}

@@ -436,9 +436,14 @@ where
         if self.settings.subagents {
             set.offer_agent();
         }
-        // A thread with a plan keeps it current whatever the settings say.
-        if self.settings.plans || thread.plan.plan.is_some() {
+        // Plan mode proposes its plan with it, and a thread with a plan keeps it current, so
+        // both have it whatever the settings say.
+        let planning = self.permissions_for(thread) == Permissions::Plan;
+        if self.settings.plans || planning || thread.plan.plan.is_some() {
             set.offer_plan();
+        }
+        if planning {
+            set.system.push_str(crate::plan::PLAN_MODE);
         }
         set
     }

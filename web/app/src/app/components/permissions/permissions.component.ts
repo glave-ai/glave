@@ -6,7 +6,7 @@ import {
   type GlzMenuOption,
   GlzMenuSelectComponent,
 } from '@glave/glaze';
-import { Hand, ShieldCheck, ShieldOff } from 'lucide';
+import { ClipboardList, Hand, ShieldCheck, ShieldOff } from 'lucide';
 
 import { ServerService } from '../../services/server.service';
 
@@ -53,6 +53,12 @@ export class PermissionsComponent {
       about: $localize`:@@permissions.autoAbout:Works on its own in this project. Asks only before something risky.`,
       icon: ShieldCheck,
       recommended: true,
+    },
+    plan: {
+      text: $localize`:@@permissions.plan:Plan`,
+      about: $localize`:@@permissions.planAbout:Looks around and proposes a plan. Changes nothing until you approve it.`,
+      icon: ClipboardList,
+      recommended: false,
     },
     ask: {
       text: $localize`:@@permissions.ask:Ask first`,

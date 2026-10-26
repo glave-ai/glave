@@ -35,8 +35,8 @@ pub struct Settings {
     pub max_output_tokens: Option<u32>,
     /// Whether the model may hand work to subagents with `agent`.
     pub subagents: bool,
-    /// Whether the model keeps the thread's plan with `update_plan`; a thread that has a plan
-    /// offers it whatever this says. Off by default.
+    /// Whether the model keeps the thread's plan with `update_plan` in every mode; plan mode,
+    /// and a thread that has a plan, offer it whatever this says. Off by default.
     pub plans: bool,
     /// Whether, where nothing else asks, a judge decides if an action a rule flagged may run
     /// because the person asked for it, and which model: its calls name it, for the `judge`

@@ -27,6 +27,12 @@ pub enum HarnessError {
     Cancelled,
     #[error("thread {0} has no active goal")]
     NoGoal(ThreadId),
+    /// No plan in the thread waits for the person's approval, to edit or build.
+    #[error("thread {0} has no plan waiting for approval")]
+    NoPlan(ThreadId),
+    /// A goal does not run in plan mode, which stops at a plan for the person to build.
+    #[error("thread {0} is in plan mode, where a goal does not run")]
+    GoalInPlan(ThreadId),
     /// The thread's workspace could not be opened, such as a worktree outside a repository.
     #[error("{}", .0.message())]
     Workspace(#[from] ComputerError),

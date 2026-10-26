@@ -493,9 +493,9 @@ fn address(value: Option<String>) -> Result<SocketAddr, String> {
 
 /// The mode `--permissions` names.
 fn mode(value: Option<String>) -> Result<Permissions, String> {
-    let name = value.ok_or("--permissions needs a mode: auto, ask or full-access")?;
+    let name = value.ok_or("--permissions needs a mode: auto, plan, ask or full-access")?;
     Permissions::named(&name)
-        .ok_or_else(|| format!("unknown mode {name:?}: use auto, ask or full-access"))
+        .ok_or_else(|| format!("unknown mode {name:?}: use auto, plan, ask or full-access"))
 }
 
 /// The value of `--max-steps`: a whole number of model calls, at least one.
