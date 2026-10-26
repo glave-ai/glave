@@ -454,7 +454,7 @@ where
             .map_err(|error| ApiError::from(&error))?;
         let id = thread.id;
         self.place(id, scope);
-        self.keep(id, thread);
+        self.keep(id, thread).await;
         Ok(id)
     }
 

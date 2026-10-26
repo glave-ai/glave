@@ -5,12 +5,13 @@ mod settings;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::{Arc, PoisonError, RwLock};
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use glave_event::{
     At, EventId, Header, Origin, OriginKind, ParentCall, Part, Payload, Permissions, Principal,
     PrincipalId, Producer, RawEvent, Seq, ThreadId, ThreadStarted, WorkspaceBound, encode,
 };
+use glave_ports::computer::WorkspaceId;
 use glave_ports::memories::Memory;
 use glave_ports::settings::Hooks;
 use glave_ports::{BlobStore, Caller, EventLog, Message, ModelProvider, Scope, ToolSource};
@@ -95,6 +96,9 @@ pub struct Harness<P, L, B, A> {
     /// project turns on; none by default, so every thread opens with the settings' own and
     /// gets only the harness's tools and hooks.
     pub(crate) project_folders: Option<Arc<dyn ProjectFolders>>,
+    /// Workspaces opened for threads let go of while commands were still in them, closed by a
+    /// later let-go once their computer has none left there (`bind.rs`).
+    pub(crate) lingering: Mutex<Vec<WorkspaceId>>,
 }
 
 /// One thread: where it is stored, where it continues, and the conversation so far.
@@ -301,6 +305,7 @@ where
             workers: None,
             memory: None,
             project_folders: None,
+            lingering: Mutex::default(),
         }
     }
 

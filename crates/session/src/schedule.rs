@@ -171,7 +171,7 @@ where
     /// schedule's next time.
     pub async fn tick(&self) -> Result<Vec<ThreadId>, ApiError> {
         // Threads idle for 30 minutes are let go even when nothing else happens.
-        self.let_go_stale();
+        self.let_go_stale().await;
         // One server of the organization fires its schedules: the holder of their lease.
         if !self.fires().await? {
             return Ok(Vec::new());

@@ -108,27 +108,33 @@ where
     }
 
     /// Opens the thread's worktree again from its branch, when a cleanup removed it while this
-    /// harness held the thread, as resuming the thread would. An archived or deleted thread's
-    /// stays removed until it is active again.
+    /// harness held the thread, as resuming the thread would, and closes the one it replaces.
+    /// An archived or deleted thread's stays removed until it is active again.
     pub(crate) async fn reopen_removed(&self, thread: &mut Thread) -> Result<(), HarnessError> {
         if !thread.removed || thread.standing != Standing::Active {
             return Ok(());
         }
-        if let Some(Sources::Worktree { path, branch, .. }) = thread
-            .workspace
-            .as_ref()
-            .map(|workspace| &workspace.info().sources)
-        {
-            let owner = owner_label(thread.scope, thread.id);
-            let worktree = self.workspace.worktree(path, branch, Some(&owner)).await?;
-            thread.workspace = Some(Arc::new(worktree));
-        } else if let Some(Sources::Scratch { name, owner }) = thread
+        let again = match thread
             .workspace
             .as_ref()
             .map(|workspace| workspace.info().sources.clone())
         {
-            let scratch = self.workspace.scratch(&name, owner.as_deref()).await?;
-            thread.workspace = Some(Arc::new(scratch));
+            Some(Sources::Worktree { path, branch, .. }) => {
+                let owner = owner_label(thread.scope, thread.id);
+                Some(
+                    self.workspace
+                        .worktree(&path, &branch, Some(&owner))
+                        .await?,
+                )
+            }
+            Some(Sources::Scratch { name, owner }) => {
+                Some(self.workspace.scratch(&name, owner.as_deref()).await?)
+            }
+            _ => None,
+        };
+        if let Some(again) = again {
+            let replaced = thread.workspace.replace(Arc::new(again));
+            self.close_workspace(replaced).await;
         }
         thread.removed = false;
         Ok(())
