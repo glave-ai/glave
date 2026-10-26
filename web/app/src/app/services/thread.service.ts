@@ -418,16 +418,11 @@ export class ThreadService {
       }
     } catch (error: unknown) {
       const aborted = controller.signal.aborted;
+      const lost = start.method === 'turn/start' && this.asking() !== null;
       if (folderGone(error)) {
         // The project's folder went since the lists were read: they say so in its place.
         void this.projects.refresh();
-      } else if (
-        !aborted &&
-        queued === null &&
-        start.method === 'turn/start' &&
-        this.asking() !== null &&
-        !refused(error)
-      ) {
+      } else if (!aborted && queued === null && lost && !refused(error)) {
         // No answer came, but it may have started: sent again with its key, as a first turn is.
         this.firstTurns.lost(start.params, key);
       } else if (!aborted) {

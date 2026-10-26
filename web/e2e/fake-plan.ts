@@ -1,6 +1,7 @@
 import type { PlanInfo, PlanStep, RawEvent } from '@glave/client';
 import type { Page } from '@playwright/test';
 
+import { type Storing, storedEvents } from './fake-events';
 import { type Gated, gates } from './fake-gate';
 import { call, done, event } from './fake-records';
 
@@ -98,6 +99,7 @@ export function planned(method: string, params: Record<string, unknown>, plan: P
  */
 export async function planServer(page: Page): Promise<void> {
   await gates(page);
+  await storedEvents(page);
   await page.addInitScript(
     ({ thread, proposed, after }) => {
       const real = window.fetch.bind(window);
@@ -117,25 +119,15 @@ export async function planServer(page: Page): Promise<void> {
         new Response(JSON.stringify({ jsonrpc: '2.0', id, result }), {
           headers: { 'Content-Type': 'application/json' },
         });
+      // Now, as the server records it, so the work's time reads as it would.
       const stored = (seq: number, type: string, data: unknown): string =>
-        JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'thread/event',
-          params: {
-            thread,
-            event: {
-              glave: 1,
-              id: `01900000-0000-7000-8000-${String(seq).padStart(12, '0')}`,
-              thread,
-              seq,
-              // Now, as the server records it, so the work's time reads as it would.
-              at: new Date().toISOString(),
-              type,
-              v: 1,
-              data,
-            },
-          },
-        });
+        (window as unknown as Storing).glaveStored(
+          thread,
+          seq,
+          new Date().toISOString(),
+          type,
+          data,
+        );
       /** The steps as far as `done` of them are done, the next one doing. */
       const ticked = (done: number): readonly Step[] =>
         steps.map((step, index): Step => {
