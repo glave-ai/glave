@@ -96,7 +96,8 @@
             "setupFiles": ["glaze/src/testing/platform.ts"],
             "runnerConfig": "vitest.config.mjs",
             "coverage": true,
-            "coverageReporters": ["text-summary"]
+            "coverageReporters": ["text-summary"],
+            "include": ["**/*.spec.ts", "../../client/src/**/*.spec.ts"]
           }
         }
       },
