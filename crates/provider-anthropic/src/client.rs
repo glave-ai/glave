@@ -119,7 +119,7 @@ impl ModelProvider for Anthropic {
             let (name, value) = header_pair(&header.name, header.value.expose())?;
             call = call.header(name, value);
         }
-        let mut response = call.body(body).send().await.map_err(|e| self.failed(e))?;
+        let response = call.body(body).send().await.map_err(|e| self.failed(e))?;
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
@@ -128,24 +128,41 @@ impl ModelProvider for Anthropic {
                 body: message_of(&redact_credentials(&body, &sent)),
             });
         }
-        let mut decoder = SseDecoder::default();
         let mut assembler = Assembler::new(&self.provider, &request.model);
+        match self.stream(response, &mut assembler, on_delta).await {
+            Ok(()) => assembler.finish(),
+            Err(error) if assembler.has_output() => {
+                Err(ProviderError::AfterOutput(Box::new(error)))
+            }
+            Err(error) => Err(error),
+        }
+    }
+}
+
+impl Anthropic {
+    /// Reads the response's events into `assembler`, until `message_stop` or the end of the
+    /// body.
+    async fn stream(
+        &self,
+        mut response: reqwest::Response,
+        assembler: &mut Assembler,
+        on_delta: &mut (dyn FnMut(Delta) + Send),
+    ) -> Result<(), ProviderError> {
+        let mut decoder = SseDecoder::default();
         while let Some(bytes) = response.chunk().await.map_err(|e| self.failed(e))? {
             for data in decoder.push(&bytes)? {
                 assembler.apply(&data, on_delta)?;
             }
             if assembler.stopped() {
-                break;
+                return Ok(());
             }
         }
         if let Some(data) = decoder.finish() {
             assembler.apply(&data, on_delta)?;
         }
-        assembler.finish()
+        Ok(())
     }
-}
 
-impl Anthropic {
     /// A `GET` of `path` under Anthropic's own API (`<base>/v1/<path>`), asked with the
     /// endpoint's credentials, its JSON answer: what the API lists, such as its models
     /// (`models`), so a key can be checked when a person adds it. Vertex AI lists nothing

@@ -18,6 +18,9 @@ use serde_json::{Value, json};
 pub enum Reply {
     /// A streamed completion: each item is one `data:` payload; `[DONE]` follows.
     Stream(Vec<Value>),
+    /// A stream that breaks off after these payloads: the connection closes before the
+    /// response's end.
+    Broken(Vec<Value>),
     /// An error status with this body.
     Status(u16, String),
     /// No answer at all: the request is held open until the client hangs up, like a model
@@ -223,24 +226,31 @@ fn serve(
 }
 
 fn respond(mut stream: TcpStream, reply: &Reply) -> std::io::Result<()> {
-    let (status, content_type, body) = match reply {
-        Reply::Stream(chunks) => {
-            let mut body = String::new();
-            for chunk in chunks {
-                let _ = write!(body, "data: {chunk}\n\n");
-            }
-            body.push_str("data: [DONE]\n\n");
-            (200, "text/event-stream", body)
+    let events = |chunks: &[Value]| {
+        let mut body = String::new();
+        for chunk in chunks {
+            let _ = write!(body, "data: {chunk}\n\n");
         }
-        Reply::Status(status, body) => (*status, "application/json", body.clone()),
+        body
+    };
+    // A broken stream promises a byte more than it sends.
+    let (status, content_type, body, missing) = match reply {
+        Reply::Stream(chunks) => {
+            let body = events(chunks) + "data: [DONE]\n\n";
+            (200, "text/event-stream", body, 0)
+        }
+        Reply::Broken(chunks) => (200, "text/event-stream", events(chunks), 1),
+        Reply::Status(status, body) => (*status, "application/json", body.clone(), 0),
         Reply::Stall => return Ok(()),
     };
     IoWrite::write_fmt(
         &mut stream,
         format_args!(
             "HTTP/1.1 {status} FAKE\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-            body.len()
+            body.len() + missing
         ),
     )?;
-    IoWrite::flush(&mut stream)
+    IoWrite::flush(&mut stream)?;
+    // Hung up as `connection: close` says, though the server keeps a clone to close on drop.
+    stream.shutdown(Shutdown::Write)
 }

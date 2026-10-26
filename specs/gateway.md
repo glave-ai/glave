@@ -40,7 +40,7 @@ A **route** names a purpose and maps it to an ordered list of **targets** (provi
 
 - **Capability-checked:** a target that cannot honour the request (no tools, a smaller context than the conversation) is skipped, never sent a degraded request.
 - **Thread-sticky:** a conversation that holds a provider's opaque reasoning falls back only to targets that accept it. Otherwise the reasoning is stripped explicitly and that is recorded.
-- Failures that may pass (rate limits, overload, timeouts) move to the next target after the provider's own retries.
+- Failures that may pass (rate limits, overload, timeouts) move to the next target after the provider's own retries. Never once output has come: an answer that breaks off partway goes to the caller as it is, since asking again, here or in the harness, would paste a second answer after the first's start.
 
 ## Catalogs
 
