@@ -25,7 +25,7 @@ use crate::task::{self, Task, Tier};
 pub(crate) const DEFAULT_MODELS: [&str; 3] = [
     "anthropic/claude-haiku-5.5",
     "openai/gpt-6-luna",
-    "deepseek/deepseek-v4.1-flash",
+    "deepseek/deepseek-v4.1-flash-1017",
 ];
 
 const USAGE: &str = "\
