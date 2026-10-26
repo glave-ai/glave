@@ -50,19 +50,32 @@ fn a_target_without_tools_is_skipped_when_tools_are_offered() {
 }
 
 #[test]
-fn a_target_without_images_is_skipped_when_the_conversation_has_one() {
+fn a_target_without_images_is_skipped_when_the_request_sends_one() {
     let fake = Fake::new("p");
     let mut asked = request(Purpose::Main);
+    let sha256 = Sha256::new("a".repeat(64)).unwrap();
     asked.messages.push(Message::User {
         parts: vec![Part::File {
             blob: BlobRef {
-                sha256: Sha256::new("a".repeat(64)).unwrap(),
+                sha256: sha256.clone(),
                 bytes: 10,
                 media_type: "image/png".into(),
             },
             name: None,
+            resized: None,
         }],
     });
+    let blind_only = vec![limited(fake.target("blind"), |can| can.images = false)];
+    assert_eq!(
+        serve(blind_only, &asked).unwrap(),
+        "p/blind",
+        "an image sent by its name needs no eyes"
+    );
+    asked.files = vec![glave_ports::InlineFile {
+        sha256,
+        media_type: "image/png".into(),
+        data: "cG5n".into(),
+    }];
     let targets = vec![
         limited(fake.target("blind"), |can| can.images = false),
         fake.target("sighted"),

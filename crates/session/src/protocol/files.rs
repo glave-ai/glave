@@ -12,7 +12,7 @@ pub struct FileInfo {
     pub sha256: Sha256,
     /// Its name, as the person's computer called it.
     pub name: String,
-    /// Its media type, such as `image/png`.
+    /// Its media type, such as `image/png`, as what it holds says.
     pub media_type: String,
     /// Its size.
     pub bytes: u64,

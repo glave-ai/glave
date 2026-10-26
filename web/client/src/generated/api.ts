@@ -164,7 +164,7 @@ export type Failure = "refused" | "no_credit" | "unknown_model" | "too_long" | "
 export type FileInfo = {
   /** Its size. */
   readonly bytes: number;
-  /** Its media type, such as `image/png`. */
+  /** Its media type, such as `image/png`, as what it holds says. */
   readonly media_type: string;
   /** Its name, as the person's computer called it. */
   readonly name: string;
@@ -950,7 +950,10 @@ export type CredentialRemoveResult = Readonly<Record<string, never>>;
 export type FileUploadParams = {
   /** Its content, in base64. */
   readonly data: string;
-  /** Its media type, such as `image/png`; `application/octet-stream` when unknown. */
+  /**
+   * Its media type, such as `image/png`; `application/octet-stream` when unknown. What
+   * it holds decides whether it is an image or a PDF; this names a text file's kind.
+   */
   readonly media_type: string;
   /** Its name, as the person's computer called it. */
   readonly name: string;

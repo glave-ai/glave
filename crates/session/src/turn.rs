@@ -187,7 +187,6 @@ where
         if let Some(preset) = choice.permissions {
             self.allowed_permissions(preset)?;
         }
-        let files = self.attach(&scope, thread, files, &model).await?;
         let (finish, done) = watch::channel(None);
         // Held until this says what it did: on any way out before that, the key is let go.
         let claimed = key.map(|key| self.inner.keyed.claim(caller.person, thread, key, &done));
@@ -198,6 +197,8 @@ where
             Some(Claimed::Mine(claim)) => Some(claim),
             None => None,
         };
+        // After the claim, so a retry with the key makes no second copy of an image.
+        let files = self.attach(&scope, thread, files, &model).await?;
         if queue {
             // Read in, so a turn that waits for an answer takes the message for when it goes on.
             self.load(thread).await?;

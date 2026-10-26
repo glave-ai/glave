@@ -15,6 +15,12 @@ use crate::words::Sentence;
 /// The type of the event that records a thread's choice.
 const CHOSEN: &str = "model.chosen";
 
+/// The ids of the `models` that say they read no images; one that says nothing is assumed to.
+pub(crate) fn without_images(models: &[ModelInfo]) -> Vec<String> {
+    let blind = models.iter().filter(|known| known.images == Some(false));
+    blind.map(|known| known.id.clone()).collect()
+}
+
 /// The models a server built on `default` runs: the default first, then each of `offered`
 /// once, in order. An offered entry for the default describes it. With no default, none:
 /// nothing is set up yet.
@@ -61,27 +67,16 @@ where
         }
     }
 
-    /// Replaces the models threads may be sent to.
+    /// Replaces the models threads may be sent to, telling the harness which read no images.
     pub(crate) fn set_catalog(&self, models: Vec<ModelInfo>) {
+        self.inner
+            .harness
+            .set_without_images(without_images(&models));
         *self
             .inner
             .models
             .write()
             .unwrap_or_else(PoisonError::into_inner) = models;
-    }
-
-    /// Whether `model` reads images: unless what this server knows of it says it does not.
-    pub(crate) fn reads_images(&self, model: &str) -> bool {
-        let models = self
-            .inner
-            .models
-            .read()
-            .unwrap_or_else(PoisonError::into_inner);
-        models
-            .iter()
-            .find(|known| known.id == model)
-            .and_then(|known| known.images)
-            .unwrap_or(true)
     }
 
     /// Refuses `model` with `-32021` unless this server runs it.

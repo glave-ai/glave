@@ -459,7 +459,7 @@
           "type": "integer"
         },
         "media_type": {
-          "description": "Its media type, such as `image/png`.",
+          "description": "Its media type, such as `image/png`, as what it holds says.",
           "type": "string"
         },
         "name": {
@@ -2974,7 +2974,7 @@
             "type": "string"
           },
           "media_type": {
-            "description": "Its media type, such as `image/png`; `application/octet-stream` when unknown.",
+            "description": "Its media type, such as `image/png`; `application/octet-stream` when unknown. What\nit holds decides whether it is an image or a PDF; this names a text file's kind.",
             "type": "string"
           },
           "name": {

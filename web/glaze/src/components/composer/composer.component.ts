@@ -10,7 +10,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { ArrowUp, Plus, SlidersHorizontal, Square } from 'lucide';
+import { ArrowUp, Paperclip, SlidersHorizontal, Square } from 'lucide';
 
 import { injectId } from '../../tokens/ids';
 import { isApple } from '../../lib/shortcuts';
@@ -52,7 +52,7 @@ export type GlzComposerSize = 'md' | 'lg';
  * it works. A `lg` composer starts a thread: two lines to write in, in larger type, more room
  * round them, rounder corners, and a shadow under it.
  *
- * With an `attachLabel`, a + at the box's start opens the system's file picker, and files
+ * With an `attachLabel`, a paperclip at the box's start opens the system's file picker, and files
  * pasted into the box or dropped on the composer are added too: `attach` emits them, and the app
  * shows each as a chip in `[glzComposerAttachments]`, a row above the text. `attached` lets a
  * message with files and no text be sent; `waiting` holds Send while one is on its way.
@@ -125,7 +125,7 @@ export class GlzComposerComponent {
     send: ArrowUp,
     stop: Square,
     options: SlidersHorizontal,
-    attach: Plus,
+    attach: Paperclip,
   };
   private readonly textarea = viewChild.required<ElementRef<HTMLTextAreaElement>>('textarea');
   private readonly picker = viewChild<ElementRef<HTMLInputElement>>('picker');

@@ -17,6 +17,7 @@ pub(crate) struct Needs<'a> {
     /// Bytes of everything the model reads: system prompt, conversation and tools.
     pub(crate) bytes: u64,
     pub(crate) tools: bool,
+    /// Whether it sends an image or a PDF inline, which only a model that reads images reads.
     pub(crate) images: bool,
     /// The provider and model of the latest opaque reasoning in the conversation, if any.
     pub(crate) reasoning: Option<&'a Opaque>,
@@ -27,7 +28,7 @@ impl<'a> Needs<'a> {
         let mut needs = Self {
             bytes: len(&request.system),
             tools: !request.tools.is_empty(),
-            images: false,
+            images: !request.files.is_empty(),
             reasoning: None,
         };
         for tool in &request.tools {
@@ -74,10 +75,7 @@ impl<'a> Needs<'a> {
                         .map_or(0, len)
                         .saturating_add(opaque.as_ref().map_or(0, |o| len(&o.data)))
                 }
-                Part::File { blob, .. } => {
-                    self.images |= blob.media_type.starts_with("image/");
-                    0
-                }
+                Part::File { .. } => 0,
             };
             self.bytes = self.bytes.saturating_add(bytes);
         }

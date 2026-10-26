@@ -155,7 +155,7 @@ Every type is at version 1.
 Details shared by several types:
 
 - **Reasoning parts** carry an optional `text` (whatever readable reasoning the provider returned) and an optional `opaque` (`provider`, `model`, `kind`, `data`). `data` is stored byte-exact and replayed only to the same provider.
-- **File parts** and the `config` reference use a blob reference: `sha256` (64 lowercase hex digits), `bytes`, `media_type`. Large outputs are stored once by hash and referenced.
+- **File parts** and the `config` reference use a blob reference: `sha256` (64 lowercase hex digits), `bytes`, `media_type`. Large outputs are stored once by hash and referenced. A file part names the file (`blob`), its `name`, and, for an image the model is sent a copy of, that copy (`resized`, `session.md`, "Attachments").
 - **Stop reasons** are normalized across providers: `end_turn`, `tool_use`, `max_tokens`, `stop_sequence`, `context_exceeded`, `content_filter`, `refusal`, `pause`, `malformed_tool_call`, `error`, `cancelled`, `interrupted`. The provider's exact value goes in `provider_stop`.
 - **Usage** counts are inclusive totals with subsets: `input` includes `cache_read` and `cache_write`, and `output` includes `reasoning`. `estimated` is true when a stream ended before the provider reported usage. The provider's own usage object can ride along as `raw`.
 - **Money** is an integer count of millionths plus an ISO 4217 currency code: `{"micros": 4200, "currency": "USD"}` is $0.0042. A cost also names the `price_list` it was computed from.
