@@ -187,9 +187,9 @@ export class ProjectsService {
     return undefined;
   }
 
-  /** The project that holds `thread`, if a listed project has it. */
-  projectOf(id: ThreadId): Project | undefined {
-    return this.lists().find(({ threads }) => threads.some((thread) => thread.id === id))?.project;
+  /** The project `id`, if it is listed. */
+  project(id: ProjectId): Project | undefined {
+    return this.lists().find(({ project }) => project.id === id)?.project;
   }
 
   /** The project new chats start in: the person's own (Chats), never a project. */

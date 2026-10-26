@@ -85,6 +85,8 @@ export class ThreadService {
   private readonly deciding = signal(false);
   private readonly asked = signal<TrustAsk | null>(null);
   private readonly trustAnswered = signal<TrustChoice | null>(null);
+  /** The thread's summary as the server last answered it here: on opening, coming back, renamed. */
+  private readonly own = signal<ThreadSummary | null>(null);
   private readonly controllers = new Set<AbortController>();
   /** The watch of the thread, while one runs. */
   private watching: AbortController | null = null;
@@ -93,6 +95,19 @@ export class ThreadService {
   private readonly mac = onApple(this.document);
 
   readonly thread = this.id.asReadonly();
+  /**
+   * The thread's summary: its own, as the server answered it here, or the side nav's copy when
+   * newer (a rename or a turn elsewhere), the only one as it opens; `null` before either.
+   */
+  readonly summary = computed(() => {
+    const thread = this.id();
+    const own = this.own();
+    const listed = thread === null ? undefined : this.projects.thread(thread);
+    if (own?.id !== thread) {
+      return listed ?? null;
+    }
+    return listed !== undefined && listed.updated_at >= own.updated_at ? listed : own;
+  });
   /** The thread's turns, each with its items, the files it changed, its time and cost. */
   readonly turns = computed(() => threadTurns(this.events()));
   /**
@@ -202,6 +217,7 @@ export class ThreadService {
     this.failed.set(null);
     this.asked.set(null);
     this.trustAnswered.set(null);
+    this.own.set(null);
     this.opening.set(true);
     await this.readAll(thread);
     if (this.id() === thread) {
@@ -306,7 +322,10 @@ export class ThreadService {
       return;
     }
     try {
-      await this.session.call('thread/rename', { thread, title });
+      const { thread: renamed } = await this.session.call('thread/rename', { thread, title });
+      if (this.id() === thread) {
+        this.own.set(renamed);
+      }
       this.failed.set(null);
     } catch (error: unknown) {
       this.failed.set(error instanceof Error ? error.message : String(error));
@@ -669,13 +688,14 @@ export class ThreadService {
     }
   }
 
-  /** Reads the thread's summary, which raises its project's ask, and shows the ask: the summary. */
+  /** Reads and keeps the thread's summary, which raises its project's ask, and shows the ask. */
   private async readAsk(thread: ThreadId, quiet = false): Promise<ThreadSummary | null> {
     try {
       const { thread: summary } = await this.session.call('thread/get', { thread });
       if (this.id() !== thread) {
         return null;
       }
+      this.own.set(summary);
       this.asked.set(summary.trust ?? null);
       return summary;
     } catch (error: unknown) {
