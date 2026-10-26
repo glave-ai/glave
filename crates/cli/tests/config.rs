@@ -17,15 +17,12 @@ fn choose(place: &Place, text: &str) {
 #[test]
 fn the_person_s_choices_reach_the_run_and_flags_win_over_them() {
     let place = place("config-choices");
-    choose(
-        &place,
-        "model = \"from-file\"\npermissions = \"read-only\"\n",
-    );
+    choose(&place, "model = \"from-file\"\npermissions = \"ask\"\n");
     let model = FakeServer::start(vec![Reply::text("Hi."), Reply::text("Hi again.")]).unwrap();
     let output = glave(&place, &model, &["hello"], "");
     let shown = text(&output);
     assert!(output.status.success(), "{shown}");
-    assert!(shown.contains("permissions: read-only"), "{shown}");
+    assert!(shown.contains("permissions: ask"), "{shown}");
     assert_eq!(model.received()[0].body["model"], "from-file");
     let output = glave(
         &place,
@@ -78,7 +75,7 @@ fn only_the_mcp_servers_chosen_start() {
 #[test]
 fn policy_explain_names_where_each_setting_came_from() {
     let place = place("config-explain");
-    choose(&place, "permissions = \"read-only\"\n");
+    choose(&place, "permissions = \"ask\"\n");
     let output = Command::new(env!("CARGO_BIN_EXE_glave"))
         .args(["policy", "explain", "--no-network"])
         .current_dir(&place.project)
@@ -101,7 +98,7 @@ fn policy_explain_names_where_each_setting_came_from() {
     assert_eq!(row("model"), "model gemma4:12b from GLAVE_MODEL");
     let permissions = row("permissions");
     assert!(
-        permissions.starts_with("permissions read-only")
+        permissions.starts_with("permissions ask")
             && permissions.ends_with(&format!("from {}", config.display())),
         "{permissions}"
     );

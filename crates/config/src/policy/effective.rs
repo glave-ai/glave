@@ -24,7 +24,7 @@ pub(super) fn settle(mut choices: Choices, constraints: &Constraints) -> crate::
 }
 
 /// `choices` within `constraints` for a server that already runs, and so cannot refuse to
-/// start: a preset, a judge, the network or memory a rule refuses gives way as glave's default
+/// start: a mode, a judge, the network or memory a rule refuses gives way as glave's default
 /// would, each said in a sentence. A constraint added while it runs narrows its next turn
 /// whatever the person's file says. Anything else outside them still fails.
 pub fn give_way(
@@ -55,7 +55,7 @@ pub fn give_way(
     Ok((settle(choices, constraints)?, aside))
 }
 
-/// The preset within `constraints`: glave's default gives way to the highest a rule leaves,
+/// The mode within `constraints`: glave's default gives way to the highest a rule leaves,
 /// and choosing one above it is refused.
 fn permissions(
     chosen: Chosen<Permissions>,

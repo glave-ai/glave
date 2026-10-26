@@ -221,7 +221,7 @@ where
     }
 
     /// A view as the API shows it: what the thread is doing now, its title, read from the one
-    /// event that gives it, and the preset it runs with, as its project changes it (`protections`)
+    /// event that gives it, and the mode it runs with, as its project changes it (`protections`)
     /// when it is the person on this computer's.
     async fn summarize(
         &self,

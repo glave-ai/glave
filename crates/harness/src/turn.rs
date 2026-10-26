@@ -181,7 +181,7 @@ struct TurnConfig<'a> {
     system: &'a str,
     tools: &'a [ToolSpec],
     max_output_tokens: Option<u32>,
-    /// What the agent could do without asking: the thread's preset.
+    /// What the agent could do without asking: the thread's mode.
     permissions: Permissions,
     /// The sandbox commands ran in; absent when there was none.
     #[serde(skip_serializing_if = "Option::is_none")]

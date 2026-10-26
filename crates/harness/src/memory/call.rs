@@ -1,8 +1,9 @@
 //! Running the model's call of a memory tool. Memory is first-party: saving needs no approval
 //! and is never hidden, but after the thread has read untrusted content or a secrets file, a
-//! save is a soft caution (`specs/memory.md`, "Safety"): in auto mode the judge lets it run
-//! only when the person asked for it to be remembered, in ask mode the person is asked, and
-//! with no one there nothing is saved. Memory never changes an approval or what the judge sees.
+//! save is a soft caution (`specs/memory.md`, "Safety"): in Auto the judge lets it run only
+//! when the person asked for it to be remembered, otherwise the person is asked, and with no
+//! one there nothing is saved; Full access asks no one and saves. Memory never changes an
+//! approval or what the judge sees.
 
 use glave_ports::memories::{
     EDIT_MEMORY, FORGET, MemoryChange as Change, MemoryContext, MemoryOutput, RECALL, REMEMBER,

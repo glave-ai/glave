@@ -234,9 +234,9 @@ export class ThreadService {
   /**
    * Sends `prompt`, with the `files` kept for it, and follows the turn as it runs. With
    * `model`, the turn and the thread's turns after it go to that model; with `permissions`, they
-   * run with that preset; with `effort`, their model reasons that much. While a turn runs, the
+   * run with that mode; with `effort`, their model reasons that much. While a turn runs, the
    * message goes to it instead, for the model to read at its next step, and waits in the thread
-   * until it has; the model, preset and level go with the next turn.
+   * until it has; the model, mode and level go with the next turn.
    */
   async send(
     prompt: string,

@@ -33,7 +33,7 @@ where
         unattended: bool,
     ) -> Result<TurnStream, ApiError> {
         let scope = self.authorize(caller, thread).await?;
-        // A model the thread chose before must still be one this server runs; a preset it chose
+        // A model the thread chose before must still be one this server runs; a mode it chose
         // before a cap came runs capped.
         let model = self.model_of(thread, None).await?;
         if goal.is_none() && !self.goal(thread).await?.is_some_and(|g| g.resumable()) {

@@ -5,7 +5,7 @@ expression: "explain(&empty, None).0"
 Settings (the nearest wins: flags, environment, project, person, default)
   model           none: set GLAVE_MODEL or pass --model  from default
   judge_model     the main model                         from default
-  permissions     workspace                              from default
+  permissions     auto                                   from default
   network         on                                     from default
   mcp             every server in mcp.json               from default
   models          none besides model                     from default

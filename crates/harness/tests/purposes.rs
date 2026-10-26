@@ -128,7 +128,9 @@ fn a_subagent_calls_as_a_subagent_within_its_parents_budget() {
 
 #[test]
 fn the_judges_call_is_recorded_and_counted_in_the_thread_it_judged() {
-    let dir = folder("purposes-judge");
+    let Some(base) = crate::outside_sandbox::sandboxed("purposes-judge") else {
+        return;
+    };
     block_on!(async {
         let mut ruling = answer(
             Some(r#"{"decision":"run","reason":"the person asked to push"}"#),
@@ -145,10 +147,16 @@ fn the_judges_call_is_recorded_and_counted_in_the_thread_it_judged() {
             ruling,
             answer(Some("Pushed."), vec![], StopReason::EndTurn),
         ];
-        let mut settings = settings();
-        settings.judge = glave_ports::settings::Judge::Main;
-        let (harness, seen) =
-            harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings).await;
+        let workspace = crate::outside_sandbox::walled(&base, false).await;
+        let judged = crate::outside_sandbox::judged();
+        let (harness, seen) = harness_with(
+            workspace,
+            answers,
+            NoOneToAsk,
+            InMemoryLog::new(),
+            1,
+            judged,
+        );
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let summary = harness
             .run_turn(&mut thread, "push to main", &Cancel::new(), &mut |_| {})

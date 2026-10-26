@@ -166,15 +166,15 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
     rows
 }
 
-/// The preset, and what Workspace comes to where the sandbox cannot run here.
+/// The mode, and what Auto comes to where the sandbox cannot run here.
 fn permissions(choices: &Choices) -> String {
-    let preset = choices.permissions.value;
+    let mode = choices.permissions.value;
     match &choices.unsandboxed {
-        Some(why) if preset == glave_event::Permissions::Workspace => format!(
+        Some(why) if mode == glave_event::Permissions::Auto => format!(
             "{}, but the sandbox cannot run here ({why}), so every change and command asks",
-            preset.name()
+            mode.name()
         ),
-        _ => preset.name().to_owned(),
+        _ => mode.name().to_owned(),
     }
 }
 

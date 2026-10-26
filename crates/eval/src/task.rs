@@ -293,7 +293,7 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         None => Permissions::default(),
         Some(name) => Permissions::named(name).ok_or_else(|| {
             bad(format!(
-                "no preset is named {name:?}: use read-only, workspace or full-access"
+                "no mode is named {name:?}: use auto, ask or full-access"
             ))
         })?,
     };
@@ -467,7 +467,7 @@ mod tests {
             timeout_sec = 90
             [glave]
             tier = "hard"
-            permissions = "workspace"
+            permissions = "auto"
             sandboxed = true
             network = true
             context_window = 6000
@@ -485,7 +485,7 @@ mod tests {
         assert_eq!(task.name, "full");
         assert_eq!(task.turns, ["Do it.", "And again."]);
         assert_eq!(task.tier, Tier::Hard);
-        assert_eq!(task.permissions, Permissions::Workspace);
+        assert_eq!(task.permissions, Permissions::Auto);
         assert!(task.sandboxed);
         assert!(task.network);
         assert_eq!(task.context_window, Some(6000));
@@ -527,7 +527,7 @@ mod tests {
         assert_eq!(task.tier, Tier::Fast);
         assert_eq!(
             task.permissions,
-            Permissions::Workspace,
+            Permissions::Auto,
             "as glave runs by default"
         );
         assert!(!task.sandboxed, "it gives way where no sandbox runs");
@@ -543,7 +543,7 @@ mod tests {
     #[test]
     fn mistakes_are_named() {
         let error = |toml: &str| load(&folder("bad", toml, "Hi.")).unwrap_err().to_string();
-        assert!(error("[glave]\npermissions = \"yolo\"").contains("no preset is named"));
+        assert!(error("[glave]\npermissions = \"yolo\"").contains("no mode is named"));
         assert!(error("[glave]\napproval = \"auto\"").contains("unknown field"));
         let both = "[glave]\npermissions = \"full-access\"\nsandboxed = true";
         assert!(error(both).contains("runs without the sandbox"));

@@ -265,12 +265,12 @@ pub(crate) async fn pick_thread(
 }
 
 /// What the agent may do, as the folder's project changes it, for the banner and receipts:
-/// `permissions: workspace · sandbox: project + network`, within the most a sandbox here
+/// `permissions: auto · sandbox: project + network`, within the most a sandbox here
 /// allows (`here`).
 fn protections(choices: &Choices, project: Protections, here: Option<&Sandbox>) -> String {
-    let preset = project.permissions(None, choices.permissions.value);
-    let shown = format!("permissions: {}", preset.name());
-    match project.sandbox(preset, here) {
+    let mode = project.permissions(None, choices.permissions.value);
+    let shown = format!("permissions: {}", mode.name());
+    match project.sandbox(mode, here) {
         Some(sandbox) => {
             let network = if sandbox.network { " + network" } else { "" };
             format!("{shown} · sandbox: {}{network}", sandbox.level.name())

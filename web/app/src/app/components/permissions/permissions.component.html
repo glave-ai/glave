@@ -9,11 +9,11 @@
     (valueChange)="pick($event)"
   />
 }
-@if (fixed(); as preset) {
-  <span class="preset" data-testid="permissions" [attr.title]="preset.title">
-    <glz-icon [icon]="preset.icon" />
+@if (fixed(); as mode) {
+  <span class="mode" data-testid="permissions" [attr.title]="mode.title">
+    <glz-icon [icon]="mode.icon" />
     <span class="glz-visually-hidden">{{ copy.prefix }}</span>
-    <span>{{ preset.text }}</span>
-    <span class="glz-visually-hidden">{{ preset.title }}</span>
+    <span>{{ mode.text }}</span>
+    <span class="glz-visually-hidden">{{ mode.title }}</span>
   </span>
 }

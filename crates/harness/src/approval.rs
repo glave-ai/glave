@@ -1,5 +1,6 @@
-//! Asking the person before acting: how much to ask (the mode a thread's preset comes to), and
-//! always before the model sees a file that usually holds secrets. See `specs/approvals.md`.
+//! Asking the person before acting: how much to ask (what a thread's mode comes to), and
+//! before the model sees a file that usually holds secrets, which Full access, never asking,
+//! declines instead. See `specs/approvals.md`.
 
 use std::future::{Future, ready};
 use std::path::Path;
@@ -71,26 +72,29 @@ pub(crate) fn sentence(reason: &str) -> String {
     sentence
 }
 
-/// How much asks before acting, as a thread's preset comes to it where its commands run
-/// (`specs/approvals.md`, "Modes"): it is never chosen itself, only the preset is.
+/// How much asks before acting, as a thread's mode comes to it where its commands run
+/// (`specs/approvals.md`, "Modes"): it is never chosen itself, only the mode is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ApprovalMode {
     /// Every change and command asks first.
-    Ask,
-    /// Read-only in its sandbox: commands go through, since the sandbox keeps them from
+    Everything,
+    /// Ask first in its sandbox: commands go through, since the sandbox keeps them from
     /// changing the project, and every change and every other tool that acts asks first.
-    Look,
+    Changes,
     /// Changes and commands go through; only risky ones ask, or go to the judge.
-    Auto,
+    Risky,
+    /// Nothing asks, risky actions included (Full access): what would show the model a secret
+    /// is declined at once instead.
+    Never,
 }
 
 /// Whether a tool with `effect` needs the person's approval in `mode`; `confined` when it is
 /// a command that runs in the thread's sandbox.
 pub(crate) fn asks_for(mode: ApprovalMode, effect: Effect, confined: bool) -> bool {
     match (effect, mode) {
-        (Effect::Reads, _) | (_, ApprovalMode::Auto) => false,
-        (Effect::Runs, ApprovalMode::Look) => !confined,
-        (Effect::Changes, ApprovalMode::Look) | (_, ApprovalMode::Ask) => true,
+        (Effect::Reads, _) | (_, ApprovalMode::Risky | ApprovalMode::Never) => false,
+        (Effect::Runs, ApprovalMode::Changes) => !confined,
+        (Effect::Changes, ApprovalMode::Changes) | (_, ApprovalMode::Everything) => true,
     }
 }
 
@@ -296,26 +300,28 @@ mod tests {
 
     #[test]
     fn each_mode_asks_for_exactly_what_it_should() {
-        use ApprovalMode::{Ask, Auto, Look};
+        use ApprovalMode::{Changes, Everything, Never, Risky};
         for confined in [false, true] {
-            for mode in [Ask, Look, Auto] {
+            for mode in [Everything, Changes, Risky, Never] {
                 assert!(!asks_for(mode, Effect::Reads, confined), "reads never ask");
             }
-            assert!(asks_for(Ask, Effect::Changes, confined));
-            assert!(asks_for(Ask, Effect::Runs, confined));
+            assert!(asks_for(Everything, Effect::Changes, confined));
+            assert!(asks_for(Everything, Effect::Runs, confined));
             assert!(
-                asks_for(Look, Effect::Changes, confined),
-                "changes ask in Read-only"
+                asks_for(Changes, Effect::Changes, confined),
+                "changes ask in Ask first"
             );
-            assert!(!asks_for(Auto, Effect::Changes, confined));
-            assert!(!asks_for(Auto, Effect::Runs, confined));
+            for mode in [Risky, Never] {
+                assert!(!asks_for(mode, Effect::Changes, confined));
+                assert!(!asks_for(mode, Effect::Runs, confined));
+            }
         }
         assert!(
-            !asks_for(Look, Effect::Runs, true),
+            !asks_for(Changes, Effect::Runs, true),
             "a command in the sandbox goes"
         );
         assert!(
-            asks_for(Look, Effect::Runs, false),
+            asks_for(Changes, Effect::Runs, false),
             "any other tool that acts asks"
         );
     }

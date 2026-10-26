@@ -97,7 +97,7 @@ pub(crate) struct Client<'a> {
     pub asks: bool,
     /// The MCP servers started here, if any.
     pub servers: Option<&'a Servers>,
-    /// The model and preset each turn chooses for the thread, when the person named them for a
+    /// The model and mode each turn chooses for the thread, when the person named them for a
     /// server elsewhere: the server records a choice only when it changes.
     pub model: Option<String>,
     pub permissions: Option<Permissions>,

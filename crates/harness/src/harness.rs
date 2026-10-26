@@ -149,7 +149,7 @@ pub struct Thread {
     pub(crate) for_: Option<PrincipalId>,
     /// The model chosen for the thread (`chosen.rs`); the harness's own when `None`.
     pub(crate) model: Option<String>,
-    /// The preset chosen for the thread (`chosen.rs`); its project's, else the harness's own,
+    /// The mode chosen for the thread (`chosen.rs`); its project's, else the harness's own,
     /// when `None`.
     pub(crate) permissions: Option<Permissions>,
     /// How much its model is asked to reason (`chosen.rs`); the model's own way when `None`.
@@ -450,7 +450,7 @@ where
         &self.blobs
     }
 
-    /// What the harness was set up with: the default model and the preset among them,
+    /// What the harness was set up with: the default model and the mode among them,
     /// as it started. Those now are [`Harness::default_model`] and [`Harness::defaults`].
     pub fn settings(&self) -> &Settings {
         &self.settings

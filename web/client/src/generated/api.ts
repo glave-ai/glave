@@ -330,12 +330,12 @@ export type PasskeySummary = {
 export type PayloadVersion = number;
 
 /**
- * What the agent may do without asking the person (`specs/approvals.md`, "Permissions"): the
- * one choice a person makes about it, of three presets, the most cautious first. Each comes to
- * a sandbox and how much asks wherever it runs (`glave-harness`); risky actions ask in every
- * preset.
+ * What the agent may do without asking the person (`specs/approvals.md`, "Modes"): the one
+ * choice a person makes about it, its mode. Ordered by caution, the most cautious least, so a
+ * policy's cap is the highest mode it allows. Each comes to a sandbox and how much asks
+ * wherever it runs (`glave-harness`).
  */
-export type Permissions = "read-only" | "workspace" | "full-access";
+export type Permissions = "ask" | "auto" | "full-access";
 
 /**
  * A reference to a principal: `{"kind": "person", "id": "…"}`. Every kind but `glave` has an
@@ -518,13 +518,13 @@ export type ServerInfo = {
   /** Where people reach the server from elsewhere, if they do: its public origin. */
   readonly origin?: string | null;
   /**
-   * What the agent may do in a thread that, and whose project, chose no preset:
-   * `--permissions` or `permissions` in `config.toml` (`specs/approvals.md`, "Permissions").
+   * What the agent may do in a thread that, and whose project, chose no mode:
+   * `--permissions` or `permissions` in `config.toml` (`specs/approvals.md`, "Modes").
    */
   readonly permissions: Permissions;
   /**
-   * The presets a thread may choose (`permissions` on `thread/start` and `turn/start`):
-   * those the policy leaves, the most cautious first.
+   * The modes a thread may choose (`permissions` on `thread/start` and `turn/start`):
+   * those the policy leaves, in the order a person is offered them, the recommended first.
    */
   readonly presets: readonly (Permissions)[];
   /** The protocol versions spoken. */
@@ -535,8 +535,8 @@ export type ServerInfo = {
    */
   readonly signin?: readonly (SignInWay)[];
   /**
-   * Why Workspace asks before every change and command here, in a sentence, when it does:
-   * no sandbox can run on this computer (Read-only then asks so too), or only one that keeps
+   * Why Auto asks before every change and command here, in a sentence, when it does:
+   * no sandbox can run on this computer (Ask first then asks so too), or only one that keeps
    * files as they are.
    */
   readonly unsandboxed?: string | null;
@@ -617,7 +617,7 @@ export type ThreadSummary = {
   /** The thread whose call started this one, for a subagent's. */
   readonly parent?: ThreadId | null;
   /**
-   * What the agent may do in its next turn: the preset last chosen for it, else its
+   * What the agent may do in its next turn: the mode last chosen for it, else its
    * project's, else the server's.
    */
   readonly permissions: Permissions;

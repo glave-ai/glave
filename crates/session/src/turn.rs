@@ -159,7 +159,7 @@ where
     B: BlobStore + 'static,
 {
     /// Sends `caller`'s `message` to `thread`: it starts a turn, streamed, first choosing for
-    /// the thread the model and preset the message names, when it does: this turn and
+    /// the thread the model and mode the message names, when it does: this turn and
     /// the thread's later ones go to it and ask that much. While a turn runs there, a message
     /// that may be queued is queued to it instead, for the model's next call. With `key`, what
     /// `caller` already sent to `thread` with the same key answers instead: the turn it started,
@@ -184,8 +184,8 @@ where
         if let Some(effort) = &choice.effort {
             self.offered_effort(&model, effort)?;
         }
-        if let Some(preset) = choice.permissions {
-            self.allowed_permissions(preset)?;
+        if let Some(mode) = choice.permissions {
+            self.allowed_permissions(mode)?;
         }
         let (finish, done) = watch::channel(None);
         // Held until this says what it did: on any way out before that, the key is let go.
@@ -280,7 +280,7 @@ type TurnWork<P, L, B> = Box<
     dyn FnOnce(Arc<Inner<P, L, B>>, Thread, Cancel) -> BoxFuture<'static, (Thread, Ended)> + Send,
 >;
 
-/// A turn's work on a held thread: the model and preset `choice` names chosen first,
+/// A turn's work on a held thread: the model and mode `choice` names chosen first,
 /// then the turn on what was `said`, then a turn for each message sent too late for the one
 /// before it; answered by no one throughout when `unattended`. A turn that stops at a wait
 /// keeps `finish`, where it sends how it ends, for the work that goes on with it.

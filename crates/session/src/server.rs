@@ -384,7 +384,7 @@ where
     /// in the folder itself; a task's thread (`background`) always works on a copy, never in
     /// the folder. In the project whose settings chose workers, every thread works on a worker
     /// instead, which clones that project's repository. With no folder (a person's Chats, or a project without one), the thread gets a
-    /// scratch folder of its own. With a model or a preset in `choice`, its turns go
+    /// scratch folder of its own. With a model or a mode in `choice`, its turns go
     /// to that model, or ask that much.
     pub(crate) async fn new_thread(
         &self,
@@ -404,8 +404,8 @@ where
             let model = model.unwrap_or_else(|| self.inner.harness.default_model());
             self.offered_effort(&model, effort)?;
         }
-        if let Some(preset) = choice.permissions {
-            self.allowed_permissions(preset)?;
+        if let Some(mode) = choice.permissions {
+            self.allowed_permissions(mode)?;
         }
         let project = scope.project();
         let own = self.inner.worktree.load(Ordering::Relaxed);

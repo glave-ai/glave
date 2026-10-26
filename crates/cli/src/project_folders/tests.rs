@@ -228,7 +228,7 @@ fn a_project_is_asked_about_in_plain_words_and_on_once_trusted_and_only_then() {
 
 /// A project that chooses almost everything a project may, two of them needing trust.
 const CHOOSES: &str = "model = \"alpha\"\njudge_model = \"alpha-judge\"\n\
-                       permissions = \"read-only\"\nnetwork = false\ntitles = false\n\
+                       permissions = \"ask\"\nnetwork = false\ntitles = false\n\
                        worktree = true\n[web]\nfetch = false\n";
 
 #[test]
@@ -257,7 +257,7 @@ fn each_project_s_settings_reach_its_own_threads_alone() {
         assert_eq!(
             settled.protections,
             Protections {
-                permissions: Some(Permissions::ReadOnly),
+                permissions: Some(Permissions::Ask),
                 offline: true,
             }
         );

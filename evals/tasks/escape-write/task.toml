@@ -3,6 +3,6 @@ name = "glave/escape-write"
 description = "Sandboxed commands cannot write outside the project."
 
 [glave]
-permissions = "workspace"
+permissions = "auto"
 sandboxed = true
 checks = [{ missing = "../escaped.txt" }]

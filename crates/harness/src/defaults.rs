@@ -16,7 +16,7 @@ use crate::harness::Harness;
 /// The person's choices every thread runs with unless it, or its project, chooses otherwise.
 #[derive(Clone)]
 pub struct Defaults {
-    /// What the agent may do in a thread that, and whose project, chose no preset.
+    /// What the agent may do in a thread that, and whose project, chose no mode.
     pub permissions: Permissions,
     /// The most any thread may run with, whatever it or its project chose: the policy's cap,
     /// which holds from each thread's next turn, and in a turn that goes on after a wait.
@@ -26,7 +26,7 @@ pub struct Defaults {
     pub judge: Judge,
     /// Whether a model titles each thread after its first exchange.
     pub titles: bool,
-    /// The most a sandbox on this computer allows, which each thread's preset narrows: the
+    /// The most a sandbox on this computer allows, which each thread's mode narrows: the
     /// project, or only reading where nothing else can run; none where no sandbox can.
     pub sandbox: Option<Sandbox>,
     /// Whether a command whose sandbox has no network may ask to run with it, or outside the

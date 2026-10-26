@@ -68,7 +68,7 @@ function lost(gone: Gone): ThreadSummary {
     status: 'idle',
     standing: gone.removed ? 'archived' : 'active',
     title: 'Sketch a bouncing ball',
-    permissions: 'workspace',
+    permissions: 'auto',
     origin: { kind: 'web' },
     created_at: '2026-10-11T10:00:00.000Z',
     updated_at: '2026-10-11T10:04:00.000Z',

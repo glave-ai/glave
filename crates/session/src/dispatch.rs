@@ -114,7 +114,7 @@ where
                     version: env!("CARGO_PKG_VERSION").to_owned(),
                     protocols: vec![crate::protocol::PROTOCOL.to_owned()],
                     permissions: self.inner.harness.defaults().permissions,
-                    presets: self.presets(),
+                    presets: self.modes(),
                     unsandboxed: self.unsandboxed().map(crate::protocol::Told::from),
                     id: self.server_id(),
                     origin: self.inner.origin.as_ref().map(ToString::to_string),

@@ -117,7 +117,7 @@ test('a model is searched and picked by name, by keyboard alone', async ({ page,
   expect(turn?.params).toMatchObject({ prompt: 'Go on', model: 'openai/gpt-6-luna' });
 });
 
-test('the preset is chosen by keyboard and goes with the next turn', async ({
+test('the mode is chosen by keyboard and goes with the next turn', async ({
   page,
   browserName,
 }) => {
@@ -126,20 +126,23 @@ test('the preset is chosen by keyboard and goes with the next turn', async ({
     'WebKit on a Mac Tabs only to fields and links, as Safari does by default',
   );
   const trigger = byTestId(page, 'permissions-trigger');
-  await expect(trigger).toContainText('Workspace');
+  await expect(trigger).toContainText('Auto');
   await tabTo(page, 'permissions-trigger');
   await page.keyboard.press('Enter');
-  const readOnly = byTestId(page, 'permissions-option').first();
-  await expect(readOnly).toBeVisible();
+  const auto = byTestId(page, 'permissions-option').first();
+  await expect(auto).toBeVisible();
   await expectAccessible(page);
-  // Opened from the keyboard, the menu focuses its first preset, the most cautious.
-  await expect(readOnly).toBeFocused();
+  // Opened from the keyboard, the menu focuses its first mode, the recommended one; Ask first
+  // is next.
+  await expect(auto).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(byTestId(page, 'permissions-option').nth(1)).toBeFocused();
   await page.keyboard.press('Enter');
-  await expect(trigger).toContainText('Read-only');
+  await expect(trigger).toContainText('Ask first');
   await tabTo(page, 'thread-composer-input', true);
   await page.keyboard.type('Carefully');
   await page.keyboard.press('Enter');
   await expect(byTestId(page, 'thread-message').last()).toContainText('Glad to help.');
   const turn = requests.find((request) => request.method === 'turn/start');
-  expect(turn?.params).toMatchObject({ prompt: 'Carefully', permissions: 'read-only' });
+  expect(turn?.params).toMatchObject({ prompt: 'Carefully', permissions: 'ask' });
 });

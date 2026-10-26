@@ -190,7 +190,7 @@ fn yes(line: Option<String>) -> bool {
 }
 
 /// The thread to use in `project` (Chats when none): the newest one there with `--continue`,
-/// otherwise a new one, choosing the model, preset and worktree `args` name.
+/// otherwise a new one, choosing the model, mode and worktree `args` name.
 async fn thread(
     session: Session<'_>,
     project: Option<ProjectId>,

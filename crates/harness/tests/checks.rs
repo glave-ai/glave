@@ -1,4 +1,4 @@
-//! Commands read before they run: a risky one asks whatever the mode, and says why; one that
+//! Commands read before they run: a risky one asks in every mode that asks, and says why; one that
 //! only reads runs without asking even in `ask`; and allowing bash for the thread never silences
 //! a risky command. Every risky command here would be harmless if it ran: the folder is not a
 //! git repository.
@@ -61,14 +61,14 @@ fn bash(command: &str) -> (&'static str, serde_json::Value) {
 }
 
 #[test]
-fn in_auto_a_risky_command_with_no_one_there_is_not_run_and_the_model_learns_why() {
-    let dir = folder("checks-auto");
+fn a_risky_command_with_no_one_there_is_not_run_and_the_model_learns_why() {
+    let dir = folder("checks-alone");
     block_on!(async {
         let answers = vec![
             answer(None, vec![bash("git reset --hard")], StopReason::ToolUse),
             answer(Some("I left it."), vec![], StopReason::EndTurn),
         ];
-        let harness = harness(&dir, answers, NoOneToAsk).await;
+        let harness = asking_harness(&dir, answers, NoOneToAsk).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
         harness
             .run_turn(&mut thread, "start over", &Cancel::new(), &mut |_| {})

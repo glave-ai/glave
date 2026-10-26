@@ -1,7 +1,7 @@
 //! The person's settings read again, through the real binary over stdio with a fresh home
 //! (`specs/one-server.md`, "Its settings"): an edited `config.toml` changes the next turn's
 //! model, and a server added to `mcp.json` starts while a removed one stops, with no restart;
-//! a tightened approval asks from the next turn while the running one keeps its own; the
+//! a changed mode holds from the next turn while the running one keeps its own; the
 //! network turned off is off for the next turn's commands; and the judge follows the models.
 
 use std::path::{Path, PathBuf};
@@ -129,18 +129,22 @@ fn result(model: &FakeServer, index: usize) -> String {
 }
 
 #[test]
-fn a_narrower_preset_asks_from_the_next_turn_and_a_running_turn_keeps_its_own() {
+fn a_changed_mode_holds_from_the_next_turn_and_a_running_turn_keeps_its_own() {
     let place = place("settings-approval");
     std::fs::create_dir_all(&place.home).unwrap();
     let unjudged = "judge_model = \"off\"\n";
     writing(
         &place.home,
         "m",
-        &format!("{unjudged}permissions = \"full-access\"\n"),
+        &format!("{unjudged}permissions = \"ask\"\n"),
     );
     let model = FakeServer::start(vec![
         bash("call_1", "git push --dry-run origin main"),
-        bash("call_2", "touch first.txt"),
+        Reply::tool_call(
+            "call_2",
+            "write",
+            &serde_json::json!({"path": "first.txt", "content": "x"}),
+        ),
         Reply::text("Done."),
         Reply::tool_call(
             "call_3",
@@ -154,19 +158,19 @@ fn a_narrower_preset_asks_from_the_next_turn_and_a_running_turn_keeps_its_own() 
     let thread = new_thread(&mut served);
     let home = place.home.clone();
     let asked = turn_in(&mut served, &thread, |_| {
-        // While the turn waits on the push, the person chooses to be asked first.
+        // While the turn waits on the push, the person chooses full access.
         writing(
             &home,
             "m",
-            &format!("{unjudged}permissions = \"read-only\"\n"),
+            &format!("{unjudged}permissions = \"full-access\"\n"),
         );
         "allow_once"
     });
-    assert_eq!(asked, 1, "only the push asked: the running turn kept auto");
+    assert_eq!(asked, 2, "the push and the change asked: the running turn kept Ask first");
     assert!(!result(&model, 2).contains("Not run"), "it ran");
 
     let asked = turn_in(&mut served, &thread, |_| "allow_once");
-    assert_eq!(asked, 1, "the next turn asks before a change");
+    assert_eq!(asked, 0, "the next turn runs in full access, which never asks");
     served.end();
 }
 
@@ -203,14 +207,13 @@ fn turning_the_network_off_applies_to_the_next_turn_s_commands() {
 
 #[test]
 fn the_judge_follows_the_models_it_names_when_they_change() {
+    // The judge decides in Auto behind the sandbox's wall.
+    if !glave_computer::sandbox_available() {
+        return;
+    }
     let place = place("settings-judge");
     std::fs::create_dir_all(&place.home).unwrap();
-    let unconfined = "permissions = \"full-access\"\n";
-    writing(
-        &place.home,
-        "m",
-        &format!("{unconfined}judge_model = \"j\"\n"),
-    );
+    writing(&place.home, "m", "judge_model = \"j\"\n");
     let push = "git push --dry-run origin main";
     let run = r#"{"decision":"run","reason":"the person asked to push"}"#;
     let model = FakeServer::start(vec![
@@ -227,11 +230,7 @@ fn the_judge_follows_the_models_it_names_when_they_change() {
     let asked = turn_in(&mut served, &thread, |_| "deny");
     assert_eq!(asked, 0, "the judge let it run");
 
-    writing(
-        &place.home,
-        "n",
-        &format!("{unconfined}judge_model = \"k\"\n"),
-    );
+    writing(&place.home, "n", "judge_model = \"k\"\n");
     let asked = turn_in(&mut served, &thread, |_| "deny");
     assert_eq!(asked, 0, "the new judge let it run too");
     let models: Vec<String> = model

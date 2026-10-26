@@ -12,7 +12,7 @@ export const LEFT_ALONE = 'Left it alone.';
 
 /**
  * What it asks to change when asked to touch a file: writing `live.txt`, a change that asks in
- * Read-only, as the approval shows it.
+ * Ask first, as the approval shows it.
  */
 export const TOUCH = 'live.txt (1 lines)';
 

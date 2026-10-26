@@ -8,12 +8,12 @@ const INFO = {
   name: 'glave',
   version: '0.1.0',
   protocols: ['2026-10'],
-  permissions: 'read-only',
-  presets: ['read-only'],
+  permissions: 'ask',
+  presets: ['ask'],
 } as const;
 
 describe('ServerService', () => {
-  it('asks the server about itself once, and says its presets', async () => {
+  it('asks the server about itself once, and says its modes', async () => {
     const fake = new FakeSession().answer('server/discover', INFO);
     TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
     const server = TestBed.inject(ServerService);
@@ -22,8 +22,8 @@ describe('ServerService', () => {
     expect(server.unsandboxed()).toBeNull();
     await Promise.all([server.load(), server.load()]);
     expect(server.info()).toEqual(INFO);
-    expect(server.permissions()).toBe('read-only');
-    expect(server.presets()).toEqual(['read-only']);
+    expect(server.permissions()).toBe('ask');
+    expect(server.presets()).toEqual(['ask']);
     expect(fake.paramsOf('server/discover')).toHaveLength(1);
   });
 
@@ -38,6 +38,6 @@ describe('ServerService', () => {
     expect(server.info()).toBeNull();
     fake.answer('server/discover', INFO);
     await server.load();
-    expect(server.permissions()).toBe('read-only');
+    expect(server.permissions()).toBe('ask');
   });
 });

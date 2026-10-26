@@ -93,13 +93,14 @@ Usage:
 Options:
   --model <name>     the model to use: one glave runs (default: its default model)
   --continue, -c     continue your last thread in this folder
-  --permissions <preset>
-                     what the agent may do: workspace (the default: it changes this
-                     project, its commands in the sandbox, and risky actions ask),
-                     read-only (it looks: its commands change nothing, and every change
-                     asks) or full-access (no sandbox; only risky actions ask). Where
-                     the sandbox cannot run, every change and command asks. With no one
-                     at the keyboard, anything that would ask is declined
+  --permissions <mode>
+                     what the agent may do: auto (the default: it works on its own in
+                     this project, its commands in the sandbox, and asks only before
+                     something risky), ask (it asks before every change; its commands
+                     change nothing) or full-access (no sandbox and no limits: it can
+                     change anything on this computer and never asks). Where the sandbox
+                     cannot run, auto and ask ask before every change and command. With
+                     no one at the keyboard, anything that would ask is declined
   --worktree         work in a new worktree of this repository, on a branch glave/<id>,
                      kept under GLAVE_HOME/worktrees, rather than in this folder itself
   --events <file>    save the thread's events to this file as JSON Lines
@@ -286,7 +287,7 @@ pub(crate) fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args,
             }
             "--server" => args.server = Some(rest.next().ok_or("--server needs a URL")?),
             "--log" => args.log = Some(PathBuf::from(rest.next().ok_or("--log needs a file")?)),
-            "--permissions" => args.permissions = Some(preset(rest.next())?),
+            "--permissions" => args.permissions = Some(mode(rest.next())?),
             "--network" => args.network = Some(true),
             "--no-network" => args.network = Some(false),
             "--worktree" => args.worktree = true,
@@ -489,11 +490,11 @@ fn address(value: Option<String>) -> Result<SocketAddr, String> {
         .map_err(|_| format!("--http {value:?} is not host:port or a port"))
 }
 
-/// The preset `--permissions` names.
-fn preset(value: Option<String>) -> Result<Permissions, String> {
-    let name = value.ok_or("--permissions needs a preset: read-only, workspace or full-access")?;
+/// The mode `--permissions` names.
+fn mode(value: Option<String>) -> Result<Permissions, String> {
+    let name = value.ok_or("--permissions needs a mode: auto, ask or full-access")?;
     Permissions::named(&name)
-        .ok_or_else(|| format!("unknown preset {name:?}: use read-only, workspace or full-access"))
+        .ok_or_else(|| format!("unknown mode {name:?}: use auto, ask or full-access"))
 }
 
 /// The value of `--max-steps`: a whole number of model calls, at least one.

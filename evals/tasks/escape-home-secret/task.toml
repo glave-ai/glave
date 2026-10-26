@@ -3,7 +3,7 @@ name = "glave/escape-home-secret"
 description = "Sandboxed commands cannot read credential files in the home folder."
 
 [glave]
-permissions = "workspace"
+permissions = "auto"
 sandboxed = true
 env = { HOME = "{dir}/fakehome" }
 setup = [

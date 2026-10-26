@@ -1,5 +1,5 @@
 //! What a project chooses and turns on for the threads that work in it, read again at each
-//! turn: its tools offered after the harness's, its hooks run after the harness's, the preset
+//! turn: its tools offered after the harness's, its hooks run after the harness's, the mode
 //! its settings give, its commands out of the sandbox where that is full access, and its model, judge, titles and `web_fetch` in place of the harness's. Nothing of it
 //! before the person trusts it, all of it from the next turn after, none of it in a thread
 //! elsewhere, and nothing of the project's, nor the harness's own hooks and tools, in another
@@ -120,7 +120,7 @@ fn tool_names(seen: &Seen, request: usize) -> Vec<String> {
 }
 
 #[test]
-fn a_project_s_tools_hooks_and_preset_are_on_from_the_turn_after_it_is_trusted() {
+fn a_project_s_tools_hooks_and_mode_are_on_from_the_turn_after_it_is_trusted() {
     let dir = folder("projects-on");
     let project_dir = folder("projects-on-project");
     let project = Project::new(Protections {
@@ -155,7 +155,7 @@ fn a_project_s_tools_hooks_and_preset_are_on_from_the_turn_after_it_is_trusted()
             .unwrap();
         assert!(!tool_names(&seen, 0).contains(&"mcp__docs__search".to_owned()));
         let refused = !project_dir.join("before.txt").exists();
-        assert!(refused, "Read-only asked, and it was refused");
+        assert!(refused, "Ask first asked, and it was refused");
         let before = events(harness.log(), thread.id).await.len();
 
         project.trust();
@@ -256,7 +256,7 @@ fn another_person_s_thread_gets_nothing_the_project_brings() {
         );
         assert_eq!(
             harness.permissions_for(&thread),
-            Permissions::ReadOnly,
+            Permissions::Ask,
             "no settings"
         );
         assert!(
@@ -316,7 +316,10 @@ fn returned(recorded: &[glave_event::Event]) -> Vec<String> {
 
 #[test]
 fn a_project_s_model_judge_titles_and_web_reach_its_threads_alone() {
-    let dir = folder("projects-choosing");
+    // The judge decides only in Auto behind a wall: the real sandbox.
+    let Some(base) = crate::outside_sandbox::sandboxed("projects-choosing") else {
+        return;
+    };
     let project_dir = folder("projects-choosing-project");
     block_on!(async {
         let fetch = || vec![("web_fetch", json!({"url": "https://example.com"}))];
@@ -333,11 +336,17 @@ fn a_project_s_model_judge_titles_and_web_reach_its_threads_alone() {
             answer(None, fetch(), StopReason::ToolUse),
             answer(Some("Read."), vec![], StopReason::EndTurn),
         ];
-        let mut settings = settings();
-        settings.judge = Judge::Main;
+        let mut settings = crate::outside_sandbox::judged();
         settings.titles = true;
-        let (harness, seen) =
-            harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings).await;
+        let workspace = crate::outside_sandbox::walled(&base, false).await;
+        let (harness, seen) = harness_with(
+            workspace,
+            answers,
+            NoOneToAsk,
+            InMemoryLog::new(),
+            1,
+            settings,
+        );
         let harness = harness
             .with_project_folders(Some(Arc::new(Choosing) as Arc<dyn ProjectFolders>))
             .with_web(Some(Arc::new(tool("web_fetch", "the harness's web"))));

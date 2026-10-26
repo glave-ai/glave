@@ -52,7 +52,7 @@ fn a_constraint_added_while_it_runs_narrows_the_next_turn_whatever_the_file_loos
         "there for the threads that choose it"
     );
 
-    let strict = "version = 1\n[permissions]\nhighest = \"read-only\"\n[sandbox]\n\
+    let strict = "version = 1\n[permissions]\nhighest = \"ask\"\n[sandbox]\n\
                   network = false\nask_network = false\n";
     std::fs::write(&locations.policies[0], strict).unwrap();
     // And the person's file loosens further: the network too.
@@ -60,12 +60,12 @@ fn a_constraint_added_while_it_runs_narrows_the_next_turn_whatever_the_file_loos
     let after = runs_now(&locations, &start, &dir);
     assert_eq!(
         after.defaults.permissions,
-        Permissions::ReadOnly,
+        Permissions::Ask,
         "asks from now on"
     );
     assert_eq!(
         after.defaults.highest,
-        Permissions::ReadOnly,
+        Permissions::Ask,
         "and no thread may run with more"
     );
     assert!(!after.defaults.ask_network, "no command may ask for it");
@@ -79,7 +79,7 @@ fn a_constraint_added_while_it_runs_narrows_the_next_turn_whatever_the_file_loos
 #[test]
 fn where_no_sandbox_ran_at_the_start_none_runs_after_and_the_choices_say_why() {
     let (dir, locations) = place("unwalled");
-    std::fs::write(&locations.person, "permissions = \"workspace\"\n").unwrap();
+    std::fs::write(&locations.person, "permissions = \"auto\"\n").unwrap();
     let start = block_on!(async {
         let (setup, _) = Setup::reload(&Args::default(), &locations).await.unwrap();
         Choices {
@@ -91,7 +91,7 @@ fn where_no_sandbox_ran_at_the_start_none_runs_after_and_the_choices_say_why() {
     assert_eq!(setup.choices.unsandboxed.as_deref(), Some("no bubblewrap"));
     let runs = runs(&setup, None, &dir).unwrap();
     assert_eq!(runs.defaults.sandbox, None, "every command asks");
-    assert_eq!(runs.defaults.permissions, Permissions::Workspace);
+    assert_eq!(runs.defaults.permissions, Permissions::Auto);
     let _ = std::fs::remove_dir_all(dir);
 }
 

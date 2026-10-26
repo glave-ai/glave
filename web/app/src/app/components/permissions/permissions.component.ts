@@ -6,17 +6,27 @@ import {
   type GlzMenuOption,
   GlzMenuSelectComponent,
 } from '@glave/glaze';
-import { Eye, ShieldCheck, ShieldOff } from 'lucide';
+import { Hand, ShieldCheck, ShieldOff } from 'lucide';
 
 import { ServerService } from '../../services/server.service';
 
+/** How a mode is shown: its word, the line saying what it means, and its icon. */
+interface Shown {
+  readonly text: string;
+  readonly about: string;
+  readonly icon: GlzIconData;
+  /** Whether the picker names it as the one glave recommends. */
+  readonly recommended: boolean;
+}
+
 /**
- * What the agent may do in the composer's next turn, quiet in its status line: its icon and its
- * word, the shape and the word saying it, never a colour. The person's pick, else the thread's
- * own (`current`, from its summary), else the server's. A choice among the presets the server
- * lets a thread choose (`server/discover`'s `presets`), each with a line saying what it means;
- * where the server says Workspace asks as Read-only does (no sandbox there), its line is the
- * server's sentence. Read-only when it lets only one. `value` is the person's pick, `null` until
+ * The composer's mode for its next turn, what the agent may do without asking, quiet in its
+ * status line: its icon and its word, the shape and the word saying it, never a colour. The
+ * person's pick, else the thread's own (`current`, from its summary), else the server's. A
+ * choice among the modes the server lets a thread choose (`server/discover`'s `presets`), in the
+ * server's order, each with a line saying what it means, Auto named as recommended; where the
+ * server says Auto asks before everything (no sandbox there), its line is the server's sentence.
+ * Shown without a menu when the server lets only one. `value` is the person's pick, `null` until
  * they make one; it goes with the next `thread/start` or `turn/start`.
  */
 @Component({
@@ -27,63 +37,67 @@ import { ServerService } from '../../services/server.service';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PermissionsComponent {
-  /** The thread's own preset, or `null` for the server's. */
+  /** The thread's own mode, or `null` for the server's. */
   readonly current = input<Permissions | null>(null);
   /** The person's pick, or `null` for none. */
   readonly value = model<Permissions | null>(null);
 
   protected readonly copy = {
-    label: $localize`:@@permissions.label:Permissions`,
-    prefix: $localize`:@@permissions.prefix:Permissions:`,
+    label: $localize`:@@permissions.label:Mode`,
+    prefix: $localize`:@@permissions.prefix:Mode:`,
   } as const;
-  /** How each preset is shown. */
-  private readonly presets: Readonly<
-    Record<
-      Permissions,
-      { readonly text: string; readonly about: string; readonly icon: GlzIconData }
-    >
-  > = {
-    'read-only': {
-      text: $localize`:@@permissions.readOnly:Read-only`,
-      about: $localize`:@@permissions.readOnlyAbout:Looks around; asks before changing your files`,
-      icon: Eye,
-    },
-    workspace: {
-      text: $localize`:@@permissions.workspace:Workspace`,
-      about: $localize`:@@permissions.workspaceAbout:Edits and runs commands here; asks before risky actions`,
+  /** How each mode is shown. */
+  private readonly modes: Readonly<Record<Permissions, Shown>> = {
+    auto: {
+      text: $localize`:@@permissions.auto:Auto`,
+      about: $localize`:@@permissions.autoAbout:Works on its own in this project. Asks only before something risky.`,
       icon: ShieldCheck,
+      recommended: true,
+    },
+    ask: {
+      text: $localize`:@@permissions.ask:Ask first`,
+      about: $localize`:@@permissions.askAbout:Asks you before every change.`,
+      icon: Hand,
+      recommended: false,
     },
     'full-access': {
       text: $localize`:@@permissions.fullAccess:Full access`,
-      about: $localize`:@@permissions.fullAccessAbout:No sandbox; for work you fully trust`,
+      about: $localize`:@@permissions.fullAccessAbout:No limits: can change anything on this computer, and never asks.`,
       icon: ShieldOff,
+      recommended: false,
     },
   };
   private readonly server = inject(ServerService);
-  /** The preset the next turn runs with. */
-  private readonly shownPreset = computed(
+  /** The mode the next turn runs with. */
+  private readonly shownMode = computed(
     () => this.value() ?? this.current() ?? this.server.permissions(),
   );
-  protected readonly shown = computed<string | null>(() => this.shownPreset());
+  protected readonly shown = computed<string | null>(() => this.shownMode());
   protected readonly choosable = computed(() => this.server.presets().length > 1);
   protected readonly options = computed<readonly GlzMenuOption[]>(() =>
-    this.server.presets().map((preset) => ({
-      value: preset,
-      label: this.presets[preset].text,
-      hint: this.about(preset),
-      icon: this.presets[preset].icon,
-    })),
+    this.server.presets().map((mode) => {
+      const shown = this.modes[mode];
+      return {
+        value: mode,
+        label: shown.recommended
+          ? $localize`:@@permissions.recommended:${shown.text}:MODE: · Recommended`
+          : shown.text,
+        short: shown.text,
+        hint: this.about(mode),
+        icon: shown.icon,
+      };
+    }),
   );
-  /** The preset shown read-only, when there is no choice to make. */
+  /** The mode shown on its own, when there is no choice to make. */
   protected readonly fixed = computed(() => {
-    const preset = this.shownPreset();
-    if (preset === null || this.choosable()) {
+    const mode = this.shownMode();
+    if (mode === null || this.choosable()) {
       return null;
     }
-    const shown = this.presets[preset];
+    const shown = this.modes[mode];
     return {
       ...shown,
-      title: $localize`:@@permissions.onlyOne:${this.about(preset)}:ABOUT:. The only choice this server allows.`,
+      title: $localize`:@@permissions.onlyOne:${this.about(mode)}:ABOUT: The only choice this server allows.`,
     };
   });
 
@@ -92,18 +106,18 @@ export class PermissionsComponent {
   }
 
   protected pick(value: string | null): void {
-    const preset = this.server.presets().find((each) => each === value);
-    if (preset !== undefined) {
-      this.value.set(preset);
+    const mode = this.server.presets().find((each) => each === value);
+    if (mode !== undefined) {
+      this.value.set(mode);
     }
   }
 
-  /** What `preset` means here: the server's sentence for Workspace where it asks as Read-only. */
-  private about(preset: Permissions): string {
+  /** What `mode` means here: the server's sentence for Auto where it asks before everything. */
+  private about(mode: Permissions): string {
     const unsandboxed = this.server.unsandboxed();
-    if (preset === 'workspace' && unsandboxed !== null) {
+    if (mode === 'auto' && unsandboxed !== null) {
       return unsandboxed;
     }
-    return this.presets[preset].about;
+    return this.modes[mode].about;
   }
 }

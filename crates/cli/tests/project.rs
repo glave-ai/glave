@@ -121,7 +121,7 @@ fn a_repository_with_nothing_that_runs_commands_never_mentions_trust() {
     std::fs::create_dir_all(place.project.join(".glave")).unwrap();
     std::fs::write(
         place.project.join(".glave/config.toml"),
-        "permissions = \"read-only\"\nmodel = \"from-project\"\n",
+        "permissions = \"ask\"\nmodel = \"from-project\"\n",
     )
     .unwrap();
     // A project's model must be one glave offers: the person's own choices offer it, and
@@ -133,7 +133,7 @@ fn a_repository_with_nothing_that_runs_commands_never_mentions_trust() {
     let output = glave(&place, &model, &["hello"], "");
     let shown = text(&output);
     assert!(output.status.success(), "{shown}");
-    assert!(shown.contains("permissions: read-only"), "applied: {shown}");
+    assert!(shown.contains("permissions: ask"), "applied: {shown}");
     assert!(
         !shown.contains("trust") && !shown.contains("is off"),
         "{shown}"

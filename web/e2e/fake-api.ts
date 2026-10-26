@@ -69,7 +69,7 @@ function thread(
     status,
     standing: 'active',
     title,
-    permissions: 'workspace',
+    permissions: 'auto',
     origin: { kind: 'web' },
     created_at: '2026-10-11T10:00:00.000Z',
     updated_at: '2026-10-11T10:05:00.000Z',
@@ -584,8 +584,8 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
         name: 'glave',
         version: '0.0.0',
         protocols: ['2026-10'],
-        permissions: 'workspace',
-        presets: ['read-only', 'workspace', 'full-access'],
+        permissions: 'auto',
+        presets: ['auto', 'ask', 'full-access'],
         id: FAKE_SERVER,
       };
     default:

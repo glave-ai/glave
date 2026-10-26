@@ -27,7 +27,7 @@ pub struct Changed {
 /// How threads run where neither they nor their projects choose: from each one's next turn,
 /// or, for where a thread works, from the next new one.
 pub struct Runs {
-    /// What every thread's turns run with: the preset and the policy's cap on it, the judge,
+    /// What every thread's turns run with: the mode and the policy's cap on it, the judge,
     /// the sandbox and the rest. The judge comes with the models it names, so it never names one that is gone.
     pub defaults: Defaults,
     /// Whether a new thread in a project with a folder works in a worktree of its own.

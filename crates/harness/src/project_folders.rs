@@ -96,7 +96,7 @@ where
 {
     /// Takes the harness's defaults as they are now, and reads again what `thread`'s project
     /// chooses and turns on, at the start of a turn; then gives its commands on this computer
-    /// the sandbox that follows from its preset, within the most a sandbox here allows, and
+    /// the sandbox that follows from its mode, within the most a sandbox here allows, and
     /// without the network where the project takes it. A thread with no project of its own here gets nothing of a
     /// project, and so does another person's thread than the one the harness works for, who
     /// trusted the project: no settings, no tools, no hooks.
@@ -113,8 +113,8 @@ where
         // commands run in the sandbox.
         if workspace.info().computer == self.workspace.info().computer {
             let protections = brought.settled.protections;
-            let preset = thread.defaults.permissions(protections, thread.permissions);
-            let wanted = protections.sandbox(preset, thread.defaults.sandbox.as_ref());
+            let mode = thread.defaults.permissions(protections, thread.permissions);
+            let wanted = protections.sandbox(mode, thread.defaults.sandbox.as_ref());
             let asks = thread.defaults.ask_network;
             if workspace.sandbox() != wanted.as_ref() || workspace.asks_network() != asks {
                 let within = workspace.within(wanted.as_ref()).await?;

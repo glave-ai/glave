@@ -172,7 +172,7 @@ impl Project {
         self.config.as_ref().map(|config| ConfigFile {
             permissions: config
                 .permissions
-                .filter(|preset| *preset != Permissions::FullAccess),
+                .filter(|mode| *mode != Permissions::FullAccess),
             judge_model: config.judge_model.clone().filter(|j| j.trim() == "off"),
             web: config.web.as_ref().map(WebFile::without_trust),
             hooks: None,

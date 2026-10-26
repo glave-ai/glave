@@ -113,12 +113,12 @@ fn a_declined_action_is_reported_to_the_model() {
 }
 
 #[test]
-fn the_preset_decides_what_asks() {
+fn the_mode_decides_what_asks() {
     use glave_harness::Permissions;
     // No sandbox here: Workspace asks as Read-only does, and only Full access goes through.
     for (mode, wrote, ran) in [
-        (Permissions::ReadOnly, false, false),
-        (Permissions::Workspace, false, false),
+        (Permissions::Ask, false, false),
+        (Permissions::Auto, false, false),
         (Permissions::FullAccess, true, true),
     ] {
         let dir = folder(&format!("mode-{}", mode.name()));

@@ -41,7 +41,7 @@ export function thread(
     status: 'idle',
     standing: 'active',
     title,
-    permissions: 'workspace',
+    permissions: 'auto',
     origin: { kind: 'web' },
     created_at: '2026-10-11T10:00:00.000Z',
     updated_at: '2026-10-11T10:05:00.000Z',
@@ -123,6 +123,6 @@ export const SERVER = {
   name: 'glave',
   version: '0.1.0',
   protocols: ['2026-10'],
-  permissions: 'workspace',
-  presets: ['read-only', 'workspace', 'full-access'],
+  permissions: 'auto',
+  presets: ['auto', 'ask', 'full-access'],
 } as const;

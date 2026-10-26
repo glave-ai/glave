@@ -138,7 +138,7 @@ export class ThreadComponent {
   });
   /** The model the person picked for the next turn, or `null` for the thread's own. */
   protected readonly picked = signal<string | null>(null);
-  /** The preset the person picked for the next turn, or `null` for the thread's own. */
+  /** The mode the person picked for the next turn, or `null` for the thread's own. */
   protected readonly pickedPermissions = signal<Permissions | null>(null);
   /** How much the person picked the next turn's model reasons, or `null` for the thread's own. */
   protected readonly pickedEffort = signal<string | null>(null);
@@ -179,7 +179,7 @@ export class ThreadComponent {
     const summary = this.summary();
     return summary === undefined ? '' : threadTitle(summary);
   });
-  /** The thread's own preset, from its summary, or `null` until it is read. */
+  /** The thread's own mode, from its summary, or `null` until it is read. */
   protected readonly permissions = computed(() => this.summary()?.permissions ?? null);
   /** The project the thread is in, by name; `null` for a chat. */
   protected readonly project = computed(() => {
@@ -219,7 +219,7 @@ export class ThreadComponent {
   });
 
   protected send(text: string): void {
-    // A pick goes with the turn only when it changes the thread's model or preset.
+    // A pick goes with the turn only when it changes the thread's model or mode.
     const picked = this.picked();
     const model = picked !== null && picked !== this.service.chosen() ? picked : null;
     const pickedPermissions = this.pickedPermissions();

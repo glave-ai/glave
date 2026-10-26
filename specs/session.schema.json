@@ -945,21 +945,21 @@
       "type": "integer"
     },
     "Permissions": {
-      "description": "What the agent may do without asking the person (`specs/approvals.md`, \"Permissions\"): the\none choice a person makes about it, of three presets, the most cautious first. Each comes to\na sandbox and how much asks wherever it runs (`glave-harness`); risky actions ask in every\npreset.",
+      "description": "What the agent may do without asking the person (`specs/approvals.md`, \"Modes\"): the one\nchoice a person makes about it, its mode. Ordered by caution, the most cautious least, so a\npolicy's cap is the highest mode it allows. Each comes to a sandbox and how much asks\nwherever it runs (`glave-harness`).",
       "oneOf": [
         {
-          "const": "read-only",
-          "description": "The agent looks: commands run in a sandbox that writes nothing of the project, and\nevery change asks first.",
+          "const": "ask",
+          "description": "Ask first: commands run in a sandbox that writes nothing of the project, and every\nchange asks first.",
           "type": "string"
         },
         {
-          "const": "workspace",
-          "description": "The agent changes the project, or the chat's folder: commands run in the sandbox and\nnothing inside it asks; risky actions ask or go to the judge. Where no sandbox can run,\nevery change and command asks instead.",
+          "const": "auto",
+          "description": "The agent works on its own in the project, or the chat's folder: commands run in the\nsandbox and nothing inside it asks; risky actions ask or go to the judge. Where no\nsandbox can run, every change and command asks instead.",
           "type": "string"
         },
         {
           "const": "full-access",
-          "description": "No sandbox, and nothing asks but the risky actions: for work the person fully trusts.",
+          "description": "No sandbox, and nothing ever asks, risky actions included; what would show the model a\nsecret is declined instead. For work the person fully trusts.",
           "type": "string"
         }
       ]
@@ -1421,10 +1421,10 @@
         },
         "permissions": {
           "$ref": "#/$defs/Permissions",
-          "description": "What the agent may do in a thread that, and whose project, chose no preset:\n`--permissions` or `permissions` in `config.toml` (`specs/approvals.md`, \"Permissions\")."
+          "description": "What the agent may do in a thread that, and whose project, chose no mode:\n`--permissions` or `permissions` in `config.toml` (`specs/approvals.md`, \"Modes\")."
         },
         "presets": {
-          "description": "The presets a thread may choose (`permissions` on `thread/start` and `turn/start`):\nthose the policy leaves, the most cautious first.",
+          "description": "The modes a thread may choose (`permissions` on `thread/start` and `turn/start`):\nthose the policy leaves, in the order a person is offered them, the recommended first.",
           "items": {
             "$ref": "#/$defs/Permissions"
           },
@@ -1445,7 +1445,7 @@
           "type": "array"
         },
         "unsandboxed": {
-          "description": "Why Workspace asks before every change and command here, in a sentence, when it does:\nno sandbox can run on this computer (Read-only then asks so too), or only one that keeps\nfiles as they are.",
+          "description": "Why Auto asks before every change and command here, in a sentence, when it does:\nno sandbox can run on this computer (Ask first then asks so too), or only one that keeps\nfiles as they are.",
           "type": [
             "string",
             "null"
@@ -1737,7 +1737,7 @@
         },
         "permissions": {
           "$ref": "#/$defs/Permissions",
-          "description": "What the agent may do in its next turn: the preset last chosen for it, else its\nproject's, else the server's."
+          "description": "What the agent may do in its next turn: the mode last chosen for it, else its\nproject's, else the server's."
         },
         "project": {
           "$ref": "#/$defs/ProjectId"

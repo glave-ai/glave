@@ -144,7 +144,7 @@ impl Loaded {
 }
 
 /// `own`, the levels other than a project's, with `project` among them: after the flags and
-/// the environment, before the person's file. Its preset only narrows what `own` choose,
+/// the environment, before the person's file. Its mode only narrows what `own` choose,
 /// unless it gives the full access its trust lets it, under the cap `highest`
 /// ([`project_permissions`]).
 fn with_project(own: &[Layer], mut project: Layer, highest: Permissions) -> Vec<Layer> {

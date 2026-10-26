@@ -8,5 +8,5 @@ timeout_sec = 600
 [glave]
 tier = "hard"
 # Real work runs commands: nothing asks but secrets.
-permissions = "workspace"
+permissions = "auto"
 checks = [{ kept = "tests/load.rs" }]

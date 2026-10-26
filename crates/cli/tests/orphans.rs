@@ -86,10 +86,10 @@ fn commands(pids: &[u32]) -> Vec<String> {
         .collect()
 }
 
-/// No sandbox, and nothing asks: the preset, as `config.toml` writes it.
+/// No sandbox, and nothing asks: the mode, as `config.toml` writes it.
 const FULL_ACCESS: &str = "\"full-access\"";
 
-/// glave in `place`, mid-turn, with `permissions` (a preset, as `config.toml` writes it): a
+/// glave in `place`, mid-turn, with `permissions` (a mode, as `config.toml` writes it): a
 /// command kept in the background and one in the foreground, each with a program of its own
 /// beside it, and an MCP server, which `server_starts` one too; and every process glave started
 /// and those started.
@@ -210,14 +210,14 @@ fn a_glave_killed_outright_has_what_it_started_stopped_at_once() {
 
 #[test]
 fn a_glave_killed_outright_has_its_sandboxed_commands_stopped_at_once() {
-    killed_mid_turn_leaves_nothing("sandboxed", "\"workspace\"");
+    killed_mid_turn_leaves_nothing("sandboxed", "\"auto\"");
 }
 
 #[test]
 fn a_glave_killed_outright_has_its_landlocked_commands_stopped_at_once() {
-    // Read-only, the level Landlock keeps where bubblewrap cannot start (CI's Landlock job):
+    // Ask first, whose level Landlock keeps where bubblewrap cannot start (CI's Landlock job):
     // there each command runs under glave's own sandbox helper, in a session of its own.
-    killed_mid_turn_leaves_nothing("landlocked", "\"read-only\"");
+    killed_mid_turn_leaves_nothing("landlocked", "\"ask\"");
 }
 
 #[test]

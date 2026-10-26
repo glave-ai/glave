@@ -37,7 +37,7 @@ import { PermissionsComponent } from '../permissions/permissions.component';
 /**
  * A new chat: the question, then the composer that starts a thread, with where it goes (a
  * chat, or a project) in its box, and what the agent may do and the model in the quiet line
- * under it. Sending starts the thread there, on the model and with the preset picked, and its
+ * under it. Sending starts the thread there, on the model and with the mode picked, and its
  * first turn, and opens the thread at once. When glave runs on this
  * computer, a line under it says what stays private. Opened for a project, the composer takes
  * focus, and the page has Back.
@@ -87,7 +87,7 @@ export class HomeComponent {
   });
   /** The model the person picked, or `null` for the server's default. */
   protected readonly picked = signal<string | null>(null);
-  /** The preset the person picked, or `null` for the server's. */
+  /** The mode the person picked, or `null` for the server's. */
   protected readonly pickedPermissions = signal<Permissions | null>(null);
   /** How much the person picked the model reasons, or `null` for the model's own way. */
   protected readonly pickedEffort = signal<string | null>(null);

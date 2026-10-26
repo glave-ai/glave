@@ -14,9 +14,9 @@ use crate::support::*;
 /// run it, and asking where it cannot.
 fn default_protections() -> &'static str {
     if glave_computer::sandbox_available() {
-        "permissions: workspace · sandbox: project + network"
+        "permissions: auto · sandbox: project + network"
     } else {
-        "permissions: workspace"
+        "permissions: auto"
     }
 }
 
@@ -194,7 +194,7 @@ fn only_full_access_chosen_runs_commands_unconfined_without_asking() {
 }
 
 #[test]
-fn in_read_only_with_no_one_to_ask_nothing_changes() {
+fn in_ask_first_with_no_one_to_ask_nothing_changes() {
     let place = place("ask");
     let server = FakeServer::start(vec![
         Reply::tool_call(
@@ -208,7 +208,7 @@ fn in_read_only_with_no_one_to_ask_nothing_changes() {
     let output = glave(
         &place,
         &server,
-        &["--model", "m", "--permissions", "read-only", "write notes"],
+        &["--model", "m", "--permissions", "ask", "write notes"],
         "",
     );
     assert!(output.status.success(), "{}", text(&output));
@@ -220,7 +220,7 @@ fn in_read_only_with_no_one_to_ask_nothing_changes() {
             .any(|result| result.contains("No one is available to approve")),
         "{second}"
     );
-    assert!(text(&output).contains("permissions: read-only"));
+    assert!(text(&output).contains("permissions: ask"));
 }
 
 #[test]

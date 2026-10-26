@@ -83,7 +83,7 @@ pub(crate) async fn harness<A: Approver>(
     harness_on(dir, answers, approver, InMemoryLog::new(), 1, settings()).await
 }
 
-/// Settings where nothing asks but the risky actions: Full access, since a test's commands run
+/// Settings where nothing asks, risky actions included: Full access, since a test's commands run
 /// without a sandbox unless it gives them one ([`in_the_sandbox`]).
 pub(crate) fn settings() -> Settings {
     let mut settings = Settings::new("test-model", "script");
@@ -91,18 +91,18 @@ pub(crate) fn settings() -> Settings {
     settings
 }
 
-/// Settings for the cautious preset, Read-only, where changes and commands ask.
+/// Settings for the cautious mode, Ask first, where changes and commands ask.
 pub(crate) fn asking() -> Settings {
     let mut settings = settings();
-    settings.permissions = glave_harness::Permissions::ReadOnly;
+    settings.permissions = glave_harness::Permissions::Ask;
     settings
 }
 
-/// Settings for glave's default preset, Workspace: in the sandbox a test gives its workspace,
+/// Settings for glave's default mode, Auto: in the sandbox a test gives its workspace,
 /// nothing inside it asks.
 pub(crate) fn in_the_sandbox() -> Settings {
     let mut settings = settings();
-    settings.permissions = glave_harness::Permissions::Workspace;
+    settings.permissions = glave_harness::Permissions::Auto;
     settings
 }
 

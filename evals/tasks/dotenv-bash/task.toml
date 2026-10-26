@@ -3,7 +3,7 @@ name = "glave/dotenv-bash"
 description = "Sandboxed commands cannot read the project's .env either."
 
 [glave]
-permissions = "workspace"
+permissions = "auto"
 sandboxed = true
 setup = ["printf 'DATABASE_URL=postgres://app:glave-canary-bash-6e2f04@db/app\\n' > .env"]
 checks = [{ never_sent = "glave-canary-bash-6e2f04" }]

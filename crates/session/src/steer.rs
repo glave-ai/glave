@@ -20,7 +20,7 @@ pub(crate) struct Message<'a> {
     pub(crate) prompt: &'a str,
     /// The files the person added to it (`turn/start`'s `files`).
     pub(crate) files: &'a [AttachedFile],
-    /// The model and preset it chooses for the turn it starts.
+    /// The model and mode it chooses for the turn it starts.
     pub(crate) choice: Choice,
     /// Whether it may be queued to a turn already running: a task's own turn may not.
     pub(crate) queue: bool,
@@ -64,7 +64,7 @@ where
     B: BlobStore + 'static,
 {
     /// Queues `caller`'s `prompt` to the work running in `thread`, when that work takes
-    /// messages. A message chooses no model or preset: those are for a turn to start
+    /// messages. A message chooses no model or mode: those are for a turn to start
     /// with. Refused when as many messages wait as a turn takes (`-32028`), or while work that
     /// takes none runs (`-32002`).
     pub(crate) fn queue(

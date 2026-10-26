@@ -35,7 +35,7 @@ pub enum Verdict {
     ReadOnly,
     /// It needs the person, whatever the mode, for this reason.
     Caution(Caution),
-    /// Neither: the preset decides.
+    /// Neither: the mode decides.
     Unknown,
 }
 

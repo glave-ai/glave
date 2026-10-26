@@ -5,7 +5,7 @@ import { SessionService } from './session.service';
 
 /**
  * What the glave that served the app says about itself (`server/discover`): its name and
- * version, the preset a thread runs with when it chooses none, the presets a thread may choose,
+ * version, the mode a thread runs with when it chooses none, the modes a thread may choose,
  * and, where no sandbox can run, the sentence saying so. Read once, when first asked.
  */
 @Service()
@@ -18,9 +18,9 @@ export class ServerService {
   readonly info = this.read.asReadonly();
   /** What the agent may do where nothing chose, or `null` until the server has said. */
   readonly permissions = computed<Permissions | null>(() => this.info()?.permissions ?? null);
-  /** The presets a thread may choose, the most cautious first; none until the server has said. */
+  /** The modes a thread may choose, in the order they are offered; none until the server has said. */
   readonly presets = computed<readonly Permissions[]>(() => this.info()?.presets ?? []);
-  /** Why Read-only and Workspace ask before everything here, in the server's words, if they do. */
+  /** Why Auto and Ask first ask before everything here, in the server's words, if they do. */
   readonly unsandboxed = computed<string | null>(() => this.info()?.unsandboxed ?? null);
 
   /** Asks the server about itself, once; a failed ask is tried again next time. */
