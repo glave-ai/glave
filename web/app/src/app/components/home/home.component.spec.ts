@@ -117,7 +117,7 @@ describe('HomeComponent', () => {
     document.querySelectorAll<HTMLElement>('[data-testid="model-picker-option"]')[1]?.click();
     root.querySelector<HTMLButtonElement>('[data-testid="permissions-trigger"]')?.click();
     await new Promise((resolve) => setTimeout(resolve));
-    document.querySelectorAll<HTMLElement>('[data-testid="permissions-option"]')[0]?.click();
+    document.querySelectorAll<HTMLElement>('[data-testid="permissions-option"]')[1]?.click();
     await send(root, 'Plant tomatoes');
     await new Promise((resolve) => setTimeout(resolve));
     expect(fake.paramsOf('thread/start')).toEqual([
