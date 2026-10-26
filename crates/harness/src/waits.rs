@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 
 use glave_event::{
     ApprovalDecided, ApprovalRequested, Body, CallId, Event, Lifted, Outcome, ParentCall, Payload,
-    Principal, PrincipalId, Seq, ThreadId, ToolCallCompleted, Verdict, decode,
+    Principal, PrincipalId, Seq, ThreadId, ToolCallCompleted, TurnResult, Verdict, decode,
 };
 use glave_ports::{
     BlobStore, CallKind, EventLog, LogError, ModelProvider, Scope, Standing, ThreadQuery,
@@ -17,7 +17,7 @@ use glave_ports::{
 
 use crate::approval::{Approver, Decision};
 use crate::harness::{Harness, HarnessError};
-use crate::turn::{Step, TurnSummary, absorb};
+use crate::turn::Step;
 
 /// A turn its log has open: where it started, and its calls without a result, in order, with
 /// the approval asked for the first of them when one was.
@@ -216,7 +216,7 @@ where
         scope: &Scope,
         thread: ThreadId,
         turn: &[Event],
-    ) -> Result<TurnSummary, HarnessError> {
+    ) -> Result<TurnResult, HarnessError> {
         let mut summary = own_tallies(turn);
         let agents: Vec<&CallId> = turn
             .iter()
@@ -230,7 +230,7 @@ where
         for call in agents {
             if let Some(child) = self.child_of(scope, thread, call).await? {
                 let events = self.load(scope, child.thread).await?;
-                absorb(&mut summary, &own_tallies(&events));
+                summary.absorb(&own_tallies(&events));
             }
         }
         Ok(summary)
@@ -243,7 +243,7 @@ where
         &self,
         scope: &Scope,
         child: ThreadId,
-    ) -> Result<(ToolOutput, TurnSummary), HarnessError> {
+    ) -> Result<(ToolOutput, TurnResult), HarnessError> {
         let events = self.load(scope, child).await?;
         let summary = own_tallies(&events);
         let messages = crate::conversation::conversation(&events);
@@ -393,24 +393,19 @@ fn dangling(events: &[Event]) -> bool {
 
 /// What the latest turn in `events` did by itself: its model calls, tool calls, commands run
 /// outside the sandbox, tokens and cost, and how it ended (completed while it has not).
-pub(crate) fn own_tallies(events: &[Event]) -> TurnSummary {
+pub(crate) fn own_tallies(events: &[Event]) -> TurnResult {
     let started = events
         .iter()
         .rposition(|event| matches!(event.body, Body::TurnStarted(_)))
         .unwrap_or(0);
     let turn = events.get(started..).unwrap_or_default();
-    let mut summary = TurnSummary::started();
+    let mut summary = TurnResult::begun();
     let mut outside: HashMap<&CallId, Lifted> = HashMap::new();
     for event in turn {
         match &event.body {
             Body::ModelResponded(responded) => {
                 summary.model_calls = summary.model_calls.saturating_add(1);
-                summary.tokens += responded.usage.counts();
-                summary.estimated |= responded.usage.estimated();
-                summary.cost = summary
-                    .cost
-                    .zip(responded.cost.as_ref())
-                    .and_then(|(sum, cost)| sum.checked_add(cost.amount));
+                summary.take_in(responded);
             }
             Body::ToolCallCompleted(_) => {
                 summary.tool_calls = summary.tool_calls.saturating_add(1);

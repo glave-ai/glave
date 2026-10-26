@@ -78,5 +78,5 @@ pub use subagent::SubagentType;
 pub use title::{TitleCase, Titled};
 pub use tools::workspace::{Inside, Looked, Workspace};
 pub use tools::{Tool, ToolOutcome};
-pub use turn::{Live, Said, TurnSummary};
+pub use turn::{Live, Said};
 pub use worker::{ReleasedWorker, Workers, wip_branch};

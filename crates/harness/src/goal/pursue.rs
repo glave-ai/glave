@@ -3,7 +3,7 @@
 
 use glave_event::{
     Arguments, Body, CallId, Event, GoalEnded, GoalReason, GoalResumed, GoalSet, Outcome,
-    Principal, ThreadId,
+    Principal, ThreadId, TurnResult,
 };
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope};
 
@@ -14,13 +14,13 @@ use super::{
 use crate::approval::Approver;
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
-use crate::turn::{Live, Prompt, TurnSummary, absorb};
+use crate::turn::{Live, Prompt};
 
 /// Where a goal's turns start: a turn to run, with the objective when the goal is new, or one
 /// that ran already and went on from the log after a wait.
 enum First<'a> {
     Run(Option<&'a str>),
-    Ran(TurnSummary),
+    Ran(TurnResult),
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -42,7 +42,7 @@ where
         caller: &Caller,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<TurnSummary, HarnessError> {
+    ) -> Result<TurnResult, HarnessError> {
         if self.planning(thread) {
             return Err(HarnessError::GoalInPlan(thread.id));
         }
@@ -74,7 +74,7 @@ where
         caller: &Caller,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<TurnSummary, HarnessError> {
+    ) -> Result<TurnResult, HarnessError> {
         if self.planning(thread) {
             return Err(HarnessError::GoalInPlan(thread.id));
         }
@@ -168,7 +168,7 @@ where
         caller: &Caller,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<TurnSummary, HarnessError> {
+    ) -> Result<TurnResult, HarnessError> {
         self.pursue_from(thread, First::Run(opening), caller, cancel, live)
             .await
     }
@@ -179,11 +179,11 @@ where
     pub(crate) async fn pursue_after(
         &self,
         thread: &mut Thread,
-        turn: TurnSummary,
+        turn: TurnResult,
         caller: &Caller,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<TurnSummary, HarnessError> {
+    ) -> Result<TurnResult, HarnessError> {
         self.pursue_from(thread, First::Ran(turn), caller, cancel, live)
             .await
     }
@@ -196,12 +196,12 @@ where
         caller: &Caller,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<TurnSummary, HarnessError> {
+    ) -> Result<TurnResult, HarnessError> {
         let (mut opening, mut ran) = match first {
             First::Run(opening) => (opening, None),
             First::Ran(turn) => (None, Some(turn)),
         };
-        let mut total = TurnSummary::started();
+        let mut total = TurnResult::begun();
         let mut idle = 0;
         loop {
             let turn = match ran.take() {
@@ -214,7 +214,7 @@ where
                     None => break,
                 },
             };
-            absorb(&mut total, &turn);
+            total.absorb(&turn);
             total.outcome = turn.outcome;
             let used = self.last_turn_used(thread).await?;
             let verdict = note_turn(thread, used);
@@ -255,7 +255,7 @@ where
         caller: &Caller,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<Option<TurnSummary>, HarnessError> {
+    ) -> Result<Option<TurnResult>, HarnessError> {
         let Some(goal) = thread.goal().filter(|goal| goal.active()).cloned() else {
             return Ok(None);
         };
@@ -328,7 +328,7 @@ pub(crate) fn of_turn(thread: &Thread, events: &[Event], started: usize) -> bool
 /// tallies: it runs as the goal's turn, with how the model ended the goal in it already, if it
 /// did, and is counted once it ends, as any of the goal's turns is (the log counted it, and
 /// what it used so far, already).
-pub(crate) fn going_on(thread: &mut Thread, turn: &[Event], so_far: &TurnSummary) {
+pub(crate) fn going_on(thread: &mut Thread, turn: &[Event], so_far: &TurnResult) {
     set_running(thread, true);
     let completed: Vec<&CallId> = turn
         .iter()

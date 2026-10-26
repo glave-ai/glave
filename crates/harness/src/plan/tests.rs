@@ -1,5 +1,5 @@
 use glave_event::{
-    At, EventId, Header, Outcome, PlanApproved, Principal, Seq, ThreadId, TurnEnded,
+    At, EventId, Header, Outcome, PlanApproved, Principal, Seq, ThreadId, TurnResult,
 };
 use glave_ports::{Effect, Message};
 
@@ -111,8 +111,9 @@ fn the_model_is_told_of_the_person_s_edit_where_it_was_made_and_of_nothing_else(
     let edit = event(2, updated(steps, None, true));
     let ended = event(
         3,
-        Body::TurnEnded(TurnEnded {
+        Body::TurnEnded(TurnResult {
             outcome: Outcome::Completed,
+            ..TurnResult::begun()
         }),
     );
     let messages = crate::conversation::conversation(&[proposed, ended, edit]);

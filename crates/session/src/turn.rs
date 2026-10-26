@@ -7,7 +7,7 @@ use std::future::pending;
 use std::sync::Arc;
 
 use glave_event::ThreadId;
-use glave_harness::{Cancel, HarnessError, Live, Said, Thread, TurnSummary};
+use glave_harness::{Cancel, HarnessError, Live, Said, Thread};
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider, Scope};
 use tokio::sync::watch;
 
@@ -141,7 +141,7 @@ async fn ending(done: &mut Done) -> Result<TurnResult, ApiError> {
             return Err(ApiError::new(code::INTERNAL, Sentence::TurnStopped));
         };
         match ended.as_ref() {
-            Ok(summary) => return Ok(TurnResult::from(summary.clone())),
+            Ok(result) => return Ok(result.clone()),
             Err(HarnessError::Waits(_)) => {
                 if done.changed().await.is_err() {
                     return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::TurnUnfollowed));
@@ -290,7 +290,7 @@ fn turn<P, L, B>(
     caller: &Caller,
     choice: &Choice,
     unattended: bool,
-    finish: Finish<TurnSummary>,
+    finish: Finish<TurnResult>,
 ) -> TurnWork<P, L, B>
 where
     P: ModelProvider + 'static,

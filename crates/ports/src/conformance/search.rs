@@ -5,7 +5,7 @@
 
 use glave_event::{
     At, CallId, EventId, Header, MessageAdded, Outcome, Part, RawEvent, Role, Seq, ThreadId,
-    ToolCallCompleted, TurnEnded, encode,
+    ToolCallCompleted, TurnResult, encode,
 };
 
 use super::{Verdict, ensure, scope, thread, uuid_v7};
@@ -55,8 +55,9 @@ fn from_memory(thread: ThreadId, seq: u64, text: &str) -> Result<RawEvent, Strin
 }
 
 fn ended(thread: ThreadId, seq: u64) -> Result<RawEvent, String> {
-    let ended = TurnEnded {
+    let ended = TurnResult {
         outcome: Outcome::Completed,
+        ..TurnResult::begun()
     };
     encode(header(thread, seq)?, &ended).map_err(|e| e.to_string())
 }

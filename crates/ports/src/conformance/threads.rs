@@ -4,7 +4,7 @@
 use glave_event::{
     At, Cost, Currency, EventId, Header, MessageAdded, ModelRef, ModelResponded, Money, Origin,
     OriginKind, Outcome, Part, Payload, Principal, PrincipalId, Producer, RawEvent, Role, Seq,
-    StopReason, ThreadArchived, ThreadId, ThreadRenamed, ThreadStarted, TokenCounts, TurnEnded,
+    StopReason, ThreadArchived, ThreadId, ThreadRenamed, ThreadStarted, TokenCounts, TurnResult,
     TurnStarted, Usage, encode,
 };
 
@@ -135,8 +135,9 @@ fn turn(writer: &mut Writer, from: u64) -> Result<Vec<RawEvent>, String> {
         writer.next(from + 2, &responded()?)?,
         writer.next(
             from + 3,
-            &TurnEnded {
+            &TurnResult {
                 outcome: Outcome::Completed,
+                ..TurnResult::begun()
             },
         )?,
     ])
@@ -200,8 +201,9 @@ pub async fn thread_views<L: EventLog>(log: &L) -> Verdict {
             ledger,
             vec![Writer::new(ledger).next(
                 8,
-                &TurnEnded {
+                &TurnResult {
                     outcome: Outcome::Failed,
+                    ..TurnResult::begun()
                 },
             )?],
         ),

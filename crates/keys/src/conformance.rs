@@ -5,7 +5,7 @@
 use glave_event::{
     At, CredentialConnected, CredentialId, EventId, Forge, Header, MemoryId, MemorySaved,
     MemoryScope, Outcome, Principal, ProviderConnected, ProviderId, ProviderKind, RawEvent, Secret,
-    Seq, ThreadId, TurnEnded, encode,
+    Seq, ThreadId, TurnResult, encode,
 };
 use glave_ports::testing::FAKE_SECRET;
 use glave_ports::{Erasable, Eraser, OrgId, ProjectId, Scope};
@@ -51,8 +51,9 @@ pub fn event(thread: u64, seq: u64, month: &str) -> Result<RawEvent, String> {
     };
     encode(
         header,
-        &TurnEnded {
+        &TurnResult {
             outcome: Outcome::Completed,
+            ..TurnResult::begun()
         },
     )
     .map_err(|e| e.to_string())

@@ -7,9 +7,9 @@ use std::future::{Future, ready};
 use std::net::TcpListener;
 use std::path::Path;
 
-use glave_event::{Body, Event, Lifted, Principal, StopReason, ThreadId, Verdict};
+use glave_event::{Body, Event, Lifted, Principal, StopReason, ThreadId, TurnResult, Verdict};
 use glave_harness::{
-    ApprovalRequest, Approver, Cancel, Decision, Defaults, HarnessError, NoOneToAsk, TurnSummary,
+    ApprovalRequest, Approver, Cancel, Decision, Defaults, HarnessError, NoOneToAsk,
 };
 use glave_ports::computer::Sandbox;
 use glave_ports::{Caller, Completion, InMemoryLog, ModelRequest};
@@ -54,7 +54,7 @@ fn making(calls: Vec<(&'static str, serde_json::Value)>) -> Vec<Completion> {
 
 /// What one turn did.
 struct Ran {
-    turn: TurnSummary,
+    turn: TurnResult,
     /// What each call gave the model.
     said: Vec<String>,
     events: Vec<Event>,

@@ -30,7 +30,7 @@ pub use search::search;
 pub use threads::thread_views;
 
 use glave_event::{
-    At, EventId, Header, Outcome, RawEvent, Seq, ThreadId, ThreadRenamed, TurnEnded, encode,
+    At, EventId, Header, Outcome, RawEvent, Seq, ThreadId, ThreadRenamed, TurnResult, encode,
 };
 use uuid::{Builder, Uuid};
 
@@ -76,8 +76,9 @@ fn event(thread: ThreadId, seq: u64) -> Result<RawEvent, String> {
     };
     encode(
         header,
-        &TurnEnded {
+        &TurnResult {
             outcome: Outcome::Completed,
+            ..TurnResult::begun()
         },
     )
     .map_err(|e| e.to_string())
