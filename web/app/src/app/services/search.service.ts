@@ -7,8 +7,9 @@ import { SessionService } from './session.service';
 /**
  * Whether the person's agent may search the web, as the server says (`search/get`,
  * `search/set`): read as the app starts, signed in, so the composer shows it while it is on,
- * and again as Settings opens. The person's switch is sent, and the server's answer is what
- * stays; when it keeps none, what it said before stays, with why.
+ * and again as Settings opens, with how often it searched this month. Each switch is sent once
+ * the one before it is answered, so the server keeps the person's last, and the answer to the
+ * last is what stays; when the server keeps none, what it said before stays, with why.
  */
 @Service()
 export class SearchService {
@@ -17,10 +18,12 @@ export class SearchService {
   private readonly failed = signal<string | null>(null);
   /** How many times it was asked, so an answer that comes late never wins. */
   private asked = 0;
+  /** The switches on their way, each sent once the one before it is answered. */
+  private sending: Promise<unknown> = Promise.resolve();
 
   /** What the server last said; none until it has. */
   readonly search = this.said.asReadonly();
-  /** Why the person's last switch was not kept, until the next. */
+  /** Why the person's last switch was not kept, until the next, or the next read. */
   readonly problem = this.failed.asReadonly();
   /** Whether the agent may search the web now. */
   readonly on = computed(() => {
@@ -32,12 +35,16 @@ export class SearchService {
     void this.load();
   }
 
-  /** Reads it again; one that cannot be read leaves what was read before. */
-  async load(): Promise<void> {
+  /**
+   * Reads it again, with how often it searched this month when `usage` asks, which the server
+   * reads from the month's threads; one that cannot be read leaves what was read before.
+   */
+  async load(usage = false): Promise<void> {
     this.asked += 1;
     const asked = this.asked;
+    this.failed.set(null);
     try {
-      const { search } = await this.session.call('search/get', {});
+      const { search } = await this.session.call('search/get', { usage });
       if (asked === this.asked) {
         this.said.set(search);
       }
@@ -46,15 +53,22 @@ export class SearchService {
     }
   }
 
-  /** Turns web search on or off; the server's answer is what stays. */
+  /** Turns web search on or off; the server's answer to the last switch is what stays. */
   async set(on: boolean): Promise<void> {
     this.asked += 1;
+    const asked = this.asked;
+    const answered = this.sending.then(() => this.session.call('search/set', { on }));
+    this.sending = answered.catch(() => undefined);
     try {
-      const { search } = await this.session.call('search/set', { on });
-      this.said.set(search);
-      this.failed.set(null);
+      const { search } = await answered;
+      if (asked === this.asked) {
+        this.said.set(search);
+        this.failed.set(null);
+      }
     } catch (error: unknown) {
-      this.failed.set(error instanceof ApiError ? sentence(error.message) : unreached());
+      if (asked === this.asked) {
+        this.failed.set(error instanceof ApiError ? sentence(error.message) : unreached());
+      }
     }
   }
 }

@@ -18,7 +18,7 @@ const RESULTS: &str = "1. Tokio, an asynchronous runtime for Rust: https://tokio
 
 /// Web search as `search/get` answers it.
 fn search(api: &Api) -> Value {
-    api.call("search/get", json!({}))["result"]["search"].clone()
+    api.call("search/get", json!({"usage": true}))["result"]["search"].clone()
 }
 
 #[test]

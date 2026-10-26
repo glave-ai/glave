@@ -243,7 +243,10 @@ sentences! {
     SignInNoWayBack = "sign-in-no-way-back"
         "this glave has no address your browser can come back to after signing in: whoever runs it gives it the address people reach it at, then try again",
     SearchDetail = "search-detail" "Uses Exa, free. Your searches go to Exa.",
-    CallsThisMonth { calls: u64 } = "calls-this-month"
+    SearchNotHere = "search-not-here"
+        "web search is set up by whoever runs this server, not from here",
+    SearchOnItsComputer = "search-on-its-computer"
+        "web search is turned on or off on the computer glave runs on, by its person",    CallsThisMonth { calls: u64 } = "calls-this-month"
         "{ $calls ->\n    [0] No calls\n    [1] One call\n   *[other] { $calls } calls\n } this month",
     SearchesThisMonth { searches: u64 } = "searches-this-month"
         "{ $searches ->\n    [0] No searches\n    [1] One search\n   *[other] { $searches } searches\n } this month",

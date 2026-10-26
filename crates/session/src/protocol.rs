@@ -529,8 +529,13 @@ methods! {
         /// What the person's `mcp.json` calls the server, or its address.
         server: String,
     } -> [Done],
-    /// Whether the person's agent may search the web, and how much it searched this month.
-    "search/get" => SearchGet {} -> [Search],
+    /// Whether the person's agent may search the web, and, never theirs to choose, why.
+    "search/get" => SearchGet {
+        /// Also how much it searched this month, which reads the month's threads: for
+        /// Settings, not for a client that only shows whether it is on.
+        #[serde(default)]
+        usage: bool,
+    } -> [Search],
     /// Turns web search on or off for the person: on, its server joins their own settings,
     /// `mcp.json` in glave's folder, and their threads may search from the next turn; off, it
     /// leaves them, unless they set it up there themselves. Only the person on this computer.

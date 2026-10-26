@@ -72,8 +72,8 @@ function lifeline(): string {
 }
 
 /**
- * What each glave the run starts is handed: the run's lifeline, and, in place of the web search
- * glave suggests, an address nothing listens on (the discard port), so no test reaches Exa.
+ * What each glave the run starts is handed: the run's lifeline, and, in place of web search's
+ * server, Exa's, an address nothing listens on (the discard port), so no test reaches Exa.
  */
 const tied = {
   GLAVE_LIFELINE: lifeline(),

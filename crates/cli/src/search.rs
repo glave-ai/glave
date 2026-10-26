@@ -24,10 +24,14 @@ pub(crate) fn main(words: &[String]) -> ExitCode {
     run_with(words, USAGE, |words| async move {
         let words: Vec<&str> = words.iter().map(String::as_str).collect();
         let request = match words.as_slice() {
-            [] => Request::SearchGet {},
+            [] => Request::SearchGet { usage: true },
             ["on"] => Request::SearchSet { on: true },
             ["off"] => Request::SearchSet { on: false },
-            _ => bail!("give on, off or nothing\n\n{USAGE}"),
+            _ => bail!(
+                "glave search takes on, off or nothing; to ask glave something that starts \
+                 with \"search\", put it after --, as in: glave -- search the docs for retries\
+                 \n\n{USAGE}"
+            ),
         };
         reach::with(async |server| said(server, request).await).await
     })
@@ -39,8 +43,8 @@ async fn said(server: &mut Reached, request: Request) -> anyhow::Result<()> {
         bail!("glave answered about web search with something else");
     };
     match search {
-        SearchInfo::Never => {
-            println!("Web search isn't yours to turn on here: your organization chooses it.");
+        SearchInfo::Never { reason } => {
+            println!("Web search isn't yours to choose here: {reason}.");
         }
         SearchInfo::Chosen { on, detail, usage } => {
             let state = if on { "on" } else { "off" };

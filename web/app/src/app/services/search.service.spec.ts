@@ -27,6 +27,42 @@ describe('SearchService', () => {
     expect(search.problem()).toBeNull();
   });
 
+  it('reads only whether it is on as it starts, and the month’s searches when asked', async () => {
+    const fake = new FakeSession().answer('search/get', { search: OFF });
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const search = TestBed.inject(SearchService);
+    await settled();
+    await search.load(true);
+    expect(fake.paramsOf('search/get')).toEqual([{ usage: false }, { usage: true }]);
+  });
+
+  it('sends each switch once the one before is answered, and the last answer stays', async () => {
+    const answers: ((value: { search: SearchInfo }) => void)[] = [];
+    const fake = new FakeSession().answer('search/get', { search: OFF }).answer(
+      'search/set',
+      () =>
+        new Promise<{ search: SearchInfo }>((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const search = TestBed.inject(SearchService);
+    await settled();
+    const first = search.set(true);
+    const second = search.set(false);
+    await settled();
+    // The second waits for the first's answer before it is sent.
+    expect(fake.paramsOf('search/set')).toEqual([{ on: true }]);
+    answers[0]?.({ search: ON });
+    await first;
+    await settled();
+    expect(fake.paramsOf('search/set')).toEqual([{ on: true }, { on: false }]);
+    expect(search.on()).toBe(false);
+    answers[1]?.({ search: OFF });
+    await second;
+    expect(search.on()).toBe(false);
+  });
+
   it('keeps what it had when the server refuses, and says why', async () => {
     const fake = new FakeSession()
       .answer('search/get', { search: ON })

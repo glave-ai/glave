@@ -40,7 +40,7 @@ Usage:
                                 with it, for a host that needs one
 
 Connecting the same server or host again replaces it. List or remove them with
-glave connections.";
+glave connections. Web search is no connection: turn it on or off with glave search.";
 
 pub(crate) const CONNECTIONS_USAGE: &str = "\
 glave connections: your connections and git hosts

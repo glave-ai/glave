@@ -160,7 +160,7 @@ pub(crate) fn glave(place: &Place, server: &FakeServer, args: &[&str], stdin: &s
     child.wait_with_output().unwrap()
 }
 
-/// In place of the web search glave suggests, an address nothing listens on (the discard port),
+/// In place of web search's server, Exa's, an address nothing listens on (the discard port),
 /// given to every glave a test starts, so none reaches Exa; a test may give its own.
 pub(crate) const SEARCH_STAND_IN: (&str, &str) = (
     "GLAVE_SEARCH_URL",

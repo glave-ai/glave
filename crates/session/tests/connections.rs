@@ -4,7 +4,8 @@
 //! and removed. Only the person on this computer may do this: a caller signed in with OIDC is
 //! refused, a server whose sign-ins someone else sets up refuses everyone, and one no browser
 //! can come back to says so. Each connection in the person's settings says how often it was
-//! called this month; one glave suggests says what it is for.
+//! called this month; web search, no connection the person sees, says what it is for and how
+//! often it searched, and is never theirs to choose where they may not.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -260,6 +261,14 @@ fn only_the_person_on_this_computer_signs_in_to_connections() {
             let refused = client.call(request).await.unwrap_err();
             assert_eq!(refused.code, code::NOT_ALLOWED, "{refused}");
         }
+        // Web search is not theirs to choose, and they are told why, as `search/set` refused.
+        let never = client
+            .call(Request::SearchGet { usage: false })
+            .await
+            .unwrap();
+        assert_eq!(never["search"]["kind"], "never", "{never}");
+        let reason = never["search"]["reason"].as_str().unwrap_or_default();
+        assert!(reason.contains("on the computer glave runs on"), "{never}");
         client.close().await;
 
         let tested = server(&folder("conn-none"), Vec::new(), Answering::Clients).await;
@@ -267,15 +276,19 @@ fn only_the_person_on_this_computer_signs_in_to_connections() {
             let refused = tested.request(request).await.unwrap_err();
             assert_eq!(refused.code, code::NOT_AVAILABLE);
         }
-        let never = tested.request(Request::SearchGet {}).await.unwrap();
-        assert!(
-            matches!(
-                never,
-                Reply::Search {
-                    search: SearchInfo::Never
-                }
-            ),
-            "not theirs to choose, so not shown: {never:?}"
+        let never = tested
+            .request(Request::SearchGet { usage: true })
+            .await
+            .unwrap();
+        let Reply::Search {
+            search: SearchInfo::Never { reason },
+        } = never
+        else {
+            panic!("not theirs to choose, so not shown: {never:?}");
+        };
+        assert_eq!(
+            &*reason,
+            "web search is set up by whoever runs this server, not from here"
         );
         tested.shutdown().await;
     });
@@ -324,6 +337,14 @@ async fn search(tested: &Tested, request: Request) -> SearchInfo {
     }
 }
 
+/// Whether `search` is on, and how many searches it says it made this month, if it says.
+fn on_and_counted(search: &SearchInfo) -> (bool, Option<u64>) {
+    match search {
+        SearchInfo::Chosen { on, usage, .. } => (*on, usage.as_ref().map(|usage| usage.calls)),
+        SearchInfo::Never { .. } => panic!("the person's to choose, not {search:?}"),
+    }
+}
+
 #[test]
 fn web_search_is_the_person_s_to_turn_on_and_says_how_often_it_searched_this_month() {
     block_on!(async {
@@ -342,7 +363,7 @@ fn web_search_is_the_person_s_to_turn_on_and_says_how_often_it_searched_this_mon
         setup.connections = Some(Arc::clone(&connections) as Arc<dyn Connections>);
         let dir = folder("search-usage");
         let (tested, _) = setup.build(&dir).await;
-        let off = search(&tested, Request::SearchGet {}).await;
+        let off = search(&tested, Request::SearchGet { usage: true }).await;
         let SearchInfo::Chosen { on, detail, usage } = off else {
             panic!("the person's to choose, not {off:?}");
         };
@@ -372,7 +393,7 @@ fn web_search_is_the_person_s_to_turn_on_and_says_how_often_it_searched_this_mon
         );
         let thread = crate::support::start(&tested, false).await;
         turn(&tested, thread, "search twice").await.unwrap();
-        let counted = search(&tested, Request::SearchGet {}).await;
+        let counted = search(&tested, Request::SearchGet { usage: true }).await;
         let SearchInfo::Chosen {
             usage: Some(usage), ..
         } = counted
@@ -383,18 +404,11 @@ fn web_search_is_the_person_s_to_turn_on_and_says_how_often_it_searched_this_mon
             (usage.calls, &*usage.sentence),
             (2, "2 searches this month")
         );
+        // A client that only shows whether it is on reads no month of threads.
+        let shown = search(&tested, Request::SearchGet { usage: false }).await;
+        assert_eq!(on_and_counted(&shown), (true, None));
         let off = search(&tested, Request::SearchSet { on: false }).await;
-        assert!(
-            matches!(
-                off,
-                SearchInfo::Chosen {
-                    on: false,
-                    usage: None,
-                    ..
-                }
-            ),
-            "{off:?}"
-        );
+        assert_eq!(on_and_counted(&off), (false, None));
         tested.shutdown().await;
     });
 }

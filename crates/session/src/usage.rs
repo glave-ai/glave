@@ -49,18 +49,17 @@ where
         }
     }
 
-    /// Web search as the person sees it, from `searching`: never theirs to choose when there is
-    /// none; else whether it is on, who searches and what it costs, and, while it is on, how
-    /// much it searched this month.
+    /// Web search as the person sees it, from `searching`: whether it is on, who searches and
+    /// what it costs, and, while it is on and when `usage` asks, how much it searched this
+    /// month, which reads the month's threads.
     pub(crate) async fn search_info(
         &self,
         caller: &Caller,
-        searching: Option<Searching>,
+        searching: Searching,
+        usage: bool,
     ) -> SearchInfo {
-        let Some(Searching { on, name }) = searching else {
-            return SearchInfo::Never;
-        };
-        let usage = if on {
+        let Searching { on, name } = searching;
+        let usage = if on && usage {
             let counted = self.counted(caller, &[name.as_str()]).await;
             counted.map(|calls| {
                 let searches = calls.get(&name).copied().unwrap_or(0);

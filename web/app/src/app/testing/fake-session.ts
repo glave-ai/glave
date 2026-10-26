@@ -211,7 +211,12 @@ function unanswered(method: Method, params: unknown): Answer {
     return { awake: { kind: 'never' } };
   }
   if (method === 'search/get') {
-    return { search: { kind: 'never' } };
+    return {
+      search: {
+        kind: 'never',
+        reason: 'web search is set up by whoever runs this server, not from here',
+      },
+    };
   }
   if (method === 'grouping/get') {
     return { grouping: 'project' };

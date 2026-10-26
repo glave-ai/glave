@@ -23,7 +23,7 @@ import { SearchService } from '../../services/search.service';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class WebSearchComponent {
-  protected readonly service = inject(SearchService);
+  private readonly service = inject(SearchService);
   private readonly changes = inject(ChangeDetectorRef);
   protected readonly copy = {
     heading: $localize`:@@webSearch.heading:Web search`,
@@ -44,7 +44,8 @@ export class WebSearchComponent {
   private readonly box = viewChild(GlzCheckboxComponent);
 
   constructor() {
-    void this.service.load();
+    // Settings shows how often it searched this month, which only it asks for.
+    void this.service.load(true);
   }
 
   /** Turns web search on or off; the server's answer is what stays. */

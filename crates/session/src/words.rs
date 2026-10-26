@@ -27,6 +27,9 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
         Ok(Reply::Search {
             search: SearchInfo::Chosen { detail, .. },
         }) => detail.translatable(),
+        Ok(Reply::Search {
+            search: SearchInfo::Never { reason },
+        }) => reason.translatable(),
         Ok(_) => false,
     }
 }
@@ -61,6 +64,9 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             detail.translate(language);
             used(usage);
         }
+        Ok(Reply::Search {
+            search: SearchInfo::Never { reason },
+        }) => reason.translate(language),
         Ok(_) => {}
     }
 }

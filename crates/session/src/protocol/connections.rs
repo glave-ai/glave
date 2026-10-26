@@ -48,11 +48,12 @@ pub struct Usage {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SearchInfo {
-    /// Not the person's to choose here: their organization chooses its search among its
-    /// approved connections, or this server keeps no connections of the person's own.
-    Never,
+    /// Not the caller's to choose here, and `reason`, why: their organization chooses its
+    /// search among its approved connections, this server keeps no connections of the
+    /// person's own, or only the person on its computer chooses.
+    Never { reason: Told },
     /// The person's to turn on or off: on when `on`; `detail` says who searches and what it
-    /// costs; `usage`, while it is on, how much it searched this month.
+    /// costs; `usage`, while it is on and when asked for, how much it searched this month.
     Chosen {
         on: bool,
         detail: Told,

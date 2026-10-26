@@ -73,6 +73,12 @@ fn web_search_turns_on_into_the_person_s_settings_and_off_again_never_a_connecti
             connected.list().await.unwrap().is_empty(),
             "never listed as a connection"
         );
+        let back = Some("http://127.0.0.1:1/connect/callback".to_owned());
+        for named in ["search", url] {
+            let refused = connected.start(named.to_owned(), back.clone()).await;
+            let refused = refused.unwrap_err();
+            assert_eq!(refused.code, code::NO_SERVER, "nor signed in to as one");
+        }
 
         assert_eq!(connected.set_search(false).await.unwrap(), state(false));
         let settings = std::fs::read_to_string(home.join(crate::mcp::FILE)).unwrap();

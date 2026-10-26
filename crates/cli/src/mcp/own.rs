@@ -145,7 +145,7 @@ impl Servers {
     }
 
     /// `wanted` started, in the person's home folder; a remote one signed in as the person,
-    /// and the one glave suggests to search the web telling the person what each call searched.
+    /// and web search's telling the person what each call searched.
     fn started(&self, wanted: &Wanted) -> Arc<McpServer> {
         let (name, limits) = (&wanted.name, Limits::default());
         let server = match (&wanted.config, &self.connected) {

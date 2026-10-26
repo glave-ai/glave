@@ -7,7 +7,7 @@
 use glave_event::Secret;
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 
-use crate::protocol::{ApiError, ConnectionInfo, Reply, SearchInfo, SignInLink, code};
+use crate::protocol::{ApiError, ConnectionInfo, Reply, SearchInfo, SignInLink, Told, code};
 use crate::providers::theirs;
 use crate::server::Server;
 use crate::words::Sentence;
@@ -156,23 +156,37 @@ where
         Ok(Reply::Connections { connections })
     }
 
-    /// Answers `search/get`: never the person's to choose where this server keeps no
-    /// connections of theirs.
-    pub(crate) async fn get_search(&self, caller: &Caller) -> Result<Reply, ApiError> {
-        if self.inner.connections.is_none() {
-            return Ok(Reply::Search {
-                search: SearchInfo::Never,
-            });
-        }
-        let searching = self.connections_for(caller)?.search().await?;
-        let search = self.search_info(caller, searching).await;
+    /// Web search's keeper, when it is `caller`'s to choose: the person on this computer, where
+    /// this server keeps connections of theirs.
+    fn search_for(&self, caller: &Caller) -> Result<&dyn Connections, ApiError> {
+        let connections = self.inner.connections.as_deref();
+        let elsewhere = Sentence::SearchOnItsComputer;
+        theirs(caller, connections, Sentence::SearchNotHere, elsewhere)
+    }
+
+    /// Answers `search/get`, counting this month's searches when `usage` asks: never the
+    /// caller's to choose, with why, where `search/set` would refuse them.
+    pub(crate) async fn get_search(&self, caller: &Caller, usage: bool) -> Result<Reply, ApiError> {
+        let never = |reason: Told| Reply::Search {
+            search: SearchInfo::Never { reason },
+        };
+        let connections = match self.search_for(caller) {
+            Ok(connections) => connections,
+            Err(refused) => return Ok(never(refused.message)),
+        };
+        let Some(searching) = connections.search().await? else {
+            return Ok(never(Sentence::SearchNotHere.into()));
+        };
+        let search = self.search_info(caller, searching, usage).await;
         Ok(Reply::Search { search })
     }
 
-    /// Answers `search/set`.
+    /// Answers `search/set`, with this month's searches, for Settings, which turned it.
     pub(crate) async fn set_search(&self, caller: &Caller, on: bool) -> Result<Reply, ApiError> {
-        let searching = self.connections_for(caller)?.set_search(on).await?;
-        let search = self.search_info(caller, searching).await;
+        let Some(searching) = self.search_for(caller)?.set_search(on).await? else {
+            return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::SearchNotHere));
+        };
+        let search = self.search_info(caller, searching, true).await;
         Ok(Reply::Search { search })
     }
 

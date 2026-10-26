@@ -3,7 +3,10 @@
 //! one glave added taken out again. Everything else stays as the person wrote it, in its order,
 //! each server's text as it was; only the spacing between them is glave's. A crash leaves the
 //! old file or the new one, whole, at the place a link points to when the file is one. Changes
-//! are made one at a time in this process, each read and written whole off the async runtime.
+//! are made one at a time in this process, each read and written whole off the async runtime;
+//! another process writing the file at the same moment (a second glave with no server to ask,
+//! or the person in their editor) may have its change or this one lost, as with any file two
+//! programs write.
 
 use std::fmt;
 use std::path::Path;
@@ -17,7 +20,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::value::RawValue;
 use serde_json::{Value, json};
 
-/// What turning off a connection glave suggests did to the person's settings.
+/// What turning off web search did to the person's settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Removed {
     /// The server glave added there is gone.

@@ -343,7 +343,7 @@ async fn settings_for(
 
 /// The git hosts `person` connected, when they may connect them here, and `workspace` with
 /// every thread's commands asking them for credentials at each use; and the remote servers they
-/// sign in to, likewise, with the connections glave suggests where they may add their own.
+/// sign in to, likewise, with web search where they may add servers of their own.
 async fn signed(
     args: &Args,
     store: &Data,

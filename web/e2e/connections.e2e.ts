@@ -165,8 +165,13 @@ test('web search is a switch in Settings, and the composer shows a globe while i
 
   await page.goBack();
   await page.goBack();
+  // The switch shows the click at once; the file changes once the server answers it.
+  const answered = page.waitForResponse(
+    (response) => response.request().headers()['glave-method'] === 'search/set',
+  );
   await byTestId(page, 'web-search-on-input').click();
   await expect(byTestId(page, 'web-search-on-input')).not.toBeChecked();
+  await answered;
   expect(readFileSync(settings, 'utf8')).not.toContain('web_search_exa');
   await byTestId(page, 'nav-new-chat').click();
   await expect(byTestId(page, 'home-composer-box')).toBeVisible();

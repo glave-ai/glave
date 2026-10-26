@@ -48,6 +48,6 @@ codes! {
     QUEUE_FULL = -32028, "As many messages wait for the running turn as it takes";
     NO_FILE = -32030, "No such file here: never kept in this project, or no message used it within a day";
     NO_IMAGES = -32031, "The thread's model does not read images";
-    NO_SERVER = -32032, "No remote server of the person's settings, nor one glave suggests, goes by that name or address";
+    NO_SERVER = -32032, "No remote server of the person's settings goes by that name or address";
     NO_FOLDER = -32029, "The project's folder isn't there anymore: give it its new place (`project/folder/set`) or remove the project (`project/remove`)";
 }

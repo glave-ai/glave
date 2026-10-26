@@ -498,6 +498,7 @@ export type ScheduleInfo = {
 /** Whether the person's agent may search the web (`specs/session.md`, "Web search"). */
 export type SearchInfo = {
   readonly kind: "never";
+  readonly reason: string;
 } | {
   readonly detail: string;
   readonly kind: "chosen";
@@ -1394,7 +1395,13 @@ export type ScheduleListResult = {
   readonly schedules: readonly (ScheduleInfo)[];
 };
 
-export type SearchGetParams = Readonly<Record<string, never>>;
+export type SearchGetParams = {
+  /**
+   * Also how much it searched this month, which reads the month's threads: for
+   * Settings, not for a client that only shows whether it is on.
+   */
+  readonly usage?: boolean;
+};
 
 /** Whether the person's agent may search the web. */
 export type SearchGetResult = {
@@ -1855,7 +1862,7 @@ export const ErrorCode = {
   NO_QUESTION: -32006,
   /** No such schedule */
   NO_SCHEDULE: -32016,
-  /** No remote server of the person's settings, nor one glave suggests, goes by that name or address */
+  /** No remote server of the person's settings goes by that name or address */
   NO_SERVER: -32032,
   /** No valid sign-in (network transports) */
   NO_SIGN_IN: -32013,

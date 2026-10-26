@@ -125,9 +125,12 @@ impl Connected {
     }
 
     /// The address of the person's remote server `server` and what their settings call it: the
-    /// one they call that, or at that address.
+    /// one they call that, or at that address. Web search's is none: no connection of theirs.
     async fn resolved(&self, server: &str) -> Option<(String, String)> {
-        let remotes = self.remotes().await;
+        let mut remotes = self.remotes().await;
+        if let Some(url) = self.search_address() {
+            remotes.remove(&url);
+        }
         let at = address(server).and_then(|url| remotes.get_key_value(&url));
         let at = at.map(|(url, remote)| (url.clone(), remote.name.clone()));
         at.or_else(|| {

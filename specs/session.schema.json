@@ -1397,20 +1397,24 @@
       "description": "Whether the person's agent may search the web (`specs/session.md`, \"Web search\").",
       "oneOf": [
         {
-          "description": "Not the person's to choose here: their organization chooses its search among its\napproved connections, or this server keeps no connections of the person's own.",
+          "description": "Not the caller's to choose here, and `reason`, why: their organization chooses its\nsearch among its approved connections, this server keeps no connections of the\nperson's own, or only the person on its computer chooses.",
           "properties": {
             "kind": {
               "const": "never",
               "type": "string"
+            },
+            "reason": {
+              "type": "string"
             }
           },
           "required": [
-            "kind"
+            "kind",
+            "reason"
           ],
           "type": "object"
         },
         {
-          "description": "The person's to turn on or off: on when `on`; `detail` says who searches and what it\ncosts; `usage`, while it is on, how much it searched this month.",
+          "description": "The person's to turn on or off: on when `on`; `detail` says who searches and what it\ncosts; `usage`, while it is on and when asked for, how much it searched this month.",
           "properties": {
             "detail": {
               "type": "string"
@@ -2546,7 +2550,7 @@
     },
     "NO_SERVER": {
       "code": -32032,
-      "message": "No remote server of the person's settings, nor one glave suggests, goes by that name or address"
+      "message": "No remote server of the person's settings goes by that name or address"
     },
     "NO_SIGN_IN": {
       "code": -32013,
@@ -4263,6 +4267,13 @@
     },
     "search/get": {
       "params": {
+        "properties": {
+          "usage": {
+            "default": false,
+            "description": "Also how much it searched this month, which reads the month's threads: for\nSettings, not for a client that only shows whether it is on.",
+            "type": "boolean"
+          }
+        },
         "type": "object"
       },
       "result": {
