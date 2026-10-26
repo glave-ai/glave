@@ -2,15 +2,9 @@
 //! the terminal, compacting, and showing what failed with what to fix. It uses nothing a
 //! remote client could not.
 
-mod sources;
-
 use std::collections::HashMap;
-use std::future::{Future, poll_fn};
 use std::path::Path;
-use std::pin::pin;
 use std::process::ExitCode;
-use std::task::Poll;
-use std::time::Duration;
 
 use glave_event::{
     ApprovalRequested, Body, CallId, GoalReason, Outcome, PrincipalKind, ThreadId, decode,
@@ -22,7 +16,6 @@ use glave_session::protocol::Meta;
 use glave_session::protocol::{Answer, ApiError, ErrorData, Notification, Reply, Request, Update};
 use glave_session::{Sent, Server, TurnItem, TurnStream};
 
-use self::sources::Followed;
 use crate::asking;
 use crate::config::{self, Endpoint};
 use crate::data::{DataBlobs, DataLog};
@@ -30,7 +23,6 @@ use crate::gateway::GatewaySwitch;
 use crate::input::{CtrlC, Input};
 use crate::mcp::Servers;
 use crate::terminal::Printer;
-use crate::waiting::Waiting;
 
 pub(crate) type Glave = Server<GatewaySwitch, DataLog, DataBlobs>;
 
@@ -181,40 +173,30 @@ impl Client<'_> {
                 return ExitCode::FAILURE;
             }
         };
-        let waiting = printer.waiting();
-        let mut followed = Followed::default();
-        let ended = ticking(
-            async {
-                let mut cancelling = false;
-                let mut requested = Requested::new();
-                loop {
-                    let item = if cancelling {
-                        stream.next().await
-                    } else if let Some(item) = interrupt.run(stream.next()).await {
-                        item
-                    } else {
+        let mut cancelling = false;
+        let mut requested = Requested::new();
+        let ended = loop {
+            let item = if cancelling {
+                stream.next().await
+            } else if let Some(item) = interrupt.run(stream.next()).await {
+                item
+            } else {
+                cancelling = self.cancel().await;
+                continue;
+            };
+            match item {
+                Some(TurnItem::Ended(ended)) => break Some(ended),
+                Some(TurnItem::Note(note)) => {
+                    if self.note(&note, &mut requested, printer, interrupt).await {
                         cancelling = self.cancel().await;
-                        continue;
-                    };
-                    match item {
-                        Some(TurnItem::Ended(ended)) => return Some(ended),
-                        Some(TurnItem::Note(note)) => {
-                            followed.note(self.thread, &note);
-                            if self.note(&note, &mut requested, printer, interrupt).await {
-                                cancelling = self.cancel().await;
-                            }
-                        }
-                        Some(TurnItem::Missed(_)) => followed.missed(),
-                        None => return None,
                     }
                 }
-            },
-            &waiting,
-        )
-        .await;
+                Some(TurnItem::Missed(_)) => {}
+                None => break None,
+            }
+        };
         match ended {
             Some(Ok(turn)) => {
-                followed.show(self.server, self.thread, printer).await;
                 printer.receipt(&turn, self.endpoint.is_some_and(|endpoint| endpoint.local));
                 match turn.outcome {
                     Outcome::Completed => ExitCode::SUCCESS,
@@ -251,10 +233,8 @@ impl Client<'_> {
                 Some(asked) => self.decide(*thread, &asked, printer, interrupt).await,
                 None => false,
             },
-            Notification::Live { thread, update } if *thread != self.thread => {
-                printer.child(*thread, update.clone());
-                false
-            }
+            // A subagent's steps are its own; its report reaches the model, not here.
+            Notification::Live { thread, .. } if *thread != self.thread => false,
             Notification::Live {
                 update:
                     Update::Asked {
@@ -307,10 +287,8 @@ impl Client<'_> {
         interrupt: &Cancel,
     ) -> bool {
         let decision = if self.asks {
-            // A subagent asks under its own thread.
-            let summary = printer.labeled(thread, &asked.summary);
             let outside = asked.outside_sandbox.as_ref();
-            printer.approval(&summary, asked.caution.as_deref(), outside);
+            printer.approval(&asked.summary, asked.caution.as_deref(), outside);
             let Some(line) = interrupt.run(self.input.line()).await else {
                 return true;
             };
@@ -394,22 +372,6 @@ impl Client<'_> {
             printer.fix(&fix);
         }
     }
-}
-
-/// Runs `work`, updating the waiting line once a second until it finishes.
-async fn ticking<T>(work: impl Future<Output = T>, waiting: &Waiting) -> T {
-    let mut work = pin!(work);
-    let mut clock = tokio::time::interval(Duration::from_secs(1));
-    poll_fn(|cx| {
-        if let Poll::Ready(value) = work.as_mut().poll(cx) {
-            return Poll::Ready(value);
-        }
-        while clock.poll_tick(cx).is_ready() {
-            waiting.tick();
-        }
-        Poll::Pending
-    })
-    .await
 }
 
 /// Writes the thread's events as JSON Lines, one event per line, exactly as stored.
