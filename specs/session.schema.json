@@ -743,7 +743,7 @@
           ]
         },
         "maker": {
-          "description": "Who made it, such as `Anthropic`, when its provider says.",
+          "description": "Who made it, such as `Anthropic`: as its provider says, else from its id's prefix\n(`anthropic/…`); absent when neither says.",
           "type": [
             "string",
             "null"
@@ -759,11 +759,8 @@
           ]
         },
         "name": {
-          "description": "Its own name, without its maker's, such as `Claude Haiku 5.5`, when its provider or the\nsettings give one.",
-          "type": [
-            "string",
-            "null"
-          ]
+          "description": "Its own name, without its maker's, such as `Claude Haiku 5.5`: the settings', else its\nprovider's, else written from its id as its maker writes it.",
+          "type": "string"
         },
         "price": {
           "anyOf": [
@@ -797,6 +794,7 @@
       },
       "required": [
         "id",
+        "name",
         "default"
       ],
       "type": "object"

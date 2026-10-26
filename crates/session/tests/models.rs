@@ -14,7 +14,7 @@ use crate::support::*;
 fn offered() -> Vec<ModelInfo> {
     vec![
         ModelInfo {
-            name: Some("Hope".into()),
+            name: "Hope".into(),
             maker: Some("Glave".into()),
             providers: vec!["OpenRouter".into()],
             context: Some(131_072),
@@ -143,6 +143,19 @@ fn the_list_names_the_default_first_and_describes_each_model() {
         let mut expected = vec![default];
         expected.extend(offered());
         assert_eq!(models, expected);
+        let names: Vec<(&str, Option<&str>)> = models
+            .iter()
+            .map(|model| (model.name.as_str(), model.maker.as_deref()))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                ("Test Model", None),
+                ("Hope", Some("Glave")),
+                ("Other", None)
+            ],
+            "every model named, those no one named from their ids"
+        );
         let json = serde_json::to_value(Reply::Models { models }).unwrap();
         assert_eq!(
             json["models"][1],
