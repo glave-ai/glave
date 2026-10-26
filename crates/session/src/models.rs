@@ -181,10 +181,7 @@ mod tests {
     use super::*;
 
     fn named(id: &str, name: &str) -> ModelInfo {
-        ModelInfo {
-            name: Some(name.into()),
-            ..ModelInfo::new(id)
-        }
+        ModelInfo::new(id).named(name)
     }
 
     #[test]
@@ -212,6 +209,30 @@ mod tests {
             }
         );
         assert_eq!(models[1], named("hope-12b", "Hope"));
+    }
+
+    #[test]
+    fn a_name_that_says_its_maker_names_both_and_a_blank_one_changes_nothing() {
+        let model = ModelInfo::new("anthropic/claude-haiku-5.5");
+        assert_eq!(
+            (model.name.as_str(), model.maker.as_deref()),
+            ("Claude Haiku 5.5", Some("Anthropic")),
+            "named from its id"
+        );
+        let listed = model.clone().named("Acme: Claude Haiku 5.5 Fast");
+        assert_eq!(listed.name, "Claude Haiku 5.5 Fast");
+        assert_eq!(listed.maker.as_deref(), Some("Acme"));
+        let own = listed.named(" Mine ");
+        assert_eq!(
+            (own.name.as_str(), own.maker.as_deref()),
+            ("Mine", Some("Acme"))
+        );
+        assert_eq!(model.clone().named("  "), model);
+        assert_eq!(
+            model.clone().named(": x").name,
+            ": x",
+            "no maker before the colon"
+        );
     }
 
     #[test]

@@ -5,6 +5,7 @@ import { chosenEffort, defaultEffort, effortOptions, effortToSend, levelName } f
 
 const REASONS: ModelInfo = {
   id: 'openai/gpt-6-luna',
+  name: 'GPT-6 Luna',
   default: true,
   reasoning: { efforts: ['xhigh', 'high', 'medium', 'low', 'none'], default: 'medium' },
 };
@@ -18,15 +19,22 @@ describe('effort', () => {
       { value: 'low', label: 'Low' },
       { value: 'none', label: 'Off' },
     ]);
-    expect(effortOptions({ id: 'm', default: false })).toEqual([]);
-    expect(effortOptions({ id: 'm', default: false, reasoning: { mandatory: true } })).toEqual([]);
+    expect(effortOptions({ id: 'm', name: 'M', default: false })).toEqual([]);
+    expect(
+      effortOptions({ id: 'm', name: 'M', default: false, reasoning: { mandatory: true } }),
+    ).toEqual([]);
     expect(effortOptions(undefined)).toEqual([]);
     expect(defaultEffort(REASONS)).toBe('medium');
     expect(levelName('turbo')).toBe('Turbo');
   });
 
   it('marks no level where none is sent unasked, which is the model maker’s default', () => {
-    const unsent: ModelInfo = { id: 'm', default: false, reasoning: { efforts: ['high', 'low'] } };
+    const unsent: ModelInfo = {
+      id: 'm',
+      name: 'M',
+      default: false,
+      reasoning: { efforts: ['high', 'low'] },
+    };
     expect(effortOptions(unsent).some((option) => option.hint !== undefined)).toBe(false);
     expect(defaultEffort(unsent)).toBeNull();
   });

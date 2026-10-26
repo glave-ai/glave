@@ -23,10 +23,17 @@ export const MODELS: readonly ModelInfo[] = [
     default: false,
     reasoning: { efforts: ['high', 'low', 'none'], default: 'low' },
   },
-  { id: 'openai/gpt-6-luna', default: false },
-  { id: 'deepseek/deepseek-v4.1-flash', default: false },
+  { id: 'openai/gpt-6-luna', name: 'GPT-6 Luna', maker: 'OpenAI', default: false },
+  {
+    id: 'deepseek/deepseek-v4.1-flash',
+    name: 'DeepSeek V4.1 Flash',
+    maker: 'DeepSeek',
+    default: false,
+  },
   ...Array.from({ length: 200 }, (_, index) => ({
     id: `lab-${String(index % 20)}/model-${String(index)}`,
+    name: `Model ${String(index)}`,
+    maker: `Lab ${String(index % 20)}`,
     default: false,
   })),
 ];

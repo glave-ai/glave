@@ -45,119 +45,16 @@ export function modelHint(model: ModelInfo, locale: string): string {
   return parts.filter((part) => part !== '').join(DOT);
 }
 
-/** Between a model's company and its own name: `Anthropic · Claude Haiku 5.5`. */
+/** Between a model's maker and its own name: `Anthropic · Claude Haiku 5.5`. */
 const SEPARATOR = ' · ';
 
-/** Companies by the prefix their model ids carry (`anthropic/…`), as they write their names. */
-const COMPANIES: Readonly<Record<string, string>> = {
-  ai21: 'AI21',
-  amazon: 'Amazon',
-  anthropic: 'Anthropic',
-  cohere: 'Cohere',
-  deepseek: 'DeepSeek',
-  google: 'Google',
-  'meta-llama': 'Meta',
-  microsoft: 'Microsoft',
-  minimax: 'MiniMax',
-  mistralai: 'Mistral',
-  moonshotai: 'Moonshot AI',
-  nvidia: 'NVIDIA',
-  openai: 'OpenAI',
-  perplexity: 'Perplexity',
-  qwen: 'Qwen',
-  'x-ai': 'xAI',
-  'z-ai': 'Z.ai',
-};
-
-/** Words in model ids that are not written in title case. */
-const WORDS: Readonly<Record<string, string>> = {
-  ai: 'AI',
-  deepseek: 'DeepSeek',
-  glm: 'GLM',
-  gpt: 'GPT',
-  oss: 'OSS',
-  vl: 'VL',
-};
-
-/** Words a model's name joins to the number after them with a hyphen: `GPT-6`. */
-const HYPHENATED: ReadonlySet<string> = new Set(['GPT']);
-
-function wordName(word: string): string {
-  return WORDS[word.toLowerCase()] ?? `${word.charAt(0).toUpperCase()}${word.slice(1)}`;
-}
-
 /**
- * A slug as people write it, in title case but for the words its makers write otherwise:
- * `claude-haiku-5.5` is `Claude Haiku 5.5`, `gpt-6-luna` is `GPT-6 Luna`, and a tag after a
- * colon goes in brackets (`llama-4:free` is `Llama 4 (Free)`).
+ * What people read for a model, as the server names it: `Maker · Model`, or its name alone
+ * when the server knows no maker.
  */
-export function slugWords(slug: string): string {
-  const [base = '', tag = ''] = slug.split(':');
-  const words = base
-    .split(/[-_\s]+/u)
-    .filter((word) => word !== '')
-    .map(wordName);
-  const name = words
-    .map((word, index) => {
-      const before = words[index - 1];
-      if (before === undefined) {
-        return word;
-      }
-      return HYPHENATED.has(before) && /^\d/u.test(word) ? `-${word}` : ` ${word}`;
-    })
-    .join('');
-  return tag === '' ? name : `${name} (${wordName(tag)})`;
-}
-
-/** A company's name from the prefix of a model id: as it writes it, else in title case. */
-export function companyName(prefix: string): string {
-  return COMPANIES[prefix.toLowerCase()] ?? slugWords(prefix);
-}
-
-/** The company and the model's own name a configured name gives (`Anthropic: Claude …`). */
-function fromName(name: string): { readonly company: string; readonly own: string } {
-  const colon = name.indexOf(': ');
-  return colon === -1
-    ? { company: '', own: name }
-    : { company: name.slice(0, colon).trim(), own: name.slice(colon + 2).trim() };
-}
-
-/**
- * What people read for a model, `Company · Model`, never its slug: its own name from the
- * server's `name` when there is one (`Claude Haiku 5.5`, or a configured `Anthropic: Claude
- * Haiku 5.5`), else from the id's last part; its company the server's `maker`, else from that
- * name, else from the id's prefix (`anthropic/claude-haiku-5.5`). A model with no company in
- * any is its name alone.
- */
-export function displayName(model: Pick<ModelInfo, 'id' | 'name' | 'maker'>): string {
-  const { company, own } = names(model);
-  return company === '' ? own : `${company}${SEPARATOR}${own}`;
-}
-
-/** A model's own name alone, with no company: `Claude Haiku 5.5`. */
-export function shortName(model: Pick<ModelInfo, 'id' | 'name' | 'maker'>): string {
-  return names(model).own;
-}
-
-function names(model: Pick<ModelInfo, 'id' | 'name' | 'maker'>): {
-  readonly company: string;
-  readonly own: string;
-} {
-  const parts = model.id.split('/').filter((part) => part !== '');
-  const slug = parts.at(-1) ?? model.id;
-  const prefix = parts.length > 1 ? (parts.at(-2) ?? '') : '';
-  const named = fromName(model.name?.trim() ?? '');
-  const own = named.own === '' ? slugWords(slug) : named.own;
-  const maker = model.maker?.trim() ?? '';
-  const company =
-    maker !== ''
-      ? maker
-      : named.company !== ''
-        ? named.company
-        : prefix === ''
-          ? ''
-          : companyName(prefix);
-  return { company, own };
+export function displayName(model: Pick<ModelInfo, 'name' | 'maker'>): string {
+  const maker = model.maker ?? '';
+  return maker === '' ? model.name : `${maker}${SEPARATOR}${model.name}`;
 }
 
 /** The thread's own choice of model: the latest `model.chosen`'s, or `null` for the default. */
@@ -181,7 +78,7 @@ export function modelOptions(
     return {
       value: model.id,
       label: displayName(model),
-      short: shortName(model),
+      short: model.name,
       ...(hint === '' ? {} : { hint }),
     };
   });
