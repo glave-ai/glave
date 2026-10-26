@@ -102,7 +102,7 @@ export class FakeTurn {
  * A session API in memory for tests: answers by method, notifications for a turn and for a
  * watch, and every call recorded. An answer that is an `ApiError` is thrown. Unanswered,
  * `thread/get` answers the thread as the fixtures make one, idle and asking nothing;
- * `thread/sources`, no reply drew on the web;
+ * `thread/sources`, no reply drew on the web; `thread/plan`, no plan;
  * `command/list`, nothing running; `awake/get`, a server, which keeps no computer awake;
  * `search/get`, web search not the person's to choose;
  * `grouping/get`, by project, and `grouping/set`, the grouping asked for; a watch, of a thread
@@ -207,6 +207,9 @@ function unanswered(method: Method, params: unknown): Answer {
   }
   if (method === 'thread/sources') {
     return { sources: [] };
+  }
+  if (method === 'thread/plan') {
+    return { plan: null };
   }
   if (method === 'command/list') {
     return { commands: [] };
