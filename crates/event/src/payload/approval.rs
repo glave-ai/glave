@@ -19,6 +19,14 @@ pub struct ApprovalRequested {
     pub tool: String,
     /// What would run, as the person is shown it: `bash: rm -rf ~/notes`. Never why it asks.
     pub summary: String,
+    /// What it asks the person, in a sentence of glave's, by what would run: "Run this
+    /// command?". Empty in requests recorded before it was.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub ask: String,
+    /// What would run, as the object of `ask`: the summary without the tool's name it starts
+    /// with, such as the command `rm -rf ~/notes`. Empty in requests recorded before it was.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub detail: String,
     /// Whether the call would show the model a secret: a file that usually holds one, or a
     /// command that prints one or could.
     pub secret: bool,

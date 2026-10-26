@@ -54,6 +54,8 @@ const RESULTS: TurnResults = {
       approval: 'c3',
       tool: 'bash',
       summary: 'bash: git push',
+      ask: 'Run this command?',
+      detail: 'git push',
       caution: 'It pushes to a remote.',
       outsideSandbox: false,
       withNetwork: false,
