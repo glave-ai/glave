@@ -1,0 +1,13 @@
+[task]
+name = "glave/spreadsheet-answer"
+description = "Answers a question from a workbook's rows (dates, formulas), not from its summary sheet."
+
+[agent]
+timeout_sec = 600
+
+[glave]
+tier = "fast"
+permissions = "auto"
+# The workbook is made as the task starts, as a spreadsheet app saves one, by a script kept as
+# text, and the script removed.
+setup = ["sh make-sales.sh && rm make-sales.sh"]

@@ -12,7 +12,7 @@ use glave_ports::{
 };
 use serde_json::json;
 
-use super::{Skill, frontmatter};
+use super::{Skill, SkillSource, frontmatter};
 
 /// The tool's name.
 pub const SKILL: &str = "skill";
@@ -97,28 +97,39 @@ fn escaped(text: &str) -> String {
 }
 
 /// The skill's body, read now so an edit since the thread began counts, with where its
-/// files are.
+/// files are; a built-in skill's from glave itself, with no folder.
 async fn load(skill: &Skill) -> Result<String, String> {
-    let text = tokio::fs::read_to_string(&skill.file)
-        .await
-        .map_err(|err| format!("Could not read {}: {err}", skill.file.display()))?;
-    let document = frontmatter::parse(&text)
-        .map_err(|why| format!("Could not read {}: {why}", skill.file.display()))?;
+    let (text, file) = match &skill.source {
+        SkillSource::File(file) => {
+            let text = tokio::fs::read_to_string(file)
+                .await
+                .map_err(|err| format!("Could not read {}: {err}", file.display()))?;
+            (text, Some(file))
+        }
+        SkillSource::BuiltIn(text) => ((*text).to_owned(), None),
+    };
+    let document = frontmatter::parse(&text).map_err(|why| {
+        let what = file.map_or_else(|| skill.name.clone(), |file| file.display().to_string());
+        format!("Could not read {what}: {why}")
+    })?;
     let body = document.body.trim();
     let (body, cut) = crate::instructions::within(body, MAX_BODY);
-    let note = if cut {
-        format!(
+    let note = match file {
+        Some(file) if cut => format!(
             "\n\n[cut short at 32 KiB; read the rest from {}]",
-            skill.file.display()
-        )
-    } else {
-        String::new()
+            file.display()
+        ),
+        _ => String::new(),
     };
+    let folder = skill.folder().map_or_else(String::new, |folder| {
+        format!(
+            "\n\nThis skill's folder is {}. Paths in it are relative to that folder.",
+            folder.display()
+        )
+    });
     Ok(format!(
-        "<skill_content name=\"{}\">\n{body}{note}\n\nThis skill's folder is {}. Paths in it are \
-         relative to that folder.\n</skill_content>",
-        skill.name,
-        skill.folder().display()
+        "<skill_content name=\"{}\">\n{body}{note}{folder}\n</skill_content>",
+        skill.name
     ))
 }
 

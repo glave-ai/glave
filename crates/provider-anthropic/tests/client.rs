@@ -257,6 +257,26 @@ mod over_http {
     }
 
     #[test]
+    fn a_connection_that_never_opens_is_the_provider_unreached_not_silent() {
+        // A listener that never accepts: the system completes the TCP handshake and nothing
+        // answers TLS's, so the connection never opens. The paused clock jumps to the limit.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let provider = provider(&format!("https://{}", listener.local_addr().unwrap()), None);
+        let result = block_on!(async {
+            tokio::time::pause();
+            provider.complete(&request(), &mut |_| {}).await
+        });
+        let error = result.unwrap_err();
+        assert_eq!(error.failure(), Failure::Unreachable, "{error:?}");
+        assert!(
+            error
+                .to_string()
+                .ends_with("no connection to 127.0.0.1 within 10 seconds"),
+            "says what was waited for and how long: {error}"
+        );
+    }
+
+    #[test]
     fn a_stream_that_never_stops_is_not_a_finished_answer() {
         let server = FakeServer::start(vec![Reply::Stream(vec![
             json!({"type": "message_start", "message": {"id": "msg_1", "model": "fake-model", "usage": {"input_tokens": 5, "output_tokens": 1}}}),

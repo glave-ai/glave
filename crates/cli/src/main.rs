@@ -26,6 +26,7 @@ mod connections;
 mod credentials;
 
 mod data;
+mod doc;
 mod gateway;
 mod helpers;
 mod home;

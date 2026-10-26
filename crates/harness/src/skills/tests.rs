@@ -57,8 +57,8 @@ fn the_nearest_project_folder_wins_then_the_persons_and_the_list_is_sorted() {
     assert_eq!(names(&found), ["alpha", "deploy", "zebra"]);
     let deploy = found.skills.get(1).unwrap();
     assert_eq!(
-        (deploy.description.as_str(), &deploy.file),
-        ("Near.", &near)
+        (deploy.description.as_str(), &deploy.source),
+        ("Near.", &SkillSource::File(near))
     );
     assert_eq!(found.warnings.len(), 2, "{:?}", found.warnings);
     assert!(
@@ -244,6 +244,31 @@ fn the_tool_lists_the_skills_and_loads_a_body_with_its_folder() {
     let missing = call(&source, json!({"name": "nope"}));
     assert!(missing.is_error);
     assert!(text(&missing).contains("other, release-notes"));
+}
+
+#[test]
+fn a_built_in_skill_is_named_as_glaves_and_loads_its_own_text_with_no_folder() {
+    const TEXT: &str =
+        "---\nname: spreadsheets\ndescription: Reads workbooks.\n---\n# Spreadsheets\n\nRun it.\n";
+    let skill = Skill::built_in(TEXT).unwrap();
+    assert_eq!(
+        (
+            skill.name.as_str(),
+            skill.description.as_str(),
+            skill.folder()
+        ),
+        ("glave:spreadsheets", "Reads workbooks.", None)
+    );
+    let source = Skills::offer(vec![skill]).unwrap();
+    let loaded = call(&source, json!({"name": "glave:spreadsheets"}));
+    assert_eq!(
+        text(&loaded),
+        "<skill_content name=\"glave:spreadsheets\">\n# Spreadsheets\n\nRun it.\n</skill_content>"
+    );
+    let unnamed = Skill::built_in("---\ndescription: x\n---\nBody.").unwrap_err();
+    assert!(unnamed.contains("no name"), "{unnamed}");
+    let wrong = Skill::built_in("---\nname: Upper\ndescription: x\n---\n").unwrap_err();
+    assert!(wrong.contains("lowercase"), "{wrong}");
 }
 
 #[test]
