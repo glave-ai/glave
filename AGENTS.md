@@ -90,6 +90,7 @@ cargo xtask file-sizes  # line limits only
 cargo xtask secrets     # no secret-shaped literal in a tracked file
 cargo xtask spawns      # every process glave starts goes through glave-process
 cargo xtask waits       # every wait has a limit on its line, or a reason in xtask/src/waits/bounded.rs
+cargo xtask package-age # every package version new in Cargo.lock or web/package-lock.json was published at least 7 days ago
 cargo xtask schema      # regenerate specs/session.schema.json and the web client's types after changing the session API
 cargo xtask release-workflow   # regenerate .github/workflows/release.yml after changing dist-workspace.toml or .github/build-setup.yml (needs dist, the version dist-workspace.toml names)
 cargo xtask bench       # benchmarks, alone on the machine (see Performance)
@@ -180,6 +181,7 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - Every new dependency needs a reason in its pull request. Prefer `std`.
 - Declare versions once in `[workspace.dependencies]`.
 - `cargo deny` must pass: allowed licenses, no known vulnerabilities, crates.io only.
+- A package version a change adds or updates, crate or npm, is at least 7 days old, so a poisoned release is found first (`cargo xtask package-age`, in the gate); a security fix that can't wait gets an entry with its reason in `xtask/src/package_age/allowed.rs`.
 
 **Ports and adapters**
 - Ports are traits in the ports crate. Every port ships an in-memory adapter and a conformance suite every adapter must pass.

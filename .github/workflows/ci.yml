@@ -207,10 +207,11 @@ jobs:
   # checks, and the end-to-end tests in four shards. `web`, below them, passes only when every
   # one did; it is the check the `main` ruleset requires.
   #
-  # The checks: format, lint (eslint and stylelint), type-check, the licences and audit of
-  # what ships, the app's messages against its source and every language, unit tests with axe,
-  # the library, app and showcase builds, every release archive's third-party notices, and
-  # glave built with the app inside (the `web` feature) and its serving tests.
+  # The checks: format, lint (eslint and stylelint), type-check, unused files and dependencies
+  # (knip), the licences and audit of what ships, the app's messages against its source and
+  # every language, unit tests with axe, the library, app and showcase builds, every release
+  # archive's third-party notices, and glave built with the app inside (the `web` feature) and
+  # its serving tests.
   web-checks:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -241,6 +242,7 @@ jobs:
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
+      - run: npm run knip
       - run: npm run licenses
       - run: npm run audit
       - run: npm run i18n:check

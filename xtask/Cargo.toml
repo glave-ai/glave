@@ -9,15 +9,22 @@ publish = false
 autotests = false
 
 [dependencies]
-# The one list of the prefixes providers put on keys and tokens, which the secret scan reads.
+# The one list of the prefixes providers put on keys and tokens, which the secret scan reads,
+# and the one clock (`cargo xtask package-age`).
 glave-ports.workspace = true
 # What xtask runs to its end (the builds, the tests, the web checks, the evals) ends with xtask,
 # however xtask ends: glave's lifeline.
 glave-process.workspace = true
-# Reading the generated API schema to write the web client's types.
+# When a package version was published, as crates.io and the npm registry say, and how old it
+# is (`cargo xtask package-age`; already in the tree, under glave-ports).
+jiff.workspace = true
+# Reading JSON: the generated API schema the web client's types are written from, and
+# package-lock.json, the registries' answers and GitHub's event (`cargo xtask package-age`).
 serde_json.workspace = true
 # The runtime glave-process starts and waits for programs on, and the limit a query has.
 tokio = { workspace = true, features = ["io-util", "rt", "time"] }
+# Reading Cargo.lock (`cargo xtask package-age`; already in the tree, under glave-config).
+toml.workspace = true
 
 [dev-dependencies]
 # Temp folders and the guard against a hang the tests share.

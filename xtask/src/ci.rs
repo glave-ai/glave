@@ -1,7 +1,8 @@
 //! `cargo xtask ci`: the local gate, what CI runs: the Rust checks and docs, that no tracked
 //! file holds a secret-shaped literal, that crates keep the dependency rule and start processes
 //! only through glave-process, that every wait has a limit (`waits.rs`), that the tests leave
-//! nothing behind (`leftovers.rs`), then the web checks (`web.rs`), which need Node unless
+//! nothing behind (`leftovers.rs`), that every package version a change brings in is at least
+//! 7 days old (`package_age.rs`), then the web checks (`web.rs`), which need Node unless
 //! `GLAVE_SKIP_WEB=1` skips them. On a laptop the lint, docs and tests cover only the crates a
 //! change reaches, and the web checks run only when the web changed (`changed.rs`); `--all`,
 //! and CI always, check everything. `--target` builds the lint, docs and tests for a target
@@ -71,6 +72,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         None => println!("\n== lint, docs and tests: skipped, as no crate changed"),
     }
     step("dependencies", || cmd::run("cargo", &["deny", "check"]))?;
+    step("package ages", crate::package_age::check)?;
     // Called directly: run as `cargo machete` under `cargo xtask`, it takes `machete` for a path.
     step("unused dependencies", || cmd::run("cargo-machete", &[]))?;
     step("file sizes", crate::file_sizes::check)?;

@@ -44,6 +44,7 @@ npm run check     # everything CI runs, in order:
 npm run format:check   # Prettier
 npm run lint           # eslint (typescript-eslint strict, angular-eslint) and stylelint
 npm run typecheck      # tsc, strict
+npm run knip           # no file nothing reaches, no dependency unused or unlisted (knip.jsonc)
 npm test               # Vitest: every component, directive, service and lib function, with axe; prints coverage
 npm run build:glaze    # Glaze as a publishable Angular package (ng-packagr)
 npm run build          # the app, production, within its size budget (angular.json)

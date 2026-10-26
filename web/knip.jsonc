@@ -1,0 +1,35 @@
+// knip (`npm run knip`): files nothing reaches, dependencies package.json lists and nothing
+// uses, and packages and programs used but not listed, as `cargo machete` checks the crates.
+//
+// web/ is one npm package, so knip sees one workspace: the app, Glaze, its showcase, the client
+// and the end-to-end tests are folders of it. Its plugins find their entry points from their
+// own configs: Angular (angular.json), Vitest (the unit tests), Playwright
+// (e2e/playwright.config.ts), ESLint, Prettier and Stylelint; package.json's scripts name the
+// scripts they run. The two entry points none of them names are listed here.
+//
+// Unused exports and types are left off: today they find 10 exports and 215 types, 207 of them
+// the session API's generated types (client/src/generated/).
+{
+  "$schema": "./node_modules/knip/schema-jsonc.json",
+  "entry": [
+    // The app's dev server proxy, which angular.json names as `serve`'s `proxyConfig`.
+    "app/proxy.conf.mjs",
+    // Screenshots for a pull request, run by hand (`node e2e/shots.mjs <url> <out-dir>`).
+    "e2e/shots.mjs",
+  ],
+  "include": [
+    "files",
+    "dependencies",
+    "devDependencies",
+    "optionalPeerDependencies",
+    "unlisted",
+    "binaries",
+    "unresolved",
+  ],
+  // The fonts, which angular.json's `styles` name by package (`@fontsource/…/400.css`), and
+  // knip's Angular plugin looks for as files of this folder.
+  "ignoreDependencies": [
+    "@fontsource/atkinson-hyperlegible-mono",
+    "@fontsource/atkinson-hyperlegible-next",
+  ],
+}
