@@ -27,6 +27,11 @@ pub(crate) const NOT_ALLOWED: &str = "Not run: commands here go without the inte
      writing your own replacement for a package. Finish what does not depend on it, and say at \
      the end which command needs it.";
 
+/// What the model is told when a command would leave the sandbox in plan mode.
+pub(crate) const PLAN_STAYS: &str = "Not run: in plan mode commands stay in the sandbox, where \
+     they change nothing, until the person approves the plan. Look around with commands that \
+     only read, and put what needs more in the plan.";
+
 /// What the model is told when what a command would run without of the sandbox changed while
 /// it waited for the person, so their answer was about something else.
 pub(crate) const CHANGED: &str = "Not run: the sandbox changed while this waited for the \
@@ -43,11 +48,16 @@ pub(crate) enum Asks {
     /// Nothing: the sandbox has no network, and the policy forbids asking for it, so running
     /// outside the sandbox, which has it, too.
     Nothing,
+    /// Nothing, in plan mode: what a command runs in changes nothing, and it stays so.
+    Never,
 }
 
 impl Asks {
     /// What commands in `workspace` may ask for.
     pub(crate) fn of(workspace: &Workspace) -> Self {
+        if workspace.plans() {
+            return Self::Never;
+        }
         match workspace.sandbox() {
             Some(sandbox) if !sandbox.network && workspace.asks_network() => Self::OutsideOrNetwork,
             Some(sandbox) if !sandbox.network => Self::Nothing,
@@ -126,7 +136,7 @@ pub(crate) fn blocked_note(asks: Asks, exit: Option<i32>, output: &str) -> Optio
         "nodename nor servname",
     ];
     let offline: &[&str] = match asks {
-        Asks::Outside => &[],
+        Asks::Outside | Asks::Never => &[],
         Asks::OutsideOrNetwork | Asks::Nothing => &[
             "name resolution",
             "getaddrinfo",
@@ -162,6 +172,11 @@ pub(crate) fn blocked_note(asks: Asks, exit: Option<i32>, output: &str) -> Optio
              (credential stores and files such as .env and private keys are hidden), and none \
              may ask to run with the network or outside the sandbox. Do the task another way, \
              or tell the person what is needed.]"
+        }
+        Asks::Never => {
+            "[This command may have been blocked by the sandbox: in plan mode commands cannot \
+             change any file or read secrets, and none may leave the sandbox. Look around with \
+             commands that only read, and put what needs changing in the plan.]"
         }
     })
 }

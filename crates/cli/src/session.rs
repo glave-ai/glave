@@ -144,7 +144,15 @@ pub(crate) async fn serve(mut args: Args) -> anyhow::Result<ExitCode> {
             org: wired.org,
             memory: wired.memory.as_ref(),
         };
-        crate::server::run(&args, &wired.reach, &wired.server, &daily, lock).await
+        // Boxed: the server's future is large.
+        Box::pin(crate::server::run(
+            &args,
+            &wired.reach,
+            &wired.server,
+            &daily,
+            lock,
+        ))
+        .await
     } else {
         let input = tokio::io::BufReader::new(tokio::io::stdin());
         glave_session::rpc::serve(wired.server.clone(), input, tokio::io::stdout())

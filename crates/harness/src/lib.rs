@@ -64,7 +64,7 @@ pub use inbox::{Inbox, MAX_QUEUED, NotQueued, Queued};
 pub use instructions::{AGENTS_MD, Instructions, agents_md};
 pub use judge::{JudgeCase, Ruling, judge};
 pub use memory::{MemoryVerb, REMEMBER_CAUTION};
-pub use plan::Plan;
+pub use plan::{MAX_STEP, MAX_STEPS, Plan};
 pub use project_folders::{Brought, ProjectFolders, Settled};
 pub use prompt::system_prompt;
 pub use question::{Choice, Question, QuestionRequest};

@@ -132,11 +132,13 @@ test('the mode is chosen by keyboard and goes with the next turn', async ({
   const auto = byTestId(page, 'permissions-option').first();
   await expect(auto).toBeVisible();
   await expectAccessible(page);
-  // Opened from the keyboard, the menu focuses its first mode, the recommended one; Ask first
-  // is next.
+  // Opened from the keyboard, the menu focuses its first mode, the recommended one; Plan is
+  // next, then Ask first.
   await expect(auto).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await expect(byTestId(page, 'permissions-option').nth(1)).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(byTestId(page, 'permissions-option').nth(2)).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(trigger).toContainText('Ask first');
   await tabTo(page, 'thread-composer-input', true);

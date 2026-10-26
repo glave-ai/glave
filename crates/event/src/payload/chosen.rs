@@ -79,6 +79,10 @@ pub(crate) fn decode_effort(
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum Permissions {
+    /// Plan: the agent looks around and proposes a plan, and changes nothing until the person
+    /// approves it: commands run in the sandbox that writes nothing of the project, and what
+    /// Ask first would ask about is refused instead.
+    Plan,
     /// Ask first: commands run in a sandbox that writes nothing of the project, and every
     /// change asks first.
     #[serde(alias = "read-only")]
@@ -96,7 +100,7 @@ pub enum Permissions {
 
 impl Permissions {
     /// Every mode, in the order a person is offered them: the recommended one first.
-    pub const ALL: [Self; 3] = [Self::Auto, Self::Ask, Self::FullAccess];
+    pub const ALL: [Self; 4] = [Self::Auto, Self::Plan, Self::Ask, Self::FullAccess];
 
     /// The mode `name` names, as config and the API write it.
     pub fn named(name: &str) -> Option<Self> {
@@ -106,6 +110,7 @@ impl Permissions {
     /// The mode's name, as config and the API write it.
     pub fn name(self) -> &'static str {
         match self {
+            Self::Plan => "plan",
             Self::Ask => "ask",
             Self::Auto => "auto",
             Self::FullAccess => "full-access",
@@ -154,6 +159,7 @@ mod tests {
             assert_eq!(Permissions::named(mode.name()), Some(mode));
             assert_eq!(serde_json::to_value(mode).unwrap(), mode.name());
         }
+        assert!(Permissions::Plan < Permissions::Ask);
         assert!(Permissions::Ask < Permissions::Auto);
         assert!(Permissions::Auto < Permissions::FullAccess);
     }

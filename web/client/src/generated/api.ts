@@ -339,11 +339,16 @@ export type PayloadVersion = number;
  * `read-only` and `workspace`, still read as `ask` and `auto`, so logs and files written then
  * still open; only the new names are written.
  */
-export type Permissions = "ask" | "auto" | "full-access";
+export type Permissions = "plan" | "ask" | "auto" | "full-access";
 
-/** A thread's plan: its latest `plan.updated`. */
+/** A thread's plan: its latest `plan.updated`, by the model or the person. */
 export type PlanInfo = {
-  /** How far it has come, in a sentence: "Plan: 2 of 5 steps done". */
+  /**
+   * Whether it waits for the person: proposed in plan mode and not approved yet, to build
+   * (`plan/build`), edit (`plan/edit`) or change with a message.
+   */
+  readonly proposed: boolean;
+  /** What it is, in a sentence: "Proposed plan: 5 steps", "Plan: 2 of 5 steps done". */
   readonly sentence: string;
   /** The steps, in order, each with its status. */
   readonly steps: readonly (PlanStep)[];
@@ -1300,6 +1305,25 @@ export type PasskeyRemoveParams = {
 
 export type PasskeyRemoveResult = Readonly<Record<string, never>>;
 
+export type PlanBuildParams = {
+  readonly thread: ThreadId;
+};
+
+export type PlanBuildResult = {
+  readonly turn: TurnResult;
+};
+
+export type PlanEditParams = {
+  /** The steps, in order: 1 to 64, each a line of up to 1,000 characters. */
+  readonly steps: readonly (string)[];
+  readonly thread: ThreadId;
+};
+
+/** The thread's plan, or `null`. */
+export type PlanEditResult = {
+  readonly plan?: PlanInfo | null;
+};
+
 export type ProjectCreateParams = {
   readonly folder?: NewFolder | null;
   readonly name: string;
@@ -1798,6 +1822,8 @@ export interface Methods {
   readonly "passkey/get_options": { readonly params: PasskeyGetOptionsParams; readonly result: PasskeyGetOptionsResult };
   readonly "passkey/list": { readonly params: PasskeyListParams; readonly result: PasskeyListResult };
   readonly "passkey/remove": { readonly params: PasskeyRemoveParams; readonly result: PasskeyRemoveResult };
+  readonly "plan/build": { readonly params: PlanBuildParams; readonly result: PlanBuildResult };
+  readonly "plan/edit": { readonly params: PlanEditParams; readonly result: PlanEditResult };
   readonly "project/create": { readonly params: ProjectCreateParams; readonly result: ProjectCreateResult };
   readonly "project/find": { readonly params: ProjectFindParams; readonly result: ProjectFindResult };
   readonly "project/folder/set": { readonly params: ProjectFolderSetParams; readonly result: ProjectFolderSetResult };
@@ -1846,7 +1872,7 @@ export interface Methods {
 export type Method = keyof Methods;
 
 /** The methods that answer with server-sent events, unless run in the background. */
-export const STREAMING = ["goal/start", "thread/list/watch", "thread/watch", "turn/start"] as const;
+export const STREAMING = ["goal/start", "plan/build", "thread/list/watch", "thread/watch", "turn/start"] as const;
 
 export type StreamingMethod = (typeof STREAMING)[number];
 
@@ -1919,6 +1945,8 @@ export const ErrorCode = {
   NO_METHOD: -32601,
   /** No such model here, or not one this server may run */
   NO_MODEL: -32021,
+  /** The thread has no plan waiting for the person's approval */
+  NO_PLAN: -32033,
   /** No such project */
   NO_PROJECT: -32019,
   /** No such model account here */

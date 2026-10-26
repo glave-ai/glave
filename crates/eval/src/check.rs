@@ -1,7 +1,8 @@
 //! The checks a task must pass, judged only from the trace and the files left behind. No
 //! model grades another, so a run needs no person and no judge.
 
-use std::path::Path;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 use glave_event::{GoalReason, Outcome};
 use serde::{Deserialize, Serialize};
@@ -25,6 +26,9 @@ pub enum Check {
     Kept(String),
     /// The file does not exist. Paths are relative to the workspace, and may leave it.
     Missing(String),
+    /// The workspace is exactly the task's starting files: none added, changed or removed, as
+    /// plan mode leaves it.
+    Unchanged,
     /// The file exists.
     Exists(String),
     /// Every turn stayed in one thread.
@@ -109,6 +113,7 @@ impl Check {
             Self::Exists(path) => holds(cx.workspace.join(path).exists(), || {
                 format!("{path} was not created")
             }),
+            Self::Unchanged => unchanged(cx),
             Self::OneThread => holds(cx.trace.threads == 1, || {
                 format!("the turns used {} threads", cx.trace.threads)
             }),
@@ -282,6 +287,48 @@ fn kept(cx: &Context<'_>, path: &str) -> Result<(), String> {
     }
 }
 
+/// The workspace holds exactly the task's starting files, each as it was.
+fn unchanged(cx: &Context<'_>) -> Result<(), String> {
+    let before = files(cx.original)?;
+    let after = files(cx.workspace)?;
+    let changed = before
+        .iter()
+        .filter(|(path, bytes)| after.get(*path) != Some(*bytes))
+        .map(|(path, _)| path)
+        .chain(after.keys().filter(|path| !before.contains_key(*path)))
+        .next();
+    match changed {
+        Some(path) => Err(format!("{} was changed, added or removed", path.display())),
+        None => Ok(()),
+    }
+}
+
+/// Every file under `root`, by its path there, with its bytes; a link by where it points,
+/// never followed.
+fn files(root: &Path) -> Result<BTreeMap<PathBuf, Vec<u8>>, String> {
+    let mut files = BTreeMap::new();
+    let mut folders = vec![root.to_owned()];
+    while let Some(folder) = folders.pop() {
+        let read = |err: std::io::Error| format!("could not read {}: {err}", folder.display());
+        for entry in std::fs::read_dir(&folder).map_err(read)? {
+            let entry = entry.map_err(read)?;
+            let (path, kind) = (entry.path(), entry.file_type().map_err(read)?);
+            let bytes = if kind.is_dir() {
+                folders.push(path);
+                continue;
+            } else if kind.is_symlink() {
+                let target = std::fs::read_link(&path).map_err(read)?;
+                target.as_os_str().as_encoded_bytes().to_vec()
+            } else {
+                std::fs::read(&path).map_err(read)?
+            };
+            let inside = path.strip_prefix(root).unwrap_or(&path).to_owned();
+            files.insert(inside, bytes);
+        }
+    }
+    Ok(files)
+}
+
 /// Whether `text` appears in `haystack`, ignoring case and curly apostrophes.
 fn mentions(haystack: &str, text: &str) -> bool {
     haystack
@@ -396,6 +443,38 @@ mod tests {
             judge_with("fn a() { ignore }\nfn b() {}\n").is_err(),
             "a test changed"
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn an_unchanged_workspace_has_exactly_its_starting_files() {
+        let dir = glave_ports::testing::TempDir::new("eval-unchanged").unwrap();
+        let (original, workspace) = (dir.join("original"), dir.join("workspace"));
+        for root in [&original, &workspace] {
+            std::fs::create_dir_all(root.join("src")).unwrap();
+            std::fs::write(root.join("src/lib.rs"), "fn a() {}\n").unwrap();
+        }
+        let trace = answering("Here is the plan.");
+        let judged = || {
+            Check::Unchanged.judge(&Context {
+                trace: &trace,
+                last: &trace,
+                events: "",
+                workspace: &workspace,
+                original: &original,
+                model: "m",
+                memory: &MemoryReport::default(),
+                requested: &[],
+            })
+        };
+        assert_eq!(judged(), Ok(()));
+        std::fs::write(workspace.join("src/new.rs"), "").unwrap();
+        assert!(judged().unwrap_err().contains("new.rs"), "a file added");
+        std::fs::remove_file(workspace.join("src/new.rs")).unwrap();
+        std::fs::write(workspace.join("src/lib.rs"), "fn b() {}\n").unwrap();
+        assert!(judged().unwrap_err().contains("lib.rs"), "a file changed");
+        std::fs::remove_file(workspace.join("src/lib.rs")).unwrap();
+        assert!(judged().unwrap_err().contains("lib.rs"), "a file removed");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

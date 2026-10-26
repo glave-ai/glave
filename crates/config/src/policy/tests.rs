@@ -275,7 +275,10 @@ fn the_lowest_highest_mode_holds_and_below_full_access_the_sandbox_is_required()
     let (highest, rule) = rules.highest_permissions();
     assert_eq!(highest, Permissions::Ask);
     assert_eq!(rule.unwrap().from, Path::new(PROJECT_POLICY));
-    assert_eq!(rules.permissions_allowed(), [Permissions::Ask]);
+    assert_eq!(
+        rules.permissions_allowed(),
+        [Permissions::Plan, Permissions::Ask]
+    );
     assert_eq!(
         rules.sandbox_required().unwrap().to_string(),
         format!("[permissions] highest = \"ask\" in {PROJECT_POLICY}")

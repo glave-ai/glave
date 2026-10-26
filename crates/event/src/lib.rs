@@ -49,5 +49,5 @@ pub use payload::{
     ProviderConnected, ProviderKind, ProviderRemoved, Renewal, sealed_under_account,
 };
 pub use payload::{PasskeyAdded, PasskeyRemoved, PasskeyUsed};
-pub use payload::{PlanStatus, PlanStep, PlanUpdated};
+pub use payload::{PlanApproved, PlanStatus, PlanStep, PlanUpdated};
 pub use secret::{Secret, serialize_exposed};

@@ -182,17 +182,24 @@ where
     /// commands run. Full access never asks. Ask first lets commands run in its read-only
     /// sandbox and asks before every change, as Codex's Read Only does; Auto asks only before
     /// risky actions behind a wall (the sandbox, or a worker's own container). Without a wall,
-    /// both ask before every change and command.
+    /// both ask before every change and command. Plan comes to what Ask first does, and what
+    /// would ask there is refused instead (`Harness::ask`).
     pub(crate) fn approval_for(&self, thread: &Thread) -> ApprovalMode {
         let workspace = self.workspace_for(thread);
         let sandboxed = workspace.sandbox().is_some();
         let worker = workspace.info().computer != self.workspace.info().computer;
         match self.permissions_for(thread) {
             Permissions::FullAccess => ApprovalMode::Never,
-            Permissions::Ask if sandboxed => ApprovalMode::Changes,
+            Permissions::Plan | Permissions::Ask if sandboxed => ApprovalMode::Changes,
             Permissions::Auto if sandboxed || worker => ApprovalMode::Risky,
-            Permissions::Ask | Permissions::Auto => ApprovalMode::Everything,
+            Permissions::Plan | Permissions::Ask | Permissions::Auto => ApprovalMode::Everything,
         }
+    }
+
+    /// Whether `thread` runs in plan mode: it changes nothing until the person approves its
+    /// plan.
+    pub(crate) fn planning(&self, thread: &Thread) -> bool {
+        self.permissions_for(thread) == Permissions::Plan
     }
 
     /// Runs `thread`'s turns with `permissions` from now on, recorded as `permissions.chosen`

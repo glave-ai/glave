@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use Permissions::{Ask, Auto, FullAccess};
+use Permissions::{Ask, Auto, FullAccess, Plan};
 use glave_event::{Body, RawEvent, ThreadId, decode};
 use glave_ports::Completion;
 use glave_session::Answering;
@@ -180,7 +180,7 @@ fn a_mode_the_policy_does_not_leave_is_refused_in_plain_words() {
     let dir = folder("permissions-refused");
     let log = Shared::default();
     block_on!(async {
-        let capped = [Auto, Ask];
+        let capped = [Auto, Plan, Ask];
         let server = serve(&dir, Vec::new(), &log, Auto, Auto).await;
         let Reply::Server(info) = server.request(Request::Discover {}).await.unwrap() else {
             panic!("server info");
@@ -190,7 +190,7 @@ fn a_mode_the_policy_does_not_leave_is_refused_in_plain_words() {
         assert_eq!(refused.code, code::NOT_ALLOWED, "{refused:?}");
         assert_eq!(
             refused.message.to_string(),
-            "Full access isn't allowed here: choose Auto or Ask first"
+            "Full access isn't allowed here: choose Auto, Plan or Ask first"
         );
         let Reply::Threads { threads, .. } = server
             .request(Request::ThreadList {

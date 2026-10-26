@@ -37,6 +37,10 @@ const CANARY: &str = "{canary}";
 
 /// One task, loaded and checked.
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "a task's own switches, each read from a key of its task.toml"
+)]
 pub struct Task {
     /// The folder's name.
     pub name: String,
@@ -71,6 +75,9 @@ pub struct Task {
     pub goal: Option<TaskGoal>,
     /// A correction sent while the first turn runs, for the model to read at its next call.
     pub steer: Option<Steer>,
+    /// Whether the person builds the plan the instruction's turn proposed, as Build it does,
+    /// before the turns after it.
+    pub build: bool,
     /// Whether memory is on for the task (`specs/memory.md`); `--memory` overrides it.
     pub memory: bool,
     /// The first thread's project setting: `shared` (default), `isolated` or `off`.
@@ -250,6 +257,8 @@ struct Glave {
     goal: Option<TaskGoal>,
     steer: Option<Steer>,
     #[serde(default)]
+    build: bool,
+    #[serde(default)]
     memory: bool,
     project_memory: Option<String>,
     #[serde(default)]
@@ -293,7 +302,7 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         None => Permissions::default(),
         Some(name) => Permissions::named(name).ok_or_else(|| {
             bad(format!(
-                "no mode is named {name:?}: use auto, ask or full-access"
+                "no mode is named {name:?}: use auto, plan, ask or full-access"
             ))
         })?,
     };
@@ -335,6 +344,7 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         outcome: glave.outcome.unwrap_or(Outcome::Completed),
         goal: glave.goal,
         steer: glave.steer,
+        build: glave.build,
         memory: glave.memory,
         project_memory: glave.project_memory,
         threads: glave.threads,

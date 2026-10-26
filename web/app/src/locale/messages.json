@@ -269,6 +269,8 @@
     "permissions.fullAccessAbout": "No limits: can change anything on this computer, and never asks.",
     "permissions.label": "Mode",
     "permissions.onlyOne": "{$ABOUT} The only choice this server allows.",
+    "permissions.plan": "Plan",
+    "permissions.planAbout": "Looks around and proposes a plan. Changes nothing until you approve it.",
     "permissions.prefix": "Mode:",
     "permissions.recommended": "{$MODE} · Recommended",
     "person.settings": "Settings",

@@ -142,7 +142,7 @@ fn an_organization_takes_the_network_and_only_glave_s_default_gives_way() {
     );
     assert_eq!(
         Constraints::of(&off).permissions_allowed(),
-        [Permissions::Auto, Permissions::Ask],
+        [Permissions::Auto, Permissions::Plan, Permissions::Ask],
         "no full access: out of the sandbox, commands would have the network"
     );
     let mine = layers(
