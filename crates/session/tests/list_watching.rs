@@ -276,8 +276,11 @@ fn a_person_hears_their_own_settings_change_and_nobody_else_s() {
                 trace: None,
             };
             let mut watcher = over.watcher().await;
-            watcher.watch_list(&Caller::default(), None, None).await;
-            // Heard, so the watch follows from here.
+            // From long ago, so the thread is heard of whether the watch begins before it or
+            // after it; heard, the watch follows from there.
+            watcher
+                .watch_list(&Caller::default(), None, Some(long_ago()))
+                .await;
             let first = start(&server, false).await;
             hear(&mut watcher, first, &mut Vec::new(), |_| true).await;
             let grouped = || Request::GroupingSet {
