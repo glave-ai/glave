@@ -27,7 +27,7 @@ type Subcommand = fn(&[String]) -> ExitCode;
 
 /// The commands that are their first word, each reading the words after it. Only as the
 /// first word: a prompt starting with one goes after `--`.
-const SUBCOMMANDS: [(&str, Subcommand); 11] = [
+const SUBCOMMANDS: [(&str, Subcommand); 12] = [
     ("server", crate::server::main),
     ("computer", crate::computer::main),
     ("worktrees", crate::worktrees::main),
@@ -36,6 +36,7 @@ const SUBCOMMANDS: [(&str, Subcommand); 11] = [
     ("connect", crate::connections::connect_main),
     ("connections", crate::connections::connections_main),
     ("search", crate::search::main),
+    ("doc", crate::doc::main),
     ("tasks", crate::tasks::tasks_main),
     ("schedule", crate::tasks::schedule_main),
     ("gateway", crate::gateway::serve::main),

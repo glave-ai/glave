@@ -50,6 +50,8 @@ const LAYERS: &[(&str, Layer)] = &[
     ("glave-memory", Adapter),
     // web_fetch as a tool source, over reqwest.
     ("glave-web", Adapter),
+    // Office files for `glave doc`: workbooks read with calamine.
+    ("glave-office", Adapter),
     // The model port over OpenAI-compatible APIs.
     ("glave-provider-openai", Adapter),
     // The model port over Anthropic's Messages API.

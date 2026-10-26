@@ -69,6 +69,9 @@ aws-lc-rs = { version = "1", default-features = false, features = ["aws-lc-sys",
 # jsonwebtoken and kube).
 base64 = "0.23"
 bytes = "1"
+# Workbooks read for `glave doc` (glave-office): xlsx, xlsm, xlsb, xls and ods, each cell's value
+# and formula, in pure Rust on zip and quick-xml. The Rust reader most used (16 million downloads).
+calamine = "0.37"
 chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
 deadpool-postgres = { version = "0.14", default-features = false, features = ["rt_tokio_1"] }
 # The session API's own sentences in the caller's language: Mozilla's Fluent, the message format
@@ -92,6 +95,7 @@ glave-identity = { path = "crates/identity" }
 glave-keys = { path = "crates/keys" }
 glave-mcp = { path = "crates/mcp" }
 glave-memory = { path = "crates/memory" }
+glave-office = { path = "crates/office" }
 glave-ports = { path = "crates/ports" }
 glave-process = { path = "crates/process" }
 glave-provider-anthropic = { path = "crates/provider-anthropic" }

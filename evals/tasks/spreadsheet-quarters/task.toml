@@ -1,0 +1,15 @@
+[task]
+name = "glave/spreadsheet-quarters"
+description = "Totals a year across four sheets of over 100 rows each, not the first sheet or the hidden plan."
+
+[agent]
+timeout_sec = 600
+
+[glave]
+tier = "fast"
+permissions = "auto"
+# The workbook is made as the task starts, as a spreadsheet app saves one, by a script kept as
+# text, and the script removed.
+setup = ["sh make-quarters.sh && rm make-quarters.sh"]
+# Teal Kettle sold the most; Copper Pan leads the first sheet, Brass Lamp the hidden plan.
+checks = [{ answer_contains = "Teal Kettle" }, { answer_lacks = ["Copper Pan", "Brass Lamp"] }]

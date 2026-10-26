@@ -6,6 +6,7 @@
     reason = "the eval's command line: it reports in the terminal"
 )]
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -66,7 +67,7 @@ struct Options {
 
 pub fn main() -> ExitCode {
     // As the lifeline's helper that ties the model's commands to the eval (`tied`).
-    let whole: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    let whole: Vec<OsString> = std::env::args_os().collect();
     if let Some(code) = glave_process::lifeline_helper(&whole) {
         return code;
     }
@@ -126,7 +127,7 @@ fn run(options: &Options) -> Result<bool, String> {
     let processes = runtime.block_on(tied())?;
     let setup = Arc::new(Setup {
         endpoint,
-        environment: std::env::vars_os().collect(),
+        environment: glave_first(std::env::vars_os().collect())?,
         todo: options.todo,
         subagents: options.subagents,
         memory: options.memory,
@@ -165,6 +166,33 @@ fn run(options: &Options) -> Result<bool, String> {
     write(&dir.join("report.md"), &table)?;
     println!("\n{table}\nreport: {}", dir.join("report.json").display());
     Ok(report.passed())
+}
+
+/// `environment` with the folder of the glave beside this program first on `PATH`, where
+/// `cargo xtask eval` builds it: a task's `glave doc` is then the glave being measured, never
+/// one installed on this machine.
+fn glave_first(
+    mut environment: Vec<(OsString, OsString)>,
+) -> Result<Vec<(OsString, OsString)>, String> {
+    let here =
+        std::env::current_exe().map_err(|err| format!("could not find this program: {err}"))?;
+    let folder = here.parent().unwrap_or(Path::new("."));
+    if !folder.join("glave").is_file() {
+        return Err(format!(
+            "no glave beside {}: cargo build -p glave (cargo xtask eval builds it)",
+            here.display()
+        ));
+    }
+    let path = environment
+        .iter()
+        .position(|(name, _)| name == "PATH")
+        .map(|at| environment.swap_remove(at).1);
+    let mut folders = vec![folder.to_path_buf()];
+    folders.extend(path.iter().flat_map(std::env::split_paths));
+    let path =
+        std::env::join_paths(folders).map_err(|err| format!("could not make PATH: {err}"))?;
+    environment.push(("PATH".into(), path));
+    Ok(environment)
 }
 
 /// How the model's commands start: tied to this eval by glave's lifeline, with this program
