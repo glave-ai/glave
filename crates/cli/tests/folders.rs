@@ -58,7 +58,7 @@ fn listing_makes_no_project_in_the_home_folder_or_a_new_one_and_a_turn_at_home_i
         project: home.project.join("new"),
         home: home.home.clone(),
         lifeline: home.lifeline.clone(),
-        _folder: None,
+        folder: None,
     };
     std::fs::create_dir_all(&new.project).unwrap();
     let model = FakeServer::start(vec![Reply::text("Hello.")]).unwrap();
