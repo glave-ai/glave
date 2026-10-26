@@ -21,6 +21,9 @@ jiff.workspace = true
 # Reading JSON: the generated API schema the web client's types are written from, and
 # package-lock.json, the registries' answers and GitHub's event (`cargo xtask package-age`).
 serde_json.workspace = true
+# Reading the items each library crate exports (`cargo xtask unused-pub`; already in the
+# tree, under the derive macros).
+syn.workspace = true
 # The runtime glave-process starts and waits for programs on, and the limit a query has.
 tokio = { workspace = true, features = ["io-util", "rt", "time"] }
 # Reading Cargo.lock (`cargo xtask package-age`; already in the tree, under glave-config).

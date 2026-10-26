@@ -29,7 +29,7 @@ pub(crate) fn standing_after(before: Standing, events: &[Event]) -> Standing {
 }
 
 /// The longest title a person may give a thread, in characters.
-pub const MAX_TITLE: usize = 200;
+pub(crate) const MAX_TITLE: usize = 200;
 
 /// What to do to a thread's standing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -175,7 +175,7 @@ where
     }
 
     /// Gives a thread this harness holds the title `title` for `caller`, recorded as
-    /// `thread.renamed`. The title is trimmed; one that is empty or longer than [`MAX_TITLE`]
+    /// `thread.renamed`. The title is trimmed; one that is empty or longer than `MAX_TITLE`
     /// characters is refused. A deleted thread is no longer there to rename.
     pub async fn rename(
         &self,

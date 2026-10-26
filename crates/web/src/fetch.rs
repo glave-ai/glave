@@ -25,9 +25,9 @@ pub struct Limits {
     /// The longest a whole fetch may take, redirects included.
     pub timeout: Duration,
     /// The most redirects followed.
-    pub max_redirects: u8,
+    pub(crate) max_redirects: u8,
     /// The most characters of text the model is given.
-    pub max_chars: usize,
+    pub(crate) max_chars: usize,
 }
 
 impl Default for Limits {

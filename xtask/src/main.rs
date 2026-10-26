@@ -28,6 +28,7 @@ mod secrets;
 mod sources;
 mod spawns;
 mod typescript;
+mod unused_pub;
 mod waits;
 mod web;
 mod workspace;

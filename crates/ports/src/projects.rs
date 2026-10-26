@@ -67,7 +67,7 @@ impl Project {
     }
 
     /// Whether two names are the same to a person: equal but for case and the spaces around.
-    pub fn same_name(a: &str, b: &str) -> bool {
+    pub(crate) fn same_name(a: &str, b: &str) -> bool {
         a.trim().to_lowercase() == b.trim().to_lowercase()
     }
 

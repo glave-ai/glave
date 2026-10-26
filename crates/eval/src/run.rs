@@ -70,7 +70,7 @@ pub struct Attempt {
     pub failures: Vec<String>,
     pub model_calls: u32,
     pub tool_calls: u32,
-    pub tool_errors: u32,
+    pub(crate) tool_errors: u32,
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cached_tokens: u64,
