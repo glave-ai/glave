@@ -233,7 +233,7 @@ mod judging {
     }
 
     #[test]
-    fn changing_credentials_or_writing_through_a_forges_api_always_asks() {
+    fn changing_credentials_or_writing_through_a_forges_api_is_firm() {
         for script in [
             "gh secret set NPM_TOKEN --body x",
             "gh secret delete NPM_TOKEN",

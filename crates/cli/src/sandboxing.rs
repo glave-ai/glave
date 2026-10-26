@@ -32,8 +32,8 @@ pub(crate) fn sandbox_at(
 /// The workspace in `folder`, in the most a sandbox here allows: the project; else only
 /// reading, where only that can run (Landlock without bubblewrap); its commands asking for the
 /// network unless the policy forbids it. Where the project's sandbox cannot run, Auto asks
-/// before every change and command and the choices say why, said once here; a policy that requires the
-/// sandbox refuses to start instead.
+/// before every change and command and the choices say why, said once here; a policy that
+/// requires the sandbox refuses to start instead.
 pub(crate) async fn workspace(
     folder: &Path,
     setup: &mut Setup,

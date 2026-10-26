@@ -72,10 +72,10 @@ pub enum Kind {
 }
 
 impl Kind {
-    /// Whether a caution of this kind needs the person wherever one is asked, never a judge. The
-    /// others may be cleared by a judge that finds the person's say-so in what they asked: secrets must never reach the
-    /// model without the person, credentials never change without them, and an unreadable
-    /// command cannot be judged.
+    /// Whether a caution of this kind needs the person wherever one is asked, never a judge.
+    /// The others may be cleared by a judge that finds the person's say-so in what they asked:
+    /// secrets must never reach the model without the person, credentials never change without
+    /// them, and an unreadable command cannot be judged.
     pub fn firm(self) -> bool {
         matches!(self, Self::Secrets | Self::Credentials | Self::Unreadable)
     }
