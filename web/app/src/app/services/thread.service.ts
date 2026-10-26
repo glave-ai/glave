@@ -457,8 +457,9 @@ export class ThreadService {
       if (drawn && event.type === 'message.added') {
         this.forgetLive();
       }
+      // A turn this view did not follow ended: its draft goes.
       if (added && event.type === 'turn.ended' && this.streaming() === 0) {
-        this.endedElsewhere();
+        this.forgetLive();
       }
     } else if (note.method === 'turn/live' && drawn) {
       const update = note.params.update;
@@ -473,11 +474,6 @@ export class ThreadService {
         this.doing.update((steps) => stepsAfter(steps, update));
       }
     }
-  }
-
-  /** A turn this view did not follow ended: its draft goes. */
-  private endedElsewhere(): void {
-    this.forgetLive();
   }
 
   /** What a turn showed live goes, the reply being written and the steps it took: never kept. */
