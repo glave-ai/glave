@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
 
 /// A request the fake received.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Received {
     pub method: String,
     pub path: String,
