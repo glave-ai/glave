@@ -112,11 +112,13 @@ struct CalledStep {
 pub(crate) fn spec() -> ToolSpec {
     ToolSpec {
         name: UPDATE_PLAN.to_owned(),
-        description: "Keep the plan for work with several steps, so you and the person can see \
-                      it and how far along it is. Send the whole plan each time: every step, \
-                      in order, with its status. Keep one step in_progress while you work on \
-                      it, and mark each completed as soon as it is done. Skip it for simple \
-                      tasks. When the person approved a plan, build it and keep it current."
+        description: "Keep the plan for work of several distinct steps, so you and the person \
+                      can see it and how far along it is. Outside plan mode, skip it for a \
+                      quick or one-step task you can just do or answer: do not split simple \
+                      work into steps. Send the whole plan each time: every step, in order, \
+                      with its status. Keep one step in_progress while you work on it, and mark \
+                      each completed as soon as it is done. When the person approved a plan, \
+                      build it and keep it current."
             .to_owned(),
         parameters: json!({"type": "object", "properties": {
             "plan": {"type": "array", "items": {"type": "object", "properties": {

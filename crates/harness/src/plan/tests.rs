@@ -162,3 +162,11 @@ fn steps_read_as_numbered_lines_with_their_status() {
         "1. [completed] read\n2. [in_progress] fix\n3. [pending] test\n"
     );
 }
+
+#[test]
+fn the_tool_keeps_one_step_work_out_of_a_plan_but_plan_mode_proposes_one() {
+    let description = spec().description;
+    assert!(description.contains("skip it for a quick or one-step task"));
+    assert!(description.contains("Outside plan mode"), "{description}");
+    assert!(PLAN_MODE.contains("propose the plan with update_plan"));
+}
