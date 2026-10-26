@@ -50,6 +50,37 @@ type Result<M extends Method> = Methods[M]['result'];
 /** What a streaming call yields: each notification as it arrives. Its return is the result. */
 export type TurnStream<M extends StreamingMethod> = AsyncGenerator<Notification, Result<M>, void>;
 
+/** How long a call waits for the server's answer: reading or changing what it holds takes moments. */
+const ANSWERS_WITHIN_MS = 2 * 60_000;
+
+/**
+ * How long the slow calls wait: those that ask a model (compacting, checking a provider), reach
+ * another service (a git host, a connection), make a computer to work on or a folder, or send a
+ * file; and a turn or goal to start, whose stream begins once it has.
+ */
+const SLOW_ANSWERS_WITHIN_MS = 15 * 60_000;
+
+/** The calls that wait `SLOW_ANSWERS_WITHIN_MS`, as glave's own client waits for them. */
+const SLOW: ReadonlySet<Method> = new Set<Method>([
+  'connection/start',
+  'credential/connect',
+  'file/upload',
+  'goal/start',
+  'project/create',
+  'provider/connect',
+  'provider/refresh',
+  'thread/compact',
+  'thread/start',
+  'turn/start',
+]);
+
+/**
+ * How long a stream may go without a word: the server says something at least every 15
+ * seconds while it streams, so a silence of four times that is a lost stream, as on a
+ * connection a change of network left dead.
+ */
+const STREAM_IDLE_MS = 60_000;
+
 /** A client of one server. */
 export class GlaveClient {
   private readonly options: ClientOptions;
@@ -59,35 +90,48 @@ export class GlaveClient {
     this.options = options;
   }
 
-  /** Calls `method` and resolves with its result; a turn's notifications are passed over. */
+  /**
+   * Calls `method` and resolves with its result; a turn's notifications are passed over. It
+   * waits 2 minutes for the answer, or 15 for a call that waits on a model, another service, a
+   * computer or a file, then throws that the server did not answer.
+   */
   async call<M extends Method>(
     method: M,
     params: Params<M>,
     signal?: AbortSignal,
   ): Promise<Result<M>> {
-    const response = await this.post(method, params, signal);
-    if (!isEventStream(response)) {
-      return answerOf<Result<M>>(await response.json());
-    }
-    for await (const message of messages(response)) {
-      if (!isNotification(message)) {
-        return answerOf<Result<M>>(message);
+    return within(answersWithin(method), signal, async (bounded) => {
+      const response = await this.post(method, params, bounded);
+      if (!isEventStream(response)) {
+        return answerOf<Result<M>>(await response.json());
       }
-    }
-    throw new ApiError({ code: ErrorCode.INTERNAL, message: 'the stream ended without an answer' });
+      for await (const message of messages(response)) {
+        if (!isNotification(message)) {
+          return answerOf<Result<M>>(message);
+        }
+      }
+      throw new ApiError({
+        code: ErrorCode.INTERNAL,
+        message: 'the stream ended without an answer',
+      });
+    });
   }
 
   /**
    * Starts a turn or a goal and yields its notifications as they arrive; the generator returns
    * the turn's result. Closing it early stops only this stream: the turn goes on in the server,
-   * and `thread/events` or `thread/watch` pick it up again.
+   * and `thread/events` or `thread/watch` pick it up again. It waits for the stream to begin as
+   * `call` waits for an answer, and throws once the stream says nothing for a minute, as a lost
+   * one does.
    */
   async *stream<M extends StreamingMethod>(
     method: M,
     params: Params<M>,
     signal?: AbortSignal,
   ): TurnStream<M> {
-    const response = await this.post(method, params, signal);
+    const response = await within(answersWithin(method), signal, (bounded) =>
+      this.post(method, params, bounded),
+    );
     if (!isEventStream(response)) {
       return answerOf<Result<M>>(await response.json());
     }
@@ -101,7 +145,7 @@ export class GlaveClient {
     throw new ApiError({ code: ErrorCode.INTERNAL, message: 'the stream ended without an answer' });
   }
 
-  private async post(method: Method, params: unknown, signal?: AbortSignal): Promise<Response> {
+  private async post(method: Method, params: unknown, signal: AbortSignal): Promise<Response> {
     this.nextId += 1;
     const body = JSON.stringify({ jsonrpc: '2.0', id: this.nextId, method, params });
     const token = await this.options.token();
@@ -118,7 +162,7 @@ export class GlaveClient {
         ...(token === '' ? {} : { Authorization: `Bearer ${token}` }),
         'Glave-Method': method,
       },
-      ...(signal === undefined ? {} : { signal }),
+      signal,
     };
     return send(this.options.url, init);
   }
@@ -175,7 +219,77 @@ function answerOf<T>(message: unknown): T {
   return message['result'] as T;
 }
 
-/** Each server-sent event's message, parsed, as it arrives. */
+/** How long `method` waits for its answer, or for its stream to begin. */
+function answersWithin(method: Method): number {
+  return SLOW.has(method) ? SLOW_ANSWERS_WITHIN_MS : ANSWERS_WITHIN_MS;
+}
+
+/** `ms` in words: `a minute`, `15 minutes`. */
+function spoken(ms: number): string {
+  const minutes = Math.round(ms / 60_000);
+  return minutes === 1 ? 'a minute' : `${String(minutes)} minutes`;
+}
+
+/**
+ * What `ask` answers, given a signal that aborts with `signal` or once `ms` have passed; then it
+ * throws that the server did not answer within that time, whether or not `ask` heeds the
+ * signal. Once `ask` has answered, the signal stays live, for the body of a stream it began.
+ */
+async function within<T>(
+  ms: number,
+  signal: AbortSignal | undefined,
+  ask: (bounded: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const limit = new AbortController();
+  const bounded = signal === undefined ? limit.signal : AbortSignal.any([signal, limit.signal]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      // Said first, so it is what the call throws, not what the abort makes of it.
+      reject(
+        new ApiError({
+          code: ErrorCode.INTERNAL,
+          message: `the server did not answer within ${spoken(ms)}`,
+        }),
+      );
+      limit.abort();
+    }, ms);
+  });
+  try {
+    return await Promise.race([ask(bounded), late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * The stream's next chunk, or a throw once it has said nothing for `STREAM_IDLE_MS`, the stream
+ * cancelled so its connection goes.
+ */
+async function nextChunk(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const quiet = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      // Said first, so it is what the read throws, not the end the cancelling makes.
+      reject(
+        new ApiError({
+          code: ErrorCode.INTERNAL,
+          message: `the server said nothing for ${spoken(STREAM_IDLE_MS)}`,
+        }),
+      );
+      reader.cancel().catch(() => undefined);
+    }, STREAM_IDLE_MS);
+  });
+  try {
+    return await Promise.race([reader.read(), quiet]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Each server-sent event's message, parsed, as it arrives, until the stream goes quiet. */
 async function* messages(response: Response): AsyncGenerator<unknown, void, void> {
   const body = response.body;
   if (body === null) {
@@ -186,7 +300,7 @@ async function* messages(response: Response): AsyncGenerator<unknown, void, void
   let buffer = '';
   try {
     for (;;) {
-      const { done, value } = await reader.read();
+      const { done, value } = await nextChunk(reader);
       buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
       let end = buffer.indexOf('\n\n');
       while (end >= 0) {

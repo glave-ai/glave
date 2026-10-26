@@ -4,5 +4,5 @@
     "outDir": "../out-tsc/app-spec",
     "types": ["vitest/globals", "@angular/localize"]
   },
-  "include": ["src/**/*.d.ts", "src/**/*.spec.ts"]
+  "include": ["src/**/*.d.ts", "src/**/*.spec.ts", "../client/src/**/*.spec.ts"]
 }
