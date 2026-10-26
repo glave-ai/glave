@@ -113,42 +113,54 @@ pub(crate) fn counted(tokens: &TokenCounts) -> u64 {
     tokens.input.saturating_add(tokens.output)
 }
 
-/// The thread's latest goal in `events`, with the tokens and turns since it was set.
-pub(crate) fn latest(events: &[Event]) -> Option<GoalProgress> {
-    let mut goal: Option<GoalProgress> = None;
-    for event in events {
+/// The thread's latest goal in `events`, with the turns since it was set and the tokens its
+/// end recorded, and where each of its turns starts whose tokens that leaves out: those since
+/// it was set, or resumed. [`crate::Harness::goal_in`] adds what each of them used.
+pub(crate) fn latest(events: &[Event]) -> Option<(GoalProgress, Vec<usize>)> {
+    let mut goal: Option<(GoalProgress, Vec<usize>)> = None;
+    for (at, event) in events.iter().enumerate() {
         match (&event.body, goal.as_mut()) {
             (Body::GoalSet(set), _) => {
-                goal = Some(GoalProgress {
+                let progress = GoalProgress {
                     objective: set.objective.clone(),
                     token_budget: set.token_budget,
                     tokens: 0,
                     turns: 0,
                     ended: None,
                     note: None,
-                });
+                };
+                goal = Some((progress, Vec::new()));
             }
-            (Body::GoalEnded(ended), Some(goal)) => {
+            (Body::GoalEnded(ended), Some((goal, uncounted))) => {
                 goal.ended = Some(ended.reason);
                 goal.tokens = ended.tokens;
                 goal.note.clone_from(&ended.note);
+                uncounted.clear();
             }
-            (Body::GoalResumed(_), Some(goal)) if goal.resumable() => {
+            (Body::GoalResumed(_), Some((goal, _))) if goal.resumable() => {
                 goal.ended = None;
                 goal.note = None;
             }
-            (Body::ModelResponded(responded), Some(goal)) if goal.active() => {
-                goal.tokens = goal
-                    .tokens
-                    .saturating_add(counted(&responded.usage.counts()));
-            }
-            (Body::TurnStarted(_), Some(goal)) if goal.active() => {
+            (Body::TurnStarted(_), Some((goal, uncounted))) if goal.active() => {
                 goal.turns = goal.turns.saturating_add(1);
+                uncounted.push(at);
             }
             _ => {}
         }
     }
     goal
+}
+
+/// The turn that starts at `started` among `events`: through its `turn.ended`, or to the last
+/// event while it has not ended. A goal counts what each of its turns used over this span,
+/// while it runs and read again alike.
+pub(crate) fn turn_at(events: &[Event], started: usize) -> &[Event] {
+    let turn = events.get(started..).unwrap_or_default();
+    let end = turn
+        .iter()
+        .position(|event| matches!(event.body, Body::TurnEnded(_)))
+        .map_or(turn.len(), |at| at.saturating_add(1));
+    turn.get(..end).unwrap_or(turn)
 }
 
 /// The message that starts each turn after the first, as Codex's continuation prompt does.

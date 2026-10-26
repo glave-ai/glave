@@ -330,6 +330,37 @@ fn a_goal_survives_a_restart_and_continues_from_the_log() {
 }
 
 #[test]
+fn a_goal_read_again_counts_what_its_subagents_used_as_it_did() {
+    let dir = folder("goal-subagents");
+    block_on!(async {
+        let brief =
+            json!({"description": "look", "prompt": "List the files.", "subagent_type": "explore"});
+        // The first turn hands work to a subagent; the script runs out in the second.
+        let answers = vec![
+            call("agent", brief),
+            done("There are two."),
+            done("A subagent counted them."),
+        ];
+        let mut settings = settings();
+        settings.subagents = true;
+        let harness = harness_on(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings).await;
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let goal = goal("count the files", 1_000_000);
+        let caller = Caller::default();
+        let failed = harness
+            .start_goal(&mut thread, goal, &caller, &Cancel::new(), &mut |_| {})
+            .await;
+        assert!(failed.is_err(), "the script runs out mid-goal");
+        let held = thread.goal().unwrap().tokens;
+        assert_eq!(held, 330, "three calls, the subagent's among them");
+        let read = harness.goal(scope(), thread.id).await.unwrap().unwrap();
+        assert_eq!(read.tokens, held);
+        let resumed = harness.resume_thread(scope(), thread.id).await.unwrap();
+        assert_eq!(resumed.goal().unwrap().tokens, held);
+    });
+}
+
+#[test]
 fn turns_without_a_tool_call_stall_a_goal() {
     let dir = folder("goal-stall");
     block_on!(async {

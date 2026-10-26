@@ -70,7 +70,10 @@ where
             asked: asked(&events),
             turns: turns_begun(&events),
             above: above(&events),
-            goal: crate::goal::latest(&events).map(crate::goal::Pursuit::of),
+            goal: self
+                .goal_in(&scope, id, &events)
+                .await?
+                .map(crate::goal::Pursuit::of),
             plan: crate::plan::Planning::of(&events),
             workspace,
             unnumbered: crate::bind::own_records(&events),

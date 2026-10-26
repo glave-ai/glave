@@ -9,7 +9,7 @@ use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope};
 
 use super::{
     Goal, GoalProgress, IDLE_TURNS, Pursuit, UPDATE_GOAL, Verdict, continuation, counted, latest,
-    update,
+    turn_at, update,
 };
 use crate::approval::Approver;
 use crate::cancel::Cancel;
@@ -110,7 +110,48 @@ where
         if events.is_empty() {
             return Err(HarnessError::NotFound(id));
         }
-        Ok(latest(&events))
+        self.goal_in(&scope, id, &events).await
+    }
+
+    /// The latest goal in `events`, thread `id`'s, with each of its turns counted as it was
+    /// while the goal ran ([`Harness::turn_used`]).
+    pub(crate) async fn goal_in(
+        &self,
+        scope: &Scope,
+        id: ThreadId,
+        events: &[Event],
+    ) -> Result<Option<GoalProgress>, HarnessError> {
+        let Some((mut progress, uncounted)) = latest(events) else {
+            return Ok(None);
+        };
+        for started in uncounted {
+            let used = self.turn_used(scope, id, turn_at(events, started)).await?;
+            progress.tokens = progress.tokens.saturating_add(used);
+        }
+        Ok(Some(progress))
+    }
+
+    /// The tokens `turn`, thread `id`'s, used, as its log has it: its model calls and its
+    /// subagents' ([`Harness::tallies`]). A goal counts each of its turns so, as it runs and
+    /// read again alike.
+    async fn turn_used(
+        &self,
+        scope: &Scope,
+        id: ThreadId,
+        turn: &[Event],
+    ) -> Result<u64, HarnessError> {
+        Ok(counted(&self.tallies(scope, id, turn).await?.tokens))
+    }
+
+    /// What `thread`'s latest turn used, as [`Harness::turn_used`] counts it.
+    async fn last_turn_used(&self, thread: &Thread) -> Result<u64, HarnessError> {
+        let events = self.load(&thread.scope, thread.id).await?;
+        let started = events
+            .iter()
+            .rposition(|event| matches!(event.body, Body::TurnStarted(_)))
+            .unwrap_or_default();
+        let turn = turn_at(&events, started);
+        self.turn_used(&thread.scope, thread.id, turn).await
     }
 
     async fn pursue(
@@ -168,7 +209,8 @@ where
             };
             absorb(&mut total, &turn);
             total.outcome = turn.outcome;
-            let verdict = note_turn(thread, &turn);
+            let used = self.last_turn_used(thread).await?;
+            let verdict = note_turn(thread, used);
             if turn.outcome == Outcome::Cancelled || cancel.is_cancelled() {
                 let by = Self::other_than_for(thread, caller.person);
                 self.end_goal(thread, GoalReason::Stopped, by, None).await?;
@@ -269,10 +311,11 @@ pub(crate) fn of_turn(thread: &Thread, events: &[Event], started: usize) -> bool
     active && set.is_some_and(|set| set < started)
 }
 
-/// A goal's turn goes on from its log, its events so far `turn`: it runs as the goal's turn,
-/// with how the model ended the goal in it already, if it did, and is counted once it ends, as
-/// any of the goal's turns is (the log counted it, and what it used so far, already).
-pub(crate) fn going_on(thread: &mut Thread, turn: &[Event]) {
+/// A goal's turn goes on from its log, its events so far `turn`, which used what `so_far`
+/// tallies: it runs as the goal's turn, with how the model ended the goal in it already, if it
+/// did, and is counted once it ends, as any of the goal's turns is (the log counted it, and
+/// what it used so far, already).
+pub(crate) fn going_on(thread: &mut Thread, turn: &[Event], so_far: &TurnSummary) {
     set_running(thread, true);
     let completed: Vec<&CallId> = turn
         .iter()
@@ -296,13 +339,7 @@ pub(crate) fn going_on(thread: &mut Thread, turn: &[Event]) {
     for arguments in &used {
         update(thread, arguments);
     }
-    let spent: u64 = turn
-        .iter()
-        .filter_map(|event| match &event.body {
-            Body::ModelResponded(responded) => Some(counted(&responded.usage.counts())),
-            _ => None,
-        })
-        .sum();
+    let spent = counted(&so_far.tokens);
     if let Some(goal) = thread.goal.as_mut() {
         goal.progress.tokens = goal.progress.tokens.saturating_sub(spent);
         goal.progress.turns = goal.progress.turns.saturating_sub(1);
@@ -323,11 +360,12 @@ fn set_running(thread: &mut Thread, running: bool) {
     }
 }
 
-/// Adds a finished turn to the goal's progress, with how the model ended the goal, if it did.
-fn note_turn(thread: &mut Thread, turn: &TurnSummary) -> Option<Verdict> {
+/// Adds a finished turn, which used `used` tokens, to the goal's progress, with how the model
+/// ended the goal, if it did.
+fn note_turn(thread: &mut Thread, used: u64) -> Option<Verdict> {
     let goal = thread.goal.as_mut()?;
     let progress = &mut goal.progress;
-    progress.tokens = progress.tokens.saturating_add(counted(&turn.tokens));
+    progress.tokens = progress.tokens.saturating_add(used);
     progress.turns = progress.turns.saturating_add(1);
     goal.verdict.take()
 }

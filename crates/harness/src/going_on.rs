@@ -79,7 +79,7 @@ where
                 let summary = self.tallies(&thread.scope, thread.id, turn).await?;
                 if goal {
                     toolset.offer_goal();
-                    crate::goal::going_on(thread, turn);
+                    crate::goal::going_on(thread, turn, &summary);
                 }
                 let step = Step {
                     toolset,
