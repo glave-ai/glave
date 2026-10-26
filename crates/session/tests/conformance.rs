@@ -185,18 +185,7 @@ impl Client for OverJsonRpc {
         prompt: &str,
         react: &mut dyn FnMut(&Notification) -> Reaction,
     ) -> Result<TurnResult, ApiError> {
-        let request = Request::TurnStart {
-            background: false,
-            budget: None,
-            thread,
-            prompt: prompt.to_owned(),
-            meta: Meta::default(),
-            model: None,
-            permissions: None,
-            effort: None,
-            unattended: false,
-            files: Vec::new(),
-        };
+        let request = turn_start(thread, prompt, None);
         let id = self.send(&request).await;
         loop {
             let message = self.receive().await;
@@ -250,18 +239,7 @@ impl Client for OverHttp {
         prompt: &str,
         react: &mut dyn FnMut(&Notification) -> Reaction,
     ) -> Result<TurnResult, ApiError> {
-        let request = Request::TurnStart {
-            background: false,
-            budget: None,
-            thread,
-            prompt: prompt.to_owned(),
-            meta: Meta::default(),
-            model: None,
-            permissions: None,
-            effort: None,
-            unattended: false,
-            files: Vec::new(),
-        };
+        let request = turn_start(thread, prompt, None);
         let (message, id) = self.web.message(&request);
         let response = self.web.open(&message, Some("turn/start")).await;
         let streams = response.headers()["content-type"] == "text/event-stream";
@@ -494,18 +472,7 @@ fn a_message_sent_while_a_turn_runs_reaches_the_model_in_the_same_stream() {
                 asked(note)
                     .map(|approval| {
                         vec![
-                            Request::TurnStart {
-                                thread,
-                                prompt: "and name it done.txt".into(),
-                                background: false,
-                                budget: None,
-                                meta: Meta::default(),
-                                model: None,
-                                permissions: None,
-                                effort: None,
-                                unattended: false,
-                                files: Vec::new(),
-                            },
+                            turn_start(thread, "and name it done.txt", None),
                             Request::ApprovalDecide {
                                 thread,
                                 approval,
