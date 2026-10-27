@@ -62,10 +62,13 @@ impl Offered {
 
 /// The helper and wrappers for the hosts `credentials` names now, for a command whose
 /// environment is `environment`; none when it names none. A host whose URL is not a plain
-/// origin is never offered.
+/// origin is never offered. They are made in `within`, glave's own folder for commands, which
+/// every sandbox keeps readable and never writable, so no sandboxed command can change another
+/// command's; only a computer given none makes them in the system's temp folder.
 pub(crate) async fn offer(
     credentials: &dyn GitCredentials,
     environment: &[(OsString, OsString)],
+    within: Option<&Path>,
 ) -> Result<Option<Offered>, ComputerError> {
     let hosts: Vec<CredentialHost> = credentials
         .hosts()
@@ -84,7 +87,7 @@ pub(crate) async fn offer(
         .map_err(|error| failed("listen for the credential helper", &error))?
         .port();
     let password = random_hex()?;
-    let folder = private_folder().await?;
+    let folder = private_folder(within).await?;
     let mut offered = Offered {
         folder,
         listener,
@@ -160,9 +163,14 @@ fn helper_script(port: u16, password: &str) -> String {
     )
 }
 
-/// A folder only this user may enter, in the system's temp folder.
-async fn private_folder() -> Result<PathBuf, ComputerError> {
-    let folder = std::env::temp_dir().join(format!("glave-credentials-{}", random_hex()?));
+/// A folder only this user may enter, in `within`, or the system's temp folder without it.
+async fn private_folder(within: Option<&Path>) -> Result<PathBuf, ComputerError> {
+    // Named as `glave-shell` knows it, wherever it is.
+    let name = format!("glave-credentials-{}", random_hex()?);
+    let folder = match within {
+        Some(within) => within.join(name),
+        None => std::env::temp_dir().join(name),
+    };
     let mut builder = tokio::fs::DirBuilder::new();
     #[cfg(unix)]
     builder.mode(0o700);
