@@ -57,16 +57,29 @@ impl ApprovalRequest {
     }
 }
 
+/// Every sentence an approval asks with, in English, as `approval.requested` records it: for a
+/// command, an edit, a write, a read, a page, and any other tool. A transport writes each again
+/// in the caller's language, finding it in the session's table by these words.
+pub const ASKS: [&str; 6] = [
+    "Run this command?",
+    "Edit this file?",
+    "Write this file?",
+    "Read this file?",
+    "Open this page?",
+    "Allow this?",
+];
+
 /// What an approval for `tool` asks the person, in a sentence: by what the tool does, for the
 /// harness's own tools and `web_fetch`, else a sentence for any tool.
 fn ask_of(tool: &str) -> &'static str {
+    let [command, edit, write, read, page, any] = ASKS;
     match Tool::named(tool) {
-        Some(Tool::Bash) => "Run this command?",
-        Some(Tool::Edit) => "Edit this file?",
-        Some(Tool::Write) => "Write this file?",
-        Some(Tool::Read) => "Read this file?",
-        _ if tool == WebPage::TOOL => "Open this page?",
-        _ => "Allow this?",
+        Some(Tool::Bash) => command,
+        Some(Tool::Edit) => edit,
+        Some(Tool::Write) => write,
+        Some(Tool::Read) => read,
+        _ if tool == WebPage::TOOL => page,
+        _ => any,
     }
 }
 

@@ -289,6 +289,10 @@ fn a_person_hears_their_own_settings_change_and_nobody_else_s() {
             server.request_as(&bea, grouped()).await.unwrap();
             server.request(grouped()).await.unwrap();
             server.request(Request::GroupingGet {}).await.unwrap();
+            let chosen = Request::LanguageSet {
+                language: Some("en-XA".into()),
+            };
+            server.request(chosen).await.unwrap();
             let second = start(&server, false).await;
             let mut settings = Vec::new();
             loop {
@@ -303,8 +307,8 @@ fn a_person_hears_their_own_settings_change_and_nobody_else_s() {
             }
             assert_eq!(
                 settings,
-                [Setting::Grouping],
-                "{kind:?}: their own change, once; not another person's, nor a read"
+                [Setting::Grouping, Setting::Language],
+                "{kind:?}: their own changes, once each; not another person's, nor a read"
             );
             over.close().await;
         }

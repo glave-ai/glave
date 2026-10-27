@@ -130,3 +130,109 @@ fn a_program_on_this_computer_reads_the_persons_language_and_in_process_stays_en
         serving.abort();
     });
 }
+
+/// A turn that would run a command: in Ask, with no one to answer, its approval is recorded,
+/// in English, and declined at once.
+fn asking() -> Vec<glave_ports::Completion> {
+    vec![
+        answer(None, Some(("bash", json!({"command": "touch ran.txt"})))),
+        answer(Some("Done."), None),
+    ]
+}
+
+/// What the approvals among `messages` ask, each a `thread/event` notification or an event.
+fn asked(messages: &[Value]) -> Vec<String> {
+    messages
+        .iter()
+        .map(|message| {
+            message
+                .get("params")
+                .map_or(message, |params| &params["event"])
+        })
+        .filter(|event| event["type"] == "approval.requested")
+        .map(|event| event["data"]["ask"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+/// How "Run this command?" begins in `en-XA`.
+const RUN_ACCENTED: &str = "[Ŕûñ ţĥîš çöɱɱåñð? one";
+
+#[test]
+fn an_approval_asks_in_the_callers_language_as_it_streams_and_in_its_history() {
+    block_on!(async {
+        let issuer = Issuer::start().await;
+        let signer = Signer::es256("key-1");
+        issuer.publish(&signer);
+        let dir = folder("languages-approval");
+        let served = serve_http(server(&dir, asking(), Answering::NoOne).await, &issuer).await;
+        let token = signer.sign(&issuer.claims("ada"));
+        let mut reading = Web::new(&served, Some(token.clone())).reading("en-XA");
+        let mut plain = Web::new(&served, Some(token));
+        let started = reading
+            .call(&Request::ThreadStart {
+                project: None,
+                background: false,
+                worktree: None,
+                computer: None,
+                model: None,
+                permissions: None,
+                effort: None,
+            })
+            .await;
+        let thread: ThreadId =
+            serde_json::from_value(started["result"]["thread"]["id"].clone()).unwrap();
+        let (message, _) = reading.message(&turn_start(thread, "touch it", None));
+        let streamed = asked(&reading.post(&message).await.messages);
+        assert_eq!(streamed.len(), 1, "{streamed:?}");
+        assert!(streamed[0].starts_with(RUN_ACCENTED), "{streamed:?}");
+        let history = Request::ThreadEvents {
+            thread,
+            after: None,
+            limit: None,
+        };
+        let page = reading.call(&history).await;
+        let read = asked(page["result"]["events"].as_array().unwrap());
+        assert!(read[0].starts_with(RUN_ACCENTED), "{read:?}");
+        // What was recorded is English, as a client reading English is sent it.
+        let page = plain.call(&history).await;
+        let english = asked(page["result"]["events"].as_array().unwrap());
+        assert_eq!(english, ["Run this command?"]);
+        served.close().await;
+    });
+}
+
+#[test]
+fn a_watch_on_this_computer_sends_an_approval_in_the_persons_language() {
+    block_on!(async {
+        let dir = folder("languages-approval-local");
+        let server = server(&dir, asking(), Answering::NoOne).await;
+        let thread = start(&server, false).await;
+        turn(&server, thread, "touch it").await.unwrap();
+        let (client, connection) = tokio::io::duplex(1 << 16);
+        let (read, write) = tokio::io::split(connection);
+        let serving = tokio::spawn(rpc::serve_connection(
+            server.clone(),
+            BufReader::new(read),
+            write,
+        ));
+        let (client_read, mut out) = tokio::io::split(client);
+        let mut lines = BufReader::new(client_read).lines();
+        let chosen = Request::LanguageSet {
+            language: Some("en-XA".into()),
+        };
+        ask(&mut out, &mut lines, 1, &chosen).await;
+        let watch = Request::ThreadWatch {
+            thread,
+            after: None,
+        };
+        let line = format!("{}\n", rpc::message(2, &watch));
+        out.write_all(line.as_bytes()).await.unwrap();
+        let mut notes = Vec::new();
+        while asked(&notes).is_empty() {
+            let line = lines.next_line().await.unwrap().unwrap();
+            notes.push(serde_json::from_str::<Value>(&line).unwrap());
+        }
+        assert!(asked(&notes)[0].starts_with(RUN_ACCENTED), "{notes:?}");
+        serving.abort();
+    });
+}

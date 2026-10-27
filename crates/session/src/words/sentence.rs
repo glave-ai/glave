@@ -198,6 +198,15 @@ sentences! {
     NotARepository { url: String } = "not-a-repository"
         "\"{ $url }\" is not a repository's address: give its https:// address, such as https://github.com/acme/app, with no user name or token in it",
 
+    // What an approval asks, by what would run: recorded in English in `approval.requested`,
+    // by which its English is found again here.
+    AskCommand = "ask-command" "Run this command?",
+    AskEdit = "ask-edit" "Edit this file?",
+    AskWrite = "ask-write" "Write this file?",
+    AskRead = "ask-read" "Read this file?",
+    AskPage = "ask-page" "Open this page?",
+    AskAllow = "ask-allow" "Allow this?",
+
     // Project trust.
     NothingToTrust = "nothing-to-trust" "nothing in this thread's project waits to be trusted",
     TrustChanged = "trust-changed"
@@ -281,4 +290,21 @@ sentences! {
         "only the person on this computer chooses whether it stays awake",
     NoLanguage { tag: String } = "no-language"
         "glave does not write in \"{ $tag }\": choose another language",
+}
+
+impl Sentence {
+    /// The sentence an approval asks with, by the English its `approval.requested` recorded:
+    /// none for words the table does not hold, such as a wording from before.
+    pub(crate) fn asking(english: &str) -> Option<Self> {
+        [
+            Self::AskCommand,
+            Self::AskEdit,
+            Self::AskWrite,
+            Self::AskRead,
+            Self::AskPage,
+            Self::AskAllow,
+        ]
+        .into_iter()
+        .find(|sentence| sentence.english() == english)
+    }
 }

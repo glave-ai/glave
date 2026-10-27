@@ -32,6 +32,7 @@ import { threadTitle } from '../../lib/threads';
 import { chatPlan } from '../../lib/plans';
 import { askedTurns } from '../../lib/turns';
 import { AttachmentsService } from '../../services/attachments.service';
+import { onChange } from '../../services/changes.service';
 import { effortToSend } from '../../lib/effort';
 import { CommandsService } from '../../services/commands.service';
 import { ModelsService } from '../../services/models.service';
@@ -267,6 +268,12 @@ export class ThreadComponent {
       this.attachments.keepIn(project);
     });
   });
+
+  constructor() {
+    // The server writes its own words in the thread (what an approval asks, what replies drew
+    // on, the plan) in the person's language: when they choose another, it is read again.
+    onChange('language', () => void this.service.open(this.thread()));
+  }
 
   protected send(text: string): void {
     // A pick goes with the turn only when it changes the thread's model or mode.

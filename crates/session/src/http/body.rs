@@ -18,7 +18,7 @@ use tokio::time::{Instant, Sleep, sleep};
 use crate::protocol::Notification;
 use crate::rpc::{Id, notify, respond};
 use crate::streamed::{Item, Streamed};
-use crate::words::{Language, translate};
+use crate::words::{Language, note_in, translate};
 
 /// How long a stream may say nothing before it sends a comment.
 pub(crate) const KEEP_ALIVE: Duration = Duration::from_secs(15);
@@ -38,7 +38,8 @@ pub(crate) enum Answer {
         watched: Option<ThreadId>,
         /// When the stream has been quiet long enough for a comment.
         quiet: Pin<Box<Sleep>>,
-        /// The language the server's own sentences in its response are written in.
+        /// The language the server's own sentences in its notifications and its response are
+        /// written in.
         language: Language,
     },
 }
@@ -82,9 +83,9 @@ fn event(id: Option<String>, message: &str) -> Frame<Bytes> {
     Frame::data(Bytes::from(format!("{id}data: {message}\n\n")))
 }
 
-/// `note` as an event: an event of the thread `watched` with its `seq` as its id, a list's
-/// summary with its `updated_at`.
-fn note(note: &Arc<Notification>, watched: Option<ThreadId>) -> Frame<Bytes> {
+/// `note` as an event, its sentences in `language`: an event of the thread `watched` with its
+/// `seq` as its id, a list's summary with its `updated_at`.
+fn note(note: &Arc<Notification>, watched: Option<ThreadId>, language: Language) -> Frame<Bytes> {
     let id = match note.as_ref() {
         Notification::Event { thread, event } if Some(*thread) == watched => {
             Some(event.seq.get().to_string())
@@ -92,7 +93,7 @@ fn note(note: &Arc<Notification>, watched: Option<ThreadId>) -> Frame<Bytes> {
         Notification::Changed { summary, .. } => Some(summary.updated_at.to_string()),
         _ => None,
     };
-    event(id, &notify(note))
+    event(id, &notify(&note_in(note, language)))
 }
 
 impl Body for Answer {
@@ -126,7 +127,7 @@ impl Body for Answer {
                 match item {
                     Some(Item::Note(sent)) => {
                         *next = Some(following(streamed));
-                        Poll::Ready(Some(Ok(note(&sent, *watched))))
+                        Poll::Ready(Some(Ok(note(&sent, *watched, *language))))
                     }
                     Some(Item::Last(mut last)) => {
                         *next = None;

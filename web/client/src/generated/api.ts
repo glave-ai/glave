@@ -644,7 +644,7 @@ export type ServerInfo = {
 };
 
 /** A person's own settings or connections, by what a client reads to show them. */
-export type Setting = "providers" | "credentials" | "connections" | "search" | "grouping" | "awake" | "passkeys";
+export type Setting = "providers" | "credentials" | "connections" | "search" | "grouping" | "awake" | "passkeys" | "language";
 
 /** Which threads `thread/list` shows. */
 export type Show = "archived" | "active" | "deleted";

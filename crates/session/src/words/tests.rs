@@ -121,6 +121,62 @@ fn what_replies_drew_on_is_written_again_in_their_sources() {
     );
 }
 
+#[test]
+fn every_sentence_an_approval_asks_with_is_found_in_the_table_by_its_english() {
+    for english in glave_harness::ASKS {
+        let sentence = Sentence::asking(english);
+        let said = sentence.as_ref().map(|it| say(Language::English, it));
+        assert_eq!(said.as_deref(), Some(english), "{english} has no entry");
+    }
+    assert_eq!(
+        Sentence::asking("Run this?"),
+        None,
+        "words it does not hold"
+    );
+}
+
+#[test]
+fn an_approval_in_a_page_of_events_is_written_again_and_nothing_else() {
+    let event = |seq: u64, kind: &str, data: serde_json::Value| -> glave_event::RawEvent {
+        serde_json::from_value(serde_json::json!({
+            "glave": 1, "id": "0192f5c2-7000-7000-8000-000000000001",
+            "thread": "0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c10", "seq": seq,
+            "at": "2026-10-17T17:10:00.000Z", "type": kind, "v": 1, "data": data
+        }))
+        .unwrap()
+    };
+    let asked = serde_json::json!({
+        "call_id": "call_1", "tool": "bash", "summary": "bash: ls", "ask": "Run this command?",
+        "detail": "ls", "secret": false
+    });
+    let said = serde_json::json!({"role": "assistant", "parts": [{"type": "text", "text": "Run this command?"}]});
+    let mut page: Result<Reply, ApiError> = Ok(Reply::Events {
+        events: vec![
+            event(1, "approval.requested", asked),
+            event(2, "message.added", said),
+        ],
+        next: None,
+    });
+    assert!(says(&page));
+    translate(&mut page, Language::Accented);
+    let Ok(Reply::Events { events, .. }) = page else {
+        panic!("a page of events")
+    };
+    let data = |at: usize| serde_json::to_value(&events[at].data).unwrap();
+    assert!(
+        data(0)["ask"]
+            .as_str()
+            .unwrap()
+            .starts_with("[Ŕûñ ţĥîš çöɱɱåñð?")
+    );
+    assert_eq!(data(0)["detail"], "ls", "what would run stays as it is");
+    assert_eq!(
+        data(1)["parts"][0]["text"],
+        "Run this command?",
+        "the model's own words are never the server's"
+    );
+}
+
 /// The words of its own the session crate writes in English, by file and what they say: about
 /// the message itself, for whoever writes a client (JSON-RPC's own codes), what a client reads
 /// of a server's answer, and misuse of the API in process.
