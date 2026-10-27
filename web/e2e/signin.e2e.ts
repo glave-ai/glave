@@ -4,7 +4,7 @@ import {
   ACCOUNTS,
   byTestId,
   expectAccessible,
-  newTab,
+  heldUntilHeard,
   served,
   signInCode,
   watchForProblems,
@@ -21,6 +21,7 @@ test('a link signs one browser in once, and it stays signed in until it signs ou
   context,
   browser,
 }) => {
+  await heldUntilHeard(context);
   const problems = watchForProblems(page);
   const glave = served(ACCOUNTS);
   const code = await signInCode(ACCOUNTS);
@@ -72,14 +73,14 @@ test('a link signs one browser in once, and it stays signed in until it signs ou
   expect(await context.cookies()).toEqual([]);
 
   // The code is spent: the same link signs no other browser in.
-  const another = await browser.newContext();
+  const another = await heldUntilHeard(await browser.newContext());
   const elsewhere = await another.newPage();
   await elsewhere.goto(`${glave}/#code=${code}`);
   await expect(byTestId(elsewhere, 'sign-in')).toBeVisible();
   await another.close();
 
   // A new tab of this browser is signed in, and so is one opened after every tab closed.
-  const tab = await newTab(page);
+  const tab = await context.newPage();
   await tab.goto(`${glave}/settings`);
   await expect(byTestId(tab, 'settings-sign-out')).toBeVisible();
   await page.close();
@@ -89,7 +90,7 @@ test('a link signs one browser in once, and it stays signed in until it signs ou
   await expect(byTestId(reopened, 'home-composer-input')).toBeVisible();
 
   // Signing out in one tab signs every tab out.
-  const settings = await newTab(reopened);
+  const settings = await context.newPage();
   await settings.goto(`${glave}/settings`);
   await byTestId(settings, 'settings-sign-out').click();
   await expect(byTestId(settings, 'sign-in')).toBeVisible();

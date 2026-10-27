@@ -153,24 +153,20 @@ export async function readIn(page: Page, language: string): Promise<void> {
 }
 
 /**
- * A tab beside `from`, opened from it on a blank page, for the test to go to glave in. It starts
- * in `from`'s origin and browsing context group, which glave's `Cross-Origin-Opener-Policy:
- * same-origin` keeps it in, so its load stays in `from`'s process. A tab of its own
- * (`context.newPage()`) starts on a page of no origin, and its first load of glave moves to a new
- * process, which Linux WebKit at times cancels and never commits, so `goto` waits until the
- * test's time runs out (WebKit bug 325840, microsoft/playwright#42957). Any tab of its own can be
- * caught, a context's first too, which has nothing to open from; a second tab beside a page that
- * has just loaded is caught most often. Like any tab opened from another, it starts with a copy
- * of `from`'s session storage.
+ * `context`, every request of its pages held until Playwright has heard the page make it, as the
+ * fake API's routes hold them, so no tab of it is stranded on its first load of a real glave. A
+ * tab (`context.newPage()`) starts on a page of no origin, and glave's
+ * `Cross-Origin-Opener-Policy: same-origin` moves its first load of glave to a new process. Linux
+ * WebKit cancels that load, and never commits it, when the new process gets glave's answer before
+ * WebKit has heard from the old one that the load began: the tab stays on `about:blank` and
+ * `goto` waits until the test's time runs out (WebKit bug 325840, microsoft/playwright#42957).
+ * The old process says the load began before it makes the request, and Playwright hears the
+ * request from it the same way, so a request held until Playwright has heard it is answered only
+ * after WebKit has heard that the load began.
  */
-export async function newTab(from: Page): Promise<Page> {
-  const [tab] = await Promise.all([
-    from.waitForEvent('popup'),
-    from.evaluate(() => {
-      window.open('about:blank');
-    }),
-  ]);
-  return tab;
+export async function heldUntilHeard(context: BrowserContext): Promise<BrowserContext> {
+  await context.route('**/*', (route) => route.fallback());
+  return context;
 }
 
 /**

@@ -7,7 +7,7 @@ import {
   PASSKEYS_ORIGIN,
   byTestId,
   expectAccessible,
-  newTab,
+  heldUntilHeard,
   served,
   setupCode,
   signInCode,
@@ -225,7 +225,6 @@ interface Device {
  * Opens tabs on one device, each able to make and use its passkeys, those `carried` from
  * another browser first: in Chromium a virtual authenticator per tab, holding the passkeys the
  * tabs before it made; in WebKit the script, whose key every tab reads from the same storage.
- * Each tab after the first is opened from the one before it (`newTab`).
  */
 function oneDevice(
   context: BrowserContext,
@@ -235,7 +234,7 @@ function oneDevice(
   let before: Virtual | null = null;
   let last: Page | null = null;
   const tab = async (): Promise<Page> => {
-    const page = last === null ? await context.newPage() : await newTab(last);
+    const page = await context.newPage();
     last = page;
     if (browserName !== 'chromium') {
       await page.addInitScript(scriptedAuthenticator);
@@ -351,14 +350,14 @@ test('a passkey made here signs another browser on this computer in', async ({
 }) => {
   const site = browserName === 'webkit' ? HERE_WEBKIT : HERE;
   const here = `http://localhost:${new URL(served(site)).port}`;
-  const nobody = await browser.newContext();
+  const nobody = await heldUntilHeard(await browser.newContext());
   const signedOut = await nobody.newPage();
   await signedOut.goto(`${here}/`);
   await expect(byTestId(signedOut, 'sign-in')).toBeVisible();
   await expect(byTestId(signedOut, 'sign-in-passkey')).toHaveCount(0);
   await nobody.close();
 
-  const first = await browser.newContext();
+  const first = await heldUntilHeard(await browser.newContext());
   const device = oneDevice(first, browserName);
   const page = await device.tab();
   const problems = watchForProblems(page);
@@ -374,7 +373,7 @@ test('a passkey made here signs another browser on this computer in', async ({
   await expect(offer).toBeHidden();
   await expect(byTestId(page, 'home-composer-input')).toBeVisible();
 
-  const second = await browser.newContext();
+  const second = await heldUntilHeard(await browser.newContext());
   const other = await oneDevice(second, browserName, await device.carried()).tab();
   const problemsThere = watchForProblems(other);
   await other.goto(`${here}/`);
