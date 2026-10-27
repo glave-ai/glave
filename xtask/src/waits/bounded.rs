@@ -399,6 +399,12 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "a permit held for one attempt, within its task's time limit",
     ),
     (
+        "crates/eval/src/suite.rs",
+        "let _turn = turn.acquire_owned().await;",
+        1,
+        "a task's turn, held for one attempt of it, within its task's time limit",
+    ),
+    (
         "xtask/src/cmd.rs",
         "Ok::<_, std::io::Error>((child.wait().await?, output))",
         1,
