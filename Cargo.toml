@@ -154,6 +154,9 @@ opentelemetry = { version = "0.33", default-features = false, features = ["trace
 opentelemetry-otlp = { version = "0.33", default-features = false, features = ["http-proto", "reqwest-blocking-client", "reqwest-rustls", "trace", "metrics"] }
 opentelemetry_sdk = { version = "0.33", default-features = false, features = ["trace", "metrics"] }
 proptest = "1"
+# The XML in Office files' parts, for `glave doc` (glave-office) to read Word and PowerPoint.
+# Already in the tree, under calamine.
+quick-xml = "0.42"
 # Self-signed certificates for workers, on aws-lc-rs, the crypto rustls already uses.
 rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem"] }
 regex = "1"
@@ -198,6 +201,9 @@ webauthn-rs = { version = "=0.6.1-dev", default-features = false }
 # When a certificate's life begins and ends (glave-acme), so it is renewed with a third left.
 x509-parser = { version = "0.18", default-features = false }
 zeroize = "1"
+# Office files as the zips of parts they are, for `glave doc` (glave-office). Already in the
+# tree, under calamine and rust_xlsxwriter, with the same one feature.
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 # Day-to-day builds: no debug info. A failing assert or a panic names its file and line without
 # it, and builds and links are faster. Stepping through code takes the `debugging` profile below.

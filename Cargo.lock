@@ -2156,10 +2156,12 @@ dependencies = [
  "calamine",
  "glave-ports",
  "proptest",
+ "quick-xml 0.42.0",
  "rust_xlsxwriter",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "zip",
 ]
 
 [[package]]

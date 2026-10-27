@@ -121,7 +121,7 @@ fn mistakes_are_said_so_they_can_be_put_right() {
         .unwrap_err()
         .to_string();
     assert!(
-        not.starts_with("this is not a workbook glave can read"),
+        not.starts_with("this is not a file glave doc reads"),
         "{not}"
     );
     let missing = Path::new(&*dir).join("gone.xlsx");
