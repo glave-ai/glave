@@ -1,10 +1,12 @@
 import type {
+  ChangedFile,
   ModelInfo,
   RawEvent,
   RunningCommand,
   ScheduleInfo,
   Project,
   TaskInfo,
+  ThreadChanges,
   ThreadSummary,
   TokenCounts,
 } from '@glave/client';
@@ -66,6 +68,33 @@ export function event(
     type,
     v: 1,
     data,
+  };
+}
+
+/** What the server answers a thread changed: `files`, all in the turn that started at `turn`. */
+export function changed(
+  turn: number,
+  files: readonly ChangedFile[],
+): { readonly changes: ThreadChanges } {
+  const note = 'Changes made by commands or other tools are not listed.';
+  return { changes: { files, turns: [{ turn, files }], note } };
+}
+
+/** A file the server says one edit changed, taking out `removed` and putting in `added`. */
+export function editedFile(
+  path: string,
+  removed: readonly string[],
+  added: readonly string[],
+): ChangedFile {
+  const lines = [
+    ...removed.map((text) => ({ kind: 'removed', text }) as const),
+    ...added.map((text) => ({ kind: 'added', text }) as const),
+  ];
+  return {
+    path,
+    added: added.length,
+    removed: removed.length,
+    changes: [{ kind: 'edited', lines }],
   };
 }
 

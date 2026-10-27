@@ -1,9 +1,10 @@
 import type { Page } from '@playwright/test';
 
 import { HISTORY } from './fake-api';
+import { changesOf } from './fake-changes';
 import { type Storing, storedEvents } from './fake-events';
 import { type Gate, type Gated, gates } from './fake-gate';
-import { THREAD } from './fake-records';
+import { THREAD, call, done, event } from './fake-records';
 
 /** What the person asks in a turn that thinks first (`thinkingTurn`). */
 export const THINKING_PROMPT = 'Why does the test hang?';
@@ -15,6 +16,15 @@ export const STEP = 'write src/lock.rs (2 lines)';
 export const THINKING = ['The lock is taken ', 'twice on the same thread.\n\n'];
 /** What it answers, in the pieces it streams. */
 export const ANSWER = ['The lock ', 'is taken twice.'];
+
+/** The file the turn writes, and what the server says the thread changed once it has. */
+const LOCK = { path: 'src/lock.rs', content: 'one\ntwo\n' };
+const WROTE = changesOf([
+  ...HISTORY,
+  event(HISTORY.length + 1, 'turn.started', {}),
+  call(HISTORY.length + 3, 'call_test', 'write', LOCK),
+  done(HISTORY.length + 4, 'call_test', 'Wrote src/lock.rs'),
+]);
 
 /**
  * Makes the page's next turn in `THREAD` one that runs a tool, then thinks before it answers, a
@@ -29,7 +39,7 @@ export async function thinkingTurn(page: Page): Promise<void> {
   await gates(page);
   await storedEvents(page);
   await page.addInitScript(
-    ({ after, thread, started, step, thinking, answer }) => {
+    ({ after, thread, started, step, thinking, answer, lock, wrote }) => {
       const real = window.fetch.bind(window);
       const encoder = new TextEncoder();
       const passed = (gate: Gate): Promise<void> =>
@@ -39,8 +49,15 @@ export async function thinkingTurn(page: Page): Promise<void> {
       const live = (update: unknown): string =>
         JSON.stringify({ jsonrpc: '2.0', method: 'turn/live', params: { thread, update } });
       const call = { call_id: 'call_test' };
+      // Once the file is written, the server says so when asked what the thread changed.
+      let written = false;
       window.fetch = async (input, init) => {
         const body = typeof init?.body === 'string' ? init.body : '';
+        if (written && body.includes('"thread/changes"')) {
+          const { id } = JSON.parse(body) as { id: number };
+          const result = JSON.stringify({ jsonrpc: '2.0', id, result: { changes: wrote } });
+          return new Response(result, { headers: { 'Content-Type': 'application/json' } });
+        }
         if (!body.includes('"turn/start"')) {
           return real(input, init);
         }
@@ -64,12 +81,13 @@ export async function thinkingTurn(page: Page): Promise<void> {
               stored(after + 3, 'tool.call.requested', {
                 ...call,
                 tool: 'write',
-                arguments: { json: { path: 'src/lock.rs', content: 'one\ntwo\n' } },
+                arguments: { json: lock },
               }),
             );
             send(live({ kind: 'tool_started', summary: step }));
             await passed('think');
             send(live({ kind: 'tool_finished', summary: step, is_error: false }));
+            written = true;
             send(
               stored(after + 4, 'tool.call.completed', {
                 ...call,
@@ -111,6 +129,8 @@ export async function thinkingTurn(page: Page): Promise<void> {
       step: STEP,
       thinking: THINKING,
       answer: ANSWER,
+      lock: LOCK,
+      wrote: WROTE,
     },
   );
 }

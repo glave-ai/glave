@@ -31,6 +31,7 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
             search: SearchInfo::Never { reason },
         }) => reason.translatable(),
         Ok(Reply::Sources { sources }) => sources.iter().any(|each| each.sentence.translatable()),
+        Ok(Reply::Changes { changes }) => changes.note.translatable(),
         Ok(Reply::Plan { plan: Some(plan) }) => plan.sentence.translatable(),
         Ok(_) => false,
     }
@@ -74,6 +75,7 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
                 each.sentence.translate(language);
             }
         }
+        Ok(Reply::Changes { changes }) => changes.note.translate(language),
         Ok(Reply::Plan { plan: Some(plan) }) => plan.sentence.translate(language),
         Ok(_) => {}
     }

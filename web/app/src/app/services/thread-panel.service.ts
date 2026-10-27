@@ -1,8 +1,8 @@
 import { Service, computed, effect, inject, signal, untracked } from '@angular/core';
-import type { WorkspaceBound } from '@glave/client';
+import type { ChangedFile, WorkspaceBound } from '@glave/client';
 
-import type { ChangedFile } from '../lib/files';
 import { type SourceLink, sourceLinks } from '../lib/sources';
+import { ChangedFilesService } from './changed-files.service';
 import { CommandsService } from './commands.service';
 import { PanelService } from './panel.service';
 import { PlanService } from './plan.service';
@@ -47,6 +47,7 @@ function hostOf(link: SourceLink): string {
 export class ThreadPanelService {
   private readonly thread = inject(ThreadService);
   private readonly commands = inject(CommandsService);
+  private readonly changed = inject(ChangedFilesService);
   private readonly sources = inject(SourcesService);
   private readonly plans = inject(PlanService);
   private readonly panel = inject(PanelService);
@@ -59,7 +60,10 @@ export class ThreadPanelService {
   });
   /** Its plan, as the server reads it. */
   readonly plan = this.plans.plan;
-  readonly files = this.thread.files;
+  /** The files it changed, as the server says. */
+  readonly files = this.changed.files;
+  /** What those leave out, in the server's sentence. */
+  readonly note = this.changed.note;
   readonly running = this.commands.count;
   /** The pages its replies drew on, each once, in the order first read. */
   readonly pages = computed<readonly Page[]>(() => {

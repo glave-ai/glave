@@ -1,8 +1,7 @@
-import type { Outcome, ReplySources, TurnResult } from '@glave/client';
+import type { ChangedFile, Outcome, ReplySources, TurnResult } from '@glave/client';
 import { type GlzRunStatus, formatDuration, formatMoney, listFormat } from '@glave/glaze';
 
 import type { ApprovalItem, Draft, MessageItem, QuestionItem, ThreadItem } from './conversation';
-import type { ChangedFile } from './files';
 import { plural } from './plural';
 import type { Turn } from './turns';
 
@@ -58,6 +57,7 @@ export interface TurnResults {
    * step it takes, when a tool runs, and since when it has worked; else `null`.
    */
   readonly working: Working | null;
+  /** The files it changed, as the server says. */
   readonly files: readonly ChangedFile[];
   /** The work folded behind the receipt, in order. */
   readonly steps: readonly ThreadItem[];
@@ -175,12 +175,22 @@ function resultFacts(result: TurnResult, locale: string): readonly string[] {
   ];
 }
 
+/** What the server says of a thread's turns besides their events. */
+export interface TurnFacts {
+  /** What replies drew on, by the `seq` of each reply. */
+  readonly sourced: ReadonlyMap<number, ReplySources>;
+  /** The files each turn changed, by the `seq` of its start. */
+  readonly changed: ReadonlyMap<number, readonly ChangedFile[]>;
+}
+
+const NO_FACTS: TurnFacts = { sourced: new Map(), changed: new Map() };
+
 /**
  * `turn` results first, its facts written for `locale`. `live` is the reply being written, for
  * the turn that runs now (`running`); it takes the reply's place, and what was the reply goes
  * back among what was said along the way. `step` is the step that turn takes now, in the
- * server's words, as it said while a tool runs. `sourced` holds what replies drew on, by the
- * `seq` of each reply.
+ * server's words, as it said while a tool runs. `told` is what the server says of the turn
+ * besides its events: what its reply drew on and the files it changed.
  */
 export function turnResults(
   turn: Turn,
@@ -188,7 +198,7 @@ export function turnResults(
   step: string | null,
   running: boolean,
   locale: string,
-  sourced: ReadonlyMap<number, ReplySources> = new Map(),
+  told: TurnFacts = NO_FACTS,
 ): TurnResults {
   const [first, ...after] = turn.items;
   const asked = first?.kind === 'message' && first.from === 'person';
@@ -212,10 +222,10 @@ export function turnResults(
     prompt,
     before: worked ? [] : along,
     reply,
-    sources: reply === null ? null : (sourced.get(reply.seq) ?? null),
+    sources: reply === null ? null : (told.sourced.get(reply.seq) ?? null),
     live,
     working,
-    files: turn.files,
+    files: turn.startSeq === null ? [] : (told.changed.get(turn.startSeq) ?? []),
     steps: worked ? along : [],
     receipt: worked
       ? {

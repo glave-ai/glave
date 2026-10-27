@@ -50,13 +50,14 @@ describe('turns', () => {
         cost: { micros: 1500, currency: 'USD' },
       },
     });
-    expect(first?.files.map((file) => [file.path, file.added])).toEqual([['a.rs', 2]]);
+    // Each by the seq of its start, as the server names it in what it says of the turn.
+    expect(first?.startSeq).toBe(2);
     // Still going: no end, its time so far, no result yet.
     expect(second).toMatchObject({
+      startSeq: 9,
       took: 12_000,
       started: '2026-10-11T10:05:00.000Z',
       result: null,
-      files: [],
     });
   });
 

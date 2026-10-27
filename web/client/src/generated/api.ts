@@ -66,6 +66,19 @@ export type AwakeInfo = {
 /** Links a tool call to its result: 1 to 128 printable ASCII characters. */
 export type CallId = string;
 
+/** What a change did to its file. */
+export type ChangeKind = "wrote" | "edited" | "edited_every";
+
+/** A file, with every line its changes added and took out, and each change. */
+export type ChangedFile = {
+  readonly added: number;
+  /** Its changes, in order. */
+  readonly changes: readonly (FileChange)[];
+  /** Where it is, as the call named it. */
+  readonly path: string;
+  readonly removed: number;
+};
+
 /** Where a folder is checked out: a computer, and the path on it. */
 export type Checkout = {
   /** The computer, by the id it keeps across runs. */
@@ -175,6 +188,12 @@ export type DeviceCode = {
   readonly url: string;
 };
 
+/** One line of a change. */
+export type DiffLine = {
+  readonly kind: LineKind;
+  readonly text: string;
+};
+
 /** What a failure says beyond its sentence, for a client to act on. */
 export type ErrorData = {
   readonly failure: Failure;
@@ -187,6 +206,19 @@ export type EventId = string;
 
 /** The kind of a failed model request. */
 export type Failure = "refused" | "no_credit" | "unknown_model" | "too_long" | "rate_limited" | "unavailable" | "unreachable" | "silent" | "malformed" | "rejected" | "over_budget";
+
+/**
+ * One change to a file: a `write` or an `edit` that finished without an error, as its call
+ * asked for it, which the tool applied exactly.
+ */
+export type FileChange = {
+  readonly kind: ChangeKind;
+  /**
+   * Its lines in order: those kept before it, those taken out, those put in, and those kept
+   * after it.
+   */
+  readonly lines: readonly (DiffLine)[];
+};
 
 /** A file the server keeps, as `file/upload` answers it. */
 export type FileInfo = {
@@ -248,6 +280,9 @@ export type Grouping = "project" | "status";
 
 /** A client's name for one attempt at a turn: 1 to 255 bytes of text. */
 export type IdempotencyKey = string;
+
+/** Whether a line was kept, taken out or put in. */
+export type LineKind = "same" | "removed" | "added";
 
 /** Identifies one memory: a short statement kept for later threads (`specs/memory.md`). */
 export type MemoryId = string;
@@ -703,6 +738,19 @@ export type TaskKind = "agent";
 /** Whether a task is still going. */
 export type TaskStatus = "running" | "finished" | "elsewhere";
 
+/** The files a thread changed, its subagents' changes with its own, and each turn's. */
+export type ThreadChanges = {
+  /** Every file it changed, in the order first changed. */
+  readonly files: readonly (ChangedFile)[];
+  /**
+   * What they leave out, in a sentence: "Changes made by commands or other tools are not
+   * listed."
+   */
+  readonly note: string;
+  /** Each turn that changed files, in order. */
+  readonly turns: readonly (TurnChanges)[];
+};
+
 /** Identifies one thread: a conversation or task with its own ordered log. */
 export type ThreadId = string;
 
@@ -808,6 +856,13 @@ export type TrustItem = {
   readonly detail?: string | null;
   /** What it does, in a sentence: `Runs a tool server`. */
   readonly text: string;
+};
+
+/** The files one turn changed. */
+export type TurnChanges = {
+  readonly files: readonly (ChangedFile)[];
+  /** The `seq` of the turn's `turn.started`. */
+  readonly turn: Seq;
 };
 
 /**
@@ -1654,6 +1709,15 @@ export type ThreadArchiveParams = {
 
 export type ThreadArchiveResult = Readonly<Record<string, never>>;
 
+export type ThreadChangesParams = {
+  readonly thread: ThreadId;
+};
+
+/** What a thread changed in files. */
+export type ThreadChangesResult = {
+  readonly changes: ThreadChanges;
+};
+
 export type ThreadCompactParams = {
   readonly thread: ThreadId;
 };
@@ -1951,6 +2015,7 @@ export interface Methods {
   readonly "tasks/list": { readonly params: TasksListParams; readonly result: TasksListResult };
   readonly "tasks/stop": { readonly params: TasksStopParams; readonly result: TasksStopResult };
   readonly "thread/archive": { readonly params: ThreadArchiveParams; readonly result: ThreadArchiveResult };
+  readonly "thread/changes": { readonly params: ThreadChangesParams; readonly result: ThreadChangesResult };
   readonly "thread/compact": { readonly params: ThreadCompactParams; readonly result: ThreadCompactResult };
   readonly "thread/delete": { readonly params: ThreadDeleteParams; readonly result: ThreadDeleteResult };
   readonly "thread/events": { readonly params: ThreadEventsParams; readonly result: ThreadEventsResult };

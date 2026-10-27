@@ -1,7 +1,6 @@
 import type { Money, Outcome, RawEvent, ThreadSummary, TurnResult } from '@glave/client';
 
 import { type ThreadItem, byGlave, threadItems } from './conversation';
-import { type ChangedFile, changedFiles } from './files';
 
 const OUTCOMES: readonly string[] = [
   'completed',
@@ -16,8 +15,11 @@ export interface Turn {
   readonly key: string;
   /** Its items in order, the person's message first when it has one. */
   readonly items: readonly ThreadItem[];
-  /** The files its own `write` and `edit` calls changed. */
-  readonly files: readonly ChangedFile[];
+  /**
+   * The `seq` of its `turn.started`, by which the server names it; `null` with no start
+   * recorded.
+   */
+  readonly startSeq: number | null;
   /**
    * How long it took, in milliseconds: to its end, or while it has not ended (it runs, or waits
    * for the person) to the latest thing it recorded. `null` with no start recorded.
@@ -119,7 +121,7 @@ function turnOf(events: readonly RawEvent[], items: readonly ThreadItem[]): Turn
   return {
     key: `turn-${String(events[0]?.seq ?? 0)}`,
     items,
-    files: changedFiles(events),
+    startSeq: started?.seq ?? null,
     took: Number.isNaN(took) ? null : took,
     started: started?.at ?? null,
     result: ended === undefined ? null : resultOf(ended.data),
@@ -128,8 +130,8 @@ function turnOf(events: readonly RawEvent[], items: readonly ThreadItem[]): Turn
 
 /**
  * A thread's turns, from its events, in order: each from the person's message (or the
- * `turn.started` just before it) to the next, with its items, the files it changed, how long
- * it took, and its result as the server recorded it. Events before the first message that put nothing
+ * `turn.started` just before it) to the next, with its items, where it started, how long it
+ * took, and its result as the server recorded it. Events before the first message that put nothing
  * in the conversation (the thread's start, its workspace) make no turn of their own.
  */
 export function threadTurns(events: readonly RawEvent[]): readonly Turn[] {
@@ -174,7 +176,7 @@ function startingTurn(prompt: string, key: string): Turn {
         files: [],
       },
     ],
-    files: [],
+    startSeq: null,
     took: null,
     started: null,
     result: null,

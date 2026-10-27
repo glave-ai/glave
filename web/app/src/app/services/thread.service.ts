@@ -25,7 +25,7 @@ import type { GlzDecision } from '@glave/glaze';
 
 import { lastCommandChange } from '../lib/commands';
 import { NO_DRAFT, applyUpdate, mergeEvents, stepsAfter, type Draft } from '../lib/conversation';
-import { changedFiles } from '../lib/files';
+import { lastChanging } from '../lib/files';
 import { idempotencyKey } from '../lib/idempotency';
 import { chosenEffort } from '../lib/effort';
 import { chosenModel } from '../lib/models';
@@ -112,15 +112,15 @@ export class ThreadService {
     }
     return listed !== undefined && listed.updated_at >= own.updated_at ? listed : own;
   });
-  /** The thread's turns, each with its items, the files it changed, its time and cost. */
+  /** The thread's turns, each with its items, its time and cost. */
   readonly turns = computed(() => threadTurns(this.events()));
   /**
    * The turns this view asked for, each by the `seq` of the last event it had read as it asked:
    * the turn is the first recorded after it.
    */
   readonly askedAfter = this.afters.asReadonly();
-  /** The files the thread changed with its own `write` and `edit` calls. */
-  readonly files = computed(() => changedFiles(this.events()));
+  /** The `seq` of the latest end of a call that can change files; `null` while it opens. */
+  readonly changing = computed(() => (this.opening() ? null : lastChanging(this.events())));
   /** The `seq` of the latest start or end of a command in the background it recorded, if any. */
   readonly commandChange = computed(() => lastCommandChange(this.events()));
   /**

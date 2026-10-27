@@ -11,6 +11,7 @@ import type { Page, Route } from '@playwright/test';
 
 import { type Commands, SERVING, SERVING_HISTORY, background } from './fake-commands';
 import { type Awake, keptAwake } from './fake-awake';
+import { changesOf } from './fake-changes';
 import { keptFile } from './fake-files';
 import { HOME, listFolders } from './fake-folders';
 import { type Gated, gates } from './fake-gate';
@@ -628,6 +629,8 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
       return sourcesOf(params);
     case 'thread/events':
       return { events: HISTORIES[String(params['thread'])] ?? [] };
+    case 'thread/changes':
+      return { changes: changesOf(HISTORIES[String(params['thread'])] ?? []) };
     case 'thread/start': {
       const inProject = params['project'] === PERSONAL.id ? PERSONAL : PROJECT;
       const fresh = thread(NEW_THREAD, '', 'idle', inProject);

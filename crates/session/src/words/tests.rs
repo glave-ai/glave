@@ -121,6 +121,23 @@ fn what_replies_drew_on_is_written_again_in_their_sources() {
     );
 }
 
+#[test]
+fn what_changes_leave_out_is_written_again_in_their_note() {
+    let mut changed: Result<Reply, ApiError> = Ok(Reply::Changes {
+        changes: crate::protocol::ThreadChanges {
+            files: Vec::new(),
+            turns: Vec::new(),
+            note: Sentence::ChangesLeftOut.into(),
+        },
+    });
+    assert!(says(&changed));
+    translate(&mut changed, Language::Accented);
+    let Ok(Reply::Changes { changes }) = changed else {
+        panic!("changes")
+    };
+    assert!(changes.note.starts_with("[Çĥåñĝéš"), "{}", &*changes.note);
+}
+
 /// The words of its own the session crate writes in English, by file and what they say: about
 /// the message itself, for whoever writes a client (JSON-RPC's own codes), what a client reads
 /// of a server's answer, and misuse of the API in process.

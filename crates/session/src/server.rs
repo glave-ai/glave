@@ -495,6 +495,23 @@ where
         Ok(Reply::Events { events, next })
     }
 
+    /// Every event of `thread`, read page by page, each handed to `read` in order.
+    pub(crate) async fn read_all(
+        &self,
+        thread: ThreadId,
+        mut read: impl FnMut(RawEvent),
+    ) -> Result<(), ApiError> {
+        let mut after = None;
+        loop {
+            let (events, next) = self.page(thread, after, Some(MAX_PAGE)).await?;
+            events.into_iter().for_each(&mut read);
+            match next {
+                Some(next) => after = Some(next),
+                None => return Ok(()),
+            }
+        }
+    }
+
     /// A page of `thread`'s events after `after`, at most `limit` (500 when absent), and the
     /// `seq` the next page follows, when there may be one.
     pub(crate) async fn page(
