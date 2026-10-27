@@ -26,14 +26,21 @@ export function event(
   };
 }
 
+/** A tool call, with the line the server records for its step (`bash: cargo test`). */
 export function call(
   seq: number,
   callId: string,
   tool: string,
   json: Record<string, unknown>,
+  summary: string,
   id = THREAD,
 ): RawEvent {
-  return event(seq, 'tool.call.requested', { call_id: callId, tool, arguments: { json } }, id);
+  return event(
+    seq,
+    'tool.call.requested',
+    { call_id: callId, tool, arguments: { json }, summary },
+    id,
+  );
 }
 
 export function done(seq: number, callId: string, text: string, id = THREAD): RawEvent {

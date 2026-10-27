@@ -23,6 +23,7 @@ fn requested(id: &str, tool: &str) -> Result<ToolCallRequested, String> {
         provider_call_id: None,
         tool: tool.into(),
         arguments: Arguments::Json(serde_json::Map::new()),
+        summary: String::new(),
     })
 }
 

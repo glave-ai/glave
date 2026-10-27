@@ -8,6 +8,7 @@
 use glave_ports::memories::{
     EDIT_MEMORY, FORGET, MemoryChange as Change, MemoryContext, MemoryOutput, RECALL, REMEMBER,
 };
+use glave_event::Arguments;
 use glave_ports::{BlobStore, Effect, EventLog, ModelProvider, ToolCall, ToolOutput};
 
 use super::state::recorded;
@@ -62,7 +63,7 @@ where
             return Ok(ToolOutput::text(true, "Memory is off here."));
         };
         let name = canonical(&call.tool);
-        let summary = glave_ports::describe_call(name, &call.arguments);
+        let summary = described(&call.tool, &call.arguments);
         let hooked = ToolHook::of(call, name);
         let writes = name == REMEMBER || name == EDIT_MEMORY;
         let refused = if let Some(answered) = step.waited(&call.call_id) {
@@ -118,6 +119,11 @@ where
         output.structured = Some(recorded(change.as_ref()));
         Ok(output)
     }
+}
+
+/// A call of memory tool `tool` in a line, by the tool's own name: `remember {"text":"…"}`.
+pub(crate) fn described(tool: &str, arguments: &Arguments) -> String {
+    glave_ports::describe_call(canonical(tool), arguments)
 }
 
 /// The tool's own name, whatever case or spacing the model used.

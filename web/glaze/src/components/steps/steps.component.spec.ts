@@ -10,8 +10,8 @@ import { type GlzRunStatus, GlzStepsComponent } from './steps.component';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <glz-steps testId="steps" steps="2 steps" [status]="status()" [facts]="facts" [(open)]="open">
-      <glz-receipt tool="bash" summary="cargo test" />
-      <glz-receipt tool="edit" summary="src/parse.rs" />
+      <glz-receipt summary="bash: cargo test" />
+      <glz-receipt summary="edit src/parse.rs" />
     </glz-steps>
   `,
 })

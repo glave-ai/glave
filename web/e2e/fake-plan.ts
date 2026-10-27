@@ -36,7 +36,7 @@ export const PLANNING_HISTORY: readonly RawEvent[] = [
     { role: 'user', parts: [{ type: 'text', text: 'Add a --verbose flag to the CLI' }] },
     PLANNING,
   ),
-  call(5, 'call_1', 'search', { pattern: 'fn parse_args' }, PLANNING),
+  call(5, 'call_1', 'search', { pattern: 'fn parse_args' }, 'search fn parse_args', PLANNING),
   done(6, 'call_1', 'src/args.rs:12: pub fn parse_args() -> Args {', PLANNING),
   event(
     7,
@@ -52,7 +52,7 @@ export const PLANNING_HISTORY: readonly RawEvent[] = [
     },
     PLANNING,
   ),
-  call(8, 'call_2', 'update_plan', { plan: PROPOSED }, PLANNING),
+  call(8, 'call_2', 'update_plan', { plan: PROPOSED }, 'update_plan 0/3 done', PLANNING),
   event(9, 'plan.updated', { steps: PROPOSED, call_id: 'call_2', proposed: true }, PLANNING),
   done(
     10,
@@ -171,6 +171,7 @@ export async function planServer(page: Page): Promise<void> {
                   call_id: call,
                   tool: 'update_plan',
                   arguments: { json: { plan: now } },
+                  summary: `update_plan ${String(done)}/${String(now.length)} done`,
                 }),
               );
               steps = now;

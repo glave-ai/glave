@@ -41,8 +41,8 @@ const ICONS: Readonly<Record<GlzRunStatus, GlzIconData>> = {
  *
  * ```html
  * <glz-steps status="done" [facts]="['4m 02s', '$0.04']" steps="2 steps">
- *   <glz-receipt tool="bash" summary="cargo test" />
- *   <glz-receipt tool="edit" summary="src/parse.rs" />
+ *   <glz-receipt summary="bash: cargo test" />
+ *   <glz-receipt summary="edit src/parse.rs" />
  * </glz-steps>
  * ```
  */

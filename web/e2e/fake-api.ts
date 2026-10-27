@@ -141,21 +141,33 @@ export const HISTORY = [
     role: 'user',
     parts: [{ type: 'text', text: 'Make the tests pass' }],
   }),
-  call(5, 'call_1', 'bash', { command: 'cargo test' }),
+  call(5, 'call_1', 'bash', { command: 'cargo test' }, 'bash: cargo test'),
   done(6, 'call_1', 'test parse::empty ... FAILED'),
-  call(7, 'call_2', 'edit', {
-    path: 'src/parse.rs',
+  call(
+    7,
+    'call_2',
+    'edit',
+    {
+      path: 'src/parse.rs',
     old_string: 'fn parse(input: &str) -> Value {\n    input.parse().unwrap()\n}',
     new_string:
       'fn parse(input: &str) -> Option<Value> {\n    if input.is_empty() {\n        return None;\n    }\n    input.parse().ok()\n}',
-  }),
+    },
+    'edit src/parse.rs',
+  ),
   done(8, 'call_2', 'Edited src/parse.rs'),
-  call(9, 'call_3', 'write', {
-    path: 'tests/empty.rs',
-    content: '#[test]\nfn empty_input_is_none() {\n    assert_eq!(parse(""), None);\n}\n',
-  }),
+  call(
+    9,
+    'call_3',
+    'write',
+    {
+      path: 'tests/empty.rs',
+      content: '#[test]\nfn empty_input_is_none() {\n    assert_eq!(parse(""), None);\n}\n',
+    },
+    'write tests/empty.rs (4 lines)',
+  ),
   done(10, 'call_3', 'Wrote tests/empty.rs'),
-  call(11, 'call_4', 'bash', { command: 'cargo test' }),
+  call(11, 'call_4', 'bash', { command: 'cargo test' }, 'bash: cargo test'),
   done(12, 'call_4', 'test result: ok. 12 passed'),
   event(13, 'message.added', {
     role: 'assistant',
@@ -205,6 +217,7 @@ const WAITING_HISTORY = [
     'call_1',
     'edit',
     { path: 'docs/RELEASE.md', old_string: '- fixed stuff', new_string: '- Fixed the parser' },
+    'edit docs/RELEASE.md',
     WAITING,
   ),
   done(6, 'call_1', 'Edited docs/RELEASE.md', WAITING),
@@ -214,7 +227,14 @@ const WAITING_HISTORY = [
     { role: 'assistant', parts: [{ type: 'text', text: 'The notes are tidy. Ready to push.' }] },
     WAITING,
   ),
-  call(8, 'call_2', 'bash', { command: 'git push -u origin docs/release-notes' }, WAITING),
+  call(
+    8,
+    'call_2',
+    'bash',
+    { command: 'git push -u origin docs/release-notes' },
+    'bash: git push -u origin docs/release-notes',
+    WAITING,
+  ),
   event(
     9,
     'approval.requested',

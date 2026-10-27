@@ -388,7 +388,9 @@ where
                 completion.tool_calls.clear();
             }
             step.summary.take_in(&completion.responded());
-            let calls = self.record_response(thread, &completion).await?;
+            let calls = self
+                .record_response(thread, &completion, &step.toolset)
+                .await?;
             measure(thread, &completion);
             if last {
                 break Outcome::LimitReached;
@@ -687,11 +689,13 @@ where
         Ok(())
     }
 
-    /// Records a finished model response: its message, its tool calls, then its usage.
+    /// Records a finished model response: its message, its tool calls, each with its line as
+    /// `tools` describe it, then its usage.
     async fn record_response(
         &self,
         thread: &mut Thread,
         completion: &Completion,
+        tools: &ToolSet,
     ) -> Result<Vec<ToolCall>, HarnessError> {
         let mut events = Vec::new();
         if !completion.parts.is_empty() {
@@ -720,6 +724,7 @@ where
                 provider_call_id: requested.provider_call_id.clone(),
                 tool: call.tool.clone(),
                 arguments: call.arguments.clone(),
+                summary: self.describe(thread, tools, &call),
             };
             self.stage(thread, &mut events, &payload)?;
             calls.push(call);

@@ -23,7 +23,14 @@ export const SERVING_HISTORY = [
     { role: 'user', parts: [{ type: 'text', text: 'Start the docs site so I can look at it' }] },
     SERVING,
   ),
-  call(5, 'call_1', 'bash', { command: DOCS_SERVER, background: true }, SERVING),
+  call(
+    5,
+    'call_1',
+    'bash',
+    { command: DOCS_SERVER, background: true },
+    `bash: ${DOCS_SERVER}`,
+    SERVING,
+  ),
   done(6, 'call_1', 'Running in the background as command 1.', SERVING),
   event(
     7,
