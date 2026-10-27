@@ -1,6 +1,8 @@
 //! What bubblewrap mounts for one command, read from the workspace as it is just before the
 //! command starts: the writable folders, the protected paths inside them laid over read-only,
-//! and what commands may not read hidden under an empty, unreadable stand-in.
+//! what commands may not read hidden under an empty, unreadable stand-in, and glave's own
+//! folder under an empty folder of the sandbox's own, so what glave writes there later stays
+//! hidden too.
 //!
 //! A protected path that does not exist yet gets a stand-in too, an empty folder bubblewrap
 //! creates in the project, so a command cannot create it; it is removed once no command needs
@@ -72,6 +74,22 @@ pub(super) enum Mount {
     HiddenFile(PathBuf),
     /// Hidden under the empty folder; also the stand-in for a protected path not there yet.
     HiddenFolder(PathBuf),
+    /// Hidden whole under an empty folder of the sandbox's own, which the mounts inside it are
+    /// made in and which is read-only once they are: what is written there after the command
+    /// starts stays hidden, where a stand-in hides only what was there.
+    Emptied(PathBuf),
+}
+
+impl Mount {
+    fn path(&self) -> &Path {
+        match self {
+            Self::Writable(path)
+            | Self::ReadOnly(path)
+            | Self::HiddenFile(path)
+            | Self::HiddenFolder(path)
+            | Self::Emptied(path) => path.as_path(),
+        }
+    }
 }
 
 /// Stand-ins in use, by path, with how many running commands use each.
@@ -105,7 +123,7 @@ impl Drop for Held {
 }
 
 /// The mounts for the next command, and the stand-ins it holds. Blocking: it reads the
-/// workspace, the home folder and glave's own folder.
+/// workspace and the home folder.
 pub(super) fn plan(
     layout: &Layout,
     temp: &Path,
@@ -139,10 +157,15 @@ pub(super) fn plan(
             protect.project(layout)?;
         }
     }
-    hide_glave_home(layout, &mut mounts);
+    mounts.extend(layout.glave_home.iter().cloned().map(Mount::Emptied));
     mounts.extend(layout.cache.iter().cloned().map(Mount::Writable));
     hide_places(layout, &mut mounts);
     mounts.extend(secret_files.into_iter().map(Mount::HiddenFile));
+    // A folder's mount before those inside it, which it would otherwise lie over: glave's
+    // folder holds the cache, and the workspace when it is a thread's worktree there, and is
+    // itself inside the workspace when that is the home folder. Stable, so of two mounts at one
+    // path the later still wins.
+    mounts.sort_by_key(|mount| mount.path().components().count());
     Ok((mounts, held))
 }
 
@@ -221,39 +244,6 @@ impl Protect<'_> {
             )),
             Ok(meta) if meta.is_dir() => Ok(State::Folder),
             Ok(_) => Ok(State::File),
-        }
-    }
-}
-
-/// glave's own folder, all of it, except the workspace when it lives there and the sandbox's
-/// cache folder, and the way to each.
-fn hide_glave_home(layout: &Layout, mounts: &mut Vec<Mount>) {
-    let Some(glave_home) = &layout.glave_home else {
-        return;
-    };
-    let kept: Vec<&PathBuf> = [Some(&layout.root), layout.cache.as_ref()]
-        .into_iter()
-        .flatten()
-        .filter(|kept| kept.starts_with(glave_home) && *kept != glave_home)
-        .collect();
-    if kept.is_empty() {
-        hide(glave_home, mounts);
-    } else {
-        hide_except(glave_home, &kept, mounts);
-    }
-}
-
-/// What `folder` holds, hidden, except each of `kept` and the way to it.
-fn hide_except(folder: &Path, kept: &[&PathBuf], mounts: &mut Vec<Mount>) {
-    for entry in std::fs::read_dir(folder).into_iter().flatten().flatten() {
-        let path = entry.path();
-        if kept.iter().any(|kept| **kept == path) {
-            continue;
-        }
-        if kept.iter().any(|kept| kept.starts_with(&path)) {
-            hide_except(&path, kept, mounts);
-        } else {
-            hide(&path, mounts);
         }
     }
 }

@@ -86,8 +86,18 @@ pub(super) fn args(bwrap: &Path, layout: &Layout, mounts: &[Mount]) -> Vec<OsStr
             Mount::ReadOnly(path) => ("--ro-bind", path, path),
             Mount::HiddenFile(path) => ("--ro-bind", &layout.empty_file, path),
             Mount::HiddenFolder(path) => ("--ro-bind", &layout.empty_folder, path),
+            Mount::Emptied(path) => {
+                args.extend(["--tmpfs".into(), path.into()]);
+                continue;
+            }
         };
         args.extend([how.into(), from.into(), to.into()]);
+    }
+    // Read-only only now, once the mounts inside are made in it; each keeps its own.
+    for mount in mounts {
+        if let Mount::Emptied(path) = mount {
+            args.extend(["--remount-ro".into(), path.into()]);
+        }
     }
     args.extend(["--chdir".into(), layout.root.clone().into_os_string()]);
     args.extend(["--seccomp", "3", "--"].map(OsString::from));
