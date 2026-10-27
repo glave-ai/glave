@@ -4,22 +4,26 @@ import { THREAD, fakeApi } from './fake-api';
 import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './support';
 
 for (const colorScheme of ['light', 'dark'] as const) {
-  test(`the three panes pass axe with the tools open (${colorScheme})`, async ({ page }) => {
+  test(`the three panes pass axe with the thread's panel open (${colorScheme})`, async ({
+    page,
+  }) => {
     const problems = watchForProblems(page);
     await page.emulateMedia({ colorScheme });
     await page.setViewportSize({ width: 1440, height: 900 });
     await fakeApi(page);
     await page.goto(`/t/${THREAD}${SIGNED_IN}`);
     await expect(byTestId(page, 'thread-title')).toHaveText('Make the tests pass');
-    await expect(byTestId(page, 'thread-meta')).toContainText(/^glave · on /u);
-    await byTestId(page, 'tools-handle').press('Enter');
-    await expect(byTestId(page, 'task').first()).toContainText('Nightly dependency audit');
+    await expect(byTestId(page, 'thread-meta')).toHaveText('glave');
+    await expect(byTestId(page, 'panel-changes-file')).toHaveText([
+      /^src\/parse\.rs/u,
+      /^tests\/empty\.rs/u,
+    ]);
     await expectAccessible(page);
-    await expect(byTestId(page, 'tools-tabs-tab')).toHaveText(['Tasks', 'Changes (2)', 'Commands']);
-    await byTestId(page, 'tools-tabs-tab').nth(1).click();
-    await byTestId(page, 'file').first().click();
+    await byTestId(page, 'panel-review').click();
+    await expect(byTestId(page, 'file')).toHaveCount(2);
     await expect(byTestId(page, 'file-change').first()).toContainText('fn parse');
     await expectAccessible(page);
+    await page.keyboard.press('Escape');
     // The model picker open, searched by name.
     await byTestId(page, 'model-picker-trigger').click();
     await byTestId(page, 'model-picker-search').pressSequentially('gpt');
@@ -36,17 +40,23 @@ test('the side panels resize by their edge, collapse past it, and are remembered
   await fakeApi(page);
   await page.goto(`/t/${THREAD}${SIGNED_IN}`);
   await expect(byTestId(page, 'thread-message').first()).toBeVisible();
-  // No toggle buttons on a wide screen: the edges and the shortcuts do it.
-  await expect(byTestId(page, 'thread-tools')).toHaveCount(0);
+  // No side bar button on a wide screen: its edge and its shortcut do it.
   await expect(byTestId(page, 'page-menu')).toHaveCount(0);
-  const panel = byTestId(page, 'tools-panel');
-  const edge = byTestId(page, 'tools-handle');
+  const panel = byTestId(page, 'panel-panel');
+  const edge = byTestId(page, 'panel-handle');
+  await expect(panel).toBeVisible();
+  const y = ((await edge.boundingBox())?.y ?? 0) + 200;
+  // Dragged past half its minimum, it collapses to the slim edge.
+  const open = await edge.boundingBox();
+  await page.mouse.move((open?.x ?? 0) + 4, y);
+  await page.mouse.down();
+  await page.mouse.move((open?.x ?? 0) + 300, y, { steps: 6 });
+  await page.mouse.up();
   await expect(panel).toBeHidden();
   await expect(edge).toBeVisible();
   await expect(edge).toHaveAttribute('aria-valuenow', '0');
   // Dragging the collapsed edge toward the start brings the panel out.
   const box = await edge.boundingBox();
-  const y = (box?.y ?? 0) + 200;
   const x = (box?.x ?? 0) + 4;
   await page.mouse.move(x, y);
   await page.mouse.down();
@@ -55,14 +65,6 @@ test('the side panels resize by their edge, collapse past it, and are remembered
   await page.mouse.up();
   await expect(panel).toBeVisible();
   await expect.poll(async () => Math.round((await panel.boundingBox())?.width ?? 0)).toBe(400);
-  // Dragged back past half its minimum, it collapses to the slim edge.
-  const open = await edge.boundingBox();
-  await page.mouse.move((open?.x ?? 0) + 4, y);
-  await page.mouse.down();
-  await page.mouse.move((open?.x ?? 0) + 300, y, { steps: 6 });
-  await page.mouse.up();
-  await expect(panel).toBeHidden();
-  await expect(edge).toBeVisible();
   // The side nav's edge: the same, and both are remembered after a reload.
   const nav = byTestId(page, 'workspace-nav');
   const navEdge = byTestId(page, 'workspace-handle');
@@ -75,7 +77,7 @@ test('the side panels resize by their edge, collapse past it, and are remembered
   await page.reload();
   await expect(byTestId(page, 'thread-message').first()).toBeVisible();
   await expect.poll(async () => Math.round((await nav.boundingBox())?.width ?? 0)).toBe(navWidth);
-  await expect(panel).toBeHidden();
+  await expect.poll(async () => Math.round((await panel.boundingBox())?.width ?? 0)).toBe(400);
   const navStart = await navEdge.boundingBox();
   await page.mouse.move((navStart?.x ?? 0) + 4, y);
   await page.mouse.down();
@@ -217,7 +219,7 @@ test('the search keeps the threads whose title matches', async ({ page }) => {
   await expect(byTestId(page, 'nav-thread')).toHaveCount(5);
 });
 
-test('on a phone the side nav is a drawer and the tools a sheet', async ({ page }) => {
+test('on a phone the side nav is a drawer and the thread’s panel a sheet', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await fakeApi(page);
   await page.goto(`/t/${THREAD}${SIGNED_IN}`);
@@ -231,10 +233,12 @@ test('on a phone the side nav is a drawer and the tools a sheet', async ({ page 
   await expectAccessible(page);
   await page.keyboard.press('Escape');
   await expect(nav).toBeHidden();
-  await byTestId(page, 'thread-tools').click();
-  const panel = byTestId(page, 'tools-panel');
+  // Closed at first, so the conversation shows.
+  const panel = byTestId(page, 'panel-panel');
+  await expect(panel).toBeHidden();
+  await byTestId(page, 'thread-panel').click();
   await expect(panel).toHaveAttribute('aria-modal', 'true');
-  await expect(byTestId(page, 'tools-handle')).toHaveCount(0);
+  await expect(byTestId(page, 'panel-handle')).toHaveCount(0);
   expect((await panel.boundingBox())?.width).toBe(390);
   await expectAccessible(page);
   await page.keyboard.press('Escape');

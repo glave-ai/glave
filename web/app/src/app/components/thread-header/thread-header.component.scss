@@ -4,7 +4,7 @@
 }
 
 // One row across the top, ruled off from the conversation: the title and the line about it,
-// then whatever opens the tools at the end.
+// then the panel's button at the end.
 .bar {
   display: flex;
   align-items: center;
@@ -71,21 +71,8 @@
   text-overflow: ellipsis;
 }
 
-.changes {
-  --glz-button-bg: var(--glz-surface-card);
-  --glz-button-fg: var(--glz-color-text-secondary);
-
-  flex: none;
-}
-
-.count {
-  color: var(--glz-color-text-muted);
-  font-family: var(--glz-font-mono);
-  font-size: var(--glz-text-xs);
-}
-
 // A phone: the title and its line in the middle, one above the other, between the side bar's
-// button and the tools', each a finger's size.
+// button and the panel's, each a finger's size.
 .phone .heading {
   flex-flow: column nowrap;
   gap: 0;

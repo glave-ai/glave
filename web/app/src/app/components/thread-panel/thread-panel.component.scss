@@ -1,0 +1,160 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+// The sheet's heading and its close button, across its top; beside the page, the heading is
+// heard alone and the edge closes the panel.
+.close {
+  display: none;
+}
+
+:host(.sheet) .header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glz-space-2);
+  height: var(--glz-top-bar-height);
+  padding-inline: var(--glz-inset-pane-inline) var(--glz-space-2);
+}
+
+:host(.sheet) .close {
+  display: inline-flex;
+}
+
+.heading {
+  font-size: var(--glz-text-md);
+}
+
+// The facts, one above another, scrolling when they outgrow the panel.
+.facts {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--glz-space-3);
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--glz-inset-pane-block) var(--glz-inset-pane-inline);
+}
+
+// Where it works: quiet, on one line that wraps, ruled off from the sections.
+.where {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--glz-space-1) var(--glz-space-3);
+  padding: 0 0 var(--glz-space-2);
+  border-bottom: var(--glz-border-width) solid var(--glz-color-divider);
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+  list-style: none;
+}
+
+.part {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glz-space-1);
+}
+
+// The folder opens to its full path, on a line of its own.
+.folder:has(details[open]) {
+  flex-basis: 100%;
+}
+
+summary.part {
+  display: flex;
+  cursor: pointer;
+  list-style: none;
+}
+
+summary.part::-webkit-details-marker {
+  display: none;
+}
+
+// A path reads left to right in any page.
+.path {
+  display: block;
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: match-parent;
+  overflow-wrap: anywhere;
+}
+
+.title {
+  font-size: var(--glz-text-md);
+}
+
+.detail {
+  flex: none;
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+  font-weight: var(--glz-weight-regular);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-2);
+  color: var(--glz-color-text);
+  font-size: var(--glz-text-sm);
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mark {
+  flex: none;
+  color: var(--glz-color-text-muted);
+}
+
+.line {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--glz-space-3);
+  font-size: var(--glz-text-sm);
+}
+
+// How full the context is: a native meter, drawn as a bar filled as far as the server says.
+.meter {
+  width: 100%;
+  height: var(--glz-space-2);
+  border: 0;
+  border-radius: var(--glz-radius-full);
+  background: var(--glz-surface-selected);
+  appearance: none;
+}
+
+.meter::-webkit-meter-bar {
+  height: 100%;
+  border: 0;
+  border-radius: var(--glz-radius-full);
+  background: var(--glz-surface-selected);
+}
+
+.meter::-webkit-meter-optimum-value,
+.meter::-webkit-meter-suboptimum-value,
+.meter::-webkit-meter-even-less-good-value {
+  border-radius: var(--glz-radius-full);
+  background: var(--glz-color-text);
+}
+
+.meter::-moz-meter-bar {
+  border-radius: var(--glz-radius-full);
+  background: var(--glz-color-text);
+}

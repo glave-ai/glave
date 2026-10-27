@@ -507,7 +507,7 @@ describe('ThreadService', () => {
     expect(service.place()).toBeNull();
     fake.answer('thread/get', { thread: thread('thread-1', 'Plan', { workspace }) });
     await service.open('thread-1');
-    expect(service.place()).toBe('on another computer');
+    expect(service.place()).toBe('Another computer');
   });
 
   it('follows the thread live once read: a turn another tab started, its progress and its approval', async () => {

@@ -1,6 +1,6 @@
 <div class="files">
-  @for (file of files(); track file.path) {
-    <details class="file" data-testid="file">
+  @for (file of shown(); track file.path) {
+    <details class="file" data-testid="file" open>
       <summary class="summary">
         <span class="path">{{ file.path }}</span>
         <span class="counts" aria-hidden="true"
@@ -23,12 +23,6 @@
         </div>
       }
     </details>
-  } @empty {
-    <glz-empty-state [heading]="copy.emptyHeading" [icon]="icon">{{
-      copy.emptyText
-    }}</glz-empty-state>
   }
-  @if (hasFiles()) {
-    <p class="note">{{ copy.commands }}</p>
-  }
+  <p class="note">{{ copy.commands }}</p>
 </div>

@@ -3,7 +3,7 @@ import type { RunningCommand } from '@glave/client';
 import { Refusal, bound, call, done, event } from './fake-records';
 
 /**
- * A thread that keeps the docs site running in the background, and what it runs (`fakeApi`'s
+ * A chat that keeps the docs site running in the background, and what it runs (`fakeApi`'s
  * `commands`).
  */
 export const SERVING = '01900000-0000-7000-8000-000000000108';

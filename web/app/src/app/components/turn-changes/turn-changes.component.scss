@@ -97,16 +97,25 @@
   text-overflow: ellipsis;
 }
 
+// What the panel adds at the foot, such as "Review all changes"; nothing in a turn.
+.foot {
+  display: flex;
+  padding: var(--glz-inset-card-row);
+  border-top: var(--glz-border-width) solid var(--glz-color-divider);
+}
+
+.foot:empty {
+  display: none;
+}
+
 .more {
   display: none;
   color: var(--glz-color-text-muted);
   font-size: var(--glz-text-sm);
 }
 
-// Narrow: the paths keep the room; two rows, then how many more.
+// Narrow: the paths are cut short before the counts; two rows, then how many more.
 @container (width <= 30rem) {
-  .count,
-  .row .counts,
   .file:nth-child(n + 3) {
     display: none;
   }

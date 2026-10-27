@@ -9,7 +9,7 @@ import { of } from 'rxjs';
 
 import { FirstTurnService } from '../../services/first-turn.service';
 import { ProjectsService } from '../../services/projects.service';
-import { ToolsPanelService } from '../../services/tools-panel.service';
+import { PanelService } from '../../services/panel.service';
 import { FakeSession, FakeTurn, provideFakeSession } from '../../testing/fake-session';
 import { MODELS, SERVER, event, record, thread } from '../../testing/fixtures';
 import type { TurnResults } from '../../lib/results';
@@ -29,6 +29,19 @@ const HISTORY = [
     tool: 'question',
     arguments: { json: { questions: [{ question: 'Keep logs?', options: [{ label: 'Yes' }] }] } },
   }),
+];
+
+/** A turn that edited a file: a thread with something for its panel. */
+const EDITED = [
+  event(1, 'message.added', { role: 'user', parts: [{ type: 'text', text: 'Fix the typo' }] }),
+  event(2, 'tool.call.requested', {
+    call_id: 'c1',
+    tool: 'edit',
+    arguments: { json: { path: 'README.md', old_string: 'teh', new_string: 'the' } },
+  }),
+  event(3, 'tool.call.completed', { call_id: 'c1', is_error: false, output: [] }),
+  event(4, 'message.added', { role: 'assistant', parts: [{ type: 'text', text: 'Fixed.' }] }),
+  event(5, 'turn.ended', { outcome: 'completed' }),
 ];
 
 const ANSWERED = [
@@ -52,16 +65,15 @@ async function settle(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve));
 }
 
-/** Opens thread-1, on a phone when `narrow`, after the new chat sent it `first`, if given. */
+/** Opens thread-1 on a wide screen, after the new chat sent it `first`, if given. */
 async function open(
   fake: FakeSession,
-  narrow = false,
   first?: TurnStartParams,
 ): Promise<{
   readonly root: HTMLElement;
   readonly fixture: ReturnType<typeof TestBed.createComponent<ThreadComponent>>;
 }> {
-  const breakpoints = { observe: () => of({ matches: narrow, breakpoints: {} }) };
+  const breakpoints = { observe: () => of({ matches: false, breakpoints: {} }) };
   TestBed.configureTestingModule({
     providers: [
       provideRouter([]),
@@ -308,8 +320,8 @@ describe('ThreadComponent', () => {
     ).map((each) => each.getAttribute('data-testid'));
     expect(order).toEqual(['thread-message', 'thread-message', 'turn-changes', 'thread-steps']);
     expect(root.querySelector('[data-testid="turn-changes-count"]')?.textContent).toBe('2 files');
-    // Changes in the bar too, for the whole thread.
-    expect(root.querySelector('[data-testid="thread-changes"]')?.textContent).toContain('2');
+    // And in the thread's panel, for the whole thread.
+    expect(root.querySelectorAll('[data-testid="panel-changes-file"]')).toHaveLength(2);
     const steps = root.querySelector('[data-testid="thread-steps"]');
     const summary = root.querySelector<HTMLElement>('[data-testid="thread-steps-summary"]');
     expect(summary?.querySelector('.state')?.textContent).toBe('Done');
@@ -392,7 +404,7 @@ describe('ThreadComponent', () => {
     const lost = new FakeTurn();
     lost.fail(new TypeError('Failed to fetch'));
     const fake = session([]).turn(lost).streams([]);
-    const { root, fixture } = await open(fake, false, { thread: 'thread-1', prompt: 'Plan' });
+    const { root, fixture } = await open(fake, { thread: 'thread-1', prompt: 'Plan' });
     expect(root.querySelector('[data-testid="thread-message"]')?.textContent).toContain('Plan');
     expect(root.querySelector('[data-testid="thread-lost"]')?.textContent).toContain(
       'This message may not have reached glave.',
@@ -557,20 +569,35 @@ describe('ThreadComponent', () => {
     ]);
   });
 
-  it('opens and closes the tools panel by its edge and its shortcut on wide screens', async () => {
-    const { root, fixture } = await open(session([]));
-    const panel = root.querySelector<HTMLElement>('[data-testid="tools-panel"]');
-    const edge = root.querySelector<HTMLElement>('[data-testid="tools-handle"]');
-    expect(root.querySelector('[data-testid="thread-tools"]')).toBeNull();
-    expect(root.querySelector('[data-testid="tools-close"]')).toBeNull();
-    expect(panel?.inert).toBe(true);
+  it('shows no panel for a plain chat: no edge, no button', async () => {
+    const { root } = await open(session(ANSWERED));
+    expect(root.querySelector<HTMLElement>('[data-testid="panel-panel"]')?.inert).toBe(true);
+    expect(root.querySelector('[data-testid="panel-handle"]')).toBeNull();
+    expect(root.querySelector('[data-testid="thread-panel"]')).toBeNull();
+    expect(root.querySelector('[data-testid="panel-changes"]')).toBeNull();
+    await expectAccessible(root);
+  });
+
+  it('shows a thread’s panel beside it, hidden and shown by its edge, button and shortcut', async () => {
+    const { root, fixture } = await open(session(EDITED));
+    const panel = root.querySelector<HTMLElement>('[data-testid="panel-panel"]');
+    const edge = root.querySelector<HTMLElement>('[data-testid="panel-handle"]');
+    const button = root.querySelector<HTMLElement>('[data-testid="thread-panel"]');
+    expect(panel?.inert).toBe(false);
+    expect(panel?.querySelector('[data-testid="panel-changes-file"]')?.textContent).toContain(
+      'README.md',
+    );
+    expect(button?.getAttribute('aria-pressed')).toBe('true');
     expect(edge?.getAttribute('aria-keyshortcuts')).toMatch(/^(Meta|Control)\+\.$/u);
+    await expectAccessible(root);
     edge?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     await fixture.whenStable();
-    expect(TestBed.inject(ToolsPanelService).open()).toBe(true);
+    expect(TestBed.inject(PanelService).showing()).toBe(false);
+    expect(panel?.inert).toBe(true);
+    expect(button?.getAttribute('aria-pressed')).toBe('false');
+    button?.click();
+    await fixture.whenStable();
     expect(panel?.inert).toBe(false);
-    expect(root.querySelector('app-tools-panel [data-testid="tools-tabs"]')).not.toBeNull();
-    await expectAccessible(root);
     const apple = /mac|iphone|ipad/iu.test(navigator.platform || navigator.userAgent);
     document.dispatchEvent(
       new KeyboardEvent('keydown', { key: '.', metaKey: apple, ctrlKey: !apple, bubbles: true }),
@@ -579,20 +606,27 @@ describe('ThreadComponent', () => {
     expect(panel?.inert).toBe(true);
   });
 
-  it('opens and closes the tools sheet from the top bar on narrow screens', async () => {
-    const { root, fixture } = await open(session([]), true);
-    const toggle = root.querySelector<HTMLButtonElement>('[data-testid="thread-tools"]');
-    const panel = root.querySelector<HTMLElement>('[data-testid="tools-panel"]');
-    expect(root.querySelector('[data-testid="tools-handle"]')).toBeNull();
-    expect(toggle?.getAttribute('aria-pressed')).toBe('false');
-    toggle?.click();
+  it('opens a file’s changes in full from the panel and from the turn’s card', async () => {
+    const { root, fixture } = await open(session(EDITED));
+    const dialog = (): HTMLDialogElement | null =>
+      document.querySelector<HTMLDialogElement>('dialog[data-testid="changes"]');
+    expect(dialog()?.open).toBe(false);
+    root.querySelector<HTMLButtonElement>('[data-testid="panel-changes-file"]')?.click();
     await fixture.whenStable();
-    expect(toggle?.getAttribute('aria-pressed')).toBe('true');
-    expect(panel?.getAttribute('aria-modal')).toBe('true');
+    expect(dialog()?.open).toBe(true);
+    const files = dialog()?.querySelectorAll('[data-testid="file"]');
+    expect(files).toHaveLength(1);
+    expect(files?.[0]?.textContent).toContain('-teh');
     await expectAccessible(root);
-    root.querySelector<HTMLButtonElement>('[data-testid="tools-close"]')?.click();
+    dialog()?.querySelector<HTMLButtonElement>('[data-testid="changes-close"]')?.click();
     await fixture.whenStable();
-    expect(panel?.inert).toBe(true);
+    expect(dialog()?.open).toBe(false);
+    root.querySelector<HTMLButtonElement>('[data-testid="turn-changes-file"]')?.click();
+    await fixture.whenStable();
+    expect(dialog()?.open).toBe(true);
+    fixture.componentRef.setInput('thread', 'thread-2');
+    await fixture.whenStable();
+    expect(dialog()?.open).toBe(false);
   });
 
   it('says in the composer’s place, in the server’s words, that the project’s folder is gone', async () => {

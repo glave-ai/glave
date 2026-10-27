@@ -12,7 +12,9 @@ const EDITED = [
   'Say what --verbose does in the README',
 ];
 
-test('a proposed plan is edited, then built in Auto, its steps ticking off', async ({ page }) => {
+test('a proposed plan is edited, then built in Auto, its steps ticking off in the panel', async ({
+  page,
+}) => {
   const problems = watchForProblems(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   const { requests } = await fakeApi(page, { plan: true });
@@ -50,12 +52,13 @@ test('a proposed plan is edited, then built in Auto, its steps ticking off', asy
     { method: 'plan/edit', params: { thread: PLANNING, steps: EDITED } },
   ]);
 
-  // Build it: the thread runs in Auto, and the plan ticks off as the model keeps it.
+  // Build it: the thread runs in Auto, and the plan ticks off as the model keeps it, in the
+  // thread's panel beside the conversation, which shows no card of its own meanwhile.
   await byTestId(page, 'thread-plan-build').click();
-  await expect(card).toContainText('Plan: 1 of 3 steps done');
-  await expect(card).not.toContainText('Needs you');
-  await expect(byTestId(page, 'thread-plan-build')).toHaveCount(0);
-  const marks = steps.locator('glz-icon');
+  const panel = byTestId(page, 'panel-plan');
+  await expect(panel).toContainText('Plan: 1 of 3 steps done');
+  await expect(card).toHaveCount(0);
+  const marks = byTestId(page, 'panel-plan-step').locator('glz-icon');
   await expect(marks.nth(0)).toHaveAttribute('aria-label', 'Done');
   await expect(marks.nth(1)).toHaveAttribute('aria-label', 'Doing');
   await expect(marks.nth(2)).toHaveAttribute('aria-label', 'To do');
@@ -63,9 +66,14 @@ test('a proposed plan is edited, then built in Auto, its steps ticking off', asy
   await expect(byTestId(page, 'thread-message').filter({ hasText: 'Build it' })).toHaveCount(1);
   await expect(page.getByText('The person approved this plan')).toHaveCount(0);
   await expectAccessible(page);
+  // With the panel hidden, the conversation's card carries the progress, never out of sight.
+  await byTestId(page, 'thread-panel').click();
+  await expect(card).toContainText('Plan: 1 of 3 steps done');
+  await expect(card).not.toContainText('Needs you');
+  await expect(byTestId(page, 'thread-plan-build')).toHaveCount(0);
   await letGo(page, 'step');
   await expect(card).toContainText('Plan: 3 of 3 steps done');
-  await expect(marks.nth(2)).toHaveAttribute('aria-label', 'Done');
+  await expect(steps.locator('glz-icon').nth(2)).toHaveAttribute('aria-label', 'Done');
   await expect(byTestId(page, 'thread-message').last()).toContainText('the tests pass');
   expect(requests.filter((request) => request.method === 'plan/build')).toEqual([
     { method: 'plan/build', params: { thread: PLANNING } },

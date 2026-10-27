@@ -12,12 +12,12 @@ function bound(kind: WorkspaceBound['computer']['kind']): WorkspaceBound {
 }
 
 describe('place', () => {
-  it('says where the thread runs, as its summary says, in words for the reader', () => {
+  it('names the computer the thread runs on, as its summary says, for the reader', () => {
     const local = { local: true, mac: false };
-    expect(placeOf(bound('local'), { local: true, mac: true })).toBe('on your Mac');
-    expect(placeOf(bound('local'), local)).toBe('on this computer');
-    expect(placeOf(bound('local'), { local: false, mac: true })).toBe('on the server');
-    expect(placeOf(bound('worker'), local)).toBe('on another computer');
+    expect(placeOf(bound('local'), { local: true, mac: true })).toBe('Your Mac');
+    expect(placeOf(bound('local'), local)).toBe('This computer');
+    expect(placeOf(bound('local'), { local: false, mac: true })).toBe('The server');
+    expect(placeOf(bound('worker'), local)).toBe('Another computer');
     expect(placeOf(null, local)).toBeNull();
   });
 });

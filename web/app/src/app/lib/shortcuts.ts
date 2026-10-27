@@ -4,8 +4,8 @@ import { type GlzShortcut, isApple, matchesShortcut, parseShortcut } from '@glav
 export const SHORTCUTS = {
   /** Shows or hides the side nav. */
   nav: 'mod+b',
-  /** Shows or hides a thread's tools panel. */
-  tools: 'mod+.',
+  /** Shows or hides a thread's panel. */
+  panel: 'mod+.',
 } as const;
 
 /** Whether the page runs on an Apple platform, where `mod` is Cmd. */

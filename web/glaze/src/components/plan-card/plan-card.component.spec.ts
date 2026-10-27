@@ -25,6 +25,7 @@ const BUILDING: readonly GlzPlanStep[] = [
       [steps]="steps()"
       [proposed]="proposed()"
       [busy]="busy()"
+      [size]="size()"
       (build)="did.push('build')"
       (revise)="did.push('revise')"
       (edit)="edits.push($event)"
@@ -36,6 +37,7 @@ class HostComponent {
   readonly steps = signal<readonly GlzPlanStep[]>(PROPOSED);
   readonly proposed = signal(true);
   readonly busy = signal(false);
+  readonly size = signal<'md' | 'sm'>('md');
   readonly did: string[] = [];
   readonly edits: (readonly string[])[] = [];
 }
@@ -175,6 +177,16 @@ describe('GlzPlanCardComponent', () => {
     );
     expect(marks).toEqual(['Done', 'Doing', 'To do']);
     expect(all(root, 'plan-step')[1]?.querySelector('glz-icon')?.classList).toContain('glz-spin');
+    await expectAccessible(root);
+  });
+
+  it('is tighter in a column of facts, small', async () => {
+    const { fixture, root } = await rendered();
+    const card = root.querySelector('glz-plan-card');
+    expect(card?.classList).not.toContain('glz-plan-card--sm');
+    fixture.componentInstance.size.set('sm');
+    await fixture.whenStable();
+    expect(card?.classList).toContain('glz-plan-card--sm');
     await expectAccessible(root);
   });
 

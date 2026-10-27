@@ -8,7 +8,7 @@ import { SIGNED_IN, byTestId, expectAccessible, hold, watchForProblems } from '.
 const NOW = new Date(Date.parse(DOCS_STARTED) + 125_000);
 
 for (const colorScheme of ['light', 'dark'] as const) {
-  test(`the tools show what a thread runs in the background, and Stop ends it (${colorScheme})`, async ({
+  test(`the panel shows what a chat runs in the background, and Stop ends it (${colorScheme})`, async ({
     page,
   }) => {
     const problems = watchForProblems(page);
@@ -18,33 +18,37 @@ for (const colorScheme of ['light', 'dark'] as const) {
     const api = await fakeApi(page, { commands: true });
     await page.goto(`/t/${SERVING}${SIGNED_IN}`);
     await expect(byTestId(page, 'thread-message').last()).toContainText('The docs site is running');
-    await byTestId(page, 'tools-handle').press('Enter');
-    const tab = byTestId(page, 'tools-tabs-tab').nth(2);
-    // The thread recorded the command starting, so the tab counts it before it opens.
-    await expect(tab).toHaveText('Commands (1)');
-    await tab.click();
+    const running = byTestId(page, 'panel-running');
+    await expect(running).toContainText('Running');
+    // One line: what it runs, cut short, and how long it has run; it opens to the whole
+    // command and the server's sentence about it.
     const text = byTestId(page, 'command-text');
     await expect(text).toHaveText(DOCS_SERVER);
-    await expect(byTestId(page, 'command')).toContainText('Still running');
-    await expect(byTestId(page, 'command-time')).toHaveText('Running for 2m 05s');
-    // One line, cut short in the panel; focus shows all of it.
+    await expect(byTestId(page, 'command-time')).toHaveText('2m 05s');
     expect(await text.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
-    await text.focus();
-    await expect(page.getByRole('tooltip').filter({ hasText: DOCS_SERVER })).toBeVisible();
+    const summary = byTestId(page, 'command-summary');
+    await expect(summary).toBeHidden();
+    await byTestId(page, 'command-more').locator('summary').click();
+    await expect(summary).toContainText('Still running');
+    await expect(byTestId(page, 'command-more')).toContainText(DOCS_SERVER);
     await expectAccessible(page);
 
     const stop = byTestId(page, 'command-stop');
     await expect(stop).toHaveAccessibleName(`Stop ${DOCS_SERVER}`);
     // It stays stopping until the test has seen it.
     const stopping = await hold(page, '/', 'command/stop');
-    await stop.click();
-    await expect(stop).toHaveText('Stopping…');
+    await stop.focus();
+    await page.keyboard.press('Enter');
+    await expect(stop).toHaveAccessibleName(`Stopping ${DOCS_SERVER}…`);
+    await expect(stop).toBeDisabled();
     stopping.letGo();
+    // Nothing runs now, and a chat has nothing else for its panel: it goes, and the keyboard's
+    // place goes to the composer.
     await expect(byTestId(page, 'command')).toHaveCount(0);
-    await expect(byTestId(page, 'commands-empty')).toContainText(
-      'Nothing running in the background',
-    );
-    await expect(tab).toHaveText('Commands');
+    await expect(running).toHaveCount(0);
+    await expect(byTestId(page, 'panel-panel')).toBeHidden();
+    await expect(byTestId(page, 'thread-panel')).toHaveCount(0);
+    await expect(byTestId(page, 'thread-composer-input')).toBeFocused();
     const stops = api.requests.filter((request) => request.method === 'command/stop');
     expect(stops.map((request) => request.params)).toEqual([
       { thread: SERVING, command: DOCS_COMMAND },
@@ -53,3 +57,26 @@ for (const colorScheme of ['light', 'dark'] as const) {
     expect(problems()).toEqual([]);
   });
 }
+
+test('on a phone, a sheet left with nothing closes, and does not open again by itself', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.clock.setFixedTime(NOW);
+  await fakeApi(page, { commands: true });
+  await page.goto(`/t/${SERVING}${SIGNED_IN}`);
+  await expect(byTestId(page, 'thread-message').last()).toContainText('The docs site is running');
+  const panel = byTestId(page, 'panel-panel');
+  const button = byTestId(page, 'thread-panel');
+  await expect(panel).toBeHidden();
+  await expect(button).toHaveAttribute('aria-expanded', 'false');
+  await button.click();
+  await expect(panel).toHaveAttribute('aria-modal', 'true');
+  await expect(byTestId(page, 'panel-heading')).toHaveText('This thread');
+  await byTestId(page, 'command-stop').click();
+  await expect(byTestId(page, 'command')).toHaveCount(0);
+  await expect(panel).toBeHidden();
+  await expect(panel).not.toHaveAttribute('aria-modal', 'true');
+  await expect(byTestId(page, 'thread-composer-input')).toBeVisible();
+  await expectAccessible(page);
+});

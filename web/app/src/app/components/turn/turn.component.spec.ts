@@ -3,9 +3,22 @@ import { provideRouter } from '@angular/router';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import type { TurnResults } from '../../lib/results';
+import { CommandsService } from '../../services/commands.service';
+import { PlanService } from '../../services/plan.service';
+import { SourcesService } from '../../services/sources.service';
+import { ThreadPanelService } from '../../services/thread-panel.service';
 import { ThreadService } from '../../services/thread.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { TurnComponent } from './turn.component';
+
+/** What a thread view provides, which a turn's cards reach. */
+const THREAD_VIEW = [
+  ThreadService,
+  CommandsService,
+  SourcesService,
+  PlanService,
+  ThreadPanelService,
+];
 
 const RESULTS: TurnResults = {
   key: 't',
@@ -78,7 +91,7 @@ const WORKING: TurnResults = {
 
 async function mount(results: TurnResults): Promise<ComponentFixture<TurnComponent>> {
   TestBed.configureTestingModule({
-    providers: [provideRouter([]), ...provideFakeSession(new FakeSession()), ThreadService],
+    providers: [provideRouter([]), ...provideFakeSession(new FakeSession()), ...THREAD_VIEW],
   });
   const fixture = TestBed.createComponent(TurnComponent);
   fixture.componentRef.setInput('turn', results);
@@ -242,7 +255,7 @@ describe('TurnComponent', () => {
 
   it('shows reasoning open as it streams, and folds it once the answer begins', async () => {
     TestBed.configureTestingModule({
-      providers: [provideRouter([]), ...provideFakeSession(new FakeSession()), ThreadService],
+      providers: [provideRouter([]), ...provideFakeSession(new FakeSession()), ...THREAD_VIEW],
     });
     const fixture = TestBed.createComponent(TurnComponent);
     const thinking = { ...RESULTS, reply: null, waiting: [] };

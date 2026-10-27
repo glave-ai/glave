@@ -5,39 +5,75 @@
 .list {
   display: flex;
   flex-direction: column;
-  gap: var(--glz-space-3);
+  gap: var(--glz-space-2);
+  padding: 0;
+  list-style: none;
 }
 
-// What it runs: one line of monospace, cut short; all of it shows on hover or focus.
 .command {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-1);
+}
+
+// The line, which opens to the rest, then Stop at its end.
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--glz-space-2);
+}
+
+.more {
+  flex: 1;
+  min-width: 0;
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-2);
+  min-height: var(--glz-control-height-sm);
+  cursor: pointer;
+  list-style: none;
+}
+
+.line::-webkit-details-marker {
+  display: none;
+}
+
+.mark {
+  flex: none;
+}
+
+// What it runs: one line of monospace, cut short; the line opens to all of it.
+.text {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
-  padding: var(--glz-space-half) var(--glz-space-2);
-  border-radius: var(--glz-radius-mark);
-  background: var(--glz-surface-sunken);
+  font-size: var(--glz-text-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.summary,
 .time {
+  flex: none;
   color: var(--glz-color-text-muted);
   font-size: var(--glz-text-sm);
 }
 
-// How long it has run at the start of the line, Stop at its end.
-.footer {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--glz-space-2);
+.whole {
+  display: block;
+  padding-block-start: var(--glz-space-1);
+  font-size: var(--glz-text-sm);
+  overflow-wrap: anywhere;
 }
 
-.time {
-  margin-inline-end: auto;
+.summary {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
 }
 
 .error {
   color: var(--glz-color-danger);
+  font-size: var(--glz-text-sm);
 }

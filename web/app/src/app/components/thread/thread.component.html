@@ -1,19 +1,20 @@
 <glz-panel-layout
   class="layout"
-  testId="tools"
-  [label]="copy.tools"
+  testId="panel"
+  [label]="copy.panel"
   [resizeLabel]="copy.resize"
   [resizeHint]="panelHint"
   [shortcut]="panelShortcut"
-  [(open)]="panelOpen"
+  [empty]="noFacts()"
+  [open]="panelShowing()"
+  (openChange)="showPanel($event)"
   [(width)]="panelWidth"
 >
   <div class="column">
     <app-thread-header
       [title]="title()"
       [project]="project()"
-      [place]="service.place()"
-      [changes]="changes()"
+      [panel]="facts.shown()"
       (rename)="startRename()"
     />
     <section
@@ -33,7 +34,7 @@
             <p class="caption">{{ copy.queued }}</p>
           </glz-message>
         }
-        @if (plans.plan(); as plan) {
+        @if (chatPlan(); as plan) {
           <glz-plan-card
             testId="thread-plan"
             [summary]="plan.sentence"
@@ -137,6 +138,17 @@
       </div>
     </div>
   </div>
-  <app-tools-panel glzPanel />
+  <app-thread-panel glzPanel (gone)="panelGone()" />
 </glz-panel-layout>
 <app-rename-dialog [title]="title()" [(open)]="renaming" (renamed)="rename($event)" />
+<glz-dialog
+  class="changes"
+  testId="changes"
+  [heading]="copy.changes"
+  [open]="facts.reviewing()"
+  (openChange)="facts.setReviewing($event)"
+>
+  @if (facts.reviewing()) {
+    <app-thread-files [files]="facts.reviewedFiles()" [path]="facts.reviewed()" />
+  }
+</glz-dialog>

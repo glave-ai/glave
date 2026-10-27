@@ -55,11 +55,12 @@ for (const colorScheme of ['light', 'dark'] as const) {
     const steps = byTestId(page, 'thread-steps');
     const summary = byTestId(page, 'thread-steps-summary');
     await expect(reply).toContainText('They pass now.');
-    // The bar: the project, where it runs, and the thread's changes.
-    await expect(byTestId(page, 'thread-meta')).toHaveText(
-      /^glave · on (your Mac|this computer)$/u,
+    // The bar: the project, and the button of the thread's panel, which says where it runs.
+    await expect(byTestId(page, 'thread-meta')).toHaveText('glave');
+    await expect(byTestId(page, 'thread-panel')).toHaveAttribute('aria-pressed', 'true');
+    await expect(byTestId(page, 'panel-where-part').first()).toHaveText(
+      /^(Your Mac|This computer)$/u,
     );
-    await expect(byTestId(page, 'thread-changes')).toHaveText(/Changes\s*2/u);
     // What changed, then the receipt: how long it took, what it cost, and its steps.
     await expect(byTestId(page, 'turn-changes-count')).toHaveText('2 files');
     await expect(byTestId(page, 'turn-changes-file')).toHaveCount(2);
@@ -89,11 +90,13 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expectAccessible(page);
     await page.keyboard.press('Enter');
     await expect(receipts.first()).toBeHidden();
-    // A file, or Changes, opens the tools panel on the thread's changes.
+    // A file opens its changes in full.
     await byTestId(page, 'turn-changes-file').first().click();
-    await expect(byTestId(page, 'tools-panel')).toBeVisible();
-    await expect(byTestId(page, 'tools-tabs-tab').nth(1)).toHaveAttribute('aria-selected', 'true');
-    await expect(byTestId(page, 'thread-changes')).toHaveAttribute('aria-pressed', 'true');
+    await expect(byTestId(page, 'changes')).toBeVisible();
+    await expect(byTestId(page, 'file')).toHaveCount(1);
+    await expect(byTestId(page, 'file-change')).toContainText('fn parse');
+    await page.keyboard.press('Escape');
+    await expect(byTestId(page, 'changes')).toBeHidden();
   });
 
   test(`what waits for the person is a card after the receipt, answered in place (${colorScheme})`, async ({
@@ -167,11 +170,13 @@ test.describe('on a touch screen', () => {
     await fakeApi(page);
     await page.goto(`/t/${THREAD}${SIGNED_IN}`);
     await expect(byTestId(page, 'thread-message').last()).toContainText('They pass now.');
-    for (const testId of ['page-menu', 'thread-tools', 'thread-composer-options']) {
+    for (const testId of ['page-menu', 'thread-panel', 'thread-composer-options']) {
       const box = await byTestId(page, testId).boundingBox();
       expect([Math.round(box?.width ?? 0), Math.round(box?.height ?? 0)]).toEqual([44, 44]);
     }
-    await expect(byTestId(page, 'thread-tools')).toHaveAccessibleName('Changes, 2 files');
+    await expect(byTestId(page, 'thread-panel')).toHaveAccessibleName(
+      'Show or hide the thread panel',
+    );
     // One row: options, the text and send, side by side.
     const [options, input, send] = await Promise.all(
       ['thread-composer-options', 'thread-composer-input', 'thread-composer-send'].map((each) =>

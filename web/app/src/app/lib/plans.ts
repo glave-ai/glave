@@ -1,4 +1,4 @@
-import type { RawEvent } from '@glave/client';
+import type { PlanInfo, RawEvent } from '@glave/client';
 
 /** The events that change a thread's plan: the model's or the person's steps, and Build it. */
 const CHANGES: ReadonlySet<string> = new Set(['plan.updated', 'plan.approved']);
@@ -15,4 +15,13 @@ export function lastPlanning(events: readonly RawEvent[]): number | null {
     }
   }
   return null;
+}
+
+/**
+ * The plan as the conversation shows it, as a card: a proposal always, since it waits for the
+ * person there; a plan being built only while the thread's panel, which carries its progress,
+ * is out of sight (`panelShown` false), so the progress is never hidden. `null` for no card.
+ */
+export function chatPlan(plan: PlanInfo | null, panelShown: boolean): PlanInfo | null {
+  return plan !== null && (plan.proposed || !panelShown) ? plan : null;
 }

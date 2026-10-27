@@ -4,6 +4,7 @@ import {
   Component,
   type ElementRef,
   afterRenderEffect,
+  booleanAttribute,
   computed,
   inject,
   input,
@@ -32,8 +33,8 @@ export const GLZ_PANEL_NARROW = '(max-width: 64rem)';
  * minimum or press Enter on it to collapse, and the collapsed edge stays as a slim grip to bring
  * the panel back. `width` is in pixels, bound two ways, and `null` keeps `--glz-panel-width`.
  * On narrow screens the panel slides over the content as a modal sheet: the content behind is
- * inert, and Escape or the scrim close it. `open` is bound two ways and starts closed. Glaze
- * keeps neither: remembering them is the app's job.
+ * inert, and Escape or the scrim close it. `open` is bound two ways and starts closed. With nothing in the panel (`empty`), the page is its content
+ * alone: no panel, no edge and no sheet. Glaze keeps neither: remembering them is the app's job.
  *
  * ```html
  * <glz-panel-layout label="Tools" [(open)]="toolsOpen" [(width)]="toolsWidth">
@@ -52,6 +53,7 @@ export const GLZ_PANEL_NARROW = '(max-width: 64rem)';
     '[attr.data-testid]': 'testId()',
     '[class.narrow]': 'narrow()',
     '[class.open]': 'open()',
+    '[class.empty]': 'empty()',
     '[style.--glz-panel-width]': 'widthStyle()',
     '(keydown.escape)': 'escape()',
   },
@@ -79,6 +81,8 @@ export class GlzPanelLayoutComponent {
   readonly shortcut = input<string | null>(null);
   /** The media query under which the panel becomes a sheet over the content. */
   readonly narrowQuery = input(GLZ_PANEL_NARROW);
+  /** Whether the panel has nothing to show, so the page is its content alone. */
+  readonly empty = input(false, { transform: booleanAttribute });
 
   protected readonly panelId = injectId('glz-panel');
   private readonly breakpoints = inject(BreakpointObserver);
@@ -93,11 +97,11 @@ export class GlzPanelLayoutComponent {
     { initialValue: false },
   );
   /** Whether the panel is open over the content, so it is modal. */
-  protected readonly modal = computed(() => this.narrow() && this.open());
-  protected readonly closed = computed(() => !this.open());
+  protected readonly modal = computed(() => this.narrow() && this.open() && !this.empty());
+  protected readonly closed = computed(() => !this.open() || this.empty());
   protected readonly role = computed(() => (this.modal() ? 'dialog' : 'complementary'));
   protected readonly ariaModal = computed(() => (this.modal() ? 'true' : null));
-  protected readonly showHandle = computed(() => !this.narrow());
+  protected readonly showHandle = computed(() => !this.narrow() && !this.empty());
   /** The narrowest the panel may be dragged while open, and the widest, in pixels. */
   protected readonly minWidth = 280;
   protected readonly maxWidth = 720;

@@ -24,8 +24,7 @@ import { TasksService } from '../../services/tasks.service';
 
 /**
  * The background tasks, live: each one's title, status, model, tokens, cost and time, with
- * Stop while it runs. Read again every few seconds while it shows; the Tasks page and the
- * thread's tools panel both show this one list.
+ * Stop while it runs. Read again every few seconds while it shows, on the Tasks page.
  */
 @Component({
   selector: 'app-task-list',

@@ -37,15 +37,10 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(byTestId(page, 'nav-gone-find')).toBeVisible();
     await expect(byTestId(page, 'nav-gone-remove')).toBeVisible();
 
-    // The tools say nothing changed and nothing runs, rather than an error.
-    await byTestId(page, 'tools-handle').press('Enter');
-    const tabs = byTestId(page, 'tools-tabs-tab');
-    await tabs.nth(1).click();
-    await expect(byTestId(page, 'tools-panel')).toContainText('No files changed');
-    await tabs.nth(2).click();
-    await expect(byTestId(page, 'commands-empty')).toContainText(
-      'Nothing running in the background',
-    );
+    // Nothing changed and nothing runs, so no panel, rather than an error.
+    await expect(byTestId(page, 'panel-panel')).toBeHidden();
+    await expect(byTestId(page, 'thread-panel')).toHaveCount(0);
+    await expect(byTestId(page, 'commands-error')).toHaveCount(0);
     await expectPlainWords(page);
     await expectAccessible(page);
 

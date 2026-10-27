@@ -1,0 +1,130 @@
+<div class="header">
+  <h2
+    #heading
+    class="heading"
+    tabindex="-1"
+    data-testid="panel-heading"
+    [class.glz-visually-hidden]="beside()"
+  >
+    {{ copy.heading }}
+  </h2>
+  <button
+    glzIconButton
+    class="close"
+    data-testid="panel-close"
+    [label]="copy.close"
+    (click)="close()"
+  >
+    <glz-icon [icon]="icons.close" />
+  </button>
+</div>
+<div class="facts" data-testid="panel-facts">
+  @if (where(); as where) {
+    <ul class="where" data-testid="panel-where" [attr.aria-label]="copy.where">
+      @for (part of where.before; track part.key) {
+        <li class="part" data-testid="panel-where-part">
+          <glz-icon [icon]="part.icon" [label]="part.label" /><span>{{ part.text }}</span>
+        </li>
+      }
+      @if (where.folder; as folder) {
+        <li class="folder">
+          <details data-testid="panel-folder">
+            <summary class="part" data-testid="panel-where-part">
+              <glz-icon [icon]="icons.folder" [label]="copy.folder" /><span>{{ folder.name }}</span>
+            </summary>
+            <code class="path" data-testid="panel-path">{{ folder.path }}</code>
+          </details>
+        </li>
+      }
+      @for (part of where.after; track part.key) {
+        <li class="part" data-testid="panel-where-part">
+          <glz-icon [icon]="part.icon" [label]="part.label" /><span>{{ part.text }}</span>
+        </li>
+      }
+    </ul>
+  }
+  @if (facts.plan(); as plan) {
+    <div class="plan">
+      <h3 class="glz-visually-hidden">{{ copy.plan }}</h3>
+      <glz-plan-card testId="panel-plan" size="sm" [summary]="plan.sentence" [steps]="plan.steps" />
+    </div>
+  }
+  @if (changes(); as files) {
+    <app-turn-changes testId="panel-changes" [files]="files" [heading]="copy.changes" [level]="3">
+      <button
+        appTurnChangesFoot
+        glzButton
+        size="sm"
+        data-testid="panel-review"
+        (click)="reviewAll()"
+      >
+        {{ copy.review }}
+      </button>
+    </app-turn-changes>
+  }
+  @if (running(); as count) {
+    <glz-card data-testid="panel-running">
+      <h3 glzCardHeader class="title">
+        {{ copy.running }} <span class="detail">{{ count }}</span>
+      </h3>
+      <app-command-list />
+    </glz-card>
+  }
+  @if (sources(); as sources) {
+    <glz-card data-testid="panel-sources">
+      <h3 glzCardHeader class="title">{{ copy.sources }}</h3>
+      <ul class="rows">
+        @for (page of sources.pages; track page.href) {
+          <li>
+            <a
+              class="row"
+              data-testid="panel-page"
+              target="_blank"
+              rel="noopener noreferrer"
+              [href]="page.href"
+              [attr.title]="page.href"
+            >
+              <glz-icon class="mark" [icon]="icons.page" />
+              <span class="name" dir="auto">{{ page.name }}</span
+              >&ngsp; <span class="detail">{{ page.host }}</span
+              >&ngsp;
+              <span class="glz-visually-hidden">{{ copy.newTab }}</span>
+            </a>
+          </li>
+        }
+        @for (file of sources.attached; track file.key) {
+          <li class="row" data-testid="panel-attached">
+            <glz-icon class="mark" [icon]="icons.file" />
+            <span class="name" dir="auto">{{ file.name }}</span
+            >&ngsp;
+            <span class="detail">{{ copy.attached }}</span>
+          </li>
+        }
+      </ul>
+    </glz-card>
+  }
+  @if (spent(); as spent) {
+    <glz-card data-testid="panel-spent">
+      <h3 glzCardHeader class="title">{{ copy.spent }}</h3>
+      @if (spent.context; as context) {
+        <div class="line">
+          <span>{{ copy.context }}</span>
+          <span class="detail" data-testid="panel-context">{{ context.used }}</span>
+        </div>
+        <meter
+          class="meter"
+          min="0"
+          max="100"
+          data-testid="panel-meter"
+          [value]="context.percent"
+          [attr.aria-label]="copy.context"
+          [attr.aria-valuetext]="context.used"
+        ></meter>
+      }
+      <div class="line">
+        <span>{{ copy.cost }}</span>
+        <span class="detail" data-testid="panel-cost">{{ spent.cost }}</span>
+      </div>
+    </glz-card>
+  }
+</div>

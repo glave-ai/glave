@@ -94,10 +94,9 @@ test('a browser set to en-XA reads every word of the app in it, plurals too', as
   await expect(byTestId(page, 'turn-changes-count')).toHaveText('[2 ƒîļéš one]');
   expect(await skipped(page)).toEqual([]);
   await expectAccessible(page);
-  // The tools beside it, and a dialog over it.
-  await byTestId(page, 'tools-handle').press('Enter');
-  await expect(byTestId(page, 'tools-tabs-tab').first()).toHaveText(
-    PSEUDO['toolsPanel.tasks'] ?? '',
+  // The thread's panel beside it, and a dialog over it.
+  await expect(byTestId(page, 'panel-changes').locator('h3')).toHaveText(
+    PSEUDO['threadPanel.changes'] ?? '',
   );
   expect(await skipped(page)).toEqual([]);
   await byTestId(page, 'thread-rename').click();
@@ -150,11 +149,10 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await page.goto(`/t/${THREAD}${SIGNED_IN}`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.locator('html')).toHaveAttribute('lang', 'ar-XB');
-    await byTestId(page, 'tools-handle').press('Enter');
-    // The side nav on the right, the tools on the left, the conversation and its composer
-    // between them, nothing over anything else.
+    // The side nav on the right, the thread's panel on the left, the conversation and its
+    // composer between them, nothing over anything else.
     const nav = await boxOf(page, 'workspace-nav');
-    const tools = await boxOf(page, 'tools-panel');
+    const tools = await boxOf(page, 'panel-panel');
     const conversation = await boxOf(page, 'thread-items');
     const composer = await boxOf(page, 'thread-composer');
     expect(leftOf(conversation, nav)).toBe(true);
@@ -175,8 +173,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
       .poll(async () => Math.round((await boxOf(page, 'workspace-nav')).width))
       .toBe(before + 16);
     // On a phone, the side nav is a drawer from the right, where its button is.
-    await byTestId(page, 'tools-handle').press('Enter');
-    await expect(byTestId(page, 'tools-panel')).toBeHidden();
+    await byTestId(page, 'panel-handle').press('Enter');
+    await expect(byTestId(page, 'panel-panel')).toBeHidden();
     await page.setViewportSize({ width: 390, height: 800 });
     const menu = await boxOf(page, 'page-menu');
     await byTestId(page, 'page-menu').click();

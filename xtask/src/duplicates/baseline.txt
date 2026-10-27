@@ -26,7 +26,6 @@
 3a6f88c56187a776 9 crates/eval/tests/attempt.rs crates/eval/tests/attempt.rs
 3b6e34fd48a5a87f 29 crates/store-postgres/src/blobs.rs crates/store-sqlite/src/blobs.rs
 3e673752818820ab 11 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
-3eb8d8248d96b2c6 7 web/glaze/src/components/panel-layout/panel-layout.component.ts web/glaze/src/components/sidenav-layout/sidenav-layout.component.ts
 44a392879170b883 55 crates/provider-anthropic/src/client.rs crates/provider-openai/src/client.rs
 46a00e6b7dbe1997 6 crates/computer/src/local/sandbox/linux/tests.rs crates/harness/src/sandbox/tests.rs
 4cea69ea751e317b 9 crates/computer/src/worker/docker.rs crates/computer/src/worker/kubernetes/objects.rs

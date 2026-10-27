@@ -9,21 +9,21 @@ export interface Here {
 }
 
 /**
- * Where a thread's tools act, in plain words relative to the reader, from where its summary says
- * it works: on the computer glave runs on (this one, a Mac by name, when glave is local; else the
- * server), or on another computer glave made for it. `null` before the thread has a workspace.
+ * The computer a thread's tools act on, named relative to the reader, from where its summary
+ * says it works: the computer glave runs on (this one, a Mac by name, when glave is local; else
+ * the server), or another computer glave made for it. `null` before the thread has a workspace.
  */
 export function placeOf(workspace: WorkspaceBound | null, here: Here): string | null {
   switch (workspace?.computer.kind) {
     case 'local':
       if (!here.local) {
-        return $localize`:@@place.server:on the server`;
+        return $localize`:@@place.server:The server`;
       }
       return here.mac
-        ? $localize`:@@place.mac:on your Mac`
-        : $localize`:@@place.computer:on this computer`;
+        ? $localize`:@@place.mac:Your Mac`
+        : $localize`:@@place.computer:This computer`;
     case 'worker':
-      return $localize`:@@place.worker:on another computer`;
+      return $localize`:@@place.worker:Another computer`;
     case undefined:
       return null;
   }

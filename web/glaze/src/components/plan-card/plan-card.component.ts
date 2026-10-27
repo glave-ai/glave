@@ -64,7 +64,8 @@ const MARKS: Readonly<Record<GlzPlanStatus, GlzIconData>> = {
  * order, each with a mark for how far it has come (a ring to do, a turning ring doing, a check
  * done), so steps tick off as the work goes on. A `proposed` plan needs the person, as
  * `glz-approval-card` does: a "Needs you" label, then Build it (the primary), Change it and
- * Edit. Editing puts each step in a field of its own, to change, remove or add to, then Save,
+ * Edit. `size="sm"` makes it tighter, for a column of facts beside a page. Editing puts each
+ * step in a field of its own, to change, remove or add to, then Save,
  * which emits the steps written (each trimmed, the blank left out), or Cancel. Change it
  * (`revise`) only says the person wants changes; the app takes their words. The keyboard
  * follows: into the first field on Edit, into a field added, to the next field when one is
@@ -84,6 +85,7 @@ const MARKS: Readonly<Record<GlzPlanStatus, GlzIconData>> = {
   host: {
     '[attr.data-testid]': 'testId()',
     '[class.glz-plan-card--proposed]': 'proposed()',
+    '[class.glz-plan-card--sm]': 'small()',
     role: 'group',
     '[attr.aria-labelledby]': 'labelledBy()',
     '[attr.aria-busy]': 'ariaBusy()',
@@ -112,6 +114,8 @@ export class GlzPlanCardComponent {
   readonly steps = input.required<readonly GlzPlanStep[]>();
   /** Whether it waits for the person to build it, edit it or ask for changes. */
   readonly proposed = input(false, { transform: booleanAttribute });
+  /** `sm`: a tighter card, its sentence a section's heading, for a column of facts beside a page. */
+  readonly size = input<'md' | 'sm'>('md');
   /** Whether what the person did is being sent, so the buttons wait. */
   readonly busy = input(false, { transform: booleanAttribute });
   /** The label over a plan that waits. */
@@ -148,6 +152,7 @@ export class GlzPlanCardComponent {
   protected readonly editing = computed(() => this.proposed() && this.draft() !== null);
   protected readonly waits = computed(() => this.proposed() && !this.editing());
   protected readonly ariaBusy = computed(() => (this.busy() ? 'true' : null));
+  protected readonly small = computed(() => this.size() === 'sm');
   /** Named by its label and sentence while it waits, by its sentence otherwise. */
   protected readonly labelledBy = computed(() =>
     this.waits() ? `${this.labelId} ${this.summaryId}` : this.summaryId,

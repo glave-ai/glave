@@ -24,50 +24,25 @@
         <span dir="auto">{{ title() }}</span>
       </button>
     </h1>
-    @if (meta()) {
+    @if (project(); as project) {
       <p class="meta" data-testid="thread-meta">
-        @if (project()) {
-          <glz-icon class="folder" [icon]="icons.folder" />
-        }
-        <span class="where">{{ meta() }}</span>
+        <glz-icon class="folder" [icon]="icons.folder" />
+        <span class="where">{{ project }}</span>
       </p>
     }
   </div>
-  @if (phone()) {
+  @if (panel()) {
     <button
       glzIconButton
-      class="touch"
-      data-testid="thread-tools"
-      [label]="phoneButton().label"
-      [attr.aria-pressed]="panelOpen()"
-      [attr.aria-keyshortcuts]="panelShortcut"
-      (click)="phoneTools()"
-    >
-      <glz-icon [class.glz-mirrored]="phoneButton().mirrored" [icon]="phoneButton().icon" />
-    </button>
-  } @else if (changed()) {
-    <button
-      glzButton
-      size="sm"
-      pill
-      class="changes"
-      data-testid="thread-changes"
-      [attr.aria-pressed]="changesShown()"
-      (click)="toggleChanges()"
-    >
-      {{ copy.changes }}
-      <span class="count">{{ count() }}</span>
-    </button>
-  } @else if (toolsButton()) {
-    <button
-      glzIconButton
-      data-testid="thread-tools"
-      [label]="copy.tools"
-      [attr.aria-pressed]="panelOpen()"
+      data-testid="thread-panel"
+      [class.touch]="phone()"
+      [label]="copy.panel"
+      [attr.aria-pressed]="pressed()"
+      [attr.aria-expanded]="expanded()"
       [attr.aria-keyshortcuts]="panelShortcut"
       (click)="togglePanel()"
     >
-      <glz-icon class="glz-mirrored" [icon]="icons.tools" />
+      <glz-icon class="glz-mirrored" [icon]="icons.panel" />
     </button>
   }
 </header>

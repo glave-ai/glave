@@ -1,36 +1,42 @@
-import { ChangeDetectionStrategy, Component, LOCALE_ID, computed, inject } from '@angular/core';
-import { GlzEmptyStateComponent } from '@glave/glaze';
-import { FileDiff } from 'lucide';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  LOCALE_ID,
+  computed,
+  inject,
+  input,
+} from '@angular/core';
 
-import { type FileChange, lineCounts } from '../../lib/files';
-import { ThreadService } from '../../services/thread.service';
+import { type ChangedFile, type FileChange, lineCounts } from '../../lib/files';
 
 /**
- * The files this thread changed with its own `write` and `edit` calls, each with its diffs,
- * read from the thread's events: what each call asked for, which the tool applied exactly.
+ * Changes made to files with a thread's own `write` and `edit` calls, in full: each of `files`
+ * (a turn's, or the thread's) open on its diffs, what each call asked for, which the tool
+ * applied exactly; one file's alone, given its `path`.
  */
 @Component({
   selector: 'app-thread-files',
-  imports: [GlzEmptyStateComponent],
   templateUrl: './thread-files.component.html',
   styleUrl: './thread-files.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ThreadFilesComponent {
+  readonly files = input.required<readonly ChangedFile[]>();
+  /** The file whose changes show, or `null` for every file's. */
+  readonly path = input<string | null>(null);
+
   protected readonly copy = {
-    emptyHeading: $localize`:@@threadFiles.emptyHeading:No files changed`,
-    emptyText: $localize`:@@threadFiles.emptyText:Files this thread writes or edits show here, with what changed.`,
     commands: $localize`:@@threadFiles.commands:Changes made by commands, or by subagents, are not listed.`,
     wrote: $localize`:@@threadFiles.wrote:Wrote the whole file`,
     edited: $localize`:@@threadFiles.edited:Edited`,
     editedAll: $localize`:@@threadFiles.editedAll:Edited every match`,
   } as const;
-  protected readonly icon = FileDiff;
-  private readonly thread = inject(ThreadService);
   private readonly locale = inject(LOCALE_ID);
 
-  protected readonly files = computed(() =>
-    this.thread.files().map((file) => ({
+  protected readonly shown = computed(() => {
+    const path = this.path();
+    const files = this.files().filter((file) => path === null || file.path === path);
+    return files.map((file) => ({
       path: file.path,
       ...lineCounts(file.added, file.removed, this.locale),
       changes: file.changes.map((change) => ({
@@ -38,9 +44,8 @@ export class ThreadFilesComponent {
         note: this.noteOf(change),
         lines: change.lines,
       })),
-    })),
-  );
-  protected readonly hasFiles = computed(() => this.files().length > 0);
+    }));
+  });
 
   private noteOf(change: FileChange): string {
     if (change.tool === 'write') {

@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import type { ChangedFile } from '../../lib/files';
-import { ToolsPanelService } from '../../services/tools-panel.service';
+import { ThreadPanelService } from '../../services/thread-panel.service';
 import { TurnChangesComponent } from './turn-changes.component';
 
 const FILES: readonly ChangedFile[] = [
@@ -11,10 +11,30 @@ const FILES: readonly ChangedFile[] = [
   { path: 'crates/harness/tests/worktrees.rs', changes: [], added: 2, removed: 2 },
 ];
 
-async function render(files: readonly ChangedFile[]): Promise<HTMLElement> {
-  localStorage.clear();
+/** What the turn's card asked to show in full, in order: whose files, and which. */
+let shown: (readonly [readonly ChangedFile[] | null, string | null])[] = [];
+
+async function render(
+  files: readonly ChangedFile[],
+  inputs: Readonly<Record<string, unknown>> = {},
+): Promise<HTMLElement> {
+  shown = [];
+  TestBed.configureTestingModule({
+    providers: [
+      {
+        provide: ThreadPanelService,
+        useValue: {
+          showChanges: (files: readonly ChangedFile[] | null, path: string | null) =>
+            shown.push([files, path]),
+        },
+      },
+    ],
+  });
   const fixture = TestBed.createComponent(TurnChangesComponent);
   fixture.componentRef.setInput('files', files);
+  for (const [name, value] of Object.entries(inputs)) {
+    fixture.componentRef.setInput(name, value);
+  }
   await fixture.whenStable();
   return fixture.nativeElement as HTMLElement;
 }
@@ -42,11 +62,22 @@ describe('TurnChangesComponent', () => {
     await expectAccessible(root);
   });
 
-  it('opens the tools panel on the changes from a file', async () => {
+  it('shows this turn’s changes in full: a file’s from its row, every one’s from the last', async () => {
     const root = await render(FILES);
-    root.querySelector<HTMLButtonElement>('[data-testid="turn-changes-file"]')?.click();
-    const panel = TestBed.inject(ToolsPanelService);
-    expect([panel.open(), panel.tab()]).toEqual([true, 'changes']);
+    root.querySelectorAll<HTMLButtonElement>('[data-testid="turn-changes-file"]')[1]?.click();
+    root.querySelector<HTMLButtonElement>('[data-testid="turn-changes-more"]')?.click();
+    expect(shown).toEqual([
+      [FILES, 'crates/computer/src/local/worktree/lock.rs'],
+      [FILES, null],
+    ]);
+  });
+
+  it('serves the panel under its own heading, a level down, with its own test hooks', async () => {
+    const root = await render(FILES, { heading: 'Changes', level: 3, testId: 'panel-changes' });
+    expect(root.querySelector('h3')?.textContent).toBe('Changes');
+    expect(root.querySelector('h2')).toBeNull();
+    expect(root.querySelectorAll('[data-testid="panel-changes-file"]')).toHaveLength(3);
+    expect(root.querySelector('[data-testid="turn-changes"]')).toBeNull();
   });
 
   it('says nothing of more files when they all fit', async () => {

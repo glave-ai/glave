@@ -9,11 +9,11 @@ import { ariaShortcut, onApple, pressed, shortcutLabel } from '../lib/shortcuts'
 import { readStored, storageOf, writeStored } from '../lib/storage';
 
 /** What sets one side panel apart from another. */
-interface PaneOptions<S extends PaneState> {
+interface PaneOptions {
   /** Where this browser keeps it. */
   readonly key: string;
   /** Reads back what was kept, whatever it is. */
-  readonly read: (stored: unknown) => S;
+  readonly read: (stored: unknown) => PaneState;
   /** The media query under which it slides over the page instead of sitting beside it. */
   readonly narrowQuery: string;
   /** The shortcut that shows or hides it, in the form `SHORTCUTS` gives. */
@@ -23,15 +23,15 @@ interface PaneOptions<S extends PaneState> {
 /**
  * A side panel as the person left it: open or not, and the width they dragged it to, read back
  * from this browser's storage when it allows; whether the screen is narrow; and its shortcut.
- * The side nav and the tools panel are each one, keeping what they choose with `keep`.
+ * The side nav and a thread's panel are each one, keeping what they choose with `keep`.
  */
-export abstract class PaneService<S extends PaneState> {
+export abstract class PaneService {
   private readonly document = inject(DOCUMENT);
   private readonly storage = storageOf(this.document);
   private readonly apple = onApple(this.document);
 
   /** How the person left it, or the default for someone new. */
-  protected readonly stored: S;
+  protected readonly stored: PaneState;
   readonly open: WritableSignal<boolean>;
   /** Its width in pixels, or `null` for the default. */
   readonly width: WritableSignal<number | null>;
@@ -42,7 +42,7 @@ export abstract class PaneService<S extends PaneState> {
   /** The shortcut for `aria-keyshortcuts` (`Meta+B`). */
   readonly ariaShortcut: string;
 
-  protected constructor(private readonly options: PaneOptions<S>) {
+  protected constructor(private readonly options: PaneOptions) {
     this.stored = options.read(readStored(this.storage, options.key));
     this.open = signal(this.stored.open);
     this.width = signal(this.stored.width);
@@ -69,7 +69,7 @@ export abstract class PaneService<S extends PaneState> {
   }
 
   /** Keeps `state` in this browser, if it allows; else it lasts for the page. */
-  protected keep(state: S): void {
+  protected keep(state: PaneState): void {
     writeStored(this.storage, this.options.key, state);
   }
 }
