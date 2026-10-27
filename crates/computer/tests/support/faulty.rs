@@ -124,7 +124,15 @@ impl Pump {
             .map(|planned| planned.fault)
     }
 
-    /// Passes lines from `from` to `to` until either end closes or a fault drops the link.
+    /// Resolves once the link has dropped, at once if it already has.
+    async fn dropped(&self) {
+        let mut watching = self.watching.clone();
+        let _ = watching.wait_for(|dropped| *dropped).await;
+    }
+
+    /// Passes lines from `from` to `to` until either end closes or a fault drops the link. A
+    /// link that has dropped passes nothing more, as a connection that drops carries nothing
+    /// either way, though a message is waiting or one was held.
     async fn run<R, W>(self, mut from: BufReader<R>, mut to: W)
     where
         R: AsyncRead + Unpin,
@@ -134,13 +142,10 @@ impl Pump {
         let mut at = 0;
         loop {
             let mut line = Vec::new();
-            let mut watching = self.watching.clone();
-            let dropped = async move {
-                let _ = watching.wait_for(|dropped| *dropped).await;
-            };
             let next = tokio::select! {
+                biased;
+                () = self.dropped() => None,
                 read = from.read_until(b'\n', &mut line) => Some(read),
-                () = dropped => None,
                 () = tokio::time::sleep(Duration::from_secs(1)), if held.is_some() => {
                     // Nothing came to swap with: the held message goes on alone.
                     if let Some(message) = held.take() && to.write_all(&message).await.is_err() {
@@ -162,10 +167,11 @@ impl Pump {
                     self.serving.abort();
                     send(&mut to, &line).await
                 }
-                Some(Fault::Stall(time)) => {
-                    tokio::time::sleep(time).await;
-                    send(&mut to, &line).await
-                }
+                Some(Fault::Stall(time)) => tokio::select! {
+                    biased;
+                    () = self.dropped() => false,
+                    () = tokio::time::sleep(time) => send(&mut to, &line).await,
+                },
                 Some(Fault::Truncate) => {
                     let _ = to
                         .write_all(line.get(..line.len() / 2).unwrap_or_default())
