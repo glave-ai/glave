@@ -32,8 +32,8 @@ export const RESEARCH_HISTORY = [
     'call_1',
     'mcp__search__web_search_exa',
     { query: 'Tokio 2.0 release' },
-    'Searched the web: Tokio 2.0 release',
     RESEARCH,
+    'Searched the web: Tokio 2.0 release',
   ),
   done(
     5,
@@ -41,16 +41,9 @@ export const RESEARCH_HISTORY = [
     'Title: Announcing Tokio 2.0\nURL: https://tokio.rs/blog/2026-10-tokio-2',
     RESEARCH,
   ),
-  call(6, 'call_2', 'web_fetch', { url: PAGES[0].url }, `web_fetch ${PAGES[0].url}`, RESEARCH),
+  call(6, 'call_2', 'web_fetch', { url: PAGES[0].url }, RESEARCH),
   read(7, 'call_2', PAGES[0]),
-  call(
-    8,
-    'call_3',
-    'web_fetch',
-    { url: 'https://tokio.rs/missing' },
-    'web_fetch https://tokio.rs/missing',
-    RESEARCH,
-  ),
+  call(8, 'call_3', 'web_fetch', { url: 'https://tokio.rs/missing' }, RESEARCH),
   event(
     9,
     'tool.call.completed',
@@ -61,7 +54,7 @@ export const RESEARCH_HISTORY = [
     },
     RESEARCH,
   ),
-  call(10, 'call_4', 'web_fetch', { url: PAGES[1].url }, `web_fetch ${PAGES[1].url}`, RESEARCH),
+  call(10, 'call_4', 'web_fetch', { url: PAGES[1].url }, RESEARCH),
   read(11, 'call_4', PAGES[1]),
   event(
     12,

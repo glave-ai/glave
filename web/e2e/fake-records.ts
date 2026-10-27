@@ -26,14 +26,34 @@ export function event(
   };
 }
 
-/** A tool call, with the line the server records for its step (`bash: cargo test`). */
+/** A step in a line, as the server says a call of glave's own tools: `bash: cargo test`. */
+function stepOf(tool: string, json: Record<string, unknown>): string {
+  const field = (name: string): string => {
+    const value = json[name];
+    return typeof value === 'string' ? value : '?';
+  };
+  switch (tool) {
+    case 'bash':
+      return `bash: ${field('command')}`;
+    case 'write':
+      return `write ${field('path')} (${String(field('content').replace(/\n$/u, '').split('\n').length)} lines)`;
+    case 'search':
+      return `search ${field('pattern')}`;
+    case 'web_fetch':
+      return `web_fetch ${field('url')}`;
+    default:
+      return `${tool} ${field('path')}`;
+  }
+}
+
+/** A tool call, with the line the server records for its step, `summary`. */
 export function call(
   seq: number,
   callId: string,
   tool: string,
   json: Record<string, unknown>,
-  summary: string,
   id = THREAD,
+  summary = stepOf(tool, json),
 ): RawEvent {
   return event(
     seq,

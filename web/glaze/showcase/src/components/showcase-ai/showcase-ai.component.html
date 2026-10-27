@@ -8,11 +8,7 @@
       <glz-reasoning>{{ copy.reasoning }}</glz-reasoning>
       <glz-steps status="failed" [facts]="facts" [steps]="copy.steps" [(open)]="stepsOpen">
         @for (receipt of receipts; track receipt.summary) {
-          <glz-receipt
-            [icon]="receipt.icon"
-            [summary]="receipt.summary"
-            [status]="receipt.status"
-          >
+          <glz-receipt [icon]="receipt.icon" [summary]="receipt.summary" [status]="receipt.status">
             <pre>{{ receipt.evidence }}</pre>
           </glz-receipt>
         }

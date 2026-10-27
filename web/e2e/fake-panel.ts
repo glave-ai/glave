@@ -68,7 +68,7 @@ export const VERBOSE_HISTORY = [
     },
     VERBOSE,
   ),
-  call(5, 'call_1', 'web_fetch', { url: PAGE.url }, `web_fetch ${PAGE.url}`, VERBOSE),
+  call(5, 'call_1', 'web_fetch', { url: PAGE.url }, VERBOSE),
   {
     ...done(6, 'call_1', `URL: ${PAGE.url}\n\nThe page.`, VERBOSE),
     data: { call_id: 'call_1', is_error: false, output: [], structured: { page: PAGE } },
@@ -78,7 +78,6 @@ export const VERBOSE_HISTORY = [
     'call_2',
     'edit',
     { path: 'src/args.rs', old_string: ARGS_BEFORE, new_string: ARGS_AFTER },
-    'edit src/args.rs',
     VERBOSE,
   ),
   done(8, 'call_2', 'Edited src/args.rs', VERBOSE),
@@ -92,18 +91,10 @@ export const VERBOSE_HISTORY = [
       new_string:
         '    if args.verbose {\n        eprintln!("checking {}", args.path.display());\n    }\n    run(args)',
     },
-    'edit src/main.rs',
     VERBOSE,
   ),
   done(10, 'call_3', 'Edited src/main.rs', VERBOSE),
-  call(
-    11,
-    'call_4',
-    'bash',
-    { command: TESTS.command, background: true },
-    `bash: ${TESTS.command}`,
-    VERBOSE,
-  ),
+  call(11, 'call_4', 'bash', { command: TESTS.command, background: true }, VERBOSE),
   done(12, 'call_4', 'Running in the background as command 1.', VERBOSE),
   event(13, 'plan.updated', { steps: PLAN.steps, call_id: 'call_5' }, VERBOSE),
   event(
