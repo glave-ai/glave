@@ -1,6 +1,6 @@
 import { type Locator, expect, test } from '@playwright/test';
 
-import { THREAD, fakeApi } from './fake-api';
+import { type Request, THREAD, fakeApi } from './fake-api';
 import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './support';
 
 for (const colorScheme of ['light', 'dark'] as const) {
@@ -108,13 +108,15 @@ test('the model picked is sent with the next turn, and no reply names a model', 
   await picker.click();
   await byTestId(page, 'model-picker-option').filter({ hasText: 'Hope' }).click();
   await expect(picker).toContainText('Hope');
-  // Hope offers its levels, its default shown; the level picked goes with the turn.
+  // Hope offers Default and its levels, Default shown at the level it is; the level picked
+  // goes with the turn.
   const effort = byTestId(page, 'effort-picker-trigger');
+  const level = byTestId(page, 'effort-picker-option');
   await expect(effort).toContainText('Low');
   await effort.click();
-  await expect(byTestId(page, 'effort-picker-option')).toHaveCount(3);
+  await expect(level).toHaveText([/^Default/u, 'High', 'Low', 'Off']);
   await expectAccessible(page);
-  await byTestId(page, 'effort-picker-option').filter({ hasText: 'High' }).click();
+  await level.filter({ hasText: 'High' }).click();
   await expect(effort).toContainText('High');
   await expect(byTestId(page, 'permissions')).toContainText('Auto');
   const reply = byTestId(page, 'thread-composer-input');
@@ -122,8 +124,16 @@ test('the model picked is sent with the next turn, and no reply names a model', 
   await reply.press('Enter');
   await expect(byTestId(page, 'thread-message').last()).toContainText('Glad to help.');
   await expect(byTestId(page, 'thread-items')).not.toContainText('Hope');
-  const turns = api.requests.filter((request) => request.method === 'turn/start');
-  expect(turns).toEqual([
+  // Back to Default: the next turn asks for no level again.
+  await effort.click();
+  await level.filter({ hasText: 'Default' }).click();
+  await expect(effort).toContainText('Low');
+  await reply.fill('Once more');
+  await reply.press('Enter');
+  const turns = (): readonly Request[] =>
+    api.requests.filter((request) => request.method === 'turn/start');
+  await expect.poll(() => turns().length).toBe(2);
+  expect(turns()).toEqual([
     {
       method: 'turn/start',
       params: expect.objectContaining({
@@ -132,6 +142,10 @@ test('the model picked is sent with the next turn, and no reply names a model', 
         model: 'hope-12b',
         effort: 'high',
       }),
+    },
+    {
+      method: 'turn/start',
+      params: expect.objectContaining({ thread: THREAD, prompt: 'Once more', effort: null }),
     },
   ]);
 });

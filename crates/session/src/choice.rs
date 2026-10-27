@@ -24,8 +24,12 @@ pub(crate) struct Choice {
     pub(crate) model: Option<String>,
     /// What the agent may do in its turns.
     pub(crate) permissions: Option<Permissions>,
-    /// How much its model reasons.
-    pub(crate) effort: Option<String>,
+    /// How much its model reasons: `Some(None)` is Default, the model's own again.
+    #[expect(
+        clippy::option_option,
+        reason = "as the API's `effort`: left out keeps the thread's level, `null` is Default"
+    )]
+    pub(crate) effort: Option<Option<String>>,
 }
 
 /// The modes a thread may choose on a server whose own is `own`, under the cap `highest`, in the
@@ -76,7 +80,9 @@ where
         harness.choose_permissions(thread, caller, mode).await?;
     }
     if let Some(effort) = &choice.effort {
-        harness.choose_effort(thread, caller, effort).await?;
+        harness
+            .choose_effort(thread, caller, effort.as_deref())
+            .await?;
     }
     Ok(())
 }

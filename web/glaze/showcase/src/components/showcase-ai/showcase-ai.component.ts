@@ -75,22 +75,19 @@ const QUESTIONS: readonly GlzQuestion[] = [
 /** The demo's tool calls. */
 const RECEIPTS: readonly {
   readonly icon: GlzIconData;
-  readonly tool: string;
   readonly summary: string;
   readonly status: GlzReceiptStatus;
   readonly evidence: string;
 }[] = [
   {
     icon: TextSearch,
-    tool: 'search',
-    summary: 'parse_date',
+    summary: 'search parse_date',
     status: 'done',
     evidence: 'src/dates.rs:41',
   },
   {
     icon: SquareTerminal,
-    tool: 'bash',
-    summary: 'cargo test',
+    summary: 'bash: cargo test',
     status: 'failed',
     evidence: 'test dates::parses_utc ... FAILED',
   },

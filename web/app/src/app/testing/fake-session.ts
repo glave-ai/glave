@@ -103,7 +103,7 @@ export class FakeTurn {
  * watch, and every call recorded. An answer that is an `ApiError` is thrown. Unanswered,
  * `thread/get` answers the thread as the fixtures make one, idle and asking nothing, and
  * `thread/rename` the same thread with its new title, updated since;
- * `thread/sources`, no reply drew on the web; `thread/plan`, no plan;
+ * `thread/sources`, no reply drew on the web; `thread/plan`, no plan; `thread/changes`, none;
  * `command/list`, nothing running; `awake/get`, a server, which keeps no computer awake;
  * `search/get`, web search not the person's to choose;
  * `grouping/get`, by project, and `grouping/set`, the grouping asked for; a watch, of a thread
@@ -218,6 +218,9 @@ function unanswered(method: Method, params: unknown): Answer {
   }
   if (method === 'thread/plan') {
     return { plan: null };
+  }
+  if (method === 'thread/changes') {
+    return { changes: { files: [], turns: [], note: '' } };
   }
   if (method === 'command/list') {
     return { commands: [] };

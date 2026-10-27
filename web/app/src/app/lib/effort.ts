@@ -27,31 +27,29 @@ export function levelName(level: string): string {
 }
 
 /**
- * The levels of reasoning `model` offers, as its provider lists them, the one sent when none
- * is chosen marked: none when it offers no choice.
+ * The picker's choice that asks for no level: Default, the model's own way, as in a thread that
+ * never chose. No level is empty.
+ */
+export const UNASKED = '';
+
+/**
+ * What the picker offers for `model`: Default first, named by the level the server says it is
+ * where it says one, then the levels it offers, as its provider lists them; nothing when it
+ * offers no choice.
  */
 export function effortOptions(model: ModelInfo | undefined): readonly GlzMenuOption[] {
   const reasoning = model?.reasoning ?? null;
   const efforts = reasoning?.efforts ?? [];
+  if (efforts.length === 0) {
+    return [];
+  }
   const fallback = reasoning?.default ?? null;
-  // What marks the level sent when none is chosen.
-  const hint = $localize`:@@effort.default:Default`;
-  return efforts.map((level) => ({
-    value: level,
-    label: levelName(level),
-    ...(level === fallback ? { hint } : {}),
-  }));
+  const named = fallback === null ? {} : { hint: levelName(fallback), short: levelName(fallback) };
+  const unasked = { value: UNASKED, label: $localize`:@@effort.default:Default`, ...named };
+  return [unasked, ...efforts.map((level) => ({ value: level, label: levelName(level) }))];
 }
 
-/**
- * The level the server says `model` is sent when none is chosen, or `null` when it is sent
- * none, so it reasons as its maker set it.
- */
-export function defaultEffort(model: ModelInfo | undefined): string | null {
-  return model?.reasoning?.default ?? null;
-}
-
-/** The thread's own choice of level: the latest `effort.chosen`'s, or `null` for none. */
+/** The thread's own choice of level: the latest `effort.chosen`'s, or `null` for Default. */
 export function chosenEffort(events: readonly RawEvent[]): string | null {
   const chosen = events.filter((event) => event.type === 'effort.chosen').at(-1);
   const effort = chosen?.data['effort'];
@@ -59,14 +57,18 @@ export function chosenEffort(events: readonly RawEvent[]): string | null {
 }
 
 /**
- * The level to send with the next turn: the person's pick, when `model` offers it and it is
- * not the thread's choice already; else `null`, which leaves the thread's choice as it is.
+ * The level to send with the next turn, when the person's pick changes the thread's choice: a
+ * level `model` offers, or `null` for Default, the model's own way again. Else `undefined`,
+ * which leaves the thread's choice as it is.
  */
 export function effortToSend(
   picked: string | null,
   chosen: string | null,
   model: ModelInfo | undefined,
-): string | null {
+): string | null | undefined {
+  if (picked === UNASKED) {
+    return chosen === null ? undefined : null;
+  }
   const offered = model?.reasoning?.efforts ?? [];
-  return picked !== null && picked !== chosen && offered.includes(picked) ? picked : null;
+  return picked !== null && picked !== chosen && offered.includes(picked) ? picked : undefined;
 }

@@ -4,7 +4,6 @@ import {
   NO_DRAFT,
   answersOf,
   applyUpdate,
-  argumentsSummary,
   mergeEvents,
   partsText,
   promptOf,
@@ -73,11 +72,25 @@ describe('conversation', () => {
     expect(message).toMatchObject({ from: 'person', text: 'Say hello' });
   });
 
-  it('sums up a call in a line', () => {
-    expect(argumentsSummary({ json: { command: 'cargo test\n--all' } })).toBe('cargo test');
-    expect(argumentsSummary({ json: { limit: 3 } })).toBe('{"limit":3}');
-    expect(argumentsSummary({ malformed: '{oops' })).toBe('{oops');
-    expect(argumentsSummary(null)).toBe('');
+  it("says each step in the server's line, never one of its own from the arguments", () => {
+    const items = threadItems([
+      event('tool.call.requested', {
+        call_id: 'c1',
+        tool: 'mcp__search__web_search_exa',
+        arguments: { json: { query: 'tokio', numResults: 5 } },
+        summary: 'Searched the web: tokio',
+      }),
+      // A call recorded before the server said its line: its tool alone.
+      event('tool.call.requested', {
+        call_id: 'c2',
+        tool: 'bash',
+        arguments: { json: { command: 'cargo test' } },
+      }),
+    ]);
+    expect(items).toMatchObject([
+      { kind: 'call', tool: 'mcp__search__web_search_exa', summary: 'Searched the web: tokio' },
+      { kind: 'call', tool: 'bash', summary: 'bash' },
+    ]);
   });
 
   it('reads the questions a question call asks', () => {
@@ -133,6 +146,7 @@ describe('conversation', () => {
         call_id: 'c1',
         tool: 'bash',
         arguments: { json: { command: 'rm -rf build' } },
+        summary: 'bash: rm -rf build',
       }),
       event('approval.requested', {
         call_id: 'c1',
@@ -181,7 +195,11 @@ describe('conversation', () => {
       'message',
     ]);
     expect(items[0]).toMatchObject({ from: 'person', text: 'Fix it' });
-    expect(items[1]).toMatchObject({ tool: 'bash', summary: 'rm -rf build', status: 'declined' });
+    expect(items[1]).toMatchObject({
+      tool: 'bash',
+      summary: 'bash: rm -rf build',
+      status: 'declined',
+    });
     expect(items[2]).toMatchObject({
       approval: 'c1',
       decision: 'deny',

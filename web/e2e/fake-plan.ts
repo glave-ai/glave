@@ -52,7 +52,7 @@ export const PLANNING_HISTORY: readonly RawEvent[] = [
     },
     PLANNING,
   ),
-  call(8, 'call_2', 'update_plan', { plan: PROPOSED }, PLANNING),
+  call(8, 'call_2', 'update_plan', { plan: PROPOSED }, PLANNING, 'update_plan 0/3 done'),
   event(9, 'plan.updated', { steps: PROPOSED, call_id: 'call_2', proposed: true }, PLANNING),
   done(
     10,
@@ -171,6 +171,7 @@ export async function planServer(page: Page): Promise<void> {
                   call_id: call,
                   tool: 'update_plan',
                   arguments: { json: { plan: now } },
+                  summary: `update_plan ${String(done)}/${String(now.length)} done`,
                 }),
               );
               steps = now;

@@ -149,6 +149,10 @@
   (openChange)="facts.setReviewing($event)"
 >
   @if (facts.reviewing()) {
-    <app-thread-files [files]="facts.reviewedFiles()" [path]="facts.reviewed()" />
+    <app-thread-files
+      [files]="facts.reviewedFiles()"
+      [path]="facts.reviewed()"
+      [note]="facts.note()"
+    />
   }
 </glz-dialog>

@@ -31,6 +31,7 @@ export interface SentFile {
 export interface CallItem extends Placed {
   readonly kind: 'call';
   readonly tool: string;
+  /** The step in a line, as the server recorded it: `bash: cargo test`. */
   readonly summary: string;
   readonly status: GlzReceiptStatus;
   readonly output: string;
@@ -137,20 +138,6 @@ export function promptOf(parts: unknown): string {
   const list = Array.isArray(parts) ? (parts as readonly unknown[]) : [];
   const texts = list.filter(isRecord).filter((part) => part['type'] === 'text');
   return text(texts.at(-1)?.['text']);
-}
-
-/** A tool call's arguments in a line: the first text argument, or the whole of them. */
-export function argumentsSummary(argumentsValue: unknown): string {
-  if (!isRecord(argumentsValue)) {
-    return '';
-  }
-  const json = argumentsValue['json'];
-  if (!isRecord(json)) {
-    return text(argumentsValue['malformed']);
-  }
-  const first = Object.values(json).find((value) => typeof value === 'string');
-  const line = typeof first === 'string' ? first : JSON.stringify(json);
-  return line.split('\n')[0] ?? '';
 }
 
 /** The questions a `question` call asks. */
@@ -276,7 +263,8 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
             key: `call-${call}`,
             seq: event.seq,
             tool,
-            summary: argumentsSummary(data['arguments']),
+            // The step in the server's line; a call recorded before it said one, its tool.
+            summary: text(data['summary']) || tool,
             status: 'running',
             output: '',
           });

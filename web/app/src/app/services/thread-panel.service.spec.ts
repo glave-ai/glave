@@ -5,6 +5,7 @@ import { of } from 'rxjs';
 
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
 import { command, event, thread } from '../testing/fixtures';
+import { ChangedFilesService } from './changed-files.service';
 import { CommandsService } from './commands.service';
 import { PanelService } from './panel.service';
 import { PlanService } from './plan.service';
@@ -46,6 +47,7 @@ async function make(
       ThreadService,
       CommandsService,
       SourcesService,
+      ChangedFilesService,
       PlanService,
       ThreadPanelService,
     ],
@@ -135,6 +137,20 @@ describe('ThreadPanelService', () => {
     ]);
     expect(panel.plan()).toEqual(plan);
     expect(panel.shown()).toBe(true);
+  });
+
+  it('shows the files the server says it changed, and what they leave out', async () => {
+    const files = [{ path: 'src/main.rs', changes: [], added: 1, removed: 0 }];
+    const note = 'Changes made by commands or other tools are not listed.';
+    const fake = new FakeSession().answer('thread/changes', {
+      changes: { files, turns: [], note },
+    });
+    const panel = await make(fake, [
+      event(1, 'tool.call.requested', { call_id: 'c1', tool: 'edit', arguments: { json: {} } }),
+      event(2, 'tool.call.completed', { call_id: 'c1', is_error: false, output: [] }),
+    ]);
+    expect([panel.files(), panel.note(), panel.shown()]).toEqual([files, note, true]);
+    expect(panel.reviewedFiles()).toBe(files);
   });
 
   it('shows the commands it keeps running, and a turn’s or the thread’s changes in full', async () => {

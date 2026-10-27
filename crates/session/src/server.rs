@@ -407,7 +407,7 @@ where
         if let Some(model) = &choice.model {
             self.known_model(model)?;
         }
-        if let Some(effort) = &choice.effort {
+        if let Some(Some(effort)) = &choice.effort {
             let model = choice.model.clone();
             let model = model.unwrap_or_else(|| self.inner.harness.default_model());
             self.offered_effort(&model, effort)?;
@@ -493,6 +493,23 @@ where
     ) -> Result<Reply, ApiError> {
         let (events, next) = self.page(thread, after, limit).await?;
         Ok(Reply::Events { events, next })
+    }
+
+    /// Every event of `thread`, read page by page, each handed to `read` in order.
+    pub(crate) async fn read_all(
+        &self,
+        thread: ThreadId,
+        mut read: impl FnMut(RawEvent),
+    ) -> Result<(), ApiError> {
+        let mut after = None;
+        loop {
+            let (events, next) = self.page(thread, after, Some(MAX_PAGE)).await?;
+            events.into_iter().for_each(&mut read);
+            match next {
+                Some(next) => after = Some(next),
+                None => return Ok(()),
+            }
+        }
     }
 
     /// A page of `thread`'s events after `after`, at most `limit` (500 when absent), and the
