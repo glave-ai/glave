@@ -65,6 +65,7 @@ export async function thinkingTurn(page: Page): Promise<void> {
                 ...call,
                 tool: 'write',
                 arguments: { json: { path: 'src/lock.rs', content: 'one\ntwo\n' } },
+                summary: step,
               }),
             );
             send(live({ kind: 'tool_started', summary: step }));

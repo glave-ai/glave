@@ -67,6 +67,14 @@ pub(crate) fn asked(arguments: &Arguments) -> Result<Asked, String> {
     Ok(asked)
 }
 
+/// An `agent` call in a line, by the work's few words: `agent find the parser`.
+pub(crate) fn describe(arguments: &Arguments) -> String {
+    match asked(arguments) {
+        Ok(asked) => format!("{AGENT} {}", asked.description.trim()),
+        Err(_) => glave_ports::describe_call(AGENT, arguments),
+    }
+}
+
 /// What the child is told: who it works for and what to hand back, then the prompt.
 pub(crate) fn brief(asked: &Asked) -> String {
     format!(
@@ -139,6 +147,14 @@ mod tests {
             json!({"description": "x", "prompt": "y", "subagent_type": "boss"}),
         ));
         assert!(odd.unwrap_err().contains("unknown variant `boss`"));
+    }
+
+    #[test]
+    fn a_call_reads_as_its_few_words() {
+        let call = arguments(json!({"description": " find the tests ", "prompt": "List them."}));
+        assert_eq!(describe(&call), "agent find the tests");
+        let unread = arguments(json!({"description": "x"}));
+        assert_eq!(describe(&unread), r#"agent {"description":"x"}"#);
     }
 
     #[test]

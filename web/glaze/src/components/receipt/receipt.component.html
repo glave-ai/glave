@@ -3,9 +3,6 @@
     @if (icon(); as kind) {
       <glz-icon class="kind" [icon]="kind" />
     }
-    @if (tool()) {
-      <span class="tool">{{ tool() }}</span>
-    }
     <span class="what">{{ summary() }}</span>
     <glz-icon
       class="status"

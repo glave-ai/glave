@@ -22,6 +22,7 @@ const HISTORY = [
     call_id: 'c1',
     tool: 'bash',
     arguments: { json: { command: 'rm -rf build' } },
+    summary: 'bash: rm -rf build',
   }),
   event(3, 'approval.requested', { call_id: 'c1', tool: 'bash', summary: 'Delete build/' }),
   event(4, 'tool.call.requested', {
@@ -297,18 +298,18 @@ describe('ThreadComponent', () => {
   });
 
   it('shows a turn that worked results first: the reply, what changed, then its steps', async () => {
-    const call = (seq: number, id: string, tool: string, json: Record<string, unknown>): unknown =>
-      event(seq, 'tool.call.requested', { call_id: id, tool, arguments: { json } });
+    const call = (seq: number, id: string, tool: string, json: object, summary: string): unknown =>
+      event(seq, 'tool.call.requested', { call_id: id, tool, arguments: { json }, summary });
     const done = (seq: number, id: string): unknown =>
       event(seq, 'tool.call.completed', { call_id: id, is_error: false, output: [] });
     const { root, fixture } = await open(
       session([
         event(1, 'message.added', { role: 'user', parts: [{ type: 'text', text: 'Fix it' }] }),
-        call(2, 'a', 'bash', { command: 'cargo test' }),
+        call(2, 'a', 'bash', { command: 'cargo test' }, 'bash: cargo test'),
         done(3, 'a'),
-        call(4, 'b', 'edit', { path: 'src/parse.rs' }),
+        call(4, 'b', 'edit', { path: 'src/parse.rs' }, 'edit src/parse.rs'),
         done(5, 'b'),
-        call(6, 'c', 'write', { path: 'tests/empty.rs' }),
+        call(6, 'c', 'write', { path: 'tests/empty.rs' }, 'write tests/empty.rs (0 lines)'),
         done(7, 'c'),
         event(8, 'message.added', { role: 'assistant', parts: [{ type: 'text', text: 'Done' }] }),
       ]),
@@ -328,15 +329,11 @@ describe('ThreadComponent', () => {
     expect(summary?.querySelector('.count')?.textContent).toBe('3 steps');
     expect(steps?.querySelector('details')?.open).toBe(false);
     const receipts = Array.from(steps?.querySelectorAll('[data-testid="thread-receipt"]') ?? []);
-    expect(receipts.map((receipt) => receipt.querySelector('.tool')?.textContent)).toEqual([
-      'bash',
-      'edit',
-      'write',
-    ]);
+    // Each step in the server's line.
     expect(receipts.map((receipt) => receipt.querySelector('.what')?.textContent)).toEqual([
-      'cargo test',
-      'src/parse.rs',
-      'tests/empty.rs',
+      'bash: cargo test',
+      'edit src/parse.rs',
+      'write tests/empty.rs (0 lines)',
     ]);
     expect(receipts.every((receipt) => receipt.querySelector('.kind svg') !== null)).toBe(true);
     summary?.click();

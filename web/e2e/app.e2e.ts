@@ -77,16 +77,17 @@ for (const colorScheme of ['light', 'dark'] as const) {
     // Every box spans the column: the same edges, the same width.
     expect(new Set(boxes.map((box) => Math.round(box?.x ?? -1))).size).toBe(1);
     expect(new Set(boxes.map((box) => Math.round(box?.width ?? -1))).size).toBe(1);
-    // The receipt is a disclosure: the keyboard opens it, and each call keeps its tool and target.
+    // The receipt is a disclosure: the keyboard opens it, and each call says its step in the
+    // server's line.
     const receipts = byTestId(page, 'thread-receipt');
     await expect(receipts.first()).toBeHidden();
     await summary.focus();
     await page.keyboard.press('Enter');
     await expect(receipts).toHaveCount(4);
     await expect(receipts.first()).toBeVisible();
-    await expect(receipts.nth(0)).toContainText('bash');
-    await expect(receipts.nth(1)).toContainText('src/parse.rs');
-    await expect(receipts.nth(2)).toContainText('tests/empty.rs');
+    await expect(receipts.nth(0)).toContainText('bash: cargo test');
+    await expect(receipts.nth(1)).toContainText('edit src/parse.rs');
+    await expect(receipts.nth(2)).toContainText('write tests/empty.rs (4 lines)');
     await expectAccessible(page);
     await page.keyboard.press('Enter');
     await expect(receipts.first()).toBeHidden();

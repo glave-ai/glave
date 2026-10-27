@@ -90,6 +90,63 @@ fn a_turn_writes_a_file_and_records_every_step() {
 }
 
 #[test]
+fn each_step_is_recorded_in_the_line_it_began_with() {
+    let dir = folder("step-lines");
+    block_on!(async {
+        let answers = vec![
+            answer(
+                None,
+                vec![
+                    ("write", json!({"path": "a.txt", "content": "one\ntwo\n"})),
+                    ("bash", json!({"command": "cat a.txt"})),
+                    ("nothing", json!({"x": 1})),
+                ],
+                StopReason::ToolUse,
+            ),
+            answer(Some("Done."), vec![], StopReason::EndTurn),
+        ];
+        let harness = harness(&dir, answers, AllowAll).await;
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let mut began = Vec::new();
+        harness
+            .run_turn(&mut thread, "write and read", &Cancel::new(), &mut |live| {
+                if let Live::ToolStarted { summary } = live {
+                    began.push(summary);
+                }
+            })
+            .await
+            .unwrap();
+
+        let events = events(harness.log(), thread.id).await;
+        let recorded: Vec<&str> = events
+            .iter()
+            .filter_map(|event| match &event.body {
+                Body::ToolCallRequested(call) => Some(call.summary.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            recorded,
+            [
+                "write a.txt (2 lines)",
+                "bash: cat a.txt",
+                r#"nothing {"x":1}"#
+            ]
+        );
+        assert_eq!(
+            began,
+            recorded[..2],
+            "the line it began with, for every call that ran"
+        );
+        assert_eq!(
+            conversation(&events),
+            thread.messages(),
+            "the line is glave's record: the model is sent the same"
+        );
+    });
+}
+
+#[test]
 fn a_declined_action_is_reported_to_the_model() {
     let dir = folder("deny");
     block_on!(async {
