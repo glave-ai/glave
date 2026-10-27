@@ -90,7 +90,7 @@ describe('ChangedFilesService', () => {
       ]);
     const { changed, thread } = make(fake);
     const opening = thread.open('thread-1');
-    // Not known while the thread opens, nor until the server has said: its turns wait to know.
+    // Not known while the thread opens, nor once it has, until the server says what it changed.
     TestBed.tick();
     expect(changed.byTurn()).toBeNull();
     await opening;
