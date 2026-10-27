@@ -154,8 +154,8 @@ opentelemetry = { version = "0.33", default-features = false, features = ["trace
 opentelemetry-otlp = { version = "0.33", default-features = false, features = ["http-proto", "reqwest-blocking-client", "reqwest-rustls", "trace", "metrics"] }
 opentelemetry_sdk = { version = "0.33", default-features = false, features = ["trace", "metrics"] }
 proptest = "1"
-# The XML in Office files' parts, for `glave doc` (glave-office) to read Word and PowerPoint.
-# Already in the tree, under calamine.
+# The XML in Office files' parts, for `glave doc` (glave-office) to read Word and PowerPoint
+# and to check every part before it is packed. Already in the tree, under calamine.
 quick-xml = "0.42"
 # Self-signed certificates for workers, on aws-lc-rs, the crypto rustls already uses.
 rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem"] }

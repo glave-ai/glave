@@ -93,6 +93,13 @@ mod tests {
             .iter()
             .map(|skill| skill.name.as_str())
             .collect();
-        assert_eq!(names, ["glave:spreadsheets"]);
+        assert_eq!(
+            names,
+            [
+                "glave:spreadsheets",
+                "glave:documents",
+                "glave:presentations"
+            ]
+        );
     }
 }

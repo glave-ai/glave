@@ -1,0 +1,13 @@
+[task]
+name = "glave/document-edit"
+description = "Changes one paragraph of a Word document in place, keeping its formatting and everything else."
+
+[agent]
+timeout_sec = 600
+
+[glave]
+tier = "fast"
+permissions = "auto"
+# The document is made as the task starts, as Word saves one, by a script kept as text, and
+# the script removed.
+setup = ["sh make-memo.sh && rm make-memo.sh"]

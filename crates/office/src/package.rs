@@ -149,6 +149,28 @@ impl<'a> Package<'a> {
         }
     }
 
+    /// The parts the elements of `list` in the part `part` point to, in order, each with its
+    /// element's `name`: a deck's slides from `p:sldIdLst`, a workbook's sheets from `sheets`.
+    pub(crate) fn listed(
+        &mut self,
+        part: &str,
+        list: &str,
+    ) -> Result<Vec<(String, String)>, OfficeError> {
+        let root = self.xml(part)?.unwrap_or_default();
+        let related = self.related(part)?;
+        Ok(root
+            .child(list)
+            .into_iter()
+            .flat_map(Element::elements)
+            .filter_map(|item| {
+                let id = item.attribute("r:id")?;
+                let relationship = related.iter().find(|relationship| relationship.id == id)?;
+                let name = item.attribute("name").unwrap_or_default().to_owned();
+                Some((name, relationship.target.clone()?))
+            })
+            .collect())
+    }
+
     /// The main part, and what kind of file its content type makes this.
     pub(crate) fn main(&mut self) -> Result<Option<(String, Kind)>, OfficeError> {
         let Some(main) = self

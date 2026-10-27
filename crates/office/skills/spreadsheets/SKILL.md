@@ -1,6 +1,6 @@
 ---
 name: spreadsheets
-description: Read, analyze and make spreadsheets (.xlsx, .xlsm, .xlsb, .xls, .ods) with glave's own commands, nothing to install. Use whenever a task reads a workbook, answers questions from one, or asks for a new one.
+description: Read, analyze, make and edit spreadsheets (.xlsx, .xlsm, .xlsb, .xls, .ods) with glave's own commands, nothing to install. Use whenever a task reads a workbook, answers questions from one, changes one, or asks for a new one.
 ---
 # Spreadsheets
 
@@ -55,3 +55,21 @@ Use formulas for totals and anything worked out from other cells, so the workboo
 when its data changes. glave stores no results: the app that opens the file computes them, so
 reading it back shows `→ not computed yet`; check the formulas themselves. It won't write over
 a file unless you add `--replace`, and remaking a workbook loses what the description lacks.
+
+## Editing a workbook
+
+`write` only makes new workbooks. To change one and keep its formatting, charts and everything
+else, edit its XML in place:
+
+```sh
+glave doc unpack sales.xlsx sales   # its parts, and which is each sheet
+# edit the sheet's XML with edit
+glave doc pack sales sales.xlsx --replace
+glave doc read sales.xlsx           # check the change
+```
+
+A cell is `<c r="E5" s="3"><f>SUM(E2:E4)</f><v>5905</v></c>`: its formula without the `=`,
+the value it last computed to, and its formatting `s`, which you keep. To fix a formula,
+change its `<f>`, delete that cell's `<v>`, and add `fullCalcOnLoad="1"` to `<calcPr>` in
+`xl/workbook.xml`, so the app that opens the file works every formula out again. A cell marked
+`t="s"` keeps its text in `xl/sharedStrings.xml`.

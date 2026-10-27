@@ -57,7 +57,9 @@ fn glave_skills_lists_them_and_warns_about_the_broken_one() {
         "{shown}"
     );
     assert!(
-        stdout.contains("\nglave:spreadsheets\n  Read, analyze and make spreadsheets")
+        stdout.contains("\nglave:spreadsheets\n  Read, analyze, make and edit spreadsheets")
+            && stdout.contains("\nglave:documents\n  Read and edit Word documents")
+            && stdout.contains("\nglave:presentations\n  Read and edit PowerPoint decks")
             && stdout.contains("\n  built into glave"),
         "glave's own come after: {shown}"
     );
