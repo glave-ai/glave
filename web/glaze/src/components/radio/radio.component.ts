@@ -7,6 +7,7 @@ import {
   input,
 } from '@angular/core';
 
+import { INERT_UNTIL_BOUND } from '../../lib/inert-until-bound';
 import { injectId } from '../../tokens/ids';
 import { GlzRadioGroupComponent } from '../radio-group/radio-group.component';
 
@@ -24,6 +25,7 @@ import { GlzRadioGroupComponent } from '../radio-group/radio-group.component';
   templateUrl: './radio.component.html',
   styleUrl: './radio.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { ...INERT_UNTIL_BOUND },
 })
 export class GlzRadioComponent {
   readonly value = input.required<string>();

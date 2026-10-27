@@ -12,6 +12,7 @@ import {
 import type { ControlValueAccessor } from '@angular/forms';
 import type { FormCheckboxControl } from '@angular/forms/signals';
 
+import { INERT_UNTIL_BOUND } from '../../lib/inert-until-bound';
 import { testIds } from '../../lib/test-ids';
 import { GLZ_FORM_FIELD, bindValueAccessor, injectFormState } from '../../tokens/forms';
 
@@ -33,7 +34,7 @@ const PARTS = { input: 'input' } as const;
   templateUrl: './checkbox.component.html',
   styleUrl: './checkbox.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { '[attr.data-testid]': 'testId()' },
+  host: { ...INERT_UNTIL_BOUND, '[attr.data-testid]': 'testId()' },
 })
 export class GlzCheckboxComponent implements ControlValueAccessor, FormCheckboxControl {
   /** The test hook for this component; its parts get `<testId>-<part>`. */

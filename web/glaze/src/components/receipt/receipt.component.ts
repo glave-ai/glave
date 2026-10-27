@@ -3,6 +3,7 @@ import { Ban, Check, LoaderCircle, TriangleAlert } from 'lucide';
 
 import type { GlzIconData } from '../../lib/icons';
 import { GlzIconComponent } from '../icon/icon.component';
+import { INERT_UNTIL_BOUND } from '../../lib/inert-until-bound';
 import { testIds } from '../../lib/test-ids';
 import { glzText } from '../../lib/words';
 
@@ -39,6 +40,7 @@ const ICONS: Readonly<Record<GlzReceiptStatus, GlzIconData>> = {
   styleUrl: './receipt.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
+    ...INERT_UNTIL_BOUND,
     '[attr.data-testid]': 'testId()',
     '[class]': 'statusClass()',
   },

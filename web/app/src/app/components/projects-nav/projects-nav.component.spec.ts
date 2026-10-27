@@ -303,7 +303,7 @@ describe('ProjectsNavComponent', () => {
     await newProject?.render(DeferBlockState.Error);
     expect(
       Array.from(root.querySelectorAll('[role="alert"]'), (each) => each.textContent.trim()),
-    ).toEqual(['This part of glave could not load. Reload the page to try again.']);
+    ).toEqual(['This part of glave could not load.']);
     await expectAccessible(root);
   });
 

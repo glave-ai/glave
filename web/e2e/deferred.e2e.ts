@@ -1,15 +1,17 @@
 import { expect, test } from '@playwright/test';
-import axe, { type Result } from 'axe-core';
+import type { Result } from 'axe-core';
 
 import { fakeApi } from './fake-api';
 import {
   SIGNED_IN,
   WCAG,
+  type WithAxe,
   builtChunk,
   byTestId,
   described,
   expectAccessible,
   hold,
+  withAxe,
 } from './support';
 
 /** What axe found the moment the side nav's ⋯ appeared, and whether it was bound by then. */
@@ -20,7 +22,7 @@ interface Appeared {
 }
 
 /** The page, with axe in it and what it found as the ⋯ appeared. */
-type Watched = Window & { axe: typeof axe; appeared?: Promise<Appeared> };
+type Watched = WithAxe & { appeared?: Promise<Appeared> };
 
 test('the side nav’s ⋯, loaded late, is never in the page unnamed: axe passes the moment it appears', async ({
   page,
@@ -40,7 +42,7 @@ test('the side nav’s ⋯, loaded late, is never in the page unnamed: axe passe
   // appears, in the page, before any task can: its own waits between rules, which would let one
   // in, are made microtasks until it is done. The ⋯ is found by its element, since its test
   // hook is a binding too.
-  await page.evaluate(axe.source);
+  await withAxe(page);
   await page.evaluate((tags) => {
     const watched = window as unknown as Watched;
     watched.appeared = new Promise<Appeared>((resolve, reject) => {

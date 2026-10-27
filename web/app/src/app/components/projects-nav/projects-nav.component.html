@@ -91,7 +91,7 @@
             @defer (on immediate) {
               <app-folder-gone testId="nav-gone" [project]="project.id" [message]="gone" />
             } @error {
-              <p class="error" role="alert">{{ copy.unloaded }}</p>
+              <app-unloaded class="error" />
             }
           }
           @for (thread of project.threads; track thread.id) {
@@ -143,7 +143,7 @@
 @defer (when newProject(); prefetch on idle) {
   <app-new-project [(open)]="newProject" (navigated)="followed()" />
 } @error {
-  <p class="error" role="alert">{{ copy.unloaded }}</p>
+  <app-unloaded class="error" />
 }
 @defer (when renameOpen(); prefetch on idle) {
   <app-rename-dialog
@@ -153,5 +153,5 @@
     (renamed)="rename($event)"
   />
 } @error {
-  <p class="error" role="alert">{{ copy.unloaded }}</p>
+  <app-unloaded class="error" />
 }

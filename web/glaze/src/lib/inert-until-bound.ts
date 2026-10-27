@@ -8,7 +8,9 @@
  * and screen readers meet it named, never before. Code that reaches for it in that first change
  * detection (an effect on its first run) finds it out of reach too, so what moves focus waits
  * for the page to be rendered (`afterRenderEffect`, `afterNextRender`), as the dialog does.
- * Glaze's buttons and menus spread it into their `host` (a host directive would do the same,
- * for a kilobyte more of the first load).
+ * Glaze's controls spread it into their `host`: its buttons, nav items and menus, its fields
+ * (`glzInput`, the composer's box, checkboxes and radios, named by a label bound or projected)
+ * and its disclosures (reasoning, receipts and steps, each a `summary` named by its line). A
+ * host directive would do the same, for a kilobyte more of the first load.
  */
 export const INERT_UNTIL_BOUND = { inert: '', '[attr.inert]': 'null' } as const;
