@@ -11,6 +11,7 @@ use calamine::{Data, Range, Reader, Sheet, SheetType, SheetVisible, Sheets};
 use crate::cells::{cell_name, column_name, listed};
 use crate::command::Answer;
 use crate::error::OfficeError;
+use crate::table::escaped;
 
 /// The rows shown of each sheet when no rows are asked for: enough to see what a sheet holds,
 /// little enough that a workbook of many sheets stays readable.
@@ -316,13 +317,6 @@ fn general(number: f64) -> String {
     format!("{rounded}")
 }
 
-/// A cell's text safe inside a table row.
-fn escaped(text: &str) -> String {
-    text.replace('|', "\\|")
-        .replace('\r', "")
-        .replace('\n', "\\n")
-}
-
 /// A field of a CSV line, quoted when it must be (RFC 4180).
 fn quoted(field: &str) -> String {
     if field.contains([',', '"', '\n', '\r']) {
@@ -399,7 +393,6 @@ mod tests {
 
     #[test]
     fn cells_and_fields_are_kept_whole() {
-        assert_eq!(escaped("a|b\nc"), "a\\|b\\nc");
         assert_eq!(quoted("plain"), "plain");
         assert_eq!(quoted("a, \"b\""), "\"a, \"\"b\"\"\"");
         assert_eq!(argument("Q1"), "Q1");

@@ -1,6 +1,6 @@
 [package]
 name = "glave-office"
-description = "glave's office files for `glave doc`: workbooks read with calamine and written with rust_xlsxwriter, with the built-in skill that teaches it"
+description = "glave's office files for `glave doc`: workbooks read with calamine and written with rust_xlsxwriter, Word and PowerPoint read as their XML, with the built-in skill that teaches it"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -16,10 +16,12 @@ path = "tests/main.rs"
 
 [dependencies]
 calamine.workspace = true
+quick-xml.workspace = true
 rust_xlsxwriter.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+zip.workspace = true
 
 [dev-dependencies]
 glave-ports = { workspace = true, features = ["conformance"] }

@@ -5,16 +5,19 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use crate::error::OfficeError;
+use crate::package::{Kind, Package};
 use crate::read::{self, Reading};
-use crate::write;
+use crate::{document, presentation, write};
 
 pub const USAGE: &str = "\
-glave doc: read and write spreadsheets, with nothing else installed
+glave doc: read and write office files, with nothing else installed
 
 Usage:
   glave doc read <file> [--sheet <name>] [--rows <first>-<last>]
       a workbook (.xlsx, .xlsm, .xlsb, .xls or .ods) as tables, each formula beside the
-      value it last computed to; the first 100 rows of each sheet unless --rows says which
+      value it last computed to; the first 100 rows of each sheet unless --rows says which.
+      A Word document (.docx) or a PowerPoint deck (.pptx) as text, with its tables,
+      comments and speaker notes
   glave doc csv <file> [--sheet <name>]
       one sheet's values as CSV: the first sheet unless --sheet names another
   glave doc write <file.xlsx> [<description.json>] [--replace]
@@ -67,15 +70,71 @@ pub fn run(words: &[String], input: &mut dyn Read) -> Result<Answer, OfficeError
     match parse(words)? {
         Asked::Help => Ok(Answer::printed(USAGE.to_owned())),
         Asked::Read(file, reading) => {
-            let name = file.file_name().map_or_else(
-                || file.display().to_string(),
-                |name| name.to_string_lossy().into_owned(),
-            );
-            read::read(bytes(&file)?, &name, &reading).map(Answer::printed)
+            read_any(bytes(&file)?, &named(&file), &reading).map(Answer::printed)
         }
-        Asked::Csv(file, sheet) => read::csv(bytes(&file)?, sheet.as_deref()),
+        Asked::Csv(file, sheet) => {
+            let bytes = bytes(&file)?;
+            if let Some((_, _, kind)) = office(&bytes)
+                && kind != Kind::Workbook
+            {
+                return Err(OfficeError::NotAWorkbook(format!(
+                    "{} is {}, which glave doc read reads",
+                    named(&file),
+                    kind.said()
+                )));
+            }
+            read::csv(bytes, sheet.as_deref())
+        }
         Asked::Write(writing) => write_new(&writing, input),
     }
+}
+
+/// A file's name as its text says it: the name alone, without its folder.
+fn named(file: &Path) -> String {
+    file.file_name().map_or_else(
+        || file.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    )
+}
+
+/// The Office file in `bytes`, its main part and what it is, when its parts say.
+fn office(bytes: &[u8]) -> Option<(Package<'_>, String, Kind)> {
+    let mut package = Package::open(bytes)?;
+    let (main, kind) = package.main().ok()??;
+    Some((package, main, kind))
+}
+
+/// Reads an Office file of one kind from its parts, given its main part and its name.
+type ReadParts = fn(&mut Package<'_>, &str, &str) -> Result<String, OfficeError>;
+
+/// How a kind of Office file is read from its parts; `None` for workbooks, which calamine
+/// reads whole.
+fn reader(kind: Kind) -> Option<ReadParts> {
+    match kind {
+        Kind::Word => Some(document::read),
+        Kind::PowerPoint => Some(presentation::read),
+        Kind::Workbook => None,
+    }
+}
+
+/// The file in `bytes`, named `name`, as text: a Word document or a PowerPoint deck read from
+/// its XML, anything else as a workbook.
+fn read_any(bytes: Vec<u8>, name: &str, reading: &Reading) -> Result<String, OfficeError> {
+    if let Some((mut package, main, kind)) = office(&bytes)
+        && let Some(read) = reader(kind)
+    {
+        if *reading != Reading::default() {
+            return Err(usage(&format!(
+                "--sheet and --rows are for workbooks, and {name} is {}",
+                kind.said()
+            )));
+        }
+        return read(&mut package, &main, name);
+    }
+    read::read(bytes, name, reading).map_err(|error| match error {
+        OfficeError::NotAWorkbook(why) => OfficeError::NotOffice(why),
+        error => error,
+    })
 }
 
 /// Writes the workbook `writing` asks for, unless a file there would be lost.

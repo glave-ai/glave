@@ -3,5 +3,6 @@
 
 #![cfg(test)]
 
+mod documents;
 mod workbooks;
 mod written;

@@ -24,6 +24,17 @@ pub enum OfficeError {
     },
     #[error("this is not a workbook glave can read (.xlsx, .xlsm, .xlsb, .xls or .ods): {0}")]
     NotAWorkbook(String),
+    #[error(
+        "this is not a file glave doc reads: a workbook (.xlsx, .xlsm, .xlsb, .xls or .ods), a \
+         Word document (.docx) or a PowerPoint deck (.pptx): {0}"
+    )]
+    NotOffice(String),
+    /// An Office file whose zip or parts can't be read.
+    #[error("the file is damaged: {0}")]
+    Damaged(String),
+    /// A part that is not well-formed XML: which, and where it breaks.
+    #[error("{part} is not well-formed XML: {broken}")]
+    Broken { part: String, broken: String },
     #[error("the workbook has no worksheets")]
     NoSheets,
     #[error("there is no sheet named {wanted:?}; the sheets are {}", sheets.join(", "))]
