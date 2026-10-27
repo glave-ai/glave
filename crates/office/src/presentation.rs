@@ -18,18 +18,11 @@ pub(crate) fn read(
     main: &str,
     name: &str,
 ) -> Result<String, OfficeError> {
-    let presentation = package.xml(main)?.unwrap_or_default();
-    let related = package.related(main)?;
     // The slides in the deck's order, which their parts' names need not follow.
-    let slides: Vec<String> = presentation
-        .child("p:sldIdLst")
+    let slides: Vec<String> = package
+        .listed(main, "p:sldIdLst")?
         .into_iter()
-        .flat_map(Element::elements)
-        .filter_map(|slide| {
-            let id = slide.attribute("r:id")?;
-            let relationship = related.iter().find(|relationship| relationship.id == id)?;
-            relationship.target.clone()
-        })
+        .map(|(_, part)| part)
         .collect();
     let mut text = match slides.len() {
         1 => format!("{name}: 1 slide\n"),

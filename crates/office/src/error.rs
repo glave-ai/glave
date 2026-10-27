@@ -35,6 +35,20 @@ pub enum OfficeError {
     /// A part that is not well-formed XML: which, and where it breaks.
     #[error("{part} is not well-formed XML: {broken}")]
     Broken { part: String, broken: String },
+    #[error(
+        "{0} is not an Office file glave can unpack: those are zips of XML parts, as .docx, \
+         .xlsx and .pptx files are"
+    )]
+    NotAPackage(String),
+    /// What stopped an Office file being unpacked or packed, said so it can be put right.
+    #[error("{0}")]
+    Parts(String),
+    #[error(
+        "{} is already there. Add --replace to write the packed file over it, or name a new \
+         file",
+        .0.display()
+    )]
+    PackedOver(PathBuf),
     #[error("the workbook has no worksheets")]
     NoSheets,
     #[error("there is no sheet named {wanted:?}; the sheets are {}", sheets.join(", "))]

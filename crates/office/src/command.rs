@@ -7,10 +7,10 @@ use std::path::{Path, PathBuf};
 use crate::error::OfficeError;
 use crate::package::{Kind, Package};
 use crate::read::{self, Reading};
-use crate::{document, presentation, write};
+use crate::{document, parts, presentation, write};
 
 pub const USAGE: &str = "\
-glave doc: read and write office files, with nothing else installed
+glave doc: read, write and edit office files, with nothing else installed
 
 Usage:
   glave doc read <file> [--sheet <name>] [--rows <first>-<last>]
@@ -23,7 +23,13 @@ Usage:
   glave doc write <file.xlsx> [<description.json>] [--replace]
       a new workbook from a description in JSON, read from standard input unless its file
       is named: sheets of rows with formulas, number formats, a header row, column widths,
-      frozen panes and charts; --replace writes over a file already there";
+      frozen panes and charts; --replace writes over a file already there
+  glave doc unpack <file> <folder>
+      an Office file's parts (.docx, .xlsx, .pptx and the like) into a new folder, each XML
+      part an element to a line, to edit in place
+  glave doc pack <folder> <file> [--replace]
+      an unpacked folder back into an Office file, each XML part checked first; --replace
+      writes over a file already there";
 
 /// The largest file read: a workbook is read whole, and so is a description.
 const MAX_FILE: u64 = 100 * 1024 * 1024;
@@ -52,6 +58,18 @@ enum Asked {
     Read(PathBuf, Reading),
     Csv(PathBuf, Option<String>),
     Write(Writing),
+    /// An Office file to unpack, and the folder for its parts.
+    Unpack(PathBuf, PathBuf),
+    Pack(Packing),
+}
+
+/// An unpacked folder to pack into a file.
+#[derive(Debug, PartialEq, Eq)]
+struct Packing {
+    folder: PathBuf,
+    out: PathBuf,
+    /// Whether a file already at `out` may be written over.
+    replace: bool,
 }
 
 /// A new workbook to write.
@@ -86,6 +104,14 @@ pub fn run(words: &[String], input: &mut dyn Read) -> Result<Answer, OfficeError
             read::csv(bytes, sheet.as_deref())
         }
         Asked::Write(writing) => write_new(&writing, input),
+        Asked::Unpack(file, folder) => {
+            parts::unpack(&bytes(&file)?, &file, &folder).map(Answer::printed)
+        }
+        Asked::Pack(Packing {
+            folder,
+            out,
+            replace,
+        }) => parts::pack(&folder, &out, replace).map(Answer::printed),
     }
 }
 
@@ -248,7 +274,15 @@ fn parse(words: &[String]) -> Result<Asked, OfficeError> {
                 replace,
             }))
         }
-        ("read" | "csv" | "write", _) => Err(usage(&format!(
+        ("unpack", [file, folder]) if reading && writing => {
+            Ok(Asked::Unpack(file.clone(), folder.clone()))
+        }
+        ("pack", [folder, out]) if writing => Ok(Asked::Pack(Packing {
+            folder: folder.clone(),
+            out: out.clone(),
+            replace,
+        })),
+        ("read" | "csv" | "write" | "unpack" | "pack", _) => Err(usage(&format!(
             "glave doc {verb} was not given what it takes"
         ))),
         _ => Err(usage(&format!("glave doc has no command {verb:?}"))),
@@ -281,84 +315,4 @@ fn usage(why: &str) -> OfficeError {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn asked(words: &[&str]) -> Result<Asked, OfficeError> {
-        parse(&words.iter().map(|w| (*w).to_owned()).collect::<Vec<_>>())
-    }
-
-    #[test]
-    fn the_words_say_what_is_asked() {
-        assert_eq!(asked(&[]).unwrap(), Asked::Help);
-        assert_eq!(asked(&["read", "--help"]).unwrap(), Asked::Help);
-        assert_eq!(
-            asked(&["read", "--sheet", "Q1 sales", "a.xlsx", "--rows", "101-200"]).unwrap(),
-            Asked::Read(
-                "a.xlsx".into(),
-                Reading {
-                    sheet: Some("Q1 sales".into()),
-                    rows: Some((101, 200))
-                }
-            )
-        );
-        assert_eq!(
-            asked(&["read", "a.xlsx", "--rows", "7"]).unwrap(),
-            Asked::Read(
-                "a.xlsx".into(),
-                Reading {
-                    sheet: None,
-                    rows: Some((7, 7))
-                }
-            )
-        );
-        assert_eq!(
-            asked(&["csv", "a.xlsx"]).unwrap(),
-            Asked::Csv("a.xlsx".into(), None)
-        );
-        for (words, description, replace) in [
-            (&["write", "out.XLSX"][..], None, false),
-            (&["write", "out.XLSX", "-"], None, false),
-            (
-                &["write", "--replace", "out.XLSX", "a.json"],
-                Some("a.json"),
-                true,
-            ),
-        ] {
-            let description = description.map(PathBuf::from);
-            let out = "out.XLSX".into();
-            let writing = Writing {
-                out,
-                description,
-                replace,
-            };
-            assert_eq!(asked(words).unwrap(), Asked::Write(writing));
-        }
-        for wrong in [
-            &["read"][..],
-            &["read", "a.xlsx", "b.xlsx"],
-            &["read", "a.xlsx", "--rows", "9-2"],
-            &["read", "a.xlsx", "--rows", "0-2"],
-            &["read", "a.xlsx", "--rows"],
-            &["read", "a.xlsx", "--replace"],
-            &["csv", "a.xlsx", "--rows", "1-2"],
-            &["read", "a.xlsx", "--all"],
-            &["write"],
-            &["write", "book.json", "out.xlsx"],
-            &["write", "out.xls"],
-            &["write", "out.xlsx", "a.json", "b.json"],
-            &["write", "out.xlsx", "--sheet", "Sales"],
-            &["open", "a.xlsx"],
-        ] {
-            let error = asked(wrong).unwrap_err().to_string();
-            assert!(error.ends_with(USAGE), "{wrong:?}: {error}");
-        }
-        let swapped = asked(&["write", "book.json", "out.xlsx"])
-            .unwrap_err()
-            .to_string();
-        assert!(
-            swapped.starts_with("glave doc write makes .xlsx workbooks: name the new one first"),
-            "{swapped}"
-        );
-    }
-}
+mod tests;

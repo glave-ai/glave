@@ -1,6 +1,6 @@
 [package]
 name = "glave-office"
-description = "glave's office files for `glave doc`: workbooks read with calamine and written with rust_xlsxwriter, Word and PowerPoint read as their XML, with the built-in skill that teaches it"
+description = "glave's office files for `glave doc`: workbooks read with calamine and written with rust_xlsxwriter, Word and PowerPoint read as their XML, any Office file unpacked and packed to edit in place, with the built-in skills that teach it"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

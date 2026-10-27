@@ -1,0 +1,13 @@
+[task]
+name = "glave/spreadsheet-edit"
+description = "Fixes a broken formula in a workbook in place, keeping its formatting, chart and everything else."
+
+[agent]
+timeout_sec = 600
+
+[glave]
+tier = "fast"
+permissions = "auto"
+# The workbook is made as the task starts, as Excel saves one, by a script kept as text, and
+# the script removed.
+setup = ["sh make-budget.sh && rm make-budget.sh"]

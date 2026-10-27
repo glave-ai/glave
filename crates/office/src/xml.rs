@@ -153,6 +153,17 @@ impl fmt::Display for Broken {
 /// app needs each part to be: one root, every tag closed by its own, attributes quoted once
 /// each, every prefix declared, only XML's entities.
 pub(crate) fn parse(text: &str) -> Result<Element, Broken> {
+    read(text, true)
+}
+
+/// That `text` is well-formed, as [`parse`] needs it to be, without keeping its tree: a
+/// sheet's XML may hold a million cells.
+pub(crate) fn check(text: &str) -> Result<(), Broken> {
+    read(text, false).map(drop)
+}
+
+/// The root element of `text`, with the tree under it when `keep`.
+fn read(text: &str, keep: bool) -> Result<Element, Broken> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let mut reader = NsReader::from_str(text);
     reader.config_mut().check_comments = true;
@@ -186,25 +197,25 @@ pub(crate) fn parse(text: &str) -> Result<Element, Broken> {
                     .map_err(|(at, why)| broken(text, start + 1 + at, &why))?;
                 let element = Element {
                     name,
-                    attributes,
+                    attributes: if keep { attributes } else { Vec::new() },
                     children: Vec::new(),
                 };
                 if opens {
                     open.push(element);
                 } else {
-                    close(element, &mut open, &mut root);
+                    close(element, &mut open, &mut root, keep);
                 }
             }
             Event::End(_) => {
                 if let Some(element) = open.pop() {
-                    close(element, &mut open, &mut root);
+                    close(element, &mut open, &mut root, keep);
                 }
             }
-            Event::Text(content) => add(&content.xml10_content(), &mut open, &fail)?,
-            Event::CData(content) => add(&content.xml10_content(), &mut open, &fail)?,
+            Event::Text(content) => add(&content.xml10_content(), &mut open, keep, &fail)?,
+            Event::CData(content) => add(&content.xml10_content(), &mut open, keep, &fail)?,
             Event::GeneralRef(reference) => {
                 let character = entity(&reference).map_err(|why| fail(&why))?;
-                add(&character, &mut open, &fail)?;
+                add(&character, &mut open, keep, &fail)?;
             }
             Event::Eof => {
                 if let Some(element) = open.last() {
@@ -218,16 +229,23 @@ pub(crate) fn parse(text: &str) -> Result<Element, Broken> {
     }
 }
 
-/// `element`, finished: into the one holding it, or the root.
-fn close(element: Element, open: &mut [Element], root: &mut Option<Element>) {
+/// `element`, finished: into the one holding it when the tree is kept, or the root.
+fn close(element: Element, open: &mut [Element], root: &mut Option<Element>, keep: bool) {
     match open.last_mut() {
-        Some(parent) => parent.children.push(Node::Element(element)),
+        Some(parent) if keep => parent.children.push(Node::Element(element)),
+        Some(_) => {}
         None => *root = Some(element),
     }
 }
 
-/// Text, into the element holding it: outside the root only blank space may be.
-fn add(text: &str, open: &mut [Element], fail: &dyn Fn(&str) -> Broken) -> Result<(), Broken> {
+/// Text, into the element holding it when the tree is kept: outside the root only blank space
+/// may be.
+fn add(
+    text: &str,
+    open: &mut [Element],
+    keep: bool,
+    fail: &dyn Fn(&str) -> Broken,
+) -> Result<(), Broken> {
     if let Some(bad) = text
         .chars()
         .find(|c| *c < ' ' && !matches!(c, '\t' | '\n' | '\r'))
@@ -238,10 +256,11 @@ fn add(text: &str, open: &mut [Element], fail: &dyn Fn(&str) -> Broken) -> Resul
         )));
     }
     match open.last_mut() {
-        Some(parent) => match parent.children.last_mut() {
+        Some(parent) if keep => match parent.children.last_mut() {
             Some(Node::Text(before)) => before.push_str(text),
             _ => parent.children.push(Node::Text(text.to_owned())),
         },
+        Some(_) => {}
         None if text.trim().is_empty() => {}
         None => return Err(fail("text outside the root element")),
     }

@@ -1,5 +1,6 @@
-//! `glave doc`: office files read and written by glave itself (glave-office), for the model,
-//! which runs it through bash as the built-in skills teach, and for a person at a terminal.
+//! `glave doc`: office files read, written and edited by glave itself (glave-office), for the
+//! model, which runs it through bash as the built-in skills teach, and for a person at a
+//! terminal.
 
 use std::io::{IsTerminal as _, Read};
 use std::process::ExitCode;

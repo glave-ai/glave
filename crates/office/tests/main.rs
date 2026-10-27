@@ -4,5 +4,6 @@
 #![cfg(test)]
 
 mod documents;
+mod edited;
 mod workbooks;
 mod written;
