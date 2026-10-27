@@ -1,0 +1,69 @@
+name: webkit-probe
+
+# Temporary, removed before the pull request is ready: the WebKit tests against real glaves over
+# and over, to count pages that never finish loading (#698).
+on:
+  push:
+    branches: ['test/webkit-first-loads']
+
+permissions:
+  contents: read
+
+env:
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  probe:
+    name: probe (${{ matrix.round }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        round: [1, 2, 3, 4]
+    defaults:
+      run:
+        working-directory: web
+    env:
+      GLAVE_BIN: ${{ github.workspace }}/target/debug/glave
+      PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the pinned toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+        working-directory: .
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: web
+          save-if: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm run build:showcase
+      - name: Build glave with the app inside, and pull Playwright's image
+        run: |
+          .github/pull-image.sh "$PLAYWRIGHT_IMAGE" &
+          cargo test -p glave --features web --test cli --no-run
+          cargo build -p glave-mcp --features test-server --bin=glave-mcp-test-server
+          wait $!
+        working-directory: .
+      - name: The image's browsers, where the scripts look for them
+        run: ln -s /ms-playwright node_modules/playwright-core/.local-browsers
+      - name: The WebKit tests against real glaves, over and over
+        run: >-
+          docker run --rm --init --ipc=host -e CI -e GLAVE_BIN
+          -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE"
+          npm run e2e -- --project=webkit --repeat-each=30 --timeout=60000
+          first-send live signin passkeys connections
+      - name: Keep the traces of failed tests
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: probe-${{ matrix.round }}
+          path: web/test-results
+          if-no-files-found: ignore
+          retention-days: 7
