@@ -25,10 +25,20 @@ const TEMP: &str = "tmp";
 /// The environment commands run with: glave's own, then the run's, then the task's.
 pub(crate) type Environment = BTreeMap<OsString, OsString>;
 
+/// A run's own Cargo home, in its folder.
+const CARGO_HOME: &str = "cargo-home";
+
+/// The folders of this machine's Cargo home that hold what it downloaded: the crates and their
+/// index, and git checkouts.
+const CARGO_DOWNLOADS: [&str; 2] = ["registry", "git"];
+
 /// A workspace ready for the agent.
 pub(crate) struct Prepared {
     pub workspace: PathBuf,
     pub environment: Environment,
+    /// What its commands may not read: this machine's crate downloads, which a fresh computer
+    /// would not have.
+    pub hidden: Vec<PathBuf>,
 }
 
 /// Copies the task's files into `<dir>/workspace` and runs its setup commands there.
@@ -40,10 +50,8 @@ pub(crate) async fn prepare(
     let workspace = dir.join("workspace");
     copy_files(task.environment(), workspace.clone()).await?;
     // `{path}` is the `PATH` commands get otherwise, so a task can put its own tools first.
-    let path = base
-        .iter()
-        .find(|(name, _)| name == "PATH")
-        .map(|(_, value)| value.to_string_lossy().into_owned())
+    let path = variable(base, "PATH")
+        .map(|value| value.to_string_lossy().into_owned())
         .unwrap_or_default();
     let fill = |text: &str| {
         text.replace("{dir}", &dir.display().to_string())
@@ -63,6 +71,14 @@ pub(crate) async fn prepare(
     // Each run builds in its own folder: runs at once would otherwise overwrite each other's
     // binaries. It sits outside the workspace and is removed once the run is graded.
     environment.insert("CARGO_TARGET_DIR".into(), target(dir, task).into());
+    // It starts as a fresh computer would, with an empty Cargo home of its own, and this
+    // machine's crate downloads hidden from its commands (`hidden`), which could otherwise
+    // build offline what a fresh computer would have to download. Removed with the build.
+    let cargo_home = dir.join(CARGO_HOME);
+    tokio::fs::create_dir_all(&cargo_home)
+        .await
+        .map_err(EvalError::io("create", &cargo_home))?;
+    environment.insert("CARGO_HOME".into(), cargo_home.into());
     environment.insert("NO_COLOR".into(), "1".into());
     for (name, value) in &task.env {
         environment.insert(name.into(), fill(value).into());
@@ -81,7 +97,26 @@ pub(crate) async fn prepare(
     Ok(Prepared {
         workspace,
         environment,
+        hidden: cargo_downloads(base),
     })
+}
+
+/// The value of `name` in `environment`, when it is set.
+fn variable<'a>(environment: &'a [(OsString, OsString)], name: &str) -> Option<&'a OsString> {
+    (environment.iter())
+        .find(|(key, value)| key == name && !value.is_empty())
+        .map(|(_, value)| value)
+}
+
+/// Where this machine's Cargo home keeps what it downloaded, as `cargo` finds that home in
+/// `environment`: `CARGO_HOME`, else `~/.cargo`.
+fn cargo_downloads(environment: &[(OsString, OsString)]) -> Vec<PathBuf> {
+    let home = variable(environment, "CARGO_HOME")
+        .map(PathBuf::from)
+        .or_else(|| variable(environment, "HOME").map(|home| Path::new(home).join(".cargo")));
+    (home.iter())
+        .flat_map(|home| CARGO_DOWNLOADS.iter().map(|folder| home.join(folder)))
+        .collect()
 }
 
 /// Whether the task's commands run in the sandbox wherever it can run: below full access.
@@ -102,7 +137,7 @@ fn target(dir: &Path, task: &Task) -> PathBuf {
         .join("target")
 }
 
-/// Removes what a run built, keeping its workspace and records.
+/// Removes what a run built and downloaded, keeping its workspace and records.
 pub(crate) async fn tidy(dir: &Path, task: &Task) {
     // Its temp folder too, with whatever its scripts left there, read-only folders and all.
     let temp = dir.join(TEMP);
@@ -115,6 +150,7 @@ pub(crate) async fn tidy(dir: &Path, task: &Task) {
         &target
     };
     let _ = tokio::fs::remove_dir_all(built).await;
+    let _ = tokio::fs::remove_dir_all(dir.join(CARGO_HOME)).await;
 }
 
 /// A finished script.
@@ -207,4 +243,34 @@ fn copy_tree(from: &Path, to: &Path) -> Result<(), EvalError> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn environment(pairs: &[(&str, &str)]) -> Vec<(OsString, OsString)> {
+        (pairs.iter())
+            .map(|(name, value)| ((*name).into(), (*value).into()))
+            .collect()
+    }
+
+    /// The downloads hidden are in the Cargo home `cargo` itself would use.
+    #[test]
+    fn this_machine_s_downloads_are_where_cargo_keeps_them() {
+        let named = environment(&[("HOME", "/h"), ("CARGO_HOME", "/c")]);
+        assert_eq!(
+            cargo_downloads(&named),
+            [PathBuf::from("/c/registry"), PathBuf::from("/c/git")]
+        );
+        let unnamed = environment(&[("HOME", "/h"), ("CARGO_HOME", "")]);
+        assert_eq!(
+            cargo_downloads(&unnamed),
+            [
+                PathBuf::from("/h/.cargo/registry"),
+                PathBuf::from("/h/.cargo/git")
+            ]
+        );
+        assert_eq!(cargo_downloads(&environment(&[])), Vec::<PathBuf>::new());
+    }
 }

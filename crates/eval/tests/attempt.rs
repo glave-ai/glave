@@ -103,6 +103,68 @@ fn a_task_done_right_passes_and_leaves_its_record() {
     );
 }
 
+/// Each attempt starts with an empty Cargo home of its own, which goes with what it built.
+#[test]
+fn an_attempt_has_an_empty_cargo_home_of_its_own() {
+    let dir = folder("cargo-home");
+    let task = task(
+        &dir,
+        "",
+        "test \"$CARGO_HOME\" = \"$(cd .. && pwd -P)/cargo-home\" && test -d \"$CARGO_HOME\" \
+             && test -z \"$(ls -A \"$CARGO_HOME\")\"\n",
+    );
+    let server = FakeServer::start(writes_hello()).unwrap();
+    let run = dir.join("run");
+    let done = block_on!(attempt(&setup(&server), &task, "fake-model", 1, &run)).unwrap();
+    assert_eq!(done.failures, Vec::<String>::new());
+    assert!(!run.join("cargo-home").exists(), "it goes with the attempt");
+}
+
+/// What this machine's Cargo home downloaded is hidden from an attempt's commands, which could
+/// otherwise build offline what a fresh computer would have to download (#823); the rest of
+/// it, where `cargo` itself is, stays readable. Where CI expects the sandbox, it must run.
+#[test]
+fn this_machine_s_crate_downloads_are_hidden_from_an_attempt() {
+    let sandbox = glave_computer::sandbox_available();
+    let required = std::env::var_os("GLAVE_REQUIRE_SANDBOX").is_some();
+    assert!(
+        sandbox || !required,
+        "no sandbox runs here, which CI requires"
+    );
+    if !sandbox {
+        return;
+    }
+    let dir = folder("downloads");
+    let machine = dir.join("machine-cargo");
+    for (folder, text) in [("registry", "canary-crate"), ("git", "canary-checkout")] {
+        std::fs::create_dir_all(machine.join(folder)).unwrap();
+        std::fs::write(machine.join(folder).join("lib.rs"), text).unwrap();
+    }
+    std::fs::create_dir_all(machine.join("bin")).unwrap();
+    std::fs::write(machine.join("bin/cargo"), "cargo-readable").unwrap();
+    let task = task(&dir, "permissions = \"auto\"", "exit 0\n");
+    let reads = format!(
+        "cat '{0}/registry/lib.rs' '{0}/git/lib.rs' '{0}/bin/cargo'; true",
+        machine.display()
+    );
+    let server = FakeServer::start(vec![
+        Reply::tool_call("call_1", "bash", &json!({ "command": reads })),
+        Reply::text("Read them."),
+    ])
+    .unwrap();
+    let mut setup = setup(&server);
+    setup.environment.retain(|(name, _)| name != "CARGO_HOME");
+    setup
+        .environment
+        .push(("CARGO_HOME".into(), machine.into()));
+    let run = dir.join("run");
+    let done = block_on!(attempt(&setup, &task, "fake-model", 1, &run)).unwrap();
+    assert_eq!(done.failures, Vec::<String>::new());
+    let events = std::fs::read_to_string(run.join("events.jsonl")).unwrap();
+    assert!(events.contains("cargo-readable"), "{events}");
+    assert!(!events.contains("canary-"), "{events}");
+}
+
 #[test]
 fn every_failure_is_named() {
     let dir = folder("fails");

@@ -69,6 +69,7 @@ impl Enforcer {
         git_common: Option<&Path>,
         helper: Option<&Path>,
         cache: Option<&Path>,
+        also_hidden: &[PathBuf],
     ) -> Result<(Self, Temps), ComputerError> {
         let git_common = resolved(git_common).await;
         let how = choose(sandbox, root, git_common.as_deref(), helper).await?;
@@ -86,6 +87,7 @@ impl Enforcer {
             empty_folder: folder.empty_folder(),
             shared_tmp: resolved(Some(Path::new("/tmp"))).await,
             home: resolved(sandbox.home.as_deref()).await,
+            also_hidden: also_hidden.to_vec(),
             glave_home: resolved(sandbox.glave_home.as_deref()).await,
             cache: cache.map(Path::to_path_buf),
             runtime: resolved(Some(runtime_folder().as_path())).await,

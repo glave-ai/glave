@@ -61,6 +61,9 @@ pub struct LocalComputers {
     host: Option<ComputerId>,
     /// A program that runs [`crate::sandbox_helper`], for Linux's Landlock fallback.
     sandbox_helper: Option<PathBuf>,
+    /// Places on this machine its sandboxed commands may not read, beside the home folder's
+    /// credential stores.
+    hidden: Arc<[PathBuf]>,
     environment: Arc<Vec<(OsString, OsString)>>,
     registry: Registry,
     /// The commands its workspaces keep running in the background.
@@ -85,6 +88,7 @@ impl LocalComputers {
             projects: None,
             host: None,
             sandbox_helper: None,
+            hidden: Arc::new([]),
             environment: Arc::new(without_secrets(environment)),
             registry: Registry::default(),
             background: Backgrounds::default(),
@@ -158,6 +162,16 @@ impl LocalComputers {
     #[must_use]
     pub fn with_processes(mut self, processes: Processes) -> Self {
         self.processes = processes;
+        self
+    }
+
+    /// Hides `places` from its sandboxed commands too, as the home folder's credential stores
+    /// are, whether they exist yet or not (on Linux, from the next command once they do): the
+    /// evals hide this machine's own crate downloads, so an attempt starts as a fresh computer
+    /// would.
+    #[must_use]
+    pub fn with_hidden(mut self, places: impl IntoIterator<Item = PathBuf>) -> Self {
+        self.hidden = places.into_iter().collect();
         self
     }
 
@@ -240,6 +254,7 @@ impl LocalComputers {
             copy,
             git_common,
             environment,
+            hidden: Arc::clone(&self.hidden),
             credential: credential.cloned(),
             prepared: Mutex::new(None),
             processes: self.processes.owned_by(Owner::Workspace(id.to_string())),

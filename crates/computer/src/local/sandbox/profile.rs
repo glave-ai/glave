@@ -52,7 +52,8 @@ const NETWORK_RULES: &str = r#"; network: allowed
 pub(crate) struct Places {
     pub root: PathBuf,
     pub glave_home: Option<PathBuf>,
-    /// Credential stores, hidden: the home folder's, and where links among them lead.
+    /// Hidden: the home folder's credential stores and whatever else the computer hides, and
+    /// where links among them lead.
     pub hidden: Vec<PathBuf>,
     /// glave's sandbox cache folder, readable and writable inside glave's own.
     pub cache: Option<PathBuf>,

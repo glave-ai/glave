@@ -32,6 +32,8 @@ pub(crate) struct Opened {
     /// in a sandbox, so that `git commit` works there.
     pub(crate) git_common: Option<PathBuf>,
     pub(crate) environment: Arc<Vec<(OsString, OsString)>>,
+    /// Places its sandboxed commands may not read, beside the home folder's credential stores.
+    pub(crate) hidden: Arc<[PathBuf]>,
     /// The credential its sources were opened with, kept in memory only, for saving them.
     pub(crate) credential: Option<GitCredential>,
     /// The sandbox its commands last ran in, prepared once and kept while they ask for the
@@ -58,7 +60,8 @@ impl Opened {
         if let Some(kept) = kept {
             return Ok(kept);
         }
-        let prepared = Prepared::new(sandbox, &self.root, self.git_common.as_deref(), helper);
+        let git_common = self.git_common.as_deref();
+        let prepared = Prepared::new(sandbox, &self.root, git_common, helper, &self.hidden);
         let prepared = Arc::new(prepared.await?);
         if let Ok(mut kept) = self.prepared.lock() {
             *kept = Some(Arc::clone(&prepared));
