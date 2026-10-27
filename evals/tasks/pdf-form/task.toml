@@ -1,0 +1,13 @@
+[task]
+name = "glave/pdf-form"
+description = "Fills in a PDF form whose fields aren't named as their labels: text, a date format, radio buttons and a checkbox, leaving another person's part empty."
+
+[agent]
+timeout_sec = 600
+
+[glave]
+tier = "fast"
+permissions = "auto"
+# The form is made as the task starts, as a form-making app saves one, by a script kept as
+# text, and the script removed.
+setup = ["sh make-form.sh && rm make-form.sh"]

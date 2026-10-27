@@ -15,10 +15,11 @@ use crate::cells::{Cell, Range, SheetRange, column_number, listed};
 use crate::error::OfficeError;
 use description::{ChartDescription, Description, SheetDescription};
 
-/// A workbook written: its bytes, and what it holds in words.
+/// A new file: its bytes, and what it holds in words.
 pub(crate) struct Written {
     pub(crate) bytes: Vec<u8>,
-    /// Each sheet with its rows, formulas and charts, then what to know about them.
+    /// A workbook's sheets with their rows, formulas and charts, then what to know about
+    /// them; a PDF's pages, or the fields filled.
     pub(crate) report: String,
 }
 

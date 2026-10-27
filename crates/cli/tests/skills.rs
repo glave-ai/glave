@@ -60,6 +60,7 @@ fn glave_skills_lists_them_and_warns_about_the_broken_one() {
         stdout.contains("\nglave:spreadsheets\n  Read, analyze, make and edit spreadsheets")
             && stdout.contains("\nglave:documents\n  Read and edit Word documents")
             && stdout.contains("\nglave:presentations\n  Read and edit PowerPoint decks")
+            && stdout.contains("\nglave:pdfs\n  Merge, split, reorder and rotate PDF pages")
             && stdout.contains("\n  built into glave"),
         "glave's own come after: {shown}"
     );

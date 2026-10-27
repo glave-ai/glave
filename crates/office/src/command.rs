@@ -4,13 +4,17 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use changing::{Change, Making, changing};
+
 use crate::error::OfficeError;
 use crate::package::{Kind, Package};
+use crate::pdf;
 use crate::read::{self, Reading};
-use crate::{document, parts, presentation, write};
+use crate::write::{self, Written};
+use crate::{document, parts, presentation};
 
 pub const USAGE: &str = "\
-glave doc: read, write and edit office files, with nothing else installed
+glave doc: read, write and edit office files, and change PDFs, with nothing else installed
 
 Usage:
   glave doc read <file> [--sheet <name>] [--rows <first>-<last>]
@@ -29,7 +33,21 @@ Usage:
       part an element to a line, to edit in place
   glave doc pack <folder> <file> [--replace]
       an unpacked folder back into an Office file, each XML part checked first; --replace
-      writes over a file already there";
+      writes over a file already there
+  glave doc merge <new.pdf> <file.pdf> <file.pdf>... [--replace]
+      a new PDF of the PDFs' pages, each one's after the one before's
+  glave doc pages <file.pdf> <new.pdf> <pages> [--replace]
+      a new PDF of the pages named, in that order: 1-3,7 is pages 1 to 3 then 7, 5- runs
+      from page 5 to the last, and 3-1 runs backwards
+  glave doc rotate <file.pdf> <new.pdf> <degrees> [<pages>] [--replace]
+      a new PDF with the pages named, or every page, turned clockwise by 90, 180 or 270
+      degrees (-90 turns them anticlockwise)
+  glave doc fields <file.pdf>
+      a PDF form's fields: each one's name, kind, page and value
+  glave doc fill <file.pdf> <new.pdf> [<values.json>] [--replace]
+      a new PDF with its form filled from a JSON object of field names and values, read
+      from standard input unless its file is named: text for text, true or false for a
+      checkbox, one of its values for a choice";
 
 /// The largest file read: a workbook is read whole, and so is a description.
 const MAX_FILE: u64 = 100 * 1024 * 1024;
@@ -61,6 +79,10 @@ enum Asked {
     /// An Office file to unpack, and the folder for its parts.
     Unpack(PathBuf, PathBuf),
     Pack(Packing),
+    /// A PDF whose form's fields to list.
+    Fields(PathBuf),
+    /// A new PDF to write, and what it is made from.
+    Pdf(Making, Change),
 }
 
 /// An unpacked folder to pack into a file.
@@ -103,7 +125,20 @@ pub fn run(words: &[String], input: &mut dyn Read) -> Result<Answer, OfficeError
             }
             read::csv(bytes, sheet.as_deref())
         }
-        Asked::Write(writing) => write_new(&writing, input),
+        Asked::Write(Writing {
+            out,
+            description,
+            replace,
+        }) => make(&out, replace, OfficeError::Exists, || {
+            let json = json(
+                description.as_deref(),
+                input,
+                "it",
+                OfficeError::Description,
+                "there is none: give it on standard input, or name its file after the workbook's",
+            )?;
+            write::write(&json)
+        }),
         Asked::Unpack(file, folder) => {
             parts::unpack(&bytes(&file)?, &file, &folder).map(Answer::printed)
         }
@@ -112,6 +147,8 @@ pub fn run(words: &[String], input: &mut dyn Read) -> Result<Answer, OfficeError
             out,
             replace,
         }) => parts::pack(&folder, &out, replace).map(Answer::printed),
+        Asked::Fields(file) => pdf::fields(&changing::given(&file)?).map(Answer::printed),
+        Asked::Pdf(making, change) => changing::changed(&making, &change, input),
     }
 }
 
@@ -146,6 +183,12 @@ fn reader(kind: Kind) -> Option<ReadParts> {
 /// The file in `bytes`, named `name`, as text: a Word document or a PowerPoint deck read from
 /// its XML, anything else as a workbook.
 fn read_any(bytes: Vec<u8>, name: &str, reading: &Reading) -> Result<String, OfficeError> {
+    if bytes.starts_with(b"%PDF-") {
+        return Err(OfficeError::NotOffice(format!(
+            "{name} is a PDF, which the read tool shows as it is; glave doc merge, pages, \
+             rotate, fields and fill change PDFs"
+        )));
+    }
     if let Some((mut package, main, kind)) = office(&bytes)
         && let Some(read) = reader(kind)
     {
@@ -163,55 +206,63 @@ fn read_any(bytes: Vec<u8>, name: &str, reading: &Reading) -> Result<String, Off
     })
 }
 
-/// Writes the workbook `writing` asks for, unless a file there would be lost.
-fn write_new(writing: &Writing, input: &mut dyn Read) -> Result<Answer, OfficeError> {
-    let out = &writing.out;
-    if !writing.replace && std::fs::symlink_metadata(out).is_ok() {
-        return Err(OfficeError::Exists(out.clone()));
+/// The file `made` makes, written to `out` unless a file is there and `replace` isn't given:
+/// `refused` says why it wasn't written.
+fn make(
+    out: &Path,
+    replace: bool,
+    refused: fn(PathBuf) -> OfficeError,
+    made: impl FnOnce() -> Result<Written, OfficeError>,
+) -> Result<Answer, OfficeError> {
+    if !replace && std::fs::symlink_metadata(out).is_ok() {
+        return Err(refused(out.to_path_buf()));
     }
-    let json = if let Some(path) = &writing.description {
-        bytes(path)?
-    } else {
-        given(input)?
-    };
-    let json = String::from_utf8(json)
-        .map_err(|_| OfficeError::Description("it is not text in UTF-8".to_owned()))?;
-    if json.trim().is_empty() {
-        return Err(OfficeError::Description(
-            "there is none: give it on standard input, or name its file after the workbook's"
-                .to_owned(),
-        ));
-    }
-    let written = write::write(&json)?;
-    std::fs::write(out, written.bytes).map_err(|error| OfficeError::Io {
+    let Written { bytes, report } = made()?;
+    std::fs::write(out, bytes).map_err(|error| OfficeError::Io {
         action: "write",
-        path: out.clone(),
+        path: out.to_path_buf(),
         error,
     })?;
     Ok(Answer::printed(format!(
-        "Wrote {}: {}",
-        out.display(),
-        written.report
+        "Wrote {}: {report}",
+        out.display()
     )))
 }
 
-/// What `input` gives, whole, when it is not too large to read.
-fn given(input: &mut dyn Read) -> Result<Vec<u8>, OfficeError> {
-    let mut given = Vec::new();
-    input
-        .take(MAX_FILE + 1)
-        .read_to_end(&mut given)
-        .map_err(|error| OfficeError::Io {
-            action: "read the description from",
-            path: "standard input".into(),
-            error,
-        })?;
-    if u64::try_from(given.len()).unwrap_or(u64::MAX) > MAX_FILE {
-        return Err(OfficeError::Description(format!(
-            "it is longer than the {MAX_FILE} bytes glave reads"
-        )));
+/// JSON given as the file at `path`, or else on `input`: `what` names it in what `wrong` says
+/// is wrong with it, and `missing` says what to do when there is none.
+fn json(
+    path: Option<&Path>,
+    input: &mut dyn Read,
+    what: &'static str,
+    wrong: fn(String) -> OfficeError,
+    missing: &str,
+) -> Result<String, OfficeError> {
+    let json = if let Some(path) = path {
+        bytes(path)?
+    } else {
+        let mut given = Vec::new();
+        input
+            .take(MAX_FILE + 1)
+            .read_to_end(&mut given)
+            .map_err(|error| OfficeError::Io {
+                action: "read",
+                path: "standard input".into(),
+                error,
+            })?;
+        if u64::try_from(given.len()).unwrap_or(u64::MAX) > MAX_FILE {
+            return Err(wrong(format!(
+                "{what} is longer than the {MAX_FILE} bytes glave reads"
+            )));
+        }
+        given
+    };
+    let json =
+        String::from_utf8(json).map_err(|_| wrong(format!("{what} is not text in UTF-8")))?;
+    if json.trim().is_empty() {
+        return Err(wrong(missing.to_owned()));
     }
-    Ok(given)
+    Ok(json)
 }
 
 /// The file at `path`, whole, when it is not too large to read.
@@ -259,7 +310,7 @@ fn parse(words: &[String]) -> Result<Asked, OfficeError> {
         ("help" | "-h" | "--help", _) => Ok(Asked::Help),
         ("read", [file]) if reading => Ok(Asked::Read(file.clone(), Reading { sheet, rows })),
         ("csv", [file]) if reading && rows.is_none() => Ok(Asked::Csv(file.clone(), sheet)),
-        ("write", [out, ..]) if !is_xlsx(out) => Err(usage(&format!(
+        ("write", [out, ..]) if !ends_in(out, "xlsx") => Err(usage(&format!(
             "glave doc write makes .xlsx workbooks: name the new one first, like report.xlsx, \
              not {}",
             out.display()
@@ -282,16 +333,25 @@ fn parse(words: &[String]) -> Result<Asked, OfficeError> {
             out: out.clone(),
             replace,
         })),
-        ("read" | "csv" | "write" | "unpack" | "pack", _) => Err(usage(&format!(
+        ("fields", [file]) if reading && writing => Ok(Asked::Fields(file.clone())),
+        ("merge" | "pages" | "rotate" | "fill", files) if writing => {
+            changing(verb, files, replace).map(|(making, change)| Asked::Pdf(making, change))
+        }
+        (
+            "read" | "csv" | "write" | "unpack" | "pack" | "fields" | "merge" | "pages" | "rotate"
+            | "fill",
+            _,
+        ) => Err(usage(&format!(
             "glave doc {verb} was not given what it takes"
         ))),
         _ => Err(usage(&format!("glave doc has no command {verb:?}"))),
     }
 }
 
-fn is_xlsx(path: &Path) -> bool {
+/// Whether `path`'s name ends in `extension`, in any case.
+fn ends_in(path: &Path, extension: &str) -> bool {
     path.extension()
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("xlsx"))
+        .is_some_and(|its| its.eq_ignore_ascii_case(extension))
 }
 
 fn value<'a>(word: Option<&'a String>, flag: &str, what: &str) -> Result<&'a String, OfficeError> {
@@ -313,6 +373,8 @@ fn row_span(text: &str) -> Result<(u32, u32), OfficeError> {
 fn usage(why: &str) -> OfficeError {
     OfficeError::Usage(format!("{why}\n\n{USAGE}"))
 }
+
+mod changing;
 
 #[cfg(test)]
 mod tests;

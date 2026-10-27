@@ -90,8 +90,9 @@ Usage:
   glave connections [remove <id> | <name>]
                                 list your connections and git hosts, or remove one
   glave search [on | off]       whether glave may search the web for you, or turn it on or off
-  glave doc read|csv|write      read or make a spreadsheet, with nothing else installed
-                                (glave doc --help)
+  glave doc <command>           read, make and edit spreadsheets, documents and decks, and
+                                merge, split, turn and fill in PDFs, with nothing else
+                                installed (glave doc --help)
 
 Options:
   --model <name>     the model to use: one glave runs (default: its default model)

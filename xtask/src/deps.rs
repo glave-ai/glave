@@ -52,7 +52,7 @@ const LAYERS: &[(&str, Layer)] = &[
     ("glave-web", Adapter),
     // Office files for `glave doc`: workbooks read with calamine and written with
     // rust_xlsxwriter, Word and PowerPoint read from their XML and any Office file edited in
-    // place, with zip and quick-xml.
+    // place, with zip and quick-xml; PDFs' pages and forms changed with lopdf.
     ("glave-office", Adapter),
     // The model port over OpenAI-compatible APIs.
     ("glave-provider-openai", Adapter),

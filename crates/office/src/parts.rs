@@ -191,7 +191,7 @@ struct Part {
 /// each XML part checked, and drawn back together as it was before it was unpacked.
 pub(crate) fn pack(folder: &Path, out: &Path, replace: bool) -> Result<String, OfficeError> {
     if !replace && std::fs::symlink_metadata(out).is_ok() {
-        return Err(OfficeError::PackedOver(out.to_path_buf()));
+        return Err(OfficeError::AlreadyThere(out.to_path_buf()));
     }
     let shown = folder.display().to_string();
     let mut found = BTreeSet::new();
