@@ -1,133 +1,39 @@
 //! A turn stopped at every event boundary (`specs/one-server.md`, "The pull requests", 5): its
-//! server dies after the first `n` appends, for every `n` a whole run makes, and a server
-//! started on the same store finds each turn waiting or closes it `interrupted`; answering
-//! what waits then takes the turn to its end. Alone and with two subagents side by side, no
-//! call ever runs twice.
+//! server stops after its first `n` appends, and nothing it appends after lands, for every `n`
+//! up to what a whole run makes; a server started on the same store finds each turn waiting or
+//! closes it `interrupted`, and answering what waits then takes every turn to its end. A turn
+//! whose start never landed has nothing to repair: its request failed. Alone and with two
+//! subagents side by side, no call ever runs twice.
 
-use std::future::Future;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
-use glave_event::{Arguments, RawEvent, Seq, ThreadId};
-use glave_ports::testing::ScriptedModel;
+use glave_event::{Arguments, ThreadId};
+use glave_ports::testing::{FaultyLog, ScriptedModel};
 use glave_ports::{
     BoxFuture, Completion, Effect, EventLog, InMemoryLeases, InMemoryProjects, InMemoryTools,
-    Leases, Located, LogError, Projects, Scope, ThreadQuery, ThreadView, ToolInfo, ToolOutput,
-    ToolSource, ToolSpec,
+    Leases, Projects, ToolInfo, ToolOutput, ToolSource, ToolSpec,
 };
-use glave_session::protocol::{Reply, Request};
+use glave_session::protocol::{Reply, Request, Status};
 use serde_json::json;
 
 use super::{Memory, Opened, Store, answering, calling, calling_all, server_on, subagent, waiting};
 use crate::support::*;
 
-/// A log that takes `left` appends, then refuses every other, as a store whose glave died
-/// does: nothing more lands.
-#[derive(Clone)]
-struct Dying {
-    log: Shared,
-    left: Arc<AtomicUsize>,
-    died: Arc<AtomicBool>,
-}
+/// More appends than a whole run of either script makes.
+const BOUNDARIES: usize = 100;
 
-impl Dying {
-    fn after(log: &Shared, appends: usize) -> Self {
-        Self {
-            log: log.clone(),
-            left: Arc::new(AtomicUsize::new(appends)),
-            died: Arc::default(),
-        }
-    }
-}
-
-impl EventLog for Dying {
-    fn append(
-        &self,
-        scope: &Scope,
-        events: &[RawEvent],
-    ) -> impl Future<Output = Result<(), LogError>> + Send {
-        let alive = self
-            .left
-            .try_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
-                left.checked_sub(1)
-            })
-            .is_ok();
-        if !alive {
-            self.died.store(true, Ordering::SeqCst);
-        }
-        let appended = self.log.append(scope, events);
-        async move {
-            if alive {
-                appended.await
-            } else {
-                Err(LogError::Storage("this glave stopped".into()))
-            }
-        }
-    }
-
-    fn read(
-        &self,
-        scope: &Scope,
-        thread: ThreadId,
-        after: Option<Seq>,
-        limit: usize,
-    ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send {
-        self.log.read(scope, thread, after, limit)
-    }
-
-    fn search(
-        &self,
-        scope: &Scope,
-        query: &str,
-        limit: usize,
-    ) -> impl Future<Output = Result<Vec<glave_ports::search::Found>, LogError>> + Send {
-        self.log.search(scope, query, limit)
-    }
-
-    fn locate(
-        &self,
-        thread: ThreadId,
-    ) -> impl Future<Output = Result<Option<Located>, LogError>> + Send {
-        self.log.locate(thread)
-    }
-
-    fn thread_views(
-        &self,
-        scope: &Scope,
-        query: &ThreadQuery,
-    ) -> impl Future<Output = Result<Vec<ThreadView>, LogError>> + Send {
-        self.log.thread_views(scope, query)
-    }
-
-    fn thread_view(
-        &self,
-        scope: &Scope,
-        thread: ThreadId,
-    ) -> impl Future<Output = Result<Option<ThreadView>, LogError>> + Send {
-        self.log.thread_view(scope, thread)
-    }
-
-    fn rebuild_thread_view(
-        &self,
-        scope: &Scope,
-        thread: ThreadId,
-    ) -> impl Future<Output = Result<Option<ThreadView>, LogError>> + Send {
-        self.log.rebuild_thread_view(scope, thread)
-    }
-}
-
-/// The server that dies: the store's log, dying after its appends, and its projects; its
-/// leases its own, so they are gone with it, as a dead server's lapse.
+/// The server that stops: the store's log, through a log that stops landing its appends, and
+/// its projects; its leases its own, so they are gone with it, as a stopped server's lapse.
 struct Doomed {
-    log: Dying,
+    log: FaultyLog,
     projects: Arc<InMemoryProjects>,
     leases: Arc<InMemoryLeases>,
 }
 
 impl Store for Doomed {
-    type Log = Dying;
-    fn open(&self) -> BoxFuture<'_, Opened<Dying>> {
+    type Log = FaultyLog;
+    fn open(&self) -> BoxFuture<'_, Opened<FaultyLog>> {
         let projects: Arc<dyn Projects> = Arc::clone(&self.projects) as Arc<dyn Projects>;
         let leases: Arc<dyn Leases> = Arc::clone(&self.leases) as Arc<dyn Leases>;
         Box::pin(std::future::ready((self.log.clone(), projects, leases)))
@@ -215,14 +121,14 @@ fn runs(tools: &InMemoryTools) -> Vec<(String, usize)> {
 }
 
 /// Answers whatever `root`'s turn, or a subagent's, waits for, until the turn has ended, or
-/// until `dead` says its server can record nothing more. Answered with every wait it met.
+/// until `stopped` says its server can record nothing more.
 async fn answer_until_done<L: EventLog + 'static>(
     server: &Tested<L>,
     root: ThreadId,
-    dead: impl Fn() -> bool,
+    stopped: impl Fn() -> bool,
 ) {
     for _ in 0..100_000 {
-        if dead() {
+        if stopped() {
             return;
         }
         let ended = events(server, root)
@@ -241,50 +147,49 @@ async fn answer_until_done<L: EventLog + 'static>(
     panic!("the turn never ended");
 }
 
-/// Whether every open turn of `root` and its subagents waits, as their views say after a
-/// restart: none is left running.
-async fn none_left_running<L: EventLog + 'static>(server: &Tested<L>, root: ThreadId) -> bool {
+/// The open turns of `root` and its subagents, each by whether it waits as its view says: a
+/// parent whose subagent waits is waiting too.
+async fn left_open<L: EventLog + 'static>(server: &Tested<L>, root: ThreadId) -> Vec<bool> {
     let mut threads = vec![root];
     threads.extend(super::children_of(server, root).await);
+    let mut open = Vec::new();
     for thread in threads {
         let got = server.request(Request::ThreadGet { thread }).await.unwrap();
         let Reply::Thread { thread: summary } = got else {
-            return false;
+            panic!("a thread, not {got:?}");
         };
-        let events = events(server, thread).await;
-        let open = events
+        let turn_open = events(server, thread)
+            .await
             .iter()
             .rev()
             .find(|event| matches!(event.kind.as_str(), "turn.started" | "turn.ended"))
             .is_some_and(|event| event.kind.as_str() == "turn.started");
-        let waits = summary.status == glave_session::protocol::Status::Waiting;
-        // A parent whose subagent waits is waiting too.
-        if open && !waits {
-            return false;
+        if turn_open {
+            open.push(summary.status == Status::Waiting);
         }
     }
-    true
+    open
 }
 
 /// `script` stopped after `appends` appends, then taken to its end by a server on the same
-/// store: whether every turn was waiting or closed, how often each deploy ran, and how many
-/// appends the first server made.
+/// store: every turn left open waits or is closed, then ends, and no deploy runs twice. How
+/// often each deploy ran when the run was whole, its server never stopped.
 async fn stopped_after(
     name: &str,
     script: fn() -> Vec<(&'static str, Vec<Completion>)>,
     appends: usize,
-) -> (bool, Vec<(String, usize)>, usize) {
+) -> Option<Vec<(String, usize)>> {
     let dir = folder(&format!("{name}-{appends}"));
     let tools = deploys();
     let shared = Memory::new();
     let (_, own_leases) = shared_leases();
+    let log = FaultyLog::over(Arc::clone(&shared.log.0));
+    log.stop_after(appends);
     let doomed = Doomed {
-        log: Dying::after(&shared.log, appends),
+        log: log.clone(),
         projects: Arc::clone(&shared.projects),
         leases: own_leases,
     };
-    let dead = Arc::clone(&doomed.log.died);
-    let left = Arc::clone(&doomed.log.left);
     let sources: Vec<Arc<dyn ToolSource>> = vec![Arc::clone(&tools) as Arc<dyn ToolSource>];
     let first = server_on(
         &dir,
@@ -308,48 +213,71 @@ async fn stopped_after(
     let Ok(Reply::Thread { thread }) = started else {
         // Stopped before its thread was kept: nothing ran.
         first.stop(Duration::ZERO).await;
-        let used = appends.saturating_sub(left.load(Ordering::SeqCst));
-        return (true, runs(&tools), used);
+        assert!(log.stopped(), "a thread refused with {started:?}");
+        return None;
     };
     let root = thread.id;
-    let stream = stream_turn(&first, root, "PARENT: go", None).await;
-    answer_until_done(&first, root, || dead.load(Ordering::SeqCst)).await;
+    let mut stream = stream_turn(&first, root, "PARENT: go", None).await;
+    answer_until_done(&first, root, || log.stopped()).await;
+    let begun = events(&first, root)
+        .await
+        .iter()
+        .any(|event| event.kind.as_str() == "turn.started");
+    if !begun {
+        // Stopped before its turn was kept: nothing to repair, and the request failed.
+        let failed = match &mut stream {
+            Ok(stream) => stream.finish().await.is_err(),
+            Err(_) => true,
+        };
+        assert!(
+            failed,
+            "stopped after {appends} appends: a turn never kept ended well"
+        );
+    }
     first.stop(Duration::ZERO).await;
     drop((stream, first));
 
     let second = server_on(&dir, &shared, ScriptedModel::keyed(script()), sources, 2).await;
     second.repair_left_open().await.unwrap();
-    let settled = none_left_running(&second, root).await;
-    answer_until_done(&second, root, || false).await;
+    assert!(
+        left_open(&second, root).await.iter().all(|waits| *waits),
+        "stopped after {appends} appends: a turn was left running"
+    );
+    if begun {
+        answer_until_done(&second, root, || false).await;
+    }
     second.stop(Duration::from_secs(3_600)).await;
-    let used = appends.saturating_sub(left.load(Ordering::SeqCst));
-    (settled, runs(&tools), used)
+    assert_eq!(
+        left_open(&second, root).await,
+        Vec::<bool>::new(),
+        "stopped after {appends} appends: a turn never ended"
+    );
+    let ran = runs(&tools);
+    assert!(
+        ran.iter().all(|(_, n)| *n <= 1),
+        "stopped after {appends} appends: a call ran twice: {ran:?}"
+    );
+    (!log.stopped()).then_some(ran)
 }
 
-/// Every boundary of `script`'s run: how many appends a whole run makes, deploying each of
-/// `parts` once, then a run stopped after each count.
+/// `script`'s run stopped at every boundary, one append after another, until a run is whole:
+/// it deploys each of `parts` once.
 async fn every_boundary(
     name: &str,
     script: fn() -> Vec<(&'static str, Vec<Completion>)>,
     parts: &[&str],
 ) {
-    let whole = usize::MAX / 2;
-    let (_, mut all, total) = stopped_after(name, script, whole).await;
-    all.sort();
-    let once: Vec<(String, usize)> = parts.iter().map(|part| ((*part).to_owned(), 1)).collect();
-    assert_eq!(all, once, "a whole run deploys each part once");
-    assert!(total > 10, "a whole run appends {total} times");
-    for appends in 0..total {
-        let (settled, ran, _) = stopped_after(name, script, appends).await;
-        assert!(
-            settled,
-            "stopped after {appends} appends: a turn was left running"
-        );
-        assert!(
-            ran.iter().all(|(_, n)| *n <= 1),
-            "stopped after {appends} appends: a call ran twice: {ran:?}"
-        );
+    for appends in 0..BOUNDARIES {
+        let Some(mut all) = stopped_after(name, script, appends).await else {
+            continue;
+        };
+        all.sort();
+        let once: Vec<(String, usize)> = parts.iter().map(|part| ((*part).to_owned(), 1)).collect();
+        assert_eq!(all, once, "a whole run deploys each part once");
+        assert!(appends > 10, "a whole run appends {appends} times");
+        return;
     }
+    panic!("no run was whole within {BOUNDARIES} appends");
 }
 
 #[test]

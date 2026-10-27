@@ -61,7 +61,6 @@
 98f24eff20f113f2 8 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
 9917f56ff024635e 7 crates/computer/src/local/credentials/tests.rs crates/computer/src/local/sandbox/linux/tests.rs crates/computer/src/local/sandbox/tests.rs
 9a55ffbd3709ee1f 12 crates/memory/tests/safety.rs crates/memory/tests/safety.rs
-9b355e43cd2e040a 24 crates/ports/src/testing/faulty.rs crates/session/tests/durable/crashes.rs
 9e0deedec0a616b8 11 crates/cli/src/memory.rs crates/cli/src/threads.rs
 a0516b39583ad5d6 7 web/e2e/languages.e2e.ts web/e2e/support.ts
 a2cc55aeef3d089c 11 crates/gateway-service/src/http.rs crates/session/src/http.rs
