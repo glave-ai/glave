@@ -20,9 +20,9 @@ no spreadsheet app has opened it since; work the value out yourself if you need 
 the cells' own (`19.5`), not as the sheet formats them (`$19.50`); dates read `2026-01-31`. A
 sheet marked hidden is still read; say so if you use it.
 
-For sums, counts and averages over many rows, take the sheet as CSV and compute with `awk` or
-whatever the machine has, rather than adding numbers up by reading them. Before you answer,
-check which rows are headers and totals, and that the cells you use cover what was asked.
+For sums, counts and averages over many rows, query the sheet with `glave doc sql` (the
+`glave:data` skill), rather than adding numbers up by reading them. Before you answer, check
+which rows are headers and totals, and that the cells you use cover what was asked.
 
 ## Making a workbook
 

@@ -1,2 +1,9 @@
 [alias]
 xtask = "run --quiet --package xtask --"
+
+[env]
+# SQLite as glave builds it (rusqlite's bundled copy), with the math functions (sqrt, power,
+# ln, floor...) and percentile functions (median, percentile, percentile_cont,
+# percentile_disc) it leaves out unless asked, for `glave doc sql` (glave-office). Not forced,
+# so a build may set its own.
+LIBSQLITE3_FLAGS = "-DSQLITE_ENABLE_MATH_FUNCTIONS -DSQLITE_ENABLE_PERCENTILE"

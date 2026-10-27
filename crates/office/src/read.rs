@@ -35,7 +35,7 @@ type At = (u32, u32);
 
 type Book = Sheets<Cursor<Vec<u8>>>;
 
-fn open(bytes: Vec<u8>) -> Result<Book, OfficeError> {
+pub(crate) fn open(bytes: Vec<u8>) -> Result<Book, OfficeError> {
     calamine::open_workbook_auto_from_rs(Cursor::new(bytes))
         .map_err(|error| OfficeError::NotAWorkbook(error.to_string()))
 }
@@ -126,7 +126,10 @@ fn not_computed(sheet: &str, cells: &[String]) -> Option<String> {
 }
 
 /// The worksheets to read: the one named, or every worksheet (charts and macros hold no cells).
-fn chosen<'a>(sheets: &'a [Sheet], wanted: Option<&str>) -> Result<Vec<&'a Sheet>, OfficeError> {
+pub(crate) fn chosen<'a>(
+    sheets: &'a [Sheet],
+    wanted: Option<&str>,
+) -> Result<Vec<&'a Sheet>, OfficeError> {
     let worksheets = sheets
         .iter()
         .filter(|sheet| sheet.typ == SheetType::WorkSheet);
@@ -287,7 +290,7 @@ fn with_formula(formula: &str, value: Option<&Data>) -> String {
 }
 
 /// A value as a person reads it: numbers without binary noise, dates as `2026-01-31`.
-fn shown(value: &Data) -> String {
+pub(crate) fn shown(value: &Data) -> String {
     match value {
         Data::Float(number) => general(*number),
         Data::DateTime(when) if when.is_duration() => {
@@ -312,13 +315,13 @@ fn shown(value: &Data) -> String {
 
 /// A number as a spreadsheet's General format shows it: at most 15 significant digits, so
 /// `0.1 + 0.2` reads `0.3`.
-fn general(number: f64) -> String {
+pub(crate) fn general(number: f64) -> String {
     let rounded: f64 = format!("{number:.14e}").parse().unwrap_or(number);
     format!("{rounded}")
 }
 
 /// A field of a CSV line, quoted when it must be (RFC 4180).
-fn quoted(field: &str) -> String {
+pub(crate) fn quoted(field: &str) -> String {
     if field.contains([',', '"', '\n', '\r']) {
         format!("\"{}\"", field.replace('"', "\"\""))
     } else {

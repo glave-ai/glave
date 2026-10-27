@@ -1,6 +1,6 @@
 [package]
 name = "glave-office"
-description = "glave's office files for `glave doc`: workbooks read with calamine and written with rust_xlsxwriter, Word and PowerPoint read as their XML, any Office file unpacked and packed to edit in place, PDFs' pages and forms changed with lopdf, with the built-in skills that teach it"
+description = "glave's office files for `glave doc`: workbooks read with calamine and written with rust_xlsxwriter, Word and PowerPoint read as their XML, any Office file unpacked and packed to edit in place, PDFs' pages and forms changed with lopdf, CSV, JSON and workbooks queried with SQLite, with the built-in skills that teach it"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -18,6 +18,9 @@ path = "tests/main.rs"
 calamine.workspace = true
 lopdf.workspace = true
 quick-xml.workspace = true
+# `glave doc sql`: files loaded into an in-memory SQLite, the one glave's store builds, with
+# standard deviation and correlation added as functions.
+rusqlite = { workspace = true, features = ["functions"] }
 rust_xlsxwriter.workspace = true
 serde.workspace = true
 serde_json.workspace = true

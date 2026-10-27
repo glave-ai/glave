@@ -14,9 +14,13 @@
 //!   once each part is checked, so what the edit didn't touch stays as it was.
 //! - PDFs are changed with lopdf: pages merged, kept, reordered and turned, and forms listed
 //!   and filled. Reading a PDF stays with the `read` tool.
+//! - CSV, JSON and workbooks are loaded as tables into an in-memory SQLite, the one glave's
+//!   store builds, and queried, with SQLite's math and percentile functions and standard
+//!   deviation and correlation added.
 
 mod cells;
 mod command;
+mod data;
 mod document;
 mod error;
 mod layout;
@@ -33,10 +37,11 @@ pub use command::{Answer, USAGE, run};
 pub use error::OfficeError;
 
 /// The skills built into glave that teach the model `glave doc`, each a SKILL.md's text: for
-/// spreadsheets, Word documents, PowerPoint decks and PDFs.
-pub const SKILLS: [&str; 4] = [
+/// spreadsheets, Word documents, PowerPoint decks, PDFs and data.
+pub const SKILLS: [&str; 5] = [
     include_str!("../skills/spreadsheets/SKILL.md"),
     include_str!("../skills/documents/SKILL.md"),
     include_str!("../skills/presentations/SKILL.md"),
     include_str!("../skills/pdfs/SKILL.md"),
+    include_str!("../skills/data/SKILL.md"),
 ];

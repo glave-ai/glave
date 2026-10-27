@@ -71,6 +71,12 @@ pub enum OfficeError {
     /// The values to fill a form with are not right: what is wrong. Nothing was written.
     #[error("Nothing was written: {0}")]
     Values(String),
+    /// A file `glave doc sql` can't load as a table: which, and why.
+    #[error("{0}")]
+    Data(String),
+    /// A query SQLite refused: what it said, and the tables there are.
+    #[error("the query failed: {0}")]
+    Query(String),
     #[error(
         "{} is already there, and glave doc write makes a whole new workbook: writing over it \
          loses its formatting, its charts and anything else the description doesn't hold. Name \
