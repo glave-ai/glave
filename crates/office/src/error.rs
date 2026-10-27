@@ -1,4 +1,4 @@
-//! What goes wrong reading an office file, each said so the model can act on it.
+//! What goes wrong reading or writing an office file, each said so the model can act on it.
 
 use std::path::PathBuf;
 
@@ -30,4 +30,14 @@ pub enum OfficeError {
     NoSuchSheet { wanted: String, sheets: Vec<String> },
     #[error("could not read the sheet {0:?}: {1}")]
     Sheet(String, String),
+    /// A workbook to write was described wrongly: what is wrong, and where.
+    #[error("the workbook's description is not right: {0}")]
+    Description(String),
+    #[error(
+        "{} is already there, and glave doc write makes a whole new workbook: writing over it \
+         loses its formatting, its charts and anything else the description doesn't hold. Name \
+         a new file, or add --replace if replacing it is what was asked",
+        .0.display()
+    )]
+    Exists(PathBuf),
 }

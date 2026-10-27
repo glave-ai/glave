@@ -8,6 +8,8 @@ use std::io::Cursor;
 
 use calamine::{Data, Range, Reader, Sheet, SheetType, SheetVisible, Sheets};
 
+use crate::cells::{cell_name, column_name, listed};
+use crate::command::Answer;
 use crate::error::OfficeError;
 
 /// The rows shown of each sheet when no rows are asked for: enough to see what a sheet holds,
@@ -77,8 +79,9 @@ pub(crate) fn read(bytes: Vec<u8>, name: &str, reading: &Reading) -> Result<Stri
 }
 
 /// One sheet of the workbook in `bytes` as CSV: the first when `sheet` is `None`. Each formula
-/// gives the value it last computed to; dates are written as `2026-01-31`.
-pub(crate) fn csv(bytes: Vec<u8>, sheet: Option<&str>) -> Result<String, OfficeError> {
+/// gives the value it last computed to, and one no app has computed is warned of, apart from
+/// the CSV; dates are written as `2026-01-31`.
+pub(crate) fn csv(bytes: Vec<u8>, sheet: Option<&str>) -> Result<Answer, OfficeError> {
     let mut book = open(bytes)?;
     let sheets: Vec<Sheet> = book.sheets_metadata().to_vec();
     let name = chosen(&sheets, sheet)?
@@ -94,7 +97,31 @@ pub(crate) fn csv(bytes: Vec<u8>, sheet: Option<&str>) -> Result<String, OfficeE
         text.push_str(&fields.join(","));
         text.push('\n');
     }
-    Ok(text)
+    let formulas = book.worksheet_formula(&name).unwrap_or_default();
+    let uncomputed: Vec<String> = formulas_by_cell(&formulas)
+        .into_keys()
+        .filter(|at| computed(values.get_value(*at)).is_none())
+        .map(|(row, column)| cell_name(row, column))
+        .collect();
+    Ok(Answer {
+        printed: text,
+        warning: not_computed(&name, &uncomputed),
+    })
+}
+
+/// The cells shown by name in a warning, of however many there are.
+const CELLS_NAMED: usize = 5;
+
+/// That the formulas in `cells` of `sheet` have no values yet, so their fields are empty.
+fn not_computed(sheet: &str, cells: &[String]) -> Option<String> {
+    let first = cells.first()?;
+    let mut named = vec![format!("{sheet}!{first}")];
+    named.extend(cells.iter().skip(1).take(CELLS_NAMED - 1).cloned());
+    Some(format!(
+        "formulas not computed yet, so their fields are empty: {}. No spreadsheet app has \
+         opened the file since a program wrote it.",
+        listed(&named, cells.len())
+    ))
 }
 
 /// The worksheets to read: the one named, or every worksheet (charts and macros hold no cells).
@@ -161,7 +188,7 @@ impl Table<'_> {
             format!("{}:{}", name(first), name(last))
         };
         let _ = writeln!(text, "## {sheet} ({span})");
-        let formulas = self.formulas_by_cell();
+        let formulas = formulas_by_cell(self.formulas);
         let (from, to) = rows.unwrap_or((first.0 + 1, first.0 + ROWS_SHOWN));
         let (from, to) = (from.max(first.0 + 1), to.min(last.0 + 1));
         let last_shown = last.1.min(first.1 + COLUMNS_SHOWN - 1);
@@ -215,50 +242,46 @@ impl Table<'_> {
             .reduce(|a, b| (a.0.max(b.0), a.1.max(b.1)))?;
         Some((first, last))
     }
+}
 
-    /// Every formula in the sheet by its cell, with its `=`, which calamine leaves off.
-    fn formulas_by_cell(&self) -> BTreeMap<At, String> {
-        let Some(start) = self.formulas.start() else {
-            return BTreeMap::new();
-        };
-        self.formulas
-            .used_cells()
-            .filter(|(_, _, formula)| !formula.is_empty())
-            .filter_map(|(row, column, formula)| {
-                let row = u32::try_from(row).ok()?.checked_add(start.0)?;
-                let column = u32::try_from(column).ok()?.checked_add(start.1)?;
-                // As Excel shows them: without the prefixes it stores newer functions under.
-                let formula = formula.replace("_xlfn.", "").replace("_xlws.", "");
-                Some(((row, column), format!("={formula}")))
-            })
-            .collect()
-    }
+/// Every formula in a sheet by its cell, with its `=`, which calamine leaves off.
+fn formulas_by_cell(formulas: &Range<String>) -> BTreeMap<At, String> {
+    let Some(start) = formulas.start() else {
+        return BTreeMap::new();
+    };
+    formulas
+        .used_cells()
+        .filter(|(_, _, formula)| !formula.is_empty())
+        .filter_map(|(row, column, formula)| {
+            let row = u32::try_from(row).ok()?.checked_add(start.0)?;
+            let column = u32::try_from(column).ok()?.checked_add(start.1)?;
+            // As Excel shows them: without the prefixes it stores newer functions under.
+            let formula = formula.replace("_xlfn.", "").replace("_xlws.", "");
+            Some(((row, column), format!("={formula}")))
+        })
+        .collect()
 }
 
 /// A cell's name: `A1` for (0, 0).
 fn name((row, column): At) -> String {
-    format!("{}{}", column_name(column), u64::from(row) + 1)
+    cell_name(row, column)
 }
 
-/// A column's letters: `A` for 0, `AA` for 26.
-fn column_name(column: u32) -> String {
-    let mut letters = Vec::new();
-    let mut rest = u64::from(column) + 1;
-    while rest > 0 {
-        let letter = u8::try_from((rest - 1) % 26).unwrap_or(0);
-        letters.push(char::from(b'A' + letter));
-        rest = (rest - 1) / 26;
-    }
-    letters.iter().rev().collect()
-}
-
-/// A formula and the value it last computed to, or that it has none yet: a workbook written by
-/// a program rather than a spreadsheet app has no results until one opens it.
-fn with_formula(formula: &str, value: Option<&Data>) -> String {
+/// A formula's value, unless it has none yet: a workbook written by a program rather than a
+/// spreadsheet app (as `glave doc write` writes one) has no results until one opens it.
+fn computed(value: Option<&Data>) -> Option<&Data> {
     match value {
-        None | Some(Data::Empty) => format!("{formula} → not computed yet"),
-        Some(Data::String(text)) if text.is_empty() => format!("{formula} → not computed yet"),
+        None | Some(Data::Empty) => None,
+        Some(Data::String(text)) if text.is_empty() => None,
+        value => value,
+    }
+}
+
+/// A formula and the value it last computed to, or that it has none yet.
+fn with_formula(formula: &str, value: Option<&Data>) -> String {
+    match computed(value) {
         Some(value) => format!("{formula} → {}", shown(value)),
+        None => format!("{formula} → not computed yet"),
     }
 }
 
@@ -335,10 +358,19 @@ mod tests {
     }
 
     #[test]
-    fn cells_are_named_as_a_spreadsheet_names_them() {
-        let names: Vec<String> = [0, 25, 26, 701, 702, 16_383].map(column_name).into();
-        assert_eq!(names, ["A", "Z", "AA", "ZZ", "AAA", "XFD"]);
-        assert_eq!(name((1_048_575, 3)), "D1048576");
+    fn formulas_with_no_values_are_warned_of_by_their_cells() {
+        let cells = |n: u32| (1..=n).map(|row| cell_name(row, 1)).collect::<Vec<_>>();
+        assert_eq!(not_computed("Summary", &[]), None);
+        assert_eq!(
+            not_computed("Summary", &cells(1)).unwrap(),
+            "formulas not computed yet, so their fields are empty: Summary!B2. No spreadsheet \
+             app has opened the file since a program wrote it."
+        );
+        let many = not_computed("Summary", &cells(8)).unwrap();
+        assert!(
+            many.contains(": Summary!B2, B3, B4, B5, B6 and 3 more. "),
+            "{many}"
+        );
     }
 
     #[test]

@@ -1,11 +1,11 @@
 ---
 name: spreadsheets
-description: Read and analyze spreadsheets (.xlsx, .xlsm, .xlsb, .xls, .ods) with glave's own commands, nothing to install. Use whenever a task reads a workbook or answers questions from one.
+description: Read, analyze and make spreadsheets (.xlsx, .xlsm, .xlsb, .xls, .ods) with glave's own commands, nothing to install. Use whenever a task reads a workbook, answers questions from one, or asks for a new one.
 ---
 # Spreadsheets
 
-glave reads workbooks itself: run `glave doc` with bash. Nothing needs installing, so don't
-reach for Python, LibreOffice or a package for this.
+glave reads and writes workbooks itself: run `glave doc` with bash. Nothing needs installing,
+so don't reach for Python, LibreOffice or a package for this.
 
 ```sh
 glave doc read sales.xlsx                          # every sheet, first 100 rows of each
@@ -24,5 +24,34 @@ For sums, counts and averages over many rows, take the sheet as CSV and compute 
 whatever the machine has, rather than adding numbers up by reading them. Before you answer,
 check which rows are headers and totals, and that the cells you use cover what was asked.
 
-glave doesn't make or change workbooks yet. For a new table, write a CSV, which every
-spreadsheet app opens, and say that is what you made.
+## Making a workbook
+
+`glave doc write` makes a new .xlsx from a description in JSON, on standard input or in a file
+named after the workbook:
+
+```sh
+glave doc write report.xlsx <<'EOF'
+{"sheets": [{"name": "Sales", "header": true,
+  "rows": [["Month", "Units", "Price", "Revenue"],
+           ["Jan", 120, 19.5, "=B2*C2"],
+           ["Feb", 135, 19.5, "=B3*C3"],
+           ["Total", "=SUM(B2:B3)", null, "=SUM(D2:D3)"]],
+  "formats": {"C2:D4": "$#,##0.00"}, "widths": {"A": 12},
+  "charts": [{"type": "column", "at": "F2", "title": "Revenue",
+              "categories": "A2:A3", "values": ["D2:D3"]}]}]}
+EOF
+```
+
+- A cell is a number (never in quotes), text, `true`, `null` for none, a formula (`"=..."`, in
+  Excel's names and commas) or a date (`{"date": "2026-01-31"}`).
+- A sheet has `name` and `rows` from A1, and may have `header` (the first row bold, frozen and
+  filtered), `formats` (number formats by range), `widths` (by column), `freeze` (the first
+  cell that scrolls, `B2`) and `charts`.
+- A chart has `type` (column, bar, line, pie, doughnut, area or scatter), `at` and `values` (a
+  range per series), and may have `categories`, `names` (one per series), `title`, `x_title`
+  and `y_title`. A range on another sheet names it: `Orders!E2:E25`.
+
+Use formulas for totals and anything worked out from other cells, so the workbook stays right
+when its data changes. glave stores no results: the app that opens the file computes them, so
+reading it back shows `→ not computed yet`; check the formulas themselves. It won't write over
+a file unless you add `--replace`, and remaking a workbook loses what the description lacks.

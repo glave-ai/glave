@@ -1,0 +1,10 @@
+[task]
+name = "glave/spreadsheet-report"
+description = "Makes a workbook from a CSV: the orders, region totals as formulas over them, and a column chart."
+
+[agent]
+timeout_sec = 600
+
+[glave]
+tier = "fast"
+permissions = "auto"
