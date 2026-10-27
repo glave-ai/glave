@@ -160,7 +160,14 @@ pub(crate) async fn run(
     // Held until the command ends, or moves to the background: its helper's folder and
     // listener go with it.
     let offered = match credentials {
-        Some(credentials) => offer(credentials, &opened.environment).await?,
+        Some(credentials) => {
+            offer(
+                credentials,
+                &opened.environment,
+                opened.glave_on_path.as_deref(),
+            )
+            .await?
+        }
         None => None,
     };
     // Its id in the background, made before it starts: without an id it never runs.
