@@ -278,6 +278,24 @@ fn a_dropped_connection_fails_the_call_saying_it_may_have_run_and_sends_nothing_
 }
 
 #[test]
+fn a_command_running_when_the_link_drops_fails_saying_it_may_have_run() {
+    // The command's first output is held 5 seconds, and the link drops a second in: the
+    // computer stops the command, and its answer never crosses the link that is gone.
+    let (ledger, outcomes) = run(
+        &[Op::Slow(0), Op::Write(1), Op::Write(2)],
+        &[
+            at(Way::Back, 0, Fault::Stall(Duration::from_secs(5))),
+            at(Way::Out, 1, Fault::Stall(Duration::from_secs(1))),
+            at(Way::Out, 2, Fault::Drop),
+        ],
+    );
+    let slow = outcomes.iter().find(|outcome| outcome.op == Op::Slow(0));
+    let said = slow.map(message).unwrap_or_default();
+    assert!(said.contains("may or may not have done it"), "{said}");
+    assert_eq!(ledger.times("slow 0"), 1);
+}
+
+#[test]
 fn a_message_cut_off_or_run_into_the_next_is_a_protocol_error() {
     let (_, outcomes) = run(&[Op::Read(0)], &[at(Way::Back, 0, Fault::Truncate)]);
     assert!(
