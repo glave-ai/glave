@@ -19,6 +19,9 @@ const SCRIPT_TIMEOUT: Duration = Duration::from_secs(600);
 /// Lines of a failing script's output kept in its failure.
 const LAST_LINES: usize = 8;
 
+/// A run's own temp folder, in its folder.
+const TEMP: &str = "tmp";
+
 /// The environment commands run with: glave's own, then the run's, then the task's.
 pub(crate) type Environment = BTreeMap<OsString, OsString>;
 
@@ -49,6 +52,14 @@ pub(crate) async fn prepare(
             .replace("{path}", &path)
     };
     let mut environment: Environment = base.iter().cloned().collect();
+    // Each run has a temp folder of its own, made empty, for what runs outside the sandbox,
+    // its setup and its grader (the sandbox gives each command one): runs at once would
+    // otherwise share the machine's, and leave there what they wrote. Removed once graded.
+    let temp = dir.join(TEMP);
+    tokio::fs::create_dir_all(&temp)
+        .await
+        .map_err(EvalError::io("create", &temp))?;
+    environment.insert("TMPDIR".into(), temp.into());
     // Each run builds in its own folder: runs at once would otherwise overwrite each other's
     // binaries. It sits outside the workspace and is removed once the run is graded.
     environment.insert("CARGO_TARGET_DIR".into(), target(dir, task).into());
@@ -93,6 +104,9 @@ fn target(dir: &Path, task: &Task) -> PathBuf {
 
 /// Removes what a run built, keeping its workspace and records.
 pub(crate) async fn tidy(dir: &Path, task: &Task) {
+    // Its temp folder too, with whatever its scripts left there, read-only folders and all.
+    let temp = dir.join(TEMP);
+    let _ = tokio::task::spawn_blocking(move || glave_ports::remove_tree(&temp)).await;
     // Best effort: a leftover build folder costs disk space, not correctness.
     let target = target(dir, task);
     let built = if sandboxed(task) {

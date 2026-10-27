@@ -40,17 +40,24 @@ pub async fn run(
     let mut running = JoinSet::new();
     let mut started = HashMap::new();
     for task in plan.tasks.into_iter().map(Arc::new) {
+        // A task's attempts take turns: models write scratch files at fixed paths in the shared
+        // `/tmp` (`/tmp/Q1.csv`), which no sandbox here gives each a copy of, so two attempts
+        // of one task at once overwrite each other's (#750). Other tasks run meanwhile.
+        let turns = Arc::new(Semaphore::new(1));
         for model in &plan.models {
             for number in 1..=plan.repeat {
                 let (setup, task, model) = (Arc::clone(&setup), Arc::clone(&task), model.clone());
                 let (permits, spent) = (Arc::clone(&permits), Arc::clone(&spent));
+                let turn = Arc::clone(&turns);
                 let dir = plan
                     .dir
                     .join(&task.name)
                     .join(format!("{}-{number}", model.replace('/', "_")));
                 let label = (task.name.clone(), model.clone(), number);
                 let handle = running.spawn(async move {
-                    // The semaphore is never closed, so a permit always comes.
+                    // Its task's turn first, so an attempt waiting for it holds no place. The
+                    // semaphores are never closed, so a permit always comes.
+                    let _turn = turn.acquire_owned().await;
                     let _permit = permits.acquire_owned().await;
                     if spent.load(Ordering::SeqCst) >= cap {
                         return Attempt::unrun(

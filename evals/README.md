@@ -22,6 +22,11 @@ the failed ones too, over the attempts that passed, with the tokens beside it. A
 route reports no cost, or only $0 as a free route does, shows "no cost reported" (and a dash for
 its cost), is named as left out, and is never taken for the cheapest.
 
+Attempts run side by side, `--concurrency` at once, but a task's own attempts take turns: models
+write scratch files at fixed paths in the shared `/tmp`, so two attempts of one task at once would
+overwrite each other's. Each attempt also has a temp folder of its own (`TMPDIR`) for its setup
+and grader, removed once it is graded; the sandbox gives each command it runs one of its own.
+
 ## A task
 
 Tasks use [Harbor](https://github.com/harbor-framework/harbor)'s layout:

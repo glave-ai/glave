@@ -294,6 +294,62 @@ fn a_failed_setup_command_is_an_error_not_a_result() {
     assert!(server.received().is_empty(), "the model is never called");
 }
 
+/// Each attempt has a temp folder of its own, which its setup and its grader share, and which
+/// goes with it, read-only folders and all.
+#[test]
+fn an_attempt_has_a_temp_folder_of_its_own() {
+    let dir = folder("temp");
+    let task = task(
+        &dir,
+        r#"setup = ["echo set > \"$TMPDIR/from-setup\""]"#,
+        "test \"$TMPDIR\" = \"$(cd .. && pwd -P)/tmp\" && test -f \"$TMPDIR/from-setup\" \
+             && mkdir -p \"$TMPDIR/kept/a\" && chmod -R a-w \"$TMPDIR/kept\"\n",
+    );
+    let server = FakeServer::start(writes_hello()).unwrap();
+    let run = dir.join("run");
+    let done = block_on!(attempt(&setup(&server), &task, "fake-model", 1, &run)).unwrap();
+    assert_eq!(done.failures, Vec::<String>::new());
+    assert!(!run.join("tmp").exists(), "it goes with the attempt");
+}
+
+/// Two attempts of one task never run at once, though there is room for both: models write
+/// scratch files at fixed paths in the shared `/tmp`, which they would overwrite (#750).
+#[test]
+fn attempts_of_one_task_take_turns() {
+    let dir = folder("turns");
+    let task = task(
+        &dir,
+        r#"setup = ["echo start >> \"$TURNS_LOG\""]"#,
+        "echo end >> \"$TURNS_LOG\"\n",
+    );
+    let mut replies = writes_hello();
+    replies.extend(writes_hello());
+    let server = FakeServer::start(replies).unwrap();
+    let mut setup = setup(&server);
+    let log = dir.join("turns.log");
+    setup
+        .environment
+        .push(("TURNS_LOG".into(), log.clone().into()));
+    let plan = Plan {
+        tasks: vec![task],
+        models: vec!["a/one".into()],
+        repeat: 2,
+        concurrency: 2,
+        max_cost_micros: 1_000_000,
+        dir: dir.join("runs"),
+    };
+    let attempts = block_on!(glave_eval::run(Arc::new(setup), plan, |_| {}));
+    assert!(
+        attempts.iter().all(glave_eval::Attempt::passed),
+        "{attempts:?}"
+    );
+    let turns = std::fs::read_to_string(log).unwrap();
+    assert_eq!(
+        turns, "start\nend\nstart\nend\n",
+        "one ends before the next starts"
+    );
+}
+
 #[test]
 fn nothing_starts_once_the_cost_cap_is_reached() {
     let dir = folder("cap");
