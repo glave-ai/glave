@@ -228,6 +228,20 @@ export function byTestId(page: Page, testId: string): ReturnType<Page['getByTest
   return page.getByTestId(testId);
 }
 
+/**
+ * Waits until what moves on `page` has come to rest: every animation and transition that ends
+ * has finished (one that turns while work goes on never ends, and is left out), so a test that
+ * measures where things are measures where they settle, never a frame on their way there.
+ */
+export async function atRest(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const ending = document
+      .getAnimations()
+      .filter((each) => each.effect?.getComputedTiming().endTime !== Infinity);
+    await Promise.allSettled(ending.map((each) => each.finished));
+  });
+}
+
 /** How opaque an element shows: its own opacity times its ancestors'. */
 export async function shownOpacity(locator: Locator): Promise<number> {
   return locator.evaluate((element) => {

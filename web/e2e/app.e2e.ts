@@ -1,7 +1,14 @@
 import { expect, test } from '@playwright/test';
 
 import { NEW_THREAD, PERSONAL, THREAD, WAITING, fakeApi } from './fake-api';
-import { SIGNED_IN, byTestId, expectAccessible, shownOpacity, watchForProblems } from './support';
+import {
+  SIGNED_IN,
+  atRest,
+  byTestId,
+  expectAccessible,
+  shownOpacity,
+  watchForProblems,
+} from './support';
 
 test('without a sign-in, the app says how to get one, in plain words', async ({ page }) => {
   await fakeApi(page);
@@ -68,6 +75,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(summary).toContainText('2m 05s');
     await expect(summary).toContainText('$0.0042');
     await expect(summary).toContainText('4 steps');
+    // Where each box comes to rest, whatever moves on the way.
+    await atRest(page);
     const boxes = await Promise.all(
       [reply, changes, steps, byTestId(page, 'thread-composer')].map((each) => each.boundingBox()),
     );

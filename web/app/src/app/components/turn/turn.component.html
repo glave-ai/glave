@@ -41,7 +41,7 @@
   </glz-message>
 }
 @if (changes(); as changes) {
-  <app-turn-changes [class.glz-settle]="changes.settles" [files]="turn().files" />
+  <app-turn-changes [class.glz-settle]="changes.settles" [files]="changes.files" />
 }
 @if (turn().receipt; as receipt) {
   <glz-steps
