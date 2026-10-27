@@ -333,6 +333,29 @@ fn a_corrupted_byte_is_rejected_and_never_misread() {
 }
 
 #[test]
+fn a_request_damaged_while_a_command_runs_fails_the_command_as_the_link_not_as_cancelled() {
+    // The stall lets the command start before the damaged request comes. The computer cannot
+    // read that request as text, so it stops reading and stops the command; the client hears
+    // why first and closes the connection, never taking the stopped command for one it cancelled.
+    let (ledger, outcomes) = run(
+        &[Op::Slow(0), Op::Write(1), Op::Write(2)],
+        &[
+            at(Way::Out, 1, Fault::Stall(Duration::from_secs(1))),
+            at(Way::Out, 2, Fault::Corrupt(0)),
+        ],
+    );
+    let slow = outcomes.iter().find(|outcome| outcome.op == Op::Slow(0));
+    let said = slow.map(message).unwrap_or_default();
+    assert!(said.contains("could not read a request"), "{said}");
+    assert_eq!(ledger.times("slow 0"), 1);
+    assert_eq!(
+        ledger.times("w2.txt=written 2"),
+        0,
+        "a damaged request never runs"
+    );
+}
+
+#[test]
 fn a_computer_killed_mid_command_fails_the_command_without_a_hang() {
     // The command's first output goes back; the computer dies before passing it on.
     let (ledger, outcomes) = run(&[Op::Slow(0)], &[at(Way::Back, 0, Fault::Kill)]);

@@ -99,7 +99,10 @@ where
     read.and(written)
 }
 
-/// Reads and answers requests until the input ends, then stops what is still running.
+/// Reads and answers requests until the input ends, then stops what is still running. Input it
+/// cannot read (not text, or a message too long) ends it too, answered first as a request it
+/// cannot read: a client still there closes the connection on that answer, so it never takes
+/// the commands stopped here for commands it cancelled.
 async fn requests<C, R>(connection: &Arc<Connection<C>>, input: &mut R) -> std::io::Result<()>
 where
     C: Computers + 'static,
@@ -110,7 +113,14 @@ where
         let line = match next_line(input).await {
             Ok(Some(line)) => line,
             Ok(None) => break Ok(()),
-            Err(error) => break Err(error),
+            Err(error) => {
+                let unreadable = wire::failure(code::PARSE, &format!("not JSON-RPC: {error}"));
+                let _ = connection
+                    .lines
+                    .send(wire::respond(None, Err(unreadable)))
+                    .await;
+                break Err(error);
+            }
         };
         if line.trim().is_empty() {
             continue;
@@ -128,7 +138,8 @@ where
         running.spawn(async move { connection.answer(&line).await });
         while running.try_join_next().is_some() {}
     };
-    // The client is gone: stop its commands, then let every request finish.
+    // The client is gone, or can no longer be read: stop its commands, then let every request
+    // finish.
     if let Ok(runs) = connection.runs.lock() {
         #[expect(
             clippy::iter_over_hash_type,
@@ -142,8 +153,8 @@ where
     read
 }
 
-/// One line, or `None` at the end. A line longer than [`MAX_LINE`] is an error; a last line
-/// the input ended in the middle of was cut off, so it is not acted on.
+/// One line, or `None` at the end. A line that is not UTF-8, or longer than [`MAX_LINE`], is an
+/// error; a last line the input ended in the middle of was cut off, so it is not acted on.
 async fn next_line<R: AsyncBufRead + Unpin>(input: &mut R) -> std::io::Result<Option<String>> {
     let mut line = String::new();
     let got = input.take(MAX_LINE).read_line(&mut line).await?;
