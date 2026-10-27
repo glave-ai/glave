@@ -5,10 +5,10 @@
 //! one there nothing is saved; Full access asks no one and saves. Memory never changes an
 //! approval or what the judge sees.
 
+use glave_event::Arguments;
 use glave_ports::memories::{
     EDIT_MEMORY, FORGET, MemoryChange as Change, MemoryContext, MemoryOutput, RECALL, REMEMBER,
 };
-use glave_event::Arguments;
 use glave_ports::{BlobStore, Effect, EventLog, ModelProvider, ToolCall, ToolOutput};
 
 use super::state::recorded;

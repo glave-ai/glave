@@ -127,7 +127,11 @@ fn each_step_is_recorded_in_the_line_it_began_with() {
             .collect();
         assert_eq!(
             recorded,
-            ["write a.txt (2 lines)", "bash: cat a.txt", r#"nothing {"x":1}"#]
+            [
+                "write a.txt (2 lines)",
+                "bash: cat a.txt",
+                r#"nothing {"x":1}"#
+            ]
         );
         assert_eq!(
             began,
