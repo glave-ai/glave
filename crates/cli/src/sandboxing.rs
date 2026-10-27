@@ -96,7 +96,9 @@ async fn open_here(folder: &Path, processes: &Processes, asks: bool) -> anyhow::
         .with_scratch(home::folder()?.join(crate::worktrees::SCRATCH))
         .with_projects(home::projects()?)
         .with_processes(processes.clone());
-    let (computers, here) = crate::helpers::with_sandbox_helper(computers)
+    let computers = crate::helpers::with_sandbox_helper(computers);
+    let (computers, here) = crate::helpers::with_glave_on_path(computers, &home::folder()?)
+        .await?
         .open_here(folder)
         .await?;
     Ok(Workspace::new(computers, here).asking_network(asks))

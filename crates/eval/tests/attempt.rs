@@ -50,6 +50,7 @@ fn setup(server: &FakeServer) -> Setup {
         subagents: false,
         memory: None,
         processes: glave_process::Processes::unrecorded(),
+        glave_on_path: None,
     }
 }
 

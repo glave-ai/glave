@@ -55,6 +55,9 @@ pub struct Setup {
     /// How the model's commands start: tied to the eval by its lifeline, so they end with it
     /// however it ends.
     pub processes: Processes,
+    /// glave's folder first on the commands' `PATH`, holding the glave being measured, as
+    /// glave puts its own there; none where no glave was built.
+    pub glave_on_path: Option<PathBuf>,
 }
 
 /// How one attempt went.
@@ -229,13 +232,19 @@ async fn tested(
 /// sandbox never gives way.
 async fn workspace(
     task: &Task,
-    (environment, hidden, processes): (&Environment, &[PathBuf], &Processes),
+    setup: &Setup,
+    (environment, hidden): (&Environment, &[PathBuf]),
     root: &Path,
 ) -> Result<Workspace, EvalError> {
     let open = || async {
-        let (computers, info) = LocalComputers::for_here(environment.clone())
-            .with_processes(processes.clone())
-            .with_hidden(hidden.iter().cloned())
+        let computers = LocalComputers::for_here(environment.clone())
+            .with_processes(setup.processes.clone())
+            .with_hidden(hidden.iter().cloned());
+        let computers = match &setup.glave_on_path {
+            Some(folder) => computers.with_glave_on_path(folder),
+            None => computers,
+        };
+        let (computers, info) = computers
             .open_here(root)
             .await
             .map_err(|error| EvalError::io("open", root)(std::io::Error::other(error)))?;
@@ -265,8 +274,7 @@ async fn wire(
     (root, web): (&Path, Option<&str>),
     (remembering, calendar): (&Remembering, &Calendar),
 ) -> Result<Wired, EvalError> {
-    let computer = (environment, hidden, &setup.processes);
-    let workspace = workspace(task, computer, root).await?;
+    let workspace = workspace(task, setup, (environment, hidden), root).await?;
     let provider = OpenAiCompatible::new(setup.endpoint.clone())
         .map_err(|err| EvalError::Setup(err.to_string()))?;
     let mut settings = Settings::new(model, setup.endpoint.provider.clone());

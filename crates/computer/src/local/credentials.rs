@@ -112,15 +112,7 @@ pub(crate) async fn offer(
             let script = wrapper::wrapper(tool, host, &places, environment);
             write_script(&bin.join(tool.name()), &script).await?;
         }
-        let path = environment
-            .iter()
-            .find(|(name, _)| name == "PATH")
-            .map(|(_, value)| value.clone());
-        let mut first = bin.into_os_string();
-        if let Some(path) = path {
-            first.push(":");
-            first.push(path);
-        }
+        let first = super::first_on_path(environment, &bin);
         offered.environment.push(("PATH".into(), first));
     }
     Ok(Some(offered))

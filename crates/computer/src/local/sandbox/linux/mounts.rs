@@ -58,6 +58,8 @@ pub(super) struct Layout {
     pub(super) glave_home: Option<PathBuf>,
     /// glave's sandbox cache folder, writable, inside glave's own.
     pub(super) cache: Option<PathBuf>,
+    /// glave's own folder on commands' `PATH`, readable, never writable, inside glave's own.
+    pub(super) glave_on_path: Option<PathBuf>,
     /// The user's runtime folder (`$XDG_RUNTIME_DIR`).
     pub(super) runtime: Option<PathBuf>,
     /// For a worktree: the repository's shared git folder, where its commits go.
@@ -159,6 +161,7 @@ pub(super) fn plan(
     }
     mounts.extend(layout.glave_home.iter().cloned().map(Mount::Emptied));
     mounts.extend(layout.cache.iter().cloned().map(Mount::Writable));
+    mounts.extend(layout.glave_on_path.iter().cloned().map(Mount::ReadOnly));
     hide_places(layout, &mut mounts);
     mounts.extend(secret_files.into_iter().map(Mount::HiddenFile));
     // A folder's mount before those inside it, which it would otherwise lie over: glave's

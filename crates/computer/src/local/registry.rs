@@ -34,6 +34,8 @@ pub(crate) struct Opened {
     pub(crate) environment: Arc<Vec<(OsString, OsString)>>,
     /// Places its sandboxed commands may not read, beside the home folder's credential stores.
     pub(crate) hidden: Arc<[PathBuf]>,
+    /// glave's own folder on its commands' `PATH`, which its sandbox keeps readable.
+    pub(crate) glave_on_path: Option<PathBuf>,
     /// The credential its sources were opened with, kept in memory only, for saving them.
     pub(crate) credential: Option<GitCredential>,
     /// The sandbox its commands last ran in, prepared once and kept while they ask for the
@@ -61,7 +63,15 @@ impl Opened {
             return Ok(kept);
         }
         let git_common = self.git_common.as_deref();
-        let prepared = Prepared::new(sandbox, &self.root, git_common, helper, &self.hidden);
+        let glave_on_path = self.glave_on_path.as_deref();
+        let prepared = Prepared::new(
+            sandbox,
+            &self.root,
+            git_common,
+            helper,
+            &self.hidden,
+            glave_on_path,
+        );
         let prepared = Arc::new(prepared.await?);
         if let Ok(mut kept) = self.prepared.lock() {
             *kept = Some(Arc::clone(&prepared));

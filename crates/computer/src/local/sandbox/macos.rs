@@ -8,7 +8,7 @@ use glave_ports::computer::{ComputerError, Sandbox};
 
 use super::profile::{Places, TEMP_PARAM, home_secrets, profile};
 use super::run_temp::RunTemp;
-use super::{Launch, Temps, failed, own_git_folder, resolved};
+use super::{Launch, Reached, Temps, failed, own_git_folder, resolved};
 
 /// The only `sandbox-exec` trusted: an earlier one in `PATH` could be planted.
 const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
@@ -40,7 +40,7 @@ impl Enforcer {
         root: &Path,
         git_common: Option<&Path>,
         _helper: Option<&Path>,
-        cache: Option<&Path>,
+        reached: Reached<'_>,
         also_hidden: &[PathBuf],
     ) -> Result<(Self, Temps), ComputerError> {
         if !available() {
@@ -71,7 +71,8 @@ impl Enforcer {
             root: root.to_owned(),
             glave_home: resolved(sandbox.glave_home.as_deref()).await,
             hidden,
-            cache: cache.map(Path::to_path_buf),
+            cache: reached.cache.map(Path::to_path_buf),
+            glave_on_path: resolved(reached.glave_on_path).await,
             git_common,
             git_own,
         };

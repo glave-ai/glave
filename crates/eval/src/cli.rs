@@ -125,13 +125,15 @@ fn run(options: &Options) -> Result<bool, String> {
         .build()
         .map_err(|err| format!("could not start: {err}"))?;
     let processes = runtime.block_on(tied())?;
+    let glave_on_path = runtime.block_on(glave_on_path())?;
     let setup = Arc::new(Setup {
         endpoint,
-        environment: glave_first(std::env::vars_os().collect())?,
+        environment: std::env::vars_os().collect(),
         plans: options.plans,
         subagents: options.subagents,
         memory: options.memory,
         processes,
+        glave_on_path: Some(glave_on_path),
     });
     let attempts = options
         .repeat
@@ -168,31 +170,26 @@ fn run(options: &Options) -> Result<bool, String> {
     Ok(report.passed())
 }
 
-/// `environment` with the folder of the glave beside this program first on `PATH`, where
-/// `cargo xtask eval` builds it: a task's `glave doc` is then the glave being measured, never
-/// one installed on this machine.
-fn glave_first(
-    mut environment: Vec<(OsString, OsString)>,
-) -> Result<Vec<(OsString, OsString)>, String> {
+/// glave's folder for the tasks' commands, made as glave makes its own: `glave`, linked to
+/// the glave beside this program, where `cargo xtask eval` builds it, so a task's `glave doc` is
+/// the glave being measured, reached as people reach theirs, never one installed on this
+/// machine. Beside the build, never in the temp folder sandboxed commands may write.
+async fn glave_on_path() -> Result<PathBuf, String> {
     let here =
         std::env::current_exe().map_err(|err| format!("could not find this program: {err}"))?;
     let folder = here.parent().unwrap_or(Path::new("."));
-    if !folder.join("glave").is_file() {
+    let glave = folder.join("glave");
+    if !glave.is_file() {
         return Err(format!(
             "no glave beside {}: cargo build -p glave (cargo xtask eval builds it)",
             here.display()
         ));
     }
-    let path = environment
-        .iter()
-        .position(|(name, _)| name == "PATH")
-        .map(|at| environment.swap_remove(at).1);
-    let mut folders = vec![folder.to_path_buf()];
-    folders.extend(path.iter().flat_map(std::env::split_paths));
-    let path =
-        std::env::join_paths(folders).map_err(|err| format!("could not make PATH: {err}"))?;
-    environment.push(("PATH".into(), path));
-    Ok(environment)
+    let on_path = folder.join("glave-eval-on-path");
+    glave_computer::glave_on_path(&on_path, &glave)
+        .await
+        .map_err(|err| format!("could not put glave in {}: {err}", on_path.display()))?;
+    Ok(on_path)
 }
 
 /// How the model's commands start: tied to this eval by glave's lifeline, with this program

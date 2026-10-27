@@ -28,6 +28,7 @@ mod https;
 mod installed;
 mod mcp;
 mod memory;
+mod onpath;
 mod orphans;
 mod postgres;
 mod project;

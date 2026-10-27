@@ -34,6 +34,7 @@ First cut built. Each piece built has one line, which the pull requests that cha
 6. **One writer.** A workspace has one writing thread. Moving a thread ends the old binding before the new one starts.
 7. **Processes and memory are never promised.** A computer that sleeps or moves keeps files, not running programs.
 8. **Secrets never enter a remote computer.** Git and cloud credentials reach it through a credential helper that asks the harness for each use; values are never written to its disk. Git credentials are built this way (`credentials/request`, "Credentials" below); a worker's own clone and save still take theirs in `workspace/open`, kept in its memory (below).
+9. **A command's `glave` is the glave that runs it** (#883). Every computer puts a folder of glave's own first on each command's `PATH`, `bin` in glave's folder, holding `glave`: a link to the running binary's path, made anew at each start, so an upgrade that replaces the binary in place keeps it working. The sandbox keeps the folder readable, never writable, though the rest of glave's folder stays hidden (`sandbox.md`). A skill's `glave doc` then reaches the glave that taught it whatever else is installed, or with none at all: on this machine, a served computer and a worker (`/opt/glave/glave`) alike, a worker's being its own build, which may be another version than the server's (#880). The evals reach theirs the same way. The binary was always readable and runnable in the sandbox at its own path; on `PATH` it reaches nothing more.
 
 ## The protocol
 

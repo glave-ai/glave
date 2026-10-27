@@ -36,16 +36,7 @@ fn local(copies: &PathBuf) -> Arc<LocalComputers> {
 fn a_computer_across_a_pipe_passes_the_suite() {
     let (_dir, work, copies) = scratch("pipe");
     block_on!(async {
-        let (client, server) = tokio::io::duplex(64 * 1024);
-        let (server_read, server_write) = tokio::io::split(server);
-        let serving = tokio::spawn(serve(
-            local(&copies),
-            BufReader::new(server_read),
-            server_write,
-            None,
-        ));
-        let (client_read, client_write) = tokio::io::split(client);
-        let remote = RemoteComputers::connect(client_read, client_write);
+        let (remote, serving) = across_a_pipe(local(&copies));
         remote.check_protocol().await.unwrap();
         let verdict =
             conformance::computers(&remote, &Environment::host(), &work.to_string_lossy()).await;
@@ -143,35 +134,47 @@ fn with_secrets(copies: &PathBuf) -> Arc<LocalComputers> {
     Arc::new(LocalComputers::new(copies, environment))
 }
 
-/// Runs `env` on `remote` in `work`: ordinary settings come through, secrets never do.
-async fn secrets_stay_out<C: Computers>(remote: &C, work: &std::path::Path) {
-    use glave_ports::BoxFuture;
-    use glave_ports::computer::{Command, Environment, Output, Sources};
-    use std::sync::Mutex;
+/// `computers` served over an in-memory pipe, a client of them, and the serving, which ends
+/// once the client is dropped.
+fn across_a_pipe(
+    computers: Arc<LocalComputers>,
+) -> (
+    RemoteComputers,
+    tokio::task::JoinHandle<std::io::Result<()>>,
+) {
+    let (client, server) = tokio::io::duplex(64 * 1024);
+    let (server_read, server_write) = tokio::io::split(server);
+    let serving = tokio::spawn(serve(
+        computers,
+        BufReader::new(server_read),
+        server_write,
+        None,
+    ));
+    let (client_read, client_write) = tokio::io::split(client);
+    (RemoteComputers::connect(client_read, client_write), serving)
+}
 
-    struct Text(Mutex<String>);
-    impl Output for Text {
-        fn write<'a>(&'a self, text: &'a str) -> BoxFuture<'a, ()> {
-            if let Ok(mut all) = self.0.lock() {
-                all.push_str(text);
-            }
-            Box::pin(std::future::ready(()))
-        }
-    }
-
+/// What `script` printed, run on a new computer of `remote` in `work`.
+async fn printed<C: Computers>(remote: &C, work: &std::path::Path, script: &str) -> String {
+    use glave_ports::computer::{Command, Sources};
     let made = remote.create(&Environment::host()).await.unwrap();
     let path = work.to_string_lossy().into_owned();
     let here = remote
         .open(made.id, &Sources::Folder { path })
         .await
         .unwrap();
-    let text = Text(Mutex::default());
+    let output = glave_ports::testing::Captured::default();
     let never = glave_computer::CancelSwitch::default();
     remote
-        .run(here.id, &Command::new("env"), &text, &never)
+        .run(here.id, &Command::new(script), &output, &never)
         .await
         .unwrap();
-    let seen = text.0.lock().unwrap().clone();
+    output.text()
+}
+
+/// Runs `env` on `remote` in `work`: ordinary settings come through, secrets never do.
+async fn secrets_stay_out<C: Computers>(remote: &C, work: &std::path::Path) {
+    let seen = printed(remote, work, "env").await;
     assert!(seen.contains("HARMLESS_SETTING=visible"), "{seen}");
     assert!(
         !seen.contains("hunter2"),
@@ -182,20 +185,37 @@ async fn secrets_stay_out<C: Computers>(remote: &C, work: &std::path::Path) {
     }
 }
 
+/// A served computer, as a worker is, puts its own glave first on its commands' `PATH`, so
+/// they reach the glave serving them whatever the `PATH` they were given holds.
+#[test]
+fn a_computer_across_a_pipe_puts_its_glave_first_on_its_commands_path() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let (dir, work, copies) = scratch("on-path");
+    let serving_glave = dir.join("serving/glave");
+    std::fs::create_dir_all(serving_glave.parent().unwrap()).unwrap();
+    std::fs::write(&serving_glave, "#!/bin/sh\necho serving-glave\n").unwrap();
+    std::fs::set_permissions(&serving_glave, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let on_path = dir.join("glave-home/bin");
+    block_on!(async {
+        glave_computer::glave_on_path(&on_path, &serving_glave)
+            .await
+            .unwrap();
+        let environment = std::env::vars_os().filter(|(name, _)| name == "PATH");
+        let computers = LocalComputers::new(&copies, environment).with_glave_on_path(&on_path);
+        let (remote, serving) = across_a_pipe(Arc::new(computers));
+        let seen = printed(&remote, &work, "glave").await;
+        assert!(seen.contains("serving-glave"), "{seen}");
+        drop(remote);
+        serving.await.unwrap().unwrap();
+    });
+}
+
 #[test]
 fn a_computer_across_a_pipe_keeps_secret_variables_from_commands() {
     let (_dir, work, copies) = scratch("secrets-pipe");
     block_on!(async {
-        let (client, server) = tokio::io::duplex(64 * 1024);
-        let (server_read, server_write) = tokio::io::split(server);
-        let serving = tokio::spawn(serve(
-            with_secrets(&copies),
-            BufReader::new(server_read),
-            server_write,
-            None,
-        ));
-        let (client_read, client_write) = tokio::io::split(client);
-        let remote = RemoteComputers::connect(client_read, client_write);
+        let (remote, serving) = across_a_pipe(with_secrets(&copies));
         secrets_stay_out(&remote, &work).await;
         drop(remote);
         serving.await.unwrap().unwrap();
