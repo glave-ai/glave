@@ -5,6 +5,7 @@
 use std::fmt::Write as _;
 use std::time::Duration;
 
+use glave_ports::conformance::Listening;
 use glave_ports::testing::{Received as Asked, ScriptedHttp, Written};
 use serde_json::{Value, json};
 
@@ -131,5 +132,11 @@ impl FakeServer {
     /// Waits until `count` requests have arrived, or `limit` has passed; whether they did.
     pub fn wait_for_requests(&self, count: usize, limit: Duration) -> bool {
         self.server.wait_for_requests(count, limit)
+    }
+}
+
+impl Listening for FakeServer {
+    fn heard(&self, limit: Duration) -> bool {
+        self.wait_for_requests(1, limit)
     }
 }
