@@ -13,16 +13,6 @@ Thanks for wanting to help. glave is built by people and AI agents together, and
    It covers formatting, lints, tests, the dependency audit and file-size limits, plus the web checks when Node is installed. While you work, `cargo xtask ci` alone checks only the crates your change reaches, and the web when you changed it.
 4. **Every pull request is reviewed before it merges.**
 
-## Sign your work (DCO)
-
-We use the [Developer Certificate of Origin](https://developercertificate.org/). It certifies that you wrote the change, or have the right to contribute it under the project's license. Sign off every commit:
-
-```sh
-git commit -s -m "fix(shell): …"
-```
-
-This adds a `Signed-off-by:` line with your name and email. There's no separate agreement to sign.
-
 ## Security
 
 Please report vulnerabilities privately; see [SECURITY.md](SECURITY.md).
