@@ -29,7 +29,7 @@ use crate::protocol::{ApiError, Notification, Reply, Request, WatchEnd, code};
 use crate::server::Server;
 use crate::turn::{TurnItem, TurnStream};
 use crate::watch::{Watch, Watched};
-use crate::words::Sentence;
+use crate::words::{Language, Sentence, note_in};
 
 /// The longest message accepted, in bytes. A longer line ends the connection.
 const MAX_LINE: u64 = 16 * 1024 * 1024;
@@ -233,9 +233,15 @@ async fn handle<P, L, B>(
     }
     let answered = match server.call(&caller, request).await {
         Answered::Reply(reply) => reply,
-        Answered::Stream(stream) => follow_turn(stream, lines, turn.as_mut()).await,
+        Answered::Stream(stream) => {
+            let language = server.language_for(&caller, None).await;
+            follow_turn(stream, lines, turn.as_mut(), language).await
+        }
         Answered::Watch(mut watch) => match &claim {
-            Some(claim) => watch_thread(&mut watch, lines, claim).await,
+            Some(claim) => {
+                let language = server.language_for(&caller, None).await;
+                watch_thread(&mut watch, lines, claim, language).await
+            }
             None => Err(unheld()),
         },
         Answered::List(mut watch) => match &claim {
@@ -261,15 +267,17 @@ fn unheld() -> ApiError {
     ApiError::new(code::INTERNAL, "a watch the connection does not hold")
 }
 
-/// Follows a thread's watch until it ends or the connection ends it: its answer.
+/// Follows a thread's watch until it ends or the connection ends it, its sentences in
+/// `language`: its answer.
 async fn watch_thread(
     watch: &mut Watch,
     lines: &mpsc::Sender<String>,
     claim: &Claim,
+    language: Language,
 ) -> Result<Reply, ApiError> {
     claim.following();
     let ended = tokio::select! {
-        last = follow_watch(watch, lines, claim) => Some(last),
+        last = follow_watch(watch, lines, claim, language) => Some(last),
         () = claim.ended() => None,
     };
     if let Some(last) = ended {
@@ -277,7 +285,7 @@ async fn watch_thread(
     }
     // Ended by the connection: what it already has, it writes first.
     while let Some(Watched::Note(note)) = watch.rest().await {
-        write(&note, watch, lines, claim).await;
+        write(&note, watch, lines, claim, language).await;
     }
     Ok(Reply::Watched {
         ended: WatchEnd::Unwatched,
@@ -301,30 +309,33 @@ async fn follow_list(
     }
 }
 
-/// Writes each of a watch's notifications to the connection, noting how far it has written
-/// its thread: its answer once it ends.
+/// Writes each of a watch's notifications to the connection, its sentences in `language`,
+/// noting how far it has written its thread: its answer once it ends.
 async fn follow_watch(
     watch: &mut Watch,
     lines: &mpsc::Sender<String>,
     claim: &Claim,
+    language: Language,
 ) -> Result<Reply, ApiError> {
     loop {
         match watch.next().await {
-            Some(Watched::Note(note)) => write(&note, watch, lines, claim).await,
+            Some(Watched::Note(note)) => write(&note, watch, lines, claim, language).await,
             Some(Watched::Ended(ended)) => return ended.map(|ended| Reply::Watched { ended }),
             None => return Err(ApiError::new(code::INTERNAL, Sentence::WatchStopped)),
         }
     }
 }
 
-/// Writes one of a watch's notifications to the connection, noting how far it has written.
+/// Writes one of a watch's notifications to the connection, its sentences in `language`,
+/// noting how far it has written.
 async fn write(
     note: &Arc<Notification>,
     watch: &Watch,
     lines: &mpsc::Sender<String>,
     claim: &Claim,
+    language: Language,
 ) {
-    let _ = lines.send(notify(note)).await;
+    let _ = lines.send(notify(&note_in(note, language))).await;
     if let Notification::Event { thread, event } = note.as_ref()
         && *thread == watch.thread()
     {
@@ -332,13 +343,14 @@ async fn write(
     }
 }
 
-/// Writes each of a turn's notifications to the connection, unless the connection watches its
-/// thread, whose watch writes them: then its answer waits until the watch has written the last
-/// event the turn saw recorded.
+/// Writes each of a turn's notifications to the connection, its sentences in `language`,
+/// unless the connection watches its thread, whose watch writes them: then its answer waits
+/// until the watch has written the last event the turn saw recorded.
 async fn follow_turn(
     mut stream: TurnStream,
     lines: &mpsc::Sender<String>,
     mut turn: Option<&mut Turn>,
+    language: Language,
 ) -> Result<Reply, ApiError> {
     let thread = stream.thread();
     let quiet = turn.as_ref().is_some_and(|turn| turn.quiet());
@@ -352,7 +364,7 @@ async fn follow_turn(
                     last = Some(event.seq);
                 }
                 if !quiet {
-                    let _ = lines.send(notify(&note)).await;
+                    let _ = lines.send(notify(&note_in(&note, language))).await;
                 }
             }
             // Only a client of a server elsewhere misses any.

@@ -4,14 +4,17 @@
 //! reads the same everywhere, and again in the caller's language where a transport answers
 //! them (`in_language`).
 
+mod events;
 mod language;
 mod say;
 mod sentence;
 
+pub(crate) use self::events::note_in;
 pub(crate) use self::language::Language;
 pub(crate) use self::say::say;
 pub(crate) use self::sentence::Sentence;
 
+use self::events::{asks, event_in};
 use crate::protocol::{ApiError, Reply, SearchInfo, Told, Usage};
 
 /// Whether `answered` holds a sentence of the server's own, which a transport writes in the
@@ -33,6 +36,7 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
         Ok(Reply::Sources { sources }) => sources.iter().any(|each| each.sentence.translatable()),
         Ok(Reply::Changes { changes }) => changes.note.translatable(),
         Ok(Reply::Plan { plan: Some(plan) }) => plan.sentence.translatable(),
+        Ok(Reply::Events { events, .. }) => events.iter().any(asks),
         Ok(_) => false,
     }
 }
@@ -77,6 +81,13 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
         }
         Ok(Reply::Changes { changes }) => changes.note.translate(language),
         Ok(Reply::Plan { plan: Some(plan) }) => plan.sentence.translate(language),
+        Ok(Reply::Events { events, .. }) => {
+            for event in events {
+                if let Some(written) = event_in(event, language) {
+                    *event = written;
+                }
+            }
+        }
         Ok(_) => {}
     }
 }

@@ -26,11 +26,14 @@ pub enum Setting {
     Awake,
     /// Their passkeys (`passkey/list`).
     Passkeys,
+    /// The language the server writes its own sentences to them in (`language/get`): what a
+    /// client shows of the server's words, an approval's included, it reads again.
+    Language,
 }
 
 impl Setting {
     /// Every setting, as a watcher that may have missed some is told.
-    pub(crate) const ALL: [Self; 7] = [
+    pub(crate) const ALL: [Self; 8] = [
         Self::Providers,
         Self::Credentials,
         Self::Connections,
@@ -38,6 +41,7 @@ impl Setting {
         Self::Grouping,
         Self::Awake,
         Self::Passkeys,
+        Self::Language,
     ];
 }
 
@@ -59,6 +63,7 @@ impl Request {
             Self::PasskeyCreate { .. } | Self::PasskeyAdd { .. } | Self::PasskeyRemove { .. } => {
                 Setting::Passkeys
             }
+            Self::LanguageSet { .. } => Setting::Language,
             _ => return None,
         })
     }
@@ -84,5 +89,10 @@ mod tests {
             Some(Setting::Providers)
         );
         assert_eq!(Request::GroupingGet {}.changes(), None);
+        let chosen = Request::LanguageSet {
+            language: Some("en-XA".into()),
+        };
+        assert_eq!(chosen.changes(), Some(Setting::Language));
+        assert_eq!(Request::LanguageGet {}.changes(), None);
     }
 }

@@ -1,20 +1,16 @@
 import { LiveAnnouncer } from '@angular/cdk/a11y';
-import { BreakpointObserver } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { provideRouter } from '@angular/router';
-import type { Notification, TurnStartParams } from '@glave/client';
+import type { Notification } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
-import { of } from 'rxjs';
 
-import { FirstTurnService } from '../../services/first-turn.service';
-import { ProjectsService } from '../../services/projects.service';
+import { ChangesService } from '../../services/changes.service';
 import { PanelService } from '../../services/panel.service';
-import { FakeSession, FakeTurn, provideFakeSession } from '../../testing/fake-session';
+import { FakeSession, FakeTurn } from '../../testing/fake-session';
 import { MODELS, SERVER, changed, editedFile, event, record, thread } from '../../testing/fixtures';
+import { openThread as open } from '../../testing/thread-view';
 import type { TurnResults } from '../../lib/results';
 import { TurnComponent } from '../turn/turn.component';
-import { ThreadComponent } from './thread.component';
 
 const HISTORY = [
   event(1, 'message.added', { role: 'user', parts: [{ type: 'text', text: 'Clean up' }] }),
@@ -64,34 +60,6 @@ function session(events: readonly unknown[], changes = changed(1, [])): FakeSess
 }
 
 const settle = (): Promise<unknown> => new Promise((resolve) => setTimeout(resolve));
-
-/** Opens thread-1 on a wide screen, after the new chat sent it `first`, if given. */
-async function open(
-  fake: FakeSession,
-  first?: TurnStartParams,
-): Promise<{
-  readonly root: HTMLElement;
-  readonly fixture: ReturnType<typeof TestBed.createComponent<ThreadComponent>>;
-}> {
-  const breakpoints = { observe: () => of({ matches: false, breakpoints: {} }) };
-  TestBed.configureTestingModule({
-    providers: [
-      provideRouter([]),
-      ...provideFakeSession(fake),
-      { provide: BreakpointObserver, useValue: breakpoints },
-    ],
-  });
-  await TestBed.inject(ProjectsService).refresh();
-  if (first !== undefined) {
-    TestBed.inject(FirstTurnService).start(first);
-  }
-  const fixture = TestBed.createComponent(ThreadComponent);
-  fixture.componentRef.setInput('thread', 'thread-1');
-  await fixture.whenStable();
-  await settle();
-  await fixture.whenStable();
-  return { root: fixture.nativeElement as HTMLElement, fixture };
-}
 
 async function type(root: HTMLElement, text: string): Promise<void> {
   const input = root.querySelector<HTMLTextAreaElement>('[data-testid="thread-composer-input"]');
@@ -792,5 +760,21 @@ describe('ThreadComponent with files', () => {
     const sent = root.querySelector('[data-testid="thread-message-file"]');
     expect(sent?.textContent).toContain('cat.png');
     expect(sent?.textContent).toContain('3 bytes');
+  });
+
+  it('reads the thread again in the person’s language once they choose another', async () => {
+    const fake = session(HISTORY);
+    const { root, fixture } = await open(fake);
+    expect(fake.paramsOf('thread/events')).toHaveLength(1);
+    // What the approval asks, as the server writes it in the language chosen now.
+    const asked = { ...HISTORY[2], data: { ...HISTORY[2]?.data, ask: '[Ŕûñ ţĥîš? one]' } };
+    fake.answer('thread/events', { events: [HISTORY[0], HISTORY[1], asked, HISTORY[3]] });
+    TestBed.inject(ChangesService).tell('language');
+    await fixture.whenStable();
+    await settle();
+    await fixture.whenStable();
+    expect(fake.paramsOf('thread/events')).toHaveLength(2);
+    const card = root.querySelector('[data-testid="thread-approval"]');
+    expect(card?.querySelector('.summary')?.textContent).toContain('[Ŕûñ ţĥîš? one]');
   });
 });

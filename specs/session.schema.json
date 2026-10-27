@@ -1895,6 +1895,11 @@
           "const": "passkeys",
           "description": "Their passkeys (`passkey/list`).",
           "type": "string"
+        },
+        {
+          "const": "language",
+          "description": "The language the server writes its own sentences to them in (`language/get`): what a\nclient shows of the server's words, an approval's included, it reads again.",
+          "type": "string"
         }
       ]
     },
