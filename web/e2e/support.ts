@@ -155,7 +155,7 @@ export async function readIn(page: Page, language: string): Promise<void> {
 /**
  * `context`, every request of its pages held until Playwright has heard the page make it, as the
  * fake API's routes hold them, so no tab of it is stranded on its first load of a real glave. A
- * tab of its own (`context.newPage()`) starts on a page of no origin, and glave's
+ * tab (`context.newPage()`) starts on a page of no origin, and glave's
  * `Cross-Origin-Opener-Policy: same-origin` moves its first load of glave to a new process. Linux
  * WebKit cancels that load, and never commits it, when the new process gets glave's answer before
  * WebKit has heard from the old one that the load began: the tab stays on `about:blank` and
@@ -167,23 +167,6 @@ export async function readIn(page: Page, language: string): Promise<void> {
 export async function heldUntilHeard(context: BrowserContext): Promise<BrowserContext> {
   await context.route('**/*', (route) => route.fallback());
   return context;
-}
-
-/**
- * A tab beside `from`, opened from it on a blank page, for the test to go to glave in. It starts
- * in `from`'s origin and browsing context group, which glave's `Cross-Origin-Opener-Policy:
- * same-origin` keeps it in, so its load stays in `from`'s process and moves to no new one (a
- * tab of its own needs `heldUntilHeard`). Like any tab opened from another, it starts with a
- * copy of `from`'s session storage.
- */
-export async function newTab(from: Page): Promise<Page> {
-  const [tab] = await Promise.all([
-    from.waitForEvent('popup'),
-    from.evaluate(() => {
-      window.open('about:blank');
-    }),
-  ]);
-  return tab;
 }
 
 /**

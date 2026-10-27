@@ -5,7 +5,6 @@ import {
   byTestId,
   expectAccessible,
   heldUntilHeard,
-  newTab,
   served,
   signInCode,
   watchForProblems,
@@ -81,7 +80,7 @@ test('a link signs one browser in once, and it stays signed in until it signs ou
   await another.close();
 
   // A new tab of this browser is signed in, and so is one opened after every tab closed.
-  const tab = await newTab(page);
+  const tab = await context.newPage();
   await tab.goto(`${glave}/settings`);
   await expect(byTestId(tab, 'settings-sign-out')).toBeVisible();
   await page.close();
@@ -91,7 +90,7 @@ test('a link signs one browser in once, and it stays signed in until it signs ou
   await expect(byTestId(reopened, 'home-composer-input')).toBeVisible();
 
   // Signing out in one tab signs every tab out.
-  const settings = await newTab(reopened);
+  const settings = await context.newPage();
   await settings.goto(`${glave}/settings`);
   await byTestId(settings, 'settings-sign-out').click();
   await expect(byTestId(settings, 'sign-in')).toBeVisible();

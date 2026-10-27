@@ -7,7 +7,6 @@ import {
   byTestId,
   expectAccessible,
   heldUntilHeard,
-  newTab,
   served,
   signInCode,
   watchForProblems,
@@ -47,7 +46,7 @@ test('a second tab sees a turn and its approval as they happen, and answers it',
 
   // The second tab opens the thread the first started, and follows it from then on.
   const thread = new URL(first.url()).pathname;
-  const second = await newTab(first);
+  const second = await context.newPage();
   problems.push(watchForProblems(second));
   await second.goto(`${live}${thread}#code=${await signInCode(LIVE)}`);
   await expect(byTestId(second, 'thread-message').last()).toContainText(HELLO);
@@ -99,7 +98,7 @@ test('the side nav shows a turn another tab starts running, then needing the per
   await watching.goto(`${live}/#code=${await signInCode(LIVE)}`);
   await expect.poll(() => called.includes('thread/list/watch')).toBe(true);
   const read = called.length;
-  const working = await newTab(watching);
+  const working = await context.newPage();
   problems.push(watchForProblems(working));
   await working.goto(`${live}/#code=${await signInCode(LIVE)}`);
   const composer = byTestId(working, 'home-composer-input');
