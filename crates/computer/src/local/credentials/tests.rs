@@ -173,7 +173,7 @@ fn the_helper_files_hold_no_token_and_go_with_the_command() {
         GitCredential::new("x-access-token", &token).unwrap(),
     );
     let folder = block_on!(async {
-        let offered = offer(&credentials, &[]).await.unwrap().unwrap();
+        let offered = offer(&credentials, &[], None).await.unwrap().unwrap();
         assert_eq!(offered.hosts.len(), 1, "only a plain origin is offered");
         let folder = offered.folder.clone();
         for name in [HELPER, "bin/gh"] {
@@ -187,7 +187,7 @@ fn the_helper_files_hold_no_token_and_go_with_the_command() {
     });
     assert!(!folder.exists(), "removed when the command ends");
     let none = FixedGitCredentials::new(Vec::new(), GitCredential::new("a", &token).unwrap());
-    assert!(block_on!(offer(&none, &[])).unwrap().is_none());
+    assert!(block_on!(offer(&none, &[], None)).unwrap().is_none());
 }
 
 #[derive(Default)]
@@ -256,4 +256,69 @@ fn a_sandboxed_command_signs_in_through_the_helper() {
     assert_eq!(finished.ending, Ending::Exited { code: 0 }, "{printed}");
     assert!(printed.contains(FAKE_COMMIT), "{printed}");
     assert!(!printed.contains(&token), "the token shows: {printed}");
+}
+
+/// A command's helper is made in glave's own folder for commands, which every sandbox keeps
+/// readable and never writable: a sandboxed command cannot change it, nor add to its folder,
+/// so no command can change another's. Runs only where the sandbox is.
+#[test]
+fn a_command_s_helper_is_where_no_sandboxed_command_can_change_it() {
+    if !sandbox_available() {
+        return;
+    }
+    let dir = scratch("credentials-kept");
+    let token = fake_secret("ghp_");
+    let credentials = FixedGitCredentials::new(
+        vec![host("https://github.com", Forge::Other)],
+        GitCredential::new("x-access-token", &token).unwrap(),
+    );
+    let glave_home = dir.join(".glave");
+    let on_path = glave_home.join("bin");
+    std::fs::create_dir_all(&on_path).unwrap();
+    let environment = std::env::vars_os().filter(|(name, _)| name == "PATH");
+    let computers =
+        LocalComputers::new(dir.join("copies"), environment).with_glave_on_path(&on_path);
+    let output = Collect::default();
+    block_on!(async {
+        let computer = computers.create(&Environment::host()).await.unwrap();
+        let sources = Sources::Folder {
+            path: dir.to_string_lossy().into_owned(),
+        };
+        let here = computers.open(computer.id, &sources).await.unwrap();
+        // The helper's path is git's setting for it, after the cleared one.
+        let mut command = Command::new(
+            "helper=$(printf '%s' \"$GIT_CONFIG_VALUE_1\" | sed \"s/^!'//; s/'$//\"); \
+             echo \"helper=$helper\"; \
+             echo changed > \"$helper\" && echo wrote-helper; \
+             touch \"$(dirname \"$helper\")/added\" && echo added-file; true",
+        );
+        command.sandbox = Some(Sandbox {
+            level: SandboxLevel::Project,
+            network: false,
+            home: Some(dir.to_path_buf()),
+            glave_home: Some(glave_home.clone()),
+        });
+        let finished = computers
+            .run_with_credentials(
+                here.id,
+                &command,
+                &output,
+                &CancelSwitch::default(),
+                &credentials,
+            )
+            .await
+            .unwrap();
+        assert_eq!(finished.ending, Ending::Exited { code: 0 });
+    });
+    let printed = output.0.lock().unwrap().clone();
+    let helper = printed
+        .lines()
+        .find_map(|line| line.strip_prefix("helper="))
+        .unwrap_or_else(|| panic!("no helper in {printed}"));
+    assert!(
+        Path::new(helper).starts_with(&on_path),
+        "not in glave's folder: {printed}"
+    );
+    assert!(!printed.contains("wrote-helper"), "{printed}");
+    assert!(!printed.contains("added-file"), "{printed}");
 }
