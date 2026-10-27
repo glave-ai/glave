@@ -3,8 +3,11 @@ use super::*;
 const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
+/// Where `text` breaks, as reading it and checking it both say.
 fn broken_by(text: &str) -> Broken {
-    parse(text).unwrap_err()
+    let broken = parse(text).unwrap_err();
+    assert_eq!(check(text), Err(broken.clone()), "{text:?}");
+    broken
 }
 
 #[test]
@@ -90,8 +93,10 @@ fn a_broken_part_says_where_and_why() {
     let unquoted = broken_by("<root>\n<a x=1/></root>");
     assert_eq!((unquoted.line, unquoted.column), (2, 6));
     assert_eq!(unquoted.why, "an attribute's value must be in quotes");
-    let fine = parse("\u{feff}<?xml version=\"1.0\"?>\r\n<a b='1'>x</a>\n").unwrap();
+    let well_formed = "\u{feff}<?xml version=\"1.0\"?>\r\n<a b='1'>x</a>\n";
+    let fine = parse(well_formed).unwrap();
     assert_eq!((fine.name.as_str(), fine.text().as_str()), ("a", "x"));
+    assert_eq!(check(well_formed), Ok(()));
 }
 
 #[test]
