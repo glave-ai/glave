@@ -164,7 +164,7 @@ export class HomeComponent {
         ...(project === null ? {} : { project }),
         ...(model === null ? {} : { model }),
         ...(permissions === null ? {} : { permissions }),
-        ...(effort === null ? {} : { effort }),
+        ...(effort === undefined ? {} : { effort }),
       };
       const { thread } = await this.session.call('thread/start', params);
       const files = this.attachments.attached();

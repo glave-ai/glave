@@ -192,9 +192,9 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         permissions: Option<Permissions>,
         /// How much the model reasons in the thread's turns: one of the levels `model/list`
-        /// gives for its model, such as `high`. The model's own default when absent.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        effort: Option<String>,
+        /// gives for its model, such as `high`. The model's own default when absent or `null`.
+        #[serde(default, deserialize_with = "given", skip_serializing_if = "Option::is_none")]
+        effort: Option<Option<String>>,
     } -> [Thread],
     "thread/list" => ThreadList {
         /// The project whose threads to list, by default as `thread/start` picks one.
@@ -286,16 +286,17 @@ methods! {
         /// a turn runs.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model: Option<String>,
+        /// How much the model reasons in this turn, and the thread's turns after it: one of
+        /// the levels `model/list` gives for the model the turn goes to, or `null` for Default,
+        /// the model's own default again, as in a thread that never chose. The thread's latest
+        /// choice when absent, else the model's own default. Not while a turn runs.
+        #[serde(default, deserialize_with = "given", skip_serializing_if = "Option::is_none")]
+        effort: Option<Option<String>>,
         /// What the agent may do in this turn, and the thread's turns after it: one of the
         /// server's `modes`. The thread's latest choice when absent, else its project's, else
         /// the server's. Not while a turn runs.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         permissions: Option<Permissions>,
-        /// How much the model reasons in this turn, and the thread's turns after it: one of
-        /// the levels `model/list` gives for the model the turn goes to. The thread's latest
-        /// choice when absent, else the model's own default. Not while a turn runs.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        effort: Option<String>,
         /// No one answers the turn it starts: what would ask is declined at once and
         /// `question` is not offered, as in a task, for its subagents too, while it still
         /// streams to whoever follows it. For a client with no one at it, such as a script.
@@ -572,6 +573,16 @@ methods! {
 )]
 fn is_false(value: &bool) -> bool {
     !*value
+}
+
+/// A field that is given, `null` included, as distinct from one left out, which its
+/// `#[serde(default)]` reads as `None`: `null` is `Some(None)`.
+fn given<'de, D, T>(field: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(field).map(Some)
 }
 
 impl Request {

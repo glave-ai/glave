@@ -226,45 +226,51 @@ where
     }
 
     /// Asks `thread`'s model to reason at `effort` from now on, recorded as `effort.chosen`
-    /// for `caller`. Choosing the level already chosen records nothing. A level that is empty,
-    /// longer than 32 bytes or not one plain word is refused; whether the model offers it is
-    /// the caller's to check.
+    /// for `caller`; with none, Default: it asks for no level again, as a thread that never
+    /// chose. Choosing the level already chosen records nothing. A level that is empty, longer
+    /// than 32 bytes or not one plain word is refused; whether the model offers it is the
+    /// caller's to check.
     pub async fn choose_effort(
         &self,
         thread: &mut Thread,
         caller: &Caller,
-        effort: &str,
+        effort: Option<&str>,
     ) -> Result<(), HarnessError> {
-        let effort = effort.trim();
-        let plain = effort
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_');
-        if effort.is_empty() || effort.len() > MAX_EFFORT || !plain {
-            return Err(HarnessError::Invalid(format!(
-                "a reasoning level is one word of 1 to {MAX_EFFORT} letters, such as high"
-            )));
+        let effort = effort.map(str::trim);
+        if let Some(level) = effort {
+            let plain = level.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+            if level.is_empty() || level.len() > MAX_EFFORT || !plain {
+                return Err(HarnessError::Invalid(format!(
+                    "a reasoning level is one word of 1 to {MAX_EFFORT} letters, such as high"
+                )));
+            }
         }
-        if thread.effort.as_deref() == Some(effort) {
+        if thread.effort.as_deref() == effort {
             return Ok(());
         }
         let chosen = EffortChosen {
-            effort: effort.to_owned(),
+            effort: effort.map(str::to_owned),
             by: Self::other_than_for(thread, caller.person),
         };
         self.record(thread, &chosen).await?;
         // Glave's own record: call ids do not count it, so the model is sent the same.
         thread.unnumbered = thread.unnumbered.saturating_add(1);
-        thread.effort = Some(effort.to_owned());
+        thread.effort = chosen.effort;
         Ok(())
     }
 }
 
-/// The level the latest `effort.chosen` in `events` names, if any.
+/// The level the latest `effort.chosen` in `events` names: none when it chose Default, or
+/// when there is none.
 pub(crate) fn effort_in(events: &[Event]) -> Option<String> {
-    events.iter().rev().find_map(|event| match &event.body {
-        Body::EffortChosen(chosen) => Some(chosen.effort.clone()),
-        _ => None,
-    })
+    events
+        .iter()
+        .rev()
+        .find_map(|event| match &event.body {
+            Body::EffortChosen(chosen) => Some(chosen.effort.clone()),
+            _ => None,
+        })
+        .flatten()
 }
 
 /// The mode the latest `permissions.chosen` in `events` names, if any.

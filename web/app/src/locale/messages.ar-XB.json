@@ -94,7 +94,6 @@
     "effort.none": "\u200f\u202eOff\u202c\u200f",
     "effort.xhigh": "\u200f\u202eExtra\u202c\u200f \u200f\u202ehigh\u202c\u200f",
     "effortPicker.label": "\u200f\u202eReasoning\u202c\u200f",
-    "effortPicker.unasked": "\u200f\u202eDefault\u202c\u200f",
     "files.lines": "{{$ADDED}, plural, one {# \u200f\u202eline\u202c\u200f \u200f\u202eadded\u202c\u200f} other {# \u200f\u202elines\u202c\u200f \u200f\u202eadded\u202c\u200f}}\u200f\u202e,\u202c\u200f {{$REMOVED}, plural, other {# \u200f\u202eremoved\u202c\u200f}}",
     "folderGone.find": "\u200f\u202eFind\u202c\u200f \u200f\u202eit\u202c\u200f",
     "folderGone.findHeading": "\u200f\u202eWhere\u202c\u200f \u200f\u202eis\u202c\u200f \u200f\u202ethe\u202c\u200f \u200f\u202eproject’s\u202c\u200f \u200f\u202efolder\u202c\u200f \u200f\u202enow?\u202c\u200f",

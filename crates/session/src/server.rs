@@ -407,7 +407,7 @@ where
         if let Some(model) = &choice.model {
             self.known_model(model)?;
         }
-        if let Some(effort) = &choice.effort {
+        if let Some(Some(effort)) = &choice.effort {
             let model = choice.model.clone();
             let model = model.unwrap_or_else(|| self.inner.harness.default_model());
             self.offered_effort(&model, effort)?;
