@@ -34,10 +34,13 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(byTestId(page, 'panel-plan-step')).toHaveCount(4);
     // The plan being built is the panel's to show: the conversation has no card of it.
     await expect(byTestId(page, 'thread-plan')).toHaveCount(0);
-    await expect(byTestId(page, 'panel-changes')).toContainText('2 files');
+    // Both the count and each file's lines show at the panel's width.
+    await expect(byTestId(page, 'panel-changes-count')).toBeVisible();
+    await expect(byTestId(page, 'panel-changes-count')).toHaveText('2 files');
+    await expect(byTestId(page, 'panel-changes-file').first().locator('.counts')).toBeVisible();
     await expect(byTestId(page, 'panel-changes-file')).toHaveCount(2);
     await expect(byTestId(page, 'command-text')).toHaveText('cargo test');
-    await expect(byTestId(page, 'command-time')).toHaveText('Running for 42s');
+    await expect(byTestId(page, 'command-time')).toHaveText('42s');
     await expect(byTestId(page, 'command-stop')).toHaveAccessibleName('Stop cargo test');
     await expect(byTestId(page, 'panel-page')).toContainText('clap: Arg::action');
     await expect(byTestId(page, 'panel-page')).toHaveAttribute('target', '_blank');

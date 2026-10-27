@@ -1,32 +1,35 @@
 @if (service.error(); as error) {
   <p class="error" role="alert" data-testid="commands-error">{{ error }}</p>
 }
-<div class="list">
+<ul class="list">
   @for (row of rows(); track row.id) {
-    <glz-card surface="sunken" data-testid="command" [attr.aria-busy]="row.ariaBusy">
-      <p class="summary" data-testid="command-summary">{{ row.summary }}</p>
-      <code class="command" tabindex="0" data-testid="command-text" [glzTooltip]="row.command">{{
-        row.command
-      }}</code>
+    <li class="command" data-testid="command" [attr.aria-busy]="row.ariaBusy">
+      <div class="row">
+        <details class="more" data-testid="command-more">
+          <summary class="line">
+            <glz-icon class="glz-spin mark" [icon]="icons.running" />
+            <code class="text" data-testid="command-text">{{ row.command }}</code>
+            @if (row.time; as time) {
+              <span class="time" data-testid="command-time">{{ time }}</span>
+            }
+          </summary>
+          <code class="whole">{{ row.command }}</code>
+          <p class="summary" data-testid="command-summary">{{ row.summary }}</p>
+        </details>
+        <button
+          glzIconButton
+          size="sm"
+          data-testid="command-stop"
+          [label]="row.actionLabel"
+          [disabled]="row.busy"
+          (click)="stop(row.id)"
+        >
+          <glz-icon [icon]="icons.stop" />
+        </button>
+      </div>
       @if (row.refusal; as refusal) {
         <p class="error" role="alert" data-testid="command-refusal">{{ refusal }}</p>
       }
-      <div glzCardFooter class="footer">
-        @if (row.time; as time) {
-          <span class="time" data-testid="command-time">{{ time }}</span>
-        }
-        <button
-          glzButton
-          size="sm"
-          variant="danger"
-          data-testid="command-stop"
-          [disabled]="row.busy"
-          [attr.aria-label]="row.actionLabel"
-          (click)="stop(row.id)"
-        >
-          {{ row.action }}
-        </button>
-      </div>
-    </glz-card>
+    </li>
   }
-</div>
+</ul>

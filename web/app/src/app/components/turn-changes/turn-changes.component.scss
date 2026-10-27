@@ -114,10 +114,8 @@
   font-size: var(--glz-text-sm);
 }
 
-// Narrow: the paths keep the room; two rows, then how many more.
+// Narrow: the paths are cut short before the counts; two rows, then how many more.
 @container (width <= 30rem) {
-  .count,
-  .row .counts,
   .file:nth-child(n + 3) {
     display: none;
   }

@@ -20,15 +20,17 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(byTestId(page, 'thread-message').last()).toContainText('The docs site is running');
     const running = byTestId(page, 'panel-running');
     await expect(running).toContainText('Running');
-    // The server's sentence, then what it runs.
-    await expect(byTestId(page, 'command-summary')).toContainText('Still running');
+    // One line: what it runs, cut short, and how long it has run; it opens to the whole
+    // command and the server's sentence about it.
     const text = byTestId(page, 'command-text');
     await expect(text).toHaveText(DOCS_SERVER);
-    await expect(byTestId(page, 'command-time')).toHaveText('Running for 2m 05s');
-    // One line, cut short in the panel; focus shows all of it.
+    await expect(byTestId(page, 'command-time')).toHaveText('2m 05s');
     expect(await text.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
-    await text.focus();
-    await expect(page.getByRole('tooltip').filter({ hasText: DOCS_SERVER })).toBeVisible();
+    const summary = byTestId(page, 'command-summary');
+    await expect(summary).toBeHidden();
+    await byTestId(page, 'command-more').locator('summary').click();
+    await expect(summary).toContainText('Still running');
+    await expect(byTestId(page, 'command-more')).toContainText(DOCS_SERVER);
     await expectAccessible(page);
 
     const stop = byTestId(page, 'command-stop');
@@ -37,7 +39,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     const stopping = await hold(page, '/', 'command/stop');
     await stop.focus();
     await page.keyboard.press('Enter');
-    await expect(stop).toHaveText('Stopping…');
+    await expect(stop).toHaveAccessibleName(`Stopping ${DOCS_SERVER}…`);
     await expect(stop).toBeDisabled();
     stopping.letGo();
     // Nothing runs now, and a chat has nothing else for its panel: it goes, and the keyboard's

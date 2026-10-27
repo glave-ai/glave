@@ -20,8 +20,8 @@ const NARROW_ROWS = 2;
  * (each in its colour, the words read by screen readers), then a row for each file, its path in
  * monospace, cut short at the end when it is long, and its own counts. A row opens that file's
  * changes in full, and the last row, when there are more, every one of these files'. On a narrow
- * card the counts give way to the paths, and after two rows a last one says how many more files
- * there are. The thread's panel shows the thread's changes the same way, under its own `heading`
+ * card the paths are cut short before the counts, and after two rows a last one says how many
+ * more files there are. The thread's panel shows the thread's changes the same way, under its own `heading`
  * one `level` down, with what it adds at the foot (`[appTurnChangesFoot]`).
  */
 @Component({
