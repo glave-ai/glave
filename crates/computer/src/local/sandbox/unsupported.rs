@@ -1,7 +1,7 @@
 //! Where glave has no sandbox (Windows, for now): a sandboxed command is refused.
 
 use std::ffi::OsString;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use glave_ports::computer::{ComputerError, Sandbox};
 
@@ -28,6 +28,7 @@ impl Enforcer {
         _git_common: Option<&Path>,
         _helper: Option<&Path>,
         _cache: Option<&Path>,
+        _hidden: &[PathBuf],
     ) -> std::future::Ready<Result<(Self, Temps), ComputerError>> {
         std::future::ready(Err(ComputerError::Unsupported(
             "the sandbox is not available on this computer (macOS and Linux only for now)".into(),

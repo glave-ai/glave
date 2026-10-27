@@ -17,6 +17,10 @@ Each run keeps its workspaces, events, transcripts and `report.json` under
 `$TMPDIR/glave-eval/<time>/`; the newest ten runs are kept. `--baseline <report.json>` marks
 what changed since an earlier run.
 
+Each attempt starts as a fresh computer would: with an empty Cargo home of its own
+(`CARGO_HOME`, removed once it is graded), and this computer's own crate downloads hidden from
+its commands, so it cannot build offline what a fresh computer would have to download.
+
 The report leads with the model cheapest per passed task: everything a model's attempts spent,
 the failed ones too, over the attempts that passed, with the tokens beside it. A model whose
 route reports no cost, or only $0 as a free route does, shows "no cost reported" (and a dash for

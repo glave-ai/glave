@@ -51,6 +51,8 @@ pub(super) struct Layout {
     /// `/tmp`, shared, which models reach for constantly.
     pub(super) shared_tmp: Option<PathBuf>,
     pub(super) home: Option<PathBuf>,
+    /// What the computer hides beside the home folder's credential stores.
+    pub(super) also_hidden: Vec<PathBuf>,
     pub(super) glave_home: Option<PathBuf>,
     /// glave's sandbox cache folder, writable, inside glave's own.
     pub(super) cache: Option<PathBuf>,
@@ -139,7 +141,7 @@ pub(super) fn plan(
     }
     hide_glave_home(layout, &mut mounts);
     mounts.extend(layout.cache.iter().cloned().map(Mount::Writable));
-    hide_home_secrets(layout, &mut mounts);
+    hide_places(layout, &mut mounts);
     mounts.extend(secret_files.into_iter().map(Mount::HiddenFile));
     Ok((mounts, held))
 }
@@ -256,16 +258,17 @@ fn hide_except(folder: &Path, kept: &[&PathBuf], mounts: &mut Vec<Mount>) {
     }
 }
 
-/// Credential folders and files in the home folder, wherever their links lead.
-fn hide_home_secrets(layout: &Layout, mounts: &mut Vec<Mount>) {
-    for real in home_secrets(layout) {
+/// Credential folders and files in the home folder, and whatever else the computer hides,
+/// wherever their links lead.
+fn hide_places(layout: &Layout, mounts: &mut Vec<Mount>) {
+    for real in hidden_places(layout) {
         hide(&real, mounts);
     }
 }
 
-/// The real paths of the home folder's credential folders and files that exist, except one
-/// that holds the workspace.
-fn home_secrets(layout: &Layout) -> Vec<PathBuf> {
+/// The real paths of the home folder's credential folders and files, and of whatever else the
+/// computer hides, that exist, except one that holds the workspace.
+fn hidden_places(layout: &Layout) -> Vec<PathBuf> {
     let in_home = layout.home.iter().flat_map(|home| {
         HOME_SECRETS
             .iter()
@@ -279,15 +282,16 @@ fn home_secrets(layout: &Layout) -> Vec<PathBuf> {
     });
     in_home
         .chain(in_runtime)
+        .chain(layout.also_hidden.iter().cloned())
         .filter_map(|secret| std::fs::canonicalize(secret).ok())
         .filter(|real| !layout.root.starts_with(real))
         .collect()
 }
 
-/// What commands may not read, for Landlock: the home folder's credentials and the
-/// project's files named like secrets. Blocking.
+/// What commands may not read, for Landlock: the home folder's credentials, whatever else the
+/// computer hides and the project's files named like secrets. Blocking.
 pub(super) fn hidden(layout: &Layout) -> Result<Vec<PathBuf>, String> {
-    let mut hidden = home_secrets(layout);
+    let mut hidden = hidden_places(layout);
     hidden.extend(
         secret_files(&layout.root, &layout.names)
             .map_err(|error| format!("could not read {}: {error}", layout.root.display()))?,

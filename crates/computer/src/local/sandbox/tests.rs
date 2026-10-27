@@ -61,6 +61,15 @@ async fn run(
     (finished.ending, output.0.lock().unwrap().clone())
 }
 
+/// `dir/app`, opened in place on a new computer.
+async fn open_app(computers: &LocalComputers, dir: &Path) -> WorkspaceId {
+    let computer = computers.create(&Environment::host()).await.unwrap();
+    let app = Sources::Folder {
+        path: dir.join("app").to_string_lossy().into_owned(),
+    };
+    computers.open(computer.id, &app).await.unwrap().id
+}
+
 /// A repository with one commit on `main`, in `dir/<name>`.
 fn committed_repo(dir: &Path, name: &str) -> PathBuf {
     let repo = dir.join(name);
@@ -137,6 +146,34 @@ fn still_aside(aside: &Path, prepared: &[&str], said: &str) {
         .filter(|prepared| !aside.join(prepared).exists())
         .collect();
     assert!(gone.is_empty(), "no longer aside: {gone:?}: {said}");
+}
+
+/// What the computer is told to hide is unreadable to its sandboxed commands, through a link
+/// too, while what sits beside it stays readable.
+#[test]
+fn what_the_computer_hides_is_unreadable() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("hidden");
+    let cargo = dir.join("cargo");
+    std::fs::create_dir_all(cargo.join("registry")).unwrap();
+    std::fs::create_dir_all(cargo.join("bin")).unwrap();
+    std::fs::write(cargo.join("registry/lib.rs"), "canary-hidden\n").unwrap();
+    std::fs::write(cargo.join("bin/tool"), "beside-ok\n").unwrap();
+    std::os::unix::fs::symlink(cargo.join("registry"), dir.join("app/linked")).unwrap();
+    let (computers, sandbox) = computers(&dir);
+    let computers = computers.with_hidden([cargo.join("registry")]);
+    block_on!(async {
+        let here = open_app(&computers, &dir).await;
+        let reads = format!(
+            "cat '{0}/registry/lib.rs' linked/lib.rs '{0}/bin/tool'; true",
+            cargo.display()
+        );
+        let (_, said) = run(&computers, here, &sandbox, &reads).await;
+        assert!(said.contains("beside-ok"), "{said}");
+        assert!(!said.contains("canary-hidden"), "{said}");
+    });
 }
 
 /// Prepared folders moved in whole under `.git/worktrees`, `.git/modules` (one that is there
@@ -457,12 +494,7 @@ fn every_command_s_temp_folder_is_removed_when_it_ends() {
     let (computers, sandbox) = computers(&dir);
     let prints = "test -d \"$TMPDIR\" && echo \"temp=$TMPDIR\"";
     block_on!(async {
-        let computer = computers.create(&Environment::host()).await.unwrap();
-        let path = dir.join("app").to_string_lossy().into_owned();
-        let here = computers
-            .open(computer.id, &Sources::Folder { path })
-            .await
-            .unwrap();
+        let here = open_app(&computers, &dir).await;
         let read_only = format!(
             "{prints} && mkdir -p \"$TMPDIR/mod/a\" && touch \"$TMPDIR/mod/a/f\" && \
              chmod -R a-w \"$TMPDIR/mod\""
@@ -472,7 +504,7 @@ fn every_command_s_temp_folder_is_removed_when_it_ends() {
             (read_only, Ending::Exited { code: 0 }),
             (format!("{prints}; exit 3"), Ending::Exited { code: 3 }),
         ] {
-            let (ended, said) = run(&computers, here.id, &sandbox, &script).await;
+            let (ended, said) = run(&computers, here, &sandbox, &script).await;
             assert_eq!(ended, ending, "{said}");
             temps.push(printed_temp(&said));
         }
@@ -482,7 +514,7 @@ fn every_command_s_temp_folder_is_removed_when_it_ends() {
         timed.timeout_secs = Some(1);
         let said = Collect::default();
         let finished = computers
-            .run(here.id, &timed, &said, &CancelSwitch::default())
+            .run(here, &timed, &said, &CancelSwitch::default())
             .await
             .unwrap();
         let said = said.0.lock().unwrap().clone();
@@ -499,7 +531,7 @@ fn every_command_s_temp_folder_is_removed_when_it_ends() {
             switch: CancelSwitch::default(),
         };
         let finished = computers
-            .run(here.id, &cancelled, &output, &output.switch)
+            .run(here, &cancelled, &output, &output.switch)
             .await
             .unwrap();
         let said = output.said.0.lock().unwrap().clone();

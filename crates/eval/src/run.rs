@@ -132,6 +132,7 @@ pub async fn attempt(
     let Prepared {
         workspace,
         environment,
+        hidden,
     } = prepare(&setup.environment, task, dir).await?;
     // The task's pages, served until the attempt is graded.
     let pages = match task.web_pages() {
@@ -149,7 +150,7 @@ pub async fn attempt(
         setup,
         task,
         model,
-        &environment,
+        (&environment, &hidden),
         (&workspace, web.as_deref()),
     )
     .await?;
@@ -222,17 +223,19 @@ async fn tested(
     Ok((!output.success).then(|| format!("tests/test.sh failed: {}", last_lines(&output.text))))
 }
 
-/// The workspace in `root`, in the sandbox, which the task's mode narrows. As glave does:
-/// where the sandbox cannot run, commands run without it, and Auto and Ask first ask (with
-/// no one to ask, they are not run); a task that tests the sandbox never gives way.
+/// The workspace in `root`, in the sandbox, which the task's mode narrows, with `hidden`
+/// hidden from it too. As glave does: where the sandbox cannot run, commands run without it,
+/// and Auto and Ask first ask (with no one to ask, they are not run); a task that tests the
+/// sandbox never gives way.
 async fn workspace(
     task: &Task,
-    (environment, processes): (&Environment, &Processes),
+    (environment, hidden, processes): (&Environment, &[PathBuf], &Processes),
     root: &Path,
 ) -> Result<Workspace, EvalError> {
     let open = || async {
         let (computers, info) = LocalComputers::for_here(environment.clone())
             .with_processes(processes.clone())
+            .with_hidden(hidden.iter().cloned())
             .open_here(root)
             .await
             .map_err(|error| EvalError::io("open", root)(std::io::Error::other(error)))?;
@@ -258,11 +261,12 @@ async fn wire(
     setup: &Setup,
     task: &Task,
     model: &str,
-    environment: &Environment,
+    (environment, hidden): (&Environment, &[PathBuf]),
     (root, web): (&Path, Option<&str>),
     (remembering, calendar): (&Remembering, &Calendar),
 ) -> Result<Wired, EvalError> {
-    let workspace = workspace(task, (environment, &setup.processes), root).await?;
+    let computer = (environment, hidden, &setup.processes);
+    let workspace = workspace(task, computer, root).await?;
     let provider = OpenAiCompatible::new(setup.endpoint.clone())
         .map_err(|err| EvalError::Setup(err.to_string()))?;
     let mut settings = Settings::new(model, setup.endpoint.provider.clone());
@@ -375,14 +379,14 @@ async fn converse(
     setup: &Setup,
     task: &Task,
     model: &str,
-    environment: &Environment,
+    computer: (&Environment, &[PathBuf]),
     (root, web): (&Path, Option<&str>),
 ) -> Result<Conversed, EvalError> {
     let calendar = Calendar::new(Arc::new(SystemClock));
     let on = setup.memory.unwrap_or(task.memory);
     let remembering = Remembering::open(task, on, &calendar).await?;
     let wiring = (&remembering, &calendar);
-    let harness = wire(setup, task, model, environment, (root, web), wiring).await?;
+    let harness = wire(setup, task, model, computer, (root, web), wiring).await?;
     let tidier = || {
         Ok::<_, EvalError>(Tidier {
             provider: OpenAiCompatible::new(setup.endpoint.clone())

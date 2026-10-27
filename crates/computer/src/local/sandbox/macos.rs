@@ -32,14 +32,16 @@ pub(super) struct Enforcer {
 
 impl Enforcer {
     /// Resolves every path the profile names (macOS matches real paths) and writes the
-    /// profile once, for every command run in `root` under `sandbox`. Commands' temp folders
-    /// go in the system's, resolved.
+    /// profile once, for every command run in `root` under `sandbox`, hiding the home
+    /// folder's credential stores and `also_hidden`. Commands' temp folders go in the
+    /// system's, resolved.
     pub(super) async fn prepare(
         sandbox: &Sandbox,
         root: &Path,
         git_common: Option<&Path>,
         _helper: Option<&Path>,
         cache: Option<&Path>,
+        also_hidden: &[PathBuf],
     ) -> Result<(Self, Temps), ComputerError> {
         if !available() {
             return Err(ComputerError::Unsupported(format!(
@@ -60,10 +62,11 @@ impl Enforcer {
             }
             None => None,
         };
-        let hidden = match resolved(sandbox.home.as_deref()).await {
-            Some(home) => hidden(&home).await,
+        let secrets: Vec<PathBuf> = match resolved(sandbox.home.as_deref()).await {
+            Some(home) => home_secrets(&home).collect(),
             None => Vec::new(),
         };
+        let hidden = hidden(secrets.into_iter().chain(also_hidden.iter().cloned())).await;
         let places = Places {
             root: root.to_owned(),
             glave_home: resolved(sandbox.glave_home.as_deref()).await,
@@ -108,12 +111,12 @@ fn param(name: &str, path: &Path) -> OsString {
     arg
 }
 
-/// The home folder's credential stores, each as named and, when a link leads elsewhere, where
-/// it leads: Seatbelt matches the real path, so a `~/.config` that is a link to dotfiles would
-/// otherwise leave what it holds readable.
-async fn hidden(home: &Path) -> Vec<PathBuf> {
+/// Each of `paths`, as named and, when a link leads elsewhere, where it leads: Seatbelt matches
+/// the real path, so a `~/.config` that is a link to dotfiles would otherwise leave what it
+/// holds readable.
+async fn hidden(paths: impl Iterator<Item = PathBuf>) -> Vec<PathBuf> {
     let mut hidden = Vec::new();
-    for path in home_secrets(home) {
+    for path in paths {
         if let Ok(real) = tokio::fs::canonicalize(&path).await
             && real != path
         {

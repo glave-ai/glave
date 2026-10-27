@@ -92,17 +92,25 @@ pub(crate) struct Launch {
 impl Prepared {
     /// Prepares `sandbox` for every command run in `root`. `git_common`, for a worktree, is
     /// its repository's shared git folder, writable too. `helper` is a program that runs
-    /// [`sandbox_helper`], which Linux needs where bubblewrap cannot start.
+    /// [`sandbox_helper`], which Linux needs where bubblewrap cannot start. `hidden` is what
+    /// this computer hides beside the home folder's credential stores.
     pub(crate) async fn new(
         sandbox: &Sandbox,
         root: &Path,
         git_common: Option<&Path>,
         helper: Option<&Path>,
+        hidden: &[PathBuf],
     ) -> Result<Self, ComputerError> {
         let cache = cache_home(sandbox.glave_home.as_deref()).await;
-        let (enforcer, temps) =
-            platform::Enforcer::prepare(sandbox, root, git_common, helper, cache.as_deref())
-                .await?;
+        let (enforcer, temps) = platform::Enforcer::prepare(
+            sandbox,
+            root,
+            git_common,
+            helper,
+            cache.as_deref(),
+            hidden,
+        )
+        .await?;
         Ok(Self {
             sandbox: sandbox.clone(),
             temps,
