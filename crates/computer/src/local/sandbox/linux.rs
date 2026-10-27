@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use glave_ports::computer::{ComputerError, Sandbox, SandboxLevel};
 
 use super::run_temp::RunTemp;
-use super::{Launch, SANDBOX_HELPER_ARG, Temps, failed, resolved};
+use super::{Launch, Reached, SANDBOX_HELPER_ARG, Temps, failed, resolved};
 use mounts::{Layout, StandIns};
 use names::SecretNames;
 use temp::RunFolder;
@@ -68,7 +68,7 @@ impl Enforcer {
         root: &Path,
         git_common: Option<&Path>,
         helper: Option<&Path>,
-        cache: Option<&Path>,
+        reached: Reached<'_>,
         also_hidden: &[PathBuf],
     ) -> Result<(Self, Temps), ComputerError> {
         let git_common = resolved(git_common).await;
@@ -89,7 +89,8 @@ impl Enforcer {
             home: resolved(sandbox.home.as_deref()).await,
             also_hidden: also_hidden.to_vec(),
             glave_home: resolved(sandbox.glave_home.as_deref()).await,
-            cache: cache.map(Path::to_path_buf),
+            cache: reached.cache.map(Path::to_path_buf),
+            glave_on_path: resolved(reached.glave_on_path).await,
             runtime: resolved(Some(runtime_folder().as_path())).await,
             git_common,
             names,
@@ -221,6 +222,7 @@ fn landlock_plan(layout: &Layout, temp: &Path) -> Result<landlocked::Plan, Strin
         .filter(|glave_home| layout.root.starts_with(glave_home))
         .map(|_| layout.root.clone())
         .chain(layout.cache.iter().cloned())
+        .chain(layout.glave_on_path.iter().cloned())
         .collect();
     unreadable.sort();
     unreadable.dedup();

@@ -57,6 +57,8 @@ pub(crate) struct Places {
     pub hidden: Vec<PathBuf>,
     /// glave's sandbox cache folder, readable and writable inside glave's own.
     pub cache: Option<PathBuf>,
+    /// glave's own folder on commands' `PATH`, readable, never writable, inside glave's own.
+    pub glave_on_path: Option<PathBuf>,
     /// For a worktree: the repository's shared git folder, where its commits go.
     pub git_common: Option<PathBuf>,
     /// For a worktree: its own folder in the shared one (`worktrees/<name>`).
@@ -102,12 +104,20 @@ fn reads(profile: &mut Profile, places: &Places) {
         } else {
             ""
         };
+        let on_path = if places.glave_on_path.is_some() {
+            r#" (subpath (param "ON_PATH"))"#
+        } else {
+            ""
+        };
         conditions.push(format!(
-            r#"(require-any (require-not (subpath (param "GLAVE_HOME"))) (subpath (param "ROOT")){cache})"#
+            r#"(require-any (require-not (subpath (param "GLAVE_HOME"))) (subpath (param "ROOT")){cache}{on_path})"#
         ));
         profile
             .params
             .push(("GLAVE_HOME".into(), glave_home.clone()));
+        if let Some(on_path) = &places.glave_on_path {
+            profile.params.push(("ON_PATH".into(), on_path.clone()));
+        }
     }
     let root = regex_escape(&places.root);
     let (env, templates, others) = (
@@ -296,6 +306,7 @@ mod tests {
             glave_home: Some(PathBuf::from("/Users/me/.glave")),
             hidden: home_secrets(Path::new("/Users/me")).collect(),
             cache: Some(PathBuf::from("/Users/me/.glave/sandbox-cache")),
+            glave_on_path: Some(PathBuf::from("/Users/me/.glave/bin")),
             git_common: None,
             git_own: None,
         }
@@ -378,11 +389,21 @@ mod tests {
             Some(Path::new("/Users/me/.glave"))
         );
         assert!(profile.text.contains(
-            r#"(require-any (require-not (subpath (param "GLAVE_HOME"))) (subpath (param "ROOT")) (subpath (param "CACHE")))"#
+            r#"(require-any (require-not (subpath (param "GLAVE_HOME"))) (subpath (param "ROOT")) (subpath (param "CACHE")) (subpath (param "ON_PATH")))"#
         ));
         assert_eq!(
             param(&profile, "CACHE"),
             Some(Path::new("/Users/me/.glave/sandbox-cache"))
+        );
+        assert_eq!(
+            param(&profile, "ON_PATH"),
+            Some(Path::new("/Users/me/.glave/bin"))
+        );
+        assert!(
+            !profile
+                .text
+                .contains(r#"file-write* (require-all (subpath (param "ON_PATH"))"#),
+            "glave's folder on PATH is read, never written"
         );
         assert!(profile.text.contains(
             r#"(allow file-write* (require-all (subpath (param "CACHE")) (require-not (literal (param "CACHE")))))"#

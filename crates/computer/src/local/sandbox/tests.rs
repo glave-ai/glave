@@ -176,6 +176,64 @@ fn what_the_computer_hides_is_unreadable() {
     });
 }
 
+/// A script at `path` that prints `said` and its arguments, standing in for a glave.
+pub(super) fn fake_glave(path: &Path, said: &str) {
+    use std::os::unix::fs::PermissionsExt as _;
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, format!("#!/bin/sh\necho {said} \"$@\"\n")).unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+/// A command's `glave` is the glave that runs it, through glave's own folder first on its
+/// `PATH`, which the sandbox keeps readable though it sits in glave's hidden folder: with no
+/// glave on the `PATH` it was given, and with an older one earlier on it.
+#[test]
+fn the_running_glave_is_first_on_every_command_s_path() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("on-path");
+    let home = dir.join("home");
+    let glave_home = home.join(".glave");
+    let on_path = glave_home.join("bin");
+    let running = dir.join("running/glave");
+    fake_glave(&running, "running-glave");
+    fake_glave(&dir.join("old/glave"), "old-glave");
+    let sandbox = Sandbox {
+        level: SandboxLevel::Project,
+        network: false,
+        home: Some(home.clone()),
+        glave_home: Some(glave_home.clone()),
+    };
+    let old_first = format!("{}:/usr/bin:/bin", dir.join("old").display());
+    block_on!(async {
+        crate::glave_on_path(&on_path, &running).await.unwrap();
+        for path in ["/usr/bin:/bin", old_first.as_str()] {
+            let environment: Vec<(OsString, OsString)> = vec![
+                ("PATH".into(), path.into()),
+                ("HOME".into(), home.clone().into_os_string()),
+            ];
+            let computers =
+                LocalComputers::new(dir.join("copies"), environment).with_glave_on_path(&on_path);
+            let here = open_app(&computers, &dir).await;
+            let (ending, said) = run(&computers, here, &sandbox, "glave --version").await;
+            assert_eq!(ending, Ending::Exited { code: 0 }, "{path}: {said}");
+            assert!(said.contains("running-glave --version"), "{path}: {said}");
+            assert!(!said.contains("old-glave"), "{path}: {said}");
+            // Outside the sandbox too.
+            let unsandboxed = Command::new("glave --version");
+            let output = Collect::default();
+            let finished = computers
+                .run(here, &unsandboxed, &output, &CancelSwitch::default())
+                .await
+                .unwrap();
+            let said = output.0.lock().unwrap().clone();
+            assert_eq!(finished.ending, Ending::Exited { code: 0 }, "{said}");
+            assert!(said.contains("running-glave"), "{path}: {said}");
+        }
+    });
+}
+
 /// glave's folder stays hidden from a command for its whole life (`specs/invariants.md`, 23):
 /// whether the workspace is outside it or a thread's worktree inside it.
 #[test]

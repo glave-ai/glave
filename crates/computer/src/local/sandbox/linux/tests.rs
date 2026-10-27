@@ -308,6 +308,57 @@ fn landlock_keeps_what_glave_writes_later_hidden() {
     });
 }
 
+/// Under Landlock too, glave's folder on commands' `PATH` stays readable though the rest of
+/// glave's folder is hidden, so a command's `glave` is the one that runs it.
+#[test]
+fn landlock_keeps_glave_on_path_readable() {
+    let Some(helper) = landlock() else {
+        return;
+    };
+    let dir = scratch("landlock-on-path");
+    let glave_home = dir.join(".glave");
+    let on_path = glave_home.join("bin");
+    let running = dir.join("running/glave");
+    super::super::tests::fake_glave(&running, "running-glave");
+    std::fs::create_dir_all(&glave_home).unwrap();
+    std::fs::write(glave_home.join("glave.db"), "canary-db\n").unwrap();
+    let environment: Vec<(OsString, OsString)> = vec![
+        ("PATH".into(), "/usr/bin:/bin".into()),
+        ("HOME".into(), dir.as_os_str().to_owned()),
+    ];
+    let computers = LocalComputers::new(dir.join("copies"), environment)
+        .with_sandbox_helper(&helper)
+        .with_glave_on_path(&on_path);
+    let sandbox = Sandbox {
+        level: SandboxLevel::ReadOnly,
+        network: false,
+        home: Some(dir.to_path_buf()),
+        glave_home: Some(glave_home.clone()),
+    };
+    let root = dir.join("project");
+    block_on!(async {
+        crate::glave_on_path(&on_path, &running).await.unwrap();
+        let computer = computers.create(&Environment::host()).await.unwrap();
+        let sources = Sources::Folder {
+            path: root.to_string_lossy().into_owned(),
+        };
+        let here = computers.open(computer.id, &sources).await.unwrap().id;
+        let mut command = Command::new(format!(
+            "glave --version; cat '{}/glave.db'; true",
+            glave_home.display()
+        ));
+        command.sandbox = Some(sandbox);
+        let output = Collect::default();
+        computers
+            .run(here, &command, &output, &CancelSwitch::default())
+            .await
+            .unwrap();
+        let said = output.0.lock().unwrap().clone();
+        assert!(said.contains("running-glave --version"), "{said}");
+        assert!(!said.contains("canary"), "{said}");
+    });
+}
+
 #[test]
 fn landlock_runs_with_named_pipes_beside_what_it_hides() {
     let Some(helper) = landlock() else {

@@ -10,6 +10,7 @@ mod files;
 mod finding;
 pub(crate) mod git;
 mod listing;
+mod on_path;
 mod paths;
 mod process;
 mod project;
@@ -40,6 +41,7 @@ use command::Keep;
 pub(crate) use registry::new_id;
 use registry::{Opened, Registry};
 
+pub use on_path::glave_on_path;
 pub use sandbox::{sandbox_available, sandbox_helper};
 
 /// This machine's computers.
@@ -64,6 +66,9 @@ pub struct LocalComputers {
     /// Places on this machine its sandboxed commands may not read, beside the home folder's
     /// credential stores.
     hidden: Arc<[PathBuf]>,
+    /// A folder of glave's own holding `glave`, first on every command's `PATH` and readable in
+    /// every sandbox, so a command reaches the glave that runs it whatever else is installed.
+    glave_on_path: Option<PathBuf>,
     environment: Arc<Vec<(OsString, OsString)>>,
     registry: Registry,
     /// The commands its workspaces keep running in the background.
@@ -89,6 +94,7 @@ impl LocalComputers {
             host: None,
             sandbox_helper: None,
             hidden: Arc::new([]),
+            glave_on_path: None,
             environment: Arc::new(without_secrets(environment)),
             registry: Registry::default(),
             background: Backgrounds::default(),
@@ -175,6 +181,15 @@ impl LocalComputers {
         self
     }
 
+    /// Puts `folder`, which holds `glave` (see [`crate::glave_on_path`]), first on every
+    /// command's `PATH`, and keeps it readable in every sandbox though it sits in glave's own
+    /// folder, which they hide: a command's `glave` is then the one running it.
+    #[must_use]
+    pub fn with_glave_on_path(mut self, folder: impl Into<PathBuf>) -> Self {
+        self.glave_on_path = Some(folder.into());
+        self
+    }
+
     /// A host computer made from these computers, with `folder` open on it in place.
     pub async fn open_here(
         self,
@@ -255,6 +270,7 @@ impl LocalComputers {
             git_common,
             environment,
             hidden: Arc::clone(&self.hidden),
+            glave_on_path: self.glave_on_path.clone(),
             credential: credential.cloned(),
             prepared: Mutex::new(None),
             processes: self.processes.owned_by(Owner::Workspace(id.to_string())),
@@ -364,7 +380,8 @@ impl LocalComputers {
         }
     }
 
-    /// What commands on a computer see: this machine's environment, then the computer's own.
+    /// What commands on a computer see: this machine's environment, then the computer's own,
+    /// with glave's own folder first on `PATH` when it has one.
     fn command_environment(&self, environment: &Environment) -> Arc<Vec<(OsString, OsString)>> {
         let mut all: Vec<(OsString, OsString)> = self
             .environment
@@ -378,8 +395,23 @@ impl LocalComputers {
                 .iter()
                 .map(|(name, value)| (name.into(), value.into())),
         );
+        if let Some(folder) = &self.glave_on_path {
+            let path = first_on_path(&all, folder);
+            all.retain(|(name, _)| name != "PATH");
+            all.push(("PATH".into(), path));
+        }
         Arc::new(all)
     }
+}
+
+/// `environment`'s `PATH` with `folder` first.
+pub(crate) fn first_on_path(environment: &[(OsString, OsString)], folder: &Path) -> OsString {
+    let mut first = folder.as_os_str().to_owned();
+    if let Some((_, path)) = environment.iter().find(|(name, _)| name == "PATH") {
+        first.push(":");
+        first.push(path);
+    }
+    first
 }
 
 /// Refuses what a computer on the host cannot honour, rather than quietly ignoring it.

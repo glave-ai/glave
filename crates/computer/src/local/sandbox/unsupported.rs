@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use glave_ports::computer::{ComputerError, Sandbox};
 
 use super::run_temp::RunTemp;
-use super::{Launch, Temps};
+use super::{Launch, Reached, Temps};
 
 pub(super) type Held = ();
 
@@ -27,7 +27,7 @@ impl Enforcer {
         _root: &Path,
         _git_common: Option<&Path>,
         _helper: Option<&Path>,
-        _cache: Option<&Path>,
+        _reached: Reached<'_>,
         _hidden: &[PathBuf],
     ) -> std::future::Ready<Result<(Self, Temps), ComputerError>> {
         std::future::ready(Err(ComputerError::Unsupported(
