@@ -5,5 +5,7 @@
 
 mod documents;
 mod edited;
+mod forms;
+mod pdfs;
 mod workbooks;
 mod written;

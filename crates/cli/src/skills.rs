@@ -98,7 +98,8 @@ mod tests {
             [
                 "glave:spreadsheets",
                 "glave:documents",
-                "glave:presentations"
+                "glave:presentations",
+                "glave:pdfs"
             ]
         );
     }

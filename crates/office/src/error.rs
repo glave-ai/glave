@@ -44,11 +44,10 @@ pub enum OfficeError {
     #[error("{0}")]
     Parts(String),
     #[error(
-        "{} is already there. Add --replace to write the packed file over it, or name a new \
-         file",
+        "{} is already there. Add --replace to write over it, or name a new file",
         .0.display()
     )]
-    PackedOver(PathBuf),
+    AlreadyThere(PathBuf),
     #[error("the workbook has no worksheets")]
     NoSheets,
     #[error("there is no sheet named {wanted:?}; the sheets are {}", sheets.join(", "))]
@@ -58,6 +57,20 @@ pub enum OfficeError {
     /// A workbook to write was described wrongly: what is wrong, and where.
     #[error("the workbook's description is not right: {0}")]
     Description(String),
+    #[error("{0} is not a PDF")]
+    NotAPdf(String),
+    /// A PDF that can't be opened or changed for its encryption: which, and why.
+    #[error(
+        "{0}: glave doesn't change encrypted PDFs or take their protection off. Ask for a copy \
+         that isn't encrypted"
+    )]
+    Encrypted(String),
+    /// What stopped a PDF being read or changed, said so it can be put right.
+    #[error("{0}")]
+    Pdf(String),
+    /// The values to fill a form with are not right: what is wrong. Nothing was written.
+    #[error("Nothing was written: {0}")]
+    Values(String),
     #[error(
         "{} is already there, and glave doc write makes a whole new workbook: writing over it \
          loses its formatting, its charts and anything else the description doesn't hold. Name \
