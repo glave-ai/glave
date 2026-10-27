@@ -7,6 +7,7 @@ import {
   PASSKEYS_ORIGIN,
   byTestId,
   expectAccessible,
+  heldUntilHeard,
   newTab,
   served,
   setupCode,
@@ -351,14 +352,14 @@ test('a passkey made here signs another browser on this computer in', async ({
 }) => {
   const site = browserName === 'webkit' ? HERE_WEBKIT : HERE;
   const here = `http://localhost:${new URL(served(site)).port}`;
-  const nobody = await browser.newContext();
+  const nobody = await heldUntilHeard(await browser.newContext());
   const signedOut = await nobody.newPage();
   await signedOut.goto(`${here}/`);
   await expect(byTestId(signedOut, 'sign-in')).toBeVisible();
   await expect(byTestId(signedOut, 'sign-in-passkey')).toHaveCount(0);
   await nobody.close();
 
-  const first = await browser.newContext();
+  const first = await heldUntilHeard(await browser.newContext());
   const device = oneDevice(first, browserName);
   const page = await device.tab();
   const problems = watchForProblems(page);
@@ -374,7 +375,7 @@ test('a passkey made here signs another browser on this computer in', async ({
   await expect(offer).toBeHidden();
   await expect(byTestId(page, 'home-composer-input')).toBeVisible();
 
-  const second = await browser.newContext();
+  const second = await heldUntilHeard(await browser.newContext());
   const other = await oneDevice(second, browserName, await device.carried()).tab();
   const problemsThere = watchForProblems(other);
   await other.goto(`${here}/`);

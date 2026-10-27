@@ -6,6 +6,7 @@ import {
   LIVE_MODEL_URL,
   byTestId,
   expectAccessible,
+  heldUntilHeard,
   newTab,
   served,
   signInCode,
@@ -32,7 +33,7 @@ function callsOf(page: Page): readonly string[] {
 test('a second tab sees a turn and its approval as they happen, and answers it', async ({
   browser,
 }) => {
-  const context = await browser.newContext();
+  const context = await heldUntilHeard(await browser.newContext());
   const first = await context.newPage();
   const problems = [watchForProblems(first)];
   const live = served(LIVE);
@@ -86,7 +87,7 @@ test('the side nav shows a turn another tab starts running, then needing the per
   browser,
   browserName,
 }) => {
-  const context = await browser.newContext();
+  const context = await heldUntilHeard(await browser.newContext());
   const watching = await context.newPage();
   const problems = [watchForProblems(watching)];
   const called = callsOf(watching);

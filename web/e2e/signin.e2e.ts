@@ -4,6 +4,7 @@ import {
   ACCOUNTS,
   byTestId,
   expectAccessible,
+  heldUntilHeard,
   newTab,
   served,
   signInCode,
@@ -21,6 +22,7 @@ test('a link signs one browser in once, and it stays signed in until it signs ou
   context,
   browser,
 }) => {
+  await heldUntilHeard(context);
   const problems = watchForProblems(page);
   const glave = served(ACCOUNTS);
   const code = await signInCode(ACCOUNTS);
@@ -72,7 +74,7 @@ test('a link signs one browser in once, and it stays signed in until it signs ou
   expect(await context.cookies()).toEqual([]);
 
   // The code is spent: the same link signs no other browser in.
-  const another = await browser.newContext();
+  const another = await heldUntilHeard(await browser.newContext());
   const elsewhere = await another.newPage();
   await elsewhere.goto(`${glave}/#code=${code}`);
   await expect(byTestId(elsewhere, 'sign-in')).toBeVisible();
