@@ -56,8 +56,7 @@ export class ThreadService {
   private readonly firstTurns = inject(FirstTurnService);
   private readonly id = signal<ThreadId | null>(null);
   private readonly events = signal<readonly RawEvent[]>([]);
-  /** Whether the thread is being opened, its history read page by page. */
-  private readonly opening = signal(false);
+  private readonly reading = signal(false);
   private readonly draft = signal<Draft>(NO_DRAFT);
   /** The steps the running turn takes now, in the server's words, as its live updates say. */
   private readonly doing = signal<readonly string[]>([]);
@@ -99,6 +98,8 @@ export class ThreadService {
   private readonly mac = onApple(this.document);
 
   readonly thread = this.id.asReadonly();
+  /** Whether the thread is being opened, its history read page by page. */
+  readonly opening = this.reading.asReadonly();
   /**
    * The thread's summary: its own, as the server answered it here, or the side nav's copy when
    * newer (a rename or a turn elsewhere), the only one as it opens; `null` before either.
@@ -224,10 +225,10 @@ export class ThreadService {
     this.asked.set(null);
     this.trustAnswered.set(null);
     this.own.set(null);
-    this.opening.set(true);
+    this.reading.set(true);
     await this.readAll(thread);
     if (this.id() === thread) {
-      this.opening.set(false);
+      this.reading.set(false);
     }
     // Read after the events: a turn they leave open runs only when the server says so, not
     // when glave stopped in the middle of it.

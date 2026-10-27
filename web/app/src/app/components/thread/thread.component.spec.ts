@@ -289,6 +289,8 @@ describe('ThreadComponent', () => {
     ).map((each) => each.getAttribute('data-testid'));
     expect(order).toEqual(['thread-message', 'thread-message', 'turn-changes', 'thread-steps']);
     expect(root.querySelector('[data-testid="turn-changes-count"]')?.textContent).toBe('2 files');
+    // There before the thread opened, though read just after: it shows still, never settling in.
+    expect(root.querySelector('app-turn-changes')?.classList).not.toContain('glz-settle');
     // And in the thread's panel, for the whole thread.
     expect(root.querySelectorAll('[data-testid="panel-changes-file"]')).toHaveLength(2);
     const steps = root.querySelector('[data-testid="thread-steps"]');
