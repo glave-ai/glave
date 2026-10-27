@@ -1,6 +1,6 @@
 //! A log in memory that misbehaves when told, as a store does: one that blips fails the next
-//! write or read holding an event of a given kind, and a slow one holds an append until the
-//! test lets it go.
+//! write or read holding an event of a given kind, a slow one holds an append until the test
+//! lets it go, and one whose glave stopped lands nothing after a count of appends.
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -13,8 +13,8 @@ use crate::scope::{Located, Scope};
 use crate::search::Found;
 use crate::view::{ThreadQuery, ThreadView};
 
-/// A log in memory that fails or holds when told, and is otherwise a log in memory. Clones
-/// share the log and what they were told.
+/// A log in memory that fails, holds or stops when told, and is otherwise a log in memory.
+/// Clones share the log and what they were told.
 #[derive(Clone, Default)]
 pub struct FaultyLog {
     log: Arc<InMemoryLog>,
@@ -32,9 +32,32 @@ struct Faults {
     held: Notify,
     /// Lets the held append go.
     released: Notify,
+    /// Whether appends stop landing.
+    stop: Mutex<Stop>,
+}
+
+/// Whether a [`FaultyLog`]'s appends stop landing, as when the glave writing them stops.
+#[derive(Default)]
+enum Stop {
+    /// They never do.
+    #[default]
+    Never,
+    /// After this many more.
+    After(usize),
+    /// They have: one was refused.
+    Stopped,
 }
 
 impl FaultyLog {
+    /// A log over `log`, which others may share as servers share one store: what lands here
+    /// lands there, and only this one misbehaves when told.
+    pub fn over(log: Arc<InMemoryLog>) -> Self {
+        Self {
+            log,
+            faults: Arc::default(),
+        }
+    }
+
     /// Fails the next write or read that holds an event of `kind`, writing or reading nothing,
     /// as a store that blips does.
     pub fn fail_with(&self, kind: &'static str) {
@@ -56,6 +79,38 @@ impl FaultyLog {
     pub fn release(&self) {
         self.faults.released.notify_one();
     }
+
+    /// Stops after `appends` more appends: every append after them is refused and lands
+    /// nothing, as when the glave writing to the store stops.
+    pub fn stop_after(&self, appends: usize) {
+        *lock(&self.faults.stop) = Stop::After(appends);
+    }
+
+    /// Whether it stopped and refused an append: the glave writing through it can record
+    /// nothing more.
+    pub fn stopped(&self) -> bool {
+        matches!(*lock(&self.faults.stop), Stop::Stopped)
+    }
+}
+
+/// Refused, once `stop` says appends no longer land; otherwise one append fewer is left before
+/// they stop.
+fn stops(stop: &Mutex<Stop>) -> Option<LogError> {
+    let mut stop = lock(stop);
+    match *stop {
+        Stop::Never => return None,
+        Stop::After(left) => match left.checked_sub(1) {
+            Some(fewer) => {
+                *stop = Stop::After(fewer);
+                return None;
+            }
+            None => *stop = Stop::Stopped,
+        },
+        Stop::Stopped => {}
+    }
+    Some(LogError::Storage(
+        "the glave writing to the store stopped".into(),
+    ))
 }
 
 /// Takes `told`'s kind if `events` hold an event of it, saying whether they did.
@@ -81,12 +136,13 @@ impl EventLog for FaultyLog {
         scope: &Scope,
         events: &[RawEvent],
     ) -> impl Future<Output = Result<(), LogError>> + Send {
-        let blips = strikes(&self.faults.blip, events);
-        let held = !blips && strikes(&self.faults.hold, events);
-        let now = (!blips && !held).then(|| self.log.append(scope, events));
+        let refused =
+            stops(&self.faults.stop).or_else(|| strikes(&self.faults.blip, events).then(blipped));
+        let held = refused.is_none() && strikes(&self.faults.hold, events);
+        let now = (refused.is_none() && !held).then(|| self.log.append(scope, events));
         async move {
-            if blips {
-                return Err(blipped());
+            if let Some(refused) = refused {
+                return Err(refused);
             }
             if let Some(appended) = now {
                 return appended.await;
@@ -184,12 +240,12 @@ mod tests {
         ThreadId::new(Timestamp::UNIX_EPOCH, [3; 10]).unwrap()
     }
 
-    /// The thread's first event: a turn's end.
-    fn ended() -> Vec<RawEvent> {
+    /// The thread's event `seq`: a turn's end.
+    fn ended(seq: u8) -> Vec<RawEvent> {
         let header = Header {
-            id: EventId::new(Timestamp::UNIX_EPOCH, [1; 10]).unwrap(),
+            id: EventId::new(Timestamp::UNIX_EPOCH, [seq; 10]).unwrap(),
             thread: thread(),
-            seq: Seq::new(1).unwrap(),
+            seq: Seq::new(u64::from(seq)).unwrap(),
             at: At::try_from("2026-10-07T21:14:03.512Z".to_owned()).unwrap(),
         };
         let ended = TurnResult {
@@ -216,9 +272,9 @@ mod tests {
         let log = FaultyLog::default();
         block_on!(async {
             log.fail_with("turn.ended");
-            assert!(log.append(&scope(), &ended()).await.is_err());
+            assert!(log.append(&scope(), &ended(1)).await.is_err());
             assert_eq!(kept(&log).await, 0, "nothing landed");
-            log.append(&scope(), &ended()).await.unwrap();
+            log.append(&scope(), &ended(1)).await.unwrap();
             log.fail_with("turn.ended");
             assert!(log.read(&scope(), thread(), None, 10).await.is_err());
             assert_eq!(kept(&log).await, 1, "once");
@@ -231,12 +287,31 @@ mod tests {
         block_on!(async {
             log.hold("turn.ended");
             let held = log.clone();
-            let appending = tokio::spawn(async move { held.append(&scope(), &ended()).await });
+            let appending = tokio::spawn(async move { held.append(&scope(), &ended(1)).await });
             log.held().await;
             assert_eq!(kept(&log).await, 0, "held, not landed");
             log.release();
             appending.await.unwrap().unwrap();
             assert_eq!(kept(&log).await, 1);
+        });
+    }
+
+    #[test]
+    fn once_stopped_it_lands_nothing_in_the_log_it_shares() {
+        let shared = Arc::new(InMemoryLog::default());
+        let log = FaultyLog::over(Arc::clone(&shared));
+        block_on!(async {
+            log.stop_after(1);
+            log.append(&scope(), &ended(1)).await.unwrap();
+            assert!(!log.stopped(), "it took the one append it had left");
+            assert!(log.append(&scope(), &ended(2)).await.is_err());
+            assert!(log.stopped());
+            let landed = shared.read(&scope(), thread(), None, 10).await.unwrap();
+            assert_eq!(
+                landed.len(),
+                1,
+                "the first landed where it is shared, and no more"
+            );
         });
     }
 }
