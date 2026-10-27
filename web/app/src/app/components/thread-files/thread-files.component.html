@@ -24,5 +24,7 @@
       }
     </details>
   }
-  <p class="note">{{ copy.commands }}</p>
+  @if (note()) {
+    <p class="note" data-testid="files-note">{{ note() }}</p>
+  }
 </div>

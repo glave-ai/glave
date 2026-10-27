@@ -11,7 +11,7 @@ import { FirstTurnService } from '../../services/first-turn.service';
 import { ProjectsService } from '../../services/projects.service';
 import { PanelService } from '../../services/panel.service';
 import { FakeSession, FakeTurn, provideFakeSession } from '../../testing/fake-session';
-import { MODELS, SERVER, event, record, thread } from '../../testing/fixtures';
+import { MODELS, SERVER, changed, editedFile, event, record, thread } from '../../testing/fixtures';
 import type { TurnResults } from '../../lib/results';
 import { TurnComponent } from '../turn/turn.component';
 import { ThreadComponent } from './thread.component';
@@ -34,16 +34,16 @@ const HISTORY = [
 
 /** A turn that edited a file: a thread with something for its panel. */
 const EDITED = [
-  event(1, 'message.added', { role: 'user', parts: [{ type: 'text', text: 'Fix the typo' }] }),
-  event(2, 'tool.call.requested', {
-    call_id: 'c1',
-    tool: 'edit',
-    arguments: { json: { path: 'README.md', old_string: 'teh', new_string: 'the' } },
-  }),
-  event(3, 'tool.call.completed', { call_id: 'c1', is_error: false, output: [] }),
-  event(4, 'message.added', { role: 'assistant', parts: [{ type: 'text', text: 'Fixed.' }] }),
-  event(5, 'turn.ended', { outcome: 'completed' }),
+  event(1, 'turn.started', {}),
+  event(2, 'message.added', { role: 'user', parts: [{ type: 'text', text: 'Fix the typo' }] }),
+  event(3, 'tool.call.requested', { call_id: 'c1', tool: 'edit', arguments: { json: {} } }),
+  event(4, 'tool.call.completed', { call_id: 'c1', is_error: false, output: [] }),
+  event(5, 'message.added', { role: 'assistant', parts: [{ type: 'text', text: 'Fixed.' }] }),
+  event(6, 'turn.ended', { outcome: 'completed' }),
 ];
+
+/** What the server says that turn changed. */
+const README = changed(1, [editedFile('README.md', ['teh'], ['the'])]);
 
 const ANSWERED = [
   event(1, 'message.added', { role: 'user', parts: [{ type: 'text', text: 'Hi' }] }),
@@ -51,9 +51,10 @@ const ANSWERED = [
   event(3, 'model.responded', { model: { provider: 'gateway', name: 'hope-12b' } }),
 ];
 
-function session(events: readonly unknown[]): FakeSession {
+function session(events: readonly unknown[], changes = changed(1, [])): FakeSession {
   return new FakeSession()
     .answer('thread/events', { events })
+    .answer('thread/changes', changes)
     .answer('model/list', { models: MODELS })
     .answer('server/discover', SERVER)
     .answer('schedule/list', { schedules: [] })
@@ -62,9 +63,7 @@ function session(events: readonly unknown[]): FakeSession {
     .answer('thread/list', { threads: [thread('thread-1', 'Tidy the repo', { project: 'p1' })] });
 }
 
-async function settle(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve));
-}
+const settle = (): Promise<unknown> => new Promise((resolve) => setTimeout(resolve));
 
 /** Opens thread-1 on a wide screen, after the new chat sent it `first`, if given. */
 async function open(
@@ -302,18 +301,19 @@ describe('ThreadComponent', () => {
       event(seq, 'tool.call.requested', { call_id: id, tool, arguments: { json }, summary });
     const done = (seq: number, id: string): unknown =>
       event(seq, 'tool.call.completed', { call_id: id, is_error: false, output: [] });
-    const { root, fixture } = await open(
-      session([
-        event(1, 'message.added', { role: 'user', parts: [{ type: 'text', text: 'Fix it' }] }),
-        call(2, 'a', 'bash', { command: 'cargo test' }, 'bash: cargo test'),
-        done(3, 'a'),
-        call(4, 'b', 'edit', { path: 'src/parse.rs' }, 'edit src/parse.rs'),
-        done(5, 'b'),
-        call(6, 'c', 'write', { path: 'tests/empty.rs' }, 'write tests/empty.rs (0 lines)'),
-        done(7, 'c'),
-        event(8, 'message.added', { role: 'assistant', parts: [{ type: 'text', text: 'Done' }] }),
-      ]),
-    );
+    const events = [
+      event(1, 'turn.started', {}),
+      event(2, 'message.added', { role: 'user', parts: [{ type: 'text', text: 'Fix it' }] }),
+      call(3, 'a', 'bash', { command: 'cargo test' }, 'bash: cargo test'),
+      done(4, 'a'),
+      call(5, 'b', 'edit', { path: 'src/parse.rs' }, 'edit src/parse.rs'),
+      done(6, 'b'),
+      call(7, 'c', 'write', { path: 'tests/empty.rs' }, 'write tests/empty.rs (0 lines)'),
+      done(8, 'c'),
+      event(9, 'message.added', { role: 'assistant', parts: [{ type: 'text', text: 'Done' }] }),
+    ];
+    const both = [editedFile('src/parse.rs', [], ['x']), editedFile('tests/empty.rs', [], ['x'])];
+    const { root, fixture } = await open(session(events, changed(1, both)));
     const order = Array.from(
       root.querySelectorAll(
         '[data-testid="thread-message"], [data-testid="turn-changes"], [data-testid="thread-steps"]',
@@ -576,7 +576,7 @@ describe('ThreadComponent', () => {
   });
 
   it('shows a thread’s panel beside it, hidden and shown by its edge, button and shortcut', async () => {
-    const { root, fixture } = await open(session(EDITED));
+    const { root, fixture } = await open(session(EDITED, README));
     const panel = root.querySelector<HTMLElement>('[data-testid="panel-panel"]');
     const edge = root.querySelector<HTMLElement>('[data-testid="panel-handle"]');
     const button = root.querySelector<HTMLElement>('[data-testid="thread-panel"]');
@@ -604,7 +604,7 @@ describe('ThreadComponent', () => {
   });
 
   it('opens a file’s changes in full from the panel and from the turn’s card', async () => {
-    const { root, fixture } = await open(session(EDITED));
+    const { root, fixture } = await open(session(EDITED, README));
     const dialog = (): HTMLDialogElement | null =>
       document.querySelector<HTMLDialogElement>('dialog[data-testid="changes"]');
     expect(dialog()?.open).toBe(false);

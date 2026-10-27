@@ -2,6 +2,7 @@
 //! notifications a turn sends, and errors. Every transport carries these same types; in-process
 //! they are passed as they are, elsewhere as JSON-RPC 2.0.
 
+mod changes;
 pub mod code;
 mod connections;
 mod credentials;
@@ -28,6 +29,9 @@ use glave_ports::ProjectId;
 use glave_ports::computer::{CommandId, ComputerId};
 use serde::{Deserialize, Serialize};
 
+pub use changes::{
+    ChangeKind, ChangedFile, DiffLine, FileChange, LineKind, ThreadChanges, TurnChanges,
+};
 pub use connections::{ConnectionInfo, ConnectionStatus, SearchInfo, SignInLink, Usage};
 pub use credentials::{Ability, CredentialInfo, DeviceCode};
 pub use error::{ApiError, ErrorData};
@@ -228,6 +232,10 @@ methods! {
     /// What a thread's replies drew on from the web, read from its log: for each reply whose
     /// turn read pages with `web_fetch` before it, those pages, in order.
     "thread/sources" => ThreadSources { thread: ThreadId } -> [Sources],
+    /// What a thread changed in files with glave's own `write` and `edit`, its subagents'
+    /// changes with its own, read from the logs: each file with the lines added and taken out
+    /// and each change, for the thread and for each turn that changed any.
+    "thread/changes" => ThreadChanges { thread: ThreadId } -> [Changes],
     /// The thread's plan, read from its log: its steps, each with its status, and whether it
     /// waits for the person's approval; `null` when it has none.
     "thread/plan" => ThreadPlan { thread: ThreadId } -> [Plan],
@@ -597,6 +605,7 @@ impl Request {
             | Self::ThreadGet { thread }
             | Self::ThreadEvents { thread, .. }
             | Self::ThreadSources { thread }
+            | Self::ThreadChanges { thread }
             | Self::ThreadPlan { thread }
             | Self::PlanEdit { thread, .. }
             | Self::PlanBuild { thread }

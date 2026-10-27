@@ -3,6 +3,7 @@ import { provideRouter } from '@angular/router';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import type { TurnResults } from '../../lib/results';
+import { ChangedFilesService } from '../../services/changed-files.service';
 import { CommandsService } from '../../services/commands.service';
 import { PlanService } from '../../services/plan.service';
 import { SourcesService } from '../../services/sources.service';
@@ -16,6 +17,7 @@ const THREAD_VIEW = [
   ThreadService,
   CommandsService,
   SourcesService,
+  ChangedFilesService,
   PlanService,
   ThreadPanelService,
 ];

@@ -227,6 +227,7 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         ("thread/delete", on_thread()),
         ("thread/get", on_thread()),
         ("thread/sources", on_thread()),
+        ("thread/changes", on_thread()),
         ("thread/plan", on_thread()),
         (
             "plan/edit",

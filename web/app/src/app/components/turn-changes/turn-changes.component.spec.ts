@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
+import type { ChangedFile } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
-import type { ChangedFile } from '../../lib/files';
 import { ThreadPanelService } from '../../services/thread-panel.service';
 import { TurnChangesComponent } from './turn-changes.component';
 

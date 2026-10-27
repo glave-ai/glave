@@ -124,6 +124,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(reasoning.getByText(THINKING.join(''))).toBeVisible();
     await expect(working).toHaveCount(0);
     expect(await animationOf(live)).toContain('glz-rise');
+    // What changed comes from the server once the write has ended: the turn's own card.
+    await expect(byTestId(page, 'turn-changes')).toHaveCount(2);
     expect(await settling(page)).toBe('glz-settle');
     await expect(reasoning.getByTestId('thread-reasoning-summary')).toHaveText('Thinking…');
     expect(await isOpen(reasoning)).toBe(true);
@@ -190,6 +192,7 @@ test('nothing moves when the person asks for less motion, though the words still
   const live = byTestId(page, 'thread-reply');
   await expect(live.getByTestId('thread-reasoning')).toBeVisible();
   expect(await animationOf(live)).toBe('none');
+  await expect(byTestId(page, 'turn-changes')).toHaveCount(2);
   expect(await settling(page)).toBe('none');
   expect(await moving(page)).toBe(0);
   await letGo(page, 'answer');
