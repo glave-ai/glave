@@ -401,25 +401,28 @@ export interface Request {
 type Note = Readonly<Record<string, unknown>>;
 
 /**
- * What a turn streams: the person's message, the reply growing piece by piece, then the reply
- * itself and the turn's result (answering call `id`).
+ * What a turn streams: the level it chose (`effort`, `null` for Default, none when it chose
+ * none), the person's message, the reply growing piece by piece, then the reply itself and the
+ * turn's result (answering call `id`).
  */
 function turnNotes(
   target: string,
   prompt: string,
   pieces: readonly string[],
   id: number,
+  effort?: unknown,
 ): readonly Note[] {
-  const after = HISTORIES[target]?.length ?? 0;
-  const added = (seq: number, role: string, text: string): Note => ({
+  const chose = effort === undefined ? [] : [effort === null ? {} : { effort }];
+  const after = (HISTORIES[target]?.length ?? 0) + chose.length;
+  const recorded = (seq: number, type: string, data: Readonly<Record<string, unknown>>): Note => ({
     jsonrpc: '2.0',
     method: 'thread/event',
-    params: {
-      thread: target,
-      event: event(seq, 'message.added', { role, parts: [{ type: 'text', text }] }, target),
-    },
+    params: { thread: target, event: event(seq, type, data, target) },
   });
+  const added = (seq: number, role: string, text: string): Note =>
+    recorded(seq, 'message.added', { role, parts: [{ type: 'text', text }] });
   return [
+    ...chose.map((data) => recorded(after, 'effort.chosen', data)),
     added(after + 1, 'user', prompt),
     ...pieces.map((text) => ({
       jsonrpc: '2.0',
@@ -441,6 +444,7 @@ function turn(message: { id: number; params: Record<string, unknown> }): string 
     String(message.params['prompt']),
     ['Glad to ', 'help.'],
     message.id,
+    message.params['effort'],
   );
   return notes.map((note) => `data: ${JSON.stringify(note)}\n\n`).join('');
 }

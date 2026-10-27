@@ -5281,7 +5281,7 @@
             "description": "A running computer to work on, such as the person's own laptop dialled in to this\nserver. Not available yet: refused with `-32022`."
           },
           "effort": {
-            "description": "How much the model reasons in the thread's turns: one of the levels `model/list`\ngives for its model, such as `high`. The model's own default when absent.",
+            "description": "How much the model reasons in the thread's turns: one of the levels `model/list`\ngives for its model, such as `high`. The model's own default when absent or `null`.",
             "type": [
               "string",
               "null"
@@ -5481,7 +5481,7 @@
             ]
           },
           "effort": {
-            "description": "How much the model reasons in this turn, and the thread's turns after it: one of\nthe levels `model/list` gives for the model the turn goes to. The thread's latest\nchoice when absent, else the model's own default. Not while a turn runs.",
+            "description": "How much the model reasons in this turn, and the thread's turns after it: one of\nthe levels `model/list` gives for the model the turn goes to, or `null` for Default,\nthe model's own default again, as in a thread that never chose. The thread's latest\nchoice when absent, else the model's own default. Not while a turn runs.",
             "type": [
               "string",
               "null"

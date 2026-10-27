@@ -6,7 +6,7 @@
 use glave_event::{Body, ModelRef, Reasoning, ThreadId, TokenPrice, decode};
 use glave_ports::Completion;
 use glave_session::protocol::{ApiError, Meta, ModelInfo, Reply, Request, code};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::support::*;
 
@@ -305,6 +305,42 @@ fn a_background_turn_runs_on_the_model_it_chose_and_the_task_says_so() {
     });
 }
 
+/// A turn of `thread` that chooses `effort`: a level, or Default with none.
+fn with_effort(thread: ThreadId, effort: Option<&str>) -> Request {
+    Request::TurnStart {
+        thread,
+        prompt: "hi".into(),
+        background: false,
+        budget: None,
+        meta: Meta::default(),
+        model: None,
+        permissions: None,
+        effort: Some(effort.map(str::to_owned)),
+        unattended: false,
+        files: Vec::new(),
+    }
+}
+
+/// The level each request the provider received was sent with, `null` for none.
+fn efforts_sent(seen: &Seen) -> Vec<Value> {
+    json(seen)
+        .iter()
+        .map(|json| serde_json::from_str::<Value>(json).unwrap()["effort"].clone())
+        .collect()
+}
+
+/// The level each `effort.chosen` in the thread records, `None` for Default.
+async fn efforts_chosen(server: &Tested<Shared>, thread: ThreadId) -> Vec<Option<String>> {
+    events(server, thread)
+        .await
+        .iter()
+        .filter_map(|event| match &event.body {
+            Body::EffortChosen(chosen) => Some(chosen.effort.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
 fn a_reasoning_level_the_model_offers_is_kept_for_every_turn_after_it() {
     let dir = folder("models-effort");
@@ -312,37 +348,21 @@ fn a_reasoning_level_the_model_offers_is_kept_for_every_turn_after_it() {
         let answers = vec![from("hope-12b", "One."), from("hope-12b", "Two.")];
         let (server, seen) = setup(answers).build_on(&dir, Shared::default()).await;
         let thread = start_on(&server, Some("hope-12b")).await.unwrap();
-        let with_effort = |effort: &str| Request::TurnStart {
-            thread,
-            prompt: "hi".into(),
-            background: false,
-            budget: None,
-            meta: Meta::default(),
-            model: None,
-            permissions: None,
-            effort: Some(effort.into()),
-            unattended: false,
-            files: Vec::new(),
-        };
-        let refused = server.request(with_effort("medium")).await.unwrap_err();
+        let refused = server
+            .request(with_effort(thread, Some("medium")))
+            .await
+            .unwrap_err();
         assert_eq!(refused.code, code::INVALID_PARAMS);
         assert!(refused.message.contains("high, low, none"), "{refused}");
-        server.request(with_effort("high")).await.unwrap();
-        turn_on(&server, thread, None).await.unwrap();
-        let efforts: Vec<Value> = json(&seen)
-            .iter()
-            .map(|json| serde_json::from_str::<Value>(json).unwrap()["effort"].clone())
-            .collect();
-        assert_eq!(efforts, ["high", "high"], "kept for the turn after it");
-        let chosen: Vec<String> = events(&server, thread)
+        server
+            .request(with_effort(thread, Some("high")))
             .await
-            .iter()
-            .filter_map(|event| match &event.body {
-                Body::EffortChosen(chosen) => Some(chosen.effort.clone()),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(chosen, ["high"]);
+            .unwrap();
+        turn_on(&server, thread, None).await.unwrap();
+        let sent = efforts_sent(&seen);
+        assert_eq!(sent, ["high", "high"], "kept for the turn after it");
+        let chosen = efforts_chosen(&server, thread).await;
+        assert_eq!(chosen, [Some("high".to_owned())]);
         let started = Request::ThreadStart {
             project: Some(scope().project()),
             worktree: None,
@@ -350,7 +370,7 @@ fn a_reasoning_level_the_model_offers_is_kept_for_every_turn_after_it() {
             computer: None,
             model: None,
             permissions: None,
-            effort: Some("high".into()),
+            effort: Some(Some("high".into())),
         };
         let none = server.request(started).await.unwrap_err();
         assert!(
@@ -359,4 +379,68 @@ fn a_reasoning_level_the_model_offers_is_kept_for_every_turn_after_it() {
         );
         server.shutdown().await;
     });
+}
+
+#[test]
+fn a_thread_goes_back_to_default_and_is_sent_no_level_from_then_on() {
+    let dir = folder("models-effort-default");
+    let log = Shared::default();
+    block_on!(async {
+        let answers = vec![
+            from("test-model", "Zero."),
+            from("hope-12b", "One."),
+            from("hope-12b", "Two."),
+            from("hope-12b", "Three."),
+        ];
+        let (server, seen) = setup(answers).build_on(&dir, log.clone()).await;
+        // Default is there to choose on a model that offers no levels, as on one that does,
+        // and a thread that never chose is at it already.
+        let plain = start_on(&server, None).await.unwrap();
+        server.request(with_effort(plain, None)).await.unwrap();
+        assert_eq!(efforts_chosen(&server, plain).await, []);
+
+        let thread = start_on(&server, Some("hope-12b")).await.unwrap();
+        server
+            .request(with_effort(thread, Some("high")))
+            .await
+            .unwrap();
+        server.request(with_effort(thread, None)).await.unwrap();
+        // Choosing Default again records nothing more.
+        server.request(with_effort(thread, None)).await.unwrap();
+        let sent = efforts_sent(&seen);
+        assert_eq!(sent, [Value::Null, json!("high"), Value::Null, Value::Null]);
+        let chosen = efforts_chosen(&server, thread).await;
+        assert_eq!(chosen, [Some("high".to_owned()), None]);
+        server.shutdown().await;
+
+        // A fresh server reads Default from the log.
+        let (restarted, seen) = setup(vec![from("hope-12b", "Four.")])
+            .build_on(&dir, log)
+            .await;
+        turn_on(&restarted, thread, None).await.unwrap();
+        assert_eq!(efforts_sent(&seen), [Value::Null]);
+        restarted.shutdown().await;
+    });
+}
+
+#[test]
+fn default_is_null_on_the_wire_and_a_level_left_out_keeps_the_thread_s() {
+    let thread = "0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c13";
+    let read = |params: Value| -> Request {
+        serde_json::from_value(json!({"method": "turn/start", "params": params})).unwrap()
+    };
+    let effort = |request: &Request| match request {
+        Request::TurnStart { effort, .. } => effort.clone(),
+        other => panic!("a turn, not {other:?}"),
+    };
+    let default = read(json!({"thread": thread, "prompt": "hi", "effort": null}));
+    assert_eq!(effort(&default), Some(None));
+    let kept = read(json!({"thread": thread, "prompt": "hi"}));
+    assert_eq!(effort(&kept), None);
+    let high = read(json!({"thread": thread, "prompt": "hi", "effort": "high"}));
+    assert_eq!(effort(&high), Some(Some("high".to_owned())));
+    for request in [default, kept, high] {
+        let written = serde_json::to_value(&request).unwrap();
+        assert_eq!(serde_json::from_value::<Request>(written).unwrap(), request);
+    }
 }

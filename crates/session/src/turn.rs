@@ -181,7 +181,8 @@ where
         } = message;
         let scope = self.authorize(caller, thread).await?;
         let model = self.model_of(thread, choice.model.as_deref()).await?;
-        if let Some(effort) = &choice.effort {
+        // Default is always there to go back to, whatever the model offers.
+        if let Some(Some(effort)) = &choice.effort {
             self.offered_effort(&model, effort)?;
         }
         if let Some(mode) = choice.permissions {

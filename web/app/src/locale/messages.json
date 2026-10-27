@@ -94,7 +94,6 @@
     "effort.none": "Off",
     "effort.xhigh": "Extra high",
     "effortPicker.label": "Reasoning",
-    "effortPicker.unasked": "Default",
     "files.lines": "{{$ADDED}, plural, one {# line added} other {# lines added}}, {{$REMOVED}, plural, other {# removed}}",
     "folderGone.find": "Find it",
     "folderGone.findHeading": "Where is the project’s folder now?",

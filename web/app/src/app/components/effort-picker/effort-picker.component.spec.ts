@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import type { ModelInfo } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
+import { UNASKED } from '../../lib/effort';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { EffortPickerComponent } from './effort-picker.component';
 
@@ -39,28 +40,39 @@ function trigger(root: HTMLElement): HTMLButtonElement | null {
 }
 
 describe('EffortPickerComponent', () => {
-  it('shows the default model’s levels, its default first chosen, and takes a pick', async () => {
+  it('offers Default, then the default model’s levels, Default first chosen, and takes a pick', async () => {
     const fixture = await render();
     const root: HTMLElement = fixture.nativeElement;
+    // Default, at the level the server says it is.
     expect(trigger(root)?.textContent).toContain('Medium');
     await expectAccessible(root);
-    trigger(root)?.click();
-    await fixture.whenStable();
-    const options = Array.from(
-      document.querySelectorAll<HTMLElement>('[data-testid="effort-picker-option"]'),
-    );
-    expect(options.map((option) => option.querySelector('.label')?.textContent.trim())).toEqual([
+    const options = async (): Promise<readonly HTMLElement[]> => {
+      trigger(root)?.click();
+      await fixture.whenStable();
+      return Array.from(
+        document.querySelectorAll<HTMLElement>('[data-testid="effort-picker-option"]'),
+      );
+    };
+    const offered = await options();
+    expect(offered.map((option) => option.querySelector('.label')?.textContent.trim())).toEqual([
+      'Default',
       'Extra high',
       'High',
       'Medium',
       'Low',
       'Off',
     ]);
-    expect(options[2]?.querySelector('.hint')?.textContent).toContain('Default');
-    options[1]?.click();
+    expect(offered[0]?.querySelector('.hint')?.textContent).toContain('Medium');
+    expect(offered[0]?.getAttribute('aria-checked')).toBe('true');
+    offered[2]?.click();
     await fixture.whenStable();
     expect(fixture.componentInstance.value()).toBe('high');
     expect(trigger(root)?.textContent).toContain('High');
+    // Back to Default, which the next turn sends.
+    (await options())[0]?.click();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.value()).toBe(UNASKED);
+    expect(trigger(root)?.textContent).toContain('Medium');
   });
 
   it('follows the model: its own levels, the thread’s level only where offered, none to choose', async () => {

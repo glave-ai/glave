@@ -1,17 +1,18 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, model } from '@angular/core';
 import { GlzMenuSelectComponent } from '@glave/glaze';
 
-import { defaultEffort, effortOptions } from '../../lib/effort';
+import { UNASKED, effortOptions } from '../../lib/effort';
 import { ModelsService } from '../../services/models.service';
 
 /**
  * How much the next turn's model reasons, quiet in the composer's status line beside the model:
- * shown only when that model offers a choice, with exactly the levels its provider lists, in
- * their names as people read them (`Extra high`, `Off`). The person's pick, else the thread's
- * own (`current`), else the level the server says it sends unasked, else `Default`: none is
- * sent, and the model reasons as its maker set it. `model` is the model the next turn goes to,
- * `null` for the server's default. `value` is the person's pick, `null` until they make one; it
- * goes with the next `thread/start` or `turn/start` when the model offers it.
+ * shown only when that model offers a choice, with Default, then exactly the levels its provider
+ * lists, in their names as people read them (`Extra high`, `Off`). The person's pick, else the
+ * thread's own (`current`), else Default: no level is asked for, so the model reasons at the
+ * level the server says it sends unasked, which the button shows, else as its maker set it.
+ * `model` is the model the next turn goes to, `null` for the server's default. `value` is the
+ * person's pick, `null` until they make one, `UNASKED` for Default; it goes with the next
+ * `thread/start` or `turn/start` when it changes the thread's choice.
  */
 @Component({
   selector: 'app-effort-picker',
@@ -30,8 +31,6 @@ export class EffortPickerComponent {
 
   protected readonly copy = {
     label: $localize`:@@effortPicker.label:Reasoning`,
-    // The button when no level is sent: the model reasons as its maker set it.
-    unasked: $localize`:@@effortPicker.unasked:Default`,
   } as const;
   private readonly models = inject(ModelsService);
   private readonly info = computed(() => {
@@ -40,13 +39,13 @@ export class EffortPickerComponent {
   });
   protected readonly options = computed(() => effortOptions(this.info()));
   protected readonly choosable = computed(() => this.options().length > 0);
-  /** The level the next turn reasons at: one the model offers. */
+  /** The level the next turn reasons at: one the model offers, else Default. */
   protected readonly shown = computed(() => {
     const offered = this.options().map((option) => option.value);
     const wanted = [this.value(), this.current()].find(
       (level) => level !== null && offered.includes(level),
     );
-    return wanted ?? defaultEffort(this.info());
+    return wanted ?? UNASKED;
   });
 
   constructor() {
