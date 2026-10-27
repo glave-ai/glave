@@ -239,13 +239,10 @@ mod over_http {
 
     #[test]
     fn an_unreachable_provider_is_a_transport_error() {
-        // Bind and release a port, so nothing is listening there.
-        let port = std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
-        let (result, _) = ask(&provider(&format!("http://127.0.0.1:{port}"), None));
+        // Port 1: a privileged port nothing listens on, and never one of the ephemeral ports the
+        // other tests' fake servers take. A port bound and released here could be taken by one
+        // of them before the request, which then answers it.
+        let (result, _) = ask(&provider("http://127.0.0.1:1", None));
         match result {
             Err(ProviderError::Transport(cause)) => assert!(
                 cause.to_ascii_lowercase().contains("refused"),
