@@ -2,7 +2,7 @@
 program may have made the fix. Travel's year total, F4, now adds up all four quarters; the
 workbook opens showing right totals, its stored results right or an app told to work every
 formula out again; every other cell, its formatting, the chart and every other part are as
-they were.
+they were, but for a chart's own copy of a corrected total, which may hold the right value.
 """
 
 import re
@@ -99,21 +99,33 @@ def check_cells(before, after, recomputed):
         )
 
 
+def as_before(name, data, stale):
+    """A chart's part with the right totals it now caches put back to what it cached before,
+    since a chart keeps its own copy of each value it draws; any other part as it is."""
+    if not name.startswith("xl/charts/"):
+        return data
+    for right, old in stale.items():
+        data = data.replace(f"<c:v>{right}</c:v>".encode(), f"<c:v>{old}</c:v>".encode())
+    return data
+
+
 def main():
     original, edited = parts(sys.argv[1]), parts(sys.argv[2])
+    before, after = ET.fromstring(original[SHEET]), ET.fromstring(edited[SHEET])
+    # Each corrected total's right value, by the value the workbook cached before the fix.
+    stale = {RIGHT[cell]: value(cells(before)[cell]) for cell in RIGHT}
     for name, data in original.items():
         if name not in edited:
             fail(f"budget.xlsx lost its part {name}")
         if name in (SHEET, BOOK) or name.startswith("docProps/"):
             continue
-        if shape(ET.fromstring(data)) != shape(ET.fromstring(edited[name])):
+        if shape(ET.fromstring(data)) != shape(ET.fromstring(as_before(name, edited[name], stale))):
             fail(f"budget.xlsx changed {name}, which the fix had no need to touch")
     book = ET.fromstring(edited[BOOK])
     if shape(ET.fromstring(original[BOOK]), [MAIN + "calcPr"]) != shape(book, [MAIN + "calcPr"]):
         fail("budget.xlsx changed its sheets or its defined name")
     calc = book.find(MAIN + "calcPr")
     recomputed = calc is not None and calc.get("fullCalcOnLoad") in ("1", "true")
-    before, after = ET.fromstring(original[SHEET]), ET.fromstring(edited[SHEET])
     if shape(before, [MAIN + "sheetData"]) != shape(after, [MAIN + "sheetData"]):
         fail("the Budget sheet lost its column widths, frozen header, highlight or chart")
     check_cells(cells(before), cells(after), recomputed)
