@@ -32,13 +32,13 @@ pub(crate) fn fill(given: &Given, json: &str) -> Result<Written, OfficeError> {
     let values: Map<String, Value> = serde_json::from_str(json).map_err(|error| {
         OfficeError::Values(format!(
             "the values are not a JSON object of field names and values, like \
-             {{\"Name\": \"Sam Okafor\", \"Paid\": true}}: {error}"
+             {{\"Name\": \"Ada Lovelace\", \"Paid\": true}}: {error}"
         ))
     })?;
     if values.is_empty() {
         return Err(OfficeError::Values(
             "the JSON names no fields: give each field's name and value, like \
-             {\"Name\": \"Sam Okafor\"}"
+             {\"Name\": \"Ada Lovelace\"}"
                 .to_owned(),
         ));
     }

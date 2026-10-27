@@ -13,8 +13,8 @@ import zlib
 WANTED = {
     "Text1": r"sam okafor",
     "Text2": r"support( team)?",
-    "Text3": r"0?1/12/2026",
-    "Text4": r"0?5/12/2026",
+    "Text3": r"0?7/12/2026",
+    "Text4": r"11/12/2026",
     "Text5": r"5",
 }
 ON = {"Group1": "Annual", "Check Box1": "Yes"}

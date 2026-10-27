@@ -22,7 +22,7 @@ the new one and add `--replace`.
 ```sh
 glave doc fields form.pdf                 # each field's name, kind, page and value
 glave doc fill form.pdf filled.pdf <<'EOF'
-{"Full name": "Sam Okafor", "Start date": "01/12/2026", "Paid leave": true, "Leave type": "Annual"}
+{"Name": "Ada Lovelace", "Date": "2027-03-14", "Member": true, "Plan": "Basic"}
 EOF
 glave doc fields filled.pdf               # check the values
 ```
