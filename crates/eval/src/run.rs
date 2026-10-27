@@ -55,6 +55,9 @@ pub struct Setup {
     /// How the model's commands start: tied to the eval by its lifeline, so they end with it
     /// however it ends.
     pub processes: Processes,
+    /// Whether glave's document skills are offered; off, with no `glave doc` on the commands'
+    /// `PATH` either, to measure the document tasks with Python in their place.
+    pub office: bool,
     /// glave's folder first on the commands' `PATH`, holding the glave being measured, as
     /// glave puts its own there; none where no glave was built.
     pub glave_on_path: Option<PathBuf>,
@@ -324,7 +327,12 @@ async fn wire(
     // The project's skills, as the CLI finds them, then glave's own; the person's own are not
     // part of a task.
     let mut skills = find_skills(&skill_folders(root, &[])).await;
-    for text in glave_office::SKILLS {
+    let office: &[&str] = if setup.office {
+        &glave_office::SKILLS
+    } else {
+        &[]
+    };
+    for text in office {
         skills
             .skills
             .push(Skill::built_in(text).map_err(EvalError::Setup)?);
