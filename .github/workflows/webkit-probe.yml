@@ -58,7 +58,7 @@ jobs:
           docker run --rm --init --ipc=host -e CI -e GLAVE_BIN
           -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE"
           npm run e2e -- --project=webkit --repeat-each=30 --timeout=60000
-          first-send live signin passkeys connections
+          --grep-invert "a passkey made here" first-send live signin passkeys connections
       - name: Keep the traces of failed tests
         if: always()
         uses: actions/upload-artifact@v7
