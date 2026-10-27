@@ -1,5 +1,6 @@
 import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import type { ChangedFile } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import type { TurnResults } from '../../lib/results';
@@ -20,6 +21,10 @@ const THREAD_VIEW = [
   ChangedFilesService,
   PlanService,
   ThreadPanelService,
+];
+
+const CHANGED: readonly ChangedFile[] = [
+  { path: 'src/lock.rs', changes: [], added: 16, removed: 0 },
 ];
 
 const RESULTS: TurnResults = {
@@ -48,7 +53,7 @@ const RESULTS: TurnResults = {
   sources: null,
   live: null,
   working: null,
-  files: [{ path: 'src/lock.rs', changes: [], added: 16, removed: 0 }],
+  files: CHANGED,
   steps: [
     {
       kind: 'call',
@@ -99,6 +104,21 @@ async function mount(results: TurnResults): Promise<ComponentFixture<TurnCompone
   fixture.componentRef.setInput('turn', results);
   await fixture.whenStable();
   return fixture;
+}
+
+/**
+ * Shows the turn with each of `files` as the server says them, one after another, and whether
+ * what changed then settles in; `undefined` while there is none.
+ */
+async function settles(...files: readonly TurnResults['files'][]): Promise<boolean | undefined> {
+  const [first = null, ...after] = files;
+  const fixture = await mount({ ...RESULTS, files: first });
+  for (const each of after) {
+    fixture.componentRef.setInput('turn', { ...RESULTS, files: each });
+    await fixture.whenStable();
+  }
+  const root = fixture.nativeElement as HTMLElement;
+  return root.querySelector('app-turn-changes')?.classList.contains('glz-settle');
 }
 
 async function render(results: TurnResults): Promise<HTMLElement> {
@@ -245,7 +265,7 @@ describe('TurnComponent', () => {
     // More files change: it stays as it settled, never settling again.
     fixture.componentRef.setInput('turn', {
       ...RESULTS,
-      files: [...RESULTS.files, { path: 'src/main.rs', changes: [], added: 1, removed: 0 }],
+      files: [...CHANGED, { path: 'src/main.rs', changes: [], added: 1, removed: 0 }],
     });
     await fixture.whenStable();
     expect(root.querySelector('app-turn-changes')?.classList).toContain('glz-settle');
@@ -253,6 +273,14 @@ describe('TurnComponent', () => {
     // A turn that shows with its changes, as one read back from the log, moves nothing.
     const read = await render(RESULTS);
     expect(read.querySelector('app-turn-changes')?.classList).not.toContain('glz-settle');
+  });
+
+  it('settles in nothing the thread had changed as it opened, though said only after', async () => {
+    // Not known as the thread opens, then said: it was there before the person looked.
+    expect(await settles(null, CHANGED)).toBe(false);
+    TestBed.resetTestingModule();
+    // Said to be nothing as it opened, then changed: it changed as the person watched.
+    expect(await settles(null, [], CHANGED)).toBe(true);
   });
 
   it('shows reasoning open as it streams, and folds it once the answer begins', async () => {

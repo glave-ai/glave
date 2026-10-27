@@ -72,6 +72,8 @@ describe('ChangedFilesService', () => {
     expect(fake.paramsOf('thread/changes')).toEqual([]);
     expect(changed.files()).toEqual([]);
     expect(changed.note()).toBe('');
+    // Known as none once it has opened, so what its turns change next comes as the person watches.
+    expect(changed.byTurn()).toEqual(new Map());
   });
 
   it('draws the server’s changes as the thread opens, and asks again as a write ends', async () => {
@@ -87,11 +89,16 @@ describe('ChangedFilesService', () => {
         recorded(event(7, 'turn.ended', {})),
       ]);
     const { changed, thread } = make(fake);
-    await thread.open('thread-1');
+    const opening = thread.open('thread-1');
+    // Not known while the thread opens, nor until the server has said: its turns wait to know.
+    TestBed.tick();
+    expect(changed.byTurn()).toBeNull();
+    await opening;
+    expect(changed.byTurn()).toBeNull();
     await settle();
     expect(fake.paramsOf('thread/changes')).toEqual([{ thread: 'thread-1' }]);
     expect(changed.files()).toBe(CHANGED.files);
-    expect(changed.byTurn().get(1)).toEqual([]);
+    expect(changed.byTurn()?.get(1)).toEqual([]);
     expect(changed.note()).toBe(CHANGED.note);
     await thread.send('Fix the typo');
     await settle();

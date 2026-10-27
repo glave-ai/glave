@@ -73,23 +73,30 @@ export class TurnComponent {
       $localize`:@@turn.polishing:Polishing…`,
     ],
   } as const;
-  private readonly changed = computed(() => this.turn().files.length > 0);
-  /**
-   * Whether what changed settles in: only once it appears as the person watches, never when the
-   * turn shows with it already there.
-   */
-  private readonly settles = linkedSignal<boolean, boolean>({
-    source: this.changed,
-    computation: (changed, previous) =>
-      previous !== undefined && changed && (previous.value || !previous.source),
+  /** Whether the turn changed anything, once the server has said; `null` until then. */
+  private readonly changed = computed(() => {
+    const files = this.turn().files;
+    return files === null ? null : files.length > 0;
   });
   /**
-   * What changed, while the turn changed anything: whether it settles in. `settles` is read
-   * whatever it holds, from the turn's first showing, so it knows what came before.
+   * Whether what changed settles in: only once it appears as the person watches, never when the
+   * turn shows with it already there, nor when it was there as the thread opened and shows once
+   * the server has said so.
+   */
+  private readonly settles = linkedSignal<boolean | null, boolean>({
+    source: this.changed,
+    computation: (changed, previous) =>
+      changed === true && previous !== undefined && (previous.value || previous.source === false),
+  });
+  /**
+   * What changed, while the turn changed anything: its files, and whether it settles in.
+   * `settles` is read whatever it holds, from the turn's first showing, so it knows what came
+   * before.
    */
   protected readonly changes = computed(() => {
     const settles = this.settles();
-    return this.changed() ? { settles } : null;
+    const files = this.turn().files ?? [];
+    return files.length > 0 ? { settles, files } : null;
   });
   /** The reasoning streaming in, without the blank lines at its ends. */
   protected readonly reasoning = computed(() => trimBlankLines(this.turn().live?.reasoning ?? ''));

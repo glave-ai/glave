@@ -162,6 +162,10 @@ describe('results', () => {
       turnResults(turn(items, { startSeq: 3 }), null, null, false, 'en-US', facts).files,
     ).toEqual([]);
     expect(turnResults(turn(items), null, null, false, 'en-US', facts).files).toEqual([]);
+    // Until the server has said, as the thread opens, none are known.
+    const unknown = { sourced: new Map(), changed: null };
+    const opening = turnResults(turn(items, { startSeq: 7 }), null, null, false, 'en-US', unknown);
+    expect(opening.files).toBeNull();
   });
 
   it('says how many commands ran outside the sandbox as the server counted them', () => {

@@ -57,8 +57,8 @@ export interface TurnResults {
    * step it takes, when a tool runs, and since when it has worked; else `null`.
    */
   readonly working: Working | null;
-  /** The files it changed, as the server says. */
-  readonly files: readonly ChangedFile[];
+  /** The files it changed, as the server says; `null` until it has said, as the thread opens. */
+  readonly files: readonly ChangedFile[] | null;
   /** The work folded behind the receipt, in order. */
   readonly steps: readonly ThreadItem[];
   /** The receipt, for a turn that did work. */
@@ -179,11 +179,22 @@ function resultFacts(result: TurnResult, locale: string): readonly string[] {
 export interface TurnFacts {
   /** What replies drew on, by the `seq` of each reply. */
   readonly sourced: ReadonlyMap<number, ReplySources>;
-  /** The files each turn changed, by the `seq` of its start. */
-  readonly changed: ReadonlyMap<number, readonly ChangedFile[]>;
+  /**
+   * The files each turn changed, by the `seq` of its start; `null` until the server has said,
+   * as the thread opens.
+   */
+  readonly changed: ReadonlyMap<number, readonly ChangedFile[]> | null;
 }
 
 const NO_FACTS: TurnFacts = { sourced: new Map(), changed: new Map() };
+
+/** The files `turn` changed, in `changed`, by the `seq` of its start; `null` while not known. */
+function filesOf(turn: Turn, changed: TurnFacts['changed']): readonly ChangedFile[] | null {
+  if (changed === null) {
+    return null;
+  }
+  return turn.startSeq === null ? [] : (changed.get(turn.startSeq) ?? []);
+}
 
 /**
  * `turn` results first, its facts written for `locale`. `live` is the reply being written, for
@@ -225,7 +236,7 @@ export function turnResults(
     sources: reply === null ? null : (told.sourced.get(reply.seq) ?? null),
     live,
     working,
-    files: turn.startSeq === null ? [] : (told.changed.get(turn.startSeq) ?? []),
+    files: filesOf(turn, told.changed),
     steps: worked ? along : [],
     receipt: worked
       ? {
