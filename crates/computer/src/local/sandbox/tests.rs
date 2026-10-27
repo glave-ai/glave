@@ -176,6 +176,80 @@ fn what_the_computer_hides_is_unreadable() {
     });
 }
 
+/// glave's folder stays hidden from a command for its whole life (`specs/invariants.md`, 23):
+/// whether the workspace is outside it or a thread's worktree inside it.
+#[test]
+fn what_glave_writes_in_its_folder_while_a_command_runs_stays_hidden() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("glave-home");
+    let repo = committed_repo(&dir, "repo");
+    let (computers, sandbox) = computers(&dir);
+    std::fs::create_dir_all(sandbox.glave_home.as_ref().unwrap()).unwrap();
+    block_on!(async {
+        let computer = computers.create(&Environment::host()).await.unwrap();
+        let app = Sources::Folder {
+            path: dir.join("app").to_string_lossy().into_owned(),
+        };
+        let worktree = Sources::Worktree {
+            path: repo.to_string_lossy().into_owned(),
+            branch: "glave/late".into(),
+            owner: None,
+        };
+        for sources in [app, worktree] {
+            let opened = computers.open(computer.id, &sources).await.unwrap();
+            let root = PathBuf::from(&opened.root);
+            written_later_stays_hidden(&computers, opened.id, &root, &sandbox).await;
+        }
+    });
+}
+
+/// Runs a command in `workspace` whose root is `root`, under `sandbox`, that reads glave's
+/// folder only once glave has replaced a file there (as it replaces its own, by renaming a new
+/// one over it) and written a new one, as a sign-in link's page is; it must read neither, and
+/// its package cache there must still work.
+pub(super) async fn written_later_stays_hidden(
+    computers: &LocalComputers,
+    workspace: WorkspaceId,
+    root: &Path,
+    sandbox: &Sandbox,
+) {
+    let glave_home = sandbox.glave_home.clone().unwrap();
+    std::fs::write(glave_home.join("early"), "canary-early\n").unwrap();
+    let mut command = Command::new(format!(
+        "i=0; while [ ! -e go ] && [ $i -lt 400 ]; do sleep 0.05; i=$((i + 1)); done; \
+         test -e go && echo go-seen; cat '{home}/early' '{home}/late'; \
+         mkdir -p \"$XDG_CACHE_HOME\" && echo cache-works > \"$XDG_CACHE_HOME/probe\" && \
+         cat \"$XDG_CACHE_HOME/probe\"; true",
+        home = glave_home.display()
+    ));
+    command.sandbox = Some(sandbox.clone());
+    let started = computers.start(workspace, &command).await.unwrap();
+    glave_ports::file::replace(&glave_home.join("early"), b"canary-replaced\n").unwrap();
+    std::fs::write(glave_home.join("late"), "canary-late\n").unwrap();
+    std::fs::write(root.join("go"), "").unwrap();
+    let mut said = String::new();
+    for _ in 0..3 {
+        let wait = std::time::Duration::from_secs(60);
+        let printed = computers.output(workspace, started, wait).await.unwrap();
+        said.push_str(&printed.text);
+        if printed.ended.is_some() {
+            break;
+        }
+    }
+    assert!(said.contains("go-seen"), "{said}");
+    assert!(!said.contains("canary"), "{said}");
+    assert!(said.contains("cache-works"), "{said}");
+    for file in [
+        glave_home.join("early"),
+        glave_home.join("late"),
+        root.join("go"),
+    ] {
+        std::fs::remove_file(file).unwrap();
+    }
+}
+
 /// Prepared folders moved in whole under `.git/worktrees`, `.git/modules` (one that is there
 /// and one nested in a submodule's), and `.glave`, and the project itself moved aside for a
 /// prepared copy of it. `aside` is a folder outside the project the command may write, on the

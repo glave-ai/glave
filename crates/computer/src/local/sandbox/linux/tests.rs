@@ -224,8 +224,10 @@ fn landlock_confines_read_only_commands() {
         "cat {home}/.ssh/id_ed25519 {home}/.glave/glave.db .env notes.md; \
          echo x > inside.txt; echo x > {home}/outside.txt; \
          echo t > \"$TMPDIR/t\" && echo temp-ok; echo t > /tmp/glave-landlock-$$ && rm /tmp/glave-landlock-$$ && echo tmp-ok; \
-         (exec 3<>/dev/tcp/127.0.0.1/{port}) && echo connected; true",
-        home = dir.display()
+         (exec 3<>/dev/tcp/127.0.0.1/{port}) && echo connected; \
+         cat /proc/{me}/environ >/dev/null && echo environ-read; true",
+        home = dir.display(),
+        me = std::process::id(),
     );
     let (_, said) = run(
         &dir,
@@ -241,12 +243,69 @@ fn landlock_confines_read_only_commands() {
         "{said}"
     );
     assert!(!said.contains("connected"), "{said}");
+    // Landlock leaves `/proc` the machine's, but not another process's environment.
+    assert!(!said.contains("environ-read"), "{said}");
     assert!(!project.join("inside.txt").exists(), "{said}");
     assert!(!dir.join("outside.txt").exists(), "{said}");
     // Control: unconfined, every canary is readable and the write lands.
     let (_, open) = run(&dir, None, None, &script).unwrap();
     assert_eq!(open.matches("canary").count(), 3, "{open}");
+    assert!(open.contains("environ-read"), "{open}");
     assert!(dir.join("outside.txt").exists());
+}
+
+/// Commands in bubblewrap have processes of their own: none of glave's, or anything else on
+/// the machine, shows in their `/proc`, so no other program's arguments or environment can be
+/// read there.
+#[test]
+fn bubblewrap_shows_no_process_but_the_command_s_own() {
+    if !bubblewrap() {
+        return;
+    }
+    let dir = scratch("processes");
+    let me = std::process::id();
+    let this = std::env::current_exe().unwrap();
+    let name = this.file_name().unwrap().to_string_lossy().into_owned();
+    let script = format!("tr '\\0' ' ' < /proc/{me}/cmdline; true");
+    let (_, said) = run(&dir, Some((SandboxLevel::Project, true)), None, &script).unwrap();
+    assert!(!said.contains(&name), "{said}");
+    // Control: unconfined, this test's own command line is there.
+    let (_, open) = run(&dir, None, None, &script).unwrap();
+    assert!(open.contains(&name), "{open}");
+}
+
+/// Under Landlock too, what glave writes in its folder while a command runs stays hidden from
+/// it, and its package cache works.
+#[test]
+fn landlock_keeps_what_glave_writes_later_hidden() {
+    let Some(helper) = landlock() else {
+        return;
+    };
+    let dir = scratch("landlock-late");
+    let glave_home = dir.join(".glave");
+    std::fs::create_dir_all(&glave_home).unwrap();
+    let environment: Vec<(OsString, OsString)> = std::env::vars_os()
+        .filter(|(name, _)| name == "PATH")
+        .chain([("HOME".into(), dir.as_os_str().to_owned())])
+        .collect();
+    let computers =
+        LocalComputers::new(dir.join("copies"), environment).with_sandbox_helper(&helper);
+    let sandbox = Sandbox {
+        level: SandboxLevel::ReadOnly,
+        network: false,
+        home: Some(dir.to_path_buf()),
+        glave_home: Some(glave_home),
+    };
+    let root = dir.join("project");
+    block_on!(async {
+        let computer = computers.create(&Environment::host()).await.unwrap();
+        let sources = Sources::Folder {
+            path: root.to_string_lossy().into_owned(),
+        };
+        let opened = computers.open(computer.id, &sources).await.unwrap();
+        super::super::tests::written_later_stays_hidden(&computers, opened.id, &root, &sandbox)
+            .await;
+    });
 }
 
 #[test]
