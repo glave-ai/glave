@@ -1,7 +1,11 @@
 import { type Page, type Route, expect, test } from '@playwright/test';
 
 import { HELLO } from './fake-model';
-import { LIVE, byTestId, hold, served, signInCode } from './support';
+import { LIVE, byTestId, heldUntilHeard, hold, served, signInCode } from './support';
+
+test.beforeEach(async ({ context }) => {
+  await heldUntilHeard(context);
+});
 
 /** Whether `route` is a `turn/start`. */
 function turnStart(route: Route): boolean {

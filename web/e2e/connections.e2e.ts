@@ -12,6 +12,7 @@ import {
   TEST_SERVER,
   byTestId,
   expectAccessible,
+  heldUntilHeard,
   hold,
   homeOf,
   served,
@@ -30,6 +31,10 @@ const ADMIN_WORDS = /policy|organization|member|group|admin|SSO|config\.toml|GLA
 
 // Each engine's tests change one glave's settings, so they run one after another.
 test.describe.configure({ mode: 'default' });
+
+test.beforeEach(async ({ context }) => {
+  await heldUntilHeard(context);
+});
 
 /** The service: glave's MCP test server, asking for a sign-in at its own fake. */
 let service: ChildProcessByStdio<Writable, Readable, null>;
