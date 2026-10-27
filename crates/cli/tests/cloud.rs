@@ -8,11 +8,13 @@
 //! Desktop). The model writes a file on the worker, the session ends, the worker is released,
 //! and its unpushed work arrives in origin on a `glave/wip/` branch.
 
+use std::io::{BufRead as _, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{ChildStderr, Command, Stdio};
+use std::sync::mpsc;
 use std::time::Duration;
 
-use glave_ports::testing::Running;
+use glave_ports::testing::{Running, TempDir};
 use glave_provider_openai::fake::{FakeServer, Reply};
 use serde_json::json;
 
@@ -61,44 +63,85 @@ fn host() -> String {
     }
 }
 
-/// `git daemon` serving `base` on all addresses, pushes allowed, once it answers; stopped
-/// when dropped. Started as `git-daemon` itself: `git daemon` runs it as a child of its own,
-/// which stopping `git` would leave running.
-fn daemon(base: &Path) -> (Running, u16) {
-    let port = std::net::TcpListener::bind("0.0.0.0:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
+/// `git daemon` serving `base` on all addresses, pushes allowed, once it listens; stopped
+/// when dropped, with the pipe it logs to, which it needs open while it runs.
+struct Daemon {
+    _running: Running,
+    _log: ChildStderr,
+}
+
+/// A [`Daemon`] on a free port, and that port. A port is free only until something takes it:
+/// another test's server may bind the one found before the daemon does, so a daemon that
+/// could not bind its port ends, and the next try takes another.
+fn daemon(base: &Path) -> (Daemon, u16) {
+    for _ in 0..10 {
+        let port = std::net::TcpListener::bind("0.0.0.0:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        if let Some(daemon) = daemon_on(base, port) {
+            return (daemon, port);
+        }
+    }
+    panic!("git daemon did not start");
+}
+
+/// A [`Daemon`] on `port` once it says it listens, or none when it ends first, unable to bind
+/// `port`. Never probed by connecting, which would reach whatever else took the port instead.
+/// Started as `git-daemon` itself: `git daemon` runs it as a child of its own, which stopping
+/// `git` would leave running.
+fn daemon_on(base: &Path, port: u16) -> Option<Daemon> {
     let exec_path = Command::new("git").arg("--exec-path").output().unwrap();
     let exec_path = String::from_utf8(exec_path.stdout).unwrap();
     let child = Command::new(Path::new(exec_path.trim()).join("git-daemon"))
         .args([
+            "--verbose",
             "--export-all",
             "--enable=receive-pack",
-            "--reuseaddr",
             "--listen=0.0.0.0",
             &format!("--port={port}"),
             &format!("--base-path={}", base.display()),
             &base.display().to_string(),
         ])
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let running = Running::new(child);
-    let url = format!("git://127.0.0.1:{port}/origin.git");
-    for _ in 0..100 {
-        let answered = Command::new("git")
-            .args(["ls-remote", &url])
-            .output()
-            .is_ok_and(|output| output.status.success());
-        if answered {
-            return (running, port);
+    let mut running = Running::new(child);
+    let log = running.stderr.take()?;
+    // Its log read on a thread until it says it listens, then handed back to stay open; a
+    // daemon that ends first closes it instead.
+    let (sender, said) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut lines = BufReader::new(log);
+        let mut line = String::new();
+        while lines.read_line(&mut line).is_ok_and(|read| read > 0) {
+            if line.contains("Ready to rumble") {
+                let _ = sender.send(lines.into_inner());
+                return;
+            }
+            line.clear();
         }
-        std::thread::sleep(Duration::from_millis(100));
+    });
+    match said.recv_timeout(Duration::from_secs(10)) {
+        Ok(log) => Some(Daemon {
+            _running: running,
+            _log: log,
+        }),
+        Err(mpsc::RecvTimeoutError::Disconnected) => None,
+        Err(mpsc::RecvTimeoutError::Timeout) => panic!("git daemon said nothing in 10 s"),
     }
-    panic!("git daemon did not start");
+}
+
+#[test]
+fn a_daemon_whose_port_another_server_took_ends_rather_than_share_it() {
+    let base = TempDir::new("git-daemon").unwrap();
+    let taken = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = taken.local_addr().unwrap().port();
+    assert!(daemon_on(&base, port).is_none());
+    drop(taken);
+    let (_daemon, _) = daemon(&base);
 }
 
 /// `project` as a repository with one commit, pushed to `origin.git` in a folder beside
