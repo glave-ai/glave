@@ -7,10 +7,13 @@ use crate::package::tests::{rels, types};
 const MAIN: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml";
 
-/// A Word document as Word zips one, but for a picture it stores rather than deflates.
+/// A Word document as Word zips one, but for a picture it stores rather than deflates and a
+/// folder of its own, as some zips list.
 fn document() -> Vec<u8> {
     let doc = "word/document.xml";
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+    zip.add_directory("word/", SimpleFileOptions::default())
+        .unwrap();
     let parts: [(&str, &str, CompressionMethod); 4] = [
         (
             CONTENT_TYPES,
@@ -46,11 +49,12 @@ fn document() -> Vec<u8> {
 fn contents(bytes: &[u8]) -> Vec<(String, CompressionMethod, Vec<u8>)> {
     let mut zip = ZipArchive::new(Cursor::new(bytes)).unwrap();
     (0..zip.len())
-        .map(|index| {
+        .filter_map(|index| {
             let mut part = zip.by_index(index).unwrap();
             let mut held = Vec::new();
             part.read_to_end(&mut held).unwrap();
-            (part.name().unwrap().into_owned(), part.compression(), held)
+            let name = part.name().unwrap().into_owned();
+            (!part.is_dir()).then_some((name, part.compression(), held))
         })
         .collect()
 }

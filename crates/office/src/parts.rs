@@ -52,7 +52,7 @@ pub(crate) fn unpack(bytes: &[u8], file: &Path, folder: &Path) -> Result<String,
     make(folder)?;
     let mut order =
         format!("# The parts of {shown} in order, each stored or deflated, for glave doc pack.\n");
-    let mut room = MAX_PARTS;
+    let (mut room, mut count) = (MAX_PARTS, 0);
     for index in 0..zip.len() {
         let damaged = |error: zip::result::ZipError| OfficeError::Damaged(error.to_string());
         let mut part = zip.by_index(index).map_err(damaged)?;
@@ -88,6 +88,7 @@ pub(crate) fn unpack(bytes: &[u8], file: &Path, folder: &Path) -> Result<String,
             error,
         })?;
         let _ = writeln!(order, "{method} {name}");
+        count += 1;
     }
     let listing = folder.join(ORDER);
     std::fs::write(&listing, order).map_err(|error| OfficeError::Io {
@@ -95,11 +96,7 @@ pub(crate) fn unpack(bytes: &[u8], file: &Path, folder: &Path) -> Result<String,
         path: listing,
         error,
     })?;
-    let mut said = format!(
-        "Unpacked {shown} into {}: {} parts.",
-        folder.display(),
-        zip.len()
-    );
+    let mut said = format!("Unpacked {shown} into {}: {count} parts.", folder.display());
     if let Some(guide) = guide(bytes) {
         let _ = write!(said, " {guide}");
     }
