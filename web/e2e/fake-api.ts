@@ -11,6 +11,7 @@ import type { Page, Route } from '@playwright/test';
 
 import { type Commands, SERVING, SERVING_HISTORY, background } from './fake-commands';
 import { type Awake, keptAwake } from './fake-awake';
+import { changesOf } from './fake-changes';
 import { keptFile } from './fake-files';
 import { HOME, listFolders } from './fake-folders';
 import { type Gated, gates } from './fake-gate';
@@ -35,7 +36,7 @@ import {
   aboutVerbose,
 } from './fake-panel';
 import { Refusal, SCRATCH, THREAD, WORKSPACE, bound, call, done, event } from './fake-records';
-import { FAKE_SERVER, signIn } from './fake-signin';
+import { discovered, signIn } from './fake-signin';
 import { PLANNING, PLANNING_HISTORY, type Planned, planned } from './fake-plan';
 import { RESEARCH, RESEARCH_HISTORY, sourcesOf } from './fake-sources';
 
@@ -401,25 +402,28 @@ export interface Request {
 type Note = Readonly<Record<string, unknown>>;
 
 /**
- * What a turn streams: the person's message, the reply growing piece by piece, then the reply
- * itself and the turn's result (answering call `id`).
+ * What a turn streams: the level it chose (`effort`, `null` for Default, none when it chose
+ * none), the person's message, the reply growing piece by piece, then the reply itself and the
+ * turn's result (answering call `id`).
  */
 function turnNotes(
   target: string,
   prompt: string,
   pieces: readonly string[],
   id: number,
+  effort?: unknown,
 ): readonly Note[] {
-  const after = HISTORIES[target]?.length ?? 0;
-  const added = (seq: number, role: string, text: string): Note => ({
+  const chose = effort === undefined ? [] : [effort === null ? {} : { effort }];
+  const after = (HISTORIES[target]?.length ?? 0) + chose.length;
+  const recorded = (seq: number, type: string, data: Readonly<Record<string, unknown>>): Note => ({
     jsonrpc: '2.0',
     method: 'thread/event',
-    params: {
-      thread: target,
-      event: event(seq, 'message.added', { role, parts: [{ type: 'text', text }] }, target),
-    },
+    params: { thread: target, event: event(seq, type, data, target) },
   });
+  const added = (seq: number, role: string, text: string): Note =>
+    recorded(seq, 'message.added', { role, parts: [{ type: 'text', text }] });
   return [
+    ...chose.map((data) => recorded(after, 'effort.chosen', data)),
     added(after + 1, 'user', prompt),
     ...pieces.map((text) => ({
       jsonrpc: '2.0',
@@ -441,6 +445,7 @@ function turn(message: { id: number; params: Record<string, unknown> }): string 
     String(message.params['prompt']),
     ['Glad to ', 'help.'],
     message.id,
+    message.params['effort'],
   );
   return notes.map((note) => `data: ${JSON.stringify(note)}\n\n`).join('');
 }
@@ -628,6 +633,8 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
       return sourcesOf(params);
     case 'thread/events':
       return { events: HISTORIES[String(params['thread'])] ?? [] };
+    case 'thread/changes':
+      return { changes: changesOf(HISTORIES[String(params['thread'])] ?? []) };
     case 'thread/start': {
       const inProject = params['project'] === PERSONAL.id ? PERSONAL : PROJECT;
       const fresh = thread(NEW_THREAD, '', 'idle', inProject);
@@ -658,14 +665,7 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
     case 'credential/list':
       return { credentials, device: true };
     case 'server/discover':
-      return {
-        name: 'glave',
-        version: '0.0.0',
-        protocols: ['2026-10'],
-        permissions: 'auto',
-        modes: ['auto', 'plan', 'ask', 'full-access'],
-        id: FAKE_SERVER,
-      };
+      return discovered();
     default:
       return (
         signIn(method, params) ??

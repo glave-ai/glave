@@ -9,6 +9,7 @@ mod support;
 mod awake;
 mod background_commands;
 mod browsers;
+mod changes;
 mod choices;
 mod commands;
 mod conformance;

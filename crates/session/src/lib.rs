@@ -8,6 +8,7 @@ mod approvals;
 mod awake;
 mod background;
 mod browsers;
+mod changes;
 mod choice;
 pub mod client;
 mod connections;

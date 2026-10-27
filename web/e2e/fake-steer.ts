@@ -91,6 +91,7 @@ export async function steerTurn(page: Page): Promise<void> {
                 call_id: 'call_9',
                 tool: 'bash',
                 arguments: { json: command },
+                summary: `bash: ${command.command}`,
               }),
             );
             send(

@@ -16,6 +16,7 @@ import { injectId } from '../../tokens/ids';
 import { isApple } from '../../lib/shortcuts';
 import { GlzIconComponent } from '../icon/icon.component';
 import { GlzIconButtonComponent } from '../icon-button/icon-button.component';
+import { INERT_UNTIL_BOUND } from '../../lib/inert-until-bound';
 import { testIds } from '../../lib/test-ids';
 import { glzText } from '../../lib/words';
 
@@ -70,6 +71,7 @@ export type GlzComposerSize = 'md' | 'lg';
   styleUrl: './composer.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
+    ...INERT_UNTIL_BOUND,
     '[attr.data-testid]': 'testId()',
     '[class.glz-composer--lg]': 'large()',
     '[class.glz-composer--dragging]': 'dragging()',

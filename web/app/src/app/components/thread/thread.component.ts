@@ -27,7 +27,7 @@ import {
 } from '@glave/glaze';
 import { Globe } from 'lucide';
 
-import { type TurnResults, turnResults } from '../../lib/results';
+import { type TurnFacts, type TurnResults, turnResults } from '../../lib/results';
 import { threadTitle } from '../../lib/threads';
 import { chatPlan } from '../../lib/plans';
 import { askedTurns } from '../../lib/turns';
@@ -39,6 +39,7 @@ import { ModelsService } from '../../services/models.service';
 import { PlanService } from '../../services/plan.service';
 import { ProjectsService } from '../../services/projects.service';
 import { SearchService } from '../../services/search.service';
+import { ChangedFilesService } from '../../services/changed-files.service';
 import { SourcesService } from '../../services/sources.service';
 import { ThreadService } from '../../services/thread.service';
 import { PanelService } from '../../services/panel.service';
@@ -95,6 +96,7 @@ import { TurnComponent } from '../turn/turn.component';
     ThreadService,
     CommandsService,
     SourcesService,
+    ChangedFilesService,
     PlanService,
     AttachmentsService,
     ThreadPanelService,
@@ -161,6 +163,12 @@ export class ThreadComponent {
   /** The plan's card in the conversation: a proposal, or the plan while the panel is hidden. */
   protected readonly chatPlan = computed(() => chatPlan(this.plans.plan(), this.facts.visible()));
   private readonly sources = inject(SourcesService);
+  private readonly changed = inject(ChangedFilesService);
+  /** What the server says of the turns besides their events. */
+  private readonly turnFacts = computed<TurnFacts>(() => ({
+    sourced: this.sources.byReply(),
+    changed: this.changed.byTurn(),
+  }));
   private readonly stick = viewChild.required(GlzStickToBottomDirective);
   private readonly composer = viewChild.required(GlzComposerComponent);
   /** The composer's draft, which a message the model never read comes back to. */
@@ -203,21 +211,17 @@ export class ThreadComponent {
   );
   /** Every turn but the last, results first: what streams into the last never redraws them. */
   private readonly settled = computed(() => {
-    const sourced = this.sources.byReply();
+    const facts = this.turnFacts();
     return this.asked()
       .slice(0, -1)
-      .map((turn) => turnResults(turn, null, null, false, this.locale, sourced));
+      .map((turn) => turnResults(turn, null, null, false, this.locale, facts));
   });
   /** The last turn, results first, which runs: the reply being written and the step taken now. */
   private readonly latest = computed(() => {
     const turn = this.asked().at(-1);
     const live = this.service.hasReply() ? this.service.reply() : null;
-    const [step, busy, sourced] = [
-      this.service.step(),
-      this.service.busy(),
-      this.sources.byReply(),
-    ];
-    return turn === undefined ? [] : [turnResults(turn, live, step, busy, this.locale, sourced)];
+    const [step, busy, facts] = [this.service.step(), this.service.busy(), this.turnFacts()];
+    return turn === undefined ? [] : [turnResults(turn, live, step, busy, this.locale, facts)];
   });
   protected readonly turns = computed<readonly TurnResults[]>(() => [
     ...this.settled(),

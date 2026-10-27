@@ -13,8 +13,12 @@
 </div>
 <label class="search">
   <glz-icon [icon]="icons.search" />
+  <!-- Out of reach until the change detection that names it, as Glaze's controls are: the side
+       nav comes in a route's page, which Angular binds a task after it adds it. -->
   <input
     type="search"
+    inert
+    [attr.inert]="null"
     autocorrect="off"
     autocapitalize="off"
     spellcheck="false"
@@ -47,7 +51,7 @@
   }
 } @error {
   @if (byStatus()) {
-    <p class="error threads" role="alert" data-testid="nav-unloaded">{{ copy.unloaded }}</p>
+    <app-unloaded class="error threads" />
   }
 }
 @if (byProject()) {

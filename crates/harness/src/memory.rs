@@ -11,5 +11,6 @@ mod rebuild;
 mod render;
 mod state;
 
+pub(crate) use call::described;
 pub use call::{MemoryVerb, REMEMBER_CAUTION};
 pub(crate) use state::{ConfigMemory, MemoryState};

@@ -165,6 +165,59 @@
       "description": "Links a tool call to its result: 1 to 128 printable ASCII characters.",
       "type": "string"
     },
+    "ChangeKind": {
+      "description": "What a change did to its file.",
+      "oneOf": [
+        {
+          "const": "wrote",
+          "description": "Wrote the whole file (`write`).",
+          "type": "string"
+        },
+        {
+          "const": "edited",
+          "description": "Swapped one piece for another (`edit`).",
+          "type": "string"
+        },
+        {
+          "const": "edited_every",
+          "description": "Swapped every match of a piece (`edit` with `replace_all`).",
+          "type": "string"
+        }
+      ]
+    },
+    "ChangedFile": {
+      "description": "A file, with every line its changes added and took out, and each change.",
+      "properties": {
+        "added": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "changes": {
+          "description": "Its changes, in order.",
+          "items": {
+            "$ref": "#/$defs/FileChange"
+          },
+          "type": "array"
+        },
+        "path": {
+          "description": "Where it is, as the call named it.",
+          "type": "string"
+        },
+        "removed": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "added",
+        "removed",
+        "changes"
+      ],
+      "type": "object"
+    },
     "Checkout": {
       "additionalProperties": false,
       "description": "Where a folder is checked out: a computer, and the path on it.",
@@ -416,6 +469,22 @@
       ],
       "type": "object"
     },
+    "DiffLine": {
+      "description": "One line of a change.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/LineKind"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "text"
+      ],
+      "type": "object"
+    },
     "ErrorData": {
       "anyOf": [
         {
@@ -511,6 +580,26 @@
           "type": "string"
         }
       ]
+    },
+    "FileChange": {
+      "description": "One change to a file: a `write` or an `edit` that finished without an error, as its call\nasked for it, which the tool applied exactly.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ChangeKind"
+        },
+        "lines": {
+          "description": "Its lines in order: those kept before it, those taken out, those put in, and those kept\nafter it.",
+          "items": {
+            "$ref": "#/$defs/DiffLine"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "lines"
+      ],
+      "type": "object"
     },
     "FileInfo": {
       "description": "A file the server keeps, as `file/upload` answers it.",
@@ -715,6 +804,15 @@
     },
     "IdempotencyKey": {
       "description": "A client's name for one attempt at a turn: 1 to 255 bytes of text.",
+      "type": "string"
+    },
+    "LineKind": {
+      "description": "Whether a line was kept, taken out or put in.",
+      "enum": [
+        "same",
+        "removed",
+        "added"
+      ],
       "type": "string"
     },
     "MemoryId": {
@@ -2015,6 +2113,35 @@
         }
       ]
     },
+    "ThreadChanges": {
+      "description": "The files a thread changed, its subagents' changes with its own, and each turn's.",
+      "properties": {
+        "files": {
+          "description": "Every file it changed, in the order first changed.",
+          "items": {
+            "$ref": "#/$defs/ChangedFile"
+          },
+          "type": "array"
+        },
+        "note": {
+          "description": "What they leave out, in a sentence: \"Changes made by commands or other tools are not\nlisted.\"",
+          "type": "string"
+        },
+        "turns": {
+          "description": "Each turn that changed files, in order.",
+          "items": {
+            "$ref": "#/$defs/TurnChanges"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "files",
+        "turns",
+        "note"
+      ],
+      "type": "object"
+    },
     "ThreadId": {
       "description": "Identifies one thread: a conversation or task with its own ordered log.",
       "format": "uuid",
@@ -2281,6 +2408,26 @@
       },
       "required": [
         "text"
+      ],
+      "type": "object"
+    },
+    "TurnChanges": {
+      "description": "The files one turn changed.",
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/$defs/ChangedFile"
+          },
+          "type": "array"
+        },
+        "turn": {
+          "$ref": "#/$defs/Seq",
+          "description": "The `seq` of the turn's `turn.started`."
+        }
+      },
+      "required": [
+        "turn",
+        "files"
       ],
       "type": "object"
     },
@@ -4919,6 +5066,32 @@
       },
       "streams": false
     },
+    "thread/changes": {
+      "params": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "What a thread changed in files.",
+        "properties": {
+          "changes": {
+            "$ref": "#/$defs/ThreadChanges"
+          }
+        },
+        "required": [
+          "changes"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
     "thread/compact": {
       "params": {
         "properties": {
@@ -5286,7 +5459,7 @@
             "description": "A running computer to work on, such as the person's own laptop dialled in to this\nserver. Not available yet: refused with `-32022`."
           },
           "effort": {
-            "description": "How much the model reasons in the thread's turns: one of the levels `model/list`\ngives for its model, such as `high`. The model's own default when absent.",
+            "description": "How much the model reasons in the thread's turns: one of the levels `model/list`\ngives for its model, such as `high`. The model's own default when absent or `null`.",
             "type": [
               "string",
               "null"
@@ -5486,7 +5659,7 @@
             ]
           },
           "effort": {
-            "description": "How much the model reasons in this turn, and the thread's turns after it: one of\nthe levels `model/list` gives for the model the turn goes to. The thread's latest\nchoice when absent, else the model's own default. Not while a turn runs.",
+            "description": "How much the model reasons in this turn, and the thread's turns after it: one of\nthe levels `model/list` gives for the model the turn goes to, or `null` for Default,\nthe model's own default again, as in a thread that never chose. The thread's latest\nchoice when absent, else the model's own default. Not while a turn runs.",
             "type": [
               "string",
               "null"

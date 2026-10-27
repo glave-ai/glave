@@ -39,7 +39,9 @@ pub(crate) fn decode(version: u32, data: &RawValue) -> Option<serde_json::Result
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EffortChosen {
-    pub effort: String,
+    /// Absent: Default, the thread asks for no level again, as one that never chose.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
     /// Who chose it. Absent: the thread's `for`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<Principal>,

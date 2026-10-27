@@ -7,6 +7,7 @@ import {
   model,
 } from '@angular/core';
 
+import { INERT_UNTIL_BOUND } from '../../lib/inert-until-bound';
 import { testIds } from '../../lib/test-ids';
 import { glzText } from '../../lib/words';
 
@@ -28,7 +29,7 @@ const PARTS = { summary: 'summary', text: 'text' } as const;
   templateUrl: './reasoning.component.html',
   styleUrl: './reasoning.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { '[attr.data-testid]': 'testId()' },
+  host: { ...INERT_UNTIL_BOUND, '[attr.data-testid]': 'testId()' },
 })
 export class GlzReasoningComponent {
   /** The test hook for this component; its parts get `<testId>-<part>`. */

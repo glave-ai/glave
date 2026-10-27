@@ -1,5 +1,6 @@
 import { Directive, computed, inject } from '@angular/core';
 
+import { INERT_UNTIL_BOUND } from '../lib/inert-until-bound';
 import { GLZ_FORM_FIELD, injectFormState } from '../tokens/forms';
 
 /**
@@ -20,6 +21,7 @@ import { GLZ_FORM_FIELD, injectFormState } from '../tokens/forms';
 @Directive({
   selector: 'input[glzInput], textarea[glzInput], select[glzInput]',
   host: {
+    ...INERT_UNTIL_BOUND,
     class: 'glz-input',
     '[attr.id]': 'id()',
     '[attr.aria-describedby]': 'describedBy()',

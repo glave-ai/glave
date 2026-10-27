@@ -241,6 +241,10 @@ sentences! {
     Sources { pages: u64 } = "sources"
         "Sources: { $pages ->\n    [1] 1 page\n   *[other] { $pages } pages\n }",
 
+    // What a thread changed in files.
+    ChangesLeftOut = "changes-left-out"
+        "Changes made by commands or other tools are not listed.",
+
     // A thread's plan.
     PlanProposed { steps: u64 } = "plan-proposed"
         "Proposed plan: { $steps ->\n    [1] 1 step\n   *[other] { $steps } steps\n }",

@@ -6,9 +6,10 @@ import {
   inject,
   input,
 } from '@angular/core';
+import type { ChangedFile } from '@glave/client';
 import { injectId } from '@glave/glaze';
 
-import { type ChangedFile, lineCounts } from '../../lib/files';
+import { lineCounts } from '../../lib/files';
 import { plural } from '../../lib/plural';
 import { ThreadPanelService } from '../../services/thread-panel.service';
 

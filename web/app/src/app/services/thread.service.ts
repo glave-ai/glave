@@ -25,7 +25,7 @@ import type { GlzDecision } from '@glave/glaze';
 
 import { lastCommandChange } from '../lib/commands';
 import { NO_DRAFT, applyUpdate, mergeEvents, stepsAfter, type Draft } from '../lib/conversation';
-import { changedFiles } from '../lib/files';
+import { lastChanging } from '../lib/files';
 import { idempotencyKey } from '../lib/idempotency';
 import { chosenEffort } from '../lib/effort';
 import { chosenModel } from '../lib/models';
@@ -112,15 +112,15 @@ export class ThreadService {
     }
     return listed !== undefined && listed.updated_at >= own.updated_at ? listed : own;
   });
-  /** The thread's turns, each with its items, the files it changed, its time and cost. */
+  /** The thread's turns, each with its items, its time and cost. */
   readonly turns = computed(() => threadTurns(this.events()));
   /**
    * The turns this view asked for, each by the `seq` of the last event it had read as it asked:
    * the turn is the first recorded after it.
    */
   readonly askedAfter = this.afters.asReadonly();
-  /** The files the thread changed with its own `write` and `edit` calls. */
-  readonly files = computed(() => changedFiles(this.events()));
+  /** The `seq` of the latest end of a call that can change files; `null` while it opens. */
+  readonly changing = computed(() => (this.opening() ? null : lastChanging(this.events())));
   /** The `seq` of the latest start or end of a command in the background it recorded, if any. */
   readonly commandChange = computed(() => lastCommandChange(this.events()));
   /**
@@ -268,16 +268,17 @@ export class ThreadService {
   /**
    * Sends `prompt`, with the `files` kept for it, and follows the turn as it runs. With
    * `model`, the turn and the thread's turns after it go to that model; with `permissions`, they
-   * run with that mode; with `effort`, their model reasons that much. While a turn runs, the
-   * message goes to it instead, for the model to read at its next step, and waits in the thread
-   * until it has; the model, mode and level go with the next turn.
+   * run with that mode; with `effort`, their model reasons that much, or at its own default
+   * again with `null`. While a turn runs, the message goes to it instead, for the model to read
+   * at its next step, and waits in the thread until it has; the model, mode and level go with
+   * the next turn.
    */
   async send(
     prompt: string,
     model: string | null = null,
     permissions: Permissions | null = null,
     files: readonly AttachedFile[] = [],
-    effort: string | null = null,
+    effort?: string | null,
   ): Promise<void> {
     const thread = this.id();
     if (thread === null) {
@@ -298,7 +299,7 @@ export class ThreadService {
       ...withFiles(files),
       ...(model === null ? {} : { model }),
       ...(permissions === null ? {} : { permissions }),
-      ...(effort === null ? {} : { effort }),
+      ...(effort === undefined ? {} : { effort }),
     };
     await this.follow(thread, sent(params), null);
   }

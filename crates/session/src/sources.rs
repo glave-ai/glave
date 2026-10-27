@@ -9,7 +9,7 @@ use glave_event::{Body, CallId, Part, RawEvent, Role, Seq, ThreadId, WebPage, de
 use glave_ports::{BlobStore, EventLog, ModelProvider};
 
 use crate::protocol::{ApiError, Reply, ReplySources};
-use crate::server::{MAX_PAGE, Server};
+use crate::server::Server;
 use crate::words::Sentence;
 
 impl<P, L, B> Server<P, L, B>
@@ -18,20 +18,10 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// What `thread`'s replies drew on, read page by page from its log.
+    /// What `thread`'s replies drew on, read from its log.
     pub(crate) async fn sources(&self, thread: ThreadId) -> Result<Reply, ApiError> {
         let mut reading = Reading::default();
-        let mut after = None;
-        loop {
-            let (events, next) = self.page(thread, after, Some(MAX_PAGE)).await?;
-            for event in events {
-                reading.read(event);
-            }
-            match next {
-                Some(next) => after = Some(next),
-                None => break,
-            }
-        }
+        self.read_all(thread, |event| reading.read(event)).await?;
         Ok(Reply::Sources {
             sources: reading.done(),
         })

@@ -4,6 +4,7 @@ import type { WorkspaceBound } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 import { of } from 'rxjs';
 
+import { ChangedFilesService } from '../../services/changed-files.service';
 import { CommandsService } from '../../services/commands.service';
 import { PanelService } from '../../services/panel.service';
 import { PlanService } from '../../services/plan.service';
@@ -74,6 +75,7 @@ async function render(
       ThreadService,
       CommandsService,
       SourcesService,
+      ChangedFilesService,
       PlanService,
       ThreadPanelService,
       { provide: BreakpointObserver, useValue: { observe: () => of({ matches: narrow }) } },
@@ -123,6 +125,16 @@ function worked(workspace: WorkspaceBound = WORKTREE): FakeSession {
           pages: [{ url: 'https://docs.rs/clap', title: 'clap: Arg::action' }],
         },
       ],
+    })
+    .answer('thread/changes', {
+      changes: {
+        files: [
+          { path: 'src/args.rs', added: 3, removed: 1, changes: [] },
+          { path: 'src/main.rs', added: 1, removed: 0, changes: [] },
+        ],
+        turns: [],
+        note: 'Changes made by commands or other tools are not listed.',
+      },
     });
 }
 

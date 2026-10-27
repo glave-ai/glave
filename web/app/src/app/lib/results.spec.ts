@@ -85,7 +85,7 @@ function turn(items: readonly ThreadItem[], more: Partial<Turn> = {}): Turn {
   return {
     key: 't',
     items,
-    files: [],
+    startSeq: null,
     took: null,
     started: null,
     result: null,
@@ -141,14 +141,27 @@ describe('results', () => {
       sentence: 'Sources: 1 page',
       pages: [{ url: 'https://tokio.rs/blog', title: 'Tokio blog' }],
     };
-    const bySeq = new Map([[4, sourced]]);
+    const facts = { sourced: new Map([[4, sourced]]), changed: new Map() };
     const items = [ask, say(2, 'Looking'), call(3), say(4, 'Here')];
-    const shown = turnResults(turn(items), null, null, false, 'en-US', bySeq);
+    const shown = turnResults(turn(items), null, null, false, 'en-US', facts);
     expect(shown.sources).toBe(sourced);
-    const earlier = turnResults(turn(items.slice(0, 3)), null, null, false, 'en-US', bySeq);
+    const earlier = turnResults(turn(items.slice(0, 3)), null, null, false, 'en-US', facts);
     expect(earlier.sources).toBeNull();
     const live = { text: 'Writ', reasoning: '' };
-    expect(turnResults(turn(items), live, null, true, 'en-US', bySeq).sources).toBeNull();
+    expect(turnResults(turn(items), live, null, true, 'en-US', facts).sources).toBeNull();
+  });
+
+  it('gives a turn the files the server says it changed, by the seq of its start', () => {
+    const changed = [{ path: 'src/a.rs', added: 2, removed: 1, changes: [] }];
+    const facts = { sourced: new Map(), changed: new Map([[7, changed]]) };
+    const items = [ask, call(8), say(9, 'Done')];
+    expect(turnResults(turn(items, { startSeq: 7 }), null, null, false, 'en-US', facts).files).toBe(
+      changed,
+    );
+    expect(
+      turnResults(turn(items, { startSeq: 3 }), null, null, false, 'en-US', facts).files,
+    ).toEqual([]);
+    expect(turnResults(turn(items), null, null, false, 'en-US', facts).files).toEqual([]);
   });
 
   it('says how many commands ran outside the sandbox as the server counted them', () => {

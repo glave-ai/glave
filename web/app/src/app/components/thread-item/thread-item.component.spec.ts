@@ -106,18 +106,18 @@ describe('ThreadItemComponent', () => {
     expect(root.querySelector('[data-testid="message-copy"]')).toBeNull();
   });
 
-  it('shows a call as a quiet line with its tool’s icon', async () => {
+  it('shows a call as a quiet line, the server’s, with its tool’s icon', async () => {
     const { root } = await render({
       kind: 'call',
       key: 'c',
       seq: 1,
       tool: 'bash',
-      summary: 'cargo test',
+      summary: 'bash: cargo test',
       status: 'failed',
       output: 'FAILED',
     });
     const receipt = root.querySelector('[data-testid="thread-receipt"]');
-    expect(receipt?.querySelector('.tool')?.textContent).toBe('bash');
+    expect(receipt?.querySelector('.what')?.textContent).toBe('bash: cargo test');
     expect(receipt?.querySelector('.kind svg')).not.toBeNull();
     expect(receipt?.querySelector('pre')?.textContent).toBe('FAILED');
     await expectAccessible(root);

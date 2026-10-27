@@ -2,6 +2,7 @@
 //! notifications a turn sends, and errors. Every transport carries these same types; in-process
 //! they are passed as they are, elsewhere as JSON-RPC 2.0.
 
+mod changes;
 pub mod code;
 mod connections;
 mod credentials;
@@ -28,6 +29,9 @@ use glave_ports::ProjectId;
 use glave_ports::computer::{CommandId, ComputerId};
 use serde::{Deserialize, Serialize};
 
+pub use changes::{
+    ChangeKind, ChangedFile, DiffLine, FileChange, LineKind, ThreadChanges, TurnChanges,
+};
 pub use connections::{ConnectionInfo, ConnectionStatus, SearchInfo, SignInLink, Usage};
 pub use credentials::{Ability, CredentialInfo, DeviceCode};
 pub use error::{ApiError, ErrorData};
@@ -192,9 +196,9 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         permissions: Option<Permissions>,
         /// How much the model reasons in the thread's turns: one of the levels `model/list`
-        /// gives for its model, such as `high`. The model's own default when absent.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        effort: Option<String>,
+        /// gives for its model, such as `high`. The model's own default when absent or `null`.
+        #[serde(default, deserialize_with = "given", skip_serializing_if = "Option::is_none")]
+        effort: Option<Option<String>>,
     } -> [Thread],
     "thread/list" => ThreadList {
         /// The project whose threads to list, by default as `thread/start` picks one.
@@ -228,6 +232,10 @@ methods! {
     /// What a thread's replies drew on from the web, read from its log: for each reply whose
     /// turn read pages with `web_fetch` before it, those pages, in order.
     "thread/sources" => ThreadSources { thread: ThreadId } -> [Sources],
+    /// What a thread changed in files with glave's own `write` and `edit`, its subagents'
+    /// changes with its own, read from the logs: each file with the lines added and taken out
+    /// and each change, for the thread and for each turn that changed any.
+    "thread/changes" => ThreadChanges { thread: ThreadId } -> [Changes],
     /// The thread's plan, read from its log: its steps, each with its status, and whether it
     /// waits for the person's approval; `null` when it has none.
     "thread/plan" => ThreadPlan { thread: ThreadId } -> [Plan],
@@ -286,16 +294,17 @@ methods! {
         /// a turn runs.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model: Option<String>,
+        /// How much the model reasons in this turn, and the thread's turns after it: one of
+        /// the levels `model/list` gives for the model the turn goes to, or `null` for Default,
+        /// the model's own default again, as in a thread that never chose. The thread's latest
+        /// choice when absent, else the model's own default. Not while a turn runs.
+        #[serde(default, deserialize_with = "given", skip_serializing_if = "Option::is_none")]
+        effort: Option<Option<String>>,
         /// What the agent may do in this turn, and the thread's turns after it: one of the
         /// server's `modes`. The thread's latest choice when absent, else its project's, else
         /// the server's. Not while a turn runs.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         permissions: Option<Permissions>,
-        /// How much the model reasons in this turn, and the thread's turns after it: one of
-        /// the levels `model/list` gives for the model the turn goes to. The thread's latest
-        /// choice when absent, else the model's own default. Not while a turn runs.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        effort: Option<String>,
         /// No one answers the turn it starts: what would ask is declined at once and
         /// `question` is not offered, as in a task, for its subagents too, while it still
         /// streams to whoever follows it. For a client with no one at it, such as a script.
@@ -574,6 +583,16 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
+/// A field that is given, `null` included, as distinct from one left out, which its
+/// `#[serde(default)]` reads as `None`: `null` is `Some(None)`.
+fn given<'de, D, T>(field: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(field).map(Some)
+}
+
 impl Request {
     /// The thread a request acts on, when it names one: whose project decides whether the
     /// caller may make it.
@@ -586,6 +605,7 @@ impl Request {
             | Self::ThreadGet { thread }
             | Self::ThreadEvents { thread, .. }
             | Self::ThreadSources { thread }
+            | Self::ThreadChanges { thread }
             | Self::ThreadPlan { thread }
             | Self::PlanEdit { thread, .. }
             | Self::PlanBuild { thread }

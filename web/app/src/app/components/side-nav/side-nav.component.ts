@@ -16,7 +16,6 @@ import PenLine from 'lucide/dist/esm/icons/pen-line.mjs';
 import Search from 'lucide/dist/esm/icons/search.mjs';
 
 import { hasProjects } from '../../lib/nav';
-import { unloaded } from '../../lib/text';
 import { GroupingService } from '../../services/grouping.service';
 import { ProjectsService } from '../../services/projects.service';
 import { TasksService } from '../../services/tasks.service';
@@ -24,6 +23,7 @@ import { GroupByComponent } from '../group-by/group-by.component';
 import { PersonComponent } from '../person/person.component';
 import { ProjectsNavComponent } from '../projects-nav/projects-nav.component';
 import { StatusNavComponent } from '../status-nav/status-nav.component';
+import { UnloadedComponent } from '../unloaded/unloaded.component';
 
 /**
  * The side nav: glave's name with New chat beside it, and the search; the person's threads,
@@ -43,6 +43,7 @@ import { StatusNavComponent } from '../status-nav/status-nav.component';
     PersonComponent,
     ProjectsNavComponent,
     StatusNavComponent,
+    UnloadedComponent,
   ],
   templateUrl: './side-nav.component.html',
   styleUrl: './side-nav.component.scss',
@@ -62,7 +63,6 @@ export class SideNavComponent {
     search: $localize`:@@sideNav.search:Search threads`,
     searchPlaceholder: $localize`:@@sideNav.searchPlaceholder:Search`,
     tasks: $localize`:@@sideNav.tasks:Tasks`,
-    unloaded: unloaded(),
   } as const;
   protected readonly icons = { newChat: PenLine, search: Search, tasks: ListChecks };
   protected readonly tasksLink = '/tasks';
