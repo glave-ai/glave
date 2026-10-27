@@ -4,12 +4,12 @@
 # a change that shares a copy takes its line out, and one that edits or moves a listed copy puts
 # the line the check prints in its place. Nothing is added here but that.
 00244d63d16a6b84 34 crates/store-postgres/src/blobs.rs crates/store-sqlite/src/blobs.rs
+010ee3b4bae24c7f 14 crates/provider-anthropic/src/fake.rs crates/provider-openai/src/fake.rs
 04879cd549cea09e 7 crates/cli/src/memory.rs crates/cli/src/threads.rs
 07eb007a21fc0e6e 6 web/app/src/app/components/settings/settings.component.spec.ts web/app/src/app/components/settings/settings.component.spec.ts
 090ee4c561993ff7 6 crates/session/tests/listing.rs crates/session/tests/standing.rs
 104f93b401311b5c 7 crates/store-postgres/src/store.rs crates/store-sqlite/src/store.rs
 111e9eda7f7fe431 9 crates/azure/src/workload/tests.rs crates/google/src/adc/tests.rs
-11a5f17bad872dba 11 crates/provider-anthropic/src/fake.rs crates/provider-openai/src/fake.rs
 12fce2f8c183f2c6 36 crates/store-postgres/src/blobs.rs crates/store-sqlite/src/blobs.rs
 164d700574459588 9 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
 19c129e6a8a15b0f 15 crates/store-sqlite/src/log.rs crates/store-sqlite/src/log.rs

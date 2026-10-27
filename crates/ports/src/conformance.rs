@@ -23,7 +23,7 @@ pub use computers::{
 };
 pub use leases::leases;
 pub use memory::{MemoryPlaces, memory_scopes};
-pub use model::{Script, model_provider};
+pub use model::{Listening, Script, model_provider};
 pub use objects::objects;
 pub use projects::projects;
 pub use search::search;

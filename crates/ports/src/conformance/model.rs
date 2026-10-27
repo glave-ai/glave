@@ -4,12 +4,18 @@
 //! has been (so nobody asks again), usage marked estimated when the provider reported none, a
 //! timeout after a silence, and no secret in an error.
 
+use std::future::poll_fn;
+use std::pin::{Pin, pin};
+use std::sync::Arc;
+use std::task::Poll;
+use std::time::Duration;
+
 use glave_event::{Part, StopReason};
 use tokio::runtime::{Handle, RuntimeFlavor};
 
 use super::{Verdict, ensure};
 use crate::model::{Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError};
-use crate::testing::fake_secret;
+use crate::testing::{HUNG, fake_secret};
 
 /// What the fake server behind a provider does with the one request it gets, in no
 /// provider's terms. The test maps each to its own wire format.
@@ -40,13 +46,20 @@ pub enum Script {
 const REASONING: &[&str] = &["Think", "ing it ", "over."];
 const TEXT: &[&str] = &["Hel", "lo, ", "there."];
 
+/// The fake server behind a provider, which the suite asks whether a request has reached it.
+pub trait Listening: Send + Sync + 'static {
+    /// Waits until a request has arrived, or `limit` has passed; whether one did.
+    fn heard(&self, limit: Duration) -> bool;
+}
+
 /// Every [`ModelProvider`] must keep the promises its port makes. `serve` starts a fake server
-/// playing a [`Script`] and returns a provider that asks it with `key`, and whatever keeps the
-/// server running. Run on a current-thread runtime: the silence is waited out on a paused
-/// clock, so the suite never sleeps.
-pub async fn model_provider<P, G>(serve: impl Fn(Script, &str) -> Result<(P, G), String>) -> Verdict
+/// playing a [`Script`] and returns a provider that asks it with `key`, and the server. Run on
+/// a current-thread runtime: the silence is waited out on a paused clock, so the suite never
+/// sleeps.
+pub async fn model_provider<P, S>(serve: impl Fn(Script, &str) -> Result<(P, S), String>) -> Verdict
 where
     P: ModelProvider,
+    S: Listening,
 {
     let key = fake_secret("sk-");
     let play = |script| ask(&serve, script, &key);
@@ -97,7 +110,7 @@ where
 
     errors(&play).await?;
     secrets(&play, &key).await?;
-    silence(&play).await
+    silence(&serve, &key).await
 }
 
 /// `NoOutput` before any output, and `AfterOutput` after it, whatever the error.
@@ -152,21 +165,51 @@ where
     )
 }
 
-/// A server that sends nothing times out, on a paused clock that jumps to each deadline.
-async fn silence<F, Fut>(ask: &F) -> Verdict
-where
-    F: Fn(Script) -> Fut,
-    Fut: Future<Output = Result<Asked, String>>,
-{
+/// A server that sends nothing times out, on a paused clock that jumps to each deadline. The
+/// clock pauses only once the server holds the request: a paused clock jumps to the next
+/// deadline whenever the runtime has nothing ready, and a connection still opening is nothing
+/// ready, so on a paused clock it would time out as one that never opened.
+async fn silence<P: ModelProvider, S: Listening>(
+    serve: &impl Fn(Script, &str) -> Result<(P, S), String>,
+    key: &str,
+) -> Verdict {
     ensure(
         Handle::try_current()
             .is_ok_and(|handle| handle.runtime_flavor() == RuntimeFlavor::CurrentThread),
         "the suite must run on a current-thread runtime, to wait out a silence on a paused clock",
     )?;
-    tokio::time::pause();
-    let asked = ask(Script::Silence).await;
-    tokio::time::resume();
-    let (result, deltas) = asked?;
+    let (provider, server) = serve(Script::Silence, key)?;
+    let server = Arc::new(server);
+    let listening = Arc::clone(&server);
+    let mut heard = tokio::task::spawn_blocking(move || listening.heard(HUNG));
+    let mut deltas = Vec::new();
+    let result = {
+        let (asked, mut shown) = (request(), |delta| deltas.push(delta));
+        let mut asking = pin!(provider.complete(&asked, &mut shown));
+        // On the real clock until the server holds the request, or the request ends first.
+        let arrived = poll_fn(|context| {
+            if let Poll::Ready(heard) = Pin::new(&mut heard).poll(context) {
+                return Poll::Ready(Ok(heard));
+            }
+            asking.as_mut().poll(context).map(Err)
+        })
+        .await;
+        match arrived {
+            Ok(heard) => ensure(
+                matches!(heard, Ok(true)),
+                "a request never reached the silent server",
+            )?,
+            Err(result) => {
+                return Err(format!(
+                    "a request to a silent server ended before it arrived: {result:?}"
+                ));
+            }
+        }
+        tokio::time::pause();
+        let result = asking.await;
+        tokio::time::resume();
+        result
+    };
     ensure(
         matches!(result, Err(ProviderError::Timeout { .. })),
         &format!("a server that sent nothing did not time out: {result:?}"),
