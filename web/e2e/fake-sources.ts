@@ -27,7 +27,14 @@ export const RESEARCH_HISTORY = [
     { role: 'user', parts: [{ type: 'text', text: 'What changed in Tokio 2.0?' }] },
     RESEARCH,
   ),
-  call(4, 'call_1', 'mcp__search__web_search_exa', { query: 'Tokio 2.0 release' }, RESEARCH),
+  call(
+    4,
+    'call_1',
+    'mcp__search__web_search_exa',
+    { query: 'Tokio 2.0 release' },
+    RESEARCH,
+    'Searched the web: Tokio 2.0 release',
+  ),
   done(
     5,
     'call_1',

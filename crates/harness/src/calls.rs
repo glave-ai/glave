@@ -10,7 +10,7 @@ use glave_event::{
 use glave_ports::settings::Judge;
 use glave_ports::{
     Assessment, BlobStore, Effect, EventLog, Message, ModelProvider, ToolCall, ToolOutput,
-    ToolSource,
+    ToolSource, describe_call,
 };
 
 use crate::approval::{ApprovalMode, ApprovalRequest, Approver, asks_for, no_one_there, sentence};
@@ -23,6 +23,7 @@ use crate::judge::{JudgeCase, Ruling, judge};
 use crate::question::{self, QuestionRequest};
 use crate::sandbox::{self, Asks};
 use crate::tools::Tool;
+use crate::toolset::ToolSet;
 use crate::turn::{Live, Step};
 use crate::waits::{Answered, verdict_of};
 
@@ -130,6 +131,25 @@ where
         Ok(())
     }
 
+    /// `call` in a line, for the person (`bash: cargo test`), as `tools` offer it: what its
+    /// `tool.call.requested` records, and what its live update and an approval of it say, each
+    /// by the same description: its source's, or glave's own tool's.
+    pub(crate) fn describe(&self, thread: &Thread, tools: &ToolSet, call: &ToolCall) -> String {
+        let (name, arguments) = (call.tool.as_str(), &call.arguments);
+        if tools.is_plan(name) {
+            return crate::plan::describe(arguments);
+        } else if tools.is_memory(name) {
+            return crate::memory::described(name, arguments);
+        } else if tools.is_agent(name) {
+            return crate::subagent::describe(arguments);
+        }
+        let described = tools.get(name).and_then(|(index, info)| {
+            let source = self.source_for(thread, index)?;
+            Some(source.describe(&info.spec.name, arguments))
+        });
+        described.unwrap_or_else(|| describe_call(name, arguments))
+    }
+
     /// Runs one tool call, asking the person first when its effect needs them in this mode or
     /// when its source says it does (a read of a secret file).
     pub(crate) async fn call_tool(
@@ -160,7 +180,7 @@ where
             return Ok(ToolOutput::text(true, format!("{:?} is gone", call.tool)));
         };
         let name = info.spec.name.as_str();
-        let summary = source.describe(name, &call.arguments);
+        let summary = self.describe(thread, tools, call);
         let hooked = ToolHook::of(call, name);
         // What of the sandbox it would run without, as its commands run now.
         let outside = (index == BUILTINS)

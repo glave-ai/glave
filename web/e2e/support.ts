@@ -1,10 +1,9 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-import AxeBuilder from '@axe-core/playwright';
 import type { Method } from '@glave/client';
 import { type BrowserContext, type Locator, type Page, expect } from '@playwright/test';
-import type { Result } from 'axe-core';
+import type { Result, default as axe } from 'axe-core';
 
 /**
  * A glave the tests are served by (playwright.config.ts), known by the variables that hold the
@@ -439,6 +438,19 @@ export function watchForProblems(page: Page): Problems {
   return Object.assign(() => problems, { leave });
 }
 
+/** The page's window once `withAxe` has put axe in it. */
+export type WithAxe = Window & { readonly axe: typeof axe };
+
+/**
+ * Puts axe in `page`, from axe-core's own source: the one axe, in the one version, that every
+ * check runs, the unit tests' too. Its module is read only here, as a test runs: as it loads it
+ * reads a page's window, which the config, read with this module in Node alone, has none of.
+ */
+export async function withAxe(page: Page): Promise<void> {
+  const { source } = (await import('axe-core')).default;
+  await page.evaluate(source);
+}
+
 /** The rules axe holds the pages to: WCAG 2.2, levels A and AA. */
 export const WCAG: readonly string[] = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 
@@ -465,6 +477,12 @@ export async function expectAccessible(page: Page): Promise<void> {
         .map((animation) => animation.finished.catch(() => undefined)),
     ),
   );
-  const results = await new AxeBuilder({ page }).withTags([...WCAG]).analyze();
-  expect(described(results.violations)).toEqual([]);
+  await withAxe(page);
+  const violations = await page.evaluate(async (tags) => {
+    const results = await (window as unknown as WithAxe).axe.run(document, {
+      runOnly: { type: 'tag', values: [...tags] },
+    });
+    return results.violations;
+  }, WCAG);
+  expect(described(violations)).toEqual([]);
 }

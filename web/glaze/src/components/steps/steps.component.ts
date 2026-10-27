@@ -10,6 +10,7 @@ import {
 import { Ban, Check, ChevronRight, Hand, LoaderCircle, TriangleAlert } from 'lucide';
 
 import type { GlzIconData } from '../../lib/icons';
+import { INERT_UNTIL_BOUND } from '../../lib/inert-until-bound';
 import { testIds } from '../../lib/test-ids';
 import { glzText } from '../../lib/words';
 import { GlzIconComponent } from '../icon/icon.component';
@@ -41,8 +42,8 @@ const ICONS: Readonly<Record<GlzRunStatus, GlzIconData>> = {
  *
  * ```html
  * <glz-steps status="done" [facts]="['4m 02s', '$0.04']" steps="2 steps">
- *   <glz-receipt tool="bash" summary="cargo test" />
- *   <glz-receipt tool="edit" summary="src/parse.rs" />
+ *   <glz-receipt summary="bash: cargo test" />
+ *   <glz-receipt summary="edit src/parse.rs" />
  * </glz-steps>
  * ```
  */
@@ -53,6 +54,7 @@ const ICONS: Readonly<Record<GlzRunStatus, GlzIconData>> = {
   styleUrl: './steps.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
+    ...INERT_UNTIL_BOUND,
     '[attr.data-testid]': 'testId()',
     '[class]': 'statusClass()',
   },

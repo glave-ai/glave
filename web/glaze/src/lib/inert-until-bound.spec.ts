@@ -3,6 +3,9 @@ import { ComponentFixtureAutoDetect, TestBed } from '@angular/core/testing';
 import { Settings, X } from 'lucide';
 
 import { GlzButtonComponent } from '../components/button/button.component';
+import { GlzCheckboxComponent } from '../components/checkbox/checkbox.component';
+import { GlzComposerComponent } from '../components/composer/composer.component';
+import { GlzFormFieldComponent } from '../components/form-field/form-field.component';
 import { GlzIconButtonComponent } from '../components/icon-button/icon-button.component';
 import { GlzIconComponent } from '../components/icon/icon.component';
 import { GlzMenuButtonComponent } from '../components/menu-button/menu-button.component';
@@ -12,19 +15,34 @@ import {
 } from '../components/menu-select/menu-select.component';
 import { GlzNavItemComponent } from '../components/nav-item/nav-item.component';
 import { GlzPickerComponent } from '../components/picker/picker.component';
+import { GlzRadioGroupComponent } from '../components/radio-group/radio-group.component';
+import { GlzRadioComponent } from '../components/radio/radio.component';
+import { GlzReasoningComponent } from '../components/reasoning/reasoning.component';
+import { GlzReceiptComponent } from '../components/receipt/receipt.component';
+import { GlzStepsComponent } from '../components/steps/steps.component';
+import { GlzInputDirective } from '../directives/input.directive';
 import { expectAccessible } from '../testing/axe';
 import type { GlzOption } from './options';
 
-/** Each of Glaze's buttons and menus, named by bindings, as an app names them in its words. */
+/** Each of Glaze's controls, named by bindings, as an app names them in its words. */
 @Component({
   imports: [
     GlzButtonComponent,
+    GlzCheckboxComponent,
+    GlzComposerComponent,
+    GlzFormFieldComponent,
     GlzIconButtonComponent,
     GlzIconComponent,
+    GlzInputDirective,
     GlzMenuButtonComponent,
     GlzMenuSelectComponent,
     GlzNavItemComponent,
     GlzPickerComponent,
+    GlzRadioComponent,
+    GlzRadioGroupComponent,
+    GlzReasoningComponent,
+    GlzReceiptComponent,
+    GlzStepsComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -36,6 +54,15 @@ import type { GlzOption } from './options';
     <glz-menu-button [label]="words.options" [actions]="actions" />
     <glz-menu-select [label]="words.mode" [options]="options" [(value)]="value" />
     <glz-picker [label]="words.model" [options]="options" [(value)]="value" />
+    <glz-composer [label]="words.message" />
+    <glz-form-field [label]="words.name"><input glzInput /></glz-form-field>
+    <glz-checkbox>{{ words.remember }}</glz-checkbox>
+    <glz-radio-group [label]="words.mode" [(value)]="value">
+      <glz-radio value="ask">{{ words.ask }}</glz-radio>
+    </glz-radio-group>
+    <glz-reasoning [label]="words.thought">{{ words.why }}</glz-reasoning>
+    <glz-receipt [summary]="words.ran">{{ words.output }}</glz-receipt>
+    <glz-steps [steps]="words.steps">{{ words.step }}</glz-steps>
   `,
 })
 class NamedComponent {
@@ -46,6 +73,16 @@ class NamedComponent {
     options: 'Options for Atlas',
     mode: 'Mode',
     model: 'Model',
+    message: 'Message',
+    name: 'Name',
+    remember: 'Remember this choice',
+    ask: 'Ask',
+    thought: 'Thought for 2 seconds',
+    why: 'The tests import the parser.',
+    ran: 'Ran the tests',
+    output: '3 passed',
+    steps: '2 steps',
+    step: 'Read the parser',
   } as const;
   protected readonly icons = { close: X, settings: Settings };
   protected readonly actions: readonly GlzOption[] = [{ value: 'rename', label: 'Rename' }];
@@ -53,14 +90,28 @@ class NamedComponent {
   readonly value = signal<string | null>('ask');
 }
 
-/** The buttons and links in `root`: what a person reaches. */
+/** What a person reaches in `root`: buttons, links, fields and disclosures. */
 function controls(root: HTMLElement): readonly HTMLElement[] {
-  return Array.from(root.querySelectorAll<HTMLElement>('button, a'));
+  return Array.from(root.querySelectorAll<HTMLElement>('button, a, input, textarea, summary'));
 }
 
-/** What names `control`, roughly as a screen reader finds it: its label, else its text. */
+/**
+ * What names `control`, roughly as a screen reader finds it: its label, else the labels of a
+ * field, else its text.
+ */
+function name(control: HTMLElement): string {
+  const label = control.getAttribute('aria-label');
+  if (label !== null) {
+    return label;
+  }
+  if (control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement) {
+    return Array.from(control.labels ?? [], (each) => each.textContent).join(' ');
+  }
+  return control.textContent;
+}
+
 function named(control: HTMLElement): boolean {
-  return (control.getAttribute('aria-label') ?? control.textContent).trim() !== '';
+  return name(control).trim() !== '';
 }
 
 describe('INERT_UNTIL_BOUND', () => {
@@ -72,11 +123,11 @@ describe('INERT_UNTIL_BOUND', () => {
     });
   });
 
-  it('keeps each button and menu out of reach on its first render, unnamed, then hands it over named', async () => {
+  it('keeps each control out of reach on its first render, unnamed, then hands it over named', async () => {
     const fixture = TestBed.createComponent(NamedComponent);
     const root: HTMLElement = fixture.nativeElement;
     // Made, not yet bound: none has a name, and none can be reached.
-    expect(controls(root)).toHaveLength(6);
+    expect(controls(root)).toHaveLength(15);
     expect(controls(root).filter(named)).toEqual([]);
     expect(controls(root).filter((control) => control.closest('[inert]') === null)).toEqual([]);
     await expectAccessible(root);

@@ -8,14 +8,6 @@ export function unreached(): string {
   return $localize`:@@text.unreached:glave could not be reached. Try again.`;
 }
 
-/**
- * What a part of the page whose code could not load says in its place: the page was being
- * left, or glave went out of reach.
- */
-export function unloaded(): string {
-  return $localize`:@@text.unloaded:This part of glave could not load. Reload the page to try again.`;
-}
-
 /** What a failure to remove an account is told as, a model account or a connected one. */
 export function removeFailed(): string {
   return $localize`:@@text.removeFailed:glave could not remove that account. Try again in a moment.`;

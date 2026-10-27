@@ -21,6 +21,11 @@ pub struct ToolCallRequested {
     pub provider_call_id: Option<String>,
     pub tool: String,
     pub arguments: Arguments,
+    /// The step in a line, as the person is shown it when it begins (`bash: cargo test`,
+    /// `Searched the web: tokio`): glave's record beside the call, never sent to the model.
+    /// Empty in calls recorded before it was.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub summary: String,
 }
 
 /// A tool call's arguments: a JSON object, or the provider's raw text when it was not valid

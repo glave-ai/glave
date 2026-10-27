@@ -11,8 +11,7 @@ import { type GlzReceiptStatus, GlzReceiptComponent } from './receipt.component'
   template: `
     <glz-receipt
       testId="receipt"
-      tool="bash"
-      summary="cargo test"
+      summary="bash: cargo test"
       [icon]="terminal"
       [status]="status()"
       [(open)]="open"
@@ -33,12 +32,11 @@ describe('GlzReceiptComponent', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     const line = root.querySelector('[data-testid="receipt-summary"]');
-    expect(line?.querySelector('.tool')?.textContent).toBe('bash');
-    expect(line?.querySelector('.what')?.textContent).toBe('cargo test');
+    expect(line?.querySelector('.what')?.textContent).toBe('bash: cargo test');
     expect(line?.querySelector('.status')?.getAttribute('aria-label')).toBe('Running');
     // Its ring turns while it runs, as every ring does (still under reduced motion).
     expect(line?.querySelector('.status')?.classList).toContain('glz-spin');
-    // The tool's icon goes first and is decorative: its name says what it is.
+    // The tool's icon goes first and is decorative: the line says what it is.
     expect(line?.firstElementChild?.classList).toContain('kind');
     expect(line?.querySelector('.kind')?.getAttribute('aria-hidden')).toBe('true');
     fixture.componentInstance.status.set('failed');
