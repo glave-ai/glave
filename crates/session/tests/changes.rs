@@ -8,37 +8,35 @@ use serde_json::json;
 
 use crate::support::*;
 
+/// Two turns: the first edits a file (once too soon, before reading it, which fails) and runs
+/// a command that makes one; the second has a subagent write another.
+fn script() -> Vec<glave_ports::Completion> {
+    let edit = json!({
+        "path": "main.rs",
+        "old_string": "fn main() {\n    hi();",
+        "new_string": "fn main() {\n    hello();\n    bye();",
+    });
+    let agent = json!({"description": "write notes", "prompt": "Write notes.md."});
+    let notes = json!({"path": "notes.md", "content": "a\nb\n"});
+    vec![
+        answer(None, Some(("edit", edit.clone()))),
+        answer(None, Some(("read", json!({"path": "main.rs"})))),
+        answer(None, Some(("edit", edit))),
+        answer(None, Some(("bash", json!({"command": "touch made.txt"})))),
+        answer(Some("Edited."), None),
+        answer(None, Some(("agent", agent))),
+        answer(None, Some(("write", notes))),
+        answer(Some("Wrote notes.md."), None),
+        answer(Some("Done."), None),
+    ]
+}
+
 #[test]
 fn a_thread_s_changes_are_its_writes_and_edits_and_its_subagents_by_turn() {
     let dir = folder("changes");
     std::fs::write(dir.join("main.rs"), "fn main() {\n    hi();\n}\n").unwrap();
     block_on!(async {
-        let edit = json!({
-            "path": "main.rs",
-            "old_string": "fn main() {\n    hi();",
-            "new_string": "fn main() {\n    hello();\n    bye();",
-        });
-        let mut setup = Setup::new(vec![
-            // An edit before the file was read fails: no change.
-            answer(None, Some(("edit", edit.clone()))),
-            answer(None, Some(("read", json!({"path": "main.rs"})))),
-            answer(None, Some(("edit", edit))),
-            answer(None, Some(("bash", json!({"command": "touch made.txt"})))),
-            answer(Some("Edited."), None),
-            answer(
-                None,
-                Some((
-                    "agent",
-                    json!({"description": "write notes", "prompt": "Write notes.md."}),
-                )),
-            ),
-            answer(
-                None,
-                Some(("write", json!({"path": "notes.md", "content": "a\nb\n"}))),
-            ),
-            answer(Some("Wrote notes.md."), None),
-            answer(Some("Done."), None),
-        ]);
+        let mut setup = Setup::new(script());
         setup.settings.titles = false;
         setup.settings.subagents = true;
         let (server, _seen) = setup.build(&dir).await;

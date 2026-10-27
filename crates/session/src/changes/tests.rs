@@ -68,7 +68,7 @@ fn a_write_puts_every_line_and_only_glave_s_own_calls_change_files() {
 
 #[test]
 fn files_add_up_their_changes_in_the_order_first_changed() {
-    let change = |turn: u64, path: &str, before: &str, after: &str| Change {
+    let change = |turn: u64, path: &str, before: &str, after: &str| Made {
         turn: Seq::new(turn).ok(),
         path: path.into(),
         change: FileChange {

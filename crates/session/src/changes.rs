@@ -27,7 +27,7 @@ where
         let mut changes = Vec::with_capacity(reading.found.len());
         for found in reading.found {
             match found {
-                Found::Change(change) => changes.push(change),
+                Found::Made(change) => changes.push(change),
                 Found::Agent { turn, call } => {
                     changes.extend(self.subagent_changes(thread, &call, turn).await?);
                 }
@@ -49,7 +49,7 @@ where
         parent: ThreadId,
         call: &CallId,
         turn: Option<Seq>,
-    ) -> Result<Vec<Change>, ApiError> {
+    ) -> Result<Vec<Made>, ApiError> {
         let scope = self.scope_of(parent).await?;
         let child = self.inner.harness.child_of(&scope, parent, call).await;
         let Some(child) = child.map_err(|error| ApiError::from(&error))? else {
@@ -59,7 +59,7 @@ where
         self.read_all(child.thread, |event| reading.read(event))
             .await?;
         let changes = reading.found.into_iter().filter_map(|found| match found {
-            Found::Change(change) => Some(Change { turn, ..change }),
+            Found::Made(change) => Some(Made { turn, ..change }),
             Found::Agent { .. } => None,
         });
         Ok(changes.collect())
@@ -67,7 +67,7 @@ where
 }
 
 /// One change to a file, in the turn that made it.
-struct Change {
+struct Made {
     turn: Option<Seq>,
     path: String,
     change: FileChange,
@@ -76,7 +76,7 @@ struct Change {
 /// What a thread's log holds that changed files, in order: a change, or a subagent, whose
 /// changes are its parent's.
 enum Found {
-    Change(Change),
+    Made(Made),
     Agent { turn: Option<Seq>, call: CallId },
 }
 
@@ -128,8 +128,7 @@ impl Reading {
                 let (_, path, change) = self.asked.swap_remove(at);
                 if !done.is_error {
                     let turn = self.turn;
-                    self.found
-                        .push(Found::Change(Change { turn, path, change }));
+                    self.found.push(Found::Made(Made { turn, path, change }));
                 }
             }
             _ => {}
@@ -143,7 +142,11 @@ fn asked(tool: &str, arguments: &Arguments) -> Option<(String, FileChange)> {
     let Arguments::Json(map) = arguments else {
         return None;
     };
-    let text = |name: &str| map.get(name).and_then(|value| value.as_str()).unwrap_or("");
+    let text = |name: &str| {
+        map.get(name)
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+    };
     let path = text("path");
     if path.is_empty() {
         return None;
@@ -154,7 +157,7 @@ fn asked(tool: &str, arguments: &Arguments) -> Option<(String, FileChange)> {
             lines: marked(LineKind::Added, &lines_of(text("content"))),
         },
         Tool::Edit => FileChange {
-            kind: match map.get("replace_all").and_then(|value| value.as_bool()) {
+            kind: match map.get("replace_all").and_then(serde_json::Value::as_bool) {
                 Some(true) => ChangeKind::EditedEvery,
                 _ => ChangeKind::Edited,
             },
@@ -215,9 +218,9 @@ fn edited(before: &str, after: &str) -> Vec<DiffLine> {
 
 /// `changes` by file, in the order each was first changed, with the lines they added and took
 /// out.
-fn files_of<'a>(changes: impl Iterator<Item = &'a Change>) -> Vec<ChangedFile> {
+fn files_of<'a>(changes: impl Iterator<Item = &'a Made>) -> Vec<ChangedFile> {
     let mut files: Vec<ChangedFile> = Vec::new();
-    for Change { path, change, .. } in changes {
+    for Made { path, change, .. } in changes {
         let count = |kind: LineKind| {
             let lines = change.lines.iter().filter(|line| line.kind == kind).count();
             u64::try_from(lines).unwrap_or(u64::MAX)
@@ -241,7 +244,7 @@ fn files_of<'a>(changes: impl Iterator<Item = &'a Change>) -> Vec<ChangedFile> {
 }
 
 /// The files each turn that changed any changed, in order.
-fn turns_of(changes: &[Change]) -> Vec<TurnChanges> {
+fn turns_of(changes: &[Made]) -> Vec<TurnChanges> {
     let mut turns: Vec<Seq> = Vec::new();
     for turn in changes.iter().filter_map(|change| change.turn) {
         if !turns.contains(&turn) {
