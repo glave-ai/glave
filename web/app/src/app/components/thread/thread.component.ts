@@ -188,7 +188,8 @@ export class ThreadComponent {
   protected readonly nextModel = computed(() => this.picked() ?? this.service.chosen());
   private readonly models = inject(ModelsService);
   protected readonly renaming = signal(false);
-  protected readonly panelOpen = this.panel.open;
+  /** Whether the panel shows: beside a wide page as the person left it, or as a sheet. */
+  protected readonly panelShowing = this.panel.showing;
   protected readonly panelWidth = this.panel.width;
   protected readonly panelShortcut = this.panel.ariaShortcut;
   protected readonly panelHint = $localize`:@@thread.hint:Drag or use the arrow keys to resize; Enter collapses. Show or hide: ${this.panel.shortcut}:SHORTCUT:`;
@@ -244,9 +245,9 @@ export class ThreadComponent {
   protected readonly folderGone = computed(() => this.gone() !== null);
 
   /**
-   * Opens the thread the route names as the server has it, nothing picked for its next turn
-   * and no files added: it only reads and follows the thread, and never sends. Opening another
-   * lets go of what the last one followed.
+   * Opens the thread the route names as the server has it, nothing picked for its next turn,
+   * no files added and nothing of the last one's panel open: it only reads and follows the
+   * thread, and never sends. Opening another lets go of what the last one followed.
    */
   protected readonly opening = effect(() => {
     const thread = this.thread();
@@ -255,6 +256,7 @@ export class ThreadComponent {
       this.pickedPermissions.set(null);
       this.attachments.clear();
       this.pickedEffort.set(null);
+      this.facts.reset();
       void this.service.open(thread);
     });
   });
@@ -307,6 +309,15 @@ export class ThreadComponent {
 
   protected jumpToLatest(): void {
     this.stick().scrollToBottom();
+  }
+
+  protected showPanel(showing: boolean): void {
+    this.panel.setShowing(showing);
+  }
+
+  /** The panel went with the keyboard's place in it: the place goes to the composer. */
+  protected panelGone(): void {
+    this.composer().focus();
   }
 
   protected startRename(): void {

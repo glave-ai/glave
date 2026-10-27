@@ -97,6 +97,17 @@
   text-overflow: ellipsis;
 }
 
+// What the panel adds at the foot, such as "Review all changes"; nothing in a turn.
+.foot {
+  display: flex;
+  padding: var(--glz-inset-card-row);
+  border-top: var(--glz-border-width) solid var(--glz-color-divider);
+}
+
+.foot:empty {
+  display: none;
+}
+
 .more {
   display: none;
   color: var(--glz-color-text-muted);

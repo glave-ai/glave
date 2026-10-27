@@ -1,5 +1,7 @@
+import { BreakpointObserver } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
 import type { Opened, WorkspaceBound } from '@glave/client';
+import { of } from 'rxjs';
 
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
 import { command, event, thread } from '../testing/fixtures';
@@ -34,10 +36,12 @@ const READ = [
 async function make(
   fake: FakeSession,
   events: readonly unknown[] = [],
+  narrow = false,
 ): Promise<ThreadPanelService> {
   fake.answer('thread/events', { events });
   TestBed.configureTestingModule({
     providers: [
+      { provide: BreakpointObserver, useValue: { observe: () => of({ matches: narrow }) } },
       ...provideFakeSession(fake),
       ThreadService,
       CommandsService,
@@ -59,28 +63,17 @@ describe('ThreadPanelService', () => {
     localStorage.clear();
   });
 
-  it('says where a thread works as its summary says: the folder, a branch where it has one', async () => {
-    const at = async (opened: Opened): Promise<unknown> => {
+  it('works in a folder the person chose, as its summary says; a chat’s scratch one is none', async () => {
+    const at = async (opened: Opened): Promise<WorkspaceBound | null> => {
       TestBed.resetTestingModule();
       const fake = new FakeSession().answer('thread/get', {
-        thread: thread('thread-1', 'Fix it', { workspace: workspace(opened), permissions: 'ask' }),
+        thread: thread('thread-1', 'Fix it', { workspace: workspace(opened) }),
       });
-      return (await make(fake)).where();
+      return (await make(fake)).workspace();
     };
-    expect(await at({ kind: 'folder', path: '/work/glave' })).toEqual({
-      computer: 'Another computer',
-      folder: 'glave',
-      path: '/work/glave',
-      branch: null,
-      mode: 'ask',
-    });
-    expect(
-      await at({ kind: 'worktree', repository: '/work/glave', branch: 'glave/0123456789ab' }),
-    ).toMatchObject({ folder: 'glave', branch: 'glave/0123456789ab' });
-    expect(
-      await at({ kind: 'clone', url: 'https://github.com/acme/app.git', at: 'main' }),
-    ).toMatchObject({ folder: 'app', path: 'https://github.com/acme/app.git', branch: 'main' });
-    // A chat's scratch folder is nowhere the person chose.
+    const worktree = { kind: 'worktree', repository: '/work/glave', branch: 'glave/0123' } as const;
+    expect((await at(worktree))?.opened).toEqual(worktree);
+    expect((await at({ kind: 'folder', path: '/work/glave' }))?.root).toBe('/w');
     expect(await at({ kind: 'scratch', path: '/tmp/glave-1' })).toBeNull();
   });
 
@@ -93,15 +86,24 @@ describe('ThreadPanelService', () => {
       }),
     });
     const panel = await make(fake);
-    expect(panel.spent()).toEqual({
-      context: { percent: 3, tokens: 3840, window: 128000 },
-      cost: { micros: 4200, currency: 'USD' },
-      estimated: false,
-      turns: 1,
-    });
-    expect(panel.shown()).toBe(false);
-    // Open as the person left it, it still shows nothing.
-    expect([TestBed.inject(PanelService).open(), panel.visible()]).toEqual([true, false]);
+    expect([panel.shown(), panel.visible()]).toEqual([false, false]);
+  });
+
+  it('closes its sheet once it has nothing left, so it never comes back over the page', async () => {
+    const fake = new FakeSession()
+      .answer('command/list', { commands: [command('c1', 'npm run dev')] })
+      .answer('command/stop', {});
+    const panel = await make(
+      fake,
+      [event(1, 'command.started', { command: 'c1', script: 'npm run dev' })],
+      true,
+    );
+    const panels = TestBed.inject(PanelService);
+    panels.setShowing(true);
+    expect([panel.shown(), panels.showing()]).toEqual([true, true]);
+    await TestBed.inject(CommandsService).stop('c1');
+    TestBed.tick();
+    expect([panel.shown(), panels.showing()]).toEqual([false, false]);
   });
 
   it('lists the pages its replies drew on once each, and the files the person attached', async () => {
@@ -135,24 +137,33 @@ describe('ThreadPanelService', () => {
     expect(panel.shown()).toBe(true);
   });
 
-  it('shows the commands it keeps running, and its changes in full on asking', async () => {
+  it('shows the commands it keeps running, and a turn’s or the thread’s changes in full', async () => {
     const fake = new FakeSession().answer('command/list', {
       commands: [command('c1', 'npm run dev')],
     });
     const panel = await make(fake, [
       event(1, 'command.started', { command: 'c1', script: 'npm run dev' }),
     ]);
+    const panels = TestBed.inject(PanelService);
     expect([panel.running(), panel.shown(), panel.visible()]).toEqual([1, true, true]);
-    TestBed.inject(PanelService).open.set(false);
+    panels.setShowing(false);
     expect(panel.visible()).toBe(false);
     expect([panel.reviewing(), panel.reviewed()]).toEqual([false, null]);
-    panel.showChanges('src/main.rs');
-    expect([panel.reviewing(), panel.reviewed()]).toEqual([true, 'src/main.rs']);
+    const turn = [{ path: 'src/main.rs', changes: [], added: 1, removed: 0 }];
+    panel.showChanges(turn, 'src/main.rs');
+    expect([panel.reviewing(), panel.reviewedFiles(), panel.reviewed()]).toEqual([
+      true,
+      turn,
+      'src/main.rs',
+    ]);
     panel.setReviewing(true);
     expect(panel.reviewed()).toBe('src/main.rs');
     panel.setReviewing(false);
     expect(panel.reviewing()).toBe(false);
-    panel.showChanges(null);
-    expect([panel.reviewing(), panel.reviewed()]).toEqual([true, null]);
+    panel.showChanges(null, null);
+    expect([panel.reviewing(), panel.reviewedFiles(), panel.reviewed()]).toEqual([true, [], null]);
+    // Another thread starts afresh.
+    panel.reset();
+    expect(panel.reviewing()).toBe(false);
   });
 });

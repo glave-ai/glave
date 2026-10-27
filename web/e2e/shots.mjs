@@ -37,7 +37,7 @@ for (const colorScheme of ['light', 'dark']) {
     await main.getByTestId('thread-message').last().waitFor();
     await main.screenshot({ path: `${out}/main-${screen.name}-${colorScheme}.png` });
     if (screen.wide) {
-      await main.getByTestId('panel-file').first().click();
+      await main.getByTestId('panel-changes-file').first().click();
       await main.screenshot({ path: `${out}/changes-${screen.name}-${colorScheme}.png` });
       await main.keyboard.press('Escape');
       // The thread's tool calls opened from their steps, the pointer over the reply.

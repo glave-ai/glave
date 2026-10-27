@@ -7,13 +7,12 @@ import {
   input,
 } from '@angular/core';
 
-import { type FileChange, lineCounts } from '../../lib/files';
-import { ThreadService } from '../../services/thread.service';
+import { type ChangedFile, type FileChange, lineCounts } from '../../lib/files';
 
 /**
- * The changes this thread made to files with its own `write` and `edit` calls, in full: each
- * file open on its diffs, read from the thread's events (what each call asked for, which the
- * tool applied exactly); one file's alone, given its `path`.
+ * Changes made to files with a thread's own `write` and `edit` calls, in full: each of `files`
+ * (a turn's, or the thread's) open on its diffs, what each call asked for, which the tool
+ * applied exactly; one file's alone, given its `path`.
  */
 @Component({
   selector: 'app-thread-files',
@@ -22,6 +21,7 @@ import { ThreadService } from '../../services/thread.service';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ThreadFilesComponent {
+  readonly files = input.required<readonly ChangedFile[]>();
   /** The file whose changes show, or `null` for every file's. */
   readonly path = input<string | null>(null);
 
@@ -31,12 +31,11 @@ export class ThreadFilesComponent {
     edited: $localize`:@@threadFiles.edited:Edited`,
     editedAll: $localize`:@@threadFiles.editedAll:Edited every match`,
   } as const;
-  private readonly thread = inject(ThreadService);
   private readonly locale = inject(LOCALE_ID);
 
-  protected readonly files = computed(() => {
+  protected readonly shown = computed(() => {
     const path = this.path();
-    const files = this.thread.files().filter((file) => path === null || file.path === path);
+    const files = this.files().filter((file) => path === null || file.path === path);
     return files.map((file) => ({
       path: file.path,
       ...lineCounts(file.added, file.removed, this.locale),

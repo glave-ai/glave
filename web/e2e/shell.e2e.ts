@@ -14,7 +14,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await page.goto(`/t/${THREAD}${SIGNED_IN}`);
     await expect(byTestId(page, 'thread-title')).toHaveText('Make the tests pass');
     await expect(byTestId(page, 'thread-meta')).toHaveText('glave');
-    await expect(byTestId(page, 'panel-file')).toHaveText([
+    await expect(byTestId(page, 'panel-changes-file')).toHaveText([
       /^src\/parse\.rs/u,
       /^tests\/empty\.rs/u,
     ]);

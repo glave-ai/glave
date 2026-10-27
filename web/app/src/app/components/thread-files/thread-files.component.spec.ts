@@ -1,8 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { expectAccessible } from '@glave/glaze/testing';
 
-import { ThreadService } from '../../services/thread.service';
-import { FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { changedFiles } from '../../lib/files';
 import { event } from '../../testing/fixtures';
 import { ThreadFilesComponent } from './thread-files.component';
 
@@ -28,10 +27,8 @@ const EDITED = [
 ];
 
 async function render(path: string | null = null): Promise<HTMLElement> {
-  const fake = new FakeSession().answer('thread/events', { events: EDITED });
-  TestBed.configureTestingModule({ providers: [...provideFakeSession(fake), ThreadService] });
-  await TestBed.inject(ThreadService).open('thread-1');
   const fixture = TestBed.createComponent(ThreadFilesComponent);
+  fixture.componentRef.setInput('files', changedFiles(EDITED));
   fixture.componentRef.setInput('path', path);
   await fixture.whenStable();
   return fixture.nativeElement as HTMLElement;

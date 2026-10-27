@@ -1,24 +1,13 @@
-import { Service, computed, inject, signal } from '@angular/core';
-import type { ContextUse, Money, Opened, Permissions } from '@glave/client';
+import { Service, computed, effect, inject, signal, untracked } from '@angular/core';
+import type { WorkspaceBound } from '@glave/client';
 
+import type { ChangedFile } from '../lib/files';
 import { type SourceLink, sourceLinks } from '../lib/sources';
 import { CommandsService } from './commands.service';
 import { PanelService } from './panel.service';
 import { PlanService } from './plan.service';
 import { SourcesService } from './sources.service';
 import { ThreadService } from './thread.service';
-
-/** Where a thread works, as its summary says: the computer, the folder, the branch, the mode. */
-export interface Where {
-  /** The computer, named for the reader. */
-  readonly computer: string;
-  /** The folder's own name, and where it is in full. */
-  readonly folder: string | null;
-  readonly path: string | null;
-  /** The branch, where the server says one: a worktree's own, or the one a clone is at. */
-  readonly branch: string | null;
-  readonly mode: Permissions;
-}
 
 /** A page a reply drew on: its title, else where it is, and the site it is on. */
 export interface Page extends SourceLink {
@@ -32,38 +21,10 @@ export interface Attached {
   readonly name: string;
 }
 
-/** What the thread has cost, as its summary says, and how full its context is. */
-export interface Spent {
-  readonly context: ContextUse | null;
-  readonly cost: Money | null;
-  readonly estimated: boolean;
-  readonly turns: number;
-}
-
-/** The last part of a path or an address, a repository's without its `.git`. */
-function lastPart(path: string): string {
-  const parts = path.split(/[/\\]/u).filter((part) => part !== '');
-  return (parts.at(-1) ?? path).replace(/\.git$/u, '');
-}
-
-/** The folder a workspace opened, and its branch where the server says one; `null` for scratch. */
-function folderOf(
-  opened: Opened,
-): { readonly folder: string; readonly path: string; readonly branch: string | null } | null {
-  switch (opened.kind) {
-    case 'folder':
-      return { folder: lastPart(opened.path), path: opened.path, branch: null };
-    case 'worktree':
-      return {
-        folder: lastPart(opened.repository),
-        path: opened.repository,
-        branch: opened.branch,
-      };
-    case 'clone':
-      return { folder: lastPart(opened.url), path: opened.url, branch: opened.at ?? null };
-    case 'scratch':
-      return null;
-  }
+/** Changes shown in full: a turn's files or, `null`, the thread's; one file's, or every one's. */
+interface Review {
+  readonly files: readonly ChangedFile[] | null;
+  readonly path: string | null;
 }
 
 function hostOf(link: SourceLink): string {
@@ -78,9 +39,9 @@ function hostOf(link: SourceLink): string {
  * What the open thread's panel shows, each from the server's facts: where it works (a folder
  * of a project; a chat's scratch folder is nowhere the person chose), its plan, the files it
  * changed, its commands running in the background, the pages its replies drew on and the files
- * the person attached, and what it has cost. Whether it shows anything at all, so a plain chat
- * has no panel, and whether it shows now; and the changes shown in full, one file's or all of them. Each thread view
- * provides its own.
+ * the person attached. Whether it shows anything at all, so a plain chat has no panel, and
+ * whether it shows now; a panel left with nothing closes its sheet. And the changes shown in
+ * full: a turn's or the thread's, one file's or all of them. Each thread view provides its own.
  */
 @Service({ autoProvided: false })
 export class ThreadPanelService {
@@ -89,18 +50,12 @@ export class ThreadPanelService {
   private readonly sources = inject(SourcesService);
   private readonly plans = inject(PlanService);
   private readonly panel = inject(PanelService);
-  /** Whether the changes show in full, and whose: a file's path, or `null` for all of them. */
-  private readonly review = signal<{ readonly path: string | null } | null>(null);
+  private readonly review = signal<Review | null>(null);
 
-  readonly where = computed<Where | null>(() => {
-    const summary = this.thread.summary();
-    const workspace = summary?.workspace ?? null;
-    const folder = workspace === null ? null : folderOf(workspace.opened);
-    const computer = this.thread.place();
-    if (summary === null || folder === null || computer === null) {
-      return null;
-    }
-    return { computer, ...folder, mode: summary.permissions };
+  /** Where it works, once its summary says: a folder the person chose, not a scratch one. */
+  readonly workspace = computed<WorkspaceBound | null>(() => {
+    const workspace = this.thread.summary()?.workspace ?? null;
+    return workspace?.opened.kind === 'scratch' ? null : workspace;
   });
   /** Its plan, as the server reads it. */
   readonly plan = this.plans.plan;
@@ -132,23 +87,13 @@ export class ThreadPanelService {
           : [],
       ),
   );
-  /** What it has cost and how full its context is, once it has run a turn. */
-  readonly spent = computed<Spent | null>(() => {
-    const summary = this.thread.summary();
-    const context = summary?.context ?? null;
-    if (summary === null || (summary.turns === 0 && context === null)) {
-      return null;
-    }
-    const { turns, cost = null, estimated = false } = summary;
-    return { context, cost, estimated, turns };
-  });
   /**
    * Whether the panel has anything to show: what it has cost alone is not enough, so a plain
    * chat has no panel.
    */
   readonly shown = computed(
     () =>
-      this.where() !== null ||
+      this.workspace() !== null ||
       this.plan() !== null ||
       this.files().length > 0 ||
       this.running() > 0 ||
@@ -159,15 +104,31 @@ export class ThreadPanelService {
    * Whether the panel shows now: the thread has one, and it is open, beside the page or, on a
    * narrow screen, as a sheet over it.
    */
-  readonly visible = computed(() => this.shown() && this.panel.open());
+  readonly visible = computed(() => this.shown() && this.panel.showing());
   /** Whether the changes show in full. */
   readonly reviewing = computed(() => this.review() !== null);
+  /** The files whose changes show in full: a turn's, else the thread's. */
+  readonly reviewedFiles = computed(() => this.review()?.files ?? this.files());
   /** Whose changes show in full: a file's path, or `null` for every file's. */
   readonly reviewed = computed(() => this.review()?.path ?? null);
 
-  /** Shows the changes in full: the file at `path`, or every file's with `null`. */
-  showChanges(path: string | null): void {
-    this.review.set({ path });
+  constructor() {
+    // A panel left with nothing to show closes its sheet, so it never comes back over the page.
+    effect(() => {
+      if (!this.shown()) {
+        untracked(() => {
+          this.panel.closeSheet();
+        });
+      }
+    });
+  }
+
+  /**
+   * Shows changes in full: of `files`, a turn's, or the thread's with `null`; the file at `path`,
+   * or every one's with `null`.
+   */
+  showChanges(files: readonly ChangedFile[] | null, path: string | null): void {
+    this.review.set({ files, path });
   }
 
   /** Shows them in full no longer, once `open` is false: the dialog says so as it closes. */
@@ -175,5 +136,11 @@ export class ThreadPanelService {
     if (!open) {
       this.review.set(null);
     }
+  }
+
+  /** Starts another thread afresh: no changes in full, its sheet closed. */
+  reset(): void {
+    this.review.set(null);
+    this.panel.closeSheet();
   }
 }

@@ -185,18 +185,6 @@ describe('GlzPanelLayoutComponent', () => {
     expect(fixture.componentInstance.open()).toBe(false);
   });
 
-  it('starts the sheet closed on a narrow screen, and is as it was back on a wide one', async () => {
-    const fixture = TestBed.createComponent(HostComponent);
-    fixture.componentInstance.open.set(true);
-    await fixture.whenStable();
-    breakpoints.matches.next({ matches: true, breakpoints: {} });
-    await fixture.whenStable();
-    expect(fixture.componentInstance.open()).toBe(false);
-    breakpoints.matches.next({ matches: false, breakpoints: {} });
-    await fixture.whenStable();
-    expect(fixture.componentInstance.open()).toBe(true);
-  });
-
   it('with nothing in its panel, is its content alone: no panel, edge or sheet', async () => {
     const fixture = TestBed.createComponent(HostComponent);
     fixture.componentInstance.open.set(true);

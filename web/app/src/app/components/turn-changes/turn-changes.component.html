@@ -1,7 +1,11 @@
-<section class="card" data-testid="turn-changes" [attr.aria-labelledby]="headingId">
+<section class="card" [attr.data-testid]="testId()" [attr.aria-labelledby]="headingId">
   <div class="head">
-    <h2 class="heading" [id]="headingId">{{ copy.heading }}</h2>
-    <span class="count" data-testid="turn-changes-count">{{ count() }}</span>
+    @if (third()) {
+      <h3 class="heading" [id]="headingId">{{ title() }}</h3>
+    } @else {
+      <h2 class="heading" [id]="headingId">{{ title() }}</h2>
+    }
+    <span class="count" [attr.data-testid]="ids().count">{{ count() }}</span>
     <span class="counts" aria-hidden="true"
       ><span class="plus">{{ total().added }}</span
       ><span class="minus">{{ total().removed }}</span></span
@@ -11,7 +15,7 @@
   <ul class="rows">
     @for (row of rows(); track row.path) {
       <li class="file">
-        <button type="button" class="row" data-testid="turn-changes-file" (click)="show(row.path)">
+        <button type="button" class="row" [attr.data-testid]="ids().file" (click)="show(row.path)">
           <span class="path">{{ row.path }}</span>
           <span class="counts" aria-hidden="true"
             ><span class="plus">{{ row.added }}</span
@@ -23,8 +27,9 @@
     }
   </ul>
   @if (more(); as more) {
-    <button type="button" class="more" data-testid="turn-changes-more" (click)="show(null)">
+    <button type="button" class="more" [attr.data-testid]="ids().more" (click)="show(null)">
       {{ more }}
     </button>
   }
+  <div class="foot"><ng-content select="[appTurnChangesFoot]" /></div>
 </section>

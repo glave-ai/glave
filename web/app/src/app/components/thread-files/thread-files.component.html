@@ -1,5 +1,5 @@
 <div class="files">
-  @for (file of files(); track file.path) {
+  @for (file of shown(); track file.path) {
     <details class="file" data-testid="file" open>
       <summary class="summary">
         <span class="path">{{ file.path }}</span>

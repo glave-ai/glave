@@ -6,7 +6,8 @@
   [resizeHint]="panelHint"
   [shortcut]="panelShortcut"
   [empty]="noFacts()"
-  [(open)]="panelOpen"
+  [open]="panelShowing()"
+  (openChange)="showPanel($event)"
   [(width)]="panelWidth"
 >
   <div class="column">
@@ -137,7 +138,7 @@
       </div>
     </div>
   </div>
-  <app-thread-panel glzPanel />
+  <app-thread-panel glzPanel (gone)="panelGone()" />
 </glz-panel-layout>
 <app-rename-dialog [title]="title()" [(open)]="renaming" (renamed)="rename($event)" />
 <glz-dialog
@@ -148,6 +149,6 @@
   (openChange)="facts.setReviewing($event)"
 >
   @if (facts.reviewing()) {
-    <app-thread-files [path]="facts.reviewed()" />
+    <app-thread-files [files]="facts.reviewedFiles()" [path]="facts.reviewed()" />
   }
 </glz-dialog>

@@ -37,7 +37,8 @@
       data-testid="thread-panel"
       [class.touch]="phone()"
       [label]="copy.panel"
-      [attr.aria-pressed]="panelOpen()"
+      [attr.aria-pressed]="pressed()"
+      [attr.aria-expanded]="expanded()"
       [attr.aria-keyshortcuts]="panelShortcut"
       (click)="togglePanel()"
     >

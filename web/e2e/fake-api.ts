@@ -124,6 +124,9 @@ const THREADS: Readonly<Record<string, readonly ThreadSummary[]>> = {
   [PERSONAL.id]: [thread(DINNER, 'Dinner ideas for Saturday', 'idle', PERSONAL)],
 };
 
+/** A chat that keeps the docs site running in the background, when a test asks. */
+const SERVING_CHAT = thread(SERVING, 'Preview the docs', 'idle', PERSONAL);
+
 /** The coding thread with something in every section of its panel, when a test asks. */
 const VERBOSE_THREAD = thread(VERBOSE, 'Add a --verbose flag to the CLI', 'idle', PROJECT, {
   ...VERBOSE_SUMMARY,
@@ -599,8 +602,7 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
     case 'thread/list': {
       const project = String(params['project']);
       const fresh = started.filter((each) => each.project === project);
-      const serving =
-        commands !== null && project === PROJECT.id ? [thread(SERVING, 'Preview the docs')] : [];
+      const serving = commands !== null && project === PERSONAL.id ? [SERVING_CHAT] : [];
       const research = known.research && project === PERSONAL.id ? [RESEARCHING] : [];
       const verbose = known.panel && project === PROJECT.id ? [VERBOSE_THREAD] : [];
       const plans = known.plan !== null && project === PROJECT.id ? [planning(known.plan)] : [];
@@ -619,7 +621,7 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
       if (id === PLANNING && known.plan !== null) {
         return { thread: planning(known.plan) };
       }
-      const listed = [RESEARCHING, VERBOSE_THREAD, ...Object.values(THREADS).flat()];
+      const listed = [RESEARCHING, VERBOSE_THREAD, SERVING_CHAT, ...Object.values(THREADS).flat()];
       return { thread: listed.find((each) => each.id === id) ?? thread(id, 'Make the tests pass') };
     }
     case 'thread/sources':
@@ -696,8 +698,8 @@ function trusted(method: string, params: Record<string, unknown>, trust: Trust):
 
 /**
  * Answers the session API's calls the app makes, as JSON-RPC over POST /. With `trust`, the
- * person also has acme, a project that asks to be trusted; with `commands`, a thread in the
- * project that keeps the docs site running in the background; with `research`, a chat that read
+ * person also has acme, a project that asks to be trusted; with `commands`, a chat that keeps
+ * the docs site running in the background; with `research`, a chat that read
  * pages on the web among the person's chats; with `plan`, a thread in the project that proposed a
  * plan, whose plan the page answers (`planServer`); with `panel`, a coding thread in the project
  * with something in every section of its panel; with `account`, a GitHub account connected; with

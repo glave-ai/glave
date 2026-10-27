@@ -1,19 +1,21 @@
 import { BreakpointObserver } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
+import type { WorkspaceBound } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 import { of } from 'rxjs';
 
 import { CommandsService } from '../../services/commands.service';
 import { PanelService } from '../../services/panel.service';
 import { PlanService } from '../../services/plan.service';
+import { ProjectsService } from '../../services/projects.service';
 import { SourcesService } from '../../services/sources.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
 import { ThreadService } from '../../services/thread.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
-import { command, event, thread } from '../../testing/fixtures';
+import { command, event, record, thread } from '../../testing/fixtures';
 import { ThreadPanelComponent } from './thread-panel.component';
 
-/** A turn that read a page, changed two files and keeps a dev server running. */
+/** A turn that read a page, changed two files, keeps a dev server running and has a plan. */
 const WORKED = [
   event(1, 'message.added', {
     role: 'user',
@@ -46,20 +48,26 @@ const WORKED = [
   event(11, 'turn.ended', { outcome: 'completed' }),
 ];
 
-const WORKSPACE = {
+const WORKTREE: WorkspaceBound = {
   workspace: 'w1',
   computer: { id: 'c1', kind: 'worker' },
   opened: { kind: 'worktree', repository: '/work/glave', branch: 'glave/0123456789ab' },
-  root: '/w',
-} as const;
+  root: '/worktrees/glave-0123',
+};
 
 async function render(
   fake: FakeSession,
   events: readonly unknown[],
   narrow = false,
-): Promise<HTMLElement> {
+): Promise<{
+  readonly root: HTMLElement;
+  readonly fixture: ReturnType<typeof TestBed.createComponent<ThreadPanelComponent>>;
+}> {
   localStorage.clear();
-  fake.answer('thread/events', { events });
+  fake
+    .answer('thread/events', { events })
+    .answer('project/list', { projects: [record('project-1', 'glave')], gone: [] })
+    .answer('thread/list', { threads: [] });
   TestBed.configureTestingModule({
     providers: [
       ...provideFakeSession(fake),
@@ -71,12 +79,13 @@ async function render(
       { provide: BreakpointObserver, useValue: { observe: () => of({ matches: narrow }) } },
     ],
   });
+  await TestBed.inject(ProjectsService).refresh();
   await TestBed.inject(ThreadService).open('thread-1');
   const fixture = TestBed.createComponent(ThreadPanelComponent);
   await fixture.whenStable();
   await new Promise((resolve) => setTimeout(resolve));
   await fixture.whenStable();
-  return fixture.nativeElement as HTMLElement;
+  return { root: fixture.nativeElement as HTMLElement, fixture };
 }
 
 function texts(root: HTMLElement, testId: string): readonly string[] {
@@ -85,11 +94,11 @@ function texts(root: HTMLElement, testId: string): readonly string[] {
   );
 }
 
-function worked(): FakeSession {
+function worked(workspace: WorkspaceBound = WORKTREE): FakeSession {
   return new FakeSession()
     .answer('thread/get', {
       thread: thread('thread-1', 'Add a --verbose flag', {
-        workspace: WORKSPACE,
+        workspace,
         turns: 3,
         cost: { micros: 12_000, currency: 'USD' },
         context: { percent: 39, tokens: 49_920, window: 128_000 },
@@ -119,32 +128,33 @@ function worked(): FakeSession {
 
 describe('ThreadPanelComponent', () => {
   it('shows where the thread works and each section that has something', async () => {
-    const root = await render(worked(), WORKED);
-    expect(root.querySelector('[data-testid="panel-close"]')).toBeNull();
+    const { root } = await render(worked(), WORKED);
     expect(texts(root, 'panel-where-part')).toEqual([
       'Another computer',
       'glave',
       'glave/0123456789ab',
       'Auto',
     ]);
-    const parts = root.querySelectorAll('[data-testid="panel-where-part"] glz-icon');
-    expect(Array.from(parts).map((icon) => icon.getAttribute('aria-label'))).toEqual([
+    const marks = root.querySelectorAll('[data-testid="panel-where-part"] glz-icon');
+    expect(Array.from(marks).map((icon) => icon.getAttribute('aria-label'))).toEqual([
       'Computer',
       'Folder',
       'Branch',
       'Mode',
     ]);
-    const plan = root.querySelector('[data-testid="panel-plan"]');
-    expect(plan?.textContent).toContain('Plan: 1 of 2 steps done');
+    // The project's own name; where its tools act in full, a press away, by keyboard or touch.
+    const folder = root.querySelector<HTMLDetailsElement>('[data-testid="panel-folder"]');
+    expect(folder?.open).toBe(false);
+    expect(texts(root, 'panel-path')).toEqual(['/worktrees/glave-0123']);
     expect(texts(root, 'panel-plan-step')).toEqual(['Read how flags are parsed', 'Add --verbose']);
-    const changes = root.querySelector('[data-testid="panel-changes"]');
-    expect(changes?.querySelector('h2')?.textContent).toBe('Changes');
-    expect(changes?.textContent).toContain('2 files');
-    expect(changes?.textContent).toContain('4 lines added, 1 removed');
-    expect(texts(root, 'panel-file')).toEqual([
+    expect(root.querySelector('[data-testid="panel-plan"]')?.textContent).toContain(
+      'Plan: 1 of 2 steps done',
+    );
+    expect(texts(root, 'panel-changes-file')).toEqual([
       'src/args.rs+3−13 lines added, 1 removed',
       'src/main.rs+1−01 line added, 0 removed',
     ]);
+    expect(texts(root, 'command-summary')[0]).toContain('Still running');
     expect(texts(root, 'command-text')).toEqual(['npm run dev']);
     const page = root.querySelector<HTMLAnchorElement>('[data-testid="panel-page"]');
     expect(page?.href).toBe('https://docs.rs/clap');
@@ -152,18 +162,43 @@ describe('ThreadPanelComponent', () => {
     expect(texts(root, 'panel-page')).toEqual(['clap: Arg::action docs.rs (opens in a new tab)']);
     expect(texts(root, 'panel-attached')).toEqual(['terminal-output.png you attached']);
     expect(texts(root, 'panel-context')).toEqual(['39% used']);
-    const meter = root.querySelector('[data-testid="panel-meter"]');
-    expect(meter?.getAttribute('aria-valuenow')).toBe('39');
-    expect(meter?.getAttribute('aria-valuetext')).toBe('39% used');
-    expect(root.style.getPropertyValue('--app-context-used')).toBe('39%');
+    const meter = root.querySelector<HTMLMeterElement>('meter[data-testid="panel-meter"]');
+    expect([meter?.value, meter?.max, meter?.getAttribute('aria-valuetext')]).toEqual([
+      39,
+      100,
+      '39% used',
+    ]);
     expect(texts(root, 'panel-cost')).toEqual(['$0.01 · 3 turns']);
     await expectAccessible(root);
   });
 
-  it('opens a file’s changes in full, or every file’s', async () => {
-    const root = await render(worked(), WORKED);
+  it('heads itself one level up from its sections, heard alone beside the page', async () => {
+    const { root } = await render(worked(), WORKED);
+    const heading = root.querySelector('h2');
+    expect(heading?.textContent.trim()).toBe('This thread');
+    expect(heading?.classList).toContain('glz-visually-hidden');
+    expect(Array.from(root.querySelectorAll('h3')).map((each) => each.textContent.trim())).toEqual([
+      'Plan',
+      'Changes',
+      'Running 1',
+      'Sources and files',
+      'Context and cost',
+    ]);
+    const close = root.querySelector<HTMLElement>('[data-testid="panel-close"]');
+    expect(close === null ? null : getComputedStyle(close).display).toBe('none');
+  });
+
+  it('names the point a clone is at as no branch, and opens changes in full', async () => {
+    const clone: WorkspaceBound = {
+      ...WORKTREE,
+      opened: { kind: 'clone', url: 'https://github.com/acme/app.git', at: 'v1.2.0' },
+    };
+    const { root } = await render(worked(clone), WORKED);
+    const parts = Array.from(root.querySelectorAll('[data-testid="panel-where-part"] glz-icon'));
+    expect(parts.map((icon) => icon.getAttribute('aria-label'))).toContain('Checked out at');
+    expect(parts.map((icon) => icon.getAttribute('aria-label'))).not.toContain('Branch');
     const panel = TestBed.inject(ThreadPanelService);
-    root.querySelectorAll<HTMLButtonElement>('[data-testid="panel-file"]')[1]?.click();
+    root.querySelectorAll<HTMLButtonElement>('[data-testid="panel-changes-file"]')[1]?.click();
     expect(panel.reviewed()).toBe('src/main.rs');
     root.querySelector<HTMLButtonElement>('[data-testid="panel-review"]')?.click();
     expect([panel.reviewing(), panel.reviewed()]).toEqual([true, null]);
@@ -172,12 +207,12 @@ describe('ThreadPanelComponent', () => {
   it('shows only what the thread has, and says a cost not reported so', async () => {
     const fake = new FakeSession().answer('thread/get', {
       thread: thread('thread-1', 'Look around', {
-        workspace: { ...WORKSPACE, opened: { kind: 'folder', path: '/work/glave' } },
+        workspace: { ...WORKTREE, opened: { kind: 'folder', path: '/work/glave' } },
         estimated: true,
         cost: { micros: 1_250_000, currency: 'USD' },
       }),
     });
-    const root = await render(fake, []);
+    const { root } = await render(fake, []);
     expect(texts(root, 'panel-where-part')).toEqual(['Another computer', 'glave', 'Auto']);
     for (const section of [
       'panel-plan',
@@ -194,15 +229,16 @@ describe('ThreadPanelComponent', () => {
       new FakeSession().answer('thread/get', { thread: thread('thread-1', 'x', { turns: 2 }) }),
       [],
     );
-    expect(texts(unreported, 'panel-cost')).toEqual(['cost not reported · 2 turns']);
+    expect(texts(unreported.root, 'panel-cost')).toEqual(['cost not reported · 2 turns']);
   });
 
-  it('as a sheet, has a heading and closes', async () => {
-    const root = await render(worked(), WORKED, true);
+  it('as a sheet, shows its heading and closes', async () => {
+    const { root, fixture } = await render(worked(), WORKED, true);
     const panel = TestBed.inject(PanelService);
-    panel.open.set(true);
-    expect(root.querySelector('h2')?.textContent).toBe('This thread');
+    panel.setShowing(true);
+    await fixture.whenStable();
+    expect(root.querySelector('h2')?.classList).not.toContain('glz-visually-hidden');
     root.querySelector<HTMLButtonElement>('[data-testid="panel-close"]')?.click();
-    expect(panel.open()).toBe(false);
+    expect(panel.showing()).toBe(false);
   });
 });

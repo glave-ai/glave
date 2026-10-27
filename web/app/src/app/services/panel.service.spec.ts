@@ -1,8 +1,24 @@
-import { BreakpointObserver } from '@angular/cdk/layout';
+import { BreakpointObserver, type BreakpointState } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { BehaviorSubject } from 'rxjs';
 
 import { PanelService } from './panel.service';
+
+function stored(): unknown {
+  return JSON.parse(localStorage.getItem('glave-thread-panel') ?? 'null');
+}
+
+/** The panel's service on a screen whose width the test changes, narrow when `narrow`. */
+function make(narrow = false): {
+  readonly panel: PanelService;
+  readonly screen: BehaviorSubject<BreakpointState>;
+} {
+  const screen = new BehaviorSubject<BreakpointState>({ matches: narrow, breakpoints: {} });
+  TestBed.configureTestingModule({
+    providers: [{ provide: BreakpointObserver, useValue: { observe: () => screen } }],
+  });
+  return { panel: TestBed.inject(PanelService), screen };
+}
 
 describe('PanelService', () => {
   beforeEach(() => {
@@ -14,46 +30,57 @@ describe('PanelService', () => {
   });
 
   it('starts shown, and remembers shown or hidden and its width for this browser', () => {
-    const panel = TestBed.inject(PanelService);
-    expect(panel.open()).toBe(true);
-    expect(panel.width()).toBeNull();
+    const { panel } = make();
+    expect([panel.showing(), panel.width()]).toEqual([true, null]);
     panel.toggle();
     panel.width.set(420);
     TestBed.tick();
-    expect(JSON.parse(localStorage.getItem('glave-thread-panel') ?? 'null')).toEqual({
-      open: false,
-      width: 420,
-    });
+    expect(stored()).toEqual({ open: false, width: 420 });
     TestBed.resetTestingModule();
-    const again = TestBed.inject(PanelService);
-    expect([again.open(), again.width()]).toEqual([false, 420]);
+    const again = make().panel;
+    expect([again.showing(), again.width()]).toEqual([false, 420]);
   });
 
-  it('keeps nothing of the sheet on a narrow screen', () => {
-    localStorage.setItem('glave-thread-panel', JSON.stringify({ open: true, width: 400 }));
-    TestBed.configureTestingModule({
-      providers: [
-        { provide: BreakpointObserver, useValue: { observe: () => of({ matches: true }) } },
-      ],
-    });
-    const panel = TestBed.inject(PanelService);
-    panel.open.set(false);
+  it('keeps the sheet apart: closed at first, never kept, and the wide choice stands', () => {
+    const { panel, screen } = make();
+    // Hidden beside a wide page.
+    panel.setShowing(false);
     TestBed.tick();
-    expect(JSON.parse(localStorage.getItem('glave-thread-panel') ?? 'null')).toEqual({
-      open: true,
-      width: 400,
-    });
+    screen.next({ matches: true, breakpoints: {} });
+    expect(panel.showing()).toBe(false);
+    panel.toggle();
+    expect(panel.showing()).toBe(true);
+    TestBed.tick();
+    expect(stored()).toEqual({ open: false, width: null });
+    // Another thread page while narrow: its sheet is closed, the wide choice still hidden.
+    TestBed.resetTestingModule();
+    const again = make(true);
+    expect(again.panel.showing()).toBe(false);
+    again.panel.toggle();
+    again.screen.next({ matches: false, breakpoints: {} });
+    TestBed.tick();
+    expect(again.panel.showing()).toBe(false);
+    expect(stored()).toEqual({ open: false, width: null });
+  });
+
+  it('closes the sheet when asked, and leaves the wide choice alone', () => {
+    const { panel, screen } = make(true);
+    panel.setShowing(true);
+    panel.closeSheet();
+    expect(panel.showing()).toBe(false);
+    screen.next({ matches: false, breakpoints: {} });
+    expect(panel.showing()).toBe(true);
   });
 
   it('toggles on its shortcut', () => {
-    const panel = TestBed.inject(PanelService);
+    const { panel } = make();
     const mod = /mac|iphone|ipad/iu.test(navigator.platform || navigator.userAgent)
       ? { metaKey: true }
       : { ctrlKey: true };
     panel.keydown(new KeyboardEvent('keydown', { key: '.', ...mod }));
-    expect(panel.open()).toBe(false);
+    expect(panel.showing()).toBe(false);
     panel.keydown(new KeyboardEvent('keydown', { key: '.' }));
-    expect(panel.open()).toBe(false);
+    expect(panel.showing()).toBe(false);
     expect(panel.shortcut).toMatch(/^(⌘\.|Ctrl\+\.)$/u);
   });
 
@@ -64,10 +91,10 @@ describe('PanelService', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('denied');
     });
-    const panel = TestBed.inject(PanelService);
-    expect(panel.open()).toBe(true);
+    const { panel } = make();
+    expect(panel.showing()).toBe(true);
     panel.toggle();
     TestBed.tick();
-    expect(panel.open()).toBe(false);
+    expect(panel.showing()).toBe(false);
   });
 });

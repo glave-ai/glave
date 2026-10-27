@@ -321,7 +321,7 @@ describe('ThreadComponent', () => {
     expect(order).toEqual(['thread-message', 'thread-message', 'turn-changes', 'thread-steps']);
     expect(root.querySelector('[data-testid="turn-changes-count"]')?.textContent).toBe('2 files');
     // And in the thread's panel, for the whole thread.
-    expect(root.querySelectorAll('[data-testid="panel-file"]')).toHaveLength(2);
+    expect(root.querySelectorAll('[data-testid="panel-changes-file"]')).toHaveLength(2);
     const steps = root.querySelector('[data-testid="thread-steps"]');
     const summary = root.querySelector<HTMLElement>('[data-testid="thread-steps-summary"]');
     expect(summary?.querySelector('.state')?.textContent).toBe('Done');
@@ -584,14 +584,15 @@ describe('ThreadComponent', () => {
     const edge = root.querySelector<HTMLElement>('[data-testid="panel-handle"]');
     const button = root.querySelector<HTMLElement>('[data-testid="thread-panel"]');
     expect(panel?.inert).toBe(false);
-    expect(panel?.getAttribute('aria-label')).toBe('This thread');
-    expect(panel?.querySelector('[data-testid="panel-file"]')?.textContent).toContain('README.md');
+    expect(panel?.querySelector('[data-testid="panel-changes-file"]')?.textContent).toContain(
+      'README.md',
+    );
     expect(button?.getAttribute('aria-pressed')).toBe('true');
     expect(edge?.getAttribute('aria-keyshortcuts')).toMatch(/^(Meta|Control)\+\.$/u);
     await expectAccessible(root);
     edge?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     await fixture.whenStable();
-    expect(TestBed.inject(PanelService).open()).toBe(false);
+    expect(TestBed.inject(PanelService).showing()).toBe(false);
     expect(panel?.inert).toBe(true);
     expect(button?.getAttribute('aria-pressed')).toBe('false');
     button?.click();
@@ -610,7 +611,7 @@ describe('ThreadComponent', () => {
     const dialog = (): HTMLDialogElement | null =>
       document.querySelector<HTMLDialogElement>('dialog[data-testid="changes"]');
     expect(dialog()?.open).toBe(false);
-    root.querySelector<HTMLButtonElement>('[data-testid="panel-file"]')?.click();
+    root.querySelector<HTMLButtonElement>('[data-testid="panel-changes-file"]')?.click();
     await fixture.whenStable();
     expect(dialog()?.open).toBe(true);
     const files = dialog()?.querySelectorAll('[data-testid="file"]');
@@ -623,7 +624,9 @@ describe('ThreadComponent', () => {
     root.querySelector<HTMLButtonElement>('[data-testid="turn-changes-file"]')?.click();
     await fixture.whenStable();
     expect(dialog()?.open).toBe(true);
-    dialog()?.close();
+    fixture.componentRef.setInput('thread', 'thread-2');
+    await fixture.whenStable();
+    expect(dialog()?.open).toBe(false);
   });
 
   it('says in the composer’s place, in the server’s words, that the project’s folder is gone', async () => {

@@ -72,9 +72,9 @@ describe('CommandsService', () => {
     const { commands, thread, panel } = make(fake);
     await thread.open('thread-1');
     await settle();
-    panel.open.set(false);
+    panel.setShowing(false);
     await settle();
-    panel.open.set(true);
+    panel.setShowing(true);
     await settle();
     // Nothing kept in the background, nothing to ask about.
     expect(fake.paramsOf('command/list')).toHaveLength(0);
@@ -83,10 +83,10 @@ describe('CommandsService', () => {
     await settle();
     expect(fake.paramsOf('command/list')).toEqual([{ thread: 'thread-2' }]);
     expect(commands.loaded()).toBe(true);
-    panel.open.set(false);
+    panel.setShowing(false);
     await settle();
     expect(fake.paramsOf('command/list')).toHaveLength(1);
-    panel.open.set(true);
+    panel.setShowing(true);
     await settle();
     expect(fake.paramsOf('command/list')).toHaveLength(2);
   });
@@ -202,13 +202,14 @@ describe('CommandsService', () => {
         .answer('thread/events', { events: [STARTED] })
         .answer('command/list', { commands: [command('c1', 'npm run dev')] });
       const { commands, thread, panel } = make(fake);
+      panel.setShowing(true);
       await thread.open('thread-1');
       await settle();
       const shown = commands.now();
       expect(shown).toBe(Date.parse('2026-10-11T10:02:05.000Z'));
       vi.advanceTimersByTime(TICK_MS * 2);
       expect(commands.now()).toBe(shown + TICK_MS * 2);
-      panel.open.set(false);
+      panel.setShowing(false);
       TestBed.tick();
       vi.advanceTimersByTime(TICK_MS * 5);
       expect(commands.now()).toBe(shown + TICK_MS * 2);

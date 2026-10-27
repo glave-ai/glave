@@ -65,7 +65,7 @@ export class CommandsService {
     this.commands().some((command) => typeof command.started_at === 'string'),
   );
   /** Now, in milliseconds since the epoch, moving on each second while the commands show. */
-  readonly now = clock(() => this.panel.open() && this.timed());
+  readonly now = clock(() => this.panel.showing() && this.timed());
 
   constructor() {
     // The thread's history says when a command started or ended, live while a turn streams in.
@@ -77,9 +77,9 @@ export class CommandsService {
       }
     });
     // Shown again, the panel reads them again: one may have ended with nothing recorded yet.
-    let shown = untracked(this.panel.open);
+    let shown = untracked(this.panel.showing);
     effect(() => {
-      const open = this.panel.open();
+      const open = this.panel.showing();
       if (open && !shown && untracked(this.thread.commandChange) !== null) {
         untracked(() => void this.refresh());
       }

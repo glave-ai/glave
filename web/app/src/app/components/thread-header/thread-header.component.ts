@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   booleanAttribute,
+  computed,
   inject,
   input,
   output,
@@ -15,7 +16,9 @@ import { PanelService } from '../../services/panel.service';
 /**
  * A thread's bar across its top, ruled off from the conversation: its title, which renames it
  * when pressed; a quiet line with its project; and at the end, when the thread has a panel of
- * facts, the button that shows or hides it. On a phone the title and that line sit in the
+ * facts, the button that shows or hides it: a toggle, pressed while it shows, beside a wide
+ * page; on a narrower one, where it opens a sheet over the page, a button that says whether the
+ * sheet is expanded. On a phone the title and that line sit in the
  * middle, between the button that opens the side bar and the panel's, each a finger's size.
  */
 @Component({
@@ -47,8 +50,15 @@ export class ThreadHeaderComponent {
   protected readonly phone = this.nav.narrow;
   protected readonly navOpen = this.nav.open;
   protected readonly navShortcut = this.nav.ariaShortcut;
-  protected readonly panelOpen = this.panels.open;
   protected readonly panelShortcut = this.panels.ariaShortcut;
+  /** Beside a wide page: whether the toggle is pressed. */
+  protected readonly pressed = computed(() =>
+    this.panels.narrow() ? null : String(this.panels.showing()),
+  );
+  /** Over a narrow page: whether the sheet it opens is expanded. */
+  protected readonly expanded = computed(() =>
+    this.panels.narrow() ? String(this.panels.showing()) : null,
+  );
 
   protected startRename(): void {
     this.rename.emit();

@@ -5,9 +5,11 @@ import {
   type ElementRef,
   afterRenderEffect,
   computed,
+  effect,
   inject,
   input,
   model,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -16,7 +18,6 @@ import { map, switchMap } from 'rxjs';
 import { GlzSplitterDirective } from '../../directives/splitter.directive';
 import { GlzTooltipDirective } from '../../directives/tooltip.directive';
 import { testIds } from '../../lib/test-ids';
-import { closedWhileNarrow } from '../../lib/narrow';
 import { injectId } from '../../tokens/ids';
 import { glzText } from '../../lib/words';
 
@@ -107,7 +108,21 @@ export class GlzSidenavLayoutComponent {
   });
 
   constructor() {
-    closedWhileNarrow(this.narrow, this.open);
+    // The drawer starts closed whenever the screen becomes narrow; back on a wide screen the
+    // nav is as the person left it there.
+    let wideOpen: boolean | null = null;
+    effect(() => {
+      const narrow = this.narrow();
+      untracked(() => {
+        if (narrow && wideOpen === null) {
+          wideOpen = this.open();
+          this.open.set(false);
+        } else if (!narrow && wideOpen !== null) {
+          this.open.set(wideOpen);
+          wideOpen = null;
+        }
+      });
+    });
     // A drawer takes focus as it opens: the button that opened it is now behind it, inert.
     afterRenderEffect(() => {
       if (this.modal()) {

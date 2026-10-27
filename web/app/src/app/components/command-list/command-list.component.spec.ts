@@ -67,18 +67,25 @@ describe('CommandListComponent', () => {
     expect(
       document.getElementById(text[0]?.getAttribute('aria-describedby') ?? '')?.textContent,
     ).toBe(DEV);
+    // The server's sentence, then what it runs beneath it.
+    expect(all(root, 'command-summary')[0]?.textContent).toContain('Still running');
+    expect(all(root, 'command-summary')[0]?.compareDocumentPosition(text[0] as Node)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
     // Only a recorded start says how long it has run.
-    expect(all(root, 'command-time').map((each) => each.textContent)).toEqual(['2m 05s']);
+    expect(all(root, 'command-time').map((each) => each.textContent)).toEqual([
+      'Running for 2m 05s',
+    ]);
     vi.advanceTimersByTime(TICK_MS);
     await settle();
-    expect(all(root, 'command-time')[0]?.textContent).toBe('2m 06s');
+    expect(all(root, 'command-time')[0]?.textContent).toBe('Running for 2m 06s');
     await expectAccessible(root);
 
     const stop = all(root, 'command-stop')[0];
     expect(stop?.getAttribute('aria-label')).toBe(`Stop ${DEV}`);
     stop?.click();
     await settle();
-    expect(stop?.getAttribute('aria-label')).toBe(`Stopping ${DEV}…`);
+    expect(stop?.textContent.trim()).toBe('Stopping…');
     expect((stop as HTMLButtonElement | undefined)?.disabled).toBe(true);
     expect(all(root, 'command')[0]?.getAttribute('aria-busy')).toBe('true');
     await expectAccessible(root);

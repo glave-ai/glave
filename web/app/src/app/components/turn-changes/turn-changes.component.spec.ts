@@ -11,21 +11,30 @@ const FILES: readonly ChangedFile[] = [
   { path: 'crates/harness/tests/worktrees.rs', changes: [], added: 2, removed: 2 },
 ];
 
-/** What the turn's card asked to show in full, in order. */
-let shown: (string | null)[] = [];
+/** What the turn's card asked to show in full, in order: whose files, and which. */
+let shown: (readonly [readonly ChangedFile[] | null, string | null])[] = [];
 
-async function render(files: readonly ChangedFile[]): Promise<HTMLElement> {
+async function render(
+  files: readonly ChangedFile[],
+  inputs: Readonly<Record<string, unknown>> = {},
+): Promise<HTMLElement> {
   shown = [];
   TestBed.configureTestingModule({
     providers: [
       {
         provide: ThreadPanelService,
-        useValue: { showChanges: (path: string | null) => shown.push(path) },
+        useValue: {
+          showChanges: (files: readonly ChangedFile[] | null, path: string | null) =>
+            shown.push([files, path]),
+        },
       },
     ],
   });
   const fixture = TestBed.createComponent(TurnChangesComponent);
   fixture.componentRef.setInput('files', files);
+  for (const [name, value] of Object.entries(inputs)) {
+    fixture.componentRef.setInput(name, value);
+  }
   await fixture.whenStable();
   return fixture.nativeElement as HTMLElement;
 }
@@ -53,11 +62,22 @@ describe('TurnChangesComponent', () => {
     await expectAccessible(root);
   });
 
-  it('shows a file’s changes in full from its row, and every file’s from the last', async () => {
+  it('shows this turn’s changes in full: a file’s from its row, every one’s from the last', async () => {
     const root = await render(FILES);
     root.querySelectorAll<HTMLButtonElement>('[data-testid="turn-changes-file"]')[1]?.click();
     root.querySelector<HTMLButtonElement>('[data-testid="turn-changes-more"]')?.click();
-    expect(shown).toEqual(['crates/computer/src/local/worktree/lock.rs', null]);
+    expect(shown).toEqual([
+      [FILES, 'crates/computer/src/local/worktree/lock.rs'],
+      [FILES, null],
+    ]);
+  });
+
+  it('serves the panel under its own heading, a level down, with its own test hooks', async () => {
+    const root = await render(FILES, { heading: 'Changes', level: 3, testId: 'panel-changes' });
+    expect(root.querySelector('h3')?.textContent).toBe('Changes');
+    expect(root.querySelector('h2')).toBeNull();
+    expect(root.querySelectorAll('[data-testid="panel-changes-file"]')).toHaveLength(3);
+    expect(root.querySelector('[data-testid="turn-changes"]')).toBeNull();
   });
 
   it('says nothing of more files when they all fit', async () => {

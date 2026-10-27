@@ -17,7 +17,6 @@ import { map, switchMap } from 'rxjs';
 import { GlzSplitterDirective } from '../../directives/splitter.directive';
 import { GlzTooltipDirective } from '../../directives/tooltip.directive';
 import { testIds } from '../../lib/test-ids';
-import { closedWhileNarrow } from '../../lib/narrow';
 import { injectId } from '../../tokens/ids';
 import { glzText } from '../../lib/words';
 
@@ -34,9 +33,7 @@ export const GLZ_PANEL_NARROW = '(max-width: 64rem)';
  * minimum or press Enter on it to collapse, and the collapsed edge stays as a slim grip to bring
  * the panel back. `width` is in pixels, bound two ways, and `null` keeps `--glz-panel-width`.
  * On narrow screens the panel slides over the content as a modal sheet: the content behind is
- * inert, and Escape or the scrim close it; the sheet starts closed whenever the screen becomes
- * narrow, and back on a wide screen the panel is as the person left it there. `open` is bound
- * two ways and starts closed. With nothing in the panel (`empty`), the page is its content
+ * inert, and Escape or the scrim close it. `open` is bound two ways and starts closed. With nothing in the panel (`empty`), the page is its content
  * alone: no panel, no edge and no sheet. Glaze keeps neither: remembering them is the app's job.
  *
  * ```html
@@ -114,7 +111,6 @@ export class GlzPanelLayoutComponent {
   });
 
   constructor() {
-    closedWhileNarrow(this.narrow, this.open);
     // A sheet takes focus as it opens, so the keyboard is where the person is looking.
     afterRenderEffect(() => {
       if (this.modal()) {
