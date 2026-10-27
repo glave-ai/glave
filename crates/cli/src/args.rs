@@ -90,7 +90,7 @@ Usage:
   glave connections [remove <id> | <name>]
                                 list your connections and git hosts, or remove one
   glave search [on | off]       whether glave may search the web for you, or turn it on or off
-  glave doc read|csv            read a spreadsheet, with nothing else installed
+  glave doc read|csv|write      read or make a spreadsheet, with nothing else installed
                                 (glave doc --help)
 
 Options:

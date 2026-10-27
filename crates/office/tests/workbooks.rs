@@ -6,17 +6,23 @@
 
 use std::path::Path;
 
-use glave_office::{OfficeError, USAGE, run};
+use glave_office::{Answer, OfficeError, USAGE, run};
 use glave_ports::testing::TempDir;
 
 const WORKBOOK: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/workbook.xlsx");
 
-fn doc(words: &[&str]) -> Result<String, OfficeError> {
+/// `glave doc` with `words`, given `input` on standard input.
+pub(crate) fn answer(words: &[&str], input: &str) -> Result<Answer, OfficeError> {
     let words: Vec<String> = words.iter().map(|word| (*word).to_owned()).collect();
-    run(&words)
+    run(&words, &mut input.as_bytes())
 }
 
-fn has(text: &str, lines: &[&str]) {
+/// What `glave doc` with `words` prints.
+pub(crate) fn doc(words: &[&str]) -> Result<String, OfficeError> {
+    answer(words, "").map(|answer| answer.printed)
+}
+
+pub(crate) fn has(text: &str, lines: &[&str]) {
     for line in lines {
         assert!(
             text.lines().any(|seen| seen == *line),
@@ -89,6 +95,13 @@ fn a_sheet_reads_as_csv_with_its_computed_values() {
         log,
         "2026-01-31 14:30:00,\"a, \"\"quoted\"\" | piped\nline\",true,,42\n"
     );
+    let computed = answer(&["csv", WORKBOOK, "--sheet", "Sales"], "").unwrap();
+    assert_eq!(computed.warning, None);
+    // A formula no app has computed leaves its field empty, and says so apart from the CSV.
+    let draft = answer(&["csv", WORKBOOK, "--sheet", "Draft"], "").unwrap();
+    assert_eq!(draft.printed, "2,\n");
+    let warning = draft.warning.unwrap();
+    assert!(warning.contains("not computed yet, so their fields are empty: Draft!B1."));
 }
 
 #[test]

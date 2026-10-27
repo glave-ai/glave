@@ -1,23 +1,46 @@
 //! `glave doc`: the words after it, what they ask for, and what to print. The model runs it
 //! through bash, taught by the built-in skill; a person can run it as well.
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use crate::error::OfficeError;
 use crate::read::{self, Reading};
+use crate::write;
 
 pub const USAGE: &str = "\
-glave doc: read spreadsheets, with nothing else installed
+glave doc: read and write spreadsheets, with nothing else installed
 
 Usage:
   glave doc read <file> [--sheet <name>] [--rows <first>-<last>]
       a workbook (.xlsx, .xlsm, .xlsb, .xls or .ods) as tables, each formula beside the
       value it last computed to; the first 100 rows of each sheet unless --rows says which
   glave doc csv <file> [--sheet <name>]
-      one sheet's values as CSV: the first sheet unless --sheet names another";
+      one sheet's values as CSV: the first sheet unless --sheet names another
+  glave doc write <file.xlsx> [<description.json>] [--replace]
+      a new workbook from a description in JSON, read from standard input unless its file
+      is named: sheets of rows with formulas, number formats, a header row, column widths,
+      frozen panes and charts; --replace writes over a file already there";
 
-/// The largest file read: a workbook is read whole.
+/// The largest file read: a workbook is read whole, and so is a description.
 const MAX_FILE: u64 = 100 * 1024 * 1024;
+
+/// What `glave doc` answers: what to print, and a warning to give apart from it, so that what
+/// is printed stays only what was asked for (a CSV to pipe on).
+#[derive(Debug, PartialEq, Eq)]
+pub struct Answer {
+    pub printed: String,
+    pub warning: Option<String>,
+}
+
+impl Answer {
+    fn printed(printed: String) -> Self {
+        Self {
+            printed,
+            warning: None,
+        }
+    }
+}
 
 /// What `glave doc` was asked.
 #[derive(Debug, PartialEq, Eq)]
@@ -25,21 +48,85 @@ enum Asked {
     Help,
     Read(PathBuf, Reading),
     Csv(PathBuf, Option<String>),
+    Write(Writing),
 }
 
-/// Runs `glave doc` on `words`, and gives what to print.
-pub fn run(words: &[String]) -> Result<String, OfficeError> {
+/// A new workbook to write.
+#[derive(Debug, PartialEq, Eq)]
+struct Writing {
+    out: PathBuf,
+    /// The description's file; standard input when `None`.
+    description: Option<PathBuf>,
+    /// Whether a file already at `out` may be written over.
+    replace: bool,
+}
+
+/// Runs `glave doc` on `words`, reading a description from `input` when no file is named for
+/// it, and gives what to print.
+pub fn run(words: &[String], input: &mut dyn Read) -> Result<Answer, OfficeError> {
     match parse(words)? {
-        Asked::Help => Ok(USAGE.to_owned()),
+        Asked::Help => Ok(Answer::printed(USAGE.to_owned())),
         Asked::Read(file, reading) => {
             let name = file.file_name().map_or_else(
                 || file.display().to_string(),
                 |name| name.to_string_lossy().into_owned(),
             );
-            read::read(bytes(&file)?, &name, &reading)
+            read::read(bytes(&file)?, &name, &reading).map(Answer::printed)
         }
         Asked::Csv(file, sheet) => read::csv(bytes(&file)?, sheet.as_deref()),
+        Asked::Write(writing) => write_new(&writing, input),
     }
+}
+
+/// Writes the workbook `writing` asks for, unless a file there would be lost.
+fn write_new(writing: &Writing, input: &mut dyn Read) -> Result<Answer, OfficeError> {
+    let out = &writing.out;
+    if !writing.replace && std::fs::symlink_metadata(out).is_ok() {
+        return Err(OfficeError::Exists(out.clone()));
+    }
+    let json = if let Some(path) = &writing.description {
+        bytes(path)?
+    } else {
+        given(input)?
+    };
+    let json = String::from_utf8(json)
+        .map_err(|_| OfficeError::Description("it is not text in UTF-8".to_owned()))?;
+    if json.trim().is_empty() {
+        return Err(OfficeError::Description(
+            "there is none: give it on standard input, or name its file after the workbook's"
+                .to_owned(),
+        ));
+    }
+    let written = write::write(&json)?;
+    std::fs::write(out, written.bytes).map_err(|error| OfficeError::Io {
+        action: "write",
+        path: out.clone(),
+        error,
+    })?;
+    Ok(Answer::printed(format!(
+        "Wrote {}: {}",
+        out.display(),
+        written.report
+    )))
+}
+
+/// What `input` gives, whole, when it is not too large to read.
+fn given(input: &mut dyn Read) -> Result<Vec<u8>, OfficeError> {
+    let mut given = Vec::new();
+    input
+        .take(MAX_FILE + 1)
+        .read_to_end(&mut given)
+        .map_err(|error| OfficeError::Io {
+            action: "read the description from",
+            path: "standard input".into(),
+            error,
+        })?;
+    if u64::try_from(given.len()).unwrap_or(u64::MAX) > MAX_FILE {
+        return Err(OfficeError::Description(format!(
+            "it is longer than the {MAX_FILE} bytes glave reads"
+        )));
+    }
+    Ok(given)
 }
 
 /// The file at `path`, whole, when it is not too large to read.
@@ -67,11 +154,13 @@ fn parse(words: &[String]) -> Result<Asked, OfficeError> {
     let mut files = Vec::new();
     let mut sheet = None;
     let mut rows = None;
+    let mut replace = false;
     let mut rest = rest.iter();
     while let Some(word) = rest.next() {
         match word.as_str() {
             "--sheet" => sheet = Some(value(rest.next(), "--sheet", "a sheet's name")?.clone()),
             "--rows" => rows = Some(row_span(value(rest.next(), "--rows", "rows like 1-100")?)?),
+            "--replace" => replace = true,
             "-h" | "--help" => return Ok(Asked::Help),
             flag if flag.starts_with("--") => {
                 return Err(usage(&format!("glave doc {verb} takes no {flag}")));
@@ -79,15 +168,37 @@ fn parse(words: &[String]) -> Result<Asked, OfficeError> {
             _ => files.push(PathBuf::from(word)),
         }
     }
+    let reading = !replace;
+    let writing = sheet.is_none() && rows.is_none();
     match (verb.as_str(), files.as_slice()) {
         ("help" | "-h" | "--help", _) => Ok(Asked::Help),
-        ("read", [file]) => Ok(Asked::Read(file.clone(), Reading { sheet, rows })),
-        ("csv", [file]) if rows.is_none() => Ok(Asked::Csv(file.clone(), sheet)),
-        ("read" | "csv", _) => Err(usage(&format!(
+        ("read", [file]) if reading => Ok(Asked::Read(file.clone(), Reading { sheet, rows })),
+        ("csv", [file]) if reading && rows.is_none() => Ok(Asked::Csv(file.clone(), sheet)),
+        ("write", [out, ..]) if !is_xlsx(out) => Err(usage(&format!(
+            "glave doc write makes .xlsx workbooks: name the new one first, like report.xlsx, \
+             not {}",
+            out.display()
+        ))),
+        ("write", [out, description @ ..]) if writing && description.len() <= 1 => {
+            Ok(Asked::Write(Writing {
+                out: out.clone(),
+                description: description
+                    .first()
+                    .filter(|path| path.as_os_str() != "-")
+                    .cloned(),
+                replace,
+            }))
+        }
+        ("read" | "csv" | "write", _) => Err(usage(&format!(
             "glave doc {verb} was not given what it takes"
         ))),
         _ => Err(usage(&format!("glave doc has no command {verb:?}"))),
     }
+}
+
+fn is_xlsx(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("xlsx"))
 }
 
 fn value<'a>(word: Option<&'a String>, flag: &str, what: &str) -> Result<&'a String, OfficeError> {
@@ -146,18 +257,49 @@ mod tests {
             asked(&["csv", "a.xlsx"]).unwrap(),
             Asked::Csv("a.xlsx".into(), None)
         );
+        for (words, description, replace) in [
+            (&["write", "out.XLSX"][..], None, false),
+            (&["write", "out.XLSX", "-"], None, false),
+            (
+                &["write", "--replace", "out.XLSX", "a.json"],
+                Some("a.json"),
+                true,
+            ),
+        ] {
+            let description = description.map(PathBuf::from);
+            let out = "out.XLSX".into();
+            let writing = Writing {
+                out,
+                description,
+                replace,
+            };
+            assert_eq!(asked(words).unwrap(), Asked::Write(writing));
+        }
         for wrong in [
             &["read"][..],
             &["read", "a.xlsx", "b.xlsx"],
             &["read", "a.xlsx", "--rows", "9-2"],
             &["read", "a.xlsx", "--rows", "0-2"],
             &["read", "a.xlsx", "--rows"],
+            &["read", "a.xlsx", "--replace"],
             &["csv", "a.xlsx", "--rows", "1-2"],
             &["read", "a.xlsx", "--all"],
-            &["write", "a.xlsx"],
+            &["write"],
+            &["write", "book.json", "out.xlsx"],
+            &["write", "out.xls"],
+            &["write", "out.xlsx", "a.json", "b.json"],
+            &["write", "out.xlsx", "--sheet", "Sales"],
+            &["open", "a.xlsx"],
         ] {
             let error = asked(wrong).unwrap_err().to_string();
             assert!(error.ends_with(USAGE), "{wrong:?}: {error}");
         }
+        let swapped = asked(&["write", "book.json", "out.xlsx"])
+            .unwrap_err()
+            .to_string();
+        assert!(
+            swapped.starts_with("glave doc write makes .xlsx workbooks: name the new one first"),
+            "{swapped}"
+        );
     }
 }

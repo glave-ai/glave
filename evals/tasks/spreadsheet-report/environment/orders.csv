@@ -1,0 +1,25 @@
+order,date,region,customer,amount
+1001,2026-09-01,North,Harbor Supply,1250.00
+1002,2026-09-01,South,Delta Foods,830.50
+1003,2026-09-02,West,Canyon Tools,2140.75
+1004,2026-09-03,North,Pine Office,415.20
+1005,2026-09-04,South,Gulf Marine,1990.00
+1006,2026-09-05,West,Mesa Garden,675.40
+1007,2026-09-08,North,Harbor Supply,980.00
+1008,2026-09-08,West,Canyon Tools,1310.10
+1009,2026-09-09,South,Delta Foods,540.25
+1010,2026-09-10,North,Lakeside Print,2205.00
+1011,2026-09-11,South,Bayou Crafts,760.80
+1012,2026-09-12,West,Summit Bikes,1845.60
+1013,2026-09-15,North,Pine Office,330.00
+1014,2026-09-15,South,Gulf Marine,1420.40
+1015,2026-09-16,West,Mesa Garden,905.25
+1016,2026-09-17,North,Lakeside Print,1675.90
+1017,2026-09-18,South,Bayou Crafts,610.00
+1018,2026-09-19,West,Summit Bikes,2380.00
+1019,2026-09-22,North,Harbor Supply,1140.35
+1020,2026-09-23,South,Delta Foods,1985.15
+1021,2026-09-24,West,Canyon Tools,720.00
+1022,2026-09-25,North,Pine Office,865.50
+1023,2026-09-26,South,Gulf Marine,1230.00
+1024,2026-09-29,West,Mesa Garden,1590.45

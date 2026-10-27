@@ -162,8 +162,12 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls", "h
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
 rustls-platform-verifier = "0.7"
 rusqlite = { version = "0.40", default-features = false, features = ["bundled", "cache"] }
+# New workbooks written for `glave doc write` (glave-office): cells, formulas, number formats,
+# panes and native charts, in pure Rust on zip (calamine's), tested against files Excel saved.
+# No features: no chrono, no serde.
+rust_xlsxwriter = { version = "0.100", default-features = false }
 # Files opened one name at a time from a folder handle (openat), for confinement.
-rustix = { version = "1.1", default-features = false, features = ["fs", "std"] }
+rustix ={ version = "1.1", default-features = false, features = ["fs", "std"] }
 # The Linux sandbox's seccomp filter, built and compiled to BPF in safe Rust (Firecracker's).
 seccompiler = { version = "0.5", default-features = false }
 # JSON Schema of the session API, derived beside serde (already in the tree, under rmcp).

@@ -1,7 +1,7 @@
 //! Skills end to end: a repository set up for Claude Code brings its skills unchanged, `glave
 //! skills` lists them with glave's own after, the model is offered `skill` and loads one, a
 //! broken one is skipped with a warning naming its file, and `glave doc`, which glave's own
-//! spreadsheets skill teaches, reads a workbook.
+//! spreadsheets skill teaches, writes a workbook and reads it back.
 
 use std::process::{Command, Output, Stdio};
 
@@ -57,7 +57,7 @@ fn glave_skills_lists_them_and_warns_about_the_broken_one() {
         "{shown}"
     );
     assert!(
-        stdout.contains("\nglave:spreadsheets\n  Read and analyze spreadsheets")
+        stdout.contains("\nglave:spreadsheets\n  Read, analyze and make spreadsheets")
             && stdout.contains("\n  built into glave"),
         "glave's own come after: {shown}"
     );
@@ -94,25 +94,43 @@ fn the_model_is_offered_skill_and_loads_one() {
 }
 
 #[test]
-fn glave_doc_reads_a_workbook_as_the_built_in_skill_says_and_leaves_glaves_folder_alone() {
+fn glave_doc_writes_a_workbook_and_reads_it_back_and_leaves_glaves_folder_alone() {
     let place = project("skills-doc");
     let model = FakeServer::start(vec![]).unwrap();
-    let workbook = concat!(env!("CARGO_MANIFEST_DIR"), "/../office/tests/workbook.xlsx");
-    let csv = run(
-        &place,
-        &model,
-        &["doc", "csv", workbook, "--sheet", "Sales"],
-    );
-    assert!(csv.status.success(), "{}", text(&csv));
-    let stdout = String::from_utf8_lossy(&csv.stdout);
+    let description = r#"{"sheets": [{"name": "Sales", "header": true,
+        "rows": [["Region", "Revenue"], ["North", 1250.5], ["Total", "=SUM(B2:B2)"]]}]}"#;
+    let written = glave(&place, &model, &["doc", "write", "sales.xlsx"], description);
+    assert!(written.status.success(), "{}", text(&written));
     assert!(
-        stdout.starts_with("Day,Region,Units,Price,Revenue\n2026-01-05,North,120,19.5,2340\n"),
-        "{stdout}"
+        String::from_utf8_lossy(&written.stdout)
+            .starts_with("Wrote sales.xlsx: Sales (3 rows, 1 formula).\n"),
+        "{}",
+        text(&written)
     );
-    let wrong = run(&place, &model, &["doc", "open", workbook]);
+    let read = run(&place, &model, &["doc", "read", "sales.xlsx"]);
+    let shown = text(&read);
+    assert!(read.status.success(), "{shown}");
+    assert!(
+        shown.contains("\n| 3 | Total | =SUM(B2:B2) → not computed yet |\n"),
+        "{shown}"
+    );
+    // The CSV stays values only; what has none yet is said apart from it.
+    let csv = run(&place, &model, &["doc", "csv", "sales.xlsx"]);
+    assert!(csv.status.success(), "{}", text(&csv));
+    assert_eq!(
+        String::from_utf8_lossy(&csv.stdout),
+        "Region,Revenue\nNorth,1250.5\nTotal,\n"
+    );
+    assert!(
+        String::from_utf8_lossy(&csv.stderr)
+            .starts_with("glave: formulas not computed yet, so their fields are empty: Sales!B3."),
+        "{}",
+        text(&csv)
+    );
+    let wrong = run(&place, &model, &["doc", "open", "sales.xlsx"]);
     assert_eq!(wrong.status.code(), Some(2), "{}", text(&wrong));
     assert!(
-        text(&wrong).contains("glave doc read <file>"),
+        text(&wrong).contains("glave doc write <file.xlsx>"),
         "{}",
         text(&wrong)
     );
