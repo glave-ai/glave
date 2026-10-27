@@ -1,14 +1,19 @@
-import type { Routes } from '@angular/router';
+import { inject } from '@angular/core';
+import { type NavigationError, RedirectCommand, Router, type Routes } from '@angular/router';
 
+import { UnloadedComponent } from './components/unloaded/unloaded.component';
 import { WorkspaceComponent } from './components/workspace/workspace.component';
 import { hasModelGuard } from './guards/has-model.guard';
 import { signedInGuard } from './guards/signed-in.guard';
 
+/** Where a page that could not open is said to have failed, in its own place. */
+const UNLOADED = '/unloaded';
+
 /**
  * The app's pages: the workspace (chat, a project, a thread, tasks, memory, settings and the
  * pages reached from it, `settings.routes.ts`) for a signed-in person with a model set up, the
- * page that adds one, and the sign-in page. Each title is read when its page opens, in the
- * app's language.
+ * page that adds one, the sign-in page, and the page that says a page could not open. Each
+ * title is read when its page opens, in the app's language.
  */
 export const routes: Routes = [
   {
@@ -67,5 +72,30 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./components/sign-in/sign-in.component').then((m) => m.SignInComponent),
   },
+  {
+    // Part of the app, not a page anyone links to: what stands in for one that could not open
+    // (`unloadedPage`). Its code is in the first load, and it needs no sign-in, so it opens
+    // whatever could not.
+    path: UNLOADED.slice(1),
+    title: 'glave',
+    component: UnloadedComponent,
+    data: { page: true },
+  },
   { path: '**', redirectTo: '' },
 ];
+
+/**
+ * A page that could not open, as when its code could not load (glave was updated while the tab
+ * was open, or the network dropped): the page that says so opens in its place. The address and
+ * the tab's history are left as they were, the page's own when it was the first to open, so a
+ * reload, the app's or the browser's, opens it again with the code glave has now. (Showing the
+ * page's address instead, with `browserUrl`, would keep the page that says so in the history
+ * entry, and a reload would open that again.)
+ */
+export function unloadedPage(error: NavigationError): RedirectCommand | undefined {
+  const instead = inject(Router).parseUrl(UNLOADED);
+  // Only ever once: should the page that says so not open either, nothing more is tried.
+  return error.url === UNLOADED
+    ? undefined
+    : new RedirectCommand(instead, { skipLocationChange: true });
+}

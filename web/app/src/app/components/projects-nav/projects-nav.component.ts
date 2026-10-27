@@ -28,7 +28,6 @@ import {
   navSections,
   threadsWords,
 } from '../../lib/nav';
-import { unloaded } from '../../lib/text';
 import { NavListsService } from '../../services/nav-lists.service';
 import { ProjectsService } from '../../services/projects.service';
 import { FolderGoneComponent } from '../folder-gone/folder-gone.component';
@@ -36,6 +35,7 @@ import { NavListMenuComponent } from '../nav-list-menu/nav-list-menu.component';
 import { NavThreadComponent } from '../nav-thread/nav-thread.component';
 import { NewProjectComponent } from '../new-project/new-project.component';
 import { RenameDialogComponent } from '../rename-dialog/rename-dialog.component';
+import { UnloadedComponent } from '../unloaded/unloaded.component';
 
 /** What a project's menu does. */
 const RENAME = 'rename';
@@ -66,6 +66,7 @@ const RENAME = 'rename';
     NavThreadComponent,
     NewProjectComponent,
     RenameDialogComponent,
+    UnloadedComponent,
   ],
   templateUrl: './projects-nav.component.html',
   styleUrl: './projects-nav.component.scss',
@@ -86,7 +87,6 @@ export class ProjectsNavComponent {
     newProject: $localize`:@@projectsNav.newProject:New project`,
     newChat: $localize`:@@projectsNav.newChat:New chat`,
     startProject: $localize`:@@projectsNav.startProject:Start a project`,
-    unloaded: unloaded(),
   } as const;
   protected readonly icons = { add: Plus, more: Ellipsis, start: FolderPlus };
   protected readonly newLink = '/';

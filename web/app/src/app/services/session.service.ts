@@ -85,10 +85,17 @@ export class SessionService {
   private readonly reachedElsewhere = signal(false);
   /** Where browsers on this computer make passkeys for it, when it makes them here. */
   private readonly here = signal<string | null>(null);
+  /** The version of glave whose app this page is, as the server said when the page loaded. */
+  private readonly loaded = signal<string | null>(null);
   private server: string | undefined;
   private readonly setupLink = signal<string | null>(null);
 
   readonly signedIn = computed(() => this.session() !== null);
+  /**
+   * The version of glave this page's code is of: the server's when the page loaded, or `null`
+   * when it could not be reached then.
+   */
+  readonly loadedVersion = this.loaded.asReadonly();
   /** Whether glave makes passkeys for browsers on this computer, at this page's origin. */
   readonly passkeysHere = computed(() => this.here() === this.document.location.origin);
   /**
@@ -208,6 +215,9 @@ export class SessionService {
   /** Takes in what the server says it is and how it signs browsers in. */
   private take(discovered: Methods['server/discover']['result']): void {
     this.server = discovered.id ?? undefined;
+    if (this.loaded() === null) {
+      this.loaded.set(discovered.version);
+    }
     this.ways.set(discovered.signin ?? []);
     this.reachedElsewhere.set(typeof discovered.origin === 'string');
     this.here.set(discovered.here ?? null);

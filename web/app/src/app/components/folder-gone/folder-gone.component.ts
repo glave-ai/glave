@@ -2,10 +2,10 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, signal } f
 import { GlzButtonComponent, GlzConfirmDialogComponent, GlzDialogComponent } from '@glave/glaze';
 
 import { projectProblem } from '../../lib/projects';
-import { unloaded } from '../../lib/text';
 import { SessionService } from '../../services/session.service';
 import { ProjectsService } from '../../services/projects.service';
 import { FolderPickerComponent } from '../folder-picker/folder-picker.component';
+import { UnloadedComponent } from '../unloaded/unloaded.component';
 
 /**
  * A project whose folder isn't there anymore, in the server's words, and what the person on
@@ -21,6 +21,7 @@ import { FolderPickerComponent } from '../folder-picker/folder-picker.component'
     GlzConfirmDialogComponent,
     GlzDialogComponent,
     FolderPickerComponent,
+    UnloadedComponent,
   ],
   templateUrl: './folder-gone.component.html',
   styleUrl: './folder-gone.component.scss',
@@ -41,7 +42,6 @@ export class FolderGoneComponent {
     removeHeading: $localize`:@@folderGone.removeHeading:Remove the project?`,
     removeMessage: $localize`:@@folderGone.removeMessage:Its threads go to the archive, with their history.`,
     removeConfirm: $localize`:@@folderGone.removeConfirm:Remove`,
-    unloaded: unloaded(),
   } as const;
   private readonly projects = inject(ProjectsService);
   /** Whether the person here may act: only they reach this computer's folders. */

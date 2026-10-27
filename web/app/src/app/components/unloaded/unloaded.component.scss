@@ -1,0 +1,26 @@
+// The sentence, then Reload under it, at the start of the line; where it goes is its parent's.
+:host {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--glz-space-2);
+}
+
+.sentence {
+  margin: 0;
+  font-size: var(--glz-text-sm);
+}
+
+// As the page: both in the middle of the window.
+:host(.page) {
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding-block: var(--glz-inset-page-block);
+  padding-inline: var(--glz-inset-page-inline);
+  text-align: center;
+}
+
+:host(.page) .sentence {
+  font-size: var(--glz-text-md);
+}

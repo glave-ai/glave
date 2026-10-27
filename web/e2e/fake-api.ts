@@ -35,7 +35,7 @@ import {
   aboutVerbose,
 } from './fake-panel';
 import { Refusal, SCRATCH, THREAD, WORKSPACE, bound, call, done, event } from './fake-records';
-import { FAKE_SERVER, signIn } from './fake-signin';
+import { discovered, signIn } from './fake-signin';
 import { PLANNING, PLANNING_HISTORY, type Planned, planned } from './fake-plan';
 import { RESEARCH, RESEARCH_HISTORY, sourcesOf } from './fake-sources';
 
@@ -658,14 +658,7 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
     case 'credential/list':
       return { credentials, device: true };
     case 'server/discover':
-      return {
-        name: 'glave',
-        version: '0.0.0',
-        protocols: ['2026-10'],
-        permissions: 'auto',
-        modes: ['auto', 'plan', 'ask', 'full-access'],
-        id: FAKE_SERVER,
-      };
+      return discovered();
     default:
       return (
         signIn(method, params) ??

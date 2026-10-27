@@ -113,7 +113,7 @@ describe('FolderGoneComponent', () => {
     const [picking] = await fixture.getDeferBlocks();
     await picking?.render(DeferBlockState.Error);
     expect(root.querySelector('[role="alert"]')?.textContent.trim()).toBe(
-      'This part of glave could not load. Reload the page to try again.',
+      'This part of glave could not load.',
     );
     await expectAccessible(root);
   });

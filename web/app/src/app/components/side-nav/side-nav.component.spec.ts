@@ -1,4 +1,9 @@
-import { DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
+import {
+  ComponentFixtureAutoDetect,
+  DeferBlockBehavior,
+  DeferBlockState,
+  TestBed,
+} from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import type { Grouping, Project, TaskInfo } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
@@ -51,6 +56,35 @@ async function settle(
 }
 
 describe('SideNavComponent', () => {
+  it('keeps the search out of reach until it is named, as it comes in a route’s page', async () => {
+    // Nothing binds the view until the test does, as a route's page waits for the next change
+    // detection after Angular adds it (Glaze's `INERT_UNTIL_BOUND`).
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([{ path: '**', children: [] }]),
+        ...provideFakeSession(
+          new FakeSession()
+            .answer('tasks/list', { tasks: [] })
+            .answer('schedule/list', { schedules: [] }),
+        ),
+        { provide: ComponentFixtureAutoDetect, useValue: false },
+      ],
+    });
+    const fixture = TestBed.createComponent(SideNavComponent);
+    const root: HTMLElement = fixture.nativeElement;
+    const search = (): HTMLInputElement | null =>
+      root.querySelector<HTMLInputElement>('input[type="search"]');
+    expect(search()?.hasAttribute('aria-label')).toBe(false);
+    expect(search()?.hasAttribute('inert')).toBe(true);
+    await expectAccessible(root);
+
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(search()?.getAttribute('aria-label')).toBe('Search threads');
+    expect(search()?.hasAttribute('inert')).toBe(false);
+  });
+
   it('has the name, New chat, a quiet search, the threads and the person', async () => {
     const { root, fixture } = await render();
     let navigated = 0;
@@ -139,10 +173,12 @@ describe('SideNavComponent', () => {
     // The switch is the first block, the threads by status the second.
     const status = (await fixture.getDeferBlocks())[1];
     await status?.render(DeferBlockState.Error);
-    const unloaded = (): Element | null => root.querySelector('[data-testid="nav-unloaded"]');
-    expect(unloaded()?.getAttribute('role')).toBe('alert');
-    expect(unloaded()?.textContent.trim()).toBe(
-      'This part of glave could not load. Reload the page to try again.',
+    const unloaded = (): Element | null => root.querySelector('[data-testid="unloaded"]');
+    expect(unloaded()?.querySelector('[role="alert"]')?.textContent.trim()).toBe(
+      'This part of glave could not load.',
+    );
+    expect(unloaded()?.querySelector('[data-testid="unloaded-reload"]')?.textContent.trim()).toBe(
+      'Reload',
     );
     expect(root.querySelector('app-projects-nav')).toBeNull();
     await expectAccessible(root);
