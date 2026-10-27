@@ -3,6 +3,7 @@
 
 #![cfg(test)]
 
+mod data;
 mod documents;
 mod edited;
 mod forms;

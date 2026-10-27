@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use changing::{Change, Making, changing};
 
+use crate::data::{self, Query};
 use crate::error::OfficeError;
 use crate::package::{Kind, Package};
 use crate::pdf;
@@ -47,7 +48,12 @@ Usage:
   glave doc fill <file.pdf> <new.pdf> [<values.json>] [--replace]
       a new PDF with its form filled from a JSON object of field names and values, read
       from standard input unless its file is named: text for text, true or false for a
-      checkbox, one of its values for a choice";
+      checkbox, one of its values for a choice
+  glave doc sql <file>... [<query>] [--sheet <name>] [--csv]
+      CSV, TSV, JSON (an array of objects) and workbook files loaded as tables into SQLite,
+      each named after its file (name=file names it), a workbook's sheets each a table unless
+      --sheet names one; the query's answer as a table, or as CSV with --csv. With no query,
+      each table's columns and their types";
 
 /// The largest file read: a workbook is read whole, and so is a description.
 const MAX_FILE: u64 = 100 * 1024 * 1024;
@@ -83,6 +89,8 @@ enum Asked {
     Fields(PathBuf),
     /// A new PDF to write, and what it is made from.
     Pdf(Making, Change),
+    /// Files to load into SQLite, and the query to run.
+    Sql(Query),
 }
 
 /// An unpacked folder to pack into a file.
@@ -149,11 +157,12 @@ pub fn run(words: &[String], input: &mut dyn Read) -> Result<Answer, OfficeError
         }) => parts::pack(&folder, &out, replace).map(Answer::printed),
         Asked::Fields(file) => pdf::fields(&changing::given(&file)?).map(Answer::printed),
         Asked::Pdf(making, change) => changing::changed(&making, &change, input),
+        Asked::Sql(query) => data::run(&query).map(Answer::printed),
     }
 }
 
 /// A file's name as its text says it: the name alone, without its folder.
-fn named(file: &Path) -> String {
+pub(crate) fn named(file: &Path) -> String {
     file.file_name().map_or_else(
         || file.display().to_string(),
         |name| name.to_string_lossy().into_owned(),
@@ -266,7 +275,7 @@ fn json(
 }
 
 /// The file at `path`, whole, when it is not too large to read.
-fn bytes(path: &Path) -> Result<Vec<u8>, OfficeError> {
+pub(crate) fn bytes(path: &Path) -> Result<Vec<u8>, OfficeError> {
     let io = |error| OfficeError::Io {
         action: "read",
         path: path.to_path_buf(),
@@ -291,12 +300,14 @@ fn parse(words: &[String]) -> Result<Asked, OfficeError> {
     let mut sheet = None;
     let mut rows = None;
     let mut replace = false;
+    let mut csv = false;
     let mut rest = rest.iter();
     while let Some(word) = rest.next() {
         match word.as_str() {
             "--sheet" => sheet = Some(value(rest.next(), "--sheet", "a sheet's name")?.clone()),
             "--rows" => rows = Some(row_span(value(rest.next(), "--rows", "rows like 1-100")?)?),
             "--replace" => replace = true,
+            "--csv" if verb == "sql" => csv = true,
             "-h" | "--help" => return Ok(Asked::Help),
             flag if flag.starts_with("--") => {
                 return Err(usage(&format!("glave doc {verb} takes no {flag}")));
@@ -334,12 +345,15 @@ fn parse(words: &[String]) -> Result<Asked, OfficeError> {
             replace,
         })),
         ("fields", [file]) if reading && writing => Ok(Asked::Fields(file.clone())),
+        ("sql", words) if reading && rows.is_none() => {
+            Query::parse(words, sheet, csv).map(Asked::Sql)
+        }
         ("merge" | "pages" | "rotate" | "fill", files) if writing => {
             changing(verb, files, replace).map(|(making, change)| Asked::Pdf(making, change))
         }
         (
             "read" | "csv" | "write" | "unpack" | "pack" | "fields" | "merge" | "pages" | "rotate"
-            | "fill",
+            | "fill" | "sql",
             _,
         ) => Err(usage(&format!(
             "glave doc {verb} was not given what it takes"
@@ -349,7 +363,7 @@ fn parse(words: &[String]) -> Result<Asked, OfficeError> {
 }
 
 /// Whether `path`'s name ends in `extension`, in any case.
-fn ends_in(path: &Path, extension: &str) -> bool {
+pub(crate) fn ends_in(path: &Path, extension: &str) -> bool {
     path.extension()
         .is_some_and(|its| its.eq_ignore_ascii_case(extension))
 }
@@ -370,7 +384,7 @@ fn row_span(text: &str) -> Result<(u32, u32), OfficeError> {
     }
 }
 
-fn usage(why: &str) -> OfficeError {
+pub(crate) fn usage(why: &str) -> OfficeError {
     OfficeError::Usage(format!("{why}\n\n{USAGE}"))
 }
 

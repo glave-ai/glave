@@ -2192,6 +2192,7 @@ dependencies = [
  "lopdf",
  "proptest",
  "quick-xml 0.42.0",
+ "rusqlite",
  "rust_xlsxwriter",
  "serde",
  "serde_json",

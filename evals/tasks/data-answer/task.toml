@@ -1,0 +1,12 @@
+[task]
+name = "glave/data-answer"
+description = "Answers analysis questions over a CSV of orders (a sum, a median by group, a correlation, a standard deviation), some fields quoted for their commas."
+
+[agent]
+timeout_sec = 600
+
+[glave]
+tier = "fast"
+permissions = "auto"
+# The orders are made as the task starts, by a script kept as text, and the script removed.
+setup = ["sh make-orders.sh && rm make-orders.sh"]
