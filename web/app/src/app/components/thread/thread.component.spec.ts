@@ -298,13 +298,7 @@ describe('ThreadComponent', () => {
   });
 
   it('shows a turn that worked results first: the reply, what changed, then its steps', async () => {
-    const call = (
-      seq: number,
-      id: string,
-      tool: string,
-      json: Record<string, unknown>,
-      summary: string,
-    ): unknown =>
+    const call = (seq: number, id: string, tool: string, json: object, summary: string): unknown =>
       event(seq, 'tool.call.requested', { call_id: id, tool, arguments: { json }, summary });
     const done = (seq: number, id: string): unknown =>
       event(seq, 'tool.call.completed', { call_id: id, is_error: false, output: [] });
