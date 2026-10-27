@@ -8,9 +8,13 @@ use glave_session::Answering;
 use glave_session::protocol::{Reply, Request, code};
 use glave_session::rpc;
 use serde_json::{Value, json};
+use std::io;
+
 use tokio::io::{
-    AsyncBufReadExt as _, AsyncRead, AsyncWrite, AsyncWriteExt as _, BufReader, Lines,
+    AsyncBufReadExt as _, AsyncRead, AsyncWrite, AsyncWriteExt as _, BufReader, DuplexStream,
+    Lines, ReadHalf, WriteHalf,
 };
+use tokio::task::JoinHandle;
 
 use crate::support::issuer::{Issuer, Signer};
 use crate::support::web::{Web, serve_http};
@@ -96,21 +100,36 @@ fn over_http_the_clients_language_counts_until_the_person_chooses_one() {
     });
 }
 
+/// A connection of lines to `server`, as a program on this computer opens one: what it writes
+/// to, the lines it reads, and the task that serves it.
+fn connect(
+    server: &Tested,
+) -> (
+    WriteHalf<DuplexStream>,
+    Lines<Read>,
+    JoinHandle<io::Result<()>>,
+) {
+    let (client, connection) = tokio::io::duplex(1 << 16);
+    let (read, write) = tokio::io::split(connection);
+    let serving = tokio::spawn(rpc::serve_connection(
+        server.clone(),
+        BufReader::new(read),
+        write,
+    ));
+    let (client_read, out) = tokio::io::split(client);
+    (out, BufReader::new(client_read).lines(), serving)
+}
+
+/// What a connection's client reads.
+type Read = BufReader<ReadHalf<DuplexStream>>;
+
 #[test]
 fn a_program_on_this_computer_reads_the_persons_language_and_in_process_stays_english() {
     block_on!(async {
         let dir = folder("languages-local");
         let server = server(&dir, Vec::new(), Answering::Clients).await;
         let get = Request::ThreadGet { thread: missing() };
-        let (client, connection) = tokio::io::duplex(1 << 16);
-        let (read, write) = tokio::io::split(connection);
-        let serving = tokio::spawn(rpc::serve_connection(
-            server.clone(),
-            BufReader::new(read),
-            write,
-        ));
-        let (client_read, mut out) = tokio::io::split(client);
-        let mut lines = BufReader::new(client_read).lines();
+        let (mut out, mut lines, serving) = connect(&server);
         assert_eq!(said(&ask(&mut out, &mut lines, 1, &get).await), english());
         let chosen = Request::LanguageSet {
             language: Some("en-XA".into()),
@@ -208,15 +227,7 @@ fn a_watch_on_this_computer_sends_an_approval_in_the_persons_language() {
         let server = server(&dir, asking(), Answering::NoOne).await;
         let thread = start(&server, false).await;
         turn(&server, thread, "touch it").await.unwrap();
-        let (client, connection) = tokio::io::duplex(1 << 16);
-        let (read, write) = tokio::io::split(connection);
-        let serving = tokio::spawn(rpc::serve_connection(
-            server.clone(),
-            BufReader::new(read),
-            write,
-        ));
-        let (client_read, mut out) = tokio::io::split(client);
-        let mut lines = BufReader::new(client_read).lines();
+        let (mut out, mut lines, serving) = connect(&server);
         let chosen = Request::LanguageSet {
             language: Some("en-XA".into()),
         };
