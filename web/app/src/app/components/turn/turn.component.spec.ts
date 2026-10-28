@@ -275,6 +275,49 @@ describe('TurnComponent', () => {
     expect(read.querySelector('app-turn-changes')?.classList).not.toContain('glz-settle');
   });
 
+  it('lets a card that needs the person rise into place as it appears, and only then', async () => {
+    const fixture = await mount({ ...RESULTS, waiting: [] });
+    const root = fixture.nativeElement as HTMLElement;
+    fixture.componentRef.setInput('turn', RESULTS);
+    await fixture.whenStable();
+    const card = root.querySelector('[data-testid="thread-approval"]');
+    expect(card?.classList).toContain('glz-rise');
+    await expectAccessible(root);
+    TestBed.resetTestingModule();
+    // A turn that shows with it waiting, as one read back from the log, moves nothing.
+    const read = await render(RESULTS);
+    expect(read.querySelector('[data-testid="thread-approval"]')?.classList).not.toContain(
+      'glz-rise',
+    );
+  });
+
+  it('lets nothing rise that the thread’s history brings as it opens', async () => {
+    let read: (events: unknown) => void = () => undefined;
+    const session = new FakeSession().answer(
+      'thread/events',
+      () =>
+        new Promise((resolve) => {
+          read = resolve;
+        }),
+    );
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), ...provideFakeSession(session), ...THREAD_VIEW],
+    });
+    const opened = TestBed.inject(ThreadService).open('thread-1');
+    const fixture = TestBed.createComponent(TurnComponent);
+    fixture.componentRef.setInput('turn', { ...RESULTS, waiting: [] });
+    await fixture.whenStable();
+    // The next page of its history holds the approval it waits on.
+    fixture.componentRef.setInput('turn', RESULTS);
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('[data-testid="thread-approval"]')?.classList).not.toContain(
+      'glz-rise',
+    );
+    read({ events: [], next: null });
+    await opened;
+  });
+
   it('settles in nothing the thread had changed as it opened, though said only after', async () => {
     // Not known as the thread opens, then said: it was there before the person looked.
     expect(await settles(null, CHANGED)).toBe(false);

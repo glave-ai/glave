@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 
 import { expectAccessible } from '../../testing/axe';
+import { fakeMotion } from '../../testing/motion';
 import { GlzMarkdownComponent } from './markdown.component';
 
 @Component({
@@ -127,6 +128,37 @@ describe('GlzMarkdownComponent', () => {
     await stable();
     expect(root.querySelector('.glz-markdown-code')).toBe(code);
     expect(root.querySelectorAll('[data-testid="md-copy"]')).toHaveLength(1);
+  });
+
+  it('fades in the text that arrives as it streams, never what it showed first', async () => {
+    const motion = fakeMotion('320ms');
+    const { root, host, stable } = await render('The lock', true);
+    const fading = (): readonly (string | null)[] =>
+      Array.from(root.querySelectorAll('.glz-markdown-arrived'), (span) => span.textContent);
+    expect(fading()).toEqual([]);
+    host.text.set('The lock is taken');
+    await stable();
+    expect(fading()).toEqual([' is taken']);
+    // It reads, selects and copies as it did: the same text, in the same paragraph.
+    expect(root.querySelector('p')?.textContent).toBe('The lock is taken');
+    await expectAccessible(root);
+    motion.restore();
+  });
+
+  it('fades in nothing when the person asks for less motion, or the text is not streaming', async () => {
+    const less = fakeMotion('0ms');
+    const streamed = await render('The lock', true);
+    streamed.host.text.set('The lock is taken');
+    await streamed.stable();
+    expect(streamed.root.querySelector('.glz-markdown-arrived')).toBeNull();
+    less.restore();
+    TestBed.resetTestingModule();
+    const motion = fakeMotion('320ms');
+    const read = await render('The lock');
+    read.host.text.set('The lock is taken');
+    await read.stable();
+    expect(read.root.querySelector('.glz-markdown-arrived')).toBeNull();
+    motion.restore();
   });
 
   it('highlights code once its language has loaded', async () => {

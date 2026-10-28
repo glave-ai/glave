@@ -1,5 +1,12 @@
 import { inject } from '@angular/core';
-import { type NavigationError, RedirectCommand, Router, type Routes } from '@angular/router';
+import {
+  type ActivatedRouteSnapshot,
+  type NavigationError,
+  RedirectCommand,
+  Router,
+  type Routes,
+  type ViewTransitionInfo,
+} from '@angular/router';
 
 import { UnloadedComponent } from './components/unloaded/unloaded.component';
 import { WorkspaceComponent } from './components/workspace/workspace.component';
@@ -8,6 +15,12 @@ import { signedInGuard } from './guards/signed-in.guard';
 
 /** Where a page that could not open is said to have failed, in its own place. */
 const UNLOADED = '/unloaded';
+
+/** A thread's page. */
+const THREAD = 't/:thread';
+
+/** The View Transition in which what Glaze marks `glz-crossfade` crossfades (styles/motion.css). */
+const CROSSFADE = 'glz-crossfade';
 
 /**
  * The app's pages: the workspace (chat, a project, a thread, tasks, memory, settings and the
@@ -36,7 +49,7 @@ export const routes: Routes = [
           import('./components/home/home.component').then((m) => m.HomeComponent),
       },
       {
-        path: 't/:thread',
+        path: THREAD,
         title: () => $localize`:@@routes.thread:Thread · glave`,
         loadComponent: () =>
           import('./components/thread/thread.component').then((m) => m.ThreadComponent),
@@ -98,4 +111,26 @@ export function unloadedPage(error: NavigationError): RedirectCommand | undefine
   return error.url === UNLOADED
     ? undefined
     : new RedirectCommand(instead, { skipLocationChange: true });
+}
+
+/** The thread whose page `route` opens, if it opens one. */
+function threadOf(route: ActivatedRouteSnapshot): string | null {
+  let page = route;
+  while (page.firstChild !== null) {
+    page = page.firstChild;
+  }
+  return page.routeConfig?.path === THREAD ? page.paramMap.get('thread') : null;
+}
+
+/**
+ * Crossfades the workspace's pane (the element marked `glz-crossfade`) as the person switches
+ * from one thread to another; every other change of page, and one in a browser that cannot
+ * crossfade, shows the next page at once.
+ */
+export function crossfadeThreads({ transition, from, to }: ViewTransitionInfo): void {
+  const before = threadOf(from);
+  const after = threadOf(to);
+  if (before !== null && after !== null && before !== after && 'types' in transition) {
+    transition.types.add(CROSSFADE);
+  }
 }

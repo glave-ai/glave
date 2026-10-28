@@ -1,6 +1,7 @@
-import { TestBed } from '@angular/core/testing';
+import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import type { ChangedFile } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
+import { fakeMotion } from '@glave/glaze/testing/motion';
 
 import { ThreadPanelService } from '../../services/thread-panel.service';
 import { TurnChangesComponent } from './turn-changes.component';
@@ -14,10 +15,10 @@ const FILES: readonly ChangedFile[] = [
 /** What the turn's card asked to show in full, in order: whose files, and which. */
 let shown: (readonly [readonly ChangedFile[] | null, string | null])[] = [];
 
-async function render(
+async function mount(
   files: readonly ChangedFile[],
   inputs: Readonly<Record<string, unknown>> = {},
-): Promise<HTMLElement> {
+): Promise<ComponentFixture<TurnChangesComponent>> {
   shown = [];
   TestBed.configureTestingModule({
     providers: [
@@ -36,6 +37,14 @@ async function render(
     fixture.componentRef.setInput(name, value);
   }
   await fixture.whenStable();
+  return fixture;
+}
+
+async function render(
+  files: readonly ChangedFile[],
+  inputs: Readonly<Record<string, unknown>> = {},
+): Promise<HTMLElement> {
+  const fixture = await mount(files, inputs);
   return fixture.nativeElement as HTMLElement;
 }
 
@@ -60,6 +69,43 @@ describe('TurnChangesComponent', () => {
       '1 more file',
     );
     await expectAccessible(root);
+  });
+
+  it('counts up a count that grows as the person watches, from what it showed', async () => {
+    const motion = fakeMotion('320ms');
+    // As it first shows, as when the thread opens on it, its numbers are as they are.
+    const fixture = await mount(FILES);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(texts(root, '.head .counts > span')).toEqual(['+42', '−7']);
+    fixture.componentRef.setInput('files', [
+      { path: 'crates/computer/src/local/worktree.rs', changes: [], added: 1_224, removed: 5 },
+      ...FILES.slice(1),
+    ]);
+    await fixture.whenStable();
+    expect(texts(root, '.head .counts > span')).toEqual(['+42', '−7']);
+    motion.to(0.5);
+    // Halfway there, eased, written in the reader's locale; what did not grow stays.
+    expect(texts(root, '.head .counts > span')).toEqual(['+642', '−7']);
+    expect(texts(root, '.row .counts > span').slice(0, 2)).toEqual(['+624', '−5']);
+    motion.end();
+    expect(texts(root, '.head .counts > span')).toEqual(['+1,242', '−7']);
+    // Screen readers hear the number it reached, at once.
+    expect(texts(root, '.head .glz-visually-hidden')).toEqual(['1,242 lines added, 7 removed']);
+    await expectAccessible(root);
+    motion.restore();
+  });
+
+  it('shows a grown count at once when the person asks for less motion', async () => {
+    const motion = fakeMotion('0ms');
+    const fixture = await mount(FILES);
+    fixture.componentRef.setInput('files', [
+      ...FILES,
+      { path: 'more.rs', changes: [], added: 24, removed: 5 },
+    ]);
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(texts(root, '.head .counts > span')).toEqual(['+66', '−12']);
+    motion.restore();
   });
 
   it('shows this turn’s changes in full: a file’s from its row, every one’s from the last', async () => {

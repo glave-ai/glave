@@ -7,9 +7,9 @@ import {
   input,
 } from '@angular/core';
 import type { ChangedFile } from '@glave/client';
-import { injectId } from '@glave/glaze';
+import { GlzCountDirective, injectId } from '@glave/glaze';
 
-import { lineCounts } from '../../lib/files';
+import { lineCounts, lineMarks } from '../../lib/files';
 import { plural } from '../../lib/plural';
 import { ThreadPanelService } from '../../services/thread-panel.service';
 
@@ -22,11 +22,13 @@ const NARROW_ROWS = 2;
  * monospace, cut short at the end when it is long, and its own counts. A row opens that file's
  * changes in full, and the last row, when there are more, every one of these files'. On a narrow
  * card the paths are cut short before the counts, and after two rows a last one says how many
- * more files there are. The thread's panel shows the thread's changes the same way, under its own `heading`
+ * more files there are. As the person watches, a count that grows counts up to its new number.
+ * The thread's panel shows the thread's changes the same way, under its own `heading`
  * one `level` down, with what it adds at the foot (`[appTurnChangesFoot]`).
  */
 @Component({
   selector: 'app-turn-changes',
+  imports: [GlzCountDirective],
   templateUrl: './turn-changes.component.html',
   styleUrl: './turn-changes.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -57,17 +59,19 @@ export class TurnChangesComponent {
       this.locale,
     );
   });
-  protected readonly total = computed(() =>
-    lineCounts(
-      this.files().reduce((sum, file) => sum + file.added, 0),
-      this.files().reduce((sum, file) => sum + file.removed, 0),
-      this.locale,
-    ),
-  );
+  /** How lines added and removed are written, as each count counts. */
+  protected readonly marks = lineMarks(this.locale);
+  protected readonly total = computed(() => {
+    const added = this.files().reduce((sum, file) => sum + file.added, 0);
+    const removed = this.files().reduce((sum, file) => sum + file.removed, 0);
+    return { added, removed, label: lineCounts(added, removed, this.locale).label };
+  });
   protected readonly rows = computed(() =>
     this.files().map((file) => ({
       path: file.path,
-      ...lineCounts(file.added, file.removed, this.locale),
+      added: file.added,
+      removed: file.removed,
+      label: lineCounts(file.added, file.removed, this.locale).label,
     })),
   );
   /** What the last row of a narrow card says: how many more files, if any. */

@@ -46,6 +46,7 @@ export * from './components/trust-card/trust-card.component';
 export * from './components/working/working.component';
 
 export * from './directives/copy.directive';
+export * from './directives/count.directive';
 export * from './directives/input.directive';
 export * from './directives/popover-trigger.directive';
 export * from './directives/stick-to-bottom.directive';

@@ -55,6 +55,6 @@
     }
   </glz-steps>
 }
-@for (item of turn().waiting; track item.key) {
-  <app-thread-item [item]="item" />
+@for (waiting of waiting(); track waiting.item.key) {
+  <app-thread-item [item]="waiting.item" [rises]="waiting.rises" />
 }

@@ -20,6 +20,7 @@ import { trimBlankLines } from '../../lib/conversation';
 import type { TurnResults } from '../../lib/results';
 import { runningFor } from '../../lib/when';
 import { clock } from '../../services/clock';
+import { ThreadService } from '../../services/thread.service';
 import { ReplySourcesComponent } from '../reply-sources/reply-sources.component';
 import { ThreadItemComponent } from '../thread-item/thread-item.component';
 import { TurnChangesComponent } from '../turn-changes/turn-changes.component';
@@ -35,7 +36,8 @@ import { TurnChangesComponent } from '../turn-changes/turn-changes.component';
  * every couple of seconds; and beside it how long the turn has worked, counted from the start
  * the server recorded. The model's reasoning, as it streams, shows open under it, and folds away
  * once the answer begins; the person can open or close it meanwhile. As the person watches, a
- * reply rises into place as it begins, and what changed settles in as it appears.
+ * reply rises into place as it begins, what changed settles in as it appears, and a card that
+ * needs the person rises into place.
  */
 @Component({
   selector: 'app-turn',
@@ -97,6 +99,32 @@ export class TurnComponent {
     const settles = this.settles();
     const files = this.turn().files ?? [];
     return files.length > 0 ? { settles, files } : null;
+  });
+  /** Whether the thread is being opened, its history read: what shows meanwhile was there. */
+  private readonly opening = inject(ThreadService).opening;
+  /**
+   * What waits for the person that appeared as the person watched, by key: never what the turn
+   * showed with as it first showed, nor what the thread's history brought as it opened.
+   */
+  private readonly risen = linkedSignal<
+    { readonly keys: readonly string[]; readonly opening: boolean },
+    ReadonlySet<string>
+  >({
+    source: () => ({ keys: this.turn().waiting.map((item) => item.key), opening: this.opening() }),
+    computation: ({ keys, opening }, previous) => {
+      if (previous === undefined) {
+        return new Set();
+      }
+      const before = new Set(previous.source.keys);
+      return new Set(
+        keys.filter((key) => previous.value.has(key) || (!opening && !before.has(key))),
+      );
+    },
+  });
+  /** What waits for the person, each with whether it rises into place. */
+  protected readonly waiting = computed(() => {
+    const risen = this.risen();
+    return this.turn().waiting.map((item) => ({ item, rises: risen.has(item.key) }));
   });
   /** The reasoning streaming in, without the blank lines at its ends. */
   protected readonly reasoning = computed(() => trimBlankLines(this.turn().live?.reasoning ?? ''));

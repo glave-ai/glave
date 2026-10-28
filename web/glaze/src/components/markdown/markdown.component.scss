@@ -60,6 +60,23 @@
   .glz-markdown-raw {
     white-space: pre-wrap;
   }
+
+  // Streaming text fades in as it arrives, each piece from where its fade has got to.
+  .glz-markdown-arrived {
+    animation: glz-markdown-arrive var(--glz-duration-slow) var(--glz-ease-out);
+  }
+}
+
+@keyframes glz-markdown-arrive {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glz-markdown .glz-markdown-arrived {
+    animation: none;
+  }
 }
 
 .glz-markdown-code {
