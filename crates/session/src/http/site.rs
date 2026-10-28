@@ -213,19 +213,28 @@ fn relative(path: &str) -> Option<PathBuf> {
         .then_some(inside)
 }
 
-/// Whether a file's name carries its content hash, as the build names every asset
-/// (`main-HFNTQ2NX.js`, `media/font-ABCD1234.woff2`): its content never changes.
+/// Whether a file's name carries its content hash, as the build names every asset: the last
+/// eight characters of its name, from `A`–`Z`, `a`–`z`, `0`–`9`, `_` and `-`, after a `-`
+/// (`main-HFNTQ2NX.js`, `chunk-Bji-1gB0.js`, `media/font-ABCD1234.woff2`): its content never
+/// changes.
 fn is_hashed(path: &Path) -> bool {
     let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
         return false;
     };
-    stem.rsplit_once('-').is_some_and(|(_, hash)| {
-        hash.len() == 8
-            && hash
-                .chars()
-                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
-    })
+    let Some(at) = stem.len().checked_sub(HASH_LENGTH) else {
+        return false;
+    };
+    let (Some(name), Some(hash)) = (stem.get(..at), stem.get(at..)) else {
+        return false;
+    };
+    name.ends_with('-')
+        && hash
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
 }
+
+/// How many characters a content hash in a file's name has.
+const HASH_LENGTH: usize = 8;
 
 fn cache_control(path: &Path) -> &'static str {
     if is_hashed(path) {
@@ -335,6 +344,36 @@ mod tests {
         );
         assert_eq!(cache_control(Path::new("favicon.svg")), "no-cache");
         assert_eq!(cache_control(Path::new("my-file.js")), "no-cache");
+    }
+
+    #[test]
+    fn every_name_a_build_hashes_is_hashed_and_no_other() {
+        // Names from a real build of the web app: Angular's lazy chunks mix case and may hold
+        // `-` and `_` in their hashes.
+        for hashed in [
+            "main-IO6EKVZ3.js",
+            "polyfills-PZSJNBYU.js",
+            "styles-IRDRWOI3.css",
+            "chunk-Bji-1gB0.js",
+            "chunk--JO8rryQ.js",
+            "chunk-BURO_rl2.js",
+            "chunk-C_9QXhhr.js",
+            "media/atkinson-hyperlegible-mono-latin-400-normal-P3LDHKPP.woff2",
+        ] {
+            assert!(is_hashed(Path::new(hashed)), "{hashed} is hashed");
+        }
+        for plain in [
+            "index.html",
+            "favicon.ico",
+            "favicon.svg",
+            "icon-192.png",
+            "manifest.webmanifest",
+            "my-file.js",
+            "chunk-Bji+1gB0.js",
+            "ABCD1234.js",
+        ] {
+            assert!(!is_hashed(Path::new(plain)), "{plain} is not hashed");
+        }
     }
 
     #[test]
