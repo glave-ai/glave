@@ -456,6 +456,7 @@
     "turnChanges.files": "[{{$COUNT}, plural, one {# ƒîļé} other {# ƒîļéš}} one]",
     "turnChanges.heading": "[Ŵĥåţ çĥåñĝéð one]",
     "turnChanges.more": "[{{$COUNT}, plural, one {# ɱöŕé ƒîļé} other {# ɱöŕé ƒîļéš}} one two]",
+    "turnPart.steps": "[Šţéþš one]",
     "unloaded.failed": "[Ţĥîš þåŕţ öƒ ĝļåṽé çöûļð ñöţ ļöåð. one two three]",
     "unloaded.reload": "[Ŕéļöåð one]",
     "unloaded.updated": "[ĝļåṽé ŵåš ûþðåţéð. Ŕéļöåð ţö çöñţîñûé. one two three]",

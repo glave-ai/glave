@@ -86,6 +86,16 @@
   color: var(--glz-color-text);
 }
 
+// Words still to come keep their room, their stand-in unseen but read; the chevron shows with
+// the words, where they end.
+.line .count.pending {
+  color: transparent;
+}
+
+.pending .chevron {
+  visibility: hidden;
+}
+
 .chevron {
   transition: transform var(--glz-duration-quick) var(--glz-ease-out);
 }

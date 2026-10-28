@@ -86,6 +86,23 @@ describe('GlzStepsComponent', () => {
     await expectAccessible(root);
   });
 
+  it('keeps the room of words still to come, unseen but named for screen readers', async () => {
+    TestBed.overrideTemplate(
+      HostComponent,
+      `<glz-steps testId="steps" plain pending steps="Steps">
+        <glz-receipt summary="bash: cargo test" />
+      </glz-steps>`,
+    );
+    const fixture = TestBed.createComponent(HostComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const count = root.querySelector<HTMLElement>('[data-testid="steps-summary"] .count');
+    expect(count?.classList).toContain('pending');
+    expect(count?.textContent.trim()).toBe('Steps');
+    expect(getComputedStyle(count!).color).toBe('rgba(0, 0, 0, 0)');
+    await expectAccessible(root);
+  });
+
   it('slides its steps shut before it closes, and closes at once when nothing moves', async () => {
     const fixture = TestBed.createComponent(HostComponent);
     fixture.componentInstance.open.set(true);

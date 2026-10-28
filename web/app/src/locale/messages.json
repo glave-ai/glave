@@ -456,6 +456,7 @@
     "turnChanges.files": "{{$COUNT}, plural, one {# file} other {# files}}",
     "turnChanges.heading": "What changed",
     "turnChanges.more": "{{$COUNT}, plural, one {# more file} other {# more files}}",
+    "turnPart.steps": "Steps",
     "unloaded.failed": "This part of glave could not load.",
     "unloaded.reload": "Reload",
     "unloaded.updated": "glave was updated. Reload to continue.",

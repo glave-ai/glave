@@ -120,7 +120,8 @@ function told(
   const steps: Steps = {
     runs: new Map(
       runs.flatMap(([sentence, calls]) =>
-        calls.map((id) => [id, { key: `run-${calls[0] ?? ''}`, sentence }] as const),
+        // Keyed by the `seq` of its first call, as the server keys it: `c3` was asked at 3.
+        calls.map((id) => [id, { key: `run-${(calls[0] ?? '').slice(1)}`, sentence }] as const),
       ),
     ),
     replies: new Set(replies),
@@ -181,7 +182,7 @@ describe('results', () => {
     expect(shown.waiting).toEqual([]);
   });
 
-  it('shows calls the server has not told yet each on its own, and reasoning before a run in place', () => {
+  it('draws each run as its line from the start, its words to come until the server tells it', () => {
     const shown = turnResults(
       turn([ask, say(2, '', 'hm'), call(3), call(4)]),
       null,
@@ -190,10 +191,29 @@ describe('results', () => {
       'en-US',
       told([['Ran 1 command', ['c3']]]),
     );
-    expect(drawn(shown.parts)).toEqual(['m2', 'Ran 1 command: c3', 'c4']);
-    expect(drawn(turnResults(turn([ask, call(2)]), null, null, true, 'en-US').parts)).toEqual([
-      'c2',
-    ]);
+    // A call the server has not told yet joins its run, under the line already told.
+    expect(drawn(shown.parts)).toEqual(['m2', 'Ran 1 command: c3 c4']);
+    // Untold, words or a question end a run, as the server reads them; reasoning does not.
+    const untold = turnResults(
+      turn([
+        ask,
+        call(2),
+        say(3, '', 'hm'),
+        call(4),
+        say(5, 'Looking'),
+        call(6),
+        { ...question(7), answers: ['Yes'] },
+        call(8),
+      ]),
+      null,
+      null,
+      true,
+      'en-US',
+    );
+    expect(drawn(untold.parts)).toEqual(['null: c2 m3 c4', 'm5', 'null: c6', 'q7', 'null: c8']);
+    // Keyed as the server will tell them, so nothing is drawn again when it does.
+    const keys = untold.parts.filter((part) => part.kind === 'run').map((part) => part.key);
+    expect(keys).toEqual(['run-2', 'run-6', 'run-8']);
     expect(NO_STEPS.runs.size).toBe(0);
   });
 
@@ -278,7 +298,7 @@ describe('results', () => {
       true,
       'en-US',
     );
-    expect(drawn(shown.parts)).toEqual(['c2', 'm3']);
+    expect(drawn(shown.parts)).toEqual(['null: c2', 'm3']);
     expect(shown.waiting).toEqual([waiting]);
     expect(shown.receipt?.status).toBe('waiting');
     expect(shown.receipt?.facts).toEqual([]);
@@ -319,7 +339,7 @@ describe('results', () => {
     const live = { text: 'Writ', reasoning: '' };
     const shown = turnResults(turn([ask, call(2), say(3, 'Earlier')]), live, null, true, 'en-US');
     expect(shown.live).toBe(live);
-    expect(drawn(shown.parts)).toEqual(['c2', 'm3']);
+    expect(drawn(shown.parts)).toEqual(['null: c2', 'm3']);
   });
 
   it('is working while the turn runs with nothing of its own to show', () => {

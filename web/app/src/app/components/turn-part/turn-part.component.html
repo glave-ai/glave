@@ -1,7 +1,8 @@
 @let shown = part();
 @switch (shown.kind) {
   @case ('run') {
-    <glz-steps plain testId="thread-run" [steps]="shown.sentence">
+    @let told = line();
+    <glz-steps plain testId="thread-run" [steps]="told.words" [pending]="told.pending">
       @for (item of shown.items; track item.key) {
         <app-thread-item [item]="item" />
       }
