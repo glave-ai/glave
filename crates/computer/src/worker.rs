@@ -1,8 +1,10 @@
 //! Workers: disposable computers, one per thread, started from an environment's pinned image
-//! by a backend (Docker, or Kubernetes with the `kubernetes` feature), with glave inside serving the computer protocol. The harness
-//! drives each one through this adapter, which keeps every call on the right worker over TLS
-//! (or a stream, for a worker with no network), within policy's limits. Work leaves a worker
-//! only as a pushed branch, a file handed back, or a store write; destroying it removes it.
+//! by a backend (Docker, or Kubernetes with the `kubernetes` feature), with glave inside
+//! serving the computer protocol. The harness drives each one through this adapter, which
+//! keeps every call on the right worker over TLS (or a stream, for a worker with no network),
+//! within policy's limits. Work leaves a worker only as a pushed branch, a file handed back, or
+//! a store write; destroying it removes it. Each worker is labelled with the glave that started
+//! it, and a glave starting removes those whose glave is gone ([`WorkerComputers::reap`]).
 
 mod backend;
 mod credentials;
@@ -24,6 +26,7 @@ use glave_ports::computer::{
     Output, Sources, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation, Clock, NeverCancelled, SystemClock};
+use glave_process::Glave;
 use tokio::task::JoinHandle;
 
 use crate::remote::RemoteComputers;
@@ -79,6 +82,8 @@ pub struct WorkerComputers {
     /// The time now; injected so tests decide when a worker runs out of time.
     clock: Arc<dyn Clock>,
     held: Mutex<Held>,
+    /// This glave, read once, which its workers are labelled with.
+    starter: tokio::sync::OnceCell<Option<Glave>>,
 }
 
 impl std::fmt::Debug for WorkerComputers {
@@ -116,7 +121,67 @@ impl WorkerComputers {
             credentials,
             clock: Arc::new(SystemClock),
             held: Mutex::new(Held::default()),
+            starter: tokio::sync::OnceCell::new(),
         }
+    }
+
+    /// Labels the workers this starts with `starter` instead of this glave, for the tests that
+    /// leave workers as a glave that is gone would.
+    #[cfg(test)]
+    pub(crate) fn started_by(self, starter: Option<Glave>) -> Self {
+        Self {
+            starter: tokio::sync::OnceCell::new_with(Some(starter)),
+            ..self
+        }
+    }
+
+    /// This glave, as its workers are labelled with it.
+    async fn starter(&self) -> Option<Glave> {
+        self.starter
+            .get_or_init(|| async {
+                tokio::task::spawn_blocking(Glave::this)
+                    .await
+                    .ok()
+                    .flatten()
+            })
+            .await
+            .clone()
+    }
+
+    /// Removes the workers on this backend whose glave is gone, as a glave starts: each
+    /// labelled with a glave that ran on this machine and whose process is no longer there.
+    /// A worker of a glave still running, of one on another machine, or with no label, is
+    /// left alone. Returns how many were removed.
+    pub async fn reap(&self) -> Result<usize, ComputerError> {
+        let listed = self.backend.list().await?;
+        let held: Vec<String> = self
+            .held()?
+            .workers
+            .values()
+            .map(|worker| worker.name.clone())
+            .collect();
+        let labelled: Vec<(String, Glave)> = listed
+            .into_iter()
+            .filter(|listed| !held.contains(&listed.name))
+            .filter_map(|listed| {
+                let starter = serde_json::from_str(listed.started_by.as_deref()?).ok()?;
+                Some((listed.name, starter))
+            })
+            .collect();
+        let starters: Vec<Glave> = labelled.iter().map(|(_, glave)| glave.clone()).collect();
+        let gone = tokio::task::spawn_blocking(move || Glave::gone(&starters))
+            .await
+            .map_err(|error| {
+                ComputerError::Failed(format!("could not tell which glaves are gone: {error}"))
+            })?;
+        let mut removed = 0;
+        for ((name, _), gone) in labelled.iter().zip(gone) {
+            if gone {
+                self.backend.remove(name).await?;
+                removed += 1;
+            }
+        }
+        Ok(removed)
     }
 
     /// Uses `clock` for the time, instead of the system's.
@@ -199,6 +264,7 @@ impl WorkerComputers {
             network: decided.network,
             identity: Identity::mint()?,
             token: token.clone(),
+            starter: self.starter().await,
         };
         let started = self.backend.start(&spec).await?;
         let name = started.name.clone();

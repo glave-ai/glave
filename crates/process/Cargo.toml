@@ -11,8 +11,8 @@ publish.workspace = true
 [dependencies]
 # Writing each entry whole (`file`).
 glave-ports.workspace = true
-# Signalling a process group, and seeing whether one is still there.
-rustix = { workspace = true, features = ["process"] }
+# Signalling a process group, and seeing whether one is still there; the machine's name.
+rustix = { workspace = true, features = ["process", "system"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

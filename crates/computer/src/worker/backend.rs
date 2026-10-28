@@ -1,5 +1,5 @@
 //! What a worker backend does: start a disposable machine from a pinned image with glave in
-//! it serving the computer protocol, say how to reach it, and remove it. Docker and Kubernetes
+//! it serving the computer protocol, say how to reach it, list its workers, and remove them. Docker and Kubernetes
 //! are the two; the trait stays inside the crate until a protocol for it is needed.
 
 use std::collections::BTreeMap;
@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use glave_ports::BoxFuture;
 use glave_ports::computer::{ComputerError, Isolation};
+use glave_process::Glave;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::task::JoinHandle;
 
@@ -37,13 +38,28 @@ pub(crate) struct Spec {
     pub(crate) identity: Identity,
     /// The short-lived token the harness presents first.
     pub(crate) token: Token,
+    /// The glave starting it, which the worker is labelled with, so that a glave starting
+    /// later removes it once that one is gone; none where it cannot be told.
+    pub(crate) starter: Option<Glave>,
+}
+
+/// The label (an annotation on Kubernetes) naming the glave that started a worker, as JSON.
+pub(crate) const STARTED_BY: &str = "glave.started-by";
+
+/// A worker a backend holds, as listed: its name, and the glave that started it as its label
+/// says, if it says.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Listed {
+    pub(crate) name: String,
+    pub(crate) started_by: Option<String>,
 }
 
 /// How the harness reaches a started worker.
 pub(crate) enum Link {
     /// Over TLS at `address`, trusting only the certificate with `fingerprint`. `forward`,
     /// when the backend reaches the worker through a forwarder of its own (Kubernetes'
-    /// port-forward), moves the bytes, and stops when the worker is removed.
+    /// port-forward), moves the bytes, or holds the worker's input (Docker's attach), and stops
+    /// when the worker is removed.
     Tls {
         address: SocketAddr,
         fingerprint: Fingerprint,
@@ -96,6 +112,9 @@ pub(crate) trait Backend: Send + Sync {
         name: &'a str,
         token: &'a Token,
     ) -> BoxFuture<'a, Result<(), ComputerError>>;
+
+    /// Every worker here, with this backend's labels, whoever started it.
+    fn list(&self) -> BoxFuture<'_, Result<Vec<Listed>, ComputerError>>;
 
     /// Removes the worker named `name` and its disk. A worker already gone is not an error.
     fn remove<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<(), ComputerError>>;

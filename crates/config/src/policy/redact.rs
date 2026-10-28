@@ -36,6 +36,11 @@ pub fn redacted(url: &str) -> String {
     }
 }
 
+/// Whether `url` holds a password: one [`redacted`] hides.
+pub fn has_password(url: &str) -> bool {
+    redacted(url) != url.trim()
+}
+
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
@@ -57,6 +62,16 @@ mod tests {
             "postgresql://glave@localhost/glave"
         );
         assert_eq!(redacted("postgres://a:b:c@h/d"), "postgres://a:***@h/d");
+    }
+
+    #[test]
+    fn a_password_is_found_where_it_would_be_hidden() {
+        assert!(has_password("postgres://glave:s3cret@db/glave"));
+        assert!(has_password(
+            "postgres://db/glave?user=glave&password=s3cret"
+        ));
+        assert!(!has_password(" postgres://glave@db/glave?sslmode=require "));
+        assert!(!has_password("postgres://db/glave"));
     }
 
     proptest! {

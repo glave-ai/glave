@@ -11,7 +11,7 @@ use std::time::SystemTime;
 use anyhow::{Context as _, bail};
 use glave_computer::{Identity, LocalComputers, MIN_SECRET, Tokens, serve, serve_tcp, serve_tls};
 use glave_ports::{Clock as _, SystemClock};
-use tokio::io::BufReader;
+use tokio::io::{AsyncReadExt as _, BufReader};
 use tokio::net::TcpListener;
 
 use crate::home;
@@ -24,13 +24,15 @@ Usage:
                                      per line) to the program that started glave
   glave computer serve --tcp <port>  serve it on 127.0.0.1:<port> to clients that first send
                                      connection/authenticate with $GLAVE_COMPUTER_TOKEN
-  glave computer serve --tls <host:port> <folder>
+  glave computer serve --tls <host:port> <folder> [--until-input-ends]
                                      serve it over TLS on any address, with cert.pem, key.pem
                                      and token in <folder> (the token file: the secret, then
                                      how many seconds it opens connections, counted on this
                                      machine's clock from when glave first reads it; read
                                      again for each connection, so it can be renewed); how
-                                     a harness reaches a worker
+                                     a harness reaches a worker. With --until-input-ends, it
+                                     ends when its standard input does, as a worker ends with
+                                     the glave that started it
 
 Copies of repositories are kept in $GLAVE_HOME/workspaces. Commands get glave's environment
 without anything named like a key, token, secret or password.";
@@ -40,7 +42,9 @@ without anything named like a key, token, secret or password.";
 enum Transport {
     Stdio,
     Tcp(SocketAddr),
-    Tls(SocketAddr, PathBuf),
+    /// The address, the folder of the identity and token, and whether it ends when its
+    /// standard input does.
+    Tls(SocketAddr, PathBuf, bool),
 }
 
 fn address(text: &str, flag: &str) -> Result<SocketAddr, String> {
@@ -66,11 +70,23 @@ fn parse(arguments: &[String]) -> Result<Transport, String> {
                 ))
             }
         }
-        [serve, tls, at, folder] if serve == "serve" && tls == "--tls" => {
-            Ok(Transport::Tls(address(at, "--tls")?, PathBuf::from(folder)))
+        [serve, tls, at, folder] if serve == "serve" && tls == "--tls" => Ok(Transport::Tls(
+            address(at, "--tls")?,
+            PathBuf::from(folder),
+            false,
+        )),
+        [serve, tls, at, folder, ends]
+            if serve == "serve" && tls == "--tls" && ends == "--until-input-ends" =>
+        {
+            Ok(Transport::Tls(
+                address(at, "--tls")?,
+                PathBuf::from(folder),
+                true,
+            ))
         }
         _ => Err(
-            "expected: glave computer serve --stdio, --tcp <port>, or --tls <host:port> <folder>"
+            "expected: glave computer serve --stdio, --tcp <port>, or --tls <host:port> <folder> \
+             [--until-input-ends]"
                 .into(),
         ),
     }
@@ -152,7 +168,7 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
                 .await
                 .with_context(|| format!("serving on {address}"))
         }
-        Transport::Tls(address, folder) => {
+        Transport::Tls(address, folder, until_input_ends) => {
             let tls = Identity::acceptor(
                 &read(&folder, "cert.pem").await?,
                 &read(&folder, "key.pem").await?,
@@ -167,11 +183,25 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
             let listener = TcpListener::bind(address)
                 .await
                 .with_context(|| format!("could not listen on {address}"))?;
-            serve_tls(computers, listener, tls, token)
-                .await
-                .with_context(|| format!("serving TLS on {address}"))
+            let serving = serve_tls(computers, listener, tls, token);
+            if !until_input_ends {
+                return serving
+                    .await
+                    .with_context(|| format!("serving TLS on {address}"));
+            }
+            tokio::select! {
+                served = serving => served.with_context(|| format!("serving TLS on {address}")),
+                () = input_ends() => Ok(()),
+            }
         }
     }
+}
+
+/// Reads standard input to its end, or to an error, discarding what it reads.
+async fn input_ends() {
+    let mut input = tokio::io::stdin();
+    let mut read = [0_u8; 256];
+    while matches!(input.read(&mut read).await, Ok(n) if n > 0) {}
 }
 
 #[cfg(test)]
@@ -194,9 +224,21 @@ mod tests {
             parse(&words("serve --tls 0.0.0.0:7070 /opt/glave/tls")),
             Ok(Transport::Tls(
                 "0.0.0.0:7070".parse().unwrap(),
-                PathBuf::from("/opt/glave/tls")
+                PathBuf::from("/opt/glave/tls"),
+                false
             ))
         );
+        assert_eq!(
+            parse(&words(
+                "serve --tls 0.0.0.0:7070 /opt/glave/tls --until-input-ends"
+            )),
+            Ok(Transport::Tls(
+                "0.0.0.0:7070".parse().unwrap(),
+                PathBuf::from("/opt/glave/tls"),
+                true
+            ))
+        );
+        assert!(parse(&words("serve --tls 0.0.0.0:7070 /opt/glave/tls --other")).is_err());
         assert!(parse(&words("serve --tls 0.0.0.0:7070")).is_err());
         assert!(parse(&words("serve")).is_err());
         assert!(parse(&words("serve --stdio --tcp 1")).is_err());

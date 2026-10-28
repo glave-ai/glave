@@ -65,7 +65,8 @@ pub(crate) async fn workers(
     Ok((Some(on), Some(computers)))
 }
 
-/// Workers on the backend `file` names, within the constraints' limits.
+/// Workers on the backend `file` names, within the constraints' limits, once those a glave
+/// that is gone left there are removed.
 async fn computers(
     file: &WorkersFile,
     constraints: &Constraints,
@@ -78,7 +79,7 @@ async fn computers(
         );
     }
     let limits = constraints.worker_limits();
-    Ok(match file.backend {
+    let computers = match file.backend {
         Backend::Docker => {
             let docker = Docker::new(
                 DockerSettings {
@@ -104,7 +105,17 @@ async fn computers(
             let credentials = WorkerCredentials::HostGit(processes.clone());
             WorkerComputers::kubernetes(kubernetes, limits, credentials)
         }
-    })
+    };
+    // As glave starts: what a glave that ended without removing its workers left.
+    match computers.reap().await {
+        Ok(0) => {}
+        Ok(removed) => eprintln!("glave: removed {removed} workers a glave that ended had left"),
+        Err(error) => eprintln!(
+            "glave: could not look for workers a glave that ended left: {}",
+            error.message()
+        ),
+    }
+    Ok(computers)
 }
 
 /// How long git has to read this repository, which it does in a moment.
