@@ -530,13 +530,24 @@ jobs:
 
   # macOS runs once per change, in the merge queue, then on main (and on demand). Pull
   # requests skip it, and a skipped job counts as passing.
-  macos:
+  #
+  # GitHub sometimes finds no macOS runner for a job and cancels it after about 15 minutes, with
+  # no step run (#952). `macos-run` then gets one more try, `macos-retry`, in the same run; a job
+  # a runner took never does, so a test that fails or hangs fails the check. `macos`, below them,
+  # passes when either passed; it is the check the `main` ruleset requires.
+  macos-run:
     if: github.event_name != 'pull_request'
     runs-on: macos-latest
     timeout-minutes: 45
-    env:
+    outputs:
+      started: ${{ steps.started.outputs.started }}
+    env: &macos-env
       GLAVE_REQUIRE_SANDBOX: "1"
-    steps:
+    steps: &macos-steps
+      # What tells the retry a runner took this job: a job none took has no outputs.
+      - name: A runner took the job
+        id: started
+        run: echo started=true >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v7
       # macOS's /bin/sh is bash 3.2, which reads some scripts otherwise than dash and shellcheck
       # do: a heredoc inside $(…) whose text holds a `)` ends early there, and what follows runs
@@ -552,3 +563,26 @@ jobs:
         with:
           tool: cargo-nextest,cargo-deny,cargo-machete
       - run: cargo xtask ci --all
+
+  # Only when no runner took the first try; not when the whole run was cancelled.
+  macos-retry:
+    needs: macos-run
+    if: "!cancelled() && needs.macos-run.result == 'cancelled' && needs.macos-run.outputs.started != 'true'"
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env: *macos-env
+    steps: *macos-steps
+
+  macos:
+    if: always() && github.event_name != 'pull_request'
+    needs: [macos-run, macos-retry]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: The checks passed on macOS, at the first try or the retry
+        env:
+          RUN: ${{ needs.macos-run.result }}
+          RETRY: ${{ needs.macos-retry.result }}
+        run: |
+          echo "first try: $RUN, retry: $RETRY"
+          test "$RUN" = success || test "$RETRY" = success
