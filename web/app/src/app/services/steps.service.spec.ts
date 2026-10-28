@@ -72,7 +72,7 @@ describe('StepsService', () => {
     expect(fake.paramsOf('thread/steps').length).toBeGreaterThan(1);
   });
 
-  it('keeps every call on its own when the steps cannot be read', async () => {
+  it('tells no run when the steps cannot be read', async () => {
     const fake = new FakeSession()
       .answer('thread/events', { events: [RUN, RAN] })
       .answer('thread/steps', new ApiError({ code: ErrorCode.INTERNAL, message: 'failed' }));

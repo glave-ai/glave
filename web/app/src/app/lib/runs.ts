@@ -47,7 +47,8 @@ export function stepping(turns: readonly Turn[]): string | null {
 export interface RunPart {
   readonly kind: 'run';
   readonly key: string;
-  readonly sentence: string;
+  /** The server's line; `null` until it has told the run, while the line keeps its room. */
+  readonly sentence: string | null;
   /** Its calls, each approval already answered after its call, and the reasoning between them. */
   readonly items: readonly ThreadItem[];
 }
@@ -79,9 +80,29 @@ function thinking(item: ThreadItem): item is MessageItem {
 }
 
 /**
- * `items` in the parts a turn shows, in order: each run of calls the server told in a line, its
- * calls and the approvals answered for them inside it, with the model's reasoning between them;
- * everything else in its own place, a call the server has not told yet among them; each message
+ * The key of each call's run in `items`, by the call's id, as the server keys it:
+ * the calls with nothing said between them, as the server reads them (`thread/steps`). Words of
+ * anyone's, or questions, end a run; reasoning alone and approvals do not. So a run shows as its
+ * line from the start, its room kept until the server tells it.
+ */
+function ownRuns(items: readonly ThreadItem[]): ReadonlyMap<string, string> {
+  const runs = new Map<string, string>();
+  let open: string | null = null;
+  for (const item of items) {
+    if (item.kind === 'call') {
+      open ??= `run-${String(item.seq)}`;
+      runs.set(item.call, open);
+    } else if (item.kind === 'question' || (item.kind === 'message' && item.text.trim() !== '')) {
+      open = null;
+    }
+  }
+  return runs;
+}
+
+/**
+ * `items` in the parts a turn shows, in order: each run of calls in the server's line (its room
+ * kept until the server has told it), its calls and the approvals answered for them inside it,
+ * with the model's reasoning between them; everything else in its own place; each message
  * of the model's before the reply the server names marked as said along the way, and a reply
  * with what it drew on, by its `seq` in `sourced`.
  */
@@ -91,11 +112,12 @@ export function turnParts(
   sourced: ReadonlyMap<number, ReplySources>,
 ): readonly TurnPart[] {
   const parts: TurnPart[] = [];
+  const own = ownRuns(items);
   // Which message is the reply is known once the server says so, as the turn ends.
   const answered = items.some((item) => steps.replies.has(item.seq));
   // Reasoning alone after a run: inside it when the run goes on, else in its own place.
   let thought: MessageItem[] = [];
-  const own = (item: ThreadItem): void => {
+  const alone = (item: ThreadItem): void => {
     const interim =
       answered && item.kind === 'message' && item.from === 'model' && !steps.replies.has(item.seq);
     const sources = sourced.get(item.seq) ?? null;
@@ -107,21 +129,23 @@ export function turnParts(
       continue;
     }
     const call = callOf(item);
-    const run = call === null ? undefined : steps.runs.get(call);
+    const told = call === null ? undefined : steps.runs.get(call);
+    const mine = call === null ? undefined : own.get(call);
+    const run = told ?? (mine === undefined ? undefined : { key: mine, sentence: null });
     const last = parts.at(-1);
     if (run !== undefined && last?.kind === 'run' && last.key === run.key) {
       parts[parts.length - 1] = { ...last, items: [...last.items, ...thought, item] };
       thought = [];
       continue;
     }
-    thought.forEach(own);
+    thought.forEach(alone);
     thought = [];
     if (run === undefined) {
-      own(item);
+      alone(item);
     } else {
       parts.push({ kind: 'run', key: run.key, sentence: run.sentence, items: [item] });
     }
   }
-  thought.forEach(own);
+  thought.forEach(alone);
   return parts;
 }

@@ -9,8 +9,8 @@ import { ThreadService } from './thread.service';
  * What the server says of the open thread's steps (`thread/steps`), read from its log: each
  * run of calls in a line, and each turn's reply. Read once the thread has opened, if it has made
  * a call, and again each time a call is asked for or ends and a turn ends. Until it is read, and
- * when it cannot be, the calls show each on its own and every message plainly. Each thread view
- * provides its own.
+ * when it cannot be, each run's line keeps its room, unseen, and every message shows plainly.
+ * Each thread view provides its own.
  */
 @Service({ autoProvided: false })
 export class StepsService {

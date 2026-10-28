@@ -38,7 +38,8 @@ const ICONS: Readonly<Record<GlzRunStatus, GlzIconData>> = {
  * reads as a footer and never as a message, with its status (a check when done, which only
  * screen readers read in words; the icon and the word otherwise), a few `facts` such as the time
  * it took and its cost, and then `steps` ("4 steps ›"). `plain` leaves the status out, for a
- * line whose words say how it stands ("Ran 2 commands (1 failed)"). The line folds what it
+ * line whose words say how it stands ("Ran 2 commands (1 failed)"), and `pending` keeps the room
+ * of words still to come. The line folds what it
  * holds (the steps themselves, each a `glz-receipt`, or what else there is to say of them): a
  * native `<details>`, so it opens by click, Enter or Space, and screen readers say whether it is
  * open. What it holds slides open and shut.
@@ -84,6 +85,11 @@ export class GlzStepsComponent {
   readonly statusLabels = input<GlzRunStatusLabels>(this.words.statusLabels);
   /** Whether the line has no status of its own: its words say how it stands. */
   readonly plain = input(false, { transform: booleanAttribute });
+  /**
+   * Whether its words are still to come: the line keeps their room, unseen, and `steps` names it
+   * for screen readers alone until they come.
+   */
+  readonly pending = input(false, { transform: booleanAttribute });
   readonly open = model(false);
 
   protected readonly chevron = ChevronRight;

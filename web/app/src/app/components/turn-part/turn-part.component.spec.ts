@@ -62,6 +62,17 @@ describe('TurnPartComponent', () => {
     await expectAccessible(root);
   });
 
+  it('keeps a run’s room until the server has told it, named for screen readers', async () => {
+    const root = await render({ kind: 'run', key: 'run-2', sentence: null, items: [CALL] });
+    const count = root.querySelector('[data-testid="thread-run-summary"] .count');
+    expect(count?.classList).toContain('pending');
+    expect(count?.textContent.trim()).toBe('Steps');
+    expect(root.querySelector('[data-testid="thread-receipt-summary"]')?.textContent).toContain(
+      'bash: exit 3',
+    );
+    await expectAccessible(root);
+  });
+
   it('shows what the model said along the way as plainly as a reply, with what it drew on', async () => {
     const root = await render({
       kind: 'item',

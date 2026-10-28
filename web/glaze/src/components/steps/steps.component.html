@@ -7,7 +7,7 @@
     @for (fact of facts(); track $index) {
       <span class="fact">{{ fact }}</span>
     }
-    <span class="count"
+    <span class="count" [class.pending]="pending()"
       >{{ steps()
       }}<glz-icon class="chevron glz-mirrored" [attr.data-testid]="ids().chevron" [icon]="chevron"
     /></span>

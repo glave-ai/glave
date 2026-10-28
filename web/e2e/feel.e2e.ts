@@ -18,16 +18,8 @@ test.skip(({ browserName }) => browserName !== 'chromium', 'only Chromium report
 
 /** The screens the app opens on, each with what shows once it has loaded. */
 const OPENED = [
-  { name: 'the Chats', path: '/', shown: 'nav-thread', moves: null },
-  {
-    name: 'a thread',
-    path: `/t/${THREAD}`,
-    shown: 'thread-message',
-    // The conversation is drawn from its history at once and waits for no other read. What
-    // each turn changed keeps its room from the turn's end until it is read (#913), but its
-    // calls fold into the server's runs only once those are read, and what is below moves.
-    moves: 'a turn’s calls fold into their runs after its history, which cannot say them (#917)',
-  },
+  { name: 'the Chats', path: '/', shown: 'nav-thread' },
+  { name: 'a thread', path: `/t/${THREAD}`, shown: 'thread-message' },
 ] as const;
 
 /** What the person feels as `page` opens at `path` and comes to rest, `shown` on it. */
@@ -47,7 +39,6 @@ for (const opened of OPENED) {
   });
 
   test(`nothing moves on opening ${opened.name}`, async ({ page }) => {
-    test.fixme(opened.moves !== null, opened.moves ?? '');
     expectStill(await opening(page, opened.path, opened.shown));
   });
 }
