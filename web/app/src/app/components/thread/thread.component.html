@@ -1,145 +1,154 @@
-<glz-panel-layout
-  class="layout"
-  testId="panel"
-  [label]="copy.panel"
-  [resizeLabel]="copy.resize"
-  [resizeHint]="panelHint"
-  [shortcut]="panelShortcut"
-  [empty]="noFacts()"
-  [open]="panelShowing()"
-  (openChange)="showPanel($event)"
-  [(width)]="panelWidth"
->
-  <div class="column">
-    <app-thread-header
-      [title]="title()"
-      [project]="project()"
-      [panel]="facts.shown()"
-      (rename)="startRename()"
-    />
-    <section
-      class="items"
-      data-testid="thread-items"
-      glzStickToBottom
-      [attr.aria-label]="copy.conversation"
-      [(atBottom)]="atBottom"
-    >
-      <div class="reading">
-        @for (turn of turns(); track turn.key) {
-          <app-turn [turn]="turn" />
-        }
-        @for (message of service.queued(); track message.key) {
-          <glz-message from="person" data-testid="thread-queued" [author]="copy.you">
-            <app-message-text [text]="message.text" />
-            <p class="caption">{{ copy.queued }}</p>
-          </glz-message>
-        }
-        @if (chatPlan(); as plan) {
-          <glz-plan-card
-            testId="thread-plan"
-            [summary]="plan.sentence"
-            [steps]="plan.steps"
-            [proposed]="plan.proposed"
-            [busy]="planBusy()"
-            (build)="build()"
-            (revise)="revise()"
-            (edit)="edit($event)"
-          />
-        }
-        @if (service.trust(); as ask) {
-          <glz-trust-card
-            testId="thread-trust"
-            [summary]="copy.trust"
-            [items]="ask.items"
-            [answered]="service.trustAnswer()"
-            [busy]="service.sending()"
-            (answer)="trust($event)"
-          />
-        }
-      </div>
-    </section>
-    <div class="dock">
-      <!-- Laid over the conversation's bottom edge, just above the composer: it takes no room. -->
-      <div class="float">
-        <div class="latest" data-testid="thread-latest" [class.shown]="latestShown()">
-          <button glzButton size="sm" pill (click)="jumpToLatest()">{{ copy.latest }}</button>
+<!-- Drawn once the thread is known (from the side nav's lists, a first message sent here, or its
+     own read), so it opens at its shape, the panel beside it or not, and nothing moves. -->
+@if (framed()) {
+  <glz-panel-layout
+    class="layout"
+    testId="panel"
+    [label]="copy.panel"
+    [resizeLabel]="copy.resize"
+    [resizeHint]="panelHint"
+    [shortcut]="panelShortcut"
+    [empty]="noFacts()"
+    [open]="panelShowing()"
+    (openChange)="showPanel($event)"
+    [(width)]="panelWidth"
+  >
+    <div class="column">
+      <app-thread-header
+        [title]="title()"
+        [project]="project()"
+        [panel]="facts.shown()"
+        (rename)="startRename()"
+      />
+      <section
+        class="items"
+        data-testid="thread-items"
+        glzStickToBottom
+        [attr.aria-label]="copy.conversation"
+        [(atBottom)]="atBottom"
+      >
+        <div class="reading">
+          @for (turn of turns(); track turn.key) {
+            <app-turn [turn]="turn" />
+          }
+          @for (message of service.queued(); track message.key) {
+            <glz-message from="person" data-testid="thread-queued" [author]="copy.you">
+              <app-message-text [text]="message.text" />
+              <p class="caption">{{ copy.queued }}</p>
+            </glz-message>
+          }
+          @if (chatPlan(); as plan) {
+            <glz-plan-card
+              testId="thread-plan"
+              [summary]="plan.sentence"
+              [steps]="plan.steps"
+              [proposed]="plan.proposed"
+              [busy]="planBusy()"
+              (build)="build()"
+              (revise)="revise()"
+              (edit)="edit($event)"
+            />
+          }
+          @if (trustAsk(); as ask) {
+            <glz-trust-card
+              testId="thread-trust"
+              [summary]="copy.trust"
+              [items]="ask.items"
+              [answered]="service.trustAnswer()"
+              [busy]="service.sending()"
+              (answer)="trust($event)"
+            />
+          }
         </div>
-        @if (problem(); as problem) {
-          <p class="error" role="alert" data-testid="thread-error">{{ problem }}</p>
-        }
-        @if (lost()) {
-          <div class="error glz-row glz-gap-3" role="alert" data-testid="thread-lost">
-            {{ copy.lost }}
-            <button
-              glzButton
-              size="sm"
-              data-testid="thread-send-again"
-              (click)="service.sendAgain()"
-            >
-              {{ copy.again }}
-            </button>
+      </section>
+      <div class="dock">
+        <!-- Laid over the conversation's bottom edge, just above the composer: it takes no room. -->
+        <div class="float">
+          <div class="latest" data-testid="thread-latest" [class.shown]="latestShown()">
+            <button glzButton size="sm" pill (click)="jumpToLatest()">{{ copy.latest }}</button>
           </div>
+          @if (problem(); as problem) {
+            <p class="error" role="alert" data-testid="thread-error">{{ problem }}</p>
+          }
+          @if (lost()) {
+            <div class="error glz-row glz-gap-3" role="alert" data-testid="thread-lost">
+              {{ copy.lost }}
+              <button
+                glzButton
+                size="sm"
+                data-testid="thread-send-again"
+                (click)="service.sendAgain()"
+              >
+                {{ copy.again }}
+              </button>
+            </div>
+          }
+        </div>
+        @if (gone(); as gone) {
+          <app-folder-gone testId="thread-gone" [project]="gone.project" [message]="gone.message" />
         }
-      </div>
-      @if (gone(); as gone) {
-        <app-folder-gone testId="thread-gone" [project]="gone.project" [message]="gone.message" />
-      }
-      <!-- Hidden rather than removed while the folder is gone, so the draft waits for it. -->
-      <div [hidden]="folderGone()">
-        <glz-composer
-          testId="thread-composer"
-          [placeholder]="copy.placeholder"
-          [busy]="service.busy()"
-          [attachLabel]="copy.attach"
-          [attached]="attachments.count()"
-          [waiting]="attachments.waiting()"
-          [(value)]="draft"
-          (send)="send($event)"
-          (stop)="stop()"
-          (attach)="attachments.add($event)"
-        >
-          @if (searching()) {
-            <glz-icon
-              glzComposerStart
-              class="searching"
-              data-testid="thread-searching"
-              [icon]="globe"
-              [label]="copy.searching"
-              [attr.title]="copy.searching"
+        <!-- Hidden rather than removed while the folder is gone, so the draft waits for it. -->
+        <div [hidden]="folderGone()">
+          <glz-composer
+            testId="thread-composer"
+            [placeholder]="copy.placeholder"
+            [busy]="service.busy()"
+            [attachLabel]="copy.attach"
+            [attached]="attachments.count()"
+            [waiting]="attachments.waiting()"
+            [(value)]="draft"
+            (send)="send($event)"
+            (stop)="stop()"
+            (attach)="attachments.add($event)"
+          >
+            @if (searching()) {
+              <glz-icon
+                glzComposerStart
+                class="searching"
+                data-testid="thread-searching"
+                [icon]="globe"
+                [label]="copy.searching"
+                [attr.title]="copy.searching"
+              />
+            }
+            @for (chip of attachments.chips(); track chip.key) {
+              <glz-attachment
+                glzComposerAttachments
+                testId="thread-composer-file"
+                [name]="chip.name"
+                [detail]="chip.detail"
+                [preview]="chip.preview"
+                [busy]="chip.busy"
+                [failed]="chip.failed"
+                [removeLabel]="chip.removeLabel"
+                (remove)="attachments.remove(chip.key)"
+              />
+            }
+            <app-permissions
+              glzComposerStatus
+              [current]="permissions()"
+              [(value)]="pickedPermissions"
             />
-          }
-          @for (chip of attachments.chips(); track chip.key) {
-            <glz-attachment
-              glzComposerAttachments
-              testId="thread-composer-file"
-              [name]="chip.name"
-              [detail]="chip.detail"
-              [preview]="chip.preview"
-              [busy]="chip.busy"
-              [failed]="chip.failed"
-              [removeLabel]="chip.removeLabel"
-              (remove)="attachments.remove(chip.key)"
-            />
-          }
-          <app-permissions
-            glzComposerStatus
-            [current]="permissions()"
-            [(value)]="pickedPermissions"
-          />
-          <div glzComposerStatus class="glz-row glz-gap-1">
-            <app-model-picker [current]="service.chosen()" [(value)]="picked" />
-            <app-effort-picker
-              [model]="nextModel()"
-              [current]="service.chosenEffort()"
-              [(value)]="pickedEffort"
-            />
-          </div>
-        </glz-composer>
+            <!-- Kept in place but unseen until the history says the thread's own choices. -->
+            <div glzComposerStatus class="glz-row glz-gap-1" [class.pending]="choicesPending()">
+              <app-model-picker [current]="service.chosen()" [(value)]="picked" />
+              <app-effort-picker
+                [model]="nextModel()"
+                [current]="service.chosenEffort()"
+                [(value)]="pickedEffort"
+              />
+            </div>
+          </glz-composer>
+        </div>
       </div>
     </div>
-  </div>
-  <app-thread-panel glzPanel (gone)="panelGone()" />
-</glz-panel-layout>
+    <!-- The conversation and the panel's facts come in once read with what they are drawn with,
+         so nothing in them moves as that comes in; at once for a first message sent here. -->
+    @if (drawn()) {
+      <app-thread-panel glzPanel (gone)="panelGone()" />
+    }
+  </glz-panel-layout>
+}
 <app-rename-dialog [title]="title()" [(open)]="renaming" (renamed)="rename($event)" />
 <glz-dialog
   class="changes"

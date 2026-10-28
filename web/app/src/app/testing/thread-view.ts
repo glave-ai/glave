@@ -7,7 +7,8 @@ import { of } from 'rxjs';
 import { ThreadComponent } from '../components/thread/thread.component';
 import { FirstTurnService } from '../services/first-turn.service';
 import { ProjectsService } from '../services/projects.service';
-import { type FakeSession, provideFakeSession } from './fake-session';
+import { FakeSession, provideFakeSession } from './fake-session';
+import { MODELS, SERVER, changed, record, thread } from './fixtures';
 
 /** The thread view, opened, as a test reaches it. */
 export interface OpenThread {
@@ -38,4 +39,31 @@ export async function openThread(fake: FakeSession, first?: TurnStartParams): Pr
   await new Promise((resolve) => setTimeout(resolve));
   await fixture.whenStable();
   return { root: fixture.nativeElement as HTMLElement, fixture };
+}
+
+/** A session that answers thread-1's history with `events` and what it changed with `changes`. */
+export function session(events: readonly unknown[], changes = changed(1, [])): FakeSession {
+  return new FakeSession()
+    .answer('thread/events', { events })
+    .answer('thread/changes', changes)
+    .answer('model/list', { models: MODELS })
+    .answer('server/discover', SERVER)
+    .answer('schedule/list', { schedules: [] })
+    .answer('tasks/list', { tasks: [] })
+    .answer('project/list', { projects: [record('p1', 'glave')] })
+    .answer('thread/list', { threads: [thread('thread-1', 'Tidy the repo', { project: 'p1' })] });
+}
+
+/** Waits a task, for what is already answered to come in. */
+export const settle = (): Promise<unknown> => new Promise((resolve) => setTimeout(resolve));
+
+/** Types `text` into the thread's composer and sends it. */
+export async function type(root: HTMLElement, text: string): Promise<void> {
+  const input = root.querySelector<HTMLTextAreaElement>('[data-testid="thread-composer-input"]');
+  if (input) {
+    input.value = text;
+    input.dispatchEvent(new Event('input'));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }));
+  }
+  await settle();
 }

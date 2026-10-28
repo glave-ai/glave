@@ -127,6 +127,24 @@ export class FakeSession implements SessionClient {
     return this;
   }
 
+  /**
+   * Answers each call of `method` only once the test gives its answer, through the function this
+   * returns, which answers the call waiting then.
+   */
+  held(method: Method): (answer: object) => void {
+    let give: (answer: object) => void = () => undefined;
+    this.answer(
+      method,
+      () =>
+        new Promise((resolve) => {
+          give = resolve;
+        }),
+    );
+    return (answer) => {
+      give(answer);
+    };
+  }
+
   streams(notes: readonly Notification[], result?: unknown): this {
     this.notes = notes;
     if (result !== undefined) {

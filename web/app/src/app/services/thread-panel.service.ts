@@ -1,5 +1,5 @@
-import { Service, computed, effect, inject, signal, untracked } from '@angular/core';
-import type { ChangedFile, WorkspaceBound } from '@glave/client';
+import { Service, computed, effect, inject, linkedSignal, signal, untracked } from '@angular/core';
+import type { ChangedFile, ThreadId, WorkspaceBound } from '@glave/client';
 
 import { type SourceLink, sourceLinks } from '../lib/sources';
 import { ChangedFilesService } from './changed-files.service';
@@ -109,6 +109,38 @@ export class ThreadPanelService {
    * narrow screen, as a sheet over it.
    */
   readonly visible = computed(() => this.shown() && this.panel.showing());
+  /**
+   * Whether it is known if there is a panel, so the page can be drawn at its shape: once the
+   * thread's summary is (from the side nav's lists, else its own read), or its first message was
+   * just sent here, before it has any facts; or it could not be read, which the page says.
+   */
+  readonly decided = computed(
+    () =>
+      this.thread.summary() !== null ||
+      this.thread.firstTurn() !== null ||
+      this.thread.error() !== null,
+  );
+  /** Whether the thread has been read as it opened, kept per thread: `read`. */
+  private readonly settled = linkedSignal<
+    { readonly thread: ThreadId | null; readonly ready: boolean },
+    boolean
+  >({
+    source: () => ({
+      thread: this.thread.thread(),
+      ready: this.thread.firstTurn() !== null || !this.thread.opening(),
+    }),
+    computation: (now, before) =>
+      now.ready || (before?.source.thread === now.thread && before.value),
+  });
+  /**
+   * Whether the thread's history has been read as it opened, so the conversation is drawn from
+   * it; at once for a thread whose first message was just sent here, which has none. Nothing
+   * else is waited for: what it changed, the pages its replies drew on, its plan and its
+   * commands each come into their own place as they are read, so a read that is slow, or never
+   * answers, holds back only what it brings. Once read, it stays so in the thread, whatever is
+   * read again as the person watches.
+   */
+  readonly read = this.settled.asReadonly();
   /** Whether the changes show in full. */
   readonly reviewing = computed(() => this.review() !== null);
   /** The files whose changes show in full: a turn's, else the thread's. */

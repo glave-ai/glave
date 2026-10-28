@@ -16,24 +16,16 @@ import { SIGNED_IN, atRest, byTestId } from './support';
 // WebKit, as Safari, reports neither layout shifts nor event timings, nor the largest paint.
 test.skip(({ browserName }) => browserName !== 'chromium', 'only Chromium reports these entries');
 
-/**
- * The screens the app opens on, each with what shows once it has loaded, and why things still
- * move as it does, while they do.
- */
+/** The screens the app opens on, each with what shows once it has loaded. */
 const OPENED = [
-  {
-    name: 'the Chats',
-    path: '/',
-    shown: 'nav-thread',
-    moves:
-      'the side nav’s grouping switch and Tasks, and the new chat’s project picker, come in after the first paint and push what is there (0.013)',
-  },
+  { name: 'the Chats', path: '/', shown: 'nav-thread', moves: null },
   {
     name: 'a thread',
     path: `/t/${THREAD}`,
     shown: 'thread-message',
-    moves:
-      'the thread’s panel opens once its facts are read, after its conversation has painted across the page, and narrows it (0.21)',
+    // The conversation is drawn from its history at once and waits for no other read, so what
+    // a turn changed comes in after it, above its steps and the panel's cost, and moves them.
+    moves: 'what a turn changed comes in after its history, which cannot say how much (#913)',
   },
 ] as const;
 
@@ -54,7 +46,7 @@ for (const opened of OPENED) {
   });
 
   test(`nothing moves on opening ${opened.name}`, async ({ page }) => {
-    test.fixme(true, opened.moves);
+    test.fixme(opened.moves !== null, opened.moves ?? '');
     expectStill(await opening(page, opened.path, opened.shown));
   });
 }
