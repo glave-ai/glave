@@ -721,3 +721,32 @@ fn a_sandboxed_command_cannot_open_the_person_s_keychains() {
         }
     });
 }
+
+/// A glave killed outright removes none of its commands' temp folders: the next glave to
+/// prepare a sandbox removes them, named for a glave that is gone (#562).
+#[test]
+fn the_next_sandbox_removes_what_a_glave_killed_outright_left() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("run-temp-left");
+    let (computers, sandbox) = computers(&dir);
+    block_on!(async {
+        let first = open_app(&computers, &dir).await;
+        let (_, said) = run(&computers, first, &sandbox, "echo \"temp=$TMPDIR\"").await;
+        let temp = printed_temp(&said);
+        // Beside the folders every glave's sandboxes keep, one named for a number no process
+        // can have.
+        #[cfg(target_os = "macos")]
+        let left = temp.with_file_name("glave-sandbox-999999999-0");
+        #[cfg(not(target_os = "macos"))]
+        let left = temp.parent().unwrap().with_file_name("999999999-0");
+        std::fs::create_dir(&left).unwrap();
+        std::fs::write(left.join("left"), "x").unwrap();
+        let second = open_app(&computers, &dir).await;
+        run(&computers, second, &sandbox, "true").await;
+        let still = left.exists();
+        let _ = glave_ports::remove_tree(&left);
+        assert!(!still, "left behind: {}", left.display());
+    });
+}

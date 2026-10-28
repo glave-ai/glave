@@ -174,7 +174,8 @@ fn killed_mid_turn_leaves_nothing(name: &str, permissions: &str) {
 }
 
 /// The temp folders the sandboxed commands of the glave it names had, which a glave killed
-/// outright cannot remove: removed when this drops, however the test ends. macOS keeps them
+/// outright cannot remove, and no glave prepares a sandbox after it here to remove them:
+/// removed when this drops, however the test ends. macOS keeps them
 /// in the system's temp folder, Linux in each user's sandbox folder there.
 struct TempFolders(u32);
 

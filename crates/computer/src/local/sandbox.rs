@@ -76,11 +76,14 @@ pub(crate) struct Reached<'a> {
     pub(crate) glave_on_path: Option<&'a Path>,
 }
 
-/// Where each command's own temp folder is made, and what its name starts with.
+/// Where each command's own temp folder is made, and what its name starts with; and where
+/// every glave's folders that hold them sit, `<prefix><pid>-<n>` named for their glave.
 #[derive(Debug)]
 struct Temps {
     parent: PathBuf,
     prefix: &'static str,
+    every: PathBuf,
+    every_prefix: &'static str,
 }
 
 /// How to start one command in the sandbox: a program and the arguments before the command.
@@ -121,6 +124,9 @@ impl Prepared {
         };
         let (enforcer, temps) =
             platform::Enforcer::prepare(sandbox, root, git_common, helper, reached, hidden).await?;
+        // What a glave killed outright left: it could not remove its own.
+        let (every, prefix) = (temps.every.clone(), temps.every_prefix);
+        let _ = tokio::task::spawn_blocking(move || run_temp::remove_left(&every, prefix)).await;
         Ok(Self {
             sandbox: sandbox.clone(),
             temps,
