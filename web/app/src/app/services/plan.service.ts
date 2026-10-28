@@ -1,4 +1,4 @@
-import { Service, effect, inject, linkedSignal, signal, untracked } from '@angular/core';
+import { Service, computed, effect, inject, linkedSignal, signal, untracked } from '@angular/core';
 import type { PlanInfo, ThreadId } from '@glave/client';
 
 import { SessionService } from './session.service';
@@ -21,11 +21,18 @@ export class PlanService {
   });
   private readonly sending = signal(false);
   private readonly failed = signal<string | null>(null);
+  /** Whether a read has answered, or failed, in this thread. */
+  private readonly answered = linkedSignal<ThreadId | null, boolean>({
+    source: this.thread.thread,
+    computation: () => false,
+  });
   /** Counts the reads begun, so an answer that a later one overtook is dropped. */
   private latest = 0;
 
   /** The thread's plan, or `null` while it has none or it is being read. */
   readonly plan = this.read.asReadonly();
+  /** Whether what the thread's history calls for has been read, or there is nothing to read. */
+  readonly known = computed(() => this.thread.planning() === null || this.answered());
   /** Whether the person's edit is on its way. */
   readonly busy = this.sending.asReadonly();
   /** Why the edit was refused, in the server's words. */
@@ -56,6 +63,9 @@ export class PlanService {
       }
     } catch {
       // The plan stands as it was read last; its next change reads it again.
+    }
+    if (ticket === this.latest && this.thread.thread() === thread) {
+      this.answered.set(true);
     }
   }
 

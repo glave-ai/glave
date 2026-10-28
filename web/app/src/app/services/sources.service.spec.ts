@@ -59,6 +59,8 @@ describe('SourcesService', () => {
     await settle();
     expect(fake.paramsOf('thread/sources')).toEqual([]);
     expect(sources.byReply().size).toBe(0);
+    // Nothing to read, so what the thread is drawn with is known.
+    expect(sources.known()).toBe(true);
   });
 
   it('reads a thread’s sources as it opens, and again when a turn that read a page ends', async () => {
@@ -69,9 +71,12 @@ describe('SourcesService', () => {
       .streams([recorded(event(8, 'turn.started', {})), recorded(event(9, 'turn.ended', {}))]);
     const { sources, thread } = make(fake);
     await thread.open('thread-1');
+    // Not known once it has opened, until the server answers.
+    expect(sources.known()).toBe(false);
     await settle();
     expect(fake.paramsOf('thread/sources')).toEqual([{ thread: 'thread-1' }]);
     expect(sources.byReply().get(6)).toEqual(SOURCED);
+    expect(sources.known()).toBe(true);
     await thread.send('And since?');
     await settle();
     expect(fake.paramsOf('thread/sources')).toHaveLength(2);
@@ -108,5 +113,7 @@ describe('SourcesService', () => {
     await settle();
     expect(fake.paramsOf('thread/sources')).toHaveLength(1);
     expect(sources.byReply().size).toBe(0);
+    // Known as none: the replies stand without them.
+    expect(sources.known()).toBe(true);
   });
 });

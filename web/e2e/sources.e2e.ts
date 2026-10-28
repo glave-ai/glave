@@ -8,14 +8,15 @@ test('a reply shows the pages it drew on from the web under it, each a link', as
   const problems = watchForProblems(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await fakeApi(page, { research: true });
-  // What the reply drew on comes from the server once the reply shows: held until then.
+  // What the reply drew on is read once the thread is, and the conversation comes in with it,
+  // so nothing under the reply moves as it does: held, the page shows the thread with none yet.
   const sourcing = await hold(page, '/', 'thread/sources');
   await page.goto(`/t/${RESEARCH}${SIGNED_IN}`);
-  await expect(byTestId(page, 'thread-message').last()).toContainText('Tokio 2.0 drops');
   await sourcing.sent;
-  const sources = byTestId(page, 'reply-sources');
-  await expect(sources).toHaveCount(0);
+  await expect(byTestId(page, 'thread-composer')).toBeVisible();
+  await expect(byTestId(page, 'thread-message')).toHaveCount(0);
   sourcing.letGo();
+  await expect(byTestId(page, 'thread-message').last()).toContainText('Tokio 2.0 drops');
   await expect(byTestId(page, 'reply-sources-sentence')).toHaveText('Sources: 2 pages');
   const links = byTestId(page, 'reply-sources-link');
   await expect(links).toHaveCount(2);

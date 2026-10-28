@@ -160,8 +160,19 @@ export class ThreadComponent {
   protected readonly facts = inject(ThreadPanelService);
   /** Whether the thread has nothing for its panel, so the page is its conversation alone. */
   protected readonly noFacts = computed(() => !this.facts.shown());
-  /** The plan's card in the conversation: a proposal, or the plan while the panel is hidden. */
-  protected readonly chatPlan = computed(() => chatPlan(this.plans.plan(), this.facts.visible()));
+  /** Whether the page is drawn: once it is known whether it has a panel. */
+  protected readonly framed = this.facts.decided;
+  /** Whether the conversation and the panel's facts show: once read as the thread opened. */
+  protected readonly drawn = this.facts.read;
+  /**
+   * The plan's card in the conversation: a proposal, or the plan while the panel is hidden;
+   * once the conversation shows.
+   */
+  protected readonly chatPlan = computed(() =>
+    this.drawn() ? chatPlan(this.plans.plan(), this.facts.visible()) : null,
+  );
+  /** What the thread's project asks the person to trust, under the conversation once it shows. */
+  protected readonly trustAsk = computed(() => (this.drawn() ? this.service.trust() : null));
   private readonly sources = inject(SourcesService);
   private readonly changed = inject(ChangedFilesService);
   /** What the server says of the turns besides their events. */
@@ -169,8 +180,9 @@ export class ThreadComponent {
     sourced: this.sources.byReply(),
     changed: this.changed.byTurn(),
   }));
-  private readonly stick = viewChild.required(GlzStickToBottomDirective);
-  private readonly composer = viewChild.required(GlzComposerComponent);
+  /** The conversation and the composer, once the page is drawn. */
+  private readonly stick = viewChild(GlzStickToBottomDirective);
+  private readonly composer = viewChild(GlzComposerComponent);
   /** The composer's draft, which a message the model never read comes back to. */
   protected readonly draft = this.service.composer;
   protected readonly atBottom = signal(true);
@@ -223,10 +235,10 @@ export class ThreadComponent {
     const [step, busy, facts] = [this.service.step(), this.service.busy(), this.turnFacts()];
     return turn === undefined ? [] : [turnResults(turn, live, step, busy, this.locale, facts)];
   });
-  protected readonly turns = computed<readonly TurnResults[]>(() => [
-    ...this.settled(),
-    ...this.latest(),
-  ]);
+  /** The turns, once the conversation shows. */
+  protected readonly turns = computed<readonly TurnResults[]>(() =>
+    this.drawn() ? [...this.settled(), ...this.latest()] : [],
+  );
   protected readonly title = computed(() => {
     const summary = this.service.summary();
     return summary === null ? '' : threadTitle(summary);
@@ -311,7 +323,7 @@ export class ThreadComponent {
 
   /** The person wants the plan changed: their words go in the composer, in plan mode still. */
   protected revise(): void {
-    this.composer().focus();
+    this.composer()?.focus();
   }
 
   protected edit(steps: readonly string[]): void {
@@ -319,7 +331,7 @@ export class ThreadComponent {
   }
 
   protected jumpToLatest(): void {
-    this.stick().scrollToBottom();
+    this.stick()?.scrollToBottom();
   }
 
   protected showPanel(showing: boolean): void {
@@ -328,7 +340,7 @@ export class ThreadComponent {
 
   /** The panel went with the keyboard's place in it: the place goes to the composer. */
   protected panelGone(): void {
-    this.composer().focus();
+    this.composer()?.focus();
   }
 
   protected startRename(): void {

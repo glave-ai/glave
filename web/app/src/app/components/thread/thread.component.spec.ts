@@ -515,7 +515,9 @@ describe('ThreadComponent', () => {
     // The thread's own mode is Auto (its summary says so), offered first.
     const fake = session([]);
     const { root } = await open(fake);
+    // A CDK menu trigger closes what it opens in the task it is made in: the page is drawn late.
     const mode = async (index: number): Promise<void> => {
+      await settle();
       root.querySelector<HTMLButtonElement>('[data-testid="permissions-trigger"]')?.click();
       await settle();
       const options = document.querySelectorAll<HTMLElement>('[data-testid="permissions-option"]');
@@ -534,6 +536,21 @@ describe('ThreadComponent', () => {
       { thread: 'thread-1', prompt: 'Careful now', permissions: 'ask' },
       { thread: 'thread-1', prompt: 'Go ahead' },
     ]);
+  });
+
+  it('draws the conversation once what it changed is read, each card in its place', async () => {
+    const fake = session(EDITED);
+    const changes = fake.held('thread/changes');
+    const { root, fixture } = await open(fake);
+    expect(root.querySelector('[data-testid="thread-composer"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="thread-message"]')).toBeNull();
+    expect(root.querySelector('app-thread-panel')).toBeNull();
+    changes(README);
+    await settle();
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="thread-message"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="turn-changes"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="panel-changes"]')).not.toBeNull();
   });
 
   it('shows no panel for a plain chat: no edge, no button', async () => {
