@@ -4,12 +4,12 @@
 
 use std::collections::BTreeSet;
 
-use glave_event::{Arguments, Body, CallId, RawEvent, Role, Seq, ThreadId, ToolKind, decode};
+use glave_event::{Arguments, Body, CallId, RawEvent, Role, Seq, ThreadId, ToolKind};
 use glave_ports::{BlobStore, CallKind, EventLog, ModelProvider};
 
 use crate::protocol::{ApiError, CallRun, Reply, ThreadSteps, Told};
 use crate::server::Server;
-use crate::sources::said;
+use crate::sources::{said, turn_event};
 use crate::words::Sentence;
 
 impl<P, L, B> Server<P, L, B>
@@ -58,21 +58,10 @@ struct Call {
 impl Reading {
     /// Reads the next event of the log.
     fn read(&mut self, event: RawEvent) {
-        if !matches!(
-            event.kind.as_str(),
-            "turn.started"
-                | "turn.ended"
-                | "tool.call.requested"
-                | "tool.call.completed"
-                | "message.added"
-        ) {
-            return;
-        }
-        let seq = event.seq;
-        let Ok(event) = decode(event) else {
+        let Some((seq, body)) = turn_event(event) else {
             return;
         };
-        match event.body {
+        match body {
             Body::TurnStarted(_) => {
                 self.open = false;
                 self.words = None;

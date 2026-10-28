@@ -48,21 +48,10 @@ struct Turn {
 impl Reading {
     /// Reads the next event of the log.
     fn read(&mut self, event: RawEvent) {
-        if !matches!(
-            event.kind.as_str(),
-            "turn.started"
-                | "turn.ended"
-                | "tool.call.requested"
-                | "tool.call.completed"
-                | "message.added"
-        ) {
-            return;
-        }
-        let seq = event.seq;
-        let Ok(event) = decode(event) else {
+        let Some((seq, body)) = turn_event(event) else {
             return;
         };
-        match event.body {
+        match body {
             // What a turn read is known once it ended; one that never did is left out.
             Body::TurnStarted(_) => self.turn = Turn::default(),
             Body::TurnEnded(_) => {
@@ -116,6 +105,23 @@ impl Turn {
             pages,
         })
     }
+}
+
+/// `event` with its `seq`, when it is one of those a turn's replies and calls are read from:
+/// its start and end, its calls and their results, and its messages.
+pub(crate) fn turn_event(event: RawEvent) -> Option<(Seq, Body)> {
+    let kinds = [
+        "turn.started",
+        "turn.ended",
+        "tool.call.requested",
+        "tool.call.completed",
+        "message.added",
+    ];
+    if !kinds.contains(&event.kind.as_str()) {
+        return None;
+    }
+    let seq = event.seq;
+    decode(event).ok().map(|event| (seq, event.body))
 }
 
 /// Whether a message says anything: text that is not blank.
