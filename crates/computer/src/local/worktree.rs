@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use glave_ports::computer::ComputerError;
 use glave_ports::digest;
+use glave_process::Processes;
 use serde::{Deserialize, Serialize};
 
 use super::git::{Git, not_an_option};
@@ -108,9 +109,10 @@ pub(crate) async fn write_record(dest: &Path, record: &Record) -> Result<(), Com
 
 /// Where the worktree for `branch` of the repository around `path` lives under `base`,
 /// created (in its turn among `locks`) if it is not there yet, with `owner` kept beside it and
-/// any hold cleared; answers the folder matching `path` inside it.
+/// any hold cleared; answers the folder matching `path` inside it. git runs as one of
+/// `processes`, with `environment`.
 pub(crate) async fn open(
-    environment: &[(OsString, OsString)],
+    (processes, environment): (&Processes, &[(OsString, OsString)]),
     locks: &Locks,
     base: &Path,
     path: &str,
@@ -119,7 +121,7 @@ pub(crate) async fn open(
 ) -> Result<Made, ComputerError> {
     let folder = paths::folder(path).await?;
     not_an_option("the branch", branch)?;
-    let git = Git::at(environment, &folder);
+    let git = Git::at(processes, environment, &folder);
     let Ok(top) = git.ask(&["rev-parse", "--show-toplevel"]).await? else {
         return Err(ComputerError::Refused(format!(
             "{path} is not in a git repository, so it cannot have a worktree. Turn the worktree \
@@ -150,7 +152,7 @@ pub(crate) async fn open(
     let dest = base.join(repository_id(&top, &common)).join(leaf(branch));
     let turn = locks.lock(&common).await?;
     if tokio::fs::try_exists(&dest).await.unwrap_or(false) {
-        check_reusable(environment, &dest, &common, branch).await?;
+        check_reusable(processes, environment, &dest, &common, branch).await?;
     } else {
         add(&git, &dest, branch).await?;
     }
@@ -201,12 +203,13 @@ fn leaf(branch: &str) -> String {
 /// Refuses a folder already at the worktree's place unless it is this repository's worktree on
 /// `branch`.
 async fn check_reusable(
+    processes: &Processes,
     environment: &[(OsString, OsString)],
     dest: &Path,
     common: &Path,
     branch: &str,
 ) -> Result<(), ComputerError> {
-    let there = Git::at(environment, dest);
+    let there = Git::at(processes, environment, dest);
     let same_repository = common_dir(&there).await.is_ok_and(|found| found == common);
     // git that gives no answer says so, rather than have a good worktree taken for another.
     let on = there

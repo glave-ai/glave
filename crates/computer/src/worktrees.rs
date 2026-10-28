@@ -11,6 +11,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use glave_ports::computer::ComputerError;
+use glave_process::Processes;
 
 use crate::local::git::Git;
 use crate::local::worktree::{Record, read_record, record_path, write_record};
@@ -96,6 +97,7 @@ pub enum Released {
 pub async fn list(
     base: &Path,
     environment: &[(OsString, OsString)],
+    processes: &Processes,
 ) -> Result<Vec<Kept>, ComputerError> {
     let mut found = Vec::new();
     for repository in folders(base).await? {
@@ -103,7 +105,7 @@ pub async fn list(
             if found.len() >= MAX_LISTED {
                 break;
             }
-            if let Some(kept) = describe(&path, environment).await? {
+            if let Some(kept) = describe(&path, environment, processes).await? {
                 found.push(kept);
             }
         }
@@ -144,12 +146,13 @@ pub async fn list_scratch(base: &Path) -> Result<Vec<Kept>, ComputerError> {
 pub async fn release(
     kept: &Kept,
     environment: &[(OsString, OsString)],
+    processes: &Processes,
     why: &str,
     trash: Option<&Trash>,
 ) -> Result<Released, ComputerError> {
     match kept.condition {
         Condition::Safe | Condition::Scratch { empty: true } => {
-            remove(kept, environment).await?;
+            remove(kept, environment, processes).await?;
             Ok(Released::Removed)
         }
         Condition::RepositoryGone | Condition::Scratch { empty: false } => match trash {
@@ -172,6 +175,7 @@ pub async fn release(
 pub async fn remove(
     kept: &Kept,
     environment: &[(OsString, OsString)],
+    processes: &Processes,
 ) -> Result<(), ComputerError> {
     if matches!(kept.condition, Condition::Scratch { .. }) {
         tokio::fs::remove_dir_all(&kept.path)
@@ -185,6 +189,7 @@ pub async fn remove(
     let mut git_dir = OsString::from("--git-dir=");
     git_dir.push(&kept.repository);
     let git = Git {
+        processes,
         environment,
         at: &kept.repository,
         options: vec![git_dir],
@@ -211,6 +216,7 @@ async fn hold(kept: &Kept, why: &str) -> Result<(), ComputerError> {
 async fn describe(
     path: &Path,
     environment: &[(OsString, OsString)],
+    processes: &Processes,
 ) -> Result<Option<Kept>, ComputerError> {
     let record = read_record(path).await?;
     let repository = match &record {
@@ -240,7 +246,7 @@ async fn describe(
     {
         return Ok(Some(kept));
     }
-    let git = Git::at(environment, &kept.path);
+    let git = Git::at(processes, environment, &kept.path);
     if let Ok(branch) = git.run(&["symbolic-ref", "--short", "-q", "HEAD"]).await {
         kept.branch = Some(branch);
     }

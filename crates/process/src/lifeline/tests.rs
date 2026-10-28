@@ -226,6 +226,26 @@ fn once_glave_reaps_a_leader_its_group_alone_is_held_until_let_go() {
 }
 
 #[test]
+fn a_program_glave_waits_for_is_held_while_it_runs_and_let_go_once_it_ends() {
+    let folder = TempDir::new("lifeline-waited").unwrap();
+    glave_ports::block_on!(async {
+        let processes = Processes::unrecorded()
+            .with_lifeline(fake_helper(&folder))
+            .await
+            .unwrap();
+        let helper = helper_pid(processes.lifeline().unwrap());
+        let output = processes
+            .output(Program::new("sh").args(["-c", "echo $$"]), HUNG)
+            .await
+            .unwrap();
+        let leader = String::from_utf8(output.stdout).unwrap();
+        let leader = leader.trim();
+        let said = format!("+{leader}\n~{leader}\n-{leader}\n");
+        assert_eq!(told(&folder, helper, &said).await, said);
+    });
+}
+
+#[test]
 fn the_helper_stops_the_group_of_a_leader_glave_reaped() {
     // What a reaped leader left runs on in its group: here, a process that leads a group, which
     // the helper reaches through the group alone.

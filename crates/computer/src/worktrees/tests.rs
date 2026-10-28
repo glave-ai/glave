@@ -132,7 +132,7 @@ fn safe_means_nothing_uncommitted_and_every_commit_on_a_remote() {
             git -c user.name=t -c user.email=t@example.com commit -q -m two";
         sh(Path::new(&ahead.root), commit);
 
-        let kept = list(&base, &env).await.unwrap();
+        let kept = list(&base, &env, &Processes::unrecorded()).await.unwrap();
         let seen: Vec<(Option<&str>, Condition)> = kept
             .iter()
             .map(|kept| (kept.branch.as_deref(), kept.condition))
@@ -157,7 +157,7 @@ fn safe_means_nothing_uncommitted_and_every_commit_on_a_remote() {
 
         // Pushed anywhere (as a squash merge leaves it, the branch on the remote) is safe.
         sh(Path::new(&ahead.root), "git push -q origin glave/ahead");
-        let kept = list(&base, &env).await.unwrap();
+        let kept = list(&base, &env, &Processes::unrecorded()).await.unwrap();
         assert_eq!(kept[0].condition, Condition::Safe);
     });
 }
@@ -181,10 +181,14 @@ fn a_release_removes_what_is_safe_and_holds_the_rest_keeping_every_branch() {
             .write(dirty.id, &[file("new.txt", b"work")])
             .await
             .unwrap();
-        let kept = list(&base, &env).await.unwrap();
+        let kept = list(&base, &env, &Processes::unrecorded()).await.unwrap();
         let mut done = Vec::new();
         for kept in &kept {
-            done.push(release(kept, &env, "idle", None).await.unwrap());
+            done.push(
+                release(kept, &env, &Processes::unrecorded(), "idle", None)
+                    .await
+                    .unwrap(),
+            );
         }
         assert_eq!(
             done,
@@ -195,7 +199,7 @@ fn a_release_removes_what_is_safe_and_holds_the_rest_keeping_every_branch() {
         );
         assert!(!Path::new(&clean.root).exists());
         assert!(Path::new(&dirty.root).join("new.txt").exists());
-        let left = list(&base, &env).await.unwrap();
+        let left = list(&base, &env, &Processes::unrecorded()).await.unwrap();
         assert_eq!(left.len(), 1);
         assert_eq!(left[0].held.as_deref(), Some("idle"));
         assert_eq!(branches(&repo), "glave/clean\nglave/dirty", "branches stay");
@@ -205,9 +209,17 @@ fn a_release_removes_what_is_safe_and_holds_the_rest_keeping_every_branch() {
             .open(made.id, &worktree(&repo, "glave/dirty", None))
             .await
             .unwrap();
-        assert_eq!(list(&base, &env).await.unwrap()[0].held, None);
-        remove(&left[0], &env).await.unwrap();
-        assert_eq!(list(&base, &env).await.unwrap(), []);
+        assert_eq!(
+            list(&base, &env, &Processes::unrecorded()).await.unwrap()[0].held,
+            None
+        );
+        remove(&left[0], &env, &Processes::unrecorded())
+            .await
+            .unwrap();
+        assert_eq!(
+            list(&base, &env, &Processes::unrecorded()).await.unwrap(),
+            []
+        );
         assert_eq!(branches(&repo), "glave/clean\nglave/dirty");
     });
 }
@@ -254,17 +266,28 @@ fn scratch_folders_reopen_as_left_and_go_empty_away_or_full_to_the_trash() {
         assert_eq!(kept[0].owner.as_deref(), Some("org/project/empty"));
         assert_eq!(kept[0].at_risk(), None);
         assert_eq!(
-            release(&kept[0], &env, "idle", None).await.unwrap(),
+            release(&kept[0], &env, &Processes::unrecorded(), "idle", None)
+                .await
+                .unwrap(),
             Released::Removed
         );
         assert_eq!(
-            release(&kept[1], &env, "idle", None).await.unwrap(),
+            release(&kept[1], &env, &Processes::unrecorded(), "idle", None)
+                .await
+                .unwrap(),
             Released::NoTrash,
             "files are never deleted outright"
         );
         let trash = Trash::Folder(base.join("Trash"));
-        let Released::Trashed(moved) = release(&kept[1], &env, "idle", Some(&trash)).await.unwrap()
-        else {
+        let Released::Trashed(moved) = release(
+            &kept[1],
+            &env,
+            &Processes::unrecorded(),
+            "idle",
+            Some(&trash),
+        )
+        .await
+        .unwrap() else {
             panic!("trashed")
         };
         assert!(
@@ -292,7 +315,7 @@ fn a_worktree_whose_repository_is_gone_goes_to_the_trash_never_away() {
             .await
             .unwrap();
         std::fs::remove_dir_all(&repo).unwrap();
-        let kept = list(&base, &env).await.unwrap();
+        let kept = list(&base, &env, &Processes::unrecorded()).await.unwrap();
         assert!(
             kept.iter()
                 .all(|kept| kept.condition == Condition::RepositoryGone),
@@ -301,16 +324,23 @@ fn a_worktree_whose_repository_is_gone_goes_to_the_trash_never_away() {
         assert_eq!(kept[0].at_risk().as_deref(), Some("its repository is gone"));
 
         assert_eq!(
-            release(&kept[1], &env, "idle", None).await.unwrap(),
+            release(&kept[1], &env, &Processes::unrecorded(), "idle", None)
+                .await
+                .unwrap(),
             Released::NoTrash
         );
         assert!(kept[1].path.exists(), "with no Trash it is kept");
 
         let folder = Trash::Folder(trash.join("mac"));
-        let Released::Trashed(moved) = release(&kept[0], &env, "idle", Some(&folder))
-            .await
-            .unwrap()
-        else {
+        let Released::Trashed(moved) = release(
+            &kept[0],
+            &env,
+            &Processes::unrecorded(),
+            "idle",
+            Some(&folder),
+        )
+        .await
+        .unwrap() else {
             panic!("trashed")
         };
         assert!(!Path::new(&first.root).exists());
@@ -320,10 +350,15 @@ fn a_worktree_whose_repository_is_gone_goes_to_the_trash_never_away() {
             root: trash.join("xdg"),
             deleted_at: "2026-10-10T12:00:00".into(),
         };
-        let Released::Trashed(moved) = release(&kept[1], &env, "idle", Some(&desktop))
-            .await
-            .unwrap()
-        else {
+        let Released::Trashed(moved) = release(
+            &kept[1],
+            &env,
+            &Processes::unrecorded(),
+            "idle",
+            Some(&desktop),
+        )
+        .await
+        .unwrap() else {
             panic!("trashed")
         };
         assert_eq!(moved, trash.join("xdg/files/glave-two"));
@@ -333,7 +368,10 @@ fn a_worktree_whose_repository_is_gone_goes_to_the_trash_never_away() {
             note.ends_with("DeletionDate=2026-10-10T12:00:00\n"),
             "{note}"
         );
-        assert_eq!(list(&base, &env).await.unwrap(), []);
+        assert_eq!(
+            list(&base, &env, &Processes::unrecorded()).await.unwrap(),
+            []
+        );
     });
 }
 
@@ -374,14 +412,14 @@ fn a_torn_record_is_read_as_none_and_written_whole_again() {
         let made = computers.create(&Environment::host()).await.unwrap();
         let sources = worktree(&repo, "glave/torn", Some("thread-1"));
         computers.open(made.id, &sources).await.unwrap();
-        let kept = list(&base, &env).await.unwrap();
+        let kept = list(&base, &env, &Processes::unrecorded()).await.unwrap();
         let record = record_path(&kept[0].path);
         let whole = std::fs::read(&record).unwrap();
         let text = String::from_utf8_lossy(&whole).into_owned();
         assert!(text.contains("\"version\": 1"), "{text}");
 
         std::fs::write(&record, &whole[..whole.len() / 2]).unwrap();
-        let torn = list(&base, &env).await.unwrap();
+        let torn = list(&base, &env, &Processes::unrecorded()).await.unwrap();
         assert_eq!(torn.len(), 1, "still found");
         assert_eq!(torn[0].owner, None);
         computers.open(made.id, &sources).await.unwrap();
@@ -393,7 +431,7 @@ fn a_torn_record_is_read_as_none_and_written_whole_again() {
 
         let unversioned = text.replace("\"version\": 1,", "");
         std::fs::write(&record, unversioned).unwrap();
-        let kept = list(&base, &env).await.unwrap();
+        let kept = list(&base, &env, &Processes::unrecorded()).await.unwrap();
         assert_eq!(kept[0].owner, None, "read as none");
     });
 }
@@ -409,11 +447,14 @@ fn a_record_of_a_newer_version_is_refused_plainly() {
         let made = computers.create(&Environment::host()).await.unwrap();
         let sources = worktree(&repo, "glave/newer", None);
         computers.open(made.id, &sources).await.unwrap();
-        let record = record_path(&list(&base, &env).await.unwrap()[0].path);
+        let record =
+            record_path(&list(&base, &env, &Processes::unrecorded()).await.unwrap()[0].path);
         let newer = r#"{"version": 2, "repository": "/elsewhere", "branch": "b"}"#;
         std::fs::write(&record, newer).unwrap();
 
-        let refused = list(&base, &env).await.unwrap_err();
+        let refused = list(&base, &env, &Processes::unrecorded())
+            .await
+            .unwrap_err();
         assert!(
             matches!(&refused, ComputerError::Refused(message)
                 if message.contains("newer version of glave")),

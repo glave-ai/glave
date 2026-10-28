@@ -8,19 +8,10 @@ use rustix::process::{Pid, test_kill_process};
 use super::*;
 use crate::ledger::{Process, Record};
 use crate::start::{self, Start};
-use crate::testing::Orphan;
+use crate::testing::{Orphan, entries};
 
 fn folder(name: &str) -> glave_ports::testing::TempDir {
     glave_ports::testing::TempDir::new(&format!("process-{name}")).unwrap()
-}
-
-fn entries(folder: &Path) -> usize {
-    std::fs::read_dir(folder).map_or(0, |listed| {
-        listed
-            .filter_map(Result::ok)
-            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
-            .count()
-    })
 }
 
 /// A glave that has ended: a process that ran and was reaped, with a start no process has.

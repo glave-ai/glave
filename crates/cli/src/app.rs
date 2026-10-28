@@ -172,7 +172,9 @@ async fn page(
 }
 
 /// Opens `link`, glave signed in by the code it carries, in the person's browser: through the
-/// page in glave's folder, so the code is never an argument of a program.
+/// page in glave's folder, so the code is never an argument of a program. The opener is
+/// recorded in glave's folder while it runs, which takes moments; this glave has no lifeline
+/// of its own to tie it to.
 pub(crate) async fn show(
     folder: &Path,
     url: &str,
@@ -182,12 +184,13 @@ pub(crate) async fn show(
     let link = format!("{url}#code={}", code.expose());
     crate::serving::keep(&page, &redirect(&link))?;
     let (program, arguments) = opener(std::env::consts::OS, &page);
-    let opened = glave_process::Program::new(program)
-        .args(&arguments)
+    let mut run = glave_process::Program::new(program);
+    run.args(&arguments)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .output(OPENS_WITHIN)
+        .stderr(std::process::Stdio::null());
+    let opened = glave_process::Processes::recorded(folder.join("run"))
+        .output(&mut run, OPENS_WITHIN)
         .await
         .with_context(|| format!("could not run {program} to open the browser"))?;
     anyhow::ensure!(

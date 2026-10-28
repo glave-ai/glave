@@ -299,10 +299,10 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "Child::gone, only ever awaited within GRACE in Child::stop",
     ),
     (
-        "crates/process/src/program.rs",
-        "child.wait_with_output().await",
+        "crates/process/src/waited.rs",
+        "tokio::try_join!(child.wait(), written, drained(stdout), drained(stderr))?;",
         1,
-        "inside Program::output_with's run, which has the caller's limit",
+        "inside Processes::waited, under the caller's limit",
     ),
     (
         "crates/process/src/within.rs",

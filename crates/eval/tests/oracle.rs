@@ -4,6 +4,7 @@
 use std::path::Path;
 
 use glave_eval::{load_all, oracle};
+use glave_process::Processes;
 
 #[test]
 fn every_grader_fails_the_task_and_passes_its_solution() {
@@ -18,7 +19,7 @@ fn every_grader_fails_the_task_and_passes_its_solution() {
         let mut checks = tokio::task::JoinSet::new();
         for task in tasks {
             let (base, dir) = (base.clone(), root.join(&task.name));
-            checks.spawn(async move { oracle(&base, &task, &dir).await });
+            checks.spawn(async move { oracle(&Processes::unrecorded(), &base, &task, &dir).await });
         }
         let mut failures = Vec::new();
         while let Some(result) = checks.join_next().await {

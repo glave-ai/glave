@@ -139,7 +139,7 @@ pub async fn attempt(
         workspace,
         environment,
         hidden,
-    } = prepare(&setup.environment, task, dir).await?;
+    } = prepare(&setup.processes, &setup.environment, task, dir).await?;
     // The task's pages, served until the attempt is graded.
     let pages = match task.web_pages() {
         Some(pages) => Some(crate::web::serve(&pages).await?),
@@ -174,7 +174,7 @@ pub async fn attempt(
     if task.goal.is_none() {
         failures.extend(ended(task.outcome, &trace.outcomes).err());
     }
-    failures.extend(tested(task, (&workspace, &environment), dir).await?);
+    failures.extend(tested(setup, task, (&workspace, &environment), dir).await?);
     let last = (threads.last())
         .and_then(|thread| trace::parse(thread).ok())
         .unwrap_or_default();
@@ -214,6 +214,7 @@ fn leaked(setup: &Setup, events: &str) -> Option<String> {
 /// Runs the task's grader, if it has one, in the workspace, keeping its output in `dir`; the
 /// failure, when it failed.
 async fn tested(
+    setup: &Setup,
     task: &Task,
     (workspace, environment): (&Path, &Environment),
     dir: &Path,
@@ -222,7 +223,14 @@ async fn tested(
         return Ok(None);
     };
     let test = test.display().to_string();
-    let output = script("bash", &[test.as_str()], workspace, environment).await;
+    let output = script(
+        &setup.processes,
+        "bash",
+        &[test.as_str()],
+        workspace,
+        environment,
+    )
+    .await;
     tidy(dir, task).await;
     let output = output?;
     write(dir.join("test.log"), &output.text).await?;

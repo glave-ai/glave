@@ -299,7 +299,7 @@ impl LocalComputers {
             Sources::Git { url, at } => {
                 let dest = self.base.join(computer.to_string()).join(id.to_string());
                 let env = self.command_environment(environment);
-                git::clone(&env, url, at.as_deref(), &dest, credential).await?;
+                git::clone(&self.processes, &env, url, at.as_deref(), &dest, credential).await?;
                 (paths::folder(&dest.to_string_lossy()).await?, true, None)
             }
             Sources::Worktree {
@@ -314,8 +314,8 @@ impl LocalComputers {
                 })?;
                 let env = self.command_environment(environment);
                 let locks = &self.worktree_locks;
-                let made =
-                    worktree::open(&env, locks, base, path, branch, owner.as_deref()).await?;
+                let git = (&self.processes, env.as_slice());
+                let made = worktree::open(git, locks, base, path, branch, owner.as_deref()).await?;
                 (made.root, false, Some(made.common))
             }
             Sources::Scratch { name, owner } => {
