@@ -7,7 +7,7 @@
 use std::fmt::Write as _;
 use std::future::ready;
 
-use glave_event::{Arguments, WebPage};
+use glave_event::{Arguments, ToolKind, WebPage};
 use glave_ports::settings::WebPolicy;
 use glave_ports::{
     BoxFuture, Cancellation, Effect, ToolError, ToolInfo, ToolOutput, ToolSource, ToolSpec,
@@ -130,6 +130,14 @@ impl ToolSource for Web {
             format!("web_fetch {}", url_of(arguments).unwrap_or("?"))
         } else {
             glave_ports::describe_call(name, arguments)
+        }
+    }
+
+    fn kind(&self, name: &str) -> ToolKind {
+        if name == WEB_FETCH {
+            ToolKind::Web
+        } else {
+            ToolKind::Other
         }
     }
 

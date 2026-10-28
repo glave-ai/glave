@@ -4,7 +4,7 @@
 
 use glave_event::{
     ApprovalDecided, ApprovalRequested, Arguments, CallId, Outcome, ParentCall, Part,
-    ToolCallCompleted, ToolCallRequested, TurnResult, Verdict,
+    ToolCallCompleted, ToolCallRequested, ToolKind, TurnResult, Verdict,
 };
 
 use super::{Writer, started, turn};
@@ -24,6 +24,7 @@ fn requested(id: &str, tool: &str) -> Result<ToolCallRequested, String> {
         tool: tool.into(),
         arguments: Arguments::Json(serde_json::Map::new()),
         summary: String::new(),
+        kind: ToolKind::Other,
     })
 }
 

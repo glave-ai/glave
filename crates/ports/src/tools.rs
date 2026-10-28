@@ -6,7 +6,7 @@ use std::future::{Future, poll_fn};
 use std::pin::{Pin, pin};
 use std::task::Poll;
 
-use glave_event::{Arguments, Part};
+use glave_event::{Arguments, Part, ToolKind};
 use thiserror::Error;
 
 use crate::model::ToolSpec;
@@ -176,6 +176,13 @@ pub trait ToolSource: Send + Sync {
     /// The call in a few words, for the person: `bash: cargo test`.
     fn describe(&self, name: &str, arguments: &Arguments) -> String {
         describe_call(name, arguments)
+    }
+
+    /// What kind of work a call of `name` does, as far as the source can tell: `other` unless
+    /// it says.
+    fn kind(&self, name: &str) -> ToolKind {
+        let _ = name;
+        ToolKind::Other
     }
 
     /// Runs one call. Failures are outputs the model can read, never errors.

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use glave_event::{
     ApprovalDecided, ApprovalRequested, CallId, Lifted, Outcome, Principal, ToolCallCompleted,
-    TurnResult, Verdict,
+    ToolKind, TurnResult, Verdict,
 };
 use glave_ports::settings::Judge;
 use glave_ports::{
@@ -148,6 +148,19 @@ where
             Some(source.describe(&info.spec.name, arguments))
         });
         described.unwrap_or_else(|| describe_call(name, arguments))
+    }
+
+    /// What kind of work `call` does, as its source says: glave's own plan, memory and
+    /// subagent tools, and a tool not offered, are `other`.
+    pub(crate) fn kind(&self, thread: &Thread, tools: &ToolSet, call: &ToolCall) -> ToolKind {
+        let name = call.tool.as_str();
+        if tools.is_plan(name) || tools.is_memory(name) || tools.is_agent(name) {
+            return ToolKind::Other;
+        }
+        tools
+            .get(name)
+            .and_then(|(index, info)| Some(self.source_for(thread, index)?.kind(&info.spec.name)))
+            .unwrap_or_default()
     }
 
     /// Runs one tool call, asking the person first when its effect needs them in this mode or

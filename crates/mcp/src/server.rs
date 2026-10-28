@@ -7,7 +7,7 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use glave_event::Arguments;
+use glave_event::{Arguments, ToolKind};
 use glave_ports::auth::Auth;
 use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::{
@@ -495,6 +495,13 @@ impl ToolSource for McpServer {
         match &self.search {
             Some(search) if search == name => searched(arguments),
             _ => glave_ports::describe_call(name, arguments),
+        }
+    }
+
+    fn kind(&self, name: &str) -> ToolKind {
+        match &self.search {
+            Some(search) if search == name => ToolKind::Web,
+            _ => ToolKind::Other,
         }
     }
 

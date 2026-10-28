@@ -15,7 +15,7 @@ mod write;
 pub(crate) use background::named as command_named;
 pub(crate) use bash::outside_sandbox;
 
-use glave_event::Arguments;
+use glave_event::{Arguments, ToolKind};
 use glave_ports::{ToolFile, ToolSpec};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -75,6 +75,16 @@ impl Tool {
         Self::Bash,
         Self::CommandOutput,
     ];
+
+    /// What kind of work it does.
+    pub(crate) fn kind(self) -> ToolKind {
+        match self {
+            Self::Search | Self::Glob => ToolKind::Search,
+            Self::Read => ToolKind::Read,
+            Self::Write | Self::Edit => ToolKind::Edit,
+            Self::Bash | Self::CommandOutput => ToolKind::Command,
+        }
+    }
 
     /// Finds a tool by name, forgiving case and stray whitespace.
     pub fn named(name: &str) -> Option<Self> {
