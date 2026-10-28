@@ -1,4 +1,4 @@
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import { type Locator, type Page } from '@playwright/test';
 
 import { NEW_THREAD, PERSONAL, PROJECT, THREAD, WAITING, fakeApi } from './fake-api';
 import type { Grouped } from './fake-grouping';
@@ -6,8 +6,10 @@ import {
   SIGNED_IN,
   builtChunk,
   byTestId,
+  expect,
   expectAccessible,
   shownOpacity,
+  test,
   watchForProblems,
 } from './support';
 

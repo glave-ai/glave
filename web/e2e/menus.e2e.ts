@@ -1,7 +1,7 @@
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import { type Locator, type Page } from '@playwright/test';
 
 import { THREAD, fakeApi } from './fake-api';
-import { SIGNED_IN, byTestId, expectAccessible } from './support';
+import { SIGNED_IN, byTestId, expect, expectAccessible, test } from './support';
 
 /** The composer's three menus: each by its button, and the part of what it opens that shows. */
 const MENUS = {

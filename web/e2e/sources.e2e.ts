@@ -1,8 +1,14 @@
-import { expect, test } from '@playwright/test';
-
 import { fakeApi } from './fake-api';
 import { PAGES, RESEARCH } from './fake-sources';
-import { SIGNED_IN, byTestId, expectAccessible, hold, watchForProblems } from './support';
+import {
+  SIGNED_IN,
+  byTestId,
+  expect,
+  expectAccessible,
+  hold,
+  test,
+  watchForProblems,
+} from './support';
 
 test('a reply shows the pages it drew on from the web under it, each a link', async ({ page }) => {
   const problems = watchForProblems(page);

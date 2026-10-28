@@ -1,14 +1,14 @@
 import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
-import { expect, test } from '@playwright/test';
-
 import {
   FIRST_RUN,
   byTestId,
+  expect,
   expectAccessible,
   served,
   signInCode,
+  test,
   watchForProblems,
 } from './support';
 

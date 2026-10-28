@@ -1,7 +1,5 @@
-import { expect, test } from '@playwright/test';
-
 import { fakeApi } from './fake-api';
-import { SIGNED_IN, byTestId, expectAccessible } from './support';
+import { SIGNED_IN, byTestId, expect, expectAccessible, test } from './support';
 
 for (const colorScheme of ['light', 'dark'] as const) {
   test(`Settings keeps this computer awake while glave works until the person turns it off (${colorScheme})`, async ({

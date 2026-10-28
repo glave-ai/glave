@@ -1,12 +1,12 @@
-import { expect, test } from '@playwright/test';
-
 import { NEW_THREAD, PERSONAL, THREAD, WAITING, fakeApi } from './fake-api';
 import {
   SIGNED_IN,
   atRest,
   byTestId,
+  expect,
   expectAccessible,
   shownOpacity,
+  test,
   watchForProblems,
 } from './support';
 

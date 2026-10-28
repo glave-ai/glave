@@ -1,4 +1,4 @@
-import { type BrowserContext, type CDPSession, type Page, expect, test } from '@playwright/test';
+import { type BrowserContext, type CDPSession, type Page } from '@playwright/test';
 
 import {
   HERE,
@@ -6,11 +6,13 @@ import {
   PASSKEYS,
   PASSKEYS_ORIGIN,
   byTestId,
+  expect,
   expectAccessible,
   heldUntilHeard,
   served,
   setupCode,
   signInCode,
+  test,
   watchForProblems,
 } from './support';
 

@@ -1,7 +1,7 @@
-import { type Page, expect, test } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
 import { PROJECT, THREAD, fakeApi } from './fake-api';
-import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './support';
+import { SIGNED_IN, byTestId, expect, expectAccessible, test, watchForProblems } from './support';
 
 const SCREENS = [
   { name: 'a laptop', phone: false, size: { width: 1440, height: 900 } },

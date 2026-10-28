@@ -1,4 +1,5 @@
-import { type Page, expect, test } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { expect, test } from './support';
 
 /**
  * How the app must feel, the budgets `feel.e2e.ts` holds it to, set in this one place, each

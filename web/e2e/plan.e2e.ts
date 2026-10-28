@@ -1,9 +1,15 @@
-import { expect, test } from '@playwright/test';
-
 import { fakeApi } from './fake-api';
 import { letGo } from './fake-gate';
 import { PLANNING, planServer } from './fake-plan';
-import { SIGNED_IN, byTestId, expectAccessible, hold, watchForProblems } from './support';
+import {
+  SIGNED_IN,
+  byTestId,
+  expect,
+  expectAccessible,
+  hold,
+  test,
+  watchForProblems,
+} from './support';
 
 /** The steps the person edits the proposal to. */
 const EDITED = [

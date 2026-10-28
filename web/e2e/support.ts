@@ -2,7 +2,13 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import type { Method } from '@glave/client';
-import { type BrowserContext, type Locator, type Page, expect } from '@playwright/test';
+import {
+  type BrowserContext,
+  type Locator,
+  type Page,
+  test as base,
+  expect,
+} from '@playwright/test';
 import type { Result, default as axe } from 'axe-core';
 
 /**
@@ -168,6 +174,20 @@ export async function heldUntilHeard(context: BrowserContext): Promise<BrowserCo
   await context.route('**/*', (route) => route.fallback());
   return context;
 }
+
+/**
+ * Playwright's `test`, each test's own context held until heard (`heldUntilHeard`), so no test's
+ * first tab is stranded on its first load, whatever site it loads. Every test is written with it
+ * (eslint.config.js says so); a context a test makes itself (`browser.newContext()`) it holds
+ * itself.
+ */
+export const test = base.extend({
+  context: async ({ context }, use) => {
+    await use(await heldUntilHeard(context));
+  },
+});
+
+export { expect };
 
 /**
  * The file of the app's build, as glave serves it, whose code `holds` picks out, such as the

@@ -1,8 +1,16 @@
-import { type Locator, expect, test } from '@playwright/test';
+import { type Locator } from '@playwright/test';
 
 import { type Request, THREAD, fakeApi } from './fake-api';
 import { VERBOSE } from './fake-panel';
-import { SIGNED_IN, atRest, byTestId, expectAccessible, watchForProblems } from './support';
+import {
+  SIGNED_IN,
+  atRest,
+  byTestId,
+  expect,
+  expectAccessible,
+  test,
+  watchForProblems,
+} from './support';
 
 for (const colorScheme of ['light', 'dark'] as const) {
   test(`the three panes pass axe with the thread's panel open (${colorScheme})`, async ({

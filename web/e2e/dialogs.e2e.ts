@@ -1,7 +1,5 @@
-import { expect, test } from '@playwright/test';
-
 import { THREAD, fakeApi } from './fake-api';
-import { SIGNED_IN, byTestId, expectDialogShown } from './support';
+import { SIGNED_IN, byTestId, expect, expectDialogShown, test } from './support';
 
 /** A dialog the app has: where it opens from, the button that opens it, and what must show. */
 interface Dialog {

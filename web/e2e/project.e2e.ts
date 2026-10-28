@@ -1,7 +1,5 @@
-import { expect, test } from '@playwright/test';
-
 import { PROJECT, fakeApi } from './fake-api';
-import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './support';
+import { SIGNED_IN, byTestId, expect, expectAccessible, test, watchForProblems } from './support';
 
 test('a project’s page, where glave run in its folder opens, starts a thread in it', async ({
   page,

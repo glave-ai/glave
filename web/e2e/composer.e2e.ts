@@ -1,7 +1,7 @@
-import { type Page, expect, test } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
 import { THREAD, fakeApi } from './fake-api';
-import { SIGNED_IN, byTestId } from './support';
+import { SIGNED_IN, byTestId, expect, test } from './support';
 
 /** How far what a composer's box holds sits from each inner edge of the box, in CSS pixels. */
 interface Insets {

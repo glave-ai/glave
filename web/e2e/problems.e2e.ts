@@ -1,7 +1,7 @@
-import { type Page, expect, test } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
 import { fakeApi } from './fake-api';
-import { SIGNED_IN, byTestId, watchForProblems } from './support';
+import { SIGNED_IN, byTestId, expect, test, watchForProblems } from './support';
 
 /** What the page says went wrong as it is left, after the fetches it starts then. */
 const SAID = 'something went wrong as the page was left';

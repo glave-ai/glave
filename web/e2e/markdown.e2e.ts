@@ -1,8 +1,8 @@
-import { type Page, expect, test } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
 import { MARKDOWN_PROMPT, MARKDOWN_REPLY, THREAD, fakeApi, streamReply } from './fake-api';
 import { letGo } from './fake-gate';
-import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './support';
+import { SIGNED_IN, byTestId, expect, expectAccessible, test, watchForProblems } from './support';
 
 /** What the streaming reply showed: how many states, and any with markup in them. */
 interface Seen {

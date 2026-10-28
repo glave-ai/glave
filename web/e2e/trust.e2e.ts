@@ -1,7 +1,7 @@
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import { type Locator, type Page } from '@playwright/test';
 
 import { TRUSTING, TRUST_ASK, fakeApi } from './fake-api';
-import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './support';
+import { SIGNED_IN, byTestId, expect, expectAccessible, test, watchForProblems } from './support';
 
 /** What the card lists, in the plain words the server sent. */
 const LISTED = [

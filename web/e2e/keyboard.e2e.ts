@@ -1,7 +1,7 @@
-import { type Page, expect, test } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
 import { THREAD, type Request, fakeApi } from './fake-api';
-import { SIGNED_IN, byTestId, expectAccessible } from './support';
+import { SIGNED_IN, byTestId, expect, expectAccessible, test } from './support';
 
 /**
  * Presses Tab (or Shift+Tab, `back`) until the element with `testId` has focus, as someone on

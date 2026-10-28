@@ -1,9 +1,7 @@
-import { expect, test } from '@playwright/test';
-
 import { THREAD, fakeApi } from './fake-api';
 import { letGo } from './fake-gate';
 import { steerTurn } from './fake-steer';
-import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './support';
+import { SIGNED_IN, byTestId, expect, expectAccessible, test, watchForProblems } from './support';
 
 for (const colorScheme of ['light', 'dark'] as const) {
   test(`a message sent while the agent works waits, then is read where the model saw it (${colorScheme})`, async ({
