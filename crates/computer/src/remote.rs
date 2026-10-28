@@ -369,7 +369,7 @@ fn deadline(request: &Request) -> Duration {
         Request::Run { command, .. } => command
             .timeout_secs
             .map_or(SLOW, |secs| Duration::from_secs(secs).saturating_add(GRACE)),
-        Request::Output { wait_ms, .. } => {
+        Request::Output { wait_ms, .. } | Request::Ended { wait_ms, .. } => {
             QUICK.max(Duration::from_millis(*wait_ms).saturating_add(GRACE))
         }
         Request::Create { .. }
@@ -492,6 +492,27 @@ impl Computers for RemoteComputers {
             wait_ms: u64::try_from(wait.as_millis()).unwrap_or(u64::MAX),
         };
         Box::pin(async move { self.typed(&request).await })
+    }
+
+    fn ended(
+        &self,
+        workspace: WorkspaceId,
+        command: CommandId,
+        wait: Duration,
+    ) -> BoxFuture<'_, Result<Option<Finished>, ComputerError>> {
+        #[derive(Deserialize)]
+        struct Ended {
+            ended: Option<Finished>,
+        }
+        let request = Request::Ended {
+            workspace,
+            command,
+            wait_ms: u64::try_from(wait.as_millis()).unwrap_or(u64::MAX),
+        };
+        Box::pin(async move {
+            let ended: Ended = self.typed(&request).await?;
+            Ok(ended.ended)
+        })
     }
 
     fn stop(

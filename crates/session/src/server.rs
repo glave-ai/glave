@@ -231,6 +231,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) approvals: Approvals,
     pub(crate) threads: Mutex<HashMap<ThreadId, Slot>>,
     pub(crate) tasks: Mutex<Vec<JoinHandle<()>>>,
+    /// The commands in the background of the threads held here, watched (`background.rs`).
+    pub(crate) watched: Mutex<crate::background::Watched>,
     /// Turns started with an idempotency key, for retries.
     pub(crate) keyed: Keyed,
     /// Where what a project asks to be trusted is read, and the person's yes kept.
@@ -323,6 +325,7 @@ where
                 approvals,
                 threads: Mutex::new(HashMap::new()),
                 tasks: Mutex::new(Vec::new()),
+                watched: Mutex::new(HashMap::new()),
                 keyed: Keyed::default(),
                 trust: wiring.trust,
                 asks: Mutex::new(Asks::default()),

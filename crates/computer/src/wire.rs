@@ -25,8 +25,9 @@ pub(crate) const MAX_LINE: u64 = 32 * 1024 * 1024;
 /// `command/run` and the computer's own `credentials/request`. `2026-10-16` added the
 /// `project` sources of `workspace/open`, a new project's folder. `2026-10-17` added commands
 /// in the background: `command/start`, `command/output`, `command/stop` and `command/list`,
-/// `on_timeout` on a command, and the `backgrounded` and `idle` endings.
-pub(crate) const PROTOCOL: &str = "2026-10-17";
+/// `on_timeout` on a command, and the `backgrounded` and `idle` endings. `2026-10-28` added
+/// `command/ended`, how a command in the background ended, waited for without reading it.
+pub(crate) const PROTOCOL: &str = "2026-10-28";
 
 /// The notification that carries a command's output.
 pub(crate) const OUTPUT: &str = "command/output";
@@ -86,6 +87,15 @@ pub(crate) enum Request {
         #[serde(default)]
         wait_ms: u64,
     },
+    /// Waits up to `wait_ms` for the command to end, answering how it `ended` (null while it
+    /// runs), without reading it.
+    #[serde(rename = "command/ended")]
+    Ended {
+        workspace: WorkspaceId,
+        command: CommandId,
+        #[serde(default)]
+        wait_ms: u64,
+    },
     #[serde(rename = "command/stop")]
     Stop {
         workspace: WorkspaceId,
@@ -140,6 +150,7 @@ impl Request {
             Self::Cancel { .. } => "command/cancel",
             Self::Start { .. } => "command/start",
             Self::Output { .. } => "command/output",
+            Self::Ended { .. } => "command/ended",
             Self::Stop { .. } => "command/stop",
             Self::Commands { .. } => "command/list",
             Self::Read { .. } => "files/read",
@@ -166,6 +177,7 @@ const METHODS: &[&str] = &[
     "command/cancel",
     "command/start",
     "command/output",
+    "command/ended",
     "command/stop",
     "command/list",
     "files/read",

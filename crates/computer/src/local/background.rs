@@ -221,6 +221,19 @@ impl Backgrounds {
         Ok(printed)
     }
 
+    /// How `command` ended, waiting up to `wait` for it to end; nothing while it runs. Not a
+    /// read: its output waits, its idle hour runs on, and it is not forgotten.
+    pub(crate) async fn ended(
+        &self,
+        workspace: WorkspaceId,
+        command: CommandId,
+        wait: Duration,
+    ) -> Result<Option<Finished>, ComputerError> {
+        let shared = self.find(workspace, command)?;
+        let _ = tokio::time::timeout(wait.min(MAX_WAIT), shared.until_ended()).await;
+        Ok(shared.ended().map(|ended| ended.finished))
+    }
+
     /// Stops `command` and everything it started, then forgets it.
     pub(crate) async fn stop(
         &self,

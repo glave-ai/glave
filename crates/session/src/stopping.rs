@@ -46,6 +46,12 @@ impl<P, L, B> Server<P, L, B> {
             cancel.interrupt();
         }
         ended(&running).await;
+        // Ends are recorded no more: what still runs is told at the next start.
+        self.inner
+            .watched
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear();
         let tasks: Vec<JoinHandle<()>> = std::mem::take(
             &mut *self
                 .inner

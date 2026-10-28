@@ -11,8 +11,11 @@ mod record;
 use std::sync::Arc;
 
 use glave_event::{Body, CommandEnding, Event, Principal};
-use glave_ports::computer::{CommandId, ComputerError, Computers, Ending, Printed, WorkspaceId};
+use glave_ports::computer::{
+    CommandId, ComputerError, Computers, Ending, MAX_WAIT, Printed, WorkspaceId,
+};
 use glave_ports::{BlobStore, EventLog, ModelProvider};
+use tokio::task::JoinSet;
 
 use crate::approval::Approver;
 use crate::harness::{Harness, HarnessError, Thread};
@@ -145,6 +148,33 @@ impl Commands {
         }
     }
 
+    /// Waits until one of the commands running ends, however it ends (by itself, or killed by
+    /// another command), and notes how, so the thread records it at once rather than at its
+    /// next turn; as Codex's exit watcher does for each of its sessions. One stopped through
+    /// glave is noted by whoever stopped it. Waits on while none runs, until one starts; it
+    /// runs until it is dropped, which its holder does when the thread is let go.
+    pub async fn until_one_ends(&self) {
+        loop {
+            let mut kept = self.watch_kept();
+            let mut waits = JoinSet::new();
+            for entry in self.running() {
+                waits.spawn(ending_of_entry(entry));
+            }
+            loop {
+                tokio::select! {
+                    // Another started: wait for it too.
+                    _ = kept.changed() => break,
+                    Some(joined) = waits.join_next() => {
+                        if let Ok(Some((id, ending, millis))) = joined {
+                            self.end(id, ending, millis);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Stops every command still running, as glave's own decision: its thread was put away,
     /// or its subagent is done.
     pub(crate) async fn release(&self) {
@@ -187,6 +217,26 @@ impl Commands {
         };
         self.stop_entry(&entry, Some(by)).await?;
         Ok(true)
+    }
+}
+
+/// How `entry` ends, as its computer tells it: nothing when it was stopped through glave,
+/// whose stopper notes it, or when its computer cannot tell, which the next turn's check does.
+async fn ending_of_entry(entry: Entry) -> Option<(CommandId, CommandEnding, Option<u64>)> {
+    loop {
+        match entry
+            .computers
+            .ended(entry.workspace, entry.id, MAX_WAIT)
+            .await
+        {
+            Ok(None) => {}
+            Ok(Some(finished)) if finished.ending == Ending::Cancelled => return None,
+            Ok(Some(finished)) => {
+                return Some((entry.id, ending_of(finished.ending), Some(finished.millis)));
+            }
+            Err(ComputerError::NotFound(_)) => return Some((entry.id, CommandEnding::Gone, None)),
+            Err(_) => return None,
+        }
     }
 }
 

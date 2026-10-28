@@ -3,6 +3,8 @@
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use tokio::sync::watch;
+
 use glave_event::{At, CallId, CommandEnded, CommandEnding, CommandStarted};
 use glave_ports::computer::{CommandId, Computers, Ending, WorkspaceId};
 
@@ -10,6 +12,8 @@ use glave_ports::computer::{CommandId, Computers, Ending, WorkspaceId};
 #[derive(Default)]
 pub struct Commands {
     inner: Mutex<Inner>,
+    /// How many commands it has kept, told to whoever waits for one to end.
+    kept: watch::Sender<u32>,
 }
 
 impl std::fmt::Debug for Commands {
@@ -110,7 +114,13 @@ impl Commands {
             started: None,
             ended: None,
         });
+        self.kept.send_replace(number);
         number
+    }
+
+    /// Tells, from now on, each time it keeps one more command.
+    pub(crate) fn watch_kept(&self) -> watch::Receiver<u32> {
+        self.kept.subscribe()
     }
 
     /// Keeps a command the log says was started, with nothing to record.
@@ -190,7 +200,8 @@ impl Commands {
             .collect()
     }
 
-    pub(crate) fn any_running(&self) -> bool {
+    /// Whether any command is not known to have ended.
+    pub fn any_running(&self) -> bool {
         self.inner().all.iter().any(|entry| entry.ended.is_none())
     }
 

@@ -84,6 +84,10 @@ where
             if threads.contains_key(&thread) {
                 vec![Box::new(resumed)]
             } else {
+                // What still runs in the background is watched from now on.
+                if resumed.commands().any_running() {
+                    self.watch_commands(thread, &resumed.commands());
+                }
                 hold_idle(&mut threads, thread, Box::new(resumed), now)
             }
         };
@@ -143,6 +147,8 @@ where
                 Err(waiting(thread))
             }
             Some(Slot::Idle { thread: held, .. }) => {
+                // What it starts in the background is watched from now on.
+                self.watch_commands(thread, &held.commands());
                 // A turn takes messages from now until it has made its last call.
                 let inbox =
                     matches!(purpose, Use::Steered | Use::Answer).then(|| held.inbox().clone());
@@ -243,6 +249,7 @@ where
     /// Lets go of `threads`, held here no more: what the harness opened for each is closed.
     async fn let_go_of(&self, threads: Gone) {
         for thread in threads {
+            self.unwatch_commands(thread.id, &thread.commands());
             self.inner.harness.let_go(*thread).await;
         }
     }

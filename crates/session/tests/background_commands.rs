@@ -1,9 +1,13 @@
 //! A thread's commands in the background, through the API: listed while they run, stopped by
-//! the person who asks (recorded as theirs), refused when there is no such command, and stopped
-//! when the thread is archived.
+//! the person who asks (recorded as theirs), refused when there is no such command, stopped
+//! when the thread is archived, and recorded as ended as soon as another command kills one.
+
+use std::time::Duration;
 
 use glave_event::{Body, CommandEnding, PrincipalKind, decode};
-use glave_session::protocol::{Reply, Request, code};
+use glave_ports::Caller;
+use glave_session::Watched;
+use glave_session::protocol::{Notification, Reply, Request, code};
 use serde_json::json;
 
 use crate::support::*;
@@ -88,6 +92,54 @@ fn archiving_a_thread_stops_its_commands() {
             kinds[kinds.len() - 2..],
             ["command.ended", "thread.archived"]
         );
+        assert_eq!(listed(&server, thread).await, []);
+    });
+}
+
+/// How long a command killed by another may take to be recorded as ended: its computer's
+/// last moment to read what it printed, and the recording, with room to spare.
+const TOLD: Duration = Duration::from_secs(10);
+
+#[test]
+fn a_command_killed_by_another_is_recorded_ended_at_once() {
+    let dir = folder("bg-api-killed");
+    block_on!(async {
+        // As `npm run dev` does: the command's own process starts the server, which holds the
+        // output open after that process is killed.
+        let serve = "sleep 600 & echo $$ > shell.next && mv shell.next shell.pid; wait";
+        let kill = "while [ ! -s shell.pid ]; do sleep 0.05; done; kill \"$(cat shell.pid)\"";
+        let answers = vec![
+            answer(
+                None,
+                Some(("bash", json!({"command": serve, "background": true}))),
+            ),
+            answer(None, Some(("bash", json!({"command": kill})))),
+            answer(Some("Stopped it."), None),
+        ];
+        let (server, _) = Setup::new(answers).build(&dir).await;
+        let thread = start(&server, false).await;
+        let mut watching = server
+            .watch(&Caller::default(), thread, None)
+            .await
+            .unwrap();
+        turn(&server, thread, "start the server, then kill it")
+            .await
+            .unwrap();
+        let ended = tokio::time::timeout(TOLD, async {
+            loop {
+                let Some(Watched::Note(note)) = watching.next().await else {
+                    panic!("the watch ended before the command did")
+                };
+                if let Notification::Event { event, .. } = note.as_ref()
+                    && let Body::CommandEnded(ended) = decode(event.clone()).unwrap().body
+                {
+                    break ended.ending;
+                }
+            }
+        })
+        .await
+        .expect("the killed command is recorded as ended within seconds");
+        assert_eq!(ended, CommandEnding::Signalled);
         assert_eq!(listed(&server, thread).await, []);
     });
 }

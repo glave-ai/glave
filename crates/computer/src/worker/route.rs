@@ -152,6 +152,21 @@ macro_rules! forward {
             })
         }
 
+        fn ended(
+            &self,
+            workspace: WorkspaceId,
+            command: glave_ports::computer::CommandId,
+            wait: std::time::Duration,
+        ) -> BoxFuture<'_, Result<Option<glave_ports::computer::Finished>, ComputerError>> {
+            Box::pin(async move {
+                let worker = self.worker_of(workspace)?;
+                self.remote(&worker)
+                    .await?
+                    .ended(workspace, command, wait)
+                    .await
+            })
+        }
+
         fn stop(
             &self,
             workspace: WorkspaceId,

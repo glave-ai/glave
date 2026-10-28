@@ -302,6 +302,7 @@ impl<C: Computers + 'static> Connection<C> {
             }
             request @ (Request::Start { .. }
             | Request::Output { .. }
+            | Request::Ended { .. }
             | Request::Stop { .. }
             | Request::Commands { .. }) => self.background(request).await,
             Request::Read { workspace, path } => reply(
@@ -340,6 +341,15 @@ impl<C: Computers + 'static> Connection<C> {
             } => {
                 let wait = Duration::from_millis(wait_ms);
                 reply(computers.output(workspace, command, wait).await)
+            }
+            Request::Ended {
+                workspace,
+                command,
+                wait_ms,
+            } => {
+                let wait = Duration::from_millis(wait_ms);
+                let ended = computers.ended(workspace, command, wait).await;
+                reply(ended.map(|ended| json!({"ended": ended})))
             }
             Request::Stop { workspace, command } => reply(computers.stop(workspace, command).await),
             Request::Commands { workspace } => reply(
