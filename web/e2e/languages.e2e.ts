@@ -1,9 +1,17 @@
 import { readFileSync } from 'node:fs';
 
-import { type Page, expect, test } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
 import { THREAD, fakeApi } from './fake-api';
-import { SIGNED_IN, byTestId, expectAccessible, readIn, watchForProblems } from './support';
+import {
+  SIGNED_IN,
+  byTestId,
+  expect,
+  expectAccessible,
+  readIn,
+  test,
+  watchForProblems,
+} from './support';
 
 /**
  * The plain words the pages may show in `en-XA`: what the server wrote (the fixtures' titles,

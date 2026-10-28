@@ -1,12 +1,14 @@
-import { type Request, expect, test } from '@playwright/test';
+import { type Request } from '@playwright/test';
 
 import {
   ACCOUNTS,
   byTestId,
+  expect,
   expectAccessible,
   heldUntilHeard,
   served,
   signInCode,
+  test,
   watchForProblems,
 } from './support';
 
@@ -21,7 +23,6 @@ test('a link signs one browser in once, and it stays signed in until it signs ou
   context,
   browser,
 }) => {
-  await heldUntilHeard(context);
   const problems = watchForProblems(page);
   const glave = served(ACCOUNTS);
   const code = await signInCode(ACCOUNTS);

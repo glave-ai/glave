@@ -1,7 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-
-import { test } from '@playwright/test';
+import { test } from './support';
 
 /** The folder of the run `killed.mjs` kills outright; none in any other run. */
 const KILLED = process.env['GLAVE_E2E_KILLED'];

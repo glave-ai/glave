@@ -1,8 +1,8 @@
-import { type Page, expect, test } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
 import { THREAD, fakeApi } from './fake-api';
 import { discovered } from './fake-signin';
-import { SIGNED_IN, builtChunk, byTestId, expectAccessible } from './support';
+import { SIGNED_IN, builtChunk, byTestId, expect, expectAccessible, test } from './support';
 
 /**
  * Answers the app's file that defines the component `selector` with a 404 from now on, as when

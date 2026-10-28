@@ -1,8 +1,14 @@
-import { expect, test } from '@playwright/test';
-
 import { fakeApi } from './fake-api';
 import { DOCS_COMMAND, DOCS_SERVER, DOCS_STARTED, SERVING } from './fake-commands';
-import { SIGNED_IN, byTestId, expectAccessible, hold, watchForProblems } from './support';
+import {
+  SIGNED_IN,
+  byTestId,
+  expect,
+  expectAccessible,
+  hold,
+  test,
+  watchForProblems,
+} from './support';
 
 /** The page's clock, held two minutes and five seconds after the docs site started. */
 const NOW = new Date(Date.parse(DOCS_STARTED) + 125_000);

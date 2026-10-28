@@ -115,6 +115,26 @@ export default tseslint.config(
     },
   },
   {
+    // Every end-to-end test holds its context's requests until Playwright hears them, so WebKit
+    // never strands a first load (#924): it is written with support.ts's `test`, which does.
+    files: ['e2e/**/*.ts'],
+    ignores: ['e2e/support.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@playwright/test',
+              importNames: ['test', 'expect'],
+              message: 'Import test and expect from ./support, whose test holds each request.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['**/*.html'],
     extends: [...angular.configs.templateRecommended, ...angular.configs.templateAccessibility],
     rules: {

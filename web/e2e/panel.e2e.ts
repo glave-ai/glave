@@ -1,12 +1,12 @@
-import { expect, test } from '@playwright/test';
-
 import { fakeApi } from './fake-api';
 import { DINNER, TESTS, VERBOSE } from './fake-panel';
 import {
   SIGNED_IN,
   byTestId,
+  expect,
   expectAccessible,
   expectDialogShown,
+  test,
   watchForProblems,
 } from './support';
 

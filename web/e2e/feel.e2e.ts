@@ -1,4 +1,4 @@
-import { type Page, expect, test } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
 import { THREAD, fakeApi } from './fake-api';
 import {
@@ -11,7 +11,7 @@ import {
   forgetFelt,
   watchFeel,
 } from './feel';
-import { SIGNED_IN, atRest, byTestId } from './support';
+import { SIGNED_IN, atRest, byTestId, expect, test } from './support';
 
 // WebKit, as Safari, reports neither layout shifts nor event timings, nor the largest paint.
 test.skip(({ browserName }) => browserName !== 'chromium', 'only Chromium reports these entries');

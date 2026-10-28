@@ -1,7 +1,13 @@
-import { expect, test } from '@playwright/test';
-
 import { THREAD, fakeApi } from './fake-api';
-import { SIGNED_IN, byTestId, expectAccessible, hold, watchForProblems } from './support';
+import {
+  SIGNED_IN,
+  byTestId,
+  expect,
+  expectAccessible,
+  hold,
+  test,
+  watchForProblems,
+} from './support';
 
 /** A one-pixel PNG, as a screenshot would come. */
 const PNG = Buffer.from(

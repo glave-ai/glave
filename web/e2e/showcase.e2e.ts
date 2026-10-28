@@ -1,10 +1,10 @@
-import { expect, test } from '@playwright/test';
-
 import {
   SHOWCASE,
   byTestId,
+  expect,
   expectAccessible,
   expectDialogShown,
+  test,
   watchForProblems,
 } from './support';
 

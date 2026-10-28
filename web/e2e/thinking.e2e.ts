@@ -1,4 +1,4 @@
-import { type Locator, type Page, expect, test } from '@playwright/test';
+import { type Locator, type Page } from '@playwright/test';
 
 import { THREAD, fakeApi } from './fake-api';
 import { letGo } from './fake-gate';
@@ -6,9 +6,11 @@ import { ANSWER, STARTED, STEP, THINKING, THINKING_PROMPT, thinkingTurn } from '
 import {
   SIGNED_IN,
   byTestId,
+  expect,
   expectAccessible,
   expectEven,
   shownOpacity,
+  test,
   watchForProblems,
 } from './support';
 

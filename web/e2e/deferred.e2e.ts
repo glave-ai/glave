@@ -1,4 +1,3 @@
-import { expect, test } from '@playwright/test';
 import type { Result } from 'axe-core';
 
 import { fakeApi } from './fake-api';
@@ -9,8 +8,10 @@ import {
   builtChunk,
   byTestId,
   described,
+  expect,
   expectAccessible,
   hold,
+  test,
   withAxe,
 } from './support';
 

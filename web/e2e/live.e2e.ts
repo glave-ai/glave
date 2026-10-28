@@ -1,14 +1,16 @@
-import { type Page, expect, test } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
 import { HELLO, LEFT_ALONE, TOUCH, holding, letGo } from './fake-model';
 import {
   LIVE,
   LIVE_MODEL_URL,
   byTestId,
+  expect,
   expectAccessible,
   heldUntilHeard,
   served,
   signInCode,
+  test,
   watchForProblems,
 } from './support';
 

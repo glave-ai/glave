@@ -1,8 +1,8 @@
-import { type Page, expect, test } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
 import { fakeApi } from './fake-api';
 import { GONE_MESSAGE, LOST, PLAYGROUND, WAS_AT } from './fake-gone';
-import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './support';
+import { SIGNED_IN, byTestId, expect, expectAccessible, test, watchForProblems } from './support';
 
 /** Fails if the page shows a path the person never typed, an error code, or the OS's words. */
 async function expectPlainWords(page: Page): Promise<void> {

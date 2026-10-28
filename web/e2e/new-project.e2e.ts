@@ -1,4 +1,4 @@
-import { type Page, expect, test } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
 import { MISSING_REPOSITORY, type Request, fakeApi } from './fake-api';
 import { HOME_REFUSED } from './fake-folders';
@@ -6,9 +6,11 @@ import { SIGNED_IN_ELSEWHERE } from './fake-signin';
 import {
   SIGNED_IN,
   byTestId,
+  expect,
   expectAccessible,
   hold,
   shownOpacity,
+  test,
   watchForProblems,
 } from './support';
 

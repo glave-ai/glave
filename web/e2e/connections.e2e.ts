@@ -4,19 +4,18 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
 
-import { expect, test } from '@playwright/test';
-
 import {
   CONNECTIONS,
   CONNECTIONS_WEBKIT,
   TEST_SERVER,
   byTestId,
+  expect,
   expectAccessible,
-  heldUntilHeard,
   hold,
   homeOf,
   served,
   signInCode,
+  test,
   watchForProblems,
 } from './support';
 
@@ -31,10 +30,6 @@ const ADMIN_WORDS = /policy|organization|member|group|admin|SSO|config\.toml|GLA
 
 // Each engine's tests change one glave's settings, so they run one after another.
 test.describe.configure({ mode: 'default' });
-
-test.beforeEach(async ({ context }) => {
-  await heldUntilHeard(context);
-});
 
 /** The service: glave's MCP test server, asking for a sign-in at its own fake. */
 let service: ChildProcessByStdio<Writable, Readable, null>;
