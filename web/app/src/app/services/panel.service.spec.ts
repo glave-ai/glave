@@ -1,6 +1,5 @@
-import { BreakpointObserver, type BreakpointState } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
-import { BehaviorSubject } from 'rxjs';
+import { type FakeMedia, fakeMedia } from '@glave/glaze/testing/media';
 
 import { PanelService } from './panel.service';
 
@@ -8,16 +7,18 @@ function stored(): unknown {
   return JSON.parse(localStorage.getItem('glave-thread-panel') ?? 'null');
 }
 
-/** The panel's service on a screen whose width the test changes, narrow when `narrow`. */
+/**
+ * The panel's service on a screen whose width the test changes, narrow when `narrow`, once its
+ * effects ran, as a page's do before the person can resize it.
+ */
 function make(narrow = false): {
   readonly panel: PanelService;
-  readonly screen: BehaviorSubject<BreakpointState>;
+  readonly screen: FakeMedia;
 } {
-  const screen = new BehaviorSubject<BreakpointState>({ matches: narrow, breakpoints: {} });
-  TestBed.configureTestingModule({
-    providers: [{ provide: BreakpointObserver, useValue: { observe: () => screen } }],
-  });
-  return { panel: TestBed.inject(PanelService), screen };
+  const screen = fakeMedia(narrow);
+  const panel = TestBed.inject(PanelService);
+  TestBed.tick();
+  return { panel, screen };
 }
 
 describe('PanelService', () => {
@@ -27,6 +28,7 @@ describe('PanelService', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('starts shown, and remembers shown or hidden and its width for this browser', () => {
@@ -46,7 +48,7 @@ describe('PanelService', () => {
     // Hidden beside a wide page.
     panel.setShowing(false);
     TestBed.tick();
-    screen.next({ matches: true, breakpoints: {} });
+    screen.set(true);
     expect(panel.showing()).toBe(false);
     panel.toggle();
     expect(panel.showing()).toBe(true);
@@ -57,7 +59,7 @@ describe('PanelService', () => {
     const again = make(true);
     expect(again.panel.showing()).toBe(false);
     again.panel.toggle();
-    again.screen.next({ matches: false, breakpoints: {} });
+    again.screen.set(false);
     TestBed.tick();
     expect(again.panel.showing()).toBe(false);
     expect(stored()).toEqual({ open: false, width: null });
@@ -68,7 +70,7 @@ describe('PanelService', () => {
     panel.setShowing(true);
     panel.closeSheet();
     expect(panel.showing()).toBe(false);
-    screen.next({ matches: false, breakpoints: {} });
+    screen.set(false);
     expect(panel.showing()).toBe(true);
   });
 

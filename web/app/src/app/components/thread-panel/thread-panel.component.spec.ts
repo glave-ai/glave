@@ -1,8 +1,7 @@
-import { BreakpointObserver } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
 import type { WorkspaceBound } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
-import { of } from 'rxjs';
+import { fakeMedia } from '@glave/glaze/testing/media';
 
 import { ChangedFilesService } from '../../services/changed-files.service';
 import { CommandsService } from '../../services/commands.service';
@@ -69,6 +68,7 @@ async function render(
     .answer('thread/events', { events })
     .answer('project/list', { projects: [record('project-1', 'glave')], gone: [] })
     .answer('thread/list', { threads: [] });
+  fakeMedia(narrow);
   TestBed.configureTestingModule({
     providers: [
       ...provideFakeSession(fake),
@@ -78,7 +78,6 @@ async function render(
       ChangedFilesService,
       PlanService,
       ThreadPanelService,
-      { provide: BreakpointObserver, useValue: { observe: () => of({ matches: narrow }) } },
     ],
   });
   await TestBed.inject(ProjectsService).refresh();
@@ -139,6 +138,10 @@ function worked(workspace: WorkspaceBound = WORKTREE): FakeSession {
 }
 
 describe('ThreadPanelComponent', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('shows where the thread works and each section that has something', async () => {
     const { root } = await render(worked(), WORKED);
     expect(texts(root, 'panel-where-part')).toEqual([

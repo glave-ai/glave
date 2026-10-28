@@ -1,9 +1,8 @@
-import { BreakpointObserver, type BreakpointState } from '@angular/cdk/layout';
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { expectAccessible } from '@glave/glaze/testing';
-import { BehaviorSubject } from 'rxjs';
+import { type FakeMedia, fakeMedia } from '@glave/glaze/testing/media';
 
 import { BackService } from '../../services/back.service';
 import { NavService } from '../../services/nav.service';
@@ -19,16 +18,17 @@ class HostComponent {
 }
 
 describe('PageHeaderComponent', () => {
-  let narrow: BehaviorSubject<BreakpointState>;
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  let narrow: FakeMedia;
 
   beforeEach(() => {
     localStorage.clear();
-    narrow = new BehaviorSubject<BreakpointState>({ matches: false, breakpoints: {} });
+    narrow = fakeMedia();
     TestBed.configureTestingModule({
-      providers: [
-        provideRouter([]),
-        { provide: BreakpointObserver, useValue: { observe: () => narrow } },
-      ],
+      providers: [provideRouter([])],
     });
   });
 
@@ -48,7 +48,7 @@ describe('PageHeaderComponent', () => {
   });
 
   it('opens the side nav’s drawer on narrow screens', async () => {
-    narrow.next({ matches: true, breakpoints: {} });
+    narrow.set(true);
     const fixture = TestBed.createComponent(HostComponent);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
@@ -63,7 +63,7 @@ describe('PageHeaderComponent', () => {
   });
 
   it('has Back after the menu button on a page that is not the Chats', async () => {
-    narrow.next({ matches: true, breakpoints: {} });
+    narrow.set(true);
     const root = await render(true);
     const buttons = [...root.querySelectorAll('header button')];
     expect(buttons.map((button) => button.getAttribute('data-testid'))).toEqual([

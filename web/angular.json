@@ -26,13 +26,7 @@
                 "input": "app/public"
               }
             ],
-            "styles": [
-              "@fontsource/atkinson-hyperlegible-next/300.css",
-              "@fontsource/atkinson-hyperlegible-next/400.css",
-              "@fontsource/atkinson-hyperlegible-next/700.css",
-              "@fontsource/atkinson-hyperlegible-mono/400.css",
-              "glaze/styles/glaze.css"
-            ],
+            "styles": ["app/src/fonts.css", "glaze/styles/glaze.css"],
             "inlineStyleLanguage": "scss"
           },
           "configurations": {
@@ -201,12 +195,7 @@
                 "input": "app/public"
               }
             ],
-            "styles": [
-              "@fontsource/atkinson-hyperlegible-next/400.css",
-              "@fontsource/atkinson-hyperlegible-next/700.css",
-              "@fontsource/atkinson-hyperlegible-mono/400.css",
-              "glaze/styles/glaze.css"
-            ],
+            "styles": ["app/src/fonts.css", "glaze/styles/glaze.css"],
             "optimization": {
               "styles": {
                 "inlineCritical": false

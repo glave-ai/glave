@@ -1,7 +1,6 @@
-import { BreakpointObserver } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode, type Opened, type WorkspaceBound } from '@glave/client';
-import { of } from 'rxjs';
+import { fakeMedia } from '@glave/glaze/testing/media';
 
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
 import { command, event, thread } from '../testing/fixtures';
@@ -42,9 +41,9 @@ function provide(
   narrow = false,
 ): ThreadPanelService {
   fake.answer('thread/events', { events });
+  fakeMedia(narrow);
   TestBed.configureTestingModule({
     providers: [
-      { provide: BreakpointObserver, useValue: { observe: () => of({ matches: narrow }) } },
       ...provideFakeSession(fake),
       ThreadService,
       CommandsService,
@@ -84,6 +83,10 @@ const EDITED = [
 describe('ThreadPanelService', () => {
   beforeEach(() => {
     localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('works in a folder the person chose, as its summary says; a chat’s scratch one is none', async () => {

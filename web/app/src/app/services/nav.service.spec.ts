@@ -1,6 +1,5 @@
-import { BreakpointObserver, type BreakpointState } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
-import { BehaviorSubject } from 'rxjs';
+import { type FakeMedia, fakeMedia } from '@glave/glaze/testing/media';
 
 import { NavService } from './nav.service';
 
@@ -9,18 +8,16 @@ function stored(): unknown {
 }
 
 describe('NavService', () => {
-  let narrow: BehaviorSubject<BreakpointState>;
+  let narrow: FakeMedia;
 
   beforeEach(() => {
     localStorage.clear();
-    narrow = new BehaviorSubject<BreakpointState>({ matches: false, breakpoints: {} });
-    TestBed.configureTestingModule({
-      providers: [{ provide: BreakpointObserver, useValue: { observe: () => narrow } }],
-    });
+    narrow = fakeMedia();
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('shows the side nav at first, toggles it, and remembers it on wide screens', () => {
@@ -32,9 +29,6 @@ describe('NavService', () => {
     TestBed.tick();
     expect(stored()).toEqual({ open: false, width: 300 });
     TestBed.resetTestingModule();
-    TestBed.configureTestingModule({
-      providers: [{ provide: BreakpointObserver, useValue: { observe: () => narrow } }],
-    });
     const again = TestBed.inject(NavService);
     expect([again.open(), again.width()]).toEqual([false, 300]);
   });
@@ -42,7 +36,7 @@ describe('NavService', () => {
   it('never stores the drawer of a narrow screen', () => {
     const nav = TestBed.inject(NavService);
     TestBed.tick();
-    narrow.next({ matches: true, breakpoints: {} });
+    narrow.set(true);
     nav.toggle();
     TestBed.tick();
     expect(stored()).toEqual({ open: true, width: null });

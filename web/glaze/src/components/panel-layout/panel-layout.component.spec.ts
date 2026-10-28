@@ -1,9 +1,8 @@
-import { BreakpointObserver, type BreakpointState } from '@angular/cdk/layout';
 import { ChangeDetectionStrategy, Component, signal, viewChild } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { BehaviorSubject, type Observable } from 'rxjs';
 
 import { expectAccessible } from '../../testing/axe';
+import { type FakeMedia, fakeMedia } from '../../testing/media';
 import { GlzPanelLayoutComponent } from './panel-layout.component';
 
 @Component({
@@ -29,13 +28,6 @@ class HostComponent {
   readonly empty = signal(false);
 }
 
-class FakeBreakpoints {
-  readonly matches = new BehaviorSubject<BreakpointState>({ matches: false, breakpoints: {} });
-  observe(): Observable<BreakpointState> {
-    return this.matches;
-  }
-}
-
 function part(root: HTMLElement, name: string): HTMLElement {
   const found = root.querySelector<HTMLElement>(`[data-testid="tools-${name}"]`);
   if (found === null) {
@@ -49,13 +41,14 @@ function key(element: HTMLElement, name: string): void {
 }
 
 describe('GlzPanelLayoutComponent', () => {
-  let breakpoints: FakeBreakpoints;
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  let screen: FakeMedia;
 
   beforeEach(() => {
-    breakpoints = new FakeBreakpoints();
-    TestBed.configureTestingModule({
-      providers: [{ provide: BreakpointObserver, useValue: breakpoints }],
-    });
+    screen = fakeMedia();
   });
 
   it('starts closed, and opens beside the content on wide screens', async () => {
@@ -165,7 +158,7 @@ describe('GlzPanelLayoutComponent', () => {
 
   it('becomes a modal sheet on narrow screens, closed by Escape or the scrim', async () => {
     const fixture = TestBed.createComponent(HostComponent);
-    breakpoints.matches.next({ matches: true, breakpoints: {} });
+    screen.set(true);
     await fixture.whenStable();
     fixture.componentInstance.open.set(true);
     await fixture.whenStable();
@@ -194,7 +187,7 @@ describe('GlzPanelLayoutComponent', () => {
     expect(part(root, 'panel').inert).toBe(true);
     expect(getComputedStyle(part(root, 'panel')).display).toBe('none');
     expect(root.querySelector('[data-testid="tools-handle"]')).toBeNull();
-    breakpoints.matches.next({ matches: true, breakpoints: {} });
+    screen.set(true);
     await fixture.whenStable();
     fixture.componentInstance.open.set(true);
     await fixture.whenStable();

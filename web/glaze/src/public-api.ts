@@ -55,6 +55,7 @@ export * from './directives/tooltip.directive';
 export * from './lib/format';
 export * from './lib/icons';
 export * from './lib/intl';
+export * from './lib/media';
 export * from './lib/options';
 export * from './lib/questions';
 export * from './lib/shortcuts';

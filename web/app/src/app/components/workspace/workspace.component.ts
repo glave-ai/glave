@@ -6,10 +6,8 @@ import {
   inject,
   viewChild,
 } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
+import { Router, RouterOutlet } from '@angular/router';
 import { GlzSidenavLayoutComponent } from '@glave/glaze';
-import { filter, map } from 'rxjs';
 
 import { pageFromUrl, threadFromUrl } from '../../lib/threads';
 import { NavService } from '../../services/nav.service';
@@ -47,13 +45,11 @@ export class WorkspaceComponent {
   private readonly router = inject(Router);
   private readonly session = inject(SessionService);
   private readonly layout = viewChild.required(GlzSidenavLayoutComponent);
-  private readonly url = toSignal(
-    this.router.events.pipe(
-      filter((event) => event instanceof NavigationEnd),
-      map(() => this.router.url),
-    ),
-    { initialValue: this.router.url },
-  );
+  /** The page's address, again after each navigation that ends. */
+  private readonly url = computed(() => {
+    this.router.lastSuccessfulNavigation();
+    return this.router.url;
+  });
   /** Whether the offer to make a passkey here may show, which is loaded only then. */
   protected readonly offering = this.session.offersPasskey;
   protected readonly currentThread = computed(() => threadFromUrl(this.url()));
