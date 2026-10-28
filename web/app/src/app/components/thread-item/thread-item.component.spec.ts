@@ -3,7 +3,6 @@ import { provideRouter } from '@angular/router';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import { NO_THOUGHT, type ThreadItem } from '../../lib/conversation';
-import { ThoughtService } from '../../services/thought.service';
 import { ThreadService } from '../../services/thread.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { ThreadItemComponent } from './thread-item.component';
@@ -13,7 +12,7 @@ async function render(
   fake = new FakeSession(),
 ): Promise<{ readonly root: HTMLElement; readonly fake: FakeSession }> {
   TestBed.configureTestingModule({
-    providers: [provideRouter([]), ...provideFakeSession(fake), ThreadService, ThoughtService],
+    providers: [provideRouter([]), ...provideFakeSession(fake), ThreadService],
   });
   await TestBed.inject(ThreadService).open('thread-1');
   const fixture = TestBed.createComponent(ThreadItemComponent);

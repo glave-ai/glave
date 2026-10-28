@@ -9,7 +9,6 @@ import { ChangedFilesService } from '../../services/changed-files.service';
 import { CommandsService } from '../../services/commands.service';
 import { PlanService } from '../../services/plan.service';
 import { SourcesService } from '../../services/sources.service';
-import { ThoughtService } from '../../services/thought.service';
 import { StepsService } from '../../services/steps.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
 import { ThreadService } from '../../services/thread.service';
@@ -24,7 +23,6 @@ const THREAD_VIEW = [
   ChangedFilesService,
   StepsService,
   PlanService,
-  ThoughtService,
   ThreadPanelService,
 ];
 
@@ -429,20 +427,28 @@ describe('TurnComponent', () => {
     expect(root.querySelector('[data-testid="thread-thought-headline"]')?.textContent).toBe(
       'The lock is taken twice.',
     );
-    // No fold: the reasoning shows in full only in the panel.
-    expect(root.querySelector('[data-testid="thread-reply"] details')).toBeNull();
+    // Nothing to open while the model thinks.
+    expect(root.querySelector('[data-testid="thread-thought-text"]')).toBeNull();
     await expectAccessible(root);
     fixture.componentRef.setInput('turn', {
       ...thinking,
       live: {
         text: 'Found it.',
-        reasoning: 'The lock is taken twice.',
+        reasoning: '\nThe lock is taken twice.\n\n',
         thought: { headline: 'The lock is taken twice.', ms: 3000 },
       },
     });
     await fixture.whenStable();
     expect(label()).toBe('Thought for 3s');
     expect(line()?.classList).not.toContain('live');
+    // Done, it opens to the reasoning in full, but for the blank lines at its ends.
+    line()?.click();
+    await fixture.whenStable();
+    expect(line()?.getAttribute('aria-expanded')).toBe('true');
+    expect(root.querySelector('[data-testid="thread-thought-text"]')?.textContent).toBe(
+      'The lock is taken twice.',
+    );
+    await expectAccessible(root);
   });
 
   it('shows a turn that did no work as its messages alone', async () => {

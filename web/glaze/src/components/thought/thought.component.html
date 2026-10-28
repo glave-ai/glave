@@ -1,11 +1,4 @@
-<button
-  type="button"
-  class="line"
-  [class.live]="live()"
-  [attr.aria-pressed]="selected()"
-  [attr.data-testid]="ids().line"
-  (click)="choose.emit()"
->
+<ng-template #words>
   <span class="label" [attr.data-testid]="ids().label">{{ label() }}</span>
   @if (shown(); as headline) {
     <span
@@ -16,4 +9,25 @@
       >{{ headline }}</span
     >
   }
-</button>
+</ng-template>
+@if (live()) {
+  <p class="line live" [attr.data-testid]="ids().line">
+    <ng-container [ngTemplateOutlet]="words" />
+  </p>
+} @else {
+  <button
+    type="button"
+    class="line"
+    [attr.aria-expanded]="open()"
+    [attr.data-testid]="ids().line"
+    (click)="toggle()"
+  >
+    <ng-container [ngTemplateOutlet]="words" />
+    <glz-icon class="chevron glz-mirrored" [attr.data-testid]="ids().chevron" [icon]="chevron" />
+  </button>
+  @if (open()) {
+    <div class="fold">
+      <p class="text" dir="auto" [attr.data-testid]="ids().text">{{ text() }}</p>
+    </div>
+  }
+}

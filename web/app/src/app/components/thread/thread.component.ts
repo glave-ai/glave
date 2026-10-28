@@ -44,7 +44,6 @@ import { SourcesService } from '../../services/sources.service';
 import { StepsService } from '../../services/steps.service';
 import { ThreadService } from '../../services/thread.service';
 import { PanelService } from '../../services/panel.service';
-import { ThoughtService } from '../../services/thought.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
 import { FolderGoneComponent } from '../folder-gone/folder-gone.component';
 import { MessageTextComponent } from '../message-text/message-text.component';
@@ -102,7 +101,6 @@ import { TurnComponent } from '../turn/turn.component';
     StepsService,
     PlanService,
     AttachmentsService,
-    ThoughtService,
     ThreadPanelService,
   ],
   templateUrl: './thread.component.html',

@@ -10,8 +10,9 @@
  * for the page to be rendered (`afterRenderEffect`, `afterNextRender`), as the dialog does.
  * Glaze's controls spread it into their `host`: its buttons, nav items and menus, its fields
  * (`glzInput`, the composer's box, checkboxes and radios, named by a label bound or projected)
- * and its disclosures (receipts and steps, each a `summary` named by its line) and the line of
- * the model's reasoning. A host directive would do the same, for a kilobyte more of the first
- * load.
+ * and its disclosures (receipts and steps, each a `summary` named by its line). A control a
+ * template makes only in a block (`@if`), as the line of the model's reasoning does, is made as
+ * it is bound and needs none. A host directive would do the same, for a kilobyte more of the
+ * first load.
  */
 export const INERT_UNTIL_BOUND = { inert: '', '[attr.inert]': 'null' } as const;

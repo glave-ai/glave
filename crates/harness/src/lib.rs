@@ -75,6 +75,7 @@ pub use skills::{
     Found, MAX_LISTED, SKILL, Skill, SkillSource, Skills, find_skills, skill_folders,
 };
 pub use standing::{Change, change_standing, standing_of};
+pub use thought::thought_of;
 pub use title::{TitleCase, Titled};
 pub use tools::workspace::{Inside, Looked, Workspace};
 pub use tools::{Tool, ToolOutcome};

@@ -3,7 +3,7 @@
   @case ('message') {
     <glz-message data-testid="thread-message" [from]="item.from" [author]="item.author">
       @if (item.reasoning) {
-        <app-thought [key]="item.key" [thought]="item.thought" />
+        <app-thought [thought]="item.thought" [text]="item.reasoning" />
       }
       <app-message-text [text]="item.text" [markdown]="item.markdown" />
       <div class="files glz-row glz-gap-2">

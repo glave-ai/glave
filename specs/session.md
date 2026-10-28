@@ -147,6 +147,8 @@ A thread's notifications include its subagents': a child thread started by an `a
 
 A client that only shows the conversation needs `thread/event` alone. Rebuilding a thread from `thread/events` and then watching it gives exactly the same state as having watched from the start.
 
+**A thought read as it is sent.** A `message.added` recorded before glave kept its `thought` (`events.md`) is sent, in a page of `thread/events` and as a watch reads the log, with the thought its reasoning reads as: its headline, by the rule the harness records it by, and no `ms`, since how long it took was never kept. So a client never draws a reasoning without its headline. The log keeps the message as it was recorded.
+
 **Watching.** `thread/watch` (`thread`, optional `after`, a `seq`) follows a thread without starting a turn, on every transport (`one-server.md`, "Watching"): its events after `after` from the log, every one when there is none, then each as it is recorded, with its live updates and its running subagents', until the client ends the watch or the thread is deleted. It answers with how it ended (`ended`: `unwatched` or `deleted`), after the thread's `thread.deleted` when that ended it. Who may watch is checked as for `thread/events`.
 
 - **Each event once, in order.** The watch subscribes before it reads the log. An event that arrives ahead of the last one sent, as two writers' appends may be told out of order, has the rest read from the log, itself with it; so does every thread whose events a watcher had been sent, when it falls behind its backlog of 1,024 notifications. A subagent first seen part way, as when the watch began while it ran, is read from its start; one that started and ended while the watcher was behind is read from its own thread (`thread/events`), since nothing in its parent's log names it. Copies of what was sent are dropped.
@@ -426,6 +428,7 @@ Version 1: in-process (`glave-session`, used by the CLI), over stdio (`glave ser
 - **Changes' room in the history** (#913): each turn's `turn.ended` records the files it changed, so the web app keeps their room as a thread opens.
 - **Runs of calls in a line** (#903): `thread/steps`, each run of calls with its line, by the kind each call records, and each turn's reply. Not yet: the web app drawing them.
 - **Steps in the server's words** (#851): each call's line recorded in its `tool.call.requested` and drawn by the web app's receipts, a search's as what it searched.
+- **Thoughts of older messages** (#927): a message recorded before its `thought` was kept is sent with its headline, read from its reasoning.
 - **Receipts from the server** (#817): a turn's result recorded in its `turn.ended`, drawn by the web app's receipt as by the terminal's, a model on the server's own computer priced at nothing. Not yet: a running turn's result so far, which shows once it ends.
 - **Watches end with a sign-in** (#546): a thread's watch, a turn's stream and a list's watch end when the browser session they follow ends here. Not yet: one ended by another server on the store, and an identity provider's token expiring.
 - Still to come from "Over the network" (issue #64): SAML and glave session tokens, idempotency keys in the log (#410), and WebSocket.

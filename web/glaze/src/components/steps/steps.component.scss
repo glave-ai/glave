@@ -1,3 +1,5 @@
+@use '../../styles/fold';
+
 // A status other than done keeps its colour, and its icon and word say it too, so colour never
 // says it alone.
 :host {
@@ -106,32 +108,21 @@
 
 // The steps hang under the line, behind a rule at the line's inset, each one line of its own.
 .steps {
+  @include fold.held;
+
   display: flex;
   flex-direction: column;
   gap: var(--glz-space-1);
-
-  /* stylelint-disable declaration-property-value-allowed-list -- the content of a <details> takes no gap (::details-content is not Baseline) */
-  margin-block: var(--glz-space-3) 0;
-  margin-inline: var(--glz-space-1) 0;
-  /* stylelint-enable declaration-property-value-allowed-list */
-  padding-inline-start: var(--glz-space-3);
-  border-inline-start: 2px solid var(--glz-color-border);
-  color: var(--glz-color-text-muted);
 }
 
-// The steps slide open and shut in the fold's one grid row: it grows from nothing as the
-// details open, clipped until it has, and shrinks back to nothing before they close (`shutting`,
-// while the details still show it), so they hide what they hold only once it has. Its one column
-// is as wide as the steps' column, however long a line in it. Open, nothing is clipped, so focus
-// rings and a message's actions show whole. Instant when the person asks for less motion.
+// The steps slide open as the details open, and shrink back to nothing before they close
+// (`shutting`, while the details still show them), so they hide what they hold only once it has.
 .fold {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr);
-  grid-template-columns: minmax(0, 1fr);
+  @include fold.fold;
 }
 
 .details[open] .fold {
-  animation: glz-unfold var(--glz-duration-standard) var(--glz-ease-out);
+  @include fold.unfolding;
 }
 
 .details.shutting .fold {
@@ -139,23 +130,6 @@
   overflow: clip;
   animation: none;
   transition: grid-template-rows var(--glz-duration-standard) var(--glz-ease-out);
-}
-
-@keyframes glz-unfold {
-  from {
-    grid-template-rows: minmax(0, 0fr);
-    overflow: clip;
-  }
-
-  to {
-    overflow: clip;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .details[open] .fold {
-    animation: none;
-  }
 }
 
 // A phone's line: smaller type, so it keeps to one line.

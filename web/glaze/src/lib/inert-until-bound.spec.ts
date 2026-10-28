@@ -19,7 +19,6 @@ import { GlzRadioGroupComponent } from '../components/radio-group/radio-group.co
 import { GlzRadioComponent } from '../components/radio/radio.component';
 import { GlzReceiptComponent } from '../components/receipt/receipt.component';
 import { GlzStepsComponent } from '../components/steps/steps.component';
-import { GlzThoughtComponent } from '../components/thought/thought.component';
 import { GlzInputDirective } from '../directives/input.directive';
 import { expectAccessible } from '../testing/axe';
 import type { GlzOption } from './options';
@@ -42,7 +41,6 @@ import type { GlzOption } from './options';
     GlzRadioGroupComponent,
     GlzReceiptComponent,
     GlzStepsComponent,
-    GlzThoughtComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -60,7 +58,6 @@ import type { GlzOption } from './options';
     <glz-radio-group [label]="words.mode" [(value)]="value">
       <glz-radio value="ask">{{ words.ask }}</glz-radio>
     </glz-radio-group>
-    <glz-thought [label]="words.thought" [headline]="words.why" />
     <glz-receipt [summary]="words.ran">{{ words.output }}</glz-receipt>
     <glz-steps [steps]="words.steps">{{ words.step }}</glz-steps>
   `,
@@ -77,8 +74,6 @@ class NamedComponent {
     name: 'Name',
     remember: 'Remember this choice',
     ask: 'Ask',
-    thought: 'Thought for 2 seconds',
-    why: 'The tests import the parser.',
     ran: 'Ran the tests',
     output: '3 passed',
     steps: '2 steps',
@@ -127,7 +122,7 @@ describe('INERT_UNTIL_BOUND', () => {
     const fixture = TestBed.createComponent(NamedComponent);
     const root: HTMLElement = fixture.nativeElement;
     // Made, not yet bound: none has a name, and none can be reached.
-    expect(controls(root)).toHaveLength(15);
+    expect(controls(root)).toHaveLength(14);
     expect(controls(root).filter(named)).toEqual([]);
     expect(controls(root).filter((control) => control.closest('[inert]') === null)).toEqual([]);
     await expectAccessible(root);
