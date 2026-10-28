@@ -668,9 +668,10 @@ where
 }
 
 /// The result of call `call_id` as it is recorded, from what it gave: content that came back
-/// from outside labelled untrusted (an error is glave's own words, never labelled).
+/// from outside labelled untrusted, an error as much as a success, since a failing command
+/// or server can echo what someone else wrote.
 pub(crate) fn completed(call_id: CallId, outcome: ToolOutput) -> ToolCallCompleted {
-    let untrusted = outcome.untrusted && !outcome.is_error;
+    let untrusted = outcome.untrusted;
     let output = if untrusted {
         crate::untrusted::label(outcome.parts)
     } else {
