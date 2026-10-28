@@ -14,7 +14,10 @@ const PREFERENCES: &str = include_str!("preferences.sbpl");
 const NETWORK: &str = include_str!("network.sbpl");
 
 /// Under the home folder, on macOS besides the common list: the keychains, and browser
-/// profiles (cookies are credentials).
+/// profiles (cookies are credentials). Hiding the keychains is what keeps a command from them
+/// (`specs/invariants.md`, 24): a file keychain is read from disk by the process that opens it,
+/// and with the network on the security server stays reachable, since TLS roots are read
+/// through it; the data-protection keychain's service (`com.apple.securityd.xpc`) never is.
 const MACOS_HOME_SECRETS: &[&str] = &[
     "Library/Keychains",
     "Library/Cookies",
@@ -480,6 +483,16 @@ mod tests {
                 .text
                 .contains("com.apple.SystemConfiguration.DNSConfiguration")
         );
+    }
+
+    #[test]
+    fn no_profile_reaches_the_data_protection_keychain() {
+        for level in [SandboxLevel::ReadOnly, SandboxLevel::Project] {
+            for network in [false, true] {
+                let profile = profile(&places(), level, network);
+                assert!(!profile.text.contains("securityd"), "{level:?} {network}");
+            }
+        }
     }
 
     #[test]
