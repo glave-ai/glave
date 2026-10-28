@@ -36,6 +36,14 @@ const STUCK: [&str; 6] = [
     "RunContainerError",
 ];
 
+/// The Pod glave runs in, which its workers name as their owner: when it is deleted, the
+/// cluster removes them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Owner {
+    pub(crate) name: String,
+    pub(crate) uid: String,
+}
+
 /// What one worker's objects are made of.
 pub(crate) struct Shape<'a> {
     pub(crate) name: &'a str,
@@ -45,6 +53,8 @@ pub(crate) struct Shape<'a> {
     pub(crate) arch: Option<&'a str>,
     /// Labels on every object besides its own, such as a test run's.
     pub(crate) labels: &'a BTreeMap<String, String>,
+    /// The Pod glave runs in, when it runs in one beside its workers.
+    pub(crate) owner: Option<&'a Owner>,
 }
 
 impl Shape<'_> {
@@ -68,7 +78,19 @@ impl Shape<'_> {
 
     /// The metadata of each of the worker's objects.
     fn metadata(&self) -> Value {
-        json!({"name": self.name, "labels": self.labels(), "annotations": self.annotations()})
+        let owners: Vec<Value> = self
+            .owner
+            .iter()
+            .map(|owner| {
+                json!({"apiVersion": "v1", "kind": "Pod", "name": owner.name, "uid": owner.uid})
+            })
+            .collect();
+        json!({
+            "name": self.name,
+            "labels": self.labels(),
+            "annotations": self.annotations(),
+            "ownerReferences": owners,
+        })
     }
 
     /// The Pod: the environment's image running the wait, then glave serving over TLS on
@@ -344,6 +366,7 @@ mod tests {
             runtime_class: Some("gvisor"),
             arch: Some("arm64"),
             labels,
+            owner: None,
         }
     }
 
@@ -384,6 +407,39 @@ mod tests {
         );
         let parsed: k8s_openapi::api::core::v1::Pod = serde_json::from_value(pod).unwrap();
         assert!(parsed.spec.is_some());
+    }
+
+    #[test]
+    fn a_worker_is_owned_by_the_pod_glave_runs_in_when_there_is_one() {
+        let labels = BTreeMap::new();
+        let spec = spec(true);
+        let alone = shape(&spec, &labels);
+        assert_eq!(alone.pod()["metadata"]["ownerReferences"], json!([]));
+        let owner = Owner {
+            name: "glave-0".into(),
+            uid: "8d1c2a52-0000-4000-8000-000000000001".into(),
+        };
+        let with_owner = Shape {
+            owner: Some(&owner),
+            ..alone
+        };
+        let reference = json!([{
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "name": "glave-0",
+            "uid": "8d1c2a52-0000-4000-8000-000000000001"
+        }]);
+        assert_eq!(with_owner.pod()["metadata"]["ownerReferences"], reference);
+        assert_eq!(
+            with_owner.network_policy()["metadata"]["ownerReferences"],
+            reference
+        );
+        let parsed: k8s_openapi::api::core::v1::Pod =
+            serde_json::from_value(with_owner.pod()).unwrap();
+        assert_eq!(
+            parsed.metadata.owner_references.map(|owners| owners.len()),
+            Some(1)
+        );
     }
 
     #[test]

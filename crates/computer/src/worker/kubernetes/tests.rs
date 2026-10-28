@@ -424,3 +424,46 @@ fn a_glave_starting_removes_the_workers_of_a_glave_that_is_gone() {
         assert_eq!(left_behind(&cluster).await, Vec::<String>::new());
     });
 }
+
+#[test]
+fn the_workers_of_a_pod_glave_ran_in_go_when_it_is_deleted() {
+    block_on!(async {
+        let Some(cluster) = cluster(None, "owned").await else {
+            return;
+        };
+        // A Pod for glave to run in, as on a cluster it does.
+        let home = name();
+        let pod: Pod = serde_json::from_value(json!({
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {"name": home, "labels": cluster.labels},
+            "spec": {
+                "containers": [{"name": "glave", "image": IMAGE, "command": ["sleep", "300"]}],
+                "terminationGracePeriodSeconds": 0,
+            }
+        }))
+        .unwrap();
+        let made = cluster
+            .pods()
+            .create(&kube::api::PostParams::default(), &pod)
+            .await
+            .unwrap();
+        let owner = super::objects::Owner {
+            name: home.clone(),
+            uid: made.metadata.uid.unwrap(),
+        };
+        let glave_in_a_pod = cluster.clone().owned_by(owner);
+        let worker = left_by(&glave_in_a_pod, None).await;
+        let now = kube::api::DeleteParams {
+            grace_period_seconds: Some(0),
+            ..kube::api::DeleteParams::default()
+        };
+        cluster.pods().delete(&home, &now).await.unwrap();
+        // The cluster removes the worker and its policy: nothing glave does.
+        let left = left_behind(&cluster).await;
+        if !left.is_empty() {
+            let _ = cluster.remove(&worker).await;
+        }
+        assert_eq!(left, Vec::<String>::new());
+    });
+}
