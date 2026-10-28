@@ -440,6 +440,13 @@ jobs:
           EOF
       - run: cargo build -p glave
       - run: cargo nextest run -p glave-computer --all-features -E 'test(/^worker::kubernetes::/)'
+      - name: Diagnose
+        if: always()
+        run: |
+          kubectl get pods -A -o wide
+          kubectl describe pods -A -l glave.worker | tail -150
+          kubectl get events -A --sort-by=.lastTimestamp | tail -60
+          kubectl describe nodes | grep -A12 "Allocated resources"
       - name: Disk space after the build
         if: always()
         run: df -h /
