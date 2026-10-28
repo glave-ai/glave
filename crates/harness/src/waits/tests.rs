@@ -1,20 +1,8 @@
-use glave_event::{Arguments, At, EventId, Header, ToolCallRequested, ToolKind};
+use glave_event::{Arguments, ToolCallRequested, ToolKind};
 use serde_json::json;
 
 use super::*;
-
-fn event(seq: u64, body: Body) -> Event {
-    let at: jiff::Timestamp = "2026-10-28T10:00:00.000Z".parse().unwrap();
-    Event {
-        header: Header {
-            id: EventId::new(at, [1; 10]).unwrap(),
-            thread: ThreadId::new(at, [2; 10]).unwrap(),
-            seq: Seq::new(seq).unwrap(),
-            at: At::from(at),
-        },
-        body,
-    }
-}
+use crate::plan::tests::event;
 
 fn requested(call: &str, tool: &str, path: &str) -> Body {
     let serde_json::Value::Object(map) = json!({"path": path, "content": "x"}) else {
