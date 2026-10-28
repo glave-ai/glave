@@ -1,3 +1,8 @@
+# nextest before 0.9.145 could report a test that starts nothing as leaky on macOS: two tests
+# spawned at once, one inherited the other's output pipe, since the platform cannot make a pipe
+# close-on-exec atomically; 0.9.145 makes its capture pipes itself (#723). Older versions warn.
+nextest-version = { recommended = "0.9.145" }
+
 # A test that hangs fails instead of holding CI forever, but a slow one on a busy laptop is not
 # a hang: warned after 60 s, stopped after 5 min. Tests guard their own waits more tightly
 # (glave_ports::testing::HUNG), so a hang there fails sooner and says why.
