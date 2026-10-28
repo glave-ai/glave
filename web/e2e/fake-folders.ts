@@ -1,3 +1,5 @@
+import type { FolderListResult } from '@glave/client';
+
 import { Refusal } from './fake-records';
 
 /** The folders on the person's computer, by path; the home folder is /Users/ana. */
@@ -24,7 +26,7 @@ export const HOME_REFUSED =
  * The folders inside `path`, as `folder/list` answers: the home folder and those above it say
  * they are no project's.
  */
-export function listFolders(path: string): unknown {
+export function listFolders(path: string): FolderListResult | Refusal {
   const folders = FOLDERS[path];
   if (folders === undefined) {
     return new Refusal(-32602, `there is no folder at ${path}`);

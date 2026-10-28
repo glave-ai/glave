@@ -1,6 +1,6 @@
 import type { PlanInfo, ReplySources, RunningCommand, ThreadSummary } from '@glave/client';
 
-import { bound, call, done, event } from './fake-records';
+import { type Answers, bound, call, done, event } from './fake-records';
 
 /**
  * A coding thread with something in every section of its panel (`fakeApi`'s `panel`): it read
@@ -127,22 +127,12 @@ const SOURCES: readonly ReplySources[] = [
   { reply: 15, sentence: 'Sources: 1 page', pages: [PAGE] },
 ];
 
-/** The answer to a call about the coding thread, else `undefined`. */
-export function aboutVerbose(method: string, params: Record<string, unknown>): unknown {
-  if (params['thread'] !== VERBOSE) {
-    return undefined;
-  }
-  switch (method) {
-    case 'thread/sources':
-      return { sources: SOURCES };
-    case 'command/list':
-      return { commands: [TESTS] };
-    case 'thread/plan':
-      return { plan: PLAN };
-    default:
-      return undefined;
-  }
-}
+/** Calls about the coding thread. */
+export const ABOUT_VERBOSE: Answers<null> = {
+  'thread/sources': (params) => (params.thread === VERBOSE ? { sources: SOURCES } : undefined),
+  'command/list': (params) => (params.thread === VERBOSE ? { commands: [TESTS] } : undefined),
+  'thread/plan': (params) => (params.thread === VERBOSE ? { plan: PLAN } : undefined),
+};
 
 /** A plain chat: words alone, so no panel. */
 export const DINNER = '01900000-0000-7000-8000-000000000105';

@@ -1,4 +1,4 @@
-import type { ReplySources } from '@glave/client';
+import type { ReplySources, ThreadSourcesParams, ThreadSourcesResult } from '@glave/client';
 
 import { call, done, event } from './fake-records';
 
@@ -81,8 +81,6 @@ export const RESEARCH_SOURCES: ReplySources = {
 };
 
 /** The answer to `thread/sources`: the research chat's reply drew on two pages; others, none. */
-export function sourcesOf(params: Record<string, unknown>): {
-  readonly sources: readonly ReplySources[];
-} {
-  return { sources: params['thread'] === RESEARCH ? [RESEARCH_SOURCES] : [] };
+export function sourcesOf(params: ThreadSourcesParams): ThreadSourcesResult {
+  return { sources: params.thread === RESEARCH ? [RESEARCH_SOURCES] : [] };
 }

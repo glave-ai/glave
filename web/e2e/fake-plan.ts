@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test';
 
 import { type Storing, storedEvents } from './fake-events';
 import { type Gated, gates } from './fake-gate';
-import { call, done, event } from './fake-records';
+import { type Answers, call, done, event } from './fake-records';
 
 /** A thread whose turn in plan mode looked around and proposed a plan. */
 export const PLANNING = '01900000-0000-7000-8000-000000000121';
@@ -70,24 +70,24 @@ export interface Planned {
   steps: readonly PlanStep[];
 }
 
-/** The answer to a call about the plan, kept in `plan`; else `undefined`. */
-export function planned(method: string, params: Record<string, unknown>, plan: Planned): unknown {
-  if (params['thread'] !== PLANNING) {
-    return undefined;
-  }
-  switch (method) {
-    case 'plan/edit': {
-      const steps = Array.isArray(params['steps']) ? (params['steps'] as readonly unknown[]) : [];
-      plan.steps = steps.map((step) => ({ step: String(step).trim(), status: 'pending' }));
-      return { plan: planOf(plan.steps, true) };
-    }
-    case 'plan/build':
-      plan.built = true;
-      return {};
-    default:
+/** Calls about the plan, kept in `plan`. */
+export const PLANNED: Answers<Planned> = {
+  'plan/edit': (params, plan) => {
+    if (params.thread !== PLANNING) {
       return undefined;
-  }
-}
+    }
+    plan.steps = params.steps.map((step) => ({ step: step.trim(), status: 'pending' }));
+    return { plan: planOf(plan.steps, true) };
+  },
+  'plan/build': (params, plan) => {
+    if (params.thread !== PLANNING) {
+      return undefined;
+    }
+    plan.built = true;
+    // The page streams the turn itself (`planServer`); this answer is never read.
+    return { turn: { outcome: 'completed' } };
+  },
+};
 
 /**
  * The page's own `fetch` as the server answers the plan of `PLANNING`, as `streamReply` does a
