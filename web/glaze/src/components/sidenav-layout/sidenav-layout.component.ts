@@ -53,7 +53,9 @@ export const GLZ_NARROW = '(max-width: 48rem)';
   host: {
     '[attr.data-testid]': 'testId()',
     '[class.narrow]': 'narrow()',
-    '[class.open]': 'open()',
+    // Closed is the class, so before its first binding (a route's page is added a frame before
+    // Angular binds it) it is drawn open, as it starts, and nothing moves as it is bound.
+    '[class.closed]': 'closed()',
     '[style.--glz-sidenav-width]': 'widthStyle()',
     '(keydown.escape)': 'escape()',
   },

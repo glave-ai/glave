@@ -6,9 +6,9 @@ import { expectAccessible } from '@glave/glaze/testing';
 
 import { ChangesService } from '../../services/changes.service';
 import { PanelService } from '../../services/panel.service';
-import { FakeSession, FakeTurn } from '../../testing/fake-session';
-import { MODELS, SERVER, changed, editedFile, event, record, thread } from '../../testing/fixtures';
-import { openThread as open } from '../../testing/thread-view';
+import { FakeTurn } from '../../testing/fake-session';
+import { changed, editedFile, event, record, thread } from '../../testing/fixtures';
+import { openThread as open, session, settle, type } from '../../testing/thread-view';
 import type { TurnResults } from '../../lib/results';
 import { TurnComponent } from '../turn/turn.component';
 
@@ -46,30 +46,6 @@ const ANSWERED = [
   event(2, 'message.added', { role: 'assistant', parts: [{ type: 'text', text: 'Hello' }] }),
   event(3, 'model.responded', { model: { provider: 'gateway', name: 'hope-12b' } }),
 ];
-
-function session(events: readonly unknown[], changes = changed(1, [])): FakeSession {
-  return new FakeSession()
-    .answer('thread/events', { events })
-    .answer('thread/changes', changes)
-    .answer('model/list', { models: MODELS })
-    .answer('server/discover', SERVER)
-    .answer('schedule/list', { schedules: [] })
-    .answer('tasks/list', { tasks: [] })
-    .answer('project/list', { projects: [record('p1', 'glave')] })
-    .answer('thread/list', { threads: [thread('thread-1', 'Tidy the repo', { project: 'p1' })] });
-}
-
-const settle = (): Promise<unknown> => new Promise((resolve) => setTimeout(resolve));
-
-async function type(root: HTMLElement, text: string): Promise<void> {
-  const input = root.querySelector<HTMLTextAreaElement>('[data-testid="thread-composer-input"]');
-  if (input) {
-    input.value = text;
-    input.dispatchEvent(new Event('input'));
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }));
-  }
-  await settle();
-}
 
 describe('ThreadComponent', () => {
   beforeEach(() => {
@@ -515,7 +491,9 @@ describe('ThreadComponent', () => {
     // The thread's own mode is Auto (its summary says so), offered first.
     const fake = session([]);
     const { root } = await open(fake);
+    // A CDK menu trigger closes what it opens in the task it is made in: the page is drawn late.
     const mode = async (index: number): Promise<void> => {
+      await settle();
       root.querySelector<HTMLButtonElement>('[data-testid="permissions-trigger"]')?.click();
       await settle();
       const options = document.querySelectorAll<HTMLElement>('[data-testid="permissions-option"]');
@@ -534,6 +512,40 @@ describe('ThreadComponent', () => {
       { thread: 'thread-1', prompt: 'Careful now', permissions: 'ask' },
       { thread: 'thread-1', prompt: 'Go ahead' },
     ]);
+  });
+
+  it('draws the conversation from its history while what it changed is never answered', async () => {
+    const fake = session(EDITED);
+    const changes = fake.held('thread/changes');
+    const { root, fixture } = await open(fake);
+    expect(root.querySelector('[data-testid="thread-composer"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="thread-message"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="turn-changes"]')).toBeNull();
+    // Once read, what it changed comes into its own place.
+    changes(README);
+    await settle();
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="turn-changes"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="panel-changes"]')).not.toBeNull();
+  });
+
+  it('shows the thread’s own model once its history is read, never the default before', async () => {
+    const fake = session([event(1, 'model.chosen', { model: 'gpt-6-luna' })]);
+    const history = fake.held('thread/events');
+    const { root, fixture } = await open(fake);
+    const pickers = (): HTMLElement | null =>
+      root
+        .querySelector<HTMLElement>('[data-testid="model-picker-trigger"]')
+        ?.closest('.pending') ?? null;
+    // Kept in its place, but unseen while the thread's own choice is unknown.
+    expect(pickers()).not.toBeNull();
+    history({ events: [event(1, 'model.chosen', { model: 'gpt-6-luna' })] });
+    await settle();
+    await fixture.whenStable();
+    expect(pickers()).toBeNull();
+    expect(root.querySelector('[data-testid="model-picker-trigger"]')?.textContent).toContain(
+      'GPT-6 Luna',
+    );
   });
 
   it('shows no panel for a plain chat: no edge, no button', async () => {
