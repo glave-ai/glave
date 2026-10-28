@@ -138,7 +138,7 @@ Five kinds, sent while a turn runs or a client watches:
 | Method | Params | Kept |
 | --- | --- | --- |
 | `thread/event` | `thread`; `event`, a stored event with its `seq` | Yes: it is in the log, and `thread/events` returns it again |
-| `turn/live` | `thread`; `update`, one of the kinds the schema lists: text or reasoning as it streams, a tool starting, finishing or declined, waiting, retrying, compaction done or failed, questions asked, an approval pending, a subagent started or ended, a memory changed | No: live updates are for showing progress, never replayed |
+| `turn/live` | `thread`; `update`, one of the kinds the schema lists: text or reasoning as it streams, the reasoning's headline each time it changes and how long it took as it ends (as its message records them, `events.md`), a tool starting, finishing or declined, waiting, retrying, compaction done or failed, questions asked, an approval pending, a subagent started or ended, a memory changed | No: live updates are for showing progress, never replayed |
 | `task/finished` | `thread`; `task`, as `tasks/list` shows it | In the ledger as `task.ended` |
 | `thread/changed` | `thread`; `summary`, as `thread/list` shows it to the watching caller now | No: a list's watch sends what the threads view and the server say at that moment |
 | `settings/changed` | `setting`: which of the watching caller's own settings or connections changed, by what reads it (`providers`, `credentials`, `connections`, `search`, `grouping`, `awake`, `passkeys`, `language`) | No: a list's watch says so, and the client reads that one again |

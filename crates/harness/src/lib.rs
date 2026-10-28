@@ -40,6 +40,7 @@ mod skills;
 mod standing;
 mod subagent;
 mod telemetry;
+mod thought;
 mod title;
 mod tools;
 mod toolset;

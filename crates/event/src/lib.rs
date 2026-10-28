@@ -32,8 +32,8 @@ pub use payload::{
     Lifted, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryScope, MemorySource,
     MemoryTidied, MessageAdded, ModelChosen, ModelRef, ModelResponded, Opaque, Origin, OriginKind,
     Outcome, OutsideSandbox, ParentCall, Part, Permissions, PermissionsChosen, Principal,
-    PrincipalKind, Producer, Role, StopReason, ThreadArchived, ThreadCompacted, ThreadDeleted,
-    ThreadRenamed, ThreadStarted, ThreadUnarchived, TokenCounts, ToolCallCompleted,
+    PrincipalKind, Producer, Role, StopReason, Thought, ThreadArchived, ThreadCompacted,
+    ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived, TokenCounts, ToolCallCompleted,
     ToolCallRequested, ToolKind, TraceId, TurnResult, TurnStarted, Usage, Verdict, WebPage,
 };
 pub use payload::{BrowserSignedIn, BrowserSignedOut, BrowserUsed, Decision, TrustDecided};

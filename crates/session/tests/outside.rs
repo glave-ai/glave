@@ -135,6 +135,7 @@ fn a_message_from_outside_is_still_a_conflict() {
                 text: "from another harness".into(),
             }],
             author: None,
+            thought: None,
         };
         store
             .log()

@@ -112,15 +112,7 @@ impl Printer {
                 println!("  {} {description}", paint(self.color, CYAN, "agent"));
                 self.speaking = false;
             }
-            Update::SubagentEnded { ok, .. } => {
-                let (color, word) = if ok {
-                    (CYAN, "agent done")
-                } else {
-                    (RED, "agent failed")
-                };
-                println!("  {}", paint(self.color, color, word));
-                self.speaking = false;
-            }
+            Update::SubagentEnded { ok, .. } => self.agent_ended(ok),
             Update::ToolFinished { is_error, .. } => {
                 if is_error {
                     println!("{}", paint(self.color, RED, "error"));
@@ -134,9 +126,22 @@ impl Printer {
             | Update::ApprovalPending { .. }
             | Update::Unread { .. }
             | Update::Reasoning { .. }
+            | Update::Thinking { .. }
+            | Update::Thought { .. }
             | Update::Waiting => {}
         }
         flush();
+    }
+
+    /// A subagent done, `ok` when it finished its work.
+    fn agent_ended(&mut self, ok: bool) {
+        let (color, word) = if ok {
+            (CYAN, "agent done")
+        } else {
+            (RED, "agent failed")
+        };
+        println!("  {}", paint(self.color, color, word));
+        self.speaking = false;
     }
 
     /// A memory saved, edited or forgotten: shown at once, with how to change it.

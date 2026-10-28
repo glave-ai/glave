@@ -14,6 +14,16 @@ pub enum Update {
     Reasoning {
         text: String,
     },
+    /// The reasoning's headline changed: its last bold title, else its last whole sentence, as
+    /// the model wrote it. A client shows the latest one beside the word that it thinks.
+    Thinking {
+        headline: String,
+    },
+    /// The reasoning ended after `ms` milliseconds: the model wrote something else, or its call
+    /// ended. Its message records the same (`message.added`'s `thought`).
+    Thought {
+        ms: u64,
+    },
     ToolStarted {
         summary: String,
     },
@@ -87,6 +97,10 @@ impl From<Live> for Update {
         match live {
             Live::Text(text) => Self::Text { text },
             Live::Reasoning(text) => Self::Reasoning { text },
+            Live::Thinking(headline) => Self::Thinking { headline },
+            Live::Thought(took) => Self::Thought {
+                ms: u64::try_from(took.as_millis()).unwrap_or(u64::MAX),
+            },
             Live::ToolStarted { summary } => Self::ToolStarted { summary },
             Live::ToolFinished { summary, is_error } => Self::ToolFinished { summary, is_error },
             Live::ToolDeclined {

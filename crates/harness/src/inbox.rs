@@ -201,6 +201,7 @@ where
                 role: Role::User,
                 parts: said(text, &queued.files),
                 author: Self::other_than_for(thread, queued.caller.person),
+                thought: None,
             };
             self.stage_as(thread, &mut events, &message, queued.id)?;
         }

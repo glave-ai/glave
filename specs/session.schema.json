@@ -2618,6 +2618,42 @@
           "type": "object"
         },
         {
+          "description": "The reasoning's headline changed: its last bold title, else its last whole sentence, as\nthe model wrote it. A client shows the latest one beside the word that it thinks.",
+          "properties": {
+            "headline": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "thinking",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "headline"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The reasoning ended after `ms` milliseconds: the model wrote something else, or its call\nended. Its message records the same (`message.added`'s `thought`).",
+          "properties": {
+            "kind": {
+              "const": "thought",
+              "type": "string"
+            },
+            "ms": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "ms"
+          ],
+          "type": "object"
+        },
+        {
           "properties": {
             "kind": {
               "const": "tool_started",

@@ -40,6 +40,7 @@ fn message(seq: u64, role: Role, parts: Vec<Part>) -> RawEvent {
         role,
         parts,
         author: None,
+        thought: None,
     };
     encode(header(seq), &payload).unwrap()
 }

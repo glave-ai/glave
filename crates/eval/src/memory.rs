@@ -359,6 +359,7 @@ async fn write_past(store: &Store, scope: Scope, messages: &[String]) -> Result<
             role: Role::User,
             parts: vec![Part::Text { text: text.clone() }],
             author: None,
+            thought: None,
         };
         events.push(encode(header, &message).map_err(|e| fail(&e))?);
     }

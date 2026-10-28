@@ -465,3 +465,51 @@ fn resuming_a_thread_that_does_not_exist_is_an_error() {
         assert!(harness.resume_thread(elsewhere, thread.id).await.is_err());
     });
 }
+
+#[test]
+fn a_message_records_what_its_reasoning_came_to_and_the_person_sees_it_as_it_streams() {
+    let dir = folder("thought");
+    block_on!(async {
+        let mut thought = answer(Some("Stopped."), vec![], StopReason::EndTurn);
+        thought.parts.insert(
+            0,
+            Part::Reasoning {
+                text: Some("**Stopping the server**\n\nIt runs on 5173.".into()),
+                opaque: None,
+            },
+        );
+        let harness = harness(&dir, vec![thought], AllowAll).await;
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        let mut seen = Vec::new();
+        harness
+            .run_turn(&mut thread, "stop it", &Cancel::new(), &mut |live| {
+                seen.push(live);
+            })
+            .await
+            .unwrap();
+
+        // The headline as it changed, then how long it took, before the words that ended it.
+        let shown: Vec<&Live> = seen
+            .iter()
+            .filter(|live| matches!(live, Live::Thinking(_) | Live::Thought(_) | Live::Text(_)))
+            .collect();
+        assert!(
+            matches!(
+                shown.as_slice(),
+                [Live::Thinking(headline), Live::Thought(_), Live::Text(_)]
+                    if headline == "Stopping the server"
+            ),
+            "{shown:?}"
+        );
+        let events = events(harness.log(), thread.id).await;
+        let recorded = events.iter().find_map(|event| match &event.body {
+            Body::MessageAdded(message) if message.role == glave_event::Role::Assistant => {
+                message.thought.clone()
+            }
+            _ => None,
+        });
+        let recorded = recorded.unwrap();
+        assert_eq!(recorded.headline.as_deref(), Some("Stopping the server"));
+        assert!(recorded.ms.is_some());
+    });
+}

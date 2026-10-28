@@ -34,6 +34,7 @@ proptest! {
             role: if assistant { Role::Assistant } else { Role::User },
             parts: vec![Part::Text { text }],
             author: None,
+            thought: None,
         };
         let json = encode(header(seq, millis), &message).unwrap().to_json().unwrap();
         let event = decode(RawEvent::from_json(&json).unwrap()).unwrap();
