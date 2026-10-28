@@ -105,3 +105,21 @@ if (typeof Element.prototype.scrollIntoView !== 'function') {
     },
   });
 }
+
+// jsdom has no media queries: none matches, as on a wide screen that asks for nothing.
+if (typeof window.matchMedia !== 'function') {
+  class NoMedia extends EventTarget implements MediaQueryList {
+    readonly matches = false;
+    onchange: MediaQueryList['onchange'] = null;
+    constructor(readonly media: string) {
+      super();
+    }
+    addListener(): void {
+      // Nothing ever changes.
+    }
+    removeListener(): void {
+      // Nothing ever changes.
+    }
+  }
+  Object.assign(window, { matchMedia: (query: string): MediaQueryList => new NoMedia(query) });
+}

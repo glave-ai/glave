@@ -1,9 +1,8 @@
-import { BreakpointObserver } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
-import { of } from 'rxjs';
+import { fakeMedia } from '@glave/glaze/testing/media';
 
 import { ProjectsService } from '../../services/projects.service';
 import { ELSEWHERE, FakeSession, provideFakeSession } from '../../testing/fake-session';
@@ -41,13 +40,9 @@ function where(root: HTMLElement): string {
 }
 
 async function render(fake: FakeSession, projectId?: string, narrow = false): Promise<HTMLElement> {
-  const breakpoints = { observe: () => of({ matches: narrow, breakpoints: {} }) };
+  fakeMedia(narrow);
   TestBed.configureTestingModule({
-    providers: [
-      provideRouter([]),
-      ...provideFakeSession(fake),
-      { provide: BreakpointObserver, useValue: breakpoints },
-    ],
+    providers: [provideRouter([]), ...provideFakeSession(fake)],
   });
   await TestBed.inject(ProjectsService).refresh();
   const fixture = TestBed.createComponent(HomeComponent);
@@ -63,6 +58,7 @@ async function render(fake: FakeSession, projectId?: string, narrow = false): Pr
 describe('HomeComponent', () => {
   afterEach(() => {
     document.body.click();
+    vi.unstubAllGlobals();
   });
 
   it('starts a thread in the personal project, sends its first turn and opens it at once', async () => {
@@ -208,6 +204,10 @@ describe('HomeComponent', () => {
 });
 
 describe('HomeComponent with files', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('keeps a file where the thread starts and sends it with the first turn', async () => {
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: () => 'blob:1' });
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: () => undefined });

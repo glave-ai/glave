@@ -1,8 +1,6 @@
-import { BreakpointObserver } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import type { TurnStartParams } from '@glave/client';
-import { of } from 'rxjs';
 
 import { ThreadComponent } from '../components/thread/thread.component';
 import { FirstTurnService } from '../services/first-turn.service';
@@ -21,13 +19,8 @@ export interface OpenThread {
  * it `first`, if given; once what it asked as it opened has been answered.
  */
 export async function openThread(fake: FakeSession, first?: TurnStartParams): Promise<OpenThread> {
-  const breakpoints = { observe: () => of({ matches: false, breakpoints: {} }) };
   TestBed.configureTestingModule({
-    providers: [
-      provideRouter([]),
-      ...provideFakeSession(fake),
-      { provide: BreakpointObserver, useValue: breakpoints },
-    ],
+    providers: [provideRouter([]), ...provideFakeSession(fake)],
   });
   await TestBed.inject(ProjectsService).refresh();
   if (first !== undefined) {

@@ -1,4 +1,3 @@
-import { BreakpointObserver } from '@angular/cdk/layout';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -6,16 +5,14 @@ import {
   afterRenderEffect,
   booleanAttribute,
   computed,
-  inject,
   input,
   model,
   viewChild,
 } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { map, switchMap } from 'rxjs';
 
 import { GlzSplitterDirective } from '../../directives/splitter.directive';
 import { GlzTooltipDirective } from '../../directives/tooltip.directive';
+import { mediaMatches } from '../../lib/media';
 import { testIds } from '../../lib/test-ids';
 import { injectId } from '../../tokens/ids';
 import { glzText } from '../../lib/words';
@@ -87,17 +84,10 @@ export class GlzPanelLayoutComponent {
   readonly empty = input(false, { transform: booleanAttribute });
 
   protected readonly panelId = injectId('glz-panel');
-  private readonly breakpoints = inject(BreakpointObserver);
   private readonly panel = viewChild.required<ElementRef<HTMLElement>>('panel');
 
   /** Whether the screen is narrow, so the panel is a sheet. */
-  readonly narrow = toSignal(
-    toObservable(this.narrowQuery).pipe(
-      switchMap((query) => this.breakpoints.observe(query)),
-      map((state) => state.matches),
-    ),
-    { initialValue: false },
-  );
+  readonly narrow = mediaMatches(this.narrowQuery);
   /** Whether the panel is open over the content, so it is modal. */
   protected readonly modal = computed(() => this.narrow() && this.open() && !this.empty());
   protected readonly closed = computed(() => !this.open() || this.empty());

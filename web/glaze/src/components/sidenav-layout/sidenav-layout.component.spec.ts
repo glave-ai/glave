@@ -1,9 +1,8 @@
-import { BreakpointObserver, type BreakpointState } from '@angular/cdk/layout';
 import { ChangeDetectionStrategy, Component, viewChild } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { BehaviorSubject, type Observable } from 'rxjs';
 
 import { expectAccessible } from '../../testing/axe';
+import { type FakeMedia, fakeMedia } from '../../testing/media';
 import { GlzSidenavLayoutComponent } from './sidenav-layout.component';
 
 @Component({
@@ -20,21 +19,15 @@ class HostComponent {
   readonly layout = viewChild.required(GlzSidenavLayoutComponent);
 }
 
-class FakeBreakpoints {
-  readonly matches = new BehaviorSubject<BreakpointState>({ matches: false, breakpoints: {} });
-  observe(): Observable<BreakpointState> {
-    return this.matches;
-  }
-}
-
 describe('GlzSidenavLayoutComponent', () => {
-  let breakpoints: FakeBreakpoints;
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  let screen: FakeMedia;
 
   beforeEach(() => {
-    breakpoints = new FakeBreakpoints();
-    TestBed.configureTestingModule({
-      providers: [{ provide: BreakpointObserver, useValue: breakpoints }],
-    });
+    screen = fakeMedia();
   });
 
   function sidenav(root: HTMLElement): HTMLElement {
@@ -111,12 +104,12 @@ describe('GlzSidenavLayoutComponent', () => {
     await fixture.whenStable();
     const layout = fixture.componentInstance.layout();
     layout.close();
-    breakpoints.matches.next({ matches: true, breakpoints: {} });
+    screen.set(true);
     await fixture.whenStable();
     layout.toggle();
     await fixture.whenStable();
     expect(layout.open()).toBe(true);
-    breakpoints.matches.next({ matches: false, breakpoints: {} });
+    screen.set(false);
     await fixture.whenStable();
     expect(layout.open()).toBe(false);
     expect(
@@ -126,7 +119,7 @@ describe('GlzSidenavLayoutComponent', () => {
 
   it('becomes a modal drawer on narrow screens, closed by Escape or the scrim', async () => {
     const fixture = TestBed.createComponent(HostComponent);
-    breakpoints.matches.next({ matches: true, breakpoints: {} });
+    screen.set(true);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     const layout = fixture.componentInstance.layout();

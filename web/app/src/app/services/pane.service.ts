@@ -1,8 +1,6 @@
-import { BreakpointObserver } from '@angular/cdk/layout';
 import { DOCUMENT } from '@angular/common';
 import { type Signal, type WritableSignal, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { map } from 'rxjs';
+import { mediaMatches } from '@glave/glaze';
 
 import type { PaneState } from '../lib/panel';
 import { ariaShortcut, onApple, pressed, shortcutLabel } from '../lib/shortcuts';
@@ -46,12 +44,7 @@ export abstract class PaneService {
     this.stored = options.read(readStored(this.storage, options.key));
     this.open = signal(this.stored.open);
     this.width = signal(this.stored.width);
-    this.narrow = toSignal(
-      inject(BreakpointObserver)
-        .observe(options.narrowQuery)
-        .pipe(map((state) => state.matches)),
-      { initialValue: false },
-    );
+    this.narrow = mediaMatches(() => options.narrowQuery);
     this.shortcut = shortcutLabel(options.keys, this.apple);
     this.ariaShortcut = ariaShortcut(options.keys, this.apple);
   }

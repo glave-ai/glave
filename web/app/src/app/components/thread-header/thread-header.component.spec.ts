@@ -1,7 +1,6 @@
-import { BreakpointObserver } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
 import { expectAccessible } from '@glave/glaze/testing';
-import { of } from 'rxjs';
+import { fakeMedia } from '@glave/glaze/testing/media';
 
 import { NavService } from '../../services/nav.service';
 import { PanelService } from '../../services/panel.service';
@@ -19,12 +18,7 @@ async function render(options: Options = {}): Promise<{
   readonly renamed: () => number;
 }> {
   localStorage.clear();
-  const narrow = options.narrow ?? false;
-  TestBed.configureTestingModule({
-    providers: [
-      { provide: BreakpointObserver, useValue: { observe: () => of({ matches: narrow }) } },
-    ],
-  });
+  fakeMedia(options.narrow ?? false);
   const fixture = TestBed.createComponent(ThreadHeaderComponent);
   fixture.componentRef.setInput('title', 'Fix the flaky test');
   fixture.componentRef.setInput('project', 'project' in options ? options.project : 'glave');
@@ -40,6 +34,10 @@ function find(root: HTMLElement, testId: string): HTMLElement | null {
 }
 
 describe('ThreadHeaderComponent', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('shows the title and its project, and renames from the title', async () => {
     const { root, renamed } = await render();
     expect(root.querySelector('h1[data-testid="thread-title"]')?.textContent.trim()).toBe(

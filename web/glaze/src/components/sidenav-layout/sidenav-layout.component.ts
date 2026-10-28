@@ -1,4 +1,3 @@
-import { BreakpointObserver } from '@angular/cdk/layout';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -6,17 +5,15 @@ import {
   afterRenderEffect,
   computed,
   effect,
-  inject,
   input,
   model,
   untracked,
   viewChild,
 } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { map, switchMap } from 'rxjs';
 
 import { GlzSplitterDirective } from '../../directives/splitter.directive';
 import { GlzTooltipDirective } from '../../directives/tooltip.directive';
+import { mediaMatches } from '../../lib/media';
 import { testIds } from '../../lib/test-ids';
 import { injectId } from '../../tokens/ids';
 import { glzText } from '../../lib/words';
@@ -85,16 +82,9 @@ export class GlzSidenavLayoutComponent {
   readonly narrowQuery = input(GLZ_NARROW);
 
   protected readonly navId = injectId('glz-sidenav');
-  private readonly breakpoints = inject(BreakpointObserver);
   private readonly sidenav = viewChild.required<ElementRef<HTMLElement>>('sidenav');
   /** Whether the screen is narrow, so the side nav is a drawer. */
-  readonly narrow = toSignal(
-    toObservable(this.narrowQuery).pipe(
-      switchMap((query) => this.breakpoints.observe(query)),
-      map((state) => state.matches),
-    ),
-    { initialValue: false },
-  );
+  readonly narrow = mediaMatches(this.narrowQuery);
   /** Whether the side nav is open over the content, so it is modal. */
   protected readonly modal = computed(() => this.narrow() && this.open());
   protected readonly closed = computed(() => !this.open());
