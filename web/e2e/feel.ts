@@ -93,7 +93,10 @@ export async function watchFeel(page: Page): Promise<void> {
           value: Number(entry['value']),
           startTime: entry.startTime,
           hadRecentInput: entry['hadRecentInput'] === true,
-          moved: (entry['sources'] as readonly Source[]).map(described),
+          moved: [
+            ...(entry['sources'] as readonly Source[]).map(described),
+            `DIAG t=${String(Math.round(entry.startTime))} w=${String(innerWidth)} narrow=${String(matchMedia('(max-width: 48rem)').matches)} layout=${document.querySelector('glz-sidenav-layout')?.className ?? 'none'} aside=${String(document.querySelector('aside')?.getBoundingClientRect().width)} disp=${document.querySelector('aside') ? getComputedStyle(document.querySelector('aside') as Element).display : ''} sw=${getComputedStyle(document.documentElement).getPropertyValue('--glz-sidenav-width')} fonts=${String(document.fonts.status)} vt=${String(document.querySelectorAll('[style*=view-transition]').length)}`,
+          ],
         });
       },
       event: (entry) => {
