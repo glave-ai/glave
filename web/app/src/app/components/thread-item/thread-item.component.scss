@@ -10,6 +10,9 @@
 }
 
 .output {
+  // A scroll container holds what is positioned inside it, so nothing hidden for screen readers
+  // far down it reaches past it and makes what holds it scroll.
+  position: relative;
   max-height: 16rem;
   overflow: auto;
   white-space: pre-wrap;

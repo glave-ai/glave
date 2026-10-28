@@ -1,7 +1,8 @@
 import { type Locator, expect, test } from '@playwright/test';
 
 import { type Request, THREAD, fakeApi } from './fake-api';
-import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './support';
+import { VERBOSE } from './fake-panel';
+import { SIGNED_IN, atRest, byTestId, expectAccessible, watchForProblems } from './support';
 
 for (const colorScheme of ['light', 'dark'] as const) {
   test(`the three panes pass axe with the thread's panel open (${colorScheme})`, async ({
@@ -297,3 +298,33 @@ test('in a short window the picker lists models beside its button, never over it
   await expect(list).toBeHidden();
   await expect(trigger).toContainText('Claude Haiku 5.5');
 });
+
+// Short windows, so the conversation outgrows its pane as a long one does: what it hides for
+// screen readers far down it once made the pane that holds the thread scroll.
+for (const size of [
+  { name: 'a desktop', width: 1440, height: 400 },
+  { name: 'a phone', width: 390, height: 400 },
+] as const) {
+  test(`the page never scrolls, each pane scrolls inside itself, the panel open, on ${size.name}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: size.width, height: size.height });
+    await fakeApi(page, { panel: true });
+    await page.goto(`/t/${VERBOSE}${SIGNED_IN}`);
+    await expect(byTestId(page, 'thread-message').last()).toContainText('the tests are running');
+    if (size.width < 768) {
+      await byTestId(page, 'thread-panel').click();
+    }
+    await expect(byTestId(page, 'command-text')).toHaveText('cargo test');
+    await expect(byTestId(page, 'panel-cost')).toBeVisible();
+    await atRest(page);
+    // Neither the page nor the pane that holds the thread scrolls: the conversation and the
+    // panel each scroll inside themselves.
+    const overflow = await page.evaluate(() =>
+      [document.scrollingElement, document.getElementById('content')].map((box) =>
+        box === null ? 0 : box.scrollHeight - box.clientHeight,
+      ),
+    );
+    expect(overflow).toEqual([0, 0]);
+  });
+}
