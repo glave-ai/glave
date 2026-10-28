@@ -74,6 +74,7 @@ describe('ChangedFilesService', () => {
     expect(changed.note()).toBe('');
     // Known as none once it has opened, so what its turns change next comes as the person watches.
     expect(changed.byTurn()).toEqual(new Map());
+    expect(changed.known()).toBe(true);
   });
 
   it('draws the server’s changes as the thread opens, and asks again as a write ends', async () => {
@@ -94,8 +95,9 @@ describe('ChangedFilesService', () => {
     TestBed.tick();
     expect(changed.byTurn()).toBeNull();
     await opening;
-    expect(changed.byTurn()).toBeNull();
+    expect([changed.byTurn(), changed.known()]).toEqual([null, false]);
     await settle();
+    expect(changed.known()).toBe(true);
     expect(fake.paramsOf('thread/changes')).toEqual([{ thread: 'thread-1' }]);
     expect(changed.files()).toBe(CHANGED.files);
     expect(changed.byTurn()?.get(1)).toEqual([]);
@@ -118,5 +120,7 @@ describe('ChangedFilesService', () => {
     await settle();
     expect(fake.paramsOf('thread/changes')).toHaveLength(1);
     expect(changed.files()).toEqual([]);
+    // Known as none: the thread stands without them.
+    expect(changed.known()).toBe(true);
   });
 });

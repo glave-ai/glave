@@ -22,7 +22,7 @@
   outline: none;
 }
 
-:host(:not(.open)) .sidenav {
+:host(.closed) .sidenav {
   display: none;
 }
 
