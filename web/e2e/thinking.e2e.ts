@@ -138,17 +138,13 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(live.getByTestId('thread-thought-label')).toHaveText('Thinking');
     expect(await animationOf(live.getByTestId('thread-thought-label'))).toContain('glz-shimmer');
     await expect(live.getByTestId('thread-thought-headline')).toHaveText(HEADLINE);
+    // While the model thinks, there is nothing to open.
+    await expect(live.getByRole('button')).toHaveCount(0);
     await expect(live.locator('details')).toHaveCount(0);
-    // Chosen, it shows the reasoning in full in the panel, and says so.
-    const panel = byTestId(page, 'panel-thought-text');
-    await expect(panel).toHaveCount(0);
-    await thinking.click();
-    await expect(panel).toHaveText(REASONING);
-    await expect(thinking).toHaveAttribute('aria-pressed', 'true');
     await expectAccessible(page);
 
-    // Once done it says how long it thought, its line kept and still chosen as its message is
-    // recorded.
+    // Once done it says how long it thought, and its line opens to the reasoning in full,
+    // under it, shut until the person opens it.
     await letGo(page, 'answer');
     const reply = byTestId(page, 'thread-message').last();
     await expect(reply).toContainText(ANSWER.join(''));
@@ -156,22 +152,33 @@ for (const colorScheme of ['light', 'dark'] as const) {
     const line = reply.getByTestId('thread-thought-line');
     await expect(reply.getByTestId('thread-thought-label')).toHaveText('Thought for 3s');
     await expect(reply.getByTestId('thread-thought-headline')).toHaveText(HEADLINE);
-    await expect(line).toHaveAttribute('aria-pressed', 'true');
-    await expect(panel).toHaveText(REASONING);
-    await expect(byTestId(page, 'panel-thought-took')).toHaveText('3s');
+    await expect(reply.getByTestId('thread-thought-chevron')).toBeVisible();
+    const text = reply.getByTestId('thread-thought-text');
+    await expect(line).toHaveAttribute('aria-expanded', 'false');
+    await expect(text).toHaveCount(0);
     await expect(working).toHaveCount(0);
-    // Chosen again, the panel shows it no longer. The click leaves focus on the line, but no
-    // ring, so the reply's copy button goes with the pointer; a key pressed there (Enter, which
-    // shows it again) gives focus its ring, and shows the button again.
+    // Opened, the reasoning slides open under the line, behind the steps' rule.
     await line.click();
-    await expect(panel).toHaveCount(0);
-    await expect(line).toHaveAttribute('aria-pressed', 'false');
+    await expect(line).toHaveAttribute('aria-expanded', 'true');
+    await expect(text).toHaveText(REASONING);
+    expect(await animationOf(text.locator('..'))).toContain('glz-unfold');
+    expect(await text.evaluate((p) => getComputedStyle(p).borderInlineStartStyle)).toBe('solid');
+    await expectAccessible(page);
+    // Opened again, it shuts. The click leaves focus on the line, but no ring, so the reply's
+    // copy button goes with the pointer; a key pressed there (Enter, which opens it again,
+    // then Space, which shuts it) gives focus its ring, and shows the button again.
+    await line.click();
+    await expect(text).toHaveCount(0);
+    await expect(line).toHaveAttribute('aria-expanded', 'false');
     const copy = reply.getByTestId('message-copy');
     await page.mouse.move(0, 0);
     await expect.poll(() => shownOpacity(copy)).toBe(0);
     await line.press('Enter');
-    await expect(panel).toHaveText(REASONING);
+    await expect(text).toHaveText(REASONING);
     await expect.poll(() => shownOpacity(copy)).toBe(1);
+    await line.press('Space');
+    await expect(text).toHaveCount(0);
+    await expect(line).toHaveAttribute('aria-expanded', 'false');
     await expectAccessible(page);
 
     // The run of calls is the server's line, which slides open in its fold, and slides shut
@@ -219,7 +226,15 @@ test('nothing moves when the person asks for less motion, though the words still
   expect(await settling(page)).toBe('none');
   expect(await moving(page)).toBe(0);
   await letGo(page, 'answer');
-  await expect(byTestId(page, 'thread-message').last()).toContainText(ANSWER.join(''));
+  const reply = byTestId(page, 'thread-message').last();
+  await expect(reply).toContainText(ANSWER.join(''));
+
+  // The reasoning opens at once.
+  await reply.getByTestId('thread-thought-line').click();
+  const text = reply.getByTestId('thread-thought-text');
+  await expect(text).toHaveText(REASONING);
+  expect(await animationOf(text.locator('..'))).toBe('none');
+  expect(await moving(page)).toBe(0);
 
   // The run of calls opens and shuts at once.
   const run = byTestId(page, 'thread-run').last();
@@ -261,18 +276,14 @@ test('the thinking in full, the steps and a step’s output sit evenly in their 
   await letGo(page, 'start');
   await letGo(page, 'tool');
 
-  // The model's thinking ends in a blank line, which shows as no space under it in the panel,
-  // as it streams and once recorded.
+  // The model's thinking ends in a blank line, which shows as no space under it once opened.
   await letGo(page, 'think');
-  await byTestId(page, 'thread-reply').getByTestId('thread-thought-line').click();
-  const thought = byTestId(page, 'panel-thought-text');
-  await expect(thought).toHaveText(REASONING);
-  await expectEven(thought);
   await letGo(page, 'answer');
   await expect(byTestId(page, 'thread-composer-stop')).toHaveCount(0);
-  await expect(
-    byTestId(page, 'thread-message').last().getByTestId('thread-thought-line'),
-  ).toHaveAttribute('aria-pressed', 'true');
+  const reply = byTestId(page, 'thread-message').last();
+  await reply.getByTestId('thread-thought-line').click();
+  const thought = reply.getByTestId('thread-thought-text');
+  await expect(thought).toHaveText(REASONING);
   await expectEven(thought);
 
   // A step's output ends in a blank line too, which its box leaves out; the run's rule runs

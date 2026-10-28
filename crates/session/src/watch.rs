@@ -15,6 +15,7 @@ use tokio::sync::broadcast::{self, error::RecvError, error::TryRecvError};
 use crate::access::Access;
 use crate::protocol::{ApiError, Notification, WatchEnd, code};
 use crate::server::{Server, no_thread};
+use crate::thought::served;
 use crate::words::Sentence;
 
 /// Events read from the log at a time while a watch catches up.
@@ -413,7 +414,8 @@ where
             let server = server.clone();
             Box::pin(async move {
                 let log = server.inner.harness.log();
-                Ok(log.read(&scope, thread, after, PAGE).await?)
+                let page = log.read(&scope, thread, after, PAGE).await?;
+                Ok(page.into_iter().map(served).collect())
             })
         })
     }

@@ -84,9 +84,9 @@ function shown(item: ThreadItem, locale: string, interim: boolean): ShownItem {
 /**
  * One thing in a thread, as its kind shows: a message (the person's as a bubble of what they
  * typed, saying so when the model read it as it worked; a reply as markdown with no name over
- * it, each with a copy button; its reasoning in a line, which shows it in full in the panel), a tool call as a quiet line, an approval or
- * questions as a card that needs the person, answered in place, which rises into place when it
- * `rises`.
+ * it, each with a copy button; its reasoning in a line, which opens to it in full), a tool call
+ * as a quiet line, an approval or questions as a card that needs the person, answered in place,
+ * which rises into place when it `rises`.
  */
 @Component({
   selector: 'app-thread-item',

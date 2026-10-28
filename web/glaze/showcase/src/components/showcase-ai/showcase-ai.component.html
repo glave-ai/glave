@@ -5,7 +5,7 @@
       <p class="text">{{ copy.ask }}</p>
     </glz-message>
     <glz-message from="model" [author]="copy.replyAuthor">
-      <glz-thought [label]="copy.thought" [headline]="copy.reasoning" />
+      <glz-thought [label]="copy.thought" [headline]="copy.reasoning" [text]="copy.reasoningText" />
       <glz-steps status="failed" [facts]="facts" [steps]="copy.steps" [(open)]="stepsOpen">
         @for (receipt of receipts; track receipt.summary) {
           <glz-receipt [icon]="receipt.icon" [summary]="receipt.summary" [status]="receipt.status">

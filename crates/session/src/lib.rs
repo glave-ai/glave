@@ -51,6 +51,7 @@ mod steps;
 mod stopping;
 mod streamed;
 mod tasks;
+mod thought;
 mod titles;
 mod trace;
 mod trust;

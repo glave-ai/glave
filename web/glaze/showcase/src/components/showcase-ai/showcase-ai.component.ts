@@ -39,6 +39,8 @@ const COPY = {
   ask: 'Make the tests pass and tell me what was wrong.',
   thought: 'Thought for 4s',
   reasoning: 'The failure is in the date parser; the test expects UTC.',
+  reasoningText:
+    'The test fails on a date at midnight.\nThe date parser reads local time; the test expects UTC.',
   reply:
     'The parser read local time. I changed `parse_date` to **UTC**, and the tests pass now:\n\n' +
     '```sh\ncargo test dates\n```',

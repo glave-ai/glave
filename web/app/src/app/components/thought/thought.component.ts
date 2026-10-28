@@ -10,12 +10,11 @@ import {
 import { GlzThoughtComponent, formatDuration } from '@glave/glaze';
 
 import type { Thought } from '../../lib/conversation';
-import { ThoughtService } from '../../services/thought.service';
 
 /**
  * The model's reasoning in one line, from what the server says it came to: "Thinking" and its
- * headline while it streams (`live`), "Thought for 4s" and its headline once it is done. The
- * line shows the reasoning in full in the thread's panel, as `key`, and says when it does.
+ * headline while it streams (`live`), "Thought for 4s" and its headline once it is done, which
+ * opens the reasoning in full (`text`) under the line.
  */
 @Component({
   selector: 'app-thought',
@@ -25,13 +24,12 @@ import { ThoughtService } from '../../services/thought.service';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ThoughtComponent {
-  /** What the panel knows the reasoning by: its message's key, or the live one's. */
-  readonly key = input.required<string>();
   readonly thought = input.required<Thought>();
+  /** The reasoning in full, as the model wrote it. */
+  readonly text = input.required<string>();
   /** Whether the reasoning is being written now. */
   readonly live = input(false, { transform: booleanAttribute });
 
-  private readonly thoughts = inject(ThoughtService);
   private readonly locale = inject(LOCALE_ID);
   /** Whether the model thinks still: live, and the server has not said how long it took. */
   protected readonly thinking = computed(() => this.live() && this.thought().ms === null);
@@ -46,9 +44,4 @@ export class ThoughtComponent {
       ? $localize`:@@thought.thinking:Thinking`
       : $localize`:@@thought.thought:Thought`;
   });
-  protected readonly selected = computed(() => this.thoughts.selected() === this.key());
-
-  protected choose(): void {
-    this.thoughts.choose(this.key());
-  }
 }

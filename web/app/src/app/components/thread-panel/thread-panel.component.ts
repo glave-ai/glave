@@ -28,7 +28,6 @@ import { ProjectsService } from '../../services/projects.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
 import { ThreadService } from '../../services/thread.service';
 import { CommandListComponent } from '../command-list/command-list.component';
-import { PanelThoughtComponent } from '../panel-thought/panel-thought.component';
 import { TurnChangesComponent } from '../turn-changes/turn-changes.component';
 
 /** One part of the line saying where the thread works. */
@@ -43,8 +42,7 @@ interface Part {
 /**
  * One column of the open thread's facts, beside it: a line saying where it works (the computer,
  * the project's folder, its full path a press away, a worktree's branch or the point a clone is
- * at, the mode), then each section only when it has something: the model's reasoning the
- * person chose to read in full, from its line in the conversation; its plan, in the server's
+ * at, the mode), then each section only when it has something: its plan, in the server's
  * sentence, its steps ticking off (the conversation's card is where a proposal is built); the
  * files it changed, as a turn's card shows them, each opening its changes in full, their room
  * kept as the thread opens until they are read; its commands running in the background, each
@@ -63,7 +61,6 @@ interface Part {
     GlzIconButtonComponent,
     GlzIconComponent,
     GlzPlanCardComponent,
-    PanelThoughtComponent,
     TurnChangesComponent,
   ],
   templateUrl: './thread-panel.component.html',

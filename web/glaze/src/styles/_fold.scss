@@ -1,0 +1,40 @@
+// What a quiet line holds once opened (a run's steps, the model's reasoning): it hangs under
+// the line, behind a rule at the line's inset, muted.
+@mixin held {
+  /* stylelint-disable declaration-property-value-allowed-list -- the fold round it takes no gap, as the content of a <details> takes none (::details-content is not Baseline) */
+  margin-block: var(--glz-space-3) 0;
+  margin-inline: var(--glz-space-1) 0;
+  /* stylelint-enable declaration-property-value-allowed-list */
+  padding-inline-start: var(--glz-space-3);
+  border-inline-start: 2px solid var(--glz-color-border);
+  color: var(--glz-color-text-muted);
+}
+
+// The box round what a line holds, which slides open in its one grid row: it grows from
+// nothing as it opens, clipped until it has. Its one column is as wide as what holds it,
+// however long a line in it. Open, nothing is clipped, so focus rings show whole. Instant when
+// the person asks for less motion.
+@mixin fold {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@mixin unfolding {
+  animation: glz-unfold var(--glz-duration-standard) var(--glz-ease-out);
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
+@keyframes glz-unfold {
+  from {
+    grid-template-rows: minmax(0, 0fr);
+    overflow: clip;
+  }
+
+  to {
+    overflow: clip;
+  }
+}

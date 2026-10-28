@@ -40,6 +40,7 @@ use crate::providers::Providers;
 use crate::reread::Rereads;
 use crate::standing::Worktrees;
 use crate::tasks::{TaskLimits, Tasks};
+use crate::thought::served;
 use crate::trust::{Asks, ProjectTrust};
 use crate::words::Sentence;
 use glave_ports::stream::Reserved;
@@ -495,6 +496,7 @@ where
         limit: Option<usize>,
     ) -> Result<Reply, ApiError> {
         let (events, next) = self.page(thread, after, limit).await?;
+        let events = events.into_iter().map(served).collect();
         Ok(Reply::Events { events, next })
     }
 

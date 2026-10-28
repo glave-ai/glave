@@ -1,3 +1,4 @@
+@use '../../styles/fold';
 @use '../../styles/working';
 
 :host {
@@ -6,7 +7,7 @@
 }
 
 // One quiet line, small and muted, with no box: the label, a dot, then the headline, which
-// ends in an ellipsis when it does not fit.
+// ends in an ellipsis when it does not fit, and once done the chevron that opens it.
 .line {
   display: flex;
   align-items: baseline;
@@ -20,6 +21,9 @@
   font-size: var(--glz-text-sm);
   line-height: var(--glz-leading-tight);
   text-align: start;
+}
+
+button.line {
   cursor: pointer;
 }
 
@@ -59,8 +63,33 @@
   opacity: 0;
 }
 
-// Pointed at, or shown in full elsewhere, its words take the text's colour.
-.line:hover .headline,
-.line[aria-pressed='true'] .headline {
+// Pointed at, or open, its words take the text's colour.
+button.line:hover .headline,
+.line[aria-expanded='true'] .headline {
   color: var(--glz-color-text);
+}
+
+.chevron {
+  flex: none;
+  align-self: center;
+  transition: transform var(--glz-duration-quick) var(--glz-ease-out);
+}
+
+.line[aria-expanded='true'] .chevron {
+  transform: rotate(90deg);
+}
+
+// The reasoning in full hangs under the line as a run's steps do, sliding open.
+.fold {
+  @include fold.fold;
+  @include fold.unfolding;
+}
+
+// As the model wrote it, its lines kept, smaller.
+.text {
+  @include fold.held;
+
+  font-size: var(--glz-text-sm);
+  line-height: var(--glz-leading-normal);
+  white-space: pre-wrap;
 }

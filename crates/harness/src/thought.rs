@@ -140,25 +140,32 @@ impl Thinking {
     /// What the reasoning of `parts`, the call's recorded message, came to: its headline and
     /// how long it took, when it streamed; `None` when it has no readable reasoning.
     pub(crate) fn thought(&self, parts: &[Part]) -> Option<Thought> {
-        let text: Vec<&str> = parts
-            .iter()
-            .filter_map(|part| match part {
-                Part::Reasoning {
-                    text: Some(text), ..
-                } if !text.trim().is_empty() => Some(text.as_str()),
-                _ => None,
-            })
-            .collect();
-        if text.is_empty() {
-            return None;
-        }
-        Some(Thought {
-            headline: headline(&text.join("\n")),
+        thought_of(parts).map(|thought| Thought {
             ms: self
                 .took
                 .map(|took| u64::try_from(took.as_millis()).unwrap_or(u64::MAX)),
+            ..thought
         })
     }
+}
+
+/// What the reasoning of a message's `parts` came to, read from its text alone: its headline,
+/// how long it took unknown; `None` when it has no readable reasoning. For a message recorded
+/// before glave kept its thought, read again as it is served.
+pub fn thought_of(parts: &[Part]) -> Option<Thought> {
+    let text: Vec<&str> = parts
+        .iter()
+        .filter_map(|part| match part {
+            Part::Reasoning {
+                text: Some(text), ..
+            } if !text.trim().is_empty() => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    (!text.is_empty()).then(|| Thought {
+        headline: headline(&text.join("\n")),
+        ms: None,
+    })
 }
 
 #[cfg(test)]
