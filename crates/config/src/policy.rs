@@ -34,7 +34,7 @@ pub use files::{
 pub use memory::{MemorySettings, settle as memory_settings};
 pub use placement::{Placement, PlacementRules};
 pub use provider::{ApiChoice, BedrockEndpointChoice, ProviderFile};
-pub use redact::redacted;
+pub use redact::{has_password, redacted};
 pub use rules::Constraints;
 pub use web::WebFile;
 pub use workers::{Backend, On, WorkersFile};
