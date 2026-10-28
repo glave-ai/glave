@@ -22,13 +22,7 @@
     [author]="copy.reply"
   >
     @if (live.reasoning) {
-      <glz-reasoning
-        testId="thread-reasoning"
-        [streaming]="thinking()"
-        [label]="copy.reasoning"
-        [thinkingLabel]="copy.thinking"
-        >{{ reasoning() }}</glz-reasoning
-      >
+      <app-thought live [key]="liveThought" [thought]="live.thought" />
     }
     <div testId="thread-markdown" streaming [glzMarkdown]="live.text"></div>
   </glz-message>

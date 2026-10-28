@@ -15,6 +15,10 @@ export const STARTED = '2026-10-11T10:10:00.000Z';
 export const STEP = 'write src/lock.rs (2 lines)';
 /** What the model thinks, in the pieces it streams, ending in a blank line as a model's may. */
 export const THINKING = ['The lock is taken ', 'twice on the same thread.\n\n'];
+/** Its headline, as the server says it once the sentence is whole. */
+export const HEADLINE = 'The lock is taken twice on the same thread.';
+/** How long it thought, as the server says once it is done: 3 s. */
+export const THOUGHT_MS = 3000;
 /** What it answers, in the pieces it streams. */
 export const ANSWER = ['The lock ', 'is taken twice.'];
 
@@ -34,8 +38,9 @@ const STEPS = stepsOf(WRITTEN);
  * Makes the page's next turn in `THREAD` one that runs a tool, then thinks before it answers, a
  * step at a time, each at a gate the test lets go (`letGo`), in order: `start` records the turn
  * (at `STARTED`) and the person's message, `tool` writes `src/lock.rs` (the server saying `STEP`
- * as it begins), `think` ends it and streams the model's reasoning, and `answer` streams its
- * reply, records it with its reasoning, and ends the turn. Until `start`, the server has
+ * as it begins), `think` ends it and streams the model's reasoning with its headline, and
+ * `answer` says how long it thought, streams its reply, records it with its reasoning and what
+ * that came to, and ends the turn. Until `start`, the server has
  * recorded nothing, as when a model call is slow to begin. The page's own `fetch` answers, as in
  * `streamReply`.
  */
@@ -43,7 +48,7 @@ export async function thinkingTurn(page: Page): Promise<void> {
   await gates(page);
   await storedEvents(page);
   await page.addInitScript(
-    ({ after, thread, started, step, thinking, answer, lock, wrote, steps }) => {
+    ({ after, thread, started, step, thinking, headline, ms, answer, lock, wrote, steps }) => {
       const real = window.fetch.bind(window);
       const encoder = new TextEncoder();
       const passed = (gate: Gate): Promise<void> =>
@@ -112,7 +117,9 @@ export async function thinkingTurn(page: Page): Promise<void> {
             for (const piece of thinking) {
               send(live({ kind: 'reasoning', text: piece }));
             }
+            send(live({ kind: 'thinking', headline }));
             await passed('answer');
+            send(live({ kind: 'thought', ms }));
             for (const piece of answer) {
               send(live({ kind: 'text', text: piece }));
             }
@@ -123,6 +130,7 @@ export async function thinkingTurn(page: Page): Promise<void> {
                   { type: 'reasoning', text: thinking.join('') },
                   { type: 'text', text: answer.join('') },
                 ],
+                thought: { headline, ms },
               }),
             );
             send(stored(after + 6, 'turn.ended', { outcome: 'completed' }));
@@ -141,6 +149,8 @@ export async function thinkingTurn(page: Page): Promise<void> {
       started: STARTED,
       step: STEP,
       thinking: THINKING,
+      headline: HEADLINE,
+      ms: THOUGHT_MS,
       answer: ANSWER,
       lock: LOCK,
       wrote: WROTE,

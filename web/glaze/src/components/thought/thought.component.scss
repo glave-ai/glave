@@ -1,0 +1,66 @@
+@use '../../styles/working';
+
+:host {
+  display: block;
+  min-width: 0;
+}
+
+// One quiet line, small and muted, with no box: the label, a dot, then the headline, which
+// ends in an ellipsis when it does not fit.
+.line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--glz-space-2);
+  max-inline-size: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--glz-color-text-muted);
+  font: inherit;
+  font-size: var(--glz-text-sm);
+  line-height: var(--glz-leading-tight);
+  text-align: start;
+  cursor: pointer;
+}
+
+.line:focus-visible {
+  outline: 2px solid var(--glz-color-focus);
+  outline-offset: 2px;
+  border-radius: var(--glz-radius-mark);
+}
+
+.label {
+  flex: none;
+}
+
+// While the model thinks, its word shimmers as the working state's does.
+.live .label {
+  @include working.shimmer;
+}
+
+.headline {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  transition:
+    opacity var(--glz-duration-standard) var(--glz-ease-out),
+    color var(--glz-duration-quick) var(--glz-ease-out);
+}
+
+// The dot before it, in the gap's rhythm.
+.headline::before {
+  display: inline-block;
+  padding-inline-end: var(--glz-space-2);
+  content: '·' / '';
+}
+
+.fading {
+  opacity: 0;
+}
+
+// Pointed at, or shown in full elsewhere, its words take the text's colour.
+.line:hover .headline,
+.line[aria-pressed='true'] .headline {
+  color: var(--glz-color-text);
+}

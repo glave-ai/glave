@@ -1,6 +1,13 @@
 import type { Outcome, TurnResult } from '@glave/client';
 
-import type { ApprovalItem, CallItem, MessageItem, QuestionItem, ThreadItem } from './conversation';
+import {
+  NO_THOUGHT,
+  type ApprovalItem,
+  type CallItem,
+  type MessageItem,
+  type QuestionItem,
+  type ThreadItem,
+} from './conversation';
 import { type TurnFacts, turnResults } from './results';
 import { NO_STEPS, type Steps, type TurnPart } from './runs';
 import type { Turn } from './turns';
@@ -13,6 +20,7 @@ const ask: MessageItem = {
   from: 'person',
   text: 'Fix it',
   reasoning: '',
+  thought: NO_THOUGHT,
   steered: false,
 };
 
@@ -25,6 +33,7 @@ function say(seq: number, text: string, reasoning = ''): MessageItem {
     from: 'model',
     text,
     reasoning,
+    thought: NO_THOUGHT,
     steered: false,
   };
 }
@@ -342,7 +351,7 @@ describe('results', () => {
   });
 
   it('writes what the model writes now after everything recorded, which stays in place', () => {
-    const live = { text: 'Writ', reasoning: '' };
+    const live = { text: 'Writ', reasoning: '', thought: NO_THOUGHT };
     const shown = turnResults(turn([ask, call(2), say(3, 'Earlier')]), live, null, true, 'en-US');
     expect(shown.live).toBe(live);
     expect(drawn(shown.parts)).toEqual(['untold: c2', 'm3']);
@@ -363,7 +372,13 @@ describe('results', () => {
     expect(turnResults(turn([ask]), null, null, false, 'en-US').working).toBeNull();
     // Not while reasoning or a reply streams: they show instead.
     expect(
-      turnResults(turn([ask]), { text: '', reasoning: 'Hm' }, null, true, 'en-US').working,
+      turnResults(
+        turn([ask]),
+        { text: '', reasoning: 'Hm', thought: NO_THOUGHT },
+        null,
+        true,
+        'en-US',
+      ).working,
     ).toBeNull();
   });
 

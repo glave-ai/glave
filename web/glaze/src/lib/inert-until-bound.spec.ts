@@ -17,9 +17,9 @@ import { GlzNavItemComponent } from '../components/nav-item/nav-item.component';
 import { GlzPickerComponent } from '../components/picker/picker.component';
 import { GlzRadioGroupComponent } from '../components/radio-group/radio-group.component';
 import { GlzRadioComponent } from '../components/radio/radio.component';
-import { GlzReasoningComponent } from '../components/reasoning/reasoning.component';
 import { GlzReceiptComponent } from '../components/receipt/receipt.component';
 import { GlzStepsComponent } from '../components/steps/steps.component';
+import { GlzThoughtComponent } from '../components/thought/thought.component';
 import { GlzInputDirective } from '../directives/input.directive';
 import { expectAccessible } from '../testing/axe';
 import type { GlzOption } from './options';
@@ -40,9 +40,9 @@ import type { GlzOption } from './options';
     GlzPickerComponent,
     GlzRadioComponent,
     GlzRadioGroupComponent,
-    GlzReasoningComponent,
     GlzReceiptComponent,
     GlzStepsComponent,
+    GlzThoughtComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -60,7 +60,7 @@ import type { GlzOption } from './options';
     <glz-radio-group [label]="words.mode" [(value)]="value">
       <glz-radio value="ask">{{ words.ask }}</glz-radio>
     </glz-radio-group>
-    <glz-reasoning [label]="words.thought">{{ words.why }}</glz-reasoning>
+    <glz-thought [label]="words.thought" [headline]="words.why" />
     <glz-receipt [summary]="words.ran">{{ words.output }}</glz-receipt>
     <glz-steps [steps]="words.steps">{{ words.step }}</glz-steps>
   `,

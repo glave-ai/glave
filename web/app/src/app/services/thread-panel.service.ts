@@ -7,6 +7,7 @@ import { CommandsService } from './commands.service';
 import { PanelService } from './panel.service';
 import { PlanService } from './plan.service';
 import { SourcesService } from './sources.service';
+import { ThoughtService } from './thought.service';
 import { ThreadService } from './thread.service';
 
 /** A page a reply drew on: its title, else where it is, and the site it is on. */
@@ -37,7 +38,8 @@ function hostOf(link: SourceLink): string {
 
 /**
  * What the open thread's panel shows, each from the server's facts: where it works (a folder
- * of a project; a chat's scratch folder is nowhere the person chose), its plan, the files it
+ * of a project; a chat's scratch folder is nowhere the person chose), the model's reasoning the
+ * person chose to read in full, its plan, the files it
  * changed, its commands running in the background, the pages its replies drew on and the files
  * the person attached. Whether it shows anything at all, so a plain chat has no panel, and
  * whether it shows now; a panel left with nothing closes its sheet. And the changes shown in
@@ -51,6 +53,7 @@ export class ThreadPanelService {
   private readonly sources = inject(SourcesService);
   private readonly plans = inject(PlanService);
   private readonly panel = inject(PanelService);
+  private readonly thoughts = inject(ThoughtService);
   private readonly review = signal<Review | null>(null);
 
   /** Where it works, once its summary says: a folder the person chose, not a scratch one. */
@@ -58,6 +61,8 @@ export class ThreadPanelService {
     const workspace = this.thread.summary()?.workspace ?? null;
     return workspace?.opened.kind === 'scratch' ? null : workspace;
   });
+  /** The model's reasoning shown in full, as the person chose its line. */
+  readonly thought = this.thoughts.shown;
   /** Its plan, as the server reads it. */
   readonly plan = this.plans.plan;
   /** The files it changed, as the server says. */
@@ -100,6 +105,7 @@ export class ThreadPanelService {
   readonly shown = computed(
     () =>
       this.workspace() !== null ||
+      this.thought() !== null ||
       this.plan() !== null ||
       this.files().length > 0 ||
       this.room().length > 0 ||

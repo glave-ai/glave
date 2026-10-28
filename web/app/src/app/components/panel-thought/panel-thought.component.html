@@ -1,0 +1,11 @@
+@if (shown(); as shown) {
+  <glz-card data-testid="panel-thought">
+    <h3 glzCardHeader class="title">
+      {{ copy.heading }}
+      @if (shown.took; as took) {
+        <span class="detail" data-testid="panel-thought-took">{{ took }}</span>
+      }
+    </h3>
+    <p class="text" dir="auto" data-testid="panel-thought-text">{{ shown.text }}</p>
+  </glz-card>
+}

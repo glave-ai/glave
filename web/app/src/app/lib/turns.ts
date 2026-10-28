@@ -1,6 +1,6 @@
 import type { Money, Outcome, RawEvent, ThreadSummary, TurnResult } from '@glave/client';
 
-import { type ThreadItem, byGlave, threadItems } from './conversation';
+import { NO_THOUGHT, type ThreadItem, byGlave, threadItems } from './conversation';
 
 const OUTCOMES: readonly string[] = [
   'completed',
@@ -186,6 +186,7 @@ function startingTurn(prompt: string, key: string): Turn {
         from: 'person',
         text: prompt,
         reasoning: '',
+        thought: NO_THOUGHT,
         steered: false,
         files: [],
       },

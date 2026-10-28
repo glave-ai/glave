@@ -14,7 +14,6 @@ import {
   type GlzIconData,
   GlzMessageComponent,
   GlzQuestionCardComponent,
-  GlzReasoningComponent,
   GlzReceiptComponent,
 } from '@glave/glaze';
 
@@ -29,6 +28,7 @@ import type {
 import { toolIcon } from '../../lib/steps';
 import { ThreadService } from '../../services/thread.service';
 import { MessageTextComponent } from '../message-text/message-text.component';
+import { ThoughtComponent } from '../thought/thought.component';
 
 /**
  * A message as the thread shows it: named for screen readers, "You" or "Reply", each file it
@@ -84,7 +84,7 @@ function shown(item: ThreadItem, locale: string, interim: boolean): ShownItem {
 /**
  * One thing in a thread, as its kind shows: a message (the person's as a bubble of what they
  * typed, saying so when the model read it as it worked; a reply as markdown with no name over
- * it, each with a copy button; its reasoning), a tool call as a quiet line, an approval or
+ * it, each with a copy button; its reasoning in a line, which shows it in full in the panel), a tool call as a quiet line, an approval or
  * questions as a card that needs the person, answered in place, which rises into place when it
  * `rises`.
  */
@@ -96,9 +96,9 @@ function shown(item: ThreadItem, locale: string, interim: boolean): ShownItem {
     GlzCopyButtonComponent,
     GlzMessageComponent,
     GlzQuestionCardComponent,
-    GlzReasoningComponent,
     GlzReceiptComponent,
     MessageTextComponent,
+    ThoughtComponent,
   ],
   templateUrl: './thread-item.component.html',
   styleUrl: './thread-item.component.scss',

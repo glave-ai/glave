@@ -2,8 +2,9 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { expectAccessible } from '@glave/glaze/testing';
 
-import type { CallItem, MessageItem } from '../../lib/conversation';
+import { NO_THOUGHT, type CallItem, type MessageItem } from '../../lib/conversation';
 import type { TurnPart } from '../../lib/runs';
+import { ThoughtService } from '../../services/thought.service';
 import { ThreadService } from '../../services/thread.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { TurnPartComponent } from './turn-part.component';
@@ -27,12 +28,18 @@ const SAID: MessageItem = {
   from: 'model',
   text: 'It fails; looking closer.',
   reasoning: '',
+  thought: NO_THOUGHT,
   steered: false,
 };
 
 async function render(part: TurnPart): Promise<HTMLElement> {
   TestBed.configureTestingModule({
-    providers: [provideRouter([]), ...provideFakeSession(new FakeSession()), ThreadService],
+    providers: [
+      provideRouter([]),
+      ...provideFakeSession(new FakeSession()),
+      ThreadService,
+      ThoughtService,
+    ],
   });
   const fixture = TestBed.createComponent(TurnPartComponent);
   fixture.componentRef.setInput('part', part);
