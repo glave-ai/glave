@@ -12,6 +12,7 @@ use glave_ports::testing::{ManualClock, TempDir};
 use tokio::io::BufReader;
 use tokio::net::TcpListener;
 
+use super::backend::Listed;
 use super::*;
 use crate::{CancelSwitch, LocalComputers, serve, serve_tls};
 
@@ -37,6 +38,8 @@ struct InProcess {
     renewed: AtomicU64,
     /// Whether giving a worker a new token fails, as it does when the worker is gone.
     renewing_fails: std::sync::atomic::AtomicBool,
+    /// Each worker running, with the glave it is labelled with.
+    labelled: Mutex<std::collections::BTreeMap<String, Option<String>>>,
 }
 
 impl InProcess {
@@ -48,11 +51,8 @@ impl InProcess {
             links: Arc::default(),
             renewed: AtomicU64::new(0),
             renewing_fails: std::sync::atomic::AtomicBool::new(false),
+            labelled: Mutex::default(),
         }
-    }
-
-    fn running(&self) -> usize {
-        self.serving.lock().unwrap().len()
     }
 
     fn token_file(&self, name: &str) -> PathBuf {
@@ -106,6 +106,10 @@ impl Backend for Shared {
         self.0.renew(name, token)
     }
 
+    fn list(&self) -> BoxFuture<'_, Result<Vec<Listed>, ComputerError>> {
+        self.0.list()
+    }
+
     fn remove<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<(), ComputerError>> {
         self.0.remove(name)
     }
@@ -114,8 +118,16 @@ impl Backend for Shared {
 impl Backend for InProcess {
     fn start<'a>(&'a self, spec: &'a Spec) -> BoxFuture<'a, Result<Started, ComputerError>> {
         Box::pin(async move {
-            self.started.lock().unwrap().push(spec.clone());
-            let name = format!("w{}", self.running());
+            let name = {
+                let mut started = self.started.lock().unwrap();
+                started.push(spec.clone());
+                format!("w{}", started.len() - 1)
+            };
+            let label = spec
+                .starter
+                .as_ref()
+                .map(|starter| serde_json::to_string(starter).unwrap());
+            self.labelled.lock().unwrap().insert(name.clone(), label);
             let environment = std::env::vars_os().filter(|(n, _)| n == "PATH" || n == "HOME");
             let computers = LocalComputers::new(self.copies.join(&name), environment)
                 .with_worktrees(self.copies.join(format!("{name}-worktrees")))
@@ -178,8 +190,17 @@ impl Backend for InProcess {
         })
     }
 
+    fn list(&self) -> BoxFuture<'_, Result<Vec<Listed>, ComputerError>> {
+        let listed = self.labelled.lock().unwrap().clone();
+        Box::pin(std::future::ready(Ok(listed
+            .into_iter()
+            .map(|(name, started_by)| Listed { name, started_by })
+            .collect())))
+    }
+
     fn remove<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<(), ComputerError>> {
         Box::pin(async move {
+            self.labelled.lock().unwrap().remove(name);
             if let Some(task) = self.serving.lock().unwrap().remove(name) {
                 task.abort();
             }
@@ -421,5 +442,51 @@ fn a_failed_setup_says_why() {
             "{failed:?}"
         );
         workers.destroy(made.id).await.unwrap();
+    });
+}
+
+/// `glave` with `field` changed, as a glave elsewhere or one that ended would be labelled.
+pub(crate) fn changed(glave: &Glave, field: &str, value: &str) -> Glave {
+    let mut changed = serde_json::to_value(glave).unwrap();
+    changed[field] = serde_json::Value::from(value);
+    serde_json::from_value(changed).unwrap()
+}
+
+#[test]
+fn a_glave_starting_removes_the_workers_of_a_glave_that_is_gone() {
+    let dir = scratch("reap");
+    let backend = Arc::new(InProcess::new(&dir.join("copies")));
+    let workers = |starter: Option<Glave>| {
+        WorkerComputers::on(
+            Box::new(Shared(Arc::clone(&backend))),
+            Limits::default(),
+            WorkerCredentials::None,
+        )
+        .started_by(starter)
+    };
+    let this = Glave::this().unwrap();
+    let ended = changed(&this, "start", "the start of a glave that ended");
+    let elsewhere = changed(&ended, "host", "another machine");
+    let mut offline = environment();
+    offline.network = Some(Network::Off);
+    block_on!(async {
+        // Glaves that ended without removing their workers, as one killed outright does.
+        for starter in [Some(ended), Some(elsewhere), None] {
+            workers(starter).create(&offline).await.unwrap();
+        }
+        let next = workers(Some(this));
+        next.create(&offline).await.unwrap();
+        assert_eq!(next.reap().await.unwrap(), 1);
+        let left: Vec<String> = backend.labelled.lock().unwrap().keys().cloned().collect();
+        assert_eq!(
+            left,
+            ["w1", "w2", "w3"],
+            "only the worker of the glave that ended goes"
+        );
+        assert_eq!(next.reap().await.unwrap(), 0);
+        next.destroy_all().await.unwrap();
+        for name in ["w1", "w2"] {
+            backend.remove(name).await.unwrap();
+        }
     });
 }

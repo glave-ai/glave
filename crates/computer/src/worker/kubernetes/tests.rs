@@ -87,6 +87,7 @@ fn spec(network: bool) -> Spec {
             Duration::from_secs(600),
         )
         .unwrap(),
+        starter: glave_process::Glave::this(),
     }
 }
 
@@ -361,6 +362,62 @@ fn a_real_worker_runs_a_command_over_tls_and_over_attach() {
         };
         real(&cluster, &image, Network::On).await;
         real(&cluster, &image, Network::Off).await;
+        assert_eq!(left_behind(&cluster).await, Vec::<String>::new());
+    });
+}
+
+/// Starts a worker of `starter`, the stub waiting in it, and lets go of the link to it, as a
+/// glave killed outright does.
+async fn left_by(cluster: &Kubernetes, starter: Option<glave_process::Glave>) -> String {
+    let name = name();
+    let spec = Spec {
+        starter,
+        ..spec(true)
+    };
+    let link = cluster.start_with(&name, &spec, WAITS).await.unwrap();
+    if let Link::Tls {
+        forward: Some(forward),
+        ..
+    } = link
+    {
+        forward.abort();
+    }
+    name
+}
+
+#[test]
+fn a_glave_starting_removes_the_workers_of_a_glave_that_is_gone() {
+    block_on!(async {
+        let Some(cluster) = cluster(None, "reaped").await else {
+            return;
+        };
+        let this = glave_process::Glave::this().unwrap();
+        let ended = super::super::tests::changed(&this, "start", "a glave that ended");
+        let elsewhere = super::super::tests::changed(&ended, "host", "another machine");
+        let gone = left_by(&cluster, Some(ended)).await;
+        let kept = [
+            left_by(&cluster, Some(elsewhere)).await,
+            left_by(&cluster, Some(this)).await,
+            left_by(&cluster, None).await,
+        ];
+        let workers = WorkerComputers::kubernetes(
+            cluster.clone(),
+            Limits::default(),
+            WorkerCredentials::None,
+        );
+        let reaped = workers.reap().await;
+        let listed = cluster.list().await.unwrap();
+        for name in &kept {
+            cluster.remove(name).await.unwrap();
+        }
+        assert_eq!(reaped.unwrap(), 1);
+        let mut kept = kept.to_vec();
+        kept.sort();
+        let names: Vec<String> = listed.into_iter().map(|listed| listed.name).collect();
+        assert_eq!(
+            names, kept,
+            "only {gone}, the worker of the glave that ended, goes"
+        );
         assert_eq!(left_behind(&cluster).await, Vec::<String>::new());
     });
 }
