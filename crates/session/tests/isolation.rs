@@ -6,6 +6,7 @@
 //! names a database. The methods come from the protocol's one table, through the schema made
 //! from it: a method this suite has no entry for fails it.
 
+mod ended;
 mod sweep;
 mod table;
 mod world;

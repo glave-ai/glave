@@ -210,15 +210,21 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "crates/session/src/lists.rs",
-        "let behind = match changes.recv().await {",
+        "received = changes.recv() => received,",
         1,
         "a list's changes, heard until its watch is dropped or the server stops",
     ),
     (
         "crates/session/src/watch.rs",
-        "self.notes.recv().await",
+        "received = self.notes.recv() => received,",
         1,
         "a thread's notes, heard until it is unwatched or its connection closes",
+    ),
+    (
+        "crates/session/src/access.rs",
+        "access.heard = access.sign_ins.changed().await.is_ok();",
+        1,
+        "a watch's caller's sign-in, heard beside what it follows until it is dropped",
     ),
     (
         "crates/session/src/awake.rs",

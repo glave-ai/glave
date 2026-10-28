@@ -22,6 +22,7 @@ use tokio::sync::broadcast::{self, error::RecvError, error::TryRecvError};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
+use crate::access::Access;
 use crate::hub::{Change, Changed};
 use crate::protocol::{ApiError, Notification, Setting, Status, ThreadSummary, WatchEnd, code};
 use crate::server::Server;
@@ -97,6 +98,8 @@ struct Follower<P, L, B> {
     queued: BTreeSet<ThreadId>,
     /// The caller's own settings that changed, to tell them of next.
     settings: BTreeSet<Setting>,
+    /// The caller's sign-in, when something here can end it: the watch ends with it.
+    access: Option<Access>,
     /// The latest update the watch was sent, or where it began.
     seen: At,
     /// When the watch had last taken every change told before then: anything it missed was
@@ -113,7 +116,7 @@ where
 {
     /// Follows the threads `caller` sees in `project`, or in every project they own: the
     /// summary of each thread updated since `after` from the threads view first, then each
-    /// thread's as it changes, until the watch is dropped.
+    /// thread's as it changes, until the caller's sign-in ends or the watch is dropped.
     pub async fn watch_list(
         &self,
         caller: &Caller,
@@ -134,6 +137,7 @@ where
         }
         // Subscribed before anything is read, so nothing recorded meanwhile falls between.
         let changes = self.inner.hub.changes();
+        let access = self.access(caller)?;
         let (out, items) = mpsc::channel(1);
         let follower = Follower {
             server: self.clone(),
@@ -144,6 +148,7 @@ where
             queue: VecDeque::new(),
             queued: BTreeSet::new(),
             settings: BTreeSet::new(),
+            access,
             seen: after.unwrap_or(now),
             tail: now,
             out,
@@ -177,6 +182,9 @@ where
             self.catch_up(after).await?;
         }
         loop {
+            if let Some(refused) = self.access.as_mut().and_then(Access::ended) {
+                return Err(refused);
+            }
             // The caller's settings first: a few words each, and nothing to read.
             while let Some(setting) = self.settings.pop_first() {
                 let note = Arc::new(Notification::SettingsChanged { setting });
@@ -202,7 +210,12 @@ where
                     return Ok(());
                 }
             }
-            let behind = match changes.recv().await {
+            let received = tokio::select! {
+                received = changes.recv() => received,
+                // Looked at once the loop comes round.
+                () = Access::changed(&mut self.access) => continue,
+            };
+            let behind = match received {
                 Ok(change) => {
                     self.take(change);
                     self.take_waiting(changes)

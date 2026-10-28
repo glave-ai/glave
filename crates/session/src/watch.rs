@@ -12,6 +12,7 @@ use glave_event::{RawEvent, Seq, ThreadId};
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider, Scope};
 use tokio::sync::broadcast::{self, error::RecvError, error::TryRecvError};
 
+use crate::access::Access;
 use crate::protocol::{ApiError, Notification, WatchEnd, code};
 use crate::server::{Server, no_thread};
 use crate::words::Sentence;
@@ -104,6 +105,8 @@ pub struct Watch {
     /// How the watch ends, once the event that ends it was sent.
     ending: Option<Result<WatchEnd, ApiError>>,
     ended: bool,
+    /// The caller's sign-in, when something here can end it: the watch ends with it.
+    access: Option<Access>,
 }
 
 impl Watch {
@@ -127,6 +130,7 @@ impl Watch {
             stale: BTreeMap::new(),
             ending: None,
             ended: false,
+            access: None,
         };
         if let Some(after) = after {
             watch.keep_place(thread, after);
@@ -150,6 +154,12 @@ impl Watch {
             watch.stale.insert(thread, until);
         }
         watch
+    }
+
+    /// The watch, ending as soon as `access` does.
+    pub(crate) fn until(mut self, access: Option<Access>) -> Self {
+        self.access = access;
+        self
     }
 
     /// The thread watched.
@@ -196,6 +206,9 @@ impl Watch {
             if let Some(ending) = self.ending.take() {
                 return Some(Watched::Ended(ending));
             }
+            if let Some(refused) = self.access.as_mut().and_then(Access::ended) {
+                return Some(Watched::Ended(Err(refused)));
+            }
             if let Some(event) = self.read_ahead.pop_front() {
                 let thread = event.thread;
                 let note = Arc::new(Notification::Event { thread, event });
@@ -208,7 +221,11 @@ impl Watch {
                 continue;
             }
             let received = if wait {
-                self.notes.recv().await
+                tokio::select! {
+                    received = self.notes.recv() => received,
+                    // Looked at once the loop comes round.
+                    () = Access::changed(&mut self.access) => continue,
+                }
             } else {
                 match self.notes.try_recv() {
                     Ok(note) => Ok(note),
@@ -354,7 +371,8 @@ where
 {
     /// Follows `thread` for `caller`, who must own its project: its events after `after`
     /// (every one when there is none) from the log, then each as it is recorded, with its live
-    /// updates and its running subagents', until it is deleted or the watch is dropped.
+    /// updates and its running subagents', until it is deleted, the caller's sign-in ends, or
+    /// the watch is dropped.
     pub async fn watch(
         &self,
         caller: &Caller,
@@ -365,24 +383,27 @@ where
         self.ensure_not_deleted(thread).await?;
         // Subscribed before anything is read, so nothing recorded meanwhile falls between.
         let notes = self.inner.hub.watch(thread);
-        Ok(Watch::new(thread, self.reader(scope), notes, after))
+        let access = self.access(caller)?;
+        Ok(Watch::new(thread, self.reader(scope), notes, after).until(access))
     }
 
-    /// A watch of `thread` from its latest event on, for a turn or a goal about to start there:
-    /// what is recorded from now, and the live updates.
+    /// A watch of `thread` from its latest event on, for a turn or a goal `caller` is about to
+    /// start there: what is recorded from now, and the live updates, until their sign-in ends.
     pub(crate) async fn watch_from_now(
         &self,
+        caller: &Caller,
         scope: Scope,
         thread: ThreadId,
     ) -> Result<Watch, ApiError> {
         // Subscribed before the latest event is read, so nothing recorded meanwhile falls
         // between.
         let notes = self.inner.hub.watch(thread);
+        let access = self.access(caller)?;
         let view = self.inner.harness.log().thread_view(&scope, thread).await?;
         let last = view
             .map(|view| view.last_seq)
             .ok_or_else(|| no_thread(thread))?;
-        Ok(Watch::from(thread, self.reader(scope), notes, last))
+        Ok(Watch::from(thread, self.reader(scope), notes, last).until(access))
     }
 
     /// What reads a page of a thread's events in `scope`, as a watch catches up.

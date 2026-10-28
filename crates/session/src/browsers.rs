@@ -85,7 +85,7 @@ where
     ) -> Result<Reply, ApiError> {
         let browsers = self.browsers()?;
         let (_, session) = browsers.create(ceremony, credential, name).await?;
-        Ok(signed_in(session, browsers))
+        Ok(self.signed_in(session, browsers))
     }
 
     /// Answers `passkey/add_options`: adding a passkey for the person signed in.
@@ -122,7 +122,7 @@ where
     ) -> Result<Reply, ApiError> {
         let browsers = self.browsers()?;
         let session = browsers.get(ceremony, credential).await?;
-        Ok(signed_in(session, browsers))
+        Ok(self.signed_in(session, browsers))
     }
 
     /// Answers `passkey/list`: the person's passkeys.
@@ -138,7 +138,10 @@ where
         caller: &Caller,
         passkey: &str,
     ) -> Result<Reply, ApiError> {
-        self.person_s(caller)?.remove(passkey).await?;
+        let removed = self.person_s(caller)?.remove(passkey).await;
+        // The sessions it signed in end with it.
+        self.inner.hub.sign_ins_changed();
+        removed?;
         Ok(Reply::Done {})
     }
 
@@ -158,7 +161,7 @@ where
     pub(crate) async fn redeem(&self, code: &str) -> Result<Reply, ApiError> {
         let browsers = self.browsers()?;
         let session = browsers.redeem(code).await?;
-        Ok(signed_in(session, browsers))
+        Ok(self.signed_in(session, browsers))
     }
 
     /// Answers `signin/end`: ends the caller's own browser session.
@@ -166,7 +169,9 @@ where
         let browsers = self.browsers()?;
         let session = session_of(caller)
             .ok_or_else(|| ApiError::new(code::INVALID_PARAMS, Sentence::NotABrowser))?;
-        browsers.end(session).await?;
+        let ended = browsers.end(session).await;
+        self.inner.hub.sign_ins_changed();
+        ended?;
         Ok(Reply::Done {})
     }
 
@@ -177,8 +182,21 @@ where
         if !local(caller) {
             return Err(ApiError::new(code::NOT_ALLOWED, Sentence::SignOutOnlyHere));
         }
-        browsers.end_others(session_of(caller)).await?;
+        let ended = browsers.end_others(session_of(caller)).await;
+        self.inner.hub.sign_ins_changed();
+        ended?;
         Ok(Reply::Done {})
+    }
+
+    /// `session`, begun with `browsers`, as the browser is told of it. Beginning it may have
+    /// ended the session used longest ago, past the most kept.
+    fn signed_in(&self, session: Session, browsers: &Browsers) -> Reply {
+        self.inner.hub.sign_ins_changed();
+        Reply::Browser {
+            session: session.token,
+            server: browsers.server(),
+            accepted: session.accepted,
+        }
     }
 
     fn browsers(&self) -> Result<&Browsers, ApiError> {
@@ -211,16 +229,6 @@ fn options(ceremony: Ceremony) -> Reply {
     }
 }
 
-/// `session`, begun with this server of `browsers`, and the passkeys that sign the person in,
-/// for the browser's passkey manager.
-fn signed_in(session: Session, browsers: &Browsers) -> Reply {
-    Reply::Browser {
-        session: session.token,
-        server: browsers.server(),
-        accepted: session.accepted,
-    }
-}
-
 /// `passkey` as a client lists it.
 fn summary(passkey: PasskeyInfo) -> PasskeySummary {
     PasskeySummary {
@@ -232,7 +240,7 @@ fn summary(passkey: PasskeyInfo) -> PasskeySummary {
 }
 
 /// The browser session `caller` signed in with, if they did.
-fn session_of(caller: &Caller) -> Option<&str> {
+pub(crate) fn session_of(caller: &Caller) -> Option<&str> {
     caller
         .auth
         .as_ref()
