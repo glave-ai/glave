@@ -70,7 +70,7 @@ crates/cli/         glave: the command-line binary; with the `web` feature, as r
 web/client/         the session API's TypeScript client: types generated from the schema (`cargo xtask schema`), a small typed client, no framework
 web/glaze/          Glaze (`@glave/glaze`): glave's Angular component library, web platform first, then the Angular CDK, themed only through CSS custom properties (its AGENTS.md says how to use it); its showcase, a dev-only app (`glaze/showcase`)
 web/app/            the web app `glave serve --http` (and `glave` alone, at the folder's project) serves at `/`: sign-in; adding a model on a first run; three panes (chats and projects with what needs you, a thread streaming live with approvals, questions and a model picker, and beside it, when it has any, its facts: where it works, its plan, the files it changed, what runs in the background, what its replies drew on and what it cost); tasks, settings, connections and memory
-web/e2e/            end-to-end smoke tests (Playwright, axe) of the built app and Glaze's showcase, served with glave's Content Security Policy
+web/e2e/            end-to-end smoke tests (Playwright, axe) of the built app and Glaze's showcase, served with glave's Content Security Policy, and the app's feel against its budgets (`feel.ts`)
 evals/tasks/        eval tasks in Harbor's layout: instruction, starting files, hidden grader, reference solution
 evals/judge/        judge cases: a request, an action, and whether it should run in auto mode (README.md)
 install/            the installer for a person's own server (`server.sh`): glave as a systemd service under its own account, reached through Tailscale or at a domain, or in Docker Compose behind Cloudflare Tunnel; run again, it updates glave (CI's install.yml runs it each way, and a release on what it built)
@@ -214,8 +214,11 @@ The bar is code a careful reader admires: every line earns its place, and each i
 | Gateway overhead per request, in-process | < 1 ms p99 |
 | Session resume, 10k events | < 100 ms |
 | Knowledge search, 16 queries batched | < 100 ms |
+| The web app: layout shift (CLS), on opening and moving between threads | 0 |
+| The web app: a click until the next paint (INP) | < 200 ms |
+| The web app: first and largest content on opening (FCP, LCP) | < 1.8 s, < 2.5 s |
 
-Two owner decisions: the release binary was raised from 30 to 40 MB on 2026-10-19, since splitting builds costs more than a few MB, and to 50 MB on 2026-10-24 as a hard ceiling for abilities baked in, never a target to fill; and "a command answered by a running server" (`glave tasks` against the person's server, about 5 ms on an M3) replaced "cold start to prompt" when `glave` alone came to open the browser and left no prompt to time (`specs/one-server.md`, decision 9). The budgets are set in one place, `crates/cli/benches/budgets.rs`. CI measures the binary's size and the answered command on the build that ships (x86-64 Linux, static with musl, as the release builds it), and the resume in the benchmark built for the same target (`budgets.yml`).
+Two owner decisions: the release binary was raised from 30 to 40 MB on 2026-10-19, since splitting builds costs more than a few MB, and to 50 MB on 2026-10-24 as a hard ceiling for abilities baked in, never a target to fill; and "a command answered by a running server" (`glave tasks` against the person's server, about 5 ms on an M3) replaced "cold start to prompt" when `glave` alone came to open the browser and left no prompt to time (`specs/one-server.md`, decision 9). The budgets are set in one place, `crates/cli/benches/budgets.rs`. CI measures the binary's size and the answered command on the build that ships (x86-64 Linux, static with musl, as the release builds it), and the resume in the benchmark built for the same target (`budgets.yml`). The web app's feel is measured in Chromium by the end-to-end tests, as web-vitals measures it, against budgets set in `web/e2e/feel.ts`.
 
 - Hot paths get microbenchmarks (event append and replay, stream parsing, gateway overhead, cache lookups).
 - Benchmarks run only through `cargo xtask bench`. It takes a machine-wide exclusive lock that test runs share, so benchmarks never run beside tests or each other. CI's budgets build the benchmark with it and run it on a runner nothing else uses (`budgets.yml`).
