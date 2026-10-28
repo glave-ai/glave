@@ -6,9 +6,9 @@ import { expectAccessible } from '@glave/glaze/testing';
 
 import { ChangesService } from '../../services/changes.service';
 import { PanelService } from '../../services/panel.service';
-import { FakeSession, FakeTurn } from '../../testing/fake-session';
-import { MODELS, SERVER, changed, editedFile, event, record, thread } from '../../testing/fixtures';
-import { openThread as open } from '../../testing/thread-view';
+import { FakeTurn } from '../../testing/fake-session';
+import { changed, editedFile, event, record, thread } from '../../testing/fixtures';
+import { openThread as open, session, settle, type } from '../../testing/thread-view';
 import type { TurnResults } from '../../lib/results';
 import { TurnComponent } from '../turn/turn.component';
 
@@ -46,30 +46,6 @@ const ANSWERED = [
   event(2, 'message.added', { role: 'assistant', parts: [{ type: 'text', text: 'Hello' }] }),
   event(3, 'model.responded', { model: { provider: 'gateway', name: 'hope-12b' } }),
 ];
-
-function session(events: readonly unknown[], changes = changed(1, [])): FakeSession {
-  return new FakeSession()
-    .answer('thread/events', { events })
-    .answer('thread/changes', changes)
-    .answer('model/list', { models: MODELS })
-    .answer('server/discover', SERVER)
-    .answer('schedule/list', { schedules: [] })
-    .answer('tasks/list', { tasks: [] })
-    .answer('project/list', { projects: [record('p1', 'glave')] })
-    .answer('thread/list', { threads: [thread('thread-1', 'Tidy the repo', { project: 'p1' })] });
-}
-
-const settle = (): Promise<unknown> => new Promise((resolve) => setTimeout(resolve));
-
-async function type(root: HTMLElement, text: string): Promise<void> {
-  const input = root.querySelector<HTMLTextAreaElement>('[data-testid="thread-composer-input"]');
-  if (input) {
-    input.value = text;
-    input.dispatchEvent(new Event('input'));
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }));
-  }
-  await settle();
-}
 
 describe('ThreadComponent', () => {
   beforeEach(() => {
