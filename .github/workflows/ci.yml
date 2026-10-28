@@ -318,11 +318,14 @@ jobs:
       # In the image, the workspace is at its path on the runner, so GLAVE_BIN and every other
       # path are the same there. As Playwright's docs run it: with an init process, which reaps
       # what a killed runner leaves, and the runner's shared memory, which Chromium needs.
+      # Chromium's job also runs how the app feels (the `feel` project), alone once Chromium's
+      # other tests are done.
       - name: npm run e2e -- --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/2
         run: >-
           docker run --rm --init --ipc=host -e CI -e GLAVE_BIN
           -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$PWD" "$PLAYWRIGHT_IMAGE"
-          npm run e2e -- --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/2
+          npm run e2e -- --project=${{ matrix.browser }}
+          ${{ matrix.browser == 'chromium' && '--project=feel' || '' }} --shard=${{ matrix.shard }}/2
       # A runner killed outright leaves nothing it started (#558): once, on one shard.
       - name: npm run e2e:killed
         if: matrix.browser == 'chromium' && matrix.shard == 1

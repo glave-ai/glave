@@ -143,6 +143,9 @@ const SITES: readonly { site: Site; web: string; env: Record<string, string> }[]
   },
 ];
 
+/** The tests of how the app feels, which run alone (the `feel` project). */
+const FEEL = 'feel.e2e.ts';
+
 /**
  * Whether the run includes WebKit: always in CI and off a Mac, and on a Mac only when asked
  * (`GLAVE_E2E_WEBKIT=1`). On macOS, Playwright's headless WebKit keeps painting while the display
@@ -185,18 +188,32 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: [FEEL] },
     ...(WEBKIT
       ? [
           {
             name: 'webkit',
             use: { ...devices['Desktop Safari'] },
             // These two change a real glave (its first model, a connected account), which the
-            // Chromium run owns: run twice, they would race on its state.
-            testIgnore: ['first-run.e2e.ts', 'accounts.e2e.ts'],
+            // Chromium run owns: run twice, they would race on its state. How the app feels
+            // only Chromium reports.
+            testIgnore: ['first-run.e2e.ts', 'accounts.e2e.ts', FEEL],
           },
         ]
       : []),
+    // How the app feels is timed in wall-clock milliseconds, which other browsers drawing at
+    // the same moment stretch: four tests at once triple a page's time to paint, eight busy
+    // CPU loops barely change it (#934). So these run one at a time, once every other
+    // project of the run has finished, with no other browser beside them. CI runs each
+    // browser in a job of its own (ci.yml), these in Chromium's.
+    {
+      name: 'feel',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: FEEL,
+      workers: 1,
+      dependencies:
+        WEBKIT && process.env['CI'] === undefined ? ['chromium', 'webkit'] : ['chromium'],
+    },
   ],
   // Each glave listens on a port the system picks (port 0), so two runs on one machine, such as
   // two `cargo xtask ci` side by side, never meet. It is ready once it says where it serves,
