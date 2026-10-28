@@ -3,12 +3,13 @@ import { provideRouter } from '@angular/router';
 import type { ChangedFile } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
-import type { MessageItem } from '../../lib/conversation';
+import { NO_THOUGHT, type MessageItem } from '../../lib/conversation';
 import type { TurnResults } from '../../lib/results';
 import { ChangedFilesService } from '../../services/changed-files.service';
 import { CommandsService } from '../../services/commands.service';
 import { PlanService } from '../../services/plan.service';
 import { SourcesService } from '../../services/sources.service';
+import { ThoughtService } from '../../services/thought.service';
 import { StepsService } from '../../services/steps.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
 import { ThreadService } from '../../services/thread.service';
@@ -23,6 +24,7 @@ const THREAD_VIEW = [
   ChangedFilesService,
   StepsService,
   PlanService,
+  ThoughtService,
   ThreadPanelService,
 ];
 
@@ -38,6 +40,7 @@ const REPLY: MessageItem = {
   from: 'model',
   text: 'Found it.',
   reasoning: '',
+  thought: NO_THOUGHT,
   steered: false,
 };
 
@@ -51,6 +54,7 @@ const RESULTS: TurnResults = {
     from: 'person',
     text: 'Fix the flaky test',
     reasoning: '',
+    thought: NO_THOUGHT,
     steered: false,
   },
   parts: [
@@ -233,7 +237,7 @@ describe('TurnComponent', () => {
   it('streams what the model writes now after what it said before', async () => {
     const root = await render({
       ...RESULTS,
-      live: { text: 'Writing', reasoning: '' },
+      live: { text: 'Writing', reasoning: '', thought: NO_THOUGHT },
       waiting: [],
     });
     expect(blocks(root).slice(0, 4)).toEqual([
@@ -314,7 +318,7 @@ describe('TurnComponent', () => {
     fixture.componentRef.setInput('turn', {
       ...RESULTS,
       parts: [],
-      live: { text: 'Writing', reasoning: '' },
+      live: { text: 'Writing', reasoning: '', thought: NO_THOUGHT },
       waiting: [],
     });
     await fixture.whenStable();
@@ -399,7 +403,7 @@ describe('TurnComponent', () => {
     expect(root.querySelector('[data-testid="turn-changes"]')).not.toBeNull();
   });
 
-  it('keeps reasoning folded as it streams, for the person to open', async () => {
+  it('shows the reasoning as it streams in one line: what it thinks now, then how long it took', async () => {
     TestBed.configureTestingModule({
       providers: [provideRouter([]), ...provideFakeSession(new FakeSession()), ...THREAD_VIEW],
     });
@@ -407,29 +411,38 @@ describe('TurnComponent', () => {
     const thinking = { ...RESULTS, parts: [], waiting: [] };
     fixture.componentRef.setInput('turn', {
       ...thinking,
-      live: { text: '', reasoning: '\nThe lock is taken twice.\n\n' },
+      live: {
+        text: '',
+        reasoning: 'The lock is taken twice.',
+        thought: { headline: 'The lock is taken twice.', ms: null },
+      },
     });
     await fixture.whenStable();
     const root = fixture.nativeElement as HTMLElement;
-    const details = (): HTMLDetailsElement | null =>
-      root.querySelector('[data-testid="thread-reasoning"] details');
-    const summary = (): string | null | undefined =>
-      root.querySelector('[data-testid="thread-reasoning-summary"]')?.textContent;
+    const line = (): HTMLElement | null =>
+      root.querySelector('[data-testid="thread-thought-line"]');
+    const label = (): string | null | undefined =>
+      root.querySelector('[data-testid="thread-thought-label"]')?.textContent;
     expect(root.querySelector('[data-testid="thread-working"]')).toBeNull();
-    expect(details()?.open).toBe(false);
-    expect(summary()).toBe('Thinking…');
-    // Drawn as written, but for the blank lines at its ends.
-    expect(root.querySelector('[data-testid="thread-reasoning-text"]')?.textContent).toBe(
+    expect(label()).toBe('Thinking');
+    expect(line()?.classList).toContain('live');
+    expect(root.querySelector('[data-testid="thread-thought-headline"]')?.textContent).toBe(
       'The lock is taken twice.',
     );
+    // No fold: the reasoning shows in full only in the panel.
+    expect(root.querySelector('[data-testid="thread-reply"] details')).toBeNull();
     await expectAccessible(root);
     fixture.componentRef.setInput('turn', {
       ...thinking,
-      live: { text: 'Found it.', reasoning: 'The lock is taken twice.' },
+      live: {
+        text: 'Found it.',
+        reasoning: 'The lock is taken twice.',
+        thought: { headline: 'The lock is taken twice.', ms: 3000 },
+      },
     });
     await fixture.whenStable();
-    expect(details()?.open).toBe(false);
-    expect(summary()).toBe('Reasoning');
+    expect(label()).toBe('Thought for 3s');
+    expect(line()?.classList).not.toContain('live');
   });
 
   it('shows a turn that did no work as its messages alone', async () => {

@@ -10,6 +10,7 @@ import { PanelService } from '../../services/panel.service';
 import { PlanService } from '../../services/plan.service';
 import { ProjectsService } from '../../services/projects.service';
 import { SourcesService } from '../../services/sources.service';
+import { ThoughtService } from '../../services/thought.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
 import { ThreadService } from '../../services/thread.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
@@ -77,6 +78,7 @@ async function render(
       SourcesService,
       ChangedFilesService,
       PlanService,
+      ThoughtService,
       ThreadPanelService,
       { provide: BreakpointObserver, useValue: { observe: () => of({ matches: narrow }) } },
     ],
@@ -271,5 +273,30 @@ describe('ThreadPanelComponent', () => {
     expect(root.querySelector('h2')?.classList).not.toContain('glz-visually-hidden');
     root.querySelector<HTMLButtonElement>('[data-testid="panel-close"]')?.click();
     expect(panel.showing()).toBe(false);
+  });
+
+  it('shows the model’s reasoning in full, as its line chose, with how long it took', async () => {
+    const thinking = [
+      event(1, 'message.added', { role: 'user', parts: [{ type: 'text', text: 'Stop it' }] }),
+      event(2, 'message.added', {
+        role: 'assistant',
+        parts: [
+          { type: 'reasoning', text: 'The port is 5173.\nStopping it.' },
+          { type: 'text', text: 'Stopped.' },
+        ],
+        thought: { headline: 'Stopping it.', ms: 4250 },
+      }),
+    ];
+    const { root, fixture } = await render(new FakeSession(), thinking);
+    // A plain chat has no panel facts until a reasoning is chosen.
+    expect(root.querySelector('[data-testid="panel-thought"]')).toBeNull();
+    TestBed.inject(ThoughtService).choose('message-2');
+    await fixture.whenStable();
+    expect(TestBed.inject(ThreadPanelService).shown()).toBe(true);
+    expect(texts(root, 'panel-thought-took')).toEqual(['4s']);
+    expect(root.querySelector('[data-testid="panel-thought-text"]')?.textContent).toBe(
+      'The port is 5173.\nStopping it.',
+    );
+    await expectAccessible(root);
   });
 });

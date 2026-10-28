@@ -2,6 +2,7 @@ import type { RawEvent } from '@glave/client';
 
 import {
   NO_DRAFT,
+  NO_THOUGHT,
   answersOf,
   applyUpdate,
   mergeEvents,
@@ -326,12 +327,44 @@ describe('conversation', () => {
     });
   });
 
+  it('reads what a reply’s reasoning came to as the server recorded it, and nothing of an older one', () => {
+    const items = threadItems([
+      event('message.added', {
+        role: 'assistant',
+        parts: [{ type: 'reasoning', text: 'Done.' }],
+        thought: { headline: 'Done.', ms: 4250 },
+      }),
+      event('message.added', {
+        role: 'assistant',
+        parts: [{ type: 'reasoning', text: 'Old.' }],
+      }),
+      event('message.added', {
+        role: 'assistant',
+        parts: [{ type: 'reasoning', text: 'x' }],
+        thought: { headline: '', ms: 'soon' },
+      }),
+    ]);
+    expect(items.map((item) => (item.kind === 'message' ? item.thought : null))).toEqual([
+      { headline: 'Done.', ms: 4250 },
+      NO_THOUGHT,
+      NO_THOUGHT,
+    ]);
+  });
+
   it('grows the draft with text and reasoning, and starts it afresh as a model call begins', () => {
-    let draft = applyUpdate(NO_DRAFT, { kind: 'text', text: 'Hel' });
+    let draft = applyUpdate(NO_DRAFT, { kind: 'reasoning', text: 'why' });
+    // What the reasoning came to as the server says it: its headline, then how long it took.
+    draft = applyUpdate(draft, { kind: 'thinking', headline: 'Checking the port.' });
+    expect(draft.thought).toEqual({ headline: 'Checking the port.', ms: null });
+    draft = applyUpdate(draft, { kind: 'thought', ms: 4250 });
+    draft = applyUpdate(draft, { kind: 'text', text: 'Hel' });
     draft = applyUpdate(draft, { kind: 'text', text: 'lo' });
-    draft = applyUpdate(draft, { kind: 'reasoning', text: 'why' });
     draft = applyUpdate(draft, { kind: 'tool_started', summary: 'bash: ls' });
-    expect(draft).toEqual({ text: 'Hello', reasoning: 'why' });
+    expect(draft).toEqual({
+      text: 'Hello',
+      reasoning: 'why',
+      thought: { headline: 'Checking the port.', ms: 4250 },
+    });
     // A call tried again: what it had written goes.
     expect(applyUpdate(draft, { kind: 'waiting' })).toBe(NO_DRAFT);
   });

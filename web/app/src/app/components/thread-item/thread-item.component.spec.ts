@@ -2,7 +2,8 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { expectAccessible } from '@glave/glaze/testing';
 
-import type { ThreadItem } from '../../lib/conversation';
+import { NO_THOUGHT, type ThreadItem } from '../../lib/conversation';
+import { ThoughtService } from '../../services/thought.service';
 import { ThreadService } from '../../services/thread.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { ThreadItemComponent } from './thread-item.component';
@@ -12,7 +13,7 @@ async function render(
   fake = new FakeSession(),
 ): Promise<{ readonly root: HTMLElement; readonly fake: FakeSession }> {
   TestBed.configureTestingModule({
-    providers: [provideRouter([]), ...provideFakeSession(fake), ThreadService],
+    providers: [provideRouter([]), ...provideFakeSession(fake), ThreadService, ThoughtService],
   });
   await TestBed.inject(ThreadService).open('thread-1');
   const fixture = TestBed.createComponent(ThreadItemComponent);
@@ -31,12 +32,19 @@ describe('ThreadItemComponent', () => {
       from: 'model',
       text: 'It **works**',
       reasoning: 'Checked it',
+      thought: { headline: 'Checked it', ms: 4250 },
       steered: false,
     });
     const message = root.querySelector('[data-testid="thread-message"]');
     expect(message?.getAttribute('aria-label')).toBe('Reply');
     expect(message?.querySelector('strong')?.textContent).toBe('works');
-    expect(message?.querySelector('glz-reasoning')).not.toBeNull();
+    // Its reasoning in one line, as the server says it went.
+    expect(message?.querySelector('[data-testid="thread-thought-label"]')?.textContent).toBe(
+      'Thought for 4s',
+    );
+    expect(message?.querySelector('[data-testid="thread-thought-headline"]')?.textContent).toBe(
+      'Checked it',
+    );
     expect(message?.querySelector('[data-testid="message-copy"]')).not.toBeNull();
     await expectAccessible(root);
   });
@@ -50,6 +58,7 @@ describe('ThreadItemComponent', () => {
       from: 'person',
       text: 'Fix the flaky test',
       reasoning: '',
+      thought: NO_THOUGHT,
       steered: false,
     });
     expect(root.querySelector('[data-testid="message-copy"]')).toBeNull();
@@ -64,6 +73,7 @@ describe('ThreadItemComponent', () => {
       from: 'person',
       text: '',
       reasoning: '',
+      thought: NO_THOUGHT,
       steered: false,
       built: true,
     });
@@ -82,6 +92,7 @@ describe('ThreadItemComponent', () => {
       from: 'person',
       text: 'Actually, use 4000',
       reasoning: '',
+      thought: NO_THOUGHT,
     } as const;
     const read = await render({ ...message, steered: true });
     const caption = read.root.querySelector('[data-testid="thread-message-read"]');
@@ -101,6 +112,7 @@ describe('ThreadItemComponent', () => {
       from: 'model',
       text: '',
       reasoning: 'Thinking it over',
+      thought: NO_THOUGHT,
       steered: false,
     });
     expect(root.querySelector('[data-testid="message-copy"]')).toBeNull();

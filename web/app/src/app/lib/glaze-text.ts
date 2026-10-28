@@ -44,10 +44,6 @@ export function glazeText(): GlzText {
       searchLabel: $localize`:@@glaze.picker.search:Search`,
       emptyText: $localize`:@@glaze.picker.empty:No matches`,
     },
-    reasoning: {
-      label: $localize`:@@glaze.reasoning.label:Reasoning`,
-      thinkingLabel: $localize`:@@glaze.reasoning.thinking:Thinking…`,
-    },
     receipt: {
       statusLabels: {
         running: $localize`:@@glaze.receipt.running:Running`,

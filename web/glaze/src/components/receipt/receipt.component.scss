@@ -68,7 +68,7 @@
   color: var(--glz-receipt-status);
 }
 
-// The evidence hangs under the line, behind a rule, as reasoning does, with no space below it:
+// The evidence hangs under the line, behind a rule, with no space below it:
 // the space after a receipt is the gap of what holds it, so a rule beside the steps ends with it.
 .evidence {
   /* stylelint-disable declaration-property-value-allowed-list -- the content of a <details> takes no gap (::details-content is not Baseline) */

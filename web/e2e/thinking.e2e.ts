@@ -2,7 +2,15 @@ import { type Locator, type Page, expect, test } from '@playwright/test';
 
 import { THREAD, fakeApi } from './fake-api';
 import { letGo } from './fake-gate';
-import { ANSWER, STARTED, STEP, THINKING, THINKING_PROMPT, thinkingTurn } from './fake-thinking';
+import {
+  ANSWER,
+  HEADLINE,
+  STARTED,
+  STEP,
+  THINKING,
+  THINKING_PROMPT,
+  thinkingTurn,
+} from './fake-thinking';
 import {
   SIGNED_IN,
   byTestId,
@@ -19,10 +27,8 @@ const SMITHY =
 /** The page's clock, held seven seconds after the turn started. */
 const NOW = new Date(Date.parse(STARTED) + 7_000);
 
-/** Whether a reasoning block's disclosure is open. */
-async function isOpen(reasoning: Locator): Promise<boolean> {
-  return reasoning.locator('details').evaluate((details) => (details as HTMLDetailsElement).open);
-}
+/** The model's reasoning, as written, without the blank lines at its ends. */
+const REASONING = THINKING.join('').trim();
 
 /** The motion tokens as the page reads them, in milliseconds: quick, standard and slow. */
 async function durations(page: Page): Promise<readonly number[]> {
@@ -116,46 +122,55 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(elapsed).toHaveText('7s');
     await expectAccessible(page);
 
-    // The model's reasoning streams in, folded, in the working line's place, rising into it;
-    // what the tool changed settles in.
+    // The model's reasoning streams in as one line in the working line's place, rising into it:
+    // "Thinking", shimmering, and its headline, the server's; what the tool changed settles in.
     await letGo(page, 'think');
     const live = byTestId(page, 'thread-reply');
-    const reasoning = live.getByTestId('thread-reasoning');
-    await expect(reasoning).toBeVisible();
+    const thinking = live.getByTestId('thread-thought-line');
+    await expect(thinking).toBeVisible();
     await expect(working).toHaveCount(0);
     expect(await animationOf(live)).toContain('glz-rise');
     // What changed comes from the server once the write has ended: the turn's own card.
     await expect(byTestId(page, 'turn-changes')).toHaveCount(2);
     expect(await settling(page)).toBe('glz-settle');
-    await expect(reasoning.getByTestId('thread-reasoning-summary')).toHaveText('Thinking…');
-    expect(await isOpen(reasoning)).toBe(false);
-    await reasoning.getByTestId('thread-reasoning-summary').click();
-    await expect(reasoning.getByText(THINKING.join(''))).toBeVisible();
+    await expect(live.getByTestId('thread-thought-label')).toHaveText('Thinking');
+    expect(await animationOf(live.getByTestId('thread-thought-label'))).toContain('glz-shimmer');
+    await expect(live.getByTestId('thread-thought-headline')).toHaveText(HEADLINE);
+    await expect(live.locator('details')).toHaveCount(0);
+    // Chosen, it shows the reasoning in full in the panel, and says so.
+    const panel = byTestId(page, 'panel-thought-text');
+    await expect(panel).toHaveCount(0);
+    await thinking.click();
+    await expect(panel).toHaveText(REASONING);
+    await expect(thinking).toHaveAttribute('aria-pressed', 'true');
     await expectAccessible(page);
 
-    // The answer folds it away; once recorded, what was thought can still be opened.
+    // Once done it says how long it thought, its line kept and still chosen as its message is
+    // recorded.
     await letGo(page, 'answer');
     const reply = byTestId(page, 'thread-message').last();
     await expect(reply).toContainText(ANSWER.join(''));
     await expect(byTestId(page, 'thread-composer-stop')).toHaveCount(0);
-    const kept = reply.getByTestId('thread-reasoning');
-    const summary = kept.getByTestId('thread-reasoning-summary');
-    await expect(summary).toHaveText('Reasoning');
-    expect(await isOpen(kept)).toBe(false);
-    const thought = kept.getByText(THINKING.join(''));
-    await expect(thought).toBeHidden();
-    await summary.click();
-    await expect(thought).toBeVisible();
+    const line = reply.getByTestId('thread-thought-line');
+    await expect(reply.getByTestId('thread-thought-label')).toHaveText('Thought for 3s');
+    await expect(reply.getByTestId('thread-thought-headline')).toHaveText(HEADLINE);
+    await expect(line).toHaveAttribute('aria-pressed', 'true');
+    await expect(panel).toHaveText(REASONING);
+    await expect(byTestId(page, 'panel-thought-took')).toHaveText('3s');
     await expect(working).toHaveCount(0);
-    // The click leaves focus on the reasoning, but no ring, so the reply's copy button goes with
-    // the pointer; a key pressed there (Enter, which folds it again) gives focus its ring, and
-    // shows the button again.
+    // Chosen again, the panel shows it no longer. The click leaves focus on the line, but no
+    // ring, so the reply's copy button goes with the pointer; a key pressed there (Enter, which
+    // shows it again) gives focus its ring, and shows the button again.
+    await line.click();
+    await expect(panel).toHaveCount(0);
+    await expect(line).toHaveAttribute('aria-pressed', 'false');
     const copy = reply.getByTestId('message-copy');
     await page.mouse.move(0, 0);
     await expect.poll(() => shownOpacity(copy)).toBe(0);
-    await summary.press('Enter');
-    await expect(thought).toBeHidden();
+    await line.press('Enter');
+    await expect(panel).toHaveText(REASONING);
     await expect.poll(() => shownOpacity(copy)).toBe(1);
+    await expectAccessible(page);
 
     // The run of calls is the server's line, which slides open in its fold, and slides shut
     // before it closes.
@@ -194,8 +209,10 @@ test('nothing moves when the person asks for less motion, though the words still
   // The reply and what changed arrive in place, still.
   await letGo(page, 'think');
   const live = byTestId(page, 'thread-reply');
-  await expect(live.getByTestId('thread-reasoning')).toBeVisible();
+  await expect(live.getByTestId('thread-thought')).toBeVisible();
   expect(await animationOf(live)).toBe('none');
+  // Its word holds still.
+  expect(await animationOf(live.getByTestId('thread-thought-label'))).toBe('none');
   await expect(byTestId(page, 'turn-changes')).toHaveCount(2);
   expect(await settling(page)).toBe('none');
   expect(await moving(page)).toBe(0);
@@ -231,7 +248,7 @@ test('the working line moves again once the person no longer asks for less motio
   await expect.poll(animations).toBe(2);
 });
 
-test('opened, the thinking, the steps and a step’s output sit evenly in their blocks', async ({
+test('the thinking in full, the steps and a step’s output sit evenly in their blocks', async ({
   page,
 }) => {
   // Still, so each block is measured as it rests.
@@ -242,19 +259,19 @@ test('opened, the thinking, the steps and a step’s output sit evenly in their 
   await letGo(page, 'start');
   await letGo(page, 'tool');
 
-  // The model's thinking ends in a blank line, which its rule does not run on beside, as it
-  // streams (opened) and once recorded.
+  // The model's thinking ends in a blank line, which shows as no space under it in the panel,
+  // as it streams and once recorded.
   await letGo(page, 'think');
-  const streaming = byTestId(page, 'thread-reply');
-  await streaming.getByTestId('thread-reasoning-summary').click();
-  const live = streaming.getByTestId('thread-reasoning-text');
-  await expect(live).toHaveText(THINKING.join(''));
-  await expectEven(live);
+  await byTestId(page, 'thread-reply').getByTestId('thread-thought-line').click();
+  const thought = byTestId(page, 'panel-thought-text');
+  await expect(thought).toHaveText(REASONING);
+  await expectEven(thought);
   await letGo(page, 'answer');
   await expect(byTestId(page, 'thread-composer-stop')).toHaveCount(0);
-  const reply = byTestId(page, 'thread-message').last();
-  await reply.getByTestId('thread-reasoning-summary').click();
-  await expectEven(reply.getByTestId('thread-reasoning-text'));
+  await expect(
+    byTestId(page, 'thread-message').last().getByTestId('thread-thought-line'),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await expectEven(thought);
 
   // A step's output ends in a blank line too, which its box leaves out; the run's rule runs
   // from the first step's line to the end of the last one's output.

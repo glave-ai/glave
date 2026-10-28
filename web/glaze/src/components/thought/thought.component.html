@@ -1,0 +1,19 @@
+<button
+  type="button"
+  class="line"
+  [class.live]="live()"
+  [attr.aria-pressed]="selected()"
+  [attr.data-testid]="ids().line"
+  (click)="choose.emit()"
+>
+  <span class="label" [attr.data-testid]="ids().label">{{ label() }}</span>
+  @if (shown(); as headline) {
+    <span
+      class="headline"
+      dir="auto"
+      [class.fading]="fading()"
+      [attr.data-testid]="ids().headline"
+      >{{ headline }}</span
+    >
+  }
+</button>

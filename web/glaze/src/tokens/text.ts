@@ -61,7 +61,6 @@ export interface GlzText {
     readonly ownWordsLabel: string;
     readonly submitLabel: string;
   };
-  readonly reasoning: { readonly label: string; readonly thinkingLabel: string };
   readonly receipt: { readonly statusLabels: Readonly<Record<GlzReceiptStatus, string>> };
   readonly sidenavLayout: { readonly label: string; readonly resizeLabel: string };
   readonly steps: { readonly statusLabels: GlzRunStatusLabels };

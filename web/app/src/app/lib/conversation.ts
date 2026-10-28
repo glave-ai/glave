@@ -7,12 +7,25 @@ interface Placed {
   readonly seq: number;
 }
 
+/**
+ * What the model's reasoning came to, as the server says: its headline, the model's own words,
+ * and how long it reasoned, in milliseconds; each `null` while the server has not said.
+ */
+export interface Thought {
+  readonly headline: string | null;
+  readonly ms: number | null;
+}
+
+export const NO_THOUGHT: Thought = { headline: null, ms: null };
+
 /** A message in a thread, as the thread view shows it. */
 export interface MessageItem extends Placed {
   readonly kind: 'message';
   readonly from: 'person' | 'model';
   readonly text: string;
   readonly reasoning: string;
+  /** What its reasoning came to, as the server recorded it with the message. */
+  readonly thought: Thought;
   /** Whether the person sent it while the turn ran, and the model read it as it worked. */
   readonly steered: boolean;
   /** The files sent with it, in order. */
@@ -82,9 +95,11 @@ export type ThreadItem = MessageItem | CallItem | ApprovalItem | QuestionItem;
 export interface Draft {
   readonly text: string;
   readonly reasoning: string;
+  /** What its reasoning has come to so far, as the server says while it streams. */
+  readonly thought: Thought;
 }
 
-export const NO_DRAFT: Draft = { text: '', reasoning: '' };
+export const NO_DRAFT: Draft = { text: '', reasoning: '', thought: NO_THOUGHT };
 
 type Data = Readonly<Record<string, unknown>>;
 
@@ -117,6 +132,16 @@ export function partsText(parts: unknown): { readonly text: string; readonly rea
         .join('\n'),
     );
   return { text: of('text'), reasoning: of('reasoning') };
+}
+
+/** What a message's reasoning came to, as `message.added` records it (`thought`). */
+export function thoughtOf(value: unknown): Thought {
+  if (!isRecord(value)) {
+    return NO_THOUGHT;
+  }
+  const headline = text(value['headline']);
+  const ms = value['ms'];
+  return { headline: headline === '' ? null : headline, ms: typeof ms === 'number' ? ms : null };
 }
 
 /** The files of a message's `parts`, in order. */
@@ -217,6 +242,7 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
           from: 'person',
           text: '',
           reasoning: '',
+          thought: NO_THOUGHT,
           steered: false,
           files: [],
           built: true,
@@ -240,6 +266,7 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
           from: person ? 'person' : 'model',
           text: person ? promptOf(data['parts']) : parts.text,
           reasoning: parts.reasoning,
+          thought: thoughtOf(data['thought']),
           steered: theirs && running && asked,
           files: filesOf(data['parts']),
         });
@@ -331,7 +358,8 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
 }
 
 /**
- * The draft after a live update: text and reasoning grow; a model call beginning (`waiting`)
+ * The draft after a live update: text and reasoning grow, and what the reasoning came to as the
+ * server says it (its headline, then how long it took); a model call beginning (`waiting`)
  * starts its step afresh, so what a call tried again had written goes; anything else leaves it.
  */
 export function applyUpdate(draft: Draft, update: Update): Draft {
@@ -342,6 +370,10 @@ export function applyUpdate(draft: Draft, update: Update): Draft {
       return { ...draft, text: draft.text + update.text };
     case 'reasoning':
       return { ...draft, reasoning: draft.reasoning + update.text };
+    case 'thinking':
+      return { ...draft, thought: { ...draft.thought, headline: update.headline } };
+    case 'thought':
+      return { ...draft, thought: { ...draft.thought, ms: update.ms } };
     default:
       return draft;
   }

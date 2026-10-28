@@ -11,6 +11,7 @@ import { FirstTurnService } from './first-turn.service';
 import { PanelService } from './panel.service';
 import { PlanService } from './plan.service';
 import { SourcesService } from './sources.service';
+import { ThoughtService } from './thought.service';
 import { ThreadPanelService } from './thread-panel.service';
 import { ThreadService } from './thread.service';
 
@@ -51,6 +52,7 @@ function provide(
       SourcesService,
       ChangedFilesService,
       PlanService,
+      ThoughtService,
       ThreadPanelService,
     ],
   });

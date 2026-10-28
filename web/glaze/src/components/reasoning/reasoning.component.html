@@ -1,6 +1,0 @@
-<details class="details" [open]="open()" (toggle)="toggled($event)">
-  <summary class="summary" [attr.data-testid]="ids().summary">
-    <span [class.thinking]="streaming()">{{ summary() }}</span>
-  </summary>
-  <div class="text" [attr.data-testid]="ids().text"><ng-content /></div>
-</details>

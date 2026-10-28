@@ -10,17 +10,17 @@ import {
 import {
   GlzMarkdownComponent,
   GlzMessageComponent,
-  GlzReasoningComponent,
   GlzStepsComponent,
   GlzWorkingComponent,
   formatDuration,
 } from '@glave/glaze';
 
-import { trimBlankLines } from '../../lib/conversation';
 import type { TurnResults } from '../../lib/results';
 import { runningFor } from '../../lib/when';
 import { clock } from '../../services/clock';
+import { LIVE_THOUGHT } from '../../services/thought.service';
 import { ThreadService } from '../../services/thread.service';
+import { ThoughtComponent } from '../thought/thought.component';
 import { ThreadItemComponent } from '../thread-item/thread-item.component';
 import { TurnChangesComponent } from '../turn-changes/turn-changes.component';
 import { TurnPartComponent } from '../turn-part/turn-part.component';
@@ -36,8 +36,9 @@ import { TurnPartComponent } from '../turn-part/turn-part.component';
  * While the turn works with nothing of its own to show, a line stands in the reply's place: the
  * step a tool takes, in the server's words, else a smithy's word while the model thinks, the next
  * every couple of seconds; and beside it how long the turn has worked, counted from the start
- * the server recorded. The model's reasoning, as it streams, is folded, as each step's is, for the
- * person to open. As the person watches, a
+ * the server recorded. The model's reasoning, as it streams, is one line, as each step's is:
+ * what it thinks now, in the model's own words, which shows it in full in the panel. As the
+ * person watches, a
  * reply rises into place as it begins, what changed settles in as it appears, and a card that
  * needs the person rises into place.
  */
@@ -46,9 +47,9 @@ import { TurnPartComponent } from '../turn-part/turn-part.component';
   imports: [
     GlzMarkdownComponent,
     GlzMessageComponent,
-    GlzReasoningComponent,
     GlzStepsComponent,
     GlzWorkingComponent,
+    ThoughtComponent,
     ThreadItemComponent,
     TurnChangesComponent,
     TurnPartComponent,
@@ -64,7 +65,6 @@ export class TurnComponent {
   protected readonly copy = {
     reply: $localize`:@@turn.reply:Reply`,
     thinking: $localize`:@@turn.thinking:Thinking…`,
-    reasoning: $localize`:@@turn.reasoning:Reasoning`,
     /** What the working line says while the model thinks, one word after another. */
     words: [
       $localize`:@@turn.forging:Forging…`,
@@ -133,10 +133,8 @@ export class TurnComponent {
     const risen = this.risen();
     return this.turn().waiting.map((item) => ({ item, rises: risen.has(item.key) }));
   });
-  /** The reasoning streaming in, without the blank lines at its ends. */
-  protected readonly reasoning = computed(() => trimBlankLines(this.turn().live?.reasoning ?? ''));
-  /** Whether the model is still thinking: its reasoning streams, and no answer yet. */
-  protected readonly thinking = computed(() => this.turn().live?.text === '');
+  /** What the panel knows the reasoning being written by. */
+  protected readonly liveThought = LIVE_THOUGHT;
 
   /** When the turn started, as the server recorded it, while the working line shows. */
   private readonly since = computed(() => this.turn().working?.since ?? null);

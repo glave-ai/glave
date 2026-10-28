@@ -21,7 +21,7 @@ export type GlzMessageFrom = 'person' | 'model' | 'note';
  *
  * ```html
  * <glz-message from="model" author="Reply" [streaming]="running()">
- *   <glz-reasoning>…</glz-reasoning>
+ *   <glz-thought label="Thought for 4s" headline="…" />
  *   <p>{{ text() }}</p>
  *   <button glzIconButton glzMessageActions label="Copy" [glzCopy]="text()">…</button>
  * </glz-message>
