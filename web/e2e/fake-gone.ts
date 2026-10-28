@@ -1,6 +1,6 @@
 import type { GoneFolder, Project, ThreadSummary } from '@glave/client';
 
-import { Refusal, event } from './fake-records';
+import { type Answers, Refusal, event } from './fake-records';
 
 /**
  * A project whose folder isn't there anymore, "playground", and its thread (`fakeApi`'s
@@ -96,27 +96,22 @@ export function refusedTurn(params: Record<string, unknown>, gone: Gone | null):
     : undefined;
 }
 
-/** The answer to a call about playground or its thread, else `undefined`. */
-export function aboutGone(method: string, params: Record<string, unknown>, gone: Gone): unknown {
-  const inPlayground = params['project'] === PLAYGROUND.id;
-  switch (method) {
-    case 'thread/list':
-      return inPlayground ? { threads: gone.removed ? [] : [lost(gone)] } : undefined;
-    case 'thread/get':
-      return params['thread'] === LOST ? { thread: lost(gone) } : undefined;
-    case 'command/list':
-      return params['thread'] === LOST ? { commands: [] } : undefined;
-    case 'project/folder/set':
-      if (!inPlayground || !gone.missing) {
-        return new Refusal(-32602, 'this project’s folder is still where it was');
-      }
-      gone.missing = false;
-      gone.foundAt = String(params['path']);
-      return { project: PLAYGROUND };
-    case 'project/remove':
-      gone.removed = true;
-      return {};
-    default:
-      return undefined;
-  }
-}
+/** Calls about playground or its thread. */
+export const ABOUT_GONE: Answers<Gone> = {
+  'thread/list': (params, gone) =>
+    params.project === PLAYGROUND.id ? { threads: gone.removed ? [] : [lost(gone)] } : undefined,
+  'thread/get': (params, gone) => (params.thread === LOST ? { thread: lost(gone) } : undefined),
+  'command/list': (params) => (params.thread === LOST ? { commands: [] } : undefined),
+  'project/folder/set': (params, gone) => {
+    if (params.project !== PLAYGROUND.id || !gone.missing) {
+      return new Refusal(-32602, 'this project’s folder is still where it was');
+    }
+    gone.missing = false;
+    gone.foundAt = params.path;
+    return { project: PLAYGROUND };
+  },
+  'project/remove': (_, gone) => {
+    gone.removed = true;
+    return {};
+  },
+};

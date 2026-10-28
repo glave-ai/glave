@@ -28,7 +28,6 @@
 3e673752818820ab 11 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
 44a392879170b883 55 crates/provider-anthropic/src/client.rs crates/provider-openai/src/client.rs
 46a00e6b7dbe1997 6 crates/computer/src/local/sandbox/linux/tests.rs crates/harness/src/sandbox/tests.rs
-4cea69ea751e317b 9 crates/computer/src/worker/docker.rs crates/computer/src/worker/kubernetes/objects.rs
 4f2c144ca00a6f0c 10 crates/computer/src/local/confinement_tests.rs crates/harness/src/tools/workspace/tests.rs
 4fac0a7d959a48c2 13 crates/session/tests/list_watching.rs crates/session/tests/subagents.rs
 55b7dc4aa2df1119 9 crates/harness/tests/support/script.rs crates/memory/tests/support/kit.rs
@@ -44,7 +43,7 @@
 73cc0adea85cddf5 18 crates/computer/src/worker/docker/tests.rs crates/computer/src/worker/kubernetes/tests.rs
 74c6b4f9fdf42ef9 8 crates/cli/tests/support/binary.rs crates/cli/tests/support/http.rs
 7542976e8395bedc 9 crates/session/tests/turn_streams.rs crates/session/tests/watching.rs
-7638a0902dc14256 12 crates/computer/src/worker/docker/tests.rs crates/computer/src/worker/kubernetes/tests.rs
+012b716fab686452 13 crates/computer/src/worker/docker/tests.rs crates/computer/src/worker/kubernetes/tests.rs
 7e042a672c377b83 7 web/app/src/app/components/thread/thread.component.spec.ts web/app/src/app/components/thread/thread.component.spec.ts
 7e3dfd09943421b7 6 crates/computer/src/local/git.rs crates/computer/src/local/worktree.rs
 7fac9e009813a8c7 10 crates/cli/src/computer.rs crates/cli/src/gateway/serve.rs crates/cli/src/threads.rs

@@ -1,4 +1,4 @@
-import type { RawEvent, WorkspaceBound } from '@glave/client';
+import type { Methods, RawEvent, WorkspaceBound } from '@glave/client';
 
 /**
  * What the fake server's threads record and how it refuses, as the session API shapes them:
@@ -98,4 +98,30 @@ export class Refusal {
     readonly code: number,
     readonly message: string,
   ) {}
+}
+
+/**
+ * How a fake answers some of the session API's calls, keeping what it keeps in `K`: each with
+ * its params and result as the schema types them, so a fixture that drifts from what the server
+ * sends fails to build. `undefined` leaves the call to the next fake.
+ */
+export type Answers<K> = {
+  readonly [M in keyof Methods]?: (
+    params: Methods[M]['params'],
+    kept: K,
+  ) => Methods[M]['result'] | Refusal | undefined;
+};
+
+/** `fake`'s answer to `method` with `params` off the wire, if it has one. */
+export function answerFrom<K>(
+  fake: Answers<K>,
+  method: string,
+  params: Record<string, unknown>,
+  kept: K,
+): unknown {
+  // The one place the wire's untyped params meet the fakes' typed ones.
+  const answers = fake as Readonly<
+    Record<string, ((params: unknown, kept: K) => unknown) | undefined>
+  >;
+  return answers[method]?.(params, kept);
 }

@@ -32,6 +32,8 @@ const IMAGE: &str =
 const STUB: &[u8] = b"#!/bin/sh\necho \"args: $*\"\nls -l /opt/glave/tls/key.pem\ncat\n";
 /// A stub that only waits, as a TLS server would, so its port stays published.
 const WAITS: &[u8] = b"#!/bin/sh\nexec sleep 300\n";
+/// A stub that waits for its input to end, as a worker's glave serving TLS does.
+const UNTIL_INPUT_ENDS: &[u8] = b"#!/bin/sh\ncat >/dev/null\n";
 
 /// The run's label value: CI's run id, or this process's.
 fn run_id() -> String {
@@ -76,6 +78,7 @@ fn spec(network: bool) -> Spec {
             Duration::from_secs(600),
         )
         .unwrap(),
+        starter: glave_process::Glave::this(),
     }
 }
 
@@ -155,6 +158,8 @@ fn the_docker_backend_starts_limits_reaches_and_removes_workers() {
             limited(&docker, &case).await;
             streamed(&docker, &case).await;
             published(&docker, &case).await;
+            ended(&docker, &case).await;
+            reaped(&docker, &case).await;
         };
         checked.await;
         assert_eq!(left_behind(&docker, &case).await, Vec::<String>::new());
@@ -226,16 +231,96 @@ async fn published(docker: &Docker, case: &str) {
     let Link::Tls {
         address,
         fingerprint,
-        ..
+        forward,
     } = link.unwrap()
     else {
         panic!("a worker with a network is reached over TLS");
     };
+    if let Some(holding) = forward {
+        holding.abort();
+    }
     assert!(address.ip().is_loopback(), "{address}");
     assert_eq!(fingerprint, wanted.identity.fingerprint);
     let bindings = &inspected["HostConfig"]["PortBindings"]["7070/tcp"][0];
     assert_eq!(bindings["HostIp"], json!("127.0.0.1"));
     assert_eq!(inspected["HostConfig"]["NetworkMode"], json!("bridge"));
+    assert_eq!(left_behind(docker, case).await, Vec::<String>::new());
+}
+
+/// A worker with a network stops at once when the glave holding its input lets go of it, as one
+/// killed outright does: the system closes its connection to Docker, and Docker the worker's
+/// input.
+async fn ended(docker: &Docker, case: &str) {
+    let name = format!(
+        "glave-worker-test-{}",
+        crate::local::new_id().unwrap().simple()
+    );
+    let link = docker
+        .start_with(&name, &spec(true), UNTIL_INPUT_ENDS)
+        .await
+        .unwrap();
+    let Link::Tls {
+        forward: Some(holding),
+        ..
+    } = link
+    else {
+        panic!("a worker with a network has its input held");
+    };
+    let path = format!("/containers/{name}/json");
+    assert_eq!(get(docker, &path).await["State"]["Running"], json!(true));
+    holding.abort();
+    let _ = holding.await;
+    let mut running = true;
+    // A guard against a hang: it stops in moments.
+    for _ in 0..300 {
+        running = get(docker, &path).await["State"]["Running"] == json!(true);
+        if !running {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    docker.remove(&name).await.unwrap();
+    assert!(!running, "the worker stops once its input is let go of");
+    assert_eq!(left_behind(docker, case).await, Vec::<String>::new());
+}
+
+/// A glave starting removes the workers of a glave that is gone, and only those.
+async fn reaped(docker: &Docker, case: &str) {
+    let this = glave_process::Glave::this().unwrap();
+    let ended = super::super::tests::changed(&this, "start", "a glave that ended");
+    let elsewhere = super::super::tests::changed(&ended, "host", "another machine");
+    let mut names = Vec::new();
+    for starter in [Some(ended), Some(elsewhere), Some(this), None] {
+        let name = format!(
+            "glave-worker-test-{}",
+            crate::local::new_id().unwrap().simple()
+        );
+        let wanted = Spec {
+            starter,
+            ..spec(true)
+        };
+        if let Link::Tls {
+            forward: Some(holding),
+            ..
+        } = docker.start_with(&name, &wanted, WAITS).await.unwrap()
+        {
+            holding.abort();
+        }
+        names.push(name);
+    }
+    let workers =
+        WorkerComputers::docker(docker.clone(), Limits::default(), WorkerCredentials::None);
+    let reaped = workers.reap().await;
+    let listed = docker.list().await.unwrap();
+    for name in &names {
+        docker.remove(name).await.unwrap();
+    }
+    assert_eq!(reaped.unwrap(), 1);
+    let mut kept: Vec<String> = names.split_off(1);
+    kept.sort();
+    let mut listed: Vec<String> = listed.into_iter().map(|listed| listed.name).collect();
+    listed.sort();
+    assert_eq!(listed, kept, "only the worker of the glave that ended goes");
     assert_eq!(left_behind(docker, case).await, Vec::<String>::new());
 }
 

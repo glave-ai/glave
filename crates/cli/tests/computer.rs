@@ -1,14 +1,15 @@
 //! `glave computer serve --stdio`, the real binary, as a harness elsewhere would reach it: the
 //! computers suite runs against it across the protocol, and its commands never see glave's
-//! secrets.
+//! secrets. And `--tls` as a worker runs it, ending when its input does.
 
 use std::process::Stdio;
 use std::sync::Mutex;
+use std::time::{Duration, SystemTime};
 
-use glave_computer::RemoteComputers;
+use glave_computer::{Identity, RemoteComputers, Token};
 use glave_ports::computer::{Command, Computers, Ending, Environment, Output, Sources};
 use glave_ports::testing::{FAKE_SECRET, TempDir};
-use glave_ports::{BoxFuture, NeverCancelled, block_on, conformance};
+use glave_ports::{BoxFuture, Clock as _, NeverCancelled, SystemClock, block_on, conformance};
 
 #[derive(Default)]
 struct Collect(Mutex<String>);
@@ -68,5 +69,34 @@ fn the_binary_serves_a_computer_that_passes_the_suite() {
             status.success(),
             "the server ends cleanly when its input does"
         );
+    });
+}
+
+#[test]
+fn a_worker_s_glave_serving_tls_ends_when_its_input_does() {
+    let dir = TempDir::new("e2e-computer-tls").unwrap();
+    let tls = dir.join("tls");
+    std::fs::create_dir_all(&tls).unwrap();
+    let identity = Identity::mint().unwrap();
+    std::fs::write(tls.join("cert.pem"), &identity.certificate).unwrap();
+    std::fs::write(tls.join("key.pem"), &identity.key).unwrap();
+    let now = SystemTime::from(SystemClock.now());
+    let token = Token::mint(now, Duration::from_mins(10)).unwrap();
+    std::fs::write(tls.join("token"), token.to_file()).unwrap();
+    block_on!(async {
+        let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_glave"))
+            .args(["computer", "serve", "--tls", "127.0.0.1:0"])
+            .arg(&tls)
+            .arg("--until-input-ends")
+            .env("GLAVE_HOME", dir.join("home"))
+            .stdin(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        // What the glave that started it holds, closed as that glave ends, however it ends.
+        drop(child.stdin.take());
+        let ended = tokio::time::timeout(Duration::from_secs(30), child.wait()).await;
+        let status = ended.expect("it ends within seconds of its input").unwrap();
+        assert!(status.success(), "{status}");
     });
 }

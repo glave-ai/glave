@@ -1,20 +1,15 @@
-import type { AwakeInfo } from '@glave/client';
+import type { Answers } from './fake-records';
 
 /** Whether the person's computer is kept awake while glave works: on until they choose. */
 export interface Awake {
   on: boolean;
 }
 
-/** The answer to `awake/get` or `awake/set` on the person's own computer, else `undefined`. */
-export function keptAwake(
-  method: string,
-  params: Record<string, unknown>,
-  awake: Awake,
-): { readonly awake: AwakeInfo } | undefined {
-  if (method === 'awake/set') {
-    awake.on = params['on'] === true;
-  } else if (method !== 'awake/get') {
-    return undefined;
-  }
-  return { awake: { kind: 'chosen', on: awake.on } };
-}
+/** `awake/get` and `awake/set` on the person's own computer. */
+export const KEPT_AWAKE: Answers<Awake> = {
+  'awake/get': (_, awake) => ({ awake: { kind: 'chosen', on: awake.on } }),
+  'awake/set': (params, awake) => {
+    awake.on = params.on;
+    return { awake: { kind: 'chosen', on: awake.on } };
+  },
+};

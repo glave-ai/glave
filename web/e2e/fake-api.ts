@@ -1,5 +1,7 @@
 import type {
   CredentialInfo,
+  Methods,
+  ProjectCreateParams,
   RawEvent,
   Remembered,
   Project,
@@ -10,19 +12,19 @@ import type {
 import type { Page, Route } from '@playwright/test';
 
 import { type Commands, SERVING, SERVING_HISTORY, background } from './fake-commands';
-import { type Awake, keptAwake } from './fake-awake';
+import { type Awake, KEPT_AWAKE } from './fake-awake';
 import { changesOf } from './fake-changes';
 import { stepsOf } from './fake-steps';
 import { keptFile } from './fake-files';
 import { HOME, listFolders } from './fake-folders';
 import { type Gated, gates } from './fake-gate';
-import { type Grouped, keptGrouping } from './fake-grouping';
+import { type Grouped, KEPT_GROUPING } from './fake-grouping';
 import { FakeLists } from './fake-lists';
 import {
   type Gone,
   LOST,
   LOST_HISTORY,
-  aboutGone,
+  ABOUT_GONE,
   folderGone,
   listedGone,
   refusedTurn,
@@ -34,11 +36,22 @@ import {
   VERBOSE,
   VERBOSE_HISTORY,
   VERBOSE_SUMMARY,
-  aboutVerbose,
+  ABOUT_VERBOSE,
 } from './fake-panel';
-import { Refusal, SCRATCH, THREAD, WORKSPACE, bound, call, done, event } from './fake-records';
-import { discovered, signIn } from './fake-signin';
-import { PLANNING, PLANNING_HISTORY, type Planned, planned } from './fake-plan';
+import {
+  type Answers,
+  Refusal,
+  SCRATCH,
+  THREAD,
+  WORKSPACE,
+  answerFrom,
+  bound,
+  call,
+  done,
+  event,
+} from './fake-records';
+import { SIGN_IN, discovered } from './fake-signin';
+import { PLANNED, PLANNING, PLANNING_HISTORY, type Planned } from './fake-plan';
 import { RESEARCH, RESEARCH_HISTORY, sourcesOf } from './fake-sources';
 
 /**
@@ -367,9 +380,12 @@ export const MISSING_REPOSITORY = 'https://github.com/acme/missing';
  * Makes a project as `project/create` does: a name taken among the person's projects gets the
  * next free one, and a repository the host does not have is refused with what git said.
  */
-function makeProject(params: Record<string, unknown>, made: Project[]): unknown {
-  const folder = params['folder'] as { kind: string; url?: string } | null | undefined;
-  const url = folder?.url ?? '';
+function makeProject(
+  params: ProjectCreateParams,
+  made: Project[],
+): Methods['project/create']['result'] | Refusal {
+  const folder = params.folder;
+  const url = folder?.kind === 'repository' ? folder.url : '';
   if (folder?.kind === 'repository' && !/^https:\/\/[^/@]+\/./u.test(url)) {
     return new Refusal(
       -32602,
@@ -382,7 +398,7 @@ function makeProject(params: Record<string, unknown>, made: Project[]): unknown 
       `could not clone ${MISSING_REPOSITORY}: remote: Repository not found. If the repository is private, connect its git host first`,
     );
   }
-  const asked = String(params['name']);
+  const asked = params.name;
   const taken = new Set([PROJECT, ...made].map((each) => each.name.toLowerCase()));
   let name = asked;
   for (let next = 2; taken.has(name.toLowerCase()); next += 1) {
@@ -575,129 +591,102 @@ interface Known {
   readonly grouped: Grouped;
 }
 
+/** The calls the fake answers that are not turns, nor any other fake's. */
+const ANSWERS: Answers<Known> = {
+  'file/upload': (params) => keptFile(params),
+  'project/list': (_, { made, gone }) => {
+    const lost = listedGone(gone);
+    return { projects: [...made, ...lost.projects, PROJECT, PERSONAL], gone: lost.gone };
+  },
+  'project/create': (params, { made }) => makeProject(params, made),
+  'folder/list': (params) => listFolders(params.path ?? HOME),
+  'thread/list': (params, known) => {
+    const project = String(params.project);
+    const fresh = known.started.filter((each) => each.project === project);
+    const serving = known.commands !== null && project === PERSONAL.id ? [SERVING_CHAT] : [];
+    const research = known.research && project === PERSONAL.id ? [RESEARCHING] : [];
+    const verbose = known.panel && project === PROJECT.id ? [VERBOSE_THREAD] : [];
+    const plans = known.plan !== null && project === PROJECT.id ? [planning(known.plan)] : [];
+    const threads = [
+      ...[...fresh, ...serving, ...research, ...verbose, ...plans],
+      ...(THREADS[project] ?? []),
+    ];
+    return {
+      threads: threads.map((each) =>
+        known.touched.has(each.id) ? { ...each, updated_at: LATER } : each,
+      ),
+    };
+  },
+  'thread/get': ({ thread: id }, known) => {
+    if (id === PLANNING && known.plan !== null) {
+      return { thread: planning(known.plan) };
+    }
+    const listed = [RESEARCHING, VERBOSE_THREAD, SERVING_CHAT, ...Object.values(THREADS).flat()];
+    return { thread: listed.find((each) => each.id === id) ?? thread(id, 'Make the tests pass') };
+  },
+  'thread/sources': (params) => sourcesOf(params),
+  'thread/events': (params) => ({ events: HISTORIES[params.thread] ?? [] }),
+  'thread/changes': (params) => ({ changes: changesOf(HISTORIES[params.thread] ?? []) }),
+  'thread/steps': (params) => ({ steps: stepsOf(HISTORIES[params.thread] ?? []) }),
+  'thread/start': (params, { started }) => {
+    const inProject = params.project === PERSONAL.id ? PERSONAL : PROJECT;
+    const fresh = thread(NEW_THREAD, '', 'idle', inProject);
+    started.push(fresh);
+    return { thread: fresh };
+  },
+  'thread/rename': (params) => ({ thread: thread(params.thread, params.title) }),
+  'model/list': () => ({ models: MODELS }),
+  'tasks/list': () => ({ tasks: TASKS }),
+  'schedule/list': () => ({ schedules: [] }),
+  'memory/list': () => ({ memories: MEMORIES }),
+  'provider/list': () => ({
+    providers: [
+      {
+        id: '01900000-0000-7000-8000-000000000301',
+        kind: 'openrouter',
+        hint: 'a1b2',
+        models: [],
+      },
+    ],
+  }),
+  'credential/list': (_, { credentials }) => ({ credentials, device: true }),
+  'server/discover': () => discovered(),
+};
+
+/** Calls about acme, the project that asks to be trusted. */
+const TRUSTED: Answers<Known> = {
+  'project/list': () => ({ projects: [ACME, PROJECT, PERSONAL] }),
+  'thread/list': (params, { trust }) =>
+    params.project === ACME.id && trust !== null ? { threads: [trusting(trust)] } : undefined,
+  'thread/get': (params, { trust }) =>
+    params.thread === TRUSTING && trust !== null ? { thread: trusting(trust) } : undefined,
+  'trust/answer': (params, { trust }) => {
+    if (trust === null || params.ask !== TRUST_ASK.ask || !trust.asking) {
+      return new Refusal(-32026, 'this project changed since you were asked');
+    }
+    trust.asking = false;
+    return { thread: trusting(trust) };
+  },
+};
+
 /** The answer to a call that is not a turn. */
 function answer(method: string, params: Record<string, unknown>, known: Known): unknown {
-  const { started, made, trust, commands, credentials, touched, gone } = known;
-  if (trust !== null) {
-    const asked = trusted(method, params, trust);
-    if (asked !== undefined) {
-      return asked;
-    }
+  const { trust, commands, gone } = known;
+  const asked = trust === null ? undefined : answerFrom(TRUSTED, method, params, known);
+  if (asked !== undefined) {
+    return asked;
   }
-  const verbose = known.panel ? aboutVerbose(method, params) : undefined;
-  if (verbose !== undefined) {
-    return verbose;
-  }
-  const ran =
+  return (
+    (known.panel ? answerFrom(ABOUT_VERBOSE, method, params, null) : undefined) ??
     background(method, params, commands) ??
-    (gone === null ? undefined : aboutGone(method, params, gone)) ??
-    (known.plan === null ? undefined : planned(method, params, known.plan));
-  if (ran !== undefined) {
-    return ran;
-  }
-  switch (method) {
-    case 'file/upload':
-      return keptFile(params);
-    case 'project/list': {
-      const lost = listedGone(gone);
-      return { projects: [...made, ...lost.projects, PROJECT, PERSONAL], gone: lost.gone };
-    }
-    case 'project/create':
-      return makeProject(params, made);
-    case 'folder/list':
-      return listFolders(typeof params['path'] === 'string' ? params['path'] : HOME);
-    case 'thread/list': {
-      const project = String(params['project']);
-      const fresh = started.filter((each) => each.project === project);
-      const serving = commands !== null && project === PERSONAL.id ? [SERVING_CHAT] : [];
-      const research = known.research && project === PERSONAL.id ? [RESEARCHING] : [];
-      const verbose = known.panel && project === PROJECT.id ? [VERBOSE_THREAD] : [];
-      const plans = known.plan !== null && project === PROJECT.id ? [planning(known.plan)] : [];
-      const threads = [
-        ...[...fresh, ...serving, ...research, ...verbose, ...plans],
-        ...(THREADS[project] ?? []),
-      ];
-      return {
-        threads: threads.map((each) =>
-          touched.has(each.id) ? { ...each, updated_at: LATER } : each,
-        ),
-      };
-    }
-    case 'thread/get': {
-      const id = String(params['thread']);
-      if (id === PLANNING && known.plan !== null) {
-        return { thread: planning(known.plan) };
-      }
-      const listed = [RESEARCHING, VERBOSE_THREAD, SERVING_CHAT, ...Object.values(THREADS).flat()];
-      return { thread: listed.find((each) => each.id === id) ?? thread(id, 'Make the tests pass') };
-    }
-    case 'thread/sources':
-      return sourcesOf(params);
-    case 'thread/events':
-      return { events: HISTORIES[String(params['thread'])] ?? [] };
-    case 'thread/changes':
-      return { changes: changesOf(HISTORIES[String(params['thread'])] ?? []) };
-    case 'thread/steps':
-      return { steps: stepsOf(HISTORIES[String(params['thread'])] ?? []) };
-    case 'thread/start': {
-      const inProject = params['project'] === PERSONAL.id ? PERSONAL : PROJECT;
-      const fresh = thread(NEW_THREAD, '', 'idle', inProject);
-      started.push(fresh);
-      return { thread: fresh };
-    }
-    case 'thread/rename':
-      return { thread: thread(String(params['thread']), String(params['title'])) };
-    case 'model/list':
-      return { models: MODELS };
-    case 'tasks/list':
-      return { tasks: TASKS };
-    case 'schedule/list':
-      return { schedules: [] };
-    case 'memory/list':
-      return { memories: MEMORIES };
-    case 'provider/list':
-      return {
-        providers: [
-          {
-            id: '01900000-0000-7000-8000-000000000301',
-            kind: 'openrouter',
-            hint: 'a1b2',
-            models: [],
-          },
-        ],
-      };
-    case 'credential/list':
-      return { credentials, device: true };
-    case 'server/discover':
-      return discovered();
-    default:
-      return (
-        signIn(method, params) ??
-        keptAwake(method, params, known.awake) ??
-        keptGrouping(method, params, known.grouped) ??
-        {}
-      );
-  }
-}
-
-/** The answer to a call about acme, the project that asks to be trusted; else `undefined`. */
-function trusted(method: string, params: Record<string, unknown>, trust: Trust): unknown {
-  switch (method) {
-    case 'project/list':
-      return { projects: [ACME, PROJECT, PERSONAL] };
-    case 'thread/list':
-      return params['project'] === ACME.id ? { threads: [trusting(trust)] } : undefined;
-    case 'thread/get':
-      return params['thread'] === TRUSTING ? { thread: trusting(trust) } : undefined;
-    case 'trust/answer':
-      if (params['ask'] !== TRUST_ASK.ask || !trust.asking) {
-        return new Refusal(-32026, 'this project changed since you were asked');
-      }
-      trust.asking = false;
-      return { thread: trusting(trust) };
-    default:
-      return undefined;
-  }
+    (gone === null ? undefined : answerFrom(ABOUT_GONE, method, params, gone)) ??
+    (known.plan === null ? undefined : answerFrom(PLANNED, method, params, known.plan)) ??
+    answerFrom(ANSWERS, method, params, known) ??
+    answerFrom(SIGN_IN, method, params, null) ??
+    answerFrom(KEPT_AWAKE, method, params, known.awake) ??
+    answerFrom(KEPT_GROUPING, method, params, known.grouped) ??
+    {}
+  );
 }
 
 /**

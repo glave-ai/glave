@@ -16,13 +16,13 @@ use glave_ports::BoxFuture;
 use glave_ports::computer::{ComputerError, Isolation};
 use k8s_openapi::api::core::v1::Pod;
 use k8s_openapi::api::networking::v1::NetworkPolicy;
-use kube::api::{AttachParams, DeleteParams, LogParams, PostParams};
+use kube::api::{AttachParams, DeleteParams, ListParams, LogParams, PostParams};
 use kube::config::{KubeConfigOptions, Kubeconfig};
 use kube::{Api, Client, Config};
 use serde_json::Value;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
-use super::backend::{Backend, COPIED_WITHIN, Link, Spec, Started};
+use super::backend::{Backend, COPIED_WITHIN, Link, Listed, STARTED_BY, Spec, Started};
 use super::docker::elf_machine;
 use crate::token::Token;
 use objects::{Progress, Shape};
@@ -330,6 +330,48 @@ impl Backend for Kubernetes {
         token: &'a Token,
     ) -> BoxFuture<'a, Result<(), ComputerError>> {
         Box::pin(async move { self.copy_in(name, &super::tar::token_file(token)?).await })
+    }
+
+    fn list(&self) -> BoxFuture<'_, Result<Vec<Listed>, ComputerError>> {
+        Box::pin(async move {
+            let selector: Vec<String> = std::iter::once(objects::LABEL.to_owned())
+                .chain(
+                    self.labels
+                        .iter()
+                        .map(|(key, value)| format!("{key}={value}")),
+                )
+                .collect();
+            let params = ListParams::default().labels(&selector.join(","));
+            let pods = self
+                .pods()
+                .list(&params)
+                .await
+                .map_err(|error| failed("could not list the workers", error))?;
+            let policies =
+                self.policies().list(&params).await.map_err(|error| {
+                    failed("could not list the workers' network policies", error)
+                })?;
+            // A policy without its Pod is what a glave that ended between the two left.
+            let mut listed = BTreeMap::new();
+            let metadata = pods
+                .items
+                .into_iter()
+                .map(|pod| pod.metadata)
+                .chain(policies.items.into_iter().map(|policy| policy.metadata));
+            for metadata in metadata {
+                let Some(name) = metadata.name else {
+                    continue;
+                };
+                let started_by = metadata
+                    .annotations
+                    .and_then(|mut annotations| annotations.remove(STARTED_BY));
+                listed.entry(name).or_insert(started_by);
+            }
+            Ok(listed
+                .into_iter()
+                .map(|(name, started_by)| Listed { name, started_by })
+                .collect())
+        })
     }
 
     fn remove<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<(), ComputerError>> {

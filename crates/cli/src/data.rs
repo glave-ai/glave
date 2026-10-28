@@ -3,11 +3,12 @@
 //! organization runs. Either way the event log, the blobs, the projects and their keys come from
 //! the one store, through the same ports.
 
+use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context as _;
 use glave_bucket::Bucket;
-use glave_config::policy::StoreFile;
+use glave_config::policy::{Chosen, Source, StoreFile};
 use glave_event::{BlobRef, PrincipalId, RawEvent, Seq, Sha256, ThreadId};
 use glave_keys::KeyMaterial;
 use glave_ports::search::Found;
@@ -57,6 +58,13 @@ impl Data {
     /// The store the choices name: `[store] url` or GLAVE_STORE_URL, else the local file; and
     /// `[store] bucket` or GLAVE_STORE_BUCKET, else the folder.
     pub(crate) async fn chosen(choices: &glave_config::policy::Choices) -> anyhow::Result<Self> {
+        if let Some(file) = choices.store.as_ref().and_then(password_in_file) {
+            tracing::warn!(
+                file = %file.display(),
+                "the data store's password is written in this file; it belongs in the \
+                 environment, as GLAVE_STORE_URL from the organization's secret manager"
+            );
+        }
         let url = choices.store.as_ref().map(|url| url.value.as_str());
         let bucket = choices.bucket.as_ref().map(|bucket| bucket.value.as_str());
         Self::open(url, bucket).await
@@ -153,6 +161,15 @@ impl Data {
             Self::Sqlite(store) => store.identity(new).await?,
             Self::Postgres(store) => store.identity(new).await?,
         })
+    }
+}
+
+/// The settings file that holds the store's password, when one does: a password belongs in
+/// the environment (`specs/storage.md`, "Which stores"). Only the file is named, never the URL.
+fn password_in_file(store: &Chosen<String>) -> Option<&Path> {
+    match &store.from {
+        Source::File(file) if glave_config::policy::has_password(&store.value) => Some(file),
+        _ => None,
     }
 }
 
@@ -318,5 +335,33 @@ impl BlobStore for DataBlobs {
             Self::Sqlite(blobs) => blobs.sweep(org).await,
             Self::Postgres(blobs) => blobs.sweep(org).await,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    #[test]
+    fn only_a_password_written_in_a_file_is_pointed_at_the_environment() {
+        let file = PathBuf::from("/srv/glave/config.toml");
+        let store = |value: &str, from: Source| Chosen {
+            value: value.to_owned(),
+            from,
+        };
+        let written = store(
+            "postgres://glave:s3cret@db/glave",
+            Source::File(file.clone()),
+        );
+        assert_eq!(password_in_file(&written), Some(file.as_path()));
+        let set = store(
+            "postgres://glave:s3cret@db/glave",
+            Source::Env("GLAVE_STORE_URL"),
+        );
+        assert_eq!(password_in_file(&set), None);
+        let none = store("postgres://glave@db/glave", Source::File(file));
+        assert_eq!(password_in_file(&none), None);
     }
 }

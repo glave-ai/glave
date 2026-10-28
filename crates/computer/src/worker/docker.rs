@@ -1,8 +1,11 @@
 //! Workers on Docker: a container per worker from the environment's pinned image, with CPU,
 //! memory and process limits, no new privileges, and either no network at all or the default
-//! bridge with glave's port published on 127.0.0.1 only. glave goes in as a file before the
-//! container starts (a Linux build for the engine's processor, from a path the person sets),
-//! with the TLS identity and token the harness side made for this worker.
+//! bridge with glave's port published on 127.0.0.1 only. Every worker's standard input is
+//! attached and held by the glave that started it: when that glave ends, however it ends, Docker
+//! closes it and the worker's glave ends, which stops the container (a later glave removes it).
+//! glave goes in as a file before the container starts (a Linux build for the engine's
+//! processor, from a path the person sets), with the TLS identity and token the harness side
+//! made for this worker.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -14,7 +17,7 @@ use http::{Method, StatusCode};
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
-use super::backend::{Backend, COPIED_WITHIN, Link, PORT, Spec, Started};
+use super::backend::{Backend, COPIED_WITHIN, Link, Listed, PORT, STARTED_BY, Spec, Started};
 use super::engine::{ANSWERS_WITHIN, Engine, PULL_QUIET, Within, demultiplex, query};
 use super::tar::{Entry, archive};
 use crate::token::Token;
@@ -145,6 +148,13 @@ impl Docker {
     fn container(&self, name: &str, spec: &Spec) -> Value {
         let mut labels = self.labels.clone();
         labels.insert(LABEL.to_owned(), name.to_owned());
+        if let Some(starter) = spec
+            .starter
+            .as_ref()
+            .and_then(|starter| serde_json::to_string(starter).ok())
+        {
+            labels.insert(STARTED_BY.to_owned(), starter);
+        }
         let command = if spec.network {
             json!([
                 format!("{HOME}/glave"),
@@ -152,7 +162,8 @@ impl Docker {
                 "serve",
                 "--tls",
                 format!("0.0.0.0:{PORT}"),
-                format!("{HOME}/tls")
+                format!("{HOME}/tls"),
+                "--until-input-ends"
             ])
         } else {
             json!([format!("{HOME}/glave"), "computer", "serve", "--stdio"])
@@ -197,9 +208,11 @@ impl Docker {
             "Env": env,
             "Labels": labels,
             "ExposedPorts": if spec.network { json!({ port: {} }) } else { json!({}) },
-            "OpenStdin": !spec.network,
-            "StdinOnce": !spec.network,
-            "AttachStdin": !spec.network,
+            // Every worker's standard input is held by the glave that started it, and closed
+            // when that glave ends, however it ends: the worker's glave then ends too.
+            "OpenStdin": true,
+            "StdinOnce": true,
+            "AttachStdin": true,
             "AttachStdout": !spec.network,
             "AttachStderr": !spec.network,
             "HostConfig": host,
@@ -289,22 +302,27 @@ impl Docker {
                 put.message()
             )));
         }
-        let link = if spec.network {
-            None
-        } else {
-            let path = format!("/containers/{name}/attach?stream=1&stdin=1&stdout=1&stderr=1");
-            Some(self.engine.upgrade(&path).await?)
-        };
+        // Attached before it starts, so its input is held from its first moment.
+        let output = u8::from(!spec.network);
+        let path =
+            format!("/containers/{name}/attach?stream=1&stdin=1&stdout={output}&stderr={output}");
+        let attached = self.engine.upgrade(&path).await?;
         self.ok(Method::POST, &format!("/containers/{name}/start"), None)
             .await?;
-        match link {
-            Some(attached) => Ok(stream(attached)),
-            None => self.published(name, spec).await,
+        if spec.network {
+            self.published(name, spec, held(attached)).await
+        } else {
+            Ok(stream(attached))
         }
     }
 
-    /// Where the worker's published port is, on 127.0.0.1.
-    async fn published(&self, name: &str, spec: &Spec) -> Result<Link, ComputerError> {
+    /// Where the worker's published port is, on 127.0.0.1; `holding` holds its input.
+    async fn published(
+        &self,
+        name: &str,
+        spec: &Spec,
+        holding: tokio::task::JoinHandle<()>,
+    ) -> Result<Link, ComputerError> {
         let inspected = self
             .ok(Method::GET, &format!("/containers/{name}/json"), None)
             .await?;
@@ -317,11 +335,18 @@ impl Docker {
                     "the worker has no published port: {}",
                     Self::why_stopped(&inspected)
                 ))
-            })?;
+            });
+        let port = match port {
+            Ok(port) => port,
+            Err(error) => {
+                holding.abort();
+                return Err(error);
+            }
+        };
         Ok(Link::Tls {
             address: std::net::SocketAddr::from(([127, 0, 0, 1], port)),
             fingerprint: spec.identity.fingerprint.clone(),
-            forward: None,
+            forward: Some(holding),
         })
     }
 
@@ -387,6 +412,20 @@ fn socket(home: Option<&Path>) -> PathBuf {
         Some(desktop) if !linux.exists() && desktop.exists() => desktop,
         _ => linux,
     }
+}
+
+/// Holds a worker's input, attached with no output, until the worker ends or the task is
+/// stopped: when the glave holding it ends, the connection closes and Docker closes the
+/// worker's input.
+fn held(
+    attached: hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut attached = attached;
+        let mut read = [0_u8; 64];
+        // Nothing comes back but the end, when the worker stops.
+        while matches!(attached.read(&mut read).await, Ok(n) if n > 0) {}
+    })
 }
 
 /// A stream link over an attached container: its multiplexed output split so glave's standard
@@ -467,6 +506,41 @@ impl Backend for Docker {
                     put.message()
                 )))
             }
+        })
+    }
+
+    fn list(&self) -> BoxFuture<'_, Result<Vec<Listed>, ComputerError>> {
+        Box::pin(async move {
+            let labels: Vec<String> = std::iter::once(LABEL.to_owned())
+                .chain(
+                    self.labels
+                        .iter()
+                        .map(|(key, value)| format!("{key}={value}")),
+                )
+                .collect();
+            let filter = query(&json!({ "label": labels }).to_string());
+            let found = self
+                .ok(
+                    Method::GET,
+                    &format!("/containers/json?all=1&filters={filter}"),
+                    None,
+                )
+                .await?;
+            Ok(found
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|container| {
+                    let labels = container.get("Labels")?;
+                    Some(Listed {
+                        name: labels.get(LABEL)?.as_str()?.to_owned(),
+                        started_by: labels
+                            .get(STARTED_BY)
+                            .and_then(Value::as_str)
+                            .map(str::to_owned),
+                    })
+                })
+                .collect())
         })
     }
 
