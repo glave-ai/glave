@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use glave_ports::host::CLOUD_METADATA;
 use serde_json::{Value, json};
 
-use super::super::backend::{PORT, Spec};
+use super::super::backend::{PORT, STARTED_BY, Spec};
 use super::super::tar::{Entry, TooLong, archive};
 
 /// The container that runs the work.
@@ -53,6 +53,22 @@ impl Shape<'_> {
         let mut labels = self.labels.clone();
         labels.insert(LABEL.to_owned(), self.name.to_owned());
         labels
+    }
+
+    /// The worker's annotations: the glave that started it, when known ([`STARTED_BY`]),
+    /// which a label's value cannot hold.
+    fn annotations(&self) -> BTreeMap<String, String> {
+        self.spec
+            .starter
+            .as_ref()
+            .and_then(|starter| serde_json::to_string(starter).ok())
+            .map(|starter| BTreeMap::from([(STARTED_BY.to_owned(), starter)]))
+            .unwrap_or_default()
+    }
+
+    /// The metadata of each of the worker's objects.
+    fn metadata(&self) -> Value {
+        json!({"name": self.name, "labels": self.labels(), "annotations": self.annotations()})
     }
 
     /// The Pod: the environment's image running the wait, then glave serving over TLS on
@@ -127,7 +143,7 @@ impl Shape<'_> {
         json!({
             "apiVersion": "v1",
             "kind": "Pod",
-            "metadata": {"name": self.name, "labels": self.labels()},
+            "metadata": self.metadata(),
             "spec": {
                 "containers": [container],
                 "volumes": volumes,
@@ -169,7 +185,7 @@ impl Shape<'_> {
         json!({
             "apiVersion": "networking.k8s.io/v1",
             "kind": "NetworkPolicy",
-            "metadata": {"name": self.name, "labels": self.labels()},
+            "metadata": self.metadata(),
             "spec": {
                 "podSelector": {"matchLabels": {LABEL: self.name}},
                 "policyTypes": ["Ingress", "Egress"],
@@ -317,6 +333,7 @@ mod tests {
                 std::time::Duration::from_secs(60),
             )
             .unwrap(),
+            starter: glave_process::Glave::this(),
         }
     }
 
@@ -348,6 +365,11 @@ mod tests {
         assert_eq!(
             pod["metadata"]["labels"],
             json!({"glave.test": "run", "glave.worker": "glave-worker-1"})
+        );
+        let starter = serde_json::to_string(&spec.starter).unwrap();
+        assert_eq!(
+            pod["metadata"]["annotations"],
+            json!({"glave.started-by": starter})
         );
         let command = container["command"].to_string();
         assert!(command.contains("\"--tls\",\"0.0.0.0:7070\""), "{command}");

@@ -11,10 +11,13 @@
 //! another process, and is never touched. A program its caller waits for
 //! ([`Processes::output`]) starts the same way, and ends with the call, within the time the
 //! caller gives it, its group killed whole if it does not; the person's server
-//! ([`Program::detach`]) is a glave of its own.
+//! ([`Program::detach`]) is a glave of its own. What glave starts outside this computer's
+//! processes (workers) names the [`Glave`] that started it, so a later glave tells whether
+//! that one is gone.
 
 mod child;
 mod error;
+mod glave;
 mod group;
 mod ledger;
 mod lifeline;
@@ -30,6 +33,7 @@ mod within;
 
 pub use child::Child;
 pub use error::ProcessError;
+pub use glave::Glave;
 pub use lifeline::helper::lifeline_helper;
 pub use lifeline::this_program;
 pub use owner::Owner;

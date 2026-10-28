@@ -14,7 +14,7 @@ use http::{Method, StatusCode};
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
-use super::backend::{Backend, COPIED_WITHIN, Link, PORT, Spec, Started};
+use super::backend::{Backend, COPIED_WITHIN, Link, Listed, PORT, STARTED_BY, Spec, Started};
 use super::engine::{ANSWERS_WITHIN, Engine, PULL_QUIET, Within, demultiplex, query};
 use super::tar::{Entry, archive};
 use crate::token::Token;
@@ -145,6 +145,13 @@ impl Docker {
     fn container(&self, name: &str, spec: &Spec) -> Value {
         let mut labels = self.labels.clone();
         labels.insert(LABEL.to_owned(), name.to_owned());
+        if let Some(starter) = spec
+            .starter
+            .as_ref()
+            .and_then(|starter| serde_json::to_string(starter).ok())
+        {
+            labels.insert(STARTED_BY.to_owned(), starter);
+        }
         let command = if spec.network {
             json!([
                 format!("{HOME}/glave"),
@@ -467,6 +474,41 @@ impl Backend for Docker {
                     put.message()
                 )))
             }
+        })
+    }
+
+    fn list(&self) -> BoxFuture<'_, Result<Vec<Listed>, ComputerError>> {
+        Box::pin(async move {
+            let labels: Vec<String> = std::iter::once(LABEL.to_owned())
+                .chain(
+                    self.labels
+                        .iter()
+                        .map(|(key, value)| format!("{key}={value}")),
+                )
+                .collect();
+            let filter = query(&json!({ "label": labels }).to_string());
+            let found = self
+                .ok(
+                    Method::GET,
+                    &format!("/containers/json?all=1&filters={filter}"),
+                    None,
+                )
+                .await?;
+            Ok(found
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|container| {
+                    let labels = container.get("Labels")?;
+                    Some(Listed {
+                        name: labels.get(LABEL)?.as_str()?.to_owned(),
+                        started_by: labels
+                            .get(STARTED_BY)
+                            .and_then(Value::as_str)
+                            .map(str::to_owned),
+                    })
+                })
+                .collect())
         })
     }
 
