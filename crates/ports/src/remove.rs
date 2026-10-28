@@ -4,11 +4,22 @@
 use std::io::ErrorKind;
 use std::path::Path;
 
-/// Removes `path` and everything in it, first letting its owner write every folder inside
-/// (links are never followed). A path that is already gone is not an error. Blocking.
+/// Removes `path` and everything in it, letting its owner write every folder inside when a
+/// plain removal fails (links are never followed). A path that is already gone is not an
+/// error. Blocking.
 pub fn remove_tree(path: &Path) -> std::io::Result<()> {
+    // Tried first: it works below `path` through open folders, so no path inside is too long
+    // for the system, as the walk that makes folders writable, by whole paths, can be (#922).
+    if gone(std::fs::remove_dir_all(path)).is_ok() {
+        return Ok(());
+    }
     writable(path)?;
-    match std::fs::remove_dir_all(path) {
+    gone(std::fs::remove_dir_all(path))
+}
+
+/// `removed`, with a path that was gone already taken as removed.
+fn gone(removed: std::io::Result<()>) -> std::io::Result<()> {
+    match removed {
         Err(error) if error.kind() != ErrorKind::NotFound => Err(error),
         _ => Ok(()),
     }
@@ -58,5 +69,27 @@ mod tests {
         remove_tree(&dir).unwrap();
         assert!(!dir.exists());
         remove_tree(&dir).unwrap();
+    }
+
+    #[test]
+    fn removes_a_tree_whose_paths_are_longer_than_the_system_takes() {
+        let dir = std::env::temp_dir().join(format!("glave-remove-long-{}", std::process::id()));
+        let long = |n: char| n.to_string().repeat(250);
+        // Each path made is short; the folders moved under one another nest past 4,096 bytes,
+        // longer than macOS (1,024) or Linux (4,096) takes in one path.
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut deepest = dir.clone();
+        for n in ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] {
+            let made = dir.join(format!("{n}.made"));
+            let chain = made.join(long(n)).join(long(n));
+            std::fs::create_dir_all(&chain).unwrap();
+            std::fs::write(chain.join("file"), "x").unwrap();
+            if deepest != dir {
+                std::fs::rename(&deepest, chain.join("under")).unwrap();
+            }
+            deepest = made;
+        }
+        remove_tree(&dir).unwrap();
+        assert!(!dir.exists());
     }
 }
