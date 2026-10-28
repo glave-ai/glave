@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use glave_event::{Body, Event, PrincipalId, RawEvent, Seq, ThreadId, decode};
 use glave_ports::{EventLog, Located, LogError, ProjectId, Scope};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 
 use crate::protocol::{Notification, Setting};
 
@@ -30,6 +30,9 @@ pub(crate) struct Hub {
     /// Each thread that changed, in its project, and each person's setting, for the watches
     /// of lists.
     changes: broadcast::Sender<Change>,
+    /// Told each time a browser's sign-in here may have ended, for the watches that follow
+    /// one (`access.rs`).
+    sign_ins: watch::Sender<()>,
 }
 
 impl Default for Hub {
@@ -38,6 +41,7 @@ impl Default for Hub {
             channels: Mutex::default(),
             parents: Mutex::default(),
             changes: broadcast::channel(BACKLOG).0,
+            sign_ins: watch::channel(()).0,
         }
     }
 }
@@ -98,6 +102,16 @@ impl Hub {
     /// Starts hearing which threads and settings change, from now on.
     pub(crate) fn changes(&self) -> broadcast::Receiver<Change> {
         self.changes.subscribe()
+    }
+
+    /// Starts hearing when a browser's sign-in may have ended, from now on.
+    pub(crate) fn sign_ins(&self) -> watch::Receiver<()> {
+        self.sign_ins.subscribe()
+    }
+
+    /// Tells every watch that follows a browser's sign-in that one may have ended.
+    pub(crate) fn sign_ins_changed(&self) {
+        self.sign_ins.send_replace(());
     }
 
     /// Tells the watches of lists that `person`'s `setting` changed (`None`: the local

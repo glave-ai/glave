@@ -250,6 +250,16 @@ impl Browsers {
         Ok(id.to_string())
     }
 
+    /// Whether the session `id` is still signed in, as far as this server has read: what
+    /// follows a browser's streams checks once a session here may have ended.
+    pub fn signed_in(&self, id: &str) -> bool {
+        let Ok(id) = Uuid::parse_str(id) else {
+            return false;
+        };
+        let now = self.clock.now();
+        self.state().live(now).any(|session| session.id == id)
+    }
+
     /// Ends the session `id`.
     pub async fn end(&self, id: &str) -> Result<(), BrowserError> {
         let Ok(id) = Uuid::parse_str(id) else {

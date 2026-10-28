@@ -173,10 +173,14 @@ fn signing_out_ends_a_session_and_other_browsers_end_theirs() {
         let [this, other, gone] = sessions.as_slice() else {
             panic!("three sessions");
         };
+        assert!(browsers.signed_in(&gone.id));
         browsers.end(&gone.id).await.unwrap();
         assert!(browsers.verify(gone.token.expose(), true).await.is_err());
+        assert!(!browsers.signed_in(&gone.id));
         browsers.end_others(Some(&this.id)).await.unwrap();
         assert!(browsers.verify(other.token.expose(), true).await.is_err());
+        assert!(!browsers.signed_in(&other.id));
+        assert!(browsers.signed_in(&this.id));
         assert_eq!(
             browsers.verify(this.token.expose(), true).await.unwrap(),
             this.id

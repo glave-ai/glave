@@ -11,6 +11,7 @@ use glave_harness::{Cancel, HarnessError, Live, Said, Thread};
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider, Scope};
 use tokio::sync::watch;
 
+use crate::access::access_ended;
 use crate::choice::Choice;
 use crate::held::{Finish, Use, busy, finished};
 use crate::hub::Hub;
@@ -92,6 +93,12 @@ impl TurnStream {
             };
             match came {
                 Came::Watched(Some(Watched::Note(note))) => return Some(TurnItem::Note(note)),
+                // The caller's sign-in ended: nothing more is theirs to follow, though the turn
+                // goes on.
+                Came::Watched(Some(Watched::Ended(Err(refused)))) if access_ended(&refused) => {
+                    self.ended = true;
+                    return Some(TurnItem::Ended(Err(refused)));
+                }
                 // The thread was deleted, or its log could not be read: the ending still comes.
                 Came::Watched(_) => self.watch = None,
                 Came::Ending(ended) => self.ending = Some(ended),
@@ -193,7 +200,7 @@ where
         let claimed = key.map(|key| self.inner.keyed.claim(caller.person, thread, key, &done));
         let claim = match claimed {
             Some(Claimed::Before(kept)) => {
-                return self.sent_before(scope, thread, model, kept).await;
+                return self.sent_before(caller, scope, thread, model, kept).await;
             }
             Some(Claimed::Mine(claim)) => Some(claim),
             None => None,
@@ -217,7 +224,7 @@ where
                     Err(refused) => break Err(refused),
                 }
             }
-            let watch = match self.watch_from_now(scope, thread).await {
+            let watch = match self.watch_from_now(caller, scope, thread).await {
                 Ok(watch) => watch,
                 Err(failed) => break Err(failed),
             };
@@ -251,10 +258,12 @@ where
         sent
     }
 
-    /// What a send to `thread` with a key already did, `kept`, for a retry with the same key:
-    /// the turn it started, to `model`, followed again, or the id it queued its message under.
+    /// What a send to `thread` with a key already did, `kept`, for `caller`'s retry with the
+    /// same key: the turn it started, to `model`, followed again, or the id it queued its
+    /// message under.
     async fn sent_before(
         &self,
+        caller: &Caller,
         scope: Scope,
         thread: ThreadId,
         model: String,
@@ -266,7 +275,7 @@ where
         };
         let running = started.borrow().is_none();
         let watch = if running {
-            Some(self.watch_from_now(scope, thread).await?)
+            Some(self.watch_from_now(caller, scope, thread).await?)
         } else {
             None
         };

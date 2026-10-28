@@ -87,7 +87,7 @@ where
             return Err(ApiError::from(&HarnessError::NoPlan(thread)));
         }
         let (finish, done) = watch::channel(None);
-        let watch = self.watch_from_now(scope, thread).await?;
+        let watch = self.watch_from_now(caller, scope, thread).await?;
         let caller = caller.clone();
         let followed = finish.clone();
         let work = move |inner: Arc<crate::server::Inner<P, L, B>>, mut held, cancel| async move {
