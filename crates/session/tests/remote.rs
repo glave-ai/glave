@@ -2,8 +2,8 @@
 //! HTTP transport and a connection of lines, as on the person's Unix socket: requests
 //! answered, a turn followed as the same items as in-process, an approval asked in the stream
 //! and answered with a second request while it waits, a message sent while a turn runs answered
-//! as queued, and a wrong token refused saying how to sign in. A client that leaves a
-//! connection of lines mid-turn stops nothing.
+//! as queued, a page of a thread's events read as in-process, and a wrong token refused saying
+//! how to sign in. A client that leaves a connection of lines mid-turn stops nothing.
 
 use std::sync::Arc;
 
@@ -19,7 +19,7 @@ use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
 use crate::support::issuer::fixed_clock;
-use crate::support::web::serve_with;
+use crate::support::web::{Served, serve_with};
 use crate::support::*;
 
 /// The answers of a turn that asks once to run a command, then is done.
@@ -139,6 +139,15 @@ fn a_turn_elsewhere_streams_and_its_approvals_are_answered_as_here() {
     });
 }
 
+/// `server` served over HTTP, signed in with a local token, and a client of it signed in.
+async fn over_http(server: &Tested) -> (Remote, Served) {
+    let token = LocalToken::new([9; 32]);
+    let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
+    let web = serve_with(server.clone(), signin, None).await;
+    let http = Remote::new(&web.url, token.reveal().to_owned()).unwrap();
+    (http, web)
+}
+
 #[test]
 fn a_turn_over_a_connection_of_lines_is_followed_and_answered_as_over_http() {
     block_on!(async {
@@ -171,10 +180,7 @@ fn a_message_sent_while_a_turn_runs_is_answered_as_queued_over_http_and_lines() 
         let mut setup = Setup::new(answers);
         setup.gate = Some(Arc::clone(&gate));
         let (server, seen) = setup.build(&dir).await;
-        let token = LocalToken::new([9; 32]);
-        let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
-        let web = serve_with(server.clone(), signin, None).await;
-        let http = Remote::new(&web.url, token.reveal().to_owned()).unwrap();
+        let (http, web) = over_http(&server).await;
         let (lines, serving) = over_lines(&server);
         let thread = thread_through(&http).await;
         let mut running = stream_turn(&server, thread, "one", None).await.unwrap();
@@ -234,5 +240,59 @@ fn a_client_that_leaves_mid_turn_stops_nothing_and_the_turn_finishes() {
         // The connection's requests end with the turn they followed; writing to the client
         // that left failed, which is all.
         let _written = serving.await.unwrap();
+    });
+}
+
+/// `thread/events` through `remote`, `limit` events from the start, or all of them.
+async fn page_through(
+    remote: &Remote,
+    thread: glave_event::ThreadId,
+    limit: Option<usize>,
+) -> serde_json::Value {
+    let page = Request::ThreadEvents {
+        thread,
+        after: None,
+        limit,
+    };
+    let read = remote.request(&page).await.unwrap();
+    assert!(matches!(read, Reply::Events { .. }), "{read:?}");
+    serde_json::to_value(read).unwrap()
+}
+
+#[test]
+fn a_page_of_events_reads_through_the_client_as_in_process_over_http_and_lines() {
+    block_on!(async {
+        let dir = folder("remote-events");
+        let server = server(&dir, asking_once(), Answering::NoOne).await;
+        let (http, web) = over_http(&server).await;
+        let (lines, serving) = over_lines(&server);
+        let thread = thread_through(&http).await;
+        let mut turn = stream_turn(&server, thread, "touch it", None)
+            .await
+            .unwrap();
+        turn.finish().await.unwrap();
+        for limit in [None, Some(2)] {
+            let page = Request::ThreadEvents {
+                thread,
+                after: None,
+                limit,
+            };
+            let here = serde_json::to_value(server.request(page).await.unwrap()).unwrap();
+            // The whole page, and the first two with where the next page starts.
+            let read = here["events"].as_array().unwrap().len();
+            assert_eq!(read > 2, limit.is_none(), "{here}");
+            assert_eq!(here["next"].is_null(), limit.is_none(), "{here}");
+            for remote in [&http, &lines] {
+                assert_eq!(
+                    page_through(remote, thread, limit).await,
+                    here,
+                    "{}",
+                    remote.url()
+                );
+            }
+        }
+        drop((http, lines));
+        web.close().await;
+        serving.await.unwrap().unwrap();
     });
 }

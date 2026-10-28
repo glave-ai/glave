@@ -143,21 +143,11 @@ impl OverJsonRpc {
     }
 }
 
-/// What a response says, as the scenarios read it: the result as JSON, or the error. Kept as
-/// JSON: a reply holding events cannot be read back as a `Reply`, whose untagged variants
-/// cannot hold raw JSON.
+/// What a response says, as the scenarios read it: read as a client of a server elsewhere
+/// reads it ([`rpc::outcome`]), a page of events included (#241), then as JSON again.
 fn outcome(message: &Value) -> Result<Value, ApiError> {
     assert_eq!(message["jsonrpc"], "2.0");
-    match message.get("error") {
-        Some(error) => Err(
-            serde_json::from_value(error.clone()).unwrap_or_else(|err| ApiError {
-                code: 0,
-                message: format!("unreadable error: {err}").into(),
-                data: None,
-            }),
-        ),
-        None => Ok(message["result"].clone()),
-    }
+    rpc::outcome(message).map(|reply| serde_json::to_value(reply).unwrap())
 }
 
 /// How a turn ended, from its response.
