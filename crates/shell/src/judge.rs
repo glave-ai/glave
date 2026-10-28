@@ -12,20 +12,38 @@ pub struct Context<'a> {
     pub project: &'a Path,
     /// The person's home folder, for `~` and `$HOME`.
     pub home: Option<&'a Path>,
-    /// The temporary folder, where removing things is ordinary.
+    /// The temporary folder, where removing things is ordinary, unless the project is in it.
     pub temp: Option<&'a Path>,
     /// Whether a path names a file that usually holds secrets.
     pub secret: &'a dyn Fn(&Path) -> bool,
 }
 
 impl Context<'_> {
-    /// Whether `path` is in a temporary folder.
+    /// Whether `path` is somewhere removing things is ordinary: in a temporary folder the
+    /// project is not in. A project in a temporary folder (a scratch project, an eval's
+    /// workspace) has neighbours there that glave did not make, so from it, deleting beside or
+    /// above it is outside the project like anywhere else. The nearest temporary folder holding
+    /// `path` decides, so `$TMPDIR` of its own stays ordinary inside one that holds the project.
     pub(crate) fn temporary(&self, path: &Path) -> bool {
-        ["/tmp", "/private/tmp", "/var/folders"]
-            .iter()
-            .any(|folder| path.starts_with(folder))
-            || self.temp.is_some_and(|temp| path.starts_with(temp))
+        let path = unaliased(path);
+        [Path::new("/tmp"), Path::new("/var/folders")]
+            .into_iter()
+            .chain(self.temp.map(unaliased))
+            .filter(|folder| path.starts_with(folder))
+            .max_by_key(|folder| folder.components().count())
+            .is_some_and(|nearest| !unaliased(self.project).starts_with(nearest))
     }
+}
+
+/// `path` without macOS's `/private`, which `/tmp` and `/var` are links into, so the two
+/// spellings of one folder compare equal.
+fn unaliased(path: &Path) -> &Path {
+    let bare = path
+        .to_str()
+        .and_then(|text| text.strip_prefix("/private"))
+        .map(Path::new)
+        .filter(|bare| bare.starts_with("/tmp") || bare.starts_with("/var"));
+    bare.unwrap_or(path)
 }
 
 /// What a command is.
