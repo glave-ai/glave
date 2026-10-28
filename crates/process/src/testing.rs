@@ -1,6 +1,8 @@
-//! What this crate's tests share: a process that stands for one a glave left running.
+//! What this crate's tests share: a process that stands for one a glave left running, and how
+//! many entries a ledger holds.
 
 use std::os::unix::process::CommandExt as _;
+use std::path::Path;
 use std::sync::mpsc;
 
 use rustix::process::{Pid, Signal, kill_process_group};
@@ -47,4 +49,14 @@ impl Drop for Orphan {
     fn drop(&mut self) {
         let _ = kill_process_group(Pid::from_raw(self.pid).unwrap(), Signal::KILL);
     }
+}
+
+/// How many entries the ledger in `folder` holds.
+pub(crate) fn entries(folder: &Path) -> usize {
+    std::fs::read_dir(folder).map_or(0, |listed| {
+        listed
+            .filter_map(Result::ok)
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
+            .count()
+    })
 }

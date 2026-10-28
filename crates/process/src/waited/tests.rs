@@ -1,10 +1,10 @@
-use std::path::Path;
 use std::time::Instant;
 
 use rustix::process::{Pid, Signal, kill_process, test_kill_process};
 
 use super::*;
 use crate::owner::Owner;
+use crate::testing::entries;
 
 const AMPLE: Duration = Duration::from_secs(30);
 
@@ -19,16 +19,6 @@ fn gone(pid: i32, what: &str) {
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-}
-
-/// How many entries the ledger in `folder` holds.
-fn entries(folder: &Path) -> usize {
-    std::fs::read_dir(folder).map_or(0, |listed| {
-        listed
-            .filter_map(Result::ok)
-            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
-            .count()
-    })
 }
 
 #[test]
