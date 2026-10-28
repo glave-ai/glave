@@ -14,40 +14,56 @@ use crate::words::{Language, Sentence, say};
 #[derive(Debug, Clone)]
 pub struct Told {
     text: String,
-    sentence: Option<Box<Sentence>>,
+    /// What it says, when it is the server's own; boxed, since most are not, and errors carry
+    /// one.
+    said: Option<Box<Said>>,
 }
 
+/// One sentence of the server's own, or the clauses of one, each carrying what comes before it
+/// ("Ran 2 commands", ", read 1 file").
+#[derive(Debug, Clone)]
+struct Said(Vec<Sentence>);
+
 impl Told {
+    /// The server's own clauses as one sentence, in English, each written after the last.
+    pub(crate) fn joined(said: Vec<Sentence>) -> Self {
+        Self {
+            text: said_in(Language::English, &said),
+            said: Some(Box::new(Said(said))),
+        }
+    }
+
     /// Whether a transport writes it again in the caller's language: it is the server's own.
     pub(crate) fn translatable(&self) -> bool {
-        self.sentence.is_some()
+        self.said.is_some()
     }
 
     /// Writes it in `language`, when it is the server's own; any other is left as it is.
     pub(crate) fn translate(&mut self, language: Language) {
-        if let Some(sentence) = &self.sentence {
-            self.text = say(language, sentence);
+        if let Some(said) = &self.said {
+            self.text = said_in(language, &said.0);
         }
     }
+}
+
+/// `said` written in `language`, each after the last.
+fn said_in(language: Language, said: &[Sentence]) -> String {
+    said.iter()
+        .map(|sentence| say(language, sentence))
+        .collect()
 }
 
 /// The server's own sentence, in English.
 impl From<Sentence> for Told {
     fn from(sentence: Sentence) -> Self {
-        Self {
-            text: say(Language::English, &sentence),
-            sentence: Some(Box::new(sentence)),
-        }
+        Self::joined(vec![sentence])
     }
 }
 
 /// Words another gave the server to pass on, as they are.
 impl From<String> for Told {
     fn from(text: String) -> Self {
-        Self {
-            text,
-            sentence: None,
-        }
+        Self { text, said: None }
     }
 }
 

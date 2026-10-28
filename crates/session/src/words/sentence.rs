@@ -251,6 +251,23 @@ sentences! {
     PlanProgress { done: u64, steps: u64 } = "plan-progress"
         "Plan: { $done } of { $steps ->\n    [1] 1 step\n   *[other] { $steps } steps\n } done",
 
+    // A run of tool calls, in a line ("Ran 2 commands, read 1 file (1 failed)"): a clause for
+    // each kind of call, `how` saying whether it comes first and whether a call still runs
+    // (`first-now`, `then-now`, `first-done`, `then-done`), then how many failed.
+    RanCommands { how: String, count: u64 } = "ran-commands"
+        "{ $how ->\n    [first-now] Running\n    [then-now] {\", \"}running\n    [first-done] Ran\n   *[then-done] {\", \"}ran\n } { $count ->\n    [1] 1 command\n   *[other] { $count } commands\n }",
+    ReadFiles { how: String, count: u64 } = "read-files"
+        "{ $how ->\n    [first-now] Reading\n    [then-now] {\", \"}reading\n    [first-done] Read\n   *[then-done] {\", \"}read\n } { $count ->\n    [1] 1 file\n   *[other] { $count } files\n }",
+    RanSearches { how: String, count: u64 } = "ran-searches"
+        "{ $how ->\n    [first-now] Running\n    [then-now] {\", \"}running\n    [first-done] Ran\n   *[then-done] {\", \"}ran\n } { $count ->\n    [1] 1 search\n   *[other] { $count } searches\n }",
+    EditedFiles { how: String, count: u64 } = "edited-files"
+        "{ $how ->\n    [first-now] Editing\n    [then-now] {\", \"}editing\n    [first-done] Edited\n   *[then-done] {\", \"}edited\n } { $count ->\n    [1] 1 file\n   *[other] { $count } files\n }",
+    UsedWeb { how: String, count: u64 } = "used-web"
+        "{ $how ->\n    [first-now] Using the web\n    [then-now] {\", \"}using the web\n    [first-done] Used the web\n   *[then-done] {\", \"}used the web\n } { $count ->\n    [1] once\n   *[other] { $count } times\n }",
+    UsedTools { how: String, count: u64 } = "used-tools"
+        "{ $how ->\n    [first-now] Using\n    [then-now] {\", \"}using\n    [first-done] Used\n   *[then-done] {\", \"}used\n } { $count ->\n    [1] 1 tool\n   *[other] { $count } tools\n }",
+    CallsFailed { count: u64 } = "calls-failed" "{\" \"}({ $count } failed)",
+
     // Memory.
     MemoryOff = "memory-off" "memory is off for this server",
     ForgetWhat = "forget-what" "memory/forget takes `memory`, or `all: true` with a `scope`",

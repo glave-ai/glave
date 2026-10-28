@@ -25,9 +25,10 @@ fn every_sentence_has_an_entry_that_writes_exactly_its_values() {
         let said = bundle.format_pattern(pattern, Some(&args), &mut errors);
         // A value the words name and the sentence does not give is an error.
         assert!(errors.is_empty(), "{id}: {errors:?}");
+        // A value only chosen by, such as whether a clause comes first, is named as it is.
         for value in *values {
             assert!(
-                said.contains(&format!("<{value}>")),
+                said.contains(&format!("<{value}>")) || english.contains(&format!("${value} ->")),
                 "{id} never writes its {value}"
             );
         }

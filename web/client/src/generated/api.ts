@@ -66,6 +66,22 @@ export type AwakeInfo = {
 /** Links a tool call to its result: 1 to 128 printable ASCII characters. */
 export type CallId = string;
 
+/**
+ * Tool calls one after another in a turn, with nothing said between them: no message with
+ * words, and no questions for the person.
+ */
+export type CallRun = {
+  /** Its calls, in order. */
+  readonly calls: readonly (CallId)[];
+  /** The `seq` of its first call's `tool.call.requested`. */
+  readonly first: Seq;
+  /**
+   * What they did, in a line: "Ran 2 commands (1 failed)", "Ran 1 command, read 1 file";
+   * in the present while one of them runs.
+   */
+  readonly sentence: string;
+};
+
 /** What a change did to its file. */
 export type ChangeKind = "wrote" | "edited" | "edited_every";
 
@@ -753,6 +769,17 @@ export type ThreadChanges = {
 
 /** Identifies one thread: a conversation or task with its own ordered log. */
 export type ThreadId = string;
+
+/** Each run of a thread's tool calls, and its turns' replies. */
+export type ThreadSteps = {
+  /**
+   * The `seq` of each reply: the last `message.added` of the model's with words in a turn
+   * that ended. Every other message of the model's is said along the way.
+   */
+  readonly replies: readonly (Seq)[];
+  /** Each run of calls, in order. */
+  readonly runs: readonly (CallRun)[];
+};
 
 /** A thread, as a list shows it: from the threads view, with what it is doing now. */
 export type ThreadSummary = {
@@ -1856,6 +1883,15 @@ export type ThreadStartResult = {
   readonly thread: ThreadSummary;
 };
 
+export type ThreadStepsParams = {
+  readonly thread: ThreadId;
+};
+
+/** A thread's turns in steps. */
+export type ThreadStepsResult = {
+  readonly steps: ThreadSteps;
+};
+
 export type ThreadUnarchiveParams = {
   readonly thread: ThreadId;
 };
@@ -2028,6 +2064,7 @@ export interface Methods {
   readonly "thread/rename": { readonly params: ThreadRenameParams; readonly result: ThreadRenameResult };
   readonly "thread/sources": { readonly params: ThreadSourcesParams; readonly result: ThreadSourcesResult };
   readonly "thread/start": { readonly params: ThreadStartParams; readonly result: ThreadStartResult };
+  readonly "thread/steps": { readonly params: ThreadStepsParams; readonly result: ThreadStepsResult };
   readonly "thread/unarchive": { readonly params: ThreadUnarchiveParams; readonly result: ThreadUnarchiveResult };
   readonly "thread/unwatch": { readonly params: ThreadUnwatchParams; readonly result: ThreadUnwatchResult };
   readonly "thread/watch": { readonly params: ThreadWatchParams; readonly result: ThreadWatchResult };

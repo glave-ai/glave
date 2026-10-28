@@ -17,6 +17,7 @@ mod providers;
 mod reply;
 mod settings;
 mod sources;
+mod steps;
 mod tasks;
 mod told;
 mod trust;
@@ -47,6 +48,7 @@ pub use providers::{ProviderInfo, hint};
 pub use reply::{AwakeInfo, ContextUse, QueuedMessage, Reply, ServerInfo, Status, ThreadSummary};
 pub use settings::Setting;
 pub use sources::ReplySources;
+pub use steps::{CallRun, ThreadSteps};
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 pub use told::Told;
 pub use trust::{TrustAsk, TrustChoice, TrustItem};
@@ -236,6 +238,10 @@ methods! {
     /// changes with its own, read from the logs: each file with the lines added and taken out
     /// and each change, for the thread and for each turn that changed any.
     "thread/changes" => ThreadChanges { thread: ThreadId } -> [Changes],
+    /// A thread's turns in steps, read from its log: each run of tool calls with nothing said
+    /// between them, its calls and what they did in a line, and which message is each turn's
+    /// reply.
+    "thread/steps" => ThreadSteps { thread: ThreadId } -> [Steps],
     /// The thread's plan, read from its log: its steps, each with its status, and whether it
     /// waits for the person's approval; `null` when it has none.
     "thread/plan" => ThreadPlan { thread: ThreadId } -> [Plan],
@@ -606,6 +612,7 @@ impl Request {
             | Self::ThreadEvents { thread, .. }
             | Self::ThreadSources { thread }
             | Self::ThreadChanges { thread }
+            | Self::ThreadSteps { thread }
             | Self::ThreadPlan { thread }
             | Self::PlanEdit { thread, .. }
             | Self::PlanBuild { thread }

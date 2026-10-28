@@ -29,6 +29,9 @@ pub enum Update {
         caution: Option<String>,
         no_one_there: bool,
     },
+    /// A model call began, and nothing has come back yet: each step of a turn starts with
+    /// one, so text and reasoning after it are the new step's, and what streamed before it
+    /// from a call that was not recorded (one tried again) is gone.
     Waiting,
     Retrying {
         retry: u32,

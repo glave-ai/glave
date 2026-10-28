@@ -46,6 +46,7 @@ mod settings;
 mod sources;
 mod standing;
 mod steer;
+mod steps;
 mod stopping;
 mod streamed;
 mod tasks;
