@@ -129,11 +129,11 @@ function told(
   return { sourced: new Map(), changed: new Map(), steps, models: new Map(), ...more };
 }
 
-/** Each part in a line: a run as its line and what it holds, anything else by its key. */
+/** Each part in a line: a run as its line (`untold` until told) and what it holds, else its key. */
 function drawn(parts: readonly TurnPart[]): readonly string[] {
   return parts.map((part) =>
     part.kind === 'run'
-      ? `${part.sentence}: ${part.items.map((item) => item.key).join(' ')}`
+      ? `${part.sentence ?? 'untold'}: ${part.items.map((item) => item.key).join(' ')}`
       : part.key,
   );
 }
@@ -210,7 +210,13 @@ describe('results', () => {
       true,
       'en-US',
     );
-    expect(drawn(untold.parts)).toEqual(['null: c2 m3 c4', 'm5', 'null: c6', 'q7', 'null: c8']);
+    expect(drawn(untold.parts)).toEqual([
+      'untold: c2 m3 c4',
+      'm5',
+      'untold: c6',
+      'q7',
+      'untold: c8',
+    ]);
     // Keyed as the server will tell them, so nothing is drawn again when it does.
     const keys = untold.parts.filter((part) => part.kind === 'run').map((part) => part.key);
     expect(keys).toEqual(['run-2', 'run-6', 'run-8']);
@@ -298,7 +304,7 @@ describe('results', () => {
       true,
       'en-US',
     );
-    expect(drawn(shown.parts)).toEqual(['null: c2', 'm3']);
+    expect(drawn(shown.parts)).toEqual(['untold: c2', 'm3']);
     expect(shown.waiting).toEqual([waiting]);
     expect(shown.receipt?.status).toBe('waiting');
     expect(shown.receipt?.facts).toEqual([]);
@@ -339,7 +345,7 @@ describe('results', () => {
     const live = { text: 'Writ', reasoning: '' };
     const shown = turnResults(turn([ask, call(2), say(3, 'Earlier')]), live, null, true, 'en-US');
     expect(shown.live).toBe(live);
-    expect(drawn(shown.parts)).toEqual(['null: c2', 'm3']);
+    expect(drawn(shown.parts)).toEqual(['untold: c2', 'm3']);
   });
 
   it('is working while the turn runs with nothing of its own to show', () => {
