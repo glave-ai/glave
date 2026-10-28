@@ -562,6 +562,18 @@ impl Computers for LocalComputers {
         })
     }
 
+    fn ended(
+        &self,
+        workspace: WorkspaceId,
+        command: CommandId,
+        wait: Duration,
+    ) -> BoxFuture<'_, Result<Option<Finished>, ComputerError>> {
+        Box::pin(async move {
+            self.registry.workspace(workspace)?;
+            self.background.ended(workspace, command, wait).await
+        })
+    }
+
     fn stop(
         &self,
         workspace: WorkspaceId,

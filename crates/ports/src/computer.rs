@@ -140,6 +140,20 @@ pub trait Computers: Send + Sync {
         Box::pin(std::future::ready(Err(no_background())))
     }
 
+    /// How a command in the background ended, waiting up to `wait` (at most [`MAX_WAIT`]) for
+    /// it to end, or nothing while it still runs (`command/ended`): however it ended, by itself,
+    /// killed by another command, or stopped. Not a read: what it printed waits for the next
+    /// one, and it is not forgotten.
+    fn ended(
+        &self,
+        workspace: WorkspaceId,
+        command: CommandId,
+        wait: Duration,
+    ) -> BoxFuture<'_, Result<Option<Finished>, ComputerError>> {
+        let _ = (workspace, command, wait);
+        Box::pin(std::future::ready(Err(no_background())))
+    }
+
     /// Stops a command in the background and everything it started, then forgets it
     /// (`command/stop`), answering what it printed since the last read and how it ended. One
     /// that has already ended is only forgotten.

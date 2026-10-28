@@ -1,5 +1,6 @@
 //! Commands kept running in the background: started, read, listed and stopped; ended by
-//! themselves and read to the end; stopped with everything they started; bounded in number and
+//! themselves and read to the end; their end told when another command kills them, whatever
+//! they left still holding their output; stopped with everything they started; bounded in number and
 //! in the output kept; moved there at a timeout; confined by their sandbox; reached only through
 //! their own workspace, and stopped when it closes.
 
@@ -28,6 +29,7 @@ pub(super) async fn background<C: Computers>(
     run_quietly(computers, here, "mkdir -p background/elsewhere").await?;
     read_and_stop(computers, here).await?;
     ends_by_itself(computers, here).await?;
+    killed_from_outside(computers, here).await?;
     whole_group(computers, here).await?;
     bounded(computers, here).await?;
     kept_output(computers, here).await?;
@@ -150,6 +152,43 @@ async fn ends_by_itself<C: Computers>(computers: &C, here: WorkspaceId) -> Verdi
             Err(ComputerError::NotFound(_))
         ),
         "the read that answers a command's ending is its last",
+    )
+}
+
+async fn killed_from_outside<C: Computers>(computers: &C, here: WorkspaceId) -> Verdict {
+    // The shell is the command's own process, as npm is a dev server's; the child it starts
+    // keeps the output open after the shell is killed.
+    let script = "sleep 300 & echo $! > background/served.pid; echo $$ > background/shell.pid; \
+                  echo ready; wait";
+    let id = start(computers, here, script).await?;
+    until_printed(computers, here, id, "ready").await?;
+    let running = computers
+        .ended(here, id, POLL)
+        .await
+        .map_err(failed("ask how a running command ended"))?;
+    ensure(running.is_none(), "a command still running has not ended")?;
+    run_quietly(computers, here, "kill \"$(cat background/shell.pid)\"").await?;
+    let began = Instant::now();
+    let ended = computers
+        .ended(here, id, SOON)
+        .await
+        .map_err(failed("wait for a killed command to end"))?;
+    ensure(
+        began.elapsed() < SOON
+            && ended.is_some_and(|ended| !matches!(ended.ending, Ending::Cancelled)),
+        "a command killed by another command is told ended, not stopped",
+    )?;
+    ensure(
+        gone(computers, here, "background/served.pid").await?,
+        "what a killed command left running is stopped with it",
+    )?;
+    let printed = computers
+        .output(here, id, Duration::ZERO)
+        .await
+        .map_err(failed("read a command after its end was told"))?;
+    ensure(
+        printed.ended.is_some() && printed.ended == ended,
+        "telling a command's end is not a read: the next read answers the same ending",
     )
 }
 

@@ -30,6 +30,20 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
          cancelling the turn ends it",
     ),
     (
+        "crates/session/src/background.rs",
+        "let _ = working.wait_for(|done| *done).await;",
+        1,
+        "work on a thread ending, bounded as held.rs says of its own wait for it; a watcher \
+         waits for it to record an end it noted, and is dropped when the thread is let go",
+    ),
+    (
+        "crates/harness/src/background.rs",
+        "_ = kept.changed() => break,",
+        1,
+        "a thread's next command in the background, or its commands ending in the other arm; \
+         the session drops the watcher when it lets the thread go or stops",
+    ),
+    (
         "crates/session/src/held.rs",
         "if done.changed().await.is_err() {",
         1,
