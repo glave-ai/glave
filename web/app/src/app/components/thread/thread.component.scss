@@ -36,10 +36,11 @@
   padding-inline: var(--glz-inset-page-inline);
 }
 
+// Turns stand apart, further than the blocks inside each (the turn's own gap).
 .reading {
   display: flex;
   flex-direction: column;
-  gap: var(--glz-space-5);
+  gap: var(--glz-space-8);
 
   // Room at the end for the error line, so what the conversation ends on is never under it.
   padding-block: var(--glz-inset-page-block) var(--glz-space-8);

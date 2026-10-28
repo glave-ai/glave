@@ -240,7 +240,7 @@ describe('ThreadComponent', () => {
     }
   });
 
-  it('shows a turn that worked results first: the reply, what changed, then its steps', async () => {
+  it('shows a turn that worked in order: its run of calls in the server’s line, the reply, what changed, its receipt', async () => {
     const call = (seq: number, id: string, tool: string, json: object, summary: string): unknown =>
       event(seq, 'tool.call.requested', { call_id: id, tool, arguments: { json }, summary });
     const done = (seq: number, id: string): unknown =>
@@ -257,13 +257,16 @@ describe('ThreadComponent', () => {
       event(9, 'message.added', { role: 'assistant', parts: [{ type: 'text', text: 'Done' }] }),
     ];
     const both = [editedFile('src/parse.rs', [], ['x']), editedFile('tests/empty.rs', [], ['x'])];
-    const { root, fixture } = await open(session(events, changed(1, both)));
-    const order = Array.from(
-      root.querySelectorAll(
-        '[data-testid="thread-message"], [data-testid="turn-changes"], [data-testid="thread-steps"]',
-      ),
-    ).map((each) => each.getAttribute('data-testid'));
-    expect(order).toEqual(['thread-message', 'thread-message', 'turn-changes', 'thread-steps']);
+    const ran = 'Ran 1 command, edited 2 files';
+    const runs = [{ first: 3, calls: ['a', 'b', 'c'], sentence: ran }];
+    const told = { steps: { runs, replies: [9] } };
+    const { root, fixture } = await open(
+      session(events, changed(1, both)).answer('thread/steps', told),
+    );
+    const said = ['thread-message', 'thread-run', 'thread-message', 'turn-changes'];
+    const shown = [...said, 'thread-steps'];
+    const found = root.querySelectorAll(shown.map((id) => `[data-testid="${id}"]`).join(', '));
+    expect(Array.from(found).map((each) => each.getAttribute('data-testid'))).toEqual(shown);
     expect(root.querySelector('[data-testid="turn-changes-count"]')?.textContent).toBe('2 files');
     // There before the thread opened, though read just after: it shows still, never settling in.
     expect(root.querySelector('app-turn-changes')?.classList).not.toContain('glz-settle');
@@ -274,17 +277,13 @@ describe('ThreadComponent', () => {
     expect(summary?.querySelector('.state')?.textContent).toBe('Done');
     expect(summary?.querySelector('.count')?.textContent).toBe('3 steps');
     expect(steps?.querySelector('details')?.open).toBe(false);
-    const receipts = Array.from(steps?.querySelectorAll('[data-testid="thread-receipt"]') ?? []);
-    // Each step in the server's line.
-    expect(receipts.map((receipt) => receipt.querySelector('.what')?.textContent)).toEqual([
-      'bash: cargo test',
-      'edit src/parse.rs',
-      'write tests/empty.rs (0 lines)',
-    ]);
-    expect(receipts.every((receipt) => receipt.querySelector('.kind svg') !== null)).toBe(true);
-    summary?.click();
+    const line = root.querySelector('[data-testid="thread-run"]');
+    expect(root.querySelector('[data-testid="thread-run-summary"]')?.textContent).toContain(ran);
+    // Each call in it is the server's line (the turn part's and thread item's tests).
+    expect(line?.querySelectorAll('[data-testid="thread-receipt"]')).toHaveLength(3);
+    root.querySelector<HTMLElement>('[data-testid="thread-run-summary"]')?.click();
     await fixture.whenStable();
-    expect(steps?.querySelector('details')?.open).toBe(true);
+    expect(line?.querySelector('details')?.open).toBe(true);
     await expectAccessible(root);
   });
 

@@ -70,6 +70,22 @@ describe('GlzStepsComponent', () => {
     }
   });
 
+  it('leaves its status out when plain, its words saying how it stands', async () => {
+    TestBed.overrideTemplate(
+      HostComponent,
+      `<glz-steps testId="steps" plain steps="Ran 2 commands (1 failed)">
+        <glz-receipt summary="bash: cargo test" status="failed" />
+      </glz-steps>`,
+    );
+    const fixture = TestBed.createComponent(HostComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('[data-testid="steps-summary"] .icon')).toBeNull();
+    expect(root.querySelector('[data-testid="steps-summary"] .state')).toBeNull();
+    expect(words(root)).toEqual(['Ran 2 commands (1 failed)']);
+    await expectAccessible(root);
+  });
+
   it('slides its steps shut before it closes, and closes at once when nothing moves', async () => {
     const fixture = TestBed.createComponent(HostComponent);
     fixture.componentInstance.open.set(true);

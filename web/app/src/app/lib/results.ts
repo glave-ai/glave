@@ -3,6 +3,7 @@ import { type GlzRunStatus, formatDuration, formatMoney, listFormat } from '@gla
 
 import type { ApprovalItem, Draft, MessageItem, QuestionItem, ThreadItem } from './conversation';
 import { plural } from './plural';
+import { NO_STEPS, type Steps, type TurnPart, turnParts } from './runs';
 import type { Turn } from './turns';
 
 /** What waits for the person in a turn: an approval not yet decided, a question not answered. */
@@ -14,10 +15,12 @@ export interface Receipt {
   /**
    * The time it took (so far, while it has not ended, unless the working line counts it); and,
    * once it has ended, the server's result: what it cost, or that the cost was not reported,
-   * whether that was estimated, where its model calls ran, and how many commands ran outside
-   * the sandbox or with the network, when any did.
+   * whether that was estimated, the model by the server's name for it, and how many commands
+   * ran outside the sandbox or with the network, when any did.
    */
   readonly facts: readonly string[];
+  /** What the line opens to: where its model calls ran, as the server named them. */
+  readonly details: readonly string[];
   /** How many steps, in words: "4 steps". */
   readonly steps: string;
 }
@@ -34,21 +37,17 @@ export interface Working {
 }
 
 /**
- * A turn as the thread shows it, results first: the person's message; then, for a turn that
- * did work, its reply, the files it changed and its receipt, with the work itself (the calls,
- * what it said along the way, the questions and approvals already answered) folded behind the
- * receipt; and last what waits for the person. A turn that did no work shows what it said in
- * order instead, and no receipt.
+ * A turn as the thread shows it: the person's message; then, in order, what the model said at
+ * each step, each run of calls between as the server's line, and the questions and approvals
+ * already answered, its reply last; the files it changed; for a turn that did work, its receipt;
+ * and last what waits for the person.
  */
 export interface TurnResults {
   readonly key: string;
   readonly prompt: MessageItem | null;
-  /** In a turn that did no work, what it said before its reply. */
-  readonly before: readonly ThreadItem[];
-  /** The last thing it said, unless a reply is being written. */
-  readonly reply: MessageItem | null;
-  /** What that reply drew on from the web, as the server says, when it drew on any. */
-  readonly sources: ReplySources | null;
+  /** What it did, in order, but for what waits for the person. */
+  readonly parts: readonly TurnPart[];
+
   /** The reply being written, in the turn that runs. */
   readonly live: Draft | null;
   /**
@@ -59,8 +58,6 @@ export interface TurnResults {
   readonly working: Working | null;
   /** The files it changed, as the server says; `null` until it has said, as the thread opens. */
   readonly files: readonly ChangedFile[] | null;
-  /** The work folded behind the receipt, in order. */
-  readonly steps: readonly ThreadItem[];
   /** The receipt, for a turn that did work. */
   readonly receipt: Receipt | null;
   readonly waiting: readonly Waiting[];
@@ -77,10 +74,6 @@ function waits(item: ThreadItem): item is Waiting {
 
 function isCall(item: ThreadItem): boolean {
   return item.kind === 'call' || item.kind === 'question';
-}
-
-function said(item: ThreadItem): item is MessageItem {
-  return item.kind === 'message' && item.from === 'model' && item.text.trim() !== '';
 }
 
 /** Whether a call of `turn`'s runs now. */
@@ -164,15 +157,11 @@ function outsideSandbox(result: TurnResult, locale: string): readonly string[] {
   ];
 }
 
-/** The server's result of a turn, in words for `locale`: its cost, where it ran, what ran outside. */
-function resultFacts(result: TurnResult, locale: string): readonly string[] {
-  const via = result.via ?? [];
+/** Where the server says a turn's model calls ran, in words for `locale`, when it said. */
+function routesOf(result: TurnResult | null, locale: string): readonly string[] {
+  const via = result?.via ?? [];
   const routes = listFormat(locale, { style: 'short', type: 'unit' }).format(via);
-  return [
-    spent(result, locale),
-    ...(via.length === 0 ? [] : [$localize`:@@results.via:via ${routes}:ROUTES:`]),
-    ...outsideSandbox(result, locale),
-  ];
+  return via.length === 0 ? [] : [$localize`:@@results.via:via ${routes}:ROUTES:`];
 }
 
 /** What the server says of a thread's turns besides their events. */
@@ -184,9 +173,18 @@ export interface TurnFacts {
    * as the thread opens.
    */
   readonly changed: ReadonlyMap<number, readonly ChangedFile[]> | null;
+  /** Each run of calls in a line, and each turn's reply. */
+  readonly steps: Steps;
+  /** Each model's name as the server gives it, by the id a turn records. */
+  readonly models: ReadonlyMap<string, string>;
 }
 
-const NO_FACTS: TurnFacts = { sourced: new Map(), changed: new Map() };
+const NO_FACTS: TurnFacts = {
+  sourced: new Map(),
+  changed: new Map(),
+  steps: NO_STEPS,
+  models: new Map(),
+};
 
 /** The files `turn` changed, in `changed`, by the `seq` of its start; `null` while not known. */
 function filesOf(turn: Turn, changed: TurnFacts['changed']): readonly ChangedFile[] | null {
@@ -197,11 +195,11 @@ function filesOf(turn: Turn, changed: TurnFacts['changed']): readonly ChangedFil
 }
 
 /**
- * `turn` results first, its facts written for `locale`. `live` is the reply being written, for
- * the turn that runs now (`running`); it takes the reply's place, and what was the reply goes
- * back among what was said along the way. `step` is the step that turn takes now, in the
- * server's words, as it said while a tool runs. `told` is what the server says of the turn
- * besides its events: what its reply drew on and the files it changed.
+ * `turn` as the thread shows it, its facts written for `locale`. `live` is what the model writes
+ * now, for the turn that runs now (`running`), after everything recorded. `step` is the step
+ * that turn takes now, in the server's words, as it said while a tool runs. `told` is what the
+ * server says of the turn besides its events: its runs of calls, its reply, what the reply drew
+ * on, the files it changed and the names of models.
  */
 export function turnResults(
   turn: Turn,
@@ -216,38 +214,42 @@ export function turnResults(
   const prompt = asked ? first : null;
   const rest = asked ? after : turn.items;
   const waiting = rest.filter(waits);
-  const others = rest.filter((item) => !waits(item));
-  const reply = live === null ? (others.filter(said).at(-1) ?? null) : null;
-  const along = others.filter((item) => item !== reply);
+  const parts = turnParts(
+    rest.filter((item) => !waits(item)),
+    told.steps,
+    told.sourced,
+  );
   const calls = rest.filter(isCall).length;
-  const worked = calls > 0;
   const working = workingOn(turn, live, step, running, waiting.length);
   // While the working line counts the turn's time, the receipt leaves it to it.
   const timed = turn.took !== null && turn.took !== 0 && working === null;
+  const model = turn.model === null ? undefined : told.models.get(turn.model);
+  const result = turn.result;
   const facts = [
     ...(timed ? [formatDuration(turn.took, locale)] : []),
-    ...(turn.result === null ? [] : resultFacts(turn.result, locale)),
+    ...(result === null ? [] : [spent(result, locale)]),
+    ...(model === undefined ? [] : [model]),
+    ...(result === null ? [] : outsideSandbox(result, locale)),
   ];
   return {
     key: turn.key,
     prompt,
-    before: worked ? [] : along,
-    reply,
-    sources: reply === null ? null : (told.sourced.get(reply.seq) ?? null),
+    parts,
     live,
     working,
     files: filesOf(turn, told.changed),
-    steps: worked ? along : [],
-    receipt: worked
-      ? {
-          status: statusOf(turn, waiting, running),
-          facts,
-          steps: plural(
-            $localize`:@@results.steps:{${calls}:COUNT:, plural, one {# step} other {# steps}}`,
-            locale,
-          ),
-        }
-      : null,
+    receipt:
+      calls > 0
+        ? {
+            status: statusOf(turn, waiting, running),
+            facts,
+            details: routesOf(result, locale),
+            steps: plural(
+              $localize`:@@results.steps:{${calls}:COUNT:, plural, one {# step} other {# steps}}`,
+              locale,
+            ),
+          }
+        : null,
     waiting,
   };
 }

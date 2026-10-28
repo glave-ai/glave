@@ -21,21 +21,23 @@ import type { TurnResults } from '../../lib/results';
 import { runningFor } from '../../lib/when';
 import { clock } from '../../services/clock';
 import { ThreadService } from '../../services/thread.service';
-import { ReplySourcesComponent } from '../reply-sources/reply-sources.component';
 import { ThreadItemComponent } from '../thread-item/thread-item.component';
 import { TurnChangesComponent } from '../turn-changes/turn-changes.component';
+import { TurnPartComponent } from '../turn-part/turn-part.component';
 
 /**
- * One turn, results first: the person's message; the reply (streaming in as markdown while it
- * is written), and under it the pages it drew on from the web; what changed; the receipt, a
- * sunken line with how it went, how long it took and what it cost, which opens to the steps; and
- * last, what waits for the person. A turn that did no work is its messages in order.
+ * One turn: the person's message; then, in order, what the model said at each step, each run of
+ * calls between as the server's line, which opens to its calls, and the questions and approvals
+ * already answered, with the pages the reply drew on from the web under it; what the model
+ * writes now, as markdown; what changed; the receipt, a quiet line with how it went, how long it
+ * took, what it cost and the model, which opens to where it ran; and last, what waits for the
+ * person.
  *
  * While the turn works with nothing of its own to show, a line stands in the reply's place: the
  * step a tool takes, in the server's words, else a smithy's word while the model thinks, the next
  * every couple of seconds; and beside it how long the turn has worked, counted from the start
- * the server recorded. The model's reasoning, as it streams, shows open under it, and folds away
- * once the answer begins; the person can open or close it meanwhile. As the person watches, a
+ * the server recorded. The model's reasoning, as it streams, is folded, as each step's is, for the
+ * person to open. As the person watches, a
  * reply rises into place as it begins, what changed settles in as it appears, and a card that
  * needs the person rises into place.
  */
@@ -47,9 +49,9 @@ import { TurnChangesComponent } from '../turn-changes/turn-changes.component';
     GlzReasoningComponent,
     GlzStepsComponent,
     GlzWorkingComponent,
-    ReplySourcesComponent,
     ThreadItemComponent,
     TurnChangesComponent,
+    TurnPartComponent,
   ],
   templateUrl: './turn.component.html',
   styleUrl: './turn.component.scss',
@@ -130,8 +132,6 @@ export class TurnComponent {
   protected readonly reasoning = computed(() => trimBlankLines(this.turn().live?.reasoning ?? ''));
   /** Whether the model is still thinking: its reasoning streams, and no answer yet. */
   protected readonly thinking = computed(() => this.turn().live?.text === '');
-  /** Open while the model thinks, folded once it answers; the person may change it meanwhile. */
-  protected readonly reasoningOpen = linkedSignal(() => this.thinking());
 
   /** When the turn started, as the server recorded it, while the working line shows. */
   private readonly since = computed(() => this.turn().working?.since ?? null);

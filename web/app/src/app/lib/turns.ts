@@ -27,6 +27,8 @@ export interface Turn {
   readonly took: number | null;
   /** When it started, as the server recorded it (`turn.started`); `null` with no start recorded. */
   readonly started: string | null;
+  /** The model it started with, by the id its `turn.started` records; `null` with none. */
+  readonly model: string | null;
   /**
    * How it ended and what it did and cost, as the server says in its `turn.ended`; `null` until
    * it has ended.
@@ -110,6 +112,12 @@ function starts(event: RawEvent, turn: readonly RawEvent[]): boolean {
   return event.type === 'turn.started' && (started || worked);
 }
 
+/** The id of the model a `turn.started` records, `{ provider, name }`: its name. */
+function modelOf(model: unknown): string | null {
+  const name = isRecord(model) ? model['name'] : undefined;
+  return typeof name === 'string' && name !== '' ? name : null;
+}
+
 function turnOf(events: readonly RawEvent[], items: readonly ThreadItem[]): Turn {
   const started = events.find((event) => event.type === 'turn.started');
   const ended = events.filter((event) => event.type === 'turn.ended').at(-1);
@@ -124,6 +132,7 @@ function turnOf(events: readonly RawEvent[], items: readonly ThreadItem[]): Turn
     startSeq: started?.seq ?? null,
     took: Number.isNaN(took) ? null : took,
     started: started?.at ?? null,
+    model: modelOf(started?.data['model']),
     result: ended === undefined ? null : resultOf(ended.data),
   };
 }
@@ -179,6 +188,7 @@ function startingTurn(prompt: string, key: string): Turn {
     startSeq: null,
     took: null,
     started: null,
+    model: null,
     result: null,
   };
 }

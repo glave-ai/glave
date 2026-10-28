@@ -1,14 +1,8 @@
 @if (turn().prompt; as prompt) {
   <app-thread-item [item]="prompt" />
 }
-@for (item of turn().before; track item.key) {
-  <app-thread-item [item]="item" />
-}
-@if (turn().reply; as reply) {
-  <app-thread-item [item]="reply" />
-}
-@if (turn().sources; as sources) {
-  <app-reply-sources [sources]="sources" />
+@for (part of turn().parts; track part.key) {
+  <app-turn-part [part]="part" />
 }
 @if (turn().working; as working) {
   <glz-working
@@ -33,7 +27,6 @@
         [streaming]="thinking()"
         [label]="copy.reasoning"
         [thinkingLabel]="copy.thinking"
-        [(open)]="reasoningOpen"
         >{{ reasoning() }}</glz-reasoning
       >
     }
@@ -50,8 +43,8 @@
     [facts]="receipt.facts"
     [steps]="receipt.steps"
   >
-    @for (item of turn().steps; track item.key) {
-      <app-thread-item [item]="item" />
+    @for (detail of receipt.details; track $index) {
+      <p data-testid="thread-steps-detail">{{ detail }}</p>
     }
   </glz-steps>
 }

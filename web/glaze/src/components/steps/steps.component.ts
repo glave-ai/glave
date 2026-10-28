@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  booleanAttribute,
   type ElementRef,
   computed,
   input,
@@ -33,12 +34,14 @@ const ICONS: Readonly<Record<GlzRunStatus, GlzIconData>> = {
 };
 
 /**
- * What a run of steps came to, as a receipt: one sunken line in monospace with its status (a
- * check when done, which only screen readers read in words; the icon and the word otherwise),
- * a few `facts` such as the time it took and its cost, and at the end how many `steps`
- * ("4 steps ›"). The line folds the steps themselves (each a `glz-receipt`, or anything else
- * they did): a native `<details>`, so it opens by click, Enter or Space, and screen readers say
- * whether it is open. The steps slide open and shut.
+ * What a run of steps came to, as a receipt: one quiet line, small and muted with no box, so it
+ * reads as a footer and never as a message, with its status (a check when done, which only
+ * screen readers read in words; the icon and the word otherwise), a few `facts` such as the time
+ * it took and its cost, and then `steps` ("4 steps ›"). `plain` leaves the status out, for a
+ * line whose words say how it stands ("Ran 2 commands (1 failed)"). The line folds what it
+ * holds (the steps themselves, each a `glz-receipt`, or what else there is to say of them): a
+ * native `<details>`, so it opens by click, Enter or Space, and screen readers say whether it is
+ * open. What it holds slides open and shut.
  *
  * ```html
  * <glz-steps status="done" [facts]="['4m 02s', '$0.04']" steps="2 steps">
@@ -79,6 +82,8 @@ export class GlzStepsComponent {
   /** How many steps, in words: "4 steps". */
   readonly steps = input.required<string>();
   readonly statusLabels = input<GlzRunStatusLabels>(this.words.statusLabels);
+  /** Whether the line has no status of its own: its words say how it stands. */
+  readonly plain = input(false, { transform: booleanAttribute });
   readonly open = model(false);
 
   protected readonly chevron = ChevronRight;
@@ -86,6 +91,8 @@ export class GlzStepsComponent {
   protected readonly label = computed(() => this.statusLabels()[this.status()]);
   /** A check says done on its own; any other status says itself in words too. */
   protected readonly quiet = computed(() => this.status() === 'done');
+  /** Whether the status shows at the line's start. */
+  protected readonly marked = computed(() => !this.plain());
   protected readonly statusClass = computed(() => `status-${this.status()}`);
   /** A running run's ring turns (`glz-spin`), and holds still when the person asks for less motion. */
   protected readonly running = computed(() => this.status() === 'running');

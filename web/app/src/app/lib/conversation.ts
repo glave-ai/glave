@@ -30,6 +30,8 @@ export interface SentFile {
 /** A tool call: what it did and what came of it. */
 export interface CallItem extends Placed {
   readonly kind: 'call';
+  /** Its id, as its events name it. */
+  readonly call: string;
   readonly tool: string;
   /** The step in a line, as the server recorded it: `bash: cargo test`. */
   readonly summary: string;
@@ -262,6 +264,7 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
             kind: 'call',
             key: `call-${call}`,
             seq: event.seq,
+            call,
             tool,
             // The step in the server's line; a call recorded before it said one, its tool.
             summary: text(data['summary']) || tool,
@@ -327,9 +330,14 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
   return items;
 }
 
-/** The draft after a live update: text and reasoning grow; anything else leaves it. */
+/**
+ * The draft after a live update: text and reasoning grow; a model call beginning (`waiting`)
+ * starts its step afresh, so what a call tried again had written goes; anything else leaves it.
+ */
 export function applyUpdate(draft: Draft, update: Update): Draft {
   switch (update.kind) {
+    case 'waiting':
+      return NO_DRAFT;
     case 'text':
       return { ...draft, text: draft.text + update.text };
     case 'reasoning':

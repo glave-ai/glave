@@ -1,7 +1,9 @@
 <details #details class="details" [open]="open()" (toggle)="toggled($event)">
   <summary class="line" [attr.data-testid]="ids().summary" (click)="shut($event)">
-    <glz-icon class="icon" [class.glz-spin]="running()" [icon]="icon()" />
-    <span class="fact state" [class.glz-visually-hidden]="quiet()">{{ label() }}</span>
+    @if (marked()) {
+      <glz-icon class="icon" [class.glz-spin]="running()" [icon]="icon()" />
+      <span class="fact state" [class.glz-visually-hidden]="quiet()">{{ label() }}</span>
+    }
     @for (fact of facts(); track $index) {
       <span class="fact">{{ fact }}</span>
     }

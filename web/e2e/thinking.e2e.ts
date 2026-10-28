@@ -54,13 +54,13 @@ async function settling(page: Page): Promise<string> {
 }
 
 /**
- * Shuts `steps` by a click on their line, and says at that moment what slides in their fold
- * (each transition's property) and whether they are still open.
+ * Shuts a run of calls by a click on its line, and says at that moment what slides in its fold
+ * (each transition's property) and whether it is still open.
  */
-async function shut(steps: Locator): Promise<{ sliding: readonly string[]; open: boolean }> {
-  return steps.evaluate((host) => {
-    const fold = host.querySelector('[data-testid="thread-steps-fold"]');
-    host.querySelector<HTMLElement>('[data-testid="thread-steps-summary"]')?.click();
+async function shut(run: Locator): Promise<{ sliding: readonly string[]; open: boolean }> {
+  return run.evaluate((host) => {
+    const fold = host.querySelector('[data-testid="thread-run-fold"]');
+    host.querySelector<HTMLElement>('[data-testid="thread-run-summary"]')?.click();
     return {
       sliding: (fold?.getAnimations() ?? []).map((each) =>
         each instanceof CSSTransition ? each.transitionProperty : each.id,
@@ -116,19 +116,21 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(elapsed).toHaveText('7s');
     await expectAccessible(page);
 
-    // The model's reasoning streams in, open, in the working line's place, rising into it; what
-    // the tool changed settles in.
+    // The model's reasoning streams in, folded, in the working line's place, rising into it;
+    // what the tool changed settles in.
     await letGo(page, 'think');
     const live = byTestId(page, 'thread-reply');
     const reasoning = live.getByTestId('thread-reasoning');
-    await expect(reasoning.getByText(THINKING.join(''))).toBeVisible();
+    await expect(reasoning).toBeVisible();
     await expect(working).toHaveCount(0);
     expect(await animationOf(live)).toContain('glz-rise');
     // What changed comes from the server once the write has ended: the turn's own card.
     await expect(byTestId(page, 'turn-changes')).toHaveCount(2);
     expect(await settling(page)).toBe('glz-settle');
     await expect(reasoning.getByTestId('thread-reasoning-summary')).toHaveText('Thinking…');
-    expect(await isOpen(reasoning)).toBe(true);
+    expect(await isOpen(reasoning)).toBe(false);
+    await reasoning.getByTestId('thread-reasoning-summary').click();
+    await expect(reasoning.getByText(THINKING.join(''))).toBeVisible();
     await expectAccessible(page);
 
     // The answer folds it away; once recorded, what was thought can still be opened.
@@ -155,14 +157,16 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(thought).toBeHidden();
     await expect.poll(() => shownOpacity(copy)).toBe(1);
 
-    // The steps slide open in their fold, and slide shut before they close.
-    const steps = byTestId(page, 'thread-steps').last();
-    const receipt = steps.getByTestId('thread-receipt');
-    await steps.getByTestId('thread-steps-summary').click();
+    // The run of calls is the server's line, which slides open in its fold, and slides shut
+    // before it closes.
+    const run = byTestId(page, 'thread-run').last();
+    const receipt = run.getByTestId('thread-receipt');
+    await expect(run.getByTestId('thread-run-summary')).toHaveText('Ran 1 call');
+    await run.getByTestId('thread-run-summary').click();
     await expect(receipt).toBeVisible();
-    expect(await animationOf(steps.getByTestId('thread-steps-fold'))).toContain('glz-unfold');
+    expect(await animationOf(run.getByTestId('thread-run-fold'))).toContain('glz-unfold');
     await expectAccessible(page);
-    expect(await shut(steps)).toEqual({ sliding: ['grid-template-rows'], open: true });
+    expect(await shut(run)).toEqual({ sliding: ['grid-template-rows'], open: true });
     await expect(receipt).toBeHidden();
     expect(problems()).toEqual([]);
   });
@@ -198,14 +202,14 @@ test('nothing moves when the person asks for less motion, though the words still
   await letGo(page, 'answer');
   await expect(byTestId(page, 'thread-message').last()).toContainText(ANSWER.join(''));
 
-  // The steps open and shut at once.
-  const steps = byTestId(page, 'thread-steps').last();
-  const receipt = steps.getByTestId('thread-receipt');
-  await steps.getByTestId('thread-steps-summary').click();
+  // The run of calls opens and shuts at once.
+  const run = byTestId(page, 'thread-run').last();
+  const receipt = run.getByTestId('thread-receipt');
+  await run.getByTestId('thread-run-summary').click();
   await expect(receipt).toBeVisible();
-  expect(await animationOf(steps.getByTestId('thread-steps-fold'))).toBe('none');
+  expect(await animationOf(run.getByTestId('thread-run-fold'))).toBe('none');
   expect(await moving(page)).toBe(0);
-  expect(await shut(steps)).toEqual({ sliding: [], open: false });
+  expect(await shut(run)).toEqual({ sliding: [], open: false });
   await expect(receipt).toBeHidden();
   expect(await moving(page)).toBe(0);
 });
@@ -239,9 +243,11 @@ test('opened, the thinking, the steps and a step’s output sit evenly in their 
   await letGo(page, 'tool');
 
   // The model's thinking ends in a blank line, which its rule does not run on beside, as it
-  // streams and once recorded.
+  // streams (opened) and once recorded.
   await letGo(page, 'think');
-  const live = byTestId(page, 'thread-reply').getByTestId('thread-reasoning-text');
+  const streaming = byTestId(page, 'thread-reply');
+  await streaming.getByTestId('thread-reasoning-summary').click();
+  const live = streaming.getByTestId('thread-reasoning-text');
   await expect(live).toHaveText(THINKING.join(''));
   await expectEven(live);
   await letGo(page, 'answer');
@@ -250,16 +256,16 @@ test('opened, the thinking, the steps and a step’s output sit evenly in their 
   await reply.getByTestId('thread-reasoning-summary').click();
   await expectEven(reply.getByTestId('thread-reasoning-text'));
 
-  // A step's output ends in a blank line too, which its box leaves out; the steps' rule runs
+  // A step's output ends in a blank line too, which its box leaves out; the run's rule runs
   // from the first step's line to the end of the last one's output.
-  const steps = byTestId(page, 'thread-steps').last();
-  await steps.getByTestId('thread-steps-summary').click();
-  await steps.getByTestId('thread-receipt-summary').click();
-  const output = steps.getByTestId('thread-output');
+  const run = byTestId(page, 'thread-run').last();
+  await run.getByTestId('thread-run-summary').click();
+  await run.getByTestId('thread-receipt-summary').click();
+  const output = run.getByTestId('thread-output');
   await expect(output).toBeVisible();
   await expectEven(output);
   await expectEven(
-    steps.getByTestId('thread-steps-steps'),
-    steps.getByTestId('thread-receipt-summary').or(output),
+    run.getByTestId('thread-run-steps'),
+    run.getByTestId('thread-receipt-summary').or(output),
   );
 });

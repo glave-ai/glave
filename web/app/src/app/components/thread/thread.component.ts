@@ -41,6 +41,7 @@ import { ProjectsService } from '../../services/projects.service';
 import { SearchService } from '../../services/search.service';
 import { ChangedFilesService } from '../../services/changed-files.service';
 import { SourcesService } from '../../services/sources.service';
+import { StepsService } from '../../services/steps.service';
 import { ThreadService } from '../../services/thread.service';
 import { PanelService } from '../../services/panel.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
@@ -97,6 +98,7 @@ import { TurnComponent } from '../turn/turn.component';
     CommandsService,
     SourcesService,
     ChangedFilesService,
+    StepsService,
     PlanService,
     AttachmentsService,
     ThreadPanelService,
@@ -180,10 +182,17 @@ export class ThreadComponent {
   protected readonly trustAsk = computed(() => (this.drawn() ? this.service.trust() : null));
   private readonly sources = inject(SourcesService);
   private readonly changed = inject(ChangedFilesService);
+  private readonly steps = inject(StepsService);
+  /** Each model's own name, as the server gives it, by its id. */
+  private readonly modelNames = computed<ReadonlyMap<string, string>>(
+    () => new Map(this.models.models().map((model) => [model.id, model.name])),
+  );
   /** What the server says of the turns besides their events. */
   private readonly turnFacts = computed<TurnFacts>(() => ({
     sourced: this.sources.byReply(),
     changed: this.changed.byTurn(),
+    steps: this.steps.steps(),
+    models: this.modelNames(),
   }));
   /** The conversation and the composer, once the page is drawn. */
   private readonly stick = viewChild(GlzStickToBottomDirective);

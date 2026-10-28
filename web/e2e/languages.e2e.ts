@@ -15,6 +15,8 @@ const NOT_THE_APPS = new Set([
   'Claude Haiku 5.5',
   'Dinner ideas for Saturday',
   'Make the tests pass',
+  // The fake server's line for a run of calls: the server writes it in the caller's language.
+  'Ran 4 calls',
   'Nightly dependency audit',
   'Review the release notes',
   'Summarize open issues',
