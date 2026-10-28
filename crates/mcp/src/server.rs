@@ -407,14 +407,18 @@ impl McpServer {
         cancel: &dyn Cancellation,
     ) -> ToolOutput {
         match unless_cancelled(cancel, self.connection()).await {
-            Some(Ok(connection)) => {
-                let mut output = connection
-                    .call(name, arguments, cancel, self.call_limit)
-                    .await;
-                // A web search's results come from the open world, whatever its server says.
-                output.untrusted |= self.untrusted || self.search.as_deref() == Some(name);
-                output
-            }
+            Some(Ok(connection)) => match connection
+                .call(name, arguments, cancel, self.call_limit)
+                .await
+            {
+                // What the server answered, an error included; a web search's results come
+                // from the open world, whatever its server says.
+                Ok(mut output) => {
+                    output.untrusted |= self.untrusted || self.search.as_deref() == Some(name);
+                    output
+                }
+                Err(glaves) => glaves,
+            },
             Some(Err(err)) => ToolOutput::text(true, err.to_string()),
             None => ToolOutput::text(true, CANCELLED),
         }

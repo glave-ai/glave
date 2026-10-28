@@ -18,7 +18,7 @@ use rmcp::model::{
 };
 use rmcp::service::{
     ClientLifecycleMode, ClientServiceExt as _, Peer, PeerRequestOptions, RoleClient,
-    RunningService,
+    RunningService, ServiceError,
 };
 use rmcp::transport::IntoTransport;
 use tokio::task::JoinHandle;
@@ -301,14 +301,16 @@ impl Connection {
         }
     }
 
-    /// Calls the tool the model knows as `name`, for at most `limit`.
+    /// Calls the tool the model knows as `name`, for at most `limit`: `Ok` with what the
+    /// server answered, a result or an error in its own words, untrusted when the tool
+    /// reaches an open world; `Err` with glave's own words when it gave no answer.
     pub(crate) async fn call(
         &self,
         name: &str,
         arguments: &Arguments,
         cancel: &dyn Cancellation,
         limit: Duration,
-    ) -> ToolOutput {
+    ) -> Result<ToolOutput, ToolOutput> {
         let Some((tool, open_world)) = self
             .named
             .lock()
@@ -316,23 +318,27 @@ impl Connection {
             .get(name)
             .cloned()
         else {
-            return ToolOutput::text(true, format!("There is no tool named {name:?}."));
+            return Err(ToolOutput::text(
+                true,
+                format!("There is no tool named {name:?}."),
+            ));
         };
-        let mut output = self.send(tool, arguments, cancel, limit).await;
+        let mut output = self.send(tool, arguments, cancel, limit).await?;
         output.untrusted |= open_world;
-        output
+        Ok(output)
     }
 
-    /// Sends one call of the server's `tool`, for at most `limit`.
+    /// Sends one call of the server's `tool`, for at most `limit`: `Ok` with the server's
+    /// answer, `Err` with glave's words when there is none.
     async fn send(
         &self,
         tool: String,
         arguments: &Arguments,
         cancel: &dyn Cancellation,
         limit: Duration,
-    ) -> ToolOutput {
+    ) -> Result<ToolOutput, ToolOutput> {
         let Arguments::Json(arguments) = arguments else {
-            return ToolOutput::text(true, "The arguments were not valid JSON.");
+            return Err(ToolOutput::text(true, "The arguments were not valid JSON."));
         };
         let params = CallToolRequestParams::new(tool).with_arguments(arguments.clone());
         let request = ClientRequest::CallToolRequest(CallToolRequest::new(params));
@@ -342,30 +348,31 @@ impl Connection {
             .await;
         let mut handle = match sent {
             Ok(handle) => handle,
-            Err(err) => return ToolOutput::text(true, failed(&self.name, &err)),
+            Err(err) => return Err(ToolOutput::text(true, failed(&self.name, &err))),
         };
         let waited = unless_cancelled(cancel, tokio::time::timeout(limit, &mut handle.rx)).await;
+        let glave = |text: String| Err(ToolOutput::text(true, text));
         match waited {
-            Some(Ok(Ok(Ok(ServerResult::CallToolResult(result))))) => output(&result),
-            Some(Ok(Ok(Ok(ServerResult::InputRequiredResult(_))))) => ToolOutput::text(
-                true,
-                "The server asked for more input, which glave cannot give it yet.",
-            ),
-            Some(Ok(Ok(Ok(_)))) => ToolOutput::text(true, "The server answered something else."),
-            Some(Ok(Ok(Err(err)))) => ToolOutput::text(true, failed(&self.name, &err)),
-            Some(Ok(Err(_))) => ToolOutput::text(true, format!("{} stopped answering.", self.name)),
+            Some(Ok(Ok(Ok(ServerResult::CallToolResult(result))))) => Ok(output(&result)),
+            Some(Ok(Ok(Ok(ServerResult::InputRequiredResult(_))))) => {
+                glave("The server asked for more input, which glave cannot give it yet.".to_owned())
+            }
+            Some(Ok(Ok(Ok(_)))) => glave("The server answered something else.".to_owned()),
+            // The server's error, its message in its own words.
+            Some(Ok(Ok(Err(err @ ServiceError::McpError(_))))) => {
+                Ok(ToolOutput::text(true, failed(&self.name, &err)))
+            }
+            Some(Ok(Ok(Err(err)))) => glave(failed(&self.name, &err)),
+            Some(Ok(Err(_))) => glave(format!("{} stopped answering.", self.name)),
             Some(Err(_)) => {
                 let _ = handle.cancel(Some("timed out".to_owned())).await;
-                ToolOutput::text(
-                    true,
-                    format!("{} did not answer within {limit:?}.", self.name),
-                )
+                glave(format!("{} did not answer within {limit:?}.", self.name))
             }
             None => {
                 let _ = handle
                     .cancel(Some("cancelled by the person".to_owned()))
                     .await;
-                ToolOutput::text(true, CANCELLED)
+                glave(CANCELLED.to_owned())
             }
         }
     }

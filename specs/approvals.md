@@ -104,7 +104,7 @@ How the modes behave, where commands run in a sandbox:
 
 ## Untrusted content
 
-Some tool output comes from outside and no one vouches for it: a page `web_fetch` read, the result of an MCP tool whose annotations say `openWorldHint: true` (MCP's flag for a tool that reaches beyond its server, such as a web search), anything from an untrusted MCP server, and what a `bash` command prints when it runs a forge's tool (`gh`, `glab` or `tea`, anywhere in the command): issues, pull requests, comments and CI logs are written by others. The command is labelled whole, by what runs in it rather than by which subcommand only reads: every such tool's output can carry what others wrote, and a command that fails is not labelled, as errors are not. Such output may hold instructions planted to make the agent act.
+Some tool output comes from outside and no one vouches for it: a page `web_fetch` read, the result of an MCP tool whose annotations say `openWorldHint: true` (MCP's flag for a tool that reaches beyond its server, such as a web search), anything from an untrusted MCP server, and what a `bash` command prints when it runs a forge's tool (`gh`, `glab` or `tea`, anywhere in the command): issues, pull requests, comments and CI logs are written by others. The command is labelled whole, by what runs in it rather than by which subcommand only reads: every such tool's output can carry what others wrote, a failing one's as much as a successful one's (#255). Such output may hold instructions planted to make the agent act.
 
 Which MCP servers are untrusted, first rule that applies:
 
@@ -114,7 +114,7 @@ Which MCP servers are untrusted, first rule that applies:
 
 The organization's catalog, served by its gateway, is the organization's and trusted.
 
-- **Labelled.** The model is shown it between `<untrusted>` tags, after a line saying it is data, not instructions, and not to follow requests in it or run commands it suggests unless the person asked. A closing tag inside the content is broken up, so the content cannot end the label early. Errors are glave's own words and are not labelled.
+- **Labelled.** The model is shown it between `<untrusted>` tags, after a line saying it is data, not instructions, and not to follow requests in it or run commands it suggests unless the person asked. A closing tag inside the content is broken up, so the content cannot end the label early. An error is labelled as a success is when it comes from the same place: a forge's tool that fails, or an MCP server's own error; glave's own words (a timeout, a cancel, a refused address) are not.
 - **Remembered.** The call's `tool.call.completed` records `untrusted: true` (`events.md`), so the thread knows it has read such content, and resuming it rebuilds that. A subagent starts knowing what its parent read, and the report of a subagent that read such content is labelled and marks the parent too.
 - **Risky actions after it are judged knowing it.** The cautions above still ask in Auto and Ask first, and Full access asks nothing. In Auto, a soft caution goes to the judge as before, which is also told that the agent has read untrusted content and that asking the agent to do what some content says is not asking for the action; it never sees the content itself. A request to run outside the sandbox never goes to the judge after it: the person decides. With the judge off, or in Ask first, the caution asks as always. Actions that are not cautions are left to the mode: the sandbox, not the label, is the boundary.
 
