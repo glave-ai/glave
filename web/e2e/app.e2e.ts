@@ -50,7 +50,7 @@ test('a thread shows its history and streams a reply to a new message', async ({
 });
 
 for (const colorScheme of ['light', 'dark'] as const) {
-  test(`a turn that worked shows its results first, every box across the column (${colorScheme})`, async ({
+  test(`a turn that worked shows its work in order, every box across the column (${colorScheme})`, async ({
     page,
   }) => {
     await page.emulateMedia({ colorScheme });
@@ -74,6 +74,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(byTestId(page, 'turn-changes-file').first()).toContainText('src/parse.rs');
     await expect(summary).toContainText('2m 05s');
     await expect(summary).toContainText('$0.0042');
+    // The model by its own name, as the server names it.
+    await expect(summary).toContainText('Claude Haiku 5.5');
     await expect(summary).toContainText('4 steps');
     // Where each box comes to rest, whatever moves on the way.
     await atRest(page);
@@ -86,11 +88,14 @@ for (const colorScheme of ['light', 'dark'] as const) {
     // Every box spans the column: the same edges, the same width.
     expect(new Set(boxes.map((box) => Math.round(box?.x ?? -1))).size).toBe(1);
     expect(new Set(boxes.map((box) => Math.round(box?.width ?? -1))).size).toBe(1);
-    // The receipt is a disclosure: the keyboard opens it, and each call says its step in the
-    // server's line.
+    // The run of calls is the server's line before the reply, a disclosure: the keyboard opens
+    // it, and each call says its step in the server's line.
+    const run = byTestId(page, 'thread-run-summary');
+    await expect(run).toHaveText('Ran 4 calls');
+    expect(((await run.boundingBox())?.y ?? Infinity) < (replyBox?.y ?? 0)).toBe(true);
     const receipts = byTestId(page, 'thread-receipt');
     await expect(receipts.first()).toBeHidden();
-    await summary.focus();
+    await run.focus();
     await page.keyboard.press('Enter');
     await expect(receipts).toHaveCount(4);
     await expect(receipts.first()).toBeVisible();

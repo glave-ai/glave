@@ -326,12 +326,14 @@ describe('conversation', () => {
     });
   });
 
-  it('grows the draft with text and reasoning only', () => {
+  it('grows the draft with text and reasoning, and starts it afresh as a model call begins', () => {
     let draft = applyUpdate(NO_DRAFT, { kind: 'text', text: 'Hel' });
     draft = applyUpdate(draft, { kind: 'text', text: 'lo' });
     draft = applyUpdate(draft, { kind: 'reasoning', text: 'why' });
-    draft = applyUpdate(draft, { kind: 'waiting' });
+    draft = applyUpdate(draft, { kind: 'tool_started', summary: 'bash: ls' });
     expect(draft).toEqual({ text: 'Hello', reasoning: 'why' });
+    // A call tried again: what it had written goes.
+    expect(applyUpdate(draft, { kind: 'waiting' })).toBe(NO_DRAFT);
   });
 
   it('keeps the steps running now in the server’s words, from their start to their end', () => {

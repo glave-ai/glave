@@ -419,6 +419,7 @@
     "threadItem.built": "\u200f\u202eBuild\u202c\u200f \u200f\u202eit\u202c\u200f",
     "threadItem.read": "\u200f\u202eRead\u202c\u200f \u200f\u202ewhile\u202c\u200f \u200f\u202eworking\u202c\u200f",
     "threadItem.reply": "\u200f\u202eReply\u202c\u200f",
+    "threadItem.update": "\u200f\u202eUpdate\u202c\u200f",
     "threadItem.you": "\u200f\u202eYou\u202c\u200f",
     "threadPanel.at": "\u200f\u202eChecked\u202c\u200f \u200f\u202eout\u202c\u200f \u200f\u202eat\u202c\u200f",
     "threadPanel.attached": "\u200f\u202eyou\u202c\u200f \u200f\u202eattached\u202c\u200f",

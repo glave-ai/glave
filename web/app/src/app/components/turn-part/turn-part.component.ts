@@ -1,0 +1,21 @@
+import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { GlzStepsComponent } from '@glave/glaze';
+
+import type { TurnPart } from '../../lib/runs';
+import { ReplySourcesComponent } from '../reply-sources/reply-sources.component';
+import { ThreadItemComponent } from '../thread-item/thread-item.component';
+
+/**
+ * One part of a turn, in its place: a run of calls as the server's line, which opens to its
+ * calls; or anything else as its item, a reply with the pages it drew on from the web under it.
+ */
+@Component({
+  selector: 'app-turn-part',
+  imports: [GlzStepsComponent, ReplySourcesComponent, ThreadItemComponent],
+  templateUrl: './turn-part.component.html',
+  styleUrl: './turn-part.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class TurnPartComponent {
+  readonly part = input.required<TurnPart>();
+}

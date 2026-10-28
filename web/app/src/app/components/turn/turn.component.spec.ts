@@ -3,11 +3,13 @@ import { provideRouter } from '@angular/router';
 import type { ChangedFile } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
+import type { MessageItem } from '../../lib/conversation';
 import type { TurnResults } from '../../lib/results';
 import { ChangedFilesService } from '../../services/changed-files.service';
 import { CommandsService } from '../../services/commands.service';
 import { PlanService } from '../../services/plan.service';
 import { SourcesService } from '../../services/sources.service';
+import { StepsService } from '../../services/steps.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
 import { ThreadService } from '../../services/thread.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
@@ -19,6 +21,7 @@ const THREAD_VIEW = [
   CommandsService,
   SourcesService,
   ChangedFilesService,
+  StepsService,
   PlanService,
   ThreadPanelService,
 ];
@@ -26,6 +29,17 @@ const THREAD_VIEW = [
 const CHANGED: readonly ChangedFile[] = [
   { path: 'src/lock.rs', changes: [], added: 16, removed: 0 },
 ];
+
+const REPLY: MessageItem = {
+  kind: 'message',
+  files: [],
+  key: 'm9',
+  seq: 9,
+  from: 'model',
+  text: 'Found it.',
+  reasoning: '',
+  steered: false,
+};
 
 const RESULTS: TurnResults = {
   key: 't',
@@ -39,33 +53,35 @@ const RESULTS: TurnResults = {
     reasoning: '',
     steered: false,
   },
-  before: [],
-  reply: {
-    kind: 'message',
-    files: [],
-    key: 'm9',
-    seq: 9,
-    from: 'model',
-    text: 'Found it.',
-    reasoning: '',
-    steered: false,
-  },
-  sources: null,
+  parts: [
+    {
+      kind: 'run',
+      key: 'run-2',
+      sentence: 'Ran 1 command',
+      items: [
+        {
+          kind: 'call',
+          key: 'c2',
+          seq: 2,
+          call: 'c2',
+          tool: 'bash',
+          summary: 'bash: cargo test',
+          status: 'done',
+          output: '',
+        },
+      ],
+    },
+    { kind: 'item', key: 'm9', item: REPLY, interim: false, sources: null },
+  ],
   live: null,
   working: null,
   files: CHANGED,
-  steps: [
-    {
-      kind: 'call',
-      key: 'c2',
-      seq: 2,
-      tool: 'bash',
-      summary: 'cargo test',
-      status: 'done',
-      output: '',
-    },
-  ],
-  receipt: { status: 'done', facts: ['4m 02s'], steps: '1 step' },
+  receipt: {
+    status: 'done',
+    facts: ['4m 02s', 'Claude Haiku 5.5'],
+    details: ['via OpenRouter (Anthropic)'],
+    steps: '1 step',
+  },
   waiting: [
     {
       kind: 'approval',
@@ -88,10 +104,9 @@ const RESULTS: TurnResults = {
 /** A turn that has just started work, with nothing of its own to show yet. */
 const WORKING: TurnResults = {
   ...RESULTS,
-  reply: null,
+  parts: [],
   working: { step: null, since: null },
   files: [],
-  steps: [],
   receipt: null,
   waiting: [],
 };
@@ -137,38 +152,75 @@ function line(root: HTMLElement): readonly (string | undefined)[] {
 function blocks(root: HTMLElement): readonly string[] {
   return Array.from(
     root.querySelectorAll(
-      ':scope > app-thread-item > [data-testid], :scope > [data-testid], :scope > app-turn-changes > [data-testid], :scope > app-reply-sources > [data-testid]',
+      [
+        ':scope > app-thread-item > [data-testid]',
+        ':scope > [data-testid]',
+        ':scope > app-turn-changes > [data-testid]',
+        ':scope > app-turn-part > [data-testid]',
+        ':scope > app-turn-part > app-thread-item > [data-testid]',
+        ':scope > app-turn-part > app-reply-sources > [data-testid]',
+      ].join(', '),
     ),
   ).map((each) => each.getAttribute('data-testid') ?? '');
 }
 
 describe('TurnComponent', () => {
-  it('shows its results first: the reply, what changed, the receipt, then what waits', async () => {
+  it('shows its work in order: each run in the server’s line, the reply, what changed, the receipt, then what waits', async () => {
     const root = await render(RESULTS);
     expect(blocks(root)).toEqual([
       'thread-message',
+      'thread-run',
       'thread-message',
       'turn-changes',
       'thread-steps',
       'thread-approval',
     ]);
-    const steps = root.querySelector('[data-testid="thread-steps"]');
-    expect(steps?.querySelector('details')?.open).toBe(false);
-    expect(steps?.querySelectorAll('[data-testid="thread-receipt"]')).toHaveLength(1);
+    const run = root.querySelector('[data-testid="thread-run"]');
+    expect(run?.querySelector('details')?.open).toBe(false);
+    expect(root.querySelector('[data-testid="thread-run-summary"]')?.textContent).toContain(
+      'Ran 1 command',
+    );
+    expect(run?.querySelectorAll('[data-testid="thread-receipt"]')).toHaveLength(1);
+    const receipt = root.querySelector('[data-testid="thread-steps"]');
+    expect(receipt?.querySelector('details')?.open).toBe(false);
     expect(root.querySelector('[data-testid="thread-steps-summary"]')?.textContent).toContain(
-      '1 step',
+      'Claude Haiku 5.5',
+    );
+    expect(root.querySelector('[data-testid="thread-steps-detail"]')?.textContent).toBe(
+      'via OpenRouter (Anthropic)',
     );
     await expectAccessible(root);
   });
 
-  it('shows the pages the reply drew on from the web under it', async () => {
+  it('names a message said along the way an update, and the reply a reply', async () => {
     const root = await render({
       ...RESULTS,
-      sources: {
-        reply: 9,
-        sentence: 'Sources: 1 page',
-        pages: [{ url: 'https://tokio.rs/blog', title: 'Tokio blog' }],
-      },
+      parts: [
+        {
+          kind: 'item',
+          key: 'm5',
+          item: { ...REPLY, key: 'm5', seq: 5 },
+          interim: true,
+          sources: null,
+        },
+        ...RESULTS.parts,
+      ],
+    });
+    const names = Array.from(root.querySelectorAll('[data-testid="thread-message"]')).map((each) =>
+      each.getAttribute('aria-label'),
+    );
+    expect(names).toEqual(['You', 'Update', 'Reply']);
+  });
+
+  it('shows the pages the reply drew on from the web under it', async () => {
+    const sources = {
+      reply: 9,
+      sentence: 'Sources: 1 page',
+      pages: [{ url: 'https://tokio.rs/blog', title: 'Tokio blog' }],
+    };
+    const root = await render({
+      ...RESULTS,
+      parts: [{ kind: 'item', key: 'm9', item: REPLY, interim: false, sources }],
     });
     expect(blocks(root).slice(0, 3)).toEqual(['thread-message', 'thread-message', 'reply-sources']);
     expect(root.querySelector('[data-testid="reply-sources-sentence"]')?.textContent).toBe(
@@ -177,13 +229,18 @@ describe('TurnComponent', () => {
     await expectAccessible(root);
   });
 
-  it('streams the reply being written in the reply’s place', async () => {
+  it('streams what the model writes now after what it said before', async () => {
     const root = await render({
       ...RESULTS,
-      reply: null,
       live: { text: 'Writing', reasoning: '' },
       waiting: [],
     });
+    expect(blocks(root).slice(0, 4)).toEqual([
+      'thread-message',
+      'thread-run',
+      'thread-message',
+      'thread-reply',
+    ]);
     const live = root.querySelector('[data-testid="thread-reply"]');
     expect(live?.getAttribute('aria-busy')).toBe('true');
     expect(live?.textContent).toContain('Writing');
@@ -251,11 +308,11 @@ describe('TurnComponent', () => {
   });
 
   it('lets a reply rise into place as it begins, and what changed settle in as it appears', async () => {
-    const fixture = await mount({ ...RESULTS, reply: null, files: [], waiting: [] });
+    const fixture = await mount({ ...RESULTS, parts: [], files: [], waiting: [] });
     const root = fixture.nativeElement as HTMLElement;
     fixture.componentRef.setInput('turn', {
       ...RESULTS,
-      reply: null,
+      parts: [],
       live: { text: 'Writing', reasoning: '' },
       waiting: [],
     });
@@ -326,12 +383,12 @@ describe('TurnComponent', () => {
     expect(await settles(null, [], CHANGED)).toBe(true);
   });
 
-  it('shows reasoning open as it streams, and folds it once the answer begins', async () => {
+  it('keeps reasoning folded as it streams, for the person to open', async () => {
     TestBed.configureTestingModule({
       providers: [provideRouter([]), ...provideFakeSession(new FakeSession()), ...THREAD_VIEW],
     });
     const fixture = TestBed.createComponent(TurnComponent);
-    const thinking = { ...RESULTS, reply: null, waiting: [] };
+    const thinking = { ...RESULTS, parts: [], waiting: [] };
     fixture.componentRef.setInput('turn', {
       ...thinking,
       live: { text: '', reasoning: '\nThe lock is taken twice.\n\n' },
@@ -343,7 +400,7 @@ describe('TurnComponent', () => {
     const summary = (): string | null | undefined =>
       root.querySelector('[data-testid="thread-reasoning-summary"]')?.textContent;
     expect(root.querySelector('[data-testid="thread-working"]')).toBeNull();
-    expect(details()?.open).toBe(true);
+    expect(details()?.open).toBe(false);
     expect(summary()).toBe('Thinking…');
     // Drawn as written, but for the blank lines at its ends.
     expect(root.querySelector('[data-testid="thread-reasoning-text"]')?.textContent).toBe(
@@ -362,8 +419,8 @@ describe('TurnComponent', () => {
   it('shows a turn that did no work as its messages alone', async () => {
     const root = await render({
       ...RESULTS,
+      parts: [{ kind: 'item', key: 'm9', item: REPLY, interim: false, sources: null }],
       files: [],
-      steps: [],
       receipt: null,
       waiting: [],
     });

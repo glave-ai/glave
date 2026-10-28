@@ -1,0 +1,16 @@
+@let shown = part();
+@switch (shown.kind) {
+  @case ('run') {
+    <glz-steps plain testId="thread-run" [steps]="shown.sentence">
+      @for (item of shown.items; track item.key) {
+        <app-thread-item [item]="item" />
+      }
+    </glz-steps>
+  }
+  @case ('item') {
+    <app-thread-item [item]="shown.item" [interim]="shown.interim" />
+    @if (shown.sources; as sources) {
+      <app-reply-sources [sources]="sources" />
+    }
+  }
+}

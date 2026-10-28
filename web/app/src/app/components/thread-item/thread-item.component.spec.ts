@@ -111,6 +111,7 @@ describe('ThreadItemComponent', () => {
       kind: 'call',
       key: 'c',
       seq: 1,
+      call: 'c',
       tool: 'bash',
       summary: 'bash: cargo test',
       status: 'failed',

@@ -1,7 +1,8 @@
 import type { Outcome, TurnResult } from '@glave/client';
 
 import type { ApprovalItem, CallItem, MessageItem, QuestionItem, ThreadItem } from './conversation';
-import { turnResults } from './results';
+import { type TurnFacts, turnResults } from './results';
+import { NO_STEPS, type Steps, type TurnPart } from './runs';
 import type { Turn } from './turns';
 
 const ask: MessageItem = {
@@ -33,6 +34,7 @@ function call(seq: number, status: CallItem['status'] = 'done'): CallItem {
     kind: 'call',
     key: `c${String(seq)}`,
     seq,
+    call: `c${String(seq)}`,
     tool: 'bash',
     summary: 'cargo test',
     status,
@@ -88,6 +90,7 @@ function turn(items: readonly ThreadItem[], more: Partial<Turn> = {}): Turn {
     startSeq: null,
     took: null,
     started: null,
+    model: null,
     result: null,
     ...more,
   };
@@ -108,52 +111,109 @@ function ended(outcome: Outcome, more: Partial<TurnResult> = {}): TurnResult {
   };
 }
 
+/** What the server says of a turn: `runs` of call ids, each told in `sentence`, and `replies`. */
+function told(
+  runs: readonly (readonly [string, readonly string[]])[],
+  replies: readonly number[] = [],
+  more: Partial<TurnFacts> = {},
+): TurnFacts {
+  const steps: Steps = {
+    runs: new Map(
+      runs.flatMap(([sentence, calls]) =>
+        calls.map((id) => [id, { key: `run-${calls[0] ?? ''}`, sentence }] as const),
+      ),
+    ),
+    replies: new Set(replies),
+  };
+  return { sourced: new Map(), changed: new Map(), steps, models: new Map(), ...more };
+}
+
+/** Each part in a line: a run as its line and what it holds, anything else by its key. */
+function drawn(parts: readonly TurnPart[]): readonly string[] {
+  return parts.map((part) =>
+    part.kind === 'run'
+      ? `${part.sentence}: ${part.items.map((item) => item.key).join(' ')}`
+      : part.key,
+  );
+}
+
 describe('results', () => {
-  it('puts a working turn’s reply first and folds its work behind the receipt', () => {
+  it('shows a working turn in order: what it said, each run of calls in the server’s line', () => {
     const shown = turnResults(
-      turn([ask, say(2, 'Looking'), call(3), approval(4, true), call(5), say(6, 'Fixed')], {
-        took: 242_000,
-        result: ended('completed', {
-          cost: { micros: 42_000, currency: 'USD' },
-          via: ['OpenRouter (Anthropic)'],
-        }),
-      }),
+      turn(
+        [
+          ask,
+          say(2, 'Looking'),
+          call(3),
+          approval(3, true),
+          say(4, '', 'hm'),
+          call(5),
+          say(6, 'Fixed'),
+        ],
+        {
+          took: 242_000,
+          model: 'anthropic/claude-haiku-5-5',
+          result: ended('completed', {
+            cost: { micros: 42_000, currency: 'USD' },
+            via: ['OpenRouter (Anthropic)'],
+          }),
+        },
+      ),
       null,
       null,
       false,
       'en-US',
+      told([['Ran 2 commands', ['c3', 'c5']]], [6], {
+        models: new Map([['anthropic/claude-haiku-5-5', 'Claude Haiku 5.5']]),
+      }),
     );
     expect(shown.prompt).toBe(ask);
-    expect(shown.reply?.text).toBe('Fixed');
-    expect(shown.before).toEqual([]);
-    expect(shown.steps.map((item) => item.key)).toEqual(['m2', 'c3', 'a4', 'c5']);
+    // An approval answered sits beside its call, the reasoning between calls inside their run.
+    expect(drawn(shown.parts)).toEqual(['m2', 'Ran 2 commands: c3 a3 m4 c5', 'm6']);
+    const interim = shown.parts.map((part) => part.kind === 'item' && part.interim);
+    expect(interim).toEqual([true, false, false]);
     expect(shown.receipt).toEqual({
       status: 'done',
-      facts: ['4m 02s', '$0.04', 'via OpenRouter (Anthropic)'],
+      facts: ['4m 02s', '$0.04', 'Claude Haiku 5.5'],
+      details: ['via OpenRouter (Anthropic)'],
       steps: '2 steps',
     });
     expect(shown.waiting).toEqual([]);
   });
 
-  it('gives the reply what it drew on, by its seq, and a reply being written none', () => {
+  it('shows calls the server has not told yet each on its own, and reasoning before a run in place', () => {
+    const shown = turnResults(
+      turn([ask, say(2, '', 'hm'), call(3), call(4)]),
+      null,
+      null,
+      true,
+      'en-US',
+      told([['Ran 1 command', ['c3']]]),
+    );
+    expect(drawn(shown.parts)).toEqual(['m2', 'Ran 1 command: c3', 'c4']);
+    expect(drawn(turnResults(turn([ask, call(2)]), null, null, true, 'en-US').parts)).toEqual([
+      'c2',
+    ]);
+    expect(NO_STEPS.runs.size).toBe(0);
+  });
+
+  it('gives the reply what it drew on, by its seq', () => {
     const sourced = {
       reply: 4,
       sentence: 'Sources: 1 page',
       pages: [{ url: 'https://tokio.rs/blog', title: 'Tokio blog' }],
     };
-    const facts = { sourced: new Map([[4, sourced]]), changed: new Map() };
+    const facts = told([], [4], { sourced: new Map([[4, sourced]]) });
     const items = [ask, say(2, 'Looking'), call(3), say(4, 'Here')];
+    const sources = (shown: readonly TurnPart[]): unknown =>
+      shown.map((part) => (part.kind === 'item' ? part.sources : null));
     const shown = turnResults(turn(items), null, null, false, 'en-US', facts);
-    expect(shown.sources).toBe(sourced);
-    const earlier = turnResults(turn(items.slice(0, 3)), null, null, false, 'en-US', facts);
-    expect(earlier.sources).toBeNull();
-    const live = { text: 'Writ', reasoning: '' };
-    expect(turnResults(turn(items), live, null, true, 'en-US', facts).sources).toBeNull();
+    expect(sources(shown.parts)).toEqual([null, null, sourced]);
   });
 
   it('gives a turn the files the server says it changed, by the seq of its start', () => {
     const changed = [{ path: 'src/a.rs', added: 2, removed: 1, changes: [] }];
-    const facts = { sourced: new Map(), changed: new Map([[7, changed]]) };
+    const facts = told([], [], { changed: new Map([[7, changed]]) });
     const items = [ask, call(8), say(9, 'Done')];
     expect(turnResults(turn(items, { startSeq: 7 }), null, null, false, 'en-US', facts).files).toBe(
       changed,
@@ -163,7 +223,7 @@ describe('results', () => {
     ).toEqual([]);
     expect(turnResults(turn(items), null, null, false, 'en-US', facts).files).toEqual([]);
     // Until the server has said, as the thread opens, none are known.
-    const unknown = { sourced: new Map(), changed: null };
+    const unknown = told([], [], { changed: null });
     const opening = turnResults(turn(items, { startSeq: 7 }), null, null, false, 'en-US', unknown);
     expect(opening.files).toBeNull();
   });
@@ -203,10 +263,10 @@ describe('results', () => {
     expect(facts(ended('completed', { cost: null }))).toEqual(['cost not reported']);
     const guessed = ended('completed', { cost: { micros: 1_230_000, currency: 'USD' } });
     expect(facts({ ...guessed, estimated: true })).toEqual(['$1.23 (estimated)']);
-    expect(facts(ended('completed', { via: ['Ollama', 'OpenRouter (Anthropic)'] }))).toEqual([
-      '$0.00',
-      'via Ollama, OpenRouter (Anthropic)',
-    ]);
+    const via = ended('completed', { via: ['Ollama', 'OpenRouter (Anthropic)'] });
+    expect(facts(via)).toEqual(['$0.00']);
+    const routes = turnResults(turn([ask, call(2)], { result: via }), null, null, false, 'en-US');
+    expect(routes.receipt?.details).toEqual(['via Ollama, OpenRouter (Anthropic)']);
   });
 
   it('shows what waits for the person last, never folded', () => {
@@ -218,13 +278,13 @@ describe('results', () => {
       true,
       'en-US',
     );
-    expect(shown.reply?.text).toBe('Ready to push');
+    expect(drawn(shown.parts)).toEqual(['c2', 'm3']);
     expect(shown.waiting).toEqual([waiting]);
     expect(shown.receipt?.status).toBe('waiting');
     expect(shown.receipt?.facts).toEqual([]);
   });
 
-  it('shows a turn that did no work as what it said, in order, with no receipt', () => {
+  it('shows a turn that did no work as what it said, with no receipt', () => {
     const shown = turnResults(
       turn([ask, say(2, '', 'thinking'), say(3, 'Hello')]),
       null,
@@ -232,9 +292,7 @@ describe('results', () => {
       false,
       'en-US',
     );
-    expect(shown.reply?.text).toBe('Hello');
-    expect(shown.before.map((item) => item.key)).toEqual(['m2']);
-    expect(shown.steps).toEqual([]);
+    expect(drawn(shown.parts)).toEqual(['m2', 'm3']);
     expect(shown.receipt).toBeNull();
   });
 
@@ -257,12 +315,11 @@ describe('results', () => {
     );
   });
 
-  it('puts the reply being written in the reply’s place, and the last one back with the work', () => {
+  it('writes what the model writes now after everything recorded, which stays in place', () => {
     const live = { text: 'Writ', reasoning: '' };
     const shown = turnResults(turn([ask, call(2), say(3, 'Earlier')]), live, null, true, 'en-US');
     expect(shown.live).toBe(live);
-    expect(shown.reply).toBeNull();
-    expect(shown.steps.map((item) => item.key)).toEqual(['c2', 'm3']);
+    expect(drawn(shown.parts)).toEqual(['c2', 'm3']);
   });
 
   it('is working while the turn runs with nothing of its own to show', () => {

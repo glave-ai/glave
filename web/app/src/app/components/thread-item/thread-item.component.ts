@@ -50,8 +50,11 @@ interface ShownCall extends CallItem {
 
 type ShownItem = ShownMessage | ShownCall | ApprovalItem | QuestionItem;
 
-/** `item` as the thread shows it, its sizes written for `locale`. */
-function shown(item: ThreadItem, locale: string): ShownItem {
+/**
+ * `item` as the thread shows it, its sizes written for `locale`: a message of the model's said
+ * along the way (`interim`) named an update, its last words its reply.
+ */
+function shown(item: ThreadItem, locale: string, interim: boolean): ShownItem {
   switch (item.kind) {
     case 'message': {
       const person = item.from === 'person';
@@ -59,7 +62,11 @@ function shown(item: ThreadItem, locale: string): ShownItem {
         ...item,
         // The person's approval of a plan reads as what they pressed.
         text: item.built === true ? $localize`:@@threadItem.built:Build it` : item.text,
-        author: person ? $localize`:@@threadItem.you:You` : $localize`:@@threadItem.reply:Reply`,
+        author: person
+          ? $localize`:@@threadItem.you:You`
+          : interim
+            ? $localize`:@@threadItem.update:Update`
+            : $localize`:@@threadItem.reply:Reply`,
         files: item.files.map((file) => ({ name: file.name, size: sizeOf(file.bytes, locale) })),
         markdown: !person,
         // Only a reply is copied; what the person wrote is theirs already.
@@ -101,12 +108,14 @@ export class ThreadItemComponent {
   readonly item = input.required<ThreadItem>();
   /** Whether a card that needs the person rises into place: it appeared as the person watched. */
   readonly rises = input(false);
+  /** Whether it is a message of the model's said along the way, not its turn's reply. */
+  readonly interim = input(false);
 
   private readonly thread = inject(ThreadService);
   /** Whether an answer is being sent, so the cards wait. */
   protected readonly sending = this.thread.sending;
   private readonly locale = inject(LOCALE_ID);
-  protected readonly shown = computed(() => shown(this.item(), this.locale));
+  protected readonly shown = computed(() => shown(this.item(), this.locale, this.interim()));
   protected readonly copy = { read: $localize`:@@threadItem.read:Read while working` } as const;
 
   protected decide(approval: string, decision: GlzDecision): void {

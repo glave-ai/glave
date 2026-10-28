@@ -1,4 +1,6 @@
-// A turn's parts are blocks of the conversation's column, which projects them.
+// A turn's blocks sit close, one above another; the column sets turns further apart.
 :host {
-  display: contents;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-3);
 }

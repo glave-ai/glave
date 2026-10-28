@@ -29,7 +29,7 @@ test('a reply shows the pages it drew on from the web under it, each a link', as
     'docs.rs/tokio/latest/tokio/ (opens in a new tab)',
   );
   // The search is a step in the server's line, as it read while it ran.
-  await byTestId(page, 'thread-steps-summary').last().click();
+  await byTestId(page, 'thread-run-summary').last().click();
   await expect(byTestId(page, 'thread-receipt').first()).toContainText(
     'Searched the web: Tokio 2.0 release',
   );

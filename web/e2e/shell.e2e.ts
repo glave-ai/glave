@@ -98,7 +98,9 @@ test('the model picked is sent with the next turn, and no reply names a model', 
   const api = await fakeApi(page);
   await page.goto(`/t/${THREAD}${SIGNED_IN}`);
   await expect(byTestId(page, 'thread-message').last()).toHaveAttribute('aria-label', 'Reply');
-  await expect(byTestId(page, 'thread-items')).not.toContainText('Claude Haiku');
+  // The receipt names the model; a message never does.
+  await expect(byTestId(page, 'thread-steps-summary')).toContainText('Claude Haiku 5.5');
+  await expect(byTestId(page, 'thread-message').filter({ hasText: 'Claude Haiku' })).toHaveCount(0);
   const picker = byTestId(page, 'model-picker-trigger');
   // The default model by its name, made from its id: never a slug.
   // Its quiet line names the model alone; the list names its company too.

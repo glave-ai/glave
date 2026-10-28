@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 
 import { HISTORY } from './fake-api';
 import { changesOf } from './fake-changes';
+import { stepsOf } from './fake-steps';
 import { type Storing, storedEvents } from './fake-events';
 import { type Gate, type Gated, gates } from './fake-gate';
 import { THREAD, call, done, event } from './fake-records';
@@ -19,12 +20,15 @@ export const ANSWER = ['The lock ', 'is taken twice.'];
 
 /** The file the turn writes, and what the server says the thread changed once it has. */
 const LOCK = { path: 'src/lock.rs', content: 'one\ntwo\n' };
-const WROTE = changesOf([
+const WRITTEN = [
   ...HISTORY,
   event(HISTORY.length + 1, 'turn.started', {}),
   call(HISTORY.length + 3, 'call_test', 'write', LOCK),
   done(HISTORY.length + 4, 'call_test', 'Wrote src/lock.rs'),
-]);
+];
+const WROTE = changesOf(WRITTEN);
+/** What the server says of the thread's steps once the write has been asked for. */
+const STEPS = stepsOf(WRITTEN);
 
 /**
  * Makes the page's next turn in `THREAD` one that runs a tool, then thinks before it answers, a
@@ -39,7 +43,7 @@ export async function thinkingTurn(page: Page): Promise<void> {
   await gates(page);
   await storedEvents(page);
   await page.addInitScript(
-    ({ after, thread, started, step, thinking, answer, lock, wrote }) => {
+    ({ after, thread, started, step, thinking, answer, lock, wrote, steps }) => {
       const real = window.fetch.bind(window);
       const encoder = new TextEncoder();
       const passed = (gate: Gate): Promise<void> =>
@@ -49,14 +53,21 @@ export async function thinkingTurn(page: Page): Promise<void> {
       const live = (update: unknown): string =>
         JSON.stringify({ jsonrpc: '2.0', method: 'turn/live', params: { thread, update } });
       const call = { call_id: 'call_test' };
-      // Once the file is written, the server says so when asked what the thread changed.
-      let written = false;
+      // Once the file is written, the server says so when asked what the thread changed; once
+      // the write is asked for, it tells it in its run of calls.
+      let [asked, written] = [false, false];
+      const answered = (body: string, result: unknown): Response => {
+        const { id } = JSON.parse(body) as { id: number };
+        const said = JSON.stringify({ jsonrpc: '2.0', id, result });
+        return new Response(said, { headers: { 'Content-Type': 'application/json' } });
+      };
       window.fetch = async (input, init) => {
         const body = typeof init?.body === 'string' ? init.body : '';
         if (written && body.includes('"thread/changes"')) {
-          const { id } = JSON.parse(body) as { id: number };
-          const result = JSON.stringify({ jsonrpc: '2.0', id, result: { changes: wrote } });
-          return new Response(result, { headers: { 'Content-Type': 'application/json' } });
+          return answered(body, { changes: wrote });
+        }
+        if (asked && body.includes('"thread/steps"')) {
+          return answered(body, { steps });
         }
         if (!body.includes('"turn/start"')) {
           return real(input, init);
@@ -77,6 +88,7 @@ export async function thinkingTurn(page: Page): Promise<void> {
             );
             send(live({ kind: 'waiting' }));
             await passed('tool');
+            asked = true;
             send(
               stored(after + 3, 'tool.call.requested', {
                 ...call,
@@ -132,6 +144,7 @@ export async function thinkingTurn(page: Page): Promise<void> {
       answer: ANSWER,
       lock: LOCK,
       wrote: WROTE,
+      steps: STEPS,
     },
   );
 }
