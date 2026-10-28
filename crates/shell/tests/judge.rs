@@ -18,17 +18,38 @@ mod judging {
     }
 
     fn verdict(script: &str) -> Verdict {
+        verdict_in(script, "/work/app")
+    }
+
+    /// The verdict on `script` run in the project at `project`, with macOS's own temporary
+    /// folder as `$TMPDIR`.
+    fn verdict_in(script: &str, project: &str) -> Verdict {
         let context = Context {
-            project: Path::new("/work/app"),
+            project: Path::new(project),
             home: Some(Path::new("/home/ana")),
-            temp: None,
+            temp: Some(Path::new(TMPDIR)),
             secret: &secret,
         };
         judge(script, &context)
     }
 
+    /// A temporary folder as macOS gives each person one, under `/var/folders`.
+    const TMPDIR: &str = "/var/folders/rs/17d5l4kn/T";
+
+    /// Projects that live in a temporary folder: a scratch project, and an eval's workspace.
+    const PROJECTS_IN_TEMP: [&str; 4] = [
+        "/tmp/scratch",
+        "/private/tmp/scratch",
+        "/var/folders/rs/17d5l4kn/T/glave-eval/run-1/task",
+        "/private/var/folders/rs/17d5l4kn/T/glave-eval/run-1/task",
+    ];
+
     fn kind(script: &str) -> Option<Kind> {
-        match verdict(script) {
+        kind_in(script, "/work/app")
+    }
+
+    fn kind_in(script: &str, project: &str) -> Option<Kind> {
+        match verdict_in(script, project) {
             Verdict::Caution(caution) => Some(caution.kind),
             _ => None,
         }
@@ -129,6 +150,89 @@ mod judging {
         ] {
             assert_eq!(kind(script), Some(Kind::Deletes), "{script}");
         }
+    }
+
+    #[test]
+    fn deleting_in_a_temporary_folder_is_ordinary_from_a_project_outside_it() {
+        for script in [
+            "rm -rf /tmp/build",
+            "rm -rf /private/tmp/build",
+            "rm -rf /var/folders/rs/17d5l4kn/T/build",
+        ] {
+            assert_eq!(verdict(script), Verdict::Unknown, "{script}");
+        }
+    }
+
+    #[test]
+    fn deleting_beside_or_above_a_project_in_a_temporary_folder_needs_the_person() {
+        for project in PROJECTS_IN_TEMP {
+            // Another folder in the temporary folder the project is in, in both spellings.
+            let neighbour = if project.contains("/tmp/") {
+                ["rm -rf /tmp/build", "rm -rf /private/tmp/build"]
+            } else {
+                [
+                    "rm -rf /var/folders/rs/17d5l4kn/T/build",
+                    "rm -rf /private/var/folders/rs/17d5l4kn/T/build",
+                ]
+            };
+            for script in [
+                "rm -rf ../sibling",
+                "rm -rf ../../other-run",
+                "rm -rf ..",
+                "cd .. && rm -rf other",
+            ]
+            .into_iter()
+            .chain(neighbour)
+            {
+                assert_eq!(
+                    kind_in(script, project),
+                    Some(Kind::Deletes),
+                    "{script} in {project}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_project_in_a_temporary_folder_deletes_its_own_files_and_another_temporary_folders() {
+        for project in PROJECTS_IN_TEMP {
+            for script in ["rm -rf target", "rm -rf build/*", "cd src && rm -rf gen"] {
+                assert_eq!(
+                    verdict_in(script, project),
+                    Verdict::Unknown,
+                    "{script} in {project}"
+                );
+            }
+        }
+        assert_eq!(
+            verdict_in("rm -rf /tmp/build", PROJECTS_IN_TEMP[2]),
+            Verdict::Unknown
+        );
+        // A `$TMPDIR` of the command's own, inside the temporary folder the project is in.
+        let own_temp = Context {
+            project: Path::new(PROJECTS_IN_TEMP[2]),
+            home: None,
+            temp: Some(Path::new("/var/folders/rs/17d5l4kn/T/glave-run-1")),
+            secret: &secret,
+        };
+        assert_eq!(
+            judge(
+                "rm -rf /var/folders/rs/17d5l4kn/T/glave-run-1/out",
+                &own_temp
+            ),
+            Verdict::Unknown
+        );
+        assert!(matches!(
+            judge("rm -rf /var/folders/rs/17d5l4kn/T/build", &own_temp),
+            Verdict::Caution(caution) if caution.kind == Kind::Deletes
+        ));
+        assert_eq!(
+            verdict_in(
+                "rm -rf /var/folders/rs/17d5l4kn/T/build",
+                PROJECTS_IN_TEMP[0]
+            ),
+            Verdict::Unknown
+        );
     }
 
     #[test]
@@ -475,6 +579,19 @@ mod judging {
             for script in [sort, uniq, tree, file] {
                 prop_assert_ne!(verdict(&script), Verdict::ReadOnly, "{}", script);
             }
+        }
+
+        #[test]
+        fn from_a_project_in_a_temporary_folder_only_its_own_files_are_ordinary_to_delete(
+            project in proptest::sample::select(PROJECTS_IN_TEMP.to_vec()),
+            ups in 1usize..4,
+            name in "[a-z][a-z0-9-]{0,8}",
+            inside in "[a-z][a-z0-9-]{0,8}",
+        ) {
+            let beside = format!("rm -rf {}{name}", "../".repeat(ups));
+            prop_assert_eq!(kind_in(&beside, project), Some(Kind::Deletes), "{} in {}", beside, project);
+            let own = format!("rm -rf {inside}/{name}");
+            prop_assert_eq!(verdict_in(&own, project), Verdict::Unknown, "{} in {}", own, project);
         }
 
         #[test]
