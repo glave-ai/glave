@@ -50,6 +50,7 @@ fn setup(server: &FakeServer) -> Setup {
         subagents: false,
         memory: None,
         processes: glave_process::Processes::unrecorded(),
+        office: true,
         glave_on_path: None,
     }
 }
@@ -102,6 +103,24 @@ fn a_task_done_right_passes_and_leaves_its_record() {
         sent.first().and_then(|r| r.authorization.as_deref()),
         Some(format!("Bearer {KEY}").as_str())
     );
+}
+
+/// glave's document skills are offered unless the run measures Python in their place.
+#[test]
+fn glave_s_document_skills_go_when_python_takes_their_place() {
+    let offered = |office: bool| {
+        let dir = folder(if office { "office" } else { "python" });
+        let task = task(&dir, "", "grep -q hi hello.txt\n");
+        let server = FakeServer::start(writes_hello()).unwrap();
+        let mut setup = setup(&server);
+        setup.office = office;
+        let attempt = block_on!(attempt(&setup, &task, "fake-model", 1, &dir.join("run"))).unwrap();
+        assert!(attempt.passed(), "{:?}", attempt.failures);
+        let first = server.received().into_iter().next().unwrap();
+        first.body.to_string().contains("glave:spreadsheets")
+    };
+    assert!(offered(true));
+    assert!(!offered(false));
 }
 
 /// Each attempt starts with an empty Cargo home of its own, which goes with what it built.

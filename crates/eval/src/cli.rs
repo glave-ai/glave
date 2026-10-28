@@ -38,7 +38,7 @@ The endpoint comes from GLAVE_BASE_URL and GLAVE_API_KEY, which `cargo xtask eva
 
 options:
   --model <id>         a model to run (repeat for several; default: the three default models)
-  --only <text>        only the tasks whose name contains this
+  --only <text>        only the tasks whose name contains this (repeat for any of several)
   --tier <tier>        fast (default), hard or all
   --repeat <n>         attempts of each task on each model (default 1)
   --concurrency <n>    attempts at once (default 6)
@@ -47,13 +47,15 @@ options:
   --tasks <folder>     where the tasks are (default evals/tasks)
   --no-plan            keep update_plan out of every mode but Plan, as glave does when plans are off
   --subagents          let the model hand work to child threads with task
-  --memory <on|off>    memory on or off for every task (default: each task's own [glave] memory)";
+  --memory <on|off>    memory on or off for every task (default: each task's own [glave] memory)
+  --python <venv>      no glave document skills and no `glave doc`, but this Python environment
+                       first on the tasks' PATH (evals/README.md, \"Documents\")";
 
 /// The parsed command line.
 #[derive(Debug, PartialEq)]
 struct Options {
     models: Vec<String>,
-    only: Option<String>,
+    only: Vec<String>,
     tier: Option<Tier>,
     repeat: u32,
     concurrency: usize,
@@ -63,6 +65,8 @@ struct Options {
     plans: bool,
     subagents: bool,
     memory: Option<bool>,
+    /// The Python environment the tasks get in place of glave's own document tools.
+    python: Option<PathBuf>,
 }
 
 pub fn main() -> ExitCode {
@@ -125,21 +129,32 @@ fn run(options: &Options) -> Result<bool, String> {
         .build()
         .map_err(|err| format!("could not start: {err}"))?;
     let processes = runtime.block_on(tied())?;
-    let glave_on_path = runtime.block_on(glave_on_path())?;
+    let mut environment: Vec<(OsString, OsString)> = std::env::vars_os().collect();
+    let glave_on_path = match &options.python {
+        Some(venv) => {
+            python_first(&mut environment, venv)?;
+            None
+        }
+        None => Some(runtime.block_on(glave_on_path())?),
+    };
     let setup = Arc::new(Setup {
         endpoint,
-        environment: std::env::vars_os().collect(),
+        environment,
         plans: options.plans,
         subagents: options.subagents,
         memory: options.memory,
         processes,
-        glave_on_path: Some(glave_on_path),
+        office: options.python.is_none(),
+        glave_on_path,
     });
     let attempts = options
         .repeat
         .saturating_mul(u32::try_from(tasks.len() * options.models.len()).unwrap_or(u32::MAX));
+    let python = (options.python.as_ref())
+        .map(|venv| format!(" · Python from {}, no glave doc", venv.display()))
+        .unwrap_or_default();
     println!(
-        "glave-eval: {} tasks × {} models × {} = {attempts} attempts · {}",
+        "glave-eval: {} tasks × {} models × {} = {attempts} attempts{python} · {}",
         tasks.len(),
         options.models.len(),
         options.repeat,
@@ -190,6 +205,31 @@ async fn glave_on_path() -> Result<PathBuf, String> {
         .await
         .map_err(|err| format!("could not put glave in {}: {err}", on_path.display()))?;
     Ok(on_path)
+}
+
+/// Puts the Python environment `venv` first on the tasks' `PATH`, in place of glave's own
+/// document tools: every folder holding a `glave` comes off it, so no `glave doc` is reached.
+fn python_first(environment: &mut Vec<(OsString, OsString)>, venv: &Path) -> Result<(), String> {
+    let bin = std::path::absolute(venv)
+        .map_err(|err| format!("--python {}: {err}", venv.display()))?
+        .join("bin");
+    if !bin.join("python3").is_file() {
+        return Err(format!(
+            "--python {}: no bin/python3 there; make it as evals/README.md says (\"Documents\")",
+            venv.display()
+        ));
+    }
+    let old = environment
+        .iter()
+        .find(|(name, _)| name == "PATH")
+        .map(|(_, value)| value.clone())
+        .unwrap_or_default();
+    let others = std::env::split_paths(&old).filter(|folder| !folder.join("glave").exists());
+    let path = std::env::join_paths(std::iter::once(bin).chain(others))
+        .map_err(|err| format!("--python {}: {err}", venv.display()))?;
+    environment.retain(|(name, _)| name != "PATH");
+    environment.push(("PATH".into(), path));
+    Ok(())
 }
 
 /// How the model's commands start: tied to this eval by glave's lifeline, with this program
@@ -250,10 +290,8 @@ fn chosen(tasks: Vec<Task>, options: &Options) -> Result<Vec<Task>, String> {
         .into_iter()
         .filter(|task| options.tier.is_none_or(|tier| task.tier == tier))
         .filter(|task| {
-            options
-                .only
-                .as_deref()
-                .is_none_or(|only| task.name.contains(only))
+            options.only.is_empty()
+                || (options.only.iter()).any(|only| task.name.contains(only.as_str()))
         })
         .filter(|task| {
             let runnable = sandbox || !task.sandboxed;
@@ -285,7 +323,7 @@ fn write(path: &Path, text: &str) -> Result<(), String> {
 fn options(args: &[String]) -> Result<Options, String> {
     let mut options = Options {
         models: Vec::new(),
-        only: None,
+        only: Vec::new(),
         tier: Some(Tier::Fast),
         repeat: 1,
         concurrency: 6,
@@ -295,6 +333,7 @@ fn options(args: &[String]) -> Result<Options, String> {
         plans: true,
         subagents: false,
         memory: None,
+        python: None,
     };
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
@@ -305,7 +344,7 @@ fn options(args: &[String]) -> Result<Options, String> {
         };
         match arg.as_str() {
             "--model" => options.models.push(value()?),
-            "--only" => options.only = Some(value()?),
+            "--only" => options.only.push(value()?),
             "--tier" => {
                 options.tier = match value()?.as_str() {
                     "fast" => Some(Tier::Fast),
@@ -331,6 +370,7 @@ fn options(args: &[String]) -> Result<Options, String> {
                     other => return Err(format!("--memory is on or off, not {other:?}")),
                 };
             }
+            "--python" => options.python = Some(PathBuf::from(value()?)),
             other => return Err(format!("unknown option {other}\n{USAGE}")),
         }
     }
@@ -386,6 +426,8 @@ mod tests {
             "c/d",
             "--only",
             "fix",
+            "--only",
+            "edit",
             "--tier",
             "all",
             "--repeat",
@@ -402,13 +444,15 @@ mod tests {
             "--subagents",
             "--memory",
             "on",
+            "--python",
+            "venv",
         ])
         .unwrap();
         assert_eq!(
             options,
             Options {
                 models: vec!["a/b".into(), "c/d".into()],
-                only: Some("fix".into()),
+                only: vec!["fix".into(), "edit".into()],
                 tier: None,
                 repeat: 3,
                 concurrency: 2,
@@ -418,6 +462,7 @@ mod tests {
                 plans: false,
                 subagents: true,
                 memory: Some(true),
+                python: Some("venv".into()),
             }
         );
     }
@@ -445,6 +490,28 @@ mod tests {
         assert!(is_run("20261008-182952"));
         assert!(!is_run("2026100818295x"));
         assert!(!is_run("cargo-target"));
+    }
+
+    #[test]
+    fn python_goes_first_and_every_glave_comes_off_the_path() {
+        let base = glave_ports::testing::TempDir::new("eval-python").unwrap();
+        let (venv, installed, other) = (base.join("venv"), base.join("local"), base.join("usr"));
+        for folder in [venv.join("bin"), installed.clone(), other.clone()] {
+            std::fs::create_dir_all(folder).unwrap();
+        }
+        std::fs::write(installed.join("glave"), "").unwrap();
+        let path = std::env::join_paths([&installed, &other]).unwrap();
+        let mut environment = vec![("PATH".into(), path), ("HOME".into(), "/h".into())];
+        assert!(
+            python_first(&mut environment.clone(), &venv).is_err(),
+            "no python3 yet"
+        );
+        std::fs::write(venv.join("bin/python3"), "").unwrap();
+        python_first(&mut environment, &venv).unwrap();
+        let path = environment.iter().find(|(name, _)| name == "PATH").unwrap();
+        let folders: Vec<PathBuf> = std::env::split_paths(&path.1).collect();
+        assert_eq!(folders, [venv.join("bin"), other]);
+        assert_eq!(environment.len(), 2);
     }
 
     #[test]

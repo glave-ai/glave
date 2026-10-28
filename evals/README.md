@@ -31,6 +31,34 @@ write scratch files at fixed paths in the shared `/tmp`, so two attempts of one 
 overwrite each other's. Each attempt also has a temp folder of its own (`TMPDIR`) for its setup
 and grader, removed once it is graded; the sandbox gives each command it runs one of its own.
 
+## Documents
+
+The document scorecard compares glave's own document tools with Python on the document tasks
+(`spreadsheet-*`, `document-edit`, `pdf-form`, `data-answer`), whose graders accept any tool.
+It is two runs of the same tasks:
+
+- **glave**, as glave runs: its `glave:` document skills offered and `glave doc` on the tasks'
+  `PATH`;
+- **Python**, with `--python <venv>`: no `glave:` document skills, no `glave` anywhere on the
+  tasks' `PATH`, and the virtual environment's `bin` first on it, holding Python 3 with
+  openpyxl, python-docx, pypdf and pandas at the versions `requirements.txt` pins.
+
+The environment is made once, anywhere outside the repository; installing needs the network,
+the runs do not:
+
+```sh
+python3 -m venv /path/to/venv
+/path/to/venv/bin/pip install --only-binary :all: --requirement evals/requirements.txt
+```
+
+Then each arm, the second compared with the first:
+
+```sh
+only="--only spreadsheet --only document --only pdf --only data"
+cargo xtask eval $only --repeat 3
+cargo xtask eval $only --repeat 3 --python /path/to/venv --baseline <the first run's report.json>
+```
+
 ## A task
 
 Tasks use [Harbor](https://github.com/harbor-framework/harbor)'s layout:
