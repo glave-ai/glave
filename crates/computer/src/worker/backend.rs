@@ -58,7 +58,8 @@ pub(crate) struct Listed {
 pub(crate) enum Link {
     /// Over TLS at `address`, trusting only the certificate with `fingerprint`. `forward`,
     /// when the backend reaches the worker through a forwarder of its own (Kubernetes'
-    /// port-forward), moves the bytes, and stops when the worker is removed.
+    /// port-forward), moves the bytes, or holds the worker's input (Docker's attach), and stops
+    /// when the worker is removed.
     Tls {
         address: SocketAddr,
         fingerprint: Fingerprint,
