@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_json::value::RawValue;
 
-use crate::reasoning::sent_back;
+use crate::reasoning::{SentBack, sent_back, sent_from};
 
 #[derive(Debug, Serialize)]
 pub(crate) struct ChatRequest<'a> {
@@ -253,7 +253,8 @@ pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> Cha
     // after a line naming its result: a tool's message takes text alone. OpenCode sends them
     // so too.
     let mut handed: Vec<ContentPart> = Vec::new();
-    for message in &request.messages {
+    let reasoning_from = sent_from(&request.messages, provider);
+    for (index, message) in request.messages.iter().enumerate() {
         if let Message::Tool {
             call_id, output, ..
         } = message
@@ -275,7 +276,8 @@ pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> Cha
         } else {
             hand(&mut messages, &mut handed);
         }
-        push(&mut messages, wire_message(request, provider, message));
+        let reasoning = (index >= reasoning_from).then_some(provider);
+        push(&mut messages, wire_message(request, reasoning, message));
     }
     hand(&mut messages, &mut handed);
     ChatRequest {
@@ -336,9 +338,11 @@ fn hand(messages: &mut Vec<WireMessage<'_>>, handed: &mut Vec<ContentPart>) {
     }
 }
 
+/// One message on the wire; an assistant's carries its reasoning back to `reasoning`, the
+/// provider, when there is one.
 fn wire_message<'a>(
     request: &ModelRequest,
-    provider: &str,
+    reasoning: Option<&str>,
     message: &'a Message,
 ) -> WireMessage<'a> {
     match message {
@@ -347,7 +351,9 @@ fn wire_message<'a>(
         },
         Message::Assistant { parts, tool_calls } => {
             let text = text_of(parts);
-            let reasoning = sent_back(parts, provider, &request.model);
+            let reasoning = reasoning.map_or_else(SentBack::default, |provider| {
+                sent_back(parts, provider, &request.model)
+            });
             WireMessage::Assistant {
                 reasoning_content: reasoning.reasoning_content,
                 reasoning: reasoning.reasoning,

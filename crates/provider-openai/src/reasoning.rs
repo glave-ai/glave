@@ -1,9 +1,11 @@
 //! A model's reasoning kept so it can be sent back: the field its text came in, and
 //! OpenRouter's `reasoning_details` merged from their deltas, signed and encrypted entries
-//! exactly as they came. It goes back on every assistant message, as DeepSeek requires and
-//! OpenCode does, and only to the provider and model that produced it.
+//! exactly as they came. It goes back within the current turn's tool calls, as Codex sent
+//! it, on every turn only where the API demands it, and only to the provider and model that
+//! produced it.
 
 use glave_event::{Opaque, Part};
+use glave_ports::Message;
 use serde_json::value::RawValue;
 use serde_json::{Map, Value};
 
@@ -107,6 +109,25 @@ fn merge(previous: &mut Map<String, Value>, delta: Map<String, Value>) {
             previous.insert(key, value);
         }
     }
+}
+
+/// The providers that refuse a request with tools unless every earlier assistant message
+/// carries its reasoning, earlier turns' too: DeepSeek's own API ("Thinking Mode", tool
+/// calls). Through OpenRouter its models need only the current turn's.
+const EVERY_TURN: &[&str] = &["api.deepseek.com"];
+
+/// The index in `messages` from which assistant messages carry their reasoning back to
+/// `provider`: those after the person's last message, the current turn's tool calls, where
+/// the model continues its own chain; earlier turns' are finished and only cost tokens. From
+/// the first for a provider in [`EVERY_TURN`].
+pub(crate) fn sent_from(messages: &[Message], provider: &str) -> usize {
+    if EVERY_TURN.contains(&provider) {
+        return 0;
+    }
+    messages
+        .iter()
+        .rposition(|message| matches!(message, Message::User { .. }))
+        .map_or(0, |last| last.saturating_add(1))
 }
 
 /// How an assistant message's reasoning goes back on the wire.

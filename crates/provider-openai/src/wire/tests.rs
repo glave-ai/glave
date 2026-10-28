@@ -478,3 +478,32 @@ fn reasoning_from_another_provider_or_model_is_not_sent() {
         );
     }
 }
+
+#[test]
+fn reasoning_goes_back_within_the_turn_and_every_turn_only_where_demanded() {
+    let user = |text: &str| Message::User {
+        parts: vec![Part::Text { text: text.into() }],
+    };
+    let carried = |provider: &str| {
+        let request = asking(
+            vec![
+                user("first"),
+                reasoned(provider, "gpt", "reasoning_content", ""),
+                user("second"),
+                reasoned(provider, "gpt", "reasoning_content", ""),
+                reasoned(provider, "gpt", "reasoning_content", ""),
+            ],
+            Vec::new(),
+        );
+        let body = serde_json::to_value(chat_request(&request, provider)).unwrap();
+        body["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|message| message["role"] == "assistant")
+            .map(|message| message.get("reasoning_content").is_some())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(carried("openrouter"), [false, true, true]);
+    assert_eq!(carried("api.deepseek.com"), [true, true, true]);
+}
