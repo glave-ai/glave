@@ -58,7 +58,7 @@ describe('CommandsService', () => {
     await settle();
     // A thread that never kept a command in the background has nothing to ask about.
     expect(fake.paramsOf('command/list')).toEqual([]);
-    expect([commands.loaded(), commands.known()]).toEqual([false, true]);
+    expect(commands.loaded()).toBe(false);
     await thread.send('Start the dev server');
     await settle();
     expect(fake.paramsOf('command/list')).toEqual([{ thread: 'thread-1' }]);
@@ -192,7 +192,6 @@ describe('CommandsService', () => {
     await thread.open('thread-1');
     await settle();
     expect([commands.loaded(), commands.error()]).toEqual([true, 'The computer did not answer.']);
-    expect(commands.known()).toBe(true);
   });
 
   it('moves its clock on each second while the panel shows, and not after', async () => {

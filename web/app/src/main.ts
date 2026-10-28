@@ -4,7 +4,6 @@ import { bootstrapApplication } from '@angular/platform-browser';
 import { appConfig } from './app/app.config';
 import { AppComponent } from './app/components/app/app.component';
 import { ENGLISH, chooseLanguage } from './app/lib/language';
-import { typefaces } from './typefaces';
 
 const { messages, locale, direction } = chooseLanguage(navigator.languages);
 
@@ -31,10 +30,8 @@ async function language(): Promise<readonly (Provider | EnvironmentProviders)[]>
   }
 }
 
-// The language and the typefaces, side by side, so the first page is drawn in its own words and
-// type, and nothing on it moves as they come in.
-Promise.all([language(), typefaces(document.fonts)])
-  .then(([providers]) =>
+language()
+  .then((providers) =>
     bootstrapApplication(AppComponent, {
       ...appConfig,
       providers: [...appConfig.providers, ...providers],

@@ -1,80 +1,71 @@
-<!-- All but the person, who stays at the pane's foot. What comes in after the first paint takes
-     the room it needs from the threads, which grow to fill this, so nothing already drawn moves:
-     the threads once read, and Tasks under them once the tasks are. -->
-<div class="above">
-  <div class="top">
-    <span class="name">{{ copy.name }}</span>
-    <a
-      glzIconButton
-      class="new"
-      routerLink="/"
-      data-testid="nav-new-chat"
-      [label]="copy.newChat"
-      (click)="followed()"
-    >
-      <glz-icon [icon]="icons.newChat" />
-    </a>
-  </div>
-  <label class="search">
-    <glz-icon [icon]="icons.search" />
-    <!-- Out of reach until the change detection that names it, as Glaze's controls are: the side
+<div class="top">
+  <span class="name">{{ copy.name }}</span>
+  <a
+    glzIconButton
+    class="new"
+    routerLink="/"
+    data-testid="nav-new-chat"
+    [label]="copy.newChat"
+    (click)="followed()"
+  >
+    <glz-icon [icon]="icons.newChat" />
+  </a>
+</div>
+<label class="search">
+  <glz-icon [icon]="icons.search" />
+  <!-- Out of reach until the change detection that names it, as Glaze's controls are: the side
        nav comes in a route's page, which Angular binds a task after it adds it. -->
-    <input
-      type="search"
-      inert
-      [attr.inert]="null"
-      autocorrect="off"
-      autocapitalize="off"
-      spellcheck="false"
-      data-testid="nav-search"
-      [attr.aria-label]="copy.search"
-      [placeholder]="copy.searchPlaceholder"
-      [value]="query()"
-      (input)="search($event)"
-    />
-  </label>
-  <!-- The switch's code loads as the page starts, beside the lists' first read, and the switch
-     shows once the person has a project: kept out of the first load. Read before its code is in,
-     the lists keep its room, so it comes in moving nothing. If its code cannot load, the threads
-     stay grouped as they are. -->
-  @defer (on immediate) {
-    @if (groupable()) {
-      <app-group-by class="grouping" />
-    }
-  } @placeholder {
-    @if (groupable()) {
-      <div class="grouping room"></div>
-    }
-  } @error {}
-  <!-- The threads by what each is doing load the first time they show, fetched once the page is
+  <input
+    type="search"
+    inert
+    [attr.inert]="null"
+    autocorrect="off"
+    autocapitalize="off"
+    spellcheck="false"
+    data-testid="nav-search"
+    [attr.aria-label]="copy.search"
+    [placeholder]="copy.searchPlaceholder"
+    [value]="query()"
+    (input)="search($event)"
+  />
+</label>
+<!-- The switch's code loads as the page starts, beside the lists' first read, and the switch
+     shows once the person has a project: kept out of the first load. If its code cannot load,
+     the threads stay grouped as they are. -->
+@defer (on immediate) {
+  @if (groupable()) {
+    <app-group-by class="grouping" />
+  }
+} @error {}
+<!-- The threads by what each is doing load the first time they show, fetched once the page is
      idle: most people never leave the grouping by project. If their code cannot load, the side
      nav says so in their place. -->
-  @defer (when byStatus(); prefetch on idle) {
-    @if (byStatus()) {
-      <app-status-nav
-        class="threads"
-        [current]="current()"
-        [query]="query()"
-        (navigated)="followed()"
-      />
-    }
-  } @error {
-    @if (byStatus()) {
-      <app-unloaded class="error threads" />
-    }
-  }
-  @if (byProject() && read()) {
-    <app-projects-nav
+@defer (when byStatus(); prefetch on idle) {
+  @if (byStatus()) {
+    <app-status-nav
       class="threads"
       [current]="current()"
       [query]="query()"
       (navigated)="followed()"
     />
   }
+} @error {
+  @if (byStatus()) {
+    <app-unloaded class="error threads" />
+  }
+}
+@if (byProject()) {
+  <app-projects-nav
+    class="threads"
+    [current]="current()"
+    [query]="query()"
+    (navigated)="followed()"
+  />
+}
+<div class="foot">
   @if (tasksLive()) {
     <a
       glzNavItem
-      class="tasks"
       data-testid="nav-tasks"
       [routerLink]="tasksLink"
       [current]="tasksCurrent()"
@@ -90,5 +81,5 @@
       }
     </a>
   }
+  <app-person (navigated)="followed()" />
 </div>
-<app-person (navigated)="followed()" />

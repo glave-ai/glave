@@ -53,8 +53,6 @@ export const GLZ_PANEL_NARROW = '(max-width: 64rem)';
     '[attr.data-testid]': 'testId()',
     '[class.narrow]': 'narrow()',
     '[class.open]': 'open()',
-    // For its edge (the splitter's styles, which the side nav shares).
-    '[class.closed]': 'closed()',
     '[class.empty]': 'empty()',
     '[style.--glz-panel-width]': 'widthStyle()',
     '(keydown.escape)': 'escape()',

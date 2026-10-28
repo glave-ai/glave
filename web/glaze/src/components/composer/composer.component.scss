@@ -174,10 +174,8 @@
   order: 1;
 }
 
-// Send at the row's end, kept there by its margin rather than by growing to fill the row, so
-// where it goes coming in at the row's start moves nothing.
 :host(.glz-composer--lg) .acts {
-  margin-inline-start: auto;
+  flex-grow: 1;
 }
 
 :host(.glz-composer--lg) .act {
@@ -215,7 +213,7 @@
   }
 
   :host(.glz-composer--lg) .acts {
-    margin-inline-start: 0;
+    flex-grow: 0;
   }
 
   .options {

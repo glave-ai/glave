@@ -45,16 +45,6 @@ describe('GlzSidenavLayoutComponent', () => {
     return found;
   }
 
-  it('is drawn open before its first binding, as a route’s page is, and closed once bound so', async () => {
-    const fixture = TestBed.createComponent(GlzSidenavLayoutComponent);
-    const host: HTMLElement = fixture.nativeElement;
-    // Nothing bound yet: no class says it is closed, so the nav takes its room at once.
-    expect(host.classList.contains('closed')).toBe(false);
-    fixture.componentInstance.open.set(false);
-    await fixture.whenStable();
-    expect(host.classList.contains('closed')).toBe(true);
-  });
-
   it('shows the nav beside the content on wide screens, and collapses it', async () => {
     const fixture = TestBed.createComponent(HostComponent);
     await fixture.whenStable();
