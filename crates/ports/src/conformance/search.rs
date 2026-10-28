@@ -27,6 +27,7 @@ fn said(thread: ThreadId, seq: u64, role: Role, text: &str) -> Result<RawEvent, 
         role,
         parts: vec![Part::Text { text: text.into() }],
         author: None,
+        thought: None,
     };
     encode(header(thread, seq)?, &message).map_err(|e| e.to_string())
 }

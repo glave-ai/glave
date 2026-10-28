@@ -50,7 +50,7 @@ pub use memory::{
     MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryScope, MemorySource,
     MemoryTidied, sealed_under_memory,
 };
-pub use message::{MessageAdded, Role};
+pub use message::{MessageAdded, Role, Thought};
 pub use model::{Cost, ModelRef, ModelResponded, StopReason, TokenCounts, Usage};
 pub use part::{Opaque, Part};
 pub use passkey::{PasskeyAdded, PasskeyRemoved, PasskeyUsed};

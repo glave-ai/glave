@@ -26,6 +26,7 @@ use crate::question::Question;
 use crate::repeats::Repeats;
 use crate::sandbox::{Recorded, recorded};
 use crate::telemetry;
+use crate::thought::Thinking;
 use crate::toolset::ToolSet;
 use crate::waits::{Answered, Opened};
 use tracing::Instrument as _;
@@ -44,6 +45,10 @@ const STEP_LIMIT: &str = "[This turn has reached its step limit, so tools are of
 pub enum Live {
     Text(String),
     Reasoning(String),
+    /// The reasoning's headline changed: its last bold title, else its last whole sentence.
+    Thinking(String),
+    /// The reasoning ended, after this long: the model wrote something else, or its call ended.
+    Thought(Duration),
     ToolStarted {
         summary: String,
     },
@@ -365,8 +370,8 @@ where
                 break cancel.outcome();
             };
             step.summary.model_calls = step.summary.model_calls.saturating_add(1);
-            let mut completion = match asked {
-                Ok(completion) => completion,
+            let (mut completion, thinking) = match asked {
+                Ok(asked) => asked,
                 Err(HarnessError::Provider(refused))
                     if refused.failure() == Failure::TooLong
                         && !squeezed
@@ -389,7 +394,7 @@ where
             }
             step.summary.take_in(&completion.responded());
             let calls = self
-                .record_response(thread, &completion, &step.toolset)
+                .record_response(thread, &completion, &thinking, &step.toolset)
                 .await?;
             measure(thread, &completion);
             if last {
@@ -461,6 +466,7 @@ where
             role: Role::User,
             parts: parts.clone(),
             author: Some(Principal::glave()),
+            thought: None,
         };
         self.stage(thread, &mut events, &message)?;
         self.commit(thread, events).await?;
@@ -555,6 +561,7 @@ where
             } else {
                 Self::other_than_for(thread, caller.person)
             },
+            thought: None,
         };
         match id {
             Some(id) => self.stage_as(thread, &mut events, &message, id)?,
@@ -605,7 +612,8 @@ where
         Ok(stored.await?)
     }
 
-    /// Sends the conversation to the model, forwarding live text as it arrives. When its
+    /// Sends the conversation to the model, forwarding live text as it arrives, and answers
+    /// with how its reasoning went. When its
     /// provider refuses the images and PDFs sent inline, it is asked once more with every file
     /// by its name, and the model is taken for one that reads none: a file never stops a
     /// thread.
@@ -615,7 +623,7 @@ where
         offer: &ToolSet,
         tool_choice: ToolChoice,
         live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<Completion, HarnessError> {
+    ) -> Result<(Completion, Thinking), HarnessError> {
         let model = self.model_for(thread);
         let (messages, files) = self
             .with_files(&thread.scope, &model, self.sent(thread))
@@ -640,16 +648,16 @@ where
         let mut named = false;
         loop {
             live(Live::Waiting);
-            let mut forward = |delta: Delta| match delta {
-                Delta::Text(text) => live(Live::Text(text)),
-                Delta::Reasoning(text) => live(Live::Reasoning(text)),
-            };
-            match self.provider.complete(&request, &mut forward).await {
+            let mut thinking = Thinking::default();
+            let mut forward = |delta: Delta| thinking.see(delta, self.clock.now(), live);
+            let answered = self.provider.complete(&request, &mut forward).await;
+            match answered {
                 Ok(completion) => {
+                    thinking.end(self.clock.now(), live);
                     if named {
                         self.learn_without_images(&request.model);
                     }
-                    return Ok(completion);
+                    return Ok((completion, thinking));
                 }
                 Err(error) if !request.files.is_empty() && refuses_files(&error) => {
                     tracing::warn!(
@@ -689,12 +697,14 @@ where
         Ok(())
     }
 
-    /// Records a finished model response: its message, its tool calls, each with its line as
-    /// `tools` describe it, then its usage.
+    /// Records a finished model response: its message, with what its reasoning came to as
+    /// `thinking` saw it, its tool calls, each with its line as `tools` describe it, then its
+    /// usage.
     async fn record_response(
         &self,
         thread: &mut Thread,
         completion: &Completion,
+        thinking: &Thinking,
         tools: &ToolSet,
     ) -> Result<Vec<ToolCall>, HarnessError> {
         let mut events = Vec::new();
@@ -703,6 +713,7 @@ where
                 role: Role::Assistant,
                 parts: completion.parts.clone(),
                 author: None,
+                thought: thinking.thought(&completion.parts),
             };
             self.stage(thread, &mut events, &message)?;
         }

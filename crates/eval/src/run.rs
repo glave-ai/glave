@@ -710,6 +710,8 @@ fn note(transcript: &mut String, live: Live) {
             writeln!(transcript, "[not read] {}", reason.unwrap_or_default())
         }
         Live::Reasoning(_)
+        | Live::Thinking(_)
+        | Live::Thought(_)
         | Live::ToolFinished { .. }
         | Live::ApprovalPending { .. }
         | Live::Waiting => Ok(()),

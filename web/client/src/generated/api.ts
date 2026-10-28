@@ -960,6 +960,12 @@ export type Update = {
   readonly kind: "reasoning";
   readonly text: string;
 } | {
+  readonly headline: string;
+  readonly kind: "thinking";
+} | {
+  readonly kind: "thought";
+  readonly ms: number;
+} | {
   readonly kind: "tool_started";
   readonly summary: string;
 } | {
