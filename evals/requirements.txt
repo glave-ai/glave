@@ -4,7 +4,7 @@
 # "Documents"), never system-wide.
 openpyxl==3.1.5
 python-docx==1.2.0
-pypdf==6.1.1
+pypdf==6.21.2
 pandas==2.3.3
 et_xmlfile==2.0.0
 lxml==6.1.3
