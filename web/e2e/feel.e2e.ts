@@ -13,8 +13,9 @@ import {
 } from './feel';
 import { SIGNED_IN, atRest, byTestId, expect, test } from './support';
 
-// WebKit, as Safari, reports neither layout shifts nor event timings, nor the largest paint.
-test.skip(({ browserName }) => browserName !== 'chromium', 'only Chromium reports these entries');
+// Run in Chromium alone, one at a time once the rest of the run is done (playwright.config.ts,
+// the `feel` project): WebKit, as Safari, reports neither layout shifts nor event timings, nor
+// the largest paint, and other browsers drawing beside these would stretch their times.
 
 /** The screens the app opens on, each with what shows once it has loaded. */
 const OPENED = [
