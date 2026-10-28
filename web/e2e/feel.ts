@@ -82,21 +82,6 @@ export async function watchFeel(page: Page): Promise<void> {
       const name = `${element?.localName ?? 'text'}${id === null || id === undefined ? '' : `[${id}]`}`;
       return `${name} ${box(previousRect)} → ${box(currentRect)}`;
     };
-    const frames: string[] = [];
-    let last = '';
-    const frame = (): void => {
-      const aside = document.querySelector('aside');
-      const main = document.querySelector('main');
-      const now = `${String(aside?.getBoundingClientRect().width)}/${aside ? getComputedStyle(aside).display : '-'}/${String(main?.getBoundingClientRect().x)}/${document.querySelector('glz-sidenav-layout')?.className ?? '-'}/${String(document.styleSheets.length)}`;
-      if (now !== last) {
-        frames.push(`${String(Math.round(performance.now()))}=${now}`);
-        last = now;
-      }
-      if (performance.now() < 3000) {
-        requestAnimationFrame(frame);
-      }
-    };
-    requestAnimationFrame(frame);
     let shifts: Shift[] = [];
     let timings: Timing[] = [];
     let inputs = 0;
@@ -108,10 +93,7 @@ export async function watchFeel(page: Page): Promise<void> {
           value: Number(entry['value']),
           startTime: entry.startTime,
           hadRecentInput: entry['hadRecentInput'] === true,
-          moved: [
-            ...(entry['sources'] as readonly Source[]).map(described),
-            `DIAG ${frames.join(' ')} t=${String(Math.round(entry.startTime))} w=${String(innerWidth)} narrow=${String(matchMedia('(max-width: 48rem)').matches)} layout=${document.querySelector('glz-sidenav-layout')?.className ?? 'none'} aside=${String(document.querySelector('aside')?.getBoundingClientRect().width)} disp=${document.querySelector('aside') ? getComputedStyle(document.querySelector('aside') as Element).display : ''} sw=${getComputedStyle(document.documentElement).getPropertyValue('--glz-sidenav-width')} fonts=${String(document.fonts.status)} vt=${String(document.querySelectorAll('[style*=view-transition]').length)}`,
-          ],
+          moved: (entry['sources'] as readonly Source[]).map(described),
         });
       },
       event: (entry) => {
