@@ -76,7 +76,7 @@ Cargo's home is left alone. It holds the person's settings, installed tools and 
 
 ### Writes
 
-The project folder; a temp folder of each command's own, which it sees as `TMPDIR` and which is removed with whatever it holds when the command ends, however it ends; the shared `/tmp`, which models reach for constantly; `/dev/null` and terminal devices. Nothing else: not the person's home folder, not the rest of their temp folder (other programs' files live there), not other repositories. Temp folders never grant the project itself, so a project that lives in one keeps its protections. (The evals found that hole: their projects live in the temp folder.)
+The project folder; a temp folder of each command's own, which it sees as `TMPDIR` and which is removed with whatever it holds when the command ends, however it ends (a glave killed outright cannot: the next glave to prepare a sandbox removes the folders named for a glave no longer running); the shared `/tmp`, which models reach for constantly; `/dev/null` and terminal devices. Nothing else: not the person's home folder, not the rest of their temp folder (other programs' files live there), not other repositories. Temp folders never grant the project itself, so a project that lives in one keeps its protections. (The evals found that hole: their projects live in the temp folder.)
 
 **Protected paths** stay read-only even inside the project. Writing them makes code run later, outside the sandbox, without showing up in `git diff`:
 

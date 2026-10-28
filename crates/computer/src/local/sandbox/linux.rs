@@ -98,6 +98,8 @@ impl Enforcer {
         let temps = Temps {
             parent: folder.run().to_owned(),
             prefix: "tmp-",
+            every: folder.base().to_owned(),
+            every_prefix: "",
         };
         let enforcer = Self {
             how,

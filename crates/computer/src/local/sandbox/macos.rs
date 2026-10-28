@@ -80,6 +80,8 @@ impl Enforcer {
         let mut args: Vec<OsString> = vec!["-p".into(), profile.text.into()];
         args.extend(profile.params.iter().map(|(name, path)| param(name, path)));
         let temps = Temps {
+            every: system_temp.clone(),
+            every_prefix: "glave-sandbox-",
             parent: system_temp,
             prefix: "glave-sandbox-",
         };
