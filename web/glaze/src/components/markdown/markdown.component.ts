@@ -20,7 +20,9 @@ import {
 
 import { loadHighlighter } from '../../lib/highlight';
 import { type GlzMarkdown, renderMarkdown } from '../../lib/markdown';
+import { GlzMarkdownArrivals } from '../../lib/markdown-arrivals';
 import { GLZ_MARKDOWN_LABELS, type GlzHighlight } from '../../lib/markdown-html';
+import { durationOf } from '../../lib/motion';
 import { testIds } from '../../lib/test-ids';
 import { glzText } from '../../lib/words';
 import { GlzCopyButtonComponent } from '../copy-button/copy-button.component';
@@ -35,7 +37,9 @@ const PARTS = { copy: 'copy' } as const;
  * Angular on the way in, through its Trusted Types policy. Each top-level block is its own
  * element, rendered once: while `streaming`, only the growing last block is redone, and
  * half-written markdown shows as it will when finished. Code blocks get a copy button, and
- * highlighting loaded the first time their language appears. It flows as prose (`glz-flow`):
+ * highlighting loaded the first time their language appears. While `streaming`, the text that
+ * arrives after the first render fades in, piece by piece as it comes (`GlzMarkdownArrivals`);
+ * what it showed first, and a text not streaming, never move. It flows as prose (`glz-flow`):
  * its blocks spaced, and flush with what holds it, no space above the first or below the last.
  *
  * ```html
@@ -83,6 +87,10 @@ export class GlzMarkdownComponent {
   private readonly buttons = new Map<Element, ComponentRef<GlzCopyButtonComponent>>();
   /** The languages already asked for. */
   private readonly requested = new Set<string>();
+  private readonly arrivals = new GlzMarkdownArrivals(
+    this.host,
+    () => this.host.ownerDocument.defaultView?.performance.now() ?? 0,
+  );
 
   constructor() {
     let alive = true;
@@ -112,6 +120,8 @@ export class GlzMarkdownComponent {
     afterRenderEffect(() => {
       this.blocks();
       this.placeButtons();
+      const document = this.host.ownerDocument;
+      this.arrivals.rendered(this.streaming() ? durationOf(document, 'slow') : 0);
     });
   }
 

@@ -78,7 +78,8 @@ function shown(item: ThreadItem, locale: string): ShownItem {
  * One thing in a thread, as its kind shows: a message (the person's as a bubble of what they
  * typed, saying so when the model read it as it worked; a reply as markdown with no name over
  * it, each with a copy button; its reasoning), a tool call as a quiet line, an approval or
- * questions as a card that needs the person, answered in place.
+ * questions as a card that needs the person, answered in place, which rises into place when it
+ * `rises`.
  */
 @Component({
   selector: 'app-thread-item',
@@ -98,6 +99,8 @@ function shown(item: ThreadItem, locale: string): ShownItem {
 })
 export class ThreadItemComponent {
   readonly item = input.required<ThreadItem>();
+  /** Whether a card that needs the person rises into place: it appeared as the person watched. */
+  readonly rises = input(false);
 
   private readonly thread = inject(ThreadService);
   /** Whether an answer is being sent, so the cards wait. */

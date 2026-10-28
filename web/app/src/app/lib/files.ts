@@ -9,12 +9,27 @@ export interface LineCounts {
   readonly label: string;
 }
 
-/** `added` and `removed` lines written for `locale`: the marks a change shows, and in words. */
-export function lineCounts(added: number, removed: number, locale: string): LineCounts {
+/** How lines added and removed are marked for `locale`, as a change shows them. */
+export interface LineMarks {
+  readonly added: (lines: number) => string;
+  readonly removed: (lines: number) => string;
+}
+
+/** The marks for lines added and removed, written for `locale`: `+12` and `−3`. */
+export function lineMarks(locale: string): LineMarks {
   const numbers = new Intl.NumberFormat(locale);
   return {
-    added: `+${numbers.format(added)}`,
-    removed: `−${numbers.format(removed)}`,
+    added: (lines) => `+${numbers.format(lines)}`,
+    removed: (lines) => `−${numbers.format(lines)}`,
+  };
+}
+
+/** `added` and `removed` lines written for `locale`: the marks a change shows, and in words. */
+export function lineCounts(added: number, removed: number, locale: string): LineCounts {
+  const marks = lineMarks(locale);
+  return {
+    added: marks.added(added),
+    removed: marks.removed(removed),
     label: plural(
       $localize`:@@files.lines:{${added}:ADDED:, plural, one {# line added} other {# lines added}}, {${removed}:REMOVED:, plural, other {# removed}}`,
       locale,

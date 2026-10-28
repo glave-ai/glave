@@ -7,9 +7,9 @@
     }
     <span class="count" [attr.data-testid]="ids().count">{{ count() }}</span>
     <span class="counts" aria-hidden="true"
-      ><span class="plus">{{ total().added }}</span
-      ><span class="minus">{{ total().removed }}</span></span
-    >
+      ><span class="plus" [glzCount]="total().added" [glzCountFormat]="marks.added"></span
+      ><span class="minus" [glzCount]="total().removed" [glzCountFormat]="marks.removed"></span
+    ></span>
     <span class="glz-visually-hidden">{{ total().label }}</span>
   </div>
   <ul class="rows">
@@ -18,9 +18,9 @@
         <button type="button" class="row" [attr.data-testid]="ids().file" (click)="show(row.path)">
           <span class="path">{{ row.path }}</span>
           <span class="counts" aria-hidden="true"
-            ><span class="plus">{{ row.added }}</span
-            ><span class="minus">{{ row.removed }}</span></span
-          >
+            ><span class="plus" [glzCount]="row.added" [glzCountFormat]="marks.added"></span
+            ><span class="minus" [glzCount]="row.removed" [glzCountFormat]="marks.removed"></span
+          ></span>
           <span class="glz-visually-hidden">{{ row.label }}</span>
         </button>
       </li>

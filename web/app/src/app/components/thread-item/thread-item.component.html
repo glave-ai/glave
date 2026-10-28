@@ -32,6 +32,7 @@
   @case ('approval') {
     <glz-approval-card
       testId="thread-approval"
+      [class.glz-rise]="rises()"
       [summary]="item.ask"
       [detail]="item.detail"
       [caution]="item.caution"
@@ -45,6 +46,7 @@
   @case ('question') {
     <glz-question-card
       testId="thread-question"
+      [class.glz-rise]="rises()"
       [questions]="item.questions"
       [answered]="item.answers"
       [busy]="sending()"

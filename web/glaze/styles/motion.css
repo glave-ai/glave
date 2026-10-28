@@ -43,10 +43,58 @@
   }
 }
 
+/* A number that counts up as it grows (`glzCount`): figures of one width, so it holds still. */
+.glz-count {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * What changes in place as the person moves from one page to the next, such as a thread's pane
+ * as they switch threads: one element of a page, in a View Transition of the type
+ * `glz-crossfade` (which an app's router starts, as Angular's `withViewTransitions` does). It
+ * crossfades, the new settling in from 4px below. The rest of the page changes at once, and so
+ * does everything in a transition of any other type, or in a browser that has none.
+ */
+.glz-crossfade {
+  view-transition-name: glz-crossfade;
+}
+
+::view-transition-group(*),
+::view-transition-old(*),
+::view-transition-new(*) {
+  animation: none;
+}
+
+:root:active-view-transition-type(glz-crossfade)::view-transition-old(glz-crossfade) {
+  animation: glz-fade-out var(--glz-duration-standard) var(--glz-ease-out) both;
+}
+
+:root:active-view-transition-type(glz-crossfade)::view-transition-new(glz-crossfade) {
+  animation: glz-crossfade-in var(--glz-duration-standard) var(--glz-ease-out) both;
+}
+
+@keyframes glz-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes glz-crossfade-in {
+  from {
+    opacity: 0;
+    translate: 0 0.25rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .glz-spin,
   .glz-rise,
   .glz-settle {
+    animation: none;
+  }
+
+  :root:active-view-transition-type(glz-crossfade)::view-transition-old(glz-crossfade),
+  :root:active-view-transition-type(glz-crossfade)::view-transition-new(glz-crossfade) {
     animation: none;
   }
 }

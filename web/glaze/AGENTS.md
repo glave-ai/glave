@@ -28,7 +28,10 @@ Glaze (`@glave/glaze`) is an Angular 22 component library: standalone, zoneless,
 
 - One calm set, in the tokens alone: `--glz-duration-quick` (120ms: hover, press), `-standard` (200ms: what appears or folds), `-slow` (320ms: a large panel), each easing `--glz-ease-out`; for what loops while work goes on, `--glz-duration-ambient` (what turns or sweeps does so at `--glz-ease-even`); and for a caret's blink, `--glz-duration-blink` at `--glz-ease-blink`. Movement shows where something went or what changed, never decoration. Stylelint fails on a duration or an easing written anywhere but `styles/tokens.css`.
 - What appears takes a class: `glz-rise` rises into place (a fade, from 8px below), such as a reply as it begins; `glz-settle` settles in (a fade, from 0.97 scale), such as a card of results. Give it only to what appears as the person watches, never to what a page shows as it opens.
-- When the person asks for less motion, nothing moves at all: the quick, standard and slow durations are 0, and no rise, settle, fold, shimmer, breath or blink runs; a ring holds still.
+- `glz-crossfade` marks the one part of a page that crossfades as the person moves to the next, the new settling in from 4px below, in a View Transition of the type `glz-crossfade`: the app's router starts the transition (Angular's `withViewTransitions`) and adds the type only for the moves that should show it, such as from one thread to another. Everything else on the page, and every other transition, changes at once; so does every move in a browser without View Transitions or their types.
+- `[glzCount]="n" [glzCountFormat]="format"` writes a number as its element's text, the app's `format` writing it (`Intl` in the app's locale), in figures of one width; as it grows while the person watches it counts up from what it showed, over the slow duration, eased out. Its first number, and a smaller one, show at once.
+- Streaming markdown (`[glzMarkdown]` with `streaming`) fades in each piece of text as it arrives, over the slow duration; what it showed as it first rendered, and markdown not streaming, never fade.
+- When the person asks for less motion, nothing moves at all: the quick, standard and slow durations are 0, and no rise, settle, crossfade, count, fade, fold, shimmer, breath or blink runs; a ring holds still.
 
 ## Forms
 
