@@ -74,8 +74,6 @@ export class SideNavComponent {
   private readonly projects = inject(ProjectsService);
   private readonly grouped = inject(GroupingService);
   private readonly grouping = this.grouped.grouping;
-  /** Whether the lists have been read, so the threads come in all at once, in their place. */
-  protected readonly read = this.projects.loaded;
   /** With only Chats there is nothing to group by project: no switch, and no projects named. */
   protected readonly groupable = computed(() => hasProjects(this.projects.projects()));
   protected readonly byStatus = computed(() => this.groupable() && this.grouping() === 'status');

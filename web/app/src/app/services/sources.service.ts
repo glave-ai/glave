@@ -19,11 +19,6 @@ export class SourcesService {
     source: this.thread.thread,
     computation: () => [],
   });
-  /** Whether a read has answered, or failed, in this thread. */
-  private readonly answered = linkedSignal<ThreadId | null, boolean>({
-    source: this.thread.thread,
-    computation: () => false,
-  });
   /** Counts the reads begun, so an answer that a later one overtook is dropped. */
   private latest = 0;
 
@@ -31,8 +26,6 @@ export class SourcesService {
   readonly byReply = computed<ReadonlyMap<number, ReplySources>>(
     () => new Map(this.sources().map((sourced) => [sourced.reply, sourced])),
   );
-  /** Whether what the thread's history calls for has been read, or there is nothing to read. */
-  readonly known = computed(() => this.thread.sourcing() === null || this.answered());
 
   constructor() {
     effect(() => {
@@ -59,9 +52,6 @@ export class SourcesService {
       }
     } catch {
       // Sources only add to a reply, which stands without them; the next turn's end asks again.
-    }
-    if (ticket === this.latest && this.thread.thread() === thread) {
-      this.answered.set(true);
     }
   }
 }

@@ -62,7 +62,6 @@ describe('PlanService', () => {
     await settle();
     expect(fake.paramsOf('thread/plan')).toEqual([]);
     expect(plans.plan()).toBeNull();
-    expect(plans.known()).toBe(true);
   });
 
   it('reads the plan as the thread opens, and again as each change to it is recorded', async () => {
@@ -83,12 +82,9 @@ describe('PlanService', () => {
       ]);
     const { plans, thread } = make(fake);
     await thread.open('thread-1');
-    // Not known once it has opened, until the server answers.
-    expect(plans.known()).toBe(false);
     await settle();
     expect(fake.paramsOf('thread/plan')).toEqual([{ thread: 'thread-1' }]);
     expect(plans.plan()).toEqual(PROPOSED);
-    expect(plans.known()).toBe(true);
     plan = TICKING;
     await thread.build();
     await settle();

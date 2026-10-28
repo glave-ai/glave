@@ -1,9 +1,8 @@
 @use '../nav';
 
 // One column, the room between its parts the pane's own gap: the name and New chat, the search,
-// how the threads are grouped, the threads (which scroll), Tasks, and the person at the foot,
-// closer to Tasks than the rest are to each other. Every part spans the same width, so the name,
-// New chat and the search share the pane's edges.
+// how the threads are grouped, the threads (which scroll), and the foot. Every part spans the
+// same width, so the name, New chat and the search share the pane's edges.
 :host {
   display: flex;
   flex-direction: column;
@@ -11,20 +10,6 @@
   height: 100%;
   min-height: 0;
   padding: var(--glz-inset-pane-block) var(--glz-inset-pane-inline);
-}
-
-// With Tasks above it, the person sits as close under it as rows of the foot do.
-:host:has(> .above > .tasks) {
-  gap: var(--glz-space-1);
-}
-
-// All but the person, filling what the person leaves, so the person stays at the foot.
-.above {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: var(--glz-space-5);
-  min-height: 0;
 }
 
 .top {
@@ -84,21 +69,9 @@
   opacity: 1;
 }
 
-// How the threads are grouped, always in view above them, as they scroll; until its code is
-// in, its room, as tall as the switch (Glaze's segmented control, a small control's height, a
-// finger's on a phone, in its track).
+// How the threads are grouped, always in view above them, as they scroll.
 .grouping {
   flex: none;
-}
-
-.room {
-  block-size: var(--glz-control-height-sm);
-}
-
-@media (width <= 48rem) {
-  .room {
-    block-size: calc(var(--glz-control-height-touch) + 2 * var(--glz-space-half));
-  }
 }
 
 .threads {
@@ -107,13 +80,17 @@
   overflow-y: auto;
 }
 
-// Tasks at the foot, over the person, whether or not the threads have come in above it yet.
-.tasks {
-  margin-block-start: auto;
-}
-
 // How many tasks are going, quiet at the end of Tasks.
 .going {
   color: var(--glz-color-text-muted);
   font-size: var(--glz-text-xs);
+}
+
+// At the pane's foot, even while the threads by what each is doing are still loading.
+.foot {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--glz-space-1);
+  margin-block-start: auto;
 }

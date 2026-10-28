@@ -25,11 +25,6 @@ export class ChangedFilesService {
     source: this.thread.thread,
     computation: () => null,
   });
-  /** Whether a read has answered, or failed, in this thread. */
-  private readonly answered = linkedSignal<ThreadId | null, boolean>({
-    source: this.thread.thread,
-    computation: () => false,
-  });
   /** Counts the reads begun, so an answer that a later one overtook is dropped. */
   private latest = 0;
 
@@ -45,8 +40,6 @@ export class ChangedFilesService {
   });
   /** What the files leave out, in the server's sentence; empty until it is read. */
   readonly note = computed(() => this.changes()?.note ?? '');
-  /** Whether what the thread's history calls for has been read, or there is nothing to read. */
-  readonly known = computed(() => this.thread.changing() === null || this.answered());
 
   constructor() {
     effect(() => {
@@ -81,9 +74,6 @@ export class ChangedFilesService {
       }
     } catch {
       // What changed only adds to the thread, which stands without it; the next change asks again.
-    }
-    if (ticket === this.latest && this.thread.thread() === thread) {
-      this.answered.set(true);
     }
   }
 }

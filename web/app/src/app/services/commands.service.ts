@@ -56,8 +56,6 @@ export class CommandsService {
 
   readonly commands = computed(() => this.state().commands);
   readonly loaded = computed(() => this.state().loaded);
-  /** Whether what the thread's history calls for has been read, or there is nothing to read. */
-  readonly known = computed(() => this.thread.commandChange() === null || this.loaded());
   readonly error = computed(() => this.state().error);
   readonly stopping = computed(() => this.state().stopping);
   readonly refusals = computed(() => this.state().refusals);
