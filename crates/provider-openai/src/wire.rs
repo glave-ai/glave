@@ -4,7 +4,10 @@
 use glave_event::{Arguments, Part};
 use glave_ports::{InlineFile, Message, ModelRequest, ToolChoice, ToolSpec};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use serde_json::value::RawValue;
+
+use crate::reasoning::sent_back;
 
 #[derive(Debug, Serialize)]
 pub(crate) struct ChatRequest<'a> {
@@ -88,6 +91,13 @@ enum WireMessage<'a> {
         content: Option<String>,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         tool_calls: Vec<WireToolCall<'a>>,
+        /// The model's own reasoning, sent back in the field it came in.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reasoning_content: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reasoning: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reasoning_details: Option<&'a RawValue>,
     },
     Tool {
         tool_call_id: &'a str,
@@ -265,7 +275,7 @@ pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> Cha
         } else {
             hand(&mut messages, &mut handed);
         }
-        push(&mut messages, wire_message(request, message));
+        push(&mut messages, wire_message(request, provider, message));
     }
     hand(&mut messages, &mut handed);
     ChatRequest {
@@ -326,14 +336,22 @@ fn hand(messages: &mut Vec<WireMessage<'_>>, handed: &mut Vec<ContentPart>) {
     }
 }
 
-fn wire_message<'a>(request: &ModelRequest, message: &'a Message) -> WireMessage<'a> {
+fn wire_message<'a>(
+    request: &ModelRequest,
+    provider: &str,
+    message: &'a Message,
+) -> WireMessage<'a> {
     match message {
         Message::User { parts } => WireMessage::User {
             content: Content::of(request, parts),
         },
         Message::Assistant { parts, tool_calls } => {
             let text = text_of(parts);
+            let reasoning = sent_back(parts, provider, &request.model);
             WireMessage::Assistant {
+                reasoning_content: reasoning.reasoning_content,
+                reasoning: reasoning.reasoning,
+                reasoning_details: reasoning.reasoning_details,
                 content: (!text.is_empty()).then_some(text),
                 tool_calls: tool_calls
                     .iter()
@@ -357,8 +375,8 @@ fn wire_message<'a>(request: &ModelRequest, message: &'a Message) -> WireMessage
     }
 }
 
-/// The text parts of a message, joined. Reasoning is not sent back through this API, and a
-/// file not sent inline is named.
+/// The text parts of a message, joined. Reasoning goes back in fields of its own, and a file
+/// not sent inline is named.
 fn text_of(parts: &[Part]) -> String {
     let mut text = String::new();
     for part in parts {
@@ -398,7 +416,7 @@ pub(crate) struct Chunk {
     #[serde(default)]
     pub usage: Option<Box<RawValue>>,
     #[serde(default)]
-    pub error: Option<serde_json::Value>,
+    pub error: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -419,6 +437,9 @@ pub(crate) struct ChoiceDelta {
     /// Reasoning text, as OpenRouter and Ollama name it.
     #[serde(default)]
     pub reasoning: Option<String>,
+    /// OpenRouter's structured reasoning, signed or encrypted entries among them.
+    #[serde(default)]
+    pub reasoning_details: Option<Vec<Value>>,
     #[serde(default)]
     pub tool_calls: Option<Vec<ToolCallDelta>>,
 }

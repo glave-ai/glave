@@ -9,6 +9,7 @@ mod assemble;
 mod client;
 #[cfg(feature = "fake-server")]
 pub mod fake;
+mod reasoning;
 mod wire;
 
 pub use client::{Config, IDLE_TIMEOUT, OpenAiCompatible};

@@ -112,12 +112,90 @@ fn reasoning_is_its_own_part_before_the_text() {
         [
             Part::Reasoning {
                 text: Some("Thinking.".into()),
-                opaque: None
+                opaque: Some(Opaque {
+                    provider: "vllm".into(),
+                    model: "requested-model".into(),
+                    kind: "reasoning_content".into(),
+                    data: String::new(),
+                }),
             },
             Part::Text {
                 text: "Answer.".into()
             },
         ]
+    );
+}
+
+#[test]
+fn openrouter_s_reasoning_details_are_kept_merged_with_their_signature() {
+    let (completion, deltas) = run(
+        "openrouter",
+        &[
+            r#"{"model":"anthropic/claude-x-20261001","choices":[{"delta":{"reasoning":"Think","reasoning_details":[{"type":"reasoning.text","text":"Think","format":"anthropic-claude-v1","index":0}]}}]}"#,
+            r#"{"choices":[{"delta":{"reasoning":"ing.","reasoning_details":[{"type":"reasoning.text","text":"ing.","index":0}]}}]}"#,
+            r#"{"choices":[{"delta":{"reasoning_details":[{"type":"reasoning.text","signature":"c2ln","index":0}]}}]}"#,
+            r#"{"choices":[{"delta":{"reasoning_details":[{"type":"reasoning.encrypted","data":"ZW5j","index":1}]}}]}"#,
+            r#"{"choices":[{"delta":{"content":"Answer."},"finish_reason":"stop"}]}"#,
+        ],
+    );
+    assert_eq!(
+        deltas,
+        [
+            Delta::Reasoning("Think".into()),
+            Delta::Reasoning("ing.".into()),
+            Delta::Text("Answer.".into())
+        ]
+    );
+    let parts = completion.unwrap().parts;
+    let Some(Part::Reasoning {
+        text: Some(text),
+        opaque: Some(opaque),
+    }) = parts.first()
+    else {
+        panic!("reasoning should come first, kept: {parts:?}");
+    };
+    assert_eq!(text, "Thinking.");
+    assert_eq!(
+        (
+            opaque.provider.as_str(),
+            opaque.model.as_str(),
+            opaque.kind.as_str()
+        ),
+        ("openrouter", "requested-model", "reasoning_details")
+    );
+    let details: Value = serde_json::from_str(&opaque.data).unwrap();
+    assert_eq!(
+        details,
+        serde_json::json!([
+            {"type": "reasoning.text", "text": "Thinking.", "format": "anthropic-claude-v1",
+             "index": 0, "signature": "c2ln"},
+            {"type": "reasoning.encrypted", "data": "ZW5j", "index": 1}
+        ])
+    );
+}
+
+#[test]
+fn reasoning_that_came_only_as_details_is_a_part_of_its_own() {
+    let (completion, _) = run(
+        "openrouter",
+        &[
+            r#"{"choices":[{"delta":{"reasoning_details":[{"type":"reasoning.encrypted","data":"ZW5j"}]}}]}"#,
+            r#"{"choices":[{"delta":{"content":"Answer."},"finish_reason":"stop"}]}"#,
+        ],
+    );
+    let parts = completion.unwrap().parts;
+    assert!(
+        matches!(
+            parts.as_slice(),
+            [
+                Part::Reasoning {
+                    text: None,
+                    opaque: Some(_)
+                },
+                Part::Text { .. }
+            ]
+        ),
+        "{parts:?}"
     );
 }
 

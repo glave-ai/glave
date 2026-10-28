@@ -3,11 +3,12 @@
 
 use std::collections::BTreeMap;
 
-use glave_event::{Arguments, Cost, ModelRef, Money, Part, StopReason, TokenCounts, Usage};
+use glave_event::{Arguments, Cost, ModelRef, Money, Opaque, Part, StopReason, TokenCounts, Usage};
 use glave_ports::{Completion, Delta, ProviderError, RequestedCall};
 use serde_json::value::RawValue;
 use serde_json::{Map, Value};
 
+use crate::reasoning::{CONTENT, Kept, REASONING};
 use crate::wire::{Chunk, WireUsage};
 
 /// The longest provider name a chunk may give, in bytes.
@@ -24,9 +25,12 @@ struct PartialCall {
 #[derive(Debug)]
 pub(crate) struct Assembler {
     provider: String,
+    /// The model asked for, which reasoning is sent back to.
+    requested: String,
     model: String,
     response_id: Option<String>,
     parts: Vec<Part>,
+    reasoning: Kept,
     calls: BTreeMap<u32, PartialCall>,
     finish: Option<String>,
     usage: Option<Box<RawValue>>,
@@ -38,9 +42,11 @@ impl Assembler {
     pub(crate) fn new(provider: &str, requested_model: &str) -> Self {
         Self {
             provider: provider.to_owned(),
+            requested: requested_model.to_owned(),
             model: requested_model.to_owned(),
             response_id: None,
             parts: Vec::new(),
+            reasoning: Kept::default(),
             calls: BTreeMap::new(),
             finish: None,
             usage: None,
@@ -82,8 +88,18 @@ impl Assembler {
                 self.finish = Some(reason);
             }
             let Some(delta) = choice.delta else { continue };
-            if let Some(reasoning) = delta.reasoning_content.or(delta.reasoning) {
-                self.push_reasoning(&reasoning, on_delta);
+            let said = |text: &String| !text.is_empty();
+            let scalar = (delta
+                .reasoning_content
+                .filter(said)
+                .map(|text| (CONTENT, text)))
+            .or_else(|| delta.reasoning.filter(said).map(|text| (REASONING, text)));
+            if let Some((field, text)) = scalar {
+                self.reasoning.came_in(field);
+                self.push_reasoning(&text, on_delta);
+            }
+            if let Some(details) = delta.reasoning_details {
+                self.reasoning.add_details(details);
             }
             if let Some(text) = delta.content {
                 self.push_text(&text, on_delta);
@@ -168,13 +184,17 @@ impl Assembler {
         }
         let interrupted = self.finish.is_none();
         let (usage, cost) = usage_and_cost(self.usage.as_deref(), interrupted, &self.provider)?;
+        let mut parts = self.parts;
+        if let Some(kept) = self.reasoning.into_opaque(&self.provider, &self.requested) {
+            keep_with(&mut parts, kept);
+        }
         Ok(Completion {
             model: ModelRef {
                 provider: self.provider,
                 name: self.model,
             },
             response_id: self.response_id,
-            parts: self.parts,
+            parts,
             tool_calls,
             stop,
             provider_stop: self.finish,
@@ -183,6 +203,25 @@ impl Assembler {
             served: None,
             upstream: self.upstream,
         })
+    }
+}
+
+/// Puts `kept` on the first reasoning part of `parts`, or in a part of its own before the
+/// answer when the reasoning came only as details.
+fn keep_with(parts: &mut Vec<Part>, kept: Opaque) {
+    let first = parts.iter_mut().find_map(|part| match part {
+        Part::Reasoning { opaque, .. } => Some(opaque),
+        _ => None,
+    });
+    match first {
+        Some(opaque) => *opaque = Some(kept),
+        None => parts.insert(
+            0,
+            Part::Reasoning {
+                text: None,
+                opaque: Some(kept),
+            },
+        ),
     }
 }
 

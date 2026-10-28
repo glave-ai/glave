@@ -406,3 +406,75 @@ fn what_tool_results_hand_the_model_follows_them_as_the_persons() {
     );
     assert_eq!(messages.len(), 4);
 }
+
+/// A tool call's assistant message whose reasoning came from `provider` and `model` in `kind`.
+fn reasoned(provider: &str, model: &str, kind: &str, data: &str) -> Message {
+    Message::Assistant {
+        parts: vec![
+            Part::Reasoning {
+                text: Some("Look first.".into()),
+                opaque: Some(glave_event::Opaque {
+                    provider: provider.into(),
+                    model: model.into(),
+                    kind: kind.into(),
+                    data: data.into(),
+                }),
+            },
+            Part::Text {
+                text: "Listing.".into(),
+            },
+        ],
+        tool_calls: Vec::new(),
+    }
+}
+
+fn assistant_sent(message: Message, provider: &str) -> Value {
+    let request = asking(vec![message], Vec::new());
+    let body = serde_json::to_value(chat_request(&request, provider)).unwrap();
+    body["messages"][0].clone()
+}
+
+#[test]
+fn reasoning_goes_back_in_the_field_it_came_in() {
+    let content = assistant_sent(
+        reasoned("deepseek", "gpt", "reasoning_content", ""),
+        "deepseek",
+    );
+    assert_eq!(
+        content,
+        json!({"role": "assistant", "content": "Listing.", "reasoning_content": "Look first."})
+    );
+    let plain = assistant_sent(reasoned("ollama", "gpt", "reasoning", ""), "ollama");
+    assert_eq!(plain["reasoning"], "Look first.");
+    assert!(plain.get("reasoning_content").is_none());
+}
+
+#[test]
+fn reasoning_details_go_back_exactly_as_kept() {
+    let kept = r#"[{"type":"reasoning.text","text":"Look first.","signature":"c2ln","index":0},{"type":"reasoning.encrypted","data":"ZW5j","id":null}]"#;
+    let request = asking(
+        vec![reasoned("openrouter", "gpt", "reasoning_details", kept)],
+        Vec::new(),
+    );
+    let body = serde_json::to_string(&chat_request(&request, "openrouter")).unwrap();
+    assert!(
+        body.contains(&format!(r#""reasoning_details":{kept}"#)),
+        "{body}"
+    );
+    assert!(!body.contains(r#""reasoning":"Look first.""#), "{body}");
+}
+
+#[test]
+fn reasoning_from_another_provider_or_model_is_not_sent() {
+    for (provider, model) in [("openrouter", "gpt"), ("deepseek", "other")] {
+        let sent = assistant_sent(
+            reasoned(provider, model, "reasoning_content", ""),
+            "deepseek",
+        );
+        assert_eq!(
+            sent,
+            json!({"role": "assistant", "content": "Listing."}),
+            "from {provider} {model}"
+        );
+    }
+}
