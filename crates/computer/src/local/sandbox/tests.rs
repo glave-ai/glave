@@ -674,3 +674,50 @@ fn every_command_s_temp_folder_is_removed_when_it_ends() {
     });
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// The person's keychains stay closed to a sandboxed command, with the network on, when the
+/// security server's door is open for TLS roots (`specs/invariants.md`, 24): their folder
+/// cannot be listed nor a keychain file read, and `security` finds no keychain to open. Under
+/// the real home, since the keychains are found there; no item is read, inside or out.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_sandboxed_command_cannot_open_the_person_s_keychains() {
+    if !enforced() {
+        return;
+    }
+    let home = PathBuf::from(std::env::var_os("HOME").unwrap());
+    let keychains = home.join("Library/Keychains");
+    let login = keychains.join("login.keychain-db");
+    let dir = scratch("keychains");
+    let environment: Vec<(OsString, OsString)> = std::env::vars_os()
+        .filter(|(name, _)| name == "PATH")
+        .chain([("HOME".into(), home.clone().into_os_string())])
+        .collect();
+    let computers = LocalComputers::new(dir.join("copies"), environment);
+    let sandbox = Sandbox {
+        level: SandboxLevel::Project,
+        network: true,
+        home: Some(home),
+        glave_home: Some(dir.join("glave")),
+    };
+    let script = format!(
+        "ls '{0}' >/dev/null && echo keychain-listed; cat '{1}' >/dev/null && echo keychain-read; \
+         security default-keychain -d user && echo keychain-opened; echo done",
+        keychains.display(),
+        login.display()
+    );
+    block_on!(async {
+        let here = open_app(&computers, &dir).await;
+        let (ending, said) = run(&computers, here, &sandbox, &script).await;
+        assert_eq!(ending, Ending::Exited { code: 0 }, "{said}");
+        assert!(said.contains("done"), "{said}");
+        for opened in ["keychain-listed", "keychain-read", "keychain-opened"] {
+            assert!(!said.contains(opened), "{opened}: {said}");
+        }
+        // Refused by the sandbox, not merely missing: where each exists, outside it.
+        for (path, there) in [(&keychains, keychains.is_dir()), (&login, login.is_file())] {
+            let refused = format!("{}: Operation not permitted", path.display());
+            assert!(!there || said.contains(&refused), "{refused}: {said}");
+        }
+    });
+}
