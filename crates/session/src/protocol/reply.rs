@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 use super::{
     AcceptedPasskeys, ConnectionInfo, CredentialInfo, DeviceCode, FileInfo, GoneFolder, Grouping,
     ModelInfo, PasskeySummary, Permissions, PlanInfo, ProjectFolder, ProviderInfo, ReplySources,
-    ScheduleInfo, SearchInfo, SignInLink, SignInWay, TaskInfo, ThreadChanges, Told, TrustAsk,
-    WatchEnd,
+    ScheduleInfo, SearchInfo, SignInLink, SignInWay, TaskInfo, ThreadChanges, ThreadSteps, Told,
+    TrustAsk, WatchEnd,
 };
 
 /// What the server is.
@@ -334,6 +334,9 @@ pub enum Reply {
     /// What a thread changed in files.
     #[schemars(title = "Changes")]
     Changes { changes: ThreadChanges },
+    /// A thread's turns in steps.
+    #[schemars(title = "Steps")]
+    Steps { steps: ThreadSteps },
     // After every reply with a field of its own, since a missing `goal` or `plan` reads as
     // `null`; before `Done`, which takes any object.
     /// The thread's latest goal, or `null`.

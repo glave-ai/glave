@@ -119,7 +119,7 @@ impl Turn {
 }
 
 /// Whether a message says anything: text that is not blank.
-fn said(parts: &[Part]) -> bool {
+pub(crate) fn said(parts: &[Part]) -> bool {
     parts
         .iter()
         .any(|part| matches!(part, Part::Text { text } if !text.trim().is_empty()))

@@ -207,6 +207,7 @@ pub(super) async fn snapshot<L: EventLog + Clone + 'static>(world: &World<L>) ->
             call("thread/events", json!({"thread": thread})).await;
             call("thread/sources", json!({"thread": thread})).await;
             call("thread/changes", json!({"thread": thread})).await;
+            call("thread/steps", json!({"thread": thread})).await;
             call("thread/plan", json!({"thread": thread})).await;
             call("goal/get", json!({"thread": thread})).await;
         }

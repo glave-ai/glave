@@ -165,6 +165,32 @@
       "description": "Links a tool call to its result: 1 to 128 printable ASCII characters.",
       "type": "string"
     },
+    "CallRun": {
+      "description": "Tool calls one after another in a turn, with nothing said between them: no message with\nwords, and no questions for the person.",
+      "properties": {
+        "calls": {
+          "description": "Its calls, in order.",
+          "items": {
+            "$ref": "#/$defs/CallId"
+          },
+          "type": "array"
+        },
+        "first": {
+          "$ref": "#/$defs/Seq",
+          "description": "The `seq` of its first call's `tool.call.requested`."
+        },
+        "sentence": {
+          "description": "What they did, in a line: \"Ran 2 commands (1 failed)\", \"Ran 1 command, read 1 file\";\nin the present while one of them runs.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "first",
+        "calls",
+        "sentence"
+      ],
+      "type": "object"
+    },
     "ChangeKind": {
       "description": "What a change did to its file.",
       "oneOf": [
@@ -2147,6 +2173,30 @@
       "format": "uuid",
       "type": "string"
     },
+    "ThreadSteps": {
+      "description": "Each run of a thread's tool calls, and its turns' replies.",
+      "properties": {
+        "replies": {
+          "description": "The `seq` of each reply: the last `message.added` of the model's with words in a turn\nthat ended. Every other message of the model's is said along the way.",
+          "items": {
+            "$ref": "#/$defs/Seq"
+          },
+          "type": "array"
+        },
+        "runs": {
+          "description": "Each run of calls, in order.",
+          "items": {
+            "$ref": "#/$defs/CallRun"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "runs",
+        "replies"
+      ],
+      "type": "object"
+    },
     "ThreadSummary": {
       "description": "A thread, as a list shows it: from the threads view, with what it is doing now.",
       "properties": {
@@ -2624,6 +2674,7 @@
           "type": "object"
         },
         {
+          "description": "A model call began, and nothing has come back yet: each step of a turn starts with\none, so text and reasoning after it are the new step's, and what streamed before it\nfrom a call that was not recorded (one tried again) is gone.",
           "properties": {
             "kind": {
               "const": "waiting",
@@ -5512,6 +5563,32 @@
         },
         "required": [
           "thread"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "thread/steps": {
+      "params": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A thread's turns in steps.",
+        "properties": {
+          "steps": {
+            "$ref": "#/$defs/ThreadSteps"
+          }
+        },
+        "required": [
+          "steps"
         ],
         "type": "object"
       },
