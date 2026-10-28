@@ -21,6 +21,12 @@ describe('ThemeService', () => {
     expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
   });
 
+  it('applies a remembered choice as it is made, before anything is drawn', () => {
+    localStorage.setItem('glave-theme', 'dark');
+    TestBed.inject(ThemeService);
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+  });
+
   it('reads a remembered choice, kept as JSON or as plain text, and ignores one it does not know', () => {
     localStorage.setItem('glave-theme', 'light');
     expect(TestBed.inject(ThemeService).choice()).toBe('light');
