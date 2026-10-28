@@ -3,7 +3,7 @@
 //! while it runs, so a `git clone` or an eval's grader stops at once when glave is killed
 //! outright, rather than running on for minutes.
 
-use std::process::{Output, Stdio};
+use std::process::{ExitStatus, Output, Stdio};
 use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWriteExt as _};
@@ -28,6 +28,17 @@ impl Processes {
         program.command.stdout(Stdio::piped());
         program.command.stderr(Stdio::piped());
         self.waited(program, None, limit).await
+    }
+
+    /// [`Processes::output`] for a program whose output no one reads, such as the opener
+    /// that hands a page to the browser: its streams stay as `program` set them, and it is
+    /// done when it ends, however long what it started (that browser) holds them open.
+    pub async fn status(
+        &self,
+        program: &mut Program,
+        limit: Duration,
+    ) -> Result<ExitStatus, ProcessError> {
+        Ok(self.waited(program, None, limit).await?.status)
     }
 
     /// [`Processes::output`], with `input` written to its standard input, which is then

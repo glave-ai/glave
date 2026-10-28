@@ -161,3 +161,33 @@ fn what_it_leaves_running_once_it_has_ended_is_left_be() {
     let _ = kill_process(sleep, Signal::KILL);
     assert!(running, "the sleep was stopped with the shell");
 }
+
+#[test]
+fn an_opener_is_done_when_it_ends_though_the_browser_it_started_keeps_its_streams() {
+    let folder = glave_ports::testing::TempDir::new("waited-opener").unwrap();
+    let said = folder.join("pid");
+    // As `xdg-open` can leave a browser that inherited its streams: the shell ends at once,
+    // the sleep it started holding them open.
+    let script = format!("sleep 300 & echo $! > '{}'", said.display());
+    let processes = Processes::unrecorded();
+    let opened = glave_ports::block_on!(
+        processes.status(
+            Program::new("sh")
+                .args(["-c", &script])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null()),
+            AMPLE
+        )
+    );
+    let pid: i32 = std::fs::read_to_string(&said)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    let sleep = Pid::from_raw(pid).unwrap();
+    let running = test_kill_process(sleep).is_ok();
+    let _ = kill_process(sleep, Signal::KILL);
+    assert!(opened.unwrap().success());
+    assert!(running, "the sleep was stopped with the shell");
+}
