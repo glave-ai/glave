@@ -2,7 +2,7 @@
 //! the in-memory log, and the conversation rebuilt from the log matches what the model saw.
 
 use crate::support::*;
-use glave_event::{Body, Outcome, Part, RawEvent, StopReason};
+use glave_event::{Body, Outcome, Part, RawEvent, StopReason, ToolKind};
 use glave_harness::{AllowAll, Cancel, Live, conversation};
 use glave_ports::{EventLog, InMemoryLog, OrgId, ProjectId, Scope};
 use serde_json::json;
@@ -137,6 +137,18 @@ fn each_step_is_recorded_in_the_line_it_began_with() {
             began,
             recorded[..2],
             "the line it began with, for every call that ran"
+        );
+        let kinds: Vec<ToolKind> = events
+            .iter()
+            .filter_map(|event| match &event.body {
+                Body::ToolCallRequested(call) => Some(call.kind),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            [ToolKind::Edit, ToolKind::Command, ToolKind::Other],
+            "each call says what kind of work it is, as its source does"
         );
         assert_eq!(
             conversation(&events),

@@ -26,6 +26,31 @@ pub struct ToolCallRequested {
     /// Empty in calls recorded before it was.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub summary: String,
+    /// What kind of work the call does, as its tool's source says, so a run of calls can be
+    /// told in a line ("Ran 2 commands, read 1 file"). `other` in calls recorded before it was.
+    #[serde(default)]
+    pub kind: ToolKind,
+}
+
+/// What kind of work a tool call does, much as the Agent Client Protocol's tool kinds.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolKind {
+    /// Runs a command, or reads what one printed.
+    Command,
+    /// Reads a file.
+    Read,
+    /// Searches files' contents, or finds files by name.
+    Search,
+    /// Writes or edits a file.
+    Edit,
+    /// Reads or searches the web.
+    Web,
+    /// Anything else.
+    #[default]
+    Other,
 }
 
 /// A tool call's arguments: a JSON object, or the provider's raw text when it was not valid
@@ -132,6 +157,20 @@ mod tests {
             None
         );
         assert_eq!(WebPage::read(&serde_json::json!({"page": "a"})), None);
+    }
+
+    #[test]
+    fn a_call_says_its_kind_and_one_recorded_before_reads_as_other() {
+        let old: ToolCallRequested = serde_json::from_str(
+            r#"{"call_id":"call_1","tool":"bash","arguments":{"json":{"command":"ls"}}}"#,
+        )
+        .unwrap();
+        assert_eq!(old.kind, ToolKind::Other);
+        let new = ToolCallRequested {
+            kind: ToolKind::Command,
+            ..old
+        };
+        assert_eq!(serde_json::to_value(&new).unwrap()["kind"], "command");
     }
 
     #[test]

@@ -7,7 +7,7 @@ mod fetch {
     use std::collections::HashMap;
     use std::time::Duration;
 
-    use glave_event::{Arguments, Part, WebPage};
+    use glave_event::{Arguments, Part, ToolKind, WebPage};
     use glave_ports::settings::{Domain, WebPolicy};
     use glave_ports::{NeverCancelled, ToolOutput, ToolSource, block_on};
     use glave_web::pages::{Pages, Reply};
@@ -364,6 +364,7 @@ mod fetch {
                 web.describe(WEB_FETCH, &arguments("url", &url)),
                 format!("web_fetch {url}")
             );
+            assert_eq!(web.kind(WEB_FETCH), ToolKind::Web);
         });
     }
 }

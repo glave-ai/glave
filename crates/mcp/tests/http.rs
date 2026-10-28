@@ -6,7 +6,7 @@ use std::io::{BufRead as _, BufReader};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use glave_event::{Arguments, Part};
+use glave_event::{Arguments, Part, ToolKind};
 use glave_mcp::{Limits, McpError, McpServer};
 use glave_ports::block_on;
 use glave_ports::settings::mcp::ServerConfig;
@@ -185,6 +185,7 @@ fn a_hosted_search_offers_only_its_search_whose_calls_say_what_was_searched_and_
             server.describe("mcp__search__web_search_exa", &asked),
             "Searched the web: rust async runtimes"
         );
+        assert_eq!(server.kind("mcp__search__web_search_exa"), ToolKind::Web);
         let found = server
             .call("mcp__search__web_search_exa", &asked, &NeverCancelled)
             .await;

@@ -4,7 +4,7 @@
 use std::future::ready;
 use std::sync::Arc;
 
-use glave_event::Arguments;
+use glave_event::{Arguments, ToolKind};
 use glave_ports::{
     Assessment, BoxFuture, Cancellation, Effect, ToolError, ToolInfo, ToolOutput, ToolSource,
     describe_call,
@@ -110,6 +110,10 @@ impl ToolSource for Builtins {
             || describe_call(name, arguments),
             |tool| summarize(tool, arguments),
         )
+    }
+
+    fn kind(&self, name: &str) -> ToolKind {
+        Tool::named(name).map_or(ToolKind::Other, Tool::kind)
     }
 
     fn call<'a>(

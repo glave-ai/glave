@@ -725,6 +725,7 @@ where
                 tool: call.tool.clone(),
                 arguments: call.arguments.clone(),
                 summary: self.describe(thread, tools, &call),
+                kind: self.kind(thread, tools, &call),
             };
             self.stage(thread, &mut events, &payload)?;
             calls.push(call);
