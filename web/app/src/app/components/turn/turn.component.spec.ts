@@ -76,6 +76,7 @@ const RESULTS: TurnResults = {
   live: null,
   working: null,
   files: CHANGED,
+  room: [],
   receipt: {
     status: 'done',
     facts: ['4m 02s', 'Claude Haiku 5.5'],
@@ -381,6 +382,21 @@ describe('TurnComponent', () => {
     TestBed.resetTestingModule();
     // Said to be nothing as it opened, then changed: it changed as the person watched.
     expect(await settles(null, [], CHANGED)).toBe(true);
+  });
+
+  it('keeps the room of what it changed, unseen, until that is read, then shows it there', async () => {
+    const room = [{ path: 'src/lock.rs', changes: [], added: 0, removed: 0 }];
+    const fixture = await mount({ ...RESULTS, files: null, room });
+    const root = fixture.nativeElement as HTMLElement;
+    const kept = root.querySelector('app-turn-changes.room');
+    expect(kept?.querySelector('[data-testid="turn-changes-room"]')).not.toBeNull();
+    expect(getComputedStyle(kept ?? root).visibility).toBe('hidden');
+    expect(root.querySelector('[data-testid="turn-changes"]')).toBeNull();
+    await expectAccessible(root);
+    fixture.componentRef.setInput('turn', { ...RESULTS, room: [] });
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="turn-changes-room"]')).toBeNull();
+    expect(root.querySelector('[data-testid="turn-changes"]')).not.toBeNull();
   });
 
   it('keeps reasoning folded as it streams, for the person to open', async () => {

@@ -106,9 +106,35 @@ describe('ChangedFilesService', () => {
     expect(fake.paramsOf('thread/changes')).toHaveLength(2);
   });
 
+  it('keeps the room of the files its ended turns recorded until they are read', async () => {
+    const fake = new FakeSession().answer('thread/events', {
+      events: [
+        event(1, 'turn.started', {}),
+        WRITE,
+        WROTE,
+        event(4, 'turn.ended', { outcome: 'completed', changed: ['notes.md', 'main.rs'] }),
+        event(5, 'turn.started', {}),
+        event(6, 'message.added', { role: 'user', parts: [{ type: 'text', text: 'And more' }] }),
+        event(7, 'turn.ended', { outcome: 'completed', changed: ['main.rs', 'lib.rs'] }),
+      ],
+    });
+    const give = fake.held('thread/changes');
+    const { changed, thread } = make(fake);
+    await thread.open('thread-1');
+    TestBed.tick();
+    expect(changed.room().map((file) => file.path)).toEqual(['notes.md', 'main.rs', 'lib.rs']);
+    expect(changed.room().every((file) => file.added === 0 && file.removed === 0)).toBe(true);
+    give({ changes: CHANGED });
+    await settle();
+    expect(changed.files()).toBe(CHANGED.files);
+    expect(changed.room()).toEqual([]);
+  });
+
   it('shows none when they cannot be read', async () => {
     const fake = new FakeSession()
-      .answer('thread/events', { events: [WRITE, WROTE] })
+      .answer('thread/events', {
+        events: [WRITE, WROTE, event(4, 'turn.ended', { outcome: 'completed', changed: ['a'] })],
+      })
       .answer(
         'thread/changes',
         new ApiError({ code: ErrorCode.INTERNAL, message: 'the server failed' }),
@@ -118,5 +144,6 @@ describe('ChangedFilesService', () => {
     await settle();
     expect(fake.paramsOf('thread/changes')).toHaveLength(1);
     expect(changed.files()).toEqual([]);
+    expect(changed.room()).toEqual([]);
   });
 });

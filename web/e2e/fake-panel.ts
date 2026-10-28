@@ -114,7 +114,13 @@ export const VERBOSE_HISTORY = [
     },
     VERBOSE,
   ),
-  event(16, 'turn.ended', { outcome: 'completed' }, VERBOSE, '2026-10-11T10:04:05.000Z'),
+  event(
+    16,
+    'turn.ended',
+    { outcome: 'completed', changed: ['src/args.rs', 'src/main.rs'] },
+    VERBOSE,
+    '2026-10-11T10:04:05.000Z',
+  ),
 ];
 
 const SOURCES: readonly ReplySources[] = [

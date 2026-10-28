@@ -87,6 +87,11 @@ where
                 self.call_tool(thread, first, step, cancel, live).await?
             };
             step.summary.tool_calls = step.summary.tool_calls.saturating_add(1);
+            if let Some(path) = Tool::changes(&first.tool, &first.arguments)
+                && !output.is_error
+            {
+                step.summary.changed_file(path);
+            }
             self.record_result(thread, first.call_id.clone(), output)
                 .await?;
             rest = rest.get(1..).unwrap_or_default();

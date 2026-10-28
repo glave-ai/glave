@@ -23,9 +23,10 @@ const OPENED = [
     name: 'a thread',
     path: `/t/${THREAD}`,
     shown: 'thread-message',
-    // The conversation is drawn from its history at once and waits for no other read, so what
-    // a turn changed comes in after it, above its steps and the panel's cost, and moves them.
-    moves: 'what a turn changed comes in after its history, which cannot say how much (#913)',
+    // The conversation is drawn from its history at once and waits for no other read. What
+    // each turn changed keeps its room from the turn's end until it is read (#913), but its
+    // calls fold into the server's runs only once those are read, and what is below moves.
+    moves: 'a turn’s calls fold into their runs after its history, which cannot say them (#917)',
   },
 ] as const;
 

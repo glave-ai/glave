@@ -1,6 +1,6 @@
 //! Changes (`specs/session.md`, "Changes"): what a thread changed in files with glave's own
 //! `write` and `edit`, read from its log, its subagents' with its own, for the thread and for
-//! each turn, in the caller's language.
+//! each turn, in the caller's language, and each turn's files as its end records them.
 
 use glave_event::{Body, ThreadId, decode};
 use glave_session::protocol::{ChangeKind, LineKind, Reply, Request, ThreadChanges, code};
@@ -44,11 +44,18 @@ fn a_thread_s_changes_are_its_writes_and_edits_and_its_subagents_by_turn() {
         turn(&server, thread, "say hello").await.unwrap();
         turn(&server, thread, "and take notes").await.unwrap();
         let changed = server.request(Request::ThreadChanges { thread }).await;
-        let starts: Vec<u64> = events(&server, thread)
-            .await
-            .into_iter()
-            .filter(|raw| matches!(decode(raw.clone()).unwrap().body, Body::TurnStarted(_)))
+        let history = events(&server, thread).await;
+        let starts: Vec<u64> = history
+            .iter()
+            .filter(|raw| matches!(decode((*raw).clone()).unwrap().body, Body::TurnStarted(_)))
             .map(|raw| raw.seq.get())
+            .collect();
+        let recorded: Vec<Vec<String>> = history
+            .into_iter()
+            .filter_map(|raw| match decode(raw).unwrap().body {
+                Body::TurnEnded(ended) => Some(ended.changed),
+                _ => None,
+            })
             .collect();
         server.shutdown().await;
         let Ok(Reply::Changes { changes }) = changed else {
@@ -94,6 +101,11 @@ fn a_thread_s_changes_are_its_writes_and_edits_and_its_subagents_by_turn() {
             by_turn,
             [(starts[0], vec!["main.rs"]), (starts[1], vec!["notes.md"])],
             "each turn by its start, the subagent's in the turn that started it"
+        );
+        let told: Vec<Vec<&str>> = by_turn.iter().map(|(_, paths)| paths.clone()).collect();
+        assert_eq!(
+            recorded, told,
+            "each turn's end records the files it changed, as the changes give them"
         );
     });
 }

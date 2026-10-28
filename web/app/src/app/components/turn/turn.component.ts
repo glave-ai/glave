@@ -29,9 +29,9 @@ import { TurnPartComponent } from '../turn-part/turn-part.component';
  * One turn: the person's message; then, in order, what the model said at each step, each run of
  * calls between as the server's line, which opens to its calls, and the questions and approvals
  * already answered, with the pages the reply drew on from the web under it; what the model
- * writes now, as markdown; what changed; the receipt, a quiet line with how it went, how long it
- * took, what it cost and the model, which opens to where it ran; and last, what waits for the
- * person.
+ * writes now, as markdown; what changed, its room kept as the thread opens until it is read; the
+ * receipt, a quiet line with how it went, how long it took, what it cost and the model, which
+ * opens to where it ran; and last, what waits for the person.
  *
  * While the turn works with nothing of its own to show, a line stands in the reply's place: the
  * step a tool takes, in the server's words, else a smithy's word while the model thinks, the next
@@ -101,6 +101,11 @@ export class TurnComponent {
     const settles = this.settles();
     const files = this.turn().files ?? [];
     return files.length > 0 ? { settles, files } : null;
+  });
+  /** Until what changed is known, the files whose room it keeps, unseen; else `null`. */
+  protected readonly room = computed(() => {
+    const room = this.turn().room;
+    return room.length > 0 ? room : null;
   });
   /** Whether the thread is being opened, its history read: what shows meanwhile was there. */
   private readonly opening = inject(ThreadService).opening;

@@ -2,6 +2,7 @@ import type { ChangedFile, Outcome, ReplySources, TurnResult } from '@glave/clie
 import { type GlzRunStatus, formatDuration, formatMoney, listFormat } from '@glave/glaze';
 
 import type { ApprovalItem, Draft, MessageItem, QuestionItem, ThreadItem } from './conversation';
+import { roomFor } from './files';
 import { plural } from './plural';
 import { NO_STEPS, type Steps, type TurnPart, turnParts } from './runs';
 import type { Turn } from './turns';
@@ -58,6 +59,11 @@ export interface TurnResults {
   readonly working: Working | null;
   /** The files it changed, as the server says; `null` until it has said, as the thread opens. */
   readonly files: readonly ChangedFile[] | null;
+  /**
+   * Until the server has said, the files its end recorded it changed, nothing counted, whose
+   * room is kept; else none.
+   */
+  readonly room: readonly ChangedFile[];
   /** The receipt, for a turn that did work. */
   readonly receipt: Receipt | null;
   readonly waiting: readonly Waiting[];
@@ -238,6 +244,7 @@ export function turnResults(
     live,
     working,
     files: filesOf(turn, told.changed),
+    room: told.changed === null ? roomFor(result?.changed ?? []) : [],
     receipt:
       calls > 0
         ? {

@@ -122,6 +122,7 @@ describe('turns', () => {
         cost: { micros: 350, currency: 'USD' },
         estimated: true,
         via: ['OpenRouter (Anthropic)'],
+        changed: ['src/lib.rs', 7],
       }),
     ).toEqual({
       outcome: 'completed',
@@ -132,6 +133,7 @@ describe('turns', () => {
       cost: { micros: 350, currency: 'USD' },
       estimated: true,
       via: ['OpenRouter (Anthropic)'],
+      changed: ['src/lib.rs'],
     });
     // Recorded before it held more than its outcome: nothing counted, its cost not reported.
     expect(result({ outcome: 'failed' })).toMatchObject({

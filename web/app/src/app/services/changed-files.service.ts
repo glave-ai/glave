@@ -1,6 +1,7 @@
 import { Service, computed, effect, inject, linkedSignal, untracked } from '@angular/core';
 import type { ChangedFile, ThreadChanges, ThreadId } from '@glave/client';
 
+import { roomFor } from '../lib/files';
 import { SessionService } from './session.service';
 import { ThreadService } from './thread.service';
 
@@ -25,6 +26,11 @@ export class ChangedFilesService {
     source: this.thread.thread,
     computation: () => null,
   });
+  /** Whether the last read failed; starts again from not in each thread. */
+  private readonly failed = linkedSignal<ThreadId | null, boolean>({
+    source: this.thread.thread,
+    computation: () => false,
+  });
   /** Counts the reads begun, so an answer that a later one overtook is dropped. */
   private latest = 0;
 
@@ -37,6 +43,18 @@ export class ChangedFilesService {
   readonly byTurn = computed<ReadonlyMap<number, readonly ChangedFile[]> | null>(() => {
     const changes = this.changes();
     return changes === null ? null : new Map(changes.turns.map((turn) => [turn.turn, turn.files]));
+  });
+  /**
+   * Until they are first known, the files the thread's ended turns recorded they changed, each
+   * once in the order first changed, nothing counted, whose room is kept; else none, and none
+   * once they cannot be read.
+   */
+  readonly room = computed<readonly ChangedFile[]>(() => {
+    if (this.changes() !== null || this.failed()) {
+      return [];
+    }
+    const paths = this.thread.turns().flatMap((turn) => turn.result?.changed ?? []);
+    return roomFor([...new Set(paths)]);
   });
   /** What the files leave out, in the server's sentence; empty until it is read. */
   readonly note = computed(() => this.changes()?.note ?? '');
@@ -67,13 +85,16 @@ export class ChangedFilesService {
     }
     this.latest += 1;
     const ticket = this.latest;
-    try {
-      const { changes } = await this.session.call('thread/changes', { thread });
-      if (ticket === this.latest && this.thread.thread() === thread) {
-        this.changes.set(changes);
-      }
-    } catch {
-      // What changed only adds to the thread, which stands without it; the next change asks again.
+    // What changed only adds to the thread, which stands without it; the next change asks again.
+    const read = await this.session.call('thread/changes', { thread }).catch(() => null);
+    if (ticket !== this.latest || this.thread.thread() !== thread) {
+      return;
+    }
+    if (read === null) {
+      this.failed.set(true);
+    } else {
+      this.changes.set(read.changes);
+      this.failed.set(false);
     }
   }
 }

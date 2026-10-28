@@ -66,7 +66,6 @@ function resultOf(data: Data): TurnResult | null {
     return typeof value === 'number' ? value : 0;
   };
   const cost = data['cost'];
-  const via = data['via'];
   return {
     outcome,
     model_calls: count('model_calls'),
@@ -75,8 +74,14 @@ function resultOf(data: Data): TurnResult | null {
     with_network: count('with_network'),
     cost: isMoney(cost) ? cost : null,
     estimated: data['estimated'] === true,
-    via: Array.isArray(via) ? via.filter((each) => typeof each === 'string') : [],
+    via: texts(data['via']),
+    changed: texts(data['changed']),
   };
+}
+
+/** The strings of `value`, a list of them; none when it is not one. */
+function texts(value: unknown): readonly string[] {
+  return Array.isArray(value) ? value.filter((each) => typeof each === 'string') : [];
 }
 
 /** Whether `event` records a message of the person's own, not a note glave wrote on their side. */

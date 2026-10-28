@@ -142,6 +142,11 @@ pub struct TurnResult {
     /// (`OpenRouter (Anthropic)`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub via: Vec<String>,
+    /// The files its `write` and `edit` calls changed, each once in the order first changed,
+    /// as the call named it: what `thread/changes` gives as the turn's, so a client keeps their
+    /// room before it has read them. Absent when it changed none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changed: Vec<String>,
 }
 
 impl TurnResult {
@@ -160,6 +165,14 @@ impl TurnResult {
             }),
             estimated: false,
             via: Vec::new(),
+            changed: Vec::new(),
+        }
+    }
+
+    /// Counts the file at `path` as one the turn changed, once.
+    pub fn changed_file(&mut self, path: &str) {
+        if !self.changed.iter().any(|known| known == path) {
+            self.changed.push(path.to_owned());
         }
     }
 
@@ -193,8 +206,8 @@ impl TurnResult {
         }
     }
 
-    /// Adds a subagent's work to its parent's turn: its calls, what they used and cost, and
-    /// where they ran.
+    /// Adds a subagent's work to its parent's turn: its calls, what they used and cost, where
+    /// they ran, and the files it changed.
     pub fn absorb(&mut self, child: &Self) {
         self.model_calls = self.model_calls.saturating_add(child.model_calls);
         self.tool_calls = self.tool_calls.saturating_add(child.tool_calls);
@@ -208,6 +221,9 @@ impl TurnResult {
             .and_then(|(sum, cost)| sum.checked_add(cost));
         for place in &child.via {
             self.ran_at(place.clone());
+        }
+        for path in &child.changed {
+            self.changed_file(path);
         }
     }
 
@@ -316,7 +332,15 @@ mod tests {
         child.tool_calls = 3;
         child.take_in(&responded(4, Some(1), "OpenAI", Some("x")));
         child.let_out(Lifted::Sandbox);
+        parent.changed_file("src/lib.rs");
+        child.changed_file("src/main.rs");
+        child.changed_file("src/lib.rs");
         parent.absorb(&child);
+        assert_eq!(
+            parent.changed,
+            ["src/lib.rs", "src/main.rs"],
+            "each file once"
+        );
         assert_eq!((parent.model_calls, parent.tool_calls), (2, 3));
         assert_eq!((parent.outside_sandbox, parent.with_network), (1, 1));
         assert_eq!(parent.cost.map(|cost| cost.micros), Some(6));

@@ -2485,6 +2485,13 @@
       "additionalProperties": false,
       "description": "A turn ended (`turn.ended`): how, and what it did and cost, its subagents' work included.\nIt is what a client that ran the turn is answered with too, so every client reads the same.\nA turn recorded before it held more than `outcome` reads with nothing counted.",
       "properties": {
+        "changed": {
+          "description": "The files its `write` and `edit` calls changed, each once in the order first changed,\nas the call named it: what `thread/changes` gives as the turn's, so a client keeps their\nroom before it has read them. Absent when it changed none.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "cost": {
           "anyOf": [
             {

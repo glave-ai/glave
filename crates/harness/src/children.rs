@@ -23,7 +23,7 @@ type Shared<'a, 'b> = &'a Mutex<&'b mut (dyn FnMut(Live) + Send)>;
 /// How a subagent's call came out.
 pub(crate) enum Ran {
     /// Its result, with what its child's turn did when it ran.
-    Done(ToolOutput, Option<TurnResult>),
+    Done(ToolOutput, Option<Box<TurnResult>>),
     /// Its child's turn waits for the person, so its parent's waits too.
     Waits,
 }
@@ -182,7 +182,7 @@ where
     /// The call's result once its child's turn has ended: the child's report from its log.
     async fn report_of(&self, parent: &Thread, view: &ThreadView) -> Ran {
         match self.reported(&parent.scope, view.thread).await {
-            Ok((output, summary)) => Ran::Done(output, Some(summary)),
+            Ok((output, summary)) => Ran::Done(output, Some(Box::new(summary))),
             Err(err) => Ran::Done(failed(&err), None),
         }
     }
@@ -233,7 +233,7 @@ fn result_of(child: &Thread, ran: Result<TurnResult, HarnessError>) -> Ran {
             // A child that read untrusted content may pass its words on: its report is
             // labelled as such, and the parent judged knowing it.
             output.untrusted = child.untrusted;
-            Ran::Done(output, Some(summary))
+            Ran::Done(output, Some(Box::new(summary)))
         }
         Err(HarnessError::Cancelled) => Ran::Done(ToolOutput::text(true, NOT_RUN), None),
         Err(err) => Ran::Done(failed(&err), None),

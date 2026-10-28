@@ -100,6 +100,20 @@ impl Tool {
         }
     }
 
+    /// The file a call of `tool` with `arguments` changes when it succeeds: a `write`'s or an
+    /// `edit`'s, as it names it; none for any other call, or one that names no file.
+    pub fn changes<'a>(tool: &str, arguments: &'a Arguments) -> Option<&'a str> {
+        if !matches!(Self::named(tool)?, Self::Write | Self::Edit) {
+            return None;
+        }
+        let Arguments::Json(map) = arguments else {
+            return None;
+        };
+        map.get("path")
+            .and_then(Value::as_str)
+            .filter(|path| !path.is_empty())
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Self::Search => "search",

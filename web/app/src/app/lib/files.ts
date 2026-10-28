@@ -1,4 +1,4 @@
-import type { LineKind, RawEvent } from '@glave/client';
+import type { ChangedFile, LineKind, RawEvent } from '@glave/client';
 
 import { plural } from './plural';
 
@@ -13,6 +13,14 @@ export interface LineCounts {
 export interface LineMarks {
   readonly added: (lines: number) => string;
   readonly removed: (lines: number) => string;
+}
+
+/**
+ * Files at `paths` as a change shows them, with nothing counted: what stands in for files whose
+ * changes are not read yet, to keep their room.
+ */
+export function roomFor(paths: readonly string[]): readonly ChangedFile[] {
+  return paths.map((path) => ({ path, added: 0, removed: 0, changes: [] }));
 }
 
 /** The marks for lines added and removed, written for `locale`: `+12` and `−3`. */

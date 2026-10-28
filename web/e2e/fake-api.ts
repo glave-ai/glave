@@ -185,6 +185,7 @@ export const HISTORY = [
       tokens: { input: 9000, cache_read: 0, cache_write: 0, output: 600, reasoning: 0 },
       cost: { micros: 4200, currency: 'USD' },
       estimated: false,
+      changed: ['src/parse.rs', 'tests/empty.rs'],
     },
     THREAD,
     '2026-10-11T10:02:05.000Z',

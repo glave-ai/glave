@@ -19,7 +19,8 @@ fn step(step: &str, status: PlanStatus) -> PlanStep {
     }
 }
 
-fn event(seq: u64, body: Body) -> Event {
+/// An event of one thread at `seq`, recorded at one time; shared with other modules' tests.
+pub(crate) fn event(seq: u64, body: Body) -> Event {
     let at: jiff::Timestamp = "2026-10-26T10:00:00.000Z".parse().unwrap();
     Event {
         header: Header {
