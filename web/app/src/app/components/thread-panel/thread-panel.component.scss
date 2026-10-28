@@ -31,6 +31,9 @@
 
 // The facts, one above another, scrolling when they outgrow the panel.
 .facts {
+  // A scroll container holds what is positioned inside it, so nothing hidden for screen readers
+  // far down it reaches past it and makes what holds it scroll.
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;

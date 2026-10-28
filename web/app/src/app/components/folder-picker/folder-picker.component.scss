@@ -38,6 +38,9 @@
 }
 
 .folders {
+  // A scroll container holds what is positioned inside it, so nothing hidden for screen readers
+  // far down it reaches past it and makes what holds it scroll.
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--glz-space-half);

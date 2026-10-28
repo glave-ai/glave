@@ -70,6 +70,9 @@
 }
 
 .diff {
+  // A scroll container holds what is positioned inside it, so nothing hidden for screen readers
+  // far down it reaches past it and makes what holds it scroll.
+  position: relative;
   max-height: 24rem;
   overflow: auto;
   padding-bottom: var(--glz-space-1);
