@@ -119,3 +119,8 @@
 .changes {
   --glz-dialog-width: 56rem;
 }
+
+// The pickers before the thread's history says its own model and effort.
+.pending {
+  visibility: hidden;
+}

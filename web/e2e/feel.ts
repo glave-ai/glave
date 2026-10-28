@@ -23,6 +23,8 @@ interface Shift {
   readonly value: number;
   readonly startTime: number;
   readonly hadRecentInput: boolean;
+  /** What moved, each as its element and its box before and after, in CSS pixels. */
+  readonly moved: readonly string[];
 }
 
 /** One event of an interaction, as an `event` entry reports it. */
@@ -47,6 +49,8 @@ type Watched = Window & { feel?: { readonly seen: () => Seen; readonly forget: (
 export interface Felt {
   /** Cumulative Layout Shift. */
   readonly shift: number;
+  /** What moved in the shifts it counts, so a failure says what to look at. */
+  readonly moved: readonly string[];
   /** Interaction to Next Paint, in ms; 0 with no click slower than a frame. */
   readonly interaction: number;
   /** How many first inputs the browser reported: one once the person clicked, else none. */
@@ -65,6 +69,19 @@ export interface Felt {
 export async function watchFeel(page: Page): Promise<void> {
   await page.addInitScript(() => {
     type Entry = PerformanceEntry & Readonly<Record<string, unknown>>;
+    interface Source {
+      readonly node: Node | null;
+      readonly previousRect: DOMRectReadOnly;
+      readonly currentRect: DOMRectReadOnly;
+    }
+    const box = (rect: DOMRectReadOnly): string =>
+      [rect.x, rect.y, rect.width, rect.height].map(Math.round).join(',');
+    const described = ({ node, previousRect, currentRect }: Source): string => {
+      const element = node instanceof Element ? node : node?.parentElement;
+      const id = element?.getAttribute('data-testid');
+      const name = `${element?.localName ?? 'text'}${id === null || id === undefined ? '' : `[${id}]`}`;
+      return `${name} ${box(previousRect)} → ${box(currentRect)}`;
+    };
     let shifts: Shift[] = [];
     let timings: Timing[] = [];
     let inputs = 0;
@@ -76,6 +93,7 @@ export async function watchFeel(page: Page): Promise<void> {
           value: Number(entry['value']),
           startTime: entry.startTime,
           hadRecentInput: entry['hadRecentInput'] === true,
+          moved: (entry['sources'] as readonly Source[]).map(described),
         });
       },
       event: (entry) => {
@@ -204,6 +222,7 @@ export async function feltOn(page: Page): Promise<Felt> {
   }
   const felt: Felt = {
     shift: cumulative(seen.shifts),
+    moved: seen.shifts.filter((each) => !each.hadRecentInput).flatMap((each) => each.moved),
     interaction: slowest(seen.timings),
     inputs: seen.inputs,
     firstPaint: seen.firstPaint,
@@ -231,5 +250,5 @@ export function expectAnsweredAtOnce(felt: Felt): void {
 
 /** Fails unless nothing `felt` measured moved beyond `FEEL`'s budget. */
 export function expectStill(felt: Felt): void {
-  expect(felt.shift, 'layout shift').toBeLessThanOrEqual(FEEL.shift);
+  expect(felt.shift, `layout shift, of ${felt.moved.join('; ')}`).toBeLessThanOrEqual(FEEL.shift);
 }

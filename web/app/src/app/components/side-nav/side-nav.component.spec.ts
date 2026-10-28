@@ -14,15 +14,26 @@ import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { record, task, thread } from '../../testing/fixtures';
 import { SideNavComponent } from './side-nav.component';
 
-/** What the fake server has beside the tasks: the person's projects, and how they group. */
+/**
+ * What the fake server has beside the tasks: the person's projects, and how they group; and
+ * whether the lists are read before the side nav shows, and whether its late code loads by
+ * itself or as the test says.
+ */
 interface Has {
   readonly projects?: readonly Project[];
   readonly grouping?: Grouping;
+  readonly read?: boolean;
+  readonly blocks?: DeferBlockBehavior;
 }
 
 async function render(
   tasks: readonly TaskInfo[] = [],
-  { projects = [record('p1', 'glave')], grouping = 'project' }: Has = {},
+  {
+    projects = [record('p1', 'glave')],
+    grouping = 'project',
+    read = true,
+    blocks = DeferBlockBehavior.Playthrough,
+  }: Has = {},
 ): Promise<{
   readonly root: HTMLElement;
   readonly fixture: ReturnType<typeof TestBed.createComponent<SideNavComponent>>;
@@ -36,8 +47,11 @@ async function render(
     .answer('grouping/get', { grouping });
   TestBed.configureTestingModule({
     providers: [provideRouter([{ path: '**', children: [] }]), ...provideFakeSession(fake)],
+    deferBlockBehavior: blocks,
   });
-  await TestBed.inject(ProjectsService).refresh();
+  if (read) {
+    await TestBed.inject(ProjectsService).refresh();
+  }
   const fixture = TestBed.createComponent(SideNavComponent);
   fixture.componentRef.setInput('page', 'tasks');
   await fixture.whenStable();
@@ -137,6 +151,33 @@ describe('SideNavComponent', () => {
     tasks?.click();
     await fixture.whenStable();
     expect(navigated).toBe(1);
+  });
+
+  it('keeps the room of what comes in late, so nothing already drawn moves', async () => {
+    const { root, fixture } = await render([task('t9', 'Nightly audit', { status: 'running' })], {
+      read: false,
+      blocks: DeferBlockBehavior.Manual,
+    });
+    // Tasks at the foot of the column the threads fill, the person under it, outside it.
+    const tasks = root.querySelector('[data-testid="nav-tasks"]');
+    expect(tasks?.parentElement?.classList.contains('above')).toBe(true);
+    expect(tasks?.nextElementSibling).toBeNull();
+    expect(root.querySelector('.above app-person')).toBeNull();
+    // No threads until they are read, then all at once, above Tasks.
+    expect(root.querySelector('app-projects-nav')).toBeNull();
+    await TestBed.inject(ProjectsService).refresh();
+    await settle(fixture);
+    expect(root.querySelector('app-projects-nav')?.nextElementSibling).toBe(tasks);
+    // Read before the switch's code is in, the switch's room is kept above them.
+    expect(root.querySelector('app-projects-nav')?.previousElementSibling?.className).toBe(
+      'grouping room',
+    );
+    await (await fixture.getDeferBlocks())[0]?.render(DeferBlockState.Complete);
+    expect(root.querySelector('.room')).toBeNull();
+    expect(root.querySelector('app-group-by')?.nextElementSibling?.tagName).toBe(
+      'APP-PROJECTS-NAV',
+    );
+    await expectAccessible(root);
   });
 
   it('groups the threads by project until the person picks Status in the switch above them', async () => {

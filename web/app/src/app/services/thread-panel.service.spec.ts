@@ -1,12 +1,13 @@
 import { BreakpointObserver } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
-import type { Opened, WorkspaceBound } from '@glave/client';
+import { ApiError, ErrorCode, type Opened, type WorkspaceBound } from '@glave/client';
 import { of } from 'rxjs';
 
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
 import { command, event, thread } from '../testing/fixtures';
 import { ChangedFilesService } from './changed-files.service';
 import { CommandsService } from './commands.service';
+import { FirstTurnService } from './first-turn.service';
 import { PanelService } from './panel.service';
 import { PlanService } from './plan.service';
 import { SourcesService } from './sources.service';
@@ -34,11 +35,12 @@ const READ = [
   event(4, 'turn.ended', { outcome: 'completed' }),
 ];
 
-async function make(
+/** The panel's service on `fake`, its thread holding `events`, not yet opened. */
+function provide(
   fake: FakeSession,
   events: readonly unknown[] = [],
   narrow = false,
-): Promise<ThreadPanelService> {
+): ThreadPanelService {
   fake.answer('thread/events', { events });
   TestBed.configureTestingModule({
     providers: [
@@ -52,13 +54,32 @@ async function make(
       ThreadPanelService,
     ],
   });
-  const panel = TestBed.inject(ThreadPanelService);
-  await TestBed.inject(ThreadService).open('thread-1');
+  return TestBed.inject(ThreadPanelService);
+}
+
+/** Runs the effects, lets the calls they made answer, and runs the effects of those answers. */
+async function settle(): Promise<void> {
   TestBed.tick();
   await new Promise((resolve) => setTimeout(resolve));
   TestBed.tick();
+}
+
+/** The panel's service on `fake`, its thread holding `events`, once opened. */
+async function make(
+  fake: FakeSession,
+  events: readonly unknown[] = [],
+  narrow = false,
+): Promise<ThreadPanelService> {
+  const panel = provide(fake, events, narrow);
+  await TestBed.inject(ThreadService).open('thread-1');
+  await settle();
   return panel;
 }
+
+const EDITED = [
+  event(1, 'tool.call.requested', { call_id: 'c1', tool: 'edit', arguments: { json: {} } }),
+  event(2, 'tool.call.completed', { call_id: 'c1', is_error: false, output: [] }),
+];
 
 describe('ThreadPanelService', () => {
   beforeEach(() => {
@@ -89,6 +110,60 @@ describe('ThreadPanelService', () => {
     });
     const panel = await make(fake);
     expect([panel.shown(), panel.visible()]).toEqual([false, false]);
+  });
+
+  it('knows whether there is a panel once the thread is, or a first message was sent here', async () => {
+    const fake = new FakeSession();
+    const summary = fake.held('thread/get');
+    const panel = provide(fake);
+    const opening = TestBed.inject(ThreadService).open('thread-1');
+    await settle();
+    expect(panel.decided()).toBe(false);
+    summary({ thread: thread('thread-1', 'Fix it') });
+    await opening;
+    expect(panel.decided()).toBe(true);
+    // One the server could not read is known to say so; a first message, to have none yet.
+    TestBed.resetTestingModule();
+    const refused = new ApiError({ code: ErrorCode.INTERNAL, message: 'the server failed' });
+    const failed = provide(new FakeSession().answer('thread/get', refused));
+    await TestBed.inject(ThreadService).open('thread-1');
+    expect(failed.decided()).toBe(true);
+    TestBed.resetTestingModule();
+    const quiet = new FakeSession();
+    quiet.held('thread/get');
+    const sent = provide(quiet);
+    TestBed.inject(FirstTurnService).start({ thread: 'thread-1', prompt: 'Hi' });
+    void TestBed.inject(ThreadService).open('thread-1');
+    // Read at once too: it has nothing to wait for yet.
+    expect([sent.decided(), sent.read()]).toEqual([true, true]);
+  });
+
+  it('is read once its history is, whatever else is unanswered, and stays so in the thread', async () => {
+    const fake = new FakeSession();
+    // What it changed, its plan, its pages and its commands are never answered.
+    for (const method of [
+      'thread/changes',
+      'thread/plan',
+      'thread/sources',
+      'command/list',
+    ] as const) {
+      fake.held(method);
+    }
+    const panel = await make(fake, [
+      ...EDITED,
+      event(3, 'command.started', { command: 'c1', script: 'npm run dev' }),
+    ]);
+    expect(panel.read()).toBe(true);
+    // Opened again, in another language, it stays read while it is read again.
+    const threads = TestBed.inject(ThreadService);
+    const again = threads.open('thread-1');
+    TestBed.tick();
+    expect(panel.read()).toBe(true);
+    await again;
+    // Another thread is read afresh.
+    void threads.open('thread-2');
+    TestBed.tick();
+    expect(panel.read()).toBe(false);
   });
 
   it('closes its sheet once it has nothing left, so it never comes back over the page', async () => {
