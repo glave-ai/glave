@@ -61,6 +61,17 @@
         {{ copy.review }}
       </button>
     </app-turn-changes>
+  } @else if (room(); as files) {
+    <!-- Its room, unseen, until what changed is read: nothing below it moves as that comes in. -->
+    <app-turn-changes
+      class="room"
+      testId="panel-changes-room"
+      [files]="files"
+      [heading]="copy.changes"
+      [level]="3"
+    >
+      <button appTurnChangesFoot glzButton size="sm">{{ copy.review }}</button>
+    </app-turn-changes>
   }
   @if (running(); as count) {
     <glz-card data-testid="panel-running">

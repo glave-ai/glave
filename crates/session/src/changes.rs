@@ -137,8 +137,9 @@ impl Reading {
 }
 
 /// The change a call of `tool` with `arguments` asks for, and the path of the file it changes:
-/// a `write`'s or an `edit`'s that names a file, else none.
+/// a `write`'s or an `edit`'s that names a file ([`Tool::changes`]), else none.
 fn asked(tool: &str, arguments: &Arguments) -> Option<(String, FileChange)> {
+    let path = Tool::changes(tool, arguments)?;
     let Arguments::Json(map) = arguments else {
         return None;
     };
@@ -147,10 +148,6 @@ fn asked(tool: &str, arguments: &Arguments) -> Option<(String, FileChange)> {
             .and_then(serde_json::Value::as_str)
             .unwrap_or("")
     };
-    let path = text("path");
-    if path.is_empty() {
-        return None;
-    }
     let change = match Tool::named(tool)? {
         Tool::Write => FileChange {
             kind: ChangeKind::Wrote,

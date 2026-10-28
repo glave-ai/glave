@@ -184,6 +184,25 @@ describe('ThreadPanelComponent', () => {
     await expectAccessible(root);
   });
 
+  it('keeps the room of the files the thread changed, unseen, until they are read', async () => {
+    const fake = worked();
+    const give = fake.held('thread/changes');
+    const ended = event(11, 'turn.ended', {
+      outcome: 'completed',
+      changed: ['src/args.rs', 'src/main.rs'],
+    });
+    const { root, fixture } = await render(fake, [...WORKED.slice(0, -1), ended]);
+    const kept = root.querySelector('app-turn-changes.room');
+    expect(kept?.querySelectorAll('[data-testid="panel-changes-room-file"]')).toHaveLength(2);
+    expect(getComputedStyle(kept ?? root).visibility).toBe('hidden');
+    expect(root.querySelector('[data-testid="panel-changes"]')).toBeNull();
+    await expectAccessible(root);
+    give({ changes: { files: [], turns: [], note: '' } });
+    await new Promise((resolve) => setTimeout(resolve));
+    await fixture.whenStable();
+    expect(root.querySelector('app-turn-changes.room')).toBeNull();
+  });
+
   it('heads itself one level up from its sections, heard alone beside the page', async () => {
     const { root } = await render(worked(), WORKED);
     const heading = root.querySelector('h2');

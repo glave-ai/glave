@@ -4,3 +4,8 @@
   flex-direction: column;
   gap: var(--glz-space-3);
 }
+
+// What changed, unseen, keeping its room until it is read.
+.room {
+  visibility: hidden;
+}

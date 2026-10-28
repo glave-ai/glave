@@ -62,6 +62,8 @@ export class ThreadPanelService {
   readonly plan = this.plans.plan;
   /** The files it changed, as the server says. */
   readonly files = this.changed.files;
+  /** Until those are known, the files whose room is kept, nothing counted. */
+  readonly room = this.changed.room;
   /** What those leave out, in the server's sentence. */
   readonly note = this.changed.note;
   readonly running = this.commands.count;
@@ -100,6 +102,7 @@ export class ThreadPanelService {
       this.workspace() !== null ||
       this.plan() !== null ||
       this.files().length > 0 ||
+      this.room().length > 0 ||
       this.running() > 0 ||
       this.pages().length > 0 ||
       this.attached().length > 0,

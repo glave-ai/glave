@@ -17,6 +17,7 @@ use glave_ports::{
 
 use crate::approval::{Approver, Decision};
 use crate::harness::{Harness, HarnessError};
+use crate::tools::Tool;
 use crate::turn::Step;
 
 /// A turn its log has open: where it started, and its calls without a result, in order, with
@@ -392,7 +393,8 @@ fn dangling(events: &[Event]) -> bool {
 }
 
 /// What the latest turn in `events` did by itself: its model calls, tool calls, commands run
-/// outside the sandbox, tokens and cost, and how it ended (completed while it has not).
+/// outside the sandbox, tokens and cost, the files it changed, and how it ended (completed
+/// while it has not).
 pub(crate) fn own_tallies(events: &[Event]) -> TurnResult {
     let started = events
         .iter()
@@ -401,14 +403,23 @@ pub(crate) fn own_tallies(events: &[Event]) -> TurnResult {
     let turn = events.get(started..).unwrap_or_default();
     let mut summary = TurnResult::begun();
     let mut outside: HashMap<&CallId, Lifted> = HashMap::new();
+    let mut changing: HashMap<&CallId, &str> = HashMap::new();
     for event in turn {
         match &event.body {
+            Body::ToolCallRequested(call) => {
+                if let Some(path) = Tool::changes(&call.tool, &call.arguments) {
+                    changing.insert(&call.call_id, path);
+                }
+            }
             Body::ModelResponded(responded) => {
                 summary.model_calls = summary.model_calls.saturating_add(1);
                 summary.take_in(responded);
             }
-            Body::ToolCallCompleted(_) => {
+            Body::ToolCallCompleted(done) => {
                 summary.tool_calls = summary.tool_calls.saturating_add(1);
+                if let Some(path) = changing.get(&done.call_id).filter(|_| !done.is_error) {
+                    summary.changed_file(path);
+                }
             }
             Body::ApprovalRequested(asked) => {
                 if let Some(let_out) = &asked.outside_sandbox {
@@ -431,3 +442,6 @@ pub(crate) fn own_tallies(events: &[Event]) -> TurnResult {
     }
     summary
 }
+
+#[cfg(test)]
+mod tests;

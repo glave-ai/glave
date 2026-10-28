@@ -161,3 +161,8 @@ summary.part::-webkit-details-marker {
   border-radius: var(--glz-radius-full);
   background: var(--glz-color-text);
 }
+
+// What it changed, unseen, keeping its room until it is read.
+.room {
+  visibility: hidden;
+}

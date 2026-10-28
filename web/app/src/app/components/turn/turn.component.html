@@ -35,6 +35,9 @@
 }
 @if (changes(); as changes) {
   <app-turn-changes [class.glz-settle]="changes.settles" [files]="changes.files" />
+} @else if (room(); as room) {
+  <!-- Its room, unseen, until what changed is read: nothing below it moves as that comes in. -->
+  <app-turn-changes class="room" testId="turn-changes-room" [files]="room" />
 }
 @if (turn().receipt; as receipt) {
   <glz-steps

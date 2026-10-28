@@ -899,6 +899,12 @@ export type TurnChanges = {
  */
 export type TurnResult = {
   /**
+   * The files its `write` and `edit` calls changed, each once in the order first changed,
+   * as the call named it: what `thread/changes` gives as the turn's, so a client keeps their
+   * room before it has read them. Absent when it changed none.
+   */
+  readonly changed?: readonly (string)[];
+  /**
    * What its model calls cost, when every one of them reported a cost in one currency;
    * absent when one did not: the cost is not reported.
    */

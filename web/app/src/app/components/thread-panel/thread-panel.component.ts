@@ -44,9 +44,10 @@ interface Part {
  * the project's folder, its full path a press away, a worktree's branch or the point a clone is
  * at, the mode), then each section only when it has something: its plan, in the server's
  * sentence, its steps ticking off (the conversation's card is where a proposal is built); the
- * files it changed, as a turn's card shows them, each opening its changes in full; its commands
- * running in the background, each with Stop; the pages its replies drew on, each opening in a
- * new tab, and the files the person attached; and how full its context is and what it has cost.
+ * files it changed, as a turn's card shows them, each opening its changes in full, their room
+ * kept as the thread opens until they are read; its commands running in the background, each
+ * with Stop; the pages its replies drew on, each opening in a new tab, and the files the person
+ * attached; and how full its context is and what it has cost.
  * Its heading is seen in the sheet of a narrow screen, with a close button, and heard beside
  * the page; its sections are a level below. When Stop takes the last command away with the
  * keyboard's place, that place goes to the heading, or, when the panel goes, `gone` says so.
@@ -149,6 +150,11 @@ export class ThreadPanelComponent {
   protected readonly changes = computed(() => {
     const files = this.facts.files();
     return files.length === 0 ? null : files;
+  });
+  /** Until those are known, the files whose room is kept, unseen; else `null`. */
+  protected readonly room = computed(() => {
+    const room = this.facts.room();
+    return room.length === 0 ? null : room;
   });
   protected readonly running = computed(() => {
     const count = this.facts.running();
