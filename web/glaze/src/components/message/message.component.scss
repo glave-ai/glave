@@ -56,15 +56,14 @@
   font-size: var(--glz-text-sm);
 }
 
-// The message's actions hang just under it, in the space before what follows, so a message
-// takes no more room than its text and the conversation keeps one rhythm: at the reply's start
-// or the bubble's end, an icon button's own padding pulled back so its icon lines up with the
-// text. With a pointer they show on hover and while keyboard focus is inside the message, so the
+// The message's actions hang just under its text, in the gap before what follows and the room
+// the message keeps for them (below): at the reply's start or the bubble's end, an icon button's
+// own padding pulled back so its icon lines up with the text. With a pointer they show on hover and while keyboard focus is inside the message, so the
 // keyboard finds them and a click inside (which may leave focus there, but no ring) pins nothing;
 // on touch, where nothing hovers, they always show.
 .actions {
   position: absolute;
-  inset-block-start: calc(100% - var(--glz-space-1));
+  inset-block-start: calc(100% - var(--glz-message-actions-room, 0px) - var(--glz-space-1));
   inset-inline-start: calc(-1 * var(--glz-space-2));
   z-index: 1;
   display: flex;
@@ -75,6 +74,18 @@
 
 .actions:empty {
   display: none;
+}
+
+// The actions take room of their own: a message that has them keeps, under its text, as much as
+// they reach past it beyond the thread's gap between blocks (`--glz-space-3`), so they never
+// cover what follows, shown on hover or always on touch: its sources, a run of calls, the next
+// message.
+.main:has(> .actions:not(:empty)) {
+  --glz-message-actions-room: calc(
+    var(--glz-control-height-sm) - var(--glz-space-1) - var(--glz-space-3)
+  );
+
+  padding-block-end: var(--glz-message-actions-room);
 }
 
 :host(.from-person) .actions {

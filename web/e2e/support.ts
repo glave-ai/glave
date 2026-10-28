@@ -262,6 +262,14 @@ export async function atRest(page: Page): Promise<void> {
   });
 }
 
+/** Whether two boxes on the page overlap; a missing box counts as overlapping. */
+export function overlaps(a: Box | null, b: Box | null): boolean {
+  if (a === null || b === null) {
+    return true;
+  }
+  return a.y < b.y + b.height && b.y < a.y + a.height && a.x < b.x + b.width && b.x < a.x + a.width;
+}
+
 /** How opaque an element shows: its own opacity times its ancestors'. */
 export async function shownOpacity(locator: Locator): Promise<number> {
   return locator.evaluate((element) => {

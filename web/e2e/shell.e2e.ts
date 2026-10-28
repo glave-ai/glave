@@ -1,5 +1,3 @@
-import { type Locator } from '@playwright/test';
-
 import { type Request, THREAD, fakeApi } from './fake-api';
 import { VERBOSE } from './fake-panel';
 import {
@@ -8,6 +6,7 @@ import {
   byTestId,
   expect,
   expectAccessible,
+  overlaps,
   test,
   watchForProblems,
 } from './support';
@@ -269,17 +268,6 @@ test('on a phone the side nav is a drawer and the thread’s panel a sheet', asy
   await page.keyboard.press('Escape');
   await expect(panel).toBeHidden();
 });
-
-/** A box on the page, as Playwright measures it. */
-type Box = NonNullable<Awaited<ReturnType<Locator['boundingBox']>>>;
-
-/** Whether two boxes on the page overlap; a missing box counts as overlapping. */
-function overlaps(a: Box | null, b: Box | null): boolean {
-  if (a === null || b === null) {
-    return true;
-  }
-  return a.y < b.y + b.height && b.y < a.y + a.height && a.x < b.x + b.width && b.x < a.x + a.width;
-}
 
 test('in a short window the picker lists models beside its button, never over it', async ({
   page,

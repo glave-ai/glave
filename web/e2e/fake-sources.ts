@@ -17,7 +17,10 @@ function read(seq: number, callId: string, page: (typeof PAGES)[number]): Return
   return { ...completed, data: { ...completed.data, untrusted: true, structured: { page } } };
 }
 
-/** The chat's history: a search, a page it read, one that failed to load, another it read. */
+/**
+ * The chat's history: a search, a word on what it reads next, a page it read, one that failed
+ * to load, another it read.
+ */
 export const RESEARCH_HISTORY = [
   event(1, 'thread.started', {}, RESEARCH),
   event(2, 'turn.started', {}, RESEARCH),
@@ -41,11 +44,17 @@ export const RESEARCH_HISTORY = [
     'Title: Announcing Tokio 2.0\nURL: https://tokio.rs/blog/2026-10-tokio-2',
     RESEARCH,
   ),
-  call(6, 'call_2', 'web_fetch', { url: PAGES[0].url }, RESEARCH),
-  read(7, 'call_2', PAGES[0]),
-  call(8, 'call_3', 'web_fetch', { url: 'https://tokio.rs/missing' }, RESEARCH),
   event(
-    9,
+    6,
+    'message.added',
+    { role: 'assistant', parts: [{ type: 'text', text: 'The release notes first.' }] },
+    RESEARCH,
+  ),
+  call(7, 'call_2', 'web_fetch', { url: PAGES[0].url }, RESEARCH),
+  read(8, 'call_2', PAGES[0]),
+  call(9, 'call_3', 'web_fetch', { url: 'https://tokio.rs/missing' }, RESEARCH),
+  event(
+    10,
     'tool.call.completed',
     {
       call_id: 'call_3',
@@ -54,10 +63,10 @@ export const RESEARCH_HISTORY = [
     },
     RESEARCH,
   ),
-  call(10, 'call_4', 'web_fetch', { url: PAGES[1].url }, RESEARCH),
-  read(11, 'call_4', PAGES[1]),
+  call(11, 'call_4', 'web_fetch', { url: PAGES[1].url }, RESEARCH),
+  read(12, 'call_4', PAGES[1]),
   event(
-    12,
+    13,
     'message.added',
     {
       role: 'assistant',
@@ -70,12 +79,12 @@ export const RESEARCH_HISTORY = [
     },
     RESEARCH,
   ),
-  event(13, 'turn.ended', { outcome: 'completed' }, RESEARCH, '2026-10-11T10:00:09.000Z'),
+  event(14, 'turn.ended', { outcome: 'completed' }, RESEARCH, '2026-10-11T10:00:09.000Z'),
 ];
 
 /** What the chat's reply drew on, as the server reads it from the history. */
 export const RESEARCH_SOURCES: ReplySources = {
-  reply: 12,
+  reply: 13,
   sentence: 'Sources: 2 pages',
   pages: [...PAGES],
 };
