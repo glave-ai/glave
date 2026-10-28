@@ -190,13 +190,10 @@ pub(crate) async fn show(
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
     let opened = glave_process::Processes::recorded(folder.join("run"))
-        .output(&mut run, OPENS_WITHIN)
+        .status(&mut run, OPENS_WITHIN)
         .await
         .with_context(|| format!("could not run {program} to open the browser"))?;
-    anyhow::ensure!(
-        opened.status.success(),
-        "{program} could not open the browser"
-    );
+    anyhow::ensure!(opened.success(), "{program} could not open the browser");
     Ok(())
 }
 
