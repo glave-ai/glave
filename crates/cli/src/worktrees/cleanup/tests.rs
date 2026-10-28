@@ -97,7 +97,7 @@ async fn worktree(home: &Path, repo: &Path, branch: &str, owner: Option<ThreadId
 }
 
 async fn kept(home: &Path) -> Vec<Kept> {
-    worktrees::list(&home.join(FOLDER), &environment())
+    worktrees::list(&home.join(FOLDER), &environment(), &Processes::unrecorded())
         .await
         .unwrap()
 }
@@ -137,6 +137,7 @@ fn idle_threads_lose_their_worktrees_only_when_nothing_is_lost() {
         let cleanup = Cleanup {
             log: &log,
             environment: &env,
+            processes: &Processes::unrecorded(),
             trash: None,
             now: day(31),
             entropy: &CountingEntropy::starting_at(100),
@@ -178,9 +179,11 @@ fn the_check_runs_at_most_once_a_day() {
         let quiet = thread(&log, 1, day(0)).await;
         worktree(&home, &repo, "glave/quiet", Some(quiet)).await;
         let entropy = CountingEntropy::starting_at(100);
+        let processes = Processes::unrecorded();
         let at = |now| Cleanup {
             log: &log,
             environment: &env,
+            processes: &processes,
             trash: None,
             now,
             entropy: &entropy,
@@ -212,6 +215,7 @@ fn a_torn_check_stamp_is_checked_again_and_written_whole() {
     let cleanup = Cleanup {
         log: &log,
         environment: &env,
+        processes: &Processes::unrecorded(),
         trash: None,
         now: day(10),
         entropy: &entropy,
@@ -243,6 +247,7 @@ fn a_gone_repositorys_worktree_goes_to_the_trash_and_is_recorded() {
         let none = Cleanup {
             log: &log,
             environment: &env,
+            processes: &Processes::unrecorded(),
             trash: None,
             now: day(31),
             entropy: &entropy,
@@ -286,6 +291,7 @@ fn prune_removes_the_safe_explains_the_rest_and_forces_only_by_name() {
         let cleanup = Cleanup {
             log: &log,
             environment: &env,
+            processes: &Processes::unrecorded(),
             trash: None,
             now: day(31),
             entropy: &CountingEntropy::starting_at(100),
@@ -327,6 +333,7 @@ fn archiving_a_thread_releases_only_its_worktrees() {
         let cleanup = Cleanup {
             log: &log,
             environment: &env,
+            processes: &Processes::unrecorded(),
             trash: None,
             now: day(31),
             entropy: &CountingEntropy::starting_at(100),

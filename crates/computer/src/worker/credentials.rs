@@ -8,6 +8,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use glave_ports::computer::{ComputerError, GitCredential};
+use glave_process::Processes;
 
 /// How long the person's credential helper has to answer.
 const FILL_TIMEOUT: Duration = Duration::from_secs(20);
@@ -20,9 +21,9 @@ pub enum WorkerCredentials {
     None,
     /// The same credential for every repository.
     Fixed(GitCredential),
-    /// The person's own git, asked for each repository with `git credential fill`. Nothing is
-    /// asked interactively: no answer means no credential.
-    HostGit,
+    /// The person's own git, asked for each repository with `git credential fill`, run as one
+    /// of these processes. Nothing is asked interactively: no answer means no credential.
+    HostGit(Processes),
 }
 
 impl WorkerCredentials {
@@ -34,13 +35,13 @@ impl WorkerCredentials {
         match self {
             Self::None => Ok(None),
             Self::Fixed(credential) => Ok(Some(credential.clone())),
-            Self::HostGit => fill(rest).await,
+            Self::HostGit(processes) => fill(processes, rest).await,
         }
     }
 }
 
 /// Asks the person's git for the credential for `https://<rest>`.
-async fn fill(rest: &str) -> Result<Option<GitCredential>, ComputerError> {
+async fn fill(processes: &Processes, rest: &str) -> Result<Option<GitCredential>, ComputerError> {
     let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
     let host = host.rsplit_once('@').map_or(host, |(_, host)| host);
     let asked = format!("protocol=https\nhost={host}\npath={path}\n\n");
@@ -50,7 +51,10 @@ async fn fill(rest: &str) -> Result<Option<GitCredential>, ComputerError> {
         .env("GCM_INTERACTIVE", "never")
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
-    let output = match git.output_with(asked.as_bytes(), FILL_TIMEOUT).await {
+    let output = match processes
+        .output_with(&mut git, asked.as_bytes(), FILL_TIMEOUT)
+        .await
+    {
         Ok(output) => output,
         // A helper that does not answer in time gives no credential.
         Err(glave_process::ProcessError::TimedOut { .. }) => return Ok(None),

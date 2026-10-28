@@ -8,6 +8,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use glave_ports::computer::{ComputerError, GitCredential, Save, Saved};
+use glave_process::Processes;
 
 use super::registry::Opened;
 
@@ -23,8 +24,10 @@ const WORKS_WITHIN: Duration = Duration::from_mins(30);
 /// What git said: its output when it succeeded, what it said when it failed.
 pub(crate) type Said = Result<String, String>;
 
-/// One git invocation: the environment it runs with, the folder, and any leading options.
+/// One git invocation: the processes it runs as, the environment it runs with, the folder,
+/// and any leading options.
 pub(crate) struct Git<'a> {
+    pub(crate) processes: &'a Processes,
     pub(crate) environment: &'a [(OsString, OsString)],
     pub(crate) at: &'a Path,
     pub(crate) options: Vec<OsString>,
@@ -39,9 +42,14 @@ const HELPER: &str = "!f() { test \"$1\" = get || exit 0; \
     printf 'username=%s\\npassword=%s\\n' \"$GLAVE_GIT_USERNAME\" \"$GLAVE_GIT_PASSWORD\"; }; f";
 
 impl<'a> Git<'a> {
-    /// git in the folder `at`.
-    pub(crate) fn at(environment: &'a [(OsString, OsString)], at: &'a Path) -> Self {
+    /// git in the folder `at`, run as one of `processes`.
+    pub(crate) fn at(
+        processes: &'a Processes,
+        environment: &'a [(OsString, OsString)],
+        at: &'a Path,
+    ) -> Self {
         Self {
+            processes,
             environment,
             at,
             options: Vec::new(),
@@ -86,7 +94,7 @@ impl<'a> Git<'a> {
                 .args(["-c", "credential.helper=", "-c"])
                 .arg(format!("credential.helper={HELPER}"));
         }
-        let output = command
+        command
             .args(&self.options)
             .args(args)
             .current_dir(self.at)
@@ -99,8 +107,10 @@ impl<'a> Git<'a> {
                 ]
             }))
             .env("GIT_TERMINAL_PROMPT", "0")
-            .stdin(Stdio::null())
-            .output(limit)
+            .stdin(Stdio::null());
+        let output = self
+            .processes
+            .output(&mut command, limit)
             .await
             .map_err(|error| format!("git {}: {error}", args.first().unwrap_or(&"")))?;
         Ok(if output.status.success() {
@@ -125,6 +135,7 @@ pub(crate) fn not_an_option(what: &str, value: &str) -> Result<(), ComputerError
 
 /// Clones `url` into `dest`, at a branch, tag or commit.
 pub(crate) async fn clone(
+    processes: &Processes,
     environment: &[(OsString, OsString)],
     url: &str,
     at: Option<&str>,
@@ -142,6 +153,7 @@ pub(crate) async fn clone(
         ComputerError::Failed(format!("could not create {}: {error}", parent.display()))
     })?;
     let git = Git {
+        processes,
         environment,
         at: parent,
         options: Vec::new(),
@@ -152,6 +164,7 @@ pub(crate) async fn clone(
         .await?;
     if let Some(at) = at {
         let inside = Git {
+            processes,
             environment,
             at: dest,
             options: Vec::new(),
@@ -246,6 +259,7 @@ async fn repository(opened: &Opened) -> Result<Git<'_>, ComputerError> {
         ));
     }
     Ok(Git {
+        processes: &opened.processes,
         environment: &opened.environment,
         at: &opened.root,
         options: Vec::new(),
@@ -269,10 +283,15 @@ mod tests {
         let mut path = dir.as_os_str().to_owned();
         path.push(":/usr/bin:/bin");
         let environment = [(OsString::from("PATH"), path)];
+        let processes = Processes::unrecorded();
         let (asked, worked) = glave_ports::block_on!(async {
             tokio::time::pause();
-            let asked = Git::at(&environment, &dir).ask(&["status"]).await;
-            let worked = Git::at(&environment, &dir).work(&["push"]).await;
+            let asked = Git::at(&processes, &environment, &dir)
+                .ask(&["status"])
+                .await;
+            let worked = Git::at(&processes, &environment, &dir)
+                .work(&["push"])
+                .await;
             (asked, worked)
         });
         // No answer is never a no: a question's caller gets the error, not git's failure.

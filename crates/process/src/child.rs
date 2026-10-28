@@ -80,6 +80,14 @@ impl Child {
         Ok(())
     }
 
+    /// Lets go of what it left running once it has exited itself, as an opener leaves the
+    /// browser it starts: nothing of its group is stopped, recorded or tied to glave any more.
+    pub(crate) fn let_go(mut self) {
+        self.group = None;
+        self.entry = None;
+        self.tie = None;
+    }
+
     /// The leader is reaped: its number may be another's from now on.
     fn reaped(&self) {
         if let Some(tie) = &self.tie {

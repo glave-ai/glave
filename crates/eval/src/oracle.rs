@@ -5,11 +5,19 @@
 use std::ffi::OsString;
 use std::path::Path;
 
+use glave_process::Processes;
+
 use crate::prepare::{Prepared, last_lines, prepare, script, tidy};
 use crate::task::Task;
 
-/// `Ok` when `task` has no tests, or when its tests fail before its solution and pass after.
-pub async fn oracle(base: &[(OsString, OsString)], task: &Task, dir: &Path) -> Result<(), String> {
+/// `Ok` when `task` has no tests, or when its tests fail before its solution and pass after;
+/// its scripts run as `processes`.
+pub async fn oracle(
+    processes: &Processes,
+    base: &[(OsString, OsString)],
+    task: &Task,
+    dir: &Path,
+) -> Result<(), String> {
     let Some(test) = task.test_script() else {
         return Ok(());
     };
@@ -20,12 +28,13 @@ pub async fn oracle(base: &[(OsString, OsString)], task: &Task, dir: &Path) -> R
             task.name
         ));
     }
-    let checked = check(base, task, dir, &test, &solution).await;
+    let checked = check(processes, base, task, dir, &test, &solution).await;
     tidy(dir, task).await;
     checked
 }
 
 async fn check(
+    processes: &Processes,
     base: &[(OsString, OsString)],
     task: &Task,
     dir: &Path,
@@ -38,14 +47,14 @@ async fn check(
         workspace,
         environment,
         ..
-    } = prepare(base, task, dir)
+    } = prepare(processes, base, task, dir)
         .await
         .map_err(|err| err.to_string())?;
     let run = |path: &Path| {
         let path = path.display().to_string();
         let (workspace, environment) = (&workspace, &environment);
         async move {
-            script("bash", &[path.as_str()], workspace, environment)
+            script(processes, "bash", &[path.as_str()], workspace, environment)
                 .await
                 .map_err(|err| err.to_string())
         }

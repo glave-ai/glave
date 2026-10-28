@@ -143,6 +143,7 @@ pub(crate) async fn serve(mut args: Args) -> anyhow::Result<ExitCode> {
             blobs: wired.blobs.clone(),
             org: wired.org,
             memory: wired.memory.as_ref(),
+            processes: wired.servers.processes(),
         };
         // Boxed: the server's future is large.
         Box::pin(crate::server::run(

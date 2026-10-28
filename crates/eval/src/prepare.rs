@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
-use glave_process::Program;
+use glave_process::{Processes, Program};
 
 use crate::error::EvalError;
 use crate::task::Task;
@@ -43,6 +43,7 @@ pub(crate) struct Prepared {
 
 /// Copies the task's files into `<dir>/workspace` and runs its setup commands there.
 pub(crate) async fn prepare(
+    processes: &Processes,
     base: &[(OsString, OsString)],
     task: &Task,
     dir: &Path,
@@ -85,7 +86,7 @@ pub(crate) async fn prepare(
     }
     for command in &task.setup {
         let command = fill(command);
-        let output = script("sh", &["-c", &command], &workspace, &environment).await?;
+        let output = script(processes, "sh", &["-c", &command], &workspace, &environment).await?;
         if !output.success {
             return Err(EvalError::Setup(format!(
                 "{}: setup `{command}` failed: {}",
@@ -161,8 +162,9 @@ pub(crate) struct Output {
 }
 
 /// Runs a setup command or script in `dir`, outside any sandbox, without glave's endpoint
-/// variables.
+/// variables: one of `processes`, so it stops when the eval does, however it ends.
 pub(crate) async fn script(
+    processes: &Processes,
     program: &str,
     args: &[&str],
     dir: &Path,
@@ -181,7 +183,7 @@ pub(crate) async fn script(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    match script.output(SCRIPT_TIMEOUT).await {
+    match processes.output(&mut script, SCRIPT_TIMEOUT).await {
         Ok(output) => Ok(Output {
             success: output.status.success(),
             text: format!(

@@ -16,6 +16,7 @@ use glave_computer::{
 use glave_harness::Workers;
 use glave_ports::ProjectId;
 use glave_ports::computer::Sources;
+use glave_process::Processes;
 use glave_session::OnWorkers;
 
 use crate::client::Glave;
@@ -23,7 +24,7 @@ use crate::home;
 use glave_config::policy::{Backend, Choices, Constraints, On, WorkersFile};
 
 /// Threads of `project`, the project of `folder`, on workers, when its settings say `on` is
-/// `cloud`: what the session server needs, and the workers themselves, to remove any left at
+/// `cloud`, git asked about the repository and for credentials as one of `processes`: what the session server needs, and the workers themselves, to remove any left at
 /// the end. Tasks too work on workers only then; otherwise on a worktree here, like any thread
 /// asking for a copy.
 pub(crate) async fn workers(
@@ -31,6 +32,7 @@ pub(crate) async fn workers(
     constraints: &Constraints,
     folder: &Path,
     project: ProjectId,
+    processes: &Processes,
 ) -> anyhow::Result<(Option<OnWorkers>, Option<Arc<WorkerComputers>>)> {
     if choices.on.value != On::Cloud {
         return Ok((None, None));
@@ -49,8 +51,8 @@ pub(crate) async fn workers(
             folder.display()
         )
     })?;
-    let sources = sources(folder).await?;
-    let computers = Arc::new(computers(&backend.value, constraints).await?);
+    let sources = sources(processes, folder).await?;
+    let computers = Arc::new(computers(&backend.value, constraints, processes).await?);
     let on = OnWorkers {
         workers: Workers {
             computers: Arc::<WorkerComputers>::clone(&computers),
@@ -67,6 +69,7 @@ pub(crate) async fn workers(
 async fn computers(
     file: &WorkersFile,
     constraints: &Constraints,
+    processes: &Processes,
 ) -> anyhow::Result<WorkerComputers> {
     if let Some(key) = file.misplaced() {
         bail!(
@@ -84,7 +87,11 @@ async fn computers(
                 },
                 std::env::var_os("HOME").map(PathBuf::from).as_deref(),
             );
-            WorkerComputers::docker(docker, limits, WorkerCredentials::HostGit)
+            WorkerComputers::docker(
+                docker,
+                limits,
+                WorkerCredentials::HostGit(processes.clone()),
+            )
         }
         Backend::Kubernetes => {
             let kubernetes = Kubernetes::connect(KubernetesSettings {
@@ -94,7 +101,8 @@ async fn computers(
                 glave: file.glave.clone(),
             })
             .await?;
-            WorkerComputers::kubernetes(kubernetes, limits, WorkerCredentials::HostGit)
+            let credentials = WorkerCredentials::HostGit(processes.clone());
+            WorkerComputers::kubernetes(kubernetes, limits, credentials)
         }
     })
 }
@@ -103,11 +111,11 @@ async fn computers(
 const GIT_ANSWERS_WITHIN: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Runs git in `folder`; its output, or an error saying what it said.
-async fn git(folder: &Path, args: &[&str]) -> anyhow::Result<String> {
-    let output = glave_process::Program::new("git")
-        .args(args)
-        .current_dir(folder)
-        .output(GIT_ANSWERS_WITHIN)
+async fn git(processes: &Processes, folder: &Path, args: &[&str]) -> anyhow::Result<String> {
+    let mut git = glave_process::Program::new("git");
+    git.args(args).current_dir(folder);
+    let output = processes
+        .output(&mut git, GIT_ANSWERS_WITHIN)
         .await
         .context("could not run git")?;
     if !output.status.success() {
@@ -122,12 +130,17 @@ async fn git(folder: &Path, args: &[&str]) -> anyhow::Result<String> {
 
 /// This repository as a worker clones it: its `origin` over HTTPS, at the current commit,
 /// which must already be on a remote.
-async fn sources(folder: &Path) -> anyhow::Result<Sources> {
-    let url = git(folder, &["remote", "get-url", "origin"])
+async fn sources(processes: &Processes, folder: &Path) -> anyhow::Result<Sources> {
+    let url = git(processes, folder, &["remote", "get-url", "origin"])
         .await
         .context("--on cloud clones this repository's origin, and it has none")?;
-    let commit = git(folder, &["rev-parse", "HEAD"]).await?;
-    let unpushed = git(folder, &["rev-list", "HEAD", "--not", "--remotes"]).await?;
+    let commit = git(processes, folder, &["rev-parse", "HEAD"]).await?;
+    let unpushed = git(
+        processes,
+        folder,
+        &["rev-list", "HEAD", "--not", "--remotes"],
+    )
+    .await?;
     if !unpushed.is_empty() {
         bail!(
             "the current commit {commit} is not pushed, so a worker cannot fetch it: push it \
@@ -222,8 +235,15 @@ mod tests {
             .unwrap();
         let constraints = Constraints::default();
         let project = ProjectId::from_uuid(uuid::Uuid::from_u128(1));
+        let processes = Processes::unrecorded();
         let here = runtime
-            .block_on(workers(&chosen(""), &constraints, &dir, project))
+            .block_on(workers(
+                &chosen(""),
+                &constraints,
+                &dir,
+                project,
+                &processes,
+            ))
             .unwrap();
         assert!(here.0.is_none() && here.1.is_none(), "here by default");
         let no_backend = runtime
@@ -232,6 +252,7 @@ mod tests {
                 &constraints,
                 &dir,
                 project,
+                &processes,
             ))
             .unwrap_err();
         assert!(
@@ -240,7 +261,13 @@ mod tests {
         );
         let backend = "on = \"cloud\"\n[workers]\nbackend = \"docker\"\nglave = \"/x\"\n";
         let no_environment = runtime
-            .block_on(workers(&chosen(backend), &constraints, &dir, project))
+            .block_on(workers(
+                &chosen(backend),
+                &constraints,
+                &dir,
+                project,
+                &processes,
+            ))
             .unwrap_err();
         assert!(
             no_environment.to_string().contains("devcontainer.json"),
@@ -255,7 +282,11 @@ mod tests {
             runtime_class: Some("gvisor".into()),
         };
         let refused = runtime
-            .block_on(computers(&docker_with_a_runtime_class, &constraints))
+            .block_on(computers(
+                &docker_with_a_runtime_class,
+                &constraints,
+                &processes,
+            ))
             .unwrap_err();
         assert!(
             refused

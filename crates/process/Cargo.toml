@@ -16,7 +16,7 @@ rustix = { workspace = true, features = ["process"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["io-util", "process", "rt", "sync", "time"] }
+tokio = { workspace = true, features = ["io-util", "macros", "process", "rt", "sync", "time"] }
 
 [dev-dependencies]
 # The runtime tests run on (`block_on!`).

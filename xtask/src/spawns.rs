@@ -31,7 +31,7 @@ pub(crate) fn check() -> Result<(), String> {
     } else {
         Err(format!(
             "{} process(es) started outside glave-process; start them with \
-             glave_process::Processes::spawn, or Program::output for one waited for:\n  {}",
+             glave_process::Processes::spawn, or Processes::output for one waited for:\n  {}",
             problems.len(),
             problems.join("\n  ")
         ))

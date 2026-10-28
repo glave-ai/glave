@@ -34,6 +34,7 @@ use crate::providers::{Built, Lineup, ModelAccounts};
 use crate::reread::Rereading;
 use crate::setup::{self, Setup};
 use crate::trust::Trust;
+use crate::worktrees::OnThisMachine;
 use crate::{home, identity};
 
 /// The variable that puts a stand-in in place of Exa's server for web search, for tests, which
@@ -126,7 +127,7 @@ pub(crate) async fn wire(
     let workspace = crate::sandboxing::workspace(&folder, &mut setup, &processes).await?;
     let choices = &setup.choices;
     let (remote, configured) = crate::providers::endpoint(choices)?;
-    let store = store(&setup).await?;
+    let store = store(&setup, &processes).await?;
     let identity = identity::load_or_make(&store).await?;
     let (asked, told) = asked_here(&folder, &setup, &store, identity.person, asking).await?;
     let lineup = Lineup::new(&setup, configured);
@@ -138,8 +139,9 @@ pub(crate) async fn wire(
     settings.commands = crate::commands::find(&root).await?;
     let servers = mcp_servers(&setup, remote.as_ref(), &processes, connected.as_ref()).await?;
     let scope = scope_here(args, choices, &store, &folder, &root, identity.person).await?;
+    let constraints = &setup.loaded.constraints;
     let (on_workers, workers) =
-        crate::cloud::workers(choices, &setup.loaded.constraints, &folder, scope.project()).await?;
+        crate::cloud::workers(choices, constraints, &folder, scope.project(), &processes).await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
     let projects = projects_for(&setup, &servers, &lined.switch, memory.as_ref(), asked)?;
     let set_aside = projects.set_aside(&folder).await;
@@ -159,7 +161,7 @@ pub(crate) async fn wire(
         worktree: choices.worktree.value,
         hooks: Hooks::new(setup.hooks.clone())?,
         workers: on_workers,
-        tasks: task_limits(&setup.loaded.constraints),
+        tasks: task_limits(constraints),
         memory: memory.as_ref().map(crate::memory::Running::handle),
         project_folders: Some(Arc::clone(&projects) as Arc<dyn glave_harness::ProjectFolders>),
         trust: Some(Arc::clone(&projects) as Arc<dyn ProjectTrust>),
@@ -167,7 +169,7 @@ pub(crate) async fn wire(
         origin: choices.origin.as_ref().map(|origin| origin.value.clone()),
         leases: Some(store.leases()),
         awake: crate::awake::for_server(args, choices, &processes),
-        worktrees: Some(Arc::new(crate::worktrees::OnThisMachine(store.log()))),
+        worktrees: Some(Arc::new(OnThisMachine(store.log(), processes.clone()))),
         ..Wiring::new(
             lined.switch,
             store.log(),
@@ -438,10 +440,10 @@ async fn line_up(
 }
 
 /// The data store the setup's choices name, once this machine's worktrees have had their
-/// daily check.
-async fn store(setup: &Setup) -> anyhow::Result<Data> {
+/// daily check, git run as one of `processes`.
+async fn store(setup: &Setup, processes: &Processes) -> anyhow::Result<Data> {
     let store = Data::chosen(&setup.choices).await?;
-    crate::worktrees::check_daily(&store.log()).await;
+    crate::worktrees::check_daily(&store.log(), processes).await;
     Ok(store)
 }
 

@@ -13,6 +13,7 @@ use glave_computer::worktrees::{self, Kept, Trash};
 use glave_event::{Body, Opened, ThreadId, decode};
 use glave_ports::secrets::without_secrets;
 use glave_ports::{BoxFuture, Clock as _, EventLog, OsEntropy, Scope, SystemClock};
+use glave_process::Processes;
 use glave_session::protocol::{Reply, Request};
 use jiff::{SignedDuration, Timestamp};
 
@@ -106,9 +107,14 @@ fn forced_names(words: &[String]) -> Result<Vec<String>, String> {
     Ok(names)
 }
 
-/// The worktrees and scratch folders kept under `home`.
-async fn kept(home: &Path, environment: &[(OsString, OsString)]) -> anyhow::Result<Vec<Kept>> {
-    let mut kept = worktrees::list(&home.join(FOLDER), environment).await?;
+/// The worktrees and scratch folders kept under `home`, git asked about them as one of
+/// `processes`.
+async fn kept(
+    home: &Path,
+    environment: &[(OsString, OsString)],
+    processes: &Processes,
+) -> anyhow::Result<Vec<Kept>> {
+    let mut kept = worktrees::list(&home.join(FOLDER), environment, processes).await?;
     kept.extend(worktrees::list_scratch(&home.join(SCRATCH)).await?);
     Ok(kept)
 }
@@ -116,7 +122,9 @@ async fn kept(home: &Path, environment: &[(OsString, OsString)]) -> anyhow::Resu
 async fn run(prune: bool, forced: &[String]) -> anyhow::Result<()> {
     let home = home::folder()?;
     let environment = without_secrets(std::env::vars_os());
-    let kept = kept(&home, &environment).await?;
+    // Recorded in glave's folder while git runs; this glave has no lifeline of its own.
+    let processes = Processes::recorded(home.join("run"));
+    let kept = kept(&home, &environment, &processes).await?;
     if !prune {
         print!("{}", listing(&kept, &home.join(FOLDER)));
         return Ok(());
@@ -127,6 +135,7 @@ async fn run(prune: bool, forced: &[String]) -> anyhow::Result<()> {
     let cleanup = Cleanup {
         log: &store.log(),
         environment: &environment,
+        processes: &processes,
         trash: trash.as_ref(),
         now,
         entropy: &OsEntropy,
@@ -137,14 +146,14 @@ async fn run(prune: bool, forced: &[String]) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// This machine's worktrees as the server lets go of them, with what its log holds; it says
-/// what became of each on standard error, as the daily check does.
-pub(crate) struct OnThisMachine<L>(pub L);
+/// This machine's worktrees as the server lets go of them, with what its log holds, git run as
+/// one of its processes; it says what became of each on standard error, as the daily check does.
+pub(crate) struct OnThisMachine<L>(pub L, pub Processes);
 
 impl<L: EventLog> glave_session::Worktrees for OnThisMachine<L> {
     fn release(&self, scope: Scope, thread: ThreadId) -> BoxFuture<'_, ()> {
         Box::pin(async move {
-            match release_archived(&self.0, scope, thread).await {
+            match release_archived(&self.0, &self.1, scope, thread).await {
                 Ok(lines) => lines.iter().for_each(|line| eprintln!("glave: {line}")),
                 Err(error) => eprintln!(
                     "glave: thread {thread}'s worktree, if it has one, is kept: {error:#}"
@@ -158,16 +167,18 @@ impl<L: EventLog> glave_session::Worktrees for OnThisMachine<L> {
 /// what `log` holds: one line for each, saying what became of it.
 async fn release_archived<L: EventLog>(
     log: &L,
+    processes: &Processes,
     scope: Scope,
     thread: ThreadId,
 ) -> anyhow::Result<Vec<String>> {
     let environment = without_secrets(std::env::vars_os());
-    let kept = kept(&home::folder()?, &environment).await?;
+    let kept = kept(&home::folder()?, &environment, processes).await?;
     let now = SystemClock.now();
     let trash = this_machines_trash(now);
     let cleanup = Cleanup {
         log,
         environment: &environment,
+        processes,
         trash: trash.as_ref(),
         now,
         entropy: &OsEntropy,
@@ -184,8 +195,9 @@ fn this_machines_trash(now: Timestamp) -> Option<Trash> {
 }
 
 /// Checks this machine's worktrees as glave starts, and in the person's server as it runs, at
-/// most once a day, with what `log` holds; says what it did on standard error. Never stops glave.
-pub(crate) async fn check_daily<L: EventLog>(log: &L) {
+/// most once a day, with what `log` holds, git run as one of `processes`; says what it did on
+/// standard error. Never stops glave.
+pub(crate) async fn check_daily<L: EventLog>(log: &L, processes: &Processes) {
     let Ok(home) = home::folder() else {
         return;
     };
@@ -195,6 +207,7 @@ pub(crate) async fn check_daily<L: EventLog>(log: &L) {
     let cleanup = Cleanup {
         log,
         environment: &environment,
+        processes,
         trash: trash.as_ref(),
         now,
         entropy: &OsEntropy,
@@ -237,7 +250,7 @@ pub(crate) async fn check_if_due<L: EventLog>(
     if let Err(error) = written {
         return vec![format!("could not write {}: {error}", stamp.display())];
     }
-    match kept(home, cleanup.environment).await {
+    match kept(home, cleanup.environment, cleanup.processes).await {
         Ok(kept) => cleanup.idle(&kept).await,
         Err(error) => vec![format!("could not check worktrees: {error}")],
     }

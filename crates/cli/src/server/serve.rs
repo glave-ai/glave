@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use anyhow::Context as _;
 use glave_harness::Cancel;
+use glave_process::Processes;
 use tokio::io::BufReader;
 use tokio::net::UnixStream;
 use tokio::signal::unix::{SignalKind, signal};
@@ -45,6 +46,8 @@ pub(crate) struct Daily<'a> {
     pub org: OrgId,
     /// Memory, when it is on.
     pub memory: Option<&'a Running>,
+    /// The processes the worktrees' check runs git as.
+    pub processes: &'a Processes,
 }
 
 impl Daily<'_> {
@@ -62,7 +65,7 @@ impl Daily<'_> {
         let mut swept: Option<Instant> = None;
         loop {
             tick.tick().await;
-            crate::worktrees::check_daily(&self.log).await;
+            crate::worktrees::check_daily(&self.log, self.processes).await;
             if swept.is_none_or(|at| at.elapsed() >= DAILY) {
                 swept = Some(Instant::now());
                 self.sweep().await;

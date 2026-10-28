@@ -11,16 +11,18 @@ use glave_computer::worktrees::{self, Condition, Kept, Released, Trash};
 use glave_event::{RemovedReason, ThreadId, WorkspaceRemoved};
 use glave_harness::{last_active, owner_label, owner_of, record_removed};
 use glave_ports::{Entropy, EventLog, Scope};
+use glave_process::Processes;
 use jiff::{SignedDuration, Timestamp};
 
 /// How long a thread may do nothing before its worktree is cleaned up.
 pub(super) const IDLE: SignedDuration = SignedDuration::from_hours(30 * 24);
 
-/// What a cleanup works with: the log the threads are in, the environment git runs with, the
-/// Trash, and the moment it runs.
+/// What a cleanup works with: the log the threads are in, the environment git runs with and
+/// the processes it runs as, the Trash, and the moment it runs.
 pub(crate) struct Cleanup<'a, L> {
     pub log: &'a L,
     pub environment: &'a [(OsString, OsString)],
+    pub processes: &'a Processes,
     pub trash: Option<&'a Trash>,
     pub now: Timestamp,
     pub entropy: &'a dyn Entropy,
@@ -51,7 +53,7 @@ impl<L: EventLog> Cleanup<'_, L> {
     pub(crate) async fn release(&self, kept: &Kept, reason: RemovedReason) -> String {
         let why = named(reason);
         let path = kept.path.display();
-        match worktrees::release(kept, self.environment, why, self.trash).await {
+        match worktrees::release(kept, self.environment, self.processes, why, self.trash).await {
             Ok(Released::Removed) => {
                 let line = format!("removed {path} ({why}); its branch stays");
                 self.recorded(kept, reason, None, line).await
@@ -75,7 +77,7 @@ impl<L: EventLog> Cleanup<'_, L> {
     /// Removes `kept` whatever it holds, as the person asked by name; its branch stays.
     pub(crate) async fn force(&self, kept: &Kept) -> String {
         let path = kept.path.display();
-        match worktrees::remove(kept, self.environment).await {
+        match worktrees::remove(kept, self.environment, self.processes).await {
             Ok(()) => {
                 let line = format!("removed {path} (forced); its branch stays");
                 self.recorded(kept, RemovedReason::Pruned, None, line).await
