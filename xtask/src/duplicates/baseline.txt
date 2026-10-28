@@ -28,7 +28,6 @@
 3e673752818820ab 11 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
 44a392879170b883 55 crates/provider-anthropic/src/client.rs crates/provider-openai/src/client.rs
 46a00e6b7dbe1997 6 crates/computer/src/local/sandbox/linux/tests.rs crates/harness/src/sandbox/tests.rs
-4cea69ea751e317b 9 crates/computer/src/worker/docker.rs crates/computer/src/worker/kubernetes/objects.rs
 4f2c144ca00a6f0c 10 crates/computer/src/local/confinement_tests.rs crates/harness/src/tools/workspace/tests.rs
 4fac0a7d959a48c2 13 crates/session/tests/list_watching.rs crates/session/tests/subagents.rs
 55b7dc4aa2df1119 9 crates/harness/tests/support/script.rs crates/memory/tests/support/kit.rs
