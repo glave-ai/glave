@@ -367,11 +367,14 @@ fn a_real_worker_runs_a_command_over_tls_and_over_attach() {
 }
 
 /// Starts a worker of `starter`, the stub waiting in it, and lets go of the link to it, as a
-/// glave killed outright does.
+/// glave killed outright does. It asks for no CPU or memory: four at once asking for a CPU each
+/// would not fit on the one node of CI's cluster beside the other tests' workers.
 async fn left_by(cluster: &Kubernetes, starter: Option<glave_process::Glave>) -> String {
     let name = name();
     let spec = Spec {
         starter,
+        cpus: None,
+        memory_gb: None,
         ..spec(true)
     };
     let link = cluster.start_with(&name, &spec, WAITS).await.unwrap();
