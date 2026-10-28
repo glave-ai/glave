@@ -3,6 +3,7 @@ import { type Page, expect, test } from '@playwright/test';
 import { THREAD, fakeApi } from './fake-api';
 import {
   type Felt,
+  FEEL,
   expectAnsweredAtOnce,
   expectShownSoon,
   expectStill,
@@ -59,4 +60,55 @@ test('going from thread to thread in the side nav answers each click at once, an
   const felt = await feltOn(page);
   expectAnsweredAtOnce(felt);
   expectStill(felt);
+});
+
+test('opening Settings from a thread shows it at once over a slow network, its code already fetched', async ({
+  page,
+}) => {
+  // The app fetches Settings' code on its own once the thread has opened: the script that
+  // draws it comes before any click.
+  const fetched = page.waitForResponse(
+    async (response) =>
+      response.url().endsWith('.js') && (await response.text()).includes('settings-theme'),
+  );
+  await opening(page, `/t/${THREAD}`, 'thread-message');
+  const settings = (await fetched).url();
+  // Settings' code and all it imports have run: importing it again only reads it.
+  await page.evaluate(async (url) => {
+    await import(url);
+  }, settings);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Network.enable');
+  await cdp.send('Network.emulateNetworkConditions', {
+    offline: false,
+    latency: FEEL.slowNetwork,
+    downloadThroughput: -1,
+    uploadThroughput: -1,
+  });
+  const scripts: string[] = [];
+  page.on('request', (request) => {
+    if (request.resourceType() === 'script') {
+      scripts.push(request.url());
+    }
+  });
+  await byTestId(page, 'person').click();
+  await expect(byTestId(page, 'nav-settings')).toBeVisible();
+  const shown = await page.evaluate(
+    async () =>
+      new Promise<number>((resolve) => {
+        const start = performance.now();
+        const look = (): void => {
+          if (document.querySelector('[data-testid="settings-theme"]') === null) {
+            requestAnimationFrame(look);
+          } else {
+            resolve(performance.now() - start);
+          }
+        };
+        document.querySelector<HTMLElement>('[data-testid="nav-settings"]')?.click();
+        requestAnimationFrame(look);
+      }),
+  );
+  await expect(byTestId(page, 'settings-theme')).toBeVisible();
+  expect(scripts, 'scripts fetched on opening Settings').toEqual([]);
+  expect(shown, 'from the click until Settings shows').toBeLessThanOrEqual(FEEL.pageShown);
 });

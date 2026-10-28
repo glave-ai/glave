@@ -12,6 +12,13 @@ export const FEEL = {
   shift: 0,
   /** Interaction to Next Paint, in ms: the slowest click, from the press to the next frame. */
   interaction: 200,
+  /**
+   * Opening another page, in ms from the click until it shows, over a network a round trip of
+   * `slowNetwork` away: its code is already here, so no fetch stands between the two.
+   */
+  pageShown: 200,
+  /** The round trip, in ms, of the slow network a page opens over in `pageShown`. */
+  slowNetwork: 150,
   /** First Contentful Paint, in ms from the start of the load. */
   firstPaint: 1_800,
   /** Largest Contentful Paint, in ms from the start of the load. */

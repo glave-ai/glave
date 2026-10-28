@@ -5,9 +5,11 @@ import {
   provideBrowserGlobalErrorListeners,
 } from '@angular/core';
 import {
+  PreloadAllModules,
   provideRouter,
   withComponentInputBinding,
   withNavigationErrorHandler,
+  withPreloading,
   withViewTransitions,
 } from '@angular/router';
 
@@ -19,10 +21,13 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     // A page that cannot open says so in its place (`unloadedPage`); switching threads
-    // crossfades the pane, where the browser can (`crossfadeThreads`).
+    // crossfades the pane, where the browser can (`crossfadeThreads`). Every page's code is
+    // fetched once the first page has opened, so opening another waits on no round trip to the
+    // server, however far away it is.
     provideRouter(
       routes,
       withComponentInputBinding(),
+      withPreloading(PreloadAllModules),
       withNavigationErrorHandler(unloadedPage),
       withViewTransitions({
         skipInitialTransition: true,
