@@ -3,7 +3,9 @@
 //! is set, no service account token, no privilege, and a NetworkPolicy of its own. glave and
 //! the worker's TLS identity are copied in through the API server once the Pod runs (an exec
 //! of `tar`), so the key and token are never stored there; the Pod waits for them, then
-//! becomes glave. The harness reaches it through the API server too (`link`).
+//! becomes glave. The harness reaches it through the API server too (`link`). When glave runs
+//! in a Pod beside its workers, each worker names that Pod as its owner, so the cluster removes
+//! them when it is deleted.
 
 mod link;
 mod objects;
@@ -25,7 +27,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use super::backend::{Backend, COPIED_WITHIN, Link, Listed, STARTED_BY, Spec, Started};
 use super::docker::elf_machine;
 use crate::token::Token;
-use objects::{Progress, Shape};
+use objects::{Owner, Progress, Shape};
 
 /// How long a Pod has to start running: long enough to pull a large image.
 const START_WAIT: Duration = Duration::from_mins(5);
@@ -58,6 +60,9 @@ pub struct Kubernetes {
     glave: PathBuf,
     /// Labels put on every object besides its own, such as a test run's.
     labels: BTreeMap<String, String>,
+    /// The Pod glave runs in, when it runs in one in the workers' namespace: every worker names
+    /// it as its owner, so the cluster removes them when it is deleted, however glave ended.
+    owner: Option<Owner>,
 }
 
 impl std::fmt::Debug for Kubernetes {
@@ -117,13 +122,22 @@ impl Kubernetes {
             .clone()
             .unwrap_or_else(|| config.default_namespace.clone());
         let client = Client::try_from(config).map_err(|error| failed("client", error))?;
+        let owner = this_pod(&Api::namespaced(client.clone(), &namespace), &namespace).await;
         Ok(Self {
             client,
             namespace,
             runtime_class: settings.runtime_class,
             glave: settings.glave,
             labels: BTreeMap::new(),
+            owner,
         })
+    }
+
+    /// Names `owner` as every worker's owner, for the test that deletes one.
+    #[cfg(test)]
+    pub(crate) fn owned_by(mut self, owner: Owner) -> Self {
+        self.owner = Some(owner);
+        self
     }
 
     /// Puts `labels` on every object a worker is made of too, such as a test run's.
@@ -164,6 +178,7 @@ impl Kubernetes {
             runtime_class: self.runtime_class.as_deref(),
             arch,
             labels: &self.labels,
+            owner: self.owner.as_ref(),
         };
         // The policy first, so the Pod never runs without it.
         let policy: NetworkPolicy = serde_json::from_value(shape.network_policy())
@@ -287,6 +302,26 @@ impl Kubernetes {
         };
         self.pods().logs(name, &params).await.unwrap_or_default()
     }
+}
+
+/// The namespace of the service account a Pod runs as, in every container of one.
+const POD_NAMESPACE: &str = "/var/run/secrets/kubernetes.io/serviceaccount/namespace";
+
+/// The Pod this glave runs in, when it runs in one in `namespace`: by its name, which is its
+/// host's name, and its uid as the API server says. None anywhere else, or when it cannot be
+/// read: workers are then still removed by the next glave that starts in the same Pod.
+async fn this_pod(pods: &Api<Pod>, namespace: &str) -> Option<Owner> {
+    let own = tokio::fs::read_to_string(POD_NAMESPACE).await.ok()?;
+    if own.trim() != namespace {
+        return None;
+    }
+    let host = tokio::fs::read_to_string("/etc/hostname").await.ok()?;
+    let name = host.trim().to_owned();
+    let pod = pods.get_opt(&name).await.ok()??;
+    Some(Owner {
+        uid: pod.metadata.uid?,
+        name,
+    })
 }
 
 impl Backend for Kubernetes {
