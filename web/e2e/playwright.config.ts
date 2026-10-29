@@ -11,6 +11,7 @@ import {
   APP,
   CONNECTIONS,
   CONNECTIONS_WEBKIT,
+  CONSUMER,
   FIRST_RUN,
   GLAVE_BIN,
   HERE,
@@ -89,7 +90,8 @@ process.env[LIVE_MODEL_URL] = liveModel;
 
 /**
  * What glave serves: the app on a model the fake API names, Glaze's showcase, the app on a
- * glave with nothing set up, for the first run against the real server, the app on a real
+ * glave with nothing set up, for the first run against the real server, the app on another,
+ * for a person's whole journey on their own computer, the app on a real
  * glave with a model, to connect accounts to, the app on a real glave reached from elsewhere
  * at a public origin, to sign in to with passkeys, the app on real glaves reached here alone,
  * to make passkeys on this computer, the app on a real glave whose model is a fake service
@@ -111,6 +113,11 @@ const SITES: readonly { site: Site; web: string; env: Record<string, string> }[]
     site: FIRST_RUN,
     web: 'dist/app/browser',
     env: { ...tied, GLAVE_HOME: home(FIRST_RUN), GLAVE_MODEL: '' },
+  },
+  {
+    site: CONSUMER,
+    web: 'dist/app/browser',
+    env: { ...tied, GLAVE_HOME: home(CONSUMER), GLAVE_MODEL: '' },
   },
   {
     site: ACCOUNTS,

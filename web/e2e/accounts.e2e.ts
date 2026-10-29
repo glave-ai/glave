@@ -2,6 +2,7 @@ import { type IncomingMessage, type Server, type ServerResponse, createServer } 
 import type { AddressInfo } from 'node:net';
 
 import {
+  ADMIN_WORDS,
   ACCOUNTS,
   byTestId,
   expect,
@@ -15,9 +16,6 @@ import {
 /** The token the person pastes, and one the fake host refuses. */
 const TOKEN = 'gta_e2e0connected0account0wxyz';
 const WRONG = 'gta_e2e0wrong0token0abcd';
-
-/** Words a person on their own computer should never meet (AGENTS.md, "Keeping principle 4"). */
-const ADMIN_WORDS = /policy|organization|member|group|admin|SSO|config\.toml|GLAVE_/u;
 
 /**
  * Answers as a Gitea or Forgejo server's API does: whom a token is for at `/api/v1/user`,
