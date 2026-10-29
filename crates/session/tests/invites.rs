@@ -6,38 +6,18 @@
 
 use std::sync::Arc;
 
-use glave_event::{Auth, AuthMethod, OrgRole, PrincipalId, Secret};
+use glave_event::{OrgRole, PrincipalId, Secret};
 use glave_ports::testing::ManualClock;
 use glave_ports::{Caller, OrgId, ProjectId, Scope};
 use glave_session::protocol::{ApiError, InviteInfo, PersonInfo, Reply, Request, code};
-use glave_session::signin::person;
 
 use crate::support::*;
-
-const ISSUER: &str = "https://id.example.com";
 
 /// When the tests' clock starts.
 const START: i64 = 1_791_001_000_000;
 
 /// An invite's lifetime, in milliseconds.
 const WEEK: i64 = 7 * 24 * 60 * 60 * 1_000;
-
-fn signed_in(subject: &str) -> Caller {
-    Caller {
-        person: Some(id(subject)),
-        auth: Some(Auth {
-            method: AuthMethod::Oidc,
-            issuer: Some(ISSUER.to_owned()),
-            subject: Some(subject.to_owned()),
-            session: None,
-        }),
-        ..Caller::default()
-    }
-}
-
-fn id(subject: &str) -> PrincipalId {
-    person(ISSUER, subject).unwrap()
-}
 
 /// The local person, the organization's owner.
 fn owner() -> Caller {

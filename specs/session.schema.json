@@ -4799,6 +4799,23 @@
       },
       "streams": false
     },
+    "person/remove": {
+      "params": {
+        "properties": {
+          "person": {
+            "$ref": "#/$defs/PrincipalId"
+          }
+        },
+        "required": [
+          "person"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
     "plan/build": {
       "params": {
         "properties": {

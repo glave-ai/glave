@@ -74,6 +74,10 @@ sentences! {
         "no one else can reach this glave, so there is no one to invite: give it an address people reach it at first",
     InNoOrganization = "in-no-organization"
         "your account belongs to no organization here: ask its admins for an invite",
+    Removed = "removed"
+        "you're no longer in this organization: ask its admins for an invite",
+    LastOwner = "last-owner"
+        "this is the organization's only owner: make someone else an owner first",
     LastPasskey = "last-passkey"
         "this is your only passkey, so it can't be removed: add another first",
     NoAccounts = "no-accounts"

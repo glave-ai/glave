@@ -1631,6 +1631,12 @@ export type PeopleListResult = {
   readonly people: readonly (PersonInfo)[];
 };
 
+export type PersonRemoveParams = {
+  readonly person: PrincipalId;
+};
+
+export type PersonRemoveResult = Readonly<Record<string, never>>;
+
 export type PlanBuildParams = {
   readonly thread: ThreadId;
 };
@@ -2184,6 +2190,7 @@ export interface Methods {
   readonly "passkey/list": { readonly params: PasskeyListParams; readonly result: PasskeyListResult };
   readonly "passkey/remove": { readonly params: PasskeyRemoveParams; readonly result: PasskeyRemoveResult };
   readonly "people/list": { readonly params: PeopleListParams; readonly result: PeopleListResult };
+  readonly "person/remove": { readonly params: PersonRemoveParams; readonly result: PersonRemoveResult };
   readonly "plan/build": { readonly params: PlanBuildParams; readonly result: PlanBuildResult };
   readonly "plan/edit": { readonly params: PlanEditParams; readonly result: PlanEditResult };
   readonly "project/create": { readonly params: ProjectCreateParams; readonly result: ProjectCreateResult };

@@ -102,7 +102,7 @@ where
         reason = "one arm per method: the API's one dispatch"
     )]
     async fn answer(&self, caller: &Caller, request: Request) -> Answered {
-        if let Err(refused) = self.seen(caller).await {
+        if let Err(refused) = self.seen(caller, &request).await {
             return Answered::Reply(Err(refused));
         }
         // The thread a request names keeps its place until it is answered.
@@ -155,6 +155,7 @@ where
             }
             Request::PeopleList { after, limit } => self.list_people(caller, after, limit).await,
             Request::RoleSet { person, role } => self.set_role(caller, person, role).await,
+            Request::PersonRemove { person } => self.remove_person(caller, person).await,
             Request::InviteCreate { role, email } => {
                 self.create_invite(caller, role, email.as_deref()).await
             }

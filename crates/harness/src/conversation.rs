@@ -15,6 +15,10 @@ pub fn conversation(events: &[Event]) -> Vec<Message> {
 }
 
 /// Takes one event into the conversation built so far.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one arm for every kind of event, so a new kind must say whether it is the conversation's"
+)]
 pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
     match &event.body {
         Body::MessageAdded(added) => messages.push(message(added)),
@@ -92,6 +96,7 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::MemorySet(_)
         | Body::PersonJoined(_)
         | Body::RoleSet(_)
+        | Body::PersonRemoved(_)
         | Body::InviteCreated(_)
         | Body::InviteAccepted(_)
         | Body::InviteRevoked(_)

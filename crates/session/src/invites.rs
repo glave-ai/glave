@@ -253,13 +253,22 @@ where
         let now = self.inner.harness.clock().now();
         let local = self.inner.harness.person();
         let org = self.org_of(caller);
-        self.record_person(org, |people| {
+        self.record_people(org, |people, next| {
             let (invite, role) = people.opens(&presented, now, local).ok_or_else(gone)?;
-            Ok(Some(InviteAccepted {
+            let accepted = InviteAccepted {
                 invite,
                 person,
                 role,
-            }))
+            };
+            // Someone removed, or not yet recorded, joins with it.
+            if people.has(person) {
+                return Ok(Some(vec![self.people_event(next, &accepted)?]));
+            }
+            let after = next.saturating_add(1);
+            Ok(Some(vec![
+                self.people_event(next, &joined)?,
+                self.people_event(after, &accepted)?,
+            ]))
         })
         .await?;
         let person = self

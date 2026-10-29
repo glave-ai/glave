@@ -163,7 +163,6 @@ What today's code doesn't do yet, so no one takes it as built.
 7. Of "Identity", what is not built yet, each line edited by the pull request that builds it:
    - A request's organization comes from its caller and the session serves several on one server, each with its own people, ledgers and scheduler lease; but no transport yet sets any caller's but the server's own (#423), and the daily sweep of blobs runs for the server's own alone.
    - Of glave accounts for more than the local person: email recovery and the new-passkey notice (#424). Built: the email plug (SMTP, `[email]`, sending invites), an invited person's passkey and account, several passkeys each, sign-in with any of them.
-   - Remove (#424).
    - Sign-up, membership in several organizations and the organization each request carries (#423).
    - The isolation suite has no one signed in with a glave account yet; their sessions are proved apart by `crates/session/tests/accounts.rs` alone.
    - Groups made in glave and their grants, and a broad issuer's allowed domains (#645).
