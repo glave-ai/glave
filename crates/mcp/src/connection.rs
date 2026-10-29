@@ -12,9 +12,9 @@ use glave_ports::{
     Cancellation, Effect, ToolError, ToolInfo, ToolOutput, ToolSpec, unless_cancelled,
 };
 use rmcp::model::{
-    CallToolRequest, CallToolRequestParams, CallToolResult, ClientRequest, JsonObject, MetaObject,
-    ProtocolVersion, ReadResourceRequestParams, RequestMetaObject, Resource, ResourceContents,
-    ServerResult, Tool,
+    CallToolRequest, CallToolRequestParams, CallToolResult, ClientRequest, GetPromptRequestParams,
+    GetPromptResult, JsonObject, MetaObject, Prompt, ProtocolVersion, ReadResourceRequestParams,
+    RequestMetaObject, Resource, ResourceContents, ServerResult, Tool,
 };
 use rmcp::service::{
     ClientLifecycleMode, ClientServiceExt as _, Peer, PeerRequestOptions, RoleClient,
@@ -265,6 +265,46 @@ impl Connection {
         self.peer
             .peer_info()
             .is_some_and(|info| info.capabilities.resources.is_some())
+    }
+
+    /// Whether the server offers prompts.
+    pub(crate) fn has_prompts(&self) -> bool {
+        self.peer
+            .peer_info()
+            .is_some_and(|info| info.capabilities.prompts.is_some())
+    }
+
+    /// The server's prompts, within `limit` unless cancelled first.
+    pub(crate) async fn prompts(
+        &self,
+        cancel: &dyn Cancellation,
+        limit: Duration,
+    ) -> Result<Vec<Prompt>, String> {
+        let listed = tokio::time::timeout(limit, self.peer.list_all_prompts());
+        match unless_cancelled(cancel, listed).await {
+            Some(Ok(Ok(prompts))) => Ok(prompts),
+            Some(Ok(Err(err))) => Err(failed(&self.name, &err)),
+            Some(Err(_)) => Err(format!("{} did not answer within {limit:?}.", self.name)),
+            None => Err(CANCELLED.to_owned()),
+        }
+    }
+
+    /// The server's prompt `name` with `arguments`, within `limit` unless cancelled first.
+    pub(crate) async fn prompt(
+        &self,
+        name: &str,
+        arguments: JsonObject,
+        cancel: &dyn Cancellation,
+        limit: Duration,
+    ) -> Result<GetPromptResult, String> {
+        let params = GetPromptRequestParams::new(name).with_arguments(arguments);
+        let got = tokio::time::timeout(limit, self.peer.get_prompt(params));
+        match unless_cancelled(cancel, got).await {
+            Some(Ok(Ok(result))) => Ok(result),
+            Some(Ok(Err(err))) => Err(failed(&self.name, &err)),
+            Some(Err(_)) => Err(format!("{} did not answer within {limit:?}.", self.name)),
+            None => Err(CANCELLED.to_owned()),
+        }
     }
 
     /// The server's resources, within `limit` unless cancelled first.

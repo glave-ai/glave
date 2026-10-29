@@ -72,3 +72,17 @@ fn commands_are_found_nearest_first_with_frontmatter_optional() {
     assert_eq!(found.commands[0].body, "Just text.");
     assert_eq!(found.warnings.len(), 4, "{:?}", found.warnings);
 }
+
+#[test]
+fn a_tool_servers_prompt_is_named_as_claude_code_names_it() {
+    assert_eq!(
+        served("  /mcp__docs__review 12 fast"),
+        Some(("mcp__docs__review", "12 fast"))
+    );
+    assert_eq!(
+        served("/mcp__docs__review"),
+        Some(("mcp__docs__review", ""))
+    );
+    assert_eq!(served("/review 12"), None);
+    assert_eq!(served("mcp__docs__review"), None);
+}

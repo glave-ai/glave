@@ -9,6 +9,7 @@ mod connection;
 mod error;
 mod names;
 mod output;
+mod prompts;
 mod reason;
 mod resources;
 mod server;

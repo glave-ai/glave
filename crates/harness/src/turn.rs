@@ -1,7 +1,5 @@
 //! One turn: the person's prompt, then model calls and tool calls until the model is done.
 
-use std::borrow::Cow;
-
 use glave_event::{
     BlobRef, CallId, Caution, EventId, MemoryId, MessageAdded, ModelRef, Outcome, Part,
     Permissions, Principal, Role, StopReason, ThreadId, ToolCallRequested, TurnResult, TurnStarted,
@@ -16,7 +14,6 @@ use serde::Serialize;
 
 use crate::approval::Approver;
 use crate::cancel::Cancel;
-use crate::commands::invoked;
 use crate::compaction::{Measured, chars};
 use crate::files::refuses_files;
 use crate::goal::{BUDGET_SPENT, counted};
@@ -263,20 +260,15 @@ where
     ) -> Result<TurnResult, HarnessError> {
         self.bring(thread).await?;
         let toolset: ToolSet = self.tools(thread).await;
-        let text = self.expand(prompt.text);
+        let text = self
+            .expand(thread, prompt.text, cancel)
+            .await
+            .map_err(HarnessError::PromptFailed)?;
         let prompt = Prompt {
             text: &text,
             ..prompt
         };
         self.run_with(thread, prompt, toolset, cancel, live).await
-    }
-
-    /// What the person's `prompt` sends: a command's text when it names one, else itself.
-    pub(crate) fn expand<'a>(&self, prompt: &'a str) -> Cow<'a, str> {
-        invoked(&self.settings.commands, prompt)
-            .map_or(Cow::Borrowed(prompt), |(command, arguments)| {
-                Cow::Owned(command.expand(arguments))
-            })
     }
 
     /// Runs one turn with `toolset`. Boxed, so a child's turn can run inside its parent's.

@@ -167,7 +167,7 @@ async fn list(
 }
 
 /// A resource's contents as text: text as it is, anything else named.
-fn contents_text(contents: &[ResourceContents]) -> String {
+pub(crate) fn contents_text(contents: &[ResourceContents]) -> String {
     let texts: Vec<String> = contents
         .iter()
         .map(|content| match content {

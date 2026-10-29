@@ -175,6 +175,12 @@ impl From<&HarnessError> for ApiError {
                     reason: reason.clone(),
                 },
             ),
+            HarnessError::PromptFailed(reason) => Self::new(
+                code::HOST,
+                Sentence::PromptFailed {
+                    reason: reason.clone(),
+                },
+            ),
             HarnessError::Invalid(invalid) => {
                 Self::new(code::INVALID_PARAMS, invalid_said(invalid))
             }

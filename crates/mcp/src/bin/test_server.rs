@@ -17,7 +17,8 @@
 //! tool `extra` and says the tools changed), `listed` (how often its tools were listed) and
 //! `flood` (more output than a model should be given), and `whose` (which `--token` the request
 //! came with). Its resources: `test://greeting`
-//! (text) and `test://logo` (binary).
+//! (text) and `test://logo` (binary). Its prompt: `review` (arguments `pr` and `focus`), whose
+//! text names both.
 
 use std::io::Write as _;
 use std::process::ExitCode;
@@ -33,9 +34,11 @@ use hyper_util::rt::TokioIo;
 use hyper_util::service::TowerToHyperService;
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, DiscoverRequestMethod,
-    DiscoverResult, JsonObject, ListResourcesResult, ListToolsResult, PaginatedRequestParams,
-    ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, Resource,
-    ResourceContents, ServerCapabilities, ServerConfig, SubscriptionFilter, Tool, ToolAnnotations,
+    DiscoverResult, GetPromptRequestParams, GetPromptResponse, GetPromptResult, JsonObject,
+    ListPromptsResult, ListResourcesResult, ListToolsResult, PaginatedRequestParams, Prompt,
+    PromptArgument, PromptMessage, ReadResourceRequestParams, ReadResourceResponse,
+    ReadResourceResult, Resource, ResourceContents, Role, ServerCapabilities, ServerConfig,
+    SubscriptionFilter, Tool, ToolAnnotations,
 };
 use rmcp::service::{RequestContext, RoleServer, SubscriptionContext, SubscriptionSink};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
@@ -147,6 +150,7 @@ impl ServerHandler for TestServer {
                 .enable_tools()
                 .enable_tool_list_changed()
                 .enable_resources()
+                .enable_prompts()
                 .build(),
         )
         .with_instructions(if self.results.is_some() {
@@ -203,6 +207,46 @@ impl ServerHandler for TestServer {
             tools: self.tools(),
             ..Default::default()
         }))
+    }
+
+    fn list_prompts(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<ListPromptsResult, ErrorData>> + Send + '_ {
+        let arguments = vec![PromptArgument::new("pr"), PromptArgument::new("focus")];
+        let review = Prompt::new("review", Some("Review a pull request."), Some(arguments));
+        std::future::ready(Ok(ListPromptsResult {
+            prompts: vec![review],
+            ..Default::default()
+        }))
+    }
+
+    fn get_prompt(
+        &self,
+        request: GetPromptRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<GetPromptResponse, ErrorData>> + Send + '_ {
+        let given = |name: &str| {
+            request
+                .arguments
+                .as_ref()
+                .and_then(|arguments| arguments.get(name))
+                .and_then(|value| value.as_str())
+                .unwrap_or("(none)")
+                .to_owned()
+        };
+        std::future::ready(match request.name.as_str() {
+            "review" => {
+                let text = format!("Review PR {}, looking at {}.", given("pr"), given("focus"));
+                let message = PromptMessage::new_text(Role::User, text);
+                Ok(GetPromptResult::new(vec![message]).into())
+            }
+            other => Err(ErrorData::invalid_params(
+                format!("no prompt {other}"),
+                None,
+            )),
+        })
     }
 
     fn list_resources(
