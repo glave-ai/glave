@@ -10,6 +10,7 @@ use std::sync::Arc;
 use glave_event::{OrgRole, Secret};
 use glave_identity::testing::Authenticator;
 use glave_ports::host::PublicOrigin;
+use glave_ports::{Directory, OrgId};
 use glave_session::Answering;
 use glave_session::protocol::{Request, code};
 use glave_session::signin::{Accounts, Browsers, LocalToken, SignIn};
@@ -23,7 +24,17 @@ use crate::support::*;
 /// A server reached at [`ORIGIN`] if `reached`, keeping glave accounts there, its programs
 /// here signing in with `token`.
 async fn serve(dir: &Path, reached: bool, token: &LocalToken) -> Served {
+    serve_keeping(dir, reached, token).await.0
+}
+
+/// [`serve`], with the directory its accounts' organizations are kept in.
+async fn serve_keeping(
+    dir: &Path,
+    reached: bool,
+    token: &LocalToken,
+) -> (Served, Arc<dyn Directory>) {
     let store = sqlite(&dir.join("sign-ins.db")).await;
+    let directory: Arc<dyn Directory> = Arc::new(store.directory());
     let server = "0192f5c6-0000-7000-8000-0000000005e8".to_owned();
     let origin = PublicOrigin::parse(ORIGIN).unwrap();
     let clock = fixed_clock();
@@ -38,14 +49,14 @@ async fn serve(dir: &Path, reached: bool, token: &LocalToken) -> Served {
     let mut setup = Setup::asking(Vec::new(), Answering::Clients);
     setup.browsers = Some(Arc::new(browsers.await.unwrap()));
     if reached {
-        let directory = Arc::new(store.directory());
+        let directory = Arc::clone(&directory);
         let accounts = Accounts::new(store.log(), directory, server, &origin, Arc::new(clock));
         setup.accounts = Some(Arc::new(accounts.unwrap()));
         setup.origin = Some(origin);
     }
     let (server, _) = setup.build(dir).await;
     let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
-    serve_with(server, signin, None).await
+    (serve_with(server, signin, None).await, directory)
 }
 
 /// An invite giving `role`, made by the person on the server's computer: its code.
@@ -307,4 +318,71 @@ fn a_server_no_one_else_reaches_invites_no_one() {
         assert_eq!(refused, json!(code::NOT_ALLOWED));
         served.close().await;
     });
+}
+
+#[test]
+fn someone_in_two_organizations_names_the_one_each_request_works_in() {
+    block_on!(async {
+        let dir = folder("accounts-two-organizations");
+        let token = LocalToken::new([16; 32]);
+        let (served, directory) = serve_keeping(&dir, true, &token).await;
+        let mut phone = Authenticator::new(ORIGIN).unwrap();
+        let code = invite(&served, &token, OrgRole::Member).await;
+        let joined = join(&served, code, &mut phone).await;
+        let mut here = Web::new(&served, Some(token.reveal().to_owned()));
+        let listed = Request::PeopleList {
+            after: None,
+            limit: None,
+        };
+        let people = asked(&mut here, &listed).await;
+        let grace = serde_json::from_value(people["people"][0]["id"].clone()).unwrap();
+        let other = OrgId::from_uuid(Uuid::from_u128(0x0192_f5c6_0000_7000_8000_0000_0000_0a0c));
+        directory.join(grace, other).await.unwrap();
+
+        let start: Request =
+            serde_json::from_value(json!({"method": "thread/start", "params": {}})).unwrap();
+        let list: Request =
+            serde_json::from_value(json!({"method": "thread/list", "params": {}})).unwrap();
+        let ids = |listed: &Value| -> Vec<Value> {
+            let threads = listed["threads"].as_array().unwrap();
+            threads.iter().map(|thread| thread["id"].clone()).collect()
+        };
+        // Naming none, she works in the first she joined; naming the other, in that one alone.
+        let mut first = elsewhere(&served, token_of(&joined));
+        let mine = asked(&mut first, &start).await["thread"]["id"].clone();
+        let mut there = elsewhere(&served, token_of(&joined)).working_in(&other.to_string());
+        let theirs = asked(&mut there, &start).await["thread"]["id"].clone();
+        assert!(theirs.is_string(), "{theirs}");
+        assert_eq!(ids(&asked(&mut first, &list).await), vec![mine.clone()]);
+        assert_eq!(ids(&asked(&mut there, &list).await), vec![theirs]);
+        let own = scope().org().to_string();
+        let mut named = elsewhere(&served, token_of(&joined)).working_in(&own);
+        assert_eq!(ids(&asked(&mut named, &list).await), vec![mine]);
+
+        // One she is not in, one that is no organization's, and a word that is no id are
+        // refused alike, before anything is read; the person here is in the server's own alone.
+        let unknown = Uuid::from_u128(0x0192_f5c6_0000_7000_8000_0000_0000_0bad).to_string();
+        for named in [unknown.as_str(), "acme"] {
+            let mut refused = elsewhere(&served, token_of(&joined)).working_in(named);
+            assert_eq!(asked(&mut refused, &list).await, json!(code::NOT_ALLOWED));
+        }
+        let mut owner = Web::new(&served, Some(token.reveal().to_owned()));
+        let mut owner_there = owner_named(&served, &token, &other.to_string());
+        assert_eq!(
+            asked(&mut owner_there, &list).await,
+            json!(code::NOT_ALLOWED)
+        );
+        let mut owner_here = owner_named(&served, &token, &own);
+        assert!(asked(&mut owner_here, &list).await["threads"].is_array());
+        assert!(asked(&mut owner, &list).await["threads"].is_array());
+        // Without a sign-in, naming one changes nothing of what is open to anyone.
+        let mut anyone = elsewhere(&served, None).working_in(&unknown);
+        assert!(asked(&mut anyone, &Request::Discover {}).await.is_object());
+        served.close().await;
+    });
+}
+
+/// The person on the server's computer, signed in with `token`, naming `organization`.
+fn owner_named(served: &Served, token: &LocalToken, organization: &str) -> Web {
+    Web::new(served, Some(token.reveal().to_owned())).working_in(organization)
 }

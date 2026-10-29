@@ -76,6 +76,8 @@ sentences! {
         "your account belongs to no organization here: ask its admins for an invite",
     Removed = "removed"
         "you're no longer in this organization: ask its admins for an invite",
+    NotInOrganization = "not-in-organization"
+        "you aren't in that organization: switch to another, or ask its admins for an invite",
     LastOwner = "last-owner"
         "this is the organization's only owner: make someone else an owner first",
     LastPasskey = "last-passkey"

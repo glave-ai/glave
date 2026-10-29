@@ -5,6 +5,8 @@
 //! a watch's events carry their `seq` as their id, a list's summaries their `updated_at`, and a
 //! comment keeps a quiet stream open. The method may
 //! also be named in the `Glave-Method` header, for proxies and logs; when it is, it must match.
+//! Someone signed in who belongs to several organizations names the one a request works in
+//! in the `Glave-Organization` header (`organizations`).
 //! Every request needs a valid sign-in, but `server/discover`, from this computer
 //! `signin/redeem`, and anywhere but where the server has no public origin the passkey methods
 //! that sign a browser in: without one the answer is HTTP 401 with error `-32013`. Which way
@@ -72,6 +74,10 @@ const OPEN_BODY_WITHIN: Duration = HEADER_TIMEOUT;
 
 /// The header that names the method.
 const METHOD_HEADER: &str = "glave-method";
+
+/// The header that names the organization a request works in, by its id, for someone who
+/// belongs to several (`specs/session.md`, "Who is calling").
+const ORGANIZATION_HEADER: &str = "glave-organization";
 
 /// Serves `server` over HTTP on `listeners`, each request signed in through `signin`, until
 /// `stop` completes. Then it cancels running turns and closes every connection. With `site`,
@@ -199,6 +205,11 @@ where
         return refused;
     }
     let token = bearer(request.headers()).map(str::to_owned);
+    // A value that is no text names no organization the caller is in, and is refused as one.
+    let named = request
+        .headers()
+        .get(ORGANIZATION_HEADER)
+        .map(|value| value.to_str().unwrap_or("").to_owned());
     // The languages the client reads, for the server's own sentences when the caller chose none.
     let asked = request
         .headers()
@@ -224,7 +235,11 @@ where
         Err(failed) => return json(StatusCode::OK, failed),
     };
     let caller = match caller {
-        Some(caller) => caller,
+        // Checked once signed in, so no one learns of an organization without a sign-in.
+        Some(caller) => match server.in_organization(caller, named.as_deref()).await {
+            Ok(caller) => caller,
+            Err(refused) => return json(StatusCode::OK, respond(id.as_ref(), Err(&refused))),
+        },
         None => match open(&request, door) {
             // Neither reads who calls.
             Ok(()) => glave_ports::Caller::default(),
