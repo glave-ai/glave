@@ -5,6 +5,7 @@
 mod at_rest;
 mod blobs;
 mod computers;
+mod directory;
 mod leases;
 mod memory;
 mod model;
@@ -22,6 +23,7 @@ pub use computers::{
     Confinement, computers, confinement_case, confinement_escapes, confinement_fixture,
     confinement_untouched,
 };
+pub use directory::directory;
 pub use leases::leases;
 pub use memory::{MemoryPlaces, memory_scopes};
 pub use model::{Listening, Script, model_provider};
