@@ -8,7 +8,7 @@
     <p class="error" role="alert">{{ problem }}</p>
   }
   @if (off()) {
-    <glz-empty-state [heading]="copy.offHeading" [icon]="icon">{{ copy.offText }}</glz-empty-state>
+    <glz-empty-state [heading]="copy.offHeading" [icon]="icon" />
   }
   <div class="list">
     @for (row of rows(); track row.id) {

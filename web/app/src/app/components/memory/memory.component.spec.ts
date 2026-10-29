@@ -108,7 +108,7 @@ describe('MemoryComponent', () => {
     expect(fake.paramsOf('memory/edit')).toEqual([]);
   });
 
-  it('says when memory is off', async () => {
+  it('says when memory is off, naming no setting, file or command', async () => {
     const fake = new FakeSession().answer(
       'memory/list',
       new ApiError({ code: ErrorCode.MEMORY_OFF, message: 'off' }),
@@ -116,6 +116,8 @@ describe('MemoryComponent', () => {
     TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
     const fixture = TestBed.createComponent(MemoryComponent);
     await settle(fixture);
-    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Memory is off');
+    const text = (fixture.nativeElement as HTMLElement).textContent;
+    expect(text).toContain('Memory is off');
+    expect(text).not.toMatch(/config|toml|policy|explain|=/u);
   });
 });

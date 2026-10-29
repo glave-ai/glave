@@ -58,7 +58,6 @@ export class MemoryComponent {
     emptyHeading: $localize`:@@memory.emptyHeading:Nothing remembered yet`,
     emptyText: $localize`:@@memory.emptyText:When you ask glave to remember something, it shows up here.`,
     offHeading: $localize`:@@memory.offHeading:Memory is off`,
-    offText: $localize`:@@memory.offText:Turn it on with memory = "on" in config.toml (glave policy explain shows it).`,
     untrusted: $localize`:@@memory.untrusted:saved after reading untrusted content`,
   } as const;
   protected readonly icon = Brain;

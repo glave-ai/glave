@@ -192,7 +192,6 @@
     "memory.heading": "Memory",
     "memory.intro": "What glave keeps between threads: about you, and about this project. Edit or forget any of it.",
     "memory.offHeading": "Memory is off",
-    "memory.offText": "Turn it on with memory = \"on\" in config.toml (glave policy explain shows it).",
     "memory.personal": "about you",
     "memory.project": "this project",
     "memory.save": "Save",
