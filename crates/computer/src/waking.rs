@@ -14,7 +14,7 @@ use std::time::Duration;
 use glave_ports::computer::{
     Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
     Environment, FileWrite, Finished, GitCredential, GitCredentials, Glob, Globbed, Home, Listed,
-    Listing, Output, Pressure, Printed, Save, Saved, Search, Searched, Sources, Stat, WorkspaceId,
+    Listing, Output, Printed, Save, Saved, Search, Searched, Sources, Stat, WorkspaceId,
     WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation};
@@ -24,9 +24,19 @@ use tokio::time::Instant;
 /// before each call that needs the computer.
 pub type Wake = Arc<dyn Fn() -> BoxFuture<'static, Result<Home, ComputerError>> + Send + Sync>;
 
-/// Grows the computer for what a command ran short of, and answers what to tell whoever ran it
-/// (`specs/computers.md`, decision 8).
-pub type Grow = Arc<dyn Fn(Pressure) -> BoxFuture<'static, Option<String>> + Send + Sync>;
+/// What a computer may have run short of while a command ran (`specs/computers.md`, decision
+/// 8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Short {
+    /// The command spent its run held at the CPU limit.
+    Cpu,
+    /// The computer went away as the command ran, perhaps killed for memory.
+    Memory,
+}
+
+/// Grows the computer for what a command ran short of, where it did, and answers what to tell
+/// whoever ran the command.
+pub type Grow = Arc<dyn Fn(Short) -> BoxFuture<'static, Option<String>> + Send + Sync>;
 
 /// How long a computer that answered a call is taken to be awake without asking again: a turn
 /// holds it awake, asking it how it is once a minute, so only a call after a quiet spell asks
@@ -242,16 +252,37 @@ impl Waking {
         Ok(open)
     }
 
-    /// Grows the computer for what `finished` ran short of, if it did and it can grow, and says
-    /// how in `output`, where whoever ran the command reads it. The next call asks whether it
-    /// is awake, since growing may have put it to sleep to wake bigger.
-    async fn grown(&self, finished: &Finished, output: &dyn Output) {
-        let Some(grow) = self.grow.as_ref().filter(|_| !finished.pressure.is_none()) else {
-            return;
+    /// `ran`, a command's run: one held at the CPU limit grows the computer, saying how in
+    /// `output`, where whoever ran the command reads it; one that found the computer gone as
+    /// it ran grows it if it was killed for memory, and says so instead of the error.
+    async fn ran(
+        &self,
+        ran: Result<Finished, ComputerError>,
+        output: &dyn Output,
+    ) -> Result<Finished, ComputerError> {
+        let Some(grow) = &self.grow else {
+            return ran;
         };
-        if let Some(said) = grow(finished.pressure).await {
-            output.write(&format!("\n{said}\n")).await;
+        match ran {
+            Ok(finished) if finished.cpu_held => {
+                if let Some(said) = grow(Short::Cpu).await {
+                    output.write(&format!("\n{said}\n")).await;
+                }
+                Ok(finished)
+            }
+            Err(ComputerError::Unreachable(why)) => {
+                self.distrust();
+                match grow(Short::Memory).await {
+                    Some(said) => Err(ComputerError::Failed(said)),
+                    None => Err(ComputerError::Unreachable(why)),
+                }
+            }
+            ran => ran,
         }
+    }
+
+    /// Has the next call ask whether the computer is awake.
+    fn distrust(&self) {
         if let Some((_, at)) = self
             .awake
             .lock()
@@ -397,13 +428,12 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<Finished, ComputerError>> {
         Box::pin(async move {
             let open = self.real(workspace).await?;
-            let finished = self.done(
+            let ran = self.done(
                 open.computers
                     .run(open.workspace, command, output, stop)
                     .await,
-            )?;
-            self.grown(&finished, output).await;
-            Ok(finished)
+            );
+            self.ran(ran, output).await
         })
     }
 
@@ -417,13 +447,12 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<Finished, ComputerError>> {
         Box::pin(async move {
             let open = self.real(workspace).await?;
-            let finished = self.done(
+            let ran = self.done(
                 open.computers
                     .run_with_credentials(open.workspace, command, output, stop, credentials)
                     .await,
-            )?;
-            self.grown(&finished, output).await;
-            Ok(finished)
+            );
+            self.ran(ran, output).await
         })
     }
 

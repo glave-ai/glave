@@ -8,6 +8,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use tokio::time::Instant;
+
 use glave_ports::BoxFuture;
 use glave_ports::computer::{ComputerError, Isolation};
 use k8s_openapi::api::core::v1::PersistentVolumeClaim;
@@ -24,6 +26,9 @@ use crate::worker::backend::{Backend, Link, Listed, Spec, Started, Stream, sayin
 /// How long a removed Pod or claim has to go: the Pod's grace period (5 seconds) and its
 /// volumes let go of, so seconds.
 const GONE_WAIT: Duration = Duration::from_mins(1);
+/// How long a computer that went away as a command ran has to show how its container ended:
+/// its Pod says so within seconds.
+const ENDED_WITHIN: Duration = Duration::from_secs(20);
 /// The longest key a person's computer is named by, so its objects' names stay labels.
 const KEY_LENGTH: usize = 40;
 
@@ -183,21 +188,31 @@ impl PersonComputer {
         super::running(&self.cluster.pods(), &self.name()).await
     }
 
-    /// Whether its Pod ended killed for memory, as the API server says.
+    /// How its Pod's container ended, as the API server says, if it has.
+    async fn ended_as(&self) -> Option<String> {
+        let pod = self.cluster.pods().get_opt(&self.name()).await.ok()??;
+        let pod = serde_json::to_value(pod).ok()?;
+        pod.pointer("/status/containerStatuses/0/state/terminated/reason")?
+            .as_str()
+            .map(str::to_owned)
+    }
+
+    /// Whether its Pod's container ended killed for memory.
     pub(crate) async fn ran_out_of_memory(&self) -> bool {
-        let pod = self
-            .cluster
-            .pods()
-            .get_opt(&self.name())
-            .await
-            .ok()
-            .flatten();
-        pod.and_then(|pod| serde_json::to_value(pod).ok())
-            .and_then(|pod| {
-                pod.pointer("/status/containerStatuses/0/state/terminated/reason")
-                    .cloned()
-            })
-            .is_some_and(|reason| reason == "OOMKilled")
+        self.ended_as().await.as_deref() == Some("OOMKilled")
+    }
+
+    /// Whether its Pod's container ended killed for memory, waiting up to [`ENDED_WITHIN`] for
+    /// it to show it ended at all: for a computer that went away as a command ran.
+    pub(crate) async fn killed_for_memory(&self) -> bool {
+        let until = Instant::now() + ENDED_WITHIN;
+        loop {
+            match self.ended_as().await {
+                Some(reason) => return reason == "OOMKilled",
+                None if Instant::now() < until => tokio::time::sleep(POLL).await,
+                None => return false,
+            }
+        }
     }
 
     /// Removes the computer and its disk, with everything on it.

@@ -6,7 +6,7 @@
 
 use std::sync::{Mutex, PoisonError};
 
-use glave_ports::computer::Pressure;
+use crate::Short;
 
 /// A computer's CPU, in thousandths of one, and its memory, in MiB.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,9 +29,8 @@ pub(crate) const CEILING: Size = Size {
 };
 
 impl Size {
-    /// This, with what `pressure` says ran short doubled, within `ceiling`; none when nothing
-    /// can grow.
-    pub(crate) fn grown(self, pressure: Pressure, ceiling: Self) -> Option<Self> {
+    /// This, with what ran `short` doubled, within `ceiling`; none when it cannot grow.
+    pub(crate) fn grown(self, short: Short, ceiling: Self) -> Option<Self> {
         let double = |now: u32, most: u32, short: bool| {
             if short {
                 now.saturating_mul(2).min(most).max(now)
@@ -40,22 +39,18 @@ impl Size {
             }
         };
         let grown = Self {
-            cpu_millis: double(self.cpu_millis, ceiling.cpu_millis, pressure.cpu),
-            memory_mib: double(self.memory_mib, ceiling.memory_mib, pressure.memory),
+            cpu_millis: double(self.cpu_millis, ceiling.cpu_millis, short == Short::Cpu),
+            memory_mib: double(self.memory_mib, ceiling.memory_mib, short == Short::Memory),
         };
         (grown != self).then_some(grown)
     }
 
-    /// The size in words: `1 GiB of memory`, `0.5 CPUs`.
-    pub(crate) fn said(self, pressure: Pressure) -> String {
-        let mut parts = Vec::new();
-        if pressure.memory {
-            parts.push(format!("{} of memory", memory_words(self.memory_mib)));
+    /// What it has of what ran `short`, in words: `1 GiB`, `0.5 CPUs`.
+    pub(crate) fn said(self, short: Short) -> String {
+        match short {
+            Short::Memory => memory_words(self.memory_mib),
+            Short::Cpu => cpu_words(self.cpu_millis),
         }
-        if pressure.cpu {
-            parts.push(cpu_words(self.cpu_millis));
-        }
-        parts.join(" and ")
     }
 }
 
@@ -127,14 +122,8 @@ impl Sizing {
 mod tests {
     use super::*;
 
-    const MEMORY: Pressure = Pressure {
-        memory: true,
-        cpu: false,
-    };
-    const CPU: Pressure = Pressure {
-        memory: false,
-        cpu: true,
-    };
+    const MEMORY: Short = Short::Memory;
+    const CPU: Short = Short::Cpu;
 
     #[test]
     fn a_computer_grows_by_doubling_what_it_ran_short_of_up_to_its_ceiling() {
@@ -146,7 +135,7 @@ mod tests {
                 memory_mib: 1_024
             }
         );
-        assert_eq!(grown.said(MEMORY), "1 GiB of memory");
+        assert_eq!(grown.said(MEMORY), "1 GiB");
         let faster = SMALLEST.grown(CPU, CEILING).unwrap();
         assert_eq!(faster.cpu_millis, 500);
         assert_eq!(faster.said(CPU), "0.5 CPUs");
@@ -161,7 +150,6 @@ mod tests {
             None,
             "at the ceiling, nothing grows"
         );
-        assert_eq!(SMALLEST.grown(Pressure::default(), CEILING), None);
         assert_eq!(cpu_words(1_000), "1 CPU");
         assert_eq!(cpu_words(250), "0.25 CPUs");
         assert_eq!(memory_words(512), "512 MiB");

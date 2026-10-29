@@ -232,44 +232,26 @@ pub enum Ending {
     },
 }
 
-/// A command that ran: how it ended and how long it took, and what its computer ran short of
-/// while it ran.
+/// A command that ran: how it ended and how long it took.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Finished {
     pub ending: Ending,
     pub millis: u64,
-    #[serde(default, skip_serializing_if = "Pressure::is_none")]
-    pub pressure: Pressure,
+    /// It spent at least half of a run of 10 seconds or more held at its computer's CPU limit,
+    /// as a computer with a limit of its own (a Pod's) counts it (`specs/computers.md`,
+    /// decision 8).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cpu_held: bool,
 }
 
 impl Finished {
-    /// A command that ended so after `millis`, its computer short of nothing.
+    /// A command that ended so after `millis`, never held at a CPU limit.
     pub fn new(ending: Ending, millis: u64) -> Self {
         Self {
             ending,
             millis,
-            pressure: Pressure::default(),
+            cpu_held: false,
         }
-    }
-}
-
-/// What a computer with limits of its own (a Pod's) ran short of while a command ran, as its
-/// kernel counted it; nothing where it counts nothing (`specs/computers.md`, decision 8).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Pressure {
-    /// The command was killed for running out of memory.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub memory: bool,
-    /// The command spent at least half of a run of 10 seconds or more held at the CPU limit.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub cpu: bool,
-}
-
-impl Pressure {
-    /// Whether the computer ran short of nothing.
-    #[must_use]
-    pub fn is_none(&self) -> bool {
-        !self.memory && !self.cpu
     }
 }
 

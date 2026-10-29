@@ -388,26 +388,29 @@ impl Kubernetes {
         )
         .await
         .map_err(|error| failed("refused to resize the computer", error))?;
-        let mut waited = Duration::ZERO;
+        tokio::time::timeout(RESIZED_WITHIN, self.resized(name, &amounts))
+            .await
+            .unwrap_or_else(|_| {
+                Err(ComputerError::Failed(format!(
+                    "the computer was not resized within {}",
+                    glave_ports::spoken(RESIZED_WITHIN)
+                )))
+            })
+    }
+
+    /// Waits until the Pod `name`'s container runs at `amounts`, or its resize is refused.
+    async fn resized(&self, name: &str, amounts: &Value) -> Result<(), ComputerError> {
+        let pods = self.pods();
         loop {
             let pod = pods
                 .get(name)
                 .await
                 .map_err(|error| failed("could not read the computer", error))?;
             let pod = serde_json::to_value(&pod).unwrap_or(Value::Null);
-            match objects::resized(&pod, &amounts) {
+            match objects::resized(&pod, amounts) {
                 Resized::Done => return Ok(()),
                 Resized::Refused(why) => return Err(ComputerError::Failed(why)),
-                Resized::Pending(why) if waited >= RESIZED_WITHIN => {
-                    return Err(ComputerError::Failed(format!(
-                        "the computer was not resized within {}: {why}",
-                        glave_ports::spoken(RESIZED_WITHIN)
-                    )));
-                }
-                Resized::Pending(_) => {
-                    tokio::time::sleep(POLL).await;
-                    waited = waited.saturating_add(POLL);
-                }
+                Resized::Pending => tokio::time::sleep(POLL).await,
             }
         }
     }

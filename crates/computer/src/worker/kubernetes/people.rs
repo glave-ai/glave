@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use glave_ports::computer::{
-    ComputerError, ComputerId, Computers, Environment, Home, Image, Limits, Network, Pressure,
-    Sources, State as ComputerState, WorkspaceId, WorkspaceInfo,
+    ComputerError, ComputerId, Computers, Environment, Home, Image, Limits, Network, Sources,
+    State as ComputerState, WorkspaceId, WorkspaceInfo,
 };
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -23,7 +23,7 @@ use super::home::PersonComputer;
 use super::objects::{IDLE_MINUTES, PERSON_HOME, PERSON_SCRATCH};
 use super::sizing::{CEILING, Size};
 use crate::worker::limits::pinned;
-use crate::{Grow, Wake, Waking, WorkerComputers, WorkerCredentials};
+use crate::{Grow, Short, Wake, Waking, WorkerComputers, WorkerCredentials};
 
 /// How long a wake may take before whoever waits on it gives up: a Pod waits up to five
 /// minutes for a node and has two more to take glave in, so minutes, never more.
@@ -64,6 +64,8 @@ struct Person {
     pod: PersonComputer,
     /// The largest it grows.
     ceiling: Size,
+    /// Held by the one growth at a time, so two never undo each other.
+    growing: tokio::sync::Mutex<()>,
     computers: Arc<WorkerComputers>,
     state: watch::Sender<State>,
     waking: Mutex<Option<JoinHandle<()>>>,
@@ -196,9 +198,9 @@ impl People {
         let ceiling = self.ceiling;
         let person = Arc::new_cyclic(|me: &std::sync::Weak<Person>| {
             let grows = std::sync::Weak::clone(me);
-            let grow: Grow = Arc::new(move |pressure| {
+            let grow: Grow = Arc::new(move |short| {
                 let me = std::sync::Weak::clone(&grows);
-                Box::pin(async move { grow(&me.upgrade()?, pressure, ceiling).await })
+                Box::pin(async move { grow(&me.upgrade()?, short, ceiling).await })
             });
             let (me, environment) = (std::sync::Weak::clone(me), self.environment.clone());
             let wake: Wake = Arc::new(move || {
@@ -216,6 +218,7 @@ impl People {
                 planned: Waking::home(wake, Some(grow), home, PERSON_SCRATCH),
                 pod: computer,
                 ceiling,
+                growing: tokio::sync::Mutex::new(()),
                 computers: Arc::new(computers),
                 state: watch::Sender::new(State::Asleep),
                 waking: Mutex::new(None),
@@ -276,49 +279,70 @@ fn planned_home() -> Result<WorkspaceInfo, ComputerError> {
     })
 }
 
-/// Grows `person`'s computer for what a command ran short of (`pressure`), within `ceiling`:
-/// in place where the cluster can, else by putting it to sleep now, between commands, so its
-/// next wake is bigger on the same disk, which ends what ran there in the background. What to
-/// tell whoever ran the command.
-async fn grow(person: &Arc<Person>, pressure: Pressure, ceiling: Size) -> Option<String> {
+/// Grows `person`'s computer for what a command ran `short` of, within `ceiling`, one growth
+/// at a time: a computer held at its CPU limit in place where the cluster can, else at its next
+/// wake; one killed for memory, its glave with it, at its next wake, which the next call makes.
+/// What to tell whoever ran the command; nothing when it did not run short.
+async fn grow(person: &Arc<Person>, short: Short, ceiling: Size) -> Option<String> {
+    let _growing = person.growing.lock().await;
     let now = person.pod.sizing.now();
-    let again = if pressure.memory {
-        " Run the command again."
-    } else {
-        ""
-    };
-    let Some(bigger) = now.grown(pressure, ceiling) else {
-        return Some(format!(
-            "glave: this computer ran short of {} and is already as big as it gets.",
-            now.said(pressure)
-        ));
-    };
-    if person.pod.resize(bigger).await.is_ok() {
-        return Some(format!(
-            "glave: this computer now has {}.{again}",
-            bigger.said(pressure)
-        ));
-    }
-    person.pod.sizing.wake_at(bigger);
-    let awake = match &*person.state.borrow() {
-        State::Awake(home) => Some(home.computer),
-        _ => None,
-    };
-    if let Some(computer) = awake {
-        let _ = person.computers.destroy(computer).await;
-        person.state.send_if_modified(|state| match state {
-            State::Awake(home) if home.computer == computer => {
-                *state = State::Asleep;
-                true
+    match short {
+        Short::Cpu => {
+            let bigger = now.grown(short, ceiling)?;
+            if person.pod.resize(bigger).await.is_ok() {
+                return Some(format!(
+                    "glave: this computer now has {}.",
+                    bigger.said(short)
+                ));
             }
-            _ => false,
-        });
+            person.pod.sizing.wake_at(bigger);
+            Some(format!(
+                "glave: this computer gets {} when it next wakes.",
+                bigger.said(short)
+            ))
+        }
+        Short::Memory => {
+            if !person.pod.killed_for_memory().await {
+                return None;
+            }
+            let said = match now.grown(short, ceiling) {
+                Some(bigger) => {
+                    person.pod.sizing.wake_at(bigger);
+                    format!(
+                        "glave: this computer ran out of memory at {} and restarts with {}; \
+                         anything it ran in the background stopped. Run the command again.",
+                        now.said(short),
+                        bigger.said(short)
+                    )
+                }
+                None => format!(
+                    "glave: this computer ran out of memory at {}, as much as it gets.",
+                    now.said(short)
+                ),
+            };
+            let awake = match &*person.state.borrow() {
+                State::Awake(home) => Some(home.clone()),
+                _ => None,
+            };
+            if let Some(home) = awake {
+                slept(person, &home).await;
+            }
+            Some(said)
+        }
     }
-    Some(format!(
-        "glave: this computer restarts with {} at its next command; anything it ran in the \
-         background has stopped.{again}",
-        bigger.said(pressure)
-    ))
+}
+
+/// Lets go of `person`'s computer, awake with `home` until it went away on its own: what is
+/// left of it removed, and counted asleep, so the next call wakes it again.
+async fn slept(person: &Person, home: &WorkspaceInfo) {
+    let _ = person.computers.destroy(home.computer).await;
+    person.state.send_if_modified(|state| match state {
+        State::Awake(awake) if awake.computer == home.computer => {
+            *state = State::Asleep;
+            true
+        }
+        _ => false,
+    });
 }
 
 /// Starts waking `person`'s computer from `environment`, unless it is awake or waking.
@@ -396,25 +420,13 @@ async fn gone(person: &Person, home: &WorkspaceInfo) -> bool {
         Ok(info) if info.state == ComputerState::Running => false,
         _ if !matches!(person.pod.running().await, Ok(false)) => false,
         _ => {
-            // Killed whole for memory (its glave with its command, as where the kernel counts
-            // nothing for a command): its next wake is bigger.
-            let memory = Pressure {
-                memory: true,
-                cpu: false,
-            };
+            // Killed whole for memory with no command running: its next wake is bigger.
             if person.pod.ran_out_of_memory().await
-                && let Some(bigger) = person.pod.sizing.now().grown(memory, person.ceiling)
+                && let Some(bigger) = person.pod.sizing.now().grown(Short::Memory, person.ceiling)
             {
                 person.pod.sizing.wake_at(bigger);
             }
-            let _ = person.computers.destroy(home.computer).await;
-            person.state.send_if_modified(|state| match state {
-                State::Awake(awake) if awake.computer == home.computer => {
-                    *state = State::Asleep;
-                    true
-                }
-                _ => false,
-            });
+            slept(person, home).await;
             true
         }
     }

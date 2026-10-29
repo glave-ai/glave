@@ -318,3 +318,31 @@ fn a_starting_pod_is_running_waiting_or_failed() {
     ]}});
     assert!(matches!(progress(&unscheduled), Progress::Waiting(why) if why.contains("0/1 nodes")));
 }
+
+#[test]
+fn a_resize_is_done_when_its_container_runs_at_the_new_size_and_refused_when_it_cannot_fit() {
+    let amounts = json!({"cpu": "500m", "memory": "1Gi"});
+    let pod = |limits: Value, conditions: Value| {
+        json!({"status": {
+            "conditions": conditions,
+            "containerStatuses": [{"name": CONTAINER, "resources": {"limits": limits}}]
+        }})
+    };
+    let small = json!({"cpu": "250m", "memory": "1Gi"});
+    assert_eq!(
+        resized(&pod(small.clone(), json!([])), &amounts),
+        Resized::Pending
+    );
+    assert_eq!(
+        resized(&pod(amounts.clone(), json!([])), &amounts),
+        Resized::Done
+    );
+    let infeasible = json!([{"type": "PodResizePending", "status": "True",
+        "reason": "Infeasible", "message": "Node didn't have enough capacity"}]);
+    assert!(matches!(
+        resized(&pod(small.clone(), infeasible), &amounts),
+        Resized::Refused(why) if why.contains("enough capacity")
+    ));
+    let deferred = json!([{"type": "PodResizePending", "status": "True", "reason": "Deferred"}]);
+    assert_eq!(resized(&pod(small, deferred), &amounts), Resized::Pending);
+}

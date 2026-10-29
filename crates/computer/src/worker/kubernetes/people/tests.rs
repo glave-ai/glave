@@ -165,13 +165,21 @@ async fn phase(cluster: &super::super::Kubernetes, name: &str) -> Option<String>
     pod.status?.phase
 }
 
-#[test]
-fn a_person_s_computer_sleeps_once_idle_and_a_turn_wakes_it_again() {
+/// glave's computer image, when a real glave and it are given; `None`, and a note, otherwise.
+fn computer_image() -> Option<String> {
     let (Ok(_), Ok(image)) = (
         std::env::var("GLAVE_TEST_WORKER_GLAVE"),
         std::env::var("GLAVE_TEST_COMPUTER_IMAGE"),
     ) else {
         eprintln!("skipped: set GLAVE_TEST_WORKER_GLAVE and GLAVE_TEST_COMPUTER_IMAGE");
+        return None;
+    };
+    Some(image)
+}
+
+#[test]
+fn a_person_s_computer_sleeps_once_idle_and_a_turn_wakes_it_again() {
+    let Some(image) = computer_image() else {
         return;
     };
     block_on!(async {
@@ -254,22 +262,19 @@ async fn outcome(
     Ok((finished.ending, output.text(2_000)))
 }
 
-/// The memory the Pod `name`'s container is limited to now, if it is there.
-async fn memory_limit(cluster: &super::super::Kubernetes, name: &str) -> Option<String> {
+/// What the Pod `name`'s container runs at now, as its status says, if it is there.
+async fn running_at(cluster: &super::super::Kubernetes, name: &str) -> Option<serde_json::Value> {
     let pod = cluster.pods().get_opt(name).await.ok().flatten()?;
     let pod = serde_json::to_value(pod).ok()?;
-    pod.pointer("/spec/containers/0/resources/limits/memory")
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_owned)
+    pod.pointer("/status/containerStatuses/0/resources/limits")
+        .cloned()
 }
 
+/// A person's computer that runs out of memory restarts with twice as much, and one held at its
+/// CPU limit grows in place, each saying so to whoever ran the command.
 #[test]
-fn a_person_s_computer_that_runs_out_of_memory_grows_in_place() {
-    let (Ok(_), Ok(image)) = (
-        std::env::var("GLAVE_TEST_WORKER_GLAVE"),
-        std::env::var("GLAVE_TEST_COMPUTER_IMAGE"),
-    ) else {
-        eprintln!("skipped: set GLAVE_TEST_WORKER_GLAVE and GLAVE_TEST_COMPUTER_IMAGE");
+fn a_person_s_computer_grows_for_what_a_command_runs_short_of() {
+    let Some(image) = computer_image() else {
         return;
     };
     block_on!(async {
@@ -289,7 +294,10 @@ fn a_person_s_computer_that_runs_out_of_memory_grows_in_place() {
         let pod = format!("glave-computer-{key}");
         let home = people.home(&key).unwrap();
         let big = "python3 -c 'b = bytearray(700 * 1024 * 1024); print(\"allocated\")'";
-        let (first, small, second) = match home
+        let busy = "timeout 12 sh -c 'while :; do :; done'; echo busy";
+        let mut seen = Vec::new();
+        let mut at = Vec::new();
+        if let Ok(chat) = home
             .computers
             .open(
                 home.home.computer,
@@ -300,33 +308,37 @@ fn a_person_s_computer_that_runs_out_of_memory_grows_in_place() {
             )
             .await
         {
-            Ok(chat) => {
-                let first = outcome(&home, chat.id, big).await;
-                let small = memory_limit(&cluster, &pod).await;
-                (first, small, outcome(&home, chat.id, big).await)
+            for script in ["true", big, big, busy] {
+                seen.push(outcome(&home, chat.id, script).await);
+                at.push(running_at(&cluster, &pod).await);
             }
-            Err(error) => (Err(format!("{error:?}")), None, Err(String::new())),
-        };
-        let grown = memory_limit(&cluster, &pod).await;
+        }
         let (destroyed, left) = gone(people, &cluster, &key).await;
-        eprintln!("first: {first:?}\nsecond: {second:?}");
-        let (ending, said) = first.unwrap();
-        assert_eq!(ending, Ending::Signalled, "killed for memory: {said}");
+        eprintln!("ran: {seen:#?}\nat: {at:#?}");
+        let woke = serde_json::json!({"cpu": "250m", "memory": "512Mi"});
+        assert_eq!(at.first().cloned().flatten(), Some(woke), "it wakes small");
+        let lost = seen.get(1).cloned().unwrap().unwrap_err();
         assert!(
-            said.contains("glave: this computer now has 1 GiB of memory. Run the command again."),
-            "grown in place: {said}"
+            lost.contains(
+                "glave: this computer ran out of memory at 512 MiB and restarts with 1 GiB"
+            ),
+            "{lost}"
         );
-        assert_eq!(
-            small.as_deref(),
-            Some("1Gi"),
-            "its Pod's limit, grown in place"
-        );
-        let (ending, said) = second.unwrap();
+        let (ending, said) = seen.get(2).cloned().unwrap().unwrap();
         assert_eq!(
             (ending, said.trim()),
             (Ending::Exited { code: 0 }, "allocated")
         );
-        assert_eq!(grown.as_deref(), Some("1Gi"));
+        let bigger = serde_json::json!({"cpu": "250m", "memory": "1Gi"});
+        assert_eq!(at.get(2).cloned().flatten(), Some(bigger), "woken bigger");
+        let (ending, said) = seen.get(3).cloned().unwrap().unwrap();
+        assert_eq!(ending, Ending::Exited { code: 0 });
+        assert!(
+            said.contains("glave: this computer now has 0.5 CPUs."),
+            "{said}"
+        );
+        let faster = serde_json::json!({"cpu": "500m", "memory": "1Gi"});
+        assert_eq!(at.get(3).cloned().flatten(), Some(faster), "grown in place");
         destroyed.unwrap();
         assert_eq!(left, Vec::<String>::new());
     });

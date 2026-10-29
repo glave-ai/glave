@@ -379,39 +379,39 @@ pub(crate) fn arch(machine: Option<u16>) -> Option<&'static str> {
 pub(crate) enum Resized {
     /// Its container runs at the size asked for.
     Done,
-    /// It will not be, and why: the node can never fit it.
+    /// It will not be, and why: the node can never fit it, or the resize failed.
     Refused(String),
-    /// Not yet, and what it waits for.
-    Pending(String),
+    /// Not yet.
+    Pending,
 }
 
 /// How far the resize of `pod` (as the API server returns it) to `amounts` (its container's
 /// `cpu` and `memory`, requested and limited alike) has got.
 pub(crate) fn resized(pod: &Value, amounts: &Value) -> Resized {
-    let pending = pod
+    let refusal = pod
         .pointer("/status/conditions")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
         .find(|condition| {
-            condition.get("type") == Some(&json!("PodResizePending"))
-                && condition.get("status") == Some(&json!("True"))
+            let (kind, reason) = (condition.get("type"), condition.get("reason"));
+            condition.get("status") == Some(&json!("True"))
+                && ((kind == Some(&json!("PodResizePending"))
+                    && reason == Some(&json!("Infeasible")))
+                    || (kind == Some(&json!("PodResizeInProgress"))
+                        && reason == Some(&json!("Error"))))
         });
-    let said = |condition: &Value| {
+    if let Some(condition) = refusal {
         let text = |key: &str| {
             condition
                 .get(key)
                 .and_then(Value::as_str)
                 .unwrap_or_default()
         };
-        format!("{}: {}", text("reason"), text("message"))
-    };
-    if let Some(condition) = pending
-        && condition.get("reason") == Some(&json!("Infeasible"))
-    {
         return Resized::Refused(format!(
-            "the computer cannot grow there ({})",
-            said(condition)
+            "the computer cannot grow there ({}: {})",
+            text("reason"),
+            text("message")
         ));
     }
     let running = pod
@@ -424,11 +424,10 @@ pub(crate) fn resized(pod: &Value, amounts: &Value) -> Resized {
         .and_then(|status| status.pointer("/resources/limits"));
     let at = |key: &str| running.and_then(|limits| limits.get(key)) == amounts.get(key);
     if at("cpu") && at("memory") {
-        return Resized::Done;
+        Resized::Done
+    } else {
+        Resized::Pending
     }
-    Resized::Pending(
-        pending.map_or_else(|| "its container is not yet at the new size".into(), said),
-    )
 }
 
 /// How far a starting Pod has got.
