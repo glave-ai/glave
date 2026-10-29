@@ -3,10 +3,10 @@
 //! tells every watch here a sign-in may have ended, so theirs in the organization end at once.
 //! Their next request there is refused, and a company login lets them back only by an invite.
 
-use glave_event::{OrgRole, PersonRemoved, Principal, PrincipalId};
+use glave_event::{OrgRole, PersonRemoved, PrincipalId};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
-use crate::people::{Permit, no_such_person, permits};
+use crate::people::{Acting, Permit, no_such_person};
 use crate::protocol::{ApiError, Reply, code};
 use crate::server::Server;
 use crate::words::Sentence;
@@ -26,10 +26,12 @@ where
         caller: &Caller,
         person: PrincipalId,
     ) -> Result<Reply, ApiError> {
-        let theirs = permits(self.permitted(caller, Permit::People).await?);
-        let by = Principal::person(self.person_of(caller)?);
-        let org = self.org_of(caller);
-        let alone = org != self.inner.own;
+        let Acting {
+            theirs,
+            by,
+            org,
+            alone,
+        } = self.acting(caller).await?;
         self.record_person(org, |people| {
             // Removed already: nothing to record, and what follows is done again.
             if people.removed(person) {

@@ -4,33 +4,12 @@
 //! store. Only admins remove, only an Owner removes an Owner, and someone not there is no one
 //! to remove.
 
-use glave_event::{Auth, AuthMethod, OrgRole, PrincipalId, Secret};
+use glave_event::{OrgRole, Secret};
 use glave_ports::Caller;
 use glave_session::Watched;
 use glave_session::protocol::{ApiError, Reply, Request, code};
-use glave_session::signin::person;
 
 use crate::support::*;
-
-const ISSUER: &str = "https://id.example.com";
-
-/// Someone signed in through the company login as `subject`.
-fn signed_in(subject: &str) -> Caller {
-    Caller {
-        person: Some(id(subject)),
-        auth: Some(Auth {
-            method: AuthMethod::Oidc,
-            issuer: Some(ISSUER.to_owned()),
-            subject: Some(subject.to_owned()),
-            session: None,
-        }),
-        ..Caller::default()
-    }
-}
-
-fn id(subject: &str) -> PrincipalId {
-    person(ISSUER, subject).unwrap()
-}
 
 /// A server whose people sign in through a company login.
 async fn organization(dir: &std::path::Path) -> Tested {

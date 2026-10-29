@@ -239,18 +239,29 @@ pub(crate) async fn settle<L: EventLog + 'static>(server: &Tested<L>) {
     panic!("a task never finished");
 }
 
+/// The company login the tests' people sign in through.
+pub(crate) const ISSUER: &str = "https://id.example.com";
+
 /// Someone signed in from elsewhere, not the person on this computer.
 pub(crate) fn elsewhere() -> Caller {
+    signed_in("grace")
+}
+
+/// Someone signed in through the company login as `subject`.
+pub(crate) fn signed_in(subject: &str) -> Caller {
     Caller {
-        person: Some(glave_session::signin::person("https://id.example.com", "grace").unwrap()),
+        person: Some(id(subject)),
         auth: Some(glave_event::Auth {
             method: glave_event::AuthMethod::Oidc,
-            issuer: Some("https://id.example.com".into()),
-            subject: Some("grace".into()),
+            issuer: Some(ISSUER.into()),
+            subject: Some(subject.into()),
             session: None,
         }),
-        trace: None,
-        profile: None,
-        org: None,
+        ..Caller::default()
     }
+}
+
+/// Who `subject` is, signed in through the company login.
+pub(crate) fn id(subject: &str) -> glave_event::PrincipalId {
+    glave_session::signin::person(ISSUER, subject).unwrap()
 }

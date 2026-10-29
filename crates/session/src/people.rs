@@ -70,6 +70,15 @@ pub(crate) struct People {
     pub(crate) invites: Invites,
 }
 
+/// What an admin method that changes someone knows of its caller: what their role permits,
+/// who they are, their organization, and whether no local person owns it.
+pub(crate) struct Acting {
+    pub(crate) theirs: &'static [Permit],
+    pub(crate) by: Principal,
+    pub(crate) org: OrgId,
+    pub(crate) alone: bool,
+}
+
 /// What each organization's people ledger says, as far as this server has read it. Past
 /// [`PEOPLES`] organizations, the others are forgotten and read again when next asked for.
 #[derive(Debug, Default)]
@@ -338,6 +347,19 @@ where
         Ok(Reply::People { people })
     }
 
+    /// What an admin method that changes someone knows of `caller` before it acts, once their
+    /// role permits it.
+    pub(crate) async fn acting(&self, caller: &Caller) -> Result<Acting, ApiError> {
+        let theirs = permits(self.permitted(caller, Permit::People).await?);
+        let org = self.org_of(caller);
+        Ok(Acting {
+            theirs,
+            by: Principal::person(self.person_of(caller)?),
+            org,
+            alone: org != self.inner.own,
+        })
+    }
+
     /// Answers `role/set`: gives `person` `role`, when the caller may. Only an Owner makes an
     /// Owner or changes one's role.
     pub(crate) async fn set_role(
@@ -346,10 +368,12 @@ where
         person: PrincipalId,
         role: OrgRole,
     ) -> Result<Reply, ApiError> {
-        let theirs = permits(self.permitted(caller, Permit::People).await?);
-        let by = Principal::person(self.person_of(caller)?);
-        let org = self.org_of(caller);
-        let alone = org != self.inner.own;
+        let Acting {
+            theirs,
+            by,
+            org,
+            alone,
+        } = self.acting(caller).await?;
         self.record_person(org, |people| {
             if !people.has(person) {
                 return Err(no_such_person(person));
