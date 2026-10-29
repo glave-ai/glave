@@ -50,10 +50,8 @@ impl PostgresBlobs {
         org: OrgId,
         before: i64,
     ) -> Result<(Vec<(Uuid, String)>, BTreeSet<(Uuid, String)>), BlobError> {
+        let mut client = connection(&self.pool, org).await.map_err(|e| storage(&e))?;
         let org = org.as_uuid();
-        let mut client = connection(&self.pool, OrgId::from_uuid(org))
-            .await
-            .map_err(|e| storage(&e))?;
         let transaction = client
             .transaction()
             .await

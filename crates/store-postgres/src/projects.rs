@@ -155,10 +155,8 @@ impl PostgresProjects {
         if new.kind != ProjectKind::Personal {
             return Err(ProjectError::Invalid(ProjectRefusal::NotPersonal));
         }
+        let mut client = connection(&self.pool, org).await.map_err(unavailable)?;
         let org = org.as_uuid();
-        let mut client = connection(&self.pool, OrgId::from_uuid(org))
-            .await
-            .map_err(unavailable)?;
         let transaction = client
             .transaction()
             .await
@@ -185,10 +183,8 @@ impl PostgresProjects {
         keys: &[FolderKey],
         new: &Project,
     ) -> Result<Project, ProjectError> {
+        let mut client = connection(&self.pool, org).await.map_err(unavailable)?;
         let org = org.as_uuid();
-        let mut client = connection(&self.pool, OrgId::from_uuid(org))
-            .await
-            .map_err(unavailable)?;
         let transaction = client
             .transaction()
             .await
@@ -322,10 +318,8 @@ impl Projects for PostgresProjects {
     ) -> BoxFuture<'a, Result<Project, ProjectError>> {
         Box::pin(async move {
             Project::check_name(name)?;
+            let mut client = connection(&self.pool, org).await.map_err(unavailable)?;
             let (org, id) = (org.as_uuid(), project.as_uuid());
-            let mut client = connection(&self.pool, OrgId::from_uuid(org))
-                .await
-                .map_err(unavailable)?;
             let transaction = client
                 .transaction()
                 .await
@@ -387,10 +381,8 @@ impl Projects for PostgresProjects {
         keys: &'a [FolderKey],
     ) -> BoxFuture<'a, Result<Option<Project>, ProjectError>> {
         Box::pin(async move {
+            let client = connection(&self.pool, org).await.map_err(unavailable)?;
             let org = org.as_uuid();
-            let client = connection(&self.pool, OrgId::from_uuid(org))
-                .await
-                .map_err(unavailable)?;
             for key in keys {
                 let row = client
                     .query_opt(

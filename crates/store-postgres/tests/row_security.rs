@@ -195,7 +195,12 @@ fn a_query_that_names_no_organization_sees_only_the_one_its_connection_is_set_to
                 &[&theirs],
             )
             .await;
-        assert!(written.is_err(), "a row of another organization is refused");
+        let refused = written.err().and_then(|error| error.code().cloned());
+        assert_eq!(
+            refused,
+            Some(tokio_postgres::error::SqlState::INSUFFICIENT_PRIVILEGE),
+            "a row of another organization is refused by the policy"
+        );
         let changed = client
             .execute(&format!("DELETE FROM {schema}.events"), &[])
             .await
