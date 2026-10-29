@@ -30,8 +30,8 @@ const FENCED: &str = "echo kept > kept.txt; echo \"home=$HOME\"; echo \"user=$(i
 
 /// Runs `command` at the person's home on the computer `computers` woke, and what it printed,
 /// or why it could not: never a panic, so the test removes what it made before it asserts.
-async fn ran(
-    computers: &WorkerComputers,
+pub(in crate::worker::kubernetes) async fn ran(
+    computers: &dyn Computers,
     computer: ComputerId,
     command: &str,
 ) -> Result<String, String> {

@@ -6,10 +6,12 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Context as _, bail};
-use glave_computer::{Identity, LocalComputers, MIN_SECRET, Tokens, serve, serve_tcp, serve_tls};
+use glave_computer::{
+    Identity, Idle, LocalComputers, MIN_SECRET, Tokens, serve, serve_tcp, serve_tls,
+};
 use glave_ports::{Clock as _, SystemClock};
 use tokio::io::{AsyncReadExt as _, BufReader};
 use tokio::net::TcpListener;
@@ -24,7 +26,7 @@ Usage:
                                      per line) to the program that started glave
   glave computer serve --tcp <port>  serve it on 127.0.0.1:<port> to clients that first send
                                      connection/authenticate with $GLAVE_COMPUTER_TOKEN
-  glave computer serve --tls <host:port> <folder> [--until-input-ends]
+  glave computer serve --tls <host:port> <folder> [--until-input-ends] [--idle <minutes>]
                                      serve it over TLS on any address, with cert.pem, key.pem
                                      and token in <folder> (the token file: the secret, then
                                      how many seconds it opens connections, counted on this
@@ -32,7 +34,9 @@ Usage:
                                      again for each connection, so it can be renewed); how
                                      a harness reaches a worker. With --until-input-ends, it
                                      ends when its standard input does, as a worker ends with
-                                     the glave that started it
+                                     the glave that started it. With --idle, it ends once no
+                                     one has been connected and no command has run for that
+                                     many minutes, as a person's computer in the cloud does
 
 Copies of repositories are kept in $GLAVE_HOME/workspaces. Commands get glave's environment
 without anything named like a key, token, secret or password.";
@@ -42,9 +46,40 @@ without anything named like a key, token, secret or password.";
 enum Transport {
     Stdio,
     Tcp(SocketAddr),
-    /// The address, the folder of the identity and token, and whether it ends when its
-    /// standard input does.
-    Tls(SocketAddr, PathBuf, bool),
+    /// The address, the folder of the identity and token, and when it ends on its own.
+    Tls(SocketAddr, PathBuf, Ends),
+}
+
+/// When glave serving over TLS ends on its own, besides when accepting fails.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Ends {
+    /// When its standard input ends.
+    with_input: bool,
+    /// After this many minutes with no one connected and nothing running.
+    idle: Option<u32>,
+}
+
+/// What follows `--tls <host:port> <folder>`: `--until-input-ends` and `--idle <minutes>`,
+/// each at most once, in any order.
+fn ends(mut rest: &[String]) -> Result<Ends, String> {
+    let mut ends = Ends::default();
+    loop {
+        match rest {
+            [] => return Ok(ends),
+            [flag, more @ ..] if flag == "--until-input-ends" && !ends.with_input => {
+                ends.with_input = true;
+                rest = more;
+            }
+            [flag, minutes, more @ ..] if flag == "--idle" && ends.idle.is_none() => {
+                match minutes.parse::<u32>() {
+                    Ok(minutes) if minutes > 0 => ends.idle = Some(minutes),
+                    _ => return Err(format!("--idle {minutes:?} is not a number of minutes")),
+                }
+                rest = more;
+            }
+            [other, ..] => return Err(format!("{other:?} is not an option of serve --tls")),
+        }
+    }
 }
 
 fn address(text: &str, flag: &str) -> Result<SocketAddr, String> {
@@ -70,23 +105,12 @@ fn parse(arguments: &[String]) -> Result<Transport, String> {
                 ))
             }
         }
-        [serve, tls, at, folder] if serve == "serve" && tls == "--tls" => Ok(Transport::Tls(
-            address(at, "--tls")?,
-            PathBuf::from(folder),
-            false,
-        )),
-        [serve, tls, at, folder, ends]
-            if serve == "serve" && tls == "--tls" && ends == "--until-input-ends" =>
-        {
-            Ok(Transport::Tls(
-                address(at, "--tls")?,
-                PathBuf::from(folder),
-                true,
-            ))
-        }
+        [serve, tls, at, folder, rest @ ..] if serve == "serve" && tls == "--tls" => Ok(
+            Transport::Tls(address(at, "--tls")?, PathBuf::from(folder), ends(rest)?),
+        ),
         _ => Err(
             "expected: glave computer serve --stdio, --tcp <port>, or --tls <host:port> <folder> \
-             [--until-input-ends]"
+             [--until-input-ends] [--idle <minutes>]"
                 .into(),
         ),
     }
@@ -168,7 +192,7 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
                 .await
                 .with_context(|| format!("serving on {address}"))
         }
-        Transport::Tls(address, folder, until_input_ends) => {
+        Transport::Tls(address, folder, ends) => {
             let tls = Identity::acceptor(
                 &read(&folder, "cert.pem").await?,
                 &read(&folder, "key.pem").await?,
@@ -183,8 +207,15 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
             let listener = TcpListener::bind(address)
                 .await
                 .with_context(|| format!("could not listen on {address}"))?;
-            let serving = serve_tls(computers, listener, tls, token);
-            if !until_input_ends {
+            let idle = ends.idle.map(|minutes| {
+                let busy = Arc::clone(&computers);
+                Idle {
+                    after: Duration::from_mins(u64::from(minutes)),
+                    busy: Box::new(move || busy.busy()),
+                }
+            });
+            let serving = serve_tls(computers, listener, tls, token, idle);
+            if !ends.with_input {
                 return serving
                     .await
                     .with_context(|| format!("serving TLS on {address}"));
@@ -225,7 +256,7 @@ mod tests {
             Ok(Transport::Tls(
                 "0.0.0.0:7070".parse().unwrap(),
                 PathBuf::from("/opt/glave/tls"),
-                false
+                Ends::default()
             ))
         );
         assert_eq!(
@@ -235,8 +266,30 @@ mod tests {
             Ok(Transport::Tls(
                 "0.0.0.0:7070".parse().unwrap(),
                 PathBuf::from("/opt/glave/tls"),
-                true
+                Ends {
+                    with_input: true,
+                    idle: None
+                }
             ))
+        );
+        assert_eq!(
+            parse(&words("serve --tls 0.0.0.0:7070 /opt/glave/tls --idle 15")),
+            Ok(Transport::Tls(
+                "0.0.0.0:7070".parse().unwrap(),
+                PathBuf::from("/opt/glave/tls"),
+                Ends {
+                    with_input: false,
+                    idle: Some(15)
+                }
+            ))
+        );
+        assert!(parse(&words("serve --tls 0.0.0.0:7070 /opt/glave/tls --idle 0")).is_err());
+        assert!(parse(&words("serve --tls 0.0.0.0:7070 /opt/glave/tls --idle")).is_err());
+        assert!(
+            parse(&words(
+                "serve --tls 0.0.0.0:7070 /opt/glave/tls --idle 1 --idle 2"
+            ))
+            .is_err()
         );
         assert!(parse(&words("serve --tls 0.0.0.0:7070 /opt/glave/tls --other")).is_err());
         assert!(parse(&words("serve --tls 0.0.0.0:7070")).is_err());

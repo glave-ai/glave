@@ -5,6 +5,7 @@
 //! until they are stopped, their workspace closes, or nothing reads them for an hour.
 
 mod asking;
+mod idle;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -29,6 +30,8 @@ use crate::cancel::CancelSwitch;
 use crate::token::{Token, Tokens};
 use crate::wire::{self, Chunk, MAX_LINE, OUTPUT, Request, code};
 use asking::{Asking, Asks};
+use idle::Activity;
+pub use idle::Idle;
 
 /// Lines written ahead of a slow client.
 const WRITE_AHEAD: usize = 256;
@@ -52,6 +55,8 @@ struct Connection<C> {
     lines: mpsc::Sender<String>,
     /// The computer's own credential requests, waiting for the client's answers.
     asks: Asks,
+    /// The requests the computer answers across its connections, when it ends once idle.
+    activity: Option<Arc<Activity>>,
 }
 
 /// Serves `computers` to one client until its input ends. With a `token`, the first message
@@ -62,6 +67,22 @@ pub async fn serve<C, R, W>(
     input: R,
     output: W,
     token: Option<Token>,
+) -> std::io::Result<()>
+where
+    C: Computers + 'static,
+    R: AsyncBufRead + Unpin,
+    W: AsyncWrite + Unpin + Send + 'static,
+{
+    serving(computers, input, output, token, None).await
+}
+
+/// Serves as [`serve`] does, counting each request in `activity`, when there is one.
+async fn serving<C, R, W>(
+    computers: Arc<C>,
+    input: R,
+    output: W,
+    token: Option<Token>,
+    activity: Option<Arc<Activity>>,
 ) -> std::io::Result<()>
 where
     C: Computers + 'static,
@@ -86,6 +107,7 @@ where
         seen: Mutex::new(Seen::default()),
         lines,
         asks: Asks::default(),
+        activity,
     });
     let mut input = input;
     let read = match token {
@@ -135,7 +157,11 @@ where
             running.join_next().await;
         }
         let connection = Arc::clone(connection);
-        running.spawn(async move { connection.answer(&line).await });
+        let answering = connection.activity.as_ref().map(Activity::begin);
+        running.spawn(async move {
+            let _answering = answering;
+            connection.answer(&line).await;
+        });
         while running.try_join_next().is_some() {}
     };
     // The client is gone, or can no longer be read: stop its commands, then let every request
@@ -476,22 +502,32 @@ pub async fn serve_tcp<C: Computers + 'static>(
 
 /// Serves `computers` over TLS on a TCP listener at any address, to clients that first present
 /// the token `tokens` holds, before it expires: how a worker is reached from the harness. A
-/// client that fails the handshake is dropped without an answer. Runs until accepting fails.
+/// client that fails the handshake is dropped without an answer. Runs until accepting fails,
+/// or, with `idle`, until no request has run for that long and nothing is busy.
 pub async fn serve_tls<C: Computers + 'static>(
     computers: Arc<C>,
     listener: TcpListener,
     tls: TlsAcceptor,
     tokens: impl Into<Tokens>,
+    idle: Option<Idle>,
 ) -> std::io::Result<()> {
     let tokens = tokens.into();
+    let activity = idle.as_ref().map(|_| Activity::new());
     let mut connections = JoinSet::new();
     loop {
         while connections.len() >= MAX_CONNECTIONS {
             connections.join_next().await;
         }
-        let (stream, _) = listener.accept().await?;
+        let stream = match (&idle, &activity) {
+            (Some(idle), Some(activity)) => tokio::select! {
+                accepted = listener.accept() => accepted?.0,
+                () = idle.reached(activity) => return Ok(()),
+            },
+            _ => listener.accept().await?.0,
+        };
         let _ = stream.set_nodelay(true);
         let (computers, tokens, tls) = (Arc::clone(&computers), tokens.clone(), tls.clone());
+        let activity = activity.clone();
         connections.spawn(async move {
             let handshake = tokio::time::timeout(HANDSHAKE, tls.accept(stream));
             let Ok(Ok(stream)) = handshake.await else {
@@ -500,7 +536,14 @@ pub async fn serve_tls<C: Computers + 'static>(
             // The token as it is now: the side that minted it may have renewed it.
             let token = tokens.current(SystemTime::from(SystemClock.now())).await?;
             let (read, write) = tokio::io::split(stream);
-            serve(computers, BufReader::new(read), write, Some(token)).await
+            serving(
+                computers,
+                BufReader::new(read),
+                write,
+                Some(token),
+                activity,
+            )
+            .await
         });
         while connections.try_join_next().is_some() {}
     }

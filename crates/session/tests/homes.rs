@@ -26,7 +26,27 @@ struct Here {
     woken: Mutex<Vec<(OrgId, PrincipalId)>>,
     /// How many times a computer was asked for, to work on it.
     asked: AtomicUsize,
+    /// How many turns and tasks hold a computer now.
+    holds: Arc<AtomicUsize>,
+    /// How many held a computer each time one was asked for.
+    held_when_asked: Mutex<Vec<usize>>,
     awake: tokio::sync::Mutex<BTreeMap<PrincipalId, Home>>,
+}
+
+/// One turn or task holding a computer, counted while it is kept.
+struct Hold(Arc<AtomicUsize>);
+
+impl Hold {
+    fn new(holds: &Arc<AtomicUsize>) -> Self {
+        holds.fetch_add(1, Ordering::SeqCst);
+        Self(Arc::clone(holds))
+    }
+}
+
+impl Drop for Hold {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 impl Here {
@@ -35,6 +55,8 @@ impl Here {
             base: base.to_owned(),
             woken: Mutex::new(Vec::new()),
             asked: AtomicUsize::new(0),
+            holds: Arc::default(),
+            held_when_asked: Mutex::new(Vec::new()),
             awake: tokio::sync::Mutex::new(BTreeMap::new()),
         }
     }
@@ -58,9 +80,17 @@ impl Homes for Here {
         Ok(())
     }
 
+    fn hold(&self, _org: OrgId, _person: PrincipalId) -> Result<Box<dyn Send>, ComputerError> {
+        Ok(Box::new(Hold::new(&self.holds)))
+    }
+
     fn home(&self, _org: OrgId, person: PrincipalId) -> BoxFuture<'_, Result<Home, ComputerError>> {
         Box::pin(async move {
             self.asked.fetch_add(1, Ordering::SeqCst);
+            self.held_when_asked
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(self.holds.load(Ordering::SeqCst));
             let mut awake = self.awake.lock().await;
             if let Some(home) = awake.get(&person) {
                 return Ok(home.clone());
@@ -152,6 +182,8 @@ fn a_person_s_threads_work_on_their_own_computer_woken_as_they_open_the_app() {
             "read without waking"
         );
         turn(&again, thread.id, "hello").await.unwrap();
+        let held = homes.held_when_asked.lock().unwrap().clone();
+        assert_eq!(held.last(), Some(&1), "the turn kept it awake: {held:?}");
         assert!(
             Path::new(&workspace.root).is_dir(),
             "opened again on their computer"

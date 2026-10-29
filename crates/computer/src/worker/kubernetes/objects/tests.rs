@@ -33,6 +33,7 @@ fn person<'a>(spec: &'a Spec, labels: &'a BTreeMap<String, String>) -> Shape<'a>
         home: Some(Home {
             key: "k1",
             claim: "glave-home-k1",
+            idle_minutes: IDLE_MINUTES,
         }),
         owner: None,
         ..shape(spec, labels)
@@ -158,6 +159,12 @@ fn a_persons_computer_mounts_its_disk_as_home_and_is_never_a_worker() {
     assert_eq!(
         container["resources"]["requests"],
         json!({"cpu": "2", "memory": "4Gi", "ephemeral-storage": "1Gi"})
+    );
+    let command = container["command"].as_array().unwrap();
+    assert_eq!(
+        command.get(command.len() - 2..).unwrap(),
+        [json!("--idle"), json!("10")],
+        "it sleeps on its own once idle"
     );
     let policy = computer.network_policy();
     assert_eq!(
