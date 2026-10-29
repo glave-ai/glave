@@ -55,12 +55,30 @@ impl Tokens {
     }
 }
 
-/// Proves who is calling with whichever token it holds now.
-struct Current(Mutex<String>);
+/// Proves who is calling with whichever token it holds now, and keeps what a server asked it
+/// for more.
+struct Current {
+    token: Mutex<String>,
+    asked: Mutex<Vec<String>>,
+}
 
 impl Current {
+    fn new(token: &str) -> Arc<Self> {
+        Arc::new(Self {
+            token: Mutex::new(token.to_owned()),
+            asked: Mutex::default(),
+        })
+    }
+
     fn set(&self, token: &str) {
-        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = token.to_owned();
+        *self.token.lock().unwrap_or_else(PoisonError::into_inner) = token.to_owned();
+    }
+
+    fn asked(&self) -> Vec<String> {
+        self.asked
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 
@@ -70,7 +88,7 @@ impl RequestSigner for Current {
         _request: &'a Outgoing<'a>,
     ) -> BoxFuture<'a, Result<Vec<Header>, AuthError>> {
         let token = self
-            .0
+            .token
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
@@ -84,6 +102,11 @@ impl RequestSigner for Current {
 
     fn describe(&self) -> String {
         "the token held now".to_owned()
+    }
+
+    fn insufficient(&self, scope: &str) {
+        let mut asked = self.asked.lock().unwrap_or_else(PoisonError::into_inner);
+        asked.push(scope.to_owned());
     }
 }
 
@@ -116,6 +139,13 @@ async fn approved(page: &str) -> reqwest::Url {
     reqwest::Url::parse(location).unwrap()
 }
 
+/// What signing in to the server at `url` grants, the person approving glave.
+async fn signed_in(url: &str) -> glave_mcp::Granted {
+    let (signin, page) = SignIn::start(url, "docs", REDIRECT, &[]).await.unwrap();
+    let back = approved(&page).await;
+    signin.finish(&field(&back, "code"), None).await.unwrap()
+}
+
 fn field(url: &reqwest::Url, name: &str) -> String {
     url.query_pairs()
         .find(|(field, _)| field == name)
@@ -140,7 +170,7 @@ fn a_person_signs_in_and_their_token_goes_with_every_request_renewed() {
             "it asks you to sign in to it: connect it, then try again"
         );
 
-        let (signin, page) = SignIn::start(&listening.url, "docs", REDIRECT)
+        let (signin, page) = SignIn::start(&listening.url, "docs", REDIRECT, &[])
             .await
             .unwrap();
         assert!(
@@ -165,7 +195,7 @@ fn a_person_signs_in_and_their_token_goes_with_every_request_renewed() {
         assert_eq!(granted.client.client_id, FAKE_CLIENT);
         assert_eq!(granted.client.issuer.as_deref(), Some(auth.url.as_str()));
 
-        let current = Arc::new(Current(Mutex::new(one.clone())));
+        let current = Current::new(one);
         let server = remote(&listening.url, Auth::Changing(Arc::clone(&current) as _));
         assert_eq!(conformance::tool_source(&server).await, Ok(()));
         assert_eq!(whose(&server).await, "signed in with token 1");
@@ -203,6 +233,60 @@ fn a_person_signs_in_and_their_token_goes_with_every_request_renewed() {
 }
 
 #[test]
+fn a_server_that_asks_for_more_is_signed_in_to_again_for_all_of_it() {
+    let tokens = Tokens::new();
+    let auth = FakeAuthServer::start(tokens.grants()).unwrap();
+    let [narrow, wide] = &tokens.tokens;
+    let needs = ["--sign-in", &auth.url, "--needs", "files:write"];
+    let listening = Served::with(&[&needs[..], &["--token", narrow, "--token", wide]].concat());
+    block_on!(async {
+        let granted = signed_in(&listening.url).await;
+        let current = Current::new(narrow);
+        let server = remote(&listening.url, Auth::Changing(Arc::clone(&current) as _));
+        assert!(
+            server.tools().await.is_ok(),
+            "the narrow token lists its tools"
+        );
+        assert_eq!(
+            whose(&server).await,
+            "docs asks you to sign in to it again for more access (files:write): connect it, \
+             then try again."
+        );
+        assert_eq!(current.asked(), ["files:write"], "the signer is told");
+        server.close().await;
+
+        let mut more = granted.client.scopes.clone();
+        more.extend(current.asked());
+        let (again, page) = SignIn::start(&listening.url, "docs", REDIRECT, &more)
+            .await
+            .unwrap();
+        let asked = reqwest::Url::parse(&page).unwrap();
+        let scopes = field(&asked, "scope");
+        let scopes: Vec<&str> = scopes.split(' ').collect();
+        for scope in granted.client.scopes.iter().chain(&current.asked()) {
+            assert!(scopes.contains(&scope.as_str()), "{scope} in {scopes:?}");
+        }
+        let back = approved(&page).await;
+        let wider = again.finish(&field(&back, "code"), None).await.unwrap();
+        assert_eq!(wider.token.expose(), wide.as_str());
+        assert!(
+            wider
+                .client
+                .scopes
+                .iter()
+                .any(|scope| scope == "files:write"),
+            "{:?}",
+            wider.client.scopes
+        );
+        current.set(wide);
+        let server = remote(&listening.url, Auth::Changing(Arc::clone(&current) as _));
+        assert!(server.tools().await.is_ok());
+        assert_eq!(whose(&server).await, "signed in with token 2");
+        server.close().await;
+    });
+}
+
+#[test]
 fn a_token_granted_for_the_address_above_the_server_is_renewed_for_it() {
     let tokens = Tokens::new();
     let auth = FakeAuthServer::start(tokens.grants()).unwrap();
@@ -217,9 +301,7 @@ fn a_token_granted_for_the_address_above_the_server_is_renewed_for_it() {
         two,
     ]);
     block_on!(async {
-        let (signin, page) = SignIn::start(&above.url, "docs", REDIRECT).await.unwrap();
-        let back = approved(&page).await;
-        let granted = signin.finish(&field(&back, "code"), None).await.unwrap();
+        let granted = signed_in(&above.url).await;
         let refresh = granted.refresh.as_ref().unwrap();
         let renewed = renew(&above.url, &granted.client, refresh).await;
         let renewed = renewed.unwrap_or_else(|error| panic!("for the same resource: {error}"));
@@ -243,11 +325,7 @@ fn a_server_that_no_longer_says_where_its_sign_in_is_is_sent_no_refresh_token() 
     let listening = tokens.served(&auth);
     let gone = FakeHttp::always(404, "{}").unwrap();
     block_on!(async {
-        let (signin, page) = SignIn::start(&listening.url, "docs", REDIRECT)
-            .await
-            .unwrap();
-        let back = approved(&page).await;
-        let granted = signin.finish(&field(&back, "code"), None).await.unwrap();
+        let granted = signed_in(&listening.url).await;
         let refresh = granted.refresh.as_ref().unwrap();
         // As if the server at that address now answers nothing it used to publish.
         let moved = format!("{}/mcp", gone.url);
@@ -275,7 +353,9 @@ fn a_code_the_server_never_gave_is_refused() {
     let auth = FakeAuthServer::start(tokens.grants()).unwrap();
     let served = tokens.served(&auth);
     block_on!(async {
-        let (signin, _) = SignIn::start(&served.url, "docs", REDIRECT).await.unwrap();
+        let (signin, _) = SignIn::start(&served.url, "docs", REDIRECT, &[])
+            .await
+            .unwrap();
         let refused = signin.finish("not-a-code", None).await;
         assert!(
             matches!(refused, Err(SignInError::Refused { .. })),
@@ -296,7 +376,7 @@ fn an_authorization_server_that_takes_no_registration_is_asked_nothing_more() {
             Ok(false),
             "none glave can use"
         );
-        let started = SignIn::start(&served.url, "docs", REDIRECT).await;
+        let started = SignIn::start(&served.url, "docs", REDIRECT, &[]).await;
         assert!(
             matches!(started, Err(SignInError::Unregistered { .. })),
             "{:?}",
@@ -315,7 +395,7 @@ fn a_server_that_asks_no_one_to_sign_in_offers_no_sign_in() {
     let served = Served::with(&[]);
     block_on!(async {
         assert_eq!(offers_sign_in(&served.url).await, Ok(false));
-        let offered = SignIn::start(&served.url, "docs", REDIRECT).await;
+        let offered = SignIn::start(&served.url, "docs", REDIRECT, &[]).await;
         assert_eq!(
             offered.err(),
             Some(SignInError::NotOffered {

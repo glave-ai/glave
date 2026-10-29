@@ -13,7 +13,7 @@ mod tokens;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use glave_event::{ConnectionConnected, PrincipalId};
@@ -49,6 +49,38 @@ pub(crate) struct Connected {
     search: Option<WebSearch>,
     /// What changes their `mcp.json` when they turn it on or off.
     writer: Writer,
+    /// What their servers asked for that their sign-ins there do not grant.
+    more: MoreAsked,
+}
+
+/// What each server, by its address, last asked for with `403 insufficient_scope` since the
+/// person last signed in to it, as MCP's step-up authorization says: the scopes a sign-in
+/// there asks for next, beside those it grants. One entry for each of the person's remote
+/// servers at most, each as the server's one challenge named it.
+#[derive(Clone, Default)]
+pub(super) struct MoreAsked(Arc<Mutex<BTreeMap<String, Vec<String>>>>);
+
+impl MoreAsked {
+    fn lock(&self) -> std::sync::MutexGuard<'_, BTreeMap<String, Vec<String>>> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The server at `url` asked for `scope`, which the sign-in there lacks.
+    pub(super) fn ask(&self, url: &str, scope: &str) {
+        let scopes = scope.split_whitespace().map(str::to_owned).collect();
+        self.lock().insert(url.to_owned(), scopes);
+    }
+
+    /// What the server at `url` asked for since the person last signed in to it.
+    pub(super) fn of(&self, url: &str) -> Option<Vec<String>> {
+        self.lock().get(url).cloned()
+    }
+
+    /// The person signed in to the server at `url` again: what it asked for is asked for no
+    /// more.
+    pub(super) fn signed_in(&self, url: &str) {
+        self.lock().remove(url);
+    }
 }
 
 impl Connected {
@@ -74,6 +106,7 @@ impl Connected {
             renewals: Renewals::default(),
             search,
             writer: Writer::default(),
+            more: MoreAsked::default(),
         })))
     }
 
@@ -151,11 +184,13 @@ struct Remote {
     keyed: bool,
 }
 
-/// `connection` as a client sees it, named as `remotes` say. A token that lapsed while it can
-/// be renewed still works: the next request renews it.
+/// `connection` as a client sees it, named as `remotes` say, its server having asked for
+/// more than it grants when `more`. A token that lapsed while it can be renewed still works:
+/// the next request renews it.
 fn described(
     connection: &ConnectionConnected,
     remotes: &BTreeMap<String, Remote>,
+    more: bool,
 ) -> ConnectionInfo {
     let now = SystemClock.now();
     let lapsed = connection
@@ -163,6 +198,8 @@ fn described(
         .is_some_and(|expires| expires.timestamp() <= now);
     let status = if lapsed && connection.refresh.is_none() {
         ConnectionStatus::Expired
+    } else if more {
+        ConnectionStatus::AsksMore
     } else {
         ConnectionStatus::SignedIn
     };
@@ -237,7 +274,10 @@ impl Connections for Connected {
                 remotes.remove(&url);
                 kept.retain(|kept| kept.url != url);
             }
-            let mut listed: Vec<_> = kept.iter().map(|kept| described(kept, &remotes)).collect();
+            let mut listed: Vec<_> = kept
+                .iter()
+                .map(|kept| described(kept, &remotes, self.more.of(&kept.url).is_some()))
+                .collect();
             let unkept = remotes
                 .into_iter()
                 .filter(|(url, _)| kept.iter().all(|kept| kept.url != *url));

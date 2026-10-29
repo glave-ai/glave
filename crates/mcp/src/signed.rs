@@ -1,6 +1,7 @@
 //! How a remote server is reached: rmcp's own HTTP client, with what proves who is calling
-//! asked for on every request, so a token renewed meanwhile goes with the next one. The
-//! headers are marked sensitive, which keeps them out of what HTTP's own tools print.
+//! asked for on every request, so a token renewed meanwhile goes with the next one, and told
+//! when a server asks for more than it grants. The headers are marked sensitive, which keeps
+//! them out of what HTTP's own tools print.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -74,6 +75,17 @@ impl Signed {
         }
         Ok(headers)
     }
+
+    /// `answered`, with the signer told what a server that answered `403 insufficient_scope`
+    /// asked for, so the person can sign in again for it.
+    fn heard<T>(&self, answered: Result<T, Failed>) -> Result<T, Failed> {
+        if let Err(Failed::InsufficientScope(asked)) = &answered
+            && let Some(scope) = asked.get_required_scope()
+        {
+            self.auth.insufficient(scope);
+        }
+        answered
+    }
 }
 
 impl StreamableHttpClient for Signed {
@@ -88,9 +100,11 @@ impl StreamableHttpClient for Signed {
         custom_headers: HashMap<HeaderName, HeaderValue>,
     ) -> Result<StreamableHttpPostResponse, Failed> {
         let headers = self.signed("POST", &uri, custom_headers).await?;
-        self.http
+        let answered = self
+            .http
             .post_message(uri, message, session_id, auth_header, headers)
-            .await
+            .await;
+        self.heard(answered)
     }
 
     async fn post_message_with_max_sse_event_size(
@@ -103,7 +117,8 @@ impl StreamableHttpClient for Signed {
         max_sse_event_size: usize,
     ) -> Result<StreamableHttpPostResponse, Failed> {
         let headers = self.signed("POST", &uri, custom_headers).await?;
-        self.http
+        let answered = self
+            .http
             .post_message_with_max_sse_event_size(
                 uri,
                 message,
@@ -112,7 +127,8 @@ impl StreamableHttpClient for Signed {
                 headers,
                 max_sse_event_size,
             )
-            .await
+            .await;
+        self.heard(answered)
     }
 
     async fn delete_session(
@@ -142,9 +158,11 @@ impl StreamableHttpClient for Signed {
         custom_headers: HashMap<HeaderName, HeaderValue>,
     ) -> Result<BoxedSseResponse, Failed> {
         let headers = self.signed("GET", &uri, custom_headers).await?;
-        self.http
+        let answered = self
+            .http
             .get_stream(uri, session_id, last_event_id, auth_header, headers)
-            .await
+            .await;
+        self.heard(answered)
     }
 
     async fn get_stream_with_max_sse_event_size(
@@ -157,7 +175,8 @@ impl StreamableHttpClient for Signed {
         max_sse_event_size: usize,
     ) -> Result<BoxedSseResponse, Failed> {
         let headers = self.signed("GET", &uri, custom_headers).await?;
-        self.http
+        let answered = self
+            .http
             .get_stream_with_max_sse_event_size(
                 uri,
                 session_id,
@@ -166,7 +185,8 @@ impl StreamableHttpClient for Signed {
                 headers,
                 max_sse_event_size,
             )
-            .await
+            .await;
+        self.heard(answered)
     }
 }
 

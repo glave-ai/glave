@@ -33,7 +33,7 @@ impl Connected {
     }
 
     /// The sign-in kept for the server at `url`, if one is.
-    async fn kept_for(&self, url: &str) -> Option<ConnectionConnected> {
+    pub(super) async fn kept_for(&self, url: &str) -> Option<ConnectionConnected> {
         match self.kept().await {
             Ok(kept) => kept.into_iter().find(|kept| kept.url == url),
             Err(error) => {
@@ -100,6 +100,10 @@ impl RequestSigner for Signer {
 
     fn describe(&self) -> String {
         format!("your sign-in to {}", self.url)
+    }
+
+    fn insufficient(&self, scope: &str) {
+        self.connected.more.ask(&self.url, scope);
     }
 }
 

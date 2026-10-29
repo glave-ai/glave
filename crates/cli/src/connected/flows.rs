@@ -15,7 +15,7 @@ use glave_session::protocol::{ApiError, ConnectionInfo, ConnectionStatus, SignIn
 use tokio::sync::watch;
 use tokio::task::JoinSet;
 
-use super::Connected;
+use super::{Connected, MoreAsked};
 use crate::accounts::Ledger;
 use crate::credentials::{new_flow, new_id};
 
@@ -79,7 +79,12 @@ impl Connected {
         let Some(redirect) = redirect else {
             return Ok(None);
         };
-        let (signin, page) = SignIn::start(&url, &name, &redirect)
+        // As MCP's step-up authorization says: what the sign-in it replaces grants, and what
+        // the server asked for since, so nothing granted before is lost.
+        let granted = self.kept_for(&url).await.map(|kept| kept.client.scopes);
+        let mut more = granted.unwrap_or_default();
+        more.extend(self.more.of(&url).unwrap_or_default());
+        let (signin, page) = SignIn::start(&url, &name, &redirect, &more)
             .await
             .map_err(|error| refused(&error, &name))?;
         let id = new_flow().map_err(|e| ApiError::internal(&e))?;
@@ -158,6 +163,7 @@ impl Connected {
         let mut waiting = ended.subscribe();
         let trade = Trade {
             ledger: self.ledger.clone(),
+            more: self.more.clone(),
             url,
             name: name.clone(),
         };
@@ -209,6 +215,7 @@ fn told(name: &str, outcome: Outcome) -> String {
 /// Trading a code for a sign-in to the server at `url`, which the person calls `name`.
 struct Trade {
     ledger: Ledger,
+    more: MoreAsked,
     url: String,
     name: String,
 }
@@ -235,6 +242,7 @@ impl Trade {
             by: Principal::person(self.ledger.person()),
         };
         self.ledger.keep_connection(&connection).await?;
+        self.more.signed_in(&connection.url);
         Ok(ConnectionInfo {
             url: connection.url,
             name: Some(self.name),

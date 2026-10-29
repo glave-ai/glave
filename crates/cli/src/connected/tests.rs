@@ -1,7 +1,8 @@
 //! The person's connections on a ledger in memory: each server is sent only its own
 //! sign-in's token, a token past its time with nothing to renew it is sent nowhere, and a
 //! removed sign-in is sent no more. Web search turns on into the person's settings and off out
-//! of them, never listed as a connection.
+//! of them, never listed as a connection. A server that asks for more than its sign-in grants
+//! is listed as asking until the person signs in there again.
 
 use glave_event::{At, Principal, Secret, SignInClient};
 use glave_ports::testing::{TempDir, fake_secret};
@@ -35,6 +36,7 @@ fn connected(ledger: &Ledger, home: &Path, search: Option<WebSearch>) -> Connect
         renewals: Renewals::default(),
         search,
         writer: Writer::default(),
+        more: MoreAsked::default(),
     }
 }
 
@@ -162,5 +164,44 @@ fn each_server_is_sent_only_its_own_sign_in() {
         connected.remove(docs.to_owned()).await.unwrap();
         assert_eq!(sent(docs).await, None, "removed, sent no more");
         assert_eq!(sent(tracker).await.as_deref(), Some(two.as_str()));
+    });
+}
+
+#[test]
+fn a_server_that_asks_for_more_is_listed_as_asking_until_signed_in_to_again() {
+    let home = TempDir::new("conn-more").unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let ledger = crate::accounts::in_memory().await.unwrap();
+        let connected = Arc::new(connected(&ledger, &home, None));
+        let (docs, tracker) = (
+            "https://docs.example.com/mcp",
+            "https://tracker.example.com/mcp",
+        );
+        for url in [docs, tracker] {
+            let connection = signed_in(url, &fake_secret("mcp_"), None);
+            ledger.keep_connection(&connection).await.unwrap();
+        }
+        connected
+            .signer(docs)
+            .insufficient("files:write files:read");
+        let status = |listed: &[ConnectionInfo], url: &str| {
+            listed.iter().find(|kept| kept.url == url).unwrap().status
+        };
+        let listed = connected.list().await.unwrap();
+        assert_eq!(status(&listed, docs), ConnectionStatus::AsksMore);
+        assert_eq!(status(&listed, tracker), ConnectionStatus::SignedIn);
+        assert_eq!(
+            connected.more.of(docs),
+            Some(vec!["files:write".to_owned(), "files:read".to_owned()]),
+            "what the next sign-in there asks for besides"
+        );
+
+        connected.more.signed_in(docs);
+        let listed = connected.list().await.unwrap();
+        assert_eq!(status(&listed, docs), ConnectionStatus::SignedIn);
     });
 }

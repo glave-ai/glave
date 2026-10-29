@@ -75,18 +75,30 @@ impl SignIn {
     /// Starts signing in to the MCP server at `url`, which the person calls `name`, the
     /// browser to come back to `redirect`: the sign-in, and the authorization server's page
     /// the person opens. glave registers there as `glave (<name>)`, so that page says which
-    /// server it is for.
+    /// server it is for. It asks for what the server's sign-in says to, and `more` besides:
+    /// the scopes of the sign-in this one replaces and those the server asked for since, as
+    /// MCP's step-up authorization says (the union, so nothing granted before is lost).
     pub async fn start(
         url: &str,
         name: &str,
         redirect: &str,
+        more: &[String],
     ) -> Result<(Self, String), SignInError> {
         let failed = |error: AuthError| SignInError::from_auth(url, &error);
         let (mut manager, resolution) = offered(url).await?;
         let issuer = resolution.metadata.issuer.clone();
         manager.set_metadata(resolution.metadata);
         let client = format!("glave ({name})");
-        let request = AuthorizationRequest::new(redirect).with_client_name(client);
+        let mut request = AuthorizationRequest::new(redirect).with_client_name(client);
+        if !more.is_empty() {
+            let mut scopes = manager.select_scopes(None, &[]);
+            for scope in more {
+                if !scopes.contains(scope) {
+                    scopes.push(scope.clone());
+                }
+            }
+            request = request.with_scopes(scopes);
+        }
         let session = AuthorizationSession::new(manager, request)
             .await
             .map_err(|(_, error)| failed(error))?;
