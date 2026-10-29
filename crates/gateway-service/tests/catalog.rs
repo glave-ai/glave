@@ -51,7 +51,7 @@ fn two_servers_become_one_catalog_named_by_server_and_tool() {
         let names: Vec<&str> = tools.iter().map(|tool| tool.spec.name.as_str()).collect();
         assert!(names.contains(&"mcp__docs__echo"), "{names:?}");
         assert!(names.contains(&"mcp__tracker__echo"), "{names:?}");
-        assert_eq!(names.len(), 20, "ten tools from each: {names:?}");
+        assert_eq!(names.len(), 24, "twelve tools from each: {names:?}");
         let echo = tools
             .iter()
             .find(|tool| tool.spec.name == "mcp__docs__echo")

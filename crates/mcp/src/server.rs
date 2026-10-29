@@ -2,7 +2,7 @@
 //! glave never waits for a server it has not asked anything yet; its first listing waits for it.
 
 use std::collections::{BTreeMap, HashMap};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -22,7 +22,8 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::McpError;
-use crate::connection::{CANCELLED, Connection};
+use crate::call::Waits;
+use crate::connection::{CANCELLED, Connection, Opening};
 use crate::signed::Signed;
 
 /// Variables a server's process starts with, beyond its own configured ones. Nothing else from
@@ -31,20 +32,43 @@ const PASSED_ON: &[&str] = &[
     "HOME", "LOGNAME", "PATH", "SHELL", "USER", "LANG", "LC_ALL", "TERM", "TMPDIR", "TZ",
 ];
 
+/// The folder a server's program starts in.
+#[derive(Clone, Copy)]
+enum Folder<'a> {
+    /// One it works in for every project, which it is told nothing of.
+    Any(&'a Path),
+    /// The project's it works for, which it is told of when it asks.
+    Project(&'a Path),
+}
+
 /// How long a server may take.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Limits {
     /// To start and answer.
     pub startup: Duration,
-    /// To answer one call.
+    /// To answer one call, or to say again how a long one is going (MCP's progress); a call
+    /// that keeps saying so is stopped at twelve times this (an hour, by default).
     pub call: Duration,
 }
+
+/// How many of its quiet limits one call may take in all, however often it says how it is
+/// going.
+const CALL_TOTAL: u32 = 12;
 
 impl Default for Limits {
     fn default() -> Self {
         Self {
             startup: Duration::from_secs(30),
             call: Duration::from_secs(300),
+        }
+    }
+}
+
+impl Limits {
+    fn waits(self) -> Waits {
+        Waits {
+            quiet: self.call,
+            total: self.call.saturating_mul(CALL_TOTAL),
         }
     }
 }
@@ -71,7 +95,7 @@ pub struct McpServer {
     /// A server's process, once started: stopped, with everything it started, when the
     /// server is closed or dropped.
     process: Arc<Mutex<Option<Child>>>,
-    call_limit: Duration,
+    waits: Waits,
     /// Whether what every tool and resource of the server returns is untrusted, as the person
     /// or a policy marked it.
     untrusted: bool,
@@ -92,6 +116,38 @@ impl McpServer {
         limits: Limits,
         processes: &Processes,
     ) -> Self {
+        let folder = Folder::Any(dir);
+        Self::start_with(name, config, environment, folder, limits, processes)
+    }
+
+    /// Starts a project's server as [`McpServer::start`] does, in the project's folder `root`,
+    /// and tells it of that folder when it asks which it works for (MCP's roots), as Claude
+    /// Code tells a server of the folder it runs in. A server that works for every project is
+    /// told of none.
+    pub fn start_for_project(
+        name: &str,
+        config: &ServerConfig,
+        environment: &BTreeMap<String, String>,
+        root: &Path,
+        limits: Limits,
+        processes: &Processes,
+    ) -> Self {
+        let folder = Folder::Project(root);
+        Self::start_with(name, config, environment, folder, limits, processes)
+    }
+
+    fn start_with(
+        name: &str,
+        config: &ServerConfig,
+        environment: &BTreeMap<String, String>,
+        folder: Folder<'_>,
+        limits: Limits,
+        processes: &Processes,
+    ) -> Self {
+        let (dir, root) = match folder {
+            Folder::Any(dir) => (dir, None),
+            Folder::Project(root) => (root, Some(root.to_owned())),
+        };
         if tokio::runtime::Handle::try_current().is_err() {
             let error = McpError::start(name, "glave started it outside its async runtime");
             return Self::failed(name, error, limits);
@@ -99,10 +155,15 @@ impl McpServer {
         match config {
             ServerConfig::Stdio { command, args, env } => {
                 let program = program(command, args, env, environment, dir);
-                Self::program(name, program, processes.clone(), limits)
+                Self::program(name, program, processes.clone(), root, limits)
             }
             ServerConfig::Http { url, headers } => {
-                Self::remote(name, url, headers, Auth::None, limits)
+                let opening = Opening {
+                    catalog: false,
+                    root,
+                };
+                Self::http(name, url, headers, Auth::None, limits, opening)
+                    .unwrap_or_else(|error| Self::failed(name, error, limits))
             }
         }
     }
@@ -116,13 +177,19 @@ impl McpServer {
         auth: Auth,
         limits: Limits,
     ) -> Self {
-        Self::http(name, url, headers, auth, limits, false)
+        Self::http(name, url, headers, auth, limits, Opening::default())
             .unwrap_or_else(|error| Self::failed(name, error, limits))
     }
 
     /// A server that is a program, started in the background with its connection, its
     /// standard error dropped.
-    fn program(name: &str, mut program: Program, processes: Processes, limits: Limits) -> Self {
+    fn program(
+        name: &str,
+        mut program: Program,
+        processes: Processes,
+        root: Option<PathBuf>,
+        limits: Limits,
+    ) -> Self {
         let owned = name.to_owned();
         let transport = async move {
             let mut child = processes.spawn(&mut program).await.map_err(|error| {
@@ -139,7 +206,11 @@ impl McpServer {
                 .ok_or_else(|| McpError::start(&owned, "its input and output were not kept"))?;
             Ok((pipes, Some(child)))
         };
-        Self::open(name, transport, limits, false)
+        let opening = Opening {
+            catalog: false,
+            root,
+        };
+        Self::open(name, transport, limits, opening)
     }
 
     /// A gateway's catalog at `url` (its `/mcp`), sent `headers` with every request: one
@@ -151,7 +222,11 @@ impl McpServer {
         headers: &BTreeMap<String, String>,
         limits: Limits,
     ) -> Self {
-        Self::http(name, url, headers, Auth::None, limits, true)
+        let opening = Opening {
+            catalog: true,
+            root: None,
+        };
+        Self::http(name, url, headers, Auth::None, limits, opening)
             .unwrap_or_else(|error| Self::failed(name, error, limits))
     }
 
@@ -163,7 +238,7 @@ impl McpServer {
         headers: &BTreeMap<String, String>,
         auth: Auth,
         limits: Limits,
-        catalog: bool,
+        opening: Opening,
     ) -> Result<Self, McpError> {
         let mut sent = HashMap::new();
         for (header, value) in headers {
@@ -183,7 +258,7 @@ impl McpServer {
             name,
             async { Ok((transport, None)) },
             limits,
-            catalog,
+            opening,
         ))
     }
 
@@ -194,7 +269,8 @@ impl McpServer {
         E: std::error::Error + Send + Sync + 'static,
         A: 'static,
     {
-        Self::open(name, async { Ok((transport, None)) }, limits, false)
+        let transport = async { Ok((transport, None)) };
+        Self::open(name, transport, limits, Opening::default())
     }
 
     /// Talks MCP over the transport `transport` makes, in the background, with the server's
@@ -203,7 +279,7 @@ impl McpServer {
         name: &str,
         transport: impl Future<Output = Result<(T, Option<Child>), McpError>> + Send + 'static,
         limits: Limits,
-        catalog: bool,
+        opening: Opening,
     ) -> Self
     where
         T: IntoTransport<RoleClient, E, A> + Send + 'static,
@@ -221,7 +297,7 @@ impl McpServer {
         let starting = runtime.spawn(async move {
             let opened = match transport.await {
                 Ok((transport, child)) => {
-                    let opened = Connection::open(&owned, transport, limits.startup, catalog);
+                    let opened = Connection::open(&owned, transport, limits.startup, opening);
                     let opened = opened.await;
                     if opened.is_ok() {
                         *held.lock().unwrap_or_else(PoisonError::into_inner) = child;
@@ -240,7 +316,7 @@ impl McpServer {
             state,
             starting: Mutex::new(Some(starting)),
             process,
-            call_limit: limits.call,
+            waits: limits.waits(),
             untrusted: false,
             search: None,
         }
@@ -276,15 +352,15 @@ impl McpServer {
             state: watch::channel(State::Failed(error)).1,
             starting: Mutex::new(None),
             process: Arc::new(Mutex::new(None)),
-            call_limit: limits.call,
+            waits: limits.waits(),
             untrusted: false,
             search: None,
         }
     }
 
-    /// The longest one call may take.
+    /// The longest one call may take without a word from the server.
     pub(crate) fn call_limit(&self) -> Duration {
-        self.call_limit
+        self.waits.quiet
     }
 
     /// The server's name, as configured.
@@ -376,9 +452,7 @@ impl McpServer {
         meta: Option<rmcp::model::JsonObject>,
     ) -> Result<rmcp::model::CallToolResult, String> {
         let connection = self.connection().await.map_err(|err| err.to_string())?;
-        connection
-            .forward(tool, arguments, meta, self.call_limit)
-            .await
+        connection.forward(tool, arguments, meta, self.waits).await
     }
 
     /// Reads the resource at `uri`, sending `meta` as the request's `_meta`.
@@ -389,7 +463,7 @@ impl McpServer {
         cancel: &dyn Cancellation,
     ) -> Result<Vec<rmcp::model::ResourceContents>, String> {
         let connection = self.connection().await.map_err(|err| err.to_string())?;
-        connection.read(uri, meta, cancel, self.call_limit).await
+        connection.read(uri, meta, cancel, self.waits.quiet).await
     }
 
     async fn list(&self) -> Result<Vec<ToolInfo>, ToolError> {
@@ -407,18 +481,17 @@ impl McpServer {
         cancel: &dyn Cancellation,
     ) -> ToolOutput {
         match unless_cancelled(cancel, self.connection()).await {
-            Some(Ok(connection)) => match connection
-                .call(name, arguments, cancel, self.call_limit)
-                .await
-            {
-                // What the server answered, an error included; a web search's results come
-                // from the open world, whatever its server says.
-                Ok(mut output) => {
-                    output.untrusted |= self.untrusted || self.search.as_deref() == Some(name);
-                    output
+            Some(Ok(connection)) => {
+                match connection.call(name, arguments, cancel, self.waits).await {
+                    // What the server answered, an error included; a web search's results come
+                    // from the open world, whatever its server says.
+                    Ok(mut output) => {
+                        output.untrusted |= self.untrusted || self.search.as_deref() == Some(name);
+                        output
+                    }
+                    Err(glaves) => glaves,
                 }
-                Err(glaves) => glaves,
-            },
+            }
             Some(Err(err)) => ToolOutput::text(true, err.to_string()),
             None => ToolOutput::text(true, CANCELLED),
         }
