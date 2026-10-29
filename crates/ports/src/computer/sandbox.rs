@@ -62,7 +62,7 @@ const REFUSED_BECAUSE: &str = " is protected by the sandbox: changing it could m
 /// The refusal of a change to the protected `path`, as the computer gives it and the model
 /// reads it.
 pub fn refuse_protected(path: &str) -> ComputerError {
-    ComputerError::Refused(format!("{path}{REFUSED_BECAUSE}"))
+    ComputerError::Refused(format!("{path}{REFUSED_BECAUSE}").into())
 }
 
 /// Whether `error` is a refusal of a change to a protected path ([`refuse_protected`]).

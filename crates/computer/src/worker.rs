@@ -23,7 +23,7 @@ use std::time::{Duration, SystemTime};
 
 use glave_ports::computer::{
     Command, ComputerError, ComputerId, ComputerInfo, Computers, Ending, Environment, Limits,
-    Output, Sources, WorkspaceId, WorkspaceInfo,
+    Output, Refusal, Sources, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation, Clock, NeverCancelled, SystemClock};
 use glave_process::Glave;
@@ -234,11 +234,14 @@ impl WorkerComputers {
         };
         match deadline.duration_since(SystemTime::from(self.clock.now())) {
             Ok(left) if !left.is_zero() => Ok(Some(left)),
-            _ => Err(ComputerError::Refused(format!(
-                "this worker has run its {} minutes ([workers] max_minutes); its work is kept \
+            _ => Err(ComputerError::Refused(
+                format!(
+                    "this worker has run its {} minutes ([workers] max_minutes); its work is kept \
                  when it is released",
-                worker.minutes.unwrap_or_default()
-            ))),
+                    worker.minutes.unwrap_or_default()
+                )
+                .into(),
+            )),
         }
     }
 
@@ -246,12 +249,7 @@ impl WorkerComputers {
         let running = self.held()?.workers.len();
         let decided = limits::decide(environment, &self.limits, running)?;
         if self.backend.isolation() < self.limits.isolation {
-            return Err(ComputerError::Refused(
-                "policy requires workers isolated in a sandbox or virtual machine of their own \
-                 ([workers] isolation = \"vm\"), and this backend has none: run workers on \
-                 Kubernetes with [workers] runtime_class set (gVisor or Kata)"
-                    .into(),
-            ));
+            return Err(ComputerError::Refused(Refusal::NeedsIsolation.into()));
         }
         let now = SystemTime::from(self.clock.now());
         // The worker checks its token against its own clock, so the token keeps real time.
@@ -387,11 +385,7 @@ impl WorkerComputers {
         self.check_time(&worker)?;
         let credential = match sources {
             Sources::Git { .. } if !worker.network => {
-                return Err(ComputerError::Refused(
-                    "this worker has no network, so it cannot clone a repository; give it the \
-                     network, or open a folder on it"
-                        .into(),
-                ));
+                return Err(ComputerError::Refused(Refusal::NoNetworkToClone.into()));
             }
             Sources::Git { url, .. } => self.credentials.for_url(url).await?,
             Sources::Folder { .. }

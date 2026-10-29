@@ -11,7 +11,7 @@ use std::time::Duration;
 use glave_ports::Cancellation;
 use glave_ports::computer::{
     Command, CommandId, ComputerError, Ending, Finished, GitCredentials, OnTimeout, Output,
-    Sandbox, WorkspaceId,
+    Refusal, Sandbox, WorkspaceId,
 };
 use glave_process::{Child, Program};
 use tokio::io::AsyncWriteExt as _;
@@ -103,7 +103,7 @@ pub(crate) async fn spawn(
     offered: Option<&Offered>,
 ) -> Result<Spawned, ComputerError> {
     if script.trim().is_empty() {
-        return Err(ComputerError::Refused("the command is empty".into()));
+        return Err(ComputerError::Refused(Refusal::EmptyCommand.into()));
     }
     let prepared = match sandbox {
         Some(sandbox) => Some(opened.sandbox(sandbox, helper).await?),

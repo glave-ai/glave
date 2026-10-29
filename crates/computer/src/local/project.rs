@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use glave_ports::computer::ComputerError;
+use glave_ports::computer::{ComputerError, Refusal};
 
 use super::paths;
 
@@ -40,10 +40,13 @@ pub(crate) async fn make(base: &Path, name: &str) -> Result<PathBuf, ComputerErr
             }
         }
     }
-    Err(ComputerError::Refused(format!(
-        "{} and the {TRIES} names after it are taken; give the project another name",
-        base.join(name).display()
-    )))
+    Err(ComputerError::Refused(
+        Refusal::NamesTaken {
+            path: base.join(name).display().to_string(),
+            tries: TRIES.to_string(),
+        }
+        .into(),
+    ))
 }
 
 /// Refuses a name that is not one folder's plain name.
@@ -54,10 +57,13 @@ fn check(name: &str) -> Result<(), ComputerError> {
         || name.starts_with(['.', '-'])
         || !name.chars().all(plain)
     {
-        return Err(ComputerError::Refused(format!(
-            "{name:?} is not a project folder's name: 1 to {MAX_NAME} letters, digits, -, _ and \
-             ., not starting with . or -"
-        )));
+        return Err(ComputerError::Refused(
+            Refusal::ProjectFolderName {
+                name: format!("{name:?}"),
+                most: MAX_NAME.to_string(),
+            }
+            .into(),
+        ));
     }
     Ok(())
 }

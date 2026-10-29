@@ -52,9 +52,9 @@ impl Fingerprint {
         if hex.len() == 64 && hex.chars().all(|c| c.is_ascii_hexdigit()) {
             Ok(Self(hex))
         } else {
-            Err(ComputerError::Refused(format!(
-                "{text:?} is not a SHA-256 fingerprint"
-            )))
+            Err(ComputerError::Refused(
+                format!("{text:?} is not a SHA-256 fingerprint").into(),
+            ))
         }
     }
 }
@@ -113,7 +113,7 @@ impl Identity {
     pub fn acceptor(certificate: &str, key: &str) -> Result<TlsAcceptor, ComputerError> {
         let refused = |what: &'static str| {
             move |error: rustls::pki_types::pem::Error| {
-                ComputerError::Refused(format!("the {what} is not PEM: {error}"))
+                ComputerError::Refused(format!("the {what} is not PEM: {error}").into())
             }
         };
         let chain = vec![

@@ -120,7 +120,7 @@ impl Enforcer {
                     tokio::task::spawn_blocking(move || mounts::plan(&layout, &path, &stand_ins))
                         .await
                         .map_err(|error| ComputerError::Failed(error.to_string()))?
-                        .map_err(ComputerError::Refused)?;
+                        .map_err(|refused| ComputerError::Refused(refused.into()))?;
                 Ok(Launch {
                     program: PathBuf::from(bubblewrap::SH),
                     args: bubblewrap::args(bwrap, &self.layout, &mounts),
@@ -134,7 +134,7 @@ impl Enforcer {
                 let plan = tokio::task::spawn_blocking(move || landlock_plan(&layout, &path))
                     .await
                     .map_err(|error| ComputerError::Failed(error.to_string()))?
-                    .map_err(ComputerError::Refused)?;
+                    .map_err(|refused| ComputerError::Refused(refused.into()))?;
                 let plan = serde_json::to_string(&plan)
                     .map_err(|error| ComputerError::Failed(error.to_string()))?;
                 Ok(Launch {

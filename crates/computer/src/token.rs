@@ -98,14 +98,16 @@ impl Token {
         let mut lines = text.lines();
         let secret = lines.next().unwrap_or_default().trim().to_owned();
         if secret.len() < MIN_SECRET {
-            return Err(ComputerError::Refused(format!(
-                "the token is shorter than {MIN_SECRET} characters"
-            )));
+            return Err(ComputerError::Refused(
+                format!("the token is shorter than {MIN_SECRET} characters").into(),
+            ));
         }
         let lifetime = match lines.next().map(str::trim).filter(|line| !line.is_empty()) {
             None => None,
             Some(seconds) => Some(Duration::from_secs(seconds.parse().map_err(|_| {
-                ComputerError::Refused(format!("{seconds:?} is not how long the token lasts"))
+                ComputerError::Refused(
+                    format!("{seconds:?} is not how long the token lasts").into(),
+                )
             })?)),
         };
         Ok(Self {

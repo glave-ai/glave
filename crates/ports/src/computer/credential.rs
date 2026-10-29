@@ -7,6 +7,7 @@
 use glave_event::{Forge, Secret};
 use serde::{Deserialize, Serialize};
 
+use super::refusal::Refusal;
 use super::types::ComputerError;
 use crate::tools::BoxFuture;
 
@@ -131,9 +132,7 @@ impl GitCredential {
     pub fn check(&self) -> Result<(), ComputerError> {
         let bad = |text: &str| text.is_empty() || text.contains(['\n', '\r', '\0']);
         if bad(&self.username) || bad(self.password.expose()) {
-            return Err(ComputerError::Refused(
-                "a git credential needs a user name and a password, each one line".into(),
-            ));
+            return Err(ComputerError::Refused(Refusal::CredentialLines.into()));
         }
         Ok(())
     }

@@ -406,7 +406,8 @@ impl<C: Computers + 'static> Connection<C> {
             .lock()
             .map_err(|_| wire::failure(code::COMPUTER, "the run table's lock is poisoned"))?;
         if runs.contains_key(run) {
-            let error = ComputerError::Refused(format!("a run named {run:?} is already running"));
+            let error =
+                ComputerError::Refused(format!("a run named {run:?} is already running").into());
             return Err(wire::computer_failure(&error));
         }
         let switch = CancelSwitch::default();

@@ -24,7 +24,8 @@ use super::walk::{self, Pattern};
 const MAX_SEARCHED_BYTES: u64 = 2 * 1024 * 1024;
 
 pub(crate) async fn glob(root: &Path, glob: &Glob) -> Result<Globbed, ComputerError> {
-    let pattern = Pattern::new(&glob.pattern).map_err(ComputerError::Refused)?;
+    let pattern =
+        Pattern::new(&glob.pattern).map_err(|refused| ComputerError::Refused(refused.into()))?;
     let (root, glob) = (root.to_owned(), glob.clone());
     blocking(move || {
         let root = Root::open(&root)?;
@@ -64,7 +65,7 @@ pub(crate) async fn search(root: &Path, search: &Search) -> Result<Searched, Com
         .as_deref()
         .map(Pattern::new)
         .transpose()
-        .map_err(ComputerError::Refused)?;
+        .map_err(|refused| ComputerError::Refused(refused.into()))?;
     let (regex, as_text) = compile(&search.pattern, search.ignore_case)?;
     let (root, search) = (root.to_owned(), search.clone());
     blocking(move || {
@@ -103,7 +104,9 @@ fn compile(pattern: &str, ignore_case: bool) -> Result<(Regex, bool), ComputerEr
         Ok(regex) => Ok((regex, false)),
         Err(_) => build(&regex::escape(pattern))
             .map(|regex| (regex, true))
-            .map_err(|e| ComputerError::Refused(format!("The pattern could not be searched: {e}"))),
+            .map_err(|e| {
+                ComputerError::Refused(format!("The pattern could not be searched: {e}").into())
+            }),
     }
 }
 

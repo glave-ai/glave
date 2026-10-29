@@ -29,8 +29,8 @@ use std::time::Duration;
 use glave_ports::computer::{
     Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
     Environment, FileWrite, Finished, GitCredential, GitCredentials, Glob, Globbed, Image, Listed,
-    Listing, Network, Output, Printed, Save, Saved, Search, Searched, Size, Sources, Stat, State,
-    WorkspaceId, WorkspaceInfo,
+    Listing, Network, Output, Printed, Refusal, Save, Saved, Search, Searched, Size, Sources, Stat,
+    State, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::secrets::without_secrets;
 use glave_ports::{BoxFuture, Cancellation};
@@ -375,7 +375,7 @@ impl LocalComputers {
                     .background
                     .room(workspace)
                     .err()
-                    .unwrap_or_else(|| ComputerError::Refused("there is no room for it".into())))
+                    .unwrap_or_else(|| ComputerError::Refused(Refusal::NoRoom.into())))
             }
         }
     }

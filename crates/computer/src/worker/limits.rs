@@ -4,7 +4,7 @@
 
 use std::ffi::OsStr;
 
-use glave_ports::computer::{ComputerError, Environment, Image, Limits, Network};
+use glave_ports::computer::{ComputerError, Environment, Image, Limits, Network, Refusal};
 use glave_ports::secrets::is_secret_variable;
 
 /// A worker's settings once its environment passed the limits.
@@ -41,30 +41,34 @@ pub(crate) fn decide(
     running: usize,
 ) -> Result<Decided, ComputerError> {
     let Image::Oci(image) = &environment.image else {
-        return Err(ComputerError::Refused(
-            "a worker runs an image; this environment names the host. Name an image in \
-             devcontainer.json or .glave/environment.toml"
-                .into(),
-        ));
+        return Err(ComputerError::Refused(Refusal::HostNotImage.into()));
     };
     if !pinned(image) {
-        return Err(ComputerError::Refused(format!(
-            "workers run images pinned by digest, so the same bytes run every time: write the \
-             image as name@sha256:<digest>, not {image}"
-        )));
+        return Err(ComputerError::Refused(
+            Refusal::NotPinned {
+                image: image.clone(),
+            }
+            .into(),
+        ));
     }
     if let Some(most) = limits.per_person
         && running >= usize::try_from(most).unwrap_or(usize::MAX)
     {
-        return Err(ComputerError::Refused(format!(
-            "you already have {running} workers, and policy allows {most} at once \
-             ([workers] per_person); release one first"
-        )));
+        return Err(ComputerError::Refused(
+            Refusal::TooManyWorkers {
+                running: running.to_string(),
+                most: most.to_string(),
+            }
+            .into(),
+        ));
     }
-    let cpus = within("CPUs", "cpu", environment.size.cpus, limits.cpus)?;
+    let cpus = within(
+        |asked, most| Refusal::TooManyCpus { asked, most },
+        environment.size.cpus,
+        limits.cpus,
+    )?;
     let memory_gb = within(
-        "GB of memory",
-        "memory_gb",
+        |asked, most| Refusal::TooMuchMemory { asked, most },
         environment.size.memory_gb,
         limits.memory_gb,
     )?;
@@ -91,9 +95,9 @@ pub(crate) fn decide(
         .keys()
         .find(|name| is_secret_variable(OsStr::new(name.as_str())))
     {
-        return Err(ComputerError::Refused(format!(
-            "{name} is named like a secret; a worker's variables are never secrets"
-        )));
+        return Err(ComputerError::Refused(
+            Refusal::SecretNamed { name: name.clone() }.into(),
+        ));
     }
     Ok(Decided {
         image: image.clone(),
@@ -106,16 +110,14 @@ pub(crate) fn decide(
 
 /// A size asked for, within the limit; the limit itself when nothing is asked.
 fn within(
-    what: &str,
-    key: &str,
+    refused: fn(String, String) -> Refusal,
     asked: Option<u32>,
     most: Option<u32>,
 ) -> Result<Option<u32>, ComputerError> {
     match (asked, most) {
-        (Some(asked), Some(most)) if asked > most => Err(ComputerError::Refused(format!(
-            "the environment asks for {asked} {what}, and policy allows at most {most} \
-             ([workers] {key})"
-        ))),
+        (Some(asked), Some(most)) if asked > most => Err(ComputerError::Refused(
+            refused(asked.to_string(), most.to_string()).into(),
+        )),
         (Some(asked), _) => Ok(Some(asked)),
         (None, most) => Ok(most),
     }
@@ -133,11 +135,9 @@ fn network(environment: &Environment, limits: &Limits) -> Result<bool, ComputerE
         ));
     }
     match environment.network {
-        Some(Network::On) if !allowed => Err(ComputerError::Refused(
-            "the environment asks for the network, and policy allows workers none \
-             ([workers] network = \"off\", or [sandbox] network = false)"
-                .into(),
-        )),
+        Some(Network::On) if !allowed => {
+            Err(ComputerError::Refused(Refusal::NoNetworkAllowed.into()))
+        }
         Some(Network::Off) => Ok(false),
         _ => Ok(allowed),
     }

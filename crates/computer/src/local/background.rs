@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use glave_ports::computer::{
     Background, CommandId, ComputerError, ComputerId, Ending, Finished, IDLE, MAX_BACKGROUND,
-    MAX_WAIT, Printed, WorkspaceId,
+    MAX_WAIT, Printed, Refusal, WorkspaceId,
 };
 use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
@@ -318,15 +318,20 @@ fn full(held: &HashMap<CommandId, Entry>, workspace: WorkspaceId) -> Option<Comp
         .count()
         >= MAX_BACKGROUND
     {
-        return Some(ComputerError::Refused(format!(
-            "{MAX_BACKGROUND} commands are already running in the background here; stop one first"
-        )));
+        return Some(ComputerError::Refused(
+            Refusal::TooManyHere {
+                most: MAX_BACKGROUND.to_string(),
+            }
+            .into(),
+        ));
     }
     if running().count() >= MAX_RUNNING {
-        return Some(ComputerError::Refused(format!(
-            "this computer already keeps {MAX_RUNNING} commands running in the background; \
-             stop one first"
-        )));
+        return Some(ComputerError::Refused(
+            Refusal::TooManyRunning {
+                most: MAX_RUNNING.to_string(),
+            }
+            .into(),
+        ));
     }
     None
 }

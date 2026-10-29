@@ -93,10 +93,13 @@ impl Docker {
             .and_then(Value::as_str)
             .unwrap_or_default();
         let bytes = tokio::fs::read(&self.glave).await.map_err(|error| {
-            ComputerError::Refused(format!(
-                "could not read the glave for workers at {}: {error}",
-                self.glave.display()
-            ))
+            ComputerError::Refused(
+                format!(
+                    "could not read the glave for workers at {}: {error}",
+                    self.glave.display()
+                )
+                .into(),
+            )
         })?;
         let machine = elf_machine(&bytes);
         let fits = matches!(
@@ -106,10 +109,13 @@ impl Docker {
         if fits {
             Ok(bytes)
         } else {
-            Err(ComputerError::Refused(format!(
-                "workers need a Linux build of glave for {arch}; {} is not one",
-                self.glave.display()
-            )))
+            Err(ComputerError::Refused(
+                format!(
+                    "workers need a Linux build of glave for {arch}; {} is not one",
+                    self.glave.display()
+                )
+                .into(),
+            ))
         }
     }
 

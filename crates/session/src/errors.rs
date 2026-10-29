@@ -7,6 +7,7 @@ use std::fmt::Display;
 use glave_event::{DecodeError, EncodeError, InvalidValue};
 use glave_harness::{HarnessError, Invalid, MAX_QUEUED, NotQueued};
 use glave_identity::signin::{BrowserError, SignInError};
+use glave_ports::computer::ComputerError;
 use glave_ports::memories::MemoryError;
 use glave_ports::stream::StreamError;
 use glave_ports::{EntropyError, LogError, ProjectError};
@@ -168,6 +169,9 @@ impl From<&HarnessError> for ApiError {
                 },
             ),
             HarnessError::GoalInPlan(_) => Self::new(code::NOT_ALLOWED, Sentence::GoalInPlan),
+            HarnessError::Workspace(ComputerError::Refused(reason)) => {
+                Self::new(code::WORKSPACE, reason)
+            }
             HarnessError::Workspace(_) => Self::new(code::WORKSPACE, error.to_string()),
             HarnessError::PromptBlocked(reason) => Self::new(
                 code::PROMPT_BLOCKED,
