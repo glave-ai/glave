@@ -13,7 +13,7 @@ use crate::policy::files::{ConfigFile, GithubFile, ModelEntry};
 use crate::policy::memory::ProjectChoice;
 use crate::policy::provider::ProviderFile;
 use crate::policy::web::WebFile;
-use crate::policy::workers::{On, WorkersFile};
+use crate::policy::workers::{ComputersFile, On, WorkersFile};
 
 /// Where a value came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,6 +71,8 @@ pub struct Choices {
     pub on: Chosen<On>,
     /// The backend workers run on, if one is set up.
     pub workers: Option<Chosen<WorkersFile>>,
+    /// Each person's own computer, if people have one; none, threads work on the server's.
+    pub computers: Option<Chosen<ComputersFile>>,
     /// The gateway elsewhere model calls go to, if any: its URL.
     pub gateway: Option<Chosen<String>>,
     /// What `web_fetch` may reach: on, public hosts only, by default.
@@ -159,6 +161,7 @@ pub(super) fn resolve(layers: &[Layer]) -> Choices {
         titles: defaulted(nearest(layers, "titles", |file| file.titles), true),
         on: defaulted(nearest(layers, "on", |file| file.on), On::Here),
         workers: nearest(layers, "workers", |file| file.workers.clone()),
+        computers: nearest(layers, "computers", |file| file.computers.clone()),
         server: nearest(layers, "server", |file| {
             file.server
                 .as_ref()

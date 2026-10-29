@@ -155,6 +155,13 @@ impl PersonComputer {
     }
 
     /// Removes the computer and its disk, with everything on it.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "a person's computer is removed with the person, which comes with Remove (#221)"
+        )
+    )]
     pub(crate) async fn destroy(&self) -> Result<(), ComputerError> {
         self.sleep().await?;
         removed(&self.claims(), &self.claim_name(), "disk").await
@@ -163,7 +170,7 @@ impl PersonComputer {
 
 /// Whether `key` can name a person's computer: lowercase letters, digits and `-`, neither
 /// first nor last, at most [`KEY_LENGTH`], so every object's name made from it is a label.
-fn plain(key: &str) -> bool {
+pub(super) fn plain(key: &str) -> bool {
     !key.is_empty()
         && key.len() <= KEY_LENGTH
         && !key.starts_with('-')

@@ -11,7 +11,7 @@ use glave_event::{
     At, Checkout, EventId, FolderSource, Header, Principal, ProjectFolderSet, RawEvent, Seq,
     ThreadId, encode,
 };
-use glave_harness::{Permissions, ProjectFolders, Settings, Workspace};
+use glave_harness::{Homes, Permissions, ProjectFolders, Settings, Workspace};
 use glave_keys::{KeyFileRoot, KeySettings};
 use glave_ports::computer::{ComputerId, GitCredentials, WorkspaceInfo};
 use glave_ports::memories::Memory;
@@ -114,6 +114,8 @@ pub(crate) struct Setup {
     pub workers: Option<OnWorkers>,
     /// Whether people sign in through an identity provider; with none, it works for one person.
     pub identity_provider: bool,
+    /// Each person's own computer; with none, every thread works here.
+    pub homes: Option<Arc<dyn Homes>>,
 }
 
 impl Setup {
@@ -149,6 +151,7 @@ impl Setup {
             variables: Vec::new(),
             workers: None,
             identity_provider: false,
+            homes: None,
         }
     }
 
@@ -238,6 +241,7 @@ impl Setup {
             worktrees: self.release,
             workers: self.workers,
             identity_provider: self.identity_provider,
+            homes: self.homes,
             ..Wiring::new(provider, log, InMemoryBlobs::new(), workspace, projects)
         };
         let server = Server::new(wiring, self.settings, home.org(), self.answering);

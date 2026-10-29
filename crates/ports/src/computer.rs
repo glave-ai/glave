@@ -34,6 +34,23 @@ pub use types::{
     WorkspaceInfo,
 };
 
+/// A person's own computer, awake, and the workspace of their home on it: where their
+/// threads open their folders, worktrees and scratch folders (`specs/computers.md`, "A
+/// person's computer in the cloud").
+#[derive(Clone)]
+pub struct Home {
+    pub computers: std::sync::Arc<dyn Computers>,
+    pub home: WorkspaceInfo,
+}
+
+impl std::fmt::Debug for Home {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Home")
+            .field("home", &self.home)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Where a running command's output goes, as it arrives: standard output and standard error
 /// together, as text. A slow sink slows the command's reader, never loses output.
 pub trait Output: Send + Sync {

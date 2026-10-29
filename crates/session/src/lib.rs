@@ -24,6 +24,7 @@ mod goal;
 mod gone;
 mod grouping;
 mod held;
+mod homes;
 pub mod http;
 mod hub;
 mod invites;

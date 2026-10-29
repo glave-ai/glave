@@ -21,6 +21,7 @@ mod files;
 mod goals;
 mod gone;
 mod grouping;
+mod homes;
 mod http;
 mod invites;
 mod isolation;

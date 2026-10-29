@@ -15,7 +15,7 @@ use crate::policy::memory::{MemoryRules, ProjectChoice};
 use crate::policy::placement::PlacementRules;
 use crate::policy::provider::ProviderFile;
 use crate::policy::web::WebFile;
-use crate::policy::workers::{On, WorkerRules, WorkersFile};
+use crate::policy::workers::{ComputersFile, On, WorkerRules, WorkersFile};
 use serde::Deserialize;
 
 /// The only version of `policy.toml` there is.
@@ -45,6 +45,9 @@ pub struct ConfigFile {
     pub on: Option<On>,
     /// The backend workers run on.
     pub workers: Option<WorkersFile>,
+    /// Each person's own computer, on the cluster workers run on. Only the person's or the
+    /// server's own file sets it.
+    pub computers: Option<ComputersFile>,
     /// What `web_fetch` may reach.
     pub web: Option<WebFile>,
     /// Commands to run at points of a turn. They add up across files rather than the

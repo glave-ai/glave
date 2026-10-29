@@ -277,6 +277,7 @@
     "person.you": "[Ýöû one]",
     "place.computer": "[Ţĥîš çöɱþûţéŕ one]",
     "place.mac": "[Ýöûŕ Ṁåç one]",
+    "place.person": "[Ýöûŕ çļöûð çöɱþûţéŕ one two]",
     "place.server": "[Ţĥé šéŕṽéŕ one]",
     "place.worker": "[Åñöţĥéŕ çöɱþûţéŕ one two]",
     "projects.folders": "[{{$COUNT}, plural, =0 {ñö ƒöļðéŕš} one {# ƒöļðéŕ} other {# ƒöļðéŕš}} one two]",

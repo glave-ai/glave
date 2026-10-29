@@ -7,7 +7,9 @@
 use std::path::Path;
 use std::sync::{Arc, PoisonError};
 
-use glave_event::{Body, ComputerKind, ComputerRef, Event, Opened, ThreadId, WorkspaceBound};
+use glave_event::{
+    Body, ComputerKind, ComputerRef, Event, Opened, PrincipalId, ThreadId, WorkspaceBound,
+};
 use glave_ports::computer::{ComputerError, ComputerId, Environment, Sources};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope, ToolSource};
 
@@ -129,41 +131,38 @@ where
             .await
     }
 
-    /// The workspace for a thread `id` in `scope` at `place`, and its binding to record. A
-    /// worktree is kept with the thread as its owner, for cleaning it up later.
+    /// The workspace for a thread `id` in `scope` at `place`, working for `person`, and its
+    /// binding to record. A folder, worktree or scratch folder is opened on the person's own
+    /// computer where they have one, else on the harness's. A worktree is kept with the thread
+    /// as its owner, for cleaning it up later.
     pub(crate) async fn place(
         &self,
         scope: Scope,
         id: ThreadId,
         place: Place,
+        person: Option<PrincipalId>,
     ) -> Result<(Option<Arc<Workspace>>, WorkspaceBound), HarnessError> {
-        match place {
-            Place::Folder(path) => {
-                let folder = self.workspace.folder(&path).await?;
-                let recorded = bound(&folder, ComputerKind::Local);
-                Ok((Some(Arc::new(folder)), recorded))
+        let opened = match place {
+            Place::Worker(environment) => return self.place_worker(&environment).await,
+            Place::Computer(computer) => {
+                return Err(Invalid::ComputerNotYet(computer.to_string()).into());
             }
-            Place::Worktree(path) => {
-                let owner = owner_label(scope, id);
-                let worktree = self
-                    .workspace
-                    .worktree(&path, &branch_for(id), Some(&owner))
-                    .await?;
-                let recorded = bound(&worktree, ComputerKind::Local);
-                Ok((Some(Arc::new(worktree)), recorded))
+            place => place,
+        };
+        let (home, kind) = self.home_of(scope, person).await?;
+        let owner = owner_label(scope, id);
+        let workspace = match opened {
+            Place::Folder(path) => home.folder(&path).await?,
+            Place::Worktree(path) => home.worktree(&path, &branch_for(id), Some(&owner)).await?,
+            Place::Scratch => home.scratch(&id.to_string(), Some(&owner)).await?,
+            Place::Worker(_) | Place::Computer(_) => {
+                return Err(HarnessError::Event(
+                    "a worker or a computer was placed as a folder".into(),
+                ));
             }
-            Place::Worker(environment) => self.place_worker(&environment).await,
-            Place::Computer(computer) => Err(Invalid::ComputerNotYet(computer.to_string()).into()),
-            Place::Scratch => {
-                let owner = owner_label(scope, id);
-                let scratch = self
-                    .workspace
-                    .scratch(&id.to_string(), Some(&owner))
-                    .await?;
-                let recorded = bound(&scratch, ComputerKind::Local);
-                Ok((Some(Arc::new(scratch)), recorded))
-            }
-        }
+        };
+        let recorded = bound(&workspace, kind);
+        Ok((Some(Arc::new(workspace)), recorded))
     }
 
     /// The workspace a resumed thread's events bound it to, and that binding: its folder or
@@ -192,23 +191,24 @@ where
         }
         let owner = owner_label(scope, id);
         let elsewhere = |was: &str| moved.filter(|now| *now != was);
-        let workspace = match latest.map(|bound| &bound.opened) {
-            Some(Opened::Folder { path }) => {
-                match (self.workspace.folder(path).await, elsewhere(path)) {
-                    (Err(ComputerError::NotFound(_)), Some(now)) => {
-                        let folder = self.workspace.folder(now).await?;
-                        let recorded = bound(&folder, ComputerKind::Local);
-                        return Ok((Some(Arc::new(folder)), Some(recorded), true));
-                    }
-                    (opened, _) => Some(opened?),
+        let opened = latest.map(|bound| &bound.opened);
+        if matches!(opened, Some(Opened::Clone { .. }) | None) {
+            return Ok((None, latest.cloned(), false));
+        }
+        let (home, kind) = self
+            .home_of(scope, crate::resume::for_of(events).or(self.actors.person))
+            .await?;
+        let workspace = match opened {
+            Some(Opened::Folder { path }) => match (home.folder(path).await, elsewhere(path)) {
+                (Err(ComputerError::NotFound(_)), Some(now)) => {
+                    let folder = home.folder(now).await?;
+                    let recorded = bound(&folder, kind);
+                    return Ok((Some(Arc::new(folder)), Some(recorded), true));
                 }
-            }
+                (opened, _) => Some(opened?),
+            },
             Some(Opened::Worktree { repository, branch }) => {
-                match self
-                    .workspace
-                    .worktree(repository, branch, Some(&owner))
-                    .await
-                {
+                match home.worktree(repository, branch, Some(&owner)).await {
                     Err(ComputerError::NotFound(_)) if elsewhere(repository).is_some() => {
                         return Err(ComputerError::Unsupported(
                             "this thread worked on a copy of its project made before the \
@@ -222,11 +222,9 @@ where
                 }
             }
             // Made again, empty, if a cleanup removed it.
-            Some(Opened::Scratch { .. }) => Some(
-                self.workspace
-                    .scratch(&id.to_string(), Some(&owner))
-                    .await?,
-            ),
+            Some(Opened::Scratch { .. }) => {
+                Some(home.scratch(&id.to_string(), Some(&owner)).await?)
+            }
             Some(Opened::Clone { .. }) | None => None,
         };
         Ok((workspace.map(Arc::new), latest.cloned(), false))
@@ -239,7 +237,7 @@ where
         &self,
         workspace: Option<&Workspace>,
         bound: Option<&WorkspaceBound>,
-        person: Option<glave_event::PrincipalId>,
+        person: Option<PrincipalId>,
     ) -> Option<String> {
         let (Some(reader), Some(workspace), Some(bound)) =
             (&self.project_folders, workspace, bound)

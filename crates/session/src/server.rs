@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
 
 use glave_event::{Body, PrincipalId, RawEvent, Seq, ThreadId, TurnResult, decode};
 use glave_harness::{
-    Harness, HarnessError, Parts, Place, ProjectFolders, ReleasedWorker, Settings, Workers,
+    Harness, HarnessError, Homes, Parts, Place, ProjectFolders, ReleasedWorker, Settings, Workers,
     Workspace,
 };
 use glave_identity::signin::Browsers;
@@ -121,6 +121,10 @@ pub struct Wiring<P, L, B> {
     /// What lets go of a thread's worktrees on the host's computer once it is archived or
     /// deleted; none where the host keeps none.
     pub worktrees: Option<Arc<dyn Worktrees>>,
+    /// Each person's own computer, where a deployment gives people one (on Kubernetes): their
+    /// threads work there, and it is woken when they open the app. None: every thread works
+    /// on the computer `workspace` is on.
+    pub homes: Option<Arc<dyn Homes>>,
 }
 
 impl<P, L, B> Wiring<P, L, B> {
@@ -169,6 +173,7 @@ impl<P, L, B> Wiring<P, L, B> {
             leases: None,
             awake: None,
             worktrees: None,
+            homes: None,
         }
     }
 }
@@ -267,6 +272,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) awake: Option<Awake>,
     /// What lets go of a thread's worktrees once it is put away, where the host keeps them.
     pub(crate) worktrees: Option<Arc<dyn Worktrees>>,
+    /// Each person's own computer, where people have one.
+    pub(crate) homes: Option<Arc<dyn Homes>>,
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -310,7 +317,8 @@ where
         .with_own_tools(wiring.own)
         .with_hooks(wiring.hooks)
         .with_memory_if(wiring.memory)
-        .with_project_folders(wiring.project_folders);
+        .with_project_folders(wiring.project_folders)
+        .with_homes(wiring.homes.clone());
         harness.set_without_images(crate::models::without_images(&catalog));
         Self {
             inner: Arc::new(Inner {
@@ -350,6 +358,7 @@ where
                 followed: Followed::default(),
                 awake: wiring.awake.map(Awake::new),
                 worktrees: wiring.worktrees,
+                homes: wiring.homes,
             }),
         }
     }
