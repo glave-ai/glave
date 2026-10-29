@@ -38,6 +38,8 @@ const PERSON_USER: u32 = 65_532;
 pub(crate) const IDLE_MINUTES: u32 = 10;
 /// Where a person's disk is mounted in their computer: their home.
 pub(crate) const PERSON_HOME: &str = "/home/glave";
+/// Where glave on a person's computer makes scratch folders: its folder in their home.
+pub(crate) const PERSON_SCRATCH: &str = "/home/glave/.glave/scratch";
 /// The most a person's computer may write outside its disk (its container's layer, `/tmp`),
 /// so one person can never fill a node's disk.
 const OUTSIDE_THE_DISK: &str = "10Gi";

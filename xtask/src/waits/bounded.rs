@@ -128,6 +128,13 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
          is connected, and one that does not is let go at its handshake's limit",
     ),
     (
+        "crates/computer/src/waking.rs",
+        ".real.lock().await",
+        2,
+        "a workspace opened on a person's computer, behind the one call opening it: its wake, \
+         within WAKE_WAIT, and its open, within its own deadline",
+    ),
+    (
         "crates/computer/src/serve/socket.rs",
         "connections.join_next().await;",
         1,
