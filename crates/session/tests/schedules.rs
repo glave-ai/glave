@@ -406,7 +406,10 @@ fn one_server_keeps_each_organizations_schedules_under_its_own_lease() {
                 )
                 .await
                 .unwrap();
-            assert!(taken.is_none(), "{org}'s lease is the first server's");
+            assert!(
+                taken.is_none(),
+                "each organization's lease is the first server's"
+            );
         }
     });
 }
