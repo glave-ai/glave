@@ -30,7 +30,7 @@ use super::backend::{Backend, COPIED_WITHIN, Link, Listed, STARTED_BY, Spec, Sta
 use super::docker::elf_machine;
 use crate::token::Token;
 use objects::{Home, Owner, Progress, Shape};
-pub use people::People;
+pub use people::{Holding, People};
 
 /// How long a Pod has to start running: long enough to pull a large image.
 const START_WAIT: Duration = Duration::from_mins(5);

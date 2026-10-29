@@ -190,6 +190,12 @@ impl LocalComputers {
         self
     }
 
+    /// Whether a command still runs here in the background: for a computer that ends when
+    /// idle ([`crate::Idle`]).
+    pub fn busy(&self) -> bool {
+        self.background.running()
+    }
+
     /// A host computer made from these computers, with `folder` open on it in place.
     pub async fn open_here(
         self,
