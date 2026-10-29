@@ -220,6 +220,18 @@ export type ErrorData = {
 /** Identifies one event, unique everywhere. */
 export type EventId = string;
 
+/**
+ * What a server has beyond a person's own: each because its configuration provides it, never
+ * a setting naming a kind of deployment (`specs/deployments.md`, "One code path"). A client
+ * draws only what is here, and nothing of what is not.
+ */
+export type Exists = {
+  /** An organization of people, who sign in through its identity provider (OIDC). */
+  readonly organization: boolean;
+  /** Workers: a fresh machine for each thread of the project whose settings chose them. */
+  readonly workers: boolean;
+};
+
 /** The kind of a failed model request. */
 export type Failure = "refused" | "no_credit" | "unknown_model" | "too_long" | "rate_limited" | "unavailable" | "unreachable" | "silent" | "malformed" | "rejected" | "over_budget";
 
@@ -664,6 +676,11 @@ export type Seq = number;
 
 /** What the server is. */
 export type ServerInfo = {
+  /**
+   * What it has beyond the one person a server works for on its own; absent where it has
+   * none of it, as on a person's own computer or server.
+   */
+  readonly exists?: Exists;
   /**
    * Where a browser on this computer makes and signs in with passkeys, when the server
    * makes them here rather than at a public origin: `http://localhost:<port>`.

@@ -547,6 +547,24 @@
       "format": "uuid",
       "type": "string"
     },
+    "Exists": {
+      "description": "What a server has beyond a person's own: each because its configuration provides it, never\na setting naming a kind of deployment (`specs/deployments.md`, \"One code path\"). A client\ndraws only what is here, and nothing of what is not.",
+      "properties": {
+        "organization": {
+          "description": "An organization of people, who sign in through its identity provider (OIDC).",
+          "type": "boolean"
+        },
+        "workers": {
+          "description": "Workers: a fresh machine for each thread of the project whose settings chose them.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "organization",
+        "workers"
+      ],
+      "type": "object"
+    },
     "Failure": {
       "description": "The kind of a failed model request.",
       "oneOf": [
@@ -1854,6 +1872,10 @@
     "ServerInfo": {
       "description": "What the server is.",
       "properties": {
+        "exists": {
+          "$ref": "#/$defs/Exists",
+          "description": "What it has beyond the one person a server works for on its own; absent where it has\nnone of it, as on a person's own computer or server."
+        },
         "here": {
           "description": "Where a browser on this computer makes and signs in with passkeys, when the server\nmakes them here rather than at a public origin: `http://localhost:<port>`.",
           "type": [

@@ -50,6 +50,28 @@ pub struct ServerInfo {
     /// public origin always, a setup link making the first; on this computer once one is made.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub signin: Vec<SignInWay>,
+    /// What it has beyond the one person a server works for on its own; absent where it has
+    /// none of it, as on a person's own computer or server.
+    #[serde(default, skip_serializing_if = "Exists::is_none")]
+    pub exists: Exists,
+}
+
+/// What a server has beyond a person's own: each because its configuration provides it, never
+/// a setting naming a kind of deployment (`specs/deployments.md`, "One code path"). A client
+/// draws only what is here, and nothing of what is not.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct Exists {
+    /// An organization of people, who sign in through its identity provider (OIDC).
+    pub organization: bool,
+    /// Workers: a fresh machine for each thread of the project whose settings chose them.
+    pub workers: bool,
+}
+
+impl Exists {
+    /// Whether it has none of it.
+    pub(crate) fn is_none(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 /// Whether this server keeps its computer from sleeping on its own while a turn, task or

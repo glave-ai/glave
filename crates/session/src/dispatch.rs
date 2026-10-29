@@ -128,6 +128,10 @@ where
                     origin: self.inner.origin.as_ref().map(ToString::to_string),
                     here: self.passkeys_here(),
                     signin: self.signin_ways(),
+                    exists: crate::protocol::Exists {
+                        organization: self.inner.identity_provider,
+                        workers: self.inner.worker.is_some(),
+                    },
                 }))
             }
             Request::AwakeGet {} => Ok(self.awake().await),

@@ -46,7 +46,8 @@ pub use plans::PlanInfo;
 pub use projects::{GoneFolder, NewFolder, ProjectFolder};
 pub use providers::{ProviderInfo, hint};
 pub use reply::{
-    AwakeInfo, ContextUse, QueuedMessage, RememberingInfo, Reply, ServerInfo, Status, ThreadSummary,
+    AwakeInfo, ContextUse, Exists, QueuedMessage, RememberingInfo, Reply, ServerInfo, Status,
+    ThreadSummary,
 };
 pub use settings::Setting;
 pub use sources::ReplySources;

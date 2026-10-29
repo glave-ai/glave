@@ -1,15 +1,20 @@
 import { Service, computed, inject, signal } from '@angular/core';
-import type { Permissions, ServerInfo } from '@glave/client';
+import type { Exists, Permissions, ServerInfo } from '@glave/client';
 
 import { SessionService } from './session.service';
 
 /**
  * What the glave that served the app says about itself (`server/discover`): its name and
  * version, the mode a thread runs with when it chooses none, the modes a thread may choose,
- * and, where no sandbox can run, the sentence saying so. Read once, when first asked; its
+ * where no sandbox can run, the sentence saying so, and what exists beyond a person's own
+ * server (an organization, workers), which every part of the app reads here and draws only
+ * when the server says so. Read once, when first asked; its
  * version is asked again when a part of the app could not load, to tell whether glave was
  * updated meanwhile.
  */
+/** What a server that has said nothing beyond a person's own has: none of it. */
+const NONE: Exists = { organization: false, workers: false };
+
 @Service()
 export class ServerService {
   private readonly session = inject(SessionService);
@@ -26,6 +31,12 @@ export class ServerService {
   readonly modes = computed<readonly Permissions[]>(() => this.info()?.modes ?? []);
   /** Why Auto and Ask first ask before everything here, in the server's words, if they do. */
   readonly unsandboxed = computed<string | null>(() => this.info()?.unsandboxed ?? null);
+  /**
+   * What exists beyond a person's own server, as the server says: none of it until it has
+   * said, and none on a person's own computer. Admin and organization UI renders only when
+   * this says there is one.
+   */
+  readonly exists = computed<Exists>(() => this.info()?.exists ?? NONE);
   /**
    * Whether glave was updated since this page loaded: the server said another version than
    * the one the page's code is of, the last time it was asked (`recheck`).
