@@ -9,7 +9,6 @@
 use glave_event::Part;
 use glave_ports::computer::EntryKind;
 use glave_ports::{BlobStore, EventLog, Message, ModelProvider, ToolCall, ToolOutput};
-use serde_json::Value;
 
 use super::{AGENTS_MD, CUT_SHORT, HEADING, MAX_BYTES, within};
 use crate::approval::Approver;
@@ -32,7 +31,8 @@ where
         call: &ToolCall,
         mut output: ToolOutput,
     ) -> ToolOutput {
-        let Some(path) = touched(call).filter(|_| !output.is_error) else {
+        let path = Tool::touches(&call.tool, &call.arguments);
+        let Some(path) = path.filter(|_| !output.is_error) else {
             return output;
         };
         let workspace = self.workspace_for(thread);
@@ -71,18 +71,6 @@ where
     }
 }
 
-/// The path a `read`, `write` or `edit` call names.
-fn touched(call: &ToolCall) -> Option<&str> {
-    let tool = Tool::named(&call.tool)?;
-    if !matches!(tool, Tool::Read | Tool::Write | Tool::Edit) {
-        return None;
-    }
-    let glave_event::Arguments::Json(map) = &call.arguments else {
-        return None;
-    };
-    map.get("path").and_then(Value::as_str)
-}
-
 /// The folders below the root whose AGENTS.md apply to `path`, a path inside the workspace
 /// relative to its root: each from the first below the root down to the folder `path` is in,
 /// or `path` itself when it is a folder. None for a path outside the workspace.
@@ -103,12 +91,13 @@ fn folders(path: &str, is_folder: bool) -> Vec<String> {
         .collect()
 }
 
-/// The subfolders' instructions the conversation holds now, as parts of tool results.
+/// The subfolders' instructions the conversation holds now: parts of tool results after the
+/// first, where only glave puts them, so an output that opens like them is not taken for them.
 fn sent(messages: &[Message]) -> impl Iterator<Item = &str> {
     messages
         .iter()
         .filter_map(|message| match message {
-            Message::Tool { output, .. } => Some(output),
+            Message::Tool { output, .. } => output.get(1..),
             _ => None,
         })
         .flatten()
@@ -165,6 +154,15 @@ mod tests {
             ],
         }];
         assert!(holds(&messages, &format!("{HEADING}packages/app\n")));
+        let mimic = vec![Message::Tool {
+            call_id: CallId::new("call_2").unwrap(),
+            is_error: false,
+            output: vec![Part::Text { text: sent.clone() }],
+        }];
+        assert!(
+            !holds(&mimic, &format!("{HEADING}packages/app\n")),
+            "an output that only looks like them is not them"
+        );
         assert!(!holds(&messages, &format!("{HEADING}packages\n")));
         assert_eq!(sent_bytes(&messages), sent.len());
     }

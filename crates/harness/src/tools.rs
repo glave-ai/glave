@@ -106,6 +106,15 @@ impl Tool {
         if !matches!(Self::named(tool)?, Self::Write | Self::Edit) {
             return None;
         }
+        Self::touches(tool, arguments)
+    }
+
+    /// The path a call of `tool` with `arguments` reads or changes: a `read`'s, a `write`'s or
+    /// an `edit`'s, as it names it; none for any other call, or one that names no path.
+    pub(crate) fn touches<'a>(tool: &str, arguments: &'a Arguments) -> Option<&'a str> {
+        if !matches!(Self::named(tool)?, Self::Read | Self::Write | Self::Edit) {
+            return None;
+        }
         let Arguments::Json(map) = arguments else {
             return None;
         };
