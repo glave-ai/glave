@@ -381,10 +381,9 @@ fn an_invites_link_says_what_it_opens_and_someone_signed_in_joins_a_second_organ
         };
         let people = asked(&mut here, &listed).await;
         let grace: PrincipalId = serde_json::from_value(invited(&people)["id"].clone()).unwrap();
-        // She leaves this organization, and works in another of her own.
-        let removed = asked(&mut here, &Request::PersonRemove { person: grace }).await;
-        assert_eq!(removed, json!({}));
+        // She works in another organization of hers, and is in this one no more.
         let theirs = OrgId::from_uuid(Uuid::from_u128(0x0192_f5c6_0000_7000_8000_0000_0000_0a11));
+        directory.leave(grace, scope().org()).await.unwrap();
         directory.join(grace, theirs).await.unwrap();
         let session = sign_in(&served, &mut phone).await;
         let mut signed_in = elsewhere(&served, session.as_str().map(str::to_owned));

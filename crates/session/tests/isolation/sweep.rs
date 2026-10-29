@@ -172,13 +172,17 @@ pub(super) async fn sweep<L: EventLog + Clone + 'static>(world: &World<L>) -> Ve
                     let holes = placeholders(template);
                     let named = |kinds: &[Kind]| holes.iter().any(|(_, k)| kinds.contains(k));
                     // A link's code signs in the person on its server's computer, whoever
-                    // holds it there; only another server's is someone else's. An invite's
-                    // code is its holder's to join with, and a person or an invite is their
-                    // organization's admins' to see; only another organization's is someone
-                    // else's.
+                    // holds it there; only another server's is someone else's. A person or an
+                    // invite is their organization's admins' to see; only another
+                    // organization's is someone else's. An invite's code is its holder's: to
+                    // see what it opens, and to join with, in any organization for someone
+                    // with a glave account, who may belong to several, and in their own for
+                    // anyone a company login signs in.
+                    let joins_any = method == "invite/show" || with_account(&attacker.caller);
                     if (named(&[Kind::Code]) && victim.server == attacker.server)
                         || (named(&[Kind::Person, Kind::Invite, Kind::InviteCode])
                             && victim.org == attacker.org)
+                        || (named(&[Kind::InviteCode]) && joins_any)
                     {
                         continue;
                     }
@@ -254,4 +258,12 @@ pub(super) async fn snapshot<L: EventLog + Clone + 'static>(world: &World<L>) ->
         seen.push(Value::Array(mine));
     }
     seen
+}
+
+/// Whether `caller` signed in with a glave account.
+fn with_account(caller: &Caller) -> bool {
+    caller
+        .auth
+        .as_ref()
+        .is_some_and(|auth| auth.method == AuthMethod::Account)
 }

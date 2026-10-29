@@ -1,10 +1,11 @@
 import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import type { MockInstance } from 'vitest';
 import { Router, provideRouter } from '@angular/router';
-import { ApiError, type BrowserSession, ErrorCode, type ShownInvite } from '@glave/client';
+import { ApiError, ErrorCode, type ShownInvite } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import type { Authenticator } from '../../lib/passkeys';
+import { type BrowserSession, TOKEN_KEY } from '../../lib/token';
 import { AUTHENTICATOR } from '../../services/passkeys.service';
 import { SessionService } from '../../services/session.service';
 import {
@@ -69,6 +70,10 @@ async function render(
   readonly root: HTMLElement;
 }> {
   window.history.replaceState(null, '', '/#invite=c0de');
+  // The tab starts with the session this browser kept, if any.
+  if (session !== null) {
+    localStorage.setItem(TOKEN_KEY, JSON.stringify(session));
+  }
   TestBed.configureTestingModule({
     providers: [
       provideRouter([]),
@@ -88,6 +93,11 @@ function click(root: ParentNode, testId: string): void {
 }
 
 describe('InviteComponent', () => {
+  // A passkey made in one test keeps its session for the next: each starts signed out.
+  afterEach(() => {
+    localStorage.clear();
+  });
+
   it('new to glave, makes a passkey with the invite and joins', async () => {
     const fake = new FakeSession()
       .answer('invite/show', { shown: SHOWN })
@@ -126,7 +136,7 @@ describe('InviteComponent', () => {
       .answer('invite/show', { shown: SHOWN })
       .answer('invite/accept', { person: { id: 'p', role: 'member', you: true } });
     const { fixture, navigate, root } = await render(fake, SIGNED_IN);
-    const page = root.querySelector('[data-testid="invite-join"]');
+    const page = root.querySelector('[data-testid="invite-joining"]');
     expect(page?.textContent).toContain('Join this team?');
     expect(page?.textContent).toContain('Dana Lee invited you.');
     await expectAccessible(root);

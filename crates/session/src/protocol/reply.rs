@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 use super::{
     AcceptedPasskeys, ConnectionInfo, CredentialInfo, DeviceCode, FileInfo, GoneFolder, Grouping,
     InviteInfo, ModelInfo, PasskeySummary, Permissions, PersonInfo, PlanInfo, ProjectFolder,
-    ProviderInfo, ReplySources, ScheduleInfo, SearchInfo, SignInLink, SignInWay, TaskInfo,
-    ThreadChanges, ThreadSteps, Told, TrustAsk, WatchEnd,
+    ProviderInfo, ReplySources, ScheduleInfo, SearchInfo, ShownInvite, SignInLink, SignInWay,
+    TaskInfo, ThreadChanges, ThreadSteps, Told, TrustAsk, WatchEnd,
 };
 
 /// What the server is.

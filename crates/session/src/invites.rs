@@ -229,7 +229,7 @@ where
 
     /// How someone joins this server's organizations by an invite: through its company login,
     /// or by making a passkey where it keeps glave accounts; refused where no one else can.
-    fn joining(&self) -> Result<Joining, ApiError> {
+    fn joins_by(&self) -> Result<Joining, ApiError> {
         if self.inner.identity_provider {
             Ok(Joining::Company)
         } else if self.inner.accounts.is_some() {
@@ -242,7 +242,7 @@ where
     /// Answers `invite/show`: what the invite `code` opens now, for whoever holds it, signed in
     /// or not; refused alike as any code that opens nothing.
     pub(crate) async fn show_invite(&self, code: &str) -> Result<Reply, ApiError> {
-        let joining = self.joining()?;
+        let joining = self.joins_by()?;
         let org = self.invited_to(code);
         let presented = kept(code);
         let now = self.inner.harness.clock().now();

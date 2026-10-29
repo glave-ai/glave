@@ -903,6 +903,21 @@
       ],
       "type": "object"
     },
+    "Joining": {
+      "description": "How someone joins the organization an invite is to.",
+      "oneOf": [
+        {
+          "const": "passkey",
+          "description": "By making a passkey: a new glave account, or one more organization for someone\nsigned in with one.",
+          "type": "string"
+        },
+        {
+          "const": "company",
+          "description": "By signing in through the organization's company login.",
+          "type": "string"
+        }
+      ]
+    },
     "LineKind": {
       "description": "Whether a line was kept, taken out or put in.",
       "enum": [
@@ -2173,6 +2188,35 @@
           "type": "string"
         }
       ]
+    },
+    "ShownInvite": {
+      "description": "What an invite's link opens, for whoever holds it: never its code, nor whom it was sent to.",
+      "properties": {
+        "by": {
+          "description": "Who made it, by the name the organization knows them by, else their email; none for\nthe person who runs this glave, who has neither here.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "joining": {
+          "$ref": "#/$defs/Joining"
+        },
+        "organization": {
+          "description": "The organization it is to, for a client to work in once its person joins.",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/OrgRole",
+          "description": "The role it gives."
+        }
+      },
+      "required": [
+        "organization",
+        "role",
+        "joining"
+      ],
+      "type": "object"
     },
     "SignInLink": {
       "description": "Signing in to a remote server in the browser: the person opens `url`, its authorization server's\npage, then the client waits on `flow` with `connection/poll`.",
@@ -4161,6 +4205,32 @@
         "type": "object"
       },
       "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "invite/show": {
+      "params": {
+        "properties": {
+          "code": {
+            "$ref": "#/$defs/Secret"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "What an invite's link opens.",
+        "properties": {
+          "shown": {
+            "$ref": "#/$defs/ShownInvite"
+          }
+        },
+        "required": [
+          "shown"
+        ],
         "type": "object"
       },
       "streams": false
