@@ -1,25 +1,11 @@
 import { TestBed } from '@angular/core/testing';
-import {
-  type ActivatedRouteSnapshot,
-  Router,
-  type RouterStateSnapshot,
-  UrlTree,
-} from '@angular/router';
+import { Router, UrlTree } from '@angular/router';
 
-import { SessionService } from '../services/session.service';
-import { FAKE_SERVER, FakeSession, provideFakeSession } from '../testing/fake-session';
+import { guardAt } from '../testing/links';
 import { inviteGuard } from './invite.guard';
 
 describe('inviteGuard', () => {
-  async function run(link: string): Promise<unknown> {
-    window.history.replaceState(null, '', link);
-    const fake = new FakeSession().answer('server/discover', { id: FAKE_SERVER });
-    TestBed.configureTestingModule({ providers: provideFakeSession(fake, null) });
-    await TestBed.inject(SessionService).start();
-    return TestBed.runInInjectionContext(() =>
-      inviteGuard({} as ActivatedRouteSnapshot, {} as RouterStateSnapshot),
-    );
-  }
+  const run = (link: string): Promise<unknown> => guardAt(inviteGuard, link);
 
   it('sends a tab opened with an invite to the page that opens it', async () => {
     const result = await run('/#invite=c0de');
