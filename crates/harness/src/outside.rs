@@ -125,7 +125,10 @@ where
             thread.removed = false;
             return Ok(());
         }
-        let (home, _) = self.home_of(thread.scope, thread.for_).await?;
+        let home = match thread.home {
+            Some(_) => self.home_of(thread.scope, thread.for_).await?.0,
+            None => Arc::clone(&self.workspace),
+        };
         let again = match sources {
             Some(Sources::Worktree { path, branch, .. }) => {
                 let owner = owner_label(thread.scope, thread.id);

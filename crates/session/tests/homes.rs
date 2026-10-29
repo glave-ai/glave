@@ -1,10 +1,12 @@
 //! Each person's own computer, where a deployment gives people one (`specs/computers.md`, "A
 //! person's computer in the cloud"): opening the app starts waking it, and their threads work
-//! there, in a scratch folder on it, recorded as on their own computer and opened there again
-//! when the thread resumes. A computer of this machine stands in for the cluster's.
+//! there, in a scratch folder on it, recorded as on their own computer, and opened there again
+//! by a resumed thread's turn, never by reading it. A computer of this machine stands in for
+//! the cluster's.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use glave_computer::LocalComputers;
@@ -22,6 +24,8 @@ use crate::support::*;
 struct Here {
     base: PathBuf,
     woken: Mutex<Vec<(OrgId, PrincipalId)>>,
+    /// How many times a computer was asked for, to work on it.
+    asked: AtomicUsize,
     awake: tokio::sync::Mutex<BTreeMap<PrincipalId, Home>>,
 }
 
@@ -30,6 +34,7 @@ impl Here {
         Self {
             base: base.to_owned(),
             woken: Mutex::new(Vec::new()),
+            asked: AtomicUsize::new(0),
             awake: tokio::sync::Mutex::new(BTreeMap::new()),
         }
     }
@@ -55,6 +60,7 @@ impl Homes for Here {
 
     fn home(&self, _org: OrgId, person: PrincipalId) -> BoxFuture<'_, Result<Home, ComputerError>> {
         Box::pin(async move {
+            self.asked.fetch_add(1, Ordering::SeqCst);
             let mut awake = self.awake.lock().await;
             if let Some(home) = awake.get(&person) {
                 return Ok(home.clone());
@@ -134,6 +140,17 @@ fn a_person_s_threads_work_on_their_own_computer_woken_as_they_open_the_app() {
         next.projects = Some(Arc::clone(server.projects()));
         next.homes = Some(Arc::clone(&homes) as Arc<dyn Homes>);
         let (again, _) = next.build_on(&dir, log).await;
+        // Reading it waits for no computer: only a turn needs one.
+        let asked = homes.asked.load(Ordering::SeqCst);
+        again
+            .request(Request::ThreadGet { thread: thread.id })
+            .await
+            .unwrap();
+        assert_eq!(
+            homes.asked.load(Ordering::SeqCst),
+            asked,
+            "read without waking"
+        );
         turn(&again, thread.id, "hello").await.unwrap();
         assert!(
             Path::new(&workspace.root).is_dir(),
