@@ -40,8 +40,8 @@ pub enum HarnessError {
     #[error("a hook stopped this prompt: {0}")]
     PromptBlocked(String),
     /// What was asked for is not valid, such as an empty title.
-    #[error("{0}")]
-    Invalid(String),
+    #[error(transparent)]
+    Invalid(#[from] Invalid),
     /// The turn waits for the person, or for a subagent that does: it stopped where its log
     /// shows the wait, and goes on from the log once an answer comes ([`crate::Harness::go_on`]).
     #[error("thread {0} waits for an answer")]
@@ -55,6 +55,32 @@ pub enum HarnessError {
     /// No turn in the thread waits for answers to this call's questions.
     #[error("no question {} is waiting", .0.as_str())]
     NoQuestion(CallId),
+}
+
+/// What was asked for that is not valid, by what was wrong with it.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum Invalid {
+    /// A thread on a computer of the person's own, which cannot dial in yet.
+    #[error(
+        "a thread on computer {0} is not available yet: computers cannot dial in to a server \
+         until a later version"
+    )]
+    ComputerNotYet(String),
+    /// A model's id, at most this many bytes.
+    #[error("a model id is 1 to {0} bytes, not only spaces")]
+    ModelId(usize),
+    /// A reasoning level, at most this many letters.
+    #[error("a reasoning level is one word of 1 to {0} letters, such as high")]
+    EffortLevel(usize),
+    /// A plan to build where only Plan is allowed.
+    #[error("only Plan is allowed here, so no plan can be built")]
+    OnlyPlan,
+    /// Steps a plan cannot hold, saying why as the model is told it.
+    #[error("{0}")]
+    Steps(String),
+    /// A title, at most this many characters.
+    #[error("a title is 1 to {0} characters, not only spaces")]
+    Title(usize),
 }
 
 impl From<EncodeError> for HarnessError {

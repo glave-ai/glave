@@ -15,7 +15,7 @@ pub(crate) use self::say::{caution_in, say};
 pub(crate) use self::sentence::Sentence;
 
 use self::events::{asks, event_in};
-use crate::protocol::{ApiError, Reply, SearchInfo, Told, Usage};
+use crate::protocol::{ApiError, AwakeInfo, Reply, SearchInfo, Told, Usage};
 
 /// Whether `answered` holds a sentence of the server's own, which a transport writes in the
 /// caller's language.
@@ -38,6 +38,9 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
         Ok(Reply::Steps { steps }) => steps.runs.iter().any(|run| run.sentence.translatable()),
         Ok(Reply::Plan { plan: Some(plan) }) => plan.sentence.translatable(),
         Ok(Reply::Events { events, .. }) => events.iter().any(asks),
+        Ok(Reply::Awake {
+            awake: AwakeInfo::Cannot { reason },
+        }) => reason.translatable(),
         Ok(_) => false,
     }
 }
@@ -87,6 +90,9 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             }
         }
         Ok(Reply::Plan { plan: Some(plan) }) => plan.sentence.translate(language),
+        Ok(Reply::Awake {
+            awake: AwakeInfo::Cannot { reason },
+        }) => reason.translate(language),
         Ok(Reply::Events { events, .. }) => {
             for event in events {
                 if let Some(written) = event_in(event, language) {

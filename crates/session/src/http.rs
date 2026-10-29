@@ -47,7 +47,7 @@ use crate::rpc::{Id, parse, respond};
 use crate::server::Server;
 use crate::signin::{Door, SignIn, SignInError};
 use crate::streamed::Streamed;
-use crate::words::Sentence;
+use crate::words::{Language, Sentence};
 
 /// The largest request body accepted, in bytes.
 const MAX_BODY: usize = 16 * 1024 * 1024;
@@ -203,7 +203,7 @@ where
     let caller = match &token {
         Some(token) => match signin.verify_from(token, door).await {
             Ok(caller) => Some(caller),
-            Err(refused) => return unauthorized(&refused),
+            Err(refused) => return unauthorized(&refused, asked.as_deref()),
         },
         None => None,
     };
@@ -215,7 +215,7 @@ where
     let (id, request) = match message(request, limits).await {
         Ok(message) => message,
         // Without a sign-in, nothing is said about what was sent.
-        Err(_) if caller.is_none() => return unauthorized(&SignInError::Missing),
+        Err(_) if caller.is_none() => return unauthorized(&SignInError::Missing, asked.as_deref()),
         Err(failed) => return json(StatusCode::OK, failed),
     };
     let caller = match caller {
@@ -223,7 +223,7 @@ where
         None => match open(&request, door) {
             // Neither reads who calls.
             Ok(()) => glave_ports::Caller::default(),
-            Err(refused) => return unauthorized(&refused),
+            Err(refused) => return unauthorized(&refused, asked.as_deref()),
         },
     };
     dispatch(server, &caller, id, request, asked.as_deref()).await
@@ -405,9 +405,15 @@ fn events(body: Answer) -> Response<Answer> {
     response
 }
 
-/// HTTP 401 with error `-32013`, saying what is wrong with the sign-in but never the token.
-fn unauthorized(refused: &SignInError) -> Response<Answer> {
-    let failed = ApiError::new(code::NO_SIGN_IN, refused.to_string());
+/// HTTP 401 with error `-32013`, saying what is wrong with the sign-in but never the token, in
+/// the first language of `asked` (`Accept-Language`) the server writes in: no caller is known
+/// whose choice could be read.
+fn unauthorized(refused: &SignInError, asked: Option<&str>) -> Response<Answer> {
+    let mut failed = ApiError::new(code::NO_SIGN_IN, crate::errors::refused(refused));
+    let language = asked
+        .and_then(Language::accepted)
+        .unwrap_or(Language::English);
+    failed.message.translate(language);
     let mut response = json(StatusCode::UNAUTHORIZED, respond(None, Err(&failed)));
     response
         .headers_mut()
