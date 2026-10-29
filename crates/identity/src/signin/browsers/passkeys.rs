@@ -28,7 +28,7 @@ use glave_ports::host::PublicOrigin;
 use jiff::{SignedDuration, Timestamp};
 use uuid::Uuid;
 use webauthn_rs::prelude::{
-    Passkey, PasskeyAuthentication, PasskeyRegistration, PublicKeyCredential,
+    AuthenticationResult, Passkey, PasskeyAuthentication, PasskeyRegistration, PublicKeyCredential,
     RegisterPublicKeyCredential, Url, Webauthn, WebauthnBuilder,
 };
 
@@ -414,12 +414,22 @@ impl Browsers {
             .map_err(|error| BrowserError::Passkey(error.to_string()))?;
         // Removed, or added, on another server on this store since this one last looked.
         self.catch_up().await?;
-        let (id, mut kept) = self.kept(relying, &answer)?;
+        let (id, kept) = self.kept(relying, &answer)?;
         let result = relying
             .webauthn
             .finish_passkey_authentication(&answer, &authentication)
             .map_err(|error| BrowserError::Passkey(error.to_string()))?;
-        let changed = (kept.update_credential(&result) == Some(true))
+        self.used(id, kept, &result).await
+    }
+
+    /// Signs a browser in with the passkey `id`, `kept` as it was before `result` of using it.
+    async fn used(
+        &self,
+        id: Uuid,
+        mut kept: Passkey,
+        result: &AuthenticationResult,
+    ) -> Result<Session, BrowserError> {
+        let changed = (kept.update_credential(result) == Some(true))
             .then(|| serde_json::to_string(&kept))
             .transpose()
             .map_err(|error| BrowserError::Keep(error.to_string()))?;

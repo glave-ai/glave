@@ -263,3 +263,20 @@ impl Events {
         String::from_utf8(text).unwrap()
     }
 }
+
+/// Where a server reached from elsewhere is reached, in the tests that need one.
+pub(crate) const ORIGIN: &str = "https://glave.test";
+
+/// A client through the tunnel on this computer: its requests come to [`ORIGIN`]'s name.
+pub(crate) fn elsewhere(served: &Served, token: Option<String>) -> Web {
+    Web::new(served, token).reaching(ORIGIN)
+}
+
+/// What `request` is answered with: its result, or its error's code.
+pub(crate) async fn asked(web: &mut Web, request: &Request) -> Value {
+    let answered = web.call(request).await;
+    match answered.get("result") {
+        Some(result) => result.clone(),
+        None => answered["error"]["code"].clone(),
+    }
+}

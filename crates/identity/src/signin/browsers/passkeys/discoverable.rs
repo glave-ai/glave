@@ -12,7 +12,6 @@ use uuid::Uuid;
 use webauthn_rs::prelude::{DiscoverableAuthentication, DiscoverableKey, PublicKeyCredential};
 
 use super::{CEREMONY_LIFETIME, Ceremony, MOST_CEREMONIES, Relying, ceremony, parse};
-use crate::signin::browsers::state::Change;
 use crate::signin::browsers::{BrowserError, Browsers, Session, new_id};
 
 /// The requests to sign in with any passkey of the public origin, begun and not answered.
@@ -116,7 +115,7 @@ impl Browsers {
         }
         // Removed, or added, on another server on this store since this one last looked.
         self.catch_up().await?;
-        let (id, mut kept) = self.kept(relying, &discovered.answer)?;
+        let (id, kept) = self.kept(relying, &discovered.answer)?;
         let result = relying
             .webauthn
             .finish_discoverable_authentication(
@@ -125,11 +124,6 @@ impl Browsers {
                 &[DiscoverableKey::from(&kept)],
             )
             .map_err(|error| BrowserError::Passkey(error.to_string()))?;
-        let changed = (kept.update_credential(&result) == Some(true))
-            .then(|| serde_json::to_string(&kept))
-            .transpose()
-            .map_err(|error| BrowserError::Keep(error.to_string()))?;
-        self.begin(Some(id), vec![Change::PasskeyUsed(id, changed)])
-            .await
+        self.used(id, kept, &result).await
     }
 }

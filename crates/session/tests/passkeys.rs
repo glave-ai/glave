@@ -18,11 +18,8 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::support::issuer::fixed_clock;
-use crate::support::web::{Served, Web, serve_here, serve_with};
+use crate::support::web::{ORIGIN, Served, Web, asked, elsewhere, serve_here, serve_with};
 use crate::support::*;
-
-/// Where people reach the server from elsewhere.
-const ORIGIN: &str = "https://glave.test";
 
 /// The person's passkey handle.
 const HANDLE: Uuid = Uuid::from_u128(0x691);
@@ -53,20 +50,6 @@ async fn serve(dir: &Path, reached: bool, token: &LocalToken) -> Served {
     let (server, _) = setup.build(dir).await;
     let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
     serve_with(server, signin, None).await
-}
-
-/// A client through the tunnel on this computer: its requests come to [`ORIGIN`]'s name.
-fn elsewhere(served: &Served, token: Option<String>) -> Web {
-    Web::new(served, token).reaching(ORIGIN)
-}
-
-/// What `request` is answered with: its result, or its error's code.
-async fn asked(web: &mut Web, request: &Request) -> Value {
-    let answered = web.call(request).await;
-    match answered.get("result") {
-        Some(result) => result.clone(),
-        None => answered["error"]["code"].clone(),
-    }
 }
 
 /// A passkey made on `phone` through a setup link glave here made, and its session.
