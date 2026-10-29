@@ -115,6 +115,10 @@ async fn opening(root: &Path) -> anyhow::Result<Option<String>> {
 }
 
 /// Builds the session server on this computer's store and the current folder.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one list of every part a server is wired from, each a line"
+)]
 pub(crate) async fn wire(
     args: &Args,
     answering: Answering,
@@ -165,6 +169,7 @@ pub(crate) async fn wire(
         project_folders: Some(Arc::clone(&projects) as Arc<dyn glave_harness::ProjectFolders>),
         trust: Some(Arc::clone(&projects) as Arc<dyn ProjectTrust>),
         browsers: crate::serving::browsers(args, choices, &store, identity.person).await?,
+        accounts: crate::serving::accounts(args, choices, &store).await?,
         origin: choices.origin.as_ref().map(|origin| origin.value.clone()),
         leases: Some(store.leases()),
         awake: crate::awake::for_server(args, choices, &processes),

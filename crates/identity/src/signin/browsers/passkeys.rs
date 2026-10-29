@@ -13,7 +13,11 @@
 //! passkeys still sign in, and of one that does not, so its passkey manager forgets the rest
 //! (`signals`).
 
+mod discoverable;
 mod signals;
+
+pub use self::discoverable::Discovered;
+pub(crate) use self::discoverable::Discoverer;
 
 pub use self::signals::{AcceptedPasskeys, UnknownPasskey};
 
@@ -24,7 +28,7 @@ use glave_ports::host::PublicOrigin;
 use jiff::{SignedDuration, Timestamp};
 use uuid::Uuid;
 use webauthn_rs::prelude::{
-    Passkey, PasskeyAuthentication, PasskeyRegistration, PublicKeyCredential,
+    AuthenticationResult, Passkey, PasskeyAuthentication, PasskeyRegistration, PublicKeyCredential,
     RegisterPublicKeyCredential, Url, Webauthn, WebauthnBuilder,
 };
 
@@ -66,8 +70,15 @@ pub struct Ceremony {
 pub enum Proof<'a> {
     /// A setup code glave on its computer made.
     Code(&'a str),
-    /// The person, signed in already.
+    /// The person, signed in already; or, for the first passkey of a new glave account, the
+    /// invite they opened, which the server checked before asking.
     SignedIn,
+}
+
+/// A passkey made and checked, not kept yet ([`Browsers::checked`]).
+pub struct Checked {
+    info: PasskeyInfo,
+    change: Change,
 }
 
 /// A passkey, as the person sees it.
@@ -230,6 +241,10 @@ impl Browsers {
             .start_passkey_registration(relying.handle, "glave", "glave", Some(exclude))
             .map_err(|error| BrowserError::Passkey(error.to_string()))?;
         let id = new_id(now)?;
+        let mut asked = ceremony(id, &options)?;
+        if matches!(relying.party, Party::Public) {
+            discoverable(&mut asked.options);
+        }
         let mut ceremonies = self.ceremonies();
         ceremonies
             .making
@@ -243,7 +258,7 @@ impl Browsers {
             began: now,
             code,
         });
-        ceremony(id, &options)
+        Ok(asked)
     }
 
     /// Makes the passkey `credential` answers the request `ceremony` with, called `name` if
@@ -259,6 +274,25 @@ impl Browsers {
         let id = parse(&passkey.id).ok_or(BrowserError::Ceremony)?;
         let session = self.begin(Some(id), vec![change]).await?;
         Ok((passkey, session))
+    }
+
+    /// The passkey `credential` answers the request `ceremony` with, called `name` if named,
+    /// checked but not kept yet: the first of a new glave account, which [`Browsers::keep`]
+    /// keeps once the invite it was made for is spent.
+    pub fn checked(
+        &self,
+        ceremony: &str,
+        credential: &serde_json::Value,
+        name: Option<&str>,
+    ) -> Result<Checked, BrowserError> {
+        let (info, change) = self.made(ceremony, credential, name, false)?;
+        Ok(Checked { info, change })
+    }
+
+    /// Keeps the passkey `checked`, and signs this browser in with it.
+    pub async fn keep(&self, checked: Checked) -> Result<Session, BrowserError> {
+        let id = parse(&checked.info.id).ok_or(BrowserError::Ceremony)?;
+        self.begin(Some(id), vec![checked.change]).await
     }
 
     /// Makes the passkey `credential` answers the request `ceremony` with, called `name` if
@@ -380,12 +414,22 @@ impl Browsers {
             .map_err(|error| BrowserError::Passkey(error.to_string()))?;
         // Removed, or added, on another server on this store since this one last looked.
         self.catch_up().await?;
-        let (id, mut kept) = self.kept(relying, &answer)?;
+        let (id, kept) = self.kept(relying, &answer)?;
         let result = relying
             .webauthn
             .finish_passkey_authentication(&answer, &authentication)
             .map_err(|error| BrowserError::Passkey(error.to_string()))?;
-        let changed = (kept.update_credential(&result) == Some(true))
+        self.used(id, kept, &result).await
+    }
+
+    /// Signs a browser in with the passkey `id`, `kept` as it was before `result` of using it.
+    async fn used(
+        &self,
+        id: Uuid,
+        mut kept: Passkey,
+        result: &AuthenticationResult,
+    ) -> Result<Session, BrowserError> {
+        let changed = (kept.update_credential(result) == Some(true))
             .then(|| serde_json::to_string(&kept))
             .transpose()
             .map_err(|error| BrowserError::Keep(error.to_string()))?;
@@ -504,6 +548,19 @@ fn ceremony(id: Uuid, options: &impl serde::Serialize) -> Result<Ceremony, Brows
         options: serde_json::to_value(options)
             .map_err(|error| BrowserError::Passkey(error.to_string()))?,
     })
+}
+
+/// `options` asking for a passkey a request naming none finds (a discoverable credential), as
+/// a server with glave accounts asks: password managers' passkeys always are, a security key's
+/// only when asked.
+fn discoverable(options: &mut serde_json::Value) {
+    if let Some(selection) = options
+        .pointer_mut("/publicKey/authenticatorSelection")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        selection.insert("residentKey".into(), "required".into());
+        selection.insert("requireResidentKey".into(), true.into());
+    }
 }
 
 /// A passkey's name: `name`, trimmed and cut short, else when it was added.

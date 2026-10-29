@@ -122,7 +122,7 @@ fn a_member_may_not_list_people_or_give_roles_and_nothing_is_recorded() {
         let listed = people(&server, &Caller::default()).await.unwrap();
         let roles: Vec<_> = listed
             .iter()
-            .map(|p| (p.subject.as_str(), p.role))
+            .map(|p| (p.subject.as_deref().unwrap_or_default(), p.role))
             .collect();
         assert_eq!(roles.len(), 2);
         assert!(roles.contains(&("ada", OrgRole::Member)), "{roles:?}");

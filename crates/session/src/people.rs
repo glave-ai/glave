@@ -130,6 +130,16 @@ impl People {
             .is_some_and(|kept| kept.joined == *joined)
     }
 
+    /// How many people the ledger has.
+    pub(crate) fn count(&self) -> usize {
+        self.known.len()
+    }
+
+    /// Whether anyone in it joined with a glave account.
+    pub(crate) fn has_accounts(&self) -> bool {
+        self.known.values().any(|kept| kept.joined.issuer.is_none())
+    }
+
     /// The role of `person`, who signed in from elsewhere: a Member until given another.
     pub(crate) fn role(&self, person: PrincipalId) -> OrgRole {
         self.known
@@ -159,8 +169,8 @@ pub(crate) fn joined_of(caller: &Caller) -> Option<PersonJoined> {
     }
     Some(PersonJoined {
         person: caller.person?,
-        issuer: auth.issuer.clone()?,
-        subject: auth.subject.clone()?,
+        issuer: Some(auth.issuer.clone()?),
+        subject: Some(auth.subject.clone()?),
         profile: caller.profile.clone().unwrap_or_default(),
     })
 }
@@ -193,6 +203,25 @@ where
         let org = self.org_of(caller);
         self.catch_up_people(org).await?;
         Ok(self.people(org, |people| people.role(person)))
+    }
+
+    /// Whether `caller`'s organization is shown (`specs/model.md`, "Identity"): where people
+    /// sign in through a company login, or, to someone signed in, where it holds more than one
+    /// person, the local person counting in the server's own.
+    pub(crate) async fn organization_shown(&self, caller: &Caller) -> Result<bool, ApiError> {
+        if self.inner.identity_provider {
+            return Ok(true);
+        }
+        if caller.auth.is_none() {
+            return Ok(false);
+        }
+        let org = self.org_of(caller);
+        self.catch_up_people(org).await?;
+        let local = usize::from(org == self.inner.own);
+        Ok(self
+            .people(org, |people| people.count())
+            .saturating_add(local)
+            > 1)
     }
 
     /// Refuses `caller` what their role does not permit, before anything of it is read, and
@@ -315,6 +344,23 @@ where
         org: OrgId,
         make: impl Fn(&People) -> Result<Option<T>, ApiError>,
     ) -> Result<(), ApiError> {
+        self.record_people(org, |people, next| {
+            let payload = make(people)?;
+            payload
+                .map(|payload| Ok(vec![self.people_event(next, &payload)?]))
+                .transpose()
+        })
+        .await
+    }
+
+    /// Appends the events `make` makes of the ledger as it is then, the first at the `seq` it
+    /// is handed and each after it at the next, after anything others wrote meanwhile: nothing
+    /// when it makes nothing. They are appended together, or none of them.
+    pub(crate) async fn record_people(
+        &self,
+        org: OrgId,
+        make: impl Fn(&People, u64) -> Result<Option<Vec<RawEvent>>, ApiError>,
+    ) -> Result<(), ApiError> {
         let ledger = Reserved::People.id();
         // Glave's own: the organization's people ledger.
         let scope = Scope::of_organization(org);
@@ -322,20 +368,8 @@ where
         let make = &make;
         let appended = append_retrying(log, &scope, ledger, || async move {
             self.catch_up_people(org).await?;
-            let (payload, next) = self.people(org, |held| {
-                Ok::<_, ApiError>((make(held)?, held.next_seq()))
-            })?;
-            let Some(payload) = payload else {
-                return Ok(None);
-            };
-            let now = self.inner.harness.clock().now();
-            let header = Header {
-                id: EventId::new(now, self.inner.harness.entropy().bytes()?)?,
-                thread: ledger,
-                seq: Seq::new(next)?,
-                at: At::from(now),
-            };
-            Ok::<_, ApiError>(Some((vec![encode(header, &payload)?], ())))
+            let events = self.people(org, |held| make(held, held.next_seq()))?;
+            Ok::<_, ApiError>(events.map(|events| (events, ())))
         })
         .await?;
         self.people(org, |held| {
@@ -344,6 +378,22 @@ where
             }
         });
         Ok(())
+    }
+
+    /// `payload` as the people ledger's event at `seq`, now.
+    pub(crate) fn people_event<T: Payload>(
+        &self,
+        seq: u64,
+        payload: &T,
+    ) -> Result<RawEvent, ApiError> {
+        let now = self.inner.harness.clock().now();
+        let header = Header {
+            id: EventId::new(now, self.inner.harness.entropy().bytes()?)?,
+            thread: Reserved::People.id(),
+            seq: Seq::new(seq)?,
+            at: At::from(now),
+        };
+        Ok(encode(header, payload)?)
     }
 
     /// `look` at what this server has read of `org`'s people ledger.

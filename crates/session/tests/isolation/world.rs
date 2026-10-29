@@ -1,7 +1,8 @@
 //! The isolation suite's world: three organizations on one store, served by two servers. Each
 //! server's own organization has two people: the person on its computer and one signed in with
-//! OIDC. The third is served by the first server beside its own, with two people signed in,
-//! each request of theirs carrying it, so one server serves two organizations. Each person
+//! OIDC. The third is served by the first server beside its own, with two people signed in
+//! with glave accounts, each request of theirs carrying it, so one server serves two
+//! organizations. Each person
 //! makes their own things as any client would (a project, threads, a schedule, a task,
 //! memories; the person on the computer also browser sessions, accounts and a turn waiting for
 //! them), and the world keeps the ids.
@@ -92,12 +93,17 @@ fn third() -> OrgId {
     OrgId::from_uuid(uuid::Uuid::from_u128(3))
 }
 
-/// `name`, signed in, working in the third organization.
+/// `name`, signed in with a glave account, working in the third organization.
 fn in_third(name: &str) -> Caller {
-    Caller {
-        org: Some(third()),
-        ..signed_in(name)
-    }
+    let mut caller = signed_in(name);
+    caller.auth = Some(Auth {
+        method: AuthMethod::Account,
+        issuer: None,
+        subject: None,
+        session: None,
+    });
+    caller.org = Some(third());
+    caller
 }
 
 fn signed_in(name: &str) -> Caller {

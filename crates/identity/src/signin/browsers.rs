@@ -15,11 +15,13 @@ mod ledger;
 mod passkeys;
 mod state;
 
-pub use self::passkeys::{AcceptedPasskeys, Ceremony, PasskeyInfo, Proof, UnknownPasskey};
+pub use self::passkeys::Discovered;
+pub(crate) use self::passkeys::Discoverer;
+pub use self::passkeys::{AcceptedPasskeys, Ceremony, Checked, PasskeyInfo, Proof, UnknownPasskey};
 
 use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
 
-use glave_event::{RawEvent, Secret, Seq};
+use glave_event::{PrincipalId, RawEvent, Secret, Seq};
 use glave_ports::host::PublicOrigin;
 use glave_ports::stream::{Reserved, StreamError};
 use glave_ports::{BoxFuture, Clock, EventLog, Scope};
@@ -107,10 +109,12 @@ pub struct Session {
     pub accepted: Option<AcceptedPasskeys>,
 }
 
-/// The codes, browser sessions and passkeys of one server, the sessions and passkeys kept in
-/// the store.
+/// The codes, browser sessions and passkeys of one person on one server, the sessions and
+/// passkeys kept in the store: the local person's, or the person whose glave account it is.
 pub struct Browsers {
     ledger: Box<dyn Ledger>,
+    /// The glave account it is, whose sessions' tokens name it; none for the local person.
+    account: Option<PrincipalId>,
     server: String,
     /// The person's user handle, which every passkey made for them keeps.
     handle: Uuid,
@@ -145,6 +149,7 @@ impl Browsers {
         };
         let browsers = Self {
             ledger: Box::new(Stream { log, scope, thread }),
+            account: None,
             server,
             handle,
             clock,
@@ -159,10 +164,31 @@ impl Browsers {
         Ok(browsers)
     }
 
+    /// The sessions and passkeys of `person`'s glave account, kept in the account's own
+    /// ledger, for the server `server`, its passkeys made at `origin` and keeping `handle`.
+    pub(crate) async fn open_account<L: EventLog + 'static>(
+        log: L,
+        person: PrincipalId,
+        server: String,
+        handle: Uuid,
+        origin: &PublicOrigin,
+        clock: Box<dyn Clock>,
+    ) -> Result<Self, BrowserError> {
+        let scope = Scope::of_account(person);
+        let mut browsers = Self::open(log, scope, server, handle, Some(origin), clock).await?;
+        browsers.account = Some(person);
+        Ok(browsers)
+    }
+
     /// The server's id, which `server/discover` answers so a browser presents its session to
     /// no other.
     pub fn server(&self) -> String {
         self.server.clone()
+    }
+
+    /// The user handle every passkey made here keeps.
+    pub fn handle(&self) -> Uuid {
+        self.handle
     }
 
     /// A new code for a link, good once, for `CODE_LIFETIME`.
@@ -204,7 +230,15 @@ impl Browsers {
         with: Vec<Change>,
     ) -> Result<Session, BrowserError> {
         let now = self.clock.now();
-        let token = format!("{SESSION_PREFIX}{}", random_hex()?);
+        let token = match self.account {
+            // An account's token names it, so a server finds whose session it is.
+            Some(person) => format!(
+                "{SESSION_PREFIX}{}_{}",
+                person.as_uuid().simple(),
+                random_hex()?
+            ),
+            None => format!("{SESSION_PREFIX}{}", random_hex()?),
+        };
         let id = new_id(now)?;
         let hash = kept(&token);
         let with = &with;
@@ -360,8 +394,15 @@ impl Browsers {
     }
 }
 
+/// The glave account a session's `token` names, when it is an account's: the local person's
+/// name none.
+pub(crate) fn account_of(token: &str) -> Option<PrincipalId> {
+    let (account, _) = token.strip_prefix(SESSION_PREFIX)?.split_once('_')?;
+    PrincipalId::try_from(Uuid::try_parse(account).ok()?).ok()
+}
+
 /// A UUID v7 at `now`.
-fn new_id(now: Timestamp) -> Result<Uuid, BrowserError> {
+pub(crate) fn new_id(now: Timestamp) -> Result<Uuid, BrowserError> {
     let mut random = [0u8; 10];
     getrandom::fill(&mut random).map_err(|e| BrowserError::Random(e.to_string()))?;
     let millis = u64::try_from(now.as_millisecond()).unwrap_or_default();

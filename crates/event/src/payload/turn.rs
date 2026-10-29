@@ -89,6 +89,8 @@ open_kind! {
         Local => "local",
         /// OpenID Connect.
         Oidc => "oidc",
+        /// A glave account: a passkey of the person's, or a browser session one began.
+        Account => "account",
         /// SAML.
         Saml => "saml",
     }

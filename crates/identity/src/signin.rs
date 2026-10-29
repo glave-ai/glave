@@ -8,6 +8,7 @@
 //! the server's public origin. Which way a request came in is its [`Door`]. A token is never
 //! logged or stored.
 
+mod accounts;
 mod browsers;
 mod keys;
 mod local;
@@ -22,11 +23,12 @@ use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 
-use self::browsers::SESSION_PREFIX;
+pub use self::accounts::Accounts;
 pub use self::browsers::{
-    AcceptedPasskeys, BrowserError, Browsers, Ceremony, PasskeyInfo, Proof, Session,
-    UnknownPasskey, kept, one_time_code, same_kept,
+    AcceptedPasskeys, BrowserError, Browsers, Ceremony, Checked, Discovered, PasskeyInfo, Proof,
+    Session, UnknownPasskey, kept, one_time_code, same_kept,
 };
+use self::browsers::{SESSION_PREFIX, account_of};
 use self::keys::Keys;
 use self::local::LOCAL_PREFIX;
 pub use self::local::{LOCAL_BYTES, LocalToken};
@@ -94,6 +96,8 @@ pub enum SignInError {
          there: sign in with a passkey here"
     )]
     OnlyThere,
+    #[error("this account belongs to no organization here: ask its admins for an invite")]
+    NoOrganization,
 }
 
 /// Checks sign-in tokens for one server. Keys are fetched from each issuer when first needed,
@@ -107,6 +111,8 @@ pub struct SignIn {
     /// Browser sessions, accepted as the local person: a link's from this computer, a
     /// passkey's through the public origin too.
     browsers: Option<Arc<Browsers>>,
+    /// glave accounts' sessions, each its person's.
+    accounts: Option<Arc<Accounts>>,
 }
 
 /// The claims glave reads. `iss` and `aud` are checked while decoding.
@@ -193,6 +199,7 @@ impl SignIn {
             clock,
             local: None,
             browsers: None,
+            accounts: None,
         })
     }
 
@@ -204,6 +211,7 @@ impl SignIn {
             clock,
             local: Some(token),
             browsers: None,
+            accounts: None,
         }
     }
 
@@ -221,10 +229,50 @@ impl SignIn {
         self
     }
 
+    /// Accepts the sessions of `accounts` too, each as its person.
+    #[must_use]
+    pub fn with_accounts(mut self, accounts: Arc<Accounts>) -> Self {
+        self.accounts = Some(accounts);
+        self
+    }
+
+    /// The person whose glave account began the session `token`, in the first organization
+    /// they joined, when it comes in at `door`.
+    async fn account(&self, token: &str, door: Door) -> Result<Caller, SignInError> {
+        let accounts = self.accounts.as_ref().ok_or(SignInError::EndedSession)?;
+        if door == Door::Elsewhere {
+            return Err(SignInError::OnlyThere);
+        }
+        let signed = accounts
+            .verify(token, door == Door::Here)
+            .await
+            .map_err(|_| SignInError::EndedSession)?;
+        let org = signed
+            .orgs
+            .first()
+            .copied()
+            .ok_or(SignInError::NoOrganization)?;
+        Ok(Caller {
+            person: Some(signed.person),
+            auth: Some(Auth {
+                method: AuthMethod::Account,
+                issuer: None,
+                subject: None,
+                session: Some(signed.session),
+            }),
+            trace: None,
+            profile: None,
+            org: Some(org),
+        })
+    }
+
     /// The caller a token proves when it comes in at `door`: the local person for the local
     /// token from this computer, or a browser session (a link's from this computer, a
     /// passkey's through the public origin too); else whoever an OIDC token names.
     pub async fn verify_from(&self, token: &str, door: Door) -> Result<Caller, SignInError> {
+        if account_of(token).is_some() {
+            return self.account(token, door).await;
+        }
         if token.starts_with(SESSION_PREFIX) {
             let browsers = self.browsers.as_ref().ok_or(SignInError::EndedSession)?;
             // Checked first, so a session is never renewed from elsewhere.

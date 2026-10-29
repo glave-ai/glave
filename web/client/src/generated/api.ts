@@ -482,8 +482,8 @@ export type PersonInfo = {
   /** Their name, as the identity provider's token said it, when it did. */
   readonly name?: string | null;
   readonly role: OrgRole;
-  /** Who they are to the identity provider: its id for them. */
-  readonly subject: string;
+  /** Who they are to the company login: its id for them; none with a glave account. */
+  readonly subject?: string | null;
 };
 
 /** A thread's plan: its latest `plan.updated`, by the model or the person. */
@@ -1558,6 +1558,8 @@ export type PasskeyCreateResult = {
 
 export type PasskeyCreateOptionsParams = {
   readonly code: Secret;
+  /** Whether `code` is an invite's. */
+  readonly invite?: boolean;
 };
 
 /**

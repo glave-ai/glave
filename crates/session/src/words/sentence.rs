@@ -70,7 +70,14 @@ sentences! {
         "only an owner can make someone an owner, or change an owner's role",
     NoSuchPerson { person: String } = "no-such-person"
         "no one with the id { $person } has signed in here",
-    NoOrganization = "no-organization" "this server has no organization to invite anyone to",
+    NoOrganization = "no-organization"
+        "no one else can reach this glave, so there is no one to invite: give it an address people reach it at first",
+    InNoOrganization = "in-no-organization"
+        "your account belongs to no organization here: ask its admins for an invite",
+    LastPasskey = "last-passkey"
+        "this is your only passkey, so it can't be removed: add another first",
+    NoAccounts = "no-accounts"
+        "people sign in to this glave another way, so an invite here makes no passkey",
     InviteGone = "invite-gone"
         "that invite link was used already, revoked or has expired: ask whoever sent it for a new one",
     NoSuchInvite { invite: String } = "no-such-invite" "no invite with the id { $invite } is waiting",

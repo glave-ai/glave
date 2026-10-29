@@ -1371,13 +1371,15 @@
           "$ref": "#/$defs/OrgRole"
         },
         "subject": {
-          "description": "Who they are to the identity provider: its id for them.",
-          "type": "string"
+          "description": "Who they are to the company login: its id for them; none with a glave account.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
         "id",
-        "subject",
         "role",
         "joined"
       ],
@@ -4620,6 +4622,10 @@
         "properties": {
           "code": {
             "$ref": "#/$defs/Secret"
+          },
+          "invite": {
+            "description": "Whether `code` is an invite's.",
+            "type": "boolean"
           }
         },
         "required": [
