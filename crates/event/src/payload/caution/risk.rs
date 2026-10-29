@@ -3,10 +3,6 @@
 //! untrusted content. Each is a clause the model reads as it is ("it deletes ~/x") and the
 //! person as a sentence of its own.
 
-use serde::{Deserialize, Serialize};
-
-use super::Worded;
-
 worded! {
     /// What a call would do that needs the person, with the values it is written with.
     Risk {

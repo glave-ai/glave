@@ -338,13 +338,14 @@ where
                 let root = workspace
                     .new_project(&folder_name(name), None)
                     .await
-                    .map_err(|error| {
-                        ApiError::new(
+                    .map_err(|error| match error {
+                        ComputerError::Refused(reason) => ApiError::new(code::INTERNAL, &reason),
+                        error => ApiError::new(
                             code::INTERNAL,
                             Sentence::FolderNotMade {
                                 reason: error.to_string(),
                             },
-                        )
+                        ),
                     })?;
                 Ok((root, FolderSource::Local))
             }
@@ -440,7 +441,7 @@ fn no_folder(path: &str, error: &ComputerError) -> ApiError {
                 path: path.to_owned(),
             },
         ),
-        ComputerError::Refused(message) => ApiError::new(code::INVALID_PARAMS, message.clone()),
+        ComputerError::Refused(reason) => ApiError::new(code::INVALID_PARAMS, reason),
         _ => ApiError::new(
             code::INTERNAL,
             Sentence::FolderNotOpened {
@@ -451,8 +452,11 @@ fn no_folder(path: &str, error: &ComputerError) -> ApiError {
     }
 }
 
-/// A clone that failed, with what git said.
+/// A clone that failed, with what git said; a refusal is told as it is.
 fn not_cloned(url: &str, error: &ComputerError) -> ApiError {
+    if let ComputerError::Refused(reason) = error {
+        return ApiError::new(code::HOST, reason);
+    }
     ApiError::new(
         code::HOST,
         Sentence::CloneFailed {

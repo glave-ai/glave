@@ -57,7 +57,9 @@ impl Trash {
         tokio::fs::create_dir_all(&files).await.map_err(failed)?;
         let name = path
             .file_name()
-            .ok_or_else(|| ComputerError::Refused(format!("{} has no name", path.display())))?
+            .ok_or_else(|| {
+                ComputerError::Refused(format!("{} has no name", path.display()).into())
+            })?
             .to_string_lossy()
             .into_owned();
         for attempt in 0..MAX_NAMES {

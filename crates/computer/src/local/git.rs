@@ -7,7 +7,7 @@ use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
 
-use glave_ports::computer::{ComputerError, GitCredential, Save, Saved};
+use glave_ports::computer::{ComputerError, GitCredential, Refusal, Save, Saved};
 use glave_process::Processes;
 
 use super::registry::Opened;
@@ -123,11 +123,9 @@ impl<'a> Git<'a> {
 }
 
 /// Refuses text git would read as an option.
-pub(crate) fn not_an_option(what: &str, value: &str) -> Result<(), ComputerError> {
+pub(crate) fn not_an_option(what: fn(String) -> Refusal, value: &str) -> Result<(), ComputerError> {
     if value.starts_with('-') || value.trim().is_empty() {
-        Err(ComputerError::Refused(format!(
-            "{what} {value:?} is not valid"
-        )))
+        Err(ComputerError::Refused(what(format!("{value:?}")).into()))
     } else {
         Ok(())
     }
@@ -142,9 +140,9 @@ pub(crate) async fn clone(
     dest: &Path,
     credential: Option<&GitCredential>,
 ) -> Result<(), ComputerError> {
-    not_an_option("the repository", url)?;
+    not_an_option(|value| Refusal::RepositoryNotValid { value }, url)?;
     if let Some(at) = at {
-        not_an_option("the revision", at)?;
+        not_an_option(|value| Refusal::RevisionNotValid { value }, at)?;
     }
     let parent = dest
         .parent()
@@ -189,9 +187,9 @@ pub(crate) async fn clone(
 /// Commits everything in the workspace to `save.branch`, and pushes it to `origin` if the
 /// workspace has one.
 pub(crate) async fn save(opened: &Opened, save: &Save) -> Result<Saved, ComputerError> {
-    not_an_option("the branch", &save.branch)?;
+    not_an_option(|value| Refusal::BranchNotValid { value }, &save.branch)?;
     if save.message.trim().is_empty() {
-        return Err(ComputerError::Refused("the commit message is empty".into()));
+        return Err(ComputerError::Refused(Refusal::NoCommitMessage.into()));
     }
     let git = repository(opened).await?;
     if git
@@ -199,10 +197,12 @@ pub(crate) async fn save(opened: &Opened, save: &Save) -> Result<Saved, Computer
         .await?
         .is_err()
     {
-        return Err(ComputerError::Refused(format!(
-            "{:?} is not a valid branch name",
-            save.branch
-        )));
+        return Err(ComputerError::Refused(
+            Refusal::NotABranchName {
+                branch: format!("{:?}", save.branch),
+            }
+            .into(),
+        ));
     }
     let reference = format!("refs/heads/{}", save.branch);
     let exists = git
@@ -254,9 +254,7 @@ async fn repository(opened: &Opened) -> Result<Git<'_>, ComputerError> {
         .await
         .unwrap_or(false)
     {
-        return Err(ComputerError::Refused(
-            "this folder is not a git repository; glave saves work only in repositories".into(),
-        ));
+        return Err(ComputerError::Refused(Refusal::NotARepository.into()));
     }
     Ok(Git {
         processes: &opened.processes,

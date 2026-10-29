@@ -7,7 +7,7 @@ mod locks;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use glave_ports::computer::ComputerError;
+use glave_ports::computer::{ComputerError, Refusal};
 use glave_ports::digest;
 use glave_process::Processes;
 use serde::{Deserialize, Serialize};
@@ -77,12 +77,13 @@ pub(crate) async fn read_record(dest: &Path) -> Result<Option<Record>, ComputerE
         return Ok(None);
     };
     if stored.version != VERSION {
-        return Err(ComputerError::Refused(format!(
-            "{} was written by a newer version of glave (record version {}); update glave to \
-             use it",
-            path.display(),
-            stored.version
-        )));
+        return Err(ComputerError::Refused(
+            Refusal::NewerRecord {
+                path: path.display().to_string(),
+                version: stored.version.to_string(),
+            }
+            .into(),
+        ));
     }
     Ok(Some(stored.record))
 }
@@ -120,32 +121,34 @@ pub(crate) async fn open(
     owner: Option<&str>,
 ) -> Result<Made, ComputerError> {
     let folder = paths::folder(path).await?;
-    not_an_option("the branch", branch)?;
+    not_an_option(|value| Refusal::BranchNotValid { value }, branch)?;
     let git = Git::at(processes, environment, &folder);
     let Ok(top) = git.ask(&["rev-parse", "--show-toplevel"]).await? else {
-        return Err(ComputerError::Refused(format!(
-            "{path} is not in a git repository, so it cannot have a worktree. Turn the worktree \
-             option off to work in the folder itself, or make it a repository with a commit."
-        )));
+        return Err(ComputerError::Refused(
+            Refusal::NotInRepository {
+                path: path.to_owned(),
+            }
+            .into(),
+        ));
     };
     if git
         .ask(&["rev-parse", "--verify", "--quiet", "HEAD"])
         .await?
         .is_err()
     {
-        return Err(ComputerError::Refused(format!(
-            "the repository at {top} has no commits yet, and a worktree starts from one. \
-             Commit first, or turn the worktree option off."
-        )));
+        return Err(ComputerError::Refused(Refusal::NoCommitsYet { top }.into()));
     }
     if git
         .ask(&["check-ref-format", "--branch", branch])
         .await?
         .is_err()
     {
-        return Err(ComputerError::Refused(format!(
-            "{branch:?} is not a valid branch name"
-        )));
+        return Err(ComputerError::Refused(
+            Refusal::NotABranchName {
+                branch: format!("{branch:?}"),
+            }
+            .into(),
+        ));
     }
     let prefix = git.must(&["rev-parse", "--show-prefix"]).await?;
     let common = common_dir(&git).await?;
@@ -218,11 +221,13 @@ async fn check_reusable(
     if same_repository && on.as_deref() == Ok(branch) {
         Ok(())
     } else {
-        Err(ComputerError::Refused(format!(
-            "{} already exists and is not this repository's worktree on {branch}; move it \
-             away, or remove it with `glave worktrees prune`",
-            dest.display()
-        )))
+        Err(ComputerError::Refused(
+            Refusal::NotOurWorktree {
+                path: dest.display().to_string(),
+                branch: branch.to_owned(),
+            }
+            .into(),
+        ))
     }
 }
 

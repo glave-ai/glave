@@ -9,6 +9,7 @@ mod credential;
 mod environment;
 mod finding;
 mod limits;
+mod refusal;
 mod sandbox;
 mod types;
 
@@ -23,6 +24,7 @@ pub use environment::{Environment, Image, Network, Size};
 pub use finding::{Glob, Globbed, Match, Search, Searched, Stat, looks_binary};
 pub use glave_event::Forge;
 pub use limits::{Isolation, Limits};
+pub use refusal::{Reason, Refusal};
 pub use sandbox::{
     PROTECTED, Sandbox, SandboxLevel, is_protected, is_protected_refusal, refuse_protected,
 };

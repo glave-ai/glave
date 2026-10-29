@@ -406,9 +406,9 @@ impl Workspace {
 /// for this (paths outside the workspace, bad patterns), and what went wrong otherwise.
 pub(crate) fn explain(error: &ComputerError) -> String {
     match error {
-        ComputerError::NotFound(message)
-        | ComputerError::Refused(message)
-        | ComputerError::Failed(message) => message.clone(),
+        ComputerError::NotFound(_) | ComputerError::Refused(_) | ComputerError::Failed(_) => {
+            error.message().to_owned()
+        }
         ComputerError::Unsupported(_) | ComputerError::Unreachable(_) => {
             format!("The computer could not do this: {error}")
         }

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use glave_ports::computer::{
-    ComputerError, ComputerId, Environment, GitCredential, Sandbox, WorkspaceId,
+    ComputerError, ComputerId, Environment, GitCredential, Refusal, Sandbox, WorkspaceId,
 };
 use glave_ports::{Clock as _, Entropy as _, OsEntropy, SystemClock};
 use uuid::{Builder, Uuid};
@@ -115,9 +115,12 @@ impl Registry {
     ) -> Result<(), ComputerError> {
         let mut held = self.held()?;
         if held.computers.len() >= MAX_COMPUTERS {
-            return Err(ComputerError::Refused(format!(
-                "this machine already holds {MAX_COMPUTERS} computers; destroy one first"
-            )));
+            return Err(ComputerError::Refused(
+                Refusal::TooManyComputers {
+                    most: MAX_COMPUTERS.to_string(),
+                }
+                .into(),
+            ));
         }
         held.computers.insert(id, environment);
         Ok(())
@@ -155,9 +158,12 @@ impl Registry {
             )));
         }
         if held.workspaces.len() >= MAX_WORKSPACES {
-            return Err(ComputerError::Refused(format!(
-                "{MAX_WORKSPACES} workspaces are already open; close one first"
-            )));
+            return Err(ComputerError::Refused(
+                Refusal::TooManyWorkspaces {
+                    most: MAX_WORKSPACES.to_string(),
+                }
+                .into(),
+            ));
         }
         held.workspaces.insert(id, Arc::new(opened));
         Ok(())
