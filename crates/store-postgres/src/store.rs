@@ -14,6 +14,7 @@ use thiserror::Error;
 use tokio_postgres::Config;
 
 use crate::blobs::PostgresBlobs;
+use crate::directory::PostgresDirectory;
 use crate::keys::PostgresKeys;
 use crate::leases::PostgresLeases;
 use crate::log::PostgresLog;
@@ -133,6 +134,11 @@ impl Store {
     /// The projects: their records, and the folders that lead to them.
     pub fn projects(&self) -> PostgresProjects {
         PostgresProjects::new(self.pool.clone())
+    }
+
+    /// The directory sign-in finds people in, and the organizations they belong to.
+    pub fn directory(&self) -> PostgresDirectory {
+        PostgresDirectory::new(self.pool.clone())
     }
 
     /// The leases work in flight runs under, on the database's clock.

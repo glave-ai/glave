@@ -198,7 +198,7 @@ fn the_projects_pass_the_projects_conformance_suite() {
 }
 
 /// A file another version of glave wrote, older or newer, is refused with what to do, and left
-/// as it was: until glave 0.1 there is one schema and no migration.
+/// as it was: until glave 0.1 there is one schema and no migration, but for added tables.
 #[test]
 fn a_file_of_another_schema_is_refused_and_left_as_it_was() {
     for found in [6, schema::VERSION + 1] {
@@ -222,6 +222,52 @@ fn a_file_of_another_schema_is_refused_and_left_as_it_was() {
             .unwrap();
         assert_eq!(version, found, "the file is not changed");
     }
+}
+
+#[test]
+fn the_directory_passes_the_directory_conformance_suite() {
+    let store = Store::open_in_memory(keys()).unwrap();
+    assert_eq!(
+        block_on!(conformance::directory(&store.directory())),
+        Ok(())
+    );
+}
+
+/// A file of the schema before, which a person's glave wrote, opens: it gains the directory's
+/// tables and keeps what it held.
+#[test]
+fn a_file_of_the_schema_before_gains_the_directory_and_keeps_its_data() {
+    let (_dir, path) = temp_db("schema-before");
+    {
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection.execute_batch(schema::SCHEMA).unwrap();
+        connection
+            .execute(
+                "INSERT INTO settings (key, value) VALUES ('kept', 'yes')",
+                [],
+            )
+            .unwrap();
+        connection
+            .pragma_update(None, "user_version", schema::BEFORE)
+            .unwrap();
+    }
+    block_on!(async {
+        let store = Store::open(&path, file_keys(&path), objects())
+            .await
+            .unwrap();
+        assert_eq!(conformance::directory(&store.directory()).await, Ok(()));
+    });
+    let raw = rusqlite::Connection::open(&path).unwrap();
+    let version: u32 = raw
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, schema::VERSION);
+    let kept: String = raw
+        .query_row("SELECT value FROM settings WHERE key = 'kept'", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(kept, "yes", "what the file held is kept");
 }
 
 #[test]
