@@ -12,16 +12,16 @@ use crate::payload::{
     BrowserSignedOut, BrowserUsed, CatalogRefreshed, CertificateIssued, CommandEnded,
     CommandStarted, ConnectionConnected, ConnectionRemoved, CredentialConnected, CredentialRemoved,
     EffortChosen, GatewayToolCalled, GoalEnded, GoalResumed, GoalSet, GroupingSet, HookRan,
-    LanguageSet, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemorySet,
-    MemoryTidied, MessageAdded, ModelChosen, ModelResponded, PasskeyAdded, PasskeyRemoved,
-    PasskeyUsed, PermissionsChosen, PersonJoined, PlanApproved, PlanUpdated, ProjectFolderSet,
-    ProjectRemoved, ProviderConnected, ProviderRemoved, RoleSet, ScheduleCreated, ScheduleDeleted,
-    TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed,
-    ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested, TrustDecided,
-    TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, approval, awake, browser, catalog,
-    certificate, chosen, command, connection, credential, gateway, goal, grouping, hook, language,
-    memory, message, model, passkey, people, plan, project, provider, remembering, standing, task,
-    thread, tool, trust, turn, workspace,
+    InviteAccepted, InviteCreated, InviteRevoked, LanguageSet, MemoryEdited, MemoryForgotten,
+    MemoryRestored, MemorySaved, MemorySet, MemoryTidied, MessageAdded, ModelChosen,
+    ModelResponded, PasskeyAdded, PasskeyRemoved, PasskeyUsed, PermissionsChosen, PersonJoined,
+    PlanApproved, PlanUpdated, ProjectFolderSet, ProjectRemoved, ProviderConnected,
+    ProviderRemoved, RoleSet, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted,
+    ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived,
+    ToolCallCompleted, ToolCallRequested, TrustDecided, TurnResult, TurnStarted, WorkspaceBound,
+    WorkspaceRemoved, approval, awake, browser, catalog, certificate, chosen, command, connection,
+    credential, gateway, goal, grouping, hook, language, memory, message, model, passkey, people,
+    plan, project, provider, remembering, standing, task, thread, tool, trust, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -96,6 +96,9 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (remembering::SET, 1),
     (people::JOINED, 1),
     (people::ROLE_SET, 1),
+    (people::INVITE_CREATED, 1),
+    (people::INVITE_ACCEPTED, 1),
+    (people::INVITE_REVOKED, 1),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -169,6 +172,9 @@ pub enum Body {
     MemorySet(MemorySet),
     PersonJoined(PersonJoined),
     RoleSet(RoleSet),
+    InviteCreated(InviteCreated),
+    InviteAccepted(InviteAccepted),
+    InviteRevoked(InviteRevoked),
     /// An event this reader does not understand: an unknown type, or a newer version of a
     /// known one. Kept exactly as written.
     Unknown(Unknown),
@@ -357,6 +363,9 @@ impl Event {
             Body::MemorySet(payload) => encode(header, payload),
             Body::PersonJoined(payload) => encode(header, payload),
             Body::RoleSet(payload) => encode(header, payload),
+            Body::InviteCreated(payload) => encode(header, payload),
+            Body::InviteAccepted(payload) => encode(header, payload),
+            Body::InviteRevoked(payload) => encode(header, payload),
             Body::Unknown(unknown) => Ok(RawEvent {
                 glave: ENVELOPE_VERSION,
                 id: header.id,
@@ -446,9 +455,7 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         language::SET => language::decode_set(version, data).map(|r| r.map(Body::LanguageSet)),
         grouping::SET => grouping::decode_set(version, data).map(|r| r.map(Body::GroupingSet)),
         remembering::SET => remembering::decode_set(version, data).map(|r| r.map(Body::MemorySet)),
-        people::JOINED => people::decode_joined(version, data).map(|r| r.map(Body::PersonJoined)),
-        people::ROLE_SET => people::decode_role_set(version, data).map(|r| r.map(Body::RoleSet)),
-        _ => None,
+        _ => people::decode(kind, version, data),
     }
 }
 

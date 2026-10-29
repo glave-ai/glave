@@ -148,6 +148,10 @@ where
             }
             Request::PeopleList { after, limit } => self.list_people(after, limit).await,
             Request::RoleSet { person, role } => self.set_role(caller, person, role).await,
+            Request::InviteCreate { role } => self.create_invite(caller, role).await,
+            Request::InviteList {} => self.list_invites().await,
+            Request::InviteRevoke { invite } => self.revoke_invite(caller, invite).await,
+            Request::InviteAccept { code } => self.accept_invite(caller, code.expose()).await,
             Request::AwakeGet {} => Ok(self.awake().await),
             Request::AwakeSet { on } => self.set_awake(caller, on).await,
             Request::LanguageGet {} => self.language(caller).await,

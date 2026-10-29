@@ -39,10 +39,16 @@ pub(super) enum Kind {
     /// A person, as the organization's admins name them. Within one organization its admins
     /// see its people by design: it is checked across organizations only.
     Person,
+    /// An invite to an organization, as its admins name it. Within one organization its
+    /// admins see its invites by design: it is checked across organizations only.
+    Invite,
+    /// An invite's code. Whoever holds it joins the organization that made it, so within one
+    /// organization it proves nothing: it is checked across organizations only.
+    InviteCode,
 }
 
 impl Kind {
-    pub(super) const ALL: [Self; 16] = [
+    pub(super) const ALL: [Self; 18] = [
         Self::Thread,
         Self::Project,
         Self::Approval,
@@ -59,6 +65,8 @@ impl Kind {
         Self::Computer,
         Self::Files,
         Self::Person,
+        Self::Invite,
+        Self::InviteCode,
     ];
 
     /// How a template writes it.
@@ -80,6 +88,8 @@ impl Kind {
             Self::Computer => "@computer",
             Self::Files => "@files",
             Self::Person => "@person",
+            Self::Invite => "@invite",
+            Self::InviteCode => "@invite_code",
         }
     }
 
@@ -103,7 +113,13 @@ impl Kind {
             Self::Credential => Some("CredentialId"),
             Self::Computer => Some("ComputerId"),
             Self::Person => Some("PrincipalId"),
-            Self::Ask | Self::Flow | Self::Code | Self::Session | Self::Files => None,
+            Self::Invite => Some("InviteId"),
+            Self::Ask
+            | Self::InviteCode
+            | Self::Flow
+            | Self::Code
+            | Self::Session
+            | Self::Files => None,
         }
     }
 
@@ -129,6 +145,8 @@ impl Kind {
             Self::Session => uuid(0xdead_0008),
             Self::Computer => uuid(0xdead_0009),
             Self::Person => uuid(0xdead_000a),
+            Self::Invite => uuid(0xdead_000b),
+            Self::InviteCode => "1".repeat(64),
             Self::Files => String::new(),
         })
     }
@@ -216,6 +234,11 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
                 json!({"person": "@person", "role": "owner"}),
             ],
         ),
+        // Only for the organization's admins, of its own invites; opened by anyone signed in.
+        ("invite/create", vec![json!({"role": "member"})]),
+        ("invite/list", vec![json!({})]),
+        ("invite/revoke", vec![json!({"invite": "@invite"})]),
+        ("invite/accept", vec![json!({"code": "@invite_code"})]),
         ("model/list", vec![json!({})]),
         (
             "thread/start",

@@ -24,7 +24,8 @@ use thiserror::Error;
 
 use self::browsers::SESSION_PREFIX;
 pub use self::browsers::{
-    AcceptedPasskeys, BrowserError, Browsers, Ceremony, PasskeyInfo, Proof, Session, UnknownPasskey,
+    AcceptedPasskeys, BrowserError, Browsers, Ceremony, PasskeyInfo, Proof, Session,
+    UnknownPasskey, kept, one_time_code, same_kept,
 };
 use self::keys::Keys;
 use self::local::LOCAL_PREFIX;

@@ -206,7 +206,7 @@ impl Browsers {
         let now = self.clock.now();
         let token = format!("{SESSION_PREFIX}{}", random_hex()?);
         let id = new_id(now)?;
-        let hash = hex(&digest(&token));
+        let hash = kept(&token);
         let with = &with;
         self.change(|state, now| {
             let mut changes = with.clone();
@@ -230,7 +230,7 @@ impl Browsers {
     /// The id of the session `token` is, renewed for `SESSION_LIFETIME` from now, when it is
     /// presented `here`, on the server's own computer, or was signed in with a passkey.
     pub async fn verify(&self, token: &str, here: bool) -> Result<String, BrowserError> {
-        let presented = hex(&digest(token));
+        let presented = kept(token);
         let mut found = self.find(&presented);
         if found.is_none() {
             // Signed in on another server on this store since this one last looked.
@@ -366,6 +366,23 @@ fn new_id(now: Timestamp) -> Result<Uuid, BrowserError> {
     getrandom::fill(&mut random).map_err(|e| BrowserError::Random(e.to_string()))?;
     let millis = u64::try_from(now.as_millisecond()).unwrap_or_default();
     Ok(uuid::Builder::from_unix_timestamp_millis(millis, &random).into_uuid())
+}
+
+/// A new one-time code for a link, a sign-in link's or an invite's: 32 random bytes from the
+/// operating system, in hex.
+pub fn one_time_code() -> Result<Secret, BrowserError> {
+    random_hex().map(Secret::new)
+}
+
+/// What is kept of a code or a token: its SHA-256, in hex, which signs no one in.
+pub fn kept(code: &str) -> String {
+    hex(&digest(code))
+}
+
+/// Whether two hashes [`kept`] made are the same, in a time that does not depend on where they
+/// differ.
+pub fn same_kept(a: &str, b: &str) -> bool {
+    same(a.as_bytes(), b.as_bytes())
 }
 
 /// [`SECRET_BYTES`] random bytes from the operating system, in hex.

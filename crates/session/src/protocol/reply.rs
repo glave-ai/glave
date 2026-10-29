@@ -12,9 +12,9 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     AcceptedPasskeys, ConnectionInfo, CredentialInfo, DeviceCode, FileInfo, GoneFolder, Grouping,
-    ModelInfo, PasskeySummary, Permissions, PersonInfo, PlanInfo, ProjectFolder, ProviderInfo,
-    ReplySources, ScheduleInfo, SearchInfo, SignInLink, SignInWay, TaskInfo, ThreadChanges,
-    ThreadSteps, Told, TrustAsk, WatchEnd,
+    InviteInfo, ModelInfo, PasskeySummary, Permissions, PersonInfo, PlanInfo, ProjectFolder,
+    ProviderInfo, ReplySources, ScheduleInfo, SearchInfo, SignInLink, SignInWay, TaskInfo,
+    ThreadChanges, ThreadSteps, Told, TrustAsk, WatchEnd,
 };
 
 /// What the server is.
@@ -384,6 +384,16 @@ pub enum Reply {
     /// A person, as they are now.
     #[schemars(title = "Person")]
     Person { person: PersonInfo },
+    /// An invite just made, and its code, sent this once.
+    #[schemars(title = "Invited")]
+    Invited {
+        invite: InviteInfo,
+        #[serde(serialize_with = "glave_event::serialize_exposed")]
+        code: Secret,
+    },
+    /// The invites waiting to be opened, oldest first.
+    #[schemars(title = "Invites")]
+    Invites { invites: Vec<InviteInfo> },
     // After every reply with a field of its own, since a missing `goal` or `plan` reads as
     // `null`; before `Done`, which takes any object.
     /// The thread's latest goal, or `null`.
