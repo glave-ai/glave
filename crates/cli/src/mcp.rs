@@ -59,7 +59,8 @@ pub(crate) async fn close(started: &[Arc<McpServer>]) {
 }
 
 /// Starts the trusted `servers` of the project at `root` (by name, each as JSON), in its
-/// folder, for the threads that work in it.
+/// folder, for the threads that work in it: each told, when it asks, that the folder is the
+/// one it works for.
 pub(crate) fn start_project(
     servers: &BTreeMap<String, String>,
     root: &Path,
@@ -77,7 +78,8 @@ pub(crate) fn start_project(
         .map(|(name, config)| {
             let untrusted = project_untrusted(name, marks.get(name).copied(), constraints);
             let limits = Limits::default();
-            let server = McpServer::start(name, config, &environment, root, limits, &processes);
+            let server =
+                McpServer::start_for_project(name, config, &environment, root, limits, &processes);
             Arc::new(server.untrusted(untrusted))
         })
         .collect())
