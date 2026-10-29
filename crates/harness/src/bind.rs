@@ -13,7 +13,7 @@ use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope, ToolSource}
 
 use crate::approval::Approver;
 use crate::builtins::{BUILTINS, Builtins};
-use crate::harness::{Harness, HarnessError, Thread};
+use crate::harness::{Harness, HarnessError, Invalid, Thread};
 use crate::removed::owner_label;
 use crate::tools::workspace::Workspace;
 
@@ -153,10 +153,7 @@ where
                 Ok((Some(Arc::new(worktree)), recorded))
             }
             Place::Worker(environment) => self.place_worker(&environment).await,
-            Place::Computer(computer) => Err(HarnessError::Invalid(format!(
-                "a thread on computer {computer} is not available yet: computers cannot dial in \
-                 to a server until a later version"
-            ))),
+            Place::Computer(computer) => Err(Invalid::ComputerNotYet(computer.to_string()).into()),
             Place::Scratch => {
                 let owner = owner_label(scope, id);
                 let scratch = self

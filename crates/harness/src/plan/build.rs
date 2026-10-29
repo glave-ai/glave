@@ -8,7 +8,7 @@ use glave_ports::{BlobStore, Caller, EventLog, Message, ModelProvider};
 use super::{checked, listed, told};
 use crate::approval::Approver;
 use crate::cancel::Cancel;
-use crate::harness::{Harness, HarnessError, Thread};
+use crate::harness::{Harness, HarnessError, Invalid, Thread};
 use crate::turn::{Live, Prompt};
 
 /// The prompt of the turn that builds an approved plan, before its steps.
@@ -37,7 +37,7 @@ where
             return Err(HarnessError::NoPlan(thread.id));
         }
         let steps = checked(steps.iter().map(|step| (step.clone(), PlanStatus::Pending)))
-            .map_err(HarnessError::Invalid)?;
+            .map_err(Invalid::Steps)?;
         let edited = PlanUpdated {
             steps,
             call_id: None,
@@ -78,9 +78,7 @@ where
             return Err(HarnessError::NoPlan(thread.id));
         };
         let Some(mode) = self.builds_in() else {
-            return Err(HarnessError::Invalid(
-                "only Plan is allowed here, so no plan can be built".to_owned(),
-            ));
+            return Err(Invalid::OnlyPlan.into());
         };
         let approved = PlanApproved {
             by: Self::other_than_for(thread, caller.person),

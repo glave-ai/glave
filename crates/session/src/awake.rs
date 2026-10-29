@@ -23,9 +23,17 @@ pub trait KeepAwake: Send + Sync {
     /// when it could not, which it says in the log.
     fn hold(&self) -> BoxFuture<'_, Option<Box<dyn Send>>>;
 
-    /// Why the host cannot keep this computer awake, in a sentence, when it has nothing to
-    /// keep it with.
-    fn cannot(&self) -> Option<String>;
+    /// Why the host cannot keep this computer awake, when it has nothing to keep it with.
+    fn cannot(&self) -> Option<Unawake>;
+}
+
+/// Why a host has nothing to keep its computer awake with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unawake {
+    /// It runs Linux without systemd, which glave keeps it awake through.
+    NoSystemd,
+    /// Its system has nothing glave keeps it awake through.
+    Nothing,
 }
 
 /// How many pieces of work run now, and whether the person wants the computer kept awake.
@@ -79,7 +87,13 @@ impl Awake {
     /// Whether the computer is kept awake, as Settings shows it.
     fn info(&self) -> AwakeInfo {
         match self.keep.cannot() {
-            Some(reason) => AwakeInfo::Cannot { reason },
+            Some(unawake) => AwakeInfo::Cannot {
+                reason: match unawake {
+                    Unawake::NoSystemd => Sentence::AwakeNeedsSystemd,
+                    Unawake::Nothing => Sentence::AwakeWithNothing,
+                }
+                .into(),
+            },
             None => AwakeInfo::Chosen {
                 on: self.state.borrow().on,
             },
@@ -224,7 +238,7 @@ mod tests {
             })
         }
 
-        fn cannot(&self) -> Option<String> {
+        fn cannot(&self) -> Option<Unawake> {
             None
         }
     }

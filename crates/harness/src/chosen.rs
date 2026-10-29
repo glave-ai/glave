@@ -9,7 +9,7 @@ use glave_event::{Body, EffortChosen, Event, ModelChosen, Permissions, Permissio
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
 use crate::approval::{ApprovalMode, Approver};
-use crate::harness::{Harness, HarnessError, Thread};
+use crate::harness::{Harness, HarnessError, Invalid, Thread};
 use crate::prompt::system_prompt;
 
 /// The longest model id, in bytes.
@@ -153,9 +153,7 @@ where
     ) -> Result<(), HarnessError> {
         let model = model.trim();
         if model.is_empty() || model.len() > MAX_MODEL_ID {
-            return Err(HarnessError::Invalid(format!(
-                "a model id is 1 to {MAX_MODEL_ID} bytes, not only spaces"
-            )));
+            return Err(Invalid::ModelId(MAX_MODEL_ID).into());
         }
         if thread.model.as_deref() == Some(model) {
             return Ok(());
@@ -240,9 +238,7 @@ where
         if let Some(level) = effort {
             let plain = level.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
             if level.is_empty() || level.len() > MAX_EFFORT || !plain {
-                return Err(HarnessError::Invalid(format!(
-                    "a reasoning level is one word of 1 to {MAX_EFFORT} letters, such as high"
-                )));
+                return Err(Invalid::EffortLevel(MAX_EFFORT).into());
             }
         }
         if thread.effort.as_deref() == effort {

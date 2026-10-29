@@ -16,6 +16,15 @@ use crate::server::Server;
 use crate::turn::{TurnStream, publish};
 use crate::words::Sentence;
 
+/// What a plan holds, said when steps it cannot hold are refused.
+pub(crate) fn steps_invalid() -> Sentence {
+    let count = |n: usize| u64::try_from(n).unwrap_or(u64::MAX);
+    Sentence::PlanStepsInvalid {
+        most: count(MAX_STEPS),
+        longest: count(MAX_STEP),
+    }
+}
+
 impl<P, L, B> Server<P, L, B>
 where
     P: ModelProvider + 'static,
@@ -41,12 +50,7 @@ where
         steps: Vec<String>,
     ) -> Result<Reply, ApiError> {
         if !holds(&steps) {
-            let count = |n: usize| u64::try_from(n).unwrap_or(u64::MAX);
-            let refused = Sentence::PlanStepsInvalid {
-                most: count(MAX_STEPS),
-                longest: count(MAX_STEP),
-            };
-            return Err(ApiError::new(code::INVALID_PARAMS, refused));
+            return Err(ApiError::new(code::INVALID_PARAMS, steps_invalid()));
         }
         let (finish, mut done) = watch::channel(None);
         let by = caller.clone();

@@ -64,7 +64,7 @@ pub enum AwakeInfo {
     Chosen { on: bool },
     /// On a person's own computer that glave has nothing to keep awake with: why, in a
     /// sentence.
-    Cannot { reason: String },
+    Cannot { reason: Told },
 }
 
 /// Whether glave remembers for the person (`specs/memory.md`, "Defaults and policy").
