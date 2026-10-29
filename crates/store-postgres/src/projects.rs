@@ -3,7 +3,8 @@
 use deadpool_postgres::{GenericClient, Pool};
 use glave_event::{At, Principal};
 use glave_ports::{
-    BoxFuture, FolderKey, OrgId, Project, ProjectError, ProjectId, ProjectKind, Projects,
+    BoxFuture, FolderKey, OrgId, Project, ProjectError, ProjectId, ProjectKind, ProjectRefusal,
+    Projects,
 };
 use jiff::Timestamp;
 use tokio_postgres::Row;
@@ -152,9 +153,7 @@ async fn insert<C: GenericClient>(
 impl PostgresProjects {
     async fn personal_now(&self, org: OrgId, new: &Project) -> Result<Project, ProjectError> {
         if new.kind != ProjectKind::Personal {
-            return Err(ProjectError::Invalid(
-                "a personal project must be personal".into(),
-            ));
+            return Err(ProjectError::Invalid(ProjectRefusal::NotPersonal));
         }
         let org = org.as_uuid();
         let mut client = connection(&self.pool).await.map_err(unavailable)?;
@@ -206,10 +205,9 @@ impl PostgresProjects {
         }
         let made = found.is_none();
         if made && insert(&transaction, org, new).await?.is_none() {
-            return Err(ProjectError::Conflict(format!(
-                "project {} exists already",
-                new.id
-            )));
+            return Err(ProjectError::Conflict(ProjectRefusal::Exists {
+                project: new.id.to_string(),
+            }));
         }
         let mut id = found.unwrap_or_else(|| new.id.as_uuid());
         for key in keys {
@@ -267,9 +265,7 @@ impl Projects for PostgresProjects {
                 .await
                 .map_err(database(ProjectError::Storage))?;
             let Some(kept) = insert(&transaction, org.as_uuid(), project).await? else {
-                return Err(ProjectError::Conflict(
-                    "the project's id is taken, or its owner has a personal project already".into(),
-                ));
+                return Err(ProjectError::Conflict(ProjectRefusal::IdOrPersonal));
             };
             transaction
                 .commit()
