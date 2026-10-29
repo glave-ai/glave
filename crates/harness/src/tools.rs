@@ -14,6 +14,7 @@ mod write;
 
 pub(crate) use background::named as command_named;
 pub(crate) use bash::outside_sandbox;
+pub(crate) use captured::Captured;
 
 use glave_event::{Arguments, ToolKind};
 use glave_ports::{ToolFile, ToolSpec};
@@ -204,12 +205,14 @@ impl Tool {
     }
 
     /// Runs the tool with the model's arguments, keeping the thread's commands in the
-    /// background in `commands`. Every failure becomes an error the model can read and act on;
-    /// nothing here aborts the turn. A command in the foreground stops when `cancel` fires.
+    /// background in `commands`, its output within `room` bytes (`room::tool_room`). Every
+    /// failure becomes an error the model can read and act on; nothing here aborts the turn. A
+    /// command in the foreground stops when `cancel` fires.
     pub(crate) async fn run(
         self,
         arguments: &Arguments,
         (workspace, commands): (&Workspace, &Commands),
+        room: usize,
         cancel: &dyn Cancellation,
     ) -> ToolOutcome {
         match self {
@@ -222,7 +225,7 @@ impl Tool {
                 Err(outcome) => outcome,
             },
             Self::Read => match parse(self, arguments, Some(workspace)) {
-                Ok(args) => read::read(workspace, args).await,
+                Ok(args) => read::read(workspace, args, room).await,
                 Err(outcome) => outcome,
             },
             Self::Write => match parse(self, arguments, Some(workspace)) {
@@ -234,11 +237,11 @@ impl Tool {
                 Err(outcome) => outcome,
             },
             Self::Bash => match parse(self, arguments, Some(workspace)) {
-                Ok(args) => bash::bash(workspace, commands, args, cancel).await,
+                Ok(args) => bash::bash(workspace, commands, args, room, cancel).await,
                 Err(outcome) => outcome,
             },
             Self::CommandOutput => match parse(self, arguments, Some(workspace)) {
-                Ok(args) => background::command_output(commands, args, cancel).await,
+                Ok(args) => background::command_output(commands, args, room, cancel).await,
                 Err(outcome) => outcome,
             },
         }

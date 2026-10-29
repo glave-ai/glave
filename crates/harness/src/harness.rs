@@ -35,7 +35,7 @@ use crate::toolset::ToolSet;
 use crate::waits::Opened;
 use crate::worker::Workers;
 
-pub use error::HarnessError;
+pub use error::{HarnessError, Invalid};
 pub use settings::Settings;
 
 /// Everything the harness is wired to: the ports, the injected clock and randomness, and the
@@ -277,6 +277,8 @@ where
             sources: vec![Arc::new(Builtins {
                 workspace: Arc::clone(&workspace),
                 commands: Arc::default(),
+                // Only offered from here: each thread's calls go to its own (`source_for`).
+                room: usize::MAX,
             })],
             defaults: RwLock::new(Arc::new(Defaults {
                 permissions: settings.permissions,

@@ -2,16 +2,21 @@
 //! `memory/list`, `save`, `edit`, `move`, `forget` and `restore`, in the project a request names
 //! or the caller's Chats when it names none. The caller decides what may be seen and changed:
 //! memory is the person's own, in their projects as in their Chats, and a memory names the chat
-//! it was saved in only to the person it was started for.
+//! it was saved in only to the person it was started for. Whether memory is on is the
+//! person's own choice (`memory/get`, `memory/set`), kept in their settings ledger as
+//! `memory.set` and read as each piece of work starts, so every server on one store runs by it.
 
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 
-use glave_event::ThreadId;
-use glave_ports::memories::{Access, Control};
+use std::sync::Arc;
+
+use glave_event::{Body, MemorySet, ThreadId};
+use glave_ports::memories::{Access, Control, Memory};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Standing};
 
-use crate::protocol::{ApiError, Reply, code};
+use crate::protocol::{ApiError, RememberingInfo, Reply, code};
+use crate::providers::theirs;
 use crate::server::Server;
 use crate::words::Sentence;
 
@@ -56,6 +61,62 @@ where
             }
         }
         Ok(Reply::Memories { memories })
+    }
+
+    /// Memory, when whether it is on is `caller`'s to choose: the person on this computer,
+    /// where their organization lets it run.
+    fn switchable(&self, caller: &Caller) -> Result<&Arc<dyn Memory>, ApiError> {
+        let memory = self.inner.harness.memory();
+        theirs(
+            caller,
+            memory,
+            Sentence::MemoryOff,
+            Sentence::MemoryOnItsComputer,
+        )
+    }
+
+    /// Answers `memory/get`: never the caller's to choose, with why, where `memory/set` would
+    /// refuse them.
+    pub(crate) async fn remembering(&self, caller: &Caller) -> Result<Reply, ApiError> {
+        let remembering = match self.switchable(caller) {
+            Ok(memory) => RememberingInfo::Chosen {
+                on: self.read_remembering(caller, memory.as_ref()).await?,
+            },
+            Err(refused) => RememberingInfo::Never {
+                reason: refused.message,
+            },
+        };
+        Ok(Reply::Remembering { remembering })
+    }
+
+    /// Answers `memory/set`: keeps the caller's choice, and runs memory by it from their
+    /// threads' next turn.
+    pub(crate) async fn set_remembering(
+        &self,
+        caller: &Caller,
+        on: bool,
+    ) -> Result<Reply, ApiError> {
+        let memory = self.switchable(caller)?;
+        self.keep_setting(caller, &MemorySet { on }).await?;
+        memory.switch(on);
+        Ok(Reply::Remembering {
+            remembering: RememberingInfo::Chosen { on },
+        })
+    }
+
+    /// Reads whether `caller` wants memory from their settings ledger, and runs `memory` by it:
+    /// on until they choose, or when this glave cannot read their choice.
+    pub(crate) async fn read_remembering(
+        &self,
+        caller: &Caller,
+        memory: &dyn Memory,
+    ) -> Result<bool, ApiError> {
+        let on = !matches!(
+            self.setting::<MemorySet>(caller).await?,
+            Some(Body::MemorySet(MemorySet { on: false }))
+        );
+        memory.switch(on);
+        Ok(on)
     }
 
     /// Whether `thread` is a chat started for `caller`, in a project they work in, and not

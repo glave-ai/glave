@@ -15,7 +15,7 @@ pub(crate) use self::say::{caution_in, say};
 pub(crate) use self::sentence::Sentence;
 
 use self::events::{asks, event_in};
-use crate::protocol::{ApiError, Reply, SearchInfo, Told, Usage};
+use crate::protocol::{ApiError, AwakeInfo, Reply, SearchInfo, Told, Usage};
 
 /// Whether `answered` holds a sentence of the server's own, which a transport writes in the
 /// caller's language.
@@ -30,9 +30,14 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
         Ok(Reply::Search {
             search: SearchInfo::Chosen { detail, .. },
         }) => detail.translatable(),
-        Ok(Reply::Search {
-            search: SearchInfo::Never { reason },
-        }) => reason.translatable(),
+        Ok(
+            Reply::Search {
+                search: SearchInfo::Never { reason },
+            }
+            | Reply::Awake {
+                awake: AwakeInfo::Cannot { reason },
+            },
+        ) => reason.translatable(),
         Ok(Reply::Sources { sources }) => sources.iter().any(|each| each.sentence.translatable()),
         Ok(Reply::Changes { changes }) => changes.note.translatable(),
         Ok(Reply::Steps { steps }) => steps.runs.iter().any(|run| run.sentence.translatable()),
@@ -72,9 +77,14 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             detail.translate(language);
             used(usage);
         }
-        Ok(Reply::Search {
-            search: SearchInfo::Never { reason },
-        }) => reason.translate(language),
+        Ok(
+            Reply::Search {
+                search: SearchInfo::Never { reason },
+            }
+            | Reply::Awake {
+                awake: AwakeInfo::Cannot { reason },
+            },
+        ) => reason.translate(language),
         Ok(Reply::Sources { sources }) => {
             for each in sources {
                 each.sentence.translate(language);

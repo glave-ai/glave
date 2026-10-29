@@ -93,7 +93,7 @@ fn no_instructions_means_the_prompt_alone() {
 #[test]
 fn a_compacted_thread_opens_with_the_instructions_again() {
     let dir = folder("rules-compact");
-    std::fs::write(dir.join("big.txt"), "marigold\n".repeat(1_000)).unwrap();
+    std::fs::write(dir.join("big.txt"), "marigold\n".repeat(3_000)).unwrap();
     block_on!(async {
         let answers = vec![
             reads("big.txt"),
@@ -105,9 +105,10 @@ fn a_compacted_thread_opens_with_the_instructions_again() {
             answer(Some("It repeats marigold."), vec![], StopReason::EndTurn),
         ];
         let mut settings = with_rules();
+        // Reading big.txt fills it: a read gives at most a quarter of the window.
         settings.compaction = Compaction {
-            window_tokens: 1_000,
-            at_percent: 80,
+            window_tokens: 20_000,
+            at_percent: 20,
         };
         let (harness, seen) =
             harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings).await;

@@ -128,6 +128,10 @@ where
                     origin: self.inner.origin.as_ref().map(ToString::to_string),
                     here: self.passkeys_here(),
                     signin: self.signin_ways(),
+                    exists: crate::protocol::Exists {
+                        organization: self.inner.identity_provider,
+                        workers: self.inner.worker.is_some(),
+                    },
                 }))
             }
             Request::AwakeGet {} => Ok(self.awake().await),
@@ -398,6 +402,8 @@ where
             }
             Request::ProjectRemove { project } => self.remove_project(caller, project).await,
             Request::FolderList { path } => self.list_folders(caller, path).await,
+            Request::MemoryGet {} => self.remembering(caller).await,
+            Request::MemorySet { on } => self.set_remembering(caller, on).await,
             Request::MemoryList { scope, project } => {
                 self.remember(caller, project, Control::List { scope })
                     .await

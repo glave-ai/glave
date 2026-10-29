@@ -37,6 +37,8 @@ mod serving {
         send(json!({"jsonrpc": "2.0", "id": 1, "method": "server/discover"}));
         let discovered = answer_to(1, &mut notes);
         assert_eq!(discovered["result"]["name"], "glave");
+        // A server for one person has nothing beyond it: no organization, no workers.
+        assert_eq!(discovered["result"].get("exists"), None, "{discovered}");
 
         send(json!({"jsonrpc": "2.0", "id": 2, "method": "thread/start"}));
         let thread = answer_to(2, &mut notes)["result"]["thread"]["id"].clone();
@@ -272,6 +274,30 @@ mod reached {
             assert_eq!(elsewhere, 403);
             let page = discovered(&url, "glave.example.com", "https://evil.example.com").await;
             assert_eq!(page, 403);
+        });
+    }
+
+    #[test]
+    fn a_server_people_sign_in_to_through_an_identity_provider_is_an_organization() {
+        let place = place("serve-organization");
+        let model = FakeServer::start(vec![]).unwrap();
+        let oidc = ["--issuer", "https://id.example.com", "--audience", "glave"];
+        let (_served, url) = serve_http(&place, &model, &oidc);
+        block_on!(async {
+            let answer = reqwest::Client::new()
+                .post(format!("{url}/"))
+                .header("content-type", "application/json")
+                .body(DISCOVER)
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap();
+            let answer: serde_json::Value = serde_json::from_str(&answer).unwrap();
+            let exists = &answer["result"]["exists"];
+            assert_eq!(exists["organization"], true, "{answer}");
+            assert_eq!(exists["workers"], false, "{answer}");
         });
     }
 

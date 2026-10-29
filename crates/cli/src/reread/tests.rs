@@ -34,7 +34,7 @@ fn runs_now(locations: &Locations, start: &Choices, glave_home: &Path) -> Runs {
 #[test]
 fn a_constraint_added_while_it_runs_narrows_the_next_turn_whatever_the_file_loosens() {
     let (dir, locations) = place("narrowed");
-    let loose = "permissions = \"full-access\"\nmemory = \"off\"\n";
+    let loose = "permissions = \"full-access\"\nproject_memory = \"off\"\n";
     std::fs::write(&locations.person, loose).unwrap();
     let start = block_on!(async {
         let (setup, aside) = Setup::reload(&Args::default(), &locations).await.unwrap();

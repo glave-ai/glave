@@ -198,7 +198,7 @@ fn with_a_gateway_url_model_calls_and_the_catalog_come_through_the_gateway() {
 fn without_a_gateway_url_glave_reaches_the_model_directly_as_before() {
     let place = place("gateway-none");
     std::fs::create_dir_all(&place.home).unwrap();
-    std::fs::write(place.home.join("config.toml"), "memory = \"off\"\n").unwrap();
+    std::fs::write(place.home.join("config.toml"), "project_memory = \"off\"\n").unwrap();
     let server = FakeServer::start(vec![Reply::text("Direct.")]).unwrap();
     let output = glave(&place, &server, &["--model", "m", "hello"], "");
     let shown = text(&output);

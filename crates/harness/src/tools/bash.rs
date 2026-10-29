@@ -149,6 +149,7 @@ pub(crate) async fn bash(
     workspace: &Workspace,
     commands: &Commands,
     args: BashArgs,
+    room: usize,
     cancel: &dyn Cancellation,
 ) -> ToolOutcome {
     if args.command.trim().is_empty() {
@@ -160,13 +161,13 @@ pub(crate) async fn bash(
     };
     let workspace = let_out.as_ref().unwrap_or(workspace);
     if args.background {
-        return start(workspace, commands, args.command, cancel).await;
+        return start(workspace, commands, args.command, room, cancel).await;
     }
     let limit = args
         .timeout_secs
         .unwrap_or(DEFAULT_TIMEOUT_SECS)
         .clamp(1, MAX_TIMEOUT_SECS);
-    let captured = Capture::default();
+    let captured = Capture::within(room);
     let script = args.command.clone();
     let timeout = (limit, OnTimeout::Background);
     let finished = match workspace.run(script, timeout, &captured, cancel).await {
@@ -296,7 +297,14 @@ mod tests {
                 reason: None,
             };
             let commands = Commands::default();
-            bash(&workspace, &commands, args, &crate::cancel::Cancel::new()).await
+            bash(
+                &workspace,
+                &commands,
+                args,
+                usize::MAX,
+                &crate::cancel::Cancel::new(),
+            )
+            .await
         });
         assert!(
             outcome.text.contains("PLAIN_SETTING=visible"),

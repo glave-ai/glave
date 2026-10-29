@@ -50,6 +50,28 @@ pub struct ServerInfo {
     /// public origin always, a setup link making the first; on this computer once one is made.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub signin: Vec<SignInWay>,
+    /// What it has beyond the one person a server works for on its own; absent where it has
+    /// none of it, as on a person's own computer or server.
+    #[serde(default, skip_serializing_if = "Exists::is_none")]
+    pub exists: Exists,
+}
+
+/// What a server has beyond a person's own: each because its configuration provides it, never
+/// a setting naming a kind of deployment (`specs/deployments.md`, "One code path"). A client
+/// draws only what is here, and nothing of what is not.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct Exists {
+    /// An organization of people, who sign in through its identity provider (OIDC).
+    pub organization: bool,
+    /// Workers: a fresh machine for each thread of the project whose settings chose them.
+    pub workers: bool,
+}
+
+impl Exists {
+    /// Whether it has none of it.
+    pub(crate) fn is_none(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 /// Whether this server keeps its computer from sleeping on its own while a turn, task or
@@ -64,7 +86,18 @@ pub enum AwakeInfo {
     Chosen { on: bool },
     /// On a person's own computer that glave has nothing to keep awake with: why, in a
     /// sentence.
-    Cannot { reason: String },
+    Cannot { reason: Told },
+}
+
+/// Whether glave remembers for the person (`specs/memory.md`, "Defaults and policy").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RememberingInfo {
+    /// Not the caller's to choose here, and `reason`, why: their organization turned memory
+    /// off, or only the person on this computer chooses.
+    Never { reason: Told },
+    /// The person's to turn on or off: on when `on`.
+    Chosen { on: bool },
 }
 
 /// A thread, as a list shows it: from the threads view, with what it is doing now.
@@ -325,6 +358,9 @@ pub enum Reply {
     /// Whether the computer is kept awake while glave works.
     #[schemars(title = "Awake")]
     Awake { awake: AwakeInfo },
+    /// Whether glave remembers for the person.
+    #[schemars(title = "Remembering")]
+    Remembering { remembering: RememberingInfo },
     /// Whether the person's agent may search the web.
     #[schemars(title = "Search")]
     Search { search: SearchInfo },

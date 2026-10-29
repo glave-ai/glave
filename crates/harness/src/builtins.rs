@@ -25,6 +25,8 @@ pub(crate) const BUILTINS: usize = 0;
 pub(crate) struct Builtins {
     pub(crate) workspace: Arc<Workspace>,
     pub(crate) commands: Arc<Commands>,
+    /// The most bytes one output gives the thread's model (`room::tool_room`).
+    pub(crate) room: usize,
 }
 
 impl Tool {
@@ -125,7 +127,7 @@ impl ToolSource for Builtins {
             match Tool::named(name) {
                 Some(tool) => {
                     let at = (&*self.workspace, &*self.commands);
-                    let outcome = tool.run(arguments, at, cancel).await;
+                    let outcome = tool.run(arguments, at, self.room, cancel).await;
                     let mut output = ToolOutput::text(outcome.is_error, outcome.text);
                     output.files.extend(outcome.file);
                     // What a forge's tool prints is what others wrote there, as a web page is,
@@ -163,6 +165,7 @@ mod tests {
             let builtins = Builtins {
                 workspace: Arc::new(workspace),
                 commands: Arc::default(),
+                room: usize::MAX,
             };
             assert_eq!(
                 glave_ports::conformance::tool_source(&builtins).await,
@@ -185,6 +188,7 @@ mod tests {
                 let builtins = Builtins {
                     workspace: Arc::new(workspace),
                     commands: Arc::default(),
+                    room: usize::MAX,
                 };
                 let cancel = crate::cancel::Cancel::new();
                 builtins.call("bash", &arguments, &cancel).await

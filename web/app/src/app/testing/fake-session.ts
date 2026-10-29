@@ -106,7 +106,7 @@ export class FakeTurn {
  * `thread/sources`, no reply drew on the web; `thread/plan`, no plan; `thread/changes`, none;
  * `thread/steps`, no runs and no replies;
  * `command/list`, nothing running; `awake/get`, a server, which keeps no computer awake;
- * `search/get`, web search not the person's to choose;
+ * `search/get`, web search not the person's to choose; `memory/get`, memory on;
  * `grouping/get`, by project, and `grouping/set`, the grouping asked for; a watch, of a thread
  * or of the lists, sends nothing until it is stopped; any other method, `{}`.
  */
@@ -257,6 +257,9 @@ function unanswered(method: Method, params: unknown): Answer {
         reason: 'web search is set up by whoever runs this server, not from here',
       },
     };
+  }
+  if (method === 'memory/get') {
+    return { remembering: { kind: 'chosen', on: true } };
   }
   if (method === 'grouping/get') {
     return { grouping: 'project' };

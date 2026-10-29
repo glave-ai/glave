@@ -20,7 +20,7 @@ use std::sync::Arc;
 use glave_config::policy::Choices;
 use glave_ports::BoxFuture;
 use glave_process::{Child, ProcessError, Processes, Program};
-use glave_session::KeepAwake;
+use glave_session::{KeepAwake, Unawake};
 
 use crate::args::Args;
 
@@ -88,8 +88,8 @@ impl KeepAwake for Inhibitor {
         })
     }
 
-    fn cannot(&self) -> Option<String> {
-        self.holder.is_none().then(|| CANNOT.to_owned())
+    fn cannot(&self) -> Option<Unawake> {
+        self.holder.is_none().then_some(CANNOT)
     }
 }
 
@@ -131,10 +131,9 @@ fn holder(_glave: u32) -> Option<Holder> {
 
 /// Why glave cannot keep this computer awake, where it has nothing to do it with.
 #[cfg(target_os = "linux")]
-const CANNOT: &str = "This computer can't be kept awake while glave works: that needs systemd, which it doesn't run.";
+const CANNOT: Unawake = Unawake::NoSystemd;
 #[cfg(not(target_os = "linux"))]
-const CANNOT: &str =
-    "This computer can't be kept awake while glave works: its system has nothing for it.";
+const CANNOT: Unawake = Unawake::Nothing;
 
 /// The first of `paths` that is a file: programs by absolute path, so none on `PATH` can stand
 /// in for them.

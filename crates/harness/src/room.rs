@@ -1,12 +1,39 @@
-//! Making a conversation fit the model: the oldest tool outputs give way to a short note, and a
-//! refusal that states a model's real context window is believed for that model for the rest
-//! of the session.
+//! Making a conversation fit the model: each tool output fits a share of its context window,
+//! the oldest tool outputs give way to a short note, and a refusal that states a model's real
+//! context window is believed for that model for the rest of the session.
 
 use std::collections::VecDeque;
 use std::sync::{Mutex, PoisonError};
 
 use glave_event::Part;
-use glave_ports::Message;
+use glave_ports::{Message, ToolOutput};
+
+use crate::tools::Captured;
+
+/// Bytes per token when sizing what fits: generous, as the gateway's estimate of what fits is.
+const BYTES_PER_TOKEN: u64 = 4;
+
+/// The most bytes one tool output may give a model whose window is `window_tokens`: a quarter of
+/// the window, as a summary may take, so a model with a small window still has room to read a
+/// file in parts. A large window keeps each tool's own limit, which is smaller.
+pub(crate) fn tool_room(window_tokens: u64) -> usize {
+    usize::try_from(window_tokens / 4 * BYTES_PER_TOKEN).unwrap_or(usize::MAX)
+}
+
+/// `output` with its texts cut to `room` bytes together, each keeping its start and its end;
+/// a text that finds no room left is only the note. Files are fit apart (`files::fit`).
+pub(crate) fn fit(mut output: ToolOutput, room: usize) -> ToolOutput {
+    let mut left = room;
+    for part in &mut output.parts {
+        if let Part::Text { text } = part {
+            if text.len() > left {
+                *text = Captured::fit(text, left);
+            }
+            left = left.saturating_sub(text.len());
+        }
+    }
+    output
+}
 
 /// What a removed tool output becomes.
 pub(crate) const OMITTED: &str = "[This output was removed to fit the context window.]";
@@ -175,6 +202,34 @@ mod tests {
         assert_eq!(windows.of("model-0"), None);
         assert_eq!(windows.of(&format!("model-{MAX_LEARNED}")), Some(1_000));
         assert_eq!(windows.lock().len(), MAX_LEARNED);
+    }
+
+    #[test]
+    fn a_tool_output_fits_a_quarter_of_the_window() {
+        assert_eq!(tool_room(4_096), 4_096);
+        assert_eq!(tool_room(128_000), 128_000);
+        let long = ToolOutput::text(false, "x".repeat(10_000));
+        let ToolOutput { parts, .. } = fit(long, tool_room(4_096));
+        let [Part::Text { text }] = parts.as_slice() else {
+            panic!("one text");
+        };
+        assert!(text.len() <= 4_096, "{}", text.len());
+        assert!(text.contains("bytes of output omitted"));
+        let short = ToolOutput::text(false, "kept");
+        assert_eq!(fit(short.clone(), 10), short);
+        let mut two = ToolOutput::text(false, "x".repeat(3_000));
+        two.parts.push(Part::Text {
+            text: "y".repeat(3_000),
+        });
+        let together: usize = fit(two, 4_096)
+            .parts
+            .iter()
+            .map(|part| match part {
+                Part::Text { text } => text.len(),
+                _ => 0,
+            })
+            .sum();
+        assert!(together <= 4_096, "texts share the room: {together}");
     }
 
     #[test]

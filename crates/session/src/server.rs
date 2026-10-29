@@ -73,6 +73,9 @@ pub struct Wiring<P, L, B> {
     /// worker of its own (`on = "cloud"`) unless `thread/start` asks for a worktree; none by
     /// default.
     pub workers: Option<OnWorkers>,
+    /// Whether people sign in through an identity provider (OIDC), whose organization the server
+    /// is then: off where it works for one person.
+    pub identity_provider: bool,
     /// What one person may run at once and keep scheduled.
     pub tasks: TaskLimits,
     /// What threads remember from one to the next (`specs/memory.md`); none when memory is off.
@@ -124,8 +127,9 @@ impl<P, L, B> Wiring<P, L, B> {
     /// A server's wiring with what it cannot do without: its models, its store's log, blobs
     /// and projects, and the workspace on the computer its threads work on. Everything else
     /// starts off or empty: the system clock and the operating system's randomness; no
-    /// `web_fetch`, other tools, hooks, workers, memory, model accounts, git hosts, connections,
-    /// rereading, project folders, trust, browsers or worktrees to let go of; no limit on tasks;
+    /// `web_fetch`, other tools, hooks, workers, identity provider, memory, model accounts, git
+    /// hosts, connections, rereading, project folders, trust, browsers or worktrees to let go
+    /// of; no limit on tasks;
     /// only the settings' own model and mode; threads in their project's folder rather than a
     /// worktree; reached only on its own computer, which it does not keep awake; leases in its
     /// own memory. An embedder names only what it changes: `Wiring { hooks, ..Wiring::new(...) }`.
@@ -149,6 +153,7 @@ impl<P, L, B> Wiring<P, L, B> {
             worktree: false,
             hooks: Hooks::default(),
             workers: None,
+            identity_provider: false,
             tasks: TaskLimits::default(),
             memory: None,
             projects,
@@ -206,6 +211,8 @@ pub(crate) struct Inner<P, L, B> {
     /// The environment new threads' workers are made from, and the project whose threads go
     /// to them, when threads work on workers.
     pub(crate) worker: Option<(ProjectId, Environment)>,
+    /// Whether people sign in through an identity provider, as an organization's do.
+    pub(crate) identity_provider: bool,
     /// The models threads may be sent to, the default first; none until one is set up.
     pub(crate) models: RwLock<Vec<ModelInfo>>,
     /// Where model accounts are kept, when the person here may connect them.
@@ -307,6 +314,7 @@ where
             inner: Arc::new(Inner {
                 harness,
                 worker: wiring.workers.map(|on| (on.project, on.environment)),
+                identity_provider: wiring.identity_provider,
                 models: RwLock::new(catalog),
                 providers: wiring.providers,
                 rereads: wiring.rereads,

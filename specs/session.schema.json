@@ -547,6 +547,24 @@
       "format": "uuid",
       "type": "string"
     },
+    "Exists": {
+      "description": "What a server has beyond a person's own: each because its configuration provides it, never\na setting naming a kind of deployment (`specs/deployments.md`, \"One code path\"). A client\ndraws only what is here, and nothing of what is not.",
+      "properties": {
+        "organization": {
+          "description": "An organization of people, who sign in through its identity provider (OIDC).",
+          "type": "boolean"
+        },
+        "workers": {
+          "description": "Workers: a fresh machine for each thread of the project whose settings chose them.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "organization",
+        "workers"
+      ],
+      "type": "object"
+    },
     "Failure": {
       "description": "The kind of a failed model request.",
       "oneOf": [
@@ -1629,6 +1647,45 @@
       ],
       "type": "object"
     },
+    "RememberingInfo": {
+      "description": "Whether glave remembers for the person (`specs/memory.md`, \"Defaults and policy\").",
+      "oneOf": [
+        {
+          "description": "Not the caller's to choose here, and `reason`, why: their organization turned memory\noff, or only the person on this computer chooses.",
+          "properties": {
+            "kind": {
+              "const": "never",
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The person's to turn on or off: on when `on`.",
+          "properties": {
+            "kind": {
+              "const": "chosen",
+              "type": "string"
+            },
+            "on": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "on"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "ReplySources": {
       "description": "The pages one reply drew on: each one its turn read with `web_fetch` before it, once, in the\norder first read. A page that failed to load is none, nor is a search's result the agent\ndid not read.",
       "properties": {
@@ -1815,6 +1872,10 @@
     "ServerInfo": {
       "description": "What the server is.",
       "properties": {
+        "exists": {
+          "$ref": "#/$defs/Exists",
+          "description": "What it has beyond the one person a server works for on its own; absent where it has\nnone of it, as on a person's own computer or server."
+        },
         "here": {
           "description": "Where a browser on this computer makes and signs in with passkeys, when the server\nmakes them here rather than at a public origin: `http://localhost:<port>`.",
           "type": [
@@ -1915,6 +1976,11 @@
         {
           "const": "awake",
           "description": "Whether the computer is kept awake while glave works (`awake/get`).",
+          "type": "string"
+        },
+        {
+          "const": "memory",
+          "description": "Whether glave remembers for them (`memory/get`).",
           "type": "string"
         },
         {
@@ -3978,6 +4044,24 @@
       },
       "streams": false
     },
+    "memory/get": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "Whether glave remembers for the person.",
+        "properties": {
+          "remembering": {
+            "$ref": "#/$defs/RememberingInfo"
+          }
+        },
+        "required": [
+          "remembering"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
     "memory/list": {
       "params": {
         "properties": {
@@ -4145,6 +4229,32 @@
         },
         "required": [
           "memories"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "memory/set": {
+      "params": {
+        "properties": {
+          "on": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "on"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "Whether glave remembers for the person.",
+        "properties": {
+          "remembering": {
+            "$ref": "#/$defs/RememberingInfo"
+          }
+        },
+        "required": [
+          "remembering"
         ],
         "type": "object"
       },

@@ -134,9 +134,7 @@ where
             (Ok(()), _) => Ok(Queue::Queued(QueuedMessage { id })),
             (Err(NotQueued::Ending), Some(finished)) => Ok(Queue::Ending(finished.clone())),
             (Err(NotQueued::Ending), None) => Ok(Queue::Idle),
-            (Err(full @ NotQueued::Full), _) => {
-                Err(ApiError::new(code::QUEUE_FULL, full.to_string()))
-            }
+            (Err(full @ NotQueued::Full), _) => Err(full.into()),
         }
     }
 }

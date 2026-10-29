@@ -134,9 +134,8 @@ pub(crate) async fn wire(
     let lined = line_up(args, lineup, &store, identity.person, remote.is_some()).await?;
     let (workspace, hosts, connected) =
         signed(args, &store, identity.person, &setup, workspace).await?;
-    let mut settings = settings_for(args, &setup, &lined, identity, workspace.root()).await?;
+    let settings = settings_for(args, &setup, &lined, identity, workspace.root()).await?;
     let root = workspace.root().to_owned();
-    settings.commands = crate::commands::find(&root).await?;
     let servers = mcp_servers(&setup, remote.as_ref(), &processes, connected.as_ref()).await?;
     let scope = scope_here(args, choices, &store, &folder, &root, identity.person).await?;
     let constraints = &setup.loaded.constraints;
@@ -161,6 +160,7 @@ pub(crate) async fn wire(
         worktree: choices.worktree.value,
         hooks: Hooks::new(setup.hooks.clone())?,
         workers: on_workers,
+        identity_provider: !args.issuers.is_empty(),
         tasks: task_limits(constraints),
         memory: memory.as_ref().map(crate::memory::Running::handle),
         project_folders: Some(Arc::clone(&projects) as Arc<dyn glave_harness::ProjectFolders>),
@@ -318,7 +318,8 @@ fn projects_for(
 }
 
 /// How the harness runs: the default model, the instructions a thread opens with when it has
-/// no folder of its own here (a worker's, what `root` opens with), and the choices.
+/// no folder of its own here (a worker's, what `root` opens with), the custom commands
+/// `root` holds, and the choices.
 async fn settings_for(
     args: &Args,
     setup: &Setup,
@@ -330,6 +331,7 @@ async fn settings_for(
     let (model, named) = lined.built.models.default.clone().unwrap_or_default();
     let mut settings = Settings::new(model, named);
     settings.instructions = opening(root).await?;
+    settings.commands = crate::commands::find(root).await?;
     settings.permissions = choices.permissions.value;
     settings.highest = setup.loaded.constraints.highest_permissions().0;
     settings.max_steps = args.max_steps;

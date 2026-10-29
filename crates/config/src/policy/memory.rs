@@ -1,7 +1,7 @@
-//! Memory's settings (`specs/memory.md`, "Defaults and policy"): the person's choice
-//! (`memory = "on"` or `"off"` in their own `config.toml`), the project's setting
-//! (`project_memory`, which a project's file may choose), and an organization's `[memory]`
-//! constraints, which only narrow.
+//! Memory's settings (`specs/memory.md`, "Defaults and policy"): the project's setting
+//! (`project_memory`, which a project's file may choose) and an organization's `[memory]`
+//! constraints, which only narrow. Whether the person wants memory is their own choice, kept
+//! in their settings ledger, not a file.
 
 use crate::error::refuse;
 use glave_ports::memories::ProjectMemory;
@@ -9,14 +9,6 @@ use serde::Deserialize;
 
 use crate::policy::choices::{Choices, Source};
 use crate::policy::rules::{Constraints, Kind};
-
-/// `memory` in `config.toml`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum MemoryChoice {
-    On,
-    Off,
-}
 
 /// A project's memory setting as written.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -82,7 +74,7 @@ impl MemoryRules {
 /// What memory runs with, within the constraints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MemorySettings {
-    /// Whether glave reads and writes memory for this person at all.
+    /// Whether the policy lets glave read and write memory at all.
     pub on: bool,
     /// Whether personal memory is allowed.
     pub personal: bool,
@@ -101,16 +93,7 @@ pub fn settle(choices: &Choices, constraints: &Constraints) -> crate::Result<Mem
             _ => None,
         })
         .collect();
-    let mut on = choices.memory.value;
-    if let Some((rule, _)) = rules.iter().find(|(_, m)| m.enabled == Some(false)) {
-        if on && choices.memory.from != Source::Default {
-            refuse!(
-                "memory = \"on\" (from {}) is not allowed by {rule}",
-                choices.memory.from
-            );
-        }
-        on = false;
-    }
+    let on = rules.iter().all(|(_, m)| m.enabled != Some(false));
     let personal_rule = rules.iter().find(|(_, m)| m.personal == Some(false));
     let allowed: Vec<ProjectMemory> = [
         ProjectMemory::Shared,
@@ -167,19 +150,18 @@ mod tests {
     }
 
     #[test]
-    fn memory_is_on_by_default_and_off_by_the_persons_choice() {
+    fn memory_is_on_and_shared_by_default() {
         let none = constraints("version = 1");
         let on = settle(&chosen(""), &none).unwrap();
         assert!(on.on);
         assert_eq!(on.project, ProjectMemory::Shared);
-        assert!(!settle(&chosen("memory = \"off\""), &none).unwrap().on);
     }
 
     #[test]
     fn a_policy_only_narrows_memory() {
         let no_personal =
             constraints("version = 1\n[memory]\npersonal = false\nretention_days = 90");
-        let settled = settle(&chosen("memory = \"on\""), &no_personal).unwrap();
+        let settled = settle(&chosen(""), &no_personal).unwrap();
         assert!(!settled.personal);
         assert_eq!(
             settled.project,
@@ -193,7 +175,6 @@ mod tests {
             "a choice outside the policy is an error naming it"
         );
         let disabled = constraints("version = 1\n[memory]\nenabled = false");
-        assert!(settle(&chosen("memory = \"on\""), &disabled).is_err());
         assert!(!settle(&chosen(""), &disabled).unwrap().on);
         let only_off = constraints("version = 1\n[memory]\nprojects = [\"off\"]");
         assert_eq!(

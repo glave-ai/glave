@@ -105,6 +105,15 @@ sentences! {
     NoCommand = "no-command" "that command is not running in this thread",
     CommandNotStopped { reason: String } = "command-not-stopped"
         "the command could not be stopped: { $reason }",
+    Archived { thread: String } = "archived" "thread { $thread } is archived; unarchive it first",
+    NoOpenTurn { thread: String } = "no-open-turn" "no turn is open in thread { $thread }",
+    NoApproval { approval: String } = "no-approval" "no approval { $approval } is pending",
+    NoQuestion { question: String } = "no-question" "no question { $question } is waiting",
+    PromptBlocked { reason: String } = "prompt-blocked" "a hook stopped this prompt: { $reason }",
+    TitleLength { most: usize } = "title-length" "a title is 1 to { $most } characters, not only spaces",
+    QueueFull { most: usize } = "queue-full"
+        "{ $most } messages are already waiting for the model to read them: wait until it has, or stop it",
+    RecordsBusy = "records-busy" "glave's records kept changing while it wrote to them; try again",
 
     // Watching.
     WatchEnded = "watch-ended" "the watch already ended",
@@ -122,6 +131,9 @@ sentences! {
 
     // Models and permissions.
     NoModelYet = "no-model-yet" "no model is set up here yet: connect a model account first",
+    ModelIdLength { most: usize } = "model-id-length" "a model id is 1 to { $most } bytes, not only spaces",
+    EffortWord { most: usize } = "effort-word"
+        "a reasoning level is one word of 1 to { $most } letters, such as high",
     ModelNotRun { model: String, models: String } = "model-not-run"
         "glave does not run the model \"{ $model }\" here; it runs { $models }",
     NoEffortChoice { model: String } = "no-effort-choice"
@@ -270,6 +282,8 @@ sentences! {
 
     // Memory.
     MemoryOff = "memory-off" "memory is off for this server",
+    MemoryOnItsComputer = "memory-on-its-computer"
+        "memory is turned on or off on the computer glave runs on, by its person",
     ForgetWhat = "forget-what" "memory/forget takes `memory`, or `all: true` with a `scope`",
 
     // Accounts, sign-in and the person's own settings.
@@ -309,6 +323,52 @@ sentences! {
         "this glave is a server, which doesn't sleep: there is nothing to keep awake",
     AwakeOnlyHere = "awake-only-here"
         "only the person on this computer chooses whether it stays awake",
+    AwakeNeedsSystemd = "awake-needs-systemd"
+        "This computer can't be kept awake while glave works: that needs systemd, which it doesn't run.",
+    AwakeWithNothing = "awake-with-nothing"
+        "This computer can't be kept awake while glave works: its system has nothing for it.",
+
+    // Signing a browser in.
+    LinkSpent = "link-spent"
+        "that sign-in link was used already or has expired: open glave again for a new one",
+    SetupSpent = "setup-spent"
+        "that link to make a passkey was used already or has expired: on the computer glave runs on, ask glave for a new one",
+    TooManyLinks = "too-many-links"
+        "too many sign-in links that do not work were tried: wait a minute, then try again",
+    SignInEnded = "sign-in-ended" "this browser's sign-in has ended: open glave again to sign in",
+    SignedInThere = "signed-in-there"
+        "this browser was signed in on the computer glave runs on, and signs in only there",
+    NoPasskeysHere = "no-passkeys-here"
+        "this glave makes no passkeys for this page: open glave on its computer to sign in",
+    NoPasskeyYet = "no-passkey-yet"
+        "no passkey signs in to this glave yet: open a link glave gives you, and make one",
+    PasskeyExpired = "passkey-expired" "that passkey request has expired: try again",
+    PasskeyUnknown = "passkey-unknown"
+        "that passkey no longer signs in to this glave: sign in with another, or open a link glave gives you to make a new one",
+    PasskeyRefused { reason: String } = "passkey-refused" "the passkey was not accepted: { $reason }",
+
+    // Signing in with a token.
+    NoSignIn = "no-sign-in"
+        "no sign-in: send an OIDC access token, or from this computer the local token in serve.token, as `Authorization: Bearer <token>`",
+    TokenMalformed { reason: String } = "token-malformed"
+        "the token is not a JWT signed with RS256 or ES256: { $reason }",
+    UnknownIssuer = "unknown-issuer" "the token's issuer is not one this server trusts",
+    IssuerKeys { issuer: String, reason: String } = "issuer-keys"
+        "could not get the signing keys of { $issuer }: { $reason }",
+    UnknownKey { issuer: String } = "unknown-key" "the token was not signed by a key { $issuer } publishes",
+    TokenInvalid { reason: String } = "token-invalid" "the token is not valid: { $reason }",
+    TokenExpired = "token-expired" "the token has expired",
+    TokenNotYet = "token-not-yet" "the token is not valid yet",
+    IssuerInsecure { issuer: String } = "issuer-insecure"
+        "the issuer \"{ $issuer }\" is not an https URL (http is allowed only on this computer)",
+    NoIssuers = "no-issuers" "no issuer is trusted: a network listener never runs without sign-in",
+    KeysClient { reason: String } = "keys-client"
+        "could not make the HTTP client that fetches keys: { $reason }",
+    LocalTokenHereOnly = "local-token-here-only" "the local token is accepted only from this computer",
+    WrongLocalToken = "wrong-local-token"
+        "that is not this server's local token: read it again from serve.token",
+    SignedInThereOnly = "signed-in-there-only"
+        "this browser was signed in on the computer glave runs on, and its sign-in works only there: sign in with a passkey here",
     NoLanguage { tag: String } = "no-language"
         "glave does not write in \"{ $tag }\": choose another language",
 }

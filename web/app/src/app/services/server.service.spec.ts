@@ -20,11 +20,22 @@ describe('ServerService', () => {
     expect(server.permissions()).toBeNull();
     expect(server.modes()).toEqual([]);
     expect(server.unsandboxed()).toBeNull();
+    expect(server.exists()).toEqual({ organization: false, workers: false });
     await Promise.all([server.load(), server.load()]);
     expect(server.info()).toEqual(INFO);
     expect(server.permissions()).toBe('ask');
     expect(server.modes()).toEqual(['ask']);
     expect(fake.paramsOf('server/discover')).toHaveLength(1);
+    expect(server.exists()).toEqual({ organization: false, workers: false });
+  });
+
+  it("says what exists beyond a person's own server, as the server says", async () => {
+    const exists = { organization: true, workers: true } as const;
+    const fake = new FakeSession().answer('server/discover', { ...INFO, exists });
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const server = TestBed.inject(ServerService);
+    await server.load();
+    expect(server.exists()).toEqual(exists);
   });
 
   it('asks again after a failure', async () => {

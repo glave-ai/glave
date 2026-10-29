@@ -98,7 +98,7 @@ fn mid_turn(
     permissions: &str,
     server_starts: bool,
 ) -> (Running, FakeServer, Vec<u32>) {
-    choose(place, "memory", "\"off\"");
+    choose(place, "project_memory", "\"off\"");
     choose(place, "permissions", permissions);
     let beside = if server_starts { "sleep 300 & " } else { "" };
     let server = format!("{beside}exec '{}'", test_server().display());

@@ -19,8 +19,13 @@ async fn call(
     arguments: serde_json::Value,
 ) -> ToolOutcome {
     let arguments = Arguments::Json(serde_json::from_value(arguments).unwrap());
-    tool.run(&arguments, (workspace, commands), &Cancel::new())
-        .await
+    tool.run(
+        &arguments,
+        (workspace, commands),
+        usize::MAX,
+        &Cancel::new(),
+    )
+    .await
 }
 
 #[test]

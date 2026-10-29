@@ -1,0 +1,17 @@
+@if (shown()) {
+  <glz-card data-testid="memory-switch">
+    <h2 glzCardHeader>{{ copy.heading }}</h2>
+    <glz-form-field [label]="copy.label" [hint]="hint()">
+      <glz-checkbox
+        testId="memory-switch-on"
+        [checked]="on()"
+        [disabled]="locked()"
+        (checkedChange)="set($event)"
+        >{{ copy.remember }}</glz-checkbox
+      >
+    </glz-form-field>
+    @if (problem(); as problem) {
+      <p class="error" role="alert" data-testid="memory-switch-problem">{{ problem }}</p>
+    }
+  </glz-card>
+}

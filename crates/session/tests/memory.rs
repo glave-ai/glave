@@ -40,6 +40,15 @@ async fn served_with(
     name: &str,
     answers: Vec<glave_ports::Completion>,
 ) -> (Tested<SqliteLog>, Store, TempDir) {
+    let (server, store, dir, _) = served_seeing(name, answers).await;
+    (server, store, dir)
+}
+
+/// [`served_with`], and every request its model receives.
+pub(crate) async fn served_seeing(
+    name: &str,
+    answers: Vec<glave_ports::Completion>,
+) -> (Tested<SqliteLog>, Store, TempDir, Seen) {
     let store =
         Store::open_in_memory(KeySettings::new(Arc::new(InMemoryRoot::new().unwrap()))).unwrap();
     let rules = Rules {
@@ -61,8 +70,8 @@ async fn served_with(
     setup.settings.person = Some(person());
     setup.memory = Some(Arc::new(GlaveMemory::start(memories).await.unwrap()));
     let dir = folder(name);
-    let (server, _) = setup.build_on(&dir, store.log()).await;
-    (server, store, dir)
+    let (server, seen) = setup.build_on(&dir, store.log()).await;
+    (server, store, dir, seen)
 }
 
 fn listed(reply: Reply) -> Vec<glave_ports::memories::Remembered> {
