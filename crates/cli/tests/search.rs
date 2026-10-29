@@ -26,7 +26,7 @@ fn web_search_is_off_until_turned_on_then_searches_untrusted_and_is_counted() {
     let place = place("search");
     let (_exa, stand_in) = serving(&["--results", RESULTS]);
     let address = format!("{stand_in}?tools=web_search_exa");
-    choose(&place, "memory", "\"off\"");
+    choose(&place, "project_memory", "\"off\"");
     choose(&place, "permissions", "\"full-access\"");
     let query = json!({"query": "rust async runtimes"});
     let model = FakeServer::start(vec![
