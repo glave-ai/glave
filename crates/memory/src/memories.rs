@@ -11,7 +11,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
 
 use glave_event::{At, EventId, Header, MemoryId, MemoryScope, Payload, PrincipalId, Seq, encode};
-use glave_ports::memories::{MemoryContext, MemoryError, ProjectMemory, Remembered, Shown};
+use glave_ports::memories::{
+    MemoryContext, MemoryError, MemoryRefusal, ProjectMemory, Remembered, Shown,
+};
 use glave_ports::stream::{Reserved, append_retrying, catch_up};
 use glave_ports::{Clock, Entropy, Eraser, EventLog, ProjectId, Scope};
 
@@ -272,9 +274,9 @@ impl<L: EventLog + 'static> Memories<L> {
                 return Ok((ledger, entry));
             }
         }
-        Err(MemoryError::NotFound(format!(
-            "there is no memory {memory} here; list the memories to see their ids"
-        )))
+        Err(MemoryError::NotFound(MemoryRefusal::NoMemory {
+            memory: memory.to_string(),
+        }))
     }
 }
 

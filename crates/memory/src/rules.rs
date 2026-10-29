@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use glave_event::{MemoryScope, PrincipalId};
-use glave_ports::memories::{MemoryError, ProjectMemory};
+use glave_ports::memories::{MemoryError, MemoryRefusal, ProjectMemory};
 use glave_ports::{ProjectId, Scope};
 
 /// Where a person's own memory lives: the personal project the host provides for them, in their
@@ -69,24 +69,14 @@ impl Rules {
     ) -> Result<Scope, MemoryError> {
         let setting = self.setting(scope.project());
         match (which, setting) {
-            (_, ProjectMemory::Off) => {
-                Err(MemoryError::Off("memory is off in this project".to_owned()))
-            }
+            (_, ProjectMemory::Off) => Err(MemoryError::Off(MemoryRefusal::OffHere)),
             (MemoryScope::Project, _) => Ok(scope),
-            (MemoryScope::Personal, ProjectMemory::Isolated) => Err(MemoryError::Refused(
-                "this project is isolated: personal memory is neither read nor written here; \
-                 save it to the project instead"
-                    .to_owned(),
-            )),
-            (MemoryScope::Personal, ProjectMemory::Shared) => {
-                self.personal_for(person, scope).ok_or_else(|| {
-                    MemoryError::Refused(
-                        "personal memory is off, or belongs to someone else, here; save it to \
-                         the project instead"
-                            .to_owned(),
-                    )
-                })
+            (MemoryScope::Personal, ProjectMemory::Isolated) => {
+                Err(MemoryError::Refused(MemoryRefusal::Isolated))
             }
+            (MemoryScope::Personal, ProjectMemory::Shared) => self
+                .personal_for(person, scope)
+                .ok_or(MemoryError::Refused(MemoryRefusal::NotPersonalHere)),
         }
     }
 }

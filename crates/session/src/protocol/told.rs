@@ -6,6 +6,7 @@ use std::ops::Deref;
 use glave_event::{Caution, Worded};
 use glave_ports::ProjectRefusal;
 use glave_ports::computer::{Reason, Refusal};
+use glave_ports::memories::MemoryRefusal;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::words::{Language, Sentence, caution_in, say, word};
@@ -41,6 +42,8 @@ enum Theirs {
     Computer(Refusal),
     /// A project's refusal.
     Project(ProjectRefusal),
+    /// Memory's refusal.
+    Memory(MemoryRefusal),
 }
 
 impl Theirs {
@@ -48,6 +51,7 @@ impl Theirs {
         match self {
             Self::Computer(refusal) => refusal,
             Self::Project(refusal) => refusal,
+            Self::Memory(refusal) => refusal,
         }
     }
 }
@@ -112,6 +116,16 @@ impl From<&Reason> for Told {
             said: reason
                 .refusal()
                 .map(|refusal| Box::new(Said::Theirs(Theirs::Computer(refusal.clone())))),
+        }
+    }
+}
+
+/// Memory's refusal, written again in the caller's language.
+impl From<MemoryRefusal> for Told {
+    fn from(refusal: MemoryRefusal) -> Self {
+        Self {
+            text: refusal.english(),
+            said: Some(Box::new(Said::Theirs(Theirs::Memory(refusal)))),
         }
     }
 }

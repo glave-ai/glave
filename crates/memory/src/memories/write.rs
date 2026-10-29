@@ -6,7 +6,7 @@ use glave_event::{
     At, MemoryEdited, MemoryForgotten, MemoryId, MemoryRestored, MemorySaved, MemoryScope,
     MemorySource, Principal, PrincipalId,
 };
-use glave_ports::memories::{MemoryError, Remembered};
+use glave_ports::memories::{MemoryError, MemoryRefusal, Remembered};
 use glave_ports::secrets::looks_like_credential;
 use glave_ports::{Erasable, Scope};
 use jiff::{SignedDuration, Timestamp};
@@ -66,20 +66,19 @@ pub enum Remembering {
 pub(crate) fn checked(text: &str) -> Result<String, MemoryError> {
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if text.is_empty() {
-        return Err(MemoryError::Invalid("a memory needs some text".into()));
+        return Err(MemoryError::Invalid(MemoryRefusal::NoText));
     }
     let length = text.chars().count();
     if length > MOST_CHARS {
-        return Err(MemoryError::Invalid(format!(
-            "a memory is one short statement of at most {MOST_CHARS} characters; this is \
-             {length}. Say it shorter, or split it"
-        )));
+        return Err(MemoryError::Invalid(MemoryRefusal::TooLong {
+            most: MOST_CHARS.to_string(),
+            length: length.to_string(),
+        }));
     }
     if let Some(reason) = looks_like_credential(&text) {
-        return Err(MemoryError::Invalid(format!(
-            "not saved: {reason}. Memory never keeps secrets such as keys, tokens or passwords; \
-             leave the value out (you may remember where it is kept, without the value)"
-        )));
+        return Err(MemoryError::Invalid(MemoryRefusal::Secret {
+            reason: reason.to_owned(),
+        }));
     }
     Ok(text)
 }
@@ -126,11 +125,10 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
         }
         let used: usize = others.iter().map(|memory| tokens(&memory.text)).sum();
         if used.saturating_add(tokens(&text)) > BUDGET_TOKENS {
-            return Err(MemoryError::Invalid(format!(
-                "not saved: the {} memories are full (about {BUDGET_TOKENS} tokens). Merge \
-                 related memories with edit, or replace one that matters less, then try again",
-                which.as_str()
-            )));
+            return Err(MemoryError::Invalid(MemoryRefusal::Full {
+                which: which.as_str().to_owned(),
+                budget: BUDGET_TOKENS.to_string(),
+            }));
         }
         let random = (self.inner.entropy.bytes())
             .map_err(|error| MemoryError::Storage(error.to_string()))?;
@@ -172,9 +170,9 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
         let text = checked(text)?;
         let (ledger, entry) = self.locate(who.person, who.scope, memory).await?;
         if entry.forgot.is_some() {
-            return Err(MemoryError::NotFound(format!(
-                "memory {memory} is forgotten; restore it first"
-            )));
+            return Err(MemoryError::NotFound(MemoryRefusal::ForgottenRestore {
+                memory: memory.to_string(),
+            }));
         }
         let edited = MemoryEdited {
             memory,
@@ -278,14 +276,17 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
     ) -> Result<Remembered, MemoryError> {
         let (_, entry) = self.locate(who.person, who.scope, memory).await?;
         if entry.scope == which {
-            return entry
-                .live()
-                .ok_or_else(|| MemoryError::NotFound(format!("memory {memory} is forgotten")));
+            return entry.live().ok_or_else(|| {
+                MemoryError::NotFound(MemoryRefusal::Forgotten {
+                    memory: memory.to_string(),
+                })
+            });
         }
-        let text = entry
-            .live()
-            .map(|live| live.text)
-            .ok_or_else(|| MemoryError::NotFound(format!("memory {memory} is forgotten")))?;
+        let text = entry.live().map(|live| live.text).ok_or_else(|| {
+            MemoryError::NotFound(MemoryRefusal::Forgotten {
+                memory: memory.to_string(),
+            })
+        })?;
         let saved = self.remember(who, &text, which, Some(memory), true).await?;
         match saved {
             Remembering::Saved { memory, .. } => Ok(memory),
@@ -317,10 +318,10 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
                 .map(|version| version.event)
         };
         let undone = undone.ok_or_else(|| {
-            MemoryError::Invalid(format!(
-                "glave has not changed memory {memory} in the last {UNDO_DAYS} days; there is \
-                 nothing to undo"
-            ))
+            MemoryError::Invalid(MemoryRefusal::NothingToUndo {
+                memory: memory.to_string(),
+                days: UNDO_DAYS.to_string(),
+            })
         })?;
         let restored = MemoryRestored {
             memory,

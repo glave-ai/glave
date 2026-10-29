@@ -4,7 +4,7 @@
 
 use glave_event::{MemoryScope, Principal, decode};
 use glave_memory::{Remembering, Writer};
-use glave_ports::memories::{MemoryContext, MemoryError, ProjectMemory};
+use glave_ports::memories::{MemoryContext, MemoryError, MemoryRefusal, ProjectMemory};
 use glave_ports::testing::fake_secret;
 use glave_ports::{EventLog, Scope};
 
@@ -129,10 +129,13 @@ fn credentials_are_refused_and_never_stored() {
         let refused = memories
             .remember(&writer(shared()), &text, MemoryScope::Project, None, true)
             .await;
-        let Err(MemoryError::Invalid(why)) = refused else {
-            panic!("{refused:?}");
-        };
-        assert!(why.contains("never keeps secrets"), "{why}");
+        assert!(
+            matches!(
+                refused,
+                Err(MemoryError::Invalid(MemoryRefusal::Secret { .. }))
+            ),
+            "{refused:?}"
+        );
         let ledger = kit
             .store
             .log()
@@ -236,11 +239,13 @@ fn a_save_past_the_budget_is_refused() {
                 }
             }
         }
-        let Some(MemoryError::Invalid(why)) = refused else {
-            panic!("the budget never ran out: {refused:?}");
-        };
-        assert!(why.contains("full"), "{why}");
-        assert!(why.contains("Merge"), "{why}");
+        assert!(
+            matches!(
+                refused,
+                Some(MemoryError::Invalid(MemoryRefusal::Full { .. }))
+            ),
+            "the budget never ran out: {refused:?}"
+        );
     });
 }
 

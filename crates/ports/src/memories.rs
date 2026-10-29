@@ -4,7 +4,9 @@
 //! person's own controls. Scope comes from the thread, never from the model, and the store
 //! enforces it on every read.
 
-use glave_event::{Arguments, At, MemoryId, MemoryScope, MemorySource, PrincipalId, Seq, ThreadId};
+use glave_event::{
+    Arguments, At, MemoryId, MemoryScope, MemorySource, PrincipalId, Seq, ThreadId, Worded, worded,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -148,21 +150,55 @@ impl MemoryOutput {
 /// through a result that showed it (`specs/memory.md`, "Recall").
 pub const FROM_MEMORY: &str = "from_memory";
 
+worded! {
+    /// Why memory refused, in glave's own words: the model reads its English, and the session
+    /// writes it again in the caller's language (`specs/session.md`, "Languages").
+    MemoryRefusal {
+        // Not found.
+        NoMemory { memory } = "memory-no-memory"
+            "there is no memory { $memory } here; list the memories to see their ids",
+        ForgottenRestore { memory } = "memory-forgotten-restore"
+            "memory { $memory } is forgotten; restore it first",
+        Forgotten { memory } = "memory-forgotten" "memory { $memory } is forgotten",
+        NoResource { uri } = "memory-no-resource" "no resource { $uri }",
+        ResourceGone { uri } = "memory-resource-gone" "{ $uri } is forgotten or unknown",
+
+        // Not allowed, or off.
+        Isolated = "memory-isolated"
+            "this project is isolated: personal memory is neither read nor written here; save it to the project instead",
+        NotPersonalHere = "memory-not-personal-here"
+            "personal memory is off, or belongs to someone else, here; save it to the project instead",
+        OffHere = "memory-off-here" "memory is off in this project",
+
+        // Not valid.
+        NoKeywords = "memory-no-keywords" "recall needs a few distinctive keywords to search for",
+        NoText = "memory-no-text" "a memory needs some text",
+        TooLong { most, length } = "memory-too-long"
+            "a memory is one short statement of at most { $most } characters; this is { $length }. Say it shorter, or split it",
+        Secret { reason } = "memory-secret"
+            "not saved: { $reason }. Memory never keeps secrets such as keys, tokens or passwords; leave the value out (you may remember where it is kept, without the value)",
+        Full { which, budget } = "memory-full"
+            "not saved: the { $which } memories are full (about { $budget } tokens). Merge related memories with edit, or replace one that matters less, then try again",
+        NothingToUndo { memory, days } = "memory-nothing-to-undo"
+            "glave has not changed memory { $memory } in the last { $days } days; there is nothing to undo",
+    }
+}
+
 /// Why a memory request was refused or failed.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum MemoryError {
     /// No such memory in the scopes the caller may read.
-    #[error("{0}")]
-    NotFound(String),
+    #[error("{}", .0.english())]
+    NotFound(MemoryRefusal),
     /// The caller may not do this: another person's memory, or a scope the project does not allow.
-    #[error("{0}")]
-    Refused(String),
+    #[error("{}", .0.english())]
+    Refused(MemoryRefusal),
     /// The request itself is wrong: too long, a credential, over the budget.
-    #[error("{0}")]
-    Invalid(String),
+    #[error("{}", .0.english())]
+    Invalid(MemoryRefusal),
     /// Memory is off here.
-    #[error("{0}")]
-    Off(String),
+    #[error("{}", .0.english())]
+    Off(MemoryRefusal),
     /// The store failed.
     #[error("memory storage failed: {0}")]
     Storage(String),
@@ -276,4 +312,36 @@ pub trait Memory: Send + Sync {
         by: &'a Access,
         control: Control,
     ) -> BoxFuture<'a, Result<Vec<Remembered>, MemoryError>>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Each refusal's English, as memory wrote it before it was typed: what the model reads
+    /// stays the same, byte for byte.
+    #[test]
+    fn each_refusal_reads_as_memory_wrote_it_before() {
+        let before = [
+            "there is no memory <memory> here; list the memories to see their ids",
+            "memory <memory> is forgotten; restore it first",
+            "memory <memory> is forgotten",
+            "no resource <uri>",
+            "<uri> is forgotten or unknown",
+            "this project is isolated: personal memory is neither read nor written here; save it to the project instead",
+            "personal memory is off, or belongs to someone else, here; save it to the project instead",
+            "memory is off in this project",
+            "recall needs a few distinctive keywords to search for",
+            "a memory needs some text",
+            "a memory is one short statement of at most <most> characters; this is <length>. Say it shorter, or split it",
+            "not saved: <reason>. Memory never keeps secrets such as keys, tokens or passwords; leave the value out (you may remember where it is kept, without the value)",
+            "not saved: the <which> memories are full (about <budget> tokens). Merge related memories with edit, or replace one that matters less, then try again",
+            "glave has not changed memory <memory> in the last <days> days; there is nothing to undo",
+        ];
+        let every = MemoryRefusal::every();
+        assert_eq!(every.len(), before.len());
+        for (refusal, before) in every.iter().zip(before) {
+            assert_eq!(MemoryError::Invalid(refusal.clone()).to_string(), before);
+        }
+    }
 }
