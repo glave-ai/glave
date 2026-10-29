@@ -17,13 +17,17 @@ use http::{Method, StatusCode};
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
-use super::backend::{Backend, COPIED_WITHIN, Link, Listed, PORT, STARTED_BY, Spec, Started};
+use super::backend::{
+    Backend, COPIED_WITHIN, Link, Listed, PORT, STARTED_BY, Spec, Started, saying,
+};
 use super::engine::{ANSWERS_WITHIN, Engine, PULL_QUIET, Within, demultiplex, query};
 use super::tar::{Entry, archive};
 use crate::token::Token;
 
 /// Where glave and its identity go inside a worker.
 const HOME: &str = "/opt/glave";
+/// Where the token is, from `/`: renewed in place.
+const TOKEN: &str = "opt/glave/tls/token";
 /// The label every worker container carries, so leftovers can be found.
 pub(super) const LABEL: &str = "glave.worker";
 /// Bytes a stream link holds ahead of a slow reader.
@@ -257,7 +261,7 @@ impl Docker {
                 content: spec.identity.key.as_bytes(),
             },
             Entry::File {
-                name: "opt/glave/tls/token",
+                name: TOKEN,
                 mode: 0o600,
                 content: token.as_bytes(),
             },
@@ -474,15 +478,7 @@ impl Backend for Docker {
                 Err(error) => {
                     let said = self.logs(&name).await;
                     let _ = self.remove(&name).await;
-                    if said.trim().is_empty() {
-                        Err(error)
-                    } else {
-                        Err(ComputerError::Failed(format!(
-                            "{}; it said: {}",
-                            error.message(),
-                            said.trim()
-                        )))
-                    }
+                    Err(saying(error, &said))
                 }
             }
         })
@@ -494,7 +490,7 @@ impl Backend for Docker {
         token: &'a Token,
     ) -> BoxFuture<'a, Result<(), ComputerError>> {
         Box::pin(async move {
-            let files = Bytes::from(super::tar::token_file(token)?);
+            let files = Bytes::from(super::tar::token_file(TOKEN, token)?);
             let put = self
                 .engine
                 .send(

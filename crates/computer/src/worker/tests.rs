@@ -1,6 +1,7 @@
 //! Workers without Docker: a backend that serves this machine's computers in-process, over
-//! TLS exactly as a container would (or a stream, for a worker with no network), so the
-//! adapter's lifecycle, limits and routing are tested on every machine.
+//! TLS exactly as a container would (or a stream, for a worker with no network), or on a Unix
+//! socket reached through bridges as a Pod is, so the adapter's lifecycle, limits and routing
+//! are tested on every machine.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -12,9 +13,9 @@ use glave_ports::testing::{ManualClock, TempDir};
 use tokio::io::BufReader;
 use tokio::net::TcpListener;
 
-use super::backend::Listed;
+use super::backend::{Bridge, Listed};
 use super::*;
-use crate::{CancelSwitch, LocalComputers, serve, serve_tls};
+use crate::{CancelSwitch, LocalComputers, bridge, listen_socket, serve, serve_socket, serve_tls};
 
 mod reconnect;
 
@@ -40,6 +41,9 @@ struct InProcess {
     renewing_fails: std::sync::atomic::AtomicBool,
     /// Each worker running, with the glave it is labelled with.
     labelled: Mutex<std::collections::BTreeMap<String, Option<String>>>,
+    /// Whether every worker serves on a Unix socket, reached through bridges, as on
+    /// Kubernetes.
+    bridged: bool,
 }
 
 impl InProcess {
@@ -52,7 +56,49 @@ impl InProcess {
             renewed: AtomicU64::new(0),
             renewing_fails: std::sync::atomic::AtomicBool::new(false),
             labelled: Mutex::default(),
+            bridged: false,
         }
+    }
+
+    /// Workers reached through bridges to their sockets, as on Kubernetes.
+    fn bridged(copies: &Path) -> Self {
+        Self {
+            bridged: true,
+            ..Self::new(copies)
+        }
+    }
+
+    /// Serves `computers` as the worker `name` on a socket, its token in a file, and the
+    /// bridges into it, each a connection the test can cut.
+    fn on_socket(
+        &self,
+        name: &str,
+        spec: &Spec,
+        computers: Arc<LocalComputers>,
+    ) -> (Link, JoinHandle<()>) {
+        std::fs::create_dir_all(&self.copies).unwrap();
+        std::fs::write(self.token_file(name), spec.token.to_file()).unwrap();
+        let socket = self.copies.join(format!("{name}.sock"));
+        let listener = listen_socket(&socket).unwrap();
+        let tokens = crate::Tokens::file(self.token_file(name));
+        let task = tokio::spawn(async move {
+            let _ = serve_socket(computers, listener, tokens, None).await;
+        });
+        let links = Arc::clone(&self.links);
+        let bridges: Bridge = Arc::new(move || {
+            let (socket, links) = (socket.clone(), Arc::clone(&links));
+            Box::pin(async move {
+                let (ours, theirs) = tokio::io::duplex(64 * 1024);
+                let (read, write) = tokio::io::split(theirs);
+                let carried = tokio::spawn(async move {
+                    let _ = bridge(&socket, read, write).await;
+                });
+                links.lock().unwrap().push(carried);
+                let (read, write) = tokio::io::split(ours);
+                Ok::<backend::Stream, ComputerError>((Box::new(read), Box::new(write)))
+            })
+        });
+        (Link::Bridged(bridges), task)
     }
 
     fn token_file(&self, name: &str) -> PathBuf {
@@ -133,7 +179,9 @@ impl Backend for InProcess {
                 .with_worktrees(self.copies.join(format!("{name}-worktrees")))
                 .with_projects(self.copies.join(format!("{name}-projects")));
             let computers = Arc::new(computers);
-            let (link, task) = if spec.network {
+            let (link, task) = if self.bridged {
+                self.on_socket(&name, spec, computers)
+            } else if spec.network {
                 let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
                 let inside = listener.local_addr().unwrap();
                 let entrance = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -145,7 +193,7 @@ impl Backend for InProcess {
                 let links = Arc::clone(&self.links);
                 let task = tokio::spawn(async move {
                     tokio::select! {
-                        _ = serve_tls(computers, listener, tls, tokens, None) => {}
+                        _ = serve_tls(computers, listener, tls, tokens) => {}
                         () = door(entrance, inside, links) => {}
                     }
                 });

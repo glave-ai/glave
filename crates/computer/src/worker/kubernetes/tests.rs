@@ -2,12 +2,12 @@
 //! job sets it; elsewhere these tests say they skipped), on the kubeconfig's cluster and
 //! namespace. A small image pinned by digest runs a stub in glave's place, so the lifecycle is
 //! tested without a Linux build of glave: the Pod's limits and hardening, the network policy,
-//! the files copied in, the stream to a worker without a network, the runtime class enforced,
+//! the files copied in, the bridges into a worker (an exec each), the runtime class enforced,
 //! and removal. Everything made carries `glave.test=<run>`, and each test checks by that
 //! label that nothing is left behind, Secrets included (there are none to leave).
 //! `GLAVE_TEST_WORKER_GLAVE` (a Linux glave) and `GLAVE_TEST_WORKER_IMAGE` (an image with bash
-//! and git, pinned) add the whole path: a real worker reached over TLS through port-forward,
-//! and one without a network reached through attach.
+//! and git, pinned) add the whole path: real workers, with a network and without, reached
+//! through bridges to glave's socket.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
@@ -33,13 +33,11 @@ use crate::{CancelSwitch, WorkerComputers, WorkerCredentials};
 const IMAGE: &str =
     "alpine@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507";
 
-/// The stub that runs where glave would, without a network: it says how it was started, then
-/// echoes its input back, like a server answering on its standard output.
-const ECHOES: &[u8] = b"#!/bin/sh\necho \"args: $*\"\ncat\n";
-/// The stub for a worker with a network: it says how it was started and what it holds, then
-/// waits, as a TLS server would.
-const WAITS: &[u8] =
-    b"#!/bin/sh\necho \"args: $*\"\nls -l /opt/glave/tls/key.pem\nexec sleep 300\n";
+/// The stub that runs where glave would: serving, it says how it was started and what it
+/// holds, then waits, as a server on a socket would; as a bridge, it says how it was started,
+/// then echoes its input back, like a server answering through it.
+const STUB: &[u8] = b"#!/bin/sh\necho \"args: $*\"\ncase \"$2\" in bridge) exec cat ;; esac\n\
+ls -l /opt/glave/secret/token\nexec sleep 300\n";
 
 /// The run's label value: CI's run id, or this process's.
 fn run_id() -> String {
@@ -180,7 +178,7 @@ fn the_kubernetes_backend_starts_limits_reaches_and_removes_workers() {
             return;
         };
         limited(&cluster).await;
-        streamed(&cluster).await;
+        bridged(&cluster).await;
         assert_eq!(left_behind(&cluster).await, Vec::<String>::new());
     });
 }
@@ -188,24 +186,15 @@ fn the_kubernetes_backend_starts_limits_reaches_and_removes_workers() {
 async fn limited(cluster: &Kubernetes) {
     let name = name();
     let wanted = spec(true);
-    let link = cluster.start_with(&name, &wanted, WAITS).await;
+    let link = cluster.start_with(&name, &wanted, STUB).await;
     let pod: Value = object::<Pod>(&cluster.pods(), &name).await;
     let policy: Value = object::<NetworkPolicy>(&cluster.policies(), &name).await;
     let said = printed(cluster, &name, 2).await;
     cluster.remove(&name).await.unwrap();
-    let Link::Tls {
-        address,
-        fingerprint,
-        forward,
-    } = link.unwrap()
-    else {
-        panic!("a worker with a network is reached over TLS");
-    };
-    if let Some(forward) = forward {
-        forward.abort();
-    }
-    assert!(address.ip().is_loopback(), "{address}");
-    assert_eq!(fingerprint, wanted.identity.fingerprint);
+    assert!(
+        matches!(link, Ok(Link::Bridged(_))),
+        "a worker is reached through bridges: {link:?}"
+    );
     let container = &pod["spec"]["containers"][0];
     let amounts = json!({"cpu": "1", "memory": "1Gi"});
     assert_eq!(container["resources"]["limits"], amounts);
@@ -224,52 +213,54 @@ async fn limited(cluster: &Kubernetes) {
         "none configured"
     );
     assert!(
-        !pod.to_string().contains("PRIVATE KEY"),
-        "the key never reaches the API server"
+        !pod.to_string().contains(wanted.token.secret()),
+        "the token never reaches the API server"
     );
+    assert!(container.get("ports").is_none(), "nothing listens: {pod}");
     assert!(container["env"].to_string().contains("GREETING"));
     assert_eq!(policy["spec"]["policyTypes"], json!(["Ingress", "Egress"]));
     assert!(policy["spec"]["egress"].to_string().contains("0.0.0.0/0"));
     assert!(
-        said.contains("args: computer serve --tls 0.0.0.0:7070 /opt/glave/tls"),
+        said.contains("args: computer serve --socket /opt/glave/glave.sock /opt/glave/secret"),
         "{said}"
     );
     assert!(
         said.contains("-rw-------"),
-        "the key is the worker's alone: {said}"
+        "the token is the worker's alone: {said}"
     );
     assert_eq!(left_behind(cluster).await, Vec::<String>::new());
 }
 
-async fn streamed(cluster: &Kubernetes) {
-    let name = name();
-    let link = cluster
-        .start_with(&name, &spec(false), ECHOES)
-        .await
-        .unwrap();
-    let policy: Value = object::<NetworkPolicy>(&cluster.policies(), &name).await;
-    let Link::Stream {
-        read,
-        mut write,
-        task,
-    } = link
-    else {
-        panic!("a worker without a network is reached by stream");
+/// What one bridge into the worker answers to `hello`: the stub says how it was started, then
+/// echoes.
+async fn through(link: &Link) -> Vec<String> {
+    let Link::Bridged(bridge) = link else {
+        panic!("a worker is reached through bridges: {link:?}");
     };
+    let (read, mut write) = bridge().await.unwrap();
     let mut lines = BufReader::new(read).lines();
     write.write_all(b"hello\n").await.unwrap();
     write.flush().await.unwrap();
-    let first = lines.next_line().await.unwrap().unwrap();
-    // The stub may have printed its arguments before the attachment; the echo always comes.
-    let echoed = if first == "hello" {
-        first
-    } else {
-        assert_eq!(first, "args: computer serve --stdio");
-        lines.next_line().await.unwrap().unwrap()
-    };
-    assert_eq!(echoed, "hello");
-    task.abort();
+    let mut said = Vec::new();
+    for _ in 0..2 {
+        said.push(lines.next_line().await.unwrap().unwrap());
+    }
+    said
+}
+
+async fn bridged(cluster: &Kubernetes) {
+    let name = name();
+    let link = cluster.start_with(&name, &spec(false), STUB).await.unwrap();
+    let policy: Value = object::<NetworkPolicy>(&cluster.policies(), &name).await;
+    // Each connection is a bridge of its own, the worker going on between them.
+    let first = through(&link).await;
+    let second = through(&link).await;
     cluster.remove(&name).await.unwrap();
+    let echoed = vec![
+        "args: computer bridge /opt/glave/glave.sock".to_owned(),
+        "hello".to_owned(),
+    ];
+    assert_eq!((first, second), (echoed.clone(), echoed));
     // Both directions are governed, and the API server drops empty rule lists: no rules.
     assert_eq!(policy["spec"]["policyTypes"], json!(["Ingress", "Egress"]));
     let none = |rules: &Value| rules.is_null() || *rules == json!([]);
@@ -353,7 +344,7 @@ async fn real(cluster: &Kubernetes, image: &str, network: Network) {
 }
 
 #[test]
-fn a_real_worker_runs_a_command_over_tls_and_over_attach() {
+fn a_real_worker_runs_a_command_through_a_bridge_with_a_network_or_without() {
     let (Ok(_), Ok(image)) = (
         std::env::var("GLAVE_TEST_WORKER_GLAVE"),
         std::env::var("GLAVE_TEST_WORKER_IMAGE"),
@@ -386,14 +377,7 @@ async fn left_by(cluster: &Kubernetes, starter: Option<glave_process::Glave>) ->
         memory_gb: None,
         ..spec(true)
     };
-    let link = cluster.start_with(&name, &spec, WAITS).await.unwrap();
-    if let Link::Tls {
-        forward: Some(forward),
-        ..
-    } = link
-    {
-        forward.abort();
-    }
+    drop(cluster.start_with(&name, &spec, STUB).await.unwrap());
     name
 }
 

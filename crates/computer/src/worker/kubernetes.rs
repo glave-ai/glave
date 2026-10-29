@@ -1,11 +1,12 @@
 //! Workers on Kubernetes: a Pod per worker in one namespace, from the environment's pinned
 //! image, with CPU and memory requested and limited, a runtime class (gVisor or Kata) when one
 //! is set, no service account token, no privilege, and a NetworkPolicy of its own. glave and
-//! the worker's TLS identity are copied in through the API server once the Pod runs (an exec
-//! of `tar`), so the key and token are never stored there; the Pod waits for them, then
-//! becomes glave. The harness reaches it through the API server too (`link`). When glave runs
-//! in a Pod beside its workers, each worker names that Pod as its owner, so the cluster removes
-//! them when it is deleted.
+//! the worker's token are copied in through the API server once the Pod runs (an exec of
+//! `tar`), so the token is never stored there; the Pod waits for them, then becomes glave,
+//! serving on a Unix socket. The harness reaches it through the API server too, each
+//! connection an exec of a bridge to that socket (`link`). When glave runs in a Pod beside its
+//! workers, each worker names that Pod as its owner, so the cluster removes them when it is
+//! deleted.
 
 mod home;
 mod link;
@@ -26,7 +27,7 @@ use kube::{Api, Client, Config};
 use serde_json::Value;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
-use super::backend::{Backend, COPIED_WITHIN, Link, Listed, STARTED_BY, Spec, Started};
+use super::backend::{Backend, COPIED_WITHIN, Link, Listed, STARTED_BY, Spec, Started, saying};
 use super::docker::elf_machine;
 use crate::token::Token;
 use objects::{Home, Owner, Progress, Shape};
@@ -221,11 +222,7 @@ impl Kubernetes {
             ComputerError::Failed(format!("{} is too long a name for tar", long.0))
         })?;
         self.copy_in(name, &files).await?;
-        if spec.network {
-            link::forwarded(pods, name, spec.identity.fingerprint.clone()).await
-        } else {
-            link::attached(&pods, name).await
-        }
+        Ok(Link::Bridged(link::bridges(pods, name)))
     }
 
     /// Waits for the worker's container to run.
@@ -369,15 +366,7 @@ impl Backend for Kubernetes {
                 Err(error) => {
                     let said = self.logs(&name).await;
                     let _ = self.remove(&name).await;
-                    if said.trim().is_empty() {
-                        Err(error)
-                    } else {
-                        Err(ComputerError::Failed(format!(
-                            "{}; it said: {}",
-                            error.message(),
-                            said.trim()
-                        )))
-                    }
+                    Err(saying(error, &said))
                 }
             }
         })
@@ -388,7 +377,10 @@ impl Backend for Kubernetes {
         name: &'a str,
         token: &'a Token,
     ) -> BoxFuture<'a, Result<(), ComputerError>> {
-        Box::pin(async move { self.copy_in(name, &super::tar::token_file(token)?).await })
+        Box::pin(async move {
+            let file = super::tar::token_file(objects::TOKEN, token)?;
+            self.copy_in(name, &file).await
+        })
     }
 
     fn list(&self) -> BoxFuture<'_, Result<Vec<Listed>, ComputerError>> {

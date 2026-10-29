@@ -50,16 +50,14 @@ pub(crate) fn archive(entries: &[Entry<'_>]) -> Result<Vec<u8>, TooLong> {
     Ok(out)
 }
 
-/// Where a worker's token lives, from `/`.
-pub(crate) const TOKEN: &str = "opt/glave/tls/token";
-
-/// An archive of just a worker's token, put at `/` to renew it.
+/// An archive of just a worker's token, at `at` from `/`, put at `/` to renew it.
 pub(crate) fn token_file(
+    at: &str,
     token: &crate::token::Token,
 ) -> Result<Vec<u8>, glave_ports::computer::ComputerError> {
     let file = token.to_file();
     archive(&[Entry::File {
-        name: TOKEN,
+        name: at,
         mode: 0o600,
         content: file.as_bytes(),
     }])
