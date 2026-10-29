@@ -258,8 +258,8 @@ impl WorkerComputers {
         let spec = Spec {
             image: decided.image,
             env: environment.env.clone(),
-            cpus: decided.cpus,
-            memory_gb: decided.memory_gb,
+            cpu_millis: decided.cpus.map(|cpus| cpus.saturating_mul(1_000)),
+            memory_mib: decided.memory_gb.map(|gb| gb.saturating_mul(1_024)),
             network: decided.network,
             identity: Identity::mint()?,
             token: token.clone(),

@@ -272,11 +272,11 @@ impl Shape<'_> {
         serde_json::Map<String, Value>,
     ) {
         let mut amounts = serde_json::Map::new();
-        if let Some(cpus) = self.spec.cpus {
-            amounts.insert("cpu".into(), json!(cpus.to_string()));
+        if let Some(millis) = self.spec.cpu_millis {
+            amounts.insert("cpu".into(), json!(cpu(millis)));
         }
-        if let Some(gb) = self.spec.memory_gb {
-            amounts.insert("memory".into(), json!(format!("{gb}Gi")));
+        if let Some(mib) = self.spec.memory_mib {
+            amounts.insert("memory".into(), json!(memory(mib)));
         }
         (amounts.clone(), amounts)
     }
@@ -323,6 +323,25 @@ impl Shape<'_> {
     }
 }
 
+/// `millis` thousandths of a CPU as Kubernetes writes a quantity: whole CPUs plainly, else in
+/// thousandths (`250m`).
+pub(crate) fn cpu(millis: u32) -> String {
+    if millis.is_multiple_of(1_000) {
+        (millis / 1_000).to_string()
+    } else {
+        format!("{millis}m")
+    }
+}
+
+/// `mib` MiB of memory as Kubernetes writes a quantity: whole GiB as such, else in MiB.
+pub(crate) fn memory(mib: u32) -> String {
+    if mib.is_multiple_of(1_024) {
+        format!("{}Gi", mib / 1_024)
+    } else {
+        format!("{mib}Mi")
+    }
+}
+
 /// glave and the worker's token, as a tar archive extracted at `/`; `ready` last, so the wait
 /// ends only once everything is in.
 pub(crate) fn files(glave: &[u8], spec: &Spec) -> Result<Vec<u8>, TooLong> {
@@ -353,6 +372,63 @@ pub(crate) fn arch(machine: Option<u16>) -> Option<&'static str> {
         Some(0x3E) => Some("amd64"),
         _ => None,
     }
+}
+
+/// How far an in-place resize of a Pod has got.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Resized {
+    /// Its container runs at the size asked for.
+    Done,
+    /// It will not be, and why: the node can never fit it.
+    Refused(String),
+    /// Not yet, and what it waits for.
+    Pending(String),
+}
+
+/// How far the resize of `pod` (as the API server returns it) to `amounts` (its container's
+/// `cpu` and `memory`, requested and limited alike) has got.
+pub(crate) fn resized(pod: &Value, amounts: &Value) -> Resized {
+    let pending = pod
+        .pointer("/status/conditions")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|condition| {
+            condition.get("type") == Some(&json!("PodResizePending"))
+                && condition.get("status") == Some(&json!("True"))
+        });
+    let said = |condition: &Value| {
+        let text = |key: &str| {
+            condition
+                .get(key)
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+        };
+        format!("{}: {}", text("reason"), text("message"))
+    };
+    if let Some(condition) = pending
+        && condition.get("reason") == Some(&json!("Infeasible"))
+    {
+        return Resized::Refused(format!(
+            "the computer cannot grow there ({})",
+            said(condition)
+        ));
+    }
+    let running = pod
+        .pointer("/status/containerStatuses")
+        .and_then(Value::as_array)
+        .and_then(|all| {
+            all.iter()
+                .find(|c| c.get("name") == Some(&json!(CONTAINER)))
+        })
+        .and_then(|status| status.pointer("/resources/limits"));
+    let at = |key: &str| running.and_then(|limits| limits.get(key)) == amounts.get(key);
+    if at("cpu") && at("memory") {
+        return Resized::Done;
+    }
+    Resized::Pending(
+        pending.map_or_else(|| "its container is not yet at the new size".into(), said),
+    )
 }
 
 /// How far a starting Pod has got.

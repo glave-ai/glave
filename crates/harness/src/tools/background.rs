@@ -192,7 +192,7 @@ fn body(output: &str, none: &str) -> String {
 
 /// The line after a command's output: whether it still runs, or how it ended.
 fn state(number: u32, ended: Option<Finished>) -> String {
-    let Some(Finished { ending, millis }) = ended else {
+    let Some(Finished { ending, millis, .. }) = ended else {
         return format!("[command {number} is still running]");
     };
     let after = took(millis);

@@ -30,8 +30,8 @@ pub use sandbox::{
 };
 pub use types::{
     Command, CommandId, ComputerError, ComputerId, ComputerInfo, Ending, Entry, EntryKind,
-    FileWrite, Finished, Listed, Listing, OnTimeout, Save, Saved, Sources, State, WorkspaceId,
-    WorkspaceInfo,
+    FileWrite, Finished, Listed, Listing, OnTimeout, Pressure, Save, Saved, Sources, State,
+    WorkspaceId, WorkspaceInfo,
 };
 
 /// A person's own computer, awake, and the workspace of their home on it: where their

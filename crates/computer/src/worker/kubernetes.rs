@@ -12,6 +12,7 @@ mod home;
 mod link;
 mod objects;
 mod people;
+mod sizing;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -21,11 +22,13 @@ use glave_ports::BoxFuture;
 use glave_ports::computer::{ComputerError, Isolation};
 use k8s_openapi::api::core::v1::Pod;
 use k8s_openapi::api::networking::v1::NetworkPolicy;
-use kube::api::{AttachParams, DeleteParams, ListParams, LogParams, PostParams};
+use kube::api::{
+    AttachParams, DeleteParams, ListParams, LogParams, Patch, PatchParams, PostParams,
+};
 use kube::client::UpgradeConnectionError;
 use kube::config::{KubeConfigOptions, Kubeconfig};
 use kube::{Api, Client, Config};
-use serde_json::Value;
+use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
 use super::backend::{
@@ -33,8 +36,9 @@ use super::backend::{
 };
 use super::docker::elf_machine;
 use crate::token::Token;
-use objects::{Home, Owner, Progress, Shape};
+use objects::{Home, Owner, Progress, Resized, Shape};
 pub use people::{Holding, People};
+use sizing::Size;
 
 /// How long a Pod has to start running: long enough to pull a large image.
 const START_WAIT: Duration = Duration::from_mins(5);
@@ -42,6 +46,9 @@ const START_WAIT: Duration = Duration::from_mins(5);
 const POLL: Duration = Duration::from_millis(500);
 /// Bytes sent to `tar` at a time while copying glave in.
 const CHUNK: usize = 1 << 20;
+/// How long an in-place resize has to take effect before a person's computer is restarted
+/// bigger instead.
+const RESIZED_WITHIN: Duration = Duration::from_mins(1);
 
 /// Which cluster workers run on, and the glave that goes into them.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -357,6 +364,51 @@ impl Kubernetes {
                 status.message.unwrap_or_default(),
                 said.trim()
             ))),
+        }
+    }
+
+    /// Resizes the running Pod `name` in place to `size`, CPU and memory requested and limited
+    /// alike, through its `resize` subresource, and waits, within [`RESIZED_WITHIN`], until its
+    /// container runs at it. A cluster that cannot, or a node with no room, refuses it.
+    async fn resize(&self, name: &str, size: Size) -> Result<(), ComputerError> {
+        let amounts = json!({
+            "cpu": objects::cpu(size.cpu_millis),
+            "memory": objects::memory(size.memory_mib),
+        });
+        let patch = json!({"spec": {"containers": [{
+            "name": objects::CONTAINER,
+            "resources": {"requests": amounts, "limits": amounts},
+        }]}});
+        let pods = self.pods();
+        pods.patch_subresource(
+            "resize",
+            name,
+            &PatchParams::default(),
+            &Patch::Strategic(&patch),
+        )
+        .await
+        .map_err(|error| failed("refused to resize the computer", error))?;
+        let mut waited = Duration::ZERO;
+        loop {
+            let pod = pods
+                .get(name)
+                .await
+                .map_err(|error| failed("could not read the computer", error))?;
+            let pod = serde_json::to_value(&pod).unwrap_or(Value::Null);
+            match objects::resized(&pod, &amounts) {
+                Resized::Done => return Ok(()),
+                Resized::Refused(why) => return Err(ComputerError::Failed(why)),
+                Resized::Pending(why) if waited >= RESIZED_WITHIN => {
+                    return Err(ComputerError::Failed(format!(
+                        "the computer was not resized within {}: {why}",
+                        glave_ports::spoken(RESIZED_WITHIN)
+                    )));
+                }
+                Resized::Pending(_) => {
+                    tokio::time::sleep(POLL).await;
+                    waited = waited.saturating_add(POLL);
+                }
+            }
         }
     }
 

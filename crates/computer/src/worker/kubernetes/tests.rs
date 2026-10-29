@@ -76,8 +76,8 @@ fn spec(network: bool) -> Spec {
     Spec {
         image: IMAGE.into(),
         env: BTreeMap::from([("GREETING".to_owned(), "hi".to_owned())]),
-        cpus: Some(1),
-        memory_gb: Some(1),
+        cpu_millis: Some(1_000),
+        memory_mib: Some(1_024),
         network,
         identity: Identity::mint().unwrap(),
         token: Token::mint(
@@ -371,8 +371,8 @@ async fn left_by(cluster: &Kubernetes, starter: Option<glave_process::Glave>) ->
     let name = name();
     let spec = Spec {
         starter,
-        cpus: None,
-        memory_gb: None,
+        cpu_millis: None,
+        memory_mib: None,
         ..spec(true)
     };
     drop(cluster.start_with(&name, &spec, STUB).await.unwrap());

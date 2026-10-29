@@ -184,8 +184,8 @@ impl Docker {
             .map(|(key, value)| format!("{key}={value}"))
             .collect();
         let memory = spec
-            .memory_gb
-            .map(|gb| i64::from(gb).saturating_mul(1 << 30));
+            .memory_mib
+            .map(|mib| i64::from(mib).saturating_mul(1 << 20));
         let mut host = serde_json::Map::new();
         host.insert(
             "NetworkMode".into(),
@@ -195,10 +195,10 @@ impl Docker {
         host.insert("SecurityOpt".into(), json!(["no-new-privileges"]));
         host.insert("CapDrop".into(), json!(["NET_RAW", "MKNOD", "AUDIT_WRITE"]));
         host.insert("Init".into(), json!(true));
-        if let Some(cpus) = spec.cpus {
+        if let Some(millis) = spec.cpu_millis {
             host.insert(
                 "NanoCpus".into(),
-                json!(i64::from(cpus).saturating_mul(1_000_000_000)),
+                json!(i64::from(millis).saturating_mul(1_000_000)),
             );
         }
         if let Some(memory) = memory {

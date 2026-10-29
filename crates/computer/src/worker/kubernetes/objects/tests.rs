@@ -13,8 +13,8 @@ fn spec(network: bool) -> Spec {
         image: "alpine@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507"
             .into(),
         env: BTreeMap::from([("GREETING".to_owned(), "hi".to_owned())]),
-        cpus: Some(2),
-        memory_gb: Some(4),
+        cpu_millis: Some(2_000),
+        memory_mib: Some(4_096),
         network,
         identity: Identity::mint().unwrap(),
         token: Token::mint(

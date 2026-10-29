@@ -427,10 +427,7 @@ async fn watch_over(
     // What it left running goes with it.
     child.stop_left().await;
     drop((child, held));
-    let finished = Finished {
-        ending,
-        millis: millis(started.elapsed()),
-    };
+    let finished = Finished::new(ending, millis(started.elapsed()));
     shared.ended.send_replace(Some(Ended {
         finished,
         at: Instant::now(),
