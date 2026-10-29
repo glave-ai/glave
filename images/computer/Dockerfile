@@ -4,6 +4,8 @@
 # which is their disk. glave itself is copied in at each wake, never baked in.
 FROM cgr.dev/chainguard/wolfi-base:latest
 
+# bubblewrap: glave's sandbox, measured under gVisor (specs/computers.md); commands on a
+# person's computer do not run in it yet.
 RUN apk add --no-cache \
       bash bubblewrap build-base ca-certificates-bundle coreutils curl findutils git gnutar grep gzip jq \
       less nodejs-24 npm openssh-client procps python-3.13 ripgrep rustup sed unzip uv zip

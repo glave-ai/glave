@@ -1,8 +1,8 @@
 //! A person's computer measured under the runtime class CI gives it (`GLAVE_TEST_MEASURE=1` on
 //! `kind`, once under runc and once under gVisor, `specs/computers.md`, decision 12): how long
 //! it takes to wake, whether glave's sandbox (bubblewrap) starts inside it, and how long work
-//! takes there. Each number is printed with the runtime class; what fails is printed too, and
-//! only the wake is asserted, since the rest are measurements.
+//! takes there. Each number is printed with the runtime class; the work must succeed, and the
+//! probes of bubblewrap (bare `bwrap`, not glave's whole sandbox) are findings, never asserted.
 
 use std::time::{Duration, Instant};
 
@@ -30,7 +30,7 @@ const COMPILE: &str = "rm -rf py && cp -r /usr/lib/python3.13 py && \
 
 /// The stable Rust toolchain fetched into the home: the network and many files written.
 const TOOLCHAIN: &str = "rustup set profile minimal >/dev/null && \
-    rustup default stable 2>&1 | tail -n 2 && echo fetched";
+    rustup default stable >/dev/null 2>&1 && echo fetched";
 
 /// A small Rust program built.
 const BUILD: &str = "rm -rf hello && cargo new -q --vcs none hello && cd hello && \
@@ -88,6 +88,7 @@ fn a_persons_computer_measured_under_its_runtime() {
         let woke = computers.create(&environment).await;
         let wake_took = started.elapsed();
         let mut said = Vec::new();
+        let mut failed = Vec::new();
         if let Ok(woke) = &woke {
             for (what, script) in [
                 ("bubblewrap without the network", BUBBLEWRAP_OFFLINE),
@@ -97,6 +98,9 @@ fn a_persons_computer_measured_under_its_runtime() {
                 ("build a small Rust program", BUILD),
             ] {
                 let (took, answer) = timed(&computers, woke.id, script).await;
+                if answer.is_err() && !what.starts_with("bubblewrap") {
+                    failed.push(what);
+                }
                 said.push(format!(
                     "{what}: {} ms, {}",
                     took.as_millis(),
@@ -116,6 +120,7 @@ fn a_persons_computer_measured_under_its_runtime() {
             said.join("\n")
         );
         woke.unwrap();
+        assert_eq!(failed, Vec::<&str>::new(), "the work ran");
         destroyed.unwrap();
         assert_eq!(left, Vec::<String>::new());
     });

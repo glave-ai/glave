@@ -456,11 +456,13 @@ jobs:
           mkdir -p "$RUNNER_TEMP/gvisor" && cd "$RUNNER_TEMP/gvisor"
           curl -fsSL -o gvisor.tar.zstd "https://storage.googleapis.com/gvisor/releases/release/$GVISOR_RELEASE/x86_64/gvisor.tar.zstd"
           echo "$GVISOR_SHA512  gvisor.tar.zstd" | sha512sum -c -
-          tar --zstd -xf gvisor.tar.zstd
-          # runsc with the sidecars it starts beside it (gvisor-bin/), and the shim.
-          docker cp "$(dirname "$(find . -type f -name runsc | head -n 1)")/." glave-control-plane:/usr/local/bin/
-          docker cp "$(find . -type f -name containerd-shim-runsc-v1 | head -n 1)" glave-control-plane:/usr/local/bin/
-          docker exec glave-control-plane sh -c 'chmod -R a+rX /usr/local/bin && chmod 0755 /usr/local/bin/runsc /usr/local/bin/containerd-shim-runsc-v1' 
+          mkdir -p unpacked && tar --zstd -xf gvisor.tar.zstd -C unpacked
+          # runsc, the sidecars it starts beside it (gvisor-bin/), and the shim.
+          runsc="$(find unpacked -type f -name runsc | head -n 1)"
+          docker cp "$runsc" glave-control-plane:/usr/local/bin/runsc
+          docker cp "$(dirname "$runsc")/gvisor-bin" glave-control-plane:/usr/local/bin/gvisor-bin
+          docker cp "$(find unpacked -type f -name containerd-shim-runsc-v1 | head -n 1)" glave-control-plane:/usr/local/bin/
+          docker exec glave-control-plane sh -c 'chmod 0755 /usr/local/bin/runsc /usr/local/bin/containerd-shim-runsc-v1 && chmod -R a+rX /usr/local/bin/gvisor-bin'
           # The shim runs runsc with systemd's cgroups, as kind's containerd runs runc, under
           # the plugin name the node's containerd config version uses.
           docker exec glave-control-plane sh -c 'printf "[runsc_config]\n  systemd-cgroup = \"true\"\n" > /etc/containerd/runsc.toml'
@@ -484,6 +486,8 @@ jobs:
           kind: Pod
           metadata:
             name: gvisor-smoke
+            labels:
+              glave.test: "${{ github.run_id }}"
           spec:
             runtimeClassName: glave-test-gvisor
             restartPolicy: Never
@@ -520,7 +524,9 @@ jobs:
         env:
           GLAVE_TEST_MEASURE: "1"
         run: |
-          GLAVE_TEST_KUBE_RUNTIME_CLASS=glave-test-gvisor cargo nextest run -p glave-computer --all-features --success-output final -E 'test(/keeps_its_disk_while_it_sleeps|measured_under_its_runtime/)'
+          GLAVE_TEST_KUBE_RUNTIME_CLASS=glave-test-gvisor cargo nextest run -p glave-computer --all-features --success-output final -E 'test(/keeps_its_disk_while_it_sleeps/)'
+          # Each measurement alone on the node.
+          GLAVE_TEST_KUBE_RUNTIME_CLASS=glave-test-gvisor cargo nextest run -p glave-computer --all-features --success-output final -E 'test(/measured_under_its_runtime/)'
           cargo nextest run -p glave-computer --all-features --success-output final -E 'test(/measured_under_its_runtime/)'
       - name: Disk space after the build
         if: always()
