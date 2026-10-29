@@ -134,7 +134,7 @@ fn credentials_are_refused_and_never_stored() {
                 refused,
                 Err(MemoryError::Invalid(MemoryRefusal::Secret { .. }))
             ),
-            "{refused:?}"
+            "a text holding a credential is refused as a secret"
         );
         let ledger = kit
             .store
@@ -244,7 +244,7 @@ fn a_save_past_the_budget_is_refused() {
                 refused,
                 Some(MemoryError::Invalid(MemoryRefusal::Full { .. }))
             ),
-            "the budget never ran out: {refused:?}"
+            "the budget runs out and refuses the save as full"
         );
     });
 }
