@@ -1,6 +1,7 @@
 //! The database schema: one, made whole in a new database. Until glave 0.1 ships it changes in
 //! place, with [`VERSION`] bumped, and a database of another version is refused (AGENTS.md,
-//! "Types"). `glave_migrations` records the version.
+//! "Types"). `glave_migrations` records the version. The one exception is a change that only
+//! adds tables, made in a database of the version before as well ([`ADDED`]).
 
 use tokio_postgres::Client;
 
@@ -8,7 +9,10 @@ use crate::store::{StoreError, describe};
 
 /// The schema this build makes and reads. Bumped whenever [`SCHEMA`] changes. It starts past
 /// every version the migrations it replaced wrote, so a database one of them made is refused.
-pub(crate) const VERSION: i32 = 19;
+pub(crate) const VERSION: i32 = 20;
+
+/// The version before [`VERSION`], whose databases get [`ADDED`] and are this build's after.
+const BEFORE: i32 = 19;
 
 /// Every table, made in one transaction in a new database.
 const SCHEMA: &str = "
@@ -185,6 +189,24 @@ const SCHEMA: &str = "
     END $$;
 ";
 
+/// The tables version 20 adds: the directory sign-in finds people in (`specs/storage.md`,
+/// "Sign-in is the one lookup before an organization is known"), ids and hashes only, read
+/// before anyone's organization is known, so no policy, as `glave_orgs` has none. A person's
+/// organizations come in the order they joined.
+const ADDED: &str = "
+    CREATE TABLE identities (
+        identity  text PRIMARY KEY,
+        person    uuid NOT NULL
+    );
+
+    CREATE TABLE memberships (
+        joined  bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        person  uuid   NOT NULL,
+        org     uuid   NOT NULL,
+        UNIQUE (person, org)
+    );
+";
+
 /// Refuses a connection whose role row-level security does not bind: a superuser, or a role
 /// with `BYPASSRLS`, for which every organization's rows would be one.
 pub(crate) async fn refuse_bypassing(client: &Client) -> Result<(), StoreError> {
@@ -236,14 +258,18 @@ pub(crate) async fn prepare(client: &mut Client) -> Result<(), StoreError> {
     if found == VERSION {
         return transaction.commit().await.map_err(schema);
     }
-    if found != 0 {
+    if found != 0 && found != BEFORE {
         return Err(StoreError::Schema(format!(
             "this database was set up by another version of glave, which this one cannot read \
              before glave 0.1 (schema {found}, not {VERSION}). Empty it (drop glave's tables, or \
              the schema they are in) and start glave again"
         )));
     }
-    transaction.batch_execute(SCHEMA).await.map_err(schema)?;
+    // A database of the version before only gains the tables added since.
+    if found == 0 {
+        transaction.batch_execute(SCHEMA).await.map_err(schema)?;
+    }
+    transaction.batch_execute(ADDED).await.map_err(schema)?;
     transaction
         .execute(
             "INSERT INTO glave_migrations (version) VALUES ($1)",

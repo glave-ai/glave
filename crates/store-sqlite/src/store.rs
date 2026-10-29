@@ -12,6 +12,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::blobs::SqliteBlobs;
+use crate::directory::SqliteDirectory;
 use crate::keys::SqliteKeys;
 use crate::leases::SqliteLeases;
 use crate::log::SqliteLog;
@@ -141,6 +142,11 @@ impl Store {
     /// The leases work in flight runs under, on this file's clock.
     pub fn leases(&self) -> SqliteLeases {
         SqliteLeases::new(Arc::clone(&self.connection))
+    }
+
+    /// The directory sign-in finds people in, and the organizations they belong to.
+    pub fn directory(&self) -> SqliteDirectory {
+        SqliteDirectory::new(Arc::clone(&self.connection))
     }
 
     /// The one organization on this computer, made with the id `new` the first time.

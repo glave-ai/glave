@@ -129,6 +129,20 @@ fn the_log_passes_the_search_conformance_suite() {
 }
 
 #[test]
+fn the_directory_passes_the_directory_conformance_suite() {
+    block_on!(async {
+        let Some(scratch) = Scratch::new("directory").await else {
+            return;
+        };
+        let store = scratch.store().await.unwrap();
+        let verdict = conformance::directory(&store.directory()).await;
+        drop(store);
+        scratch.drop_schema().await;
+        assert_eq!(verdict, Ok(()));
+    });
+}
+
+#[test]
 fn the_leases_pass_the_leases_conformance_suite() {
     block_on!(async {
         let Some(scratch) = Scratch::new("leases").await else {

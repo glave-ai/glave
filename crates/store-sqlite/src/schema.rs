@@ -1,6 +1,8 @@
 //! The database schema: one, made whole in a new file. Until glave 0.1 ships it changes in
 //! place, with [`VERSION`] bumped, and a file of another version is refused (AGENTS.md,
-//! "Types"). The version is SQLite's `user_version`.
+//! "Types"). The version is SQLite's `user_version`. The one exception is a change that only
+//! adds tables, made in a file of the version before as well ([`ADDED`]), so a person's file
+//! keeps opening.
 
 use rusqlite::Connection;
 
@@ -8,10 +10,13 @@ use crate::store::StoreError;
 
 /// The schema this build makes and reads. Bumped whenever [`SCHEMA`] changes. It starts past
 /// every version the migrations it replaced wrote, so a file one of them made is refused.
-pub(crate) const VERSION: u32 = 17;
+pub(crate) const VERSION: u32 = 18;
+
+/// The version before [`VERSION`], whose files get [`ADDED`] and are this build's after.
+pub(crate) const BEFORE: u32 = 17;
 
 /// Every table, made in one transaction in a new file.
-const SCHEMA: &str = "
+pub(crate) const SCHEMA: &str = "
     -- The event log. `data` is the payload sealed under the data key `key_id` names.
     CREATE TABLE events (
         org      TEXT    NOT NULL,
@@ -152,6 +157,23 @@ const SCHEMA: &str = "
     );
 ";
 
+/// The tables version 18 adds: the directory sign-in finds people in (`specs/storage.md`,
+/// "Sign-in is the one lookup before an organization is known"), ids and hashes only. A
+/// person's organizations come in the order of their rows, the first joined first.
+const ADDED: &str = "
+    CREATE TABLE identities (
+        identity TEXT NOT NULL PRIMARY KEY,
+        person   TEXT NOT NULL
+    ) STRICT;
+
+    CREATE TABLE memberships (
+        joined INTEGER PRIMARY KEY,
+        person TEXT NOT NULL,
+        org    TEXT NOT NULL,
+        UNIQUE (person, org)
+    ) STRICT;
+";
+
 /// Makes the schema in a new file, and checks an existing one is this build's. A file of any
 /// other version is refused with what to do about it, never changed.
 pub(crate) fn prepare(connection: &mut Connection) -> Result<(), StoreError> {
@@ -160,6 +182,9 @@ pub(crate) fn prepare(connection: &mut Connection) -> Result<(), StoreError> {
         .map_err(|e| StoreError::schema(&e))?;
     if found == VERSION {
         return Ok(());
+    }
+    if found == BEFORE {
+        return added(connection);
     }
     if found != 0 {
         return Err(StoreError::Schema(format!(
@@ -173,6 +198,23 @@ pub(crate) fn prepare(connection: &mut Connection) -> Result<(), StoreError> {
         .map_err(|e| StoreError::schema(&e))?;
     transaction
         .execute_batch(SCHEMA)
+        .map_err(|e| StoreError::schema(&e))?;
+    transaction
+        .execute_batch(ADDED)
+        .map_err(|e| StoreError::schema(&e))?;
+    transaction
+        .pragma_update(None, "user_version", VERSION)
+        .map_err(|e| StoreError::schema(&e))?;
+    transaction.commit().map_err(|e| StoreError::schema(&e))
+}
+
+/// Adds [`ADDED`] to a file of the version before, in one transaction, nothing else changed.
+fn added(connection: &mut Connection) -> Result<(), StoreError> {
+    let transaction = connection
+        .transaction()
+        .map_err(|e| StoreError::schema(&e))?;
+    transaction
+        .execute_batch(ADDED)
         .map_err(|e| StoreError::schema(&e))?;
     transaction
         .pragma_update(None, "user_version", VERSION)
