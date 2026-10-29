@@ -10,7 +10,7 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
 use glave_event::{At, Body, MemoryId, MemoryScope, Role, Seq, ThreadId, decode};
-use glave_ports::memories::{MemoryContext, MemoryError};
+use glave_ports::memories::{MemoryContext, MemoryError, MemoryRefusal};
 use glave_ports::search::{Found, query_terms, searchable_body, terms};
 use glave_ports::stream::Reserved;
 use glave_ports::{EventLog, Scope, Standing};
@@ -72,9 +72,7 @@ impl<L: EventLog + 'static> Memories<L> {
         let limit = limit.clamp(1, MOST_HITS);
         let wanted: BTreeSet<String> = query_terms(query).into_iter().collect();
         if wanted.is_empty() {
-            return Err(MemoryError::Invalid(
-                "recall needs a few distinctive keywords to search for".into(),
-            ));
+            return Err(MemoryError::Invalid(MemoryRefusal::NoKeywords));
         }
         let readable = self.rules().readable(on.person, on.scope);
         let mut ranked = Vec::new();

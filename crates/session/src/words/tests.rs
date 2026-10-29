@@ -322,7 +322,11 @@ fn every_word_of_another_crates_table_is_one_fluent_message_whose_english_is_wha
     let projects = glave_ports::ProjectRefusal::every()
         .into_iter()
         .map(|it| Box::new(it) as Box<dyn Worded>);
-    for words in worded.chain(phrases).chain(refusals).chain(projects) {
+    let memories = glave_ports::memories::MemoryRefusal::every()
+        .into_iter()
+        .map(|it| Box::new(it) as Box<dyn Worded>);
+    let all = worded.chain(phrases).chain(refusals).chain(projects);
+    for words in all.chain(memories) {
         assert!(ids.insert(words.id()), "{} is in a table twice", words.id());
         let said = word(Language::English, words.as_ref());
         assert_eq!(said, words.english(), "{}", words.id());
@@ -341,6 +345,7 @@ fn every_word_of_another_crates_table_is_one_fluent_message_whose_english_is_wha
             + Phrase::ALL.len()
             + Refusal::ALL.len()
             + glave_ports::ProjectRefusal::ALL.len()
+            + glave_ports::memories::MemoryRefusal::ALL.len()
     );
 }
 

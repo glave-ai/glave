@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use glave_event::{MemoryId, MemoryScope, MemorySource, Principal};
 use glave_ports::EventLog;
-use glave_ports::memories::{MemoryContext, MemoryError, Shown};
+use glave_ports::memories::{MemoryContext, MemoryError, MemoryRefusal, Shown};
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, JsonObject,
     ListResourceTemplatesResult, ListResourcesResult, ListToolsResult, PaginatedRequestParams,
@@ -319,12 +319,17 @@ impl<L: EventLog + 'static> MemoryServer<L> {
                     version: version.parse().ok()?,
                 })
             })
-            .ok_or_else(|| MemoryError::NotFound(format!("no resource {uri}")))?;
+            .ok_or_else(|| {
+                MemoryError::NotFound(MemoryRefusal::NoResource {
+                    uri: uri.to_string(),
+                })
+            })?;
         let found = self.memories.versions(on, &[wanted]).await?;
-        let memory = found
-            .into_iter()
-            .next()
-            .ok_or_else(|| MemoryError::NotFound(format!("{uri} is forgotten or unknown")))?;
+        let memory = found.into_iter().next().ok_or_else(|| {
+            MemoryError::NotFound(MemoryRefusal::ResourceGone {
+                uri: uri.to_string(),
+            })
+        })?;
         Ok(json!({ "memories": [memory] }).to_string())
     }
 }
@@ -392,7 +397,9 @@ impl<L: EventLog + 'static> ServerHandler for MemoryServer<L> {
                     .with_mime_type("application/json"),
             ])
             .into()),
-            Err(MemoryError::NotFound(why)) => Err(ErrorData::resource_not_found(why, None)),
+            Err(missing @ MemoryError::NotFound(_)) => {
+                Err(ErrorData::resource_not_found(missing.to_string(), None))
+            }
             Err(error) => Err(ErrorData::internal_error(error.to_string(), None)),
         }
     }

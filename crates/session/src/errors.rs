@@ -96,14 +96,14 @@ impl From<ProjectError> for ApiError {
 
 impl From<MemoryError> for ApiError {
     fn from(error: MemoryError) -> Self {
-        let code = match error {
-            MemoryError::NotFound(_) => code::NO_MEMORY,
-            MemoryError::Refused(_) => code::NOT_ALLOWED,
-            MemoryError::Invalid(_) => code::INVALID_PARAMS,
-            MemoryError::Off(_) => code::MEMORY_OFF,
+        let (code, refusal) = match error {
+            MemoryError::NotFound(refusal) => (code::NO_MEMORY, refusal),
+            MemoryError::Refused(refusal) => (code::NOT_ALLOWED, refusal),
+            MemoryError::Invalid(refusal) => (code::INVALID_PARAMS, refusal),
+            MemoryError::Off(refusal) => (code::MEMORY_OFF, refusal),
             MemoryError::Storage(_) => return Self::internal(&error),
         };
-        Self::new(code, error.to_string())
+        Self::new(code, refusal)
     }
 }
 
@@ -271,6 +271,7 @@ pub(crate) fn refused(error: &SignInError) -> Sentence {
 
 #[cfg(test)]
 mod tests {
+    use glave_ports::memories::MemoryRefusal;
     use glave_ports::{ProjectId, ProjectRefusal};
 
     use crate::protocol::Told;
@@ -311,6 +312,44 @@ mod tests {
         );
     }
 
+    /// Each of `told`, an English text and the error the API made of it, reads as the text and
+    /// is written again in another language.
+    fn written_again(told: Vec<(String, ApiError)>) {
+        use crate::words::Language;
+
+        for (english, error) in told {
+            assert_eq!(&*error.message, english.as_str());
+            let mut written = error.message.clone();
+            written.translate(Language::Accented);
+            assert!(
+                written.starts_with('['),
+                "{english} is not the server's own"
+            );
+        }
+    }
+
+    #[test]
+    fn a_projects_and_memorys_refusals_read_as_they_did_and_are_written_again() {
+        let mut told: Vec<(String, ApiError)> = Vec::new();
+        let projects = ProjectRefusal::every().into_iter().flat_map(|refusal| {
+            [
+                ProjectError::Invalid(refusal.clone()),
+                ProjectError::Conflict(refusal),
+            ]
+        });
+        told.extend(projects.map(|error| (error.to_string(), ApiError::from(error))));
+        let memories = MemoryRefusal::every().into_iter().flat_map(|refusal| {
+            [
+                MemoryError::NotFound(refusal.clone()),
+                MemoryError::Refused(refusal.clone()),
+                MemoryError::Invalid(refusal.clone()),
+                MemoryError::Off(refusal),
+            ]
+        });
+        told.extend(memories.map(|error| (error.to_string(), ApiError::from(error))));
+        written_again(told);
+    }
+
     #[test]
     fn what_other_crates_refuse_with_reads_as_it_did_and_is_written_again() {
         use glave_event::{CallId, ThreadId};
@@ -349,22 +388,7 @@ mod tests {
         told.push((NotQueued::Full.to_string(), ApiError::from(NotQueued::Full)));
         let busy = StreamError::Busy { thread };
         told.push((busy.to_string(), ApiError::from(busy)));
-        let projects = ProjectRefusal::every().into_iter().flat_map(|refusal| {
-            [
-                ProjectError::Invalid(refusal.clone()),
-                ProjectError::Conflict(refusal),
-            ]
-        });
-        told.extend(projects.map(|error| (error.to_string(), ApiError::from(error))));
-        for (english, error) in told {
-            assert_eq!(&*error.message, english.as_str());
-            let mut written = error.message.clone();
-            written.translate(Language::Accented);
-            assert!(
-                written.starts_with('['),
-                "{english} is not the server's own"
-            );
-        }
+        written_again(told);
         let signins = [
             SignInError::Missing,
             SignInError::Malformed("no dots".into()),
