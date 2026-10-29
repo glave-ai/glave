@@ -177,6 +177,11 @@ impl Homes for OnCluster {
                 .await
         })
     }
+
+    fn hold(&self, org: OrgId, person: PrincipalId) -> Result<Box<dyn Send>, ComputerError> {
+        let held = self.0.hold(&People::key(org.as_uuid(), person.as_uuid()))?;
+        Ok(Box::new(held))
+    }
 }
 
 /// How long git has to read this repository, which it does in a moment.

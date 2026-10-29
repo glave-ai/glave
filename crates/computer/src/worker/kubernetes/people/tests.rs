@@ -1,18 +1,19 @@
 //! People's computers on a real cluster, as CI's `kind` job runs them (`GLAVE_TEST_KUBE=1`, a
 //! real glave and image): a wake started when the app opens and the turn that needs the
-//! computer share one Pod, a second ask finds it awake, and nothing is left once it is gone.
+//! computer share one Pod, a second ask finds it awake, and nothing is left once it is gone;
+//! held by a turn it stays awake, unasked it sleeps on its own, and a turn wakes it again on
+//! the same disk.
 
 use std::time::Instant;
 
 use glave_ports::block_on;
-use glave_ports::computer::{Command, Ending, Limits};
+use glave_ports::computer::Limits;
 
 use super::super::home::PersonComputer;
+use super::super::home::tests::ran;
 use super::super::tests::{cluster, left_behind};
 use super::People;
-use crate::CancelSwitch;
 use crate::worker::backend::Backend as _;
-use crate::worker::route::Tail;
 
 #[test]
 fn a_person_s_computer_wakes_once_however_many_ask() {
@@ -49,26 +50,16 @@ fn a_person_s_computer_wakes_once_however_many_ask() {
         let at_once = again.elapsed();
         let ran = match &third {
             Ok(home) => {
-                let output = Tail::default();
-                home.computers
-                    .run(
-                        home.home.id,
-                        &Command::new("echo $HOME; pwd"),
-                        &output,
-                        &CancelSwitch::default(),
-                    )
-                    .await
-                    .map(|finished| (finished.ending, output.text(1_000)))
-                    .map_err(|error| format!("{error:?}"))
+                ran(
+                    home.computers.as_ref(),
+                    home.home.computer,
+                    "echo $HOME; pwd",
+                )
+                .await
             }
             Err(error) => Err(format!("{error:?}")),
         };
-        drop(people);
-        let destroyed = PersonComputer::new(cluster.clone(), &key, 1)
-            .unwrap()
-            .destroy()
-            .await;
-        let left = left_behind(&cluster).await;
+        let (destroyed, left) = gone(people, &cluster, &key).await;
         eprintln!(
             "a person's computer woke in {} ms, and was found awake in {} ms",
             woke.as_millis(),
@@ -85,9 +76,7 @@ fn a_person_s_computer_wakes_once_however_many_ask() {
             "awake, not woken again"
         );
         assert_eq!(first.home.root, "/home/glave");
-        let (ending, said) = ran.unwrap();
-        assert_eq!(ending, Ending::Exited { code: 0 }, "{said}");
-        assert_eq!(said.trim(), "/home/glave\n/home/glave");
+        assert_eq!(ran.unwrap().trim(), "/home/glave\n/home/glave");
         destroyed.unwrap();
         assert_eq!(left, Vec::<String>::new());
     });
@@ -102,4 +91,120 @@ fn a_person_s_key_is_plain_and_their_own() {
     assert_eq!(key, "aaaabbbbcccc-70008000000000000001");
     assert_ne!(key, People::key(org, bob));
     assert!(super::super::home::plain(&key), "{key}");
+}
+
+/// Lets go of `people`, removes the computer `key` names with its disk, and what the test
+/// left on `cluster`.
+async fn gone(
+    people: People,
+    cluster: &super::super::Kubernetes,
+    key: &str,
+) -> (
+    Result<(), glave_ports::computer::ComputerError>,
+    Vec<String>,
+) {
+    drop(people);
+    let destroyed = PersonComputer::new(cluster.clone(), key, 1)
+        .unwrap()
+        .destroy()
+        .await;
+    (destroyed, left_behind(cluster).await)
+}
+
+/// Whether the Pod `name` ended (its glave exited) within three minutes: never a panic.
+async fn ended(cluster: &super::super::Kubernetes, name: &str) -> bool {
+    for _ in 0..360 {
+        if matches!(
+            phase(cluster, name).await.as_deref(),
+            Some("Succeeded" | "Failed")
+        ) {
+            return true;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    false
+}
+
+/// The phase the Pod `name` is in, if it is there.
+async fn phase(cluster: &super::super::Kubernetes, name: &str) -> Option<String> {
+    let pod = cluster.pods().get_opt(name).await.ok().flatten()?;
+    pod.status?.phase
+}
+
+#[test]
+fn a_person_s_computer_sleeps_once_idle_and_a_turn_wakes_it_again() {
+    let (Ok(_), Ok(image)) = (
+        std::env::var("GLAVE_TEST_WORKER_GLAVE"),
+        std::env::var("GLAVE_TEST_WORKER_IMAGE"),
+    ) else {
+        eprintln!("skipped: set GLAVE_TEST_WORKER_GLAVE and GLAVE_TEST_WORKER_IMAGE");
+        return;
+    };
+    block_on!(async {
+        let runtime_class = std::env::var("GLAVE_TEST_KUBE_RUNTIME_CLASS").ok();
+        let Some(cluster) = cluster(runtime_class.as_deref(), "sleep").await else {
+            return;
+        };
+        let limits = Limits {
+            isolation: cluster.isolation(),
+            ..Limits::default()
+        };
+        // Asleep after a minute unasked, so a turn holding it asks every 15 seconds.
+        let people = People::new(cluster.clone(), &image, &limits, 1)
+            .unwrap()
+            .idle_after(1);
+        let key = People::key(
+            crate::local::new_id().unwrap(),
+            crate::local::new_id().unwrap(),
+        );
+        let pod = format!("glave-computer-{key}");
+
+        let first = people.home(&key).await;
+        let wrote = match &first {
+            Ok(home) => {
+                ran(
+                    home.computers.as_ref(),
+                    home.home.computer,
+                    "echo kept > kept.txt",
+                )
+                .await
+            }
+            Err(error) => Err(format!("{error:?}")),
+        };
+        // A turn holds it: two idle limits and more pass and it stays awake.
+        let held = people.hold(&key);
+        tokio::time::sleep(std::time::Duration::from_secs(150)).await;
+        let kept_awake = phase(&cluster, &pod).await;
+        drop(held);
+        // Let go of, it sleeps on its own: its glave ends, so its Pod does, its disk kept.
+        let slept = ended(&cluster, &pod).await;
+        // A turn wakes it again, on the same disk.
+        let waking = Instant::now();
+        let again = people.home(&key).await;
+        let woke = waking.elapsed();
+        let read = match &again {
+            Ok(home) => ran(home.computers.as_ref(), home.home.computer, "cat kept.txt").await,
+            Err(error) => Err(format!("{error:?}")),
+        };
+        let (destroyed, left) = gone(people, &cluster, &key).await;
+        eprintln!(
+            "a person's computer woke from sleep in {} ms",
+            woke.as_millis()
+        );
+        wrote.unwrap();
+        assert_eq!(
+            kept_awake.as_deref(),
+            Some("Running"),
+            "held, it stays awake"
+        );
+        assert!(slept, "idle, it sleeps");
+        assert_ne!(
+            first.unwrap().home.computer,
+            again.as_ref().unwrap().home.computer,
+            "woken again"
+        );
+        assert_eq!(read.unwrap().trim(), "kept");
+        destroyed.unwrap();
+        assert_eq!(left, Vec::<String>::new());
+    });
 }
