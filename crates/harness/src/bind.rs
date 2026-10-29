@@ -149,7 +149,7 @@ where
             }
             place => place,
         };
-        let (home, kind) = self.home_of(scope, person).await?;
+        let (home, kind) = self.home_of(scope, person)?;
         let owner = owner_label(scope, id);
         let workspace = match opened {
             Place::Folder(path) if kind == ComputerKind::Person => {

@@ -1,6 +1,7 @@
 //! What a worker backend does: start a disposable machine from a pinned image with glave in
-//! it serving the computer protocol, say how to reach it, list its workers, and remove them. Docker and Kubernetes
-//! are the two; the trait stays inside the crate until a protocol for it is needed.
+//! it serving the computer protocol, say how to reach it, list its workers, and remove them.
+//! Docker and Kubernetes are the two; the trait stays inside the crate until a protocol for it
+//! is needed.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -16,7 +17,7 @@ use tokio::task::JoinHandle;
 use crate::tls::{Fingerprint, Identity};
 use crate::token::Token;
 
-/// The port glave serves on inside a worker that has a network.
+/// The port glave serves on inside a Docker worker that has a network.
 pub(crate) const PORT: u16 = 7070;
 
 /// How long copying glave into a started worker may take: seconds into a container here or
@@ -54,12 +55,17 @@ pub(crate) struct Listed {
     pub(crate) started_by: Option<String>,
 }
 
+/// A stream to glave in a worker: what it reads, and what it writes.
+pub(crate) type Stream = (
+    Box<dyn AsyncRead + Unpin + Send>,
+    Box<dyn AsyncWrite + Unpin + Send>,
+);
+
 /// How the harness reaches a started worker.
 pub(crate) enum Link {
     /// Over TLS at `address`, trusting only the certificate with `fingerprint`. `forward`,
-    /// when the backend reaches the worker through a forwarder of its own (Kubernetes'
-    /// port-forward), moves the bytes, or holds the worker's input (Docker's attach), and stops
-    /// when the worker is removed.
+    /// when the backend holds the worker's input (Docker's attach), stops when the worker is
+    /// removed.
     Tls {
         address: SocketAddr,
         fingerprint: Fingerprint,
@@ -72,6 +78,14 @@ pub(crate) enum Link {
         write: Box<dyn AsyncWrite + Unpin + Send>,
         task: JoinHandle<()>,
     },
+    /// Through bridges into the worker ([`Backend::bridge`]), opened as often as a connection
+    /// is needed, each signed in with the token: on Kubernetes, where a port-forward does not
+    /// reach a sandboxed Pod.
+    #[cfg_attr(
+        all(not(feature = "kubernetes"), not(test)),
+        expect(dead_code, reason = "only Kubernetes bridges into its workers")
+    )]
+    Bridged,
 }
 
 impl fmt::Debug for Link {
@@ -83,7 +97,17 @@ impl fmt::Debug for Link {
                 ..
             } => write!(f, "Tls({address}, {fingerprint:?})"),
             Self::Stream { .. } => f.write_str("Stream"),
+            Self::Bridged => f.write_str("Bridged"),
         }
+    }
+}
+
+/// `error`, with what a worker that did not start `said` last, when it said anything.
+pub(crate) fn saying(error: ComputerError, said: &str) -> ComputerError {
+    if said.trim().is_empty() {
+        error
+    } else {
+        ComputerError::Failed(format!("{}; it said: {}", error.message(), said.trim()))
     }
 }
 
@@ -112,6 +136,15 @@ pub(crate) trait Backend: Send + Sync {
         name: &'a str,
         token: &'a Token,
     ) -> BoxFuture<'a, Result<(), ComputerError>>;
+
+    /// A new bridge into the running worker `name`, for a worker started with
+    /// [`Link::Bridged`]: a stream to glave there, a connection of its own each time. Only
+    /// Kubernetes has them.
+    fn bridge<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<Stream, ComputerError>> {
+        Box::pin(std::future::ready(Err(ComputerError::Unsupported(
+            format!("glave reaches {name} without bridges"),
+        ))))
+    }
 
     /// Every worker here, with this backend's labels, whoever started it.
     fn list(&self) -> BoxFuture<'_, Result<Vec<Listed>, ComputerError>>;

@@ -127,8 +127,8 @@ pub struct Wiring<P, L, B> {
     /// deleted; none where the host keeps none.
     pub worktrees: Option<Arc<dyn Worktrees>>,
     /// Each person's own computer, where a deployment gives people one (on Kubernetes): their
-    /// threads work there, and it is woken when they open the app. None: every thread works
-    /// on the computer `workspace` is on.
+    /// threads work there, and it is woken by the first tool call that needs it. None: every
+    /// thread works on the computer `workspace` is on.
     pub homes: Option<Arc<dyn Homes>>,
 }
 

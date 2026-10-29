@@ -110,7 +110,6 @@ where
             Ok(held) => held,
             Err(refused) => return Answered::Reply(Err(refused)),
         };
-        self.wake_for(caller, &request);
         // A turn joins the caller's trace, when they sent one.
         let traced = &Caller {
             trace: crate::trace::trace_of(&request).or_else(|| caller.trace.clone()),

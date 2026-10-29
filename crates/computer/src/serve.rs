@@ -6,6 +6,7 @@
 
 mod asking;
 mod idle;
+mod socket;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -32,6 +33,7 @@ use crate::wire::{self, Chunk, MAX_LINE, OUTPUT, Request, code};
 use asking::{Asking, Asks};
 use idle::Activity;
 pub use idle::Idle;
+pub use socket::{bridge, listen_socket, serve_socket};
 
 /// Lines written ahead of a slow client.
 const WRITE_AHEAD: usize = 256;
@@ -501,33 +503,24 @@ pub async fn serve_tcp<C: Computers + 'static>(
 }
 
 /// Serves `computers` over TLS on a TCP listener at any address, to clients that first present
-/// the token `tokens` holds, before it expires: how a worker is reached from the harness. A
-/// client that fails the handshake is dropped without an answer. Runs until accepting fails,
-/// or, with `idle`, until no request has run for that long and nothing is busy.
+/// the token `tokens` holds, before it expires: how a worker on Docker is reached from the
+/// harness. A client that fails the handshake is dropped without an answer. Runs until
+/// accepting fails.
 pub async fn serve_tls<C: Computers + 'static>(
     computers: Arc<C>,
     listener: TcpListener,
     tls: TlsAcceptor,
     tokens: impl Into<Tokens>,
-    idle: Option<Idle>,
 ) -> std::io::Result<()> {
     let tokens = tokens.into();
-    let activity = idle.as_ref().map(|_| Activity::new());
     let mut connections = JoinSet::new();
     loop {
         while connections.len() >= MAX_CONNECTIONS {
             connections.join_next().await;
         }
-        let stream = match (&idle, &activity) {
-            (Some(idle), Some(activity)) => tokio::select! {
-                accepted = listener.accept() => accepted?.0,
-                () = idle.reached(activity) => return Ok(()),
-            },
-            _ => listener.accept().await?.0,
-        };
+        let (stream, _) = listener.accept().await?;
         let _ = stream.set_nodelay(true);
         let (computers, tokens, tls) = (Arc::clone(&computers), tokens.clone(), tls.clone());
-        let activity = activity.clone();
         connections.spawn(async move {
             let handshake = tokio::time::timeout(HANDSHAKE, tls.accept(stream));
             let Ok(Ok(stream)) = handshake.await else {
@@ -536,14 +529,7 @@ pub async fn serve_tls<C: Computers + 'static>(
             // The token as it is now: the side that minted it may have renewed it.
             let token = tokens.current(SystemTime::from(SystemClock.now())).await?;
             let (read, write) = tokio::io::split(stream);
-            serving(
-                computers,
-                BufReader::new(read),
-                write,
-                Some(token),
-                activity,
-            )
-            .await
+            serve(computers, BufReader::new(read), write, Some(token)).await
         });
         while connections.try_join_next().is_some() {}
     }
