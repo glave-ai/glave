@@ -277,7 +277,8 @@ async fn message(
 /// origin.
 fn open(request: &Request, door: Door) -> Result<(), SignInError> {
     match request {
-        Request::Discover {} => Ok(()),
+        // Neither reads who calls: what the server is, and what an invite's link opens.
+        Request::Discover {} | Request::InviteShow { .. } => Ok(()),
         Request::SigninRedeem { .. } if door == Door::Here => Ok(()),
         Request::SigninRedeem { .. } => Err(SignInError::NotLoopback),
         Request::PasskeyCreateOptions { .. }

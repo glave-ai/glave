@@ -394,6 +394,9 @@ pub enum Reply {
     /// The invites waiting to be opened, oldest first.
     #[schemars(title = "Invites")]
     Invites { invites: Vec<InviteInfo> },
+    /// What an invite's link opens.
+    #[schemars(title = "InviteShown")]
+    InviteShown { shown: ShownInvite },
     // After every reply with a field of its own, since a missing `goal` or `plan` reads as
     // `null`; before `Done`, which takes any object.
     /// The thread's latest goal, or `null`.

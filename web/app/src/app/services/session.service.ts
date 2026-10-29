@@ -89,6 +89,7 @@ export class SessionService {
   private readonly loaded = signal<string | null>(null);
   private server: string | undefined;
   private readonly setupLink = signal<string | null>(null);
+  private readonly inviteLink = signal<string | null>(null);
 
   readonly signedIn = computed(() => this.session() !== null);
   /**
@@ -109,6 +110,8 @@ export class SessionService {
   readonly passkeySignIn = computed(() => this.passkeys() && this.ways().includes('passkey'));
   /** The code of the setup link the tab was opened with, until the tab signs in. */
   readonly setupCode = this.setupLink.asReadonly();
+  /** The code of the invite the tab was opened with, until the person joins or puts it aside. */
+  readonly inviteCode = this.inviteLink.asReadonly();
   /** Whether the session is with a glave on this computer: a browser session. */
   readonly local = computed(() => {
     const session = this.session();
@@ -139,6 +142,7 @@ export class SessionService {
     const place = { location: view.location, history: view.history };
     const code = takeCode(place, 'code');
     this.setupLink.set(takeCode(place, 'setup'));
+    this.inviteLink.set(takeCode(place, 'invite'));
     try {
       this.take(await this.client.call('server/discover', {}));
     } catch {
@@ -221,6 +225,11 @@ export class SessionService {
     this.ways.set(discovered.signin ?? []);
     this.reachedElsewhere.set(typeof discovered.origin === 'string');
     this.here.set(discovered.here ?? null);
+  }
+
+  /** Puts the tab's invite aside: the person joined, or chose not to now. */
+  clearInvite(): void {
+    this.inviteLink.set(null);
   }
 
   /** Signs every other browser out; this one stays signed in. */

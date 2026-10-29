@@ -352,3 +352,60 @@ fn an_account_an_emailed_invite_makes_has_the_address_it_was_sent_to() {
         served.close().await;
     });
 }
+
+#[test]
+fn an_invites_link_says_what_it_opens_and_someone_signed_in_joins_a_second_organization() {
+    block_on!(async {
+        let dir = folder("accounts-second");
+        let token = LocalToken::new([18; 32]);
+        let (served, directory) = serve_keeping(&dir, true, &token).await;
+        let mut here = Web::new(&served, Some(token.reveal().to_owned()));
+        let mut phone = Authenticator::new(ORIGIN).unwrap();
+        let first = invite(&served, &token, OrgRole::Member).await;
+        let joined = join(&served, first, &mut phone).await;
+        assert!(token_of(&joined).is_some(), "{joined}");
+        let listed = Request::PeopleList {
+            after: None,
+            limit: None,
+        };
+        let people = asked(&mut here, &listed).await;
+        let grace: PrincipalId = serde_json::from_value(invited(&people)["id"].clone()).unwrap();
+        // She leaves this organization, and works in another of her own.
+        let removed = asked(&mut here, &Request::PersonRemove { person: grace }).await;
+        assert_eq!(removed, json!({}));
+        let theirs = OrgId::from_uuid(Uuid::from_u128(0x0192_f5c6_0000_7000_8000_0000_0000_0a11));
+        directory.join(grace, theirs).await.unwrap();
+        let session = sign_in(&served, &mut phone).await;
+        let mut signed_in = elsewhere(&served, session.as_str().map(str::to_owned));
+
+        // The link says what it opens to anyone holding it, signed in or not.
+        let code = invite(&served, &token, OrgRole::Admin).await;
+        let mut anyone = elsewhere(&served, None);
+        let show = Request::InviteShow { code: code.clone() };
+        let shown = asked(&mut anyone, &show).await;
+        let own = scope().org().to_string();
+        assert_eq!(shown["shown"]["organization"], json!(own), "{shown}");
+        assert_eq!(shown["shown"]["role"], json!("admin"));
+        assert_eq!(shown["shown"]["joining"], json!("passkey"));
+        assert!(shown["shown"].get("by").is_none(), "the person here has no name");
+        assert!(code.expose().starts_with(&scope().org().as_uuid().simple().to_string()));
+
+        // Signed in, she joins it as a second organization, and works there by naming it.
+        let accepted = asked(&mut signed_in, &Request::InviteAccept { code: code.clone() }).await;
+        assert_eq!(accepted["person"]["role"], json!("admin"), "{accepted}");
+        assert_eq!(accepted["person"]["you"], json!(true));
+        let mut there = elsewhere(&served, session.as_str().map(str::to_owned)).working_in(&own);
+        let list: Request = serde_json::from_value(json!({"method": "thread/list", "params": {}}))
+            .unwrap();
+        assert!(asked(&mut there, &list).await["threads"].is_array());
+        let orgs = directory.organizations(grace).await.unwrap();
+        assert_eq!(orgs, [theirs, scope().org()]);
+
+        // Spent, or to an organization that is none, it opens nothing, and says so alike.
+        assert_eq!(asked(&mut anyone, &show).await, json!(code::NO_INVITE));
+        let elsewhere_code = Secret::new(format!("{}.{}", theirs.as_uuid().simple(), "00".repeat(32)));
+        let show = Request::InviteShow { code: elsewhere_code };
+        assert_eq!(asked(&mut anyone, &show).await, json!(code::NO_INVITE));
+        served.close().await;
+    });
+}

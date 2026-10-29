@@ -44,7 +44,7 @@ pub use glave_event::{Grouping, Permissions, TurnResult};
 pub use live::Update;
 pub use models::ModelInfo;
 pub use passkeys::{AcceptedPasskeys, PasskeySummary, SignInWay, UnknownPasskey};
-pub use people::{InviteInfo, PersonInfo};
+pub use people::{InviteInfo, Joining, PersonInfo, ShownInvite};
 pub use plans::PlanInfo;
 pub use projects::{GoneFolder, NewFolder, ProjectFolder};
 pub use providers::{ProviderInfo, hint};
@@ -210,9 +210,15 @@ methods! {
     "invite/list" => InviteList {} -> [Invites],
     /// Revokes an invite waiting to be opened.
     "invite/revoke" => InviteRevoke { invite: InviteId } -> [Done],
+    /// What an invite's link opens, before anyone signs in: the organization it is to, the role
+    /// it gives, who made it, and how someone joins with it. Over HTTP it needs no sign-in.
+    "invite/show" => InviteShow {
+        #[serde(serialize_with = "glave_event::serialize_exposed")]
+        code: Secret,
+    } -> [InviteShown],
     /// Opens an invite with its link's `code`, as the person signed in through the
-    /// organization's identity provider: their role is raised to the invite's, and the invite
-    /// is spent.
+    /// organization's identity provider, or with a glave account, who joins the organization
+    /// it is to: their role is raised to the invite's, and the invite is spent.
     "invite/accept" => InviteAccept {
         #[serde(serialize_with = "glave_event::serialize_exposed")]
         code: Secret,

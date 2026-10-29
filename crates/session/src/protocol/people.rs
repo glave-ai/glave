@@ -2,6 +2,7 @@
 //! (`specs/model.md`, "Roles").
 
 use glave_event::{At, InviteId, OrgRole, Principal, PrincipalId};
+use glave_ports::OrgId;
 use serde::{Deserialize, Serialize};
 
 use super::Request;
@@ -57,6 +58,32 @@ pub struct InviteInfo {
     /// The address its link was emailed to, when it was.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
+}
+
+/// How someone joins the organization an invite is to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Joining {
+    /// By making a passkey: a new glave account, or one more organization for someone
+    /// signed in with one.
+    Passkey,
+    /// By signing in through the organization's company login.
+    Company,
+}
+
+/// What an invite's link opens, for whoever holds it: never its code, nor whom it was sent to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ShownInvite {
+    /// The organization it is to, for a client to work in once its person joins.
+    #[schemars(with = "String")]
+    pub organization: OrgId,
+    /// The role it gives.
+    pub role: OrgRole,
+    /// Who made it, by the name the organization knows them by, else their email; none for
+    /// the person who runs this glave, who has neither here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
+    pub joining: Joining,
 }
 
 impl Request {

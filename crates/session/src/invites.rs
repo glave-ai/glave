@@ -7,14 +7,16 @@
 use std::collections::BTreeMap;
 
 use glave_event::{
-    At, InviteAccepted, InviteCreated, InviteId, InviteRevoked, OrgRole, Principal, PrincipalId,
+    At, AuthMethod, InviteAccepted, InviteCreated, InviteId, InviteRevoked, OrgRole, PersonJoined,
+    Principal, PrincipalId, Profile, Secret,
 };
 use glave_identity::signin::{kept, one_time_code, same_kept};
-use glave_ports::{BlobStore, Caller, EventLog, Mail, MailError, Mailer, ModelProvider};
+use glave_ports::{BlobStore, Caller, EventLog, Mail, MailError, Mailer, ModelProvider, OrgId};
 use jiff::{SignedDuration, Timestamp};
+use uuid::Uuid;
 
 use crate::people::{People, Permit, joined_of, no_such_person, permits};
-use crate::protocol::{ApiError, InviteInfo, PersonInfo, Reply, code};
+use crate::protocol::{ApiError, InviteInfo, Joining, PersonInfo, Reply, ShownInvite, code};
 use crate::server::Server;
 use crate::words::{Language, Sentence, say};
 
@@ -106,6 +108,17 @@ pub(crate) fn gone() -> ApiError {
     ApiError::new(code::NO_INVITE, Sentence::InviteGone)
 }
 
+/// What parts an invite's code: the id of the organization it is to, then its secret.
+const TO: char = '.';
+
+/// Whether `caller` signed in with a glave account.
+fn with_account(caller: &Caller) -> bool {
+    caller
+        .auth
+        .as_ref()
+        .is_some_and(|auth| auth.method == AuthMethod::Account)
+}
+
 impl<P, L, B> Server<P, L, B>
 where
     P: ModelProvider + 'static,
@@ -131,7 +144,12 @@ where
             Some(to) => Some(self.sender(to)?),
             None => None,
         };
-        let code = one_time_code()?;
+        let org = self.org_of(caller);
+        let code = Secret::new(format!(
+            "{}{TO}{}",
+            org.as_uuid().simple(),
+            one_time_code()?.expose()
+        ));
         let now = self.inner.harness.clock().now();
         let expires = now
             .checked_add(LIFETIME)
@@ -144,7 +162,6 @@ where
             expires: At::from(expires),
             email: sending.as_ref().map(|(_, _, to)| (*to).to_owned()),
         };
-        let org = self.org_of(caller);
         self.record_person(org, |people| {
             let waiting = people.invites.waiting.values();
             if waiting
@@ -202,6 +219,55 @@ where
         Ok((mailer, origin.trim_end_matches('/').to_owned(), to))
     }
 
+    /// The organization an invite's `code` is to: the id it begins with, before [`TO`]; a code
+    /// that names none is to the server's own, and opens nothing elsewhere.
+    pub(crate) fn invited_to(&self, code: &str) -> OrgId {
+        code.split_once(TO)
+            .and_then(|(org, _)| Uuid::try_parse(org).ok())
+            .map_or(self.inner.own, OrgId::from_uuid)
+    }
+
+    /// How someone joins this server's organizations by an invite: through its company login,
+    /// or by making a passkey where it keeps glave accounts; refused where no one else can.
+    fn joining(&self) -> Result<Joining, ApiError> {
+        if self.inner.identity_provider {
+            Ok(Joining::Company)
+        } else if self.inner.accounts.is_some() {
+            Ok(Joining::Passkey)
+        } else {
+            Err(ApiError::new(code::NOT_ALLOWED, Sentence::NoOrganization))
+        }
+    }
+
+    /// Answers `invite/show`: what the invite `code` opens now, for whoever holds it, signed in
+    /// or not; refused alike as any code that opens nothing.
+    pub(crate) async fn show_invite(&self, code: &str) -> Result<Reply, ApiError> {
+        let joining = self.joining()?;
+        let org = self.invited_to(code);
+        let presented = kept(code);
+        let now = self.inner.harness.clock().now();
+        let local = self.inner.harness.person();
+        self.catch_up_people(org).await?;
+        let shown = self.people(org, |people| {
+            let opened = people.opens(&presented, now, local)?;
+            let by = opened
+                .by
+                .id
+                .filter(|maker| Some(*maker) != local)
+                .and_then(|maker| people.info(maker))
+                .and_then(|maker| maker.name.or(maker.email));
+            Some(ShownInvite {
+                organization: org,
+                role: opened.role,
+                by,
+                joining,
+            })
+        });
+        Ok(Reply::InviteShown {
+            shown: shown.ok_or_else(gone)?,
+        })
+    }
+
     /// Answers `invite/list`: the invites waiting in the caller's organization, oldest first.
     pub(crate) async fn list_invites(&self, caller: &Caller) -> Result<Reply, ApiError> {
         let org = self.org_of(caller);
@@ -245,21 +311,31 @@ where
         Ok(Reply::Done {})
     }
 
-    /// Answers `invite/accept`: spends the invite `code` opens, for the caller signed in
-    /// through the identity provider, raising their role to its.
+    /// Answers `invite/accept`: spends the invite `code` opens, raising the caller's role to
+    /// its: someone signed in through the identity provider, in their organization; someone
+    /// with a glave account, in the organization it is to, which they join.
     pub(crate) async fn accept_invite(
         &self,
         caller: &Caller,
         code: &str,
     ) -> Result<Reply, ApiError> {
-        let Some(joined) = joined_of(caller) else {
-            return Err(ApiError::new(code::NOT_ALLOWED, Sentence::InviteSignIn));
+        let org = self.invited_to(code);
+        let joined = match (joined_of(caller), caller.person) {
+            (Some(joined), _) if org == self.org_of(caller) => joined,
+            // Another organization's code opens nothing for someone a company login signed in.
+            (Some(_), _) => return Err(gone()),
+            (None, Some(person)) if with_account(caller) => PersonJoined {
+                person,
+                issuer: None,
+                subject: None,
+                profile: Profile::default(),
+            },
+            (None, _) => return Err(ApiError::new(code::NOT_ALLOWED, Sentence::InviteSignIn)),
         };
         let person = joined.person;
         let presented = kept(code);
         let now = self.inner.harness.clock().now();
         let local = self.inner.harness.person();
-        let org = self.org_of(caller);
         self.record_people(org, |people, next| {
             let opened = people.opens(&presented, now, local).ok_or_else(gone)?;
             let accepted = InviteAccepted {
@@ -267,9 +343,14 @@ where
                 person,
                 role: opened.role,
             };
-            // Someone removed, or not yet recorded, joins with it.
+            // Someone removed, or not yet recorded, joins with it; a glave account with the
+            // address the invite was emailed to, as one an invite makes does.
             if people.has(person) {
                 return Ok(Some(vec![self.people_event(next, &accepted)?]));
+            }
+            let mut joined = joined.clone();
+            if joined.issuer.is_none() {
+                joined.profile.email.clone_from(&opened.email);
             }
             let after = next.saturating_add(1);
             Ok(Some(vec![
@@ -278,6 +359,9 @@ where
             ]))
         })
         .await?;
+        if let (true, Some(accounts)) = (with_account(caller), self.inner.accounts.as_deref()) {
+            accounts.join(person, org).await?;
+        }
         let person = self
             .people(org, |people| people.info(person))
             .map(|info| PersonInfo { you: true, ..info })

@@ -52,7 +52,7 @@ where
     /// of a new account, when the code opens an invite now.
     pub(crate) async fn join_options(&self, code: &Secret) -> Result<Reply, ApiError> {
         let accounts = self.accounts()?;
-        let org = self.inner.own;
+        let org = self.invited_to(code.expose());
         let presented = kept(code.expose());
         let now = self.inner.harness.clock().now();
         self.catch_up_people(org).await?;

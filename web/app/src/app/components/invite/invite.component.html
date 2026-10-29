@@ -1,0 +1,81 @@
+<header>
+  <glz-top-bar>{{ copy.name }}</glz-top-bar>
+</header>
+<main class="page">
+  @switch (asked()) {
+    @case ('reading') {
+      <div data-testid="invite-reading"></div>
+    }
+    @case ('failed') {
+      <p class="problem" role="alert" data-testid="invite-failed">{{ failed() }}</p>
+    }
+    @case ('gone') {
+      <glz-empty-state data-testid="invite-gone" [heading]="heading()" [icon]="icon">
+        <p>{{ copy.goneText }}</p>
+        <button glzEmptyStateAction glzButton data-testid="invite-open" (click)="later()">
+          {{ copy.open }}
+        </button>
+      </glz-empty-state>
+    }
+    @case ('passkey') {
+      <glz-empty-state data-testid="invite-passkey" [heading]="heading()" [icon]="icon">
+        <p>{{ copy.passkeyText }}</p>
+        <p class="hint">{{ role() }}</p>
+        @if (problem(); as problem) {
+          <p class="problem" role="alert" data-testid="invite-problem">{{ problem }}</p>
+        }
+        <button
+          glzEmptyStateAction
+          glzButton
+          variant="primary"
+          data-testid="invite-make-passkey"
+          [attr.aria-disabled]="busy()"
+          (click)="makePasskey()"
+        >
+          {{ passkeyLabel() }}
+        </button>
+      </glz-empty-state>
+    }
+    @case ('company') {
+      <glz-empty-state data-testid="invite-company" [heading]="heading()" [icon]="icon">
+        <p>{{ copy.companyText }}</p>
+        <p class="hint">{{ role() }}</p>
+        <button
+          glzEmptyStateAction
+          glzButton
+          variant="primary"
+          data-testid="invite-company-sign-in"
+          (click)="company()"
+        >
+          {{ copy.companyAction }}
+        </button>
+      </glz-empty-state>
+    }
+    @case ('join') {
+      <glz-empty-state data-testid="invite-join" [heading]="heading()" [icon]="icon">
+        @if (byLine(); as byLine) {
+          <p>{{ byLine }}</p>
+        }
+        <p>{{ copy.joinText }}</p>
+        <p class="hint">{{ role() }}</p>
+        @if (problem(); as problem) {
+          <p class="problem" role="alert" data-testid="invite-problem">{{ problem }}</p>
+        }
+        <div glzEmptyStateAction class="glz-row glz-gap-2">
+          <button glzButton data-testid="invite-not-now" (click)="later()">
+            {{ copy.notNow }}
+          </button>
+          <button
+            glzButton
+            variant="primary"
+            data-testid="invite-join"
+            [attr.aria-disabled]="busy()"
+            (click)="join()"
+          >
+            {{ joinLabel() }}
+          </button>
+        </div>
+      </glz-empty-state>
+    }
+  }
+</main>
