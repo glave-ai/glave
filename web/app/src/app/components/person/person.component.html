@@ -23,7 +23,15 @@
       {{ copy.admin }}
     </a>
   }
+  @if (invitesAlone()) {
+    <button glzNavItem data-testid="nav-invite" [icon]="icons.invite" (click)="invite()">
+      {{ copy.invite }}
+    </button>
+  }
   <button glzNavItem data-testid="person-sign-out" [icon]="icons.signOut" (click)="signOut()">
     {{ copy.signOut }}
   </button>
 </glz-popover>
+@defer (when inviting()) {
+  <app-invite-dialog [(open)]="inviting" />
+}

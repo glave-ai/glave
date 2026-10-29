@@ -346,6 +346,7 @@
     "permissions.prefix": "\u200f\u202eMode:\u202c\u200f",
     "permissions.recommended": "{$MODE} \u200f\u202e·\u202c\u200f \u200f\u202eRecommended\u202c\u200f",
     "person.admin": "\u200f\u202eAdmin\u202c\u200f",
+    "person.invite": "\u200f\u202eInvite\u202c\u200f \u200f\u202esomeone\u202c\u200f",
     "person.settings": "\u200f\u202eSettings\u202c\u200f",
     "person.signOut": "\u200f\u202eSign\u202c\u200f \u200f\u202eout\u202c\u200f",
     "person.you": "\u200f\u202eYou\u202c\u200f",

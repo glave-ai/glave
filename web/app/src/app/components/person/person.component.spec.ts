@@ -66,4 +66,46 @@ describe('PersonComponent', () => {
       }
     }
   });
+
+  it('offers a person alone who may invite "Invite someone", which opens the invite dialog', async () => {
+    const alone = { ...SERVER, origin: 'https://glave.example', invites: true };
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([{ path: '**', children: [] }]),
+        ...provideFakeSession(
+          new FakeSession()
+            .answer('server/discover', alone)
+            .answer('people/list', { people: [] })
+            .answer('invite/list', { invites: [] }),
+        ),
+      ],
+    });
+    await TestBed.inject(ServerService).load();
+    const fixture = TestBed.createComponent(PersonComponent);
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('[data-testid="nav-admin"]')).toBeNull();
+    expect(root.textContent).not.toMatch(/admin|organization/iu);
+    root.querySelector<HTMLElement>('[data-testid="nav-invite"]')?.click();
+    for (let turn = 0; turn < 5; turn += 1) {
+      await new Promise((resolve) => setTimeout(resolve));
+      await fixture.whenStable();
+    }
+    expect(document.querySelector('[data-testid="invite"]')).not.toBeNull();
+    await expectAccessible(root);
+  });
+
+  it('offers no invite where the server takes none, as on a laptop', async () => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([{ path: '**', children: [] }]),
+        ...provideFakeSession(new FakeSession().answer('server/discover', SERVER)),
+      ],
+    });
+    await TestBed.inject(ServerService).load();
+    const fixture = TestBed.createComponent(PersonComponent);
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('[data-testid="nav-invite"]')).toBeNull();
+  });
 });

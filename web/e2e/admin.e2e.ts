@@ -1,6 +1,6 @@
 import { fakeAdmin, INVITE_CODE } from './fake-admin';
 import { fakeApi } from './fake-api';
-import { SIGNED_IN, byTestId, expect, expectAccessible, test } from './support';
+import { ADMIN_WORDS, SIGNED_IN, byTestId, expect, expectAccessible, test } from './support';
 
 for (const colorScheme of ['light', 'dark'] as const) {
   test(`An Owner opens Admin from their menu, changes a role, invites someone and removes someone (${colorScheme})`, async ({
@@ -67,4 +67,25 @@ test('A person on their own server has no Admin, and Admin sends them to their c
   await expect(byTestId(page, 'nav-admin')).toHaveCount(0);
   await page.goto('/admin');
   await expect(page).not.toHaveURL(/\/admin/u);
+});
+
+test('A person alone on their own server invites someone from their menu, with no Admin', async ({
+  page,
+}) => {
+  await fakeApi(page);
+  const admin = await fakeAdmin(page, { alone: true });
+  await page.goto(`/${SIGNED_IN}`);
+  await byTestId(page, 'person').click();
+  await expect(byTestId(page, 'nav-admin')).toHaveCount(0);
+  await expect(byTestId(page, 'person-menu')).not.toContainText(ADMIN_WORDS);
+  await byTestId(page, 'nav-invite').click();
+  await expect(byTestId(page, 'invite')).toBeVisible();
+  // Where glave sends no email, no address is asked for.
+  await expect(byTestId(page, 'invite-email')).toHaveCount(0);
+  await expectAccessible(page);
+  await byTestId(page, 'invite-make').click();
+  await expect(byTestId(page, 'invite-link')).toHaveValue(
+    `https://glave.example/#invite=${INVITE_CODE}`,
+  );
+  expect(admin.sent).toContainEqual({ method: 'invite/create', params: { role: 'member' } });
 });

@@ -2086,6 +2086,10 @@
             "null"
           ]
         },
+        "invites": {
+          "description": "Whether the caller may invite someone here: the server takes invites (glave accounts\nat a public origin, or a company login), and the caller's role permits it. So a person\nalone, whose organization is shown to no one, can still make the first.",
+          "type": "boolean"
+        },
         "modes": {
           "description": "The modes a thread may choose (`permissions` on `thread/start` and `turn/start`):\nthose the policy leaves, in the order a person is offered them, the recommended first.",
           "items": {

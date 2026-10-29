@@ -63,6 +63,11 @@ pub struct ServerInfo {
     /// a client asks for an address only where one is used.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub email: bool,
+    /// Whether the caller may invite someone here: the server takes invites (glave accounts
+    /// at a public origin, or a company login), and the caller's role permits it. So a person
+    /// alone, whose organization is shown to no one, can still make the first.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub invites: bool,
 }
 
 /// What a server has beyond a person's own: each because its configuration provides it, never

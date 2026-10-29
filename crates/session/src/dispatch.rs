@@ -126,6 +126,10 @@ where
                     Ok(shown) => shown,
                     Err(failed) => return Answered::Reply(Err(failed)),
                 };
+                let invites = match self.may_invite(caller).await {
+                    Ok(may) => may,
+                    Err(failed) => return Answered::Reply(Err(failed)),
+                };
                 let role = if organization && caller.auth.is_some() {
                     match self.role_of(caller).await {
                         Ok(role) => Some(role),
@@ -151,6 +155,7 @@ where
                     },
                     role,
                     email: self.inner.mail.is_some() && self.inner.origin.is_some(),
+                    invites,
                 }))
             }
             Request::PeopleList { after, limit } => self.list_people(caller, after, limit).await,
