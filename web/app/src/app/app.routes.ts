@@ -13,6 +13,7 @@ import { WorkspaceComponent } from './components/workspace/workspace.component';
 import { adminGuard } from './guards/admin.guard';
 import { hasModelGuard } from './guards/has-model.guard';
 import { inviteGuard } from './guards/invite.guard';
+import { signUpGuard } from './guards/sign-up.guard';
 import { signedInGuard } from './guards/signed-in.guard';
 
 /** Where a page that could not open is said to have failed, in its own place. */
@@ -34,7 +35,7 @@ export const routes: Routes = [
   {
     path: '',
     component: WorkspaceComponent,
-    canActivate: [inviteGuard, signedInGuard, hasModelGuard],
+    canActivate: [inviteGuard, signUpGuard, signedInGuard, hasModelGuard],
     children: [
       {
         path: '',
@@ -102,6 +103,13 @@ export const routes: Routes = [
     title: () => $localize`:@@routes.invite:Invite · glave`,
     loadComponent: () =>
       import('./components/invite/invite.component').then((m) => m.InviteComponent),
+  },
+  {
+    // Signing up, where the server takes sign-ups: an email, then a passkey from its link.
+    path: 'sign-up',
+    title: () => $localize`:@@routes.signUp:Sign up · glave`,
+    loadComponent: () =>
+      import('./components/sign-up/sign-up.component').then((m) => m.SignUpComponent),
   },
   {
     path: 'sign-in',

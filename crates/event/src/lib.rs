@@ -26,6 +26,7 @@ pub use id::{
 pub use money::{Currency, Decimal, Money};
 pub use payload::{
     AcmeRegistered, AwakeSet, CertificateIssued, Grouping, GroupingSet, LanguageSet, MemorySet,
+    SignupFinished, SignupStarted,
 };
 pub use payload::{
     ApprovalDecided, ApprovalRequested, Arguments, Auth, AuthMethod, Cost, EffortChosen, ForkPoint,

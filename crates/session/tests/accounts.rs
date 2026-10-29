@@ -12,7 +12,7 @@ use glave_identity::testing::Authenticator;
 use glave_ports::host::PublicOrigin;
 use glave_ports::{Directory, OrgId};
 use glave_session::Answering;
-use glave_session::protocol::{Request, code};
+use glave_session::protocol::{LinkKind, Request, code};
 use glave_session::signin::{Accounts, Browsers, LocalToken, SignIn};
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -70,7 +70,10 @@ async fn invite(served: &Served, token: &LocalToken, role: OrgRole) -> Secret {
 /// What making a passkey on `device` with the invite `code` is answered with.
 async fn join(served: &Served, code: Secret, device: &mut Authenticator) -> Value {
     let mut anyone = elsewhere(served, None);
-    let create = Request::PasskeyCreateOptions { code, invite: true };
+    let create = Request::PasskeyCreateOptions {
+        code,
+        link: LinkKind::Invite,
+    };
     let options = asked(&mut anyone, &create).await;
     if !options.is_object() {
         return options;
@@ -245,7 +248,7 @@ fn the_person_on_the_computer_signs_in_with_their_passkey_once_others_have_accou
         let mut anyone = elsewhere(&served, None);
         let create = Request::PasskeyCreateOptions {
             code,
-            invite: false,
+            link: LinkKind::Setup,
         };
         let options = asked(&mut anyone, &create).await;
         let made = Request::PasskeyCreate {

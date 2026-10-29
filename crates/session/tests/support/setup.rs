@@ -100,6 +100,8 @@ pub(crate) struct Setup {
     pub mail: Option<Arc<dyn glave_ports::Mailer>>,
     /// Where people reach it from elsewhere; with none, only on its own computer.
     pub origin: Option<glave_ports::host::PublicOrigin>,
+    /// Whether it takes sign-ups.
+    pub signup: bool,
     /// What keeps its computer awake while work runs; with none, nothing does.
     pub awake: Option<Arc<dyn KeepAwake>>,
     /// What lets go of a thread's worktrees once it is put away; with none, nothing does.
@@ -148,6 +150,7 @@ impl Setup {
             accounts: None,
             mail: None,
             origin: None,
+            signup: false,
             awake: None,
             release: None,
             home: scope(),
@@ -243,6 +246,7 @@ impl Setup {
             accounts: self.accounts,
             mail: self.mail,
             origin: self.origin,
+            signup: self.signup,
             leases: self.leases,
             tools: self.tools,
             awake: self.awake,

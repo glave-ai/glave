@@ -96,7 +96,23 @@ export class PasskeysService {
    */
   async join(code: string): Promise<string | null> {
     return this.asking(async () => {
-      const asked = await this.session.call('passkey/create_options', { code, invite: true });
+      const asked = await this.session.call('passkey/create_options', { code, link: 'invite' });
+      const credential = await made(this.authenticator, asked.options);
+      if (credential === null) {
+        return passkeyRefused();
+      }
+      const created = { ceremony: asked.ceremony, credential };
+      return this.begun(await this.session.call('passkey/create', created));
+    });
+  }
+
+  /**
+   * Makes the first passkey of a new account on this device with the sign-up link `code`,
+   * which makes the account and signs the browser in.
+   */
+  async signUp(code: string): Promise<string | null> {
+    return this.asking(async () => {
+      const asked = await this.session.call('passkey/create_options', { code, link: 'signup' });
       const credential = await made(this.authenticator, asked.options);
       if (credential === null) {
         return passkeyRefused();

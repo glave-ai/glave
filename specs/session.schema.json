@@ -927,6 +927,26 @@
       ],
       "type": "string"
     },
+    "LinkKind": {
+      "description": "Which link's code a passkey is made with (`passkey/create_options`).",
+      "oneOf": [
+        {
+          "const": "setup",
+          "description": "A setup link from glave on the server's computer: the local person's passkey.",
+          "type": "string"
+        },
+        {
+          "const": "invite",
+          "description": "An invite's: the first passkey of a new account, joining its organization.",
+          "type": "string"
+        },
+        {
+          "const": "signup",
+          "description": "A sign-up's, emailed: the first passkey of a new account and its own organization.",
+          "type": "string"
+        }
+      ]
+    },
     "MemoryId": {
       "description": "Identifies one memory: a short statement kept for later threads (`specs/memory.md`).",
       "format": "uuid",
@@ -2247,6 +2267,11 @@
         {
           "const": "passkey",
           "description": "A passkey: at the server's public origin, where a setup link from glave on its computer\nmakes the first; or on this computer, once a browser signed in by glave's link made one.",
+          "type": "string"
+        },
+        {
+          "const": "signup",
+          "description": "Signing up with an email: a link sent there makes the person's first passkey, their\naccount and an organization of their own.",
           "type": "string"
         }
       ]
@@ -4732,9 +4757,9 @@
           "code": {
             "$ref": "#/$defs/Secret"
           },
-          "invite": {
-            "description": "Whether `code` is an invite's.",
-            "type": "boolean"
+          "link": {
+            "$ref": "#/$defs/LinkKind",
+            "description": "Which link `code` is: a setup link's unless said."
           }
         },
         "required": [
@@ -5631,6 +5656,23 @@
         "required": [
           "code"
         ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "signup/start": {
+      "params": {
+        "properties": {
+          "email": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "type": "object"
+      },
+      "result": {
         "type": "object"
       },
       "streams": false

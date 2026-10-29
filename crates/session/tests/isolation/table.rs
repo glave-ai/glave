@@ -239,6 +239,8 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         ("invite/create", vec![json!({"role": "member"})]),
         ("invite/list", vec![json!({})]),
         ("invite/revoke", vec![json!({"invite": "@invite"})]),
+        // Open to anyone, naming no one's: a sign-up for an address.
+        ("signup/start", vec![json!({"email": "ada@example.com"})]),
         ("invite/show", vec![json!({"code": "@invite_code"})]),
         ("invite/accept", vec![json!({"code": "@invite_code"})]),
         ("model/list", vec![json!({})]),

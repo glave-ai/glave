@@ -16,12 +16,13 @@ use crate::payload::{
     MemoryRestored, MemorySaved, MemorySet, MemoryTidied, MessageAdded, ModelChosen,
     ModelResponded, PasskeyAdded, PasskeyRemoved, PasskeyUsed, PermissionsChosen, PersonJoined,
     PersonRemoved, PlanApproved, PlanUpdated, ProjectFolderSet, ProjectRemoved, ProviderConnected,
-    ProviderRemoved, RoleSet, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted,
-    ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived,
-    ToolCallCompleted, ToolCallRequested, TrustDecided, TurnResult, TurnStarted, WorkspaceBound,
-    WorkspaceRemoved, approval, awake, browser, catalog, certificate, chosen, command, connection,
-    credential, gateway, goal, grouping, hook, language, memory, message, model, passkey, people,
-    plan, project, provider, remembering, standing, task, thread, tool, trust, turn, workspace,
+    ProviderRemoved, RoleSet, ScheduleCreated, ScheduleDeleted, SignupFinished, SignupStarted,
+    TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed,
+    ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested, TrustDecided,
+    TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, approval, awake, browser, catalog,
+    certificate, chosen, command, connection, credential, gateway, goal, grouping, hook, language,
+    memory, message, model, passkey, people, plan, project, provider, remembering, signup,
+    standing, task, thread, tool, trust, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -100,6 +101,8 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (people::INVITE_CREATED, 1),
     (people::INVITE_ACCEPTED, 1),
     (people::INVITE_REVOKED, 1),
+    (signup::STARTED, 1),
+    (signup::FINISHED, 1),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -177,6 +180,8 @@ pub enum Body {
     InviteCreated(InviteCreated),
     InviteAccepted(InviteAccepted),
     InviteRevoked(InviteRevoked),
+    SignupStarted(SignupStarted),
+    SignupFinished(SignupFinished),
     /// An event this reader does not understand: an unknown type, or a newer version of a
     /// known one. Kept exactly as written.
     Unknown(Unknown),
@@ -369,6 +374,8 @@ impl Event {
             Body::InviteCreated(payload) => encode(header, payload),
             Body::InviteAccepted(payload) => encode(header, payload),
             Body::InviteRevoked(payload) => encode(header, payload),
+            Body::SignupStarted(payload) => encode(header, payload),
+            Body::SignupFinished(payload) => encode(header, payload),
             Body::Unknown(unknown) => Ok(RawEvent {
                 glave: ENVELOPE_VERSION,
                 id: header.id,
@@ -458,7 +465,7 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         language::SET => language::decode_set(version, data).map(|r| r.map(Body::LanguageSet)),
         grouping::SET => grouping::decode_set(version, data).map(|r| r.map(Body::GroupingSet)),
         remembering::SET => remembering::decode_set(version, data).map(|r| r.map(Body::MemorySet)),
-        _ => people::decode(kind, version, data),
+        _ => people::decode(kind, version, data).or_else(|| signup::decode(kind, version, data)),
     }
 }
 

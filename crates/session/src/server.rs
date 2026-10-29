@@ -116,6 +116,9 @@ pub struct Wiring<P, L, B> {
     /// Where people reach the server from elsewhere, through what serves HTTPS for it; none
     /// where it answers only on its own computer.
     pub origin: Option<PublicOrigin>,
+    /// Whether anyone may sign up with their email (`[serve] signup`): it does only where it
+    /// also keeps `accounts`, sends `mail` and has an `origin`.
+    pub signup: bool,
     /// The leases work on a thread runs under, kept in the store beside its log, so servers on
     /// one store never run one thread at once; none keeps them in this server's memory, for a
     /// server alone on its store.
@@ -177,6 +180,7 @@ impl<P, L, B> Wiring<P, L, B> {
             accounts: None,
             mail: None,
             origin: None,
+            signup: false,
             leases: None,
             awake: None,
             worktrees: None,
@@ -270,6 +274,12 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) accounts: Option<Arc<Accounts>>,
     /// The accounts being made by invites (`joining.rs`).
     pub(crate) joinings: Mutex<crate::joining::Joinings>,
+    /// Whether it takes sign-ups, as its configuration says.
+    pub(crate) signup: bool,
+    /// The sign-ups waiting, as far as this server has read.
+    pub(crate) signups: Mutex<crate::signups::Signups>,
+    /// The accounts being made by sign-up on this server.
+    pub(crate) signings: Mutex<crate::signups::Signings>,
     /// Where people reach the server from elsewhere, if they do.
     pub(crate) origin: Option<PublicOrigin>,
     /// What the threads opened or started here did with their projects' asks.
@@ -369,6 +379,9 @@ where
                 accounts: wiring.accounts,
                 mail: wiring.mail,
                 joinings: Mutex::new(crate::joining::Joinings::default()),
+                signup: wiring.signup,
+                signups: Mutex::new(crate::signups::Signups::default()),
+                signings: Mutex::new(crate::signups::Signings::default()),
                 origin: wiring.origin,
                 stopping: AtomicBool::new(false),
                 leases,

@@ -218,6 +218,7 @@ fn as_started(start: &Choices, now: Choices) -> Choices {
         github: start.github.clone(),
         origin: start.origin.clone(),
         acme: start.acme.clone(),
+        signup: start.signup.clone(),
         unsandboxed: start.unsandboxed.clone(),
         ..now
     }

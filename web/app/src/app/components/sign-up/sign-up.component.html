@@ -1,0 +1,84 @@
+<header>
+  <glz-top-bar>{{ copy.name }}</glz-top-bar>
+</header>
+<main class="page">
+  @switch (step()) {
+    @case ('email') {
+      <glz-empty-state
+        data-testid="sign-up-email"
+        [heading]="copy.emailHeading"
+        [icon]="icons.mail"
+      >
+        <p>{{ copy.emailText }}</p>
+        <form class="form glz-stack glz-gap-3" (submit)="send($event)">
+          <glz-form-field [label]="copy.email">
+            <input
+              glzInput
+              type="email"
+              autocomplete="email"
+              data-testid="sign-up-address"
+              [value]="email()"
+              (input)="typed($event)"
+            />
+          </glz-form-field>
+          @if (problem(); as problem) {
+            <p class="problem" role="alert" data-testid="sign-up-problem">{{ problem }}</p>
+          }
+          <button
+            glzButton
+            variant="primary"
+            type="submit"
+            data-testid="sign-up-send"
+            [attr.aria-disabled]="busy()"
+          >
+            {{ sendLabel() }}
+          </button>
+        </form>
+        <p class="hint">
+          {{ copy.have }}
+          <a data-testid="sign-up-sign-in" [routerLink]="signInLink">{{ copy.signIn }}</a>
+        </p>
+      </glz-empty-state>
+    }
+    @case ('sent') {
+      <glz-empty-state data-testid="sign-up-sent" [heading]="copy.sentHeading" [icon]="icons.mail">
+        <p>{{ sentText() }}</p>
+        @if (problem(); as problem) {
+          <p class="problem" role="alert" data-testid="sign-up-problem">{{ problem }}</p>
+        }
+        <button
+          glzEmptyStateAction
+          glzButton
+          data-testid="sign-up-again"
+          [attr.aria-disabled]="busy()"
+          (click)="again()"
+        >
+          {{ copy.again }}
+        </button>
+      </glz-empty-state>
+    }
+    @case ('passkey') {
+      <glz-empty-state
+        data-testid="sign-up-passkey"
+        [heading]="copy.passkeyHeading"
+        [icon]="icons.key"
+      >
+        <p>{{ copy.passkeyText }}</p>
+        <p class="hint">{{ copy.then }}</p>
+        @if (problem(); as problem) {
+          <p class="problem" role="alert" data-testid="sign-up-problem">{{ problem }}</p>
+        }
+        <button
+          glzEmptyStateAction
+          glzButton
+          variant="primary"
+          data-testid="sign-up-make"
+          [attr.aria-disabled]="busy()"
+          (click)="make()"
+        >
+          {{ makeLabel() }}
+        </button>
+      </glz-empty-state>
+    }
+  }
+</main>

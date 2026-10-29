@@ -12,7 +12,7 @@ use glave_identity::testing::Authenticator;
 use glave_ports::host::PublicOrigin;
 use glave_ports::testing::ManualClock;
 use glave_session::Answering;
-use glave_session::protocol::{Request, code};
+use glave_session::protocol::{LinkKind, Request, code};
 use glave_session::signin::{Browsers, LocalToken, SignIn};
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -60,7 +60,7 @@ async fn set_up(served: &Served, token: &LocalToken, phone: &mut Authenticator) 
     let mut anyone = elsewhere(served, None);
     let create = Request::PasskeyCreateOptions {
         code,
-        invite: false,
+        link: LinkKind::Setup,
     };
     let options = asked(&mut anyone, &create).await;
     let credential = phone.create(&options["options"]).unwrap();

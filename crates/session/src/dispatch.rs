@@ -9,7 +9,7 @@ use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 use crate::choice::Choice;
 use crate::credentials::NewCredential;
 use crate::lists::ListWatch;
-use crate::protocol::{ApiError, Reply, Request, ServerInfo, code};
+use crate::protocol::{ApiError, LinkKind, Reply, Request, ServerInfo, code};
 use crate::providers::NewProvider;
 use crate::schedule::NewSchedule;
 use crate::server::Server;
@@ -171,13 +171,12 @@ where
             Request::GroupingSet { grouping } => self.set_grouping(caller, grouping).await,
             Request::SigninLink {} => self.link(caller),
             Request::SigninSetup {} => self.setup(caller),
-            Request::PasskeyCreateOptions { code, invite } => {
-                if invite {
-                    self.join_options(&code).await
-                } else {
-                    self.create_options(&code)
-                }
-            }
+            Request::PasskeyCreateOptions { code, link } => match link {
+                LinkKind::Setup => self.create_options(&code),
+                LinkKind::Invite => self.join_options(&code).await,
+                LinkKind::Signup => self.signup_options(&code).await,
+            },
+            Request::SignupStart { email } => self.start_signup(&email).await,
             Request::PasskeyCreate {
                 ceremony,
                 credential,

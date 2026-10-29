@@ -332,6 +332,9 @@ export type Joining = "passkey" | "company";
 /** Whether a line was kept, taken out or put in. */
 export type LineKind = "same" | "removed" | "added";
 
+/** Which link's code a passkey is made with (`passkey/create_options`). */
+export type LinkKind = "setup" | "invite" | "signup";
+
 /** Identifies one memory: a short statement kept for later threads (`specs/memory.md`). */
 export type MemoryId = string;
 
@@ -811,7 +814,7 @@ export type SignInLink = {
 };
 
 /** A way a browser signs in to the server, as `server/discover` says. */
-export type SignInWay = "link" | "passkey";
+export type SignInWay = "link" | "passkey" | "signup";
 
 /**
  * Whether a thread is shown: the latest `thread.archived`, `thread.unarchived` or
@@ -1605,8 +1608,8 @@ export type PasskeyCreateResult = {
 
 export type PasskeyCreateOptionsParams = {
   readonly code: Secret;
-  /** Whether `code` is an invite's. */
-  readonly invite?: boolean;
+  /** Which link `code` is: a setup link's unless said. */
+  readonly link?: LinkKind;
 };
 
 /**
@@ -1916,6 +1919,12 @@ export type SigninSetupParams = Readonly<Record<string, never>>;
 export type SigninSetupResult = {
   readonly code: Secret;
 };
+
+export type SignupStartParams = {
+  readonly email: string;
+};
+
+export type SignupStartResult = Readonly<Record<string, never>>;
 
 export type TasksListParams = {
   readonly limit?: number | null;
@@ -2260,6 +2269,7 @@ export interface Methods {
   readonly "signin/link": { readonly params: SigninLinkParams; readonly result: SigninLinkResult };
   readonly "signin/redeem": { readonly params: SigninRedeemParams; readonly result: SigninRedeemResult };
   readonly "signin/setup": { readonly params: SigninSetupParams; readonly result: SigninSetupResult };
+  readonly "signup/start": { readonly params: SignupStartParams; readonly result: SignupStartResult };
   readonly "tasks/list": { readonly params: TasksListParams; readonly result: TasksListResult };
   readonly "tasks/stop": { readonly params: TasksStopParams; readonly result: TasksStopResult };
   readonly "thread/archive": { readonly params: ThreadArchiveParams; readonly result: ThreadArchiveResult };

@@ -112,7 +112,7 @@ describe('InviteComponent', () => {
     await expectAccessible(root);
     click(root, 'invite-make-passkey');
     await settle(fixture);
-    expect(fake.paramsOf('passkey/create_options')).toEqual([{ code: 'c0de', invite: true }]);
+    expect(fake.paramsOf('passkey/create_options')).toEqual([{ code: 'c0de', link: 'invite' }]);
     expect(TestBed.inject(SessionService).inviteCode()).toBeNull();
     expect(navigate).toHaveBeenCalledWith('/');
   });

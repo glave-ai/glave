@@ -11,7 +11,7 @@ use glave_event::{
     Principal, PrincipalId, Profile, Secret,
 };
 use glave_identity::signin::{kept, one_time_code, same_kept};
-use glave_ports::{BlobStore, Caller, EventLog, Mail, MailError, Mailer, ModelProvider, OrgId};
+use glave_ports::{BlobStore, Caller, EventLog, Mail, Mailer, ModelProvider, OrgId};
 use jiff::{SignedDuration, Timestamp};
 use uuid::Uuid;
 
@@ -144,6 +144,11 @@ where
             Some(to) => Some(self.sender(to)?),
             None => None,
         };
+        if let Some((_, _, to)) = sending
+            && !self.may_mail(to).await?
+        {
+            return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::MailedJustNow));
+        }
         let org = self.org_of(caller);
         let code = Secret::new(format!(
             "{}{TO}{}",
@@ -190,11 +195,7 @@ where
                     say(Language::English, &Sentence::InviteMailIgnore),
                 ),
             };
-            if let Err(error) = mailer.send(&mail).await {
-                // What the mail server said, never the address.
-                if let MailError::Send(reason) = &error {
-                    tracing::warn!(%reason, "an invite's email was not sent");
-                }
+            if self.send(mailer, &mail).await.is_err() {
                 // An invite whose link reached no one is not left waiting.
                 self.revoke_invite(caller, created.invite).await?;
                 return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::InviteNotSent));
@@ -208,7 +209,10 @@ where
 
     /// What sends an invite's link to `to`, and where the link leads: refused where this server
     /// sends no email, or is reached from nowhere a link could lead to.
-    fn sender<'a>(&'a self, to: &'a str) -> Result<(&'a dyn Mailer, String, &'a str), ApiError> {
+    pub(crate) fn sender<'a>(
+        &'a self,
+        to: &'a str,
+    ) -> Result<(&'a dyn Mailer, String, &'a str), ApiError> {
         let (Some(mailer), Some(origin)) = (self.inner.mail.as_deref(), &self.inner.origin) else {
             return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::NoEmail));
         };

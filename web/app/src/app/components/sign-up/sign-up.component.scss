@@ -1,0 +1,18 @@
+.page {
+  max-width: calc(var(--glz-content-width) + 2 * var(--glz-inset-page-inline));
+  margin-inline: auto;
+  padding: var(--glz-inset-page-block) var(--glz-inset-page-inline);
+}
+
+.hint {
+  color: var(--glz-color-text-muted);
+}
+
+.problem {
+  color: var(--glz-color-danger);
+}
+
+// The email field and its button, as wide as the text above them.
+.form {
+  width: 100%;
+}
