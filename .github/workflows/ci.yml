@@ -440,7 +440,8 @@ jobs:
           handler: runc
           EOF
       - run: cargo build -p glave
-      - run: cargo nextest run -p glave-computer --all-features -E 'test(/^worker::kubernetes::/)'
+      # What passing tests print is shown too: how long a person's computer took to wake.
+      - run: cargo nextest run -p glave-computer --all-features --success-output final -E 'test(/^worker::kubernetes::/)'
       - name: Disk space after the build
         if: always()
         run: df -h /
