@@ -16,7 +16,7 @@ use glave_computer::{
 use glave_event::PrincipalId;
 use glave_harness::{Homes, Workers};
 use glave_ports::computer::{ComputerError, Home, Sources};
-use glave_ports::{BoxFuture, OrgId, ProjectId};
+use glave_ports::{OrgId, ProjectId};
 use glave_process::Processes;
 use glave_session::OnWorkers;
 
@@ -166,16 +166,8 @@ async fn homes(
 struct OnCluster(People);
 
 impl Homes for OnCluster {
-    fn wake(&self, org: OrgId, person: PrincipalId) -> Result<(), ComputerError> {
-        self.0.wake(&People::key(org.as_uuid(), person.as_uuid()))
-    }
-
-    fn home(&self, org: OrgId, person: PrincipalId) -> BoxFuture<'_, Result<Home, ComputerError>> {
-        Box::pin(async move {
-            self.0
-                .home(&People::key(org.as_uuid(), person.as_uuid()))
-                .await
-        })
+    fn home(&self, org: OrgId, person: PrincipalId) -> Result<Home, ComputerError> {
+        self.0.home(&People::key(org.as_uuid(), person.as_uuid()))
     }
 
     fn hold(&self, org: OrgId, person: PrincipalId) -> Result<Box<dyn Send>, ComputerError> {

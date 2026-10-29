@@ -1,13 +1,14 @@
 //! People's own computers (`specs/computers.md`, "A person's computer in the cloud"): where a
 //! deployment gives each person a computer of their own, a thread for them works there, in
 //! their home, rather than on the harness's computer. Their folders, worktrees and scratch
-//! folders are opened on it as they would be here.
+//! folders are opened on it as they would be here; a scratch folder is planned without waking
+//! it, and the first tool call that needs the computer wakes it (decision 6).
 
 use std::sync::Arc;
 
 use glave_event::{ComputerKind, Opened, PrincipalId, WorkspaceBound};
 use glave_ports::computer::{ComputerError, Home};
-use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider, OrgId, Scope};
+use glave_ports::{BlobStore, EventLog, ModelProvider, OrgId, Scope};
 
 use crate::approval::Approver;
 use crate::background::Commands;
@@ -15,16 +16,13 @@ use crate::harness::{Harness, HarnessError, Thread};
 use crate::removed::owner_label;
 use crate::tools::workspace::Workspace;
 
-/// Each person's own computer, woken on demand. The harness cannot reach a cluster itself (its
-/// crate depends on no adapter), so the host hands it this.
+/// Each person's own computer, woken by the calls that need it. The harness cannot reach a
+/// cluster itself (its crate depends on no adapter), so the host hands it this.
 pub trait Homes: Send + Sync {
-    /// Starts waking the computer of `person` in `org`, unless it is awake or waking, and
-    /// returns at once: for when they open the app, so it is awake by the time a turn needs it.
-    fn wake(&self, org: OrgId, person: PrincipalId) -> Result<(), ComputerError>;
-
-    /// The computer of `person` in `org`, once it is awake, and the workspace of their home on
-    /// it.
-    fn home(&self, org: OrgId, person: PrincipalId) -> BoxFuture<'_, Result<Home, ComputerError>>;
+    /// The computer of `person` in `org` and the workspace of their home on it, as planned: at
+    /// once, never waking it. The first call on it that needs the computer (a command, a file
+    /// read or written) wakes it and waits for it, and the same computer comes back each time.
+    fn home(&self, org: OrgId, person: PrincipalId) -> Result<Home, ComputerError>;
 
     /// Keeps the computer of `person` in `org` from sleeping while what it answers is kept:
     /// for a turn or a task, which may run long between its commands. It does not wake it.
@@ -39,9 +37,10 @@ where
     A: Approver,
 {
     /// Where the threads of `person` in `scope` open their folders, worktrees and scratch
-    /// folders, and the kind of computer that is: their own computer's home, woken if it
-    /// sleeps, where people have computers of their own; else the harness's own workspace.
-    pub(crate) async fn home_of(
+    /// folders, and the kind of computer that is: their own computer's home, as planned (woken
+    /// by the first call that needs it), where people have computers of their own; else the
+    /// harness's own workspace.
+    pub(crate) fn home_of(
         &self,
         scope: Scope,
         person: Option<PrincipalId>,
@@ -49,8 +48,8 @@ where
         let (Some(homes), Some(person)) = (&self.homes, person) else {
             return Ok((Arc::clone(&self.workspace), ComputerKind::Local));
         };
-        let awake = homes.home(scope.org(), person).await?;
-        let home = Workspace::new(awake.computers, awake.home);
+        let planned = homes.home(scope.org(), person)?;
+        let home = Workspace::new(planned.computers, planned.home);
         // Their git sign-ins reach their computer as they reach this one: asked at each use.
         let home = match self.workspace.credentials() {
             Some(credentials) => home.with_credentials(Arc::clone(credentials)),
@@ -59,10 +58,11 @@ where
         Ok((Arc::new(home), ComputerKind::Person))
     }
 
-    /// Opens `thread`'s workspace on its person's own computer, woken if it sleeps, when it
-    /// works there and is not open on the computer awake now: at the start of each turn, so a
-    /// thread read from the log, or one whose computer slept since, works there again. Its
-    /// commands in the background are read again from its log, for the computer they ran on.
+    /// Opens `thread`'s workspace on its person's own computer when it works there and has none
+    /// there yet: at the start of each turn, for a thread read from the log. A scratch folder
+    /// is planned without waking the computer, which opens it again itself once it woke since.
+    /// Its commands in the background are read again from its log, for the computer they ran
+    /// on.
     pub(crate) async fn come_home(&self, thread: &mut Thread) -> Result<(), HarnessError> {
         let Some(bound) = thread.home.clone() else {
             return Ok(());
@@ -75,7 +75,7 @@ where
             )
             .into());
         }
-        let (home, _) = self.home_of(thread.scope, thread.for_).await?;
+        let (home, _) = self.home_of(thread.scope, thread.for_)?;
         let there = home.info().computer;
         if thread
             .workspace
@@ -108,16 +108,15 @@ pub(crate) fn at_home(bound: Option<&WorkspaceBound>) -> Option<WorkspaceBound> 
         .cloned()
 }
 
-/// Closes `workspace`, opened on a person's own computer for a thread let go of, unless a
-/// command of its still runs there: then it stays open until the computer sleeps.
+/// Closes `workspace`, opened on a person's own computer for a thread let go of: one never
+/// opened there is only forgotten, and one where a command of its still runs stays open until
+/// the computer sleeps (the computer's own adapter keeps it, `Waking` in `glave-computer`).
 pub(crate) async fn close_away(workspace: Option<Arc<Workspace>>) {
     let Some(workspace) = workspace else {
         return;
     };
-    let (computers, id) = (workspace.computers(), workspace.info().id);
-    if matches!(computers.commands(id).await, Ok(listed) if listed.is_empty())
-        && let Err(error) = computers.close(id).await
-    {
+    let id = workspace.info().id;
+    if let Err(error) = workspace.computers().close(id).await {
         tracing::warn!(%error, %id, "could not close a workspace on a person's computer");
     }
 }
