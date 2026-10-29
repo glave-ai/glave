@@ -123,7 +123,11 @@ where
         Answered::Reply(match request {
             Request::Discover {} => {
                 self.reread().await;
-                let role = if self.inner.identity_provider && caller.auth.is_some() {
+                let organization = match self.organization_shown(caller).await {
+                    Ok(shown) => shown,
+                    Err(failed) => return Answered::Reply(Err(failed)),
+                };
+                let role = if organization && caller.auth.is_some() {
                     match self.role_of(caller).await {
                         Ok(role) => Some(role),
                         Err(failed) => return Answered::Reply(Err(failed)),
@@ -143,7 +147,7 @@ where
                     here: self.passkeys_here(),
                     signin: self.signin_ways(),
                     exists: crate::protocol::Exists {
-                        organization: self.inner.identity_provider,
+                        organization,
                         workers: self.inner.worker.is_some(),
                     },
                     role,
@@ -163,13 +167,19 @@ where
             Request::GroupingSet { grouping } => self.set_grouping(caller, grouping).await,
             Request::SigninLink {} => self.link(caller),
             Request::SigninSetup {} => self.setup(caller),
-            Request::PasskeyCreateOptions { code } => self.create_options(&code),
+            Request::PasskeyCreateOptions { code, invite } => {
+                if invite {
+                    self.join_options(&code).await
+                } else {
+                    self.create_options(&code)
+                }
+            }
             Request::PasskeyCreate {
                 ceremony,
                 credential,
                 name,
             } => self.create(&ceremony, &credential, name.as_deref()).await,
-            Request::PasskeyAddOptions {} => self.add_options(caller),
+            Request::PasskeyAddOptions {} => self.add_options(caller).await,
             Request::PasskeyAdd {
                 ceremony,
                 credential,
@@ -178,12 +188,12 @@ where
                 self.add(caller, &ceremony, &credential, name.as_deref())
                     .await
             }
-            Request::PasskeyGetOptions {} => self.get_options(),
+            Request::PasskeyGetOptions {} => self.get_options().await,
             Request::PasskeyGet {
                 ceremony,
                 credential,
             } => self.get(&ceremony, &credential).await,
-            Request::PasskeyList {} => self.passkeys(caller),
+            Request::PasskeyList {} => self.passkeys(caller).await,
             Request::PasskeyRemove { passkey } => self.remove_passkey(caller, &passkey).await,
             Request::SigninRedeem { code } => self.redeem(code.expose()).await,
             Request::SigninEnd {} => self.end_session(caller).await,

@@ -7,6 +7,8 @@
 //! ever the local person's: nobody an identity provider signs in gets one, so a browser's
 //! sign-in through a provider ends when the provider stops renewing it.
 
+use std::sync::Arc;
+
 use glave_event::{At, AuthMethod, Secret};
 use glave_identity::signin::{Browsers, Ceremony, PasskeyInfo, Proof, Session};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
@@ -83,14 +85,17 @@ where
         credential: &serde_json::Value,
         name: Option<&str>,
     ) -> Result<Reply, ApiError> {
+        if let Some(joining) = self.joining(ceremony) {
+            return self.join(joining, credential, name).await;
+        }
         let browsers = self.browsers()?;
         let (_, session) = browsers.create(ceremony, credential, name).await?;
         Ok(self.signed_in(session, browsers))
     }
 
     /// Answers `passkey/add_options`: adding a passkey for the person signed in.
-    pub(crate) fn add_options(&self, caller: &Caller) -> Result<Reply, ApiError> {
-        let browsers = self.person_s(caller)?;
+    pub(crate) async fn add_options(&self, caller: &Caller) -> Result<Reply, ApiError> {
+        let browsers = self.person_s(caller).await?;
         Ok(options(browsers.create_options(Proof::SignedIn)?))
     }
 
@@ -102,32 +107,56 @@ where
         credential: &serde_json::Value,
         name: Option<&str>,
     ) -> Result<Reply, ApiError> {
-        let browsers = self.person_s(caller)?;
+        let browsers = self.person_s(caller).await?;
         let passkey = browsers.add(ceremony, credential, name).await?;
         Ok(Reply::Passkey {
             passkey: summary(passkey),
         })
     }
 
-    /// Answers `passkey/get_options`: signing a browser in with a passkey.
-    pub(crate) fn get_options(&self) -> Result<Reply, ApiError> {
+    /// Answers `passkey/get_options`: signing a browser in with a passkey. Where people other
+    /// than the local person have glave accounts here, with any passkey for the public origin,
+    /// whose it is told by the passkey; else with one of the local person's.
+    pub(crate) async fn get_options(&self) -> Result<Reply, ApiError> {
+        if let Some(accounts) = self.inner.accounts.as_deref() {
+            let own = self.inner.own;
+            self.catch_up_people(own).await?;
+            if self.people(own, |people| people.has_accounts()) {
+                return Ok(options(accounts.get_options()?));
+            }
+        }
         Ok(options(self.browsers()?.get_options()?))
     }
 
-    /// Answers `passkey/get`: the browser signed in with a passkey.
+    /// Answers `passkey/get`: the browser signed in with a passkey, the local person's or, by
+    /// its handle, someone's glave account's.
     pub(crate) async fn get(
         &self,
         ceremony: &str,
         credential: &serde_json::Value,
     ) -> Result<Reply, ApiError> {
         let browsers = self.browsers()?;
-        let session = browsers.get(ceremony, credential).await?;
+        let discovered = self
+            .inner
+            .accounts
+            .as_deref()
+            .and_then(|accounts| accounts.identify(ceremony, credential).ok());
+        let Some(discovered) = discovered else {
+            let session = browsers.get(ceremony, credential).await?;
+            return Ok(self.signed_in(session, browsers));
+        };
+        if discovered.handle() == browsers.handle() {
+            let session = browsers.get_discovered(discovered).await?;
+            return Ok(self.signed_in(session, browsers));
+        }
+        let accounts = self.accounts()?;
+        let (_, session) = accounts.signed_in_by(discovered).await?;
         Ok(self.signed_in(session, browsers))
     }
 
     /// Answers `passkey/list`: the person's passkeys.
-    pub(crate) fn passkeys(&self, caller: &Caller) -> Result<Reply, ApiError> {
-        let browsers = self.person_s(caller)?;
+    pub(crate) async fn passkeys(&self, caller: &Caller) -> Result<Reply, ApiError> {
+        let browsers = self.person_s(caller).await?;
         let passkeys = browsers.passkeys().into_iter().map(summary).collect();
         Ok(Reply::Passkeys { passkeys })
     }
@@ -138,23 +167,30 @@ where
         caller: &Caller,
         passkey: &str,
     ) -> Result<Reply, ApiError> {
-        let removed = self.person_s(caller)?.remove(passkey).await;
+        let removed = self.person_s(caller).await?.remove(passkey).await;
         // The sessions it signed in end with it.
         self.inner.hub.sign_ins_changed();
         removed?;
         Ok(Reply::Done {})
     }
 
-    /// The browsers, for the person on this computer, signed in.
-    fn person_s(&self, caller: &Caller) -> Result<&Browsers, ApiError> {
-        let browsers = self.browsers()?;
+    /// The browsers of `caller`: the local person's, or their glave account's.
+    pub(crate) async fn person_s(&self, caller: &Caller) -> Result<Arc<Browsers>, ApiError> {
+        let account = caller
+            .auth
+            .as_ref()
+            .filter(|auth| auth.method == AuthMethod::Account)
+            .and(caller.person);
+        if let Some(person) = account {
+            return Ok(self.accounts()?.browsers(person).await?);
+        }
         if !local(caller) {
             return Err(ApiError::new(
                 code::NOT_ALLOWED,
                 Sentence::PasskeysOnlyTheirs,
             ));
         }
-        Ok(browsers)
+        self.browsers().map(|browsers| Arc::clone(browsers))
     }
 
     /// Answers `signin/redeem`: `code`, once, for a session with this server.
@@ -166,7 +202,7 @@ where
 
     /// Answers `signin/end`: ends the caller's own browser session.
     pub(crate) async fn end_session(&self, caller: &Caller) -> Result<Reply, ApiError> {
-        let browsers = self.browsers()?;
+        let browsers = self.person_s(caller).await?;
         let session = session_of(caller)
             .ok_or_else(|| ApiError::new(code::INVALID_PARAMS, Sentence::NotABrowser))?;
         let ended = browsers.end(session).await;
@@ -178,10 +214,10 @@ where
     /// Answers `signin/end_others`: ends every browser session but the caller's own, for the
     /// person on this computer.
     pub(crate) async fn end_others(&self, caller: &Caller) -> Result<Reply, ApiError> {
-        let browsers = self.browsers()?;
-        if !local(caller) {
-            return Err(ApiError::new(code::NOT_ALLOWED, Sentence::SignOutOnlyHere));
-        }
+        let browsers = self
+            .person_s(caller)
+            .await
+            .map_err(|_| ApiError::new(code::NOT_ALLOWED, Sentence::SignOutOnlyHere))?;
         let ended = browsers.end_others(session_of(caller)).await;
         self.inner.hub.sign_ins_changed();
         ended?;
@@ -190,7 +226,7 @@ where
 
     /// `session`, begun with `browsers`, as the browser is told of it. Beginning it may have
     /// ended the session used longest ago, past the most kept.
-    fn signed_in(&self, session: Session, browsers: &Browsers) -> Reply {
+    pub(crate) fn signed_in(&self, session: Session, browsers: &Browsers) -> Reply {
         self.inner.hub.sign_ins_changed();
         Reply::Browser {
             session: session.token,
@@ -199,10 +235,10 @@ where
         }
     }
 
-    fn browsers(&self) -> Result<&Browsers, ApiError> {
+    fn browsers(&self) -> Result<&Arc<Browsers>, ApiError> {
         self.inner
             .browsers
-            .as_deref()
+            .as_ref()
             .ok_or_else(|| ApiError::new(code::NOT_AVAILABLE, Sentence::NoBrowsers))
     }
 }
@@ -222,7 +258,7 @@ fn by_program(caller: &Caller) -> Result<(), ApiError> {
 }
 
 /// `ceremony`, as `passkey/*_options` answer it.
-fn options(ceremony: Ceremony) -> Reply {
+pub(crate) fn options(ceremony: Ceremony) -> Reply {
     Reply::PasskeyOptions {
         ceremony: ceremony.id,
         options: ceremony.options,
@@ -244,6 +280,6 @@ pub(crate) fn session_of(caller: &Caller) -> Option<&str> {
     caller
         .auth
         .as_ref()
-        .filter(|auth| auth.method == AuthMethod::Local)
+        .filter(|auth| matches!(auth.method, AuthMethod::Local | AuthMethod::Account))
         .and_then(|auth| auth.session.as_deref())
 }

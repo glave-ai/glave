@@ -68,6 +68,25 @@ impl Waiting {
 }
 
 impl People {
+    /// The invite whose code's hash is `presented` and that opens at `now`, with the role it
+    /// gives: live, and giving no more than its maker may give now.
+    pub(crate) fn opens(
+        &self,
+        presented: &str,
+        now: Timestamp,
+        local: Option<PrincipalId>,
+    ) -> Option<(InviteId, OrgRole)> {
+        self.invites
+            .waiting
+            .values()
+            .find(|it| {
+                same_kept(&it.created.hash, presented)
+                    && now < it.created.expires.timestamp()
+                    && self.may_give(&it.created.by, it.created.role, local)
+            })
+            .map(|it| (it.created.invite, it.created.role))
+    }
+
     /// Whether `by` may still give `role` by an invite: the local person, the organization's
     /// owner, always; anyone else as their role now permits.
     fn may_give(&self, by: &Principal, role: OrgRole, local: Option<PrincipalId>) -> bool {
@@ -82,7 +101,7 @@ impl People {
 }
 
 /// Every code that opens no invite here, whatever the reason, is refused alike.
-fn gone() -> ApiError {
+pub(crate) fn gone() -> ApiError {
     ApiError::new(code::NO_INVITE, Sentence::InviteGone)
 }
 
@@ -98,7 +117,8 @@ where
         caller: &Caller,
         role: OrgRole,
     ) -> Result<Reply, ApiError> {
-        if !self.inner.identity_provider {
+        // Someone else signs in through the company login, or with a glave account here.
+        if !self.inner.identity_provider && self.inner.accounts.is_none() {
             return Err(ApiError::new(code::NOT_ALLOWED, Sentence::NoOrganization));
         }
         let theirs = permits(self.permitted(caller, Permit::Invites).await?);
@@ -200,18 +220,11 @@ where
         let local = self.inner.harness.person();
         let org = self.org_of(caller);
         self.record_person(org, |people| {
-            let found = people.invites.waiting.values().find(|it| {
-                same_kept(&it.created.hash, &presented)
-                    && now < it.created.expires.timestamp()
-                    && people.may_give(&it.created.by, it.created.role, local)
-            });
-            let Some(found) = found else {
-                return Err(gone());
-            };
+            let (invite, role) = people.opens(&presented, now, local).ok_or_else(gone)?;
             Ok(Some(InviteAccepted {
-                invite: found.created.invite,
+                invite,
                 person,
-                role: found.created.role,
+                role,
             }))
         })
         .await?;

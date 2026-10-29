@@ -12,7 +12,7 @@ use glave_harness::{
     Harness, HarnessError, Homes, Parts, Place, ProjectFolders, ReleasedWorker, Settings, Workers,
     Workspace,
 };
-use glave_identity::signin::Browsers;
+use glave_identity::signin::{Accounts, Browsers};
 use glave_ports::computer::{ComputerError, Environment};
 use glave_ports::host::PublicOrigin;
 use glave_ports::memories::Memory;
@@ -108,6 +108,9 @@ pub struct Wiring<P, L, B> {
     /// The browsers signed in on this computer, by links' one-time codes; none where no
     /// browser is signed in that way, as over stdio.
     pub browsers: Option<Arc<Browsers>>,
+    /// The glave accounts it keeps for people other than the local person, where its
+    /// organization has none of a company's login and people reach it at a public origin.
+    pub accounts: Option<Arc<Accounts>>,
     /// Where people reach the server from elsewhere, through what serves HTTPS for it; none
     /// where it answers only on its own computer.
     pub origin: Option<PublicOrigin>,
@@ -169,6 +172,7 @@ impl<P, L, B> Wiring<P, L, B> {
             project_folders: None,
             trust: None,
             browsers: None,
+            accounts: None,
             origin: None,
             leases: None,
             awake: None,
@@ -257,6 +261,10 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) trust: Option<Arc<dyn ProjectTrust>>,
     /// The browsers signed in on this computer, when it signs them in.
     pub(crate) browsers: Option<Arc<Browsers>>,
+    /// The glave accounts it keeps, where it keeps any.
+    pub(crate) accounts: Option<Arc<Accounts>>,
+    /// The accounts being made by invites (`joining.rs`).
+    pub(crate) joinings: Mutex<crate::joining::Joinings>,
     /// Where people reach the server from elsewhere, if they do.
     pub(crate) origin: Option<PublicOrigin>,
     /// What the threads opened or started here did with their projects' asks.
@@ -353,6 +361,8 @@ where
                 trust: wiring.trust,
                 asks: Mutex::new(Asks::default()),
                 browsers: wiring.browsers,
+                accounts: wiring.accounts,
+                joinings: Mutex::new(crate::joining::Joinings::default()),
                 origin: wiring.origin,
                 stopping: AtomicBool::new(false),
                 leases,

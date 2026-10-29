@@ -384,7 +384,7 @@ where
         self.ensure_not_deleted(thread).await?;
         // Subscribed before anything is read, so nothing recorded meanwhile falls between.
         let notes = self.inner.hub.watch(thread);
-        let access = self.access(caller)?;
+        let access = self.access(caller).await?;
         Ok(Watch::new(thread, self.reader(scope), notes, after).until(access))
     }
 
@@ -399,7 +399,7 @@ where
         // Subscribed before the latest event is read, so nothing recorded meanwhile falls
         // between.
         let notes = self.inner.hub.watch(thread);
-        let access = self.access(caller)?;
+        let access = self.access(caller).await?;
         let view = self.inner.harness.log().thread_view(&scope, thread).await?;
         let last = view
             .map(|view| view.last_seq)

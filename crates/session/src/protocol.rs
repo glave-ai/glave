@@ -138,10 +138,14 @@ methods! {
     /// public origin: good once, for ten minutes. Only glave on this computer: a local
     /// transport, or the local token.
     "signin/setup" => SigninSetup {} -> [Link],
-    /// Begins making a passkey with a setup link's code. Over HTTP it needs no sign-in.
+    /// Begins making a passkey with a setup link's code, or, with `invite`, an invite's: the
+    /// first passkey of a new glave account. Over HTTP it needs no sign-in.
     "passkey/create_options" => PasskeyCreateOptions {
         #[serde(serialize_with = "glave_event::serialize_exposed")]
         code: Secret,
+        /// Whether `code` is an invite's.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        invite: bool,
     } -> [PasskeyOptions],
     /// Makes the passkey that answers a setup link's request, spends the code, and signs the
     /// browser in. Over HTTP it needs no sign-in.

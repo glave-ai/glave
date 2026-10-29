@@ -13,7 +13,11 @@
 //! passkeys still sign in, and of one that does not, so its passkey manager forgets the rest
 //! (`signals`).
 
+mod discoverable;
 mod signals;
+
+pub use self::discoverable::Discovered;
+pub(crate) use self::discoverable::Discoverer;
 
 pub use self::signals::{AcceptedPasskeys, UnknownPasskey};
 
@@ -68,6 +72,9 @@ pub enum Proof<'a> {
     Code(&'a str),
     /// The person, signed in already.
     SignedIn,
+    /// What the server checked before asking, such as an invite opened: the first passkey of a
+    /// new glave account.
+    Vouched,
 }
 
 /// A passkey, as the person sees it.
@@ -210,7 +217,7 @@ impl Browsers {
             let mut state = self.state();
             let code = match proof {
                 Proof::Code(code) => Some(live_setup(&mut state, code, now)?),
-                Proof::SignedIn => None,
+                Proof::SignedIn | Proof::Vouched => None,
             };
             if state.passkeys.len() >= MOST_PASSKEYS {
                 return Err(BrowserError::Passkey(format!(
@@ -256,6 +263,21 @@ impl Browsers {
         name: Option<&str>,
     ) -> Result<(PasskeyInfo, Session), BrowserError> {
         let (passkey, change) = self.made(ceremony, credential, name, true)?;
+        let id = parse(&passkey.id).ok_or(BrowserError::Ceremony)?;
+        let session = self.begin(Some(id), vec![change]).await?;
+        Ok((passkey, session))
+    }
+
+    /// Makes the passkey `credential` answers the request `ceremony` with, called `name` if
+    /// named, where the server vouched for the request ([`Proof::Vouched`]): the passkey signs
+    /// this browser in.
+    pub async fn create_vouched(
+        &self,
+        ceremony: &str,
+        credential: &serde_json::Value,
+        name: Option<&str>,
+    ) -> Result<(PasskeyInfo, Session), BrowserError> {
+        let (passkey, change) = self.made(ceremony, credential, name, false)?;
         let id = parse(&passkey.id).ok_or(BrowserError::Ceremony)?;
         let session = self.begin(Some(id), vec![change]).await?;
         Ok((passkey, session))

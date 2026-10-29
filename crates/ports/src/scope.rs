@@ -50,6 +50,8 @@ impl ProjectId {
     /// The organization's own place among its projects' ([`Scope::of_organization`]): no
     /// project's id, since projects' are made from the clock.
     const ORGANIZATION: Self = Self(Uuid::from_u128(0x0000_0000_0000_7000_8000_0000_0000_0000));
+    /// A glave account's own place ([`Scope::of_account`]), no project's either.
+    const ACCOUNT: Self = Self(Uuid::from_u128(0x0000_0000_0000_7000_8000_0000_0000_0001));
 
     pub fn from_uuid(uuid: Uuid) -> Self {
         Self(uuid)
@@ -108,6 +110,18 @@ impl Scope {
         Self {
             org,
             project: ProjectId::ORGANIZATION,
+        }
+    }
+
+    /// The scope of a glave account's own streams: its passkeys and browser sessions
+    /// (`specs/storage.md`, "A glave account is kept outside every organization"). Kept as if
+    /// in an organization of its own, the person's id its id, so it is in no organization,
+    /// sealed under a key of its own, and erased by destroying that key. glave's own: the
+    /// session reads it for the person signing in, before any organization is known.
+    pub fn of_account(person: PrincipalId) -> Self {
+        Self {
+            org: OrgId(person.as_uuid()),
+            project: ProjectId::ACCOUNT,
         }
     }
 

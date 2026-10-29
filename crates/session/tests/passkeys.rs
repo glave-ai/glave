@@ -75,7 +75,11 @@ async fn set_up(served: &Served, token: &LocalToken, phone: &mut Authenticator) 
     let setup = asked(&mut here, &Request::SigninSetup {}).await;
     let code = glave_event::Secret::new(setup["code"].as_str().unwrap());
     let mut anyone = elsewhere(served, None);
-    let options = asked(&mut anyone, &Request::PasskeyCreateOptions { code }).await;
+    let create = Request::PasskeyCreateOptions {
+        code,
+        invite: false,
+    };
+    let options = asked(&mut anyone, &create).await;
     let credential = phone.create(&options["options"]).unwrap();
     let created = Request::PasskeyCreate {
         ceremony: options["ceremony"].as_str().unwrap().to_owned(),

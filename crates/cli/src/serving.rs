@@ -21,11 +21,11 @@ use anyhow::{Context as _, bail};
 use glave_config::policy::Choices;
 use glave_event::PrincipalId;
 use glave_event::Secret;
-use glave_ports::SystemClock;
 use glave_ports::host::{PublicOrigin, is_loopback};
+use glave_ports::{Clock, SystemClock};
 use glave_session::http::{Files, Listeners, Site};
 use glave_session::protocol::{Reply, Request, SignInWay};
-use glave_session::signin::{Browsers, LOCAL_BYTES, LocalToken, SignIn, Trust};
+use glave_session::signin::{Accounts, Browsers, LOCAL_BYTES, LocalToken, SignIn, Trust};
 use tokio::net::TcpListener;
 
 use crate::args::Args;
@@ -235,6 +235,41 @@ pub(crate) async fn browsers(
         .map(|browsers| Some(Arc::new(browsers)))
 }
 
+/// What the root derives the glave accounts' passkey handles from.
+const ACCOUNT_HANDLES: &str = "account passkey handles";
+
+/// The glave accounts a server keeps for people other than the local person (`specs/model.md`,
+/// "Identity"): where it serves over HTTP, is reached from elsewhere at a public origin, and
+/// its organization signs no one in through a company login, since an organization has one
+/// identity source. Their handles are derived from what the root derives for them.
+pub(crate) async fn accounts(
+    args: &Args,
+    choices: &Choices,
+    store: &Data,
+) -> anyhow::Result<Option<Arc<Accounts>>> {
+    let origin = choices.origin.as_ref().map(|origin| &origin.value);
+    let (true, Some(origin), true) = (args.http.is_some(), origin, args.issuers.is_empty()) else {
+        return Ok(None);
+    };
+    let derived = store.derived(ACCOUNT_HANDLES).await?;
+    let secret = derived
+        .bytes()
+        .first_chunk::<32>()
+        .copied()
+        .context("the root derived too few bytes for accounts' passkey handles")?;
+    let server = store.server(random_uuid()?).await?.to_string();
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+    let accounts = Accounts::new(
+        store.log(),
+        store.directory(),
+        secret,
+        server,
+        origin,
+        clock,
+    )?;
+    Ok(Some(Arc::new(accounts)))
+}
+
 /// The browsers of `person`, the local person, in `store`, signed in by the server whose id the
 /// store keeps, reached from elsewhere at `origin` if anywhere, their passkeys keeping the
 /// handle the root derives for them.
@@ -324,8 +359,6 @@ fn here(bound: SocketAddr) -> SocketAddr {
 
 #[cfg(test)]
 mod tests {
-    use glave_ports::Clock as _;
-
     use super::*;
 
     #[test]
