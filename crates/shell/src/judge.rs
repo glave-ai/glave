@@ -2,6 +2,8 @@
 
 use std::path::Path;
 
+use glave_event::Risk;
+
 use crate::parse::parse;
 use crate::reads::reads_only;
 use crate::rules::caution;
@@ -61,8 +63,8 @@ pub enum Verdict {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Caution {
     pub kind: Kind,
-    /// In plain words, for the person and the model: "it deletes /home/ana".
-    pub reason: String,
+    /// What it would do, which the model reads as "it deletes /home/ana".
+    pub reason: Risk,
 }
 
 /// The kinds of harm a command may do.
@@ -105,13 +107,13 @@ pub fn judge(script: &str, context: &Context<'_>) -> Verdict {
     if parsed.too_deep {
         return Verdict::Caution(Caution {
             kind: Kind::Unreadable,
-            reason: "it nests shells too deep to read".to_owned(),
+            reason: Risk::NestsTooDeep,
         });
     }
     if parsed.runs_fetched_code {
         return Verdict::Caution(Caution {
             kind: Kind::RunsFetchedCode,
-            reason: "it runs code fetched from the network".to_owned(),
+            reason: Risk::RunsFetchedCode,
         });
     }
     if let Some(found) = parsed
@@ -127,3 +129,6 @@ pub fn judge(script: &str, context: &Context<'_>) -> Verdict {
         Verdict::Unknown
     }
 }
+
+#[cfg(test)]
+mod tests;

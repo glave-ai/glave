@@ -6,6 +6,7 @@
 mod judging {
     use std::path::Path;
 
+    use glave_event::Worded as _;
     use glave_shell::{Context, Kind, Verdict, judge};
     use proptest::prelude::*;
 
@@ -348,7 +349,7 @@ mod judging {
         ] {
             match verdict(script) {
                 Verdict::Caution(caution) => {
-                    assert_eq!(caution.reason, reason, "{script}");
+                    assert_eq!(caution.reason.english(), reason, "{script}");
                     assert!(!caution.kind.firm(), "{script}");
                 }
                 other => panic!("{script}: {other:?}"),
@@ -493,7 +494,7 @@ mod judging {
             panic!("not a caution");
         };
         assert_eq!(
-            caution.reason,
+            caution.reason.english(),
             "it deletes /home/ana/projects, outside the project"
         );
     }
@@ -510,7 +511,7 @@ mod judging {
             panic!("not a caution");
         };
         assert_eq!(
-            caution.reason,
+            caution.reason.english(),
             "it deletes /home/ana/café, outside the project"
         );
         assert_eq!(verdict("cat 日本.txt"), Verdict::ReadOnly);

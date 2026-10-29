@@ -3,8 +3,8 @@
 use std::borrow::Cow;
 
 use glave_event::{
-    BlobRef, CallId, EventId, MemoryId, MessageAdded, ModelRef, Outcome, Part, Permissions,
-    Principal, Role, StopReason, ThreadId, ToolCallRequested, TurnResult, TurnStarted,
+    BlobRef, CallId, Caution, EventId, MemoryId, MessageAdded, ModelRef, Outcome, Part,
+    Permissions, Principal, Role, StopReason, ThreadId, ToolCallRequested, TurnResult, TurnStarted,
 };
 use glave_ports::{
     BlobStore, BoxFuture, Caller, Completion, Delta, EventLog, Failure, Message, ModelProvider,
@@ -57,10 +57,12 @@ pub enum Live {
         is_error: bool,
     },
     /// An action that did not run: the person said no, or no one was there to ask. `caution`
-    /// is why it asked, as the person reads it, when a caution did.
+    /// is why it asked, as the person reads it, when a caution did, and `reason` what it was
+    /// written from, as its `approval.requested` records them.
     ToolDeclined {
         summary: String,
         caution: Option<String>,
+        reason: Option<Caution>,
         no_one_there: bool,
     },
     /// The conversation was summarized to fit the context window; sizes are estimates.

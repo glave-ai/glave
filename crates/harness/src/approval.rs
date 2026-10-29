@@ -6,7 +6,8 @@ use std::future::{Future, ready};
 use std::path::Path;
 
 use glave_event::{
-    ApprovalRequested, Arguments, CallId, Lifted, OutsideSandbox, PrincipalId, ThreadId, WebPage,
+    ApprovalRequested, Arguments, CallId, Caution, Lifted, OutsideSandbox, PrincipalId, Settled,
+    ThreadId, WebPage,
 };
 use glave_ports::Effect;
 
@@ -32,9 +33,10 @@ pub struct ApprovalRequest {
     /// command prints. With no one to ask, and in Full access, which asks no one, these requests
     /// are declined.
     pub secret: bool,
-    /// Why the call needs the person in any mode that asks, when it does, as the model and the
-    /// judge are told it: "it deletes ~/x". The person reads it as a sentence (`sentence`).
-    pub caution: Option<String>,
+    /// Why the call needs the person in any mode that asks, when it does: the model and the
+    /// judge are told it as a clause ("it deletes ~/x", [`Caution::because`]), and the person
+    /// reads it as a sentence.
+    pub caution: Option<Caution>,
     /// The command would run outside the sandbox, or in it with the network, as the model
     /// asked, with its reason. Such a request asks every time: allowing it for the thread
     /// allows it once.
@@ -51,8 +53,23 @@ impl ApprovalRequest {
             ask: ask_of(&self.tool).to_owned(),
             detail: detail_of(&self.tool, &self.summary).to_owned(),
             secret: self.secret,
-            caution: self.caution.as_deref().map(sentence),
+            caution: self.caution.as_ref().and_then(Caution::sentences),
+            reason: self.caution.clone(),
             outside_sandbox: self.outside_sandbox.clone(),
+        }
+    }
+
+    /// The record of this request, which glave settled `how` without asking anyone: why it
+    /// asks, then how it was settled.
+    pub(crate) fn settled(&self, how: Settled) -> ApprovalRequested {
+        let reason = Caution {
+            settled: Some(how),
+            ..self.caution.clone().unwrap_or_default()
+        };
+        ApprovalRequested {
+            caution: reason.sentences(),
+            reason: Some(reason),
+            ..self.asked()
         }
     }
 }
@@ -92,24 +109,6 @@ fn detail_of<'a>(tool: &str, summary: &'a str) -> &'a str {
         .filter(|_| !tool.is_empty())
         .and_then(|rest| rest.strip_prefix(": ").or_else(|| rest.strip_prefix(' ')))
         .unwrap_or(summary)
-}
-
-/// A caution's reason as the person reads it, a sentence of its own: "it deletes ~/x" is
-/// "It deletes ~/x.".
-pub(crate) fn sentence(reason: &str) -> String {
-    let reason = reason.trim();
-    let mut chars = reason.chars();
-    let mut sentence: String = chars
-        .next()
-        .map(char::to_uppercase)
-        .into_iter()
-        .flatten()
-        .chain(chars)
-        .collect();
-    if !sentence.is_empty() && !sentence.ends_with(['.', '!', '?']) {
-        sentence.push('.');
-    }
-    sentence
 }
 
 /// How much asks before acting, as a thread's mode comes to it where its commands run
@@ -226,24 +225,21 @@ pub(crate) fn no_one_there(request: &ApprovalRequest) -> String {
         .as_ref()
         .map(|outside| outside.lifted);
     let outside = lifted == Some(Lifted::Sandbox);
+    let because = request.caution.as_ref().and_then(Caution::because);
     if request.secret {
         "No one is available to approve this, which would show you secrets such as keys, tokens \
          or passwords: glave is running without anyone at the keyboard. Do not try to get them \
          another way. Finish what you can without it, and say at the end which value a person \
          must provide."
             .to_owned()
-    } else if let Some(reason) = request.caution.as_ref().filter(|_| outside) {
+    } else if let Some(reason) = because.as_ref().filter(|_| outside) {
         format!(
             "Not run, because {reason}, and no one is available to allow that: glave is running \
              without anyone at the keyboard. Do not get the same result another way, such as by \
              pointing the command at folders inside the project. Finish what you can in the \
              sandbox, and say at the end which command still needs a person to allow it."
         )
-    } else if let Some(reason) = request
-        .caution
-        .as_ref()
-        .filter(|_| lifted == Some(Lifted::Network))
-    {
+    } else if let Some(reason) = because.as_ref().filter(|_| lifted == Some(Lifted::Network)) {
         format!(
             "Not run, because {reason}, and no one is available to allow that: glave is running \
              without anyone at the keyboard. Do not try to reach the internet another way, \
@@ -251,7 +247,7 @@ pub(crate) fn no_one_there(request: &ApprovalRequest) -> String {
              replacement for a package. Finish what does not depend on it, and say at the end \
              which command still needs a person to allow it."
         )
-    } else if let Some(reason) = &request.caution {
+    } else if let Some(reason) = &because {
         format!(
             "Not run, because {reason}, and no one is available to approve that: glave is \
              running without anyone at the keyboard. Do not try to get the same result another \
@@ -399,20 +395,6 @@ mod tests {
         );
         assert_eq!(asked("bashful", "bash: ls").1, "bash: ls");
         assert_eq!(asked("", "x").1, "x");
-    }
-
-    #[test]
-    fn a_caution_reads_as_a_sentence_of_its_own() {
-        assert_eq!(
-            sentence("it deletes /home/ana/notes, outside the project"),
-            "It deletes /home/ana/notes, outside the project."
-        );
-        assert_eq!(
-            sentence("this file usually holds secrets; the model would see them"),
-            "This file usually holds secrets; the model would see them."
-        );
-        assert_eq!(sentence(" Already one. "), "Already one.");
-        assert_eq!(sentence(""), "");
     }
 
     #[test]

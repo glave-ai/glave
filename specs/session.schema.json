@@ -2690,7 +2690,7 @@
           "type": "object"
         },
         {
-          "description": "An action that did not run. `summary` is what would have run; `caution`, why it asked,\nin sentences the person reads, when a caution did.",
+          "description": "An action that did not run. `summary` is what would have run; `caution`, why it asked,\nin sentences the person reads, when a caution did: in the caller's language where it\nwas recorded with its reason.",
           "properties": {
             "caution": {
               "type": [

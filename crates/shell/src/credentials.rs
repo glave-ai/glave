@@ -4,6 +4,8 @@
 //! secrets cautions: no judge clears them, with no one there they are not run, and Full
 //! access, which asks no one, declines them.
 
+use glave_event::Risk;
+
 use crate::judge::{Caution, Kind};
 use crate::parse::Word;
 
@@ -14,13 +16,13 @@ pub(crate) fn prints_credential(name: &str, words: &[Word]) -> Option<Caution> {
     if words.iter().any(helper) {
         return Some(Caution {
             kind: Kind::Secrets,
-            reason: "it reaches glave's credential helper, which hands out tokens".to_owned(),
+            reason: Risk::CredentialHelper,
         });
     }
     if name == "git" && configures_credentials(&args) {
         return Some(Caution {
             kind: Kind::Secrets,
-            reason: "it changes how git keeps credentials, which could show one".to_owned(),
+            reason: Risk::GitKeepsCredentials,
         });
     }
     let plain: Vec<&str> = args
@@ -31,54 +33,56 @@ pub(crate) fn prints_credential(name: &str, words: &[Word]) -> Option<Caution> {
     let has = |flag: &str| args.contains(&flag);
     let first = plain.first().copied();
     let second = plain.get(1).copied();
-    let what = match name {
+    let reason = match name {
         "git" => git(&args)?,
-        _ if name.starts_with("git-credential-") => "git's stored credentials",
-        "gh" if first == Some("auth") && shows_token(second, &args) => "a GitHub token",
-        "glab" if first == Some("auth") && shows_token(second, &args) => "a GitLab token",
+        _ if name.starts_with("git-credential-") => Risk::PrintsGitCredentials,
+        "gh" if first == Some("auth") && shows_token(second, &args) => Risk::PrintsGitHubToken,
+        "glab" if first == Some("auth") && shows_token(second, &args) => Risk::PrintsGitLabToken,
         "security"
             if matches!(
                 first,
                 Some("find-generic-password" | "find-internet-password")
             ) && args.iter().any(|arg| short(arg, 'w') || short(arg, 'g')) =>
         {
-            "a password from the keychain"
+            Risk::PrintsKeychainPassword
         }
         "security" if first == Some("dump-keychain") && args.iter().any(|arg| short(arg, 'd')) => {
-            "the keychain's passwords"
+            Risk::PrintsKeychainPasswords
         }
         "gcloud" if plain.contains(&"auth") && plain.iter().any(|word| prints_token(word)) => {
-            "a Google Cloud token"
+            Risk::PrintsGoogleCloudToken
         }
-        "az" if first == Some("account") && second == Some("get-access-token") => "an Azure token",
+        "az" if first == Some("account") && second == Some("get-access-token") => {
+            Risk::PrintsAzureToken
+        }
         "op" if first == Some("read") || (first == Some("item") && second == Some("get")) => {
-            "a secret from 1Password"
+            Risk::PrintsOnePasswordSecret
         }
         "kubectl" | "oc" if first == Some("config") && second == Some("view") && has("--raw") => {
-            "a Kubernetes cluster's credentials"
+            Risk::PrintsKubernetesCredentials
         }
         "aws"
             if first == Some("configure")
                 && matches!(second, Some("get" | "export-credentials")) =>
         {
-            "AWS credentials"
+            Risk::PrintsAwsCredentials
         }
         "aws" if first == Some("ecr") && second == Some("get-login-password") => {
-            "an AWS registry password"
+            Risk::PrintsAwsRegistryPassword
         }
         "vault" if first == Some("read") || (first == Some("kv") && second == Some("get")) => {
-            "a secret from Vault"
+            Risk::PrintsVaultSecret
         }
         _ => return None,
     };
     Some(Caution {
         kind: Kind::Secrets,
-        reason: format!("it prints {what}, which the model would see"),
+        reason,
     })
 }
 
 /// `git credential fill` and `git credential-<helper> …`, after git's own options.
-fn git(args: &[&str]) -> Option<&'static str> {
+fn git(args: &[&str]) -> Option<Risk> {
     let mut at = 0;
     while let Some(arg) = args.get(at) {
         if matches!(
@@ -94,7 +98,7 @@ fn git(args: &[&str]) -> Option<&'static str> {
     }
     let subcommand = args.get(at)?;
     let fill = *subcommand == "credential" && args.get(at.saturating_add(1)) == Some(&"fill");
-    (fill || subcommand.starts_with("credential-")).then_some("git's stored credentials")
+    (fill || subcommand.starts_with("credential-")).then_some(Risk::PrintsGitCredentials)
 }
 
 /// What names glave's own credential helper, the folder it is in, or git's setting that
@@ -166,6 +170,8 @@ fn short(arg: &str, letter: char) -> bool {
 mod tests {
     use std::path::Path;
 
+    use glave_event::Worded as _;
+
     use crate::judge::{Context, Kind, Verdict, judge};
 
     fn verdict(script: &str) -> Verdict {
@@ -210,7 +216,10 @@ mod tests {
             match verdict(script) {
                 Verdict::Caution(caution) if caution.kind == Kind::Secrets => {
                     assert!(caution.kind.firm(), "{script}");
-                    assert!(caution.reason.starts_with("it prints"), "{script}");
+                    assert!(
+                        caution.reason.english().starts_with("it prints"),
+                        "{script}"
+                    );
                 }
                 other => panic!("{script}: {other:?}"),
             }

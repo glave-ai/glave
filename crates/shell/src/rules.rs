@@ -4,6 +4,8 @@
 
 use std::path::Path;
 
+use glave_event::Risk;
+
 use crate::credentials::prints_credential;
 use crate::forge::forge;
 use crate::judge::{Caution, Context, Kind};
@@ -86,18 +88,15 @@ pub(crate) fn caution(command: &Command, context: &Context<'_>) -> Option<Cautio
         .or_else(|| secrets(command, words, cwd, context))
 }
 
-fn found(kind: Kind, reason: impl Into<String>) -> Caution {
-    Caution {
-        kind,
-        reason: reason.into(),
-    }
+fn found(kind: Kind, reason: Risk) -> Caution {
+    Caution { kind, reason }
 }
 
 /// `sudo` and friends run as the administrator, beyond anything the project needs.
 fn admin(words: &[Word]) -> Option<Caution> {
     let name = words.first().and_then(Word::literal).map(basename)?;
     if matches!(name, "sudo" | "doas" | "su") {
-        Some(found(Kind::System, "it runs as the administrator"))
+        Some(found(Kind::System, Risk::RunsAsAdministrator))
     } else {
         None
     }
@@ -140,27 +139,18 @@ fn removes(words: &[Word], cwd: Option<&Path>, context: &Context<'_>) -> Option<
         };
         let Some(path) = path else {
             if recursive {
-                return Some(found(
-                    Kind::Deletes,
-                    format!(
-                        "it deletes {}, which glave cannot tell in advance",
-                        word.text()
-                    ),
-                ));
+                let what = word.text().to_owned();
+                return Some(found(Kind::Deletes, Risk::DeletesUnknown { what }));
             }
             continue;
         };
         if critical(&path, context.project, context.home) {
-            return Some(found(
-                Kind::Deletes,
-                format!("it deletes {}", path.display()),
-            ));
+            let path = path.display().to_string();
+            return Some(found(Kind::Deletes, Risk::Deletes { path }));
         }
         if !inside(&path, context.project) && !context.temporary(&path) {
-            return Some(found(
-                Kind::Deletes,
-                format!("it deletes {}, outside the project", path.display()),
-            ));
+            let path = path.display().to_string();
+            return Some(found(Kind::Deletes, Risk::DeletesOutside { path }));
         }
     }
     None
@@ -201,33 +191,29 @@ fn git(words: &[Word]) -> Option<Caution> {
         .map(Word::text)
         .collect();
     let has = |flag: &str| args.contains(&flag);
-    let discards = |what: &str| Some(found(Kind::Discards, format!("it {what}")));
+    let discards = |risk: Risk| Some(found(Kind::Discards, risk));
     match subcommand {
         "reset" if has("--hard") || has("--merge") || has("--keep") => {
-            discards("discards uncommitted changes")
+            discards(Risk::DiscardsChanges)
         }
         "clean"
             if !has("-n")
                 && !has("--dry-run")
                 && args.iter().any(|a| short(a, 'f') || *a == "--force") =>
         {
-            discards("deletes untracked files")
+            discards(Risk::DeletesUntracked)
         }
         // Reverting a file the person names is ordinary; wiping the whole tree is not.
-        "checkout" if args.iter().any(|a| whole_tree(a)) => {
-            discards("discards all uncommitted changes")
-        }
+        "checkout" if args.iter().any(|a| whole_tree(a)) => discards(Risk::DiscardsAllChanges),
         "restore"
             if (!(has("--staged") || has("-S")) || has("--worktree") || has("-W"))
                 && args.iter().any(|a| whole_tree(a)) =>
         {
-            discards("discards all uncommitted changes")
+            discards(Risk::DiscardsAllChanges)
         }
-        "stash" if matches!(args.first(), Some(&"drop" | &"clear")) => {
-            discards("throws away stashed changes")
-        }
+        "stash" if matches!(args.first(), Some(&"drop" | &"clear")) => discards(Risk::DropsStash),
         "branch" if has("-D") || (has("--delete") && has("--force")) => {
-            discards("deletes a branch even if it isn't merged (git branch -D)")
+            discards(Risk::DeletesBranch)
         }
         "push"
             if args.iter().any(|a| {
@@ -237,20 +223,14 @@ fn git(words: &[Word]) -> Option<Caution> {
                     || a.starts_with('+')
             }) =>
         {
-            Some(found(
-                Kind::Discards,
-                "it rewrites or deletes what others share",
-            ))
+            discards(Risk::RewritesShared)
         }
-        "push" => Some(found(Kind::Remote, "it pushes to a remote")),
+        "push" => Some(found(Kind::Remote, Risk::Pushes)),
         "config"
             if (has("--global") || has("--system") || has("core.hooksPath"))
                 && config_writes(&args) =>
         {
-            Some(found(
-                Kind::Persists,
-                "it changes git settings beyond this project",
-            ))
+            Some(found(Kind::Persists, Risk::ChangesGitSettings))
         }
         _ => None,
     }
@@ -298,23 +278,17 @@ fn system(
 ) -> Option<Caution> {
     let args: Vec<&str> = words.iter().skip(1).map(Word::text).collect();
     let reason = match name {
-        "mkfs" | "fdisk" | "sfdisk" | "parted" | "wipefs" => {
-            Some("it formats or repartitions a disk")
-        }
-        _ if name.starts_with("mkfs.") => Some("it formats a disk"),
+        "mkfs" | "fdisk" | "sfdisk" | "parted" | "wipefs" => Some(Risk::Repartitions),
+        _ if name.starts_with("mkfs.") => Some(Risk::FormatsDisk),
         "diskutil"
             if args.iter().any(|a| {
                 a.starts_with("erase") || matches!(*a, "partitionDisk" | "zeroDisk" | "secureErase")
             }) =>
         {
-            Some("it erases a disk")
+            Some(Risk::ErasesDisk)
         }
-        "dd" if args.iter().any(|a| a.starts_with("of=/dev/")) => {
-            Some("it writes straight to a device")
-        }
-        "shutdown" | "reboot" | "halt" | "poweroff" => {
-            Some("it shuts down or restarts the computer")
-        }
+        "dd" if args.iter().any(|a| a.starts_with("of=/dev/")) => Some(Risk::WritesDevice),
+        "shutdown" | "reboot" | "halt" | "poweroff" => Some(Risk::ShutsDown),
         "chmod" | "chown" | "chgrp"
             if args.iter().any(|a| short(a, 'R') || *a == "--recursive") =>
         {
@@ -328,7 +302,7 @@ fn system(
                             || !inside(&path, context.project)
                     })
                 });
-            outside.then_some("it changes permissions beyond the project")
+            outside.then_some(Risk::ChangesPermissions)
         }
         _ => None,
     };
@@ -347,27 +321,21 @@ fn persists(
     let args: Vec<&str> = words.iter().skip(1).map(Word::text).collect();
     match name {
         Some("crontab") if !args.contains(&"-l") => {
-            return Some(found(Kind::Persists, "it changes scheduled jobs"));
+            return Some(found(Kind::Persists, Risk::ChangesScheduledJobs));
         }
         Some("launchctl")
             if args
                 .iter()
                 .any(|a| matches!(*a, "load" | "bootstrap" | "enable" | "submit")) =>
         {
-            return Some(found(
-                Kind::Persists,
-                "it installs something that runs at login",
-            ));
+            return Some(found(Kind::Persists, Risk::RunsAtLogin));
         }
         Some("systemctl")
             if args
                 .iter()
                 .any(|a| matches!(*a, "enable" | "link" | "edit")) =>
         {
-            return Some(found(
-                Kind::Persists,
-                "it installs something that runs at start-up",
-            ));
+            return Some(found(Kind::Persists, Risk::RunsAtStartUp));
         }
         _ => {}
     }
@@ -389,7 +357,9 @@ fn persists(
         let path = target(word, cwd, context)?;
         startup_file(&path, context).then(|| Caution {
             kind: Kind::Persists,
-            reason: format!("it writes {}, which runs later on its own", path.display()),
+            reason: Risk::WritesStartUp {
+                path: path.display().to_string(),
+            },
         })
     })
 }
@@ -448,7 +418,9 @@ fn secrets(
             let path = target(word, cwd, context)?;
             (context.secret)(&path).then(|| Caution {
                 kind: Kind::Secrets,
-                reason: format!("it reads {}, which usually holds secrets", word.text()),
+                reason: Risk::ReadsSecrets {
+                    path: word.text().to_owned(),
+                },
             })
         })
 }

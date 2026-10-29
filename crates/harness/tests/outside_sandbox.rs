@@ -7,7 +7,7 @@ use std::future::{Future, ready};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use glave_event::{Body, Event, Principal, StopReason, ThreadId, Verdict};
+use glave_event::{Body, Caution, Event, Principal, StopReason, ThreadId, Verdict};
 use glave_harness::{ApprovalRequest, Approver, Cancel, Decision, Harness, NoOneToAsk, Settings};
 use glave_ports::computer::{Sandbox, SandboxLevel};
 use glave_ports::{Completion, InMemoryBlobs, InMemoryLog, ModelRequest, Purpose};
@@ -161,7 +161,11 @@ fn it_asks_every_time_even_in_auto_and_runs_outside_once_allowed() {
         let asked = person.asked();
         assert_eq!(asked.len(), 2, "each one asks");
         assert_eq!(
-            asked[0].caution.as_deref(),
+            asked[0]
+                .caution
+                .as_ref()
+                .and_then(Caution::because)
+                .as_deref(),
             Some("it runs outside the sandbox, where it can read and change any file you can")
         );
         assert_eq!(

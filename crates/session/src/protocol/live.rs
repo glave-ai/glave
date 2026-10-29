@@ -4,6 +4,8 @@ use glave_event::{CallId, EventId, MemoryId, ThreadId};
 use glave_harness::{Live, Question};
 use serde::{Deserialize, Serialize};
 
+use crate::protocol::Told;
+
 /// Progress while a turn runs: the live side of `Live`, in a form any transport carries.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -32,11 +34,12 @@ pub enum Update {
         is_error: bool,
     },
     /// An action that did not run. `summary` is what would have run; `caution`, why it asked,
-    /// in sentences the person reads, when a caution did.
+    /// in sentences the person reads, when a caution did: in the caller's language where it
+    /// was recorded with its reason.
     ToolDeclined {
         summary: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        caution: Option<String>,
+        caution: Option<Told>,
         no_one_there: bool,
     },
     /// A model call began, and nothing has come back yet: each step of a turn starts with
@@ -106,10 +109,13 @@ impl From<Live> for Update {
             Live::ToolDeclined {
                 summary,
                 caution,
+                reason,
                 no_one_there,
             } => Self::ToolDeclined {
                 summary,
-                caution,
+                caution: reason
+                    .and_then(Told::caution)
+                    .or_else(|| caution.map(Told::from)),
                 no_one_there,
             },
             Live::Unread { id, reason } => Self::Unread { id, reason },

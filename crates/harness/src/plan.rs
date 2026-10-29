@@ -10,8 +10,8 @@ mod build;
 use std::fmt::Write as _;
 
 use glave_event::{
-    Arguments, Body, CallId, Event, Part, Payload as _, PlanApproved, PlanStatus, PlanStep,
-    PlanUpdated, ThreadId, decode,
+    Arguments, Body, CallId, Caution, Event, Part, Payload as _, PlanApproved, PlanStatus,
+    PlanStep, PlanUpdated, ThreadId, decode,
 };
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, ToolCall, ToolOutput, ToolSpec};
 use serde::Deserialize;
@@ -248,7 +248,8 @@ pub(crate) fn told(updated: &PlanUpdated) -> Option<Vec<Part>> {
 /// What the model is told instead of a call plan mode refused: why it would have asked in
 /// Ask first, and what to do instead.
 pub(crate) fn refused(request: &ApprovalRequest) -> String {
-    let why = match (&request.caution, request.effect) {
+    let because = request.caution.as_ref().and_then(Caution::because);
+    let why = match (because, request.effect) {
         (Some(caution), _) => format!(", and {caution}"),
         (None, glave_ports::Effect::Changes) => ", and this changes files".to_owned(),
         (None, _) => ", and this may change things".to_owned(),

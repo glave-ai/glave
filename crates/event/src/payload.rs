@@ -5,6 +5,7 @@ pub(crate) mod approval;
 pub(crate) mod awake;
 pub(crate) mod browser;
 pub(crate) mod catalog;
+pub(crate) mod caution;
 pub(crate) mod certificate;
 pub(crate) mod chosen;
 pub(crate) mod command;
@@ -36,6 +37,7 @@ pub use approval::{ApprovalDecided, ApprovalRequested, Lifted, OutsideSandbox, V
 pub use awake::AwakeSet;
 pub use browser::{BrowserSignedIn, BrowserSignedOut, BrowserUsed};
 pub use catalog::{Catalog, CatalogModel, CatalogRefreshed, Reasoning, TokenPrice};
+pub use caution::{Caution, Phrase, Risk, Settled, Worded, sentence};
 pub use certificate::{AcmeRegistered, CertificateIssued};
 pub use chosen::{EffortChosen, ModelChosen, Permissions, PermissionsChosen};
 pub use command::{CommandEnded, CommandEnding, CommandStarted};

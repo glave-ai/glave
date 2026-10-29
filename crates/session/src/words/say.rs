@@ -6,7 +6,8 @@
 
 use std::borrow::Cow;
 
-use fluent_bundle::{FluentBundle, FluentResource};
+use fluent_bundle::{FluentArgs, FluentBundle, FluentResource};
+use glave_event::{Caution, Worded};
 
 use super::{Language, Sentence};
 
@@ -23,7 +24,33 @@ const NUMBERS: [&str; 10] = [
 /// isolates), so a path or an id reads whole, left to right. A pattern Fluent cannot read
 /// writes its id, which the catalog's test rules out.
 pub(crate) fn say(language: Language, sentence: &Sentence) -> String {
-    let source = format!("{} = {}\n", sentence.id(), sentence.english());
+    write(
+        language,
+        sentence.id(),
+        sentence.english(),
+        &sentence.args(),
+    )
+}
+
+/// Words of another crate's table (`glave_event::Worded`) written in `language`, as
+/// [`say`] writes the server's own.
+pub(crate) fn word(language: Language, words: &dyn Worded) -> String {
+    let mut args = FluentArgs::new();
+    for (name, value) in words.values() {
+        args.set(name, value);
+    }
+    write(language, words.id(), words.pattern(), &args)
+}
+
+/// Why a call needs the person, as `approval.requested` records it, written in `language`
+/// from its parts.
+pub(crate) fn caution_in(language: Language, caution: &Caution) -> Option<String> {
+    caution.written(&|words| word(language, words))
+}
+
+/// The message `id`, whose English is `english`, written in `language` with `args`.
+fn write(language: Language, id: &str, english: &str, args: &FluentArgs<'_>) -> String {
+    let source = format!("{id} = {english}\n");
     let resource = FluentResource::try_new(source).unwrap_or_else(|(read, _)| read);
     let mut bundle = FluentBundle::new(Vec::new());
     bundle.set_use_isolating(language == Language::RightToLeft);
@@ -34,15 +61,11 @@ pub(crate) fn say(language: Language, sentence: &Sentence) -> String {
     });
     // The message is the bundle's only one: nothing it could clash with.
     let _ = bundle.add_resource(resource);
-    let Some(pattern) = bundle
-        .get_message(sentence.id())
-        .and_then(|message| message.value())
-    else {
-        return sentence.id().to_owned();
+    let Some(pattern) = bundle.get_message(id).and_then(|message| message.value()) else {
+        return id.to_owned();
     };
-    let args = sentence.args();
     let mut errors = Vec::new();
-    let said = bundle.format_pattern(pattern, Some(&args), &mut errors);
+    let said = bundle.format_pattern(pattern, Some(args), &mut errors);
     match language {
         Language::Accented => longer(&said),
         Language::English | Language::RightToLeft => said.into_owned(),

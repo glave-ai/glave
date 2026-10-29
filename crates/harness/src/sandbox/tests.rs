@@ -190,41 +190,33 @@ fn the_note_on_a_blocked_command_offers_only_what_its_commands_may_ask_for() {
 }
 
 #[test]
-fn running_outside_the_sandbox_is_added_to_a_command_s_own_caution() {
-    use super::{OUTSIDE_SANDBOX, WITH_NETWORK, with_outside};
-    use glave_event::Lifted;
-    assert_eq!(with_outside(None, None), None);
+fn running_outside_the_sandbox_is_added_to_a_command_s_own_caution_as_the_model_reads_it() {
+    use glave_event::{Caution, Lifted, Risk};
+    let because = |risk: Option<Risk>, lifted| Caution::of(risk, lifted).and_then(|c| c.because());
+    assert_eq!(because(None, None), None);
     assert_eq!(
-        with_outside(None, Some(Lifted::Sandbox)).as_deref(),
-        Some(OUTSIDE_SANDBOX)
+        because(None, Some(Lifted::Sandbox)).as_deref(),
+        Some("it runs outside the sandbox, where it can read and change any file you can")
     );
     assert_eq!(
-        with_outside(
-            Some("it pushes to a remote".to_owned()),
-            Some(Lifted::Sandbox)
-        )
-        .as_deref(),
+        because(Some(Risk::Pushes), Some(Lifted::Sandbox)).as_deref(),
         Some(
             "it pushes to a remote, and it runs outside the sandbox, where it can read and \
              change any file you can"
         )
     );
     assert_eq!(
-        with_outside(
-            Some("it pushes to a remote".to_owned()),
-            Some(Lifted::Network)
-        )
-        .as_deref(),
+        because(Some(Risk::Pushes), Some(Lifted::Network)).as_deref(),
         Some(
             "it pushes to a remote, and it can reach the internet, which commands here otherwise cannot"
         )
     );
     assert_eq!(
-        with_outside(None, Some(Lifted::Network)).as_deref(),
-        Some(WITH_NETWORK)
+        because(None, Some(Lifted::Network)).as_deref(),
+        Some("it can reach the internet, which commands here otherwise cannot")
     );
     assert_eq!(
-        with_outside(Some("it pushes to a remote".to_owned()), None).as_deref(),
+        because(Some(Risk::Pushes), None).as_deref(),
         Some("it pushes to a remote")
     );
 }
