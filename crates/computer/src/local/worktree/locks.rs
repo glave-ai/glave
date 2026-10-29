@@ -10,7 +10,7 @@ use std::fs::{File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 
-use glave_ports::computer::ComputerError;
+use glave_ports::computer::{ComputerError, Refusal};
 use tokio::sync::OwnedMutexGuard;
 
 /// The file in a repository's shared git folder whose lock every glave takes to make a
@@ -67,10 +67,12 @@ impl Locks {
         }
         repositories.retain(|_, lock| lock.strong_count() > 0);
         if repositories.len() >= MAX_REPOSITORIES {
-            return Err(ComputerError::Refused(format!(
-                "worktrees are being made in {MAX_REPOSITORIES} repositories at once on this \
-                 computer; try again when some are done"
-            )));
+            return Err(ComputerError::Refused(
+                Refusal::TooManyRepositories {
+                    most: MAX_REPOSITORIES.to_string(),
+                }
+                .into(),
+            ));
         }
         let lock = Arc::new(tokio::sync::Mutex::new(()));
         repositories.insert(common.to_path_buf(), Arc::downgrade(&lock));

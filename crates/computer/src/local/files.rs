@@ -52,9 +52,9 @@ pub(crate) async fn read(root: &Path, path: &str) -> Result<Bytes, ComputerError
 /// The whole content of the file `found` names.
 fn read_found(path: &str, found: &Found) -> Result<Vec<u8>, ComputerError> {
     if found.is_folder() {
-        return Err(ComputerError::Refused(format!(
-            "{path} is a folder; list it instead"
-        )));
+        return Err(ComputerError::Refused(
+            format!("{path} is a folder; list it instead").into(),
+        ));
     }
     let (Some(name), Some(_)) = (&found.name, &found.stat) else {
         return Err(ComputerError::NotFound(format!("{path}: no such file")));
@@ -62,9 +62,10 @@ fn read_found(path: &str, found: &Found) -> Result<Vec<u8>, ComputerError> {
     let file = open_to_read(found.folder.as_fd(), name).map_err(|error| io(path, &error))?;
     let size = file.metadata().map_err(|error| io(path, &error))?.len();
     if size > MAX_FILE {
-        return Err(ComputerError::Refused(format!(
-            "{path} is {size} bytes; files over {MAX_FILE} bytes are not read whole"
-        )));
+        return Err(ComputerError::Refused(
+            format!("{path} is {size} bytes; files over {MAX_FILE} bytes are not read whole")
+                .into(),
+        ));
     }
     let mut content = Vec::new();
     file.take(MAX_FILE)
@@ -84,10 +85,13 @@ pub(crate) async fn write(root: &Path, files: &[FileWrite]) -> Result<(), Comput
         for file in &files {
             let size = u64::try_from(file.content.as_slice().len()).unwrap_or(u64::MAX);
             if size > MAX_FILE {
-                return Err(ComputerError::Refused(format!(
-                    "{} is {size} bytes; files over {MAX_FILE} bytes are not written whole",
-                    file.path
-                )));
+                return Err(ComputerError::Refused(
+                    format!(
+                        "{} is {size} bytes; files over {MAX_FILE} bytes are not written whole",
+                        file.path
+                    )
+                    .into(),
+                ));
             }
             let found = resolve(&root, &file.path)?;
             if file.protect
@@ -101,10 +105,9 @@ pub(crate) async fn write(root: &Path, files: &[FileWrite]) -> Result<(), Comput
                 return Err(refuse_protected(&shown(&found.names)));
             }
             if found.is_folder() || found.name.is_none() {
-                return Err(ComputerError::Refused(format!(
-                    "{} is a folder, not a file.",
-                    file.path
-                )));
+                return Err(ComputerError::Refused(
+                    format!("{} is a folder, not a file.", file.path).into(),
+                ));
             }
             resolved.push(found);
         }

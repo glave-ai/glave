@@ -4,9 +4,10 @@ use std::fmt;
 use std::ops::Deref;
 
 use glave_event::Caution;
+use glave_ports::computer::{Reason, Refusal};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::words::{Language, Sentence, caution_in, say};
+use crate::words::{Language, Sentence, caution_in, say, word};
 
 /// A sentence for a person: as they read it, and, when it is the server's own, what it says, so
 /// a transport writes it again in the caller's language (`specs/session.md`, "Languages"). The
@@ -28,6 +29,8 @@ enum Said {
     Sentences(Vec<Sentence>),
     /// Why a call needs the person, from the parts its `approval.requested` records.
     Caution(Caution),
+    /// A computer's refusal in glave's own words.
+    Refusal(Refusal),
 }
 
 impl Told {
@@ -58,6 +61,7 @@ impl Told {
         let written = match self.said.as_deref() {
             Some(Said::Sentences(said)) => Some(said_in(language, said)),
             Some(Said::Caution(caution)) => caution_in(language, caution),
+            Some(Said::Refusal(refusal)) => Some(word(language, refusal)),
             None => None,
         };
         if let Some(written) = written {
@@ -77,6 +81,19 @@ fn said_in(language: Language, said: &[Sentence]) -> String {
 impl From<Sentence> for Told {
     fn from(sentence: Sentence) -> Self {
         Self::joined(vec![sentence])
+    }
+}
+
+/// A computer's refusal: written again in the caller's language when glave's own words said it,
+/// else passed on as it is.
+impl From<&Reason> for Told {
+    fn from(reason: &Reason) -> Self {
+        Self {
+            text: reason.to_string(),
+            said: reason
+                .refusal()
+                .map(|refusal| Box::new(Said::Refusal(refusal.clone()))),
+        }
     }
 }
 

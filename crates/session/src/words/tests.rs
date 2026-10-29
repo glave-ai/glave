@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use fluent_bundle::{FluentArgs, FluentBundle, FluentResource};
 use glave_event::{Caution, Phrase, Risk, Settled, Worded};
+use glave_ports::computer::{Reason, Refusal};
 
 use super::*;
 
@@ -307,7 +308,7 @@ fn why_a_folder_is_no_project_s_is_written_again_in_its_listing() {
 }
 
 #[test]
-fn every_word_of_a_caution_is_one_fluent_message_whose_english_is_what_the_model_reads() {
+fn every_word_of_another_crates_table_is_one_fluent_message_whose_english_is_what_it_makes() {
     let mut ids: BTreeSet<&str> = Sentence::ALL.iter().map(|(id, _, _)| *id).collect();
     let worded = Risk::every()
         .into_iter()
@@ -315,9 +316,12 @@ fn every_word_of_a_caution_is_one_fluent_message_whose_english_is_what_the_model
     let phrases = Phrase::every()
         .into_iter()
         .map(|it| Box::new(it) as Box<dyn Worded>);
-    for words in worded.chain(phrases) {
+    let refusals = Refusal::every()
+        .into_iter()
+        .map(|it| Box::new(it) as Box<dyn Worded>);
+    for words in worded.chain(phrases).chain(refusals) {
         assert!(ids.insert(words.id()), "{} is in a table twice", words.id());
-        let said = say::word(Language::English, words.as_ref());
+        let said = word(Language::English, words.as_ref());
         assert_eq!(said, words.english(), "{}", words.id());
         for (name, _) in words.values() {
             assert!(
@@ -329,8 +333,39 @@ fn every_word_of_a_caution_is_one_fluent_message_whose_english_is_what_the_model
     }
     assert_eq!(
         ids.len(),
-        Sentence::ALL.len() + Risk::ALL.len() + Phrase::ALL.len()
+        Sentence::ALL.len() + Risk::ALL.len() + Phrase::ALL.len() + Refusal::ALL.len()
     );
+}
+
+#[test]
+fn a_computers_refusal_is_written_again_and_its_text_passed_on_as_it_is() {
+    let refusal = Refusal::NotInRepository {
+        path: "/srv/atlas".into(),
+    };
+    let english = refusal.english();
+    let mut refused: Result<Reply, ApiError> = Err(ApiError::new(
+        crate::protocol::code::WORKSPACE,
+        &Reason::from(refusal),
+    ));
+    assert!(says(&refused));
+    let Err(error) = &refused else {
+        panic!("an error")
+    };
+    assert_eq!(*error.message, *english);
+    translate(&mut refused, Language::Accented);
+    let Err(error) = &refused else {
+        panic!("an error")
+    };
+    assert!(
+        error.message.starts_with("[/srv/atlas îš ñöţ"),
+        "{}",
+        error.message
+    );
+    let text: Result<Reply, ApiError> = Err(ApiError::new(
+        crate::protocol::code::WORKSPACE,
+        &Reason::from("the pattern could not be searched"),
+    ));
+    assert!(!says(&text));
 }
 
 /// An `approval.requested` holding `data`, as a page of events or a watch carries it.

@@ -26,12 +26,14 @@ pub trait Worded {
 }
 
 /// Makes a table of words: each line `Variant { value, … } = "id" "English"`, its values text.
+/// Another crate makes its own table with it, as `glave_event::worded!`.
+#[macro_export]
 macro_rules! worded {
     ($(#[$doc:meta])* $name:ident { $(
         $variant:ident $({ $($value:ident),+ $(,)? })? = $id:literal $english:literal,
     )* }) => {
         $(#[$doc])*
-        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+        #[derive(Debug, Clone, PartialEq, Eq, ::serde::Serialize, ::serde::Deserialize)]
         #[serde(tag = "says")]
         pub enum $name {
             $(
@@ -58,7 +60,7 @@ macro_rules! worded {
             }
         }
 
-        impl Worded for $name {
+        impl $crate::Worded for $name {
             fn id(&self) -> &'static str {
                 match self {
                     $(Self::$variant { .. } => $id,)*

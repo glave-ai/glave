@@ -90,31 +90,32 @@ impl Kubernetes {
         let config = match &settings.kubeconfig {
             Some(path) => {
                 let text = tokio::fs::read_to_string(path).await.map_err(|error| {
-                    ComputerError::Refused(format!(
-                        "could not read the kubeconfig {}: {error}",
-                        path.display()
-                    ))
+                    ComputerError::Refused(
+                        format!("could not read the kubeconfig {}: {error}", path.display()).into(),
+                    )
                 })?;
                 let kubeconfig = Kubeconfig::from_yaml(&text).map_err(|error| {
-                    ComputerError::Refused(format!(
-                        "{} is not a kubeconfig: {error}",
-                        path.display()
-                    ))
+                    ComputerError::Refused(
+                        format!("{} is not a kubeconfig: {error}", path.display()).into(),
+                    )
                 })?;
                 Config::from_custom_kubeconfig(kubeconfig, &KubeConfigOptions::default())
                     .await
                     .map_err(|error| {
-                        ComputerError::Refused(format!(
-                            "the kubeconfig {} cannot be used: {error}",
-                            path.display()
-                        ))
+                        ComputerError::Refused(
+                            format!("the kubeconfig {} cannot be used: {error}", path.display())
+                                .into(),
+                        )
                     })?
             }
             None => Config::infer().await.map_err(|error| {
-                ComputerError::Refused(format!(
-                    "no Kubernetes cluster found (KUBECONFIG, ~/.kube/config, or a service \
+                ComputerError::Refused(
+                    format!(
+                        "no Kubernetes cluster found (KUBECONFIG, ~/.kube/config, or a service \
                      account): {error}"
-                ))
+                    )
+                    .into(),
+                )
             })?,
         };
         let namespace = settings
@@ -157,10 +158,13 @@ impl Kubernetes {
 
     async fn glave(&self) -> Result<Vec<u8>, ComputerError> {
         tokio::fs::read(&self.glave).await.map_err(|error| {
-            ComputerError::Refused(format!(
-                "could not read the glave for workers at {}: {error}",
-                self.glave.display()
-            ))
+            ComputerError::Refused(
+                format!(
+                    "could not read the glave for workers at {}: {error}",
+                    self.glave.display()
+                )
+                .into(),
+            )
         })
     }
 

@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use super::bytes::Bytes;
 use super::environment::{Environment, Size};
+use super::refusal::Reason;
 use super::sandbox::Sandbox;
 
 /// Identifies a computer, unique everywhere (UUID v7, minted by the adapter that made it).
@@ -342,7 +343,7 @@ pub enum ComputerError {
     NotFound(String),
     /// Not allowed: a path outside the workspace, a file too large, a size beyond a cap.
     #[error("refused: {0}")]
-    Refused(String),
+    Refused(Reason),
     /// This computer cannot do it, such as run an image on the host.
     #[error("unsupported: {0}")]
     Unsupported(String),
@@ -358,8 +359,8 @@ impl ComputerError {
     /// What happened, without the kind in front.
     pub fn message(&self) -> &str {
         match self {
+            Self::Refused(reason) => reason,
             Self::NotFound(message)
-            | Self::Refused(message)
             | Self::Unsupported(message)
             | Self::Failed(message)
             | Self::Unreachable(message) => message,

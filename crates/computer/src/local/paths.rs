@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use glave_ports::computer::ComputerError;
+use glave_ports::computer::{ComputerError, Refusal};
 
 /// An existing folder, made canonical.
 pub(crate) async fn folder(path: &str) -> Result<PathBuf, ComputerError> {
@@ -16,7 +16,12 @@ pub(crate) async fn folder(path: &str) -> Result<PathBuf, ComputerError> {
     if metadata.is_dir() {
         Ok(root)
     } else {
-        Err(ComputerError::Refused(format!("{path} is not a folder")))
+        Err(ComputerError::Refused(
+            Refusal::NotAFolder {
+                path: path.to_owned(),
+            }
+            .into(),
+        ))
     }
 }
 

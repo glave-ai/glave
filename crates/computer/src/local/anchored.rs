@@ -81,10 +81,9 @@ fn pieces(path: &Path, from_link: bool) -> Vec<Piece> {
 }
 
 pub(crate) fn outside(path: &str, root: &Root<'_>) -> ComputerError {
-    ComputerError::Refused(format!(
-        "{path} is outside the workspace ({}).",
-        root.path.display()
-    ))
+    ComputerError::Refused(
+        format!("{path} is outside the workspace ({}).", root.path.display()).into(),
+    )
 }
 
 fn failed(path: &str, error: Errno) -> ComputerError {
@@ -104,9 +103,7 @@ fn lost(path: &str, error: Errno) -> ComputerError {
 }
 
 pub(crate) fn changed(path: &str) -> ComputerError {
-    ComputerError::Refused(format!(
-        "{path} changed while it was being opened; try again."
-    ))
+    ComputerError::Refused(format!("{path} changed while it was being opened; try again.").into())
 }
 
 /// `path` relative to the root, as written (`..` kept). An absolute path must lead into the
@@ -160,9 +157,9 @@ pub(crate) fn resolve(root: &Root<'_>, path: &str) -> Result<Found, ComputerErro
             FileType::Symlink => {
                 links = links.saturating_add(1);
                 if links > MAX_LINKS {
-                    return Err(ComputerError::Refused(format!(
-                        "{path} goes through too many links (a loop?)."
-                    )));
+                    return Err(ComputerError::Refused(
+                        format!("{path} goes through too many links (a loop?).").into(),
+                    ));
                 }
                 let target = link_target(root, here, &name, path)?;
                 if target.is_absolute() {
@@ -240,18 +237,21 @@ fn not_there(
     queue: VecDeque<Piece>,
 ) -> Result<Found, ComputerError> {
     if from_link {
-        return Err(ComputerError::Refused(format!(
-            "{path} goes through a link to something that does not exist, so it cannot be \
+        return Err(ComputerError::Refused(
+            format!(
+                "{path} goes through a link to something that does not exist, so it cannot be \
              checked to stay inside the workspace."
-        )));
+            )
+            .into(),
+        ));
     }
     let mut rest: Vec<OsString> = Vec::with_capacity(queue.len().saturating_add(1));
     rest.push(name);
     for (piece, _) in queue {
         if piece == ".." {
-            return Err(ComputerError::Refused(format!(
-                "{path} uses '..' or '.' through a folder that does not exist."
-            )));
+            return Err(ComputerError::Refused(
+                format!("{path} uses '..' or '.' through a folder that does not exist.").into(),
+            ));
         }
         rest.push(piece);
     }

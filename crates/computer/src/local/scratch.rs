@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use glave_ports::computer::ComputerError;
+use glave_ports::computer::{ComputerError, Refusal};
 
 use super::paths;
 use super::worktree::{Record, write_record};
@@ -23,9 +23,13 @@ pub(crate) async fn open(
         || name.len() > MAX_NAME
         || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
     {
-        return Err(ComputerError::Refused(format!(
-            "{name:?} is not a scratch folder's name: 1 to {MAX_NAME} letters, digits and -"
-        )));
+        return Err(ComputerError::Refused(
+            Refusal::ScratchName {
+                name: format!("{name:?}"),
+                most: MAX_NAME.to_string(),
+            }
+            .into(),
+        ));
     }
     let dest = base.join(name);
     tokio::fs::create_dir_all(&dest).await.map_err(|error| {
