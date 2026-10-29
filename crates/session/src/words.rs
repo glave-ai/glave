@@ -30,17 +30,19 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
         Ok(Reply::Search {
             search: SearchInfo::Chosen { detail, .. },
         }) => detail.translatable(),
-        Ok(Reply::Search {
-            search: SearchInfo::Never { reason },
-        }) => reason.translatable(),
+        Ok(
+            Reply::Search {
+                search: SearchInfo::Never { reason },
+            }
+            | Reply::Awake {
+                awake: AwakeInfo::Cannot { reason },
+            },
+        ) => reason.translatable(),
         Ok(Reply::Sources { sources }) => sources.iter().any(|each| each.sentence.translatable()),
         Ok(Reply::Changes { changes }) => changes.note.translatable(),
         Ok(Reply::Steps { steps }) => steps.runs.iter().any(|run| run.sentence.translatable()),
         Ok(Reply::Plan { plan: Some(plan) }) => plan.sentence.translatable(),
         Ok(Reply::Events { events, .. }) => events.iter().any(asks),
-        Ok(Reply::Awake {
-            awake: AwakeInfo::Cannot { reason },
-        }) => reason.translatable(),
         Ok(_) => false,
     }
 }
@@ -75,9 +77,14 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             detail.translate(language);
             used(usage);
         }
-        Ok(Reply::Search {
-            search: SearchInfo::Never { reason },
-        }) => reason.translate(language),
+        Ok(
+            Reply::Search {
+                search: SearchInfo::Never { reason },
+            }
+            | Reply::Awake {
+                awake: AwakeInfo::Cannot { reason },
+            },
+        ) => reason.translate(language),
         Ok(Reply::Sources { sources }) => {
             for each in sources {
                 each.sentence.translate(language);
@@ -90,9 +97,6 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             }
         }
         Ok(Reply::Plan { plan: Some(plan) }) => plan.sentence.translate(language),
-        Ok(Reply::Awake {
-            awake: AwakeInfo::Cannot { reason },
-        }) => reason.translate(language),
         Ok(Reply::Events { events, .. }) => {
             for event in events {
                 if let Some(written) = event_in(event, language) {
