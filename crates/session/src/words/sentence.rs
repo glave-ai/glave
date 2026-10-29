@@ -83,8 +83,9 @@ sentences! {
     InviteNotSent = "invite-not-sent"
         "the invite was made, but its email could not be sent: share its link yourself, or revoke it",
     InviteMailSubject = "invite-mail-subject" "You're invited to glave",
-    InviteMail { link: String } = "invite-mail"
-        "You've been invited to glave. Open this link within 7 days to join:\n\n{ $link }\n\nIf you weren't expecting this, you can ignore it.",
+    InviteMail = "invite-mail"
+        "You've been invited to glave. Open this link within 7 days to join:",
+    InviteMailIgnore = "invite-mail-ignore" "If you weren't expecting this, you can ignore it.",
     InviteGone = "invite-gone"
         "that invite link was used already, revoked or has expired: ask whoever sent it for a new one",
     NoSuchInvite { invite: String } = "no-such-invite" "no invite with the id { $invite } is waiting",

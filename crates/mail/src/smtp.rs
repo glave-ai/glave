@@ -96,8 +96,21 @@ impl Mailer for Smtp {
                 .send(message)
                 .await
                 .map(drop)
-                .map_err(|error| MailError::Send(error.to_string()))
+                .map_err(|error| MailError::Send(said(&error)))
         })
+    }
+}
+
+/// What went wrong sending, without what the mail server said back, which may hold the address.
+fn said(error: &lettre::transport::smtp::Error) -> String {
+    match error.status() {
+        Some(code) => format!("the mail server answered {code}"),
+        None if error.is_timeout() => format!(
+            "the mail server did not answer within {}",
+            glave_ports::spoken(SEND_WITHIN)
+        ),
+        None if error.is_tls() => "TLS with the mail server failed".to_owned(),
+        None => "the mail server could not be reached".to_owned(),
     }
 }
 

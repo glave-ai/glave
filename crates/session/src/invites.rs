@@ -165,7 +165,11 @@ where
             let mail = Mail {
                 to: to.to_owned(),
                 subject: say(Language::English, &Sentence::InviteMailSubject),
-                text: say(Language::English, &Sentence::InviteMail { link }),
+                text: format!(
+                    "{}\n\n{link}\n\n{}\n",
+                    say(Language::English, &Sentence::InviteMail),
+                    say(Language::English, &Sentence::InviteMailIgnore),
+                ),
             };
             mailer.send(&mail).await.map_err(|error| {
                 tracing::warn!(%error, "an invite's email was not sent");
