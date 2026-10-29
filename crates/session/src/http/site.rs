@@ -10,6 +10,10 @@
 //! hold only the built app and must not be writable by an agent: a file put there would be
 //! served from glave's own origin. Only files inside it are served: a symbolic link that leads
 //! out of it is refused. From either, no `.html` page but `index.html` is served.
+//!
+//! A file built in gzipped is served as it is stored, with `Content-Encoding: gzip`, so glave
+//! carries no decompressor: every browser takes gzip, and a client that says it takes none is
+//! answered 406 Not Acceptable.
 
 use std::fmt::{self, Write as _};
 use std::path::{Component, Path, PathBuf};
@@ -31,7 +35,22 @@ const INDEX: &str = "index.html";
 
 /// A built web app's files as a program carries them (`include_bytes!`): each one's path
 /// inside the app, its parts joined by `/` (`media/font-ABCD1234.woff2`), and its bytes.
-pub type Files = &'static [(&'static str, &'static [u8])];
+pub type Files = &'static [(&'static str, Stored)];
+
+/// A file's bytes as a program carries them.
+#[derive(Clone, Copy, Debug)]
+pub enum Stored {
+    /// As they are.
+    Plain(&'static [u8]),
+    /// Gzipped, and served so, with `Content-Encoding: gzip`.
+    Gzip(&'static [u8]),
+}
+
+/// A file's bytes as read from where the site's files are.
+enum Found {
+    Plain(Bytes),
+    Gzip(Bytes),
+}
 
 /// The built web app.
 #[derive(Clone)]
@@ -68,9 +87,12 @@ impl Site {
         }
     }
 
-    /// The app in `files`, built into the program, which must hold its `index.html`.
+    /// The app in `files`, built into the program, which must hold its `index.html` as it is.
     pub fn built_in(files: Files) -> Result<Self, NoSite> {
-        if files.iter().any(|(path, _)| *path == INDEX) {
+        if files
+            .iter()
+            .any(|(path, stored)| *path == INDEX && matches!(stored, Stored::Plain(_)))
+        {
             Ok(Self {
                 source: Source::Memory(files),
             })
@@ -79,8 +101,13 @@ impl Site {
         }
     }
 
-    /// The answer to `GET path`: a file, or `index.html` for a route of the app.
-    pub(crate) async fn answer(&self, path: &str) -> Response<Answer> {
+    /// The answer to `GET path`: a file, or `index.html` for a route of the app. `accepted` is
+    /// the request's `Accept-Encoding`.
+    pub(crate) async fn answer(
+        &self,
+        path: &str,
+        accepted: Option<&HeaderValue>,
+    ) -> Response<Answer> {
         // Without randomness there is no nonce, and without a nonce no page is safe to serve.
         let Some(nonce) = fresh_nonce() else {
             return status(StatusCode::INTERNAL_SERVER_ERROR);
@@ -91,10 +118,10 @@ impl Site {
         // A path with an extension names a file; anything else is a route of the app, and so
         // is the page itself, which is never served without this load's nonce.
         if relative.extension().is_some() && relative != Path::new(INDEX) {
-            return secured(self.file(&relative).await, &nonce);
+            return secured(self.file(&relative, accepted).await, &nonce);
         }
         match self.read(Path::new(INDEX)).await {
-            Some(page) => {
+            Some(Found::Plain(page)) => {
                 let page = String::from_utf8_lossy(&page).replace(NONCE_PLACEHOLDER, &nonce);
                 let mut response = Response::new(Answer::once(page));
                 set(
@@ -105,23 +132,34 @@ impl Site {
                 set(&mut response, header::CACHE_CONTROL, "no-store");
                 secured(response, &nonce)
             }
-            None => secured(status(StatusCode::NOT_FOUND), &nonce),
+            Some(Found::Gzip(_)) | None => secured(status(StatusCode::NOT_FOUND), &nonce),
         }
     }
 
     /// A file of the app, or 404. No `.html` page is served this way: `index.html` is the
-    /// app's routes.
-    async fn file(&self, relative: &Path) -> Response<Answer> {
+    /// app's routes. A gzipped file is served gzipped, or 406 to a client that takes no gzip.
+    async fn file(&self, relative: &Path, accepted: Option<&HeaderValue>) -> Response<Answer> {
         if relative
             .extension()
             .is_some_and(|extension| extension == "html")
         {
             return status(StatusCode::NOT_FOUND);
         }
-        let Some(bytes) = self.read(relative).await else {
-            return status(StatusCode::NOT_FOUND);
+        let mut response = match self.read(relative).await {
+            None => return status(StatusCode::NOT_FOUND),
+            Some(Found::Plain(bytes)) => Response::new(Answer::bytes(bytes)),
+            Some(Found::Gzip(bytes)) => {
+                if !takes_gzip(accepted) {
+                    let mut refused = status(StatusCode::NOT_ACCEPTABLE);
+                    set(&mut refused, header::VARY, "accept-encoding");
+                    return refused;
+                }
+                let mut response = Response::new(Answer::bytes(bytes));
+                set(&mut response, header::CONTENT_ENCODING, "gzip");
+                set(&mut response, header::VARY, "accept-encoding");
+                response
+            }
         };
-        let mut response = Response::new(Answer::bytes(bytes));
         set(&mut response, header::CONTENT_TYPE, content_type(relative));
         set(
             &mut response,
@@ -133,14 +171,15 @@ impl Site {
 
     /// The bytes of the file at `relative`: from memory, or, links followed, a file that
     /// resolves inside the folder.
-    async fn read(&self, relative: &Path) -> Option<Bytes> {
+    async fn read(&self, relative: &Path) -> Option<Found> {
         match &self.source {
             Source::Folder(root) => {
                 let resolved = tokio::fs::canonicalize(root.join(relative)).await.ok()?;
                 if !resolved.starts_with(root) {
                     return None;
                 }
-                tokio::fs::read(resolved).await.ok().map(Bytes::from)
+                let bytes = tokio::fs::read(resolved).await.ok()?;
+                Some(Found::Plain(Bytes::from(bytes)))
             }
             Source::Memory(files) => {
                 let parts: Option<Vec<&str>> = relative.iter().map(|part| part.to_str()).collect();
@@ -148,7 +187,10 @@ impl Site {
                 files
                     .iter()
                     .find(|(path, _)| *path == wanted)
-                    .map(|&(_, bytes)| Bytes::from_static(bytes))
+                    .map(|&(_, stored)| match stored {
+                        Stored::Plain(bytes) => Found::Plain(Bytes::from_static(bytes)),
+                        Stored::Gzip(bytes) => Found::Gzip(Bytes::from_static(bytes)),
+                    })
             }
         }
     }
@@ -211,6 +253,33 @@ fn relative(path: &str) -> Option<PathBuf> {
         .components()
         .all(|component| matches!(component, Component::Normal(_)))
         .then_some(inside)
+}
+
+/// Whether a request whose `Accept-Encoding` is `accepted` takes gzip: with none, any coding
+/// is taken (RFC 9110, 12.5.3); else it must name `gzip`, or `*` without naming gzip, with a
+/// weight above 0.
+fn takes_gzip(accepted: Option<&HeaderValue>) -> bool {
+    let Some(accepted) = accepted else {
+        return true;
+    };
+    let Ok(accepted) = accepted.to_str() else {
+        return false;
+    };
+    let mut any = None;
+    for coding in accepted.split(',') {
+        let mut parts = coding.split(';').map(str::trim);
+        let name = parts.next().unwrap_or_default().to_ascii_lowercase();
+        let weight = parts
+            .filter_map(|part| part.strip_prefix("q=").or_else(|| part.strip_prefix("Q=")))
+            .find_map(|weight| weight.trim().parse::<f32>().ok())
+            .unwrap_or(1.0);
+        match name.as_str() {
+            "gzip" | "x-gzip" => return weight > 0.0,
+            "*" => any = Some(weight > 0.0),
+            _ => {}
+        }
+    }
+    any.unwrap_or(false)
 }
 
 /// Whether a file's name carries its content hash, as the build names every asset: the last
@@ -389,5 +458,19 @@ mod tests {
         );
         assert_eq!(content_type(Path::new("icon-192.png")), "image/png");
         assert_eq!(content_type(Path::new("a.bin")), "application/octet-stream");
+    }
+
+    #[test]
+    fn gzip_is_taken_unless_the_client_says_otherwise() {
+        let taken = |accepted: &'static str| takes_gzip(Some(&HeaderValue::from_static(accepted)));
+        assert!(takes_gzip(None), "no Accept-Encoding takes any coding");
+        assert!(taken("gzip, deflate, br, zstd"));
+        assert!(taken("br;q=1.0, GZIP;q=0.5"));
+        assert!(taken("*"));
+        assert!(!taken(""));
+        assert!(!taken("identity"));
+        assert!(!taken("br, gzip;q=0"));
+        assert!(!taken("*, gzip; q=0"));
+        assert!(!taken("*;q=0"));
     }
 }
