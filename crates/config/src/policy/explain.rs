@@ -131,7 +131,6 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
         switch("titles", &choices.titles),
         row("on", choices.on.value.name().to_owned(), &choices.on.from),
         row("web", choices.web.value.describe(), &choices.web.from),
-        switch("memory", &choices.memory),
         row(
             "project_memory",
             choices.project_memory.value.as_str().to_owned(),

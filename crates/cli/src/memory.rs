@@ -1,6 +1,6 @@
 //! Memory on this computer (`specs/memory.md`): glave's memory server over the local store,
-//! started when the person's `memory` choice is on and the policy allows it, and `glave memory`,
-//! which lists, edits, moves and forgets memories from the terminal, through the person's
+//! started when the policy allows it (the person turns it on and off in Settings), and
+//! `glave memory`, which lists, edits, moves and forgets memories from the terminal, through the person's
 //! server (`reach.rs`), as the app does.
 
 use std::fmt::Write as _;
@@ -31,8 +31,7 @@ Usage:
   glave memory forget --all [--project | --personal]
                                              forget every memory of both, or one, of them
 
-Memory is on when `memory = \"on\"` is in your config.toml (glave policy explain shows it).
-In a session, /memory lists them.";
+Memory is on until you turn it off in Settings. In a session, /memory lists them.";
 
 /// Memory as running here: the server, and the projects it keeps.
 pub(crate) struct Running {

@@ -108,16 +108,21 @@ describe('MemoryComponent', () => {
     expect(fake.paramsOf('memory/edit')).toEqual([]);
   });
 
-  it('says when memory is off, naming no setting, file or command', async () => {
-    const fake = new FakeSession().answer(
-      'memory/list',
-      new ApiError({ code: ErrorCode.MEMORY_OFF, message: 'off' }),
-    );
+  it('says when memory is off, in the server’s words, naming no setting, file or command', async () => {
+    const fake = new FakeSession()
+      .answer('memory/list', new ApiError({ code: ErrorCode.MEMORY_OFF, message: 'off' }))
+      .answer('memory/get', {
+        remembering: { kind: 'never', reason: 'memory is off for this server' },
+      });
     TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
     const fixture = TestBed.createComponent(MemoryComponent);
     await settle(fixture);
-    const text = (fixture.nativeElement as HTMLElement).textContent;
-    expect(text).toContain('Memory is off');
-    expect(text).not.toMatch(/config|toml|policy|explain|=/u);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.textContent).toContain('Memory is off for this server');
+    expect(root.textContent).not.toMatch(/config|toml|policy|explain|=/u);
+    const box = root.querySelector<HTMLInputElement>('[data-testid="memory-switch-on-input"]');
+    expect(box?.checked).toBe(false);
+    expect(box?.disabled).toBe(true);
+    await expectAccessible(root);
   });
 });

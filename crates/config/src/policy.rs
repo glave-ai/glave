@@ -162,14 +162,13 @@ fn with_project(own: &[Layer], mut project: Layer, highest: Permissions) -> Vec<
 
 /// The layer of a project's `config.toml` at `path`, choosing `values` less what a project
 /// never chooses. A project never chooses the gateway: the person's sign-in would go where it
-/// said. Nor whether the person's memory is on: that is theirs alone. Nor where telemetry goes,
+/// said. Nor where telemetry goes,
 /// nor where history is kept, nor which server to sign in to, nor where people reach this one,
 /// nor which cloud the organization's credentials go to, nor which app their GitHub sign-in
 /// goes to. It may take the network away from sandboxed commands, never give it back.
 fn project_layer(path: &Path, values: ConfigFile) -> Layer {
     let values = ConfigFile {
         gateway: None,
-        memory: None,
         telemetry: None,
         store: None,
         server: None,

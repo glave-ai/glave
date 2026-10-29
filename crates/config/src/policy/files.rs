@@ -11,7 +11,7 @@ use glave_ports::host::PublicOrigin;
 use glave_ports::settings::{Hook, Hooks};
 use globset::Glob;
 
-use crate::policy::memory::{MemoryChoice, MemoryRules, ProjectChoice};
+use crate::policy::memory::{MemoryRules, ProjectChoice};
 use crate::policy::placement::PlacementRules;
 use crate::policy::provider::ProviderFile;
 use crate::policy::web::WebFile;
@@ -53,8 +53,6 @@ pub struct ConfigFile {
     /// A gateway elsewhere to send model calls to, and to take the tool catalog from. Only
     /// the person's own file may set it: the person's sign-in goes there.
     pub gateway: Option<GatewayFile>,
-    /// Whether glave reads and writes memory for this person. Only the person's own file sets it.
-    pub memory: Option<MemoryChoice>,
     /// This project's memory: shared with the person's, isolated, or off.
     pub project_memory: Option<ProjectChoice>,
     /// Where spans and metrics go. Only the person's or the server's own file sets it.

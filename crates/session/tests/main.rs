@@ -39,6 +39,7 @@ mod plans;
 mod projects;
 mod providers;
 mod questions;
+mod remembering;
 mod remote;
 mod schedules;
 mod server;
