@@ -219,7 +219,12 @@ impl Shape<'_> {
     }
 
     /// The CPU and memory the size asks for, as requests and as limits (the same).
-    fn amounts(&self) -> (serde_json::Map<String, Value>, serde_json::Map<String, Value>) {
+    fn amounts(
+        &self,
+    ) -> (
+        serde_json::Map<String, Value>,
+        serde_json::Map<String, Value>,
+    ) {
         let mut amounts = serde_json::Map::new();
         if let Some(cpus) = self.spec.cpus {
             amounts.insert("cpu".into(), json!(cpus.to_string()));

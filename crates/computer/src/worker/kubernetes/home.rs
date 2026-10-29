@@ -48,7 +48,9 @@ impl PersonComputer {
         }
         if disk_gb == 0 {
             return Err(ComputerError::Refused(
-                "a person's computer needs a disk of at least 1 GB".to_owned().into(),
+                "a person's computer needs a disk of at least 1 GB"
+                    .to_owned()
+                    .into(),
             ));
         }
         Ok(Self {

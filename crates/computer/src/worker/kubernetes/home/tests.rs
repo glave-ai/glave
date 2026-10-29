@@ -11,8 +11,8 @@ use glave_ports::computer::{
 };
 
 use super::super::tests::{cluster, left_behind};
-use crate::worker::backend::Backend as _;
 use super::PersonComputer;
+use crate::worker::backend::Backend as _;
 use crate::worker::route::Tail;
 use crate::{CancelSwitch, WorkerComputers, WorkerCredentials};
 
