@@ -1,8 +1,8 @@
 //! People's computers on a real cluster, as CI's `kind` job runs them (`GLAVE_TEST_KUBE=1`, a
 //! real glave and image): a wake started when the app opens and the turn that needs the
 //! computer share one Pod, a second ask finds it awake, and nothing is left once it is gone;
-//! held by a turn it stays awake, idle it sleeps on its own, and a turn wakes it again on the
-//! same disk.
+//! held by a turn it stays awake, unasked it sleeps on its own, and a turn wakes it again on
+//! the same disk.
 
 use std::time::Instant;
 
@@ -111,15 +111,24 @@ async fn gone(
     (destroyed, left_behind(cluster).await)
 }
 
-/// Whether the Pod `name` is there, or was within a minute: never a panic.
-async fn there(cluster: &super::super::Kubernetes, name: &str, wanted: bool) -> bool {
-    for _ in 0..120 {
-        if matches!(cluster.pods().get_opt(name).await, Ok(pod) if pod.is_some() == wanted) {
+/// Whether the Pod `name` ended (its glave exited) within three minutes: never a panic.
+async fn ended(cluster: &super::super::Kubernetes, name: &str) -> bool {
+    for _ in 0..360 {
+        if matches!(
+            phase(cluster, name).await.as_deref(),
+            Some("Succeeded" | "Failed")
+        ) {
             return true;
         }
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
     false
+}
+
+/// The phase the Pod `name` is in, if it is there.
+async fn phase(cluster: &super::super::Kubernetes, name: &str) -> Option<String> {
+    let pod = cluster.pods().get_opt(name).await.ok().flatten()?;
+    pod.status?.phase
 }
 
 #[test]
@@ -140,8 +149,10 @@ fn a_person_s_computer_sleeps_once_idle_and_a_turn_wakes_it_again() {
             isolation: cluster.isolation(),
             ..Limits::default()
         };
-        let idle = std::time::Duration::from_secs(3);
-        let people = People::idle_after(cluster.clone(), &image, &limits, 1, idle).unwrap();
+        // Asleep after a minute unasked, so a turn holding it asks every 15 seconds.
+        let people = People::new(cluster.clone(), &image, &limits, 1)
+            .unwrap()
+            .idle_after(1);
         let key = People::key(
             crate::local::new_id().unwrap(),
             crate::local::new_id().unwrap(),
@@ -160,13 +171,13 @@ fn a_person_s_computer_sleeps_once_idle_and_a_turn_wakes_it_again() {
             }
             Err(error) => Err(format!("{error:?}")),
         };
-        // A turn holds it: three idle limits pass and it stays awake.
+        // A turn holds it: two idle limits and more pass and it stays awake.
         let held = people.hold(&key);
-        tokio::time::sleep(idle * 3).await;
-        let kept_awake = there(&cluster, &pod, true).await;
+        tokio::time::sleep(std::time::Duration::from_secs(150)).await;
+        let kept_awake = phase(&cluster, &pod).await;
         drop(held);
-        // Let go of, it sleeps on its own: its Pod gone, its disk kept.
-        let slept = there(&cluster, &pod, false).await;
+        // Let go of, it sleeps on its own: its glave ends, so its Pod does, its disk kept.
+        let slept = ended(&cluster, &pod).await;
         // A turn wakes it again, on the same disk.
         let waking = Instant::now();
         let again = people.home(&key).await;
@@ -181,7 +192,11 @@ fn a_person_s_computer_sleeps_once_idle_and_a_turn_wakes_it_again() {
             woke.as_millis()
         );
         wrote.unwrap();
-        assert!(kept_awake, "held, it stays awake");
+        assert_eq!(
+            kept_awake.as_deref(),
+            Some("Running"),
+            "held, it stays awake"
+        );
         assert!(slept, "idle, it sleeps");
         assert_ne!(
             first.unwrap().home.computer,

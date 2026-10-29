@@ -269,7 +269,7 @@ fn a_computer_serving_with_an_idle_limit_ends_once_nothing_runs_for_that_long() 
         let busy = Arc::new(AtomicBool::new(true));
         let running = Arc::clone(&busy);
         let idle = Idle {
-            after: Duration::from_mins(15),
+            after: Duration::from_mins(10),
             busy: Box::new(move || running.load(Ordering::SeqCst)),
         };
         let token = Token::mint(UNIX_EPOCH, Duration::from_secs(600)).unwrap();
@@ -290,7 +290,7 @@ fn a_computer_serving_with_an_idle_limit_ends_once_nothing_runs_for_that_long() 
         // Looked at every 30 seconds, so within one look of the limit.
         let took = started.elapsed();
         assert!(
-            took >= Duration::from_mins(14) && took <= Duration::from_mins(16),
+            took >= Duration::from_mins(9) && took <= Duration::from_mins(11),
             "ended {took:?} after the command did"
         );
     });

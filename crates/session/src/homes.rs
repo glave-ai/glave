@@ -36,15 +36,15 @@ where
         }
     }
 
-    /// Keeps the computer of `person` (the server's own when none) in `org` from sleeping while
-    /// what it answers is kept, where people have computers of their own: for a turn or task.
+    /// Keeps the computer of `person` in `org` from sleeping while what it answers is kept,
+    /// where people have computers of their own: for a turn or task of a thread for them, whose
+    /// work runs there (the harness's `home_of` takes the same person).
     pub(crate) fn hold_home(
         &self,
         org: OrgId,
         person: Option<PrincipalId>,
     ) -> Option<Box<dyn Send>> {
-        let homes = self.inner.homes.as_ref()?;
-        let person = person.or(self.person())?;
+        let (homes, person) = (self.inner.homes.as_ref()?, person?);
         homes
             .hold(org, person)
             .map_err(|error| {

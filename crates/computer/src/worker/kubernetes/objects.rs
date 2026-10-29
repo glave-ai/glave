@@ -21,9 +21,9 @@ pub(crate) const LABEL: &str = "glave.worker";
 /// The label a person's computer's objects carry instead, its key as the value: never a
 /// worker's, so no glave reaps a person's computer as a worker it left.
 pub(crate) const COMPUTER_LABEL: &str = "glave.computer";
-/// How long a person's computer serves with no one connected and nothing running before it
-/// ends on its own: the server's 10 idle minutes and five more, so it never ends first.
-const ENDS_IDLE_MINUTES: u32 = 15;
+/// How long a person's computer goes unasked, with nothing running in the background, before
+/// it ends on its own: asleep after 10 minutes idle (`specs/computers.md`, decision 4).
+pub(crate) const IDLE_MINUTES: u32 = 10;
 /// Where a person's disk is mounted in their computer: their home.
 pub(crate) const PERSON_HOME: &str = "/home/glave";
 /// The most a person's computer may write outside its disk (its container's layer, `/tmp`),
@@ -62,6 +62,8 @@ pub(crate) struct Owner {
 pub(crate) struct Home<'a> {
     pub(crate) key: &'a str,
     pub(crate) claim: &'a str,
+    /// The minutes it goes unasked before it ends on its own.
+    pub(crate) idle_minutes: u32,
 }
 
 /// What one worker's objects are made of.
@@ -218,9 +220,9 @@ impl Shape<'_> {
                 format!("0.0.0.0:{PORT}"),
                 format!("{HOME}/tls")
             ]);
-            // A person's computer ends on its own once every server is gone (#558).
-            if let (Some(_), Some(args)) = (&self.home, serve.as_array_mut()) {
-                args.extend([json!("--idle"), json!(ENDS_IDLE_MINUTES.to_string())]);
+            // A person's computer sleeps on its own once idle, servers or not (#558).
+            if let (Some(home), Some(args)) = (&self.home, serve.as_array_mut()) {
+                args.extend([json!("--idle"), json!(home.idle_minutes.to_string())]);
             }
             serve
         } else {
@@ -522,6 +524,7 @@ mod tests {
             home: Some(Home {
                 key: "k1",
                 claim: "glave-home-k1",
+                idle_minutes: IDLE_MINUTES,
             }),
             owner: None,
             ..shape(&spec, &labels)
@@ -559,8 +562,8 @@ mod tests {
         let command = container["command"].as_array().unwrap();
         assert_eq!(
             command.get(command.len() - 2..).unwrap(),
-            [json!("--idle"), json!("15")],
-            "it ends on its own once every server is gone"
+            [json!("--idle"), json!("10")],
+            "it sleeps on its own once idle"
         );
         let policy = computer.network_policy();
         assert_eq!(

@@ -184,28 +184,6 @@ impl WorkerComputers {
         Ok(removed)
     }
 
-    /// Whether a command still runs in the background in a workspace open on `computer`; one
-    /// it could not ask about counts as running, so nothing is put to sleep on a guess.
-    #[cfg(feature = "kubernetes")]
-    pub(crate) async fn running(&self, computer: ComputerId) -> bool {
-        let workspaces: Vec<WorkspaceId> = match self.held() {
-            Ok(held) => held
-                .workspaces
-                .iter()
-                .filter(|(_, on)| **on == computer)
-                .map(|(workspace, _)| *workspace)
-                .collect(),
-            Err(_) => return true,
-        };
-        for workspace in workspaces {
-            match self.commands(workspace).await {
-                Ok(listed) if listed.iter().all(|command| command.ended.is_some()) => {}
-                _ => return true,
-            }
-        }
-        false
-    }
-
     /// Uses `clock` for the time, instead of the system's.
     #[must_use]
     pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
