@@ -135,6 +135,50 @@ async fn two_organizations(scratch: &Scratch) -> Vec<Uuid> {
     orgs
 }
 
+/// Set to `ours`, the connection may write no row of `theirs`, and a delete naming no
+/// organization reaches only its own.
+async fn writes_stay_in(client: &Client, scratch: &Scratch, [ours, theirs]: [Uuid; 2]) {
+    let schema = &scratch.schema;
+    client
+        .execute(
+            "SELECT set_config('glave.org', $1, false)",
+            &[&ours.to_string()],
+        )
+        .await
+        .unwrap();
+    let written = client
+        .execute(
+            &format!(
+                "INSERT INTO {schema}.leases (org, key, holder, expires) VALUES ($1, 'x', $1, 0)"
+            ),
+            &[&theirs],
+        )
+        .await;
+    let refused = written.err().and_then(|error| error.code().cloned());
+    assert_eq!(
+        refused,
+        Some(tokio_postgres::error::SqlState::INSUFFICIENT_PRIVILEGE),
+        "a row of another organization is refused by the policy"
+    );
+    let changed = client
+        .execute(&format!("DELETE FROM {schema}.events"), &[])
+        .await
+        .unwrap();
+    let left: i64 = scratch
+        .admin
+        .query_one(
+            &format!("SELECT count(*) FROM {schema}.events WHERE org = $1"),
+            &[&theirs],
+        )
+        .await
+        .unwrap()
+        .get(0);
+    assert!(
+        changed > 0 && left > 0,
+        "a delete reaches only its own organization"
+    );
+}
+
 #[test]
 fn a_query_that_names_no_organization_sees_only_the_one_its_connection_is_set_to() {
     block_on!(async {
@@ -179,45 +223,7 @@ fn a_query_that_names_no_organization_sees_only_the_one_its_connection_is_set_to
                 assert_eq!(others, 0, "{table} shows no other organization's rows");
             }
         }
-        let [ours, theirs] = [orgs[0], orgs[1]];
-        client
-            .execute(
-                "SELECT set_config('glave.org', $1, false)",
-                &[&ours.to_string()],
-            )
-            .await
-            .unwrap();
-        let written = client
-            .execute(
-                &format!(
-                    "INSERT INTO {schema}.leases (org, key, holder, expires) VALUES ($1, 'x', $1, 0)"
-                ),
-                &[&theirs],
-            )
-            .await;
-        let refused = written.err().and_then(|error| error.code().cloned());
-        assert_eq!(
-            refused,
-            Some(tokio_postgres::error::SqlState::INSUFFICIENT_PRIVILEGE),
-            "a row of another organization is refused by the policy"
-        );
-        let changed = client
-            .execute(&format!("DELETE FROM {schema}.events"), &[])
-            .await
-            .unwrap();
-        let left: i64 = scratch
-            .admin
-            .query_one(
-                &format!("SELECT count(*) FROM {schema}.events WHERE org = $1"),
-                &[&theirs],
-            )
-            .await
-            .unwrap()
-            .get(0);
-        assert!(
-            changed > 0 && left > 0,
-            "a delete reaches only its own organization"
-        );
+        writes_stay_in(&client, &scratch, [orgs[0], orgs[1]]).await;
         drop(client);
         let _ = connection.await;
         scratch.drop_schema().await;
