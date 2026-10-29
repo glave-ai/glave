@@ -14,6 +14,7 @@ mod caller;
 pub mod computer;
 #[cfg(any(test, feature = "conformance"))]
 pub mod conformance;
+mod directory;
 mod env;
 mod erase;
 mod failure;
@@ -43,6 +44,7 @@ pub use blob::{
     Blob, BlobError, BlobStore, Chunks, Pieces, Swept, UNREFERENCED_FOR_MS, digest, read_all,
 };
 pub use caller::Caller;
+pub use directory::{Directory, DirectoryError, IdentityKey};
 pub use env::{Clock, Entropy, EntropyError, OsEntropy, SystemClock};
 pub use erase::{Erasable, EraseError, Eraser};
 pub use failure::Failure;

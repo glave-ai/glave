@@ -145,7 +145,7 @@ impl Backend for InProcess {
                 let links = Arc::clone(&self.links);
                 let task = tokio::spawn(async move {
                     tokio::select! {
-                        _ = serve_tls(computers, listener, tls, tokens) => {}
+                        _ = serve_tls(computers, listener, tls, tokens, None) => {}
                         () = door(entrance, inside, links) => {}
                     }
                 });

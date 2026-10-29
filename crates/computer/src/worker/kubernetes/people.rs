@@ -1,7 +1,10 @@
 //! The people of a deployment and their computers on one cluster (`specs/computers.md`, "A
 //! person's computer in the cloud"): each person's computer woken when they open the app or a
 //! turn needs it, once however many ask at the same time, and the workspace of their home on
-//! it handed to whatever works there.
+//! it handed to whatever works there; kept awake while a turn or task holds it. A computer
+//! sleeps on its own once nothing has asked it anything for 10 minutes and no command runs
+//! there in the background (`computer serve --idle`); the next ask finds it ended and wakes it
+//! again.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -18,7 +21,7 @@ use tokio::task::JoinHandle;
 
 use super::Kubernetes;
 use super::home::PersonComputer;
-use super::objects::PERSON_HOME;
+use super::objects::{IDLE_MINUTES, PERSON_HOME};
 use crate::worker::limits::pinned;
 use crate::{WorkerComputers, WorkerCredentials};
 
@@ -32,6 +35,9 @@ const RETRY_AFTER: Duration = Duration::from_mins(1);
 /// The most people whose computers one server keeps track of at once; past it, those asleep
 /// are let go of, and found again when they come back.
 const MAX_PEOPLE: usize = 4_096;
+/// The most time between asks of a computer a turn or task holds, so it never counts as idle
+/// while one runs: a quarter of its idle limit, at most a minute.
+const HEARTBEAT: Duration = Duration::from_mins(1);
 
 /// Where one person's computer is.
 #[derive(Debug, Clone)]
@@ -58,6 +64,17 @@ struct Person {
     waking: Mutex<Option<JoinHandle<()>>>,
 }
 
+/// A turn or task using a person's computer: while it is kept, the computer is asked how it is
+/// once a minute, which keeps it from counting as idle. Dropping it stops the asking.
+#[must_use = "the computer is kept awake only while this is kept"]
+pub struct Holding(JoinHandle<()>);
+
+impl Drop for Holding {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 /// Every person's computer on one cluster, made from one environment within one set of
 /// limits, each with a disk of the same size. Dropping it stops the wakes still running; a
 /// computer already awake stays so, and sleeps on its own.
@@ -66,6 +83,8 @@ pub struct People {
     environment: Environment,
     limits: Limits,
     disk_gb: u32,
+    /// The minutes a computer goes unasked before it sleeps on its own.
+    idle_minutes: u32,
     held: Mutex<BTreeMap<String, Arc<Person>>>,
 }
 
@@ -118,8 +137,17 @@ impl People {
                 ..limits.clone()
             },
             disk_gb,
+            idle_minutes: IDLE_MINUTES,
             held: Mutex::new(BTreeMap::new()),
         })
+    }
+
+    /// Computers that sleep on their own after `minutes` unasked rather than the spec's 10, as a
+    /// test's do.
+    #[cfg(test)]
+    pub(crate) fn idle_after(mut self, minutes: u32) -> Self {
+        self.idle_minutes = minutes;
+        self
     }
 
     /// The key a person's computer is named by: the random parts of their organization's id
@@ -140,7 +168,8 @@ impl People {
         if let Some(person) = held.get(key) {
             return Ok(Arc::clone(person));
         }
-        let computer = PersonComputer::new(self.cluster.clone(), key, self.disk_gb)?;
+        let computer = PersonComputer::new(self.cluster.clone(), key, self.disk_gb)?
+            .idle_after(self.idle_minutes);
         let computers = WorkerComputers::on(
             Box::new(computer),
             self.limits.clone(),
@@ -152,8 +181,10 @@ impl People {
             waking: Mutex::new(None),
         });
         if held.len() >= MAX_PEOPLE {
+            // Kept: any awake or waking, and any something still holds, such as a turn.
             held.retain(|_, person| {
-                matches!(*person.state.borrow(), State::Waking | State::Awake(_))
+                Arc::strong_count(person) > 1
+                    || !matches!(*person.state.borrow(), State::Asleep | State::Failed(..))
             });
         }
         held.insert(key.to_owned(), Arc::clone(&person));
@@ -164,13 +195,13 @@ impl People {
     /// already, or its last wake failed less than a minute ago, and returns without
     /// waiting.
     pub fn wake(&self, key: &str) -> Result<(), ComputerError> {
-        self.start(key, Some(RETRY_AFTER))
+        self.start(&self.person(key)?, Some(RETRY_AFTER));
+        Ok(())
     }
 
     /// Starts a wake unless the computer is awake or waking, or its last wake failed less
     /// than `retry_after` ago.
-    fn start(&self, key: &str, retry_after: Option<Duration>) -> Result<(), ComputerError> {
-        let person = self.person(key)?;
+    fn start(&self, person: &Arc<Person>, retry_after: Option<Duration>) {
         let starts = person.state.send_if_modified(|state| match state {
             State::Failed(at, _) if retry_after.is_some_and(|after| at.elapsed() < after) => false,
             State::Asleep | State::Failed(..) => {
@@ -180,18 +211,37 @@ impl People {
             State::Waking | State::Awake(_) => false,
         });
         if starts {
-            let task = tokio::spawn(woken(Arc::clone(&person), self.environment.clone()));
+            let task = tokio::spawn(woken(Arc::clone(person), self.environment.clone()));
             let mut waking = person.waking.lock().unwrap_or_else(PoisonError::into_inner);
             if let Some(before) = waking.replace(task) {
                 before.abort();
             }
         }
-        Ok(())
+    }
+
+    /// Keeps the computer of the person `key` names from sleeping while what it answers is
+    /// kept: for a turn or a task. It does not wake it; while it is awake, it is asked how it is
+    /// once a minute.
+    pub fn hold(&self, key: &str) -> Result<Holding, ComputerError> {
+        let person = self.person(key)?;
+        let every = HEARTBEAT.min(Duration::from_mins(u64::from(self.idle_minutes)) / 4);
+        Ok(Holding(tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(every).await;
+                let awake = match &*person.state.borrow() {
+                    State::Awake(home) => Some(home.computer),
+                    _ => None,
+                };
+                if let Some(computer) = awake {
+                    let _ = person.computers.status(computer).await;
+                }
+            }
+        })))
     }
 
     /// The computer of the person `key` names, woken if it sleeps, and the workspace of their
-    /// home on it: once awake, at once. One that went away on its own (its glave ended idle,
-    /// or its node did) is woken again.
+    /// home on it: once awake, at once. One that ended on its own (idle, or its node went) is
+    /// let go of and woken again.
     pub async fn home(&self, key: &str) -> Result<Home, ComputerError> {
         let person = self.person(key)?;
         let was = person.state.borrow().clone();
@@ -203,7 +253,7 @@ impl People {
                 home,
             });
         }
-        self.start(key, None)?;
+        self.start(&person, None);
         let mut state = person.state.subscribe();
         let woke = tokio::time::timeout(WAKE_WAIT, state.wait_for(State::settled)).await;
         let now = match woke {
@@ -232,8 +282,8 @@ impl People {
     }
 }
 
-/// Whether `person`'s computer, awake with `home`, has gone away on its own; if so, it is let
-/// go of and counted asleep, so the next ask wakes it again.
+/// Whether `person`'s computer, awake with `home`, has ended on its own; if so, what is left of
+/// it is removed and it counts asleep, so the next ask wakes it again.
 async fn gone(person: &Person, home: &WorkspaceInfo) -> bool {
     match person.computers.status(home.computer).await {
         Ok(info) if info.state == ComputerState::Running => false,

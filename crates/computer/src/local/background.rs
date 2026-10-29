@@ -256,6 +256,13 @@ impl Backgrounds {
         Ok(printed)
     }
 
+    /// Whether any command still runs, in any workspace.
+    pub(crate) fn running(&self) -> bool {
+        self.held()
+            .values()
+            .any(|entry| entry.shared.ended().is_none())
+    }
+
     /// The commands in `workspace`, oldest first.
     pub(crate) fn list(&self, workspace: WorkspaceId) -> Vec<Background> {
         let mut held = self.held();

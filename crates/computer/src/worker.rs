@@ -38,7 +38,7 @@ use reconnect::Connection;
 pub use credentials::{WorkerCredentials, https_url};
 pub use docker::{Docker, DockerSettings};
 #[cfg(feature = "kubernetes")]
-pub use kubernetes::{Kubernetes, KubernetesSettings, People};
+pub use kubernetes::{Holding, Kubernetes, KubernetesSettings, People};
 
 /// How long a worker's token opens connections: long enough for it to start.
 const TOKEN_LIFETIME: Duration = Duration::from_mins(10);

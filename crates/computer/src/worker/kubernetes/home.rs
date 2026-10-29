@@ -14,7 +14,7 @@ use kube::Api;
 use kube::api::{DeleteParams, PostParams};
 use serde_json::json;
 
-use super::objects::{COMPUTER_LABEL, Home};
+use super::objects::{COMPUTER_LABEL, Home, IDLE_MINUTES};
 use super::{Kubernetes, POLL, failed, not_found};
 use crate::token::Token;
 use crate::worker::backend::{Backend, Link, Listed, Spec, Started};
@@ -31,6 +31,8 @@ pub(crate) struct PersonComputer {
     cluster: Kubernetes,
     key: String,
     disk_gb: u32,
+    /// The minutes it goes unasked before it sleeps on its own.
+    idle_minutes: u32,
 }
 
 impl PersonComputer {
@@ -58,7 +60,17 @@ impl PersonComputer {
             cluster,
             key: key.to_owned(),
             disk_gb,
+            idle_minutes: IDLE_MINUTES,
         })
+    }
+
+    /// Sleeps on its own after `minutes` unasked rather than the spec's 10, as a test's does.
+    #[must_use]
+    pub(crate) fn idle_after(self, minutes: u32) -> Self {
+        Self {
+            idle_minutes: minutes,
+            ..self
+        }
     }
 
     /// The Pod's name, and its policy's.
@@ -124,6 +136,7 @@ impl PersonComputer {
         let home = Home {
             key: &self.key,
             claim: &claim,
+            idle_minutes: self.idle_minutes,
         };
         match self.cluster.start_on(&name, spec, &glave, Some(home)).await {
             Ok(link) => Ok(link),
@@ -258,4 +271,4 @@ impl Backend for PersonComputer {
 }
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
