@@ -12,7 +12,7 @@ grep -q '^ *///' <<<"$above" || fail "percent has no /// doc comment"
 ! grep -rnE '#\[(cfg\(test\)|test)\]' "$app/src" || fail "$app/src has tests in it"
 [ -f "$app/tests/percent.rs" ] || fail "no $app/tests/percent.rs"
 grep -q percent "$app/tests/percent.rs" || fail "$app/tests/percent.rs does not test percent"
-sed -n '/^## Unreleased/,/^## 0.1.0/p' "$app/CHANGELOG.md" | grep -q 'Added `percent`' \
+sed -n '/^## Unreleased/,/^## 0.1.0/p' "$app/CHANGELOG.md" | grep -qF "Added \`percent\`" \
     || fail "CHANGELOG.md has no line for percent under ## Unreleased"
 cp "$here/percent.rs" "$app/tests/hidden_percent.rs"
 cargo test --quiet -p app
