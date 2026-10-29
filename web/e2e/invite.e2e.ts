@@ -26,7 +26,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
     const invite = await fakeInvite(page);
     await page.goto(`/${SIGNED_IN}`);
     await expect(byTestId(page, 'home-composer-input')).toBeVisible();
-    await page.goto(`/#invite=${OPENS}`);
+    // Another page's address, so the tab loads it anew with the invite, as opening a link does.
+    await page.goto(`/tasks#invite=${OPENS}`);
     await expect(byTestId(page, 'invite-joining')).toContainText('Join this team?');
     await expectAccessible(page);
     await byTestId(page, 'invite-join').click();

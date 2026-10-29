@@ -14,7 +14,7 @@ import {
   SIGNED_IN,
   provideFakeSession,
 } from '../../testing/fake-session';
-import { MADE_PASSKEY } from '../../testing/fixtures';
+import { MADE_PASSKEY, PASSKEY_OPTIONS } from '../../testing/fixtures';
 import { InviteComponent } from './invite.component';
 
 const SHOWN: ShownInvite = {
@@ -24,17 +24,7 @@ const SHOWN: ShownInvite = {
   joining: 'passkey',
 };
 
-const OPTIONS = {
-  ceremony: 'c1',
-  options: {
-    publicKey: {
-      challenge: 'AQID',
-      rp: { id: 'glave.test', name: 'glave' },
-      user: { id: 'AQID', name: 'glave', displayName: 'glave' },
-      pubKeyCredParams: [],
-    },
-  },
-};
+const OPTIONS = PASSKEY_OPTIONS;
 
 const MADE = MADE_PASSKEY;
 
