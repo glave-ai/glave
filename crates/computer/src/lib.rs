@@ -23,10 +23,10 @@ pub use cancel::CancelSwitch;
 pub use environment::{EnvironmentError, Found, read_environment};
 pub use local::{LocalComputers, glave_on_path, sandbox_available, sandbox_helper};
 pub use remote::RemoteComputers;
-pub use serve::{serve, serve_tcp, serve_tls};
+pub use serve::{Idle, serve, serve_tcp, serve_tls};
 pub use tls::{Fingerprint, Identity, connect_tls};
 pub use token::{MIN_SECRET, Token, Tokens};
 pub use worker::{Docker, DockerSettings, WorkerComputers, WorkerCredentials, https_url};
 #[cfg(feature = "kubernetes")]
-pub use worker::{Kubernetes, KubernetesSettings, People};
+pub use worker::{Holding, Kubernetes, KubernetesSettings, People};
 pub use worktrees::{Condition, Kept, Released, Trash};

@@ -333,10 +333,15 @@ where
         let working = (purpose != Use::Manage)
             .then(|| inner.awake.as_ref().map(crate::awake::Awake::hold))
             .flatten();
+        // And the person's own computer, where they have one, does not sleep under it.
+        let holding = (purpose != Use::Manage)
+            .then(|| self.hold_home(scope.org(), held.for_person()))
+            .flatten();
         // The work stays in the span of the request that started it.
         let span = tracing::Span::current();
         let task = tokio::spawn(async move {
             let _working = working;
+            let _holding = holding;
             let leases = Arc::clone(&inner.leases);
             let work = work(Arc::clone(&inner), held, cancel.clone());
             let work = tracing::Instrument::instrument(work, span);

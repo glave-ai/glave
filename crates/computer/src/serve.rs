@@ -474,22 +474,56 @@ pub async fn serve_tcp<C: Computers + 'static>(
     }
 }
 
+/// When a computer served over TLS ends on its own (`specs/computers.md`, "A person's computer
+/// in the cloud", 5): once no client has been connected and `busy` has said nothing runs for
+/// `after`, so a computer whose servers all went away stops rather than run on.
+pub struct Idle {
+    pub after: Duration,
+    /// Whether anything still runs there that no connection is waiting on, such as a command
+    /// in the background.
+    pub busy: Box<dyn Fn() -> bool + Send + Sync>,
+}
+
+/// How often a computer serving with an [`Idle`] limit looks at whether it is idle.
+const IDLE_CHECK: Duration = Duration::from_secs(30);
+
 /// Serves `computers` over TLS on a TCP listener at any address, to clients that first present
 /// the token `tokens` holds, before it expires: how a worker is reached from the harness. A
-/// client that fails the handshake is dropped without an answer. Runs until accepting fails.
+/// client that fails the handshake is dropped without an answer. Runs until accepting fails,
+/// or, with `idle`, until it has been idle that long.
 pub async fn serve_tls<C: Computers + 'static>(
     computers: Arc<C>,
     listener: TcpListener,
     tls: TlsAcceptor,
     tokens: impl Into<Tokens>,
+    idle: Option<Idle>,
 ) -> std::io::Result<()> {
     let tokens = tokens.into();
     let mut connections = JoinSet::new();
+    let mut quiet = Duration::ZERO;
     loop {
         while connections.len() >= MAX_CONNECTIONS {
             connections.join_next().await;
         }
-        let (stream, _) = listener.accept().await?;
+        let stream = match &idle {
+            None => listener.accept().await?.0,
+            Some(idle) => tokio::select! {
+                accepted = listener.accept() => accepted?.0,
+                () = tokio::time::sleep(IDLE_CHECK.min(idle.after)) => {
+                    while connections.try_join_next().is_some() {}
+                    quiet = if connections.is_empty() && !(idle.busy)() {
+                        quiet.saturating_add(IDLE_CHECK.min(idle.after))
+                    } else {
+                        Duration::ZERO
+                    };
+                    if quiet >= idle.after {
+                        return Ok(());
+                    }
+                    continue;
+                }
+            },
+        };
+        quiet = Duration::ZERO;
         let _ = stream.set_nodelay(true);
         let (computers, tokens, tls) = (Arc::clone(&computers), tokens.clone(), tls.clone());
         connections.spawn(async move {

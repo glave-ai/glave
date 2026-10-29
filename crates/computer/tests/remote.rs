@@ -1,15 +1,16 @@
 //! A computer across the protocol passes the same suite as one in-process: over an
 //! in-memory pipe, over TCP on 127.0.0.1 with a token, and over TLS with the certificate
-//! pinned and a token that expires.
+//! pinned and a token that expires; and one serving with an idle limit ends on its own.
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use glave_computer::{
-    Fingerprint, Identity, LocalComputers, RemoteComputers, Token, connect_tls, serve, serve_tcp,
-    serve_tls,
+    Fingerprint, Identity, Idle, LocalComputers, RemoteComputers, Token, connect_tls, serve,
+    serve_tcp, serve_tls,
 };
 use glave_ports::computer::{ComputerError, ComputerId, Computers, Environment};
 use glave_ports::testing::any_secret;
@@ -246,11 +247,54 @@ async fn tls(copies: &PathBuf, token: Token) -> (std::net::SocketAddr, Identity,
     let acceptor = Identity::acceptor(&identity.certificate, &identity.key).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let serving = tokio::spawn(serve_tls(local(copies), listener, acceptor, token));
+    let serving = tokio::spawn(serve_tls(local(copies), listener, acceptor, token, None));
     (address, identity, serving)
 }
 
 type JoinHandle = tokio::task::JoinHandle<std::io::Result<()>>;
+
+#[test]
+fn a_computer_serving_with_an_idle_limit_ends_once_nothing_runs_for_that_long() {
+    let (_dir, _work, copies) = scratch("tls-idle");
+    // On paused time: the limit passes without waiting for it.
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .start_paused(true)
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let identity = Identity::mint().unwrap();
+        let acceptor = Identity::acceptor(&identity.certificate, &identity.key).unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let busy = Arc::new(AtomicBool::new(true));
+        let running = Arc::clone(&busy);
+        let idle = Idle {
+            after: Duration::from_mins(15),
+            busy: Box::new(move || running.load(Ordering::SeqCst)),
+        };
+        let token = Token::mint(UNIX_EPOCH, Duration::from_secs(600)).unwrap();
+        let mut serving = tokio::spawn(serve_tls(
+            local(&copies),
+            listener,
+            acceptor,
+            token,
+            Some(idle),
+        ));
+        // A command in the background keeps it serving, however long.
+        let kept = tokio::time::timeout(Duration::from_hours(3), &mut serving).await;
+        assert!(kept.is_err(), "it serves while a command runs");
+        busy.store(false, Ordering::SeqCst);
+        let started = tokio::time::Instant::now();
+        let ended = tokio::time::timeout(Duration::from_hours(1), serving).await;
+        assert!(matches!(ended, Ok(Ok(Ok(())))), "{ended:?}");
+        // Looked at every 30 seconds, so within one look of the limit.
+        let took = started.elapsed();
+        assert!(
+            took >= Duration::from_mins(14) && took <= Duration::from_mins(16),
+            "ended {took:?} after the command did"
+        );
+    });
+}
 
 #[test]
 fn a_computer_over_tls_passes_the_suite_with_its_certificate_pinned() {

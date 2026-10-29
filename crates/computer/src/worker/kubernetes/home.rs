@@ -258,4 +258,4 @@ impl Backend for PersonComputer {
 }
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;

@@ -1,8 +1,10 @@
 //! A person's own computer woken as they come back (`specs/computers.md`, "A person's computer
 //! in the cloud", 6): opening the app, or a chat, starts the wake, so it is usually awake by the
-//! time a turn needs it. A turn that needs it before then waits for the same wake.
+//! time a turn needs it. A turn that needs it before then waits for the same wake, and every
+//! turn or task keeps it from sleeping while it runs.
 
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
+use glave_event::PrincipalId;
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, OrgId};
 
 use crate::protocol::Request;
 use crate::server::Server;
@@ -32,5 +34,22 @@ where
         if let Err(error) = homes.wake(self.inner.org, person) {
             tracing::warn!(error = error.message(), "could not start waking a computer");
         }
+    }
+
+    /// Keeps the computer of `person` (the server's own when none) in `org` from sleeping while
+    /// what it answers is kept, where people have computers of their own: for a turn or task.
+    pub(crate) fn hold_home(
+        &self,
+        org: OrgId,
+        person: Option<PrincipalId>,
+    ) -> Option<Box<dyn Send>> {
+        let homes = self.inner.homes.as_ref()?;
+        let person = person.or(self.person())?;
+        homes
+            .hold(org, person)
+            .map_err(|error| {
+                tracing::warn!(error = error.message(), "could not keep a computer awake");
+            })
+            .ok()
     }
 }

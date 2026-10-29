@@ -25,6 +25,10 @@ pub trait Homes: Send + Sync {
     /// The computer of `person` in `org`, once it is awake, and the workspace of their home on
     /// it.
     fn home(&self, org: OrgId, person: PrincipalId) -> BoxFuture<'_, Result<Home, ComputerError>>;
+
+    /// Keeps the computer of `person` in `org` from sleeping while what it answers is kept:
+    /// for a turn or a task, which may run long between its commands. It does not wake it.
+    fn hold(&self, org: OrgId, person: PrincipalId) -> Result<Box<dyn Send>, ComputerError>;
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>

@@ -21,6 +21,9 @@ pub(crate) const LABEL: &str = "glave.worker";
 /// The label a person's computer's objects carry instead, its key as the value: never a
 /// worker's, so no glave reaps a person's computer as a worker it left.
 pub(crate) const COMPUTER_LABEL: &str = "glave.computer";
+/// How long a person's computer serves with no one connected and nothing running before it
+/// ends on its own: the server's 10 idle minutes and five more, so it never ends first.
+const ENDS_IDLE_MINUTES: u32 = 15;
 /// Where a person's disk is mounted in their computer: their home.
 pub(crate) const PERSON_HOME: &str = "/home/glave";
 /// The most a person's computer may write outside its disk (its container's layer, `/tmp`),
@@ -207,14 +210,19 @@ impl Shape<'_> {
     /// standard input and output without a network.
     fn command(&self) -> Vec<Value> {
         let serve = if self.spec.network {
-            json!([
+            let mut serve = json!([
                 format!("{HOME}/glave"),
                 "computer",
                 "serve",
                 "--tls",
                 format!("0.0.0.0:{PORT}"),
                 format!("{HOME}/tls")
-            ])
+            ]);
+            // A person's computer ends on its own once every server is gone (#558).
+            if let (Some(_), Some(args)) = (&self.home, serve.as_array_mut()) {
+                args.extend([json!("--idle"), json!(ENDS_IDLE_MINUTES.to_string())]);
+            }
+            serve
         } else {
             json!([format!("{HOME}/glave"), "computer", "serve", "--stdio"])
         };
@@ -547,6 +555,12 @@ mod tests {
         assert_eq!(
             container["resources"]["requests"],
             json!({"cpu": "2", "memory": "4Gi", "ephemeral-storage": "1Gi"})
+        );
+        let command = container["command"].as_array().unwrap();
+        assert_eq!(
+            command.get(command.len() - 2..).unwrap(),
+            [json!("--idle"), json!("15")],
+            "it ends on its own once every server is gone"
         );
         let policy = computer.network_policy();
         assert_eq!(
