@@ -11,10 +11,11 @@ use glave_event::{
     PrincipalId, Profile, Secret,
 };
 use glave_identity::signin::{kept, one_time_code, same_kept};
-use glave_ports::{BlobStore, Caller, EventLog, Mail, MailError, Mailer, ModelProvider, OrgId};
+use glave_ports::{BlobStore, Caller, EventLog, Mail, ModelProvider, OrgId};
 use jiff::{SignedDuration, Timestamp};
 use uuid::Uuid;
 
+use crate::mailing::just_now;
 use crate::organizations::with_account;
 use crate::people::{People, Permit, joined_of, no_such_person, permits};
 use crate::protocol::{ApiError, InviteInfo, JoinWay, PersonInfo, Reply, ShownInvite, code};
@@ -151,16 +152,26 @@ where
             role,
             by: Principal::person(self.person_of(caller)?),
             expires: At::from(expires),
-            email: sending.as_ref().map(|(_, _, to)| (*to).to_owned()),
+            email: sending.as_ref().map(|(_, _, to)| to.clone()),
         };
         self.record_person(org, |people| {
             let waiting = people.invites.waiting.values();
             if waiting
+                .clone()
                 .filter(|it| now < it.created.expires.timestamp())
                 .count()
                 >= MOST_WAITING
             {
                 return Err(ApiError::new(code::NOT_ALLOWED, Sentence::TooManyInvites));
+            }
+            // One email a minute to an address, from any server on the store.
+            let mailed = waiting.into_iter().any(|it| {
+                it.created.email.is_some()
+                    && it.created.email == created.email
+                    && just_now(it.made.timestamp(), now)
+            });
+            if mailed {
+                return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::MailedJustNow));
             }
             Ok(Some(created.clone()))
         })
@@ -173,7 +184,7 @@ where
         if let Some((mailer, origin, to)) = sending {
             let link = format!("{origin}/#invite={}", code.expose());
             let mail = Mail {
-                to: to.to_owned(),
+                to,
                 subject: say(Language::English, &Sentence::InviteMailSubject),
                 text: format!(
                     "{}\n\n{link}\n\n{}\n",
@@ -181,11 +192,7 @@ where
                     say(Language::English, &Sentence::InviteMailIgnore),
                 ),
             };
-            if let Err(error) = mailer.send(&mail).await {
-                // What the mail server said, never the address.
-                if let MailError::Send(reason) = &error {
-                    tracing::warn!(%reason, "an invite's email was not sent");
-                }
+            if self.send(mailer, &mail).await.is_err() {
                 // An invite whose link reached no one is not left waiting.
                 self.revoke_invite(caller, created.invite).await?;
                 return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::InviteNotSent));
@@ -195,19 +202,6 @@ where
             invite: invite.ok_or_else(gone)?,
             code,
         })
-    }
-
-    /// What sends an invite's link to `to`, and where the link leads: refused where this server
-    /// sends no email, or is reached from nowhere a link could lead to.
-    fn sender<'a>(&'a self, to: &'a str) -> Result<(&'a dyn Mailer, String, &'a str), ApiError> {
-        let (Some(mailer), Some(origin)) = (self.inner.mail.as_deref(), &self.inner.origin) else {
-            return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::NoEmail));
-        };
-        if !mailer.reaches(to) {
-            return Err(ApiError::new(code::INVALID_PARAMS, Sentence::NotAnEmail));
-        }
-        let origin = origin.to_string();
-        Ok((mailer, origin.trim_end_matches('/').to_owned(), to))
     }
 
     /// The organization an invite's `code` is to: the id it begins with, before [`TO`]; a code

@@ -6,7 +6,7 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { GlzButtonComponent, GlzEmptyStateComponent, GlzTopBarComponent } from '@glave/glaze';
 import { KeyRound } from 'lucide';
 
@@ -25,7 +25,7 @@ type Offer = 'setup' | 'passkey' | 'link';
  */
 @Component({
   selector: 'app-sign-in',
-  imports: [GlzButtonComponent, GlzEmptyStateComponent, GlzTopBarComponent],
+  imports: [RouterLink, GlzButtonComponent, GlzEmptyStateComponent, GlzTopBarComponent],
   templateUrl: './sign-in.component.html',
   styleUrl: './sign-in.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -47,9 +47,14 @@ export class SignInComponent {
     setupText: $localize`:@@signIn.setupText:This link lets this device sign in to glave. Your device makes a passkey, and from now on your face, your fingerprint or its screen lock signs you in. The link works once.`,
     setupAction: $localize`:@@signIn.setupAction:Make a passkey`,
     waiting: $localize`:@@signIn.waiting:Waiting for your device…`,
+    newHere: $localize`:@@signIn.newHere:New to glave?`,
+    signUp: $localize`:@@signIn.signUp:Sign up`,
   } as const;
+  protected readonly signUpLink = '/sign-up';
   protected readonly icon = KeyRound;
   protected readonly busy = signal(false);
+  /** Whether anyone may sign up here, so the page offers it beside signing in. */
+  protected readonly signsUp = this.session.signsUp;
   protected readonly problem = signal<string | null>(null);
 
   protected readonly offer = computed<Offer>(() => {

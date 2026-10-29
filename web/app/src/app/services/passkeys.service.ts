@@ -1,6 +1,6 @@
 import { DOCUMENT } from '@angular/common';
 import { InjectionToken, Service, inject, signal } from '@angular/core';
-import { ApiError, type PasskeySummary } from '@glave/client';
+import { ApiError, ErrorCode, type LinkKind, type PasskeySummary } from '@glave/client';
 
 import { type Authenticator, made, used } from '../lib/passkeys';
 import { type PlatformAuthenticator, platformAuthenticator } from '../lib/platform';
@@ -95,15 +95,27 @@ export class PasskeysService {
    * the organization it is to, and signs the browser in.
    */
   async join(code: string): Promise<string | null> {
-    return this.asking(async () => {
-      const asked = await this.session.call('passkey/create_options', { code, invite: true });
-      const credential = await made(this.authenticator, asked.options);
-      if (credential === null) {
-        return passkeyRefused();
+    return this.asking(() => this.makeWithLink(code, 'invite'));
+  }
+
+  /**
+   * Makes the first passkey of a new account on this device with the sign-up link `code`,
+   * which makes the account and signs the browser in: why not, if it did not, and whether the
+   * link opens nothing any more.
+   */
+  async signUp(
+    code: string,
+  ): Promise<{ readonly problem: string | null; readonly spent: boolean }> {
+    let spent = false;
+    const problem = await this.asking(async () => {
+      try {
+        return await this.makeWithLink(code, 'signup');
+      } catch (error: unknown) {
+        spent = error instanceof ApiError && error.code === ErrorCode.NO_INVITE;
+        throw error;
       }
-      const created = { ceremony: asked.ceremony, credential };
-      return this.begun(await this.session.call('passkey/create', created));
     });
+    return { problem, spent };
   }
 
   /** Signs the browser in with a passkey on this device. */
@@ -149,6 +161,17 @@ export class PasskeysService {
       await this.session.rediscover();
       return this.load();
     });
+  }
+
+  /** Makes a new account's first passkey with a link's `code`, of the kind `link`. */
+  private async makeWithLink(code: string, link: LinkKind): Promise<string | null> {
+    const asked = await this.session.call('passkey/create_options', { code, link });
+    const credential = await made(this.authenticator, asked.options);
+    if (credential === null) {
+      return passkeyRefused();
+    }
+    const created = { ceremony: asked.ceremony, credential };
+    return this.begun(await this.session.call('passkey/create', created));
   }
 
   /** Keeps the session a passkey began, when the server that served the app began it. */

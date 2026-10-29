@@ -15,6 +15,35 @@ pub enum SignInWay {
     /// A passkey: at the server's public origin, where a setup link from glave on its computer
     /// makes the first; or on this computer, once a browser signed in by glave's link made one.
     Passkey,
+    /// Signing up with an email: a link sent there makes the person's first passkey, their
+    /// account and an organization of their own.
+    Signup,
+}
+
+/// Which link's code a passkey is made with (`passkey/create_options`).
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkKind {
+    /// A setup link from glave on the server's computer: the local person's passkey.
+    #[default]
+    Setup,
+    /// An invite's: the first passkey of a new account, joining its organization.
+    Invite,
+    /// A sign-up's, emailed: the first passkey of a new account and its own organization.
+    Signup,
+}
+
+impl LinkKind {
+    /// Whether it is a setup link's, the one a request names by saying none.
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "serde's skip_serializing_if hands it a reference"
+    )]
+    pub(crate) fn is_setup(&self) -> bool {
+        *self == Self::Setup
+    }
 }
 
 /// A passkey that signs the person in.

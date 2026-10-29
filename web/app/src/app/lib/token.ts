@@ -34,11 +34,14 @@ interface LinkPlace {
 }
 
 /**
- * The one-time code in the link glave opened or printed: a sign-in link's (`#code=…`), a setup
- * link's (`#setup=…`) or an invite's (`#invite=…`), taken out of the address bar at once, so it
- * is in no history entry; `null` when the link has none.
+ * The one-time code in the link glave opened, printed or emailed: a sign-in link's (`#code=…`),
+ * a setup link's (`#setup=…`), an invite's (`#invite=…`) or a sign-up's (`#signup=…`), taken out
+ * of the address bar at once, so it is in no history entry; `null` when the link has none.
  */
-export function takeCode(place: LinkPlace, link: 'code' | 'setup' | 'invite'): string | null {
+export function takeCode(
+  place: LinkPlace,
+  link: 'code' | 'setup' | 'invite' | 'signup',
+): string | null {
   const code = codeFromFragment(place.location.hash, link);
   if (code === undefined) {
     return null;

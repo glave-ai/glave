@@ -90,6 +90,7 @@ export class SessionService {
   private server: string | undefined;
   private readonly setupLink = signal<string | null>(null);
   private readonly inviteLink = signal<string | null>(null);
+  private readonly signupLink = signal<string | null>(null);
 
   readonly signedIn = computed(() => this.session() !== null);
   /**
@@ -112,6 +113,10 @@ export class SessionService {
   readonly setupCode = this.setupLink.asReadonly();
   /** The code of the invite the tab was opened with, until the person joins or puts it aside. */
   readonly inviteCode = this.inviteLink.asReadonly();
+  /** The code of the sign-up link the tab was opened with, until the tab signs in. */
+  readonly signupCode = this.signupLink.asReadonly();
+  /** Whether anyone may sign up here with their email, as the server said. */
+  readonly signsUp = computed(() => this.reachedElsewhere() && this.ways().includes('signup'));
   /** Whether the session is with a glave on this computer: a browser session. */
   readonly local = computed(() => {
     const session = this.session();
@@ -143,6 +148,7 @@ export class SessionService {
     const code = takeCode(place, 'code');
     this.setupLink.set(takeCode(place, 'setup'));
     this.inviteLink.set(takeCode(place, 'invite'));
+    this.signupLink.set(takeCode(place, 'signup'));
     try {
       this.take(await this.client.call('server/discover', {}));
     } catch {
@@ -227,6 +233,11 @@ export class SessionService {
     this.here.set(discovered.here ?? null);
   }
 
+  /** Forgets the tab's sign-up link, once it opens nothing. */
+  clearSignup(): void {
+    this.signupLink.set(null);
+  }
+
   /** Puts the tab's invite aside: the person joined, or chose not to now. */
   clearInvite(): void {
     this.inviteLink.set(null);
@@ -251,6 +262,7 @@ export class SessionService {
     keepSession(this.storage, session);
     this.session.set(session);
     this.setupLink.set(null);
+    this.signupLink.set(null);
     const accepted = began.accepted ?? null;
     if (accepted !== null) {
       void signalAccepted(this.passkeySignals, accepted);

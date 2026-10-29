@@ -596,3 +596,21 @@ fn the_mail_server_is_the_person_s_or_server_s_choice() {
         );
     }
 }
+
+#[test]
+fn sign_up_is_off_unless_the_servers_own_file_turns_it_on() {
+    let dir = scratch("signup");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let mut locations = Locations::here(&home, &dir);
+    locations.policies = vec![];
+    let loaded = load_all(&locations, None).unwrap();
+    assert_eq!(loaded.choices.signup, None, "off unless set");
+    let text = "[serve]\norigin = \"https://glave.example.com\"\nsignup = true\n";
+    let project = files::config(text, &locations.project).unwrap();
+    let loaded = load_all(&locations, Some(project)).unwrap();
+    assert_eq!(loaded.choices.signup, None, "a project's is ignored");
+    std::fs::write(home.join("config.toml"), text).unwrap();
+    let loaded = load_all(&locations, None).unwrap();
+    assert_eq!(loaded.choices.signup.map(|chosen| chosen.value), Some(true));
+}

@@ -182,6 +182,11 @@ pub struct ServeFile {
     pub domain: Option<String>,
     /// The ACME directory that certificate comes from: Let's Encrypt's when absent.
     pub acme: Option<String>,
+    /// Whether anyone may sign up at its public origin with their email, making an account and
+    /// an organization of their own (`specs/model.md`, "Identity"): off unless set, so a
+    /// person's own server takes no strangers. A new organization's turns use this server's
+    /// own models.
+    pub signup: Option<bool>,
 }
 
 impl ServeFile {

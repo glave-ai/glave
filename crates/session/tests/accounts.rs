@@ -12,13 +12,13 @@ use glave_identity::testing::Authenticator;
 use glave_ports::host::PublicOrigin;
 use glave_ports::{Directory, OrgId};
 use glave_session::Answering;
-use glave_session::protocol::{Request, code};
+use glave_session::protocol::{LinkKind, Request, code};
 use glave_session::signin::{Accounts, Browsers, LocalToken, SignIn};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::support::issuer::fixed_clock;
-use crate::support::web::{ORIGIN, Served, Web, asked, elsewhere, serve_with};
+use crate::support::web::{ORIGIN, Served, Web, asked, elsewhere, make_passkey, serve_with};
 use crate::support::*;
 
 /// A server reached at [`ORIGIN`] if `reached`, keeping glave accounts there, its programs
@@ -69,18 +69,7 @@ async fn invite(served: &Served, token: &LocalToken, role: OrgRole) -> Secret {
 
 /// What making a passkey on `device` with the invite `code` is answered with.
 async fn join(served: &Served, code: Secret, device: &mut Authenticator) -> Value {
-    let mut anyone = elsewhere(served, None);
-    let create = Request::PasskeyCreateOptions { code, invite: true };
-    let options = asked(&mut anyone, &create).await;
-    if !options.is_object() {
-        return options;
-    }
-    let made = Request::PasskeyCreate {
-        ceremony: options["ceremony"].as_str().unwrap().to_owned(),
-        credential: device.create(&options["options"]).unwrap(),
-        name: Some("Phone".into()),
-    };
-    asked(&mut anyone, &made).await
+    make_passkey(served, code, LinkKind::Invite, device).await
 }
 
 /// A browser elsewhere signed in with `device`'s passkey: its session's token.
@@ -245,7 +234,7 @@ fn the_person_on_the_computer_signs_in_with_their_passkey_once_others_have_accou
         let mut anyone = elsewhere(&served, None);
         let create = Request::PasskeyCreateOptions {
             code,
-            invite: false,
+            link: LinkKind::Setup,
         };
         let options = asked(&mut anyone, &create).await;
         let made = Request::PasskeyCreate {

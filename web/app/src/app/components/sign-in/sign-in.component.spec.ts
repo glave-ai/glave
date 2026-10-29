@@ -179,4 +179,17 @@ describe('SignInComponent', () => {
       );
     }
   });
+
+  it('offers signing up only where the server takes sign-ups', async () => {
+    const offered = await render(
+      signingIn({ origin: 'https://glave.test', signin: ['link', 'passkey', 'signup'] }),
+      answering(ANSWER),
+    );
+    const link = offered.root.querySelector('[data-testid="sign-in-sign-up"]');
+    expect(link?.getAttribute('href')).toBe('/sign-up');
+    await expectAccessible(offered.root);
+    TestBed.resetTestingModule();
+    const { root } = await render(reached(), answering(ANSWER));
+    expect(root.querySelector('[data-testid="sign-in-sign-up"]')).toBeNull();
+  });
 });

@@ -27,6 +27,7 @@ pub(crate) mod principal;
 pub(crate) mod project;
 pub(crate) mod provider;
 pub(crate) mod remembering;
+pub(crate) mod signup;
 pub(crate) mod standing;
 pub(crate) mod task;
 pub(crate) mod thread;
@@ -67,6 +68,7 @@ pub use principal::{Principal, PrincipalKind};
 pub use project::{Checkout, FolderSource, ProjectFolderSet, ProjectRemoved};
 pub use provider::{ProviderConnected, ProviderKind, ProviderRemoved, sealed_under_account};
 pub use remembering::MemorySet;
+pub use signup::{SignupFinished, SignupStarted};
 pub use standing::{ThreadArchived, ThreadDeleted, ThreadRenamed, ThreadUnarchived};
 pub use task::{Fired, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, When};
 pub use thread::{

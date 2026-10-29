@@ -55,11 +55,14 @@ pub enum Reserved {
     /// `…0009`: the organization's people (`person.joined`) and their roles (`role.set`), in
     /// the organization's own scope ([`Scope::of_organization`]), no project's.
     People,
+    /// `…000a`: the sign-ups a server that takes them is waiting on (`signup.started`,
+    /// `signup.finished`), in its own organization's scope.
+    Signups,
 }
 
 impl Reserved {
     /// Every ledger, by number.
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Tasks,
         Self::Memory,
         Self::Accounts,
@@ -70,6 +73,7 @@ impl Reserved {
         Self::Certificates,
         Self::Settings,
         Self::People,
+        Self::Signups,
     ];
 
     /// The ledger's id, the same in every project.
@@ -85,6 +89,7 @@ impl Reserved {
             Self::Certificates => 7,
             Self::Settings => 8,
             Self::People => 9,
+            Self::Signups => 10,
         };
         ThreadId::reserved(number)
     }

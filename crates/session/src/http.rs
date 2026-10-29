@@ -310,6 +310,7 @@ fn open(request: &Request, door: Door) -> Result<(), SignInError> {
         Request::SigninRedeem { .. } => Err(SignInError::NotLoopback),
         Request::PasskeyCreateOptions { .. }
         | Request::PasskeyCreate { .. }
+        | Request::SignupStart { .. }
         | Request::PasskeyGetOptions {}
         | Request::PasskeyGet { .. }
             if door != Door::Elsewhere =>

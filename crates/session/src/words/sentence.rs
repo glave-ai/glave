@@ -92,6 +92,22 @@ sentences! {
     NotAnEmail = "not-an-email" "that isn't an email address: check it and try again",
     InviteNotSent = "invite-not-sent"
         "the invite's email could not be sent, so it was not made: try again, or make it without an address and share its link",
+    MailedJustNow = "mailed-just-now"
+        "glave emailed that address a moment ago: wait a minute, then try again",
+    MailNotSent = "mail-not-sent" "the email could not be sent: try again in a moment",
+    NoSignups = "no-signups" "this glave doesn't take sign-ups: ask its owner for an invite",
+    SignupGone = "signup-gone"
+        "that sign-up link was used already or has expired: sign up again for a new one",
+    SignupTaken = "signup-taken"
+        "that address has an account already: sign in with its passkey",
+    SignupHaveAccountSubject = "signup-have-account-subject" "You already have a glave account",
+    SignupHaveAccount = "signup-have-account"
+        "Someone asked to sign up for glave with this address, which already has an account. Sign in with your passkey here. If it wasn't you, ignore this email: nothing changes.",
+    SignupMailSubject = "signup-mail-subject" "Your glave sign-up link",
+    SignupMail = "signup-mail"
+        "Open this link on the device you signed up on to make your passkey. It works once, for 15 minutes.",
+    SignupMailIgnore = "signup-mail-ignore"
+        "If you didn't sign up for glave, ignore this email: nothing happens without the link.",
     InviteMailSubject = "invite-mail-subject" "You're invited to glave",
     InviteMail = "invite-mail"
         "You've been invited to glave. Open this link within 7 days to join:",

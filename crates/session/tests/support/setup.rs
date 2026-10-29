@@ -100,6 +100,8 @@ pub(crate) struct Setup {
     pub mail: Option<Arc<dyn glave_ports::Mailer>>,
     /// Where people reach it from elsewhere; with none, only on its own computer.
     pub origin: Option<glave_ports::host::PublicOrigin>,
+    /// Whether it takes sign-ups.
+    pub signup: bool,
     /// What keeps its computer awake while work runs; with none, nothing does.
     pub awake: Option<Arc<dyn KeepAwake>>,
     /// What lets go of a thread's worktrees once it is put away; with none, nothing does.
@@ -148,6 +150,7 @@ impl Setup {
             accounts: None,
             mail: None,
             origin: None,
+            signup: false,
             awake: None,
             release: None,
             home: scope(),
@@ -243,6 +246,7 @@ impl Setup {
             accounts: self.accounts,
             mail: self.mail,
             origin: self.origin,
+            signup: self.signup,
             leases: self.leases,
             tools: self.tools,
             awake: self.awake,
@@ -253,31 +257,7 @@ impl Setup {
             ..Wiring::new(provider, log, InMemoryBlobs::new(), workspace, projects)
         };
         let server = Server::new(wiring, self.settings, home.org(), self.answering);
-        // The server's own project, kept as its person's project at a fixed time without reading
-        // the clock, so nothing a test checks depends on when it was first asked for.
-        let at = At::try_from("2026-10-01T00:00:00.000Z".to_owned()).unwrap();
-        let project = Project {
-            id: home.project(),
-            kind: ProjectKind::Project,
-            name: "test".into(),
-            owner: Principal::person(server.person().unwrap()),
-            created_at: at,
-            updated_at: at,
-        };
-        // A second server on another's projects finds it there already.
-        if server
-            .projects()
-            .get(home.org(), project.id)
-            .await
-            .unwrap()
-            .is_none()
-        {
-            server
-                .projects()
-                .create(home.org(), &project)
-                .await
-                .unwrap();
-        }
+        keep_own_project(&server, home).await;
         (server, seen)
     }
 }
@@ -320,6 +300,30 @@ fn environment(given: &[(String, PathBuf)]) -> Vec<(OsString, OsString)> {
 /// The server of `Setup::asking`.
 pub(crate) async fn server(dir: &Path, answers: Vec<Completion>, answering: Answering) -> Tested {
     Setup::asking(answers, answering).build(dir).await.0
+}
+
+/// The server's own project, kept as its person's project at a fixed time without reading the
+/// clock, so nothing a test checks depends on when it was first asked for. A second server on
+/// another's projects finds it there already.
+async fn keep_own_project<L: EventLog + 'static>(server: &Tested<L>, home: Scope) {
+    let at = At::try_from("2026-10-01T00:00:00.000Z".to_owned()).unwrap();
+    let project = Project {
+        id: home.project(),
+        kind: ProjectKind::Project,
+        name: "test".into(),
+        owner: Principal::person(server.person().unwrap()),
+        created_at: at,
+        updated_at: at,
+    };
+    let projects = server.projects();
+    if projects
+        .get(home.org(), project.id)
+        .await
+        .unwrap()
+        .is_none()
+    {
+        projects.create(home.org(), &project).await.unwrap();
+    }
 }
 
 /// Leases in memory that two servers can share, as two processes share a database, on a clock

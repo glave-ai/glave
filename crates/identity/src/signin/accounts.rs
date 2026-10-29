@@ -11,10 +11,10 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use glave_event::PrincipalId;
 use glave_ports::host::PublicOrigin;
-use glave_ports::{BoxFuture, Clock, Directory, EventLog, OrgId};
+use glave_ports::{BoxFuture, Clock, Directory, EventLog, IdentityKey, OrgId};
 
 use super::browsers::{
-    BrowserError, Browsers, Ceremony, Discovered, Discoverer, Session, account_of, new_id,
+    BrowserError, Browsers, Ceremony, Discovered, Discoverer, Session, account_of, kept, new_id,
 };
 
 /// Accounts whose sessions and passkeys a server keeps in memory at once. Past this, those no
@@ -118,6 +118,28 @@ impl Accounts {
             .map_err(|e| BrowserError::Keep(e.to_string()))
     }
 
+    /// The account whose email is `address`, if one has it, as [`Accounts::claim_email`]
+    /// gave it.
+    pub async fn with_email(&self, address: &str) -> Result<Option<PrincipalId>, BrowserError> {
+        self.directory
+            .find(&email_key(address)?)
+            .await
+            .map_err(|e| BrowserError::Keep(e.to_string()))
+    }
+
+    /// Gives `person`'s account the email `address`, for getting back in, unless another
+    /// account has it already: whose it is now.
+    pub async fn claim_email(
+        &self,
+        address: &str,
+        person: PrincipalId,
+    ) -> Result<PrincipalId, BrowserError> {
+        self.directory
+            .link(&email_key(address)?, person)
+            .await
+            .map_err(|e| BrowserError::Keep(e.to_string()))
+    }
+
     /// Records that `person` belongs to `org`, after the organizations they joined before.
     pub async fn join(&self, person: PrincipalId, org: OrgId) -> Result<(), BrowserError> {
         self.directory
@@ -186,4 +208,12 @@ impl Accounts {
     fn held(&self) -> MutexGuard<'_, BTreeMap<PrincipalId, Arc<Browsers>>> {
         self.opened.lock().unwrap_or_else(PoisonError::into_inner)
     }
+}
+
+/// What an email address is kept as in the directory: the SHA-256 of the address as glave
+/// reads it, lowercase and trimmed, apart from every other identity, so no address is kept.
+fn email_key(address: &str) -> Result<IdentityKey, BrowserError> {
+    let read = address.trim().to_lowercase();
+    IdentityKey::new(&kept(&format!("email\0{read}")))
+        .map_err(|e| BrowserError::Keep(e.to_string()))
 }

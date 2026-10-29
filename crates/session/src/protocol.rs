@@ -43,7 +43,7 @@ pub use glave_event::{Forge, ProviderKind};
 pub use glave_event::{Grouping, Permissions, TurnResult};
 pub use live::Update;
 pub use models::ModelInfo;
-pub use passkeys::{AcceptedPasskeys, PasskeySummary, SignInWay, UnknownPasskey};
+pub use passkeys::{AcceptedPasskeys, LinkKind, PasskeySummary, SignInWay, UnknownPasskey};
 pub use people::{InviteInfo, JoinWay, PersonInfo, ShownInvite};
 pub use plans::PlanInfo;
 pub use projects::{GoneFolder, NewFolder, ProjectFolder};
@@ -138,14 +138,14 @@ methods! {
     /// public origin: good once, for ten minutes. Only glave on this computer: a local
     /// transport, or the local token.
     "signin/setup" => SigninSetup {} -> [Link],
-    /// Begins making a passkey with a setup link's code, or, with `invite`, an invite's: the
+    /// Begins making a passkey with a setup link's code, or an invite's or a sign-up's: the
     /// first passkey of a new glave account. Over HTTP it needs no sign-in.
     "passkey/create_options" => PasskeyCreateOptions {
         #[serde(serialize_with = "glave_event::serialize_exposed")]
         code: Secret,
-        /// Whether `code` is an invite's.
-        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-        invite: bool,
+        /// Which link `code` is: a setup link's unless said.
+        #[serde(default, skip_serializing_if = "LinkKind::is_setup")]
+        link: LinkKind,
     } -> [PasskeyOptions],
     /// Makes the passkey that answers a setup link's request, spends the code, and signs the
     /// browser in. Over HTTP it needs no sign-in.
@@ -210,6 +210,10 @@ methods! {
     "invite/list" => InviteList {} -> [Invites],
     /// Revokes an invite waiting to be opened.
     "invite/revoke" => InviteRevoke { invite: InviteId } -> [Done],
+    /// Signs up with `email`, where the server takes sign-ups: a link sent there makes the
+    /// person's account and an organization of their own. Answered the same whether or not an
+    /// account has that email. Over HTTP it needs no sign-in.
+    "signup/start" => SignupStart { email: String } -> [Done],
     /// What an invite's link opens, before anyone signs in: the organization it is to, the role
     /// it gives, who made it, and how someone joins with it. Over HTTP it needs no sign-in.
     "invite/show" => InviteShow {

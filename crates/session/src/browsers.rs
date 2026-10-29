@@ -48,8 +48,11 @@ where
             return Vec::new();
         };
         let mut ways = vec![SignInWay::Link];
-        if browsers.signs_in_with_passkeys() {
+        if browsers.signs_in_with_passkeys() || self.takes_signups() {
             ways.push(SignInWay::Passkey);
+        }
+        if self.takes_signups() {
+            ways.push(SignInWay::Signup);
         }
         ways
     }
@@ -89,6 +92,9 @@ where
         if let Some(joining) = self.joining(ceremony) {
             return self.join(joining, credential, name).await;
         }
+        if let Some(signing) = self.signing(ceremony) {
+            return self.finish_signup(signing, credential, name).await;
+        }
         let browsers = self.browsers()?;
         let (_, session) = browsers.create(ceremony, credential, name).await?;
         Ok(self.signed_in(session, browsers))
@@ -120,6 +126,10 @@ where
     /// whose it is told by the passkey; else with one of the local person's.
     pub(crate) async fn get_options(&self) -> Result<Reply, ApiError> {
         if let Some(accounts) = self.inner.accounts.as_deref() {
+            // Where anyone may sign up, accounts are many and in organizations of their own.
+            if self.takes_signups() {
+                return Ok(options(accounts.get_options()?));
+            }
             let own = self.inner.own;
             self.catch_up_people(own).await?;
             if self.people(own, |people| people.has_accounts()) {

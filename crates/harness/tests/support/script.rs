@@ -384,6 +384,8 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::InviteCreated(_) => "invite.created",
             Body::InviteAccepted(_) => "invite.accepted",
             Body::InviteRevoked(_) => "invite.revoked",
+            Body::SignupStarted(_) => "signup.started",
+            Body::SignupFinished(_) => "signup.finished",
             Body::Unknown(_) => "unknown",
         })
         .collect()

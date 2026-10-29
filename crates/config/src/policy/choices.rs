@@ -101,6 +101,8 @@ pub struct Choices {
     pub github: Option<Chosen<GithubFile>>,
     /// The mail server glave sends through, if one is set up.
     pub email: Option<Chosen<EmailFile>>,
+    /// Whether anyone may sign up at the public origin with their email (`[serve] signup`).
+    pub signup: Option<Chosen<bool>>,
 }
 
 /// One level choices come from.
@@ -174,6 +176,7 @@ pub(super) fn resolve(layers: &[Layer]) -> Choices {
         provider: nearest(layers, "provider", |file| file.provider.clone()),
         github: nearest(layers, "github", |file| file.github.clone()),
         email: nearest(layers, "email", |file| file.email.clone()),
+        signup: nearest(layers, "serve", |file| file.serve.as_ref()?.signup),
         store: nearest(layers, "store", |file| {
             let url = file.store.as_ref()?.url.as_ref()?;
             Some(url.trim().to_owned())

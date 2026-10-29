@@ -26,5 +26,11 @@
         {{ action() }}
       </button>
     }
+    @if (signsUp()) {
+      <p class="hint">
+        {{ copy.newHere }}
+        <a data-testid="sign-in-sign-up" [routerLink]="signUpLink">{{ copy.signUp }}</a>
+      </p>
+    }
   </glz-empty-state>
 </main>
