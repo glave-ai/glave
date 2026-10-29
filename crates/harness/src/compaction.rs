@@ -14,7 +14,7 @@ use glave_ports::{
 use crate::approval::Approver;
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
-use crate::room::{stated_window, trim_oldest};
+use crate::room::{stated_window, tool_room, trim_oldest};
 use crate::toolset::ToolSet;
 use crate::turn::Live;
 
@@ -194,6 +194,11 @@ where
         self.learned_windows
             .of(model)
             .map_or(configured, |learned| configured.min(learned))
+    }
+
+    /// The most bytes one tool output gives `thread`'s model.
+    pub(crate) fn tool_room(&self, thread: &Thread) -> usize {
+        tool_room(self.context_window(&self.model_for(thread)))
     }
 
     /// The longest summary to ask `model` for: at most a quarter of its window, since servers

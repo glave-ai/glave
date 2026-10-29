@@ -7,12 +7,13 @@ use glave_ports::{InMemoryLog, ModelRequest};
 
 use crate::support::*;
 
-/// A window so small that reading one large file fills it.
+/// A window so small that reading one large file fills it: a read gives at most a quarter of
+/// it, so it compacts at a fifth.
 fn tiny_window() -> glave_harness::Settings {
     let mut settings = settings();
     settings.compaction = Compaction {
-        window_tokens: 1_000,
-        at_percent: 80,
+        window_tokens: 20_000,
+        at_percent: 20,
     };
     settings
 }
@@ -24,7 +25,7 @@ fn requests(seen: &Seen) -> Vec<ModelRequest> {
 #[test]
 fn a_thread_that_outgrows_its_window_continues_from_a_summary() {
     let dir = folder("compact");
-    std::fs::write(dir.join("big.txt"), "marigold\n".repeat(1_000)).unwrap();
+    std::fs::write(dir.join("big.txt"), "marigold\n".repeat(3_000)).unwrap();
     block_on!(async {
         let answers = vec![
             reads("big.txt"),
@@ -149,7 +150,7 @@ fn compact_on_request_restarts_from_the_summary() {
 #[test]
 fn an_empty_summary_leaves_the_thread_as_it_was() {
     let dir = folder("empty-summary");
-    std::fs::write(dir.join("big.txt"), "marigold\n".repeat(1_000)).unwrap();
+    std::fs::write(dir.join("big.txt"), "marigold\n".repeat(3_000)).unwrap();
     block_on!(async {
         let answers = vec![
             reads("big.txt"),

@@ -277,6 +277,8 @@ where
             sources: vec![Arc::new(Builtins {
                 workspace: Arc::clone(&workspace),
                 commands: Arc::default(),
+                // Only offered from here: each thread's calls go to its own (`source_for`).
+                room: usize::MAX,
             })],
             defaults: RwLock::new(Arc::new(Defaults {
                 permissions: settings.permissions,

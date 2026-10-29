@@ -319,6 +319,7 @@ where
             BUILTINS => Some(Arc::new(Builtins {
                 workspace: Arc::clone(self.workspace_for(thread)),
                 commands: Arc::clone(&thread.commands),
+                room: self.tool_room(thread),
             })),
             _ => self.sources_for(thread).get(index).cloned(),
         }

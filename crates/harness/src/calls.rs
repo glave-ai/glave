@@ -21,6 +21,7 @@ use crate::harness::{Harness, HarnessError, Thread};
 use crate::hooks::ToolHook;
 use crate::judge::{JudgeCase, Ruling, judge};
 use crate::question::{self, QuestionRequest};
+use crate::room::fit;
 use crate::sandbox::{self, Asks};
 use crate::tools::Tool;
 use crate::toolset::ToolSet;
@@ -628,6 +629,7 @@ where
         call_id: CallId,
         outcome: ToolOutput,
     ) -> Result<(), HarnessError> {
+        let outcome = fit(outcome, self.tool_room(thread));
         let outcome = self.keep_files(thread, outcome).await;
         let completed = completed(call_id, outcome);
         let mut events = Vec::new();

@@ -192,3 +192,41 @@ fn a_first_message_too_long_is_not_tried_again() {
         assert_eq!(seen.lock().unwrap().len(), 1, "asked once, not again");
     });
 }
+
+#[test]
+fn a_model_with_a_small_window_reads_a_big_file_a_page_at_a_time() {
+    block_on!(async {
+        let dir = folder("small-window-read");
+        let lines = "line of the file\n".repeat(2_000);
+        std::fs::write(dir.join("lines.txt"), lines).unwrap();
+        let mut settings = settings();
+        settings.compaction.window_tokens = 4_096;
+        let answers = vec![reads("lines.txt"), text("Read the first page.")];
+        let (harness, seen) =
+            harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings).await;
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        harness
+            .run_turn(&mut thread, "read lines.txt", &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+        let seen = seen.lock().unwrap();
+        let page = seen[1]
+            .messages
+            .iter()
+            .find_map(|message| match message {
+                Message::Tool { output, .. } => match output.as_slice() {
+                    [Part::Text { text }] => Some(text.clone()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .unwrap();
+        assert!(
+            page.len() <= 4_096,
+            "a quarter of the window: {}",
+            page.len()
+        );
+        assert!(page.starts_with("1\tline of the file\n"), "{page}");
+        assert!(page.contains(" of 2000; use offset="), "{page}");
+    });
+}
