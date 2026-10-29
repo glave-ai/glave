@@ -255,6 +255,10 @@ fn every_server_on_one_store_reads_the_same_roles() {
             .await
             .unwrap();
         assert_eq!(role(&first, &ada).await, Some(OrgRole::Admin));
+        // The person on the computer lists, on the other server, whom the first recorded.
+        role(&first, &signed_in("alan", &[])).await;
+        let listed = recorded(people(&second, &Caller::default()).await.unwrap());
+        assert_eq!(listed.len(), 2, "{listed:?}");
     });
 }
 
@@ -282,7 +286,7 @@ fn each_person_is_listed_with_what_the_caller_may_change_of_them() {
     let dir = folder("people-seen");
     block_on!(async {
         let server = organization(&dir, &Shared::default(), 1).await;
-        let (ada, alan, bea) = three_signed_in(&server).await;
+        let (ada, _, bea) = three_signed_in(&server).await;
         let owner = Caller::default();
         set(&server, &owner, "ada", OrgRole::Admin).await.unwrap();
         set(&server, &owner, "bea", OrgRole::Owner).await.unwrap();
@@ -309,6 +313,18 @@ fn each_person_is_listed_with_what_the_caller_may_change_of_them() {
         assert_eq!(seen(&by_admin, id("alan")), (false, given, true));
         assert_eq!(seen(&by_admin, id("bea")), (false, Vec::new(), false));
         assert_eq!(seen(&by_admin, local.id), (false, Vec::new(), false));
+
+        // As the list says, no one changes their own role or takes themselves out.
+        let refused = set(&server, &ada, "ada", OrgRole::Member)
+            .await
+            .unwrap_err();
+        assert_eq!(refused.code, code::NOT_ALLOWED);
+        let ada_id = id("ada");
+        let refused = server
+            .request_as(&ada, Request::PersonRemove { person: ada_id })
+            .await
+            .unwrap_err();
+        assert_eq!(refused.code, code::NOT_ALLOWED);
 
         // The person on the server's computer owns it always: no one changes or removes them.
         let refused = server

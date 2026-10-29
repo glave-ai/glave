@@ -1,16 +1,18 @@
 <glz-dialog testId="invite" [heading]="copy.heading" [(open)]="open">
   <form class="glz-stack glz-gap-4" (submit)="make($event)">
-    <glz-form-field [label]="copy.email">
-      <input
-        glzInput
-        type="email"
-        autocomplete="off"
-        data-testid="invite-email"
-        [placeholder]="copy.placeholder"
-        [value]="email()"
-        (input)="typed($event)"
-      />
-    </glz-form-field>
+    @if (emails()) {
+      <glz-form-field [label]="copy.email">
+        <input
+          glzInput
+          type="email"
+          autocomplete="off"
+          data-testid="invite-email"
+          [placeholder]="copy.placeholder"
+          [value]="email()"
+          (input)="typed($event)"
+        />
+      </glz-form-field>
+    }
     <glz-form-field [label]="copy.role">
       <glz-radio-group
         data-testid="invite-role"

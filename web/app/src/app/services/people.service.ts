@@ -42,7 +42,9 @@ export class PeopleService {
         this.session.call('people/list', { limit: LISTED }),
         this.session.call('invite/list', {}),
       ]);
-      this.listed.set(people);
+      // Always a new list, the same as before or not: a menu the person changed shows again
+      // what the server keeps.
+      this.listed.set([...people]);
       this.waiting.set(invites);
       this.read.set(Date.now());
       return null;
@@ -79,12 +81,17 @@ export class PeopleService {
     }
   }
 
-  /** Makes a change, then reads the lists again. */
+  /**
+   * Makes a change, then reads the lists again, refused or not, so what shows is what the server
+   * keeps.
+   */
   private async changing(change: () => Promise<unknown>): Promise<string | null> {
-    return this.asking(async () => {
+    const refused = await this.asking(async () => {
       await change();
-      return this.load();
+      return null;
     });
+    const reread = await this.load();
+    return refused ?? reread;
   }
 
   /** What `ask` says, or the server's sentence when it refused, or the app's own. */

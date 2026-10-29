@@ -100,6 +100,7 @@ export async function fakeAdmin(page: Page): Promise<{ readonly sent: readonly u
   const server: ServerInfo = {
     ...discovered(),
     origin: 'https://glave.example',
+    email: true,
     exists: { organization: true, workers: false },
     role: 'owner',
   };

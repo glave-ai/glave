@@ -135,4 +135,45 @@ describe('PeopleComponent', () => {
       'only an owner can do that',
     );
   });
+
+  it('gives someone a role from their menu, and shows the server’s answer when it refuses', async () => {
+    let people: readonly PersonInfo[] = [DANA, SAM, PRIYA];
+    const fake = new FakeSession()
+      .answer('people/list', () => ({ people }))
+      .answer('invite/list', { invites: [] })
+      .answer('role/set', () => {
+        people = [DANA, SAM, { ...PRIYA, role: 'admin' }];
+        return { person: people[2] };
+      });
+    const { fixture, root } = await render(fake);
+    const menus = root.querySelectorAll<HTMLElement>('[data-testid="people-role"] button');
+    menus[1]?.click();
+    await settle(fixture);
+    document.querySelectorAll<HTMLElement>('[role="menuitemradio"]').forEach((item) => {
+      if (item.textContent.trim().startsWith('Admin')) {
+        item.click();
+      }
+    });
+    await settle(fixture);
+    expect(fake.paramsOf('role/set')).toEqual([{ person: 'p-priya', role: 'admin' }]);
+
+    fake.answer(
+      'role/set',
+      new ApiError({ code: ErrorCode.NOT_ALLOWED, message: 'only an owner can do that' }),
+    );
+    root.querySelectorAll<HTMLElement>('[data-testid="people-role"] button')[1]?.click();
+    await settle(fixture);
+    document.querySelectorAll<HTMLElement>('[role="menuitemradio"]').forEach((item) => {
+      if (item.textContent.trim().startsWith('Member')) {
+        item.click();
+      }
+    });
+    await settle(fixture);
+    expect(root.querySelector('[data-testid="people-problem"]')?.textContent).toContain(
+      'only an owner can do that',
+    );
+    // What the server keeps shows again: Priya is still an Admin.
+    const shown = root.querySelectorAll('[data-testid="people-role"]')[1];
+    expect(shown?.textContent).toContain('Admin');
+  });
 });

@@ -6,7 +6,7 @@
 use glave_event::{OrgRole, PersonRemoved, PrincipalId};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
-use crate::people::{Acting, Permit, no_such_person};
+use crate::people::{Acting, Permit, no_such_person, refuse_self};
 use crate::protocol::{ApiError, Reply, code};
 use crate::server::Server;
 use crate::words::Sentence;
@@ -32,6 +32,7 @@ where
             org,
             alone,
         } = self.acting(caller).await?;
+        refuse_self(&by, person)?;
         self.refuse_local(org, person)?;
         self.record_person(org, |people| {
             // Removed already: nothing to record, and what follows is done again.

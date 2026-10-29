@@ -14,13 +14,13 @@
   }
   <glz-card>
     <section class="rows" [attr.aria-label]="copy.list">
-      @for (person of rows(); track person.id) {
+      @for (person of rows(); track person) {
         <div class="row" data-testid="people-person">
           <glz-avatar [name]="person.name" />
           <div class="who">
             <p class="title" data-testid="people-name">{{ person.name }}</p>
-            @if (person.email; as email) {
-              <p class="details">{{ email }}</p>
+            @if (person.detail; as detail) {
+              <p class="details">{{ detail }}</p>
             }
           </div>
           <div class="acts glz-row glz-gap-2">

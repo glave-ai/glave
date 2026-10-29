@@ -151,6 +151,7 @@ where
                         workers: self.inner.worker.is_some(),
                     },
                     role,
+                    email: self.inner.mail.is_some() && self.inner.origin.is_some(),
                 }))
             }
             Request::PeopleList { after, limit } => self.list_people(caller, after, limit).await,

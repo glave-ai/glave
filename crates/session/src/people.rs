@@ -208,16 +208,15 @@ impl People {
         })
     }
 
-    /// `info` as `viewer` sees it: whether it is them, and what they may change of it, as
-    /// `role/set` and `person/remove` would let them.
-    pub(crate) fn seen(&self, mut info: PersonInfo, viewer: &Viewer) -> PersonInfo {
-        info.you = Some(info.id) == viewer.me;
+    /// `info` as the admin `acting` sees it: whether it is them, and what they may change of
+    /// it, as `role/set` and `person/remove` would let them.
+    fn as_seen_by(&self, mut info: PersonInfo, acting: &Acting) -> PersonInfo {
+        info.you = Some(info.id) == acting.by.id;
         let changeable = !info.you
             && !info.local
-            && viewer.theirs.contains(&Permit::People)
-            && (info.role != OrgRole::Owner || viewer.theirs.contains(&Permit::Owners))
-            && !self.last_owner(info.id, viewer.alone);
-        info.roles = match (changeable, viewer.theirs.contains(&Permit::Owners)) {
+            && (info.role != OrgRole::Owner || acting.theirs.contains(&Permit::Owners))
+            && !self.last_owner(info.id, acting.alone);
+        info.roles = match (changeable, acting.theirs.contains(&Permit::Owners)) {
             (false, _) => Vec::new(),
             (true, true) => vec![OrgRole::Owner, OrgRole::Admin, OrgRole::Member],
             (true, false) => vec![OrgRole::Admin, OrgRole::Member],
@@ -225,14 +224,6 @@ impl People {
         info.removable = changeable;
         info
     }
-}
-
-/// Who asks of the organization's people: who they are (the local person by their id too),
-/// what their role permits, and whether no local person owns the organization.
-pub(crate) struct Viewer {
-    me: Option<PrincipalId>,
-    theirs: &'static [Permit],
-    alone: bool,
 }
 
 /// The person on the server's computer, `local`, as the organization's people are listed: its
@@ -269,6 +260,15 @@ pub(crate) fn joined_of(caller: &Caller) -> Option<PersonJoined> {
 
 fn admins_only() -> ApiError {
     ApiError::new(code::NOT_ALLOWED, Sentence::AdminsOnly)
+}
+
+/// Refuses an admin's change of themselves: another admin changes their role, or takes them
+/// out.
+pub(crate) fn refuse_self(by: &Principal, person: PrincipalId) -> Result<(), ApiError> {
+    if by.id == Some(person) {
+        return Err(ApiError::new(code::NOT_ALLOWED, Sentence::NotYourself));
+    }
+    Ok(())
 }
 
 pub(crate) fn no_such_person(person: PrincipalId) -> ApiError {
@@ -376,7 +376,9 @@ where
         limit: Option<usize>,
     ) -> Result<Reply, ApiError> {
         let org = self.org_of(caller);
-        let viewer = self.viewer(caller).await?;
+        let acting = self.acting(caller).await?;
+        // The local person's role is never read from the ledger, so it is read here.
+        self.catch_up_people(org).await?;
         let limit = limit.unwrap_or(LISTED).clamp(1, MOST_LISTED);
         // The person on the server's computer owns its own organization, and is listed there.
         let local = self
@@ -391,38 +393,20 @@ where
             {
                 return Err(no_such_person(after));
             }
-            let mut listed: BTreeMap<PrincipalId, PersonInfo> = held
-                .known
-                .keys()
-                .filter_map(|person| held.info(*person))
-                .map(|info| (info.id, info))
-                .collect();
-            if let Some(local) = local {
-                listed.insert(local, local_info(local));
-            }
-            Ok(listed
-                .into_values()
-                .filter(|info| after.is_none_or(|after| info.id > after))
+            let mut ids: BTreeSet<PrincipalId> = held.known.keys().copied().collect();
+            ids.extend(local);
+            Ok(ids
+                .into_iter()
+                .filter(|id| after.is_none_or(|after| *id > after))
                 .take(limit)
-                .map(|info| held.seen(info, &viewer))
+                .filter_map(|id| match local {
+                    Some(local) if local == id => Some(local_info(local)),
+                    _ => held.info(id),
+                })
+                .map(|info| held.as_seen_by(info, &acting))
                 .collect())
         })?;
         Ok(Reply::People { people })
-    }
-
-    /// Who `caller` is to the organization's people, once their role permits listing them.
-    pub(crate) async fn viewer(&self, caller: &Caller) -> Result<Viewer, ApiError> {
-        let acting = self.acting(caller).await?;
-        Ok(self.seeing(caller, &acting))
-    }
-
-    /// Who `caller`, `acting` as they are, is to the organization's people.
-    pub(crate) fn seeing(&self, caller: &Caller, acting: &Acting) -> Viewer {
-        Viewer {
-            me: caller.person.or_else(|| self.inner.harness.person()),
-            theirs: acting.theirs,
-            alone: acting.alone,
-        }
     }
 
     /// What an admin method that changes someone knows of `caller` before it acts, once their
@@ -447,13 +431,13 @@ where
         role: OrgRole,
     ) -> Result<Reply, ApiError> {
         let acting = self.acting(caller).await?;
-        let viewer = self.seeing(caller, &acting);
         let Acting {
             theirs,
-            by,
+            ref by,
             org,
             alone,
         } = acting;
+        refuse_self(by, person)?;
         self.refuse_local(org, person)?;
         self.record_person(org, |people| {
             if !people.has(person) {
@@ -475,7 +459,9 @@ where
         .await?;
         let person = self
             .people(org, |people| {
-                people.info(person).map(|info| people.seen(info, &viewer))
+                people
+                    .info(person)
+                    .map(|info| people.as_seen_by(info, &acting))
             })
             .ok_or_else(|| no_such_person(person))?;
         Ok(Reply::Person { person })

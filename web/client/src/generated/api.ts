@@ -727,6 +727,11 @@ export type Seq = number;
 /** What the server is. */
 export type ServerInfo = {
   /**
+   * Whether it sends email (`[email]`) with links to its public origin, as an invite's: so
+   * a client asks for an address only where one is used.
+   */
+  readonly email?: boolean;
+  /**
    * What it has beyond the one person a server works for on its own; absent where it has
    * none of it, as on a person's own computer or server.
    */
