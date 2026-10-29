@@ -1,6 +1,7 @@
 import type { InviteInfo, PersonInfo, ServerInfo } from '@glave/client';
 import type { Page, Route } from '@playwright/test';
 
+import { posted } from './fake-records';
 import { discovered } from './fake-signin';
 
 /** The organization's people as its Owner, Dana, sees them. */
@@ -99,20 +100,15 @@ export async function fakeAdmin(page: Page): Promise<{ readonly sent: readonly u
   const server: ServerInfo = {
     ...discovered(),
     origin: 'https://glave.example',
+    email: true,
     exists: { organization: true, workers: false },
     role: 'owner',
   };
   await page.route('**/*', async (route: Route) => {
-    const request = route.request();
-    if (request.method() !== 'POST') {
-      await route.fallback();
+    const message = await posted(route);
+    if (message === null) {
       return;
     }
-    const message = request.postDataJSON() as {
-      id: number;
-      method: string;
-      params: Record<string, unknown>;
-    };
     const answered =
       message.method === 'server/discover' ? server : answer(message.method, message.params, kept);
     if (answered === undefined) {

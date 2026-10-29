@@ -126,7 +126,7 @@ where
             return Ok(());
         }
         let home = match thread.home {
-            Some(_) => self.home_of(thread.scope, thread.for_).await?.0,
+            Some(_) => self.home_of(thread.scope, thread.for_)?.0,
             None => Arc::clone(&self.workspace),
         };
         let again = match sources {

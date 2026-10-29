@@ -1,4 +1,5 @@
 import type { Methods, RawEvent, WorkspaceBound } from '@glave/client';
+import type { Route } from '@playwright/test';
 
 /**
  * What the fake server's threads record and how it refuses, as the session API shapes them:
@@ -124,4 +125,21 @@ export function answerFrom<K>(
     Record<string, ((params: unknown, kept: K) => unknown) | undefined>
   >;
   return answers[method]?.(params, kept);
+}
+
+/** A JSON-RPC request the page posted. */
+export interface Posted {
+  readonly id: number;
+  readonly method: string;
+  readonly params: Record<string, unknown>;
+}
+
+/** The JSON-RPC request `route` posts, or `null` for a page's own read, which falls back. */
+export async function posted(route: Route): Promise<Posted | null> {
+  const request = route.request();
+  if (request.method() !== 'POST') {
+    await route.fallback();
+    return null;
+  }
+  return request.postDataJSON() as Posted;
 }

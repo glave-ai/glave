@@ -1,9 +1,10 @@
 //! Workers: disposable computers, one per thread, started from an environment's pinned image
 //! by a backend (Docker, or Kubernetes with the `kubernetes` feature), with glave inside
 //! serving the computer protocol. The harness drives each one through this adapter, which
-//! keeps every call on the right worker over TLS (or a stream, for a worker with no network),
-//! within policy's limits. Work leaves a worker only as a pushed branch, a file handed back, or
-//! a store write; destroying it removes it. Each worker is labelled with the glave that started
+//! keeps every call on the right worker over TLS (or a stream, for a worker with no network)
+//! on Docker, or through bridges into its Pod on Kubernetes, within policy's limits. Work
+//! leaves a worker only as a pushed branch, a file handed back, or a store write; destroying
+//! it removes it. Each worker is labelled with the glave that started
 //! it, and a glave starting removes those whose glave is gone ([`WorkerComputers::reap`]).
 
 mod backend;
@@ -33,7 +34,7 @@ use crate::remote::RemoteComputers;
 use crate::tls::{Identity, NO_HANDSHAKE, NOT_LISTENING, connect_tls};
 use crate::token::Token;
 use backend::{Backend, Link, Spec, Started};
-use reconnect::Connection;
+use reconnect::{Connection, Door};
 
 pub use credentials::{WorkerCredentials, https_url};
 pub use docker::{Docker, DockerSettings};
@@ -298,7 +299,7 @@ impl WorkerComputers {
         token: &Token,
         environment: &Environment,
     ) -> Result<(Connection, Option<JoinHandle<()>>, ComputerInfo), ComputerError> {
-        let (remote, task, address) = match started.link {
+        let (remote, task, door) = match started.link {
             Link::Tls {
                 address,
                 fingerprint,
@@ -324,7 +325,7 @@ impl WorkerComputers {
                         }
                     }
                 };
-                (remote, forward, Some((address, fingerprint)))
+                (remote, forward, Door::Tls(address, fingerprint))
             }
             Link::Stream { read, write, task } => {
                 let remote = RemoteComputers::connect(read, write);
@@ -332,7 +333,12 @@ impl WorkerComputers {
                     task.abort();
                     return Err(error);
                 }
-                (remote, Some(task), None)
+                (remote, Some(task), Door::None)
+            }
+            Link::Bridged => {
+                let remote =
+                    reconnect::bridged(&*self.backend, &started.name, token.secret()).await?;
+                (remote, None, Door::Bridge)
             }
         };
         let inside = Environment {
@@ -341,7 +347,7 @@ impl WorkerComputers {
         };
         let mut info = remote.create(&inside).await?;
         info.environment = Some(environment.clone());
-        Ok((Connection::new(remote, address), task, info))
+        Ok((Connection::new(remote, door), task, info))
     }
 
     /// The connection to `worker`, opened again (once) if it has died.

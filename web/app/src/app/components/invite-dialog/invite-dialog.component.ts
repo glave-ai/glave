@@ -2,6 +2,7 @@ import { DOCUMENT } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
+  LOCALE_ID,
   computed,
   effect,
   inject,
@@ -19,14 +20,9 @@ import {
   GlzRadioGroupComponent,
 } from '@glave/glaze';
 
+import { lasts } from '../../lib/people';
 import { type Made, PeopleService } from '../../services/people.service';
 import { ServerService } from '../../services/server.service';
-
-/** How long an invite works, in whole days from when it was made to when it ends. */
-function days(made: Made): number {
-  const lasts = Date.parse(made.invite.expires) - Date.parse(made.invite.made);
-  return Math.max(1, Math.round(lasts / 86_400_000));
-}
 
 /**
  * Inviting someone to the organization: their email, if the inviter has it, and what they can
@@ -52,6 +48,7 @@ export class InviteDialogComponent {
   readonly open = model(false);
 
   private readonly people = inject(PeopleService);
+  private readonly locale = inject(LOCALE_ID);
   private readonly server = inject(ServerService);
   private readonly page = inject(DOCUMENT).defaultView?.location.origin ?? '';
   protected readonly copy = {
@@ -77,6 +74,8 @@ export class InviteDialogComponent {
   protected readonly problem = signal<string | null>(null);
   protected readonly made = signal<Made | null>(null);
   protected readonly showing = signal(false);
+  /** Whether glave sends the link to an address: where it doesn't, none is asked for. */
+  protected readonly emails = this.server.email;
   protected readonly makeLabel = computed(() => (this.busy() ? this.copy.making : this.copy.make));
   protected readonly link = computed(() => this.made()?.link ?? '');
   /** What the ready dialog says: whether glave emailed the link, and how long it works. */
@@ -85,11 +84,11 @@ export class InviteDialogComponent {
     if (made === null) {
       return '';
     }
-    const lasts = days(made);
+    const works = lasts(made.invite, this.locale);
     const to = made.invite.email ?? null;
     return to === null
-      ? $localize`:@@inviteDialog.share:Send the link yourself. It works once, for ${lasts}:DAYS: days.`
-      : $localize`:@@inviteDialog.emailed:We emailed it to ${to}:EMAIL:. You can also send the link yourself. It works once, for ${lasts}:DAYS: days.`;
+      ? $localize`:@@inviteDialog.share:Send the link yourself. It works once, for ${works}:LASTS:.`
+      : $localize`:@@inviteDialog.emailed:We emailed it to ${to}:EMAIL:. You can also send the link yourself. It works once, for ${works}:LASTS:.`;
   });
 
   constructor() {

@@ -2034,6 +2034,10 @@
     "ServerInfo": {
       "description": "What the server is.",
       "properties": {
+        "email": {
+          "description": "Whether it sends email (`[email]`) with links to its public origin, as an invite's: so\na client asks for an address only where one is used.",
+          "type": "boolean"
+        },
         "exists": {
           "$ref": "#/$defs/Exists",
           "description": "What it has beyond the one person a server works for on its own; absent where it has\nnone of it, as on a person's own computer or server."

@@ -15,8 +15,8 @@ import { SessionService } from '../../services/session.service';
 /**
  * Admin, a room apart from the person's chats, for the organization's Admins and Owners: its
  * side nav leads back to the chats and to its pages (People), and its page fills the rest.
- * The side nav is a drawer on narrow screens, opened from the page's own header, as the
- * workspace's is.
+ * The side nav is a drawer on narrow screens, opened from the page's own header, and ⌘B or
+ * Ctrl+B shows or hides it, as the workspace's.
  */
 @Component({
   selector: 'app-admin',
@@ -31,16 +31,19 @@ import { SessionService } from '../../services/session.service';
   templateUrl: './admin.component.html',
   styleUrl: './admin.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { '(document:keydown)': 'keydown($event)' },
 })
 export class AdminComponent {
   protected readonly copy = {
     sideNav: $localize`:@@admin.sideNav:Admin`,
+    skip: $localize`:@@admin.skip:Skip to content`,
     resize: $localize`:@@admin.resize:Resize the side bar`,
     back: $localize`:@@admin.back:Back to chats`,
     heading: $localize`:@@admin.heading:Admin`,
     people: $localize`:@@admin.people:People`,
   } as const;
   protected readonly icons = { back: ArrowLeft, people: Users } as const;
+  protected readonly contentLink = '#content';
   protected readonly chatsLink = '/';
   protected readonly peopleLink = '/admin';
   private readonly nav = inject(NavService);
@@ -58,6 +61,10 @@ export class AdminComponent {
       void this.router.navigateByUrl('/sign-in');
     }
   });
+
+  protected keydown(event: KeyboardEvent): void {
+    this.nav.keydown(event);
+  }
 
   protected navigated(): void {
     this.layout().navigated();
