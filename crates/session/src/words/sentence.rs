@@ -82,6 +82,14 @@ sentences! {
         "this is your only passkey, so it can't be removed: add another first",
     NoAccounts = "no-accounts"
         "people sign in to this glave another way, so an invite here makes no passkey",
+    NoEmail = "no-email" "this glave sends no email: share the invite's link yourself",
+    NotAnEmail = "not-an-email" "that isn't an email address: check it and try again",
+    InviteNotSent = "invite-not-sent"
+        "the invite's email could not be sent, so it was not made: try again, or make it without an address and share its link",
+    InviteMailSubject = "invite-mail-subject" "You're invited to glave",
+    InviteMail = "invite-mail"
+        "You've been invited to glave. Open this link within 7 days to join:",
+    InviteMailIgnore = "invite-mail-ignore" "If you weren't expecting this, you can ignore it.",
     InviteGone = "invite-gone"
         "that invite link was used already, revoked or has expired: ask whoever sent it for a new one",
     NoSuchInvite { invite: String } = "no-such-invite" "no invite with the id { $invite } is waiting",

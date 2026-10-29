@@ -28,8 +28,8 @@ use effective::give_way;
 pub use effective::{check_model, check_own_servers};
 pub use explain::explain;
 pub use files::{
-    ConfigFile, GithubFile, HooksFile, ModelEntry, PolicyFile, ServeFile, ServerFile, StoreFile,
-    TaskRules, TelemetryFile, config,
+    ConfigFile, EmailFile, GithubFile, HooksFile, ModelEntry, PolicyFile, ServeFile, ServerFile,
+    StoreFile, TaskRules, TelemetryFile, config,
 };
 pub use memory::{MemorySettings, settle as memory_settings};
 pub use placement::{Placement, PlacementRules};
@@ -165,7 +165,7 @@ fn with_project(own: &[Layer], mut project: Layer, highest: Permissions) -> Vec<
 /// said. Nor where telemetry goes,
 /// nor where history is kept, nor where people's computers run, nor which server to sign in to, nor where people reach this one,
 /// nor which cloud the organization's credentials go to, nor which app their GitHub sign-in
-/// goes to. It may take the network away from sandboxed commands, never give it back.
+/// goes to, nor which mail server sign-in links go through. It may take the network away from sandboxed commands, never give it back.
 fn project_layer(path: &Path, values: ConfigFile) -> Layer {
     let values = ConfigFile {
         gateway: None,
@@ -176,6 +176,7 @@ fn project_layer(path: &Path, values: ConfigFile) -> Layer {
         serve: None,
         provider: None,
         github: None,
+        email: None,
         network: values.network.filter(|on| !on),
         ..values
     };

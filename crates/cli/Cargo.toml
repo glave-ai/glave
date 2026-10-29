@@ -58,6 +58,7 @@ glave-harness.workspace = true
 glave-bucket.workspace = true
 glave-keys = { workspace = true, features = ["keychain"] }
 glave-mcp.workspace = true
+glave-mail.workspace = true
 glave-memory.workspace = true
 # Spreadsheets read and written by `glave doc`, and the skill built in that teaches it.
 glave-office.workspace = true

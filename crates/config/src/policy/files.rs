@@ -74,6 +74,47 @@ pub struct ConfigFile {
     /// The GitHub App people sign in to GitHub through, in the browser. Only the person's or
     /// the server's own file sets it: their GitHub sign-in goes there.
     pub github: Option<GithubFile>,
+    /// The mail server glave sends its few messages through. Only the person's or the server's
+    /// own file sets it: what it sends carries sign-in links.
+    pub email: Option<EmailFile>,
+}
+
+/// `[email]`: the SMTP server glave sends invites through (`specs/model.md`, "Identity"), over
+/// TLS: STARTTLS, or TLS from the first byte on port 465. Its password is never in a file: it
+/// comes from `GLAVE_SMTP_PASSWORD`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EmailFile {
+    /// The mail server's name, such as `smtp.example.com`.
+    pub host: String,
+    /// Its port: 587 unless set.
+    pub port: Option<u16>,
+    /// Who messages come from, such as `glave <glave@example.com>`.
+    pub from: String,
+    /// The user it signs in as, if it asks for one.
+    pub user: Option<String>,
+}
+
+impl EmailFile {
+    /// The submission port, where a mail server takes messages with STARTTLS.
+    pub const SUBMISSION: u16 = 587;
+
+    /// What is wrong with it, if anything.
+    fn problem(&self) -> Option<String> {
+        let host = self.host.trim();
+        if host.is_empty() || host.contains(['/', ':', ' ']) {
+            return Some(format!(
+                "host = {:?} is not a mail server's name",
+                self.host
+            ));
+        }
+        (!self.from.contains('@')).then(|| {
+            format!(
+                "from = {:?} is not an address messages can come from",
+                self.from
+            )
+        })
+    }
 }
 
 /// `[github]`: the GitHub App whose device flow signs people in to GitHub from the browser
@@ -508,6 +549,9 @@ pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
     }
     if let Some(problem) = file.github.as_ref().and_then(GithubFile::problem) {
         invalid!("{}: [github] {problem}", path.display());
+    }
+    if let Some(problem) = file.email.as_ref().and_then(EmailFile::problem) {
+        invalid!("{}: [email] {problem}", path.display());
     }
     if let Some(server) = &file.server
         && !safe_to_send(&server.url, &[])

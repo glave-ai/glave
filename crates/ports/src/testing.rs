@@ -1,7 +1,7 @@
 //! The test doubles every crate's tests share (AGENTS.md, "Testing"): the runtime they run on,
 //! a clock they move, randomness that counts, a cancellation already fired, a fake HTTP server
 //! and a client that stalls mid-request, the core of the model providers' fake servers, a fake
-//! OAuth authorization server, a command's output kept, fake secrets, a scripted model, an
+//! OAuth authorization server, a mailer that keeps what it sends, a command's output kept, fake secrets, a scripted model, an
 //! event log that fails when told, programs they start, stopped when they end, and folders of
 //! their own, removed when they are done. Behind the `conformance` feature, so no production
 //! build carries them.
@@ -11,6 +11,7 @@ mod git;
 mod http;
 mod model;
 mod oauth;
+mod outbox;
 mod output;
 mod process;
 mod scripted;
@@ -30,6 +31,7 @@ pub use git::{FAKE_COMMIT, FakeGitHost, FixedGitCredentials};
 pub use http::{FakeHttp, Received, sent_in_part};
 pub use model::{Answer, ScriptedModel, Seen};
 pub use oauth::{FAKE_CLIENT, FakeAuthServer, Grant};
+pub use outbox::Outbox;
 pub use output::Captured;
 pub use process::{HUNG, Running};
 pub use scripted::{ScriptedHttp, Written};

@@ -1356,6 +1356,11 @@ export type InviteAcceptResult = {
 };
 
 export type InviteCreateParams = {
+  /**
+   * Whom to email its link to, where the server sends email; else it is the caller's to
+   * share. The address is not kept.
+   */
+  readonly email?: string | null;
   readonly role: OrgRole;
 };
 

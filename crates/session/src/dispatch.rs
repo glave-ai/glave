@@ -156,7 +156,9 @@ where
             Request::PeopleList { after, limit } => self.list_people(caller, after, limit).await,
             Request::RoleSet { person, role } => self.set_role(caller, person, role).await,
             Request::PersonRemove { person } => self.remove_person(caller, person).await,
-            Request::InviteCreate { role } => self.create_invite(caller, role).await,
+            Request::InviteCreate { role, email } => {
+                self.create_invite(caller, role, email.as_deref()).await
+            }
             Request::InviteList {} => self.list_invites(caller).await,
             Request::InviteRevoke { invite } => self.revoke_invite(caller, invite).await,
             Request::InviteAccept { code } => self.accept_invite(caller, code.expose()).await,

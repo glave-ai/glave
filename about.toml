@@ -16,6 +16,7 @@ accepted = [
     "Unicode-3.0",
     "MPL-2.0",
     "CDLA-Permissive-2.0",
+    "0BSD",
 ]
 # What glave links: not what only builds it or tests it.
 ignore-build-dependencies = true

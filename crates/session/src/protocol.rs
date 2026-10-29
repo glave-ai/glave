@@ -199,7 +199,13 @@ methods! {
     /// Makes an invite to the organization giving `role`, good once and for 7 days: answered
     /// with its code, this once, for a link (`<origin>/#invite=<code>`). Only for those whose
     /// role permits inviting, and only an Owner invites an Owner.
-    "invite/create" => InviteCreate { role: OrgRole } -> [Invited],
+    "invite/create" => InviteCreate {
+        role: OrgRole,
+        /// Whom to email its link to, where the server sends email; else it is the caller's to
+        /// share. The address is not kept.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        email: Option<String>,
+    } -> [Invited],
     /// The invites waiting to be opened, oldest first, never their codes.
     "invite/list" => InviteList {} -> [Invites],
     /// Revokes an invite waiting to be opened.

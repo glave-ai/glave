@@ -4,6 +4,8 @@
 //! code is refused alike; only those whose role permits inviting make, list and revoke them; an
 //! invite never lowers a role, and gives no more than its maker may still give.
 
+use std::sync::Arc;
+
 use glave_event::{OrgRole, PrincipalId, Secret};
 use glave_ports::testing::ManualClock;
 use glave_ports::{Caller, OrgId, ProjectId, Scope};
@@ -55,7 +57,7 @@ async fn invite(
     role: OrgRole,
 ) -> Result<(InviteInfo, Secret), ApiError> {
     match server
-        .request_as(caller, Request::InviteCreate { role })
+        .request_as(caller, Request::InviteCreate { role, email: None })
         .await?
     {
         Reply::Invited { invite, code } => Ok((invite, code)),
@@ -304,5 +306,73 @@ fn where_no_one_else_reaches_the_server_there_is_no_one_to_invite_or_accept() {
         let guessed = Secret::new("0".repeat(64));
         let refused = accept(&server, &owner(), &guessed).await.unwrap_err();
         assert_eq!(refused.code, code::NOT_ALLOWED);
+    });
+}
+
+/// An invite named for an address is sent there, its link at the server's public origin; the
+/// address is not kept. Without a mail server, or with no address, nothing is sent.
+#[test]
+fn an_invite_is_emailed_where_the_server_sends_email() {
+    let dir = folder("invites-emailed");
+    block_on!(async {
+        let outbox = Arc::new(glave_ports::testing::Outbox::default());
+        let mut setup = Setup::new(Vec::new());
+        setup.identity_provider = true;
+        setup.origin = glave_ports::host::PublicOrigin::parse("https://glave.test");
+        setup.mail = Some(Arc::clone(&outbox) as Arc<dyn glave_ports::Mailer>);
+        let (server, _) = setup.build_on(&dir, Shared::default()).await;
+        let create = |email: Option<&str>| Request::InviteCreate {
+            role: OrgRole::Member,
+            email: email.map(str::to_owned),
+        };
+        let Ok(Reply::Invited { code, .. }) = server.request(create(Some("ada@example.com"))).await
+        else {
+            panic!("an invite");
+        };
+        let sent = outbox.sent();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].to, "ada@example.com");
+        let link = format!("https://glave.test/#invite={}", code.expose());
+        assert!(sent[0].text.contains(&link), "{}", sent[0].text);
+        server.request(create(None)).await.unwrap();
+        assert_eq!(outbox.sent().len(), 1, "no address, no email");
+        let refused = server
+            .request(create(Some("not an address")))
+            .await
+            .unwrap_err();
+        assert_eq!(refused.code, code::INVALID_PARAMS);
+
+        let unsent = folder("invites-unsent");
+        let mut setup = Setup::new(Vec::new());
+        setup.identity_provider = true;
+        let (quiet, _) = setup.build_on(&unsent, Shared::default()).await;
+        let refused = quiet
+            .request(create(Some("ada@example.com")))
+            .await
+            .unwrap_err();
+        assert_eq!(refused.code, code::NOT_AVAILABLE);
+    });
+}
+
+/// An invite whose email the mail server refused is not left waiting: its link reached no one.
+#[test]
+fn an_invite_whose_email_was_refused_is_not_made() {
+    let dir = folder("invites-refused");
+    block_on!(async {
+        let mut setup = Setup::new(Vec::new());
+        setup.identity_provider = true;
+        setup.origin = glave_ports::host::PublicOrigin::parse("https://glave.test");
+        setup.mail = Some(Arc::new(glave_ports::testing::Outbox::refusing()));
+        let (server, _) = setup.build_on(&dir, Shared::default()).await;
+        let create = Request::InviteCreate {
+            role: OrgRole::Member,
+            email: Some("ada@example.com".into()),
+        };
+        let refused = server.request(create).await.unwrap_err();
+        assert_eq!(refused.code, code::NOT_AVAILABLE);
+        let Ok(Reply::Invites { invites }) = server.request(Request::InviteList {}).await else {
+            panic!("invites");
+        };
+        assert!(invites.is_empty(), "{invites:?}");
     });
 }

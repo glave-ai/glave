@@ -96,6 +96,7 @@ glave-harness = { path = "crates/harness" }
 glave-identity = { path = "crates/identity" }
 glave-keys = { path = "crates/keys" }
 glave-mcp = { path = "crates/mcp" }
+glave-mail = { path = "crates/mail" }
 glave-memory = { path = "crates/memory" }
 glave-office = { path = "crates/office" }
 glave-ports = { path = "crates/ports" }
@@ -141,6 +142,9 @@ lopdf = { version = "0.45", default-features = false }
 # Kubernetes types for the worker backend on Kubernetes: the API at its oldest supported version.
 k8s-openapi = { version = "0.28", default-features = false, features = ["std", "earliest"] }
 keyring = { version = "4.2", default-features = false, features = ["v1"] }
+# SMTP for the email plug (glave-mail), on the rustls, aws-lc-rs and platform verifier glave
+# already uses: no native TLS and no other async runtime.
+lettre = { version = "0.11.23", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls", "aws-lc-rs", "rustls-platform-verifier"] }
 # The Kubernetes client for the worker backend on Kubernetes: kubeconfig and in-cluster auth,
 # rustls on aws-lc-rs as the rest of glave, and WebSockets for exec, attach and port-forward.
 kube = { version = "4.2", default-features = false, features = ["client", "rustls-tls", "aws-lc-rs", "ws"] }

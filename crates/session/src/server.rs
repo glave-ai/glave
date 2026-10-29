@@ -18,7 +18,7 @@ use glave_ports::host::PublicOrigin;
 use glave_ports::memories::Memory;
 use glave_ports::settings::Hooks;
 use glave_ports::{
-    BlobStore, Caller, Clock, Entropy, EventLog, Holder, InMemoryLeases, Lease, Leases,
+    BlobStore, Caller, Clock, Entropy, EventLog, Holder, InMemoryLeases, Lease, Leases, Mailer,
     ModelProvider, OrgId, OsEntropy, ProjectId, Projects, Scope, SystemClock, ToolSource,
 };
 use tokio::sync::watch;
@@ -108,6 +108,8 @@ pub struct Wiring<P, L, B> {
     /// The browsers signed in on this computer, by links' one-time codes; none where no
     /// browser is signed in that way, as over stdio.
     pub browsers: Option<Arc<Browsers>>,
+    /// Where its email goes out, where the deployment sends any.
+    pub mail: Option<Arc<dyn Mailer>>,
     /// The glave accounts it keeps for people other than the local person, where its
     /// organization has none of a company's login and people reach it at a public origin.
     pub accounts: Option<Arc<Accounts>>,
@@ -173,6 +175,7 @@ impl<P, L, B> Wiring<P, L, B> {
             trust: None,
             browsers: None,
             accounts: None,
+            mail: None,
             origin: None,
             leases: None,
             awake: None,
@@ -261,6 +264,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) trust: Option<Arc<dyn ProjectTrust>>,
     /// The browsers signed in on this computer, when it signs them in.
     pub(crate) browsers: Option<Arc<Browsers>>,
+    /// Where its email goes out, where it sends any.
+    pub(crate) mail: Option<Arc<dyn Mailer>>,
     /// The glave accounts it keeps, where it keeps any.
     pub(crate) accounts: Option<Arc<Accounts>>,
     /// The accounts being made by invites (`joining.rs`).
@@ -362,6 +367,7 @@ where
                 asks: Mutex::new(Asks::default()),
                 browsers: wiring.browsers,
                 accounts: wiring.accounts,
+                mail: wiring.mail,
                 joinings: Mutex::new(crate::joining::Joinings::default()),
                 origin: wiring.origin,
                 stopping: AtomicBool::new(false),
