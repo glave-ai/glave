@@ -3,12 +3,10 @@
 //! next turn; what they saved still theirs to see; and never theirs to choose where memory does
 //! not run or they are not the person on this computer.
 
-use glave_event::{Auth, AuthMethod};
 use glave_ports::Caller;
 use glave_ports::memories::REMEMBER;
 use glave_session::Answering;
 use glave_session::protocol::{RememberingInfo, Reply, Request, code};
-use glave_session::signin::person;
 
 use crate::memory::served_seeing;
 use crate::support::*;
@@ -30,20 +28,6 @@ async fn remembering<L: glave_ports::EventLog + 'static>(
 /// Whether the model was offered memory's tools in the `n`th request it received.
 fn offered(seen: &Seen, n: usize) -> bool {
     json(seen).get(n).unwrap().contains(REMEMBER)
-}
-
-/// Someone signed in from elsewhere, not the person on this computer.
-fn elsewhere() -> Caller {
-    Caller {
-        person: Some(person("https://id.example.com", "grace").unwrap()),
-        auth: Some(Auth {
-            method: AuthMethod::Oidc,
-            issuer: Some("https://id.example.com".into()),
-            subject: Some("grace".into()),
-            session: None,
-        }),
-        trace: None,
-    }
 }
 
 #[test]

@@ -7,10 +7,9 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use glave_event::{Auth, AuthMethod, Body, Opened, ThreadId, decode};
-use glave_ports::{Caller, EventLog, ProjectId};
+use glave_event::{Body, Opened, ThreadId, decode};
+use glave_ports::{EventLog, ProjectId};
 use glave_session::protocol::{GoneFolder, Reply, Request, Show, code};
-use glave_session::signin::person;
 use serde_json::json;
 
 use crate::support::*;
@@ -30,20 +29,6 @@ fn beside(dir: &Path, name: &str) -> std::path::PathBuf {
     let _ = std::fs::remove_dir_all(&made);
     std::fs::create_dir_all(&made).unwrap();
     made
-}
-
-/// Someone signed in from elsewhere, not the person on this computer.
-fn elsewhere() -> Caller {
-    Caller {
-        person: Some(person("https://id.example.com", "grace").unwrap()),
-        auth: Some(Auth {
-            method: AuthMethod::Oidc,
-            issuer: Some("https://id.example.com".into()),
-            subject: Some("grace".into()),
-            session: None,
-        }),
-        trace: None,
-    }
 }
 
 fn start_request(project: ProjectId, worktree: Option<bool>) -> Request {

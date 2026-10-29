@@ -238,3 +238,17 @@ pub(crate) async fn settle<L: EventLog + 'static>(server: &Tested<L>) {
     }
     panic!("a task never finished");
 }
+
+/// Someone signed in from elsewhere, not the person on this computer.
+pub(crate) fn elsewhere() -> Caller {
+    Caller {
+        person: Some(glave_session::signin::person("https://id.example.com", "grace").unwrap()),
+        auth: Some(glave_event::Auth {
+            method: glave_event::AuthMethod::Oidc,
+            issuer: Some("https://id.example.com".into()),
+            subject: Some("grace".into()),
+            session: None,
+        }),
+        trace: None,
+    }
+}
