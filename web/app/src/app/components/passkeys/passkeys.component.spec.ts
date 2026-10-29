@@ -5,6 +5,7 @@ import { expectAccessible } from '@glave/glaze/testing';
 import type { Authenticator } from '../../lib/passkeys';
 import { AUTHENTICATOR, passkeyRefused } from '../../services/passkeys.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { MADE_PASSKEY } from '../../testing/fixtures';
 import { PasskeysComponent } from './passkeys.component';
 
 const PHONE: PasskeySummary = {
@@ -28,18 +29,7 @@ const OPTIONS = {
   },
 };
 
-/** What a device answers, shaped as the browser's answers are. */
-const MADE = {
-  id: 'BAU',
-  rawId: new Uint8Array([4, 5]).buffer,
-  type: 'public-key',
-  response: {
-    attestationObject: new Uint8Array([1]).buffer,
-    clientDataJSON: new Uint8Array([2]).buffer,
-    getTransports: () => ['internal'],
-  },
-  getClientExtensionResults: () => ({}),
-};
+const MADE = MADE_PASSKEY;
 
 /** Lets the component's promises and the page settle. */
 async function settle(fixture: { whenStable(): Promise<unknown> }): Promise<void> {

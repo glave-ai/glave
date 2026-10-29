@@ -7,7 +7,20 @@
       <div data-testid="invite-reading"></div>
     }
     @case ('failed') {
-      <p class="problem" role="alert" data-testid="invite-failed">{{ failed() }}</p>
+      <glz-empty-state data-testid="invite-failed" [heading]="copy.name" [icon]="icon">
+        <p class="problem" role="alert">{{ failed() }}</p>
+        <button glzEmptyStateAction glzButton data-testid="invite-open" (click)="later()">
+          {{ copy.open }}
+        </button>
+      </glz-empty-state>
+    }
+    @case ('member') {
+      <glz-empty-state data-testid="invite-member" [heading]="heading()" [icon]="icon">
+        <p>{{ copy.memberText }}</p>
+        <button glzEmptyStateAction glzButton data-testid="invite-open" (click)="later()">
+          {{ copy.open }}
+        </button>
+      </glz-empty-state>
     }
     @case ('gone') {
       <glz-empty-state data-testid="invite-gone" [heading]="heading()" [icon]="icon">
@@ -34,6 +47,10 @@
         >
           {{ passkeyLabel() }}
         </button>
+        <p class="hint">
+          {{ copy.have }}
+          <a data-testid="invite-sign-in" [routerLink]="signInLink">{{ copy.signIn }}</a>
+        </p>
       </glz-empty-state>
     }
     @case ('company') {
@@ -62,9 +79,6 @@
           <p class="problem" role="alert" data-testid="invite-problem">{{ problem }}</p>
         }
         <div glzEmptyStateAction class="glz-row glz-gap-2">
-          <button glzButton data-testid="invite-not-now" (click)="later()">
-            {{ copy.notNow }}
-          </button>
           <button
             glzButton
             variant="primary"
@@ -73,6 +87,9 @@
             (click)="join()"
           >
             {{ joinLabel() }}
+          </button>
+          <button glzButton data-testid="invite-not-now" (click)="later()">
+            {{ copy.notNow }}
           </button>
         </div>
       </glz-empty-state>

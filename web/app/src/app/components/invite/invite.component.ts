@@ -1,14 +1,13 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import type { OrgRole, ShownInvite } from '@glave/client';
 import { GlzButtonComponent, GlzEmptyStateComponent, GlzTopBarComponent } from '@glave/glaze';
 import MailOpen from 'lucide/dist/esm/icons/mail-open.mjs';
 
 import { InviteService } from '../../services/invite.service';
-import { SessionService } from '../../services/session.service';
 
 /** What the page asks of the person, from what the invite opens and whether they signed in. */
-type Asked = 'reading' | 'gone' | 'failed' | 'passkey' | 'company' | 'join';
+type Asked = 'reading' | 'gone' | 'failed' | 'passkey' | 'company' | 'join' | 'member';
 
 /** The role an invite gives, in the sentence that says how the person joins. */
 function joinsAs(role: OrgRole): string {
@@ -31,21 +30,21 @@ function invitedBy(shown: ShownInvite): string {
 }
 
 /**
- * The page an invite's link opens (`#invite=…`), signed in or not. New to glave, the person
- * makes a passkey and joins; where the team signs people in with its own login, they continue
- * there; signed in already, they join the team as one more of theirs, or not now; and an
- * invite that no longer opens anything says so, and to ask for a new one.
+ * The page an invite's link opens (`#invite=…`), signed in or not, drawn from what the server
+ * says of it and of the reader. New to glave, the person makes a passkey and joins; where the
+ * team signs people in with its own login, they continue there; signed in, they join the team
+ * as one more of theirs, or not now, or are told they are in it already; and an invite that
+ * no longer opens anything says so, and to ask for a new one.
  */
 @Component({
   selector: 'app-invite',
-  imports: [GlzButtonComponent, GlzEmptyStateComponent, GlzTopBarComponent],
+  imports: [RouterLink, GlzButtonComponent, GlzEmptyStateComponent, GlzTopBarComponent],
   templateUrl: './invite.component.html',
   styleUrl: './invite.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class InviteComponent {
   private readonly invite = inject(InviteService);
-  private readonly session = inject(SessionService);
   private readonly router = inject(Router);
   protected readonly copy = {
     name: 'glave',
@@ -54,7 +53,11 @@ export class InviteComponent {
     companyText: $localize`:@@invite.companyText:Your team signs you in with its own login. Use your work account.`,
     companyAction: $localize`:@@invite.companyAction:Continue with your team's sign-in`,
     joinHeading: $localize`:@@invite.joinHeading:Join this team?`,
-    joinText: $localize`:@@invite.joinText:It gets its own chats and projects, apart from yours. Switch between them from your menu.`,
+    joinText: $localize`:@@invite.joinText:It gets its own chats and projects, apart from yours.`,
+    memberHeading: $localize`:@@invite.memberHeading:You're in this team already`,
+    memberText: $localize`:@@invite.memberText:This invite is for someone who isn't. Nothing to do here.`,
+    have: $localize`:@@invite.have:Already have an account?`,
+    signIn: $localize`:@@invite.signIn:Sign in, then open this link again`,
     join: $localize`:@@invite.join:Join`,
     notNow: $localize`:@@invite.notNow:Not now`,
     goneHeading: $localize`:@@invite.goneHeading:This invite doesn't work anymore`,
@@ -64,6 +67,7 @@ export class InviteComponent {
     joining: $localize`:@@invite.joining:Joining…`,
   } as const;
   protected readonly icon = MailOpen;
+  protected readonly signInLink = '/sign-in';
   protected readonly busy = signal(false);
   protected readonly problem = signal<string | null>(null);
 
@@ -72,10 +76,12 @@ export class InviteComponent {
     if (opened.kind !== 'shown') {
       return opened.kind;
     }
-    if (this.session.signedIn()) {
-      return 'join';
+    switch (opened.shown.joining) {
+      case 'accept':
+        return 'join';
+      default:
+        return opened.shown.joining;
     }
-    return opened.shown.joining === 'company' ? 'company' : 'passkey';
   });
   private readonly shown = computed(() => {
     const opened = this.invite.opened();
@@ -88,6 +94,8 @@ export class InviteComponent {
         return this.copy.goneHeading;
       case 'join':
         return this.copy.joinHeading;
+      case 'member':
+        return this.copy.memberHeading;
       default:
         return shown === null ? '' : invitedBy(shown);
     }

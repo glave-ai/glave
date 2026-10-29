@@ -326,8 +326,8 @@ export type InviteInfo = {
   readonly role: OrgRole;
 };
 
-/** How someone joins the organization an invite is to. */
-export type Joining = "passkey" | "company";
+/** How the one who holds an invite joins the organization it is to. */
+export type JoinWay = "passkey" | "company" | "accept" | "member";
 
 /** Whether a line was kept, taken out or put in. */
 export type LineKind = "same" | "removed" | "added";
@@ -797,7 +797,7 @@ export type ShownInvite = {
    * the person who runs this glave, who has neither here.
    */
   readonly by?: string | null;
-  readonly joining: Joining;
+  readonly joining: JoinWay;
   /** The organization it is to, for a client to work in once its person joins. */
   readonly organization: string;
   /** The role it gives. */

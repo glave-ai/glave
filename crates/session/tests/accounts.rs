@@ -511,3 +511,82 @@ fn someone_in_two_organizations_names_the_one_each_request_works_in() {
 fn owner_named(served: &Served, token: &LocalToken, organization: &str) -> Web {
     Web::new(served, Some(token.reveal().to_owned())).working_in(organization)
 }
+
+#[test]
+fn an_account_not_in_an_organization_joins_it_with_the_address_its_invite_went_to() {
+    block_on!(async {
+        let dir = folder("accounts-joins-anew");
+        let token = LocalToken::new([19; 32]);
+        let (served, directory) = serve_keeping(&dir, true, &token).await;
+        let mut here = Web::new(&served, Some(token.reveal().to_owned()));
+        let mut tablet = Authenticator::new(ORIGIN).unwrap();
+        let linus = join(
+            &served,
+            invite(&served, &token, OrgRole::Member).await,
+            &mut tablet,
+        )
+        .await;
+        let mut phone = Authenticator::new(ORIGIN).unwrap();
+        let first = Request::InviteCreate {
+            role: OrgRole::Member,
+            email: Some("grace@first.example.com".into()),
+        };
+        let first = asked(&mut here, &first).await;
+        let first = Secret::new(first["code"].as_str().unwrap());
+        join(&served, first, &mut phone).await;
+        let listed = Request::PeopleList {
+            after: None,
+            limit: None,
+        };
+        let before = asked(&mut here, &listed).await;
+        let grace_id: PrincipalId = before["people"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|person| person["email"] == json!("grace@first.example.com"))
+            .map(|person| serde_json::from_value(person["id"].clone()).unwrap())
+            .unwrap();
+        // Taken out of this organization, she works in one of her own.
+        let removed = asked(&mut here, &Request::PersonRemove { person: grace_id }).await;
+        assert_eq!(removed, json!({}));
+        let hers = OrgId::from_uuid(Uuid::from_u128(0x0192_f5c6_0000_7000_8000_0000_0000_0a12));
+        directory.join(grace_id, hers).await.unwrap();
+        let session = sign_in(&served, &mut phone).await;
+        let mut signed_in = elsewhere(&served, session.as_str().map(str::to_owned));
+
+        let create = Request::InviteCreate {
+            role: OrgRole::Member,
+            email: Some("grace@example.com".into()),
+        };
+        let invited = asked(&mut here, &create).await;
+        let code = Secret::new(invited["code"].as_str().unwrap());
+        let show = Request::InviteShow { code: code.clone() };
+        assert_eq!(
+            asked(&mut signed_in, &show).await["shown"]["joining"],
+            json!("accept")
+        );
+        let mut as_linus = elsewhere(&served, token_of(&linus));
+        assert_eq!(
+            asked(&mut as_linus, &show).await["shown"]["joining"],
+            json!("member")
+        );
+        assert_eq!(
+            asked(&mut here, &show).await["shown"]["joining"],
+            json!("member")
+        );
+
+        let accepted = asked(&mut signed_in, &Request::InviteAccept { code }).await;
+        assert_eq!(accepted["person"]["you"], json!(true), "{accepted}");
+        let after = asked(&mut here, &listed).await;
+        let rejoined = after["people"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|person| person["id"] == json!(grace_id))
+            .unwrap();
+        assert_eq!(rejoined["email"], json!("grace@example.com"), "{after}");
+        let orgs = directory.organizations(grace_id).await.unwrap();
+        assert_eq!(orgs, [hers, scope().org()]);
+        served.close().await;
+    });
+}

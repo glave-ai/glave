@@ -23,7 +23,7 @@ async function opened(fake: FakeSession, link = '/#invite=c0de'): Promise<Invite
 describe('InviteService', () => {
   it('says what the invite opens, and that a spent one opens nothing', async () => {
     const invite = await opened(new FakeSession().answer('invite/show', { shown: SHOWN }));
-    expect(invite.pending()).toBe(true);
+    expect(TestBed.inject(SessionService).inviteCode()).not.toBeNull();
     await invite.load();
     expect(invite.opened()).toEqual({ kind: 'shown', shown: SHOWN });
     TestBed.resetTestingModule();
@@ -38,15 +38,15 @@ describe('InviteService', () => {
     const fake = new FakeSession().answer('invite/accept', refused);
     const invite = await opened(fake);
     expect(await invite.accept()).toBe('opens nothing');
-    expect(invite.pending()).toBe(true);
+    expect(TestBed.inject(SessionService).inviteCode()).not.toBeNull();
     fake.answer('invite/accept', { person: { id: 'p', role: 'admin', you: true } });
     expect(await invite.accept()).toBeNull();
-    expect(invite.pending()).toBe(false);
+    expect(TestBed.inject(SessionService).inviteCode()).toBeNull();
   });
 
   it('opens nothing for a tab with no invite', async () => {
     const invite = await opened(new FakeSession(), '/');
-    expect(invite.pending()).toBe(false);
+    expect(TestBed.inject(SessionService).inviteCode()).toBeNull();
     await invite.load();
     expect(invite.opened()).toEqual({ kind: 'gone' });
   });

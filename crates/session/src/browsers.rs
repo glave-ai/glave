@@ -13,6 +13,7 @@ use glave_event::{At, AuthMethod, Secret};
 use glave_identity::signin::{Browsers, Ceremony, PasskeyInfo, Proof, Session};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
+use crate::organizations::with_account;
 use crate::protocol::{ApiError, PasskeySummary, Reply, SignInWay, code};
 use crate::providers::local;
 use crate::server::Server;
@@ -166,7 +167,7 @@ where
     ) -> Result<Reply, ApiError> {
         let browsers = self.person_s(caller).await?;
         let last = browsers.passkeys().iter().all(|kept| kept.id == passkey);
-        if last && is_account(caller) {
+        if last && with_account(caller) {
             return Err(ApiError::new(code::NOT_ALLOWED, Sentence::LastPasskey));
         }
         let removed = browsers.remove(passkey).await;
@@ -178,7 +179,7 @@ where
 
     /// The browsers of `caller`: the local person's, or their glave account's.
     pub(crate) async fn person_s(&self, caller: &Caller) -> Result<Arc<Browsers>, ApiError> {
-        if let (true, Some(person)) = (is_account(caller), caller.person) {
+        if let (true, Some(person)) = (with_account(caller), caller.person) {
             return Ok(self.accounts()?.browsers(person).await?);
         }
         if !local(caller) {
@@ -270,14 +271,6 @@ fn summary(passkey: PasskeyInfo) -> PasskeySummary {
         added: At::from(passkey.added),
         used: passkey.used.map(At::from),
     }
-}
-
-/// Whether `caller` signed in with a glave account.
-fn is_account(caller: &Caller) -> bool {
-    caller
-        .auth
-        .as_ref()
-        .is_some_and(|auth| auth.method == AuthMethod::Account)
 }
 
 /// The browser session `caller` signed in with, if they did.

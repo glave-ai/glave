@@ -14,6 +14,7 @@ import {
   SIGNED_IN,
   provideFakeSession,
 } from '../../testing/fake-session';
+import { MADE_PASSKEY } from '../../testing/fixtures';
 import { InviteComponent } from './invite.component';
 
 const SHOWN: ShownInvite = {
@@ -35,18 +36,7 @@ const OPTIONS = {
   },
 };
 
-/** What a device answers when it makes a passkey, shaped as the browser's answers are. */
-const MADE = {
-  id: 'BAU',
-  rawId: new Uint8Array([4, 5]).buffer,
-  type: 'public-key',
-  response: {
-    attestationObject: new Uint8Array([1]).buffer,
-    clientDataJSON: new Uint8Array([2]).buffer,
-    getTransports: () => ['internal'],
-  },
-  getClientExtensionResults: () => ({}),
-};
+const MADE = MADE_PASSKEY;
 
 const device: Authenticator = {
   create: () => Promise.resolve(MADE as unknown as Credential),
@@ -133,7 +123,7 @@ describe('InviteComponent', () => {
 
   it('signed in already, joins as one more team of theirs, or puts it aside', async () => {
     const fake = new FakeSession()
-      .answer('invite/show', { shown: SHOWN })
+      .answer('invite/show', { shown: { ...SHOWN, joining: 'accept' } })
       .answer('invite/accept', { person: { id: 'p', role: 'member', you: true } });
     const { fixture, navigate, root } = await render(fake, SIGNED_IN);
     const page = root.querySelector('[data-testid="invite-joining"]');
@@ -147,7 +137,7 @@ describe('InviteComponent', () => {
 
     TestBed.resetTestingModule();
     const later = await render(
-      new FakeSession().answer('invite/show', { shown: SHOWN }),
+      new FakeSession().answer('invite/show', { shown: { ...SHOWN, joining: 'accept' } }),
       SIGNED_IN,
     );
     click(later.root, 'invite-not-now');
@@ -163,5 +153,18 @@ describe('InviteComponent', () => {
     expect(page?.textContent).toContain("This invite doesn't work anymore");
     expect(page?.textContent).toContain('Ask whoever sent it for a new one.');
     await expectAccessible(root);
+  });
+
+  it('tells someone in the team already that there is nothing to join', async () => {
+    const fake = new FakeSession().answer('invite/show', {
+      shown: { ...SHOWN, joining: 'member' },
+    });
+    const { fixture, navigate, root } = await render(fake, SIGNED_IN);
+    const page = root.querySelector('[data-testid="invite-member"]');
+    expect(page?.textContent).toContain("You're in this team already");
+    await expectAccessible(root);
+    root.querySelector<HTMLElement>('[data-testid="invite-open"]')?.click();
+    await settle(fixture);
+    expect(navigate).toHaveBeenCalledWith('/');
   });
 });

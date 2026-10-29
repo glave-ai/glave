@@ -34,10 +34,13 @@ export async function fakeInvite(page: Page): Promise<{ readonly accepted: reado
     if (opens && message.method === 'invite/accept') {
       accepted.push(message.params);
     }
+    // Signed in, the person may accept it; signed out, they make a passkey.
+    const signedIn = route.request().headers()['authorization'] !== undefined;
+    const shown = { ...SHOWN, joining: signedIn ? 'accept' : 'passkey' };
     const reply = !opens
       ? { error: { code: -32035, message: 'this invite opens nothing: ask for a new one' } }
       : message.method === 'invite/show'
-        ? { result: { shown: SHOWN } }
+        ? { result: { shown } }
         : { result: { person: { id: 'p', role: 'member', you: true } } };
     await route.fulfill({
       contentType: 'application/json',

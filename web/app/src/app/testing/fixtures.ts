@@ -155,3 +155,16 @@ export const SERVER = {
   permissions: 'auto',
   modes: ['auto', 'plan', 'ask', 'full-access'],
 } as const;
+
+/** What a device answers when it makes a passkey, shaped as the browser's answers are. */
+export const MADE_PASSKEY = {
+  id: 'BAU',
+  rawId: new Uint8Array([4, 5]).buffer,
+  type: 'public-key',
+  response: {
+    attestationObject: new Uint8Array([1]).buffer,
+    clientDataJSON: new Uint8Array([2]).buffer,
+    getTransports: () => ['internal'],
+  },
+  getClientExtensionResults: () => ({}),
+};

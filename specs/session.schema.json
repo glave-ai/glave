@@ -903,17 +903,27 @@
       ],
       "type": "object"
     },
-    "Joining": {
-      "description": "How someone joins the organization an invite is to.",
+    "JoinWay": {
+      "description": "How the one who holds an invite joins the organization it is to.",
       "oneOf": [
         {
           "const": "passkey",
-          "description": "By making a passkey: a new glave account, or one more organization for someone\nsigned in with one.",
+          "description": "Not signed in: by making a passkey, a new glave account.",
           "type": "string"
         },
         {
           "const": "company",
-          "description": "By signing in through the organization's company login.",
+          "description": "Not signed in: by signing in through the organization's company login.",
+          "type": "string"
+        },
+        {
+          "const": "accept",
+          "description": "Signed in: by accepting it, the organization one more of theirs.",
+          "type": "string"
+        },
+        {
+          "const": "member",
+          "description": "Signed in, and in the organization already: nothing to join.",
           "type": "string"
         }
       ]
@@ -2204,7 +2214,7 @@
           ]
         },
         "joining": {
-          "$ref": "#/$defs/Joining"
+          "$ref": "#/$defs/JoinWay"
         },
         "organization": {
           "description": "The organization it is to, for a client to work in once its person joins.",
