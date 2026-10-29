@@ -326,6 +326,9 @@ export type InviteInfo = {
   readonly role: OrgRole;
 };
 
+/** How the one who holds an invite joins the organization it is to. */
+export type JoinWay = "passkey" | "company" | "accept" | "member";
+
 /** Whether a line was kept, taken out or put in. */
 export type LineKind = "same" | "removed" | "added";
 
@@ -786,6 +789,20 @@ export type Setting = "providers" | "credentials" | "connections" | "search" | "
 
 /** Which threads `thread/list` shows. */
 export type Show = "archived" | "active" | "deleted";
+
+/** What an invite's link opens, for whoever holds it: never its code, nor whom it was sent to. */
+export type ShownInvite = {
+  /**
+   * Who made it, by the name the organization knows them by, else their email; none for
+   * the person who runs this glave, who has neither here.
+   */
+  readonly by?: string | null;
+  readonly joining: JoinWay;
+  /** The organization it is to, for a client to work in once its person joins. */
+  readonly organization: string;
+  /** The role it gives. */
+  readonly role: OrgRole;
+};
 
 /**
  * Signing in to a remote server in the browser: the person opens `url`, its authorization server's
@@ -1403,6 +1420,15 @@ export type InviteRevokeParams = {
 };
 
 export type InviteRevokeResult = Readonly<Record<string, never>>;
+
+export type InviteShowParams = {
+  readonly code: Secret;
+};
+
+/** What an invite's link opens. */
+export type InviteShowResult = {
+  readonly shown: ShownInvite;
+};
 
 export type LanguageGetParams = Readonly<Record<string, never>>;
 
@@ -2191,6 +2217,7 @@ export interface Methods {
   readonly "invite/create": { readonly params: InviteCreateParams; readonly result: InviteCreateResult };
   readonly "invite/list": { readonly params: InviteListParams; readonly result: InviteListResult };
   readonly "invite/revoke": { readonly params: InviteRevokeParams; readonly result: InviteRevokeResult };
+  readonly "invite/show": { readonly params: InviteShowParams; readonly result: InviteShowResult };
   readonly "language/get": { readonly params: LanguageGetParams; readonly result: LanguageGetResult };
   readonly "language/set": { readonly params: LanguageSetParams; readonly result: LanguageSetResult };
   readonly "memory/edit": { readonly params: MemoryEditParams; readonly result: MemoryEditResult };

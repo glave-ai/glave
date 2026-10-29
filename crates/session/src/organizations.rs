@@ -36,11 +36,7 @@ where
         if named == self.org_of(&caller) {
             return Ok(caller);
         }
-        let account = caller
-            .auth
-            .as_ref()
-            .is_some_and(|auth| auth.method == AuthMethod::Account);
-        if !account {
+        if !with_account(&caller) {
             return Err(not_in());
         }
         let (Some(person), Some(accounts)) = (caller.person, self.inner.accounts.as_deref()) else {
@@ -61,4 +57,13 @@ where
 /// The one answer to an organization the caller is not in, whether or not it exists.
 fn not_in() -> ApiError {
     ApiError::new(code::NOT_ALLOWED, Sentence::NotInOrganization)
+}
+
+/// Whether `caller` signed in with a glave account, the only kind of caller who may belong to
+/// several organizations.
+pub(crate) fn with_account(caller: &Caller) -> bool {
+    caller
+        .auth
+        .as_ref()
+        .is_some_and(|auth| auth.method == AuthMethod::Account)
 }

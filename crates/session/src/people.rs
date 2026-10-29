@@ -347,7 +347,7 @@ where
         self.catch_up_people(org).await?;
         if self.people(org, |people| people.removed(person)) {
             return match request {
-                Request::InviteAccept { .. } => Ok(()),
+                Request::InviteShow { .. } | Request::InviteAccept { .. } => Ok(()),
                 _ => Err(ApiError::new(code::NOT_ALLOWED, Sentence::Removed)),
             };
         }
@@ -492,6 +492,23 @@ where
         })
         .await?;
         Ok(())
+    }
+
+    /// What `org`'s people ledger says, read apart from what this server keeps: for what a
+    /// code someone holds names, which may be any organization, so made-up ones crowd out
+    /// none this server keeps.
+    pub(crate) async fn people_apart(&self, org: OrgId) -> Result<People, ApiError> {
+        // Glave's own: the organization's people ledger, answered only as the methods here say.
+        let scope = Scope::of_organization(org);
+        let log = self.inner.harness.log();
+        let mut read = People::default();
+        catch_up(log, &scope, Reserved::People.id(), None, |page| {
+            for raw in page {
+                read.apply(raw);
+            }
+        })
+        .await?;
+        Ok(read)
     }
 
     /// Appends what `make` makes of the ledger as it is then, after anything others wrote

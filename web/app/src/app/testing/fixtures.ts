@@ -155,3 +155,29 @@ export const SERVER = {
   permissions: 'auto',
   modes: ['auto', 'plan', 'ask', 'full-access'],
 } as const;
+
+/** What a device answers when it makes a passkey, shaped as the browser's answers are. */
+export const MADE_PASSKEY = {
+  id: 'BAU',
+  rawId: new Uint8Array([4, 5]).buffer,
+  type: 'public-key',
+  response: {
+    attestationObject: new Uint8Array([1]).buffer,
+    clientDataJSON: new Uint8Array([2]).buffer,
+    getTransports: () => ['internal'],
+  },
+  getClientExtensionResults: () => ({}),
+};
+
+/** What the server answers when a passkey is to be made at `glave.test`. */
+export const PASSKEY_OPTIONS = {
+  ceremony: 'c1',
+  options: {
+    publicKey: {
+      challenge: 'AQID',
+      rp: { id: 'glave.test', name: 'glave' },
+      user: { id: 'AQID', name: 'glave', displayName: 'glave' },
+      pubKeyCredParams: [],
+    },
+  },
+};

@@ -90,6 +90,22 @@ export class PasskeysService {
     });
   }
 
+  /**
+   * Makes the first passkey of a new account on this device with the invite `code`, joining
+   * the organization it is to, and signs the browser in.
+   */
+  async join(code: string): Promise<string | null> {
+    return this.asking(async () => {
+      const asked = await this.session.call('passkey/create_options', { code, invite: true });
+      const credential = await made(this.authenticator, asked.options);
+      if (credential === null) {
+        return passkeyRefused();
+      }
+      const created = { ceremony: asked.ceremony, credential };
+      return this.begun(await this.session.call('passkey/create', created));
+    });
+  }
+
   /** Signs the browser in with a passkey on this device. */
   async signIn(): Promise<string | null> {
     return this.asking(async () => {

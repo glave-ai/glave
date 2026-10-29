@@ -52,12 +52,17 @@ where
     /// of a new account, when the code opens an invite now.
     pub(crate) async fn join_options(&self, code: &Secret) -> Result<Reply, ApiError> {
         let accounts = self.accounts()?;
-        let org = self.inner.own;
+        let org = self.invited_to(code.expose());
         let presented = kept(code.expose());
         let now = self.inner.harness.clock().now();
-        self.catch_up_people(org).await?;
         let local = self.inner.harness.person();
-        if self.people(org, |people| people.opens(&presented, now, local).is_none()) {
+        // Read apart: a code names any organization, real or not, until it opens an invite.
+        if self
+            .people_apart(org)
+            .await?
+            .opens(&presented, now, local)
+            .is_none()
+        {
             return Err(gone());
         }
         let (person, browsers) = accounts.made().await?;
