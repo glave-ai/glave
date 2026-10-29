@@ -90,10 +90,16 @@ fn not_found(error: &kube::Error) -> bool {
     matches!(error, kube::Error::Api(status) if status.is_not_found())
 }
 
-/// An exec in a Pod that failed with `error`, as a computer error: the API server's own refusal
-/// (the Pod is not there, or not running) is final, and no answer at all, as while it
-/// restarts, is unreachable, which a bridge tries again.
-fn exec_failed(what: &str, error: &kube::Error) -> ComputerError {
+/// An exec in the Pod `name` that failed with `error`, as a computer error: final when the API
+/// server refused it, or the Pod is not there or not running (an exec into a container that
+/// ended is answered as the API server's own error); unreachable, which a bridge tries again,
+/// when the Pod runs, or cannot be read, as while the API server restarts.
+async fn exec_failed(
+    pods: &Api<Pod>,
+    name: &str,
+    what: &str,
+    error: &kube::Error,
+) -> ComputerError {
     let refused = match error {
         kube::Error::Api(status) => status.code < 500,
         kube::Error::UpgradeConnection(UpgradeConnectionError::ProtocolSwitch(code)) => {
@@ -101,11 +107,24 @@ fn exec_failed(what: &str, error: &kube::Error) -> ComputerError {
         }
         _ => false,
     };
-    if refused {
+    if refused || matches!(running(pods, name).await, Ok(false)) {
         failed(what, error)
     } else {
         ComputerError::Unreachable(format!("Kubernetes {what}: {error}"))
     }
+}
+
+/// Whether the Pod `name` runs, as the API server says: there, not being removed, its container
+/// running.
+async fn running(pods: &Api<Pod>, name: &str) -> Result<bool, ComputerError> {
+    let pod = pods.get_opt(name).await.map_err(|error| {
+        ComputerError::Unreachable(format!("Kubernetes could not read {name}: {error}"))
+    })?;
+    Ok(pod.is_some_and(|pod| {
+        pod.metadata.deletion_timestamp.is_none()
+            && objects::progress(&serde_json::to_value(&pod).unwrap_or_default())
+                == Progress::Running
+    }))
 }
 
 impl Kubernetes {
@@ -293,11 +312,17 @@ impl Kubernetes {
             .stdout(false)
             .stderr(true)
             .max_stdin_buf_size(CHUNK);
-        let mut process = self
-            .pods()
+        let pods = self.pods();
+        let mut process = match pods
             .exec(name, ["tar", "-x", "-f", "-", "-C", "/"], &params)
             .await
-            .map_err(|error| exec_failed("could not copy glave into the worker", &error))?;
+        {
+            Ok(process) => process,
+            Err(error) => {
+                let what = "could not copy glave into the worker";
+                return Err(exec_failed(&pods, name, what, &error).await);
+            }
+        };
         let (Some(mut input), Some(mut errors)) = (process.stdin(), process.stderr()) else {
             return Err(ComputerError::Failed(
                 "copying glave in gave no standard input".into(),

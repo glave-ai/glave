@@ -14,7 +14,7 @@ use kube::Api;
 use kube::api::{DeleteParams, PostParams};
 use serde_json::json;
 
-use super::objects::{self, COMPUTER_LABEL, Home, IDLE_MINUTES, Progress};
+use super::objects::{COMPUTER_LABEL, Home, IDLE_MINUTES};
 use super::{Kubernetes, POLL, failed, not_found};
 use crate::token::Token;
 use crate::worker::backend::{Backend, Link, Listed, Spec, Started, Stream, saying};
@@ -162,15 +162,7 @@ impl PersonComputer {
     /// Whether the computer is awake as the API server says: its Pod there, not being removed,
     /// and its container running.
     pub(crate) async fn running(&self) -> Result<bool, ComputerError> {
-        let name = self.name();
-        let pod = self.cluster.pods().get_opt(&name).await.map_err(|error| {
-            ComputerError::Unreachable(format!("Kubernetes could not read {name}: {error}"))
-        })?;
-        Ok(pod.is_some_and(|pod| {
-            pod.metadata.deletion_timestamp.is_none()
-                && objects::progress(&serde_json::to_value(&pod).unwrap_or_default())
-                    == Progress::Running
-        }))
+        super::running(&self.cluster.pods(), &self.name()).await
     }
 
     /// Removes the computer and its disk, with everything on it.

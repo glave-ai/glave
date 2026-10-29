@@ -35,10 +35,16 @@ pub(crate) async fn bridge(pods: Api<Pod>, name: &str) -> Result<Stream, Compute
         .max_stdin_buf_size(PIPE)
         .max_stdout_buf_size(PIPE)
         .max_stderr_buf_size(PIPE);
-    let mut process = pods
+    let mut process = match pods
         .exec(name, [GLAVE, "computer", "bridge", SOCKET], &params)
         .await
-        .map_err(|error| exec_failed(&format!("could not open a bridge into {name}"), &error))?;
+    {
+        Ok(process) => process,
+        Err(error) => {
+            let what = format!("could not open a bridge into {name}");
+            return Err(exec_failed(&pods, name, &what, &error).await);
+        }
+    };
     let (Some(write), Some(read), Some(errors)) =
         (process.stdin(), process.stdout(), process.stderr())
     else {

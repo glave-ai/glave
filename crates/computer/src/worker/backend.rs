@@ -81,6 +81,10 @@ pub(crate) enum Link {
     /// Through bridges into the worker ([`Backend::bridge`]), opened as often as a connection
     /// is needed, each signed in with the token: on Kubernetes, where a port-forward does not
     /// reach a sandboxed Pod.
+    #[cfg_attr(
+        all(not(feature = "kubernetes"), not(test)),
+        expect(dead_code, reason = "only Kubernetes bridges into its workers")
+    )]
     Bridged,
 }
 
