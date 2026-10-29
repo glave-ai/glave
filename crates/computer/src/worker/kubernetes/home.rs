@@ -19,7 +19,8 @@ use super::{Kubernetes, POLL, failed, not_found};
 use crate::token::Token;
 use crate::worker::backend::{Backend, Link, Listed, Spec, Started};
 
-/// How long a removed Pod or claim has to go: its grace period is none, so seconds.
+/// How long a removed Pod or claim has to go: the Pod's grace period (5 seconds) and its
+/// volumes let go of, so seconds.
 const GONE_WAIT: Duration = Duration::from_mins(1);
 /// The longest key a person's computer is named by, so its objects' names stay labels.
 const KEY_LENGTH: usize = 40;
@@ -91,9 +92,25 @@ impl PersonComputer {
         .map_err(|error| failed("disk claim", error))?;
         match self.claims().create(&PostParams::default(), &claim).await {
             Ok(_) => Ok(()),
-            Err(kube::Error::Api(status)) if status.is_already_exists() => Ok(()),
+            Err(kube::Error::Api(status)) if status.is_already_exists() => self.kept().await,
             Err(error) => Err(failed("refused the person's disk", error)),
         }
+    }
+
+    /// Checks that the disk already there is not being removed, which no Pod could mount.
+    async fn kept(&self) -> Result<(), ComputerError> {
+        let name = self.claim_name();
+        let claim = self
+            .claims()
+            .get(&name)
+            .await
+            .map_err(|error| failed(&format!("could not read the disk {name}"), error))?;
+        if claim.metadata.deletion_timestamp.is_some() {
+            return Err(ComputerError::Failed(format!(
+                "the disk {name} is being removed, so the computer cannot wake on it"
+            )));
+        }
+        Ok(())
     }
 
     /// Wakes the computer from `spec`: its disk made if it is new, a Pod left from before
@@ -130,20 +147,17 @@ impl PersonComputer {
     /// mount again; the disk kept. Asleep already is not an error.
     async fn sleep(&self) -> Result<(), ComputerError> {
         let name = self.name();
-        self.cluster.remove(&name).await?;
-        gone(&self.cluster.pods(), &name, "computer").await
+        // Within its grace period, not at once: the Pod's object goes only once its containers
+        // have stopped and its volumes are let go of, so nothing still writes to the disk when
+        // it mounts again. Its policy goes after it, so it never runs unpoliced.
+        removed(&self.cluster.pods(), &name, "computer").await?;
+        removed(&self.cluster.policies(), &name, "computer's network policy").await
     }
 
     /// Removes the computer and its disk, with everything on it.
     pub(crate) async fn destroy(&self) -> Result<(), ComputerError> {
         self.sleep().await?;
-        let name = self.claim_name();
-        match self.claims().delete(&name, &DeleteParams::default()).await {
-            Ok(_) => {}
-            Err(error) if not_found(&error) => {}
-            Err(error) => return Err(failed(&format!("could not remove the disk {name}"), error)),
-        }
-        gone(&self.claims(), &name, "disk").await
+        removed(&self.claims(), &self.claim_name(), "disk").await
     }
 }
 
@@ -157,6 +171,25 @@ fn plain(key: &str) -> bool {
         && key
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+/// Removes the object `name`, gracefully, and waits until it is gone. One already gone is not
+/// an error.
+async fn removed<K>(api: &Api<K>, name: &str, what: &str) -> Result<(), ComputerError>
+where
+    K: kube::Resource + Clone + serde::de::DeserializeOwned + std::fmt::Debug,
+{
+    match api.delete(name, &DeleteParams::default()).await {
+        Ok(_) => {}
+        Err(error) if not_found(&error) => {}
+        Err(error) => {
+            return Err(failed(
+                &format!("could not remove the {what} {name}"),
+                error,
+            ));
+        }
+    }
+    gone(api, name, what).await
 }
 
 /// Waits until the object `name` is gone, within [`GONE_WAIT`].

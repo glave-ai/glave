@@ -3,7 +3,7 @@
 //! written before it sleeps is there after it wakes, the wake is timed, and destroying it
 //! leaves nothing behind.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use glave_ports::block_on;
 use glave_ports::computer::{
@@ -16,12 +16,20 @@ use crate::worker::backend::Backend as _;
 use crate::worker::route::Tail;
 use crate::{CancelSwitch, WorkerComputers, WorkerCredentials};
 
-/// Runs `command` at the person's home on the computer `computers` woke, and what it printed.
-async fn ran(computers: &WorkerComputers, computer: ComputerId, command: &str) -> String {
+/// Runs `command` at the person's home on the computer `computers` woke, and what it printed,
+/// or why it could not: never a panic, so the test removes what it made before it asserts.
+async fn ran(
+    computers: &WorkerComputers,
+    computer: ComputerId,
+    command: &str,
+) -> Result<String, String> {
     let home = Sources::Folder {
         path: super::super::objects::PERSON_HOME.into(),
     };
-    let opened = computers.open(computer, &home).await.unwrap();
+    let opened = computers
+        .open(computer, &home)
+        .await
+        .map_err(|error| format!("open: {error:?}"))?;
     let output = Tail::default();
     let finished = computers
         .run(
@@ -31,9 +39,32 @@ async fn ran(computers: &WorkerComputers, computer: ComputerId, command: &str) -
             &CancelSwitch::default(),
         )
         .await
-        .unwrap();
-    assert_eq!(finished.ending, Ending::Exited { code: 0 }, "{command}");
-    output.text(1_000)
+        .map_err(|error| format!("{command}: {error:?}"))?;
+    match finished.ending {
+        Ending::Exited { code: 0 } => Ok(output.text(1_000)),
+        ending => Err(format!("{command}: {ending:?} {}", output.text(1_000))),
+    }
+}
+
+/// Wakes the computer, runs `command` on it, and puts it to sleep again, whatever happened.
+async fn awake(
+    computers: &WorkerComputers,
+    environment: &Environment,
+    command: &str,
+) -> (Duration, Result<String, String>) {
+    let waking = Instant::now();
+    let woke = computers.create(environment).await;
+    let took = waking.elapsed();
+    let Ok(woke) = woke else {
+        return (
+            took,
+            woke.map(|_| String::new())
+                .map_err(|e| format!("wake: {e:?}")),
+        );
+    };
+    let said = ran(computers, woke.id, command).await;
+    let slept = computers.destroy(woke.id).await;
+    (took, slept.map_err(|e| format!("sleep: {e:?}")).and(said))
 }
 
 #[test]
@@ -67,29 +98,24 @@ fn a_persons_computer_keeps_its_disk_while_it_sleeps() {
             ..Environment::host()
         };
 
-        let first = computers.create(&environment).await.unwrap();
-        let wrote = ran(&computers, first.id, "echo kept > kept.txt && echo $HOME").await;
-        // Asleep: its Pod is gone, its disk kept.
-        computers.destroy(first.id).await.unwrap();
-        let waking = Instant::now();
-        let again = computers.create(&environment).await;
-        let woke = waking.elapsed();
-        let read = match &again {
-            Ok(again) => Ok(ran(&computers, again.id, "cat kept.txt").await),
-            Err(error) => Err(error.clone()),
-        };
-        if let Ok(again) = &again {
-            computers.destroy(again.id).await.unwrap();
-        }
+        let (_, wrote) = awake(
+            &computers,
+            &environment,
+            "echo kept > kept.txt && echo $HOME",
+        )
+        .await;
+        // Asleep in between: its Pod gone, its disk kept.
+        let (woke, read) = awake(&computers, &environment, "cat kept.txt").await;
         let destroyed = PersonComputer::new(cluster.clone(), &key, 1)
             .unwrap()
             .destroy()
             .await;
+        let left = left_behind(&cluster).await;
         eprintln!("a person's computer woke in {} ms", woke.as_millis());
-        assert_eq!(wrote.trim(), "/home/glave");
+        assert_eq!(wrote.unwrap().trim(), "/home/glave");
         assert_eq!(read.unwrap().trim(), "kept");
         destroyed.unwrap();
-        assert_eq!(left_behind(&cluster).await, Vec::<String>::new());
+        assert_eq!(left, Vec::<String>::new());
     });
 }
 

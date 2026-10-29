@@ -26,6 +26,8 @@ pub(crate) const PERSON_HOME: &str = "/home/glave";
 /// The most a person's computer may write outside its disk (its container's layer, `/tmp`),
 /// so one person can never fill a node's disk.
 const OUTSIDE_THE_DISK: &str = "10Gi";
+/// What a person's computer reserves of a node's disk: its glave and a little work in `/tmp`.
+const ON_THE_NODE: &str = "1Gi";
 
 /// Waits (up to ten minutes) for the harness to copy glave in, then becomes it. Run by
 /// `/bin/sh -c`, with glave's command line as its arguments.
@@ -132,7 +134,7 @@ impl Shape<'_> {
             .filter(|(name, _)| self.home.is_none() || name.as_str() != "HOME")
             .map(|(name, value)| json!({"name": name, "value": value}))
             .collect();
-        let (amounts, mut limits) = self.amounts();
+        let (mut amounts, mut limits) = self.amounts();
         let mut mounts = vec![json!({"name": "glave", "mountPath": HOME})];
         let mut volumes = vec![json!({"name": "glave", "emptyDir": {}})];
         if let Some(home) = self.home {
@@ -143,6 +145,9 @@ impl Shape<'_> {
                 "persistentVolumeClaim": {"claimName": home.claim}
             }));
             limits.insert("ephemeral-storage".into(), json!(OUTSIDE_THE_DISK));
+            // Asked for explicitly: a limit alone would be asked for whole, and reserve it on
+            // the node for every computer awake.
+            amounts.insert("ephemeral-storage".into(), json!(ON_THE_NODE));
         }
         if self.spec.network {
             // The identity lives in memory, never on the node's disk.
@@ -541,7 +546,7 @@ mod tests {
         );
         assert_eq!(
             container["resources"]["requests"],
-            json!({"cpu": "2", "memory": "4Gi"})
+            json!({"cpu": "2", "memory": "4Gi", "ephemeral-storage": "1Gi"})
         );
         let policy = computer.network_policy();
         assert_eq!(
