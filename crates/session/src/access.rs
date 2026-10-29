@@ -2,8 +2,9 @@
 //! stream, a list's watch. Each is let through once, as it begins; what can end the caller's
 //! access while it runs is their browser's sign-in, ended here (signing out, signing other
 //! browsers out, removing the passkey that signed it in, or a new sign-in past the most
-//! kept), or their removal from the organization the watch is in. The hub tells every watch when one may have ended, and each that follows a browser's
-//! session checks its own, so the watch ends at once rather than when its connection closes.
+//! kept), or their removal from the organization the watch is in. The hub tells every watch
+//! when one may have ended, and each checks its own, so the watch ends at once rather than
+//! when its connection closes.
 //! Projects have one owner, who keeps theirs: removing a project archives its threads, still
 //! theirs to read.
 

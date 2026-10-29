@@ -19,7 +19,8 @@ where
 {
     /// Answers `person/remove`: `person` out of the caller's organization, when the caller may.
     /// Only an Owner removes an Owner, and never the last of an organization whose owner is no
-    /// one on the server's computer.
+    /// one on the server's computer. Asked again for someone removed, it finishes what a
+    /// failure left undone.
     pub(crate) async fn remove_person(
         &self,
         caller: &Caller,
@@ -30,16 +31,18 @@ where
         let org = self.org_of(caller);
         let alone = org != self.inner.own;
         self.record_person(org, |people| {
+            // Removed already: nothing to record, and what follows is done again.
+            if people.removed(person) {
+                return Ok(None);
+            }
             if !people.has(person) {
                 return Err(no_such_person(person));
             }
-            if people.role(person) == OrgRole::Owner {
-                if !theirs.contains(&Permit::Owners) {
-                    return Err(ApiError::new(code::NOT_ALLOWED, Sentence::OwnersOnly));
-                }
-                if alone && people.owners() <= 1 {
-                    return Err(ApiError::new(code::NOT_ALLOWED, Sentence::LastOwner));
-                }
+            if people.role(person) == OrgRole::Owner && !theirs.contains(&Permit::Owners) {
+                return Err(ApiError::new(code::NOT_ALLOWED, Sentence::OwnersOnly));
+            }
+            if people.last_owner(person, alone) {
+                return Err(ApiError::new(code::NOT_ALLOWED, Sentence::LastOwner));
             }
             Ok(Some(PersonRemoved {
                 person,
@@ -47,11 +50,11 @@ where
             }))
         })
         .await?;
+        // Their watches here end now, before anything else can fail.
+        self.inner.hub.sign_ins_changed();
         if let Some(accounts) = self.inner.accounts.as_deref() {
             accounts.leave(person, org).await?;
         }
-        // Their watches here end now.
-        self.inner.hub.sign_ins_changed();
         Ok(Reply::Done {})
     }
 }

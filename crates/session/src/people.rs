@@ -159,12 +159,15 @@ impl People {
         self.known.contains_key(&person)
     }
 
-    /// How many Owners the ledger has given the role to.
-    pub(crate) fn owners(&self) -> usize {
-        self.known
+    /// Whether `person` is the organization's last Owner, where it has no owner but those the
+    /// ledger names (`alone`: no local person owns it).
+    pub(crate) fn last_owner(&self, person: PrincipalId, alone: bool) -> bool {
+        let owners = self
+            .known
             .values()
             .filter(|kept| kept.role == Some(OrgRole::Owner))
-            .count()
+            .count();
+        alone && self.role(person) == OrgRole::Owner && owners <= 1
     }
 
     /// Whether anyone in it joined with a glave account.
@@ -298,6 +301,10 @@ where
             return Ok(());
         }
         self.record_person(org, |people| {
+            // Removed meanwhile, as this request was answered: still out.
+            if people.removed(person) {
+                return Err(ApiError::new(code::NOT_ALLOWED, Sentence::Removed));
+            }
             Ok((!people.knows(&joined)).then(|| joined.clone()))
         })
         .await
@@ -316,7 +323,7 @@ where
         let limit = limit.unwrap_or(LISTED).clamp(1, MOST_LISTED);
         let people = self.people(org, |held| {
             if let Some(after) = after
-                && !held.known.contains_key(&after)
+                && !held.has(after)
             {
                 return Err(no_such_person(after));
             }
@@ -342,13 +349,17 @@ where
         let theirs = permits(self.permitted(caller, Permit::People).await?);
         let by = Principal::person(self.person_of(caller)?);
         let org = self.org_of(caller);
+        let alone = org != self.inner.own;
         self.record_person(org, |people| {
-            if !people.known.contains_key(&person) {
+            if !people.has(person) {
                 return Err(no_such_person(person));
             }
             let owners = role == OrgRole::Owner || people.role(person) == OrgRole::Owner;
             if owners && !theirs.contains(&Permit::Owners) {
                 return Err(ApiError::new(code::NOT_ALLOWED, Sentence::OwnersOnly));
+            }
+            if role != OrgRole::Owner && people.last_owner(person, alone) {
+                return Err(ApiError::new(code::NOT_ALLOWED, Sentence::LastOwner));
             }
             Ok(Some(RoleSet {
                 person,

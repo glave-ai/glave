@@ -380,6 +380,7 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::MemorySet(_) => "memory.set",
             Body::PersonJoined(_) => "person.joined",
             Body::RoleSet(_) => "role.set",
+            Body::PersonRemoved(_) => "person.removed",
             Body::InviteCreated(_) => "invite.created",
             Body::InviteAccepted(_) => "invite.accepted",
             Body::InviteRevoked(_) => "invite.revoked",

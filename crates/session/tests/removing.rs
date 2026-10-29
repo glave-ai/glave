@@ -1,7 +1,8 @@
 //! Taking someone out of an organization (`specs/model.md`, "Identity"): one admin action ends,
 //! at once, the watches they hold there and refuses their next request; signing in again
-//! through the company login does not bring them back, an invite does. Only admins remove,
-//! only an Owner removes an Owner, and someone not there is no one to remove.
+//! through the company login does not bring them back, an invite does, on every server on the
+//! store. Only admins remove, only an Owner removes an Owner, and someone not there is no one
+//! to remove.
 
 use glave_event::{Auth, AuthMethod, OrgRole, PrincipalId, Secret};
 use glave_ports::Caller;
@@ -38,7 +39,19 @@ async fn organization(dir: &std::path::Path) -> Tested {
     setup.build(dir).await.0
 }
 
-async fn remove(server: &Tested, caller: &Caller, subject: &str) -> Result<Reply, ApiError> {
+/// The `seed`th server of one organization on `log`.
+async fn on(dir: &std::path::Path, log: &Shared, seed: u64) -> Tested<Shared> {
+    let mut setup = Setup::new(Vec::new());
+    setup.identity_provider = true;
+    setup.seed = seed;
+    setup.build_on(dir, log.clone()).await.0
+}
+
+async fn remove<L: glave_ports::EventLog + 'static>(
+    server: &Tested<L>,
+    caller: &Caller,
+    subject: &str,
+) -> Result<Reply, ApiError> {
     let person = id(subject);
     server
         .request_as(caller, Request::PersonRemove { person })
@@ -130,7 +143,22 @@ fn only_admins_remove_and_only_owners_remove_owners() {
         assert_eq!(nobody.code, code::NO_PERSON);
         remove(&server, &ada, "alan").await.unwrap();
         remove(&server, &grace, "ada").await.unwrap();
-        let again = remove(&server, &grace, "ada").await.unwrap_err();
-        assert_eq!(again.code, code::NO_PERSON, "removed once");
+        // Asked again, it is done again.
+        remove(&server, &grace, "ada").await.unwrap();
+    });
+}
+
+#[test]
+fn another_server_on_the_store_refuses_them_at_their_next_request() {
+    block_on!(async {
+        let (first, second) = (folder("remove-first"), folder("remove-second"));
+        let log = Shared::default();
+        let one = on(&first, &log, 1).await;
+        let two = on(&second, &log, 2).await;
+        let ada = signed_in("ada");
+        two.request_as(&ada, list()).await.unwrap();
+        remove(&one, &Caller::default(), "ada").await.unwrap();
+        let refused = two.request_as(&ada, list()).await.unwrap_err();
+        assert_eq!(refused.code, code::NOT_ALLOWED);
     });
 }
