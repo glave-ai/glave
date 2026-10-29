@@ -57,11 +57,21 @@ fn a_command_nothing_reads_is_stopped_once_idle() {
             .start(here.id, &Command::new(script))
             .await
             .unwrap();
-        // Listing is not reading: it never keeps a command from going idle.
-        assert!(succeeds(&computers, &here, "sleep 2").await);
-        let listed = computers.commands(here.id).await.unwrap();
-        let ended = listed.iter().find(|listed| listed.id == id).unwrap().ended;
-        assert_eq!(ended, Some(Ending::Idle { after_secs: 1 }));
+        // Listing is not reading: listed all along, it still goes idle. Each wait is on its
+        // ending, not a margin, so a loaded machine only makes the loop go round fewer times.
+        let tick = std::time::Duration::from_millis(200);
+        let mut finished = None;
+        for _ in 0..100 {
+            let listed = computers.commands(here.id).await.unwrap();
+            assert!(listed.iter().any(|listed| listed.id == id));
+            finished = computers.ended(here.id, id, tick).await.unwrap();
+            if finished.is_some() {
+                break;
+            }
+        }
+        let finished = finished.expect("it went idle while it was only listed");
+        assert_eq!(finished.ending, Ending::Idle { after_secs: 1 });
+        assert!(finished.millis >= 1000, "{finished:?}");
         assert!(
             succeeds(&computers, &here, GONE).await,
             "its child is stopped too"
