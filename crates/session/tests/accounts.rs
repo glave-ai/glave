@@ -367,13 +367,13 @@ fn someone_in_two_organizations_names_the_one_each_request_works_in() {
             assert_eq!(asked(&mut refused, &list).await, json!(code::NOT_ALLOWED));
         }
         let mut owner = Web::new(&served, Some(token.reveal().to_owned()));
-        let mut owner_there = owner_named(&served, &token, &other.to_string());
+        let mut elsewhere_named = owner_named(&served, &token, &other.to_string());
         assert_eq!(
-            asked(&mut owner_there, &list).await,
+            asked(&mut elsewhere_named, &list).await,
             json!(code::NOT_ALLOWED)
         );
-        let mut owner_here = owner_named(&served, &token, &own);
-        assert!(asked(&mut owner_here, &list).await["threads"].is_array());
+        let mut own_named = owner_named(&served, &token, &own);
+        assert!(asked(&mut own_named, &list).await["threads"].is_array());
         assert!(asked(&mut owner, &list).await["threads"].is_array());
         // Without a sign-in, naming one changes nothing of what is open to anyone.
         let mut anyone = elsewhere(&served, None).working_in(&unknown);
