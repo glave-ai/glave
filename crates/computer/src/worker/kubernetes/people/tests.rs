@@ -295,8 +295,10 @@ fn a_person_s_computer_grows_for_what_a_command_runs_short_of() {
         let pod = format!("glave-computer-{key}");
         let home = people.home(&key).unwrap();
         let big = "python3 -c 'b = bytearray(700 * 1024 * 1024); print(\"allocated\")'";
-        let busy = "cat /proc/self/cgroup /sys/fs/cgroup/cpu.max /sys/fs/cgroup/cpu.stat; \
-            timeout 12 sh -c 'while :; do :; done'; cat /sys/fs/cgroup/cpu.stat; echo busy";
+        // Three loops at once use up each period's quarter of a CPU early, so the computer is
+        // held at its limit for most of the run, well past half.
+        let busy = "for _ in 1 2 3; do timeout 12 sh -c 'while :; do :; done' & done; wait; \
+            grep throttled_usec /sys/fs/cgroup/cpu.stat; echo busy";
         let mut seen = Vec::new();
         let mut at = Vec::new();
         if let Ok(chat) = home
