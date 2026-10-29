@@ -28,7 +28,8 @@ const FENCED: &str = "echo kept > kept.txt; echo \"home=$HOME\"; echo \"user=$(i
     touch /tmp/t && echo tmp=writable || echo tmp=read-only; \
     touch /var/tmp/glave-x 2>/dev/null && echo root=writable || echo root=read-only; \
     reach() { timeout 5 bash -c \"</dev/tcp/$1/$2\" 2>/dev/null && echo reached || echo refused; }; \
-    getent hosts kube-dns.kube-system.svc.cluster.local >/dev/null && echo dns=yes || echo dns=no; \
+    python3 -c \"import socket; socket.gethostbyname('kube-dns.kube-system.svc.cluster.local')\" \
+    2>/dev/null && echo dns=yes || echo dns=no; \
     echo \"api=$(reach kubernetes.default.svc.cluster.local 443)\"; \
     echo \"pods=$(reach kube-dns.kube-system.svc.cluster.local 9153)\"; \
     echo \"internet=$(reach 1.1.1.1 443)\"";
