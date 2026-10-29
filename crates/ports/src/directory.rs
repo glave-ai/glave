@@ -60,6 +60,9 @@ pub trait Directory: Send + Sync {
     /// joining one they belong to changes nothing.
     fn join(&self, person: PrincipalId, org: OrgId) -> BoxFuture<'_, Result<(), DirectoryError>>;
 
+    /// Takes `person` out of `org`; one they do not belong to changes nothing.
+    fn leave(&self, person: PrincipalId, org: OrgId) -> BoxFuture<'_, Result<(), DirectoryError>>;
+
     /// The organizations `person` belongs to, the first they joined first.
     fn organizations(
         &self,

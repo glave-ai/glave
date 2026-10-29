@@ -122,6 +122,14 @@ impl Accounts {
             .map_err(|e| BrowserError::Keep(e.to_string()))
     }
 
+    /// Takes `person` out of `org`: their sessions sign them in there no more.
+    pub async fn leave(&self, person: PrincipalId, org: OrgId) -> Result<(), BrowserError> {
+        self.directory
+            .leave(person, org)
+            .await
+            .map_err(|e| BrowserError::Keep(e.to_string()))
+    }
+
     /// Begins signing a browser in with any passkey made at the public origin.
     pub fn get_options(&self) -> Result<Ceremony, BrowserError> {
         self.discoverer.options(self.clock.now())

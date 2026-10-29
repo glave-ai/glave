@@ -80,6 +80,32 @@ async fn joining<D: Directory + ?Sized>(directory: &D) -> Verdict {
         orgs == vec![org(2), org(1)],
         "a person's organizations are theirs, once each, the first joined first",
     )?;
+    for (from, place) in [(grace, org(2)), (grace, org(9))] {
+        directory
+            .leave(from, place)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    let left = directory
+        .organizations(grace)
+        .await
+        .map_err(|e| e.to_string())?;
+    ensure(
+        left == vec![org(1)],
+        "leaving takes one organization out, and no other",
+    )?;
+    directory
+        .join(grace, org(2))
+        .await
+        .map_err(|e| e.to_string())?;
+    let back = directory
+        .organizations(grace)
+        .await
+        .map_err(|e| e.to_string())?;
+    ensure(
+        back == vec![org(1), org(2)],
+        "joining again comes after the rest",
+    )?;
     let theirs = directory
         .organizations(linus)
         .await

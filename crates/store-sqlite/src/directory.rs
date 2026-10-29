@@ -93,6 +93,20 @@ impl Directory for SqliteDirectory {
         })
     }
 
+    fn leave(&self, person: PrincipalId, org: OrgId) -> BoxFuture<'_, Result<(), DirectoryError>> {
+        let connection = Arc::clone(&self.connection);
+        Box::pin(async move {
+            run(&connection, move |connection| {
+                connection
+                    .prepare_cached("DELETE FROM memberships WHERE person = ?1 AND org = ?2")?
+                    .execute(params![person.to_string(), org.to_string()])
+            })
+            .await
+            .map(drop)
+            .map_err(storage)
+        })
+    }
+
     fn organizations(
         &self,
         person: PrincipalId,

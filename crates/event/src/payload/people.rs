@@ -1,7 +1,8 @@
 //! The people ledger's records (`specs/model.md`, "Roles"): one stream of the organization's
 //! own. `person.joined`: who signed in through the identity provider and what its token says
 //! of them, recorded again when that changes. `role.set`: the role a person was given, the
-//! latest replacing every one before it. Invites (`specs/model.md`, "Invites"): one made with
+//! latest replacing every one before it. `person.removed`: someone an admin took out of the
+//! organization, who comes back only by an invite. Invites (`specs/model.md`, "Invites"): one made with
 //! the SHA-256 of its code and the role it gives (`invite.created`), spent by the person who
 //! opened it (`invite.accepted`), or revoked before (`invite.revoked`).
 
@@ -15,6 +16,7 @@ use crate::payload::principal::Principal;
 
 pub(crate) const JOINED: &str = "person.joined";
 pub(crate) const ROLE_SET: &str = "role.set";
+pub(crate) const REMOVED: &str = "person.removed";
 pub(crate) const INVITE_CREATED: &str = "invite.created";
 pub(crate) const INVITE_ACCEPTED: &str = "invite.accepted";
 pub(crate) const INVITE_REVOKED: &str = "invite.revoked";
@@ -106,6 +108,15 @@ pub struct InviteAccepted {
     pub role: OrgRole,
 }
 
+/// Someone taken out of the organization by an admin (`specs/model.md`, "Identity"): their
+/// role and record go, and they come back only by an invite.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PersonRemoved {
+    pub person: PrincipalId,
+    pub by: Principal,
+}
+
 /// An invite revoked before anyone opened it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -121,6 +132,11 @@ impl Payload for PersonJoined {
 
 impl Payload for RoleSet {
     const TYPE: &'static str = ROLE_SET;
+    const VERSION: u32 = 1;
+}
+
+impl Payload for PersonRemoved {
+    const TYPE: &'static str = REMOVED;
     const VERSION: u32 = 1;
 }
 
@@ -151,6 +167,7 @@ pub(crate) fn decode(
     Some(match kind {
         JOINED => parse(data).map(Body::PersonJoined),
         ROLE_SET => parse(data).map(Body::RoleSet),
+        REMOVED => parse(data).map(Body::PersonRemoved),
         INVITE_CREATED => parse(data).map(Body::InviteCreated),
         INVITE_ACCEPTED => parse(data).map(Body::InviteAccepted),
         INVITE_REVOKED => parse(data).map(Body::InviteRevoked),

@@ -92,6 +92,7 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::MemorySet(_)
         | Body::PersonJoined(_)
         | Body::RoleSet(_)
+        | Body::PersonRemoved(_)
         | Body::InviteCreated(_)
         | Body::InviteAccepted(_)
         | Body::InviteRevoked(_)

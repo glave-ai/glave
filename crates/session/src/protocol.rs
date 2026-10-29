@@ -192,6 +192,10 @@ methods! {
     /// Gives a person who signed in a role. Only for the organization's Admins and Owners, and
     /// only an Owner makes an Owner or changes one's role.
     "role/set" => RoleSet { person: PrincipalId, role: OrgRole } -> [Person],
+    /// Takes someone out of the organization: their sessions and watches in it end at once, and
+    /// they come back only by an invite. Only for the organization's Admins and Owners; only an
+    /// Owner removes an Owner, and never the last.
+    "person/remove" => PersonRemove { person: PrincipalId } -> [Done],
     /// Makes an invite to the organization giving `role`, good once and for 7 days: answered
     /// with its code, this once, for a link (`<origin>/#invite=<code>`). Only for those whose
     /// role permits inviting, and only an Owner invites an Owner.
