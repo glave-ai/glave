@@ -242,7 +242,7 @@ impl Trade {
             by: Principal::person(self.ledger.person()),
         };
         self.ledger.keep_connection(&connection).await?;
-        self.more.signed_in(&connection.url);
+        self.more.forget(&connection.url);
         Ok(ConnectionInfo {
             url: connection.url,
             name: Some(self.name),

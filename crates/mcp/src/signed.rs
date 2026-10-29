@@ -13,7 +13,7 @@ use rmcp::model::ClientJsonRpcMessage;
 use rmcp::transport::auth::AuthError;
 use rmcp::transport::common::client_side_sse::BoxedSseResponse;
 use rmcp::transport::streamable_http_client::{
-    StreamableHttpClient, StreamableHttpError, StreamableHttpPostResponse,
+    InsufficientScopeError, StreamableHttpClient, StreamableHttpError, StreamableHttpPostResponse,
 };
 
 type Failed = StreamableHttpError<reqwest::Error>;
@@ -80,12 +80,38 @@ impl Signed {
     /// asked for, so the person can sign in again for it.
     fn heard<T>(&self, answered: Result<T, Failed>) -> Result<T, Failed> {
         if let Err(Failed::InsufficientScope(asked)) = &answered
-            && let Some(scope) = asked.get_required_scope()
+            && let Some(scope) = challenged(asked)
         {
-            self.auth.insufficient(scope);
+            self.auth.insufficient(&scope);
         }
         answered
     }
+}
+
+/// The most scopes, and the longest scope, a challenge may name to be heard.
+const SCOPES: usize = 16;
+const SCOPE_LENGTH: usize = 128;
+
+/// The scopes a server's `403` asks for, when it is `insufficient_scope` naming scopes as
+/// OAuth writes them (RFC 6749, section 3.3), at most [`SCOPES`] of [`SCOPE_LENGTH`]: none
+/// for any other refusal, so what a server sends reaches the person's sign-in and the model
+/// only as plain scope names. rmcp reads every `403` with a challenge as this one.
+pub(crate) fn challenged(asked: &InsufficientScopeError) -> Option<String> {
+    let header = &asked.www_authenticate_header;
+    if !header.contains("error=\"insufficient_scope\"")
+        && !header.contains("error=insufficient_scope")
+    {
+        return None;
+    }
+    let scopes: Vec<&str> = asked.get_required_scope()?.split_whitespace().collect();
+    let plain = |scope: &&str| {
+        scope.len() <= SCOPE_LENGTH
+            && scope
+                .bytes()
+                .all(|b| b == 0x21 || (0x23..=0x5b).contains(&b) || (0x5d..=0x7e).contains(&b))
+    };
+    let fits = !scopes.is_empty() && scopes.len() <= SCOPES && scopes.iter().all(plain);
+    fits.then(|| scopes.join(" "))
 }
 
 impl StreamableHttpClient for Signed {
@@ -193,6 +219,26 @@ impl StreamableHttpClient for Signed {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_an_insufficient_scope_naming_plain_scopes_is_heard() {
+        let asked = |header: &str, scope: &str| {
+            let asked = InsufficientScopeError::new(header.to_owned(), Some(scope.to_owned()));
+            challenged(&asked)
+        };
+        let challenge = r#"Bearer error="insufficient_scope", scope="files:write a""#;
+        assert_eq!(
+            asked(challenge, "files:write  a").as_deref(),
+            Some("files:write a")
+        );
+        let other = r#"Bearer error="invalid_token", scope="files:write""#;
+        assert_eq!(asked(other, "files:write"), None, "not asking for more");
+        for odd in ["say \"hi\"", "back\\slash", "", &"x".repeat(129)] {
+            assert_eq!(asked(challenge, odd), None, "{odd:?}");
+        }
+        let many = vec!["s"; 17].join(" ");
+        assert_eq!(asked(challenge, &many), None);
+    }
 
     #[test]
     fn a_server_that_never_answers_the_end_of_a_session_is_left_in_seconds() {

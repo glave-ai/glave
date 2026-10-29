@@ -53,10 +53,13 @@ pub(crate) struct Connected {
     more: MoreAsked,
 }
 
-/// What each server, by its address, last asked for with `403 insufficient_scope` since the
+/// The most scopes kept for what one server asked for.
+const MORE_ASKED: usize = 32;
+
+/// What each server, by its address, asked for with `403 insufficient_scope` since the
 /// person last signed in to it, as MCP's step-up authorization says: the scopes a sign-in
 /// there asks for next, beside those it grants. One entry for each of the person's remote
-/// servers at most, each as the server's one challenge named it.
+/// servers at most.
 #[derive(Clone, Default)]
 pub(super) struct MoreAsked(Arc<Mutex<BTreeMap<String, Vec<String>>>>);
 
@@ -65,10 +68,16 @@ impl MoreAsked {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// The server at `url` asked for `scope`, which the sign-in there lacks.
+    /// The server at `url` asked for `scope`, which the sign-in there lacks: added to what it
+    /// asked for before, `MORE_ASKED` scopes at most.
     pub(super) fn ask(&self, url: &str, scope: &str) {
-        let scopes = scope.split_whitespace().map(str::to_owned).collect();
-        self.lock().insert(url.to_owned(), scopes);
+        let mut asked = self.lock();
+        let scopes = asked.entry(url.to_owned()).or_default();
+        for scope in scope.split_whitespace() {
+            if scopes.len() < MORE_ASKED && !scopes.iter().any(|kept| kept == scope) {
+                scopes.push(scope.to_owned());
+            }
+        }
     }
 
     /// What the server at `url` asked for since the person last signed in to it.
@@ -76,9 +85,9 @@ impl MoreAsked {
         self.lock().get(url).cloned()
     }
 
-    /// The person signed in to the server at `url` again: what it asked for is asked for no
-    /// more.
-    pub(super) fn signed_in(&self, url: &str) {
+    /// The person signed in to the server at `url` again, or removed their sign-in there: what
+    /// it asked for is asked for no more.
+    pub(super) fn forget(&self, url: &str) {
         self.lock().remove(url);
     }
 }
@@ -297,6 +306,7 @@ impl Connections for Connected {
                     format!("nothing at {url} is signed in to here"),
                 ));
             }
+            self.more.forget(&url);
             // Read again, so its tokens are destroyed now, a renewal of it not kept too.
             self.kept().await?;
             Ok(())

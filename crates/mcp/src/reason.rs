@@ -39,10 +39,8 @@ fn asks_sign_in(err: &(dyn Error + 'static)) -> bool {
 /// What a server asks for when `err`, or what caused it, is it answering that the person's
 /// sign-in grants too little (HTTP 403 `insufficient_scope`, naming the scope).
 fn asks_more(err: &(dyn Error + 'static)) -> Option<String> {
-    causes(err).find_map(|err| {
-        let asked = err.downcast_ref::<InsufficientScopeError>()?;
-        asked.get_required_scope().map(str::to_owned)
-    })
+    causes(err)
+        .find_map(|err| crate::signed::challenged(err.downcast_ref::<InsufficientScopeError>()?))
 }
 
 /// `err`, then each thing that caused it.

@@ -188,6 +188,7 @@ fn a_server_that_asks_for_more_is_listed_as_asking_until_signed_in_to_again() {
         connected
             .signer(docs)
             .insufficient("files:write files:read");
+        connected.signer(docs).insufficient("admin files:write");
         let status = |listed: &[ConnectionInfo], url: &str| {
             listed.iter().find(|kept| kept.url == url).unwrap().status
         };
@@ -196,12 +197,23 @@ fn a_server_that_asks_for_more_is_listed_as_asking_until_signed_in_to_again() {
         assert_eq!(status(&listed, tracker), ConnectionStatus::SignedIn);
         assert_eq!(
             connected.more.of(docs),
-            Some(vec!["files:write".to_owned(), "files:read".to_owned()]),
-            "what the next sign-in there asks for besides"
+            Some(
+                ["files:write", "files:read", "admin"]
+                    .map(str::to_owned)
+                    .to_vec()
+            ),
+            "everything asked for, for the next sign-in there"
         );
 
-        connected.more.signed_in(docs);
+        connected.more.forget(docs);
         let listed = connected.list().await.unwrap();
         assert_eq!(status(&listed, docs), ConnectionStatus::SignedIn);
+        connected.signer(tracker).insufficient("admin");
+        connected.remove(tracker.to_owned()).await.unwrap();
+        assert_eq!(
+            connected.more.of(tracker),
+            None,
+            "forgotten with its sign-in"
+        );
     });
 }
