@@ -277,6 +277,7 @@
     "person.you": "You",
     "place.computer": "This computer",
     "place.mac": "Your Mac",
+    "place.person": "Your cloud computer",
     "place.server": "The server",
     "place.worker": "Another computer",
     "projects.folders": "{{$COUNT}, plural, =0 {no folders} one {# folder} other {# folders}}",

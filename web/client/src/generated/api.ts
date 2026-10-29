@@ -119,7 +119,7 @@ export type CommandId = string;
 export type ComputerId = string;
 
 /** What kind of computer it is. */
-export type ComputerKind = "local" | "worker";
+export type ComputerKind = "local" | "worker" | "person";
 
 /** The computer a workspace is on. */
 export type ComputerRef = {

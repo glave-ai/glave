@@ -114,21 +114,25 @@ where
         if !thread.removed || thread.standing != Standing::Active {
             return Ok(());
         }
-        let again = match thread
+        let sources = thread
             .workspace
             .as_ref()
-            .map(|workspace| workspace.info().sources.clone())
-        {
+            .map(|workspace| workspace.info().sources.clone());
+        if !matches!(
+            sources,
+            Some(Sources::Worktree { .. } | Sources::Scratch { .. })
+        ) {
+            thread.removed = false;
+            return Ok(());
+        }
+        let (home, _) = self.home_of(thread.scope, thread.for_).await?;
+        let again = match sources {
             Some(Sources::Worktree { path, branch, .. }) => {
                 let owner = owner_label(thread.scope, thread.id);
-                Some(
-                    self.workspace
-                        .worktree(&path, &branch, Some(&owner))
-                        .await?,
-                )
+                Some(home.worktree(&path, &branch, Some(&owner)).await?)
             }
             Some(Sources::Scratch { name, owner }) => {
-                Some(self.workspace.scratch(&name, owner.as_deref()).await?)
+                Some(home.scratch(&name, owner.as_deref()).await?)
             }
             _ => None,
         };

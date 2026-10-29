@@ -40,6 +40,9 @@ pub enum ComputerKind {
     Local,
     /// A computer glave made elsewhere, such as a cloud worker.
     Worker,
+    /// The person's own computer in the cloud, which glave wakes and puts to sleep, keeping
+    /// its disk.
+    Person,
 }
 
 /// How the workspace was opened.

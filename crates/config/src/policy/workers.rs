@@ -70,6 +70,24 @@ pub struct WorkersFile {
     pub runtime_class: Option<String>,
 }
 
+/// `[computers]` in the server's `config.toml`: each person gets a computer of their own on the
+/// cluster `[workers]` reaches (`backend = "kubernetes"`), from this image, with a disk of
+/// this size kept while it sleeps (`specs/computers.md`, "A person's computer in the cloud").
+/// Unset, threads work on the server's own computer.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ComputersFile {
+    /// The image every person's computer runs, pinned by digest (`name@sha256:...`).
+    pub image: String,
+    /// Each person's disk, in GB; [`ComputersFile::DISK_GB`] unless set.
+    pub disk_gb: Option<u32>,
+}
+
+impl ComputersFile {
+    /// A person's disk when `disk_gb` is not set: an organization's own cluster's default.
+    pub const DISK_GB: u32 = 50;
+}
+
 impl WorkersFile {
     /// The first key set that `backend` does not use, for refusing it by name.
     pub fn misplaced(&self) -> Option<&'static str> {

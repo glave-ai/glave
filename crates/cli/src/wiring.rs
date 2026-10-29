@@ -139,12 +139,11 @@ pub(crate) async fn wire(
     let servers = mcp_servers(&setup, remote.as_ref(), &processes, connected.as_ref()).await?;
     let scope = scope_here(args, choices, &store, &folder, &root, identity.person).await?;
     let constraints = &setup.loaded.constraints;
-    let (on_workers, workers) =
+    let (on_workers, workers, homes) =
         crate::cloud::workers(choices, constraints, &folder, scope.project(), &processes).await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
     let projects = projects_for(&setup, &servers, &lined.switch, memory.as_ref(), asked)?;
-    let set_aside = projects.set_aside(&folder).await;
-    (told.iter().chain(&set_aside)).for_each(|line| eprintln!("glave: {line}"));
+    say(&told, &projects, &folder).await;
     tidy(memory.as_ref(), &lined.switch, settings.model.clone());
     let wiring = Wiring {
         // Before the lineup's parts move into the rest.
@@ -170,6 +169,7 @@ pub(crate) async fn wire(
         leases: Some(store.leases()),
         awake: crate::awake::for_server(args, choices, &processes),
         worktrees: Some(Arc::new(OnThisMachine(store.log(), processes.clone()))),
+        homes,
         ..Wiring::new(
             lined.switch,
             store.log(),
@@ -200,6 +200,13 @@ pub(crate) async fn wire(
         reach,
         _telemetry: telemetry,
     })
+}
+
+/// Says on standard error what glave `told` the person about `folder`, and the settings of
+/// `projects` it set aside there.
+async fn say(told: &[String], projects: &ProjectFolders, folder: &Path) {
+    let set_aside = projects.set_aside(folder).await;
+    (told.iter().chain(&set_aside)).for_each(|line| eprintln!("glave: {line}"));
 }
 
 /// The scope glave's own work here keeps to: the project of `root`, the workspace of `folder`,

@@ -7,16 +7,10 @@
 //! in a Pod beside its workers, each worker names that Pod as its owner, so the cluster removes
 //! them when it is deleted.
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the session server gives each person their computer next (#221); until then only its tests do"
-    )
-)]
 mod home;
 mod link;
 mod objects;
+mod people;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -36,6 +30,7 @@ use super::backend::{Backend, COPIED_WITHIN, Link, Listed, STARTED_BY, Spec, Sta
 use super::docker::elf_machine;
 use crate::token::Token;
 use objects::{Home, Owner, Progress, Shape};
+pub use people::People;
 
 /// How long a Pod has to start running: long enough to pull a large image.
 const START_WAIT: Duration = Duration::from_mins(5);

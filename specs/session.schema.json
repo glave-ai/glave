@@ -305,6 +305,11 @@
           "const": "worker",
           "description": "A computer glave made elsewhere, such as a cloud worker.",
           "type": "string"
+        },
+        {
+          "const": "person",
+          "description": "The person's own computer in the cloud, which glave wakes and puts to sleep, keeping\nits disk.",
+          "type": "string"
         }
       ]
     },
