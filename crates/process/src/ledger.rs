@@ -2,7 +2,8 @@
 //! `GLAVE_HOME/run/processes`, named by the group's leader. Each says what the process is (its
 //! id and start), its group, its owner, and which glave started it (that glave's id and
 //! start). It is written whole and put in place in one step (`glave_ports::file`), so a reader
-//! never sees half of one, and removed when the group is gone. Every glave on the computer shares
+//! never sees half of one, and removed when the group is gone (kept, for the next start to
+//! settle, when a stop left something of it behind). Every glave on the computer shares
 //! the folder; each entry is only ever written by the glave that started it.
 
 use std::collections::HashSet;
@@ -128,7 +129,7 @@ impl Ledger {
         let text = serde_json::to_vec(&record).map_err(|error| self.failed(error.into()))?;
         let path = self.path(pid);
         file::replace(&path, &text).map_err(|error| self.failed(error))?;
-        Ok(Some(Entry { path }))
+        Ok(Some(Entry { path: Some(path) }))
     }
 
     /// The paths of the entries in place, not those being written.
@@ -209,14 +210,25 @@ impl Ledger {
     }
 }
 
-/// A process's entry, removed when this drops.
+/// A process's entry, removed when this drops, unless what it names was left behind.
 #[derive(Debug)]
 pub(crate) struct Entry {
-    path: PathBuf,
+    /// None once left behind.
+    path: Option<PathBuf>,
+}
+
+impl Entry {
+    /// Keeps the entry once this drops: its group outlived SIGKILL's wait (a process stuck in
+    /// the kernel, on a hung network mount), so the next glave to start settles it.
+    pub(crate) fn left_behind(mut self) {
+        self.path = None;
+    }
 }
 
 impl Drop for Entry {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
+        if let Some(path) = &self.path {
+            let _ = std::fs::remove_file(path);
+        }
     }
 }

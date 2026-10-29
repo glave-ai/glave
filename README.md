@@ -23,7 +23,7 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/glave-ai/glave/releases
 glave
 ```
 
-Your browser opens, signed in, at the project in the folder you ran it from (glave asks once before making a new folder a project; in your home folder, it opens your chats). Add a model by pasting a key, and start a thread. glave keeps running in the background, so the page stays connected and work goes on when you close the terminal; `glave server stop` stops it.
+Your browser opens, signed in, at the project in the folder you ran it from (glave asks once before making a new folder a project; in your home folder, it opens your chats). Add a model by pasting a key, and start a thread. glave keeps running in the background, so the page stays connected and work goes on when you close the terminal; `glave server stop` stops it. What glave starts for a thread, a command or a tool's server, ends with that thread or with glave; something you mean to keep running belongs to launchd, systemd or Docker, which glave never stops.
 
 Prefer the terminal? `glave "fix the failing test"` answers right there, asking in place before anything risky; `glave -c "…"` continues the folder's last thread. `glave --help` lists everything.
 

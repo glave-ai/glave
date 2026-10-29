@@ -18,7 +18,8 @@ pub(crate) async fn reap(ledger: Arc<Ledger>) -> Result<usize, ProcessError> {
             source: std::io::Error::other(error),
         })??;
     let groups: Vec<_> = plan.iter().filter_map(|(_, id)| group::of(*id)).collect();
-    group::stop_all(&groups).await;
+    // What outlives SIGKILL's wait is forgotten all the same: this start moves on.
+    let _left_behind = group::stop_all(&groups).await;
     for (path, _) in &plan {
         let _ = std::fs::remove_file(path);
     }

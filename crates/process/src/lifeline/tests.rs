@@ -268,3 +268,48 @@ fn a_program_that_cannot_be_the_helper_is_refused_before_anything_starts() {
         );
     }
 }
+
+#[test]
+fn a_helper_that_reads_nothing_never_stalls_glave_and_is_replaced() {
+    let folder = TempDir::new("lifeline-stopped").unwrap();
+    glave_ports::block_on!(async {
+        let lifeline = Arc::new(Lifeline::start(fake_helper(&folder)).await.unwrap());
+        let first = helper_pid(&lifeline);
+        let held = lifeline.tie(101).await.unwrap();
+
+        // The helper is stopped, not gone: it reads nothing, and glave's lines fill its pipe.
+        // Programs keep starting and ending without waiting for it, until one finds it full.
+        let stopped = Pid::from_raw(i32::try_from(first).unwrap()).unwrap();
+        kill_process(stopped, Signal::STOP).unwrap();
+        let deadline = Instant::now() + HUNG;
+        let mut leader = 1000;
+        while lifeline
+            .lock()
+            .helper
+            .as_ref()
+            .is_some_and(|helper| helper.launch == 1)
+        {
+            assert!(Instant::now() < deadline, "glave never found the pipe full");
+            drop(lifeline.tie(leader).await.unwrap());
+            leader += 1;
+        }
+
+        // The stopped helper is killed, so it can never wake to stop what glave holds; the next
+        // program has another, told what glave holds.
+        while test_kill_process(stopped).is_ok() {
+            assert!(Instant::now() < deadline, "the stopped helper is killed");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let again = lifeline.tie(1).await.unwrap();
+        let second = helper_pid(&lifeline);
+        let path = folder.join(format!("told-{second}"));
+        let mut read = String::new();
+        let holds = |read: &str| read.contains("+1\n") && read.contains("+101\n");
+        while !holds(&read) && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            read = std::fs::read_to_string(&path).unwrap_or_default();
+        }
+        assert!(holds(&read), "{read}");
+        drop((held, again));
+    });
+}

@@ -194,6 +194,8 @@ impl Lifeline {
         let (mut process, mut pipe) = {
             let _alone = self.forking.write().unwrap_or_else(PoisonError::into_inner);
             let (read, pipe) = std::io::pipe()?;
+            // glave's end alone: the helper reads its own end as any program does.
+            rustix::io::ioctl_fionbio(&pipe, true)?;
             let process = tokio::process::Command::new(&self.program)
                 .arg0(name)
                 .arg(HELPER_ARG)
@@ -213,7 +215,13 @@ impl Lifeline {
         for leader in &state.live {
             let _ = writeln!(told, "+{leader}");
         }
-        pipe.write_all(told.as_bytes())?;
+        // Into a pipe that takes 16 KB at least, more than a thousand groups, before the helper
+        // reads. One that cannot be told is killed, so it never reads the end of what it was
+        // told and stops those groups.
+        if let Err(error) = pipe.write_all(told.as_bytes()) {
+            let _ = process.start_kill();
+            return Err(error);
+        }
         state.launches += 1;
         let (ready, waited) = watch::channel(None);
         state.helper = Some(Helper {
@@ -244,17 +252,20 @@ impl Lifeline {
 }
 
 impl State {
-    /// Writes `line` to the helper; false, and the helper forgotten, when it cannot be: the
-    /// helper is gone. A line is a few bytes the helper reads at once, doing nothing else
-    /// until glave ends, so this never waits.
+    /// Writes `line` to the helper; false when it cannot be: the helper is gone, or reads
+    /// nothing (stopped, its pipe full). The pipe never blocks, so this never waits. A helper
+    /// that cannot be told is killed and forgotten, so one stopped cannot wake later, read the
+    /// pipe's end and stop what glave still holds, and the next program starts another.
     fn tell(&mut self, line: &str) -> bool {
         let Some(helper) = &mut self.helper else {
             return false;
         };
+        // A line is shorter than what a pipe takes in one piece, so it is written whole or
+        // not at all.
         let told = !matches!(helper.process.try_wait(), Ok(Some(_)))
             && helper.pipe.write_all(line.as_bytes()).is_ok();
-        if !told {
-            self.helper = None;
+        if !told && let Some(mut helper) = self.helper.take() {
+            let _ = helper.process.start_kill();
         }
         told
     }

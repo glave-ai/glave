@@ -33,8 +33,10 @@ pub(crate) async fn emptied(group: Pid) {
 }
 
 /// Stops every group of `groups` side by side: SIGTERM to each, then, after [`GRACE`],
-/// SIGKILL to those with anything left, and waits (up to another grace) for them to empty.
-pub(crate) async fn stop_all(groups: &[Pid]) {
+/// SIGKILL to those with anything left, and waits up to another grace for them to empty.
+/// Returns the groups still not empty then: left behind, since a process stuck in the kernel
+/// (a hung network mount) may never end, and glave moves on rather than wait for it.
+pub(crate) async fn stop_all(groups: &[Pid]) -> Vec<Pid> {
     let left = |groups: &[Pid]| -> Vec<Pid> {
         groups
             .iter()
@@ -52,17 +54,19 @@ pub(crate) async fn stop_all(groups: &[Pid]) {
         }
     };
     if tokio::time::timeout(GRACE, all_emptied).await.is_ok() {
-        return;
+        return Vec::new();
     }
     let stubborn = left(&running);
     for group in &stubborn {
         signal(*group, Signal::KILL);
     }
-    // SIGKILL cannot be ignored; this waits only for the kernel to finish the job.
-    let _ = tokio::time::timeout(GRACE, async {
+    let all_emptied = async {
         for group in &stubborn {
             emptied(*group).await;
         }
-    })
-    .await;
+    };
+    if tokio::time::timeout(GRACE, all_emptied).await.is_ok() {
+        return Vec::new();
+    }
+    left(&stubborn)
 }
