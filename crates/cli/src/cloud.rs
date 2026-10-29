@@ -360,20 +360,6 @@ mod tests {
             no_environment.to_string().contains("devcontainer.json"),
             "{no_environment}"
         );
-        let people = format!("[computers]\nimage = \"x@sha256:{}\"\n", "0".repeat(64));
-        let no_cluster = runtime
-            .block_on(placed(
-                &chosen(&people),
-                &constraints,
-                &dir,
-                project,
-                &processes,
-            ))
-            .unwrap_err();
-        assert!(
-            no_cluster.to_string().contains("backend = \"kubernetes\""),
-            "{no_cluster}"
-        );
         let docker_with_a_runtime_class = WorkersFile {
             backend: Backend::Docker,
             glave: "/x".into(),
@@ -393,6 +379,30 @@ mod tests {
             refused
                 .to_string()
                 .contains("runtime_class is not used by the docker"),
+            "{refused}"
+        );
+    }
+
+    #[test]
+    fn people_s_computers_without_a_cluster_say_what_to_set() {
+        use glave_config::policy::{Layer, Level, assemble};
+        let dir = glave_ports::testing::TempDir::new("computers").unwrap();
+        let text = format!("[computers]\nimage = \"x@sha256:{}\"\n", "0".repeat(64));
+        let layer = Layer {
+            level: Level::File(dir.join("config.toml")),
+            values: glave_config::policy::config(&text, &dir).unwrap(),
+        };
+        let choices = assemble(&[layer], &[], None).choices;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let refused = runtime
+            .block_on(homes(&choices, &Constraints::default()))
+            .err()
+            .unwrap();
+        assert!(
+            refused.to_string().contains("backend = \"kubernetes\""),
             "{refused}"
         );
     }

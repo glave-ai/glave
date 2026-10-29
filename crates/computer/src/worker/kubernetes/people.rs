@@ -34,6 +34,13 @@ enum State {
     Failed(String),
 }
 
+impl State {
+    /// Whether it is no longer waking: awake, or its wake failed.
+    fn settled(&self) -> bool {
+        !matches!(self, Self::Waking)
+    }
+}
+
 /// One person's computer, and the wake running for it, if one is.
 struct Person {
     computers: Arc<WorkerComputers>,
@@ -165,11 +172,7 @@ impl People {
         self.wake(key)?;
         let person = self.person(key)?;
         let mut state = person.state.subscribe();
-        let woke = tokio::time::timeout(
-            WAKE_WAIT,
-            state.wait_for(|state| !matches!(state, State::Waking)),
-        )
-        .await;
+        let woke = tokio::time::timeout(WAKE_WAIT, state.wait_for(State::settled)).await;
         let now = match woke {
             Ok(Ok(state)) => state.clone(),
             Ok(Err(_)) => State::Failed("its wake was stopped".into()),

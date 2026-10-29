@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use glave_computer::LocalComputers;
 use glave_event::{ComputerKind, PrincipalId};
@@ -46,7 +46,10 @@ impl Here {
 
 impl Homes for Here {
     fn wake(&self, org: OrgId, person: PrincipalId) -> Result<(), ComputerError> {
-        self.woken.lock().unwrap().push((org, person));
+        self.woken
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((org, person));
         Ok(())
     }
 
