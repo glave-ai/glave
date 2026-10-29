@@ -262,12 +262,13 @@ async fn outcome(
     Ok((finished.ending, output.text(2_000)))
 }
 
-/// What the Pod `name`'s container runs at now, as its status says, if it is there.
+/// The CPU and memory the Pod `name`'s container runs at now, as its status says, if it is
+/// there.
 async fn running_at(cluster: &super::super::Kubernetes, name: &str) -> Option<serde_json::Value> {
     let pod = cluster.pods().get_opt(name).await.ok().flatten()?;
     let pod = serde_json::to_value(pod).ok()?;
-    pod.pointer("/status/containerStatuses/0/resources/limits")
-        .cloned()
+    let limits = pod.pointer("/status/containerStatuses/0/resources/limits")?;
+    Some(serde_json::json!({"cpu": limits.get("cpu")?, "memory": limits.get("memory")?}))
 }
 
 /// A person's computer that runs out of memory restarts with twice as much, and one held at its
@@ -294,7 +295,8 @@ fn a_person_s_computer_grows_for_what_a_command_runs_short_of() {
         let pod = format!("glave-computer-{key}");
         let home = people.home(&key).unwrap();
         let big = "python3 -c 'b = bytearray(700 * 1024 * 1024); print(\"allocated\")'";
-        let busy = "timeout 12 sh -c 'while :; do :; done'; echo busy";
+        let busy = "cat /proc/self/cgroup /sys/fs/cgroup/cpu.max /sys/fs/cgroup/cpu.stat; \
+            timeout 12 sh -c 'while :; do :; done'; cat /sys/fs/cgroup/cpu.stat; echo busy";
         let mut seen = Vec::new();
         let mut at = Vec::new();
         if let Ok(chat) = home
