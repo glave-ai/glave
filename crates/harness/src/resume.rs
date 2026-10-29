@@ -251,7 +251,7 @@ fn turns_begun(events: &[Event]) -> u64 {
 
 /// The person a thread is for, as `thread.started` records it; `None` when it records none,
 /// which means the local person.
-fn for_of(events: &[Event]) -> Option<glave_event::PrincipalId> {
+pub(crate) fn for_of(events: &[Event]) -> Option<glave_event::PrincipalId> {
     events.iter().find_map(|event| match &event.body {
         Body::ThreadStarted(started) => started
             .for_

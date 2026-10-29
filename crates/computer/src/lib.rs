@@ -28,5 +28,5 @@ pub use tls::{Fingerprint, Identity, connect_tls};
 pub use token::{MIN_SECRET, Token, Tokens};
 pub use worker::{Docker, DockerSettings, WorkerComputers, WorkerCredentials, https_url};
 #[cfg(feature = "kubernetes")]
-pub use worker::{Kubernetes, KubernetesSettings};
+pub use worker::{Kubernetes, KubernetesSettings, People};
 pub use worktrees::{Condition, Kept, Released, Trash};

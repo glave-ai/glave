@@ -17,6 +17,7 @@ describe('place', () => {
     expect(placeOf(bound('local'), { local: true, mac: true })).toBe('Your Mac');
     expect(placeOf(bound('local'), local)).toBe('This computer');
     expect(placeOf(bound('local'), { local: false, mac: true })).toBe('The server');
+    expect(placeOf(bound('person'), local)).toBe('Your cloud computer');
     expect(placeOf(bound('worker'), local)).toBe('Another computer');
     expect(placeOf(null, local)).toBeNull();
   });

@@ -277,6 +277,7 @@
     "person.you": "\u200f\u202eYou\u202c\u200f",
     "place.computer": "\u200f\u202eThis\u202c\u200f \u200f\u202ecomputer\u202c\u200f",
     "place.mac": "\u200f\u202eYour\u202c\u200f \u200f\u202eMac\u202c\u200f",
+    "place.person": "\u200f\u202eYour\u202c\u200f \u200f\u202ecloud\u202c\u200f \u200f\u202ecomputer\u202c\u200f",
     "place.server": "\u200f\u202eThe\u202c\u200f \u200f\u202eserver\u202c\u200f",
     "place.worker": "\u200f\u202eAnother\u202c\u200f \u200f\u202ecomputer\u202c\u200f",
     "projects.folders": "{{$COUNT}, plural, =0 {\u200f\u202eno\u202c\u200f \u200f\u202efolders\u202c\u200f} one {# \u200f\u202efolder\u202c\u200f} other {# \u200f\u202efolders\u202c\u200f}}",

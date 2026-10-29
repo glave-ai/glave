@@ -25,6 +25,7 @@ use crate::chosen::DefaultModel;
 use crate::compaction::Measured;
 use crate::defaults::Defaults;
 use crate::goal::{GoalProgress, Pursuit};
+use crate::homes::Homes;
 use crate::inbox::Inbox;
 use crate::memory::MemoryState;
 use crate::plan::Planning;
@@ -90,6 +91,9 @@ pub struct Harness<P, L, B, A> {
     pub(crate) learned_windows: LearnedWindows,
     /// Where threads placed on a worker get one; none by default.
     pub(crate) workers: Option<Workers>,
+    /// Each person's own computer, where their threads work; none by default, so every thread
+    /// works on the harness's computer.
+    pub(crate) homes: Option<Arc<dyn Homes>>,
     /// What threads remember from one to the next; none by default, so the model is sent
     /// exactly what it is sent without memory.
     pub(crate) memory: Option<Arc<dyn Memory>>,
@@ -301,6 +305,7 @@ where
             settings,
             learned_windows: LearnedWindows::default(),
             workers: None,
+            homes: None,
             memory: None,
             project_folders: None,
             lingering: Mutex::default(),
@@ -349,6 +354,13 @@ where
     #[must_use]
     pub fn with_workers(mut self, workers: Workers) -> Self {
         self.workers = Some(workers);
+        self
+    }
+
+    /// Works each person's threads on their own computer from `homes`, when there is one.
+    #[must_use]
+    pub fn with_homes(mut self, homes: Option<Arc<dyn Homes>>) -> Self {
+        self.homes = homes;
         self
     }
 
@@ -509,13 +521,13 @@ where
         place: Option<Place>,
     ) -> Result<Thread, HarnessError> {
         let id = ThreadId::new(self.clock.now(), self.entropy.bytes()?)?;
+        let for_ = caller.person.or(self.actors.person);
         let placed = match place {
-            Some(place) => Some(self.place(scope, id, place).await?),
+            Some(place) => Some(self.place(scope, id, place, for_).await?),
             None => None,
         };
         let (workspace, bound) =
             placed.map_or((None, None), |(workspace, bound)| (workspace, Some(bound)));
-        let for_ = caller.person.or(self.actors.person);
         let instructions = self
             .instructions_for(workspace.as_deref(), bound.as_ref(), for_)
             .await;
