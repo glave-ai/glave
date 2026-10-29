@@ -1,36 +1,40 @@
 //! Each person's own computer, where a deployment gives people one (`specs/computers.md`, "A
-//! person's computer in the cloud"): opening the app starts waking it, and their threads work
-//! there, in a scratch folder on it, recorded as on their own computer, and opened there again
-//! by a resumed thread's turn, never by reading it. A computer of this machine stands in for
-//! the cluster's.
+//! person's computer in the cloud"): their threads work there, in a scratch folder on it,
+//! recorded as on their own computer; opening the app, starting a chat, reading it and a turn
+//! that only talks never wake it, and the first tool call that needs it does, once, while the
+//! turn holds it. A computer of this machine stands in for the cluster's.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use glave_computer::LocalComputers;
-use glave_event::{ComputerKind, PrincipalId};
+use glave_computer::{LocalComputers, Wake, Waking};
+use glave_event::{ComputerKind, PrincipalId, ThreadId};
 use glave_harness::Homes;
-use glave_ports::computer::{ComputerError, ComputerId, Computers, Home};
-use glave_ports::{BoxFuture, OrgId};
+use glave_ports::OrgId;
+use glave_ports::computer::{
+    ComputerError, ComputerId, Computers, Home, Sources, WorkspaceId, WorkspaceInfo,
+};
 use glave_session::Answering;
 use glave_session::protocol::{Reply, Request, Show};
+use serde_json::json;
 
 use crate::support::*;
 
 /// People's computers on this machine: each person's a folder of their own with its scratch
-/// folders, woken the first time it is asked for; every wake asked for is kept.
+/// folders, planned until a call needs it, then woken; every wake is counted.
 struct Here {
     base: PathBuf,
-    woken: Mutex<Vec<(OrgId, PrincipalId)>>,
-    /// How many times a computer was asked for, to work on it.
-    asked: AtomicUsize,
+    /// How many times a call asked for a computer, woken or not.
+    asked: Arc<AtomicUsize>,
+    /// How many times a computer was woken.
+    woken: Arc<AtomicUsize>,
     /// How many turns and tasks hold a computer now.
     holds: Arc<AtomicUsize>,
-    /// How many held a computer each time one was asked for.
-    held_when_asked: Mutex<Vec<usize>>,
-    awake: tokio::sync::Mutex<BTreeMap<PrincipalId, Home>>,
+    /// How many held a computer each time one was woken.
+    held_when_woken: Arc<Mutex<Vec<usize>>>,
+    planned: Mutex<BTreeMap<PrincipalId, Home>>,
 }
 
 /// One turn or task holding a computer, counted while it is kept.
@@ -51,78 +55,118 @@ impl Drop for Hold {
 
 impl Here {
     fn new(base: &Path) -> Self {
+        std::fs::create_dir_all(base).unwrap();
         Self {
-            base: base.to_owned(),
-            woken: Mutex::new(Vec::new()),
-            asked: AtomicUsize::new(0),
+            base: base.canonicalize().unwrap(),
+            asked: Arc::default(),
+            woken: Arc::default(),
             holds: Arc::default(),
-            held_when_asked: Mutex::new(Vec::new()),
-            awake: tokio::sync::Mutex::new(BTreeMap::new()),
+            held_when_woken: Arc::default(),
+            planned: Mutex::new(BTreeMap::new()),
         }
     }
 
-    fn woken(&self) -> Vec<(OrgId, PrincipalId)> {
-        self.woken.lock().unwrap().clone()
+    fn woken(&self) -> usize {
+        self.woken.load(Ordering::SeqCst)
+    }
+
+    fn asked(&self) -> usize {
+        self.asked.load(Ordering::SeqCst)
     }
 
     /// Where `person`'s computer keeps its scratch folders.
     fn scratch(&self, person: PrincipalId) -> PathBuf {
         self.base.join(person.to_string()).join("scratch")
     }
+
+    /// `person`'s computer, planned: woken, the first time a call needs it, as a computer of
+    /// this machine with its home in a folder of its own.
+    fn plan(&self, person: PrincipalId) -> Home {
+        let folder = self.base.join(person.to_string()).join("home");
+        std::fs::create_dir_all(&folder).unwrap();
+        let scratch = self.scratch(person);
+        let (asked, woken, holds, held) = (
+            Arc::clone(&self.asked),
+            Arc::clone(&self.woken),
+            Arc::clone(&self.holds),
+            Arc::clone(&self.held_when_woken),
+        );
+        let awake: Arc<tokio::sync::Mutex<Option<Home>>> = Arc::default();
+        let at = folder.clone();
+        let wake: Wake = Arc::new(move || {
+            asked.fetch_add(1, Ordering::SeqCst);
+            let (woken, holds, held, awake) = (
+                Arc::clone(&woken),
+                Arc::clone(&holds),
+                Arc::clone(&held),
+                Arc::clone(&awake),
+            );
+            let (scratch, at) = (scratch.clone(), at.clone());
+            Box::pin(async move {
+                let mut awake = awake.lock().await;
+                if let Some(home) = awake.as_ref() {
+                    return Ok(home.clone());
+                }
+                woken.fetch_add(1, Ordering::SeqCst);
+                held.lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .push(holds.load(Ordering::SeqCst));
+                let computers = LocalComputers::for_here(std::env::vars_os())
+                    .with_scratch(scratch)
+                    .known_as(ComputerId::from_uuid(person.as_uuid()));
+                let (computers, info) = computers.open_here(&at).await?;
+                let home = Home {
+                    computers: computers as Arc<dyn Computers>,
+                    home: info,
+                };
+                *awake = Some(home.clone());
+                Ok(home)
+            })
+        });
+        let path = folder.to_string_lossy().into_owned();
+        let home = WorkspaceInfo {
+            id: WorkspaceId::from_uuid(person.as_uuid()),
+            computer: ComputerId::from_uuid(person.as_uuid()),
+            root: path.clone(),
+            sources: Sources::Folder { path },
+            home: None,
+            temp: None,
+        };
+        Waking::home(wake, home, &self.scratch(person).to_string_lossy())
+    }
 }
 
 impl Homes for Here {
-    fn wake(&self, org: OrgId, person: PrincipalId) -> Result<(), ComputerError> {
-        self.woken
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((org, person));
-        Ok(())
-    }
-
     fn hold(&self, _org: OrgId, _person: PrincipalId) -> Result<Box<dyn Send>, ComputerError> {
         Ok(Box::new(Hold::new(&self.holds)))
     }
 
-    fn home(&self, _org: OrgId, person: PrincipalId) -> BoxFuture<'_, Result<Home, ComputerError>> {
-        Box::pin(async move {
-            self.asked.fetch_add(1, Ordering::SeqCst);
-            self.held_when_asked
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(self.holds.load(Ordering::SeqCst));
-            let mut awake = self.awake.lock().await;
-            if let Some(home) = awake.get(&person) {
-                return Ok(home.clone());
-            }
-            let folder = self.base.join(person.to_string()).join("home");
-            std::fs::create_dir_all(&folder).unwrap();
-            let computers = LocalComputers::for_here(std::env::vars_os())
-                .with_scratch(self.scratch(person))
-                .known_as(ComputerId::from_uuid(person.as_uuid()));
-            let (computers, info) = computers.open_here(&folder).await?;
-            let home = Home {
-                computers: computers as Arc<dyn Computers>,
-                home: info,
-            };
-            awake.insert(person, home.clone());
-            Ok(home)
-        })
+    fn home(&self, _org: OrgId, person: PrincipalId) -> Result<Home, ComputerError> {
+        let mut planned = self.planned.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(planned
+            .entry(person)
+            .or_insert_with(|| self.plan(person))
+            .clone())
     }
 }
 
 #[test]
-fn a_person_s_threads_work_on_their_own_computer_woken_as_they_open_the_app() {
+fn a_person_s_threads_work_on_their_own_computer_woken_only_by_a_tool_call_that_needs_it() {
     let dir = folder("session-homes");
     block_on!(async {
         let homes = Arc::new(Here::new(&dir.join("people")));
         let log = Shared::default();
-        let mut setup = Setup::asking(Vec::new(), Answering::NoOne);
+        let answers = vec![
+            answer(Some("Hello."), None),
+            answer(None, Some(("read", json!({"path": "notes.txt"})))),
+            answer(Some("There are no notes."), None),
+        ];
+        let mut setup = Setup::asking(answers, Answering::NoOne);
         setup.homes = Some(Arc::clone(&homes) as Arc<dyn Homes>);
         let (server, _) = setup.build_on(&dir, log.clone()).await;
         let person = server.person().unwrap();
 
-        // The app opens: its threads listed, the computer's wake started.
+        // The app opens: its threads listed, the computer left asleep.
         server
             .request(Request::ThreadList {
                 project: None,
@@ -132,7 +176,7 @@ fn a_person_s_threads_work_on_their_own_computer_woken_as_they_open_the_app() {
             })
             .await
             .unwrap();
-        assert_eq!(homes.woken(), vec![(scope().org(), person)]);
+        assert_eq!(homes.woken(), 0, "opening the app wakes nothing");
 
         // A chat of their own: its scratch folder on their computer, not the server's.
         let started = server
@@ -160,33 +204,58 @@ fn a_person_s_threads_work_on_their_own_computer_woken_as_they_open_the_app() {
             workspace.root,
             scratch.display()
         );
+        assert_eq!(homes.woken(), 0, "a chat started wakes nothing");
 
-        // A server started later on the same store resumes it on their computer: its scratch
-        // folder, removed meanwhile, made again there.
-        std::fs::remove_dir_all(&workspace.root).unwrap();
-        let mut next = Setup::asking(vec![answer(Some("Hi."), None)], Answering::NoOne);
-        next.seed = 2;
-        next.settings.person = Some(person);
-        next.projects = Some(Arc::clone(server.projects()));
-        next.homes = Some(Arc::clone(&homes) as Arc<dyn Homes>);
-        let (again, _) = next.build_on(&dir, log).await;
-        // Reading it waits for no computer: only a turn needs one.
-        let asked = homes.asked.load(Ordering::SeqCst);
-        again
-            .request(Request::ThreadGet { thread: thread.id })
-            .await
-            .unwrap();
+        // A turn that only talks never asks for the computer; one that reads a file wakes it,
+        // once, while the turn holds it.
+        turn(&server, thread.id, "hi").await.unwrap();
+        assert_eq!(homes.asked(), 0, "a turn that only talks never asks for it");
+        turn(&server, thread.id, "read my notes").await.unwrap();
         assert_eq!(
-            homes.asked.load(Ordering::SeqCst),
-            asked,
-            "read without waking"
+            homes.woken(),
+            1,
+            "the first tool call that needs it wakes it"
         );
-        turn(&again, thread.id, "hello").await.unwrap();
-        let held = homes.held_when_asked.lock().unwrap().clone();
-        assert_eq!(held.last(), Some(&1), "the turn kept it awake: {held:?}");
+        let held = homes.held_when_woken.lock().unwrap().clone();
+        assert_eq!(held, vec![1], "the turn holds it as it wakes");
         assert!(
             Path::new(&workspace.root).is_dir(),
-            "opened again on their computer"
+            "its scratch folder made there"
         );
+
+        resumed_later(&dir, log, &server, thread.id, &workspace.root).await;
     });
+}
+
+/// A server started later on the same store resumes `thread` on its person's computer: reading
+/// it and a turn that talks wake nothing, and its scratch folder at `root`, removed
+/// meanwhile, is made again there only by the tool call that needs it.
+async fn resumed_later(
+    dir: &Path,
+    log: Shared,
+    server: &Tested<Shared>,
+    thread: ThreadId,
+    root: &str,
+) {
+    let person = server.person().unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+    let answers = vec![
+        answer(Some("Hi."), None),
+        answer(None, Some(("read", json!({"path": "notes.txt"})))),
+        answer(Some("Still none."), None),
+    ];
+    let mut next = Setup::asking(answers, Answering::NoOne);
+    next.seed = 2;
+    next.settings.person = Some(person);
+    next.projects = Some(Arc::clone(server.projects()));
+    let later = Arc::new(Here::new(&dir.join("people")));
+    next.homes = Some(Arc::clone(&later) as Arc<dyn Homes>);
+    let (again, _) = next.build_on(dir, log).await;
+    again.request(Request::ThreadGet { thread }).await.unwrap();
+    turn(&again, thread, "hello").await.unwrap();
+    assert_eq!(later.asked(), 0, "read and talked to without asking for it");
+    assert!(!Path::new(root).exists());
+    turn(&again, thread, "read my notes again").await.unwrap();
+    assert_eq!(later.woken(), 1);
+    assert!(Path::new(root).is_dir(), "opened again on their computer");
 }

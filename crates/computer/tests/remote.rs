@@ -1,6 +1,7 @@
 //! A computer across the protocol passes the same suite as one in-process: over an
-//! in-memory pipe, over TCP on 127.0.0.1 with a token, and over TLS with the certificate
-//! pinned and a token that expires; and one serving with an idle limit ends on its own.
+//! in-memory pipe, over TCP on 127.0.0.1 with a token, over TLS with the certificate pinned
+//! and a token that expires, and through bridges to a Unix socket; and one serving with an
+//! idle limit ends on its own.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -9,8 +10,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use glave_computer::{
-    Fingerprint, Identity, Idle, LocalComputers, RemoteComputers, Token, connect_tls, serve,
-    serve_tcp, serve_tls,
+    Fingerprint, Identity, Idle, LocalComputers, RemoteComputers, Token, bridge, connect_tls,
+    listen_socket, serve, serve_socket, serve_tcp, serve_tls,
 };
 use glave_ports::computer::{ComputerError, ComputerId, Computers, Environment};
 use glave_ports::testing::any_secret;
@@ -247,7 +248,7 @@ async fn tls(copies: &PathBuf, token: Token) -> (std::net::SocketAddr, Identity,
     let acceptor = Identity::acceptor(&identity.certificate, &identity.key).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let serving = tokio::spawn(serve_tls(local(copies), listener, acceptor, token, None));
+    let serving = tokio::spawn(serve_tls(local(copies), listener, acceptor, token));
     (address, identity, serving)
 }
 
@@ -255,7 +256,7 @@ type JoinHandle = tokio::task::JoinHandle<std::io::Result<()>>;
 
 #[test]
 fn a_computer_serving_with_an_idle_limit_ends_once_nothing_runs_for_that_long() {
-    let (_dir, _work, copies) = scratch("tls-idle");
+    let (dir, _work, copies) = scratch("idle");
     // On paused time: the limit passes without waiting for it.
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -263,9 +264,7 @@ fn a_computer_serving_with_an_idle_limit_ends_once_nothing_runs_for_that_long() 
         .build()
         .unwrap();
     runtime.block_on(async {
-        let identity = Identity::mint().unwrap();
-        let acceptor = Identity::acceptor(&identity.certificate, &identity.key).unwrap();
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listener = listen_socket(&dir.join("glave.sock")).unwrap();
         let busy = Arc::new(AtomicBool::new(true));
         let running = Arc::clone(&busy);
         let idle = Idle {
@@ -273,13 +272,7 @@ fn a_computer_serving_with_an_idle_limit_ends_once_nothing_runs_for_that_long() 
             busy: Box::new(move || running.load(Ordering::SeqCst)),
         };
         let token = Token::mint(UNIX_EPOCH, Duration::from_secs(600)).unwrap();
-        let mut serving = tokio::spawn(serve_tls(
-            local(&copies),
-            listener,
-            acceptor,
-            token,
-            Some(idle),
-        ));
+        let mut serving = tokio::spawn(serve_socket(local(&copies), listener, token, Some(idle)));
         // A command in the background keeps it serving, however long.
         let kept = tokio::time::timeout(Duration::from_hours(3), &mut serving).await;
         assert!(kept.is_err(), "it serves while a command runs");
@@ -293,6 +286,77 @@ fn a_computer_serving_with_an_idle_limit_ends_once_nothing_runs_for_that_long() 
             took >= Duration::from_mins(9) && took <= Duration::from_mins(11),
             "ended {took:?} after the command did"
         );
+    });
+}
+
+/// A bridge to the socket at `socket`, carried over an in-memory pipe as an exec's standard
+/// input and output would carry it, and the connection through it, not yet signed in.
+fn bridged(socket: &std::path::Path) -> (RemoteComputers, JoinHandle) {
+    let (ours, theirs) = tokio::io::duplex(64 * 1024);
+    let (read, write) = tokio::io::split(theirs);
+    let socket = socket.to_owned();
+    let carried = tokio::spawn(async move { bridge(&socket, read, write).await });
+    let (read, write) = tokio::io::split(ours);
+    (RemoteComputers::connect(read, write), carried)
+}
+
+#[test]
+fn a_computer_through_bridges_to_its_socket_passes_the_suite_and_outlives_each_bridge() {
+    let (dir, work, copies) = scratch("socket");
+    block_on!(async {
+        let token = Token::mint(
+            SystemTime::from(SystemClock.now()),
+            Duration::from_secs(600),
+        )
+        .unwrap();
+        let socket = dir.join("glave.sock");
+        // A bridge opened before the computer serves waits for its socket: it runs, finds
+        // none, and tries again.
+        let (first, carried) = bridged(&socket);
+        tokio::task::yield_now().await;
+        let listener = listen_socket(&socket).unwrap();
+        let serving = tokio::spawn(serve_socket(local(&copies), listener, token.clone(), None));
+        first.authenticate(token.secret()).await.unwrap();
+        first.check_protocol().await.unwrap();
+        let verdict =
+            conformance::computers(&first, &Environment::host(), &work.to_string_lossy()).await;
+        assert_eq!(verdict, Ok(()));
+        let made = first.create(&Environment::host()).await.unwrap();
+        // Letting go of the connection ends its bridge, and only it.
+        drop(first);
+        carried.await.unwrap().unwrap();
+        let (second, _carried) = bridged(&socket);
+        second.authenticate(token.secret()).await.unwrap();
+        let status = second.status(made.id).await.unwrap();
+        assert_eq!(
+            status.id, made.id,
+            "the same computer, through a new bridge"
+        );
+
+        let (guessed, _carried) = bridged(&socket);
+        assert!(
+            guessed.authenticate("guess").await.is_err(),
+            "a wrong token is refused"
+        );
+        assert!(!serving.is_finished());
+        serving.abort();
+    });
+}
+
+#[test]
+fn a_bridge_with_no_computer_to_reach_says_so() {
+    let (dir, _work, _copies) = scratch("no-socket");
+    // On paused time: the bridge's wait passes without waiting for it.
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .start_paused(true)
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let (input, output) = (tokio::io::empty(), tokio::io::sink());
+        let refused = bridge(&dir.join("glave.sock"), input, output).await;
+        let message = refused.unwrap_err().to_string();
+        assert!(message.contains("within 30 seconds"), "{message}");
     });
 }
 

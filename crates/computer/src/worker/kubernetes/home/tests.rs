@@ -1,8 +1,10 @@
-//! A person's computer on a real cluster, with `GLAVE_TEST_KUBE=1` and a real glave and image
-//! (`GLAVE_TEST_WORKER_GLAVE`, `GLAVE_TEST_WORKER_IMAGE`), as CI's `kind` job runs it: a file
-//! written before it sleeps is there after it wakes, it runs as no root and writes nowhere but
-//! its home and `/tmp`, it reaches the internet but nothing in the cluster, the wake is timed,
-//! and destroying it leaves nothing behind.
+//! A person's computer on a real cluster, with `GLAVE_TEST_KUBE=1`, a real glave
+//! (`GLAVE_TEST_WORKER_GLAVE`) and glave's computer image (`GLAVE_TEST_COMPUTER_IMAGE`,
+//! `images/computer`), as CI's `kind` job runs it: a file written before it sleeps is there
+//! after it wakes, it runs as `nonroot` and writes nowhere but its home and `/tmp`, its tools
+//! are there, it reaches the internet but nothing in the cluster, a bridge into it
+//! that drops ends only that bridge, the wake is timed, and destroying it leaves nothing
+//! behind.
 
 use std::time::{Duration, Instant};
 
@@ -20,6 +22,9 @@ use crate::{CancelSwitch, WorkerComputers, WorkerCredentials};
 /// What the first wake writes and checks: a file kept on its disk, and the walls around it,
 /// each said as a fact so a failure shows which.
 const FENCED: &str = "echo kept > kept.txt; echo \"home=$HOME\"; echo \"user=$(id -u)\"; \
+    echo \"name=$(whoami) at $(awk -F: '$3 == 65532 { print $6 }' /etc/passwd)\"; \
+    for tool in bash git cc make tar python3 uv node npm fnm rustup cargo jq rg ssh curl; do \
+    command -v \"$tool\" >/dev/null || echo \"missing=$tool\"; done; \
     touch /tmp/t && echo tmp=writable || echo tmp=read-only; \
     touch /var/tmp/glave-x 2>/dev/null && echo root=writable || echo root=read-only; \
     reach() { timeout 5 bash -c \"</dev/tcp/$1/$2\" 2>/dev/null && echo reached || echo refused; }; \
@@ -58,11 +63,19 @@ pub(in crate::worker::kubernetes) async fn ran(
     }
 }
 
-/// Wakes the computer, runs `command` on it, and puts it to sleep again, whatever happened.
+/// Kills every bridge into the computer, the one carrying this command too, as an API server
+/// restarting drops its execs; the name is put together as it runs, so the command's own line
+/// does not match it.
+const DROP_BRIDGES: &str = "b=brid; b=\"${b}ge\"; for p in /proc/[0-9]*; do \
+    case \"$(tr '\\0' ' ' < \"$p/cmdline\" 2>/dev/null)\" in \
+    *\"computer $b \"*) kill \"${p#/proc/}\";; esac; done";
+
+/// Wakes the computer, runs `commands` on it one after another, and puts it to sleep again,
+/// whatever happened; what the last printed.
 async fn awake(
     computers: &WorkerComputers,
     environment: &Environment,
-    command: &str,
+    commands: &[&str],
 ) -> (Duration, Result<String, String>) {
     let waking = Instant::now();
     let woke = computers.create(environment).await;
@@ -74,7 +87,10 @@ async fn awake(
                 .map_err(|e| format!("wake: {e:?}")),
         );
     };
-    let said = ran(computers, woke.id, command).await;
+    let mut said = Err("no command".to_owned());
+    for command in commands {
+        said = ran(computers, woke.id, command).await;
+    }
     let slept = computers.destroy(woke.id).await;
     (took, slept.map_err(|e| format!("sleep: {e:?}")).and(said))
 }
@@ -83,11 +99,11 @@ async fn awake(
 fn a_persons_computer_keeps_its_disk_while_it_sleeps() {
     let (Ok(_), Ok(image)) = (
         std::env::var("GLAVE_TEST_WORKER_GLAVE"),
-        std::env::var("GLAVE_TEST_WORKER_IMAGE"),
+        std::env::var("GLAVE_TEST_COMPUTER_IMAGE"),
     ) else {
         eprintln!(
-            "skipped: set GLAVE_TEST_WORKER_GLAVE (a Linux glave) and GLAVE_TEST_WORKER_IMAGE \
-             (an image with bash and git, pinned by digest) to test a person's computer"
+            "skipped: set GLAVE_TEST_WORKER_GLAVE (a Linux glave) and GLAVE_TEST_COMPUTER_IMAGE \
+             (glave's computer image, pinned by digest) to test a person's computer"
         );
         return;
     };
@@ -110,9 +126,11 @@ fn a_persons_computer_keeps_its_disk_while_it_sleeps() {
             ..Environment::host()
         };
 
-        let (_, wrote) = awake(&computers, &environment, FENCED).await;
-        // Asleep in between: its Pod gone, its disk kept.
-        let (woke, read) = awake(&computers, &environment, "cat kept.txt").await;
+        let (_, wrote) = awake(&computers, &environment, &[FENCED]).await;
+        // Asleep in between: its Pod gone, its disk kept. Awake, its bridge drops (the call
+        // carried on it is lost) and the next call reaches it through a new one.
+        let after = [DROP_BRIDGES, "cat kept.txt"];
+        let (woke, read) = awake(&computers, &environment, &after).await;
         let destroyed = PersonComputer::new(cluster.clone(), &key, 1)
             .unwrap()
             .destroy()
@@ -121,10 +139,10 @@ fn a_persons_computer_keeps_its_disk_while_it_sleeps() {
         eprintln!("a person's computer woke in {} ms", woke.as_millis());
         assert_eq!(
             wrote.unwrap().trim(),
-            "home=/home/glave\nuser=65532\ntmp=writable\nroot=read-only\ndns=yes\napi=refused\n\
-             pods=refused\ninternet=reached",
-            "its own home, never root, nothing written outside it but /tmp, and the internet \
-             but nothing in the cluster"
+            "home=/home/glave\nuser=65532\nname=nonroot at /home/glave\ntmp=writable\nroot=read-only\ndns=yes\n\
+             api=refused\npods=refused\ninternet=reached",
+            "its own home, glave's image's tools, never root, nothing written outside it but \
+             /tmp, and the internet but nothing in the cluster"
         );
         assert_eq!(read.unwrap().trim(), "kept");
         destroyed.unwrap();

@@ -44,7 +44,7 @@ pub use glave_event::{Grouping, Permissions, TurnResult};
 pub use live::Update;
 pub use models::ModelInfo;
 pub use passkeys::{AcceptedPasskeys, LinkKind, PasskeySummary, SignInWay, UnknownPasskey};
-pub use people::{InviteInfo, Joining, PersonInfo, ShownInvite};
+pub use people::{InviteInfo, JoinWay, PersonInfo, ShownInvite};
 pub use plans::PlanInfo;
 pub use projects::{GoneFolder, NewFolder, ProjectFolder};
 pub use providers::{ProviderInfo, hint};

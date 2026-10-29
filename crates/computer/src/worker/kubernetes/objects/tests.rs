@@ -40,6 +40,11 @@ fn person<'a>(spec: &'a Spec, labels: &'a BTreeMap<String, String>) -> Shape<'a>
     }
 }
 
+/// The Pod of a worker from `spec`.
+fn shape_of(spec: &Spec, labels: &BTreeMap<String, String>) -> Value {
+    shape(spec, labels).pod()
+}
+
 fn shape<'a>(spec: &'a Spec, labels: &'a BTreeMap<String, String>) -> Shape<'a> {
     Shape {
         name: "glave-worker-1",
@@ -77,16 +82,23 @@ fn a_pod_is_limited_hardened_and_isolated() {
         json!({"glave.started-by": starter})
     );
     let command = container["command"].to_string();
-    assert!(command.contains("\"--tls\",\"0.0.0.0:7070\""), "{command}");
+    assert!(
+        command.contains(
+            "\"/opt/glave/glave\",\"computer\",\"serve\",\"--socket\",\
+             \"/opt/glave/glave.sock\",\"/opt/glave/secret\"]"
+        ),
+        "{command}"
+    );
     assert_eq!(
         container["env"],
         json!([{"name": "GREETING", "value": "hi"}])
     );
     assert_eq!(pod["spec"]["volumes"][1]["emptyDir"]["medium"], "Memory");
     assert!(
-        !pod.to_string().contains("PRIVATE KEY"),
-        "the key is never in the Pod"
+        !pod.to_string().contains(spec.token.secret()),
+        "the token is never in the Pod"
     );
+    assert!(container.get("ports").is_none() && container.get("stdin").is_none());
     let parsed: k8s_openapi::api::core::v1::Pod = serde_json::from_value(pod).unwrap();
     assert!(parsed.spec.is_some());
 }
@@ -221,15 +233,17 @@ fn a_persons_computer_is_never_root_and_reaches_nothing_in_the_cluster() {
 }
 
 #[test]
-fn without_the_network_glave_is_on_stdio_and_nothing_goes_in_or_out() {
+fn without_the_network_glave_still_serves_on_its_socket_and_nothing_goes_in_or_out() {
     let labels = BTreeMap::new();
     let off = spec(false);
     let shape = shape(&off, &labels);
     let pod = shape.pod();
     let container = &pod["spec"]["containers"][0];
-    assert_eq!(container["stdin"], json!(true));
-    assert!(container["command"].to_string().contains("--stdio"));
-    assert_eq!(container["ports"], json!([]));
+    assert_eq!(
+        container["command"],
+        shape_of(&spec(true), &labels)["spec"]["containers"][0]["command"],
+        "the same with the network or without"
+    );
     let policy = shape.network_policy();
     assert_eq!(policy["spec"]["egress"], json!([]));
     assert_eq!(policy["spec"]["ingress"], json!([]));
@@ -266,13 +280,16 @@ fn without_the_network_glave_is_on_stdio_and_nothing_goes_in_or_out() {
 }
 
 #[test]
-fn the_identity_goes_in_only_with_the_network_and_ready_comes_last() {
-    let with = files(b"glave", &spec(true)).unwrap();
-    let without = files(b"glave", &spec(false)).unwrap();
-    let text = String::from_utf8_lossy(&with);
-    assert!(text.contains("opt/glave/tls/key.pem") && text.contains("PRIVATE KEY"));
-    assert!(text.rfind("opt/glave/ready") > text.rfind("opt/glave/tls/token"));
-    assert!(!String::from_utf8_lossy(&without).contains("PRIVATE KEY"));
+fn the_token_goes_in_and_ready_comes_last() {
+    let spec = spec(true);
+    let archive = files(b"glave", &spec).unwrap();
+    let text = String::from_utf8_lossy(&archive);
+    assert!(text.contains("opt/glave/secret/token") && text.contains(spec.token.secret()));
+    assert!(text.rfind("opt/glave/ready") > text.rfind("opt/glave/secret/token"));
+    assert!(
+        !text.contains("PRIVATE KEY"),
+        "no TLS: the exec runs inside the API server's"
+    );
     assert_eq!(arch(Some(0x3E)), Some("amd64"));
     assert_eq!(arch(None), None);
 }

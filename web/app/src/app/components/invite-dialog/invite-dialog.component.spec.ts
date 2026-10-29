@@ -29,7 +29,7 @@ function byTestId<T extends HTMLElement>(testId: string): T | null {
 
 function fakeServer(): FakeSession {
   return new FakeSession()
-    .answer('server/discover', { ...SERVER, origin: 'https://glave.example' })
+    .answer('server/discover', { ...SERVER, origin: 'https://glave.example', email: true })
     .answer('people/list', { people: [] })
     .answer('invite/list', { invites: [] });
 }
@@ -80,5 +80,15 @@ describe('InviteDialogComponent', () => {
     await settle(fixture);
     expect(fake.paramsOf('invite/create')).toEqual([{ role: 'member' }]);
     expect(byTestId('invite-problem')?.textContent).toContain('share the invite’s link yourself');
+  });
+
+  it('asks for no address where glave sends no email', async () => {
+    const fake = new FakeSession()
+      .answer('server/discover', { ...SERVER, origin: 'https://glave.example' })
+      .answer('people/list', { people: [] })
+      .answer('invite/list', { invites: [] });
+    await opened(fake);
+    expect(byTestId('invite-email')).toBeNull();
+    expect(byTestId('invite-role')).not.toBeNull();
   });
 });

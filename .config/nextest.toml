@@ -1,7 +1,10 @@
-# nextest before 0.9.145 could report a test that starts nothing as leaky on macOS: two tests
+# nextest before 0.9.145 reports tests leaky on macOS that leave nothing running: two tests
 # spawned at once, one inherited the other's output pipe, since the platform cannot make a pipe
-# close-on-exec atomically; 0.9.145 makes its capture pipes itself (#723). Older versions warn.
-nextest-version = { recommended = "0.9.145" }
+# close-on-exec atomically, and the short one was blamed for the long one holding it (#723,
+# #1014: the CLI's `cloud` tests, the first its program starts, beside long ones). 0.9.145 makes
+# its capture pipes itself. Required, not recommended: a warning was missed, and the false
+# reports came back.
+nextest-version = { required = "0.9.145" }
 
 # A test that hangs fails instead of holding CI forever, but a slow one on a busy laptop is not
 # a hang: warned after 60 s, stopped after 5 min. Tests guard their own waits more tightly

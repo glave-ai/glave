@@ -326,8 +326,8 @@ export type InviteInfo = {
   readonly role: OrgRole;
 };
 
-/** How someone joins the organization an invite is to. */
-export type Joining = "passkey" | "company";
+/** How the one who holds an invite joins the organization it is to. */
+export type JoinWay = "passkey" | "company" | "accept" | "member";
 
 /** Whether a line was kept, taken out or put in. */
 export type LineKind = "same" | "removed" | "added";
@@ -733,6 +733,11 @@ export type Seq = number;
 /** What the server is. */
 export type ServerInfo = {
   /**
+   * Whether it sends email (`[email]`) with links to its public origin, as an invite's: so
+   * a client asks for an address only where one is used.
+   */
+  readonly email?: boolean;
+  /**
    * What it has beyond the one person a server works for on its own; absent where it has
    * none of it, as on a person's own computer or server.
    */
@@ -795,7 +800,7 @@ export type ShownInvite = {
    * the person who runs this glave, who has neither here.
    */
   readonly by?: string | null;
-  readonly joining: Joining;
+  readonly joining: JoinWay;
   /** The organization it is to, for a client to work in once its person joins. */
   readonly organization: string;
   /** The role it gives. */

@@ -25,9 +25,6 @@ export class InviteService {
 
   /** What the invite opens, once the server has said. */
   readonly opened = this.read.asReadonly();
-  /** Whether the tab was opened with an invite it has not put aside. */
-  readonly pending = (): boolean => this.session.inviteCode() !== null;
-
   /** Asks the server what the tab's invite opens. */
   async load(): Promise<void> {
     const code = this.session.inviteCode();
@@ -39,6 +36,11 @@ export class InviteService {
       const { shown } = await this.session.call('invite/show', { code });
       this.read.set({ kind: 'shown', shown });
     } catch (error: unknown) {
+      // A sign-in that ended, as for someone taken out, is forgotten: asked again signed out.
+      if (error instanceof ApiError && error.signedOut && !this.session.signedIn()) {
+        await this.load();
+        return;
+      }
       if (error instanceof ApiError && error.code === ErrorCode.NO_INVITE) {
         this.read.set({ kind: 'gone' });
       } else {

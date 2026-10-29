@@ -110,7 +110,6 @@ where
             Ok(held) => held,
             Err(refused) => return Answered::Reply(Err(refused)),
         };
-        self.wake_for(caller, &request);
         // A turn joins the caller's trace, when they sent one.
         let traced = &Caller {
             trace: crate::trace::trace_of(&request).or_else(|| caller.trace.clone()),
@@ -151,6 +150,7 @@ where
                         workers: self.inner.worker.is_some(),
                     },
                     role,
+                    email: self.inner.mail.is_some() && self.inner.origin.is_some(),
                 }))
             }
             Request::PeopleList { after, limit } => self.list_people(caller, after, limit).await,
@@ -161,7 +161,7 @@ where
             }
             Request::InviteList {} => self.list_invites(caller).await,
             Request::InviteRevoke { invite } => self.revoke_invite(caller, invite).await,
-            Request::InviteShow { code } => self.show_invite(code.expose()).await,
+            Request::InviteShow { code } => self.show_invite(caller, code.expose()).await,
             Request::InviteAccept { code } => self.accept_invite(caller, code.expose()).await,
             Request::AwakeGet {} => Ok(self.awake().await),
             Request::AwakeSet { on } => self.set_awake(caller, on).await,

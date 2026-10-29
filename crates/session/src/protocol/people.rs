@@ -60,15 +60,18 @@ pub struct InviteInfo {
     pub email: Option<String>,
 }
 
-/// How someone joins the organization an invite is to.
+/// How the one who holds an invite joins the organization it is to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum Joining {
-    /// By making a passkey: a new glave account, or one more organization for someone
-    /// signed in with one.
+pub enum JoinWay {
+    /// Not signed in: by making a passkey, a new glave account.
     Passkey,
-    /// By signing in through the organization's company login.
+    /// Not signed in: by signing in through the organization's company login.
     Company,
+    /// Signed in: by accepting it, the organization one more of theirs.
+    Accept,
+    /// Signed in, and in the organization already: nothing to join.
+    Member,
 }
 
 /// What an invite's link opens, for whoever holds it: never its code, nor whom it was sent to.
@@ -83,7 +86,7 @@ pub struct ShownInvite {
     /// the person who runs this glave, who has neither here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<String>,
-    pub joining: Joining,
+    pub joining: JoinWay,
 }
 
 impl Request {

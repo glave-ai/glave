@@ -59,6 +59,10 @@ pub struct ServerInfo {
     /// organization, where the one person may do everything.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<OrgRole>,
+    /// Whether it sends email (`[email]`) with links to its public origin, as an invite's: so
+    /// a client asks for an address only where one is used.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub email: bool,
 }
 
 /// What a server has beyond a person's own: each because its configuration provides it, never

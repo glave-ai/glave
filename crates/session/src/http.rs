@@ -298,7 +298,8 @@ async fn message(
 }
 
 /// Whether `request` may be answered without a sign-in, coming in at `door`: what the server
-/// is; trading a link's code for a session, from this computer; and signing a browser in with
+/// is, and what an invite's link opens; trading a link's code for a session, from this
+/// computer; and signing a browser in with
 /// a passkey, or making the first with a setup link's code, but where the server has no public
 /// origin.
 fn open(request: &Request, door: Door) -> Result<(), SignInError> {

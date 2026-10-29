@@ -7,8 +7,8 @@ export interface PersonRow {
   readonly id: string;
   /** What names them: their name, else their email, else the app's word for who they are. */
   readonly name: string;
-  /** Their email under their name, when their name is shown. */
-  readonly email: string | null;
+  /** The line under what names them: their email under their name, else when they joined. */
+  readonly detail: string | null;
   /** Their role, as the app says it, and "you" when they are the reader. */
   readonly role: string;
   /** The roles the reader may give them, theirs among them; none when they can't. */
@@ -56,14 +56,21 @@ function nameOf(person: PersonInfo): string {
     : $localize`:@@people.someone:Someone without a name or email`;
 }
 
-/** `person` as the People page shows them. */
-export function personRow(person: PersonInfo): PersonRow {
+/** `person` as the People page shows them, when they joined written by `day`. */
+export function personRow(person: PersonInfo, day: (at: string) => string): PersonRow {
   const name = nameOf(person);
   const role = roleName(person.role);
+  const joined = person.joined ?? null;
+  const detail =
+    (person.name ?? null) !== null
+      ? (person.email ?? null)
+      : joined === null
+        ? null
+        : $localize`:@@people.joined:Joined ${day(joined)}:DAY:`;
   return {
     id: person.id,
     name,
-    email: (person.name ?? null) === null ? null : (person.email ?? null),
+    detail,
     role: person.you === true ? $localize`:@@people.roleYou:${role}:ROLE: · you` : role,
     roles: (person.roles ?? []).map((value) => ({ value, label: roleName(value) })),
     current: person.role,
@@ -71,6 +78,23 @@ export function personRow(person: PersonInfo): PersonRow {
     removable: person.removable === true,
     roleLabel: $localize`:@@people.roleFor:Role for ${name}:NAME:`,
   };
+}
+
+/** Whether `value` is one of the three roles. */
+export function isRole(value: string | null): value is OrgRole {
+  return value === 'owner' || value === 'admin' || value === 'member';
+}
+
+/** How long an invite works, from when it was made to when it ends, in `locale`'s words. */
+export function lasts(invite: InviteInfo, locale: string): string {
+  const days = Math.max(
+    1,
+    Math.round((Date.parse(invite.expires) - Date.parse(invite.made)) / 86_400_000),
+  );
+  return plural(
+    $localize`:@@people.lasts:{${days}:COUNT:, plural, one {# day} other {# days}}`,
+    locale,
+  );
 }
 
 /** How long until an invite ends, as the reader reads it ("in 6 days", "tomorrow"). */

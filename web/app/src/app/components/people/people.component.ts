@@ -6,7 +6,6 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import type { OrgRole } from '@glave/client';
 import {
   GlzAvatarComponent,
   GlzButtonComponent,
@@ -15,15 +14,10 @@ import {
   GlzMenuSelectComponent,
 } from '@glave/glaze';
 
-import { type PersonRow, counted, inviteRow, personRow, untilIn } from '../../lib/people';
+import { type PersonRow, counted, inviteRow, isRole, personRow, untilIn } from '../../lib/people';
 import { PeopleService } from '../../services/people.service';
 import { InviteDialogComponent } from '../invite-dialog/invite-dialog.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
-
-/** Whether `value` is one of the three roles. */
-function isRole(value: string | null): value is OrgRole {
-  return value === 'owner' || value === 'admin' || value === 'member';
-}
 
 /**
  * Admin's People: the organization's people with their roles, each changed from a menu or taken
@@ -63,7 +57,12 @@ export class PeopleComponent {
   protected readonly confirming = signal(false);
   private readonly removing = signal<PersonRow | null>(null);
 
-  protected readonly rows = computed(() => this.peopleService.people().map(personRow));
+  private readonly days = new Intl.DateTimeFormat(this.locale, { dateStyle: 'medium' });
+  protected readonly rows = computed(() =>
+    this.peopleService
+      .people()
+      .map((person) => personRow(person, (at) => this.days.format(new Date(at)))),
+  );
   protected readonly invites = computed(() => {
     const until = untilIn(this.locale, this.peopleService.readAt());
     const people = this.peopleService.people();

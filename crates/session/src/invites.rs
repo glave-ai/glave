@@ -7,16 +7,17 @@
 use std::collections::BTreeMap;
 
 use glave_event::{
-    At, AuthMethod, InviteAccepted, InviteCreated, InviteId, InviteRevoked, OrgRole, PersonJoined,
-    Principal, PrincipalId, Profile, Secret,
+    At, InviteAccepted, InviteCreated, InviteId, InviteRevoked, OrgRole, PersonJoined, Principal,
+    PrincipalId, Profile, Secret,
 };
 use glave_identity::signin::{kept, one_time_code, same_kept};
 use glave_ports::{BlobStore, Caller, EventLog, Mail, Mailer, ModelProvider, OrgId};
 use jiff::{SignedDuration, Timestamp};
 use uuid::Uuid;
 
+use crate::organizations::with_account;
 use crate::people::{People, Permit, joined_of, no_such_person, permits};
-use crate::protocol::{ApiError, InviteInfo, Joining, PersonInfo, Reply, ShownInvite, code};
+use crate::protocol::{ApiError, InviteInfo, JoinWay, PersonInfo, Reply, ShownInvite, code};
 use crate::server::Server;
 use crate::words::{Language, Sentence, say};
 
@@ -111,14 +112,6 @@ pub(crate) fn gone() -> ApiError {
 /// What parts an invite's code: the id of the organization it is to, then its secret.
 const TO: char = '.';
 
-/// Whether `caller` signed in with a glave account.
-fn with_account(caller: &Caller) -> bool {
-    caller
-        .auth
-        .as_ref()
-        .is_some_and(|auth| auth.method == AuthMethod::Account)
-}
-
 impl<P, L, B> Server<P, L, B>
 where
     P: ModelProvider + 'static,
@@ -133,9 +126,7 @@ where
         email: Option<&str>,
     ) -> Result<Reply, ApiError> {
         // Someone else signs in through the company login, or with a glave account here.
-        if !self.inner.identity_provider && self.inner.accounts.is_none() {
-            return Err(ApiError::new(code::NOT_ALLOWED, Sentence::NoOrganization));
-        }
+        self.joins_by()?;
         let theirs = permits(self.permitted(caller, Permit::Invites).await?);
         if role == OrgRole::Owner && !theirs.contains(&Permit::Owners) {
             return Err(ApiError::new(code::NOT_ALLOWED, Sentence::OwnersOnly));
@@ -231,44 +222,53 @@ where
             .map_or(self.inner.own, OrgId::from_uuid)
     }
 
-    /// How someone joins this server's organizations by an invite: through its company login,
-    /// or by making a passkey where it keeps glave accounts; refused where no one else can.
-    fn joins_by(&self) -> Result<Joining, ApiError> {
+    /// How someone not signed in joins this server's organizations by an invite: through its
+    /// company login, or by making a passkey where it keeps glave accounts; refused where no
+    /// one else can.
+    fn joins_by(&self) -> Result<JoinWay, ApiError> {
         if self.inner.identity_provider {
-            Ok(Joining::Company)
+            Ok(JoinWay::Company)
         } else if self.inner.accounts.is_some() {
-            Ok(Joining::Passkey)
+            Ok(JoinWay::Passkey)
         } else {
             Err(ApiError::new(code::NOT_ALLOWED, Sentence::NoOrganization))
         }
     }
 
-    /// Answers `invite/show`: what the invite `code` opens now, for whoever holds it, signed in
-    /// or not; refused alike as any code that opens nothing.
-    pub(crate) async fn show_invite(&self, code: &str) -> Result<Reply, ApiError> {
-        let joining = self.joins_by()?;
+    /// Answers `invite/show`: what the invite `code` opens now, for whoever holds it, and how
+    /// they join with it: signed out, by a passkey or the company login; signed in, by
+    /// accepting it, unless they are in its organization already. Refused alike as any code
+    /// that opens nothing. The organization it names is read apart, never kept.
+    pub(crate) async fn show_invite(&self, caller: &Caller, code: &str) -> Result<Reply, ApiError> {
+        let way = self.joins_by()?;
         let org = self.invited_to(code);
         let presented = kept(code);
         let now = self.inner.harness.clock().now();
         let local = self.inner.harness.person();
-        self.catch_up_people(org).await?;
-        let shown = self.people(org, |people| {
-            let opened = people.opens(&presented, now, local)?;
-            let by = opened
-                .by
-                .id
-                .filter(|maker| Some(*maker) != local)
-                .and_then(|maker| people.info(maker))
-                .and_then(|maker| maker.name.or(maker.email));
-            Some(ShownInvite {
+        let people = self.people_apart(org).await?;
+        let opened = people.opens(&presented, now, local).ok_or_else(gone)?;
+        let by = opened
+            .by
+            .id
+            .filter(|maker| Some(*maker) != local)
+            .and_then(|maker| people.info(maker))
+            .and_then(|maker| maker.name.or(maker.email));
+        let joining = match (caller.auth.is_some(), caller.person) {
+            (false, _) => way,
+            // The person on the server's computer is in its own organization alone.
+            (true, None) if org == self.inner.own => JoinWay::Member,
+            (true, Some(person)) if people.has(person) && !people.removed(person) => {
+                JoinWay::Member
+            }
+            (true, _) => JoinWay::Accept,
+        };
+        Ok(Reply::InviteShown {
+            shown: ShownInvite {
                 organization: org,
                 role: opened.role,
                 by,
                 joining,
-            })
-        });
-        Ok(Reply::InviteShown {
-            shown: shown.ok_or_else(gone)?,
+            },
         })
     }
 
@@ -328,12 +328,14 @@ where
             (Some(joined), _) if org == self.org_of(caller) => joined,
             // Another organization's code opens nothing for someone a company login signed in.
             (Some(_), _) => return Err(gone()),
-            (None, Some(person)) if with_account(caller) => PersonJoined {
-                person,
-                issuer: None,
-                subject: None,
-                profile: Profile::default(),
-            },
+            (None, Some(person)) if with_account(caller) && self.inner.accounts.is_some() => {
+                PersonJoined {
+                    person,
+                    issuer: None,
+                    subject: None,
+                    profile: Profile::default(),
+                }
+            }
             (None, _) => return Err(ApiError::new(code::NOT_ALLOWED, Sentence::InviteSignIn)),
         };
         let person = joined.person;
