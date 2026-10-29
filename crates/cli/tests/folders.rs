@@ -51,7 +51,7 @@ fn list_everything(home: &Place, new: &Place, model: &FakeServer) {
 #[test]
 fn listing_makes_no_project_in_the_home_folder_or_a_new_one_and_a_turn_at_home_is_a_chat() {
     let home = place("fl");
-    choose(&home, "memory", "\"on\"");
+    choose(&home, "project_memory", "\"shared\"");
     choose(&home, "model", "\"m\"");
     choose(&home, "titles", "false");
     let new = Place {

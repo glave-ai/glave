@@ -6,14 +6,14 @@ Memory is the first of four tiers of context: memory (small, always in view), hi
 
 ## Status
 
-Accepted. **On by default** since 2026-10-11, decided by Chris after the evals: memory tasks 9/9 on every model except `memory-quirk`, where GPT-6 Luna scored 2/6; safety 9/9 on all three models; the full suite with memory on showed no regressions. The default is the person's `memory` choice only; `memory = "off"` and a policy's `[memory]` still turn it off.
+Accepted. **On by default** since 2026-10-11, decided by Chris after the evals: memory tasks 9/9 on every model except `memory-quirk`, where GPT-6 Luna scored 2/6; safety 9/9 on all three models; the full suite with memory on showed no regressions. The default is the person's choice only; their switch in Settings and a policy's `[memory]` still turn it off.
 
 **Built** (the core, issue #93), in `glave-memory`, the harness, the session API and the CLI.
 
 - **The server:** glave's own MCP server (`remember`, `edit`, `forget`, `recall`; `glave://memory`, and `glave://memory/{memory}/{version}` for a memory at one of its versions, which resuming needs), in-process over an in-memory connection, glave its only client. Who and where travel in each request's `_meta` (`glave/context`: organization, project, person, agent, thread, `seq`, whether the thread read untrusted content), set from the session and the thread, never from the model; the store applies the rules to every read and write. The model's tools reach it as `mcp__memory__remember`, `mcp__memory__edit`, `mcp__memory__forget` and `mcp__memory__recall`. The person's controls (`memory/*`, `glave memory`) go to the store directly: they are the person's actions, not the model's.
 - **One server, glave's own.** The MCP seam stays so another can plug in later. Such a server would be trusted to enforce scope from `_meta`, since glave cannot check what it does, and must pass the memory port's scope suite (`conformance::memory_scopes`), which glave's own passes; its policy key comes with the first one.
 - **Personal memory** lives in the person's personal project (`Rules.personal`; `storage.md`, "Projects"), the CLI's `projects::personal`. The stand-in projects earlier versions derived from a name only that person had became their personal projects, memories and all.
-- **A project's setting** is `project_memory` in `config.toml` (the person's or a project's: `shared`, `isolated` or `off`; narrowing only, so a project needs no trust for it). `memory` itself is the person's own choice: a project's file cannot set it.
+- **A project's setting** is `project_memory` in `config.toml` (the person's or a project's: `shared`, `isolated` or `off`; narrowing only, so a project needs no trust for it). Whether memory is on at all is the person's own choice, never a file's ("Defaults and policy").
 - **Writing:** the credential check (`glave_ports::secrets::looks_like_credential`), the near-duplicate check (normalised words, Dice overlap ≥ 0.6), the budget (about 1,000 tokens a scope, counting each line's id and dates), `replaces` (the new memory is saved and the old forgotten at once), at most 500 characters on one line.
 - **Loading:** the start goes before the last part of the first message (after AGENTS.md, before the person's words) and is laid over the conversation each time it is sent, never stored in the thread; each turn's configuration (now versioned, `v: 2`) records `memory.memories`, the ids and versions the model knew at its start. A memory call's `tool.call.completed` records in `structured` what it changed (ids and versions), so the thread's own saves need no note. Resuming reads those back and rebuilds the start and every note from the memories at those versions. Compaction asks for its summary without the start and the notes (so a summary holds a memory's text only where the conversation did) and restarts with everything the thread knows.
 - **Safety:** after untrusted content or a secrets file, `remember` and `edit` are a soft caution (`REMEMBER_CAUTION`): the judge, told untrusted content was read, lets it run only on the person's word; in Ask first the person is asked; with no one there nothing is saved; Full access asks no one and saves. `evals/judge/memory.jsonl` holds the judge cases.
@@ -21,6 +21,7 @@ Accepted. **On by default** since 2026-10-11, decided by Chris after the evals: 
 - **Tidy-up** (`Memories::tidy`, `memories/tidy.rs`): the cheap model on the `summary` route proposes merges and contradictions over a numbered list; every proposal is checked before anything changes (below). It runs in the background on a task the memory server owns (`GlaveMemory::tidy_with`), asked when a session starts and after each save or edit, over each ledger that is due.
 - **Recall** (`Memories::recall`, `memories/recall.rs`): the fourth tool. Memories are matched in the memory view; conversations through the store's full-text index (`storage.md`, "Search index"), which both stores keep, with the event log port's `search` and its conformance suite.
 - **Results as written, never searched** (#675, decision 8, replacing #589's results kept by reference): a memory tool's result (a save's, an edit's, a near duplicate's, a forget's, `recall`'s) is kept in the thread's log as the model read it, text and all, and a resumed thread, a client and an export read it as any tool's result. Its `structured` says it came from memory (`from_memory`, `glave_ports::memories::FROM_MEMORY`), and `glave_ports::search::searchable_body`, through which every store indexes, leaves it out, so no search finds a memory's text through a result that showed it (`conformance::search`).
+- **The switch** (#251): `memory/get` and `memory/set`, the person's choice kept in their settings ledger as `memory.set` and read as each turn starts; the memory page's switch, off and disabled with the server's sentence where a policy turns memory off. It replaced `memory = "on" | "off"` in the person's `config.toml`.
 - **The web memory page** (`/memory` in the app `glave serve --http` serves): the person's and the project's memories, each marked with its scope, edited and forgotten in place; Forget offers to delete the chat a memory was saved in too, when the server names that chat: it forgets the memory, then deletes the chat (`thread/delete`), and shows each answer.
 
 **Not yet:** on the memory page, moving a memory between scopes, each memory linked to the thread it came from, and glave's changes marked with an undo; the page on desktop; rotation on a schedule of its own in `glave serve --http` (it rotates when the server's session ends); and plugged-in memory servers.
@@ -162,12 +163,13 @@ Conversations gain no events: saving is a tool call, and the turn's configuratio
 
 ## Defaults and policy
 
-Memory is on by default, for personal memory and the project's setting alike, as decided on 2026-10-11 (see Status). The person turns it off with `memory = "off"`; a policy's `[memory]` can still disable it.
+Memory is on by default, for personal memory and the project's setting alike, as decided on 2026-10-11 (see Status). A policy's `[memory]` can still disable it.
+
+- **The person's switch.** Whether glave reads and writes memory in their threads is theirs, set in Settings (`memory/get`, `memory/set`) and kept by the server in their settings ledger (`memory.set`, `events.md`), as their language is, so every server on one store runs by it from each turn's start. With it off, no thread reads, writes or recalls memory, whatever its project's setting, and the person still sees, edits and forgets what was saved. It is not a file's: a choice the app makes is kept by the server, and a setting kept in two places would need a rule for which wins.
+- **Not theirs to choose** (`never`, with the server's sentence) where a policy turns memory off, and for anyone but the person on this computer, as with web search.
+- **The five deployments.** A laptop and a person's own server: the person's switch, in the app. Glave Cloud's personal plan: the same. Glave Cloud's enterprise plan and an enterprise's own servers: off and disabled where the policy turns memory off; people signed in through an identity provider see it as not theirs to choose, until memory runs for each of them (`Rules.personal` names one person today).
 
 ```toml
-# config.toml (choice)
-memory = "on"                 # default; "off": glave neither reads nor writes memory for this person
-
 # policy.toml (constraints)
 [memory]
 enabled = true                # false: no memory anywhere in the organization

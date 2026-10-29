@@ -230,6 +230,12 @@ pub trait Memory: Send + Sync {
     /// When it is not, the model is sent exactly what it would be without memory.
     fn active(&self, on: &MemoryContext) -> bool;
 
+    /// Turns memory on or off in the threads of the person it runs for, from their next turn:
+    /// their own choice, kept in their settings ledger (`memory.set`). Off, no thread reads or
+    /// writes it, whatever its project's setting, and the person's own controls still reach
+    /// what they saved.
+    fn switch(&self, on: bool);
+
     /// The tools on offer to the model.
     fn tools(&self) -> BoxFuture<'_, Result<Vec<ToolInfo>, ToolError>>;
 

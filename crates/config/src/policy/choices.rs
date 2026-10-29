@@ -10,7 +10,7 @@ use glave_ports::memories::ProjectMemory;
 use glave_ports::settings::Judge;
 
 use crate::policy::files::{ConfigFile, GithubFile, ModelEntry};
-use crate::policy::memory::{MemoryChoice, ProjectChoice};
+use crate::policy::memory::ProjectChoice;
 use crate::policy::provider::ProviderFile;
 use crate::policy::web::WebFile;
 use crate::policy::workers::{On, WorkersFile};
@@ -75,8 +75,6 @@ pub struct Choices {
     pub gateway: Option<Chosen<String>>,
     /// What `web_fetch` may reach: on, public hosts only, by default.
     pub web: Chosen<WebFile>,
-    /// Whether glave reads and writes memory for this person: on by default.
-    pub memory: Chosen<bool>,
     /// This project's memory setting: shared by default.
     pub project_memory: Chosen<ProjectMemory>,
     /// The OpenTelemetry collector spans and metrics go to, if any: its OTLP/HTTP URL.
@@ -191,12 +189,6 @@ pub(super) fn resolve(layers: &[Layer]) -> Choices {
         web: defaulted(
             nearest(layers, "web", |file| file.web.clone()),
             WebFile::default(),
-        ),
-        memory: defaulted(
-            nearest(layers, "memory", |file| {
-                file.memory.map(|choice| choice == MemoryChoice::On)
-            }),
-            true,
         ),
         project_memory: defaulted(
             nearest(layers, "project_memory", |file| {

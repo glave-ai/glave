@@ -282,6 +282,8 @@ sentences! {
 
     // Memory.
     MemoryOff = "memory-off" "memory is off for this server",
+    MemoryOnItsComputer = "memory-on-its-computer"
+        "memory is turned on or off on the computer glave runs on, by its person",
     ForgetWhat = "forget-what" "memory/forget takes `memory`, or `all: true` with a `scope`",
 
     // Accounts, sign-in and the person's own settings.

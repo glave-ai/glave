@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use glave_event::{
-    At, Auth, AuthMethod, Body, Checkout, EventId, FolderSource, Header, Opened, ProjectFolderSet,
-    Seq, ThreadId, decode, encode,
+    At, Body, Checkout, EventId, FolderSource, Header, Opened, ProjectFolderSet, Seq, ThreadId,
+    decode, encode,
 };
 use glave_harness::ProjectFolders;
 use glave_ports::computer::{CredentialHost, Forge, GitCredential};
@@ -458,16 +458,7 @@ fn a_caller_signed_in_elsewhere_gives_no_folder_and_sees_none() {
     let dir = folder("projects-elsewhere-caller");
     block_on!(async {
         let server = server(&dir, Vec::new(), Answering::NoOne).await;
-        let elsewhere = Caller {
-            person: Some(person("https://id.example.com", "grace").unwrap()),
-            auth: Some(Auth {
-                method: AuthMethod::Oidc,
-                issuer: Some("https://id.example.com".into()),
-                subject: Some("grace".into()),
-                session: None,
-            }),
-            trace: None,
-        };
+        let elsewhere = elsewhere();
         let path = dir.to_string_lossy().into_owned();
         for request in [
             Request::FolderList { path: None },

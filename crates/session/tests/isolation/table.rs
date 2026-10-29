@@ -172,6 +172,9 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         // How the caller's own threads are grouped: no one else's to name.
         ("grouping/get", vec![json!({})]),
         ("grouping/set", vec![json!({"grouping": "status"})]),
+        // Whether glave remembers for the person on this computer: no one else's to name.
+        ("memory/get", vec![json!({})]),
+        ("memory/set", vec![json!({"on": false})]),
         ("signin/link", vec![json!({})]),
         ("signin/redeem", vec![json!({"code": "@code"})]),
         ("signin/end", vec![json!({"@caller": "@session"})]),

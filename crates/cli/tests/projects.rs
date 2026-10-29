@@ -96,7 +96,7 @@ fn each_project_s_server_hook_model_and_web_reach_its_own_threads_alone() {
     trust_project(&place, &[]);
     // The person's own server, and the models they offer.
     std::fs::write(place.home.join("mcp.json"), bringing("mine")).unwrap();
-    let mine = "model = \"m\"\nmemory = \"off\"\ntitles = false\n\
+    let mine = "model = \"m\"\nproject_memory = \"off\"\ntitles = false\n\
                     [[models]]\nid = \"alpha-model\"\n[[models]]\nid = \"beta-model\"\n";
     std::fs::write(place.home.join("config.toml"), mine).unwrap();
     let alpha = project(&place, "alpha", "[web]\nfetch = false\n");

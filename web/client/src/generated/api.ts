@@ -587,6 +587,15 @@ export type Remembered = {
   readonly version: number;
 };
 
+/** Whether glave remembers for the person (`specs/memory.md`, "Defaults and policy"). */
+export type RememberingInfo = {
+  readonly kind: "never";
+  readonly reason: string;
+} | {
+  readonly kind: "chosen";
+  readonly on: boolean;
+};
+
 /**
  * The pages one reply drew on: each one its turn read with `web_fetch` before it, once, in the
  * order first read. A page that failed to load is none, nor is a search's result the agent
@@ -695,7 +704,7 @@ export type ServerInfo = {
 };
 
 /** A person's own settings or connections, by what a client reads to show them. */
-export type Setting = "providers" | "credentials" | "connections" | "search" | "grouping" | "awake" | "passkeys" | "language";
+export type Setting = "providers" | "credentials" | "connections" | "search" | "grouping" | "awake" | "memory" | "passkeys" | "language";
 
 /** Which threads `thread/list` shows. */
 export type Show = "archived" | "active" | "deleted";
@@ -1327,6 +1336,13 @@ export type MemoryForgetResult = {
   readonly memories: readonly (Remembered)[];
 };
 
+export type MemoryGetParams = Readonly<Record<string, never>>;
+
+/** Whether glave remembers for the person. */
+export type MemoryGetResult = {
+  readonly remembering: RememberingInfo;
+};
+
 export type MemoryListParams = {
   /** The project whose memory, beside the person's own: the caller's Chats when absent. */
   readonly project?: ProjectId | null;
@@ -1383,6 +1399,15 @@ export type MemorySaveParams = {
  */
 export type MemorySaveResult = {
   readonly memories: readonly (Remembered)[];
+};
+
+export type MemorySetParams = {
+  readonly on: boolean;
+};
+
+/** Whether glave remembers for the person. */
+export type MemorySetResult = {
+  readonly remembering: RememberingInfo;
 };
 
 export type ModelListParams = Readonly<Record<string, never>>;
@@ -2023,10 +2048,12 @@ export interface Methods {
   readonly "language/set": { readonly params: LanguageSetParams; readonly result: LanguageSetResult };
   readonly "memory/edit": { readonly params: MemoryEditParams; readonly result: MemoryEditResult };
   readonly "memory/forget": { readonly params: MemoryForgetParams; readonly result: MemoryForgetResult };
+  readonly "memory/get": { readonly params: MemoryGetParams; readonly result: MemoryGetResult };
   readonly "memory/list": { readonly params: MemoryListParams; readonly result: MemoryListResult };
   readonly "memory/move": { readonly params: MemoryMoveParams; readonly result: MemoryMoveResult };
   readonly "memory/restore": { readonly params: MemoryRestoreParams; readonly result: MemoryRestoreResult };
   readonly "memory/save": { readonly params: MemorySaveParams; readonly result: MemorySaveResult };
+  readonly "memory/set": { readonly params: MemorySetParams; readonly result: MemorySetResult };
   readonly "model/list": { readonly params: ModelListParams; readonly result: ModelListResult };
   readonly "passkey/add": { readonly params: PasskeyAddParams; readonly result: PasskeyAddResult };
   readonly "passkey/add_options": { readonly params: PasskeyAddOptionsParams; readonly result: PasskeyAddOptionsResult };

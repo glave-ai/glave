@@ -32,27 +32,22 @@ fn memory_cli(place: &Place, args: &[&str]) -> String {
 }
 
 #[test]
-fn off_by_the_persons_choice_the_model_is_offered_no_memory_tool() {
+fn off_in_the_project_the_model_is_offered_no_memory_tool() {
     let place = place("memory-off");
     std::fs::create_dir_all(&place.home).unwrap();
-    std::fs::write(place.home.join("config.toml"), "memory = \"off\"\n").unwrap();
+    std::fs::write(place.home.join("config.toml"), "project_memory = \"off\"\n").unwrap();
     let model = FakeServer::start(vec![Reply::text("Hi.")]).unwrap();
     let output = glave(&place, &model, &["--model", "m", "hello"], "");
     assert!(output.status.success(), "{}", text(&output));
     let tools = model.received()[0].body["tools"].to_string();
     assert!(!tools.contains("mcp__memory__"), "{tools}");
-    // `glave memory` says so, as the app does.
-    let listed = memory_run(&place, &[]);
-    let shown = text(&listed);
-    assert!(!listed.status.success(), "{shown}");
-    assert!(shown.contains("memory is off"), "{shown}");
 }
 
 #[test]
 fn a_save_shows_at_once_opens_the_next_thread_and_can_be_forgotten() {
     let place = place("memory-on");
     std::fs::create_dir_all(&place.home).unwrap();
-    std::fs::write(place.home.join("config.toml"), "memory = \"on\"\n").unwrap();
+    std::fs::write(place.home.join("config.toml"), "").unwrap();
     let save = json!({"text": "Ada prefers tabs in Python", "scope": "personal"});
     let model = FakeServer::start(vec![
         Reply::tool_call("call_a", "mcp__memory__remember", &save),
@@ -91,7 +86,7 @@ fn a_save_shows_at_once_opens_the_next_thread_and_can_be_forgotten() {
 fn through_the_person_s_server_memory_is_the_folder_s_project_s() {
     let place = place("memory-server");
     std::fs::create_dir_all(&place.home).unwrap();
-    std::fs::write(place.home.join("config.toml"), "memory = \"on\"\n").unwrap();
+    std::fs::write(place.home.join("config.toml"), "").unwrap();
     // A second project, in a folder of its own, beside the one the server starts in.
     let other = Place {
         project: place.project.join("other"),

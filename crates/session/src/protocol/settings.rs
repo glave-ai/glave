@@ -24,6 +24,8 @@ pub enum Setting {
     Grouping,
     /// Whether the computer is kept awake while glave works (`awake/get`).
     Awake,
+    /// Whether glave remembers for them (`memory/get`).
+    Memory,
     /// Their passkeys (`passkey/list`).
     Passkeys,
     /// The language the server writes its own sentences to them in (`language/get`): what a
@@ -33,13 +35,14 @@ pub enum Setting {
 
 impl Setting {
     /// Every setting, as a watcher that may have missed some is told.
-    pub(crate) const ALL: [Self; 8] = [
+    pub(crate) const ALL: [Self; 9] = [
         Self::Providers,
         Self::Credentials,
         Self::Connections,
         Self::Search,
         Self::Grouping,
         Self::Awake,
+        Self::Memory,
         Self::Passkeys,
         Self::Language,
     ];
@@ -60,6 +63,7 @@ impl Request {
             Self::SearchSet { .. } => Setting::Search,
             Self::GroupingSet { .. } => Setting::Grouping,
             Self::AwakeSet { .. } => Setting::Awake,
+            Self::MemorySet { .. } => Setting::Memory,
             Self::PasskeyCreate { .. } | Self::PasskeyAdd { .. } | Self::PasskeyRemove { .. } => {
                 Setting::Passkeys
             }

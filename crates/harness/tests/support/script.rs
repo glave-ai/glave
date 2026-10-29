@@ -377,6 +377,7 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::AwakeSet(_) => "awake.set",
             Body::LanguageSet(_) => "language.set",
             Body::GroupingSet(_) => "grouping.set",
+            Body::MemorySet(_) => "memory.set",
             Body::Unknown(_) => "unknown",
         })
         .collect()
