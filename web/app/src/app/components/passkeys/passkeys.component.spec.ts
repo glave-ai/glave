@@ -5,7 +5,7 @@ import { expectAccessible } from '@glave/glaze/testing';
 import type { Authenticator } from '../../lib/passkeys';
 import { AUTHENTICATOR, passkeyRefused } from '../../services/passkeys.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
-import { MADE_PASSKEY } from '../../testing/fixtures';
+import { MADE_PASSKEY, PASSKEY_OPTIONS } from '../../testing/fixtures';
 import { PasskeysComponent } from './passkeys.component';
 
 const PHONE: PasskeySummary = {
@@ -17,17 +17,7 @@ const PHONE: PasskeySummary = {
 
 const LAPTOP: PasskeySummary = { id: 'p2', name: 'Laptop', added: '2026-10-22T09:00:00.000Z' };
 
-const OPTIONS = {
-  ceremony: 'c1',
-  options: {
-    publicKey: {
-      challenge: 'AQID',
-      rp: { id: 'glave.test', name: 'glave' },
-      user: { id: 'AQID', name: 'glave', displayName: 'glave' },
-      pubKeyCredParams: [],
-    },
-  },
-};
+const OPTIONS = PASSKEY_OPTIONS;
 
 const MADE = MADE_PASSKEY;
 

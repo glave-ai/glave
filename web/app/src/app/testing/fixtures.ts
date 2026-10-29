@@ -168,3 +168,16 @@ export const MADE_PASSKEY = {
   },
   getClientExtensionResults: () => ({}),
 };
+
+/** What the server answers when a passkey is to be made at `glave.test`. */
+export const PASSKEY_OPTIONS = {
+  ceremony: 'c1',
+  options: {
+    publicKey: {
+      challenge: 'AQID',
+      rp: { id: 'glave.test', name: 'glave' },
+      user: { id: 'AQID', name: 'glave', displayName: 'glave' },
+      pubKeyCredParams: [],
+    },
+  },
+};
