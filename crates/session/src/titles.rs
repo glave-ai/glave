@@ -31,7 +31,7 @@ where
 
     /// Whether `thread` has a title someone gave it; true when that cannot be read.
     async fn renamed(&self, thread: ThreadId) -> bool {
-        let Ok(scope) = self.scope_of(thread).await else {
+        let Ok(scope) = self.scope_of(thread) else {
             return true;
         };
         let log = self.inner.harness.log();
@@ -45,7 +45,7 @@ where
     /// its first message gives it. The thread is never held for it, so a turn started
     /// meanwhile runs: the log orders the writes, and the turn takes the title in.
     async fn record_title(&self, thread: ThreadId, titled: Titled) {
-        if let Ok(scope) = self.scope_of(thread).await {
+        if let Ok(scope) = self.scope_of(thread) {
             let _ = self
                 .inner
                 .harness

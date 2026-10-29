@@ -134,6 +134,9 @@ where
         record: Record<P, L, B>,
     ) -> Result<Reply, ApiError> {
         let root = self.root_of(scope, thread).await?;
+        // A subagent's wait goes on in its parent's turn, in the same project, which this
+        // server may not have looked up: held until the answer is in.
+        let _root = self.hold(root, scope);
         if self.is_busy(root) {
             return self.record_now(caller, root, record).await;
         }
@@ -213,7 +216,7 @@ where
     /// Stops `thread`'s turn where it waits: it goes on stopped, declining what it waits for,
     /// and ends cancelled. Answers once it has ended.
     pub(crate) async fn stop_waiting(&self, thread: ThreadId) -> Result<Reply, ApiError> {
-        let scope = self.scope_of(thread).await?;
+        let scope = self.scope_of(thread)?;
         let view = self.inner.harness.log().thread_view(&scope, thread).await?;
         let waits = match &view {
             Some(view) => self.view_waits(&scope, view).await?,

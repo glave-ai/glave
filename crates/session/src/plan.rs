@@ -33,7 +33,7 @@ where
 {
     /// `thread`'s plan, read from the log.
     pub(crate) async fn plan(&self, thread: ThreadId) -> Result<Reply, ApiError> {
-        let scope = self.scope_of(thread).await?;
+        let scope = self.scope_of(thread)?;
         let plan = self.inner.harness.plan(scope, thread).await;
         let plan = plan.map_err(|error| ApiError::from(&error))?;
         Ok(Reply::Plan {

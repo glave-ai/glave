@@ -8,12 +8,13 @@
 use glave_event::{Principal, ProjectRemoved, ThreadId};
 use glave_harness::{Change, HarnessError, change_standing};
 use glave_ports::{
-    BlobStore, Caller, EventLog, FolderKey, ModelProvider, Project, ProjectError, ProjectId,
-    ProjectKind, Scope, Standing, ThreadQuery,
+    BlobStore, Caller, EventLog, FolderKey, Located, ModelProvider, OrgId, Project, ProjectError,
+    ProjectId, ProjectKind, Standing, ThreadQuery,
 };
 
 use crate::folders::only_here;
 use crate::held::Slot;
+use crate::ledger::own_scope;
 use crate::protocol::{ApiError, GoneFolder, NewFolder, Reply, code};
 use crate::providers::local;
 use crate::server::{MAX_PAGE, Server};
@@ -48,19 +49,20 @@ where
     /// among them whose folder isn't there anymore.
     pub(crate) async fn listed(
         &self,
+        org: OrgId,
         projects: Vec<Project>,
     ) -> Result<(Vec<Project>, Vec<GoneFolder>), ApiError> {
         let (mut shown, mut gone) = (Vec::with_capacity(projects.len()), Vec::new());
         for project in projects {
             if project.kind == ProjectKind::Project {
-                if self.removed(project.id).await? {
+                let at = Located {
+                    org,
+                    project: project.id,
+                };
+                if self.removed(at).await? {
                     continue;
                 }
-                if self
-                    .folder_found(project.id)
-                    .await
-                    .is_err_and(|e| is_gone(&e))
-                {
+                if self.folder_found(at).await.is_err_and(|e| is_gone(&e)) {
                     gone.push(GoneFolder {
                         project: project.id,
                         message: Sentence::FolderGone.into(),
@@ -84,8 +86,10 @@ where
         let found = self
             .owned_here(caller, project, HereOnly::SetFolder)
             .await?;
-        let was = match self.folder_found(project).await {
-            Err(error) if is_gone(&error) => self.folder_of(project).await?,
+        let org = self.org_of(caller);
+        let at = Located { org, project };
+        let was = match self.folder_found(at).await {
+            Err(error) if is_gone(&error) => self.folder_of(at).await?,
             Err(error) => return Err(error),
             Ok(_) => {
                 return Err(ApiError::new(
@@ -105,12 +109,7 @@ where
         if let Some(was) = was {
             keys.push(FolderKey::Path(was.checkout.path));
         }
-        match self
-            .inner
-            .projects
-            .folder(self.inner.org, &keys, &found)
-            .await
-        {
+        match self.inner.projects.folder(org, &keys, &found).await {
             Ok(led) if led.id != project => {
                 return Err(ApiError::new(code::NOT_ALLOWED, Sentence::FolderOthers));
             }
@@ -119,8 +118,8 @@ where
             Err(error) => return Err(error.into()),
         }
         let person = Principal::person(self.person_of(caller)?);
-        let folder = self.set_folder(project, source, root, Some(person)).await?;
-        self.let_go_in(project);
+        let folder = self.set_folder(at, source, root, Some(person)).await?;
+        self.let_go_in(at);
         Ok(Reply::Project {
             project: found,
             folder: Some(folder),
@@ -135,16 +134,20 @@ where
         project: ProjectId,
     ) -> Result<Reply, ApiError> {
         self.owned_here(caller, project, HereOnly::Remove).await?;
-        let threads = self.active_threads(project).await?;
+        let at = Located {
+            org: self.org_of(caller),
+            project,
+        };
+        let threads = self.active_threads(at).await?;
         if threads
             .iter()
             .any(|thread| matches!(self.lock().get(thread), Some(Slot::Busy { .. })))
         {
             return Err(ApiError::new(code::TURN_RUNNING, Sentence::ProjectBusy));
         }
-        self.let_go_in(project);
+        self.let_go_in(at);
         // Glave's own: archiving the threads of a project its owner removes.
-        let scope = Scope::glaves_own(self.inner.org, project);
+        let scope = own_scope(at);
         for thread in threads {
             let now = self.inner.harness.clock().now();
             let random = self.inner.harness.entropy().bytes()?;
@@ -154,7 +157,7 @@ where
                 .map_err(|error| ApiError::from(&error))?;
         }
         let by = Some(Principal::person(self.person_of(caller)?));
-        self.write_project_ledger(project, |current| {
+        self.write_project_ledger(at, |current| {
             Ok((!current.removed).then(|| ProjectRemoved { by: by.clone() }))
         })
         .await?;
@@ -173,7 +176,7 @@ where
         if !local(caller) {
             return Err(folder_gone());
         }
-        let scope = self.scope_of(thread).await?;
+        let scope = self.scope_of(thread)?;
         let now = self.inner.harness.clock().now();
         let random = self.inner.harness.entropy().bytes()?;
         change_standing(
@@ -220,9 +223,9 @@ where
     }
 
     /// Every thread of `project` that is neither archived nor deleted.
-    async fn active_threads(&self, project: ProjectId) -> Result<Vec<ThreadId>, ApiError> {
+    async fn active_threads(&self, at: Located) -> Result<Vec<ThreadId>, ApiError> {
         // Glave's own: listing a project's threads, for the server to act on.
-        let scope = Scope::glaves_own(self.inner.org, project);
+        let scope = own_scope(at);
         let (mut threads, mut after) = (Vec::new(), None);
         loop {
             let query = ThreadQuery {
@@ -252,11 +255,11 @@ where
         }
     }
 
-    /// Lets go of every thread of `project` held idle, so each is read again from the log, and
-    /// opened where its project's folder is now, the next time it is used.
-    fn let_go_in(&self, project: ProjectId) {
+    /// Lets go of every thread of the project `at` held idle, so each is read again from the log,
+    /// and opened where its project's folder is now, the next time it is used.
+    fn let_go_in(&self, at: Located) {
         self.lock().retain(|_, slot| match slot {
-            Slot::Idle { thread: held, .. } => held.scope.project() != project,
+            Slot::Idle { thread: held, .. } => held.scope.located() != at,
             Slot::Busy { .. } => true,
         });
     }

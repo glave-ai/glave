@@ -7,8 +7,11 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use tokio::time::Instant;
+
 use glave_ports::computer::{
-    ComputerError, Computers, Environment, Home, Image, Limits, Network, Sources, WorkspaceInfo,
+    ComputerError, Computers, Environment, Home, Image, Limits, Network, Sources,
+    State as ComputerState, WorkspaceInfo,
 };
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -22,6 +25,13 @@ use crate::{WorkerComputers, WorkerCredentials};
 /// How long a wake may take before whoever waits on it gives up: a Pod waits up to five
 /// minutes for a node and has two more to take glave in, so minutes, never more.
 const WAKE_WAIT: Duration = Duration::from_mins(10);
+/// How long after a failed wake the app opening does not start another: a broken image or a
+/// full cluster is not tried again at every list the app reads. A turn that needs the
+/// computer always tries again.
+const RETRY_AFTER: Duration = Duration::from_mins(1);
+/// The most people whose computers one server keeps track of at once; past it, those asleep
+/// are let go of, and found again when they come back.
+const MAX_PEOPLE: usize = 4_096;
 
 /// Where one person's computer is.
 #[derive(Debug, Clone)]
@@ -30,8 +40,8 @@ enum State {
     Waking,
     /// Awake: the workspace of its home.
     Awake(WorkspaceInfo),
-    /// The last wake failed, and why; the next one tries again.
-    Failed(String),
+    /// The last wake failed, when, and why; the next one tries again.
+    Failed(Instant, String),
 }
 
 impl State {
@@ -141,16 +151,29 @@ impl People {
             state: watch::Sender::new(State::Asleep),
             waking: Mutex::new(None),
         });
+        if held.len() >= MAX_PEOPLE {
+            held.retain(|_, person| {
+                matches!(*person.state.borrow(), State::Waking | State::Awake(_))
+            });
+        }
         held.insert(key.to_owned(), Arc::clone(&person));
         Ok(person)
     }
 
     /// Starts waking the computer of the person `key` names, unless it is awake or waking
-    /// already, and returns without waiting.
+    /// already, or its last wake failed less than a minute ago, and returns without
+    /// waiting.
     pub fn wake(&self, key: &str) -> Result<(), ComputerError> {
+        self.start(key, Some(RETRY_AFTER))
+    }
+
+    /// Starts a wake unless the computer is awake or waking, or its last wake failed less
+    /// than `retry_after` ago.
+    fn start(&self, key: &str, retry_after: Option<Duration>) -> Result<(), ComputerError> {
         let person = self.person(key)?;
         let starts = person.state.send_if_modified(|state| match state {
-            State::Asleep | State::Failed(_) => {
+            State::Failed(at, _) if retry_after.is_some_and(|after| at.elapsed() < after) => false,
+            State::Asleep | State::Failed(..) => {
                 *state = State::Waking;
                 true
             }
@@ -167,31 +190,63 @@ impl People {
     }
 
     /// The computer of the person `key` names, woken if it sleeps, and the workspace of their
-    /// home on it: once awake, at once.
+    /// home on it: once awake, at once. One that went away on its own (its glave ended idle,
+    /// or its node did) is woken again.
     pub async fn home(&self, key: &str) -> Result<Home, ComputerError> {
-        self.wake(key)?;
         let person = self.person(key)?;
+        let was = person.state.borrow().clone();
+        if let State::Awake(home) = was
+            && !gone(&person, &home).await
+        {
+            return Ok(Home {
+                computers: Arc::clone(&person.computers) as Arc<dyn Computers>,
+                home,
+            });
+        }
+        self.start(key, None)?;
         let mut state = person.state.subscribe();
         let woke = tokio::time::timeout(WAKE_WAIT, state.wait_for(State::settled)).await;
         let now = match woke {
             Ok(Ok(state)) => state.clone(),
-            Ok(Err(_)) => State::Failed("its wake was stopped".into()),
-            Err(_) => State::Failed(format!(
-                "it was still waking after {}",
-                glave_ports::spoken(WAKE_WAIT)
-            )),
+            Ok(Err(_)) => State::Failed(Instant::now(), "its wake was stopped".into()),
+            Err(_) => State::Failed(
+                Instant::now(),
+                format!(
+                    "it was still waking after {}",
+                    glave_ports::spoken(WAKE_WAIT)
+                ),
+            ),
         };
         match now {
             State::Awake(home) => Ok(Home {
                 computers: Arc::clone(&person.computers) as Arc<dyn Computers>,
                 home,
             }),
-            State::Failed(why) => Err(ComputerError::Failed(format!(
+            State::Failed(_, why) => Err(ComputerError::Failed(format!(
                 "your computer could not wake: {why}"
             ))),
             State::Asleep | State::Waking => Err(ComputerError::Failed(
                 "your computer went to sleep as it woke".into(),
             )),
+        }
+    }
+}
+
+/// Whether `person`'s computer, awake with `home`, has gone away on its own; if so, it is let
+/// go of and counted asleep, so the next ask wakes it again.
+async fn gone(person: &Person, home: &WorkspaceInfo) -> bool {
+    match person.computers.status(home.computer).await {
+        Ok(info) if info.state == ComputerState::Running => false,
+        _ => {
+            let _ = person.computers.destroy(home.computer).await;
+            person.state.send_if_modified(|state| match state {
+                State::Awake(awake) if awake.computer == home.computer => {
+                    *state = State::Asleep;
+                    true
+                }
+                _ => false,
+            });
+            true
         }
     }
 }
@@ -221,7 +276,7 @@ async fn woken(person: Arc<Person>, environment: Environment) {
     };
     let state = woke
         .await
-        .unwrap_or_else(|error| State::Failed(error.message().to_owned()));
+        .unwrap_or_else(|error| State::Failed(Instant::now(), error.message().to_owned()));
     person.state.send_replace(state);
 }
 

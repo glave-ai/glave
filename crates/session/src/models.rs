@@ -157,18 +157,18 @@ where
     /// The model `thread`'s project chooses for it, when the thread is the person's here
     /// whose trust turns on what a project brings.
     async fn project_model(&self, thread: ThreadId) -> Result<Option<String>, ApiError> {
-        let scope = self.scope_of(thread).await?;
+        let scope = self.scope_of(thread)?;
         let view = self.inner.harness.log().thread_view(&scope, thread).await?;
         let whose = view.and_then(|view| view.whose());
         if whose.is_some_and(|person| Some(person) != self.person()) {
             return Ok(None);
         }
-        Ok(self.project_settled(scope.project()).await.model)
+        Ok(self.project_settled(scope.located()).await.model)
     }
 
     /// The model last chosen for `thread`, from its log.
     async fn chosen(&self, thread: ThreadId) -> Result<Option<String>, ApiError> {
-        let scope = self.scope_of(thread).await?;
+        let scope = self.scope_of(thread)?;
         Ok(match self.latest(&scope, thread, CHOSEN).await? {
             Some(Body::ModelChosen(chosen)) => Some(chosen.model),
             _ => None,
