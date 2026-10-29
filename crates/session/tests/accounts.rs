@@ -7,7 +7,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use glave_event::{OrgRole, Secret};
+use glave_event::{OrgRole, PrincipalId, Secret};
 use glave_identity::testing::Authenticator;
 use glave_ports::host::PublicOrigin;
 use glave_ports::{Directory, OrgId};
@@ -362,14 +362,26 @@ fn someone_in_two_organizations_names_the_one_each_request_works_in() {
         // One she is not in, one that is no organization's, and a word that is no id are
         // refused alike, before anything is read; the person here is in the server's own alone.
         let unknown = Uuid::from_u128(0x0192_f5c6_0000_7000_8000_0000_0000_0bad).to_string();
-        for named in [unknown.as_str(), "acme"] {
+        let someone_elses =
+            OrgId::from_uuid(Uuid::from_u128(0x0192_f5c6_0000_7000_8000_0000_0000_0e15));
+        let someone =
+            PrincipalId::try_from(Uuid::from_u128(0x0192_f5c6_0000_7000_8000_0000_0000_0e16))
+                .unwrap();
+        directory.join(someone, someone_elses).await.unwrap();
+        let mut answers = Vec::new();
+        for named in [unknown.as_str(), &someone_elses.to_string(), "acme"] {
             let mut refused = elsewhere(&served, token_of(&joined)).working_in(named);
-            assert_eq!(asked(&mut refused, &list).await, json!(code::NOT_ALLOWED));
+            answers.push(refused.call(&list).await["error"].clone());
         }
+        assert_eq!(answers[0]["code"], json!(code::NOT_ALLOWED), "{answers:?}");
+        assert!(
+            answers.iter().all(|answer| *answer == answers[0]),
+            "{answers:?}"
+        );
         let mut owner = Web::new(&served, Some(token.reveal().to_owned()));
-        let mut elsewhere_named = owner_named(&served, &token, &other.to_string());
+        let mut other_named = owner_named(&served, &token, &other.to_string());
         assert_eq!(
-            asked(&mut elsewhere_named, &list).await,
+            asked(&mut other_named, &list).await,
             json!(code::NOT_ALLOWED)
         );
         let mut own_named = owner_named(&served, &token, &own);

@@ -236,9 +236,20 @@ where
     };
     let caller = match caller {
         // Checked once signed in, so no one learns of an organization without a sign-in.
-        Some(caller) => match server.in_organization(caller, named.as_deref()).await {
+        Some(caller) => match server
+            .in_organization(caller.clone(), named.as_deref())
+            .await
+        {
             Ok(caller) => caller,
-            Err(refused) => return json(StatusCode::OK, respond(id.as_ref(), Err(&refused))),
+            Err(mut refused) => {
+                let language = server.language_for(&caller, asked.as_deref()).await;
+                refused.message.translate(language);
+                return match id {
+                    Some(id) => json(StatusCode::OK, respond(Some(&id), Err(&refused))),
+                    // A notification is never answered.
+                    None => accepted(),
+                };
+            }
         },
         None => match open(&request, door) {
             // Neither reads who calls.

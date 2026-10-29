@@ -40,12 +40,17 @@ where
             .auth
             .as_ref()
             .is_some_and(|auth| auth.method == AuthMethod::Account);
-        let (Some(person), true, Some(accounts)) =
-            (caller.person, account, self.inner.accounts.as_deref())
-        else {
+        if !account {
+            return Err(not_in());
+        }
+        let (Some(person), Some(accounts)) = (caller.person, self.inner.accounts.as_deref()) else {
             return Err(not_in());
         };
-        if !accounts.organizations(person).await?.contains(&named) {
+        let theirs = accounts
+            .organizations(person)
+            .await
+            .map_err(|_| ApiError::new(code::INTERNAL, Sentence::RecordsFailed))?;
+        if !theirs.contains(&named) {
             return Err(not_in());
         }
         caller.org = Some(named);

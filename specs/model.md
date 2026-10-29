@@ -161,7 +161,7 @@ What today's code doesn't do yet, so no one takes it as built.
 5. The admin methods are listing people, setting a role and inviting (`session.md`, "The organization's people"); invites are emailed only where `[email]` names a mail server, and no screen opens a link yet; there are no admin screens (#222) and no `glave admin`, so where people sign in through an identity provider, the first roles are given through the session API from the server's computer until one comes.
 6. There is no theme yet: no organization name, logo or accent, and no choosing an accent or the assistant's name (#283, #287).
 7. Of "Identity", what is not built yet, each line edited by the pull request that builds it:
-   - A request's organization comes from its caller and the session serves several on one server, each with its own people, ledgers and scheduler lease: a glave account's works in the one its `Glave-Organization` header names among those they joined, else the first (#423); the daily sweep of blobs runs for the server's own alone.
+   - The daily sweep of blobs runs for the server's own organization alone, and no client names another organization yet (#423).
    - Of glave accounts for more than the local person: email recovery and the new-passkey notice (#424). Built: the email plug (SMTP, `[email]`, sending invites), an invited person's passkey and account, several passkeys each, sign-in with any of them.
    - Sign-up, and joining a second organization (#423).
    - The isolation suite has no one signed in with a glave account yet; their sessions are proved apart by `crates/session/tests/accounts.rs` alone.
