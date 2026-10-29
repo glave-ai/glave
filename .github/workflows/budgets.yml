@@ -1,6 +1,6 @@
 name: budgets
 
-# The performance budgets in AGENTS.md, set in crates/cli/benches/budgets.rs and measured in
+# The performance budgets in AGENTS.md, set in crates/session/benches/budgets.rs and measured in
 # the merge queue, after every merge to main, weekly, and on demand. A pull request is not
 # measured: `budgets`, the check the `main` ruleset requires, passes on it at once, and the
 # merge queue measures the change before it merges, on top of the ones ahead of it.
@@ -102,9 +102,8 @@ jobs:
         with:
           key: ${{ env.TARGET }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # Built, not run, through `cargo xtask bench`, and without the web app: what it measures
-      # in-process is the same either way, and the glave this build makes beside it, which the
-      # feature would change, is not the one measured.
+      # Built, not run, through `cargo xtask bench`: the benchmark alone, in a package with no
+      # program of its own, so no glave is linked beside it; the one measured is the release's.
       - name: Build the benchmark
         run: |
           cargo xtask bench --bench budgets --target "$TARGET" --no-run \

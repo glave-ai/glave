@@ -18,6 +18,8 @@ path = "tests/main.rs"
 [[bin]]
 name = "glave"
 path = "src/main.rs"
+# No benchmarks of its own: the budgets benchmark (crates/session) measures a build of it.
+bench = false
 
 [features]
 # The web app built into glave (build.rs), so `glave` opens it with no folder to pass.
@@ -103,10 +105,6 @@ hyper-util = { workspace = true, features = ["tokio"] }
 tokio = { workspace = true, features = ["process"] }
 # Making and inspecting the Postgres test schema.
 tokio-postgres.workspace = true
-
-[[bench]]
-name = "budgets"
-harness = false
 
 # Released (dist-workspace.toml), though not to crates.io, with the web app inside.
 [package.metadata.dist]

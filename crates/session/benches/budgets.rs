@@ -6,14 +6,17 @@
 //!
 //! The size and the answered command are measured on the glave program `GLAVE_BUDGETS_BINARY`
 //! names when it is set: in CI, glave as the release builds it for x86-64 Linux
-//! (`budgets.yml`). Otherwise they are measured on the glave this benchmark's own build made,
-//! which also carries the features the workspace's tests turn on: close to what ships, but
-//! not it. The threads are recorded and resumed in this program, on glave's own allocator.
+//! (`budgets.yml`). Otherwise they are measured on the glave in this benchmark's own build
+//! folder, which `cargo xtask bench` builds first in the same profile: close to what ships,
+//! but without the web app inside. The threads are recorded and resumed in this program, on
+//! glave's own allocator.
+//!
+//! It lives in a package with no program of its own, so building it links no second glave.
 
 #![expect(clippy::print_stdout, reason = "a benchmark: its table is its output")]
 
 #[cfg(target_env = "musl")]
-#[path = "../src/allocator.rs"]
+#[path = "../../cli/src/allocator.rs"]
 mod allocator;
 
 use std::io::{BufRead as _, BufReader};
@@ -59,13 +62,18 @@ fn main() -> anyhow::Result<()> {
 
 fn measure(dir: &Path) -> anyhow::Result<()> {
     // Absolute, since the commands it times run in a folder of their own.
-    let binary = std::path::absolute(
-        std::env::var_os(BINARY)
-            .map_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_glave")), PathBuf::from),
-    )?;
+    let binary = std::path::absolute(match std::env::var_os(BINARY) {
+        Some(named) => PathBuf::from(named),
+        None => built_beside()?,
+    })?;
     println!("measuring {}", binary.display());
     let size = std::fs::metadata(&binary)
-        .with_context(|| format!("no glave program at {}", binary.display()))?
+        .with_context(|| {
+            format!(
+                "no glave program at {}: `cargo xtask bench` builds it, or {BINARY} names one",
+                binary.display()
+            )
+        })?
         .len();
     let answer = median(answered(&binary, dir)?);
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -112,6 +120,16 @@ fn measure(dir: &Path) -> anyhow::Result<()> {
         bail!("a performance budget was missed");
     }
     Ok(())
+}
+
+/// The glave in this benchmark's build folder: the benchmark runs from `<folder>/deps`.
+fn built_beside() -> anyhow::Result<PathBuf> {
+    let me = std::env::current_exe().context("could not find this benchmark's own program")?;
+    let folder = me
+        .parent()
+        .and_then(Path::parent)
+        .with_context(|| format!("{} is not in a build folder", me.display()))?;
+    Ok(folder.join(format!("glave{}", std::env::consts::EXE_SUFFIX)))
 }
 
 /// Times a command the person's server answers while it runs (`glave tasks`, a client of its

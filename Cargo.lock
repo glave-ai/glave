@@ -2260,10 +2260,12 @@ dependencies = [
 name = "glave-session"
 version = "0.0.0"
 dependencies = [
+ "anyhow",
  "aws-lc-rs",
  "base64 0.23.1",
  "fluent-bundle",
  "getrandom 0.4.3",
+ "glave-bucket",
  "glave-computer",
  "glave-event",
  "glave-harness",
@@ -2279,6 +2281,7 @@ dependencies = [
  "hyper-util",
  "image",
  "jiff",
+ "mimalloc",
  "opentelemetry",
  "proptest",
  "reqwest",

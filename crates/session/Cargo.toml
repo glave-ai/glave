@@ -71,6 +71,19 @@ tokio-postgres.workspace = true
 proptest.workspace = true
 # A photo made in the test, to upload and see resized.
 image.workspace = true
+# The budgets benchmark: its errors, and the blobs of the thread it records.
+anyhow.workspace = true
+glave-bucket.workspace = true
+
+# The allocator of glave's static Linux builds, which the budgets benchmark measures on.
+[target.'cfg(target_env = "musl")'.dev-dependencies]
+mimalloc.workspace = true
+
+# The performance budgets in AGENTS.md, here rather than in glave's own package so that
+# building it links no second glave (`budgets.yml`).
+[[bench]]
+name = "budgets"
+harness = false
 
 [lints]
 workspace = true
