@@ -174,7 +174,7 @@ rusqlite = { version = "0.40", default-features = false, features = ["bundled", 
 # New workbooks written for `glave doc write` (glave-office): cells, formulas, number formats,
 # panes and native charts, in pure Rust on zip (calamine's), tested against files Excel saved.
 # No features: no chrono, no serde.
-rust_xlsxwriter = { version = "0.100", default-features = false }
+rust_xlsxwriter = { version = "0.101", default-features = false }
 # Files opened one name at a time from a folder handle (openat), for confinement.
 rustix ={ version = "1.1", default-features = false, features = ["fs", "std"] }
 # The Linux sandbox's seccomp filter, built and compiled to BPF in safe Rust (Firecracker's).
