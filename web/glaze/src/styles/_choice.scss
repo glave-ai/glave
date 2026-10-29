@@ -33,7 +33,7 @@
     height: 1.125rem;
     /* stylelint-disable-next-line declaration-property-value-allowed-list -- centres the mark on the label's first line, which no gap can do */
     margin-top: 0.19em;
-    border: 2px solid var(--glz-color-border-strong);
+    border: 2px solid var(--glz-color-control-edge);
     background: var(--glz-surface-card);
     transition: background-color var(--glz-duration-quick) var(--glz-ease-out);
   }

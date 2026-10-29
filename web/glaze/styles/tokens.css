@@ -43,6 +43,8 @@
   /* Lines: a box's border, a stronger one for what needs the person, and rules inside a box. */
   --glz-color-border: light-dark(#e4e4e4, #2a2c2f);
   --glz-color-border-strong: light-dark(#d3d3d3, #3a3c40);
+  /* The edge of a checkbox or radio: the lightest grey that keeps 3:1 on every surface it sits on. */
+  --glz-color-control-edge: light-dark(#8c8c8c, #6b6d71);
   --glz-color-divider: light-dark(#f0f0f0, #232528);
 
   /* Focus: its own quiet blue, never the accent, shown on :focus-visible only. */
