@@ -34,7 +34,7 @@
     oklch(from var(--glz-accent) max(l, 0.78) c h)
   );
 
-  /* Text. Muted text keeps 4.5:1 or more on every surface but the selected one. */
+  /* Text: each keeps 4.5:1 or more on every surface (src/tokens/contrast.spec.ts checks). */
   --glz-color-text: light-dark(#1b1c1d, #ececec);
   --glz-color-text-secondary: light-dark(#2a2b2d, #d6d7d9);
   --glz-color-text-muted: light-dark(#63666b, #9a9da3);
@@ -62,11 +62,11 @@
   --glz-color-added: light-dark(#1a7f37, #56c26f);
   --glz-color-removed: light-dark(#c4302b, #f0776b);
 
-  /* A danger button under the pointer, as the accent's hover. */
+  /* A danger button under the pointer, a little toward its label, which keeps 4.5:1 on it. */
   --glz-color-danger-hover: color-mix(
     in oklch,
     var(--glz-color-danger),
-    var(--glz-color-on-danger) 14%
+    var(--glz-color-on-danger) 9%
   );
 
   /* Surfaces: the page, the side panes on it, and the boxes that sit on either. */
