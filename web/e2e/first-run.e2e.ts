@@ -2,6 +2,7 @@ import { type IncomingMessage, type Server, type ServerResponse, createServer } 
 import type { AddressInfo } from 'node:net';
 
 import {
+  ADMIN_WORDS,
   FIRST_RUN,
   byTestId,
   expect,
@@ -15,9 +16,6 @@ import {
 /** The key the person pastes, and one the fake service refuses. */
 const KEY = 'fake-key-for-the-first-run-wxyz';
 const WRONG = 'fake-key-the-service-refuses';
-
-/** Words a person on their own computer should never meet (AGENTS.md, "Keeping principle 4"). */
-const ADMIN_WORDS = /policy|organization|member|group|admin|SSO|config\.toml|GLAVE_/u;
 
 /** What the fake model service says to every chat. */
 const REPLY = 'Hello from your own model.';

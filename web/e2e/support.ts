@@ -36,6 +36,14 @@ export const FIRST_RUN: Site = {
   address: 'GLAVE_E2E_FIRST_RUN_URL',
   home: 'GLAVE_E2E_FIRST_RUN_HOME',
 };
+/**
+ * A glave with nothing set up, for the whole journey of a person on their own computer, from
+ * adding a model to connecting GitHub (consumer.e2e.ts).
+ */
+export const CONSUMER: Site = {
+  address: 'GLAVE_E2E_CONSUMER_URL',
+  home: 'GLAVE_E2E_CONSUMER_HOME',
+};
 /** A glave with a model, for signing in and connecting accounts (accounts.e2e.ts). */
 export const ACCOUNTS: Site = {
   address: 'GLAVE_E2E_ACCOUNTS_URL',
@@ -110,6 +118,14 @@ function kept(variable: string): string {
   }
   return value;
 }
+
+/**
+ * Words a person on their own computer should never meet (AGENTS.md, "Keeping principle 4"),
+ * each a whole word in any case, since "remember" holds "member", and glave's own settings and
+ * variables.
+ */
+export const ADMIN_WORDS =
+  /\b(?:polic(?:y|ies)|organi[sz]ations?|members?|groups?|admins?|administrators?|SSO)\b|config\.toml|GLAVE_/iu;
 
 /** The fragment of the link that signs the app in, with a code the fake API takes. */
 export const SIGNED_IN = '#code=e2e-code';

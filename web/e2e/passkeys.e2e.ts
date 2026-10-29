@@ -1,6 +1,7 @@
 import { type BrowserContext, type CDPSession, type Page } from '@playwright/test';
 
 import {
+  ADMIN_WORDS,
   HERE,
   HERE_WEBKIT,
   PASSKEYS,
@@ -16,8 +17,8 @@ import {
   watchForProblems,
 } from './support';
 
-/** Words a person on their own server should never meet (AGENTS.md, "Keeping principle 4"). */
-const ADMIN_WORDS = /policy|organization|member|group|admin|SSO|config\.toml|GLAVE_|--/u;
+/** Words a person on their own server should never meet, nor a command's flags. */
+const ADMIN_OR_FLAGS = new RegExp(`${ADMIN_WORDS.source}|--`, 'iu');
 
 /**
  * Sends every request to the public origin on to the real glave, as a tunnel on its computer
@@ -306,7 +307,7 @@ test('a setup link makes a passkey here, and the passkey signs the browser in ag
     await page.emulateMedia({ colorScheme });
     await expectAccessible(page);
   }
-  expect(await page.locator('body').innerText()).not.toMatch(ADMIN_WORDS);
+  expect(await page.locator('body').innerText()).not.toMatch(ADMIN_OR_FLAGS);
   await byTestId(page, 'sign-in-passkey').click();
   await expect(byTestId(page, 'home-composer-input')).toBeVisible();
 

@@ -5,6 +5,7 @@ import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
 
 import {
+  ADMIN_WORDS,
   CONNECTIONS,
   CONNECTIONS_WEBKIT,
   TEST_SERVER,
@@ -26,7 +27,7 @@ const TOKEN = 'e2e-connections';
  * Words a person on their own computer should never meet (AGENTS.md, "Keeping principle 4"),
  * nor the name of the protocol or the file their services are set up in.
  */
-const ADMIN_WORDS = /policy|organization|member|group|admin|SSO|config\.toml|GLAVE_|MCP|mcp\.json/u;
+const ADMIN_OR_FILES = new RegExp(`${ADMIN_WORDS.source}|\\bMCP\\b|mcp\\.json`, 'iu');
 
 // Each engine's tests change one glave's settings, so they run one after another.
 test.describe.configure({ mode: 'default' });
@@ -109,7 +110,7 @@ test('a service that asks for a sign-in is connected in a new tab, then disconne
   }
   await tab.close();
   expect(await page.content()).not.toContain(TOKEN);
-  expect(await page.locator('body').innerText()).not.toMatch(ADMIN_WORDS);
+  expect(await page.locator('body').innerText()).not.toMatch(ADMIN_OR_FILES);
 
   await ready.getByTestId('connection-action').click();
   await byTestId(page, 'connections-disconnect-ok').click();
@@ -149,7 +150,7 @@ test('web search is a switch in Settings, and the composer shows a globe while i
     await page.emulateMedia({ colorScheme });
     await expectAccessible(page);
   }
-  expect(await page.locator('body').innerText()).not.toMatch(ADMIN_WORDS);
+  expect(await page.locator('body').innerText()).not.toMatch(ADMIN_OR_FILES);
 
   // It is no connection of the person's.
   await byTestId(page, 'settings-connections').click();
