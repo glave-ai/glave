@@ -21,6 +21,19 @@ pub(crate) const LABEL: &str = "glave.worker";
 /// The label a person's computer's objects carry instead, its key as the value: never a
 /// worker's, so no glave reaps a person's computer as a worker it left.
 pub(crate) const COMPUTER_LABEL: &str = "glave.computer";
+/// The user and group a person's computer runs as: Wolfi's `nonroot`, never root, owning
+/// its disk (`specs/computers.md`, decision 12).
+const PERSON_USER: u32 = 65_532;
+/// The private and shared ranges a person's computer never reaches, so nothing inside the
+/// cluster (another person's computer, a server, a database) answers it: the cluster's Pods
+/// and Services are within them.
+const INSIDE: [&str; 5] = [
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "100.64.0.0/10",
+    "fc00::/7",
+];
 /// Where a person's disk is mounted in their computer: their home.
 pub(crate) const PERSON_HOME: &str = "/home/glave";
 /// The most a person's computer may write outside its disk (its container's layer, `/tmp`),
@@ -144,6 +157,10 @@ impl Shape<'_> {
                 "name": "home",
                 "persistentVolumeClaim": {"claimName": home.claim}
             }));
+            // The root filesystem is read-only; `/tmp` is the one place outside the home a
+            // command may write, within the computer's `ephemeral-storage`.
+            mounts.push(json!({"name": "tmp", "mountPath": "/tmp"}));
+            volumes.push(json!({"name": "tmp", "emptyDir": {}}));
             limits.insert("ephemeral-storage".into(), json!(OUTSIDE_THE_DISK));
             // Asked for explicitly: a limit alone would be asked for whole, and reserve it on
             // the node for every computer awake.
@@ -177,12 +194,7 @@ impl Shape<'_> {
             "stdinOnce": !self.spec.network,
             "resources": {"requests": amounts, "limits": limits},
             "volumeMounts": mounts,
-            "securityContext": {
-                "allowPrivilegeEscalation": false,
-                "privileged": false,
-                "capabilities": {"drop": ["ALL"]},
-                "seccompProfile": {"type": "RuntimeDefault"}
-            }
+            "securityContext": self.container_security(),
         });
         json!({
             "apiVersion": "v1",
@@ -199,8 +211,40 @@ impl Shape<'_> {
                 "terminationGracePeriodSeconds": 5,
                 "runtimeClassName": self.runtime_class,
                 "nodeSelector": nodes,
+                "securityContext": self.pod_security(),
             }
         })
+    }
+
+    /// The container's security: no privilege, every capability dropped, the runtime's
+    /// seccomp profile; a person's computer also never root, its root filesystem read-only.
+    fn container_security(&self) -> Value {
+        let mut security = json!({
+            "allowPrivilegeEscalation": false,
+            "privileged": false,
+            "capabilities": {"drop": ["ALL"]},
+            "seccompProfile": {"type": "RuntimeDefault"}
+        });
+        if let (Some(_), Some(fields)) = (&self.home, security.as_object_mut()) {
+            fields.insert("runAsNonRoot".into(), json!(true));
+            fields.insert("runAsUser".into(), json!(PERSON_USER));
+            fields.insert("runAsGroup".into(), json!(PERSON_USER));
+            fields.insert("readOnlyRootFilesystem".into(), json!(true));
+        }
+        security
+    }
+
+    /// The Pod's security: for a person's computer, its disk owned by its group, set only when
+    /// it differs, so a large home is not walked at every wake; a worker runs as its image
+    /// says.
+    fn pod_security(&self) -> Value {
+        match &self.home {
+            Some(_) => json!({
+                "fsGroup": PERSON_USER,
+                "fsGroupChangePolicy": "OnRootMismatch"
+            }),
+            None => json!({}),
+        }
     }
 
     /// The container's command: the wait, then glave serving over TLS on [`PORT`], or on its
@@ -246,11 +290,19 @@ impl Shape<'_> {
     /// machines' credentials ([`CLOUD_METADATA`]; DNS there is still allowed).
     pub(crate) fn network_policy(&self) -> Value {
         let egress = if self.spec.network {
+            // A person's computer reaches nothing inside the cluster either.
+            let inside: &[&str] = if self.home.is_some() { &INSIDE } else { &[] };
             let except = |v4: bool| -> Vec<String> {
                 CLOUD_METADATA
                     .iter()
                     .filter(|network| network.is_ipv4() == v4)
                     .map(ToString::to_string)
+                    .chain(
+                        inside
+                            .iter()
+                            .filter(|cidr| cidr.contains(':') != v4)
+                            .map(|cidr| (*cidr).to_owned()),
+                    )
                     .collect()
             };
             json!([
@@ -553,8 +605,61 @@ mod tests {
             policy["spec"]["podSelector"]["matchLabels"],
             json!({"glave.computer": "k1"})
         );
+
         let parsed: k8s_openapi::api::core::v1::Pod = serde_json::from_value(pod).unwrap();
         assert!(parsed.spec.is_some());
+    }
+
+    #[test]
+    fn a_persons_computer_is_never_root_and_reaches_nothing_in_the_cluster() {
+        let labels = BTreeMap::new();
+        let spec = spec(true);
+        let computer = Shape {
+            name: "glave-computer-k1",
+            home: Some(Home {
+                key: "k1",
+                claim: "glave-home-k1",
+            }),
+            owner: None,
+            ..shape(&spec, &labels)
+        };
+        let pod = computer.pod();
+        let container = &pod["spec"]["containers"][0];
+        assert_eq!(
+            container["volumeMounts"][2],
+            json!({"name": "tmp", "mountPath": "/tmp"})
+        );
+        assert_eq!(
+            container["securityContext"],
+            json!({
+                "allowPrivilegeEscalation": false,
+                "privileged": false,
+                "capabilities": {"drop": ["ALL"]},
+                "seccompProfile": {"type": "RuntimeDefault"},
+                "runAsNonRoot": true,
+                "runAsUser": 65532,
+                "runAsGroup": 65532,
+                "readOnlyRootFilesystem": true
+            }),
+            "never root, nothing written outside its home and /tmp"
+        );
+        assert_eq!(
+            pod["spec"]["securityContext"],
+            json!({"fsGroup": 65532, "fsGroupChangePolicy": "OnRootMismatch"})
+        );
+        let policy = computer.network_policy();
+        let out = &policy["spec"]["egress"][0]["to"];
+        let refused = |at: usize| out[at]["ipBlock"]["except"].as_array().unwrap().clone();
+        for inside in [
+            "10.0.0.0/8",
+            "172.16.0.0/12",
+            "192.168.0.0/16",
+            "100.64.0.0/10",
+        ] {
+            assert!(refused(0).contains(&json!(inside)), "{inside} is refused");
+        }
+        assert!(refused(1).contains(&json!("fc00::/7")));
+        assert_eq!(policy["spec"]["ingress"], json!([]), "nothing comes in");
     }
 
     #[test]
