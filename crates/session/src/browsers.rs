@@ -136,20 +136,16 @@ where
         credential: &serde_json::Value,
     ) -> Result<Reply, ApiError> {
         let browsers = self.browsers()?;
-        let discovered = self
-            .inner
-            .accounts
-            .as_deref()
-            .and_then(|accounts| accounts.identify(ceremony, credential).ok());
-        let Some(discovered) = discovered else {
+        let accounts = self.inner.accounts.as_deref();
+        let Some(accounts) = accounts.filter(|accounts| accounts.began(ceremony)) else {
             let session = browsers.get(ceremony, credential).await?;
             return Ok(self.signed_in(session, browsers));
         };
+        let discovered = accounts.identify(ceremony, credential)?;
         if discovered.handle() == browsers.handle() {
             let session = browsers.get_discovered(discovered).await?;
             return Ok(self.signed_in(session, browsers));
         }
-        let accounts = self.accounts()?;
         let (_, session) = accounts.signed_in_by(discovered).await?;
         Ok(self.signed_in(session, browsers))
     }
@@ -161,13 +157,19 @@ where
         Ok(Reply::Passkeys { passkeys })
     }
 
-    /// Answers `passkey/remove`.
+    /// Answers `passkey/remove`. A glave account keeps its last passkey, since nothing else
+    /// signs its person in yet.
     pub(crate) async fn remove_passkey(
         &self,
         caller: &Caller,
         passkey: &str,
     ) -> Result<Reply, ApiError> {
-        let removed = self.person_s(caller).await?.remove(passkey).await;
+        let browsers = self.person_s(caller).await?;
+        let last = browsers.passkeys().iter().all(|kept| kept.id == passkey);
+        if last && is_account(caller) {
+            return Err(ApiError::new(code::NOT_ALLOWED, Sentence::LastPasskey));
+        }
+        let removed = browsers.remove(passkey).await;
         // The sessions it signed in end with it.
         self.inner.hub.sign_ins_changed();
         removed?;
@@ -176,12 +178,7 @@ where
 
     /// The browsers of `caller`: the local person's, or their glave account's.
     pub(crate) async fn person_s(&self, caller: &Caller) -> Result<Arc<Browsers>, ApiError> {
-        let account = caller
-            .auth
-            .as_ref()
-            .filter(|auth| auth.method == AuthMethod::Account)
-            .and(caller.person);
-        if let Some(person) = account {
+        if let (true, Some(person)) = (is_account(caller), caller.person) {
             return Ok(self.accounts()?.browsers(person).await?);
         }
         if !local(caller) {
@@ -190,7 +187,7 @@ where
                 Sentence::PasskeysOnlyTheirs,
             ));
         }
-        self.browsers().map(|browsers| Arc::clone(browsers))
+        self.browsers().map(Arc::clone)
     }
 
     /// Answers `signin/redeem`: `code`, once, for a session with this server.
@@ -202,9 +199,9 @@ where
 
     /// Answers `signin/end`: ends the caller's own browser session.
     pub(crate) async fn end_session(&self, caller: &Caller) -> Result<Reply, ApiError> {
-        let browsers = self.person_s(caller).await?;
         let session = session_of(caller)
             .ok_or_else(|| ApiError::new(code::INVALID_PARAMS, Sentence::NotABrowser))?;
+        let browsers = self.person_s(caller).await?;
         let ended = browsers.end(session).await;
         self.inner.hub.sign_ins_changed();
         ended?;
@@ -273,6 +270,14 @@ fn summary(passkey: PasskeyInfo) -> PasskeySummary {
         added: At::from(passkey.added),
         used: passkey.used.map(At::from),
     }
+}
+
+/// Whether `caller` signed in with a glave account.
+fn is_account(caller: &Caller) -> bool {
+    caller
+        .auth
+        .as_ref()
+        .is_some_and(|auth| auth.method == AuthMethod::Account)
 }
 
 /// The browser session `caller` signed in with, if they did.

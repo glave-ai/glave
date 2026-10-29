@@ -1,26 +1,23 @@
 //! Invited people making a glave account (`specs/model.md`, "Identity", "Invites"): where the
 //! organization has no company login and the server is reached at a public origin, an invite's
 //! link makes a passkey. Opening it begins making the first passkey of a new account; making
-//! it keeps the account, finds the person by their passkeys from then on, and spends the
-//! invite, recording them as joined with its role in one append, so a code someone else spent
-//! meanwhile joins no one.
+//! it checks the passkey, spends the invite, recording the person as joined with its role in
+//! one append, and only then keeps the account and its organization, so a code someone else
+//! spent meanwhile makes no account.
 
 use std::sync::{MutexGuard, PoisonError};
 
 use glave_event::{InviteAccepted, PersonJoined, PrincipalId, Profile, Secret};
 use glave_identity::signin::{Accounts, Proof, kept};
 use glave_ports::{BlobStore, EventLog, ModelProvider, OrgId};
-use jiff::{SignedDuration, Timestamp};
 
 use crate::invites::gone;
 use crate::protocol::{ApiError, Reply, code};
 use crate::server::Server;
 use crate::words::Sentence;
 
-/// How long making the first passkey may take, as any passkey request.
-const LIFETIME: SignedDuration = SignedDuration::from_mins(5);
-
-/// Accounts being made at once; a new one past this forgets the oldest.
+/// Accounts being made at once; a new one past this forgets the oldest. Each passkey request
+/// expires on its own, as any does.
 const MOST: usize = 16;
 
 /// The first passkey of a new account, being made.
@@ -31,7 +28,6 @@ pub(crate) struct Joining {
     org: OrgId,
     /// The invite code's hash.
     code: String,
-    began: Timestamp,
 }
 
 /// The accounts being made on this server.
@@ -68,11 +64,8 @@ where
             return Err(gone());
         }
         let (person, browsers) = accounts.made().await?;
-        let ceremony = browsers.create_options(Proof::Vouched)?;
+        let ceremony = browsers.create_options(Proof::SignedIn)?;
         let mut joining = self.joinings();
-        joining
-            .0
-            .retain(|it| now.duration_since(it.began) <= LIFETIME);
         if joining.0.len() >= MOST {
             joining.0.remove(0);
         }
@@ -81,7 +74,6 @@ where
             person,
             org,
             code: presented,
-            began: now,
         });
         Ok(crate::browsers::options(ceremony))
     }
@@ -103,11 +95,11 @@ where
     ) -> Result<Reply, ApiError> {
         let accounts = self.accounts()?;
         let browsers = accounts.browsers(joining.person).await?;
-        let (_, session) = browsers
-            .create_vouched(&joining.ceremony, credential, name)
-            .await?;
-        accounts.found_by_its_passkeys(joining.person).await?;
+        // Checked, then the invite spent, and only then is anything of the account kept: a
+        // code spent meanwhile leaves nothing behind.
+        let checked = browsers.checked(&joining.ceremony, credential, name)?;
         self.spend_joining(&joining).await?;
+        let session = browsers.keep(checked).await?;
         accounts.join(joining.person, joining.org).await?;
         Ok(self.signed_in(session, &browsers))
     }

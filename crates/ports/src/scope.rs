@@ -77,7 +77,8 @@ impl fmt::Display for ProjectId {
 ///   project, read from the store in their organization. The session API's one check makes it.
 /// - [`Scope::glaves_own`], for glave's own work that no one asks for at that moment (the
 ///   scheduler, sweeps, recovery, the ledgers it keeps, the host opening its own folder), and
-///   for tests. Every call is one to audit.
+///   for tests, with [`Scope::of_organization`] and [`Scope::of_account`], glave's own
+///   streams of an organization and of a glave account. Every call is one to audit.
 ///
 /// A scope found from a bare thread id is a [`Located`], never a scope: it must be checked
 /// before anything is read with it.

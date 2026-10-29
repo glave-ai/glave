@@ -70,11 +70,15 @@ pub struct Ceremony {
 pub enum Proof<'a> {
     /// A setup code glave on its computer made.
     Code(&'a str),
-    /// The person, signed in already.
+    /// The person, signed in already; or, for the first passkey of a new glave account, the
+    /// invite they opened, which the server checked before asking.
     SignedIn,
-    /// What the server checked before asking, such as an invite opened: the first passkey of a
-    /// new glave account.
-    Vouched,
+}
+
+/// A passkey made and checked, not kept yet ([`Browsers::checked`]).
+pub struct Checked {
+    info: PasskeyInfo,
+    change: Change,
 }
 
 /// A passkey, as the person sees it.
@@ -217,7 +221,7 @@ impl Browsers {
             let mut state = self.state();
             let code = match proof {
                 Proof::Code(code) => Some(live_setup(&mut state, code, now)?),
-                Proof::SignedIn | Proof::Vouched => None,
+                Proof::SignedIn => None,
             };
             if state.passkeys.len() >= MOST_PASSKEYS {
                 return Err(BrowserError::Passkey(format!(
@@ -237,6 +241,10 @@ impl Browsers {
             .start_passkey_registration(relying.handle, "glave", "glave", Some(exclude))
             .map_err(|error| BrowserError::Passkey(error.to_string()))?;
         let id = new_id(now)?;
+        let mut asked = ceremony(id, &options)?;
+        if matches!(relying.party, Party::Public) {
+            discoverable(&mut asked.options);
+        }
         let mut ceremonies = self.ceremonies();
         ceremonies
             .making
@@ -250,7 +258,7 @@ impl Browsers {
             began: now,
             code,
         });
-        ceremony(id, &options)
+        Ok(asked)
     }
 
     /// Makes the passkey `credential` answers the request `ceremony` with, called `name` if
@@ -268,19 +276,23 @@ impl Browsers {
         Ok((passkey, session))
     }
 
-    /// Makes the passkey `credential` answers the request `ceremony` with, called `name` if
-    /// named, where the server vouched for the request ([`Proof::Vouched`]): the passkey signs
-    /// this browser in.
-    pub async fn create_vouched(
+    /// The passkey `credential` answers the request `ceremony` with, called `name` if named,
+    /// checked but not kept yet: the first of a new glave account, which [`Browsers::keep`]
+    /// keeps once the invite it was made for is spent.
+    pub fn checked(
         &self,
         ceremony: &str,
         credential: &serde_json::Value,
         name: Option<&str>,
-    ) -> Result<(PasskeyInfo, Session), BrowserError> {
-        let (passkey, change) = self.made(ceremony, credential, name, false)?;
-        let id = parse(&passkey.id).ok_or(BrowserError::Ceremony)?;
-        let session = self.begin(Some(id), vec![change]).await?;
-        Ok((passkey, session))
+    ) -> Result<Checked, BrowserError> {
+        let (info, change) = self.made(ceremony, credential, name, false)?;
+        Ok(Checked { info, change })
+    }
+
+    /// Keeps the passkey `checked`, and signs this browser in with it.
+    pub async fn keep(&self, checked: Checked) -> Result<Session, BrowserError> {
+        let id = parse(&checked.info.id).ok_or(BrowserError::Ceremony)?;
+        self.begin(Some(id), vec![checked.change]).await
     }
 
     /// Makes the passkey `credential` answers the request `ceremony` with, called `name` if
@@ -526,6 +538,19 @@ fn ceremony(id: Uuid, options: &impl serde::Serialize) -> Result<Ceremony, Brows
         options: serde_json::to_value(options)
             .map_err(|error| BrowserError::Passkey(error.to_string()))?,
     })
+}
+
+/// `options` asking for a passkey a request naming none finds (a discoverable credential), as
+/// a server with glave accounts asks: password managers' passkeys always are, a security key's
+/// only when asked.
+fn discoverable(options: &mut serde_json::Value) {
+    if let Some(selection) = options
+        .pointer_mut("/publicKey/authenticatorSelection")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        selection.insert("residentKey".into(), "required".into());
+        selection.insert("requireResidentKey".into(), true.into());
+    }
 }
 
 /// A passkey's name: `name`, trimmed and cut short, else when it was added.

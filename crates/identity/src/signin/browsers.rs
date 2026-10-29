@@ -17,7 +17,7 @@ mod state;
 
 pub use self::passkeys::Discovered;
 pub(crate) use self::passkeys::Discoverer;
-pub use self::passkeys::{AcceptedPasskeys, Ceremony, PasskeyInfo, Proof, UnknownPasskey};
+pub use self::passkeys::{AcceptedPasskeys, Ceremony, Checked, PasskeyInfo, Proof, UnknownPasskey};
 
 use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
 
@@ -142,7 +142,26 @@ impl Browsers {
         origin: Option<&PublicOrigin>,
         clock: Box<dyn Clock>,
     ) -> Result<Self, BrowserError> {
-        Self::opened(log, scope, None, server, handle, origin, clock).await
+        let thread = Reserved::Browsers.id();
+        let relying = match origin {
+            Some(origin) => OnceLock::from(Relying::public(origin, handle)?),
+            None => OnceLock::new(),
+        };
+        let browsers = Self {
+            ledger: Box::new(Stream { log, scope, thread }),
+            account: None,
+            server,
+            handle,
+            clock,
+            state: Mutex::new(State {
+                next: 1,
+                ..State::default()
+            }),
+            relying,
+            ceremonies: Mutex::new(Ceremonies::default()),
+        };
+        browsers.catch_up().await?;
+        Ok(browsers)
     }
 
     /// The sessions and passkeys of `person`'s glave account, kept in the account's own
@@ -156,46 +175,8 @@ impl Browsers {
         clock: Box<dyn Clock>,
     ) -> Result<Self, BrowserError> {
         let scope = Scope::of_account(person);
-        Self::opened(
-            log,
-            scope,
-            Some(person),
-            server,
-            handle,
-            Some(origin),
-            clock,
-        )
-        .await
-    }
-
-    async fn opened<L: EventLog + 'static>(
-        log: L,
-        scope: Scope,
-        account: Option<PrincipalId>,
-        server: String,
-        handle: Uuid,
-        origin: Option<&PublicOrigin>,
-        clock: Box<dyn Clock>,
-    ) -> Result<Self, BrowserError> {
-        let thread = Reserved::Browsers.id();
-        let relying = match origin {
-            Some(origin) => OnceLock::from(Relying::public(origin, handle)?),
-            None => OnceLock::new(),
-        };
-        let browsers = Self {
-            ledger: Box::new(Stream { log, scope, thread }),
-            account,
-            server,
-            handle,
-            clock,
-            state: Mutex::new(State {
-                next: 1,
-                ..State::default()
-            }),
-            relying,
-            ceremonies: Mutex::new(Ceremonies::default()),
-        };
-        browsers.catch_up().await?;
+        let mut browsers = Self::open(log, scope, server, handle, Some(origin), clock).await?;
+        browsers.account = Some(person);
         Ok(browsers)
     }
 

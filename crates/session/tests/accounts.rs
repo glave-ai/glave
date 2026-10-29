@@ -42,14 +42,7 @@ async fn serve(dir: &Path, reached: bool, token: &LocalToken) -> Served {
     setup.browsers = Some(Arc::new(browsers.await.unwrap()));
     if reached {
         let directory = Arc::new(store.directory());
-        let accounts = Accounts::new(
-            store.log(),
-            directory,
-            [7; 32],
-            server,
-            &origin,
-            Arc::new(clock),
-        );
+        let accounts = Accounts::new(store.log(), directory, server, &origin, Arc::new(clock));
         setup.accounts = Some(Arc::new(accounts.unwrap()));
         setup.origin = Some(origin);
     }
@@ -206,6 +199,11 @@ fn people_sign_in_with_any_of_their_passkeys_and_only_as_themselves() {
         let theirs = asked(&mut linus, &Request::PasskeyList {}).await;
         assert_eq!(ids(&theirs).len(), 1, "{theirs}");
         assert!(!ids(&mine).contains(&ids(&theirs)[0]), "never another's");
+
+        // Their only passkey stays, as nothing else signs them in yet.
+        let only = theirs["passkeys"][0]["id"].as_str().unwrap().to_owned();
+        let kept = asked(&mut linus, &Request::PasskeyRemove { passkey: only }).await;
+        assert_eq!(kept, json!(code::NOT_ALLOWED));
 
         // A Member is refused what admins do; signing out ends only their own browser.
         let refused = asked(

@@ -345,8 +345,9 @@ where
         make: impl Fn(&People) -> Result<Option<T>, ApiError>,
     ) -> Result<(), ApiError> {
         self.record_people(org, |people, next| {
-            let made = make(people)?;
-            made.map(|payload| Ok(vec![self.people_event(next, &payload)?]))
+            let payload = make(people)?;
+            payload
+                .map(|payload| Ok(vec![self.people_event(next, &payload)?]))
                 .transpose()
         })
         .await
@@ -367,8 +368,8 @@ where
         let make = &make;
         let appended = append_retrying(log, &scope, ledger, || async move {
             self.catch_up_people(org).await?;
-            let made = self.people(org, |held| make(held, held.next_seq()))?;
-            Ok::<_, ApiError>(made.map(|events| (events, ())))
+            let events = self.people(org, |held| make(held, held.next_seq()))?;
+            Ok::<_, ApiError>(events.map(|events| (events, ())))
         })
         .await?;
         self.people(org, |held| {

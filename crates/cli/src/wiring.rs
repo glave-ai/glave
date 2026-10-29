@@ -115,6 +115,10 @@ async fn opening(root: &Path) -> anyhow::Result<Option<String>> {
 }
 
 /// Builds the session server on this computer's store and the current folder.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one list of every part a server is wired from, each a line"
+)]
 pub(crate) async fn wire(
     args: &Args,
     answering: Answering,

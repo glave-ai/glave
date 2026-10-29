@@ -235,13 +235,10 @@ pub(crate) async fn browsers(
         .map(|browsers| Some(Arc::new(browsers)))
 }
 
-/// What the root derives the glave accounts' passkey handles from.
-const ACCOUNT_HANDLES: &str = "account passkey handles";
-
 /// The glave accounts a server keeps for people other than the local person (`specs/model.md`,
 /// "Identity"): where it serves over HTTP, is reached from elsewhere at a public origin, and
 /// its organization signs no one in through a company login, since an organization has one
-/// identity source. Their handles are derived from what the root derives for them.
+/// identity source.
 pub(crate) async fn accounts(
     args: &Args,
     choices: &Choices,
@@ -251,22 +248,9 @@ pub(crate) async fn accounts(
     let (true, Some(origin), true) = (args.http.is_some(), origin, args.issuers.is_empty()) else {
         return Ok(None);
     };
-    let derived = store.derived(ACCOUNT_HANDLES).await?;
-    let secret = derived
-        .bytes()
-        .first_chunk::<32>()
-        .copied()
-        .context("the root derived too few bytes for accounts' passkey handles")?;
     let server = store.server(random_uuid()?).await?.to_string();
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
-    let accounts = Accounts::new(
-        store.log(),
-        store.directory(),
-        secret,
-        server,
-        origin,
-        clock,
-    )?;
+    let accounts = Accounts::new(store.log(), store.directory(), server, origin, clock)?;
     Ok(Some(Arc::new(accounts)))
 }
 

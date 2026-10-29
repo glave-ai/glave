@@ -23,10 +23,10 @@ use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 
-pub use self::accounts::{Accounts, Signed};
+pub use self::accounts::Accounts;
 pub use self::browsers::{
-    AcceptedPasskeys, BrowserError, Browsers, Ceremony, Discovered, PasskeyInfo, Proof, Session,
-    UnknownPasskey, kept, one_time_code, same_kept,
+    AcceptedPasskeys, BrowserError, Browsers, Ceremony, Checked, Discovered, PasskeyInfo, Proof,
+    Session, UnknownPasskey, kept, one_time_code, same_kept,
 };
 use self::browsers::{SESSION_PREFIX, account_of};
 use self::keys::Keys;

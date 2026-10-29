@@ -63,6 +63,14 @@ impl Discoverer {
         ceremony(id, &options)
     }
 
+    /// Whether the request `ceremony` is one of these, waiting.
+    pub(crate) fn waits(&self, ceremony: &str) -> bool {
+        let waiting = self.waiting.lock().unwrap_or_else(PoisonError::into_inner);
+        waiting
+            .iter()
+            .any(|(id, _, _)| Some(*id) == parse(ceremony))
+    }
+
     /// Whose `credential`, answering the request `ceremony`, says it is: the request taken,
     /// refused when none waits, or it waited too long.
     pub(crate) fn identify(
