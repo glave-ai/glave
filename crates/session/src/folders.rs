@@ -16,9 +16,10 @@ use glave_harness::Looked;
 use glave_ports::computer::{ComputerError, CredentialHost, Forge};
 use glave_ports::stream::{Reserved, append_retrying, catch_up};
 use glave_ports::{
-    BlobStore, Caller, EventLog, FolderKey, ModelProvider, Project, ProjectId, ProjectKind, Scope,
+    BlobStore, Caller, EventLog, FolderKey, Located, ModelProvider, Project, ProjectId, ProjectKind,
 };
 
+use crate::ledger::own_scope;
 use crate::never::{NeverAProject, never_a_project};
 use crate::protocol::{ApiError, NewFolder, ProjectFolder, Reply, code};
 use crate::providers::local;
@@ -50,13 +51,10 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// The folder of the project `project`, if it has one: its first, while a project has one.
-    pub(crate) async fn folder_of(
-        &self,
-        project: ProjectId,
-    ) -> Result<Option<ProjectFolder>, ApiError> {
+    /// The folder of the project `at`, if it has one: its first, while a project has one.
+    pub(crate) async fn folder_of(&self, at: Located) -> Result<Option<ProjectFolder>, ApiError> {
         Ok(self
-            .read_project_ledger(project)
+            .read_project_ledger(at)
             .await?
             .folder
             .map(|set| ProjectFolder {
@@ -65,15 +63,15 @@ where
             }))
     }
 
-    /// Whether the project `project` was removed, and not given a folder since.
-    pub(crate) async fn removed(&self, project: ProjectId) -> Result<bool, ApiError> {
-        Ok(self.read_project_ledger(project).await?.removed)
+    /// Whether the project `at` was removed, and not given a folder since.
+    pub(crate) async fn removed(&self, at: Located) -> Result<bool, ApiError> {
+        Ok(self.read_project_ledger(at).await?.removed)
     }
 
     /// The path of the project's folder on the computer this server's threads work on, if it
     /// has a folder; refused when the folder is checked out on another computer.
-    pub(crate) async fn folder_here(&self, project: ProjectId) -> Result<Option<String>, ApiError> {
-        let Some(folder) = self.folder_of(project).await? else {
+    pub(crate) async fn folder_here(&self, at: Located) -> Result<Option<String>, ApiError> {
+        let Some(folder) = self.folder_of(at).await? else {
             return Ok(None);
         };
         if folder.checkout.computer != self.computer() {
@@ -84,11 +82,8 @@ where
 
     /// The path of the project's folder here, as [`Server::folder_here`] finds it, once glave
     /// has looked that it is there: refused with `-32029` when it isn't anymore.
-    pub(crate) async fn folder_found(
-        &self,
-        project: ProjectId,
-    ) -> Result<Option<String>, ApiError> {
-        let Some(path) = self.folder_here(project).await? else {
+    pub(crate) async fn folder_found(&self, at: Located) -> Result<Option<String>, ApiError> {
+        let Some(path) = self.folder_here(at).await? else {
             return Ok(None);
         };
         match self.inner.harness.workspace().look(&path).await {
@@ -101,6 +96,11 @@ where
     /// unless it already is: what glave run in a folder does for that folder's project, so the
     /// folder a person last opened a project from is where its threads work.
     pub async fn keep_folder(&self, project: ProjectId, path: &str) -> Result<(), ApiError> {
+        // The folder's project is the local person's, in the server's own organization.
+        let at = Located {
+            org: self.inner.own,
+            project,
+        };
         let looked = self
             .inner
             .harness
@@ -109,7 +109,7 @@ where
             .await
             .map_err(|error| no_folder(path, &error))?;
         let source = source_of(&looked);
-        self.set_folder(project, source, looked.root, None)
+        self.set_folder(at, source, looked.root, None)
             .await
             .map(|_| ())
     }
@@ -121,9 +121,9 @@ where
 
     /// What the project's ledger says: its first folder's latest record, whether the project was
     /// removed since, and the `seq` of the ledger's last event.
-    async fn read_project_ledger(&self, project: ProjectId) -> Result<ProjectLedger, ApiError> {
+    async fn read_project_ledger(&self, at: Located) -> Result<ProjectLedger, ApiError> {
         // Glave's own: the project's ledger of folders.
-        let scope = Scope::glaves_own(self.inner.org, project);
+        let scope = own_scope(at);
         let mut read = ProjectLedger::default();
         let log = self.inner.harness.log();
         catch_up(log, &scope, Reserved::Project.id(), None, |page| {
@@ -152,16 +152,16 @@ where
     /// nothing, after anything others wrote to it meanwhile.
     pub(crate) async fn write_project_ledger<T: Payload>(
         &self,
-        project: ProjectId,
+        at: Located,
         next: impl Fn(&ProjectLedger) -> Result<Option<T>, ApiError>,
     ) -> Result<(), ApiError> {
         let ledger = Reserved::Project.id();
         // Glave's own: the project's ledger of folders.
-        let scope = Scope::glaves_own(self.inner.org, project);
+        let scope = own_scope(at);
         let (this, next) = (self, &next);
         let log = self.inner.harness.log();
         append_retrying(log, &scope, ledger, move || async move {
-            let current = this.read_project_ledger(project).await?;
+            let current = this.read_project_ledger(at).await?;
             let Some(payload) = next(&current)? else {
                 return Ok(None);
             };
@@ -173,7 +173,7 @@ where
                     .last
                     .map_or(Some(Seq::FIRST), Seq::next)
                     .ok_or_else(|| {
-                        ApiError::internal(&format!("the ledger of project {project} is full"))
+                        ApiError::internal(&format!("the ledger of project {} is full", at.project))
                     })?,
                 at: At::from(now),
             };
@@ -189,7 +189,7 @@ where
     /// the project was not removed since.
     pub(crate) async fn set_folder(
         &self,
-        project: ProjectId,
+        at: Located,
         source: FolderSource,
         path: String,
         by: Option<Principal>,
@@ -201,7 +201,7 @@ where
                 path,
             },
         };
-        self.write_project_ledger(project, |current| {
+        self.write_project_ledger(at, |current| {
             if !current.removed
                 && current
                     .folder
@@ -249,7 +249,7 @@ where
         let project = self
             .inner
             .projects
-            .folder(self.inner.org, &keys, &new)
+            .folder(self.org_of(caller), &keys, &new)
             .await?;
         if project.kind != ProjectKind::Project || project.owner != person {
             return Err(ApiError::new(
@@ -257,9 +257,11 @@ where
                 Sentence::FolderNotYours { folder: root },
             ));
         }
-        let folder = self
-            .set_folder(project.id, source, root, Some(person))
-            .await?;
+        let at = Located {
+            org: self.org_of(caller),
+            project: project.id,
+        };
+        let folder = self.set_folder(at, source, root, Some(person)).await?;
         Ok(Reply::Project {
             project,
             folder: Some(folder),
@@ -291,10 +293,11 @@ where
         let found = self
             .inner
             .projects
-            .find_folder(self.inner.org, &keys)
+            .find_folder(self.org_of(caller), &keys)
             .await?
             .filter(|project| project.kind == ProjectKind::Project && project.owner == person);
-        let (projects, gone) = self.listed(found.into_iter().collect()).await?;
+        let org = self.org_of(caller);
+        let (projects, gone) = self.listed(org, found.into_iter().collect()).await?;
         Ok(Reply::Projects { projects, gone })
     }
 

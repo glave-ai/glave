@@ -12,7 +12,7 @@ use std::path::Path;
 use std::sync::{MutexGuard, PoisonError};
 
 use glave_event::ThreadId;
-use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider, ProjectId};
+use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, Located, ModelProvider, ProjectId};
 
 use crate::protocol::{ApiError, Reply, Status, ThreadSummary, TrustAsk, TrustChoice, code};
 use crate::providers::local;
@@ -114,12 +114,12 @@ where
 
     /// What the project of `project` asks `caller` to trust now: only for the person on this
     /// computer, where someone answers, in a project with a folder here.
-    pub(crate) async fn trust_in(&self, caller: &Caller, project: ProjectId) -> Option<TrustAsk> {
+    pub(crate) async fn trust_in(&self, caller: &Caller, at: Located) -> Option<TrustAsk> {
         let host = self.inner.trust.as_ref()?;
         if !local(caller) || !self.inner.approvals.clients_answer() {
             return None;
         }
-        let folder = self.folder_here(project).await.ok().flatten()?;
+        let folder = self.folder_here(at).await.ok().flatten()?;
         match host.ask(Path::new(&folder)).await {
             Ok(ask) => ask,
             Err(error) => {
@@ -134,13 +134,13 @@ where
     pub(crate) async fn trust_on_page(
         &self,
         caller: &Caller,
-        project: ProjectId,
+        at: Located,
         threads: impl Iterator<Item = ThreadId>,
     ) -> Option<TrustAsk> {
         if !self.asks().any_raised(threads) {
             return None;
         }
-        self.trust_in(caller, project).await
+        self.trust_in(caller, at).await
     }
 
     /// `summary` with its project's ask `ask`, when it shows it, and waiting while it does.
@@ -189,10 +189,10 @@ where
         if !self.inner.approvals.clients_answer() {
             return Err(nothing_waits());
         }
-        let scope = self.scope_of(thread).await?;
+        let scope = self.scope_of(thread)?;
         let host = self.inner.trust.as_ref().ok_or_else(nothing_waits)?;
         let folder = self
-            .folder_here(scope.project())
+            .folder_here(scope.located())
             .await?
             .ok_or_else(nothing_waits)?;
         let folder = Path::new(&folder);

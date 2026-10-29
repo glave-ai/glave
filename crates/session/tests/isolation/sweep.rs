@@ -21,7 +21,7 @@ pub(super) type Finding = String;
 pub(super) async fn own_calls<L: EventLog + Clone + 'static>(world: &World<L>) -> Vec<Finding> {
     let mut found = Vec::new();
     for (index, person) in world.people.iter().enumerate() {
-        let org = &world.orgs[person.org];
+        let org = &world.orgs[person.server];
         let others = ids_of_others(world, index);
         for (method, templates) in table() {
             for template in templates.iter().filter(|t| placeholders(t).is_empty()) {
@@ -164,21 +164,22 @@ fn normalized(answer: &Value, filled: &[(String, String, &'static str)], nobody:
 pub(super) async fn sweep<L: EventLog + Clone + 'static>(world: &World<L>) -> Vec<Finding> {
     let mut found = Vec::new();
     for (a, attacker) in world.people.iter().enumerate() {
-        let org = &world.orgs[attacker.org];
+        let org = &world.orgs[attacker.server];
         let others = ids_of_others(world, a);
         for victim in world.people.iter().filter(|v| v.name != attacker.name) {
             for (method, templates) in table() {
                 for template in &templates {
-                    let codes = placeholders(template).iter().any(|(_, kind)| {
-                        matches!(
-                            kind,
-                            Kind::Code | Kind::Person | Kind::Invite | Kind::InviteCode
-                        )
-                    });
-                    // A code is its holder's to sign in or join with, and a person or an
-                    // invite is their organization's admins' to see; only another
-                    // organization's is someone else's.
-                    if codes && victim.org == attacker.org {
+                    let holes = placeholders(template);
+                    let named = |kinds: &[Kind]| holes.iter().any(|(_, k)| kinds.contains(k));
+                    // A link's code signs in the person on its server's computer, whoever
+                    // holds it there; only another server's is someone else's. An invite's
+                    // code is its holder's to join with, and a person or an invite is their
+                    // organization's admins' to see; only another organization's is someone
+                    // else's.
+                    if (named(&[Kind::Code]) && victim.server == attacker.server)
+                        || (named(&[Kind::Person, Kind::Invite, Kind::InviteCode])
+                            && victim.org == attacker.org)
+                    {
                         continue;
                     }
                     for variant in variants(template, attacker, victim) {
@@ -210,7 +211,7 @@ pub(super) async fn sweep<L: EventLog + Clone + 'static>(world: &World<L>) -> Ve
 pub(super) async fn snapshot<L: EventLog + Clone + 'static>(world: &World<L>) -> Vec<Value> {
     let mut seen = Vec::new();
     for person in &world.people {
-        let org = &world.orgs[person.org];
+        let org = &world.orgs[person.server];
         let mut mine = Vec::new();
         let mut call = async |method: &str, params: Value| {
             let answer = ask(org, &person.caller, request(method, params.clone())).await;

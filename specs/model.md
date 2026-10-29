@@ -161,7 +161,7 @@ What today's code doesn't do yet, so no one takes it as built.
 5. The admin methods are listing people, setting a role and inviting (`session.md`, "The organization's people"); invites are not emailed, and no screen opens a link yet; there are no admin screens (#222) and no `glave admin`, so where people sign in through an identity provider, the first roles are given through the session API from the server's computer until one comes.
 6. There is no theme yet: no organization name, logo or accent, and no choosing an accent or the assistant's name (#283, #287).
 7. Of "Identity", what is not built yet, each line edited by the pull request that builds it:
-   - A server serves only its own organization: every request's organization is the server's, and work over every organization runs for that one (#423).
+   - A request's organization comes from its caller and the session serves several on one server, each with its own people, ledgers and scheduler lease; but no transport yet sets any caller's but the server's own (#423), and the daily sweep of blobs runs for the server's own alone.
    - glave accounts for more than the local person: an invited person's passkey, several passkeys per person, email recovery and the new-passkey notice, and the email plug (#424).
    - Remove (#424).
    - Sign-up, membership in several organizations and the organization each request carries (#423).

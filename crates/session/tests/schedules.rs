@@ -8,8 +8,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use glave_event::{At, Opened, ScheduleId, When};
-use glave_ports::testing::{ManualClock, TempDir};
-use glave_ports::{EventLog, InMemoryLeases, InMemoryLog, Leases, ProjectId};
+use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
+use glave_ports::{
+    Caller, EventLog, Holder, InMemoryLeases, InMemoryLog, Leased, Leases, OrgId, ProjectId,
+};
 use glave_session::protocol::{Reply, Request, ScheduleInfo, code};
 use jiff::Timestamp;
 
@@ -331,5 +333,83 @@ fn schedules_fire_from_one_server_at_a_time() {
         set(&now, "2026-10-10T10:07:00Z");
         assert_eq!(tick(&two).await, 1);
         assert_eq!(tick(&two).await, 0, "each run once");
+    });
+}
+
+/// One server looks after the schedules of every organization its callers work in, each under
+/// that organization's own scheduler lease, and a run lands in its schedule's organization:
+/// someone in another organization sees nothing of it. A run for someone signed in from
+/// elsewhere does not start yet (#410), in any organization.
+#[test]
+fn one_server_keeps_each_organizations_schedules_under_its_own_lease() {
+    block_on!(async {
+        let mut first = setup();
+        let now = first.clock.clone();
+        let leases = Arc::new(InMemoryLeases::new(Arc::new(now.clone())));
+        first.leases = Some(Arc::clone(&leases) as Arc<dyn Leases>);
+        let (server, _, _, _dir) = first
+            .build_in_repository("schedule-orgs", InMemoryLog::new())
+            .await;
+        let third = OrgId::from_uuid(uuid::Uuid::from_u128(3));
+        let grace = Caller {
+            org: Some(third),
+            ..elsewhere()
+        };
+        let at_time = |text: &str| When::At(At::from(text.parse::<Timestamp>().unwrap()));
+        create(&server, at_time("2026-10-10T10:05:00Z"), 5_000)
+            .await
+            .unwrap();
+        let theirs = Request::ScheduleCreate {
+            project: None,
+            when: at_time("2026-10-10T10:05:00Z"),
+            prompt: "check the build".into(),
+            goal: false,
+            budget: 5_000,
+        };
+        let made = server.request_as(&grace, theirs).await;
+        assert!(made.is_ok(), "{made:?}");
+        set(&now, "2026-10-10T10:05:00Z");
+        assert_eq!(
+            tick(&server).await,
+            1,
+            "the run of the person on this computer"
+        );
+        let runs = async |caller: &Caller, project: Option<ProjectId>| {
+            let listed = Request::ThreadList {
+                project,
+                limit: None,
+                show: None,
+                cursor: None,
+            };
+            match server.request_as(caller, listed).await.unwrap() {
+                Reply::Threads { threads, .. } => threads.len(),
+                other => panic!("threads, not {other:?}"),
+            }
+        };
+        let project = Some(scope().project());
+        assert_eq!(
+            runs(&Caller::default(), project).await,
+            1,
+            "in its organization"
+        );
+        assert_eq!(runs(&grace, None).await, 0, "and in no other");
+        // The server holds each organization's scheduler lease apart.
+        let entropy = CountingEntropy::starting_at(0x7e);
+        let other = Holder::new(&now, &entropy).unwrap();
+        for org in [third, scope().org()] {
+            let taken = leases
+                .acquire(
+                    org,
+                    Leased::Scheduler,
+                    other,
+                    std::time::Duration::from_secs(60),
+                )
+                .await
+                .unwrap();
+            assert!(
+                taken.is_none(),
+                "each organization's lease is the first server's"
+            );
+        }
     });
 }

@@ -105,9 +105,11 @@ where
         if let Err(refused) = self.seen(caller).await {
             return Answered::Reply(Err(refused));
         }
-        if let Err(refused) = self.allow(caller, &request).await {
-            return Answered::Reply(Err(refused));
-        }
+        // The thread a request names keeps its place until it is answered.
+        let _held = match self.allow(caller, &request).await {
+            Ok(held) => held,
+            Err(refused) => return Answered::Reply(Err(refused)),
+        };
         self.wake_for(caller, &request);
         // A turn joins the caller's trace, when they sent one.
         let traced = &Caller {
@@ -147,10 +149,10 @@ where
                     role,
                 }))
             }
-            Request::PeopleList { after, limit } => self.list_people(after, limit).await,
+            Request::PeopleList { after, limit } => self.list_people(caller, after, limit).await,
             Request::RoleSet { person, role } => self.set_role(caller, person, role).await,
             Request::InviteCreate { role } => self.create_invite(caller, role).await,
-            Request::InviteList {} => self.list_invites().await,
+            Request::InviteList {} => self.list_invites(caller).await,
             Request::InviteRevoke { invite } => self.revoke_invite(caller, invite).await,
             Request::InviteAccept { code } => self.accept_invite(caller, code.expose()).await,
             Request::AwakeGet {} => Ok(self.awake().await),

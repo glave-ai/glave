@@ -2,12 +2,13 @@
 //! runs a grace to end on its own, then interrupts the rest, which end `interrupted`, not
 //! `cancelled`, since the person did not stop them.
 
+use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
 use std::sync::{MutexGuard, PoisonError};
 use std::time::Duration;
 
 use glave_harness::Cancel;
-use glave_ports::Lease;
+use glave_ports::{Lease, OrgId};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
@@ -62,17 +63,17 @@ impl<P, L, B> Server<P, L, B> {
         for task in tasks {
             let _ = task.await;
         }
-        // Another server may fire the organization's schedules at once.
-        let scheduling = self.scheduling().take();
-        if let Some(lease) = scheduling
-            && let Err(error) = self.inner.leases.release(&lease).await
-        {
-            tracing::warn!(%error, "the scheduler's lease could not be let go; it lapses on its own");
+        // Another server may fire each organization's schedules at once.
+        let scheduling = std::mem::take(&mut *self.scheduling());
+        for lease in scheduling.into_values() {
+            if let Err(error) = self.inner.leases.release(&lease).await {
+                tracing::warn!(%error, "a scheduler's lease could not be let go; it lapses");
+            }
         }
     }
 
-    /// The organization's scheduler lease, while this server holds it.
-    pub(crate) fn scheduling(&self) -> MutexGuard<'_, Option<Lease>> {
+    /// The scheduler lease of each organization whose schedules this server fires.
+    pub(crate) fn scheduling(&self) -> MutexGuard<'_, BTreeMap<OrgId, Lease>> {
         self.inner
             .scheduling
             .lock()

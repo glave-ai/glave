@@ -6,7 +6,7 @@ use std::sync::{Arc, PoisonError};
 
 use glave_event::ThreadId;
 use glave_harness::{Cancel, Commands, HarnessError, Inbox, Live, Thread};
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Standing};
+use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Standing};
 use jiff::Timestamp;
 use tokio::sync::watch;
 
@@ -38,6 +38,8 @@ pub(crate) enum Slot {
         inbox: Option<Inbox>,
         /// Its commands in the background, listed and stopped while the work holds it.
         commands: Arc<Commands>,
+        /// Where it is, which never changes, for glave's own work on it meanwhile.
+        at: Located,
     },
 }
 
@@ -66,8 +68,8 @@ where
             Some(Slot::Busy { .. }) => return Ok(()),
             None => {}
         }
-        let scope = self.scope_of(thread).await?;
-        let folder = self.folder_now(scope.project()).await?;
+        let scope = self.scope_of(thread)?;
+        let folder = self.folder_now(scope.located()).await?;
         let resumed = self
             .inner
             .harness
@@ -95,13 +97,10 @@ where
         Ok(())
     }
 
-    /// The folder of the project `project` on this computer, where its threads work: refused
-    /// with `-32029` when it isn't there anymore; none when it has none here.
-    async fn folder_now(
-        &self,
-        project: glave_ports::ProjectId,
-    ) -> Result<Option<String>, ApiError> {
-        match self.folder_found(project).await {
+    /// The folder of the project `at` on this computer, where its threads work: refused with
+    /// `-32029` when it isn't there anymore; none when it has none here.
+    async fn folder_now(&self, at: Located) -> Result<Option<String>, ApiError> {
+        match self.folder_found(at).await {
             Err(refused) if crate::gone::is_gone(&refused) => Err(refused),
             found => Ok(found.ok().flatten()),
         }
@@ -160,6 +159,7 @@ where
                     finished,
                     inbox,
                     commands: held.commands(),
+                    at: held.scope.located(),
                 };
                 threads.insert(thread, slot);
                 Ok(*held)
@@ -291,7 +291,7 @@ where
         F: Future<Output = (Thread, Result<R, HarnessError>)> + Send + 'static,
         R: Send + Sync + 'static,
     {
-        let scope = self.scope_of(thread).await?;
+        let scope = self.scope_of(thread)?;
         // Work keeps the computer awake as the person chose: read before anything is held.
         if purpose != Use::Manage
             && let Some(awake) = &self.inner.awake
@@ -310,7 +310,7 @@ where
         // Nothing but changing whether it is shown runs where its project's folder was.
         let folder = match purpose {
             Use::Manage => None,
-            Use::Work | Use::Steered | Use::Answer => self.folder_now(scope.project()).await?,
+            Use::Work | Use::Steered | Use::Answer => self.folder_now(scope.located()).await?,
         };
         self.load(thread).await?;
         self.refuse_early(thread, purpose)?;

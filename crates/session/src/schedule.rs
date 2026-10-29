@@ -6,17 +6,18 @@
 //! once, as soon as one does, never once per missed time (systemd's `Persistent=true`); a run
 //! that cannot start is skipped until the schedule's next time. Every run has a token budget.
 
+use std::collections::BTreeSet;
 use std::future::Future;
 use std::time::Duration;
 
 use glave_event::{At, Fired, ScheduleCreated, ScheduleDeleted, ScheduleId, ThreadId, When};
 use glave_harness::Goal;
-use glave_ports::{BlobStore, Caller, EventLog, Leased, ModelProvider, ProjectId, Scope};
+use glave_ports::{BlobStore, Caller, EventLog, Leased, Located, ModelProvider, OrgId, ProjectId};
 use jiff::Timestamp;
 
 use crate::choice::Choice;
 use crate::cron::Cron;
-use crate::ledger::Scheduled;
+use crate::ledger::{Scheduled, own_scope};
 use crate::protocol::{ApiError, Reply, ScheduleInfo, code};
 use crate::server::Server;
 use crate::tasks::Work;
@@ -67,7 +68,7 @@ where
                 Sentence::ScheduleNoPrompt,
             ));
         }
-        let project = self.project_for(caller, new.project).await?.0.id;
+        let project = self.project_for(caller, new.project).await?.1.located();
         if let Some(max) = self.inner.limits.max_schedules {
             let projects = self.read_ledgers_of(caller).await?;
             let now = self.inner.harness.clock().now();
@@ -156,7 +157,7 @@ where
     }
 
     /// The projects `caller` works in, each one's ledger read up to now.
-    async fn read_ledgers_of(&self, caller: &Caller) -> Result<Vec<ProjectId>, ApiError> {
+    async fn read_ledgers_of(&self, caller: &Caller) -> Result<Vec<Located>, ApiError> {
         let projects = self.projects_of(caller).await?;
         for project in &projects {
             self.catch_up(*project).await?;
@@ -172,22 +173,34 @@ where
     pub async fn tick(&self) -> Result<Vec<ThreadId>, ApiError> {
         // Threads idle for 30 minutes are let go even when nothing else happens.
         self.let_go_stale().await;
-        // One server of the organization fires its schedules: the holder of their lease.
-        if !self.fires().await? {
-            return Ok(Vec::new());
+        // One server fires each organization's schedules: the holder of its lease.
+        let projects = self.task_projects().await?;
+        let mut firing = BTreeSet::new();
+        for org in projects.iter().map(|at| at.org).collect::<BTreeSet<_>>() {
+            if self.fires(org).await? {
+                firing.insert(org);
+            }
         }
-        for project in self.task_projects().await? {
+        for project in projects.iter().filter(|at| firing.contains(&at.org)) {
             // A ledger that cannot be read now is read again on the next tick.
-            if let Err(error) = self.catch_up(project).await {
+            if let Err(error) = self.catch_up(*project).await {
+                let project = project.project;
                 tracing::warn!(%error, %project, "could not read the project's schedules");
             }
         }
         let now = self.inner.harness.clock().now();
-        let mut due: Vec<(ProjectId, ScheduleCreated, Timestamp)> = self
+        let mut due: Vec<(Located, ScheduleCreated, Timestamp)> = self
             .ledgers()
             .iter()
+            .filter(|(at, _)| firing.contains(&at.org))
             .flat_map(|(project, ledger)| {
-                ledger.schedules.values().filter_map(move |scheduled| {
+                // Only the person on this computer's run, as a run is theirs; one made by
+                // someone signed in from elsewhere waits for #410, leaving no thread behind.
+                let theirs = ledger
+                    .schedules
+                    .values()
+                    .filter(|it| it.created.by.is_none());
+                theirs.filter_map(move |scheduled| {
                     due(scheduled, now).map(|at| (*project, scheduled.created.clone(), at))
                 })
             })
@@ -214,24 +227,29 @@ where
         Ok(started)
     }
 
-    /// Whether this server fires the organization's schedules: it takes their lease, or renews
-    /// it, for [`SCHEDULING`]; none while another server holds it.
-    async fn fires(&self) -> Result<bool, ApiError> {
-        let (org, holder) = (self.inner.org, self.holder()?);
+    /// Whether this server fires `org`'s schedules: it takes their lease, or renews it, for
+    /// [`SCHEDULING`]; none while another server holds it.
+    async fn fires(&self, org: OrgId) -> Result<bool, ApiError> {
+        let holder = self.holder()?;
         let taken = self
             .inner
             .leases
             .acquire(org, Leased::Scheduler, holder, SCHEDULING)
             .await
             .map_err(|error| ApiError::internal(&error))?;
-        let fires = taken.is_some();
-        *self.scheduling() = taken;
-        Ok(fires)
+        let mut scheduling = self.scheduling();
+        if let Some(lease) = taken {
+            scheduling.insert(org, lease);
+            Ok(true)
+        } else {
+            scheduling.remove(&org);
+            Ok(false)
+        }
     }
 
     /// Holds back `schedule`'s run that was due at `at` and could not start, until the
     /// schedule's next time: in memory only, so a server started later tries it once more.
-    fn skip(&self, project: ProjectId, schedule: ScheduleId, at: Timestamp) {
+    fn skip(&self, project: Located, schedule: ScheduleId, at: Timestamp) {
         if let Some(scheduled) = self
             .ledgers()
             .get_mut(&project)
@@ -279,16 +297,20 @@ where
     /// works on a copy of the project's folder.
     async fn fire(
         &self,
-        project: ProjectId,
+        project: Located,
         schedule: &ScheduleCreated,
         at: Timestamp,
     ) -> Result<ThreadId, ApiError> {
-        let caller = Caller::default();
+        // As the person on this computer, whose run it is, in its project's organization.
+        let caller = Caller {
+            org: Some(project.org),
+            ..Caller::default()
+        };
         let thread = self
             .new_thread(
                 &caller,
                 // Glave's own: a schedule's run, in its project.
-                Scope::glaves_own(self.inner.org, project),
+                own_scope(project),
                 None,
                 true,
                 &Choice::default(),
