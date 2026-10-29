@@ -401,7 +401,7 @@ jobs:
   # glave.test=<run id>, and nothing labelled may be left.
   kubernetes:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       GLAVE_TEST_KUBE: "1"
       GLAVE_TEST_KUBE_RUNTIME_CLASS: glave-test-runc
@@ -446,8 +446,37 @@ jobs:
           image="$(docker inspect --format '{{index .RepoDigests 0}}' kind-registry:5000/glave-computer:test)"
           docker image ls kind-registry:5000/glave-computer --format 'glave-computer: {{.Size}}'
           echo "GLAVE_TEST_COMPUTER_IMAGE=$image" >> "$GITHUB_ENV"
-      # A runtime class on kind's own runc, so the real workers run under one (gVisor in kind
-      # is a follow-up): the class is set on the Pod and the VM-isolation policy accepts it.
+      # gVisor in the kind node, as GKE Sandbox runs every person's computer: runsc and its
+      # containerd shim from gVisor's release, pinned by its SHA-512, and a runtime class for it.
+      - name: gVisor in the kind node
+        env:
+          GVISOR_RELEASE: "20261019"
+          GVISOR_SHA512: bcbf431b2f9a039f6ab23bfe23986031130c0f149294978cedfd46910901deba0737d8642c848f597ed4b5c72324885db4d75ee86a1f6a90915fbe1f2f2eb915
+        run: |
+          mkdir -p "$RUNNER_TEMP/gvisor" && cd "$RUNNER_TEMP/gvisor"
+          curl -fsSL -o gvisor.tar.zstd "https://storage.googleapis.com/gvisor/releases/release/$GVISOR_RELEASE/x86_64/gvisor.tar.zstd"
+          echo "$GVISOR_SHA512  gvisor.tar.zstd" | sha512sum -c -
+          tar --zstd -xf gvisor.tar.zstd
+          for tool in runsc containerd-shim-runsc-v1; do
+            found="$(find . -type f -name "$tool" | head -n 1)"
+            docker cp "$found" "glave-control-plane:/usr/local/bin/$tool"
+            docker exec glave-control-plane chmod 0755 "/usr/local/bin/$tool"
+          done
+          docker exec glave-control-plane sh -c 'cat >> /etc/containerd/config.toml <<EOF
+          [plugins."io.containerd.cri.v1.runtime".containerd.runtimes.runsc]
+            runtime_type = "io.containerd.runsc.v1"
+          EOF
+          systemctl restart containerd'
+          kubectl wait --for=condition=Ready node --all --timeout=120s
+          kubectl apply -f - <<'EOF'
+          apiVersion: node.k8s.io/v1
+          kind: RuntimeClass
+          metadata:
+            name: glave-test-gvisor
+          handler: runsc
+          EOF
+      # A runtime class on kind's own runc, so the real workers run under one: the class is set
+      # on the Pod and the VM-isolation policy accepts it.
       - name: A runtime class for the real workers
         run: |
           kubectl apply -f - <<'EOF'
@@ -460,6 +489,15 @@ jobs:
       - run: cargo build -p glave
       # What passing tests print is shown too: how long a person's computer took to wake.
       - run: cargo nextest run -p glave-computer --all-features --success-output final -E 'test(/^worker::kubernetes::/)'
+      # A person's computer under gVisor, as GKE Sandbox runs it: its disk, walls and tools,
+      # then measured under runc and under gVisor (the wake, whether glave's sandbox starts,
+      # a build); the numbers are printed.
+      - name: A person's computer under gVisor, and measured under each runtime
+        env:
+          GLAVE_TEST_MEASURE: "1"
+        run: |
+          GLAVE_TEST_KUBE_RUNTIME_CLASS=glave-test-gvisor cargo nextest run -p glave-computer --all-features --success-output final -E 'test(/keeps_its_disk_while_it_sleeps|measured_under_its_runtime/)'
+          cargo nextest run -p glave-computer --all-features --success-output final -E 'test(/measured_under_its_runtime/)'
       - name: Disk space after the build
         if: always()
         run: df -h /

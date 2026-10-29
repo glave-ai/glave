@@ -5,7 +5,7 @@
 FROM cgr.dev/chainguard/wolfi-base:latest
 
 RUN apk add --no-cache \
-      bash build-base ca-certificates-bundle coreutils curl findutils git gnutar grep gzip jq \
+      bash bubblewrap build-base ca-certificates-bundle coreutils curl findutils git gnutar grep gzip jq \
       less nodejs-24 npm openssh-client procps python-3.13 ripgrep rustup sed unzip uv zip
 
 # fnm has no Wolfi package: its release, checked against the SHA-256 GitHub records for it.
