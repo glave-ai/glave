@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use glave_event::Permissions;
+use glave_event::{Permissions, Worded};
 use glave_ports::block_on;
 use glave_ports::testing::TempDir;
 
@@ -183,10 +183,11 @@ fn an_app_is_shown_each_thing_in_plain_words_and_until_it_answers_they_stay_off(
     );
     let project = repository(&dir, servers, Some(&config));
     let assessment = assess(project, &Record::default(), &rules);
+    // None of what a project brings is written with values: its English is its pattern.
     let plain: Vec<(&str, Option<&str>)> = assessment
         .plain()
         .iter()
-        .map(|plain| (plain.text, plain.detail.as_deref()))
+        .map(|plain| (plain.says.pattern(), plain.detail.as_deref()))
         .collect();
     assert_eq!(
         plain,

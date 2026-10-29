@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use glave_event::{HookPoint, Permissions};
-use glave_ports::settings::{Hook, point_name};
+use glave_ports::settings::{Brings, Hook, point_name};
 use serde_json::Value;
 
 use crate::policy::{self, ConfigFile, HooksFile, WebFile};
@@ -39,13 +39,13 @@ pub struct Item {
 /// is one to show (the command a server or hook runs, an address, a model).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Plain {
-    pub text: &'static str,
+    pub says: Brings,
     pub detail: Option<String>,
 }
 
 impl Plain {
-    fn new(text: &'static str, detail: Option<String>) -> Self {
-        Self { text, detail }
+    fn new(says: Brings, detail: Option<String>) -> Self {
+        Self { says, detail }
     }
 }
 
@@ -190,7 +190,7 @@ fn loosening(config: &ConfigFile) -> Option<Item> {
     let mut plain = Vec::new();
     if config.permissions == Some(Permissions::FullAccess) {
         parts.push("permissions = \"full-access\"");
-        plain.push(Plain::new(FULL_ACCESS, None));
+        plain.push(Plain::new(Brings::FullAccess, None));
     }
     let judge = config
         .judge_model
@@ -198,7 +198,7 @@ fn loosening(config: &ConfigFile) -> Option<Item> {
         .filter(|judge| judge.trim() != "off");
     let judge_part = judge.map(|judge| format!("judge_model = {judge:?}"));
     if let Some(judge) = judge {
-        plain.push(Plain::new(JUDGES, Some(judge.to_owned())));
+        plain.push(Plain::new(Brings::Judges, Some(judge.to_owned())));
     }
     let web_part = config.web.as_ref().and_then(WebFile::loosening);
     if let Some(web) = &config.web {
@@ -221,44 +221,33 @@ fn loosening(config: &ConfigFile) -> Option<Item> {
     })
 }
 
-/// What `permissions = "full-access"` does, in plain words.
-const FULL_ACCESS: &str = "Lets glave work outside the sandbox without asking";
-/// What a `judge_model` other than `off` does.
-const JUDGES: &str = "Chooses which model judges risky actions";
-
 /// What a `[web]` that reaches further than glave's default does, in plain words.
 fn web_plain(web: &WebFile) -> Vec<Plain> {
     let mut plain = Vec::new();
     if web.private_addresses == Some(true) {
-        plain.push(Plain::new(
-            "Lets glave fetch pages on private networks",
-            None,
-        ));
+        plain.push(Plain::new(Brings::PrivateNetworks, None));
     }
     if !web.allow.is_empty() {
-        plain.push(Plain::new(
-            "Lets glave fetch these sites, even on a private network",
-            Some(web.allow.join(", ")),
-        ));
+        plain.push(Plain::new(Brings::Sites, Some(web.allow.join(", "))));
     }
     plain
 }
 
 /// What a hook does, in plain words: when it runs. A matcher of `bash` alone runs it around
 /// each command; any other matcher, around some actions.
-fn hook_text(hook: &Hook) -> &'static str {
+fn hook_text(hook: &Hook) -> Brings {
     let matcher = hook.matcher.as_deref().map(str::trim);
     let every = matcher.is_none_or(|matcher| matcher.is_empty() || matcher == "*");
     let commands = matcher == Some("bash");
     match (hook.point, every, commands) {
-        (HookPoint::PreToolUse, _, true) => "Runs a hook before each command",
-        (HookPoint::PreToolUse, true, _) => "Runs a hook before each action",
-        (HookPoint::PreToolUse, ..) => "Runs a hook before some actions",
-        (HookPoint::PostToolUse, _, true) => "Runs a hook after each command",
-        (HookPoint::PostToolUse, true, _) => "Runs a hook after each action",
-        (HookPoint::PostToolUse, ..) => "Runs a hook after some actions",
-        (HookPoint::UserPromptSubmit, ..) => "Runs a hook when you send a message",
-        (HookPoint::Stop, ..) => "Runs a hook when glave finishes a reply",
+        (HookPoint::PreToolUse, _, true) => Brings::HookBeforeEachCommand,
+        (HookPoint::PreToolUse, true, _) => Brings::HookBeforeEachAction,
+        (HookPoint::PreToolUse, ..) => Brings::HookBeforeSome,
+        (HookPoint::PostToolUse, _, true) => Brings::HookAfterEachCommand,
+        (HookPoint::PostToolUse, true, _) => Brings::HookAfterEachAction,
+        (HookPoint::PostToolUse, ..) => Brings::HookAfterSome,
+        (HookPoint::UserPromptSubmit, ..) => Brings::HookOnMessage,
+        (HookPoint::Stop, ..) => Brings::HookOnReply,
     }
 }
 
@@ -280,9 +269,9 @@ fn servers(
         .map(|(name, definition)| {
             let remote = definition.get("url").is_some_and(Value::is_string);
             let text = if remote {
-                "Connects to a tool server"
+                Brings::ConnectsServer
             } else {
-                "Runs a tool server"
+                Brings::RunsServer
             };
             let item = Item {
                 id: format!("mcp:{name}"),

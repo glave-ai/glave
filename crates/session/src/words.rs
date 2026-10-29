@@ -15,7 +15,7 @@ pub(crate) use self::say::{caution_in, say, word};
 pub(crate) use self::sentence::Sentence;
 
 use self::events::{asks, event_in};
-use crate::protocol::{ApiError, AwakeInfo, Reply, SearchInfo, Told, Usage};
+use crate::protocol::{ApiError, AwakeInfo, Reply, SearchInfo, ThreadSummary, Told, Usage};
 
 /// Whether `answered` holds a sentence of the server's own, which a transport writes in the
 /// caller's language.
@@ -43,6 +43,8 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
         Ok(Reply::Steps { steps }) => steps.runs.iter().any(|run| run.sentence.translatable()),
         Ok(Reply::Plan { plan: Some(plan) }) => plan.sentence.translatable(),
         Ok(Reply::Events { events, .. }) => events.iter().any(asks),
+        Ok(Reply::Thread { thread }) => trusting(thread),
+        Ok(Reply::Threads { threads, .. }) => threads.iter().any(trusting),
         Ok(_) => false,
     }
 }
@@ -104,7 +106,31 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
                 }
             }
         }
+        Ok(Reply::Thread { thread }) => trust_in(thread, language),
+        Ok(Reply::Threads { threads, .. }) => {
+            for thread in threads {
+                trust_in(thread, language);
+            }
+        }
         Ok(_) => {}
+    }
+}
+
+/// Whether `thread` shows what its project asks to be trusted in the server's own words.
+fn trusting(thread: &ThreadSummary) -> bool {
+    thread
+        .trust
+        .iter()
+        .flat_map(|ask| &ask.items)
+        .any(|item| item.text.translatable())
+}
+
+/// Writes what `thread`'s project asks to be trusted in `language`.
+fn trust_in(thread: &mut ThreadSummary, language: Language) {
+    if let Some(ask) = &mut thread.trust {
+        for item in &mut ask.items {
+            item.text.translate(language);
+        }
     }
 }
 
