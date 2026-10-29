@@ -51,10 +51,34 @@ async fn threads<L: EventLog>(log: &L, ours: Scope, theirs: Scope, t: ThreadId) 
     log.append(&ours, &written)
         .await
         .map_err(|e| e.to_string())?;
+    unseen(log, ours, theirs, t).await?;
     let read = |scope: Scope| async move { log.read(&scope, t, None, usize::MAX).await };
-    let unseen = read(theirs).await.map_err(|e| e.to_string())?;
+    log.append(&theirs, &events(t, &[1])?).await.map_err(|e| {
+        format!("another organization's thread of the same id must start at 1: {e}")
+    })?;
     ensure(
-        unseen.is_empty(),
+        seqs(&read(ours).await.map_err(|e| e.to_string())?) == [1, 2],
+        "another organization's writes must not touch a thread",
+    )?;
+    let found = log
+        .search(&ours, "marigold", 10)
+        .await
+        .map_err(|e| e.to_string())?;
+    ensure(
+        found.len() == 1,
+        "an organization must still find its own words",
+    )
+}
+
+/// Nothing of a thread `ours` wrote is anywhere in `theirs`: not its events, where it is, its
+/// words or its view.
+async fn unseen<L: EventLog>(log: &L, ours: Scope, theirs: Scope, t: ThreadId) -> Verdict {
+    let read = log
+        .read(&theirs, t, None, usize::MAX)
+        .await
+        .map_err(|e| e.to_string())?;
+    ensure(
+        read.is_empty(),
         "another organization must not read a thread of the same id",
     )?;
     ensure(
@@ -104,22 +128,6 @@ async fn threads<L: EventLog>(log: &L, ours: Scope, theirs: Scope, t: ThreadId) 
     ensure(
         views.is_empty() && view.is_none(),
         "another organization must not see a thread's view",
-    )?;
-
-    log.append(&theirs, &events(t, &[1])?).await.map_err(|e| {
-        format!("another organization's thread of the same id must start at 1: {e}")
-    })?;
-    ensure(
-        seqs(&read(ours).await.map_err(|e| e.to_string())?) == [1, 2],
-        "another organization's writes must not touch a thread",
-    )?;
-    let found = log
-        .search(&ours, "marigold", 10)
-        .await
-        .map_err(|e| e.to_string())?;
-    ensure(
-        found.len() == 1,
-        "an organization must still find its own words",
     )
 }
 
@@ -186,7 +194,7 @@ async fn kept_projects(projects: &dyn Projects, ours: Scope, theirs: Scope) -> V
         .create(theirs.org(), &project)
         .await
         .map_err(|e| format!("another organization may keep a project of the same id: {e}"))?;
-    let at = project.created_at.clone();
+    let at = project.created_at;
     projects
         .rename(ours.org(), project.id, "garden", at)
         .await
