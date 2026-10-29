@@ -10,6 +10,7 @@ import {
 
 import { UnloadedComponent } from './components/unloaded/unloaded.component';
 import { WorkspaceComponent } from './components/workspace/workspace.component';
+import { adminGuard } from './guards/admin.guard';
 import { hasModelGuard } from './guards/has-model.guard';
 import { signedInGuard } from './guards/signed-in.guard';
 
@@ -69,6 +70,21 @@ export const routes: Routes = [
       {
         path: 'settings',
         loadChildren: () => import('./settings.routes').then((m) => m.SETTINGS_ROUTES),
+      },
+    ],
+  },
+  {
+    // Admin, a room of its own for the organization's Admins and Owners.
+    path: 'admin',
+    canActivate: [signedInGuard, adminGuard],
+    loadComponent: () => import('./components/admin/admin.component').then((m) => m.AdminComponent),
+    children: [
+      {
+        path: '',
+        pathMatch: 'full',
+        title: () => $localize`:@@routes.people:People · Admin · glave`,
+        loadComponent: () =>
+          import('./components/people/people.component').then((m) => m.PeopleComponent),
       },
     ],
   },

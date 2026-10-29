@@ -12,6 +12,17 @@
   >
     {{ copy.settings }}
   </a>
+  @if (admin()) {
+    <a
+      glzNavItem
+      data-testid="nav-admin"
+      [routerLink]="adminLink"
+      [icon]="icons.admin"
+      (click)="followed()"
+    >
+      {{ copy.admin }}
+    </a>
+  }
   <button glzNavItem data-testid="person-sign-out" [icon]="icons.signOut" (click)="signOut()">
     {{ copy.signOut }}
   </button>

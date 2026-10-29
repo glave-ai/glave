@@ -96,6 +96,10 @@ pub struct InviteCreated {
     pub by: Principal,
     /// When it stops working, opened or not.
     pub expires: At,
+    /// The address its link was emailed to, when it was: whom it waits for, and the email of
+    /// a glave account it makes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
 }
 
 /// An invite opened by `person`, and spent: their role is raised to `role`, the invite's,

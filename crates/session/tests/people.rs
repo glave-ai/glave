@@ -69,6 +69,11 @@ async fn people(server: &Tested<Shared>, caller: &Caller) -> Result<Vec<PersonIn
     }
 }
 
+/// Those of `listed` the people ledger records: all but the person on the server's computer.
+fn recorded(listed: Vec<PersonInfo>) -> Vec<PersonInfo> {
+    listed.into_iter().filter(|person| !person.local).collect()
+}
+
 async fn set(
     server: &Tested<Shared>,
     caller: &Caller,
@@ -119,7 +124,7 @@ fn a_member_may_not_list_people_or_give_roles_and_nothing_is_recorded() {
         }
         // Alan signs in, and is still a Member, as Ada is.
         refused_to_members(&people(&server, &alan).await.unwrap_err());
-        let listed = people(&server, &Caller::default()).await.unwrap();
+        let listed = recorded(people(&server, &Caller::default()).await.unwrap());
         let roles: Vec<_> = listed
             .iter()
             .map(|p| (p.subject.as_deref().unwrap_or_default(), p.role))
@@ -138,7 +143,7 @@ fn the_local_person_owns_the_organization_and_gives_the_first_roles() {
         let ada = signed_in("ada", &["engineering"]);
         assert_eq!(role(&server, &ada).await, Some(OrgRole::Member));
         assert_eq!(role(&server, &local_browser()).await, Some(OrgRole::Owner));
-        let listed = people(&server, &Caller::default()).await.unwrap();
+        let listed = recorded(people(&server, &Caller::default()).await.unwrap());
         assert_eq!(listed.len(), 1, "{listed:?}");
         let first = &listed[0];
         assert_eq!(first.id, id("ada"));
@@ -147,7 +152,7 @@ fn the_local_person_owns_the_organization_and_gives_the_first_roles() {
         let made = set(&server, &Caller::default(), "ada", OrgRole::Admin).await;
         assert_eq!(made.unwrap().role, OrgRole::Admin);
         assert_eq!(role(&server, &ada).await, Some(OrgRole::Admin));
-        assert_eq!(people(&server, &ada).await.unwrap().len(), 1);
+        assert_eq!(recorded(people(&server, &ada).await.unwrap()).len(), 1);
     });
 }
 
@@ -202,7 +207,8 @@ fn a_role_is_given_only_to_someone_who_signed_in() {
             .await
             .unwrap_err();
         assert_eq!(refused.code, code::NO_PERSON);
-        assert_eq!(people(&server, &Caller::default()).await.unwrap(), []);
+        let listed = people(&server, &Caller::default()).await.unwrap();
+        assert_eq!(recorded(listed), []);
     });
 }
 
@@ -225,7 +231,7 @@ fn a_person_is_recorded_again_only_when_their_token_says_something_new() {
         assert_eq!(read().await, 1);
         role(&server, &signed_in("ada", &["a", "b"])).await;
         assert_eq!(read().await, 2);
-        let listed = people(&server, &Caller::default()).await.unwrap();
+        let listed = recorded(people(&server, &Caller::default()).await.unwrap());
         assert_eq!(listed[0].groups, ["a", "b"]);
     });
 }
@@ -258,5 +264,73 @@ fn a_server_without_an_organization_says_no_role() {
         let organization = organization(&organization_dir, &Shared::default(), 1).await;
         // Over HTTP, `server/discover` without a sign-in is answered for no one.
         assert_eq!(role(&organization, &Caller::default()).await, None);
+    });
+}
+
+/// Each person listed says what they are to the caller, by the rules `role/set` and
+/// `person/remove` check: themselves, the roles the caller may give them, and whether the
+/// caller may remove them. The person on the server's computer is listed as its owner, and
+/// is never changed.
+#[test]
+fn each_person_is_listed_with_what_the_caller_may_change_of_them() {
+    let dir = folder("people-seen");
+    block_on!(async {
+        let server = organization(&dir, &Shared::default(), 1).await;
+        let (ada, alan, bea) = (
+            signed_in("ada", &[]),
+            signed_in("alan", &[]),
+            signed_in("bea", &[]),
+        );
+        for caller in [&ada, &alan, &bea] {
+            role(&server, caller).await;
+        }
+        let owner = Caller::default();
+        set(&server, &owner, "ada", OrgRole::Admin).await.unwrap();
+        set(&server, &owner, "bea", OrgRole::Owner).await.unwrap();
+        let seen = |listed: &[PersonInfo], who: PrincipalId| {
+            let person = listed.iter().find(|person| person.id == who).unwrap();
+            (person.you, person.roles.clone(), person.removable)
+        };
+        let all = vec![OrgRole::Owner, OrgRole::Admin, OrgRole::Member];
+
+        let by_owner = people(&server, &owner).await.unwrap();
+        let local = by_owner.iter().find(|person| person.local).unwrap();
+        assert_eq!(
+            (local.role, local.you, local.joined),
+            (OrgRole::Owner, true, None)
+        );
+        assert!(local.roles.is_empty() && !local.removable);
+        assert_eq!(seen(&by_owner, id("alan")), (false, all.clone(), true));
+        assert_eq!(seen(&by_owner, id("bea")), (false, all.clone(), true));
+
+        // An Admin changes Admins and Members alone, and never themselves or an Owner.
+        let by_admin = people(&server, &ada).await.unwrap();
+        assert_eq!(seen(&by_admin, id("ada")), (true, Vec::new(), false));
+        let given = vec![OrgRole::Admin, OrgRole::Member];
+        assert_eq!(seen(&by_admin, id("alan")), (false, given, true));
+        assert_eq!(seen(&by_admin, id("bea")), (false, Vec::new(), false));
+        assert_eq!(seen(&by_admin, local.id), (false, Vec::new(), false));
+
+        // The person on the server's computer owns it always: no one changes or removes them.
+        let refused = server
+            .request_as(
+                &bea,
+                Request::RoleSet {
+                    person: local.id,
+                    role: OrgRole::Member,
+                },
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(refused.code, code::NOT_ALLOWED);
+        let refused = server
+            .request_as(&bea, Request::PersonRemove { person: local.id })
+            .await
+            .unwrap_err();
+        assert_eq!(refused.code, code::NOT_ALLOWED);
+        // The answer to a change says the same of the person changed.
+        let alan_now = set(&server, &ada, "alan", OrgRole::Admin).await.unwrap();
+        assert_eq!(alan_now.roles, [OrgRole::Admin, OrgRole::Member]);
+        assert!(alan_now.removable && !alan_now.you);
     });
 }

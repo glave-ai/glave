@@ -1,0 +1,32 @@
+<glz-sidenav-layout
+  testId="admin"
+  [label]="copy.sideNav"
+  [resizeLabel]="copy.resize"
+  [resizeHint]="hint"
+  [shortcut]="shortcut"
+  [(open)]="navOpen"
+  [(width)]="navWidth"
+>
+  <nav glzSidenav class="side" [attr.aria-label]="copy.sideNav">
+    <a glzNavItem data-testid="admin-back" [routerLink]="chatsLink" (click)="navigated()">
+      <glz-icon glzNavItemStart class="glz-mirrored" [icon]="icons.back" />
+      {{ copy.back }}
+    </a>
+    <p class="heading">{{ copy.heading }}</p>
+    <glz-nav-list testId="admin-pages">
+      <a
+        glzNavItem
+        current
+        data-testid="admin-people"
+        [routerLink]="peopleLink"
+        [icon]="icons.people"
+        (click)="navigated()"
+      >
+        {{ copy.people }}
+      </a>
+    </glz-nav-list>
+  </nav>
+  <main id="content" class="content" tabindex="-1">
+    <router-outlet />
+  </main>
+</glz-sidenav-layout>

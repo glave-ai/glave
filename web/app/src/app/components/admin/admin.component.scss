@@ -1,0 +1,33 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+// One column: the way back to the chats, Admin's name, then its pages.
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-4);
+  height: 100%;
+  padding: var(--glz-inset-pane-block) var(--glz-inset-pane-inline);
+}
+
+.heading {
+  padding-inline: var(--glz-space-3);
+  font-size: var(--glz-text-lg);
+  font-weight: var(--glz-weight-bold);
+}
+
+.content {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.content:focus {
+  outline: none;
+}

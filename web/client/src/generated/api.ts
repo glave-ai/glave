@@ -316,6 +316,8 @@ export type InviteId = string;
 export type InviteInfo = {
   /** Who made it. */
   readonly by: Principal;
+  /** The address its link was emailed to, when it was. */
+  readonly email?: string | null;
   /** When it stops working, opened or not. */
   readonly expires: At;
   readonly id: InviteId;
@@ -477,13 +479,27 @@ export type PersonInfo = {
   /** The identity provider's groups they were in when they last signed in. */
   readonly groups?: readonly (string)[];
   readonly id: PrincipalId;
-  /** When they first signed in. */
-  readonly joined: At;
+  /**
+   * When they first signed in; none for the person on the server's computer, who never
+   * joins: they own its organization.
+   */
+  readonly joined?: At | null;
+  /** Whether they are the person on the server's computer, its organization's owner always. */
+  readonly local?: boolean;
   /** Their name, as the identity provider's token said it, when it did. */
   readonly name?: string | null;
+  /** Whether the caller may take them out of the organization. */
+  readonly removable?: boolean;
   readonly role: OrgRole;
+  /**
+   * The roles the caller may give them now, theirs among them; none when the caller may
+   * not change their role.
+   */
+  readonly roles?: readonly (OrgRole)[];
   /** Who they are to the company login: its id for them; none with a glave account. */
   readonly subject?: string | null;
+  /** Whether they are the caller. */
+  readonly you?: boolean;
 };
 
 /** A thread's plan: its latest `plan.updated`, by the model or the person. */

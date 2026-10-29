@@ -32,6 +32,7 @@ where
             org,
             alone,
         } = self.acting(caller).await?;
+        self.refuse_local(org, person)?;
         self.record_person(org, |people| {
             // Removed already: nothing to record, and what follows is done again.
             if people.removed(person) {

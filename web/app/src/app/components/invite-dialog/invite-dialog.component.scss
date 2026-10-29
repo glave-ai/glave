@@ -1,0 +1,15 @@
+.error {
+  color: var(--glz-color-danger);
+}
+
+// The link's field takes the room, its copy button at its end, on the field's line.
+.link {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--glz-space-2);
+}
+
+.link glz-form-field {
+  flex: 1;
+  min-width: 0;
+}

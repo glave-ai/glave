@@ -76,6 +76,8 @@ sentences! {
         "your account belongs to no organization here: ask its admins for an invite",
     Removed = "removed"
         "you're no longer in this organization: ask its admins for an invite",
+    LocalOwner = "local-owner"
+        "the person who runs this glave always owns it, so their role stays as it is",
     LastOwner = "last-owner"
         "this is the organization's only owner: make someone else an owner first",
     LastPasskey = "last-passkey"

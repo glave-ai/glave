@@ -37,6 +37,7 @@ async fn serve(dir: &Path, reached: bool, token: &LocalToken) -> Served {
     );
     let mut setup = Setup::asking(Vec::new(), Answering::Clients);
     setup.browsers = Some(Arc::new(browsers.await.unwrap()));
+    setup.mail = Some(Arc::new(glave_ports::testing::Outbox::default()));
     if reached {
         let directory = Arc::new(store.directory());
         let accounts = Accounts::new(store.log(), directory, server, &origin, Arc::new(clock));
@@ -82,6 +83,14 @@ async fn sign_in(served: &Served, device: &mut Authenticator) -> Value {
     asked(&mut anyone, &get).await["session"].clone()
 }
 
+/// The first of a `people/list` answer's people who is not the person on the server's
+/// computer.
+fn invited(people: &Value) -> &Value {
+    let listed = people["people"].as_array().unwrap();
+    let theirs = listed.iter().find(|person| person.get("local").is_none());
+    theirs.unwrap()
+}
+
 fn token_of(signed_in: &Value) -> Option<String> {
     signed_in["session"].as_str().map(str::to_owned)
 }
@@ -111,8 +120,10 @@ fn an_invite_makes_a_passkey_whose_person_joins_with_its_role_once() {
             },
         )
         .await;
-        assert_eq!(people["people"][0]["role"], json!("admin"), "{people}");
-        assert!(people["people"][0].get("subject").is_none());
+        let theirs = invited(&people);
+        assert_eq!(theirs["role"], json!("admin"), "{people}");
+        assert_eq!(theirs["you"], json!(true), "{people}");
+        assert!(theirs.get("subject").is_none());
         let start = json!({"method": "thread/start", "params": {}});
         let start: Request = serde_json::from_value(start).unwrap();
         let started = asked(&mut grace, &start).await;
@@ -276,7 +287,7 @@ fn someone_removed_is_signed_in_to_nothing_here() {
             limit: None,
         };
         let people = asked(&mut here, &listed).await;
-        let person = serde_json::from_value(people["people"][0]["id"].clone()).unwrap();
+        let person = serde_json::from_value(invited(&people)["id"].clone()).unwrap();
         let removed = asked(&mut here, &Request::PersonRemove { person }).await;
         assert_eq!(removed, json!({}));
         let refused = asked(&mut grace, &Request::PasskeyList {}).await;
@@ -305,6 +316,39 @@ fn a_server_no_one_else_reaches_invites_no_one() {
         )
         .await;
         assert_eq!(refused, json!(code::NOT_ALLOWED));
+        served.close().await;
+    });
+}
+
+#[test]
+fn an_account_an_emailed_invite_makes_has_the_address_it_was_sent_to() {
+    block_on!(async {
+        let dir = folder("accounts-emailed");
+        let token = LocalToken::new([17; 32]);
+        let served = serve(&dir, true, &token).await;
+        let mut here = Web::new(&served, Some(token.reveal().to_owned()));
+        let create = Request::InviteCreate {
+            role: OrgRole::Member,
+            email: Some("grace@example.com".into()),
+        };
+        let invited = asked(&mut here, &create).await;
+        assert_eq!(invited["invite"]["email"], json!("grace@example.com"));
+        let code = Secret::new(invited["code"].as_str().unwrap());
+        let mut phone = Authenticator::new(ORIGIN).unwrap();
+        let joined = join(&served, code, &mut phone).await;
+        assert!(token_of(&joined).is_some(), "{joined}");
+        let listed = Request::PeopleList {
+            after: None,
+            limit: None,
+        };
+        let people = asked(&mut here, &listed).await;
+        let emails: Vec<_> = people["people"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|person| person["email"].clone())
+            .collect();
+        assert!(emails.contains(&json!("grace@example.com")), "{people}");
         served.close().await;
     });
 }

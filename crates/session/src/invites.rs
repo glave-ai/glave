@@ -14,7 +14,7 @@ use glave_ports::{BlobStore, Caller, EventLog, Mail, MailError, Mailer, ModelPro
 use jiff::{SignedDuration, Timestamp};
 
 use crate::people::{People, Permit, joined_of, no_such_person, permits};
-use crate::protocol::{ApiError, InviteInfo, Reply, code};
+use crate::protocol::{ApiError, InviteInfo, PersonInfo, Reply, code};
 use crate::server::Server;
 use crate::words::{Language, Sentence, say};
 
@@ -63,19 +63,20 @@ impl Waiting {
             by: self.created.by.clone(),
             made: self.made,
             expires: self.created.expires,
+            email: self.created.email.clone(),
         }
     }
 }
 
 impl People {
-    /// The invite whose code's hash is `presented` and that opens at `now`, with the role it
-    /// gives: live, and giving no more than its maker may give now.
+    /// The invite whose code's hash is `presented` and that opens at `now`: live, and giving
+    /// no more than its maker may give now.
     pub(crate) fn opens(
         &self,
         presented: &str,
         now: Timestamp,
         local: Option<PrincipalId>,
-    ) -> Option<(InviteId, OrgRole)> {
+    ) -> Option<&InviteCreated> {
         self.invites
             .waiting
             .values()
@@ -84,7 +85,7 @@ impl People {
                     && now < it.created.expires.timestamp()
                     && self.may_give(&it.created.by, it.created.role, local)
             })
-            .map(|it| (it.created.invite, it.created.role))
+            .map(|it| &it.created)
     }
 
     /// Whether `by` may still give `role` by an invite: the local person, the organization's
@@ -141,6 +142,7 @@ where
             role,
             by: Principal::person(self.person_of(caller)?),
             expires: At::from(expires),
+            email: sending.as_ref().map(|(_, _, to)| (*to).to_owned()),
         };
         let org = self.org_of(caller);
         self.record_person(org, |people| {
@@ -259,11 +261,11 @@ where
         let local = self.inner.harness.person();
         let org = self.org_of(caller);
         self.record_people(org, |people, next| {
-            let (invite, role) = people.opens(&presented, now, local).ok_or_else(gone)?;
+            let opened = people.opens(&presented, now, local).ok_or_else(gone)?;
             let accepted = InviteAccepted {
-                invite,
+                invite: opened.invite,
                 person,
-                role,
+                role: opened.role,
             };
             // Someone removed, or not yet recorded, joins with it.
             if people.has(person) {
@@ -278,6 +280,7 @@ where
         .await?;
         let person = self
             .people(org, |people| people.info(person))
+            .map(|info| PersonInfo { you: true, ..info })
             .ok_or_else(|| no_such_person(person))?;
         Ok(Reply::Person { person })
     }

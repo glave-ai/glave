@@ -200,8 +200,56 @@ impl People {
             subject: kept.joined.subject.clone(),
             groups: kept.joined.profile.groups.clone(),
             role: kept.role.unwrap_or_default(),
-            joined: kept.at,
+            joined: Some(kept.at),
+            local: false,
+            you: false,
+            roles: Vec::new(),
+            removable: false,
         })
+    }
+
+    /// `info` as `viewer` sees it: whether it is them, and what they may change of it, as
+    /// `role/set` and `person/remove` would let them.
+    pub(crate) fn seen(&self, mut info: PersonInfo, viewer: &Viewer) -> PersonInfo {
+        info.you = Some(info.id) == viewer.me;
+        let changeable = !info.you
+            && !info.local
+            && viewer.theirs.contains(&Permit::People)
+            && (info.role != OrgRole::Owner || viewer.theirs.contains(&Permit::Owners))
+            && !self.last_owner(info.id, viewer.alone);
+        info.roles = match (changeable, viewer.theirs.contains(&Permit::Owners)) {
+            (false, _) => Vec::new(),
+            (true, true) => vec![OrgRole::Owner, OrgRole::Admin, OrgRole::Member],
+            (true, false) => vec![OrgRole::Admin, OrgRole::Member],
+        };
+        info.removable = changeable;
+        info
+    }
+}
+
+/// Who asks of the organization's people: who they are (the local person by their id too),
+/// what their role permits, and whether no local person owns the organization.
+pub(crate) struct Viewer {
+    me: Option<PrincipalId>,
+    theirs: &'static [Permit],
+    alone: bool,
+}
+
+/// The person on the server's computer, `local`, as the organization's people are listed: its
+/// owner always, never recorded.
+fn local_info(local: PrincipalId) -> PersonInfo {
+    PersonInfo {
+        id: local,
+        name: None,
+        email: None,
+        subject: None,
+        groups: Vec::new(),
+        role: OrgRole::Owner,
+        joined: None,
+        local: true,
+        you: false,
+        roles: Vec::new(),
+        removable: false,
     }
 }
 
@@ -328,23 +376,53 @@ where
         limit: Option<usize>,
     ) -> Result<Reply, ApiError> {
         let org = self.org_of(caller);
-        self.catch_up_people(org).await?;
+        let viewer = self.viewer(caller).await?;
         let limit = limit.unwrap_or(LISTED).clamp(1, MOST_LISTED);
+        // The person on the server's computer owns its own organization, and is listed there.
+        let local = self
+            .inner
+            .harness
+            .person()
+            .filter(|_| org == self.inner.own);
         let people = self.people(org, |held| {
             if let Some(after) = after
                 && !held.has(after)
+                && Some(after) != local
             {
                 return Err(no_such_person(after));
             }
-            Ok(held
+            let mut listed: BTreeMap<PrincipalId, PersonInfo> = held
                 .known
                 .keys()
-                .filter(|person| after.is_none_or(|after| **person > after))
-                .take(limit)
                 .filter_map(|person| held.info(*person))
+                .map(|info| (info.id, info))
+                .collect();
+            if let Some(local) = local {
+                listed.insert(local, local_info(local));
+            }
+            Ok(listed
+                .into_values()
+                .filter(|info| after.is_none_or(|after| info.id > after))
+                .take(limit)
+                .map(|info| held.seen(info, &viewer))
                 .collect())
         })?;
         Ok(Reply::People { people })
+    }
+
+    /// Who `caller` is to the organization's people, once their role permits listing them.
+    pub(crate) async fn viewer(&self, caller: &Caller) -> Result<Viewer, ApiError> {
+        let acting = self.acting(caller).await?;
+        Ok(self.seeing(caller, &acting))
+    }
+
+    /// Who `caller`, `acting` as they are, is to the organization's people.
+    pub(crate) fn seeing(&self, caller: &Caller, acting: &Acting) -> Viewer {
+        Viewer {
+            me: caller.person.or_else(|| self.inner.harness.person()),
+            theirs: acting.theirs,
+            alone: acting.alone,
+        }
     }
 
     /// What an admin method that changes someone knows of `caller` before it acts, once their
@@ -368,12 +446,15 @@ where
         person: PrincipalId,
         role: OrgRole,
     ) -> Result<Reply, ApiError> {
+        let acting = self.acting(caller).await?;
+        let viewer = self.seeing(caller, &acting);
         let Acting {
             theirs,
             by,
             org,
             alone,
-        } = self.acting(caller).await?;
+        } = acting;
+        self.refuse_local(org, person)?;
         self.record_person(org, |people| {
             if !people.has(person) {
                 return Err(no_such_person(person));
@@ -393,9 +474,20 @@ where
         })
         .await?;
         let person = self
-            .people(org, |people| people.info(person))
+            .people(org, |people| {
+                people.info(person).map(|info| people.seen(info, &viewer))
+            })
             .ok_or_else(|| no_such_person(person))?;
         Ok(Reply::Person { person })
+    }
+
+    /// Refuses to change `person` when they are the person on the server's computer, who
+    /// always owns its own organization.
+    pub(crate) fn refuse_local(&self, org: OrgId, person: PrincipalId) -> Result<(), ApiError> {
+        if org == self.inner.own && self.inner.harness.person() == Some(person) {
+            return Err(ApiError::new(code::NOT_ALLOWED, Sentence::LocalOwner));
+        }
+        Ok(())
     }
 
     /// Reads whatever was added to `org`'s people ledger since this server last looked.

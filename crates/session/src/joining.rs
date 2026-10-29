@@ -57,10 +57,7 @@ where
         let now = self.inner.harness.clock().now();
         self.catch_up_people(org).await?;
         let local = self.inner.harness.person();
-        if self
-            .people(org, |people| people.opens(&presented, now, local))
-            .is_none()
-        {
+        if self.people(org, |people| people.opens(&presented, now, local).is_none()) {
             return Err(gone());
         }
         let (person, browsers) = accounts.made().await?;
@@ -110,17 +107,21 @@ where
         let now = self.inner.harness.clock().now();
         let local = self.inner.harness.person();
         self.record_people(joining.org, |people, next| {
-            let (invite, role) = people.opens(&joining.code, now, local).ok_or_else(gone)?;
+            let opened = people.opens(&joining.code, now, local).ok_or_else(gone)?;
+            // The address the invite's link was emailed to, which they opened: theirs.
             let joined = PersonJoined {
                 person: joining.person,
                 issuer: None,
                 subject: None,
-                profile: Profile::default(),
+                profile: Profile {
+                    email: opened.email.clone(),
+                    ..Profile::default()
+                },
             };
             let accepted = InviteAccepted {
-                invite,
+                invite: opened.invite,
                 person: joining.person,
-                role,
+                role: opened.role,
             };
             let after = next.saturating_add(1);
             Ok(Some(vec![
