@@ -1,7 +1,7 @@
 //! The people of a deployment and their computers on one cluster (`specs/computers.md`, "A
-//! person's computer in the cloud"): each person's computer woken when they open the app or a
-//! turn needs it, once however many ask at the same time, and the workspace of their home on
-//! it handed to whatever works there; kept awake while a turn or task holds it. A computer
+//! person's computer in the cloud"): each person's computer handed to whatever works there as
+//! planned, asleep or awake, and woken only by the first call that needs it (decision 6), once
+//! however many ask at the same time; kept awake while a turn or task holds it. A computer
 //! sleeps on its own once nothing has asked it anything for 10 minutes and no command runs
 //! there in the background (`computer serve --idle`); the next ask finds it ended and wakes it
 //! again.
@@ -10,27 +10,25 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use tokio::time::Instant;
-
 use glave_ports::computer::{
-    ComputerError, Computers, Environment, Home, Image, Limits, Network, Sources,
-    State as ComputerState, WorkspaceInfo,
+    ComputerError, ComputerId, Computers, Environment, Home, Image, Limits, Network, Sources,
+    State as ComputerState, WorkspaceId, WorkspaceInfo,
 };
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
+use tokio::time::Instant;
 
 use super::Kubernetes;
 use super::home::PersonComputer;
-use super::objects::{IDLE_MINUTES, PERSON_HOME};
+use super::objects::{IDLE_MINUTES, PERSON_HOME, PERSON_SCRATCH};
 use crate::worker::limits::pinned;
-use crate::{WorkerComputers, WorkerCredentials};
+use crate::{Wake, Waking, WorkerComputers, WorkerCredentials};
 
 /// How long a wake may take before whoever waits on it gives up: a Pod waits up to five
 /// minutes for a node and has two more to take glave in, so minutes, never more.
 const WAKE_WAIT: Duration = Duration::from_mins(10);
-/// How long after a failed wake the app opening does not start another: a broken image or a
-/// full cluster is not tried again at every list the app reads. A turn that needs the
-/// computer always tries again.
+/// How long after a failed wake a call is told it failed rather than starting another: a broken
+/// image or a full cluster is not tried again at every tool call of a turn.
 const RETRY_AFTER: Duration = Duration::from_mins(1);
 /// The most people whose computers one server keeps track of at once; past it, those asleep
 /// are let go of, and found again when they come back.
@@ -46,7 +44,7 @@ enum State {
     Waking,
     /// Awake: the workspace of its home.
     Awake(WorkspaceInfo),
-    /// The last wake failed, when, and why; the next one tries again.
+    /// The last wake failed, when, and why; a call a minute later or more tries again.
     Failed(Instant, String),
 }
 
@@ -57,8 +55,10 @@ impl State {
     }
 }
 
-/// One person's computer, and the wake running for it, if one is.
+/// One person's computer, as planned and as it is, and the wake running for it, if one is.
 struct Person {
+    /// The computer as whatever works there holds it, waking at its first call that needs it.
+    planned: Home,
     /// Its Pod and disk, asked directly whether it runs when its connection fails.
     pod: PersonComputer,
     computers: Arc<WorkerComputers>,
@@ -177,11 +177,27 @@ impl People {
             self.limits.clone(),
             WorkerCredentials::None,
         );
-        let person = Arc::new(Person {
-            pod: computer,
-            computers: Arc::new(computers),
-            state: watch::Sender::new(State::Asleep),
-            waking: Mutex::new(None),
+        let home = planned_home()?;
+        let person = Arc::new_cyclic(|me: &std::sync::Weak<Person>| {
+            let (me, environment) = (std::sync::Weak::clone(me), self.environment.clone());
+            let wake: Wake = Arc::new(move || {
+                let (me, environment) = (std::sync::Weak::clone(&me), environment.clone());
+                Box::pin(async move {
+                    let person = me.upgrade().ok_or_else(|| {
+                        ComputerError::Failed(
+                            "your computer is no longer kept by this server".into(),
+                        )
+                    })?;
+                    awake(&person, &environment).await
+                })
+            });
+            Person {
+                planned: Waking::home(wake, home, PERSON_SCRATCH),
+                pod: computer,
+                computers: Arc::new(computers),
+                state: watch::Sender::new(State::Asleep),
+                waking: Mutex::new(None),
+            }
         });
         if held.len() >= MAX_PEOPLE {
             // Kept: any awake or waking, and any something still holds, such as a turn.
@@ -192,34 +208,6 @@ impl People {
         }
         held.insert(key.to_owned(), Arc::clone(&person));
         Ok(person)
-    }
-
-    /// Starts waking the computer of the person `key` names, unless it is awake or waking
-    /// already, or its last wake failed less than a minute ago, and returns without
-    /// waiting.
-    pub fn wake(&self, key: &str) -> Result<(), ComputerError> {
-        self.start(&self.person(key)?, Some(RETRY_AFTER));
-        Ok(())
-    }
-
-    /// Starts a wake unless the computer is awake or waking, or its last wake failed less
-    /// than `retry_after` ago.
-    fn start(&self, person: &Arc<Person>, retry_after: Option<Duration>) {
-        let starts = person.state.send_if_modified(|state| match state {
-            State::Failed(at, _) if retry_after.is_some_and(|after| at.elapsed() < after) => false,
-            State::Asleep | State::Failed(..) => {
-                *state = State::Waking;
-                true
-            }
-            State::Waking | State::Awake(_) => false,
-        });
-        if starts {
-            let task = tokio::spawn(woken(Arc::clone(person), self.environment.clone()));
-            let mut waking = person.waking.lock().unwrap_or_else(PoisonError::into_inner);
-            if let Some(before) = waking.replace(task) {
-                before.abort();
-            }
-        }
     }
 
     /// Keeps the computer of the person `key` names from sleeping while what it answers is
@@ -242,46 +230,93 @@ impl People {
         })))
     }
 
-    /// The computer of the person `key` names, woken if it sleeps, and the workspace of their
-    /// home on it: once awake, at once. One that ended on its own (idle, or its node went) is
-    /// let go of and woken again.
-    pub async fn home(&self, key: &str) -> Result<Home, ComputerError> {
-        let person = self.person(key)?;
-        let was = person.state.borrow().clone();
-        if let State::Awake(home) = was
-            && !gone(&person, &home).await
-        {
-            return Ok(Home {
-                computers: Arc::clone(&person.computers) as Arc<dyn Computers>,
-                home,
-            });
+    /// The computer of the person `key` names and the workspace of their home on it, as
+    /// planned: at once, asleep or awake. The first call on it that needs the computer wakes
+    /// it, if it sleeps, and waits for that wake, which every other call asking meanwhile
+    /// shares; one that ended on its own (idle, or its node went) is woken again.
+    pub fn home(&self, key: &str) -> Result<Home, ComputerError> {
+        Ok(self.person(key)?.planned.clone())
+    }
+}
+
+/// The home of a person's computer as planned before it wakes: the same id each time it is
+/// asked for, so whatever works there finds it the same computer however often it slept.
+fn planned_home() -> Result<WorkspaceInfo, ComputerError> {
+    Ok(WorkspaceInfo {
+        id: WorkspaceId::from_uuid(crate::local::new_id()?),
+        computer: ComputerId::from_uuid(crate::local::new_id()?),
+        root: PERSON_HOME.into(),
+        sources: Sources::Folder {
+            path: PERSON_HOME.into(),
+        },
+        home: Some(PERSON_HOME.into()),
+        temp: None,
+    })
+}
+
+/// Starts waking `person`'s computer from `environment`, unless it is awake or waking.
+fn start(person: &Arc<Person>, environment: &Environment) {
+    let starts = person.state.send_if_modified(|state| match state {
+        State::Asleep | State::Failed(..) => {
+            *state = State::Waking;
+            true
         }
-        self.start(&person, None);
-        let mut state = person.state.subscribe();
-        let woke = tokio::time::timeout(WAKE_WAIT, state.wait_for(State::settled)).await;
-        let now = match woke {
-            Ok(Ok(state)) => state.clone(),
-            Ok(Err(_)) => State::Failed(Instant::now(), "its wake was stopped".into()),
-            Err(_) => State::Failed(
-                Instant::now(),
-                format!(
-                    "it was still waking after {}",
-                    glave_ports::spoken(WAKE_WAIT)
-                ),
+        State::Waking | State::Awake(_) => false,
+    });
+    if starts {
+        let task = tokio::spawn(woken(Arc::clone(person), environment.clone()));
+        let mut waking = person.waking.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(before) = waking.replace(task) {
+            before.abort();
+        }
+    }
+}
+
+/// `person`'s computer awake, woken from `environment` if it sleeps, and the workspace of
+/// their home on it: once awake, at once. One that ended on its own is let go of and woken
+/// again.
+async fn awake(person: &Arc<Person>, environment: &Environment) -> Result<Home, ComputerError> {
+    let was = person.state.borrow().clone();
+    if let State::Awake(home) = was
+        && !gone(person, &home).await
+    {
+        return Ok(Home {
+            computers: Arc::clone(&person.computers) as Arc<dyn Computers>,
+            home,
+        });
+    }
+    if let State::Failed(at, why) = &*person.state.borrow()
+        && at.elapsed() < RETRY_AFTER
+    {
+        return Err(ComputerError::Failed(format!(
+            "your computer could not wake: {why}"
+        )));
+    }
+    start(person, environment);
+    let mut state = person.state.subscribe();
+    let woke = tokio::time::timeout(WAKE_WAIT, state.wait_for(State::settled)).await;
+    let now = match woke {
+        Ok(Ok(state)) => state.clone(),
+        Ok(Err(_)) => State::Failed(Instant::now(), "its wake was stopped".into()),
+        Err(_) => State::Failed(
+            Instant::now(),
+            format!(
+                "it was still waking after {}",
+                glave_ports::spoken(WAKE_WAIT)
             ),
-        };
-        match now {
-            State::Awake(home) => Ok(Home {
-                computers: Arc::clone(&person.computers) as Arc<dyn Computers>,
-                home,
-            }),
-            State::Failed(_, why) => Err(ComputerError::Failed(format!(
-                "your computer could not wake: {why}"
-            ))),
-            State::Asleep | State::Waking => Err(ComputerError::Failed(
-                "your computer went to sleep as it woke".into(),
-            )),
-        }
+        ),
+    };
+    match now {
+        State::Awake(home) => Ok(Home {
+            computers: Arc::clone(&person.computers) as Arc<dyn Computers>,
+            home,
+        }),
+        State::Failed(_, why) => Err(ComputerError::Failed(format!(
+            "your computer could not wake: {why}"
+        ))),
+        State::Asleep | State::Waking => Err(ComputerError::Failed(
+            "your computer went to sleep as it woke".into(),
+        )),
     }
 }
 
