@@ -102,6 +102,7 @@ where
     /// project, and so does another person's thread than the one the harness works for, who
     /// trusted the project: no settings, no tools, no hooks.
     pub(crate) async fn bring(&self, thread: &mut Thread) -> Result<(), HarnessError> {
+        self.come_home(thread).await?;
         thread.defaults = self.defaults();
         let brought = match (&self.project_folders, &thread.project) {
             (Some(host), Some(project)) if self.trusting(thread.for_) => {
