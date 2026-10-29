@@ -462,11 +462,15 @@ jobs:
             docker cp "$found" "glave-control-plane:/usr/local/bin/$tool"
             docker exec glave-control-plane chmod 0755 "/usr/local/bin/$tool"
           done
-          docker exec glave-control-plane sh -c 'cat >> /etc/containerd/config.toml <<EOF
-          [plugins."io.containerd.cri.v1.runtime".containerd.runtimes.runsc]
-            runtime_type = "io.containerd.runsc.v1"
-          EOF
-          systemctl restart containerd'
+          # The shim runs runsc with systemd's cgroups, as kind's containerd runs runc, under
+          # the plugin name the node's containerd config version uses.
+          docker exec glave-control-plane sh -c 'printf "[runsc_config]\n  systemd-cgroup = \"true\"\n" > /etc/containerd/runsc.toml'
+          if docker exec glave-control-plane grep -q '^version = 3' /etc/containerd/config.toml; then
+            plugin='io.containerd.cri.v1.runtime'
+          else
+            plugin='io.containerd.grpc.v1.cri'
+          fi
+          docker exec glave-control-plane sh -c "printf '\n[plugins.\"$plugin\".containerd.runtimes.runsc]\n  runtime_type = \"io.containerd.runsc.v1\"\n[plugins.\"$plugin\".containerd.runtimes.runsc.options]\n  TypeUrl = \"io.containerd.runsc.v1.options\"\n  ConfigPath = \"/etc/containerd/runsc.toml\"\n' >> /etc/containerd/config.toml && systemctl restart containerd"
           kubectl wait --for=condition=Ready node --all --timeout=120s
           kubectl apply -f - <<'EOF'
           apiVersion: node.k8s.io/v1
@@ -475,6 +479,27 @@ jobs:
             name: glave-test-gvisor
           handler: runsc
           EOF
+          # A Pod under it that says what kernel it sees, before any test relies on it.
+          kubectl apply -f - <<'EOF'
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: gvisor-smoke
+          spec:
+            runtimeClassName: glave-test-gvisor
+            restartPolicy: Never
+            containers:
+              - name: smoke
+                image: alpine@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507
+                command: ["dmesg"]
+          EOF
+          if ! kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/gvisor-smoke --timeout=120s; then
+            kubectl describe pod gvisor-smoke
+            docker exec glave-control-plane journalctl -u containerd --no-pager | tail -n 60
+            exit 1
+          fi
+          kubectl logs gvisor-smoke
+          kubectl delete pod gvisor-smoke --wait=true
       # A runtime class on kind's own runc, so the real workers run under one: the class is set
       # on the Pod and the VM-isolation policy accepts it.
       - name: A runtime class for the real workers
@@ -501,6 +526,12 @@ jobs:
       - name: Disk space after the build
         if: always()
         run: df -h /
+      - name: What the cluster says, when a test failed
+        if: failure()
+        run: |
+          kubectl get pods -A -o wide
+          kubectl describe pods -l glave.computer | tail -n 80
+          docker exec glave-control-plane journalctl -u containerd --no-pager | grep -i runsc | tail -n 40
       - name: Nothing the Kubernetes tests made is left behind
         if: always()
         run: |
