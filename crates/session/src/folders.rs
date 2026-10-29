@@ -544,10 +544,13 @@ mod tests {
             assert!(repository(good).is_ok(), "{good}");
         }
         let signed_in = format!("https://ada:{}@github.com/acme/app", any_secret());
+        assert!(
+            repository(&signed_in).is_err(),
+            "an address with a password in it is refused"
+        );
         for bad in [
             "git@github.com:acme/app.git",
             "http://github.com/acme/app",
-            &signed_in,
             "https://github.com",
             "https://github.com/",
             "https://github.com/it's",
