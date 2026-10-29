@@ -6,7 +6,7 @@ use std::future::{Future, poll_fn};
 use std::pin::{Pin, pin};
 use std::task::Poll;
 
-use glave_event::{Arguments, Part, ToolKind};
+use glave_event::{Arguments, Part, Risk, ToolKind};
 use thiserror::Error;
 
 use crate::model::ToolSpec;
@@ -149,7 +149,7 @@ pub enum Assessment {
     /// show the model a secret, as a file that usually holds one does. Unless `firm`, a judge
     /// that finds the person's say-so in what they asked may let it run in Auto.
     Caution {
-        reason: String,
+        reason: Risk,
         secret: bool,
         firm: bool,
     },

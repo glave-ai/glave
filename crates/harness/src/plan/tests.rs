@@ -1,5 +1,5 @@
 use glave_event::{
-    At, EventId, Header, Outcome, PlanApproved, Principal, Seq, ThreadId, TurnResult,
+    At, Caution, EventId, Header, Outcome, PlanApproved, Principal, Risk, Seq, ThreadId, TurnResult,
 };
 use glave_ports::{Effect, Message};
 
@@ -132,14 +132,14 @@ fn the_model_is_told_of_the_person_s_edit_where_it_was_made_and_of_nothing_else(
 
 #[test]
 fn a_call_plan_mode_refuses_says_why_in_the_model_s_terms() {
-    let request = |effect, caution: Option<&str>| ApprovalRequest {
+    let request = |effect, caution: Option<Risk>| ApprovalRequest {
         thread: ThreadId::new(jiff::Timestamp::UNIX_EPOCH, [0; 10]).unwrap(),
         call_id: CallId::new("call_1").unwrap(),
         tool: "edit".into(),
         effect,
         summary: "edit src/lib.rs".into(),
         secret: false,
-        caution: caution.map(str::to_owned),
+        caution: Caution::of(caution, None),
         outside_sandbox: None,
     };
     let changes = refused(&request(Effect::Changes, None));
@@ -148,7 +148,7 @@ fn a_call_plan_mode_refuses_says_why_in_the_model_s_terms() {
         "{changes}"
     );
     assert!(changes.contains("this changes files") && changes.ends_with("goes in the plan."));
-    let risky = refused(&request(Effect::Runs, Some("it pushes to a remote")));
+    let risky = refused(&request(Effect::Runs, Some(Risk::Pushes)));
     assert!(risky.contains(", and it pushes to a remote."), "{risky}");
 }
 

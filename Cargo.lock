@@ -2298,6 +2298,7 @@ dependencies = [
 name = "glave-shell"
 version = "0.0.0"
 dependencies = [
+ "glave-event",
  "proptest",
  "tree-sitter",
  "tree-sitter-bash",

@@ -3,7 +3,7 @@
 //! a risky command. Every risky command here would be harmless if it ran: the folder is not a
 //! git repository.
 
-use glave_event::{Body, StopReason};
+use glave_event::{Body, Caution, StopReason};
 use glave_harness::{Decision, NoOneToAsk};
 use serde_json::json;
 
@@ -79,7 +79,11 @@ fn allowing_bash_for_the_thread_never_silences_a_risky_command() {
         assert_eq!(asked.len(), 2, "the risky command asked again");
         assert_eq!(asked[1].summary, "bash: git clean -fdx");
         assert_eq!(
-            asked[1].caution.as_deref(),
+            asked[1]
+                .caution
+                .as_ref()
+                .and_then(Caution::because)
+                .as_deref(),
             Some("it deletes untracked files")
         );
         // Recorded, what would run and why it asks are apart, the reason a sentence.

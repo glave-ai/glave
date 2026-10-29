@@ -4,6 +4,8 @@
 //! say-so in what they asked. Pushes are found with the other git rules, and forges' tools
 //! (`gh`, `glab`, `tea`) in `forge.rs`.
 
+use glave_event::Risk;
+
 use crate::judge::{Caution, Kind};
 use crate::parse::Word;
 
@@ -13,49 +15,49 @@ pub(crate) fn remote(name: &str, words: &[Word]) -> Option<Caution> {
     let first = args.iter().find(|a| !a.starts_with('-')).copied();
     let has = |word: &str| args.contains(&word);
     let reason = match name {
-        _ if publishes(name, first, &args) => "it publishes a package",
-        "docker" | "podman" if first == Some("push") => "it publishes an image",
-        "kubectl" | "oc" if changes(first, KUBECTL) => "it changes a Kubernetes cluster",
+        _ if publishes(name, first, &args) => Risk::PublishesPackage,
+        "docker" | "podman" if first == Some("push") => Risk::PublishesImage,
+        "kubectl" | "oc" if changes(first, KUBECTL) => Risk::ChangesKubernetes,
         "helm"
             if changes(
                 first,
                 &["install", "upgrade", "uninstall", "rollback", "delete"],
             ) =>
         {
-            "it changes a Kubernetes cluster"
+            Risk::ChangesKubernetes
         }
         "terraform" | "tofu" if changes(first, &["apply", "destroy", "import"]) => {
-            "it changes cloud infrastructure"
+            Risk::ChangesCloudInfrastructure
         }
         "pulumi" if changes(first, &["up", "destroy", "refresh"]) => {
-            "it changes cloud infrastructure"
+            Risk::ChangesCloudInfrastructure
         }
-        "vercel" | "netlify" if has("--prod") || has("--production") => "it deploys to production",
-        "fly" | "flyctl" | "firebase" if first == Some("deploy") => "it deploys",
-        "wrangler" if changes(first, &["deploy", "publish"]) => "it deploys",
+        "vercel" | "netlify" if has("--prod") || has("--production") => Risk::DeploysToProduction,
+        "fly" | "flyctl" | "firebase" if first == Some("deploy") => Risk::Deploys,
+        "wrangler" if changes(first, &["deploy", "publish"]) => Risk::Deploys,
         "aws" => aws(&args)?,
         "gcloud" | "az" if args.iter().any(|a| CLOUD_VERBS.contains(a)) => {
-            "it changes cloud resources"
+            Risk::ChangesCloudResources
         }
-        "psql" | "mysql" | "mariadb" if writes_sql(&args) => "it changes a database",
+        "psql" | "mysql" | "mariadb" if writes_sql(&args) => Risk::ChangesDatabase,
         "redis-cli"
             if args.iter().any(|a| a.eq_ignore_ascii_case("flushall"))
                 || args.iter().any(|a| a.eq_ignore_ascii_case("flushdb")) =>
         {
-            "it wipes a Redis database"
+            Risk::WipesRedis
         }
         "stripe"
             if args
                 .iter()
                 .any(|a| matches!(*a, "create" | "update" | "delete")) =>
         {
-            "it changes a payments account"
+            Risk::ChangesPayments
         }
         _ => return None,
     };
     Some(Caution {
         kind: Kind::Remote,
-        reason: reason.to_owned(),
+        reason,
     })
 }
 
@@ -98,7 +100,7 @@ const AWS_VERBS: &[&str] = &[
 ];
 
 /// `aws` calls that change something: `delete-…`, `update-…`, `s3 rm`, a copy to S3.
-fn aws(args: &[&str]) -> Option<&'static str> {
+fn aws(args: &[&str]) -> Option<Risk> {
     let words: Vec<&str> = args
         .iter()
         .copied()
@@ -108,13 +110,13 @@ fn aws(args: &[&str]) -> Option<&'static str> {
     if words.first() == Some(&"s3") {
         let to_s3 = words.last().is_some_and(|last| last.starts_with("s3://"));
         return match verb {
-            "rm" | "mv" | "rb" => Some("it deletes from S3"),
-            "cp" | "sync" if to_s3 => Some("it writes to S3"),
+            "rm" | "mv" | "rb" => Some(Risk::DeletesFromS3),
+            "cp" | "sync" if to_s3 => Some(Risk::WritesToS3),
             _ => None,
         };
     }
     (AWS_VERBS.iter().any(|prefix| verb.starts_with(prefix)) || verb == "deploy")
-        .then_some("it changes cloud resources")
+        .then_some(Risk::ChangesCloudResources)
 }
 
 /// Whether a `psql -c` or `mysql -e` statement writes.

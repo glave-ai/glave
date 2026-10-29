@@ -137,6 +137,7 @@ async fn approval<L: EventLog>(
         detail: "make".into(),
         secret: false,
         caution: None,
+        reason: None,
         outside_sandbox: None,
     };
     let asked = writer.next(45, &ask)?;

@@ -6,6 +6,7 @@ use serde_json::value::RawValue;
 
 use crate::codec::{Payload, parse};
 use crate::id::CallId;
+use crate::payload::caution::Caution;
 use crate::payload::principal::Principal;
 
 pub(crate) const REQUESTED: &str = "approval.requested";
@@ -34,6 +35,11 @@ pub struct ApprovalRequested {
     /// the person reads: "It deletes /home/ana/notes, outside the project."
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub caution: Option<String>,
+    /// Why it asks, typed: what `caution` was written from, so the session writes it again in
+    /// the reader's language. Absent where no caution asks, and in requests recorded before it
+    /// was, whose `caution` is sent as it was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<Caution>,
     /// The command would run outside the sandbox the turn's commands run in, or in it with the
     /// network, as the model asked. Such a request asks every time, and is allowed only once.
     #[serde(default, skip_serializing_if = "Option::is_none")]

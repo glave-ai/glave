@@ -7,6 +7,8 @@
 
 use std::path::Path;
 
+use glave_event::Risk;
+
 use crate::judge::{Caution, Kind};
 use crate::parse::{Word, parse};
 use crate::paths::basename;
@@ -44,60 +46,60 @@ pub(crate) fn forge(name: &str, words: &[Word]) -> Option<Caution> {
     }
 }
 
-fn soft(reason: &str) -> Caution {
+fn soft(reason: Risk) -> Caution {
     Caution {
         kind: Kind::Remote,
-        reason: reason.to_owned(),
+        reason,
     }
 }
 
-fn firm(reason: &str) -> Caution {
+fn firm(reason: Risk) -> Caution {
     Caution {
         kind: Kind::Credentials,
-        reason: reason.to_owned(),
+        reason,
     }
 }
 
 /// `gh` subcommands that change something on GitHub.
 fn gh(group: &str, verb: &str, args: &[&str]) -> Option<Caution> {
     let found = match (group, verb) {
-        ("api", _) if api_writes(args) => {
-            firm("it writes through GitHub's API, which reaches anything the token can")
-        }
+        ("api", _) if api_writes(args) => firm(Risk::WritesThroughApi {
+            forge: "GitHub".to_owned(),
+        }),
         ("auth", "login" | "logout" | "refresh" | "setup-git" | "switch") => {
-            firm("it changes how this computer signs in to GitHub")
+            firm(Risk::ChangesSignIn {
+                forge: "GitHub".to_owned(),
+            })
         }
-        ("secret", "set" | "delete" | "remove") => firm("it changes a repository's secrets"),
-        ("variable", "set" | "delete") => firm("it changes a repository's variables"),
-        ("ssh-key" | "gpg-key", "add" | "delete") => firm("it changes a GitHub account's keys"),
-        ("pr", "create" | "new") => soft("it opens a pull request"),
-        ("pr", "comment") => soft("it comments on a pull request"),
-        ("pr", "merge") => soft("it merges a pull request"),
+        ("secret", "set" | "delete" | "remove") => firm(Risk::ChangesRepositorySecrets),
+        ("variable", "set" | "delete") => firm(Risk::ChangesRepositoryVariables),
+        ("ssh-key" | "gpg-key", "add" | "delete") => firm(Risk::ChangesAccountKeys),
+        ("pr", "create" | "new") => soft(Risk::OpensPullRequest),
+        ("pr", "comment") => soft(Risk::CommentsOnPullRequest),
+        ("pr", "merge") => soft(Risk::MergesPullRequest),
         ("pr", "edit" | "close" | "reopen" | "review" | "ready" | "lock" | "unlock") => {
-            soft("it changes a pull request")
+            soft(Risk::ChangesPullRequest)
         }
-        ("issue", "create" | "new") => soft("it opens an issue"),
-        ("issue", "comment") => soft("it comments on an issue"),
+        ("issue", "create" | "new") => soft(Risk::OpensIssue),
+        ("issue", "comment") => soft(Risk::CommentsOnIssue),
         (
             "issue",
             "edit" | "close" | "reopen" | "delete" | "transfer" | "lock" | "unlock" | "pin"
             | "unpin",
-        ) => soft("it changes an issue"),
-        ("release", "create" | "new") => soft("it publishes a release"),
-        ("release", "upload" | "edit" | "delete" | "delete-asset") => soft("it changes a release"),
-        ("repo", "create" | "new") => soft("it creates a repository"),
-        ("repo", "fork") => soft("it forks a repository"),
+        ) => soft(Risk::ChangesIssue),
+        ("release", "create" | "new") => soft(Risk::PublishesRelease),
+        ("release", "upload" | "edit" | "delete" | "delete-asset") => soft(Risk::ChangesRelease),
+        ("repo", "create" | "new") => soft(Risk::CreatesRepository),
+        ("repo", "fork") => soft(Risk::ForksRepository),
         ("repo", "delete" | "archive" | "unarchive" | "edit" | "rename") => {
-            soft("it changes a repository")
+            soft(Risk::ChangesRepository)
         }
-        ("gist", "create" | "new") => soft("it publishes a gist"),
-        ("gist", "edit" | "delete" | "rename") => soft("it changes a gist"),
-        ("label", "create" | "edit" | "delete" | "clone") => {
-            soft("it changes a repository's labels")
-        }
-        ("workflow", "run") => soft("it runs a workflow"),
+        ("gist", "create" | "new") => soft(Risk::PublishesGist),
+        ("gist", "edit" | "delete" | "rename") => soft(Risk::ChangesGist),
+        ("label", "create" | "edit" | "delete" | "clone") => soft(Risk::ChangesRepositoryLabels),
+        ("workflow", "run") => soft(Risk::RunsWorkflow),
         ("workflow", "enable" | "disable") | ("run", "rerun" | "cancel" | "delete") => {
-            soft("it changes a repository's workflows")
+            soft(Risk::ChangesWorkflows)
         }
         _ => return None,
     };
@@ -107,30 +109,30 @@ fn gh(group: &str, verb: &str, args: &[&str]) -> Option<Caution> {
 /// `glab` subcommands that change something on GitLab.
 fn glab(group: &str, verb: &str, args: &[&str]) -> Option<Caution> {
     let found = match (group, verb) {
-        ("api", _) if api_writes(args) => {
-            firm("it writes through GitLab's API, which reaches anything the token can")
-        }
-        ("auth", "login" | "logout") => firm("it changes how this computer signs in to GitLab"),
-        ("variable" | "var", "set" | "update" | "delete") => {
-            firm("it changes a project's variables")
-        }
-        ("mr", "create" | "new") => soft("it opens a merge request"),
-        ("mr", "note" | "comment") => soft("it comments on a merge request"),
-        ("mr", "merge" | "accept") => soft("it merges a merge request"),
+        ("api", _) if api_writes(args) => firm(Risk::WritesThroughApi {
+            forge: "GitLab".to_owned(),
+        }),
+        ("auth", "login" | "logout") => firm(Risk::ChangesSignIn {
+            forge: "GitLab".to_owned(),
+        }),
+        ("variable" | "var", "set" | "update" | "delete") => firm(Risk::ChangesProjectVariables),
+        ("mr", "create" | "new") => soft(Risk::OpensMergeRequest),
+        ("mr", "note" | "comment") => soft(Risk::CommentsOnMergeRequest),
+        ("mr", "merge" | "accept") => soft(Risk::MergesMergeRequest),
         ("mr", "update" | "close" | "reopen" | "approve" | "revoke" | "delete" | "rebase") => {
-            soft("it changes a merge request")
+            soft(Risk::ChangesMergeRequest)
         }
-        ("issue", "create" | "new") => soft("it opens an issue"),
-        ("issue", "note" | "comment") => soft("it comments on an issue"),
-        ("issue", "update" | "close" | "reopen" | "delete") => soft("it changes an issue"),
-        ("release", "create" | "new") => soft("it publishes a release"),
-        ("release", "upload" | "delete") => soft("it changes a release"),
-        ("repo", "create" | "new") => soft("it creates a repository"),
-        ("repo", "fork") => soft("it forks a repository"),
-        ("repo", "delete" | "archive" | "transfer") => soft("it changes a repository"),
-        ("snippet", "create" | "new") => soft("it publishes a snippet"),
-        ("label", "create" | "new" | "delete") => soft("it changes a project's labels"),
-        ("ci", "run" | "retry") => soft("it runs a pipeline"),
+        ("issue", "create" | "new") => soft(Risk::OpensIssue),
+        ("issue", "note" | "comment") => soft(Risk::CommentsOnIssue),
+        ("issue", "update" | "close" | "reopen" | "delete") => soft(Risk::ChangesIssue),
+        ("release", "create" | "new") => soft(Risk::PublishesRelease),
+        ("release", "upload" | "delete") => soft(Risk::ChangesRelease),
+        ("repo", "create" | "new") => soft(Risk::CreatesRepository),
+        ("repo", "fork") => soft(Risk::ForksRepository),
+        ("repo", "delete" | "archive" | "transfer") => soft(Risk::ChangesRepository),
+        ("snippet", "create" | "new") => soft(Risk::PublishesSnippet),
+        ("label", "create" | "new" | "delete") => soft(Risk::ChangesProjectLabels),
+        ("ci", "run" | "retry") => soft(Risk::RunsPipeline),
         _ => return None,
     };
     Some(found)
@@ -139,25 +141,23 @@ fn glab(group: &str, verb: &str, args: &[&str]) -> Option<Caution> {
 /// `tea` subcommands that change something on Gitea.
 fn tea(group: &str, verb: &str) -> Option<Caution> {
     let found = match (group, verb) {
-        ("login" | "logins", "add" | "delete" | "edit") => {
-            firm("it changes how this computer signs in to Gitea")
-        }
-        ("pulls" | "pull" | "pr", "create") => soft("it opens a pull request"),
-        ("pulls" | "pull" | "pr", "merge") => soft("it merges a pull request"),
+        ("login" | "logins", "add" | "delete" | "edit") => firm(Risk::ChangesSignIn {
+            forge: "Gitea".to_owned(),
+        }),
+        ("pulls" | "pull" | "pr", "create") => soft(Risk::OpensPullRequest),
+        ("pulls" | "pull" | "pr", "merge") => soft(Risk::MergesPullRequest),
         ("pulls" | "pull" | "pr", "close" | "reopen" | "approve" | "reject" | "review") => {
-            soft("it changes a pull request")
+            soft(Risk::ChangesPullRequest)
         }
-        ("issues" | "issue", "create") => soft("it opens an issue"),
-        ("issues" | "issue", "close" | "reopen" | "edit") => soft("it changes an issue"),
-        ("comment", _) => soft("it comments on an issue or a pull request"),
-        ("releases" | "release", "create") => soft("it publishes a release"),
-        ("releases" | "release", "delete" | "edit") => soft("it changes a release"),
-        ("repos" | "repo", "create") => soft("it creates a repository"),
-        ("repos" | "repo", "fork") => soft("it forks a repository"),
-        ("repos" | "repo", "delete") => soft("it changes a repository"),
-        ("labels" | "label", "create" | "update" | "delete") => {
-            soft("it changes a repository's labels")
-        }
+        ("issues" | "issue", "create") => soft(Risk::OpensIssue),
+        ("issues" | "issue", "close" | "reopen" | "edit") => soft(Risk::ChangesIssue),
+        ("comment", _) => soft(Risk::CommentsOnIssueOrPullRequest),
+        ("releases" | "release", "create") => soft(Risk::PublishesRelease),
+        ("releases" | "release", "delete" | "edit") => soft(Risk::ChangesRelease),
+        ("repos" | "repo", "create") => soft(Risk::CreatesRepository),
+        ("repos" | "repo", "fork") => soft(Risk::ForksRepository),
+        ("repos" | "repo", "delete") => soft(Risk::ChangesRepository),
+        ("labels" | "label", "create" | "update" | "delete") => soft(Risk::ChangesRepositoryLabels),
         _ => return None,
     };
     Some(found)

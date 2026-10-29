@@ -64,7 +64,7 @@ pub use harness::{Harness, HarnessError, Parts, Settings, Thread};
 pub use inbox::{Inbox, MAX_QUEUED, NotQueued, Queued};
 pub use instructions::{AGENTS_MD, Instructions, agents_md};
 pub use judge::{JudgeCase, Ruling, judge};
-pub use memory::{MemoryVerb, REMEMBER_CAUTION};
+pub use memory::MemoryVerb;
 pub use plan::{MAX_STEP, MAX_STEPS, Plan};
 pub use project_folders::{Brought, ProjectFolders, Settled};
 pub use prompt::system_prompt;

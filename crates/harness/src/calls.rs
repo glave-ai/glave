@@ -4,8 +4,8 @@
 use std::sync::Arc;
 
 use glave_event::{
-    ApprovalDecided, ApprovalRequested, CallId, Lifted, Outcome, Principal, ToolCallCompleted,
-    ToolKind, TurnResult, Verdict,
+    ApprovalDecided, ApprovalRequested, CallId, Caution, Lifted, Outcome, Principal, Settled,
+    ToolCallCompleted, ToolKind, TurnResult, Verdict,
 };
 use glave_ports::settings::Judge;
 use glave_ports::{
@@ -13,7 +13,7 @@ use glave_ports::{
     ToolSource, describe_call,
 };
 
-use crate::approval::{ApprovalMode, ApprovalRequest, Approver, asks_for, no_one_there, sentence};
+use crate::approval::{ApprovalMode, ApprovalRequest, Approver, asks_for, no_one_there};
 use crate::builtins::BUILTINS;
 use crate::cancel::Cancel;
 use crate::children::Ran;
@@ -245,7 +245,7 @@ where
             effect,
             summary: summary.clone(),
             secret,
-            caution: sandbox::with_outside(caution, lifted),
+            caution: Caution::of(caution, lifted),
             outside_sandbox: outside,
         };
         let needs = Needs { request, firm };
@@ -461,7 +461,7 @@ where
         turn: &mut TurnResult,
         cancel: &Cancel,
     ) -> Result<Judged, HarnessError> {
-        let Some(reason) = request.caution.as_deref() else {
+        let Some(reason) = request.caution.as_ref().and_then(Caution::because) else {
             return Ok(Judged::Ask);
         };
         let Some(model) = self.judge_for(thread) else {
@@ -474,7 +474,7 @@ where
             asked: &thread.asked,
             rules: thread.instructions.as_deref(),
             action: &request.summary,
-            flagged: reason,
+            flagged: &reason,
             untrusted: thread.untrusted,
             outside_sandbox: request.outside_sandbox.as_ref().map(|o| o.lifted),
         };
@@ -491,14 +491,8 @@ where
             return Ok(Judged::Ask);
         };
         // Why it asks, then the judge's own words for why it need not.
-        let cleared = match why.trim() {
-            "" => sentence("allowed without asking"),
-            why => sentence(&format!("allowed without asking: {why}")),
-        };
-        let asked = ApprovalRequested {
-            caution: Some(format!("{} {cleared}", sentence(reason))),
-            ..request.asked()
-        };
+        let why = Some(why.trim().to_owned()).filter(|why| !why.is_empty());
+        let asked = request.settled(Settled::Cleared { why });
         let decided = ApprovalDecided {
             call_id: request.call_id.clone(),
             decision: Verdict::AllowOnce,
@@ -586,12 +580,7 @@ where
         if !request.secret {
             return Ok(None);
         }
-        let mut asked = request.asked();
-        let why = sentence("declined without asking: Full access never shows the model a secret");
-        asked.caution = Some(match asked.caution.take() {
-            Some(caution) => format!("{caution} {why}"),
-            None => why,
-        });
+        let asked = request.settled(Settled::Declined);
         let decided = ApprovalDecided {
             call_id: request.call_id.clone(),
             decision: Verdict::Deny,
@@ -710,6 +699,7 @@ fn settle(
             live(Live::ToolDeclined {
                 summary: asked.summary.clone(),
                 caution: asked.caution.clone(),
+                reason: asked.reason.clone(),
                 no_one_there: verdict == Verdict::NoOneThere,
             });
             let declined = if asked.secret {

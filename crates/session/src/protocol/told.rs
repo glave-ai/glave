@@ -3,9 +3,10 @@
 use std::fmt;
 use std::ops::Deref;
 
+use glave_event::Caution;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::words::{Language, Sentence, say};
+use crate::words::{Language, Sentence, caution_in, say};
 
 /// A sentence for a person: as they read it, and, when it is the server's own, what it says, so
 /// a transport writes it again in the caller's language (`specs/session.md`, "Languages"). The
@@ -19,18 +20,32 @@ pub struct Told {
     said: Option<Box<Said>>,
 }
 
-/// One sentence of the server's own, or the clauses of one, each carrying what comes before it
-/// ("Ran 2 commands", ", read 1 file").
+/// What the server's own words say.
 #[derive(Debug, Clone)]
-struct Said(Vec<Sentence>);
+enum Said {
+    /// One sentence, or the clauses of one, each carrying what comes before it ("Ran 2
+    /// commands", ", read 1 file").
+    Sentences(Vec<Sentence>),
+    /// Why a call needs the person, from the parts its `approval.requested` records.
+    Caution(Caution),
+}
 
 impl Told {
     /// The server's own clauses as one sentence, in English, each written after the last.
     pub(crate) fn joined(said: Vec<Sentence>) -> Self {
         Self {
             text: said_in(Language::English, &said),
-            said: Some(Box::new(Said(said))),
+            said: Some(Box::new(Said::Sentences(said))),
         }
+    }
+
+    /// Why a call needs the person, in English as its `approval.requested` records it: `None`
+    /// when the caution says nothing.
+    pub(crate) fn caution(caution: Caution) -> Option<Self> {
+        Some(Self {
+            text: caution.sentences()?,
+            said: Some(Box::new(Said::Caution(caution))),
+        })
     }
 
     /// Whether a transport writes it again in the caller's language: it is the server's own.
@@ -40,8 +55,13 @@ impl Told {
 
     /// Writes it in `language`, when it is the server's own; any other is left as it is.
     pub(crate) fn translate(&mut self, language: Language) {
-        if let Some(said) = &self.said {
-            self.text = said_in(language, &said.0);
+        let written = match self.said.as_deref() {
+            Some(Said::Sentences(said)) => Some(said_in(language, said)),
+            Some(Said::Caution(caution)) => caution_in(language, caution),
+            None => None,
+        };
+        if let Some(written) = written {
+            self.text = written;
         }
     }
 }

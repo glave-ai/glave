@@ -1,7 +1,7 @@
 //! The sandbox around commands, as the harness sees it: the settings travel with every
 //! command to the computer, which enforces them (`specs/sandbox.md`); here they become a note
-//! for the model when a command looks blocked, the caution on a request to run one command
-//! outside the sandbox or with its network, and a record of what a turn ran under.
+//! for the model when a command looks blocked, what of the sandbox a request to run one
+//! command asks to run without, and a record of what a turn ran under.
 
 use glave_event::{Arguments, Lifted, OutsideSandbox};
 use glave_ports::computer::{Sandbox, SandboxLevel};
@@ -9,15 +9,6 @@ use serde::Serialize;
 
 use crate::tools::Tool;
 use crate::tools::workspace::Workspace;
-
-/// Why running a command outside the sandbox needs the person, as the model and the judge are
-/// told it; the person reads it as a sentence.
-pub(crate) const OUTSIDE_SANDBOX: &str =
-    "it runs outside the sandbox, where it can read and change any file you can";
-
-/// Why running a command with the network needs the person, where the sandbox has none.
-pub(crate) const WITH_NETWORK: &str =
-    "it can reach the internet, which commands here otherwise cannot";
 
 /// What the model is told when a command would have the network where commands go without
 /// it, and the organization does not let one ask.
@@ -81,20 +72,6 @@ pub(crate) fn outside(
     let sandbox = workspace.sandbox()?;
     let asked = crate::tools::outside_sandbox(arguments)?;
     (asked.lifted == Lifted::Sandbox || !sandbox.network).then_some(asked)
-}
-
-/// The reason a call needs the person: the command's own caution, if it has one, and then
-/// running outside the sandbox or with its network, when it would.
-pub(crate) fn with_outside(caution: Option<String>, lifted: Option<Lifted>) -> Option<String> {
-    let lifted = match lifted {
-        Some(Lifted::Sandbox) => OUTSIDE_SANDBOX,
-        Some(Lifted::Network) => WITH_NETWORK,
-        None => return caution,
-    };
-    Some(match caution {
-        Some(caution) => format!("{caution}, and {lifted}"),
-        None => lifted.to_owned(),
-    })
 }
 
 /// What the thread records about the protections a turn ran under.

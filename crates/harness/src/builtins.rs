@@ -4,7 +4,7 @@
 use std::future::ready;
 use std::sync::Arc;
 
-use glave_event::{Arguments, ToolKind};
+use glave_event::{Arguments, Risk, ToolKind};
 use glave_ports::{
     Assessment, BoxFuture, Cancellation, Effect, ToolError, ToolInfo, ToolOutput, ToolSource,
     describe_call,
@@ -94,8 +94,7 @@ impl ToolSource for Builtins {
                 Some(Tool::CommandOutput) => Assessment::Reads,
                 Some(tool) if reads_secret(&self.workspace, tool, arguments).await => {
                     Assessment::Caution {
-                        reason: "this file usually holds secrets; the model would see them"
-                            .to_owned(),
+                        reason: Risk::SecretFile,
                         secret: true,
                         firm: true,
                     }

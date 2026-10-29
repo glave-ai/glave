@@ -11,7 +11,7 @@ mod sentence;
 
 pub(crate) use self::events::note_in;
 pub(crate) use self::language::Language;
-pub(crate) use self::say::say;
+pub(crate) use self::say::{caution_in, say};
 pub(crate) use self::sentence::Sentence;
 
 use self::events::{asks, event_in};

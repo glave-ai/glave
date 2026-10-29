@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use fluent_bundle::{FluentArgs, FluentBundle, FluentResource};
+use glave_event::{Caution, Phrase, Risk, Settled, Worded};
 
 use super::*;
 
@@ -303,4 +304,130 @@ fn why_a_folder_is_no_project_s_is_written_again_in_its_listing() {
         refused: None,
     });
     assert!(!says(&plain));
+}
+
+#[test]
+fn every_word_of_a_caution_is_one_fluent_message_whose_english_is_what_the_model_reads() {
+    let mut ids: BTreeSet<&str> = Sentence::ALL.iter().map(|(id, _, _)| *id).collect();
+    let worded = Risk::every()
+        .into_iter()
+        .map(|risk| Box::new(risk) as Box<dyn Worded>);
+    let phrases = Phrase::every()
+        .into_iter()
+        .map(|it| Box::new(it) as Box<dyn Worded>);
+    for words in worded.chain(phrases) {
+        assert!(ids.insert(words.id()), "{} is in a table twice", words.id());
+        let said = say::word(Language::English, words.as_ref());
+        assert_eq!(said, words.english(), "{}", words.id());
+        for (name, _) in words.values() {
+            assert!(
+                said.contains(&format!("<{name}>")),
+                "{} never writes {name}",
+                words.id()
+            );
+        }
+    }
+    assert_eq!(
+        ids.len(),
+        Sentence::ALL.len() + Risk::ALL.len() + Phrase::ALL.len()
+    );
+}
+
+/// An `approval.requested` holding `data`, as a page of events or a watch carries it.
+fn requested(data: &serde_json::Value) -> glave_event::RawEvent {
+    serde_json::from_value(serde_json::json!({
+        "glave": 1, "id": "0192f5c2-7000-7000-8000-000000000001",
+        "thread": "0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c10", "seq": 1,
+        "at": "2026-10-17T17:10:00.000Z", "type": "approval.requested", "v": 1, "data": data
+    }))
+    .unwrap()
+}
+
+#[test]
+fn a_caution_is_written_again_from_its_reason_and_one_recorded_without_stays_as_it_was() {
+    let reason = Caution {
+        settled: Some(Settled::Cleared {
+            why: Some("they asked".into()),
+        }),
+        ..Caution::of(
+            Some(Risk::DeletesOutside {
+                path: "/home/ana/notes".into(),
+            }),
+            Some(glave_event::Lifted::Sandbox),
+        )
+        .unwrap()
+    };
+    let english = reason.sentences().unwrap();
+    assert_eq!(
+        caution_in(Language::English, &reason).as_deref(),
+        Some(english.as_str()),
+        "the reader of English reads what was recorded"
+    );
+    let asked = |reason: Option<&Caution>| {
+        requested(&serde_json::json!({
+            "call_id": "call_1", "tool": "bash", "summary": "bash: rm -rf ~/notes",
+            "ask": "Run this command?", "detail": "rm -rf ~/notes", "secret": false,
+            "caution": english, "reason": reason
+        }))
+    };
+    let caution = |event: &glave_event::RawEvent| {
+        let data = serde_json::to_value(&event.data).unwrap();
+        data["caution"].as_str().unwrap().to_owned()
+    };
+    let typed = event_in(&asked(Some(&reason)), Language::Accented).unwrap();
+    let written = caution(&typed);
+    // Each part a message of its own, written into the one that joins them.
+    assert!(
+        written.starts_with("[[îţ ðéļéţéš /home/ana/notes, öûţšîðé ţĥé þŕöĵéçţ"),
+        "{written}"
+    );
+    assert!(
+        written.contains("they asked"),
+        "the judge's own words: {written}"
+    );
+    assert!(event_in(&asked(Some(&reason)), Language::English).is_none());
+    let before = asked(None);
+    let untyped = event_in(&before, Language::Accented).unwrap();
+    assert_eq!(caution(&untyped), english, "recorded before its reason was");
+}
+
+#[test]
+fn why_a_declined_call_asked_is_written_again_as_a_turn_streams() {
+    let thread = glave_event::ThreadId::new(jiff::Timestamp::UNIX_EPOCH, [0; 10]).unwrap();
+    let declined = |reason: Option<Caution>| {
+        let live = glave_harness::Live::ToolDeclined {
+            summary: "bash: git push".into(),
+            caution: Some("It pushes to a remote.".into()),
+            reason,
+            no_one_there: false,
+        };
+        std::sync::Arc::new(crate::protocol::Notification::Live {
+            thread,
+            update: live.into(),
+        })
+    };
+    let caution = |note: &crate::protocol::Notification| match note {
+        crate::protocol::Notification::Live {
+            update: crate::protocol::Update::ToolDeclined { caution, .. },
+            ..
+        } => caution.as_deref().map(str::to_owned),
+        _ => None,
+    };
+    let typed = declined(Caution::of(Some(Risk::Pushes), None));
+    let written = note_in(&typed, Language::Accented);
+    assert!(
+        caution(&written).is_some_and(|it| it.starts_with("[îţ þûšĥéš")),
+        "{:?}",
+        caution(&written)
+    );
+    assert_eq!(
+        caution(&note_in(&typed, Language::English)).as_deref(),
+        Some("It pushes to a remote.")
+    );
+    let untyped = declined(None);
+    assert_eq!(
+        caution(&note_in(&untyped, Language::Accented)).as_deref(),
+        Some("It pushes to a remote."),
+        "passed on as it came"
+    );
 }

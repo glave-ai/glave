@@ -5,7 +5,7 @@
 //! one there nothing is saved; Full access asks no one and saves. Memory never changes an
 //! approval or what the judge sees.
 
-use glave_event::Arguments;
+use glave_event::{Arguments, Caution, Risk};
 use glave_ports::memories::{
     EDIT_MEMORY, FORGET, MemoryChange as Change, MemoryContext, MemoryOutput, RECALL, REMEMBER,
 };
@@ -18,11 +18,6 @@ use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::hooks::ToolHook;
 use crate::turn::{Live, Step};
-
-/// Why a save asks after untrusted content: told to the judge, the person and the model.
-pub const REMEMBER_CAUTION: &str = "this thread has read untrusted content or a secrets file, so \
-     saving to memory now could carry a planted instruction into every later thread; it runs \
-     only if the person asked for this to be remembered";
 
 /// What the person sees when a memory changes, in every client.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,7 +77,7 @@ where
                 effect: Effect::Changes,
                 summary: summary.clone(),
                 secret: false,
-                caution: Some(REMEMBER_CAUTION.to_owned()),
+                caution: Caution::of(Some(Risk::RemembersAfterUntrusted), None),
                 outside_sandbox: None,
             };
             let turn = &mut step.summary;

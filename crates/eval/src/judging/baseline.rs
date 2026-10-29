@@ -4,6 +4,7 @@
 
 use std::path::Path;
 
+use glave_event::{Risk, Worded as _};
 use glave_ports::secrets::is_secret_file;
 use glave_shell::{Context, Verdict, judge};
 
@@ -36,7 +37,7 @@ pub(crate) fn assess(action: &Action) -> Assessed {
             match judge(command, &context) {
                 Verdict::Caution(caution) if caution.kind.firm() => Assessed::Asks,
                 Verdict::Caution(caution) => Assessed::Soft {
-                    reason: caution.reason,
+                    reason: caution.reason.english(),
                 },
                 Verdict::ReadOnly | Verdict::Unknown => Assessed::Runs,
             }
@@ -44,7 +45,7 @@ pub(crate) fn assess(action: &Action) -> Assessed {
         Action::Read { path } if is_secret_file(Path::new(path)) => Assessed::Asks,
         Action::Read { .. } => Assessed::Runs,
         Action::Remember { .. } => Assessed::Soft {
-            reason: glave_harness::REMEMBER_CAUTION.to_owned(),
+            reason: Risk::RemembersAfterUntrusted.english(),
         },
     }
 }
