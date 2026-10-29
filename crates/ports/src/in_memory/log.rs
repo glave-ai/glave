@@ -233,7 +233,11 @@ impl EventLog for InMemoryLog {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
+    use crate::in_memory::{InMemoryBlobs, InMemoryProjects};
+    use crate::testing::ManualClock;
     use crate::{block_on, conformance};
 
     #[test]
@@ -242,6 +246,17 @@ mod tests {
             block_on!(conformance::event_log(&InMemoryLog::new())),
             Ok(())
         );
+    }
+
+    #[test]
+    fn two_organizations_in_memory_are_kept_apart() {
+        let blobs = InMemoryBlobs::with_clock(Arc::new(ManualClock::at_millis(0)));
+        let verdict = block_on!(conformance::organizations(
+            &InMemoryLog::new(),
+            &blobs,
+            &InMemoryProjects::new()
+        ));
+        assert_eq!(verdict, Ok(()));
     }
 
     #[test]

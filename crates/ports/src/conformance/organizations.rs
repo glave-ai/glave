@@ -52,6 +52,8 @@ async fn threads<L: EventLog>(log: &L, ours: Scope, theirs: Scope, t: ThreadId) 
         .await
         .map_err(|e| e.to_string())?;
     unseen(log, ours, theirs, t).await?;
+    let view = log.thread_view(&ours, t).await.map_err(|e| e.to_string())?;
+    ensure(view.is_some(), "a thread started must have a view")?;
     let read = |scope: Scope| async move { log.read(&scope, t, None, usize::MAX).await };
     log.append(&theirs, &events(t, &[1])?).await.map_err(|e| {
         format!("another organization's thread of the same id must start at 1: {e}")
@@ -59,6 +61,10 @@ async fn threads<L: EventLog>(log: &L, ours: Scope, theirs: Scope, t: ThreadId) 
     ensure(
         seqs(&read(ours).await.map_err(|e| e.to_string())?) == [1, 2],
         "another organization's writes must not touch a thread",
+    )?;
+    ensure(
+        log.thread_view(&ours, t).await.map_err(|e| e.to_string())? == view,
+        "another organization's writes must not touch a thread's view",
     )?;
     let found = log
         .search(&ours, "marigold", 10)
@@ -153,7 +159,7 @@ async fn own_streams<L: EventLog>(log: &L, ours: Scope, theirs: Scope) -> Verdic
 }
 
 /// The same content kept by both is two blobs: neither reads the other's, and one's release
-/// and sweep leave the other's in place.
+/// leaves the other's in place through both organizations' sweeps.
 async fn kept_blobs<B: BlobStore>(blobs: &B, ours: Scope, theirs: Scope, t: ThreadId) -> Verdict {
     let bytes = b"the gate's plan".to_vec();
     let reference = super::blobs::put(blobs, &ours, t, Pieces::from(bytes.clone())).await?;
@@ -165,7 +171,9 @@ async fn kept_blobs<B: BlobStore>(blobs: &B, ours: Scope, theirs: Scope, t: Thre
     )?;
     super::blobs::put(blobs, &theirs, t, Pieces::from(bytes.clone())).await?;
     blobs.release(&ours, t).await.map_err(|e| e.to_string())?;
-    blobs.sweep(ours.org()).await.map_err(|e| e.to_string())?;
+    for org in [ours.org(), theirs.org()] {
+        blobs.sweep(org).await.map_err(|e| e.to_string())?;
+    }
     ensure(
         super::blobs::read(blobs, &ours, &reference.sha256)
             .await?
