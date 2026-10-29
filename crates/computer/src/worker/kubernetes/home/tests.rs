@@ -1,7 +1,8 @@
 //! A person's computer on a real cluster, with `GLAVE_TEST_KUBE=1` and a real glave and image
 //! (`GLAVE_TEST_WORKER_GLAVE`, `GLAVE_TEST_WORKER_IMAGE`), as CI's `kind` job runs it: a file
-//! written before it sleeps is there after it wakes, the wake is timed, and destroying it
-//! leaves nothing behind.
+//! written before it sleeps is there after it wakes, it runs as no root and writes nowhere but
+//! its home and `/tmp`, it reaches the internet but nothing in the cluster, the wake is timed,
+//! and destroying it leaves nothing behind.
 
 use std::time::{Duration, Instant};
 
@@ -15,6 +16,17 @@ use super::PersonComputer;
 use crate::worker::backend::Backend as _;
 use crate::worker::route::Tail;
 use crate::{CancelSwitch, WorkerComputers, WorkerCredentials};
+
+/// What the first wake writes and checks: a file kept on its disk, and the walls around it,
+/// each said as a fact so a failure shows which.
+const FENCED: &str = "echo kept > kept.txt; echo \"home=$HOME\"; echo \"user=$(id -u)\"; \
+    touch /tmp/t && echo tmp=writable || echo tmp=read-only; \
+    touch /var/tmp/glave-x 2>/dev/null && echo root=writable || echo root=read-only; \
+    reach() { timeout 5 bash -c \"</dev/tcp/$1/$2\" 2>/dev/null && echo reached || echo refused; }; \
+    getent hosts kube-dns.kube-system.svc.cluster.local >/dev/null && echo dns=yes || echo dns=no; \
+    echo \"api=$(reach kubernetes.default.svc.cluster.local 443)\"; \
+    echo \"pods=$(reach kube-dns.kube-system.svc.cluster.local 9153)\"; \
+    echo \"internet=$(reach 1.1.1.1 443)\"";
 
 /// Runs `command` at the person's home on the computer `computers` woke, and what it printed,
 /// or why it could not: never a panic, so the test removes what it made before it asserts.
@@ -98,12 +110,7 @@ fn a_persons_computer_keeps_its_disk_while_it_sleeps() {
             ..Environment::host()
         };
 
-        let (_, wrote) = awake(
-            &computers,
-            &environment,
-            "echo kept > kept.txt && echo $HOME",
-        )
-        .await;
+        let (_, wrote) = awake(&computers, &environment, FENCED).await;
         // Asleep in between: its Pod gone, its disk kept.
         let (woke, read) = awake(&computers, &environment, "cat kept.txt").await;
         let destroyed = PersonComputer::new(cluster.clone(), &key, 1)
@@ -112,7 +119,13 @@ fn a_persons_computer_keeps_its_disk_while_it_sleeps() {
             .await;
         let left = left_behind(&cluster).await;
         eprintln!("a person's computer woke in {} ms", woke.as_millis());
-        assert_eq!(wrote.unwrap().trim(), "/home/glave");
+        assert_eq!(
+            wrote.unwrap().trim(),
+            "home=/home/glave\nuser=65532\ntmp=writable\nroot=read-only\ndns=yes\napi=refused\n\
+             pods=refused\ninternet=reached",
+            "its own home, never root, nothing written outside it but /tmp, and the internet \
+             but nothing in the cluster"
+        );
         assert_eq!(read.unwrap().trim(), "kept");
         destroyed.unwrap();
         assert_eq!(left, Vec::<String>::new());

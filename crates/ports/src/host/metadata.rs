@@ -12,14 +12,14 @@ pub struct Network {
 }
 
 impl Network {
-    const fn v4(address: Ipv4Addr, prefix: u8) -> Self {
+    pub(super) const fn v4(address: Ipv4Addr, prefix: u8) -> Self {
         Self {
             address: IpAddr::V4(address),
             prefix,
         }
     }
 
-    const fn v6(address: Ipv6Addr, prefix: u8) -> Self {
+    pub(super) const fn v6(address: Ipv6Addr, prefix: u8) -> Self {
         Self {
             address: IpAddr::V6(address),
             prefix,
