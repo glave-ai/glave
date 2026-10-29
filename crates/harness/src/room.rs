@@ -20,13 +20,16 @@ pub(crate) fn tool_room(window_tokens: u64) -> usize {
     usize::try_from(window_tokens / 4 * BYTES_PER_TOKEN).unwrap_or(usize::MAX)
 }
 
-/// `output` with each text cut to `room` bytes, keeping its start and its end.
+/// `output` with its texts cut to `room` bytes together, each keeping its start and its end;
+/// a text that finds no room left is only the note. Files are fit apart (`files::fit`).
 pub(crate) fn fit(mut output: ToolOutput, room: usize) -> ToolOutput {
+    let mut left = room;
     for part in &mut output.parts {
-        if let Part::Text { text } = part
-            && text.len() > room
-        {
-            *text = Captured::fit(text, room);
+        if let Part::Text { text } = part {
+            if text.len() > left {
+                *text = Captured::fit(text, left);
+            }
+            left = left.saturating_sub(text.len());
         }
     }
     output
@@ -214,6 +217,19 @@ mod tests {
         assert!(text.contains("bytes of output omitted"));
         let short = ToolOutput::text(false, "kept");
         assert_eq!(fit(short.clone(), 10), short);
+        let mut two = ToolOutput::text(false, "x".repeat(3_000));
+        two.parts.push(Part::Text {
+            text: "y".repeat(3_000),
+        });
+        let together: usize = fit(two, 4_096)
+            .parts
+            .iter()
+            .map(|part| match part {
+                Part::Text { text } => text.len(),
+                _ => 0,
+            })
+            .sum();
+        assert!(together <= 4_096, "texts share the room: {together}");
     }
 
     #[test]

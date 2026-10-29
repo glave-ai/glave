@@ -228,5 +228,9 @@ fn a_model_with_a_small_window_reads_a_big_file_a_page_at_a_time() {
         );
         assert!(page.starts_with("1\tline of the file\n"), "{page}");
         assert!(page.contains(" of 2000; use offset="), "{page}");
+        assert!(
+            !page.contains("bytes of output omitted"),
+            "the page fits whole, so what it says it showed is what it shows: {page}"
+        );
     });
 }

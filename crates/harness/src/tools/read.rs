@@ -126,11 +126,11 @@ fn numbered(text: &str, offset: Option<usize>, limit: Option<usize>, room: usize
         .take(limit)
     {
         let number = number.saturating_add(1);
-        let line = cut_line(line);
-        if out.len().saturating_add(line.len()) > most && last >= first {
+        let entry = format!("{number}\t{}\n", cut_line(line));
+        if out.len().saturating_add(entry.len()) > most && last >= first {
             break;
         }
-        let _ = writeln!(out, "{number}\t{line}");
+        out.push_str(&entry);
         last = number;
     }
     if last < total {

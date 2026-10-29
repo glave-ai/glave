@@ -15,11 +15,15 @@ pub(crate) const MOST_BYTES: usize = 32 * 1024;
 /// The most the note in place of the middle takes.
 const NOTE_BYTES: usize = 64;
 
+/// What a tool keeps of `room` for the lines it writes around a command's output: the note in
+/// place of the middle, how the command ended, and what the sandbox blocked.
+const AROUND_BYTES: usize = 1024;
+
 /// A command's output as it arrives, keeping its start and its end.
 pub(crate) struct Capture(Mutex<Captured>);
 
 impl Capture {
-    /// Keeping at most `room` bytes, and never more than [`MOST_BYTES`].
+    /// Keeping what fits in `room` bytes with the lines around it (`Captured::within`).
     pub(crate) fn within(room: usize) -> Self {
         Self(Mutex::new(Captured::within(room)))
     }
@@ -49,9 +53,10 @@ pub(crate) struct Captured {
 }
 
 impl Captured {
-    /// Keeping at most `room` bytes, and never more than [`MOST_BYTES`].
+    /// Keeping what fits in `room` bytes with the lines around it, and never more than
+    /// [`MOST_BYTES`].
     pub(crate) fn within(room: usize) -> Self {
-        Self::fitting(room.min(MOST_BYTES))
+        Self::fitting(room.saturating_sub(AROUND_BYTES).min(MOST_BYTES))
     }
 
     /// Keeping at most `room` bytes: a quarter from the start, the rest from the end.
@@ -137,10 +142,14 @@ mod tests {
     #[test]
     fn a_small_room_keeps_less_of_both_ends() {
         let text = format!("{}{}", "a".repeat(5_000), "z".repeat(5_000));
-        let fitted = Captured::of(&text, 1_000).render();
+        let fitted = Captured::of(&text, 2_024).render();
         assert!(fitted.starts_with(&"a".repeat(250)), "{fitted}");
         assert!(fitted.ends_with(&"z".repeat(750)), "{fitted}");
         assert!(fitted.contains("[… 9000 bytes of output omitted …]"));
+        assert!(
+            fitted.len() < 2_024 - 900,
+            "room is left for the lines around it"
+        );
         assert_eq!(Captured::fit("short", 1_000), "short");
         let fit = Captured::fit(&"x".repeat(200_000), 100_000);
         assert!(
