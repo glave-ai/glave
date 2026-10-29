@@ -5,12 +5,14 @@
 
 use std::sync::Arc;
 
-use glave_event::{ComputerKind, PrincipalId};
+use glave_event::{ComputerKind, Opened, PrincipalId, WorkspaceBound};
 use glave_ports::computer::{ComputerError, Home};
 use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider, OrgId, Scope};
 
 use crate::approval::Approver;
-use crate::harness::{Harness, HarnessError};
+use crate::background::Commands;
+use crate::harness::{Harness, HarnessError, Thread};
+use crate::removed::owner_label;
 use crate::tools::workspace::Workspace;
 
 /// Each person's own computer, woken on demand. The harness cannot reach a cluster itself (its
@@ -51,5 +53,67 @@ where
             None => home,
         };
         Ok((Arc::new(home), ComputerKind::Person))
+    }
+
+    /// Opens `thread`'s workspace on its person's own computer, woken if it sleeps, when it
+    /// works there and is not open on the computer awake now: at the start of each turn, so a
+    /// thread read from the log, or one whose computer slept since, works there again. Its
+    /// commands in the background are read again from its log, for the computer they ran on.
+    pub(crate) async fn come_home(&self, thread: &mut Thread) -> Result<(), HarnessError> {
+        let Some(bound) = thread.home.clone() else {
+            return Ok(());
+        };
+        if self.homes.is_none() {
+            return Err(ComputerError::Unsupported(
+                "this thread worked on a cloud computer this server does not reach. Start a new \
+                 thread to go on"
+                    .into(),
+            )
+            .into());
+        }
+        let (home, _) = self.home_of(thread.scope, thread.for_).await?;
+        let there = home.info().computer;
+        if thread
+            .workspace
+            .as_ref()
+            .is_some_and(|workspace| workspace.info().computer == there)
+        {
+            return Ok(());
+        }
+        let owner = owner_label(thread.scope, thread.id);
+        let workspace = match &bound.opened {
+            Opened::Folder { path } => home.folder(path).await?,
+            Opened::Worktree { repository, branch } => {
+                home.worktree(repository, branch, Some(&owner)).await?
+            }
+            Opened::Scratch { .. } => home.scratch(&thread.id.to_string(), Some(&owner)).await?,
+            Opened::Clone { .. } => return Ok(()),
+        };
+        let events = self.load(&thread.scope, thread.id).await?;
+        thread.commands = Arc::new(Commands::rebuilt(&events, workspace.computers()));
+        thread.workspace = Some(Arc::new(workspace));
+        Ok(())
+    }
+}
+
+/// The binding of a thread that works on its person's own computer, from `bound`, its
+/// latest; `None` for any other.
+pub(crate) fn at_home(bound: Option<&WorkspaceBound>) -> Option<WorkspaceBound> {
+    bound
+        .filter(|bound| bound.computer.kind == ComputerKind::Person)
+        .cloned()
+}
+
+/// Closes `workspace`, opened on a person's own computer for a thread let go of, unless a
+/// command of its still runs there: then it stays open until the computer sleeps.
+pub(crate) async fn close_away(workspace: Option<Arc<Workspace>>) {
+    let Some(workspace) = workspace else {
+        return;
+    };
+    let (computers, id) = (workspace.computers(), workspace.info().id);
+    if matches!(computers.commands(id).await, Ok(listed) if listed.is_empty())
+        && let Err(error) = computers.close(id).await
+    {
+        tracing::warn!(%error, %id, "could not close a workspace on a person's computer");
     }
 }
