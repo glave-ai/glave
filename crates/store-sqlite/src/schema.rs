@@ -174,8 +174,9 @@ const ADDED: &str = "
     ) STRICT;
 ";
 
-/// Makes the schema in a new file, and checks an existing one is this build's. A file of any
-/// other version is refused with what to do about it, never changed.
+/// Makes the schema in a new file, adds [`ADDED`] to a file of the version before, and checks
+/// an existing one is this build's. A file of any other version is refused with what to do
+/// about it, never changed.
 pub(crate) fn prepare(connection: &mut Connection) -> Result<(), StoreError> {
     let found: u32 = connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
@@ -183,39 +184,26 @@ pub(crate) fn prepare(connection: &mut Connection) -> Result<(), StoreError> {
     if found == VERSION {
         return Ok(());
     }
-    if found == BEFORE {
-        return added(connection);
-    }
-    if found != 0 {
+    if found != 0 && found != BEFORE {
         return Err(StoreError::Schema(format!(
             "glave's data was saved by another version of glave, which this one cannot read \
              before glave 0.1 (schema {found}, not {VERSION}). Remove glave's data folder \
              (~/.glave unless you moved it) and start glave again"
         )));
     }
+    let made: &[&str] = if found == BEFORE {
+        &[ADDED]
+    } else {
+        &[SCHEMA, ADDED]
+    };
     let transaction = connection
         .transaction()
         .map_err(|e| StoreError::schema(&e))?;
-    transaction
-        .execute_batch(SCHEMA)
-        .map_err(|e| StoreError::schema(&e))?;
-    transaction
-        .execute_batch(ADDED)
-        .map_err(|e| StoreError::schema(&e))?;
-    transaction
-        .pragma_update(None, "user_version", VERSION)
-        .map_err(|e| StoreError::schema(&e))?;
-    transaction.commit().map_err(|e| StoreError::schema(&e))
-}
-
-/// Adds [`ADDED`] to a file of the version before, in one transaction, nothing else changed.
-fn added(connection: &mut Connection) -> Result<(), StoreError> {
-    let transaction = connection
-        .transaction()
-        .map_err(|e| StoreError::schema(&e))?;
-    transaction
-        .execute_batch(ADDED)
-        .map_err(|e| StoreError::schema(&e))?;
+    for batch in made {
+        transaction
+            .execute_batch(batch)
+            .map_err(|e| StoreError::schema(&e))?;
+    }
     transaction
         .pragma_update(None, "user_version", VERSION)
         .map_err(|e| StoreError::schema(&e))?;
