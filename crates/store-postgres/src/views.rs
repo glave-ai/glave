@@ -5,13 +5,13 @@
 use deadpool_postgres::{Pool, Transaction};
 use glave_event::{RawEvent, Seq, ThreadId};
 use glave_ports::{
-    LogError, OrgId, ProjectId, Scope, THREAD_VIEW_VERSION, ThreadQuery, ThreadView, fold_from_log,
+    LogError, ProjectId, Scope, THREAD_VIEW_VERSION, ThreadQuery, ThreadView, fold_from_log,
 };
 use tokio_postgres::GenericClient;
 use uuid::Uuid;
 
 use crate::log::PostgresLog;
-use crate::store::{StoreError, connection, describe};
+use crate::store::{StoreError, connection, describe, organizations, unscoped};
 
 /// The setting that records which version of the fold built the stored views.
 const VERSION_SETTING: &str = "threads_view";
@@ -118,7 +118,7 @@ pub(crate) async fn page(
     scope: &Scope,
     query: &ThreadQuery,
 ) -> Result<Vec<ThreadView>, LogError> {
-    let client = connection(pool)
+    let client = connection(pool, scope.org())
         .await
         .map_err(|e| LogError::Storage(e.to_string()))?;
     let statement = client
@@ -162,7 +162,7 @@ pub(crate) async fn one(
     scope: &Scope,
     thread: ThreadId,
 ) -> Result<Option<ThreadView>, LogError> {
-    let client = connection(pool)
+    let client = connection(pool, scope.org())
         .await
         .map_err(|e| LogError::Storage(e.to_string()))?;
     stored(&**client, scope, thread, false).await
@@ -178,7 +178,7 @@ pub(crate) async fn rebuild(
 ) -> Result<Option<ThreadView>, LogError> {
     for _ in 0..REBUILD_TRIES {
         let folded = fold_from_log(log, scope, thread).await?;
-        let mut client = connection(pool)
+        let mut client = connection(pool, scope.org())
             .await
             .map_err(|e| LogError::Storage(e.to_string()))?;
         let transaction = client.transaction().await.map_err(|e| failed(&e))?;
@@ -226,29 +226,31 @@ pub(crate) async fn rebuild(
     )))
 }
 
-/// Rebuilds the view of every thread in the database. A thread that cannot be read, such as
-/// one sealed under an erased key, gets no view and is not listed.
+/// Rebuilds the view of every thread in the database, one organization at a time. A thread that
+/// cannot be read, such as one sealed under an erased key, gets no view and is not listed.
 pub(crate) async fn rebuild_all(log: &PostgresLog, pool: &Pool) -> Result<(), StoreError> {
-    let client = connection(pool).await?;
-    let rows = client
-        .query(
-            "SELECT org, project, thread FROM events WHERE seq = 1 AND type = 'thread.started'",
-            &[],
-        )
-        .await
-        .map_err(|e| StoreError::Storage(describe(&e)))?;
-    drop(client);
-    for row in rows {
-        let found = (|| {
-            let org: Uuid = row.try_get(0).ok()?;
-            let project: Uuid = row.try_get(1).ok()?;
-            let thread: Uuid = row.try_get(2).ok()?;
-            // Glave's own: views rebuilt in the scope each thread is stored in.
-            let scope = Scope::glaves_own(OrgId::from_uuid(org), ProjectId::from_uuid(project));
-            Some((scope, ThreadId::try_from(thread).ok()?))
-        })();
-        if let Some((scope, thread)) = found {
-            let _ = rebuild(log, pool, &scope, thread).await;
+    for org in organizations(pool).await? {
+        let client = connection(pool, org).await?;
+        let rows = client
+            .query(
+                "SELECT project, thread FROM events
+                 WHERE org = $1 AND seq = 1 AND type = 'thread.started'",
+                &[&org.as_uuid()],
+            )
+            .await
+            .map_err(|e| StoreError::Storage(describe(&e)))?;
+        drop(client);
+        for row in rows {
+            let found = (|| {
+                let project: Uuid = row.try_get(0).ok()?;
+                let thread: Uuid = row.try_get(1).ok()?;
+                // Glave's own: views rebuilt in the scope each thread is stored in.
+                let scope = Scope::glaves_own(org, ProjectId::from_uuid(project));
+                Some((scope, ThreadId::try_from(thread).ok()?))
+            })();
+            if let Some((scope, thread)) = found {
+                let _ = rebuild(log, pool, &scope, thread).await;
+            }
         }
     }
     Ok(())
@@ -257,7 +259,7 @@ pub(crate) async fn rebuild_all(log: &PostgresLog, pool: &Pool) -> Result<(), St
 /// Rebuilds every view when the stored ones were built by an older fold (or none was built
 /// yet, as in a new database), then records the version.
 pub(crate) async fn refresh(log: &PostgresLog, pool: &Pool) -> Result<(), StoreError> {
-    let client = connection(pool).await?;
+    let client = unscoped(pool).await?;
     let built = client
         .query_opt(
             "SELECT value FROM glave_settings WHERE key = $1",
@@ -271,7 +273,7 @@ pub(crate) async fn refresh(log: &PostgresLog, pool: &Pool) -> Result<(), StoreE
         return Ok(());
     }
     rebuild_all(log, pool).await?;
-    let client = connection(pool).await?;
+    let client = unscoped(pool).await?;
     client
         .execute(
             "INSERT INTO glave_settings (key, value) VALUES ($1, $2)

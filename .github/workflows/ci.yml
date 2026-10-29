@@ -68,7 +68,10 @@ jobs:
     # labelled glave.test=<run id>, which this job sweeps, and glave.test.case=<id> per test,
     # which each test checks so it never sees the containers of a test running beside it.
     env:
-      GLAVE_TEST_POSTGRES_URL: postgres://postgres:glave@localhost:5432/postgres
+      # glave signs in as a role of its own, which row-level security binds, as the store
+      # requires; the tests look at every organization's rows as the superuser.
+      GLAVE_TEST_POSTGRES_URL: postgres://glave:glave@localhost:5432/glave
+      GLAVE_TEST_POSTGRES_ADMIN_URL: postgres://postgres:glave@localhost:5432/glave
       # The S3-compatible bucket a step below starts, so the bucket's suites run here too.
       GLAVE_TEST_S3_URL: s3://glave-test
       GLAVE_TEST_S3_ENDPOINT: http://localhost:8333
@@ -83,6 +86,11 @@ jobs:
       # programs the tests build for the runner (the eval graders' `cargo build`).
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: -Ctarget-feature=+crt-static -Clink-self-contained=yes
     steps:
+      - name: A database role of glave's own, owning its database
+        run: >-
+          docker exec ${{ job.services.postgres.id }} psql -U postgres
+          -c "CREATE ROLE glave LOGIN PASSWORD 'glave' NOSUPERUSER NOBYPASSRLS"
+          -c "CREATE DATABASE glave OWNER glave"
       # Linking every test binary of the workspace once filled a smaller runner's disk (ld died
       # with a bus error). Today's runner starts with about 85 GB free and the build takes about
       # 8, so the toolchains it ships that glave never uses (about 30 GB, and minutes to remove)

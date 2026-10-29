@@ -62,7 +62,9 @@ impl PostgresBlobs {
     ) -> Result<Record, BlobError> {
         let (org, project) = (scope.org().as_uuid(), scope.project().as_uuid());
         let now = self.clock.now().as_millisecond();
-        let mut client = connection(&self.pool).await.map_err(|e| storage(&e))?;
+        let mut client = connection(&self.pool, scope.org())
+            .await
+            .map_err(|e| storage(&e))?;
         let transaction = client
             .transaction()
             .await
@@ -186,7 +188,9 @@ impl PostgresBlobs {
         let Some(name) = name else {
             return Ok(None);
         };
-        let client = connection(&self.pool).await.map_err(|e| storage(&e))?;
+        let client = connection(&self.pool, scope.org())
+            .await
+            .map_err(|e| storage(&e))?;
         let (org, project) = (scope.org().as_uuid(), scope.project().as_uuid());
         let row = client
             .query_opt(
@@ -244,7 +248,9 @@ impl PostgresBlobs {
             return Ok(false);
         };
         let (org, project) = (scope.org().as_uuid(), scope.project().as_uuid());
-        let mut client = connection(&self.pool).await.map_err(|e| storage(&e))?;
+        let mut client = connection(&self.pool, scope.org())
+            .await
+            .map_err(|e| storage(&e))?;
         let transaction = client
             .transaction()
             .await
@@ -275,7 +281,9 @@ impl PostgresBlobs {
 
     async fn release_now(&self, scope: Scope, thread: ThreadId) -> Result<(), BlobError> {
         let (org, project) = (scope.org().as_uuid(), scope.project().as_uuid());
-        let client = connection(&self.pool).await.map_err(|e| storage(&e))?;
+        let client = connection(&self.pool, scope.org())
+            .await
+            .map_err(|e| storage(&e))?;
         client
             .execute(
                 "DELETE FROM blob_threads WHERE org = $1 AND project = $2 AND thread = $3",

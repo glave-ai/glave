@@ -18,16 +18,40 @@ fn count(url: &str, query: &str) -> i64 {
 
 /// Runs `query` on the test database, returning the first column of the first row.
 fn first<T: for<'a> tokio_postgres::types::FromSql<'a>>(url: &str, query: &str) -> T {
+    first_after(url, "", query)
+}
+
+/// Runs `setup`, then `query`, on one connection to the test database, returning the first
+/// column of the first row.
+fn first_after<T: for<'a> tokio_postgres::types::FromSql<'a>>(
+    url: &str,
+    setup: &str,
+    query: &str,
+) -> T {
     block_on!(async {
         let (client, connection) = tokio_postgres::connect(url, NoTls).await.unwrap();
         let connection = tokio::spawn(async move {
             let _ = connection.await;
         });
+        client.batch_execute(setup).await.unwrap();
         let row = client.query_one(query, &[]).await.unwrap();
         drop(client);
         let _ = connection.await;
         row.get(0)
     })
+}
+
+/// How many events the server's own organization has in `schema`: the store's role sees only
+/// the organization its connection is set to (`specs/storage.md`, "Row-level security").
+fn events_in(url: &str, schema: &str) -> i64 {
+    first_after(
+        url,
+        &format!(
+            "SELECT set_config('glave.org',
+                 (SELECT value FROM {schema}.glave_settings WHERE key = 'org'), false)"
+        ),
+        &format!("SELECT count(*) FROM {schema}.events"),
+    )
 }
 
 fn execute(url: &str, sql: &str) {
@@ -61,7 +85,7 @@ fn history_goes_to_the_database_the_store_url_names() {
     let shown = text(&output);
     assert!(output.status.success(), "{shown}");
     assert!(shown.contains("Stored far away."), "{shown}");
-    let events = count(&url, &format!("SELECT count(*) FROM {schema}.events"));
+    let events = events_in(&url, &schema);
     assert!(events > 0, "the turn's events are in the database");
     assert!(
         !place.home.join("glave.db").exists(),

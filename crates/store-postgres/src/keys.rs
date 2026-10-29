@@ -32,7 +32,7 @@ impl KeyStorage for PostgresKeys {
     ) -> impl Future<Output = Result<Option<Vec<u8>>, KeyError>> + Send {
         let pool = self.pool.clone();
         async move {
-            let client = connection(&pool).await.map_err(storage)?;
+            let client = connection(&pool, org).await.map_err(storage)?;
             let row = client
                 .query_opt(
                     "SELECT wrapped FROM org_keys WHERE org = $1",
@@ -53,10 +53,13 @@ impl KeyStorage for PostgresKeys {
     ) -> impl Future<Output = Result<Vec<u8>, KeyError>> + Send {
         let pool = self.pool.clone();
         async move {
-            let client = connection(&pool).await.map_err(storage)?;
+            let client = connection(&pool, org).await.map_err(storage)?;
             client
                 .execute(
-                    "INSERT INTO org_keys (org, wrapped) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                    "WITH listed AS (
+                         INSERT INTO glave_orgs (org) VALUES ($1) ON CONFLICT DO NOTHING
+                     )
+                     INSERT INTO org_keys (org, wrapped) VALUES ($1, $2) ON CONFLICT DO NOTHING",
                     &[&org.as_uuid(), &wrapped],
                 )
                 .await
@@ -80,7 +83,7 @@ impl KeyStorage for PostgresKeys {
         let scope = *scope;
         let pool = self.pool.clone();
         async move {
-            let client = connection(&pool).await.map_err(storage)?;
+            let client = connection(&pool, scope.org()).await.map_err(storage)?;
             let row = client
                 .query_opt(
                     "SELECT revision, record FROM project_keys WHERE org = $1 AND project = $2",
@@ -109,7 +112,7 @@ impl KeyStorage for PostgresKeys {
         let pool = self.pool.clone();
         async move {
             let (org, project) = (scope.org().as_uuid(), scope.project().as_uuid());
-            let client = connection(&pool).await.map_err(storage)?;
+            let client = connection(&pool, scope.org()).await.map_err(storage)?;
             let changed = match expected {
                 None => client
                     .execute(

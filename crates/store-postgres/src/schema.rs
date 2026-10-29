@@ -8,7 +8,7 @@ use crate::store::{StoreError, describe};
 
 /// The schema this build makes and reads. Bumped whenever [`SCHEMA`] changes. It starts past
 /// every version the migrations it replaced wrote, so a database one of them made is refused.
-pub(crate) const VERSION: i32 = 18;
+pub(crate) const VERSION: i32 = 19;
 
 /// Every table, made in one transaction in a new database.
 const SCHEMA: &str = "
@@ -63,6 +63,12 @@ const SCHEMA: &str = "
     );
 
     CREATE INDEX blob_threads_by_thread ON blob_threads (org, project, thread);
+
+    -- The organizations the store holds, ids only, each added with its key: what work that runs
+    -- once per organization goes through. No organization's data, so no policy.
+    CREATE TABLE glave_orgs (
+        org  uuid PRIMARY KEY
+    );
 
     -- The wrapped keys: one per organization, and one record of keys per project.
     CREATE TABLE org_keys (
@@ -158,7 +164,49 @@ const SCHEMA: &str = "
         PRIMARY KEY (org, project, thread, seq)
     );
     CREATE INDEX event_search_terms ON event_search USING gin (terms);
+
+    -- Row-level security (`specs/storage.md`): every table of organizations' rows shows and
+    -- takes only the rows of the organization the connection is set to (`glave.org`), and
+    -- none while it is set to none. `FORCE`, since glave owns the tables it reads.
+    CREATE FUNCTION glave_org() RETURNS uuid LANGUAGE sql STABLE
+        AS $$ SELECT NULLIF(current_setting('glave.org', true), '')::uuid $$;
+    DO $$
+    DECLARE kept text;
+    BEGIN
+        FOREACH kept IN ARRAY ARRAY['events', 'blobs', 'blob_threads', 'org_keys',
+            'project_keys', 'project_records', 'project_folders', 'threads', 'leases',
+            'event_search']
+        LOOP
+            EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', kept);
+            EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', kept);
+            EXECUTE format('CREATE POLICY glave_org ON %I USING (org = glave_org())
+                WITH CHECK (org = glave_org())', kept);
+        END LOOP;
+    END $$;
 ";
+
+/// Refuses a connection whose role row-level security does not bind: a superuser, or a role
+/// with `BYPASSRLS`, for which every organization's rows would be one.
+pub(crate) async fn refuse_bypassing(client: &Client) -> Result<(), StoreError> {
+    let bypasses: bool = client
+        .query_one(
+            "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user",
+            &[],
+        )
+        .await
+        .and_then(|row| row.try_get(0))
+        .map_err(|e| StoreError::Schema(describe(&e)))?;
+    if bypasses {
+        return Err(StoreError::Schema(
+            "glave signs in to the database as a role that skips row-level security (a \
+             superuser, or one with BYPASSRLS), so nothing would keep one organization's data \
+             from another's. Give glave a role of its own without either, owning its tables, \
+             and name it in the store's URL"
+                .into(),
+        ));
+    }
+    Ok(())
+}
 
 /// Makes the schema in a new database, and checks an existing one is this build's. Openers
 /// queue on a lock for the schema they share, so two never make it at once. A database of any
