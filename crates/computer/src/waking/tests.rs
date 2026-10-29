@@ -1,6 +1,7 @@
 //! A computer that wakes only for the calls that need it, on this machine: planning a scratch
 //! folder, listing its commands and closing it never wake it; the first command does, once,
-//! with the folder where it was planned; a computer woken again since opens it again.
+//! with the folder where it was planned; a computer woken again since opens it again; one let
+//! go of with a command running is kept for it until the computer sleeps.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -86,6 +87,14 @@ fn planned_at(
     Waking::home(wake, home, planned)
 }
 
+/// The scratch folder `name`, planned on `home`.
+async fn planned(home: &Home, name: &str) -> WorkspaceInfo {
+    home.computers
+        .open(home.home.computer, &scratch(name))
+        .await
+        .unwrap()
+}
+
 fn scratch(name: &str) -> Sources {
     Sources::Scratch {
         name: name.into(),
@@ -117,11 +126,7 @@ fn a_scratch_folder_is_planned_asleep_and_its_first_command_wakes_the_computer_o
     let (wakes, again) = (Arc::default(), Arc::default());
     block_on!(async {
         let home = waking(&base, &wakes, &again);
-        let chat = home
-            .computers
-            .open(home.home.computer, &scratch("chat"))
-            .await
-            .unwrap();
+        let chat = planned(&home, "chat").await;
         let listed = home.computers.commands(chat.id).await.unwrap();
         assert_eq!(listed, Vec::new());
         assert_eq!(
@@ -144,11 +149,7 @@ fn a_scratch_folder_is_planned_asleep_and_its_first_command_wakes_the_computer_o
             "two calls at once share one wake"
         );
 
-        let quiet = home
-            .computers
-            .open(home.home.computer, &scratch("quiet"))
-            .await
-            .unwrap();
+        let quiet = planned(&home, "quiet").await;
         home.computers.close(quiet.id).await.unwrap();
         assert!(!Path::new(&quiet.root).exists(), "never opened, never made");
         assert_eq!(wakes.load(Ordering::SeqCst), 1);
@@ -161,14 +162,14 @@ fn a_computer_woken_again_opens_its_workspaces_again() {
     let (wakes, again) = (Arc::default(), Arc::<AtomicUsize>::default());
     block_on!(async {
         let home = waking(&base, &wakes, &again);
-        let chat = home
-            .computers
-            .open(home.home.computer, &scratch("chat"))
-            .await
-            .unwrap();
+        let chat = planned(&home, "chat").await;
         run(&home, chat.id, "echo kept > kept.txt").await;
-        // It slept and woke as another computer, its disk kept.
+        // It slept and woke as another computer, its disk kept; the next call comes after a
+        // quiet spell, so it asks.
         again.fetch_add(1, Ordering::SeqCst);
+        tokio::time::pause();
+        tokio::time::advance(TRUSTED + Duration::from_secs(1)).await;
+        tokio::time::resume();
         let read = home.computers.read(chat.id, "kept.txt").await.unwrap();
         assert_eq!(read, Bytes::new(b"kept\n"));
         assert_eq!(wakes.load(Ordering::SeqCst), 2);
@@ -181,15 +182,37 @@ fn a_folder_not_where_it_was_planned_is_refused() {
     let (wakes, again) = (Arc::default(), Arc::default());
     block_on!(async {
         let home = planned_at(&base, &wakes, &again, "/nowhere/scratch");
-        let chat = home
-            .computers
-            .open(home.home.computer, &scratch("chat"))
-            .await
-            .unwrap();
+        let chat = planned(&home, "chat").await;
         let refused = home.computers.read(chat.id, "a.txt").await;
         assert!(
             matches!(&refused, Err(ComputerError::Failed(m)) if m.contains("/nowhere/scratch/chat")),
             "{refused:?}"
         );
+    });
+}
+
+#[test]
+fn a_workspace_let_go_of_with_a_command_running_is_kept_for_it_until_the_computer_sleeps() {
+    let (_dir, base) = folder("waking-closing");
+    let (wakes, again) = (Arc::default(), Arc::<AtomicUsize>::default());
+    block_on!(async {
+        let home = waking(&base, &wakes, &again);
+        let chat = planned(&home, "chat").await;
+        let server = Command::new("sleep 30");
+        let started = home.computers.start(chat.id, &server).await.unwrap();
+        home.computers.close(chat.id).await.unwrap();
+        let kept = home.computers.commands(chat.id).await.unwrap();
+        assert_eq!(kept.len(), 1, "its command is still read there");
+        home.computers.stop(chat.id, started).await.unwrap();
+
+        // It slept, ending the command, and woke again for another workspace's call: the
+        // one kept for its command is forgotten.
+        again.fetch_add(1, Ordering::SeqCst);
+        let other = planned(&home, "other").await;
+        run(&home, other.id, "true").await;
+        let gone = home.computers.commands(chat.id).await;
+        assert!(matches!(gone, Err(ComputerError::NotFound(_))), "{gone:?}");
+        home.computers.close(other.id).await.unwrap();
+        assert_eq!(wakes.load(Ordering::SeqCst), 2, "letting go wakes nothing");
     });
 }

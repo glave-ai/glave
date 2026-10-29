@@ -26,6 +26,8 @@ use crate::support::*;
 /// folders, planned until a call needs it, then woken; every wake is counted.
 struct Here {
     base: PathBuf,
+    /// How many times a call asked for a computer, woken or not.
+    asked: Arc<AtomicUsize>,
     /// How many times a computer was woken.
     woken: Arc<AtomicUsize>,
     /// How many turns and tasks hold a computer now.
@@ -56,6 +58,7 @@ impl Here {
         std::fs::create_dir_all(base).unwrap();
         Self {
             base: base.canonicalize().unwrap(),
+            asked: Arc::default(),
             woken: Arc::default(),
             holds: Arc::default(),
             held_when_woken: Arc::default(),
@@ -65,6 +68,10 @@ impl Here {
 
     fn woken(&self) -> usize {
         self.woken.load(Ordering::SeqCst)
+    }
+
+    fn asked(&self) -> usize {
+        self.asked.load(Ordering::SeqCst)
     }
 
     /// Where `person`'s computer keeps its scratch folders.
@@ -78,7 +85,8 @@ impl Here {
         let folder = self.base.join(person.to_string()).join("home");
         std::fs::create_dir_all(&folder).unwrap();
         let scratch = self.scratch(person);
-        let (woken, holds, held) = (
+        let (asked, woken, holds, held) = (
+            Arc::clone(&self.asked),
             Arc::clone(&self.woken),
             Arc::clone(&self.holds),
             Arc::clone(&self.held_when_woken),
@@ -86,6 +94,7 @@ impl Here {
         let awake: Arc<tokio::sync::Mutex<Option<Home>>> = Arc::default();
         let at = folder.clone();
         let wake: Wake = Arc::new(move || {
+            asked.fetch_add(1, Ordering::SeqCst);
             let (woken, holds, held, awake) = (
                 Arc::clone(&woken),
                 Arc::clone(&holds),
@@ -200,7 +209,7 @@ fn a_person_s_threads_work_on_their_own_computer_woken_only_by_a_tool_call_that_
         // A turn that only talks never asks for the computer; one that reads a file wakes it,
         // once, while the turn holds it.
         turn(&server, thread.id, "hi").await.unwrap();
-        assert_eq!(homes.woken(), 0, "a turn that only talks wakes nothing");
+        assert_eq!(homes.asked(), 0, "a turn that only talks never asks for it");
         turn(&server, thread.id, "read my notes").await.unwrap();
         assert_eq!(
             homes.woken(),
@@ -244,7 +253,7 @@ async fn resumed_later(
     let (again, _) = next.build_on(dir, log).await;
     again.request(Request::ThreadGet { thread }).await.unwrap();
     turn(&again, thread, "hello").await.unwrap();
-    assert_eq!(later.woken(), 0, "read and talked to without waking");
+    assert_eq!(later.asked(), 0, "read and talked to without asking for it");
     assert!(!Path::new(root).exists());
     turn(&again, thread, "read my notes again").await.unwrap();
     assert_eq!(later.woken(), 1);

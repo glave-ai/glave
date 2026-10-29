@@ -108,16 +108,15 @@ pub(crate) fn at_home(bound: Option<&WorkspaceBound>) -> Option<WorkspaceBound> 
         .cloned()
 }
 
-/// Closes `workspace`, opened on a person's own computer for a thread let go of, unless a
-/// command of its still runs there: then it stays open until the computer sleeps.
+/// Closes `workspace`, opened on a person's own computer for a thread let go of: one never
+/// opened there is only forgotten, and one where a command of its still runs stays open until
+/// the computer sleeps (the computer's own adapter keeps it, `Waking` in `glave-computer`).
 pub(crate) async fn close_away(workspace: Option<Arc<Workspace>>) {
     let Some(workspace) = workspace else {
         return;
     };
-    let (computers, id) = (workspace.computers(), workspace.info().id);
-    if matches!(computers.commands(id).await, Ok(listed) if listed.is_empty())
-        && let Err(error) = computers.close(id).await
-    {
+    let id = workspace.info().id;
+    if let Err(error) = workspace.computers().close(id).await {
         tracing::warn!(%error, %id, "could not close a workspace on a person's computer");
     }
 }

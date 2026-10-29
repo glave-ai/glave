@@ -16,6 +16,7 @@ use glave_ports::computer::{
 };
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
+use tokio::time::Instant;
 
 use super::Kubernetes;
 use super::home::PersonComputer;
@@ -26,6 +27,9 @@ use crate::{Wake, Waking, WorkerComputers, WorkerCredentials};
 /// How long a wake may take before whoever waits on it gives up: a Pod waits up to five
 /// minutes for a node and has two more to take glave in, so minutes, never more.
 const WAKE_WAIT: Duration = Duration::from_mins(10);
+/// How long after a failed wake a call is told it failed rather than starting another: a broken
+/// image or a full cluster is not tried again at every tool call of a turn.
+const RETRY_AFTER: Duration = Duration::from_mins(1);
 /// The most people whose computers one server keeps track of at once; past it, those asleep
 /// are let go of, and found again when they come back.
 const MAX_PEOPLE: usize = 4_096;
@@ -40,8 +44,8 @@ enum State {
     Waking,
     /// Awake: the workspace of its home.
     Awake(WorkspaceInfo),
-    /// The last wake failed, and why; the next one tries again.
-    Failed(String),
+    /// The last wake failed, when, and why; a call a minute later or more tries again.
+    Failed(Instant, String),
 }
 
 impl State {
@@ -281,23 +285,33 @@ async fn awake(person: &Arc<Person>, environment: &Environment) -> Result<Home, 
             home,
         });
     }
+    if let State::Failed(at, why) = &*person.state.borrow()
+        && at.elapsed() < RETRY_AFTER
+    {
+        return Err(ComputerError::Failed(format!(
+            "your computer could not wake: {why}"
+        )));
+    }
     start(person, environment);
     let mut state = person.state.subscribe();
     let woke = tokio::time::timeout(WAKE_WAIT, state.wait_for(State::settled)).await;
     let now = match woke {
         Ok(Ok(state)) => state.clone(),
-        Ok(Err(_)) => State::Failed("its wake was stopped".into()),
-        Err(_) => State::Failed(format!(
-            "it was still waking after {}",
-            glave_ports::spoken(WAKE_WAIT)
-        )),
+        Ok(Err(_)) => State::Failed(Instant::now(), "its wake was stopped".into()),
+        Err(_) => State::Failed(
+            Instant::now(),
+            format!(
+                "it was still waking after {}",
+                glave_ports::spoken(WAKE_WAIT)
+            ),
+        ),
     };
     match now {
         State::Awake(home) => Ok(Home {
             computers: Arc::clone(&person.computers) as Arc<dyn Computers>,
             home,
         }),
-        State::Failed(why) => Err(ComputerError::Failed(format!(
+        State::Failed(_, why) => Err(ComputerError::Failed(format!(
             "your computer could not wake: {why}"
         ))),
         State::Asleep | State::Waking => Err(ComputerError::Failed(
@@ -353,7 +367,7 @@ async fn woken(person: Arc<Person>, environment: Environment) {
     };
     let state = woke
         .await
-        .unwrap_or_else(|error| State::Failed(error.message().to_owned()));
+        .unwrap_or_else(|error| State::Failed(Instant::now(), error.message().to_owned()));
     person.state.send_replace(state);
 }
 

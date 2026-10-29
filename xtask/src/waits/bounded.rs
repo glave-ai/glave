@@ -129,8 +129,8 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "crates/computer/src/waking.rs",
-        ".real.lock().await",
-        2,
+        "planned.opening.lock().await",
+        1,
         "a workspace opened on a person's computer, behind the one call opening it: its wake, \
          within WAKE_WAIT, and its open, within its own deadline",
     ),

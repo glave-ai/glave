@@ -7,6 +7,7 @@
 //! computer at once, and wakes it.
 
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -17,10 +18,16 @@ use glave_ports::computer::{
     WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation};
+use tokio::time::Instant;
 
 /// Wakes the computer, if it sleeps, and answers it awake with its home: what [`Waking`] asks
 /// before each call that needs the computer.
 pub type Wake = Arc<dyn Fn() -> BoxFuture<'static, Result<Home, ComputerError>> + Send + Sync>;
+
+/// How long a computer that answered a call is taken to be awake without asking again: a turn
+/// holds it awake, asking it how it is once a minute, so only a call after a quiet spell asks
+/// whether it slept meanwhile.
+const TRUSTED: Duration = Duration::from_secs(30);
 
 /// A person's computer that wakes only for the calls that need it.
 pub struct Waking {
@@ -31,13 +38,29 @@ pub struct Waking {
     scratch: String,
     /// Each workspace planned on it, and where it is open for real.
     workspaces: Mutex<BTreeMap<WorkspaceId, Arc<Planned>>>,
+    /// The computer last found awake, and when a call on it last went through.
+    awake: Mutex<Option<(ComputerId, Option<Instant>)>>,
 }
 
 /// A workspace planned on the computer.
 struct Planned {
     info: WorkspaceInfo,
     /// Where it is open, once a call needed it; opened again on a computer woken since.
-    real: tokio::sync::Mutex<Option<Real>>,
+    real: Mutex<Option<Real>>,
+    /// Held by the one call opening it, so two calls at once share one wake and one open.
+    opening: tokio::sync::Mutex<()>,
+    /// Let go of while a command of its ran in the background there: kept for that command
+    /// until the computer sleeps, which ends it, then forgotten.
+    closing: AtomicBool,
+}
+
+impl Planned {
+    fn real(&self) -> Option<Real> {
+        self.real
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
 }
 
 /// A planned workspace, open on the computer awake.
@@ -56,6 +79,16 @@ impl std::fmt::Debug for Waking {
     }
 }
 
+/// Whether a workspace opened from `sources` can be opened again on the computer woken since,
+/// at the same root: a folder, a worktree on its branch, a scratch folder. A clone or a new
+/// project's folder would be another.
+fn reopens(sources: &Sources) -> bool {
+    matches!(
+        sources,
+        Sources::Folder { .. } | Sources::Worktree { .. } | Sources::Scratch { .. }
+    )
+}
+
 impl Waking {
     /// The computer `wake` wakes, planned as `home`: its home's workspace, which names the
     /// computer, whose scratch folders are made in the folder `scratch`. Nothing is asked of it
@@ -66,6 +99,7 @@ impl Waking {
             home: home.clone(),
             scratch: scratch.trim_end_matches('/').to_owned(),
             workspaces: Mutex::new(BTreeMap::new()),
+            awake: Mutex::new(None),
         };
         waking.plan(home.clone(), None);
         Home {
@@ -79,7 +113,9 @@ impl Waking {
         let id = info.id;
         let planned = Arc::new(Planned {
             info,
-            real: tokio::sync::Mutex::new(real),
+            real: Mutex::new(real),
+            opening: tokio::sync::Mutex::new(()),
+            closing: AtomicBool::new(false),
         });
         self.workspaces
             .lock()
@@ -96,31 +132,95 @@ impl Waking {
             .ok_or_else(|| ComputerError::NotFound(format!("no workspace {workspace}")))
     }
 
-    /// Where `workspace` is open, if a call has opened it; never wakes the computer.
-    async fn opened(&self, workspace: WorkspaceId) -> Result<Option<Real>, ComputerError> {
-        Ok(self.planned(workspace)?.real.lock().await.clone())
+    fn forget(&self, workspace: WorkspaceId) {
+        self.workspaces
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&workspace);
+    }
+
+    /// The computer last found awake, and whether a call on it went through lately.
+    fn last_awake(&self) -> Option<(ComputerId, bool)> {
+        let awake = *self.awake.lock().unwrap_or_else(PoisonError::into_inner);
+        awake.map(|(computer, at)| (computer, at.is_some_and(|at| at.elapsed() < TRUSTED)))
+    }
+
+    /// Where `workspace` is open on the computer last found awake, if a call opened it there;
+    /// never wakes the computer. Opened on one that slept since, it is not: its commands are
+    /// gone with it.
+    fn opened(&self, planned: &Planned) -> Option<Real> {
+        let open = planned.real()?;
+        let (computer, _) = self.last_awake()?;
+        (open.computer == computer).then_some(open)
+    }
+
+    /// Counts `computer` awake as of now, and forgets what was kept only for commands on a
+    /// computer before it.
+    fn saw(&self, computer: ComputerId) {
+        let before = self
+            .awake
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .replace((computer, Some(Instant::now())));
+        if before.is_some_and(|(was, _)| was != computer) {
+            self.workspaces
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .retain(|_, planned| !planned.closing.load(Ordering::SeqCst));
+        }
+    }
+
+    /// `result`, a call's on the computer awake: one that went through counts it awake as of
+    /// now; one that found it unreachable has the next call ask whether it slept.
+    fn done<T>(&self, result: Result<T, ComputerError>) -> Result<T, ComputerError> {
+        let mut awake = self.awake.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some((_, at)) = awake.as_mut() {
+            *at = match &result {
+                Err(ComputerError::Unreachable(_)) => None,
+                _ => Some(Instant::now()),
+            };
+        }
+        result
     }
 
     /// The computer awake, woken if it sleeps, and `workspace` open on it: opened there now
-    /// when no call has opened it on the computer awake.
+    /// when no call has opened it on the computer awake. One a call went through on lately is
+    /// taken as awake without asking.
     async fn real(&self, workspace: WorkspaceId) -> Result<Real, ComputerError> {
         let planned = self.planned(workspace)?;
-        let mut real = planned.real.lock().await;
+        let trusted = |open: &Real| {
+            self.last_awake()
+                .is_some_and(|(computer, lately)| lately && computer == open.computer)
+        };
+        if let Some(open) = planned.real().filter(trusted) {
+            return Ok(open);
+        }
+        let _opening = planned.opening.lock().await;
         let awake = (self.wake)().await?;
-        if let Some(open) = real.as_ref()
+        self.saw(awake.home.computer);
+        if let Some(open) = planned.real()
             && open.computer == awake.home.computer
         {
-            return Ok(open.clone());
+            return Ok(open);
         }
-        let info = if planned.info.sources == self.home.sources {
+        let info = if workspace == self.home.id {
             awake.home.clone()
-        } else {
+        } else if reopens(&planned.info.sources) {
             awake
                 .computers
                 .open(awake.home.computer, &planned.info.sources)
                 .await?
+        } else {
+            return Err(ComputerError::Unsupported(
+                "this workspace was on your computer before it slept and cannot be made again \
+                 there. Start a new thread to go on"
+                    .into(),
+            ));
         };
         if info.root != planned.info.root {
+            if workspace != self.home.id {
+                let _ = awake.computers.close(info.id).await;
+            }
             return Err(ComputerError::Failed(format!(
                 "your computer opened this folder at {}, not at {} as glave planned",
                 info.root, planned.info.root
@@ -131,12 +231,10 @@ impl Waking {
             computer: awake.home.computer,
             workspace: info.id,
         };
-        *real = Some(open.clone());
+        *planned.real.lock().unwrap_or_else(PoisonError::into_inner) = Some(open.clone());
         Ok(open)
     }
-}
 
-impl Waking {
     /// `opened`, a workspace opened on the computer awake, `home` there, kept as planned on
     /// `computer` under an id of its own.
     fn opened_now(
@@ -232,17 +330,33 @@ impl Computers for Waking {
         })
     }
 
-    /// Closed where it is open, and forgotten; one never opened is only forgotten.
+    /// Closed where it is open, and forgotten; one never opened, or opened on a computer that
+    /// slept since, is only forgotten. One where a command of its still runs in the background
+    /// stays open there for it until the computer sleeps.
     fn close(&self, workspace: WorkspaceId) -> BoxFuture<'_, Result<(), ComputerError>> {
         Box::pin(async move {
-            let open = self.opened(workspace).await?;
-            self.workspaces
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .remove(&workspace);
-            match open {
-                Some(open) => open.computers.close(open.workspace).await,
-                None => Ok(()),
+            let planned = self.planned(workspace)?;
+            let Some(open) = self.opened(&planned) else {
+                self.forget(workspace);
+                return Ok(());
+            };
+            match self.done(open.computers.commands(open.workspace).await) {
+                Ok(running) if !running.is_empty() => {
+                    planned.closing.store(true, Ordering::SeqCst);
+                    Ok(())
+                }
+                Ok(_) => {
+                    self.forget(workspace);
+                    match self.done(open.computers.close(open.workspace).await) {
+                        Err(ComputerError::NotFound(_)) => Ok(()),
+                        closed => closed,
+                    }
+                }
+                // Its computer is gone, and its commands with it.
+                Err(_) => {
+                    self.forget(workspace);
+                    Ok(())
+                }
             }
         })
     }
@@ -256,9 +370,11 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<Finished, ComputerError>> {
         Box::pin(async move {
             let open = self.real(workspace).await?;
-            open.computers
-                .run(open.workspace, command, output, stop)
-                .await
+            self.done(
+                open.computers
+                    .run(open.workspace, command, output, stop)
+                    .await,
+            )
         })
     }
 
@@ -272,9 +388,11 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<Finished, ComputerError>> {
         Box::pin(async move {
             let open = self.real(workspace).await?;
-            open.computers
-                .run_with_credentials(open.workspace, command, output, stop, credentials)
-                .await
+            self.done(
+                open.computers
+                    .run_with_credentials(open.workspace, command, output, stop, credentials)
+                    .await,
+            )
         })
     }
 
@@ -285,7 +403,7 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<CommandId, ComputerError>> {
         Box::pin(async move {
             let open = self.real(workspace).await?;
-            open.computers.start(open.workspace, command).await
+            self.done(open.computers.start(open.workspace, command).await)
         })
     }
 
@@ -298,8 +416,8 @@ impl Computers for Waking {
         wait: Duration,
     ) -> BoxFuture<'_, Result<Printed, ComputerError>> {
         Box::pin(async move {
-            match self.opened(workspace).await? {
-                Some(open) => open.computers.output(open.workspace, command, wait).await,
+            match self.opened(&*self.planned(workspace)?) {
+                Some(open) => self.done(open.computers.output(open.workspace, command, wait).await),
                 None => Err(ComputerError::NotFound(format!("no command {command}"))),
             }
         })
@@ -312,8 +430,8 @@ impl Computers for Waking {
         wait: Duration,
     ) -> BoxFuture<'_, Result<Option<Finished>, ComputerError>> {
         Box::pin(async move {
-            match self.opened(workspace).await? {
-                Some(open) => open.computers.ended(open.workspace, command, wait).await,
+            match self.opened(&*self.planned(workspace)?) {
+                Some(open) => self.done(open.computers.ended(open.workspace, command, wait).await),
                 None => Err(ComputerError::NotFound(format!("no command {command}"))),
             }
         })
@@ -325,8 +443,8 @@ impl Computers for Waking {
         command: CommandId,
     ) -> BoxFuture<'_, Result<Printed, ComputerError>> {
         Box::pin(async move {
-            match self.opened(workspace).await? {
-                Some(open) => open.computers.stop(open.workspace, command).await,
+            match self.opened(&*self.planned(workspace)?) {
+                Some(open) => self.done(open.computers.stop(open.workspace, command).await),
                 None => Err(ComputerError::NotFound(format!("no command {command}"))),
             }
         })
@@ -337,8 +455,8 @@ impl Computers for Waking {
         workspace: WorkspaceId,
     ) -> BoxFuture<'_, Result<Vec<Background>, ComputerError>> {
         Box::pin(async move {
-            match self.opened(workspace).await? {
-                Some(open) => open.computers.commands(open.workspace).await,
+            match self.opened(&*self.planned(workspace)?) {
+                Some(open) => self.done(open.computers.commands(open.workspace).await),
                 None => Ok(Vec::new()),
             }
         })
@@ -351,7 +469,7 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<Bytes, ComputerError>> {
         Box::pin(async move {
             let open = self.real(workspace).await?;
-            open.computers.read(open.workspace, path).await
+            self.done(open.computers.read(open.workspace, path).await)
         })
     }
 
@@ -362,7 +480,7 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<(), ComputerError>> {
         Box::pin(async move {
             let open = self.real(workspace).await?;
-            open.computers.write(open.workspace, files).await
+            self.done(open.computers.write(open.workspace, files).await)
         })
     }
 
@@ -373,7 +491,7 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<Listed, ComputerError>> {
         Box::pin(async move {
             let open = self.real(workspace).await?;
-            open.computers.list(open.workspace, listing).await
+            self.done(open.computers.list(open.workspace, listing).await)
         })
     }
 
@@ -384,7 +502,7 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<Stat, ComputerError>> {
         Box::pin(async move {
             let open = self.real(workspace).await?;
-            open.computers.stat(open.workspace, path).await
+            self.done(open.computers.stat(open.workspace, path).await)
         })
     }
 
@@ -395,7 +513,7 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<Globbed, ComputerError>> {
         Box::pin(async move {
             let open = self.real(workspace).await?;
-            open.computers.glob(open.workspace, glob).await
+            self.done(open.computers.glob(open.workspace, glob).await)
         })
     }
 
@@ -406,7 +524,7 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<Searched, ComputerError>> {
         Box::pin(async move {
             let open = self.real(workspace).await?;
-            open.computers.search(open.workspace, search).await
+            self.done(open.computers.search(open.workspace, search).await)
         })
     }
 
@@ -417,7 +535,7 @@ impl Computers for Waking {
     ) -> BoxFuture<'a, Result<Saved, ComputerError>> {
         Box::pin(async move {
             let open = self.real(workspace).await?;
-            open.computers.save(open.workspace, save).await
+            self.done(open.computers.save(open.workspace, save).await)
         })
     }
 }
