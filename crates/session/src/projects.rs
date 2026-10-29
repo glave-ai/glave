@@ -196,10 +196,13 @@ where
         Ok(scope)
     }
 
-    /// Refuses `request` unless `caller` may make it: for a thread, they own its project; for
-    /// a project's memory, the project it names (with none, their own Chats).
+    /// Refuses `request` unless `caller` may make it: for an admin method, their role
+    /// permits it; for a thread, they own its project; for a project's
+    /// memory, the project it names (with none, their own Chats).
     pub(crate) async fn allow(&self, caller: &Caller, request: &Request) -> Result<(), ApiError> {
-        if let Some(thread) = request.thread() {
+        if let Some(needed) = request.needs() {
+            self.permitted(caller, needed).await?;
+        } else if let Some(thread) = request.thread() {
             self.authorize(caller, thread).await?;
         } else if let Some(project) = request.memory_project() {
             self.owned(caller, project).await?;

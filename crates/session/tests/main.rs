@@ -34,6 +34,7 @@ mod models;
 mod never_projects;
 mod outside;
 mod passkeys;
+mod people;
 mod permissions;
 mod placement;
 mod plans;

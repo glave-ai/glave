@@ -144,6 +144,36 @@ fn rs256_and_es256_tokens_both_sign_in() {
 }
 
 #[test]
+fn a_tokens_name_email_and_groups_are_read_and_odd_ones_left_out() {
+    block_on!(async {
+        let issuer = Issuer::start().await;
+        let signer = Signer::es256("ec");
+        issuer.publish(&signer);
+        let trust = Trust {
+            issuers: vec![issuer.url.clone()],
+            audience: AUDIENCE.into(),
+        };
+        let signin = SignIn::new(trust, Box::new(ManualClock::at_second(NOW))).unwrap();
+        let named = json!({"name": "Ada", "email": "ada@example.com", "groups": ["eng", 7, "ops"]});
+        let caller = signin
+            .verify(&signer.sign(&with(&issuer.claims("ada"), &named)))
+            .await
+            .unwrap();
+        let profile = caller.profile.unwrap();
+        assert_eq!(profile.name.as_deref(), Some("Ada"));
+        assert_eq!(profile.email.as_deref(), Some("ada@example.com"));
+        assert_eq!(profile.groups, ["eng", "ops"]);
+        // Claims of another shape never refuse the token: they are left out.
+        let odd = json!({"name": {"given": "Ada"}, "email": "x".repeat(300), "groups": "eng"});
+        let caller = signin
+            .verify(&signer.sign(&with(&issuer.claims("ada"), &odd)))
+            .await
+            .unwrap();
+        assert_eq!(caller.profile, Some(glave_event::Profile::default()));
+    });
+}
+
+#[test]
 fn keys_are_cached_and_fetched_again_for_a_new_key_at_most_every_half_minute() {
     block_on!(async {
         let issuer = Issuer::start().await;

@@ -102,6 +102,9 @@ where
         reason = "one arm per method: the API's one dispatch"
     )]
     async fn answer(&self, caller: &Caller, request: Request) -> Answered {
+        if let Err(refused) = self.seen(caller).await {
+            return Answered::Reply(Err(refused));
+        }
         if let Err(refused) = self.allow(caller, &request).await {
             return Answered::Reply(Err(refused));
         }
@@ -117,6 +120,14 @@ where
         Answered::Reply(match request {
             Request::Discover {} => {
                 self.reread().await;
+                let role = if self.inner.identity_provider && caller.auth.is_some() {
+                    match self.role_of(caller).await {
+                        Ok(role) => Some(role),
+                        Err(failed) => return Answered::Reply(Err(failed)),
+                    }
+                } else {
+                    None
+                };
                 Ok(Reply::Server(ServerInfo {
                     name: "glave".to_owned(),
                     version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -132,8 +143,11 @@ where
                         organization: self.inner.identity_provider,
                         workers: self.inner.worker.is_some(),
                     },
+                    role,
                 }))
             }
+            Request::PeopleList { after, limit } => self.list_people(after, limit).await,
+            Request::RoleSet { person, role } => self.set_role(caller, person, role).await,
             Request::AwakeGet {} => Ok(self.awake().await),
             Request::AwakeSet { on } => self.set_awake(caller, on).await,
             Request::LanguageGet {} => self.language(caller).await,

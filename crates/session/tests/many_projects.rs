@@ -271,6 +271,7 @@ fn someone(name: &str) -> Caller {
         person: Some(person("https://id.example.com", name).unwrap()),
         auth: None,
         trace: None,
+        profile: None,
     }
 }
 

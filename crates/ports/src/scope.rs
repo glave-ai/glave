@@ -47,6 +47,10 @@ impl fmt::Display for OrgId {
 pub struct ProjectId(Uuid);
 
 impl ProjectId {
+    /// The organization's own place among its projects' ([`Scope::of_organization`]): no
+    /// project's id, since projects' are made from the clock.
+    const ORGANIZATION: Self = Self(Uuid::from_u128(0x0000_0000_0000_7000_8000_0000_0000_0000));
+
     pub fn from_uuid(uuid: Uuid) -> Self {
         Self(uuid)
     }
@@ -95,6 +99,16 @@ impl Scope {
     /// decides.
     pub fn glaves_own(org: OrgId, project: ProjectId) -> Self {
         Self { org, project }
+    }
+
+    /// The scope of the organization's own streams, which are no project's: its people ledger
+    /// (`specs/model.md`, "Roles"). glave's own, like [`Scope::glaves_own`]: the session reads
+    /// it for a caller only to check their role, and answers it only to an admin.
+    pub fn of_organization(org: OrgId) -> Self {
+        Self {
+            org,
+            project: ProjectId::ORGANIZATION,
+        }
     }
 
     pub fn org(self) -> OrgId {

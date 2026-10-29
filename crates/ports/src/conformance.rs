@@ -36,6 +36,7 @@ use uuid::{Builder, Uuid};
 
 use crate::log::{EventLog, LogError};
 use crate::scope::{Located, OrgId, ProjectId, Scope};
+use crate::stream::Reserved;
 use crate::tools::NeverCancelled;
 
 type Verdict = Result<(), String>;
@@ -174,7 +175,37 @@ pub async fn event_log<L: EventLog>(log: &L) -> Verdict {
         "writing another scope must not touch this one",
     )?;
 
+    organizations_apart(log).await?;
     racing::racing_appends(log).await
+}
+
+/// Each organization's own streams ([`Scope::of_organization`]) are its alone, and none of its
+/// projects'.
+async fn organizations_apart<L: EventLog>(log: &L) -> Verdict {
+    let (here, elsewhere) = (scope(5), scope(6));
+    let own = Scope::of_organization(here.org());
+    let people = Reserved::People.id();
+    log.append(&own, &events(people, &[1, 2])?)
+        .await
+        .map_err(|e| e.to_string())?;
+    let read = |s: Scope| async move { log.read(&s, people, None, usize::MAX).await };
+    let kept = read(own).await.map_err(|e| e.to_string())?;
+    ensure(
+        seqs(&kept) == [1, 2],
+        "an organization's own stream must read back",
+    )?;
+    let theirs = read(Scope::of_organization(elsewhere.org()))
+        .await
+        .map_err(|e| e.to_string())?;
+    ensure(
+        theirs.is_empty(),
+        "another organization must not see an organization's own stream",
+    )?;
+    let projects = read(here).await.map_err(|e| e.to_string())?;
+    ensure(
+        projects.is_empty(),
+        "a project must not see its organization's own stream",
+    )
 }
 
 /// `latest_of` finds a thread's last event of the given types, past later events of other

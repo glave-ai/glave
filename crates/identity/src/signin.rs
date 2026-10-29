@@ -14,7 +14,7 @@ mod local;
 
 use std::sync::Arc;
 
-use glave_event::{Auth, AuthMethod, PrincipalId};
+use glave_event::{Auth, AuthMethod, PrincipalId, Profile};
 use glave_ports::auth::safe_to_send;
 use glave_ports::{Caller, Clock};
 use jsonwebtoken::{Algorithm, Validation, decode, decode_header};
@@ -118,6 +118,49 @@ struct Claims {
     nbf: Option<f64>,
     #[serde(default)]
     sid: Option<String>,
+    #[serde(default)]
+    name: Option<serde_json::Value>,
+    #[serde(default)]
+    email: Option<serde_json::Value>,
+    #[serde(default)]
+    groups: Option<serde_json::Value>,
+}
+
+/// The most groups kept of a token's, as Entra ID sends at most 200 before it sends a link
+/// instead.
+const GROUPS: usize = 256;
+/// The longest name, email or group kept of a token's, in bytes; a longer one is left out.
+const LONGEST: usize = 256;
+
+/// A claim kept when it is text of at most [`LONGEST`] bytes, not empty: a token's other
+/// claims never refuse it.
+fn text(claim: Option<&serde_json::Value>) -> Option<String> {
+    claim
+        .and_then(serde_json::Value::as_str)
+        .filter(|text| !text.is_empty() && text.len() <= LONGEST)
+        .map(str::to_owned)
+}
+
+/// What the token says of the person besides who they are: their name, email and groups,
+/// where it says them as text.
+fn profile(claims: &Claims) -> Profile {
+    let groups = claims
+        .groups
+        .as_ref()
+        .and_then(serde_json::Value::as_array)
+        .map(|groups| {
+            groups
+                .iter()
+                .filter_map(|group| text(Some(group)))
+                .take(GROUPS)
+                .collect()
+        })
+        .unwrap_or_default();
+    Profile {
+        name: text(claims.name.as_ref()),
+        email: text(claims.email.as_ref()),
+        groups,
+    }
 }
 
 /// Only the issuer, read before the signature is checked to know whose keys check it.
@@ -257,8 +300,10 @@ impl SignIn {
         if claims.sub.is_empty() {
             return Err(SignInError::Invalid("the subject is empty".into()));
         }
+        let profile = profile(&claims);
         Ok(Caller {
             person: Some(person(&claims.iss, &claims.sub)?),
+            profile: Some(profile),
             auth: Some(Auth {
                 method: AuthMethod::Oidc,
                 issuer: Some(claims.iss),
@@ -281,6 +326,7 @@ fn local_person(session: Option<String>) -> Caller {
             session,
         }),
         trace: None,
+        profile: None,
     }
 }
 

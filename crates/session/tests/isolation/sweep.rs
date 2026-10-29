@@ -39,14 +39,22 @@ pub(super) async fn own_calls<L: EventLog + Clone + 'static>(world: &World<L>) -
     found
 }
 
-/// Every id but those of `person`.
+/// Every id but those of `person`, and the people of their own organization, whom its admins
+/// see.
 fn ids_of_others<L: EventLog + 'static>(world: &World<L>, person: usize) -> BTreeSet<String> {
+    let org = world.people.get(person).map(|it| it.org);
     world
         .people
         .iter()
         .enumerate()
         .filter(|(index, _)| *index != person)
-        .flat_map(|(_, other)| other.ids.values().flatten())
+        .flat_map(|(_, other)| {
+            other
+                .ids
+                .iter()
+                .filter(move |(kind, _)| **kind != Kind::Person || Some(other.org) != org)
+                .flat_map(|(_, ids)| ids)
+        })
         .filter_map(|id| id.as_str().map(str::to_owned))
         .collect()
 }
@@ -161,9 +169,10 @@ pub(super) async fn sweep<L: EventLog + Clone + 'static>(world: &World<L>) -> Ve
                 for template in &templates {
                     let codes = placeholders(template)
                         .iter()
-                        .any(|(_, kind)| *kind == Kind::Code);
-                    // A code is its holder's to sign in with; only another organization's is
-                    // someone else's.
+                        .any(|(_, kind)| matches!(kind, Kind::Code | Kind::Person));
+                    // A code is its holder's to sign in with, and a person is their
+                    // organization's admins' to see; only another organization's is someone
+                    // else's.
                     if codes && victim.org == attacker.org {
                         continue;
                     }

@@ -322,6 +322,7 @@ fn a_thread_opens_with_its_own_folder_s_instructions_and_a_chat_with_the_person_
             person: Some(person("https://id.example.com", "grace").unwrap()),
             auth: None,
             trace: None,
+            profile: None,
         };
         let chat = server
             .request_as(

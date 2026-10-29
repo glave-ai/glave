@@ -94,6 +94,7 @@ fn a_thread_is_for_its_caller_and_anyone_else_who_acts_in_it_is_recorded() {
             person: Some(ada),
             auth: Some(auth.clone()),
             trace: None,
+            profile: None,
         };
         let mut thread = harness.start_thread_as(scope(), &signed_in).await.unwrap();
         for caller in [
@@ -102,6 +103,7 @@ fn a_thread_is_for_its_caller_and_anyone_else_who_acts_in_it_is_recorded() {
                 person: owner,
                 auth: None,
                 trace: None,
+                profile: None,
             },
         ] {
             harness

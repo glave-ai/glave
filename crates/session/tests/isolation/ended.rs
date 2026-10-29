@@ -42,6 +42,7 @@ async fn signed_in(dir: &std::path::Path, answers: Vec<Completion>) -> (Tested, 
             session: Some(session.id),
         }),
         trace: None,
+        profile: None,
     };
     (server, browser)
 }
