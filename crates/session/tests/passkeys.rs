@@ -18,11 +18,8 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::support::issuer::fixed_clock;
-use crate::support::web::{Served, Web, serve_here, serve_with};
+use crate::support::web::{ORIGIN, Served, Web, asked, elsewhere, serve_here, serve_with};
 use crate::support::*;
-
-/// Where people reach the server from elsewhere.
-const ORIGIN: &str = "https://glave.test";
 
 /// The person's passkey handle.
 const HANDLE: Uuid = Uuid::from_u128(0x691);
@@ -55,27 +52,17 @@ async fn serve(dir: &Path, reached: bool, token: &LocalToken) -> Served {
     serve_with(server, signin, None).await
 }
 
-/// A client through the tunnel on this computer: its requests come to [`ORIGIN`]'s name.
-fn elsewhere(served: &Served, token: Option<String>) -> Web {
-    Web::new(served, token).reaching(ORIGIN)
-}
-
-/// What `request` is answered with: its result, or its error's code.
-async fn asked(web: &mut Web, request: &Request) -> Value {
-    let answered = web.call(request).await;
-    match answered.get("result") {
-        Some(result) => result.clone(),
-        None => answered["error"]["code"].clone(),
-    }
-}
-
 /// A passkey made on `phone` through a setup link glave here made, and its session.
 async fn set_up(served: &Served, token: &LocalToken, phone: &mut Authenticator) -> String {
     let mut here = Web::new(served, Some(token.reveal().to_owned()));
     let setup = asked(&mut here, &Request::SigninSetup {}).await;
     let code = glave_event::Secret::new(setup["code"].as_str().unwrap());
     let mut anyone = elsewhere(served, None);
-    let options = asked(&mut anyone, &Request::PasskeyCreateOptions { code }).await;
+    let create = Request::PasskeyCreateOptions {
+        code,
+        invite: false,
+    };
+    let options = asked(&mut anyone, &create).await;
     let credential = phone.create(&options["options"]).unwrap();
     let created = Request::PasskeyCreate {
         ceremony: options["ceremony"].as_str().unwrap().to_owned(),

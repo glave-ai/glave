@@ -39,7 +39,7 @@ thiserror.workspace = true
 # Each browser session's id: UUID v7.
 uuid.workspace = true
 # Passkeys: registering them and signing in with them (WebAuthn's relying party).
-webauthn-rs.workspace = true
+webauthn-rs = { workspace = true, features = ["conditional-ui"] }
 
 [dev-dependencies]
 aws-lc-rs.workspace = true

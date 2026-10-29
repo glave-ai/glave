@@ -90,8 +90,12 @@ where
     B: BlobStore + 'static,
     S: Future<Output = ()>,
 {
-    let signin = Arc::new(match server.inner.browsers.clone() {
+    let signin = match server.inner.browsers.clone() {
         Some(browsers) => signin.with_browsers(browsers),
+        None => signin,
+    };
+    let signin = Arc::new(match server.inner.accounts.clone() {
+        Some(accounts) => signin.with_accounts(accounts),
         None => signin,
     });
     let site = Arc::new(site);

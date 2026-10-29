@@ -305,7 +305,7 @@ fn a_code_works_once_across_the_servers_of_one_store_and_never_in_another_organi
 }
 
 #[test]
-fn without_an_organization_there_is_nothing_to_invite_to_or_accept() {
+fn where_no_one_else_reaches_the_server_there_is_no_one_to_invite_or_accept() {
     let dir = folder("invites-alone");
     block_on!(async {
         let (server, _) = Setup::new(Vec::new())
@@ -317,7 +317,8 @@ fn without_an_organization_there_is_nothing_to_invite_to_or_accept() {
         assert_eq!(refused.code, code::NOT_ALLOWED);
         assert_eq!(
             refused.message.to_string(),
-            "this server has no organization to invite anyone to"
+            "no one else can reach this glave, so there is no one to invite: give it an address \
+             people reach it at first"
         );
         // Only someone signed in through the identity provider opens an invite.
         let guessed = Secret::new("0".repeat(64));

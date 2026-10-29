@@ -137,7 +137,7 @@ where
         }
         // Subscribed before anything is read, so nothing recorded meanwhile falls between.
         let changes = self.inner.hub.changes();
-        let access = self.access(caller)?;
+        let access = self.access(caller).await?;
         let (out, items) = mpsc::channel(1);
         let follower = Follower {
             server: self.clone(),

@@ -3,11 +3,13 @@
 //! credentials, the one list of those addresses. And origins: where a host is, as its scheme
 //! and name, read one way for every origin glave keeps.
 
+mod inside;
 mod metadata;
 
 use std::fmt;
 use std::net::IpAddr;
 
+pub use inside::INSIDE;
 pub use metadata::{CLOUD_METADATA, Network, is_cloud_metadata};
 
 /// Whether `host`, as a URL or a connection names it, is this computer: `localhost` in any

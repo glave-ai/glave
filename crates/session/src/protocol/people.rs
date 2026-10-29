@@ -17,8 +17,9 @@ pub struct PersonInfo {
     /// Their email, as the identity provider's token said it, when it did.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
-    /// Who they are to the identity provider: its id for them.
-    pub subject: String,
+    /// Who they are to the company login: its id for them; none with a glave account.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
     /// The identity provider's groups they were in when they last signed in.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub groups: Vec<String>,

@@ -74,13 +74,16 @@ where
     /// The access a watch for `caller` follows: their browser's session, when they signed in
     /// with one here; `None` for anyone else, whose sign-in nothing here ends. Refused when it
     /// has ended already, checked after hearing begins so no ending falls between.
-    pub(crate) fn access(&self, caller: &Caller) -> Result<Option<Access>, ApiError> {
-        let (Some(browsers), Some(session)) = (self.inner.browsers.as_ref(), session_of(caller))
-        else {
+    pub(crate) async fn access(&self, caller: &Caller) -> Result<Option<Access>, ApiError> {
+        let Some(session) = session_of(caller) else {
+            return Ok(None);
+        };
+        // The browsers it signed in with: the local person's, or their glave account's.
+        let Ok(browsers) = self.person_s(caller).await else {
             return Ok(None);
         };
         let access = Access {
-            browsers: Arc::clone(browsers),
+            browsers,
             session: session.to_owned(),
             sign_ins: self.inner.hub.sign_ins(),
             heard: false,

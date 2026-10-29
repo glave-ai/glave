@@ -6,6 +6,7 @@
 
 mod support;
 
+mod accounts;
 mod awake;
 mod background_commands;
 mod browsers;

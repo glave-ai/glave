@@ -28,6 +28,7 @@ mod homes;
 pub mod http;
 mod hub;
 mod invites;
+mod joining;
 mod keyed;
 mod language;
 mod leased;

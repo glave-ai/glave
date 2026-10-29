@@ -59,13 +59,16 @@ pub struct Profile {
     pub groups: Vec<String>,
 }
 
-/// A person who signed in through the identity provider, as its token describes them.
+/// A person who joined the organization: through its company login, as its token describes
+/// them (`issuer`, `subject`); or with a glave account, by an invite, with neither.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PersonJoined {
     pub person: PrincipalId,
-    pub issuer: String,
-    pub subject: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issuer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
     #[serde(default)]
     pub profile: Profile,
 }

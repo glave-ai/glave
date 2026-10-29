@@ -311,6 +311,7 @@ pub(crate) fn refused(error: &SignInError) -> Sentence {
         SignInError::WrongLocalToken => Sentence::WrongLocalToken,
         SignInError::EndedSession => Sentence::SignInEnded,
         SignInError::OnlyThere => Sentence::SignedInThereOnly,
+        SignInError::NoOrganization => Sentence::InNoOrganization,
     }
 }
 
