@@ -14,13 +14,14 @@ use crate::payload::{
     EffortChosen, GatewayToolCalled, GoalEnded, GoalResumed, GoalSet, GroupingSet, HookRan,
     LanguageSet, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemorySet,
     MemoryTidied, MessageAdded, ModelChosen, ModelResponded, PasskeyAdded, PasskeyRemoved,
-    PasskeyUsed, PermissionsChosen, PlanApproved, PlanUpdated, ProjectFolderSet, ProjectRemoved,
-    ProviderConnected, ProviderRemoved, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted,
-    ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived,
-    ToolCallCompleted, ToolCallRequested, TrustDecided, TurnResult, TurnStarted, WorkspaceBound,
-    WorkspaceRemoved, approval, awake, browser, catalog, certificate, chosen, command, connection,
-    credential, gateway, goal, grouping, hook, language, memory, message, model, passkey, plan,
-    project, provider, remembering, standing, task, thread, tool, trust, turn, workspace,
+    PasskeyUsed, PermissionsChosen, PersonJoined, PlanApproved, PlanUpdated, ProjectFolderSet,
+    ProjectRemoved, ProviderConnected, ProviderRemoved, RoleSet, ScheduleCreated, ScheduleDeleted,
+    TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed,
+    ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested, TrustDecided,
+    TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, approval, awake, browser, catalog,
+    certificate, chosen, command, connection, credential, gateway, goal, grouping, hook, language,
+    memory, message, model, passkey, people, plan, project, provider, remembering, standing, task,
+    thread, tool, trust, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -93,6 +94,8 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (language::SET, 1),
     (grouping::SET, 1),
     (remembering::SET, 1),
+    (people::JOINED, 1),
+    (people::ROLE_SET, 1),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -164,6 +167,8 @@ pub enum Body {
     LanguageSet(LanguageSet),
     GroupingSet(GroupingSet),
     MemorySet(MemorySet),
+    PersonJoined(PersonJoined),
+    RoleSet(RoleSet),
     /// An event this reader does not understand: an unknown type, or a newer version of a
     /// known one. Kept exactly as written.
     Unknown(Unknown),
@@ -350,6 +355,8 @@ impl Event {
             Body::LanguageSet(payload) => encode(header, payload),
             Body::GroupingSet(payload) => encode(header, payload),
             Body::MemorySet(payload) => encode(header, payload),
+            Body::PersonJoined(payload) => encode(header, payload),
+            Body::RoleSet(payload) => encode(header, payload),
             Body::Unknown(unknown) => Ok(RawEvent {
                 glave: ENVELOPE_VERSION,
                 id: header.id,
@@ -439,6 +446,8 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         language::SET => language::decode_set(version, data).map(|r| r.map(Body::LanguageSet)),
         grouping::SET => grouping::decode_set(version, data).map(|r| r.map(Body::GroupingSet)),
         remembering::SET => remembering::decode_set(version, data).map(|r| r.map(Body::MemorySet)),
+        people::JOINED => people::decode_joined(version, data).map(|r| r.map(Body::PersonJoined)),
+        people::ROLE_SET => people::decode_role_set(version, data).map(|r| r.map(Body::RoleSet)),
         _ => None,
     }
 }

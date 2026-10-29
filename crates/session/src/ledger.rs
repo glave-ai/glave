@@ -57,15 +57,10 @@ impl Ledger {
 
     /// Takes in the event at the next `seq`; any other is already in, or not yet.
     fn apply(&mut self, raw: RawEvent) {
-        if raw.seq.get() != self.next_seq() {
-            return;
-        }
-        self.next = self.next_seq().saturating_add(1);
-        let at = raw.at;
-        let Ok(event) = decode(raw) else {
+        let Some((at, body)) = in_order(&mut self.next, raw) else {
             return;
         };
-        match event.body {
+        match body {
             Body::ScheduleCreated(created) => {
                 let scheduled = Scheduled {
                     created,
@@ -102,6 +97,18 @@ impl Ledger {
             _ => {}
         }
     }
+}
+
+/// `raw` when it is the event a stream read so far takes next, after `next` (0 before the
+/// first), and when it was written: `next` then moves past it. Any other is already in, or not
+/// yet; one this reader cannot read is passed over.
+pub(crate) fn in_order(next: &mut u64, raw: RawEvent) -> Option<(At, Body)> {
+    if raw.seq.get() != (*next).max(1) {
+        return None;
+    }
+    *next = (*next).max(1).saturating_add(1);
+    let at = raw.at;
+    decode(raw).ok().map(|event| (at, event.body))
 }
 
 /// What each project's ledger says, as far as this server has read it.

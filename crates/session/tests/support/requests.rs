@@ -250,5 +250,6 @@ pub(crate) fn elsewhere() -> Caller {
             session: None,
         }),
         trace: None,
+        profile: None,
     }
 }

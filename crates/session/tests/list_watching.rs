@@ -229,6 +229,7 @@ fn nobody_hears_of_threads_in_another_person_s_projects() {
                 person: Some(person("https://id.example.com", "bea").unwrap()),
                 auth: None,
                 trace: None,
+                profile: None,
             };
             let theirs = project_of(&server, &bea).await;
             let hidden = start_in(&server, &bea, theirs).await;
@@ -274,6 +275,7 @@ fn a_person_hears_their_own_settings_change_and_nobody_else_s() {
                 person: Some(person("https://id.example.com", "bea").unwrap()),
                 auth: None,
                 trace: None,
+                profile: None,
             };
             let mut watcher = over.watcher().await;
             // From long ago, so the thread is heard of whether the watch begins before it or

@@ -52,11 +52,14 @@ pub enum Reserved {
     /// how their clients group their threads (`grouping.set`) and whether glave remembers for
     /// them (`memory.set`), in their personal project.
     Settings,
+    /// `…0009`: the organization's people (`person.joined`) and their roles (`role.set`), in
+    /// the organization's own scope ([`Scope::of_organization`]), no project's.
+    People,
 }
 
 impl Reserved {
     /// Every ledger, by number.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Tasks,
         Self::Memory,
         Self::Accounts,
@@ -66,6 +69,7 @@ impl Reserved {
         Self::Catalogs,
         Self::Certificates,
         Self::Settings,
+        Self::People,
     ];
 
     /// The ledger's id, the same in every project.
@@ -80,6 +84,7 @@ impl Reserved {
             Self::Catalogs => 6,
             Self::Certificates => 7,
             Self::Settings => 8,
+            Self::People => 9,
         };
         ThreadId::reserved(number)
     }

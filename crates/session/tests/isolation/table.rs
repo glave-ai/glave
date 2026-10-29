@@ -36,10 +36,13 @@ pub(super) enum Kind {
     /// Files kept for a message, as `turn/start` names them: a list of one, by its content's
     /// hash.
     Files,
+    /// A person, as the organization's admins name them. Within one organization its admins
+    /// see its people by design: it is checked across organizations only.
+    Person,
 }
 
 impl Kind {
-    pub(super) const ALL: [Self; 15] = [
+    pub(super) const ALL: [Self; 16] = [
         Self::Thread,
         Self::Project,
         Self::Approval,
@@ -55,6 +58,7 @@ impl Kind {
         Self::Session,
         Self::Computer,
         Self::Files,
+        Self::Person,
     ];
 
     /// How a template writes it.
@@ -75,6 +79,7 @@ impl Kind {
             Self::Session => "@session",
             Self::Computer => "@computer",
             Self::Files => "@files",
+            Self::Person => "@person",
         }
     }
 
@@ -97,6 +102,7 @@ impl Kind {
             Self::Provider => Some("ProviderId"),
             Self::Credential => Some("CredentialId"),
             Self::Computer => Some("ComputerId"),
+            Self::Person => Some("PrincipalId"),
             Self::Ask | Self::Flow | Self::Code | Self::Session | Self::Files => None,
         }
     }
@@ -122,6 +128,7 @@ impl Kind {
             Self::Code => "0".repeat(64),
             Self::Session => uuid(0xdead_0008),
             Self::Computer => uuid(0xdead_0009),
+            Self::Person => uuid(0xdead_000a),
             Self::Files => String::new(),
         })
     }
@@ -200,6 +207,15 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         ),
         ("passkey/list", vec![json!({})]),
         ("passkey/remove", vec![json!({"passkey": "x"})]),
+        // Only for the organization's admins, of its own people.
+        ("people/list", vec![json!({}), json!({"after": "@person"})]),
+        (
+            "role/set",
+            vec![
+                json!({"person": "@person", "role": "member"}),
+                json!({"person": "@person", "role": "owner"}),
+            ],
+        ),
         ("model/list", vec![json!({})]),
         (
             "thread/start",

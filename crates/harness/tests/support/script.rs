@@ -378,6 +378,8 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::LanguageSet(_) => "language.set",
             Body::GroupingSet(_) => "grouping.set",
             Body::MemorySet(_) => "memory.set",
+            Body::PersonJoined(_) => "person.joined",
+            Body::RoleSet(_) => "role.set",
             Body::Unknown(_) => "unknown",
         })
         .collect()

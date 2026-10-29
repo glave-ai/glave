@@ -91,6 +91,7 @@ fn signed_in(name: &str) -> Caller {
             session: None,
         }),
         trace: None,
+        profile: None,
     }
 }
 
@@ -246,6 +247,9 @@ impl<L: EventLog + Clone + 'static> World<L> {
             Person::new("linus", 1, signed_in("linus")),
         ];
         for person in &mut people {
+            let n = u128::try_from(person.org).unwrap() + 1;
+            let id = person.caller.person.unwrap_or(home(n).1);
+            person.keep(Kind::Person, json!(id));
             let local = person.caller.auth.is_none();
             make(&orgs[person.org], person, local).await;
         }

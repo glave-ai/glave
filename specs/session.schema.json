@@ -1166,6 +1166,26 @@
         }
       ]
     },
+    "OrgRole": {
+      "description": "What a person may do in their organization. A person given no role is a Member.",
+      "oneOf": [
+        {
+          "const": "member",
+          "description": "Uses glave within what is granted.",
+          "type": "string"
+        },
+        {
+          "const": "admin",
+          "description": "Manages people, policy, the approved connections, models, the budget and audit.",
+          "type": "string"
+        },
+        {
+          "const": "owner",
+          "description": "Everything, billing and ownership included.",
+          "type": "string"
+        }
+      ]
+    },
     "Origin": {
       "additionalProperties": false,
       "description": "What started a thread, and who.",
@@ -1274,6 +1294,53 @@
           "type": "string"
         }
       ]
+    },
+    "PersonInfo": {
+      "description": "A person who signed in through the organization's identity provider.",
+      "properties": {
+        "email": {
+          "description": "Their email, as the identity provider's token said it, when it did.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "groups": {
+          "description": "The identity provider's groups they were in when they last signed in.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "$ref": "#/$defs/PrincipalId"
+        },
+        "joined": {
+          "$ref": "#/$defs/At",
+          "description": "When they first signed in."
+        },
+        "name": {
+          "description": "Their name, as the identity provider's token said it, when it did.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "$ref": "#/$defs/OrgRole"
+        },
+        "subject": {
+          "description": "Who they are to the identity provider: its id for them.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "subject",
+        "role",
+        "joined"
+      ],
+      "type": "object"
     },
     "PlanInfo": {
       "description": "A thread's plan: its latest `plan.updated`, by the model or the person.",
@@ -1922,6 +1989,17 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OrgRole"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The caller's role in the organization, when there is one and they signed in: so a\nclient shows admin screens only to its Admins and Owners. Absent on a server with no\norganization, where the one person may do everything."
         },
         "signin": {
           "description": "How a browser signs in to it; none where no browser does, as over stdio. A passkey: at a\npublic origin always, a setup link making the first; on this computer once one is made.",
@@ -3209,6 +3287,10 @@
     "NO_MODEL": {
       "code": -32021,
       "message": "No such model here, or not one this server may run"
+    },
+    "NO_PERSON": {
+      "code": -32034,
+      "message": "No one by that id has signed in to this organization"
     },
     "NO_PLAN": {
       "code": -32033,
@@ -4524,6 +4606,47 @@
       },
       "streams": false
     },
+    "people/list": {
+      "params": {
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PrincipalId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limit": {
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "result": {
+        "description": "The organization's people, in id order.",
+        "properties": {
+          "people": {
+            "items": {
+              "$ref": "#/$defs/PersonInfo"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "people"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
     "plan/build": {
       "params": {
         "properties": {
@@ -4963,6 +5086,36 @@
         "type": "object"
       },
       "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "role/set": {
+      "params": {
+        "properties": {
+          "person": {
+            "$ref": "#/$defs/PrincipalId"
+          },
+          "role": {
+            "$ref": "#/$defs/OrgRole"
+          }
+        },
+        "required": [
+          "person",
+          "role"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A person, as they are now.",
+        "properties": {
+          "person": {
+            "$ref": "#/$defs/PersonInfo"
+          }
+        },
+        "required": [
+          "person"
+        ],
         "type": "object"
       },
       "streams": false

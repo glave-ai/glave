@@ -414,6 +414,9 @@ export type Opened = {
   readonly path: string;
 };
 
+/** What a person may do in their organization. A person given no role is a Member. */
+export type OrgRole = "member" | "admin" | "owner";
+
 /** What started a thread, and who. */
 export type Origin = {
   /** Who started it, when that differs from the thread's `for`. */
@@ -451,6 +454,22 @@ export type PayloadVersion = number;
  * still open; only the new names are written.
  */
 export type Permissions = "plan" | "ask" | "auto" | "full-access";
+
+/** A person who signed in through the organization's identity provider. */
+export type PersonInfo = {
+  /** Their email, as the identity provider's token said it, when it did. */
+  readonly email?: string | null;
+  /** The identity provider's groups they were in when they last signed in. */
+  readonly groups?: readonly (string)[];
+  readonly id: PrincipalId;
+  /** When they first signed in. */
+  readonly joined: At;
+  /** Their name, as the identity provider's token said it, when it did. */
+  readonly name?: string | null;
+  readonly role: OrgRole;
+  /** Who they are to the identity provider: its id for them. */
+  readonly subject: string;
+};
 
 /** A thread's plan: its latest `plan.updated`, by the model or the person. */
 export type PlanInfo = {
@@ -706,6 +725,12 @@ export type ServerInfo = {
   readonly permissions: Permissions;
   /** The protocol versions spoken. */
   readonly protocols: readonly (string)[];
+  /**
+   * The caller's role in the organization, when there is one and they signed in: so a
+   * client shows admin screens only to its Admins and Owners. Absent on a server with no
+   * organization, where the one person may do everything.
+   */
+  readonly role?: OrgRole | null;
   /**
    * How a browser signs in to it; none where no browser does, as over stdio. A passkey: at a
    * public origin always, a setup link making the first; on this computer once one is made.
@@ -1542,6 +1567,16 @@ export type PasskeyRemoveParams = {
 
 export type PasskeyRemoveResult = Readonly<Record<string, never>>;
 
+export type PeopleListParams = {
+  readonly after?: PrincipalId | null;
+  readonly limit?: number | null;
+};
+
+/** The organization's people, in id order. */
+export type PeopleListResult = {
+  readonly people: readonly (PersonInfo)[];
+};
+
 export type PlanBuildParams = {
   readonly thread: ThreadId;
 };
@@ -1674,6 +1709,16 @@ export type QuestionAnswerParams = {
 };
 
 export type QuestionAnswerResult = Readonly<Record<string, never>>;
+
+export type RoleSetParams = {
+  readonly person: PrincipalId;
+  readonly role: OrgRole;
+};
+
+/** A person, as they are now. */
+export type RoleSetResult = {
+  readonly person: PersonInfo;
+};
 
 export type ScheduleCreateParams = {
   /** Tokens each run may use. Required: no schedule runs unbounded. */
@@ -2080,6 +2125,7 @@ export interface Methods {
   readonly "passkey/get_options": { readonly params: PasskeyGetOptionsParams; readonly result: PasskeyGetOptionsResult };
   readonly "passkey/list": { readonly params: PasskeyListParams; readonly result: PasskeyListResult };
   readonly "passkey/remove": { readonly params: PasskeyRemoveParams; readonly result: PasskeyRemoveResult };
+  readonly "people/list": { readonly params: PeopleListParams; readonly result: PeopleListResult };
   readonly "plan/build": { readonly params: PlanBuildParams; readonly result: PlanBuildResult };
   readonly "plan/edit": { readonly params: PlanEditParams; readonly result: PlanEditResult };
   readonly "project/create": { readonly params: ProjectCreateParams; readonly result: ProjectCreateResult };
@@ -2094,6 +2140,7 @@ export interface Methods {
   readonly "provider/refresh": { readonly params: ProviderRefreshParams; readonly result: ProviderRefreshResult };
   readonly "provider/remove": { readonly params: ProviderRemoveParams; readonly result: ProviderRemoveResult };
   readonly "question/answer": { readonly params: QuestionAnswerParams; readonly result: QuestionAnswerResult };
+  readonly "role/set": { readonly params: RoleSetParams; readonly result: RoleSetResult };
   readonly "schedule/create": { readonly params: ScheduleCreateParams; readonly result: ScheduleCreateResult };
   readonly "schedule/delete": { readonly params: ScheduleDeleteParams; readonly result: ScheduleDeleteResult };
   readonly "schedule/list": { readonly params: ScheduleListParams; readonly result: ScheduleListResult };
@@ -2210,6 +2257,8 @@ export const ErrorCode = {
   NO_METHOD: -32601,
   /** No such model here, or not one this server may run */
   NO_MODEL: -32021,
+  /** No one by that id has signed in to this organization */
+  NO_PERSON: -32034,
   /** The thread has no plan waiting for the person's approval */
   NO_PLAN: -32033,
   /** No such project */

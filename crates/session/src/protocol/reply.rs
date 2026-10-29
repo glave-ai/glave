@@ -2,8 +2,8 @@
 //! the server, threads and turns.
 
 use glave_event::{
-    At, EventId, Money, Origin, Outcome, Principal, RawEvent, Secret, Seq, ThreadId, TokenCounts,
-    TurnResult, WorkspaceBound,
+    At, EventId, Money, OrgRole, Origin, Outcome, Principal, RawEvent, Secret, Seq, ThreadId,
+    TokenCounts, TurnResult, WorkspaceBound,
 };
 use glave_harness::{GoalProgress, RunningCommand};
 use glave_ports::memories::Remembered;
@@ -12,9 +12,9 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     AcceptedPasskeys, ConnectionInfo, CredentialInfo, DeviceCode, FileInfo, GoneFolder, Grouping,
-    ModelInfo, PasskeySummary, Permissions, PlanInfo, ProjectFolder, ProviderInfo, ReplySources,
-    ScheduleInfo, SearchInfo, SignInLink, SignInWay, TaskInfo, ThreadChanges, ThreadSteps, Told,
-    TrustAsk, WatchEnd,
+    ModelInfo, PasskeySummary, Permissions, PersonInfo, PlanInfo, ProjectFolder, ProviderInfo,
+    ReplySources, ScheduleInfo, SearchInfo, SignInLink, SignInWay, TaskInfo, ThreadChanges,
+    ThreadSteps, Told, TrustAsk, WatchEnd,
 };
 
 /// What the server is.
@@ -54,6 +54,11 @@ pub struct ServerInfo {
     /// none of it, as on a person's own computer or server.
     #[serde(default, skip_serializing_if = "Exists::is_none")]
     pub exists: Exists,
+    /// The caller's role in the organization, when there is one and they signed in: so a
+    /// client shows admin screens only to its Admins and Owners. Absent on a server with no
+    /// organization, where the one person may do everything.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<OrgRole>,
 }
 
 /// What a server has beyond a person's own: each because its configuration provides it, never
@@ -373,6 +378,12 @@ pub enum Reply {
     /// A thread's turns in steps.
     #[schemars(title = "Steps")]
     Steps { steps: ThreadSteps },
+    /// The organization's people, in id order.
+    #[schemars(title = "People")]
+    People { people: Vec<PersonInfo> },
+    /// A person, as they are now.
+    #[schemars(title = "Person")]
+    Person { person: PersonInfo },
     // After every reply with a field of its own, since a missing `goal` or `plan` reads as
     // `null`; before `Done`, which takes any object.
     /// The thread's latest goal, or `null`.

@@ -11,6 +11,7 @@ mod files;
 mod live;
 mod models;
 mod passkeys;
+mod people;
 mod plans;
 mod projects;
 mod providers;
@@ -23,8 +24,8 @@ mod told;
 mod trust;
 
 use glave_event::{
-    At, CallId, CredentialId, MemoryId, MemoryScope, ProviderId, RawEvent, ScheduleId, Secret, Seq,
-    ThreadId, When,
+    At, CallId, CredentialId, MemoryId, MemoryScope, OrgRole, PrincipalId, ProviderId, RawEvent,
+    ScheduleId, Secret, Seq, ThreadId, When,
 };
 use glave_ports::ProjectId;
 use glave_ports::computer::{CommandId, ComputerId};
@@ -42,6 +43,7 @@ pub use glave_event::{Grouping, Permissions, TurnResult};
 pub use live::Update;
 pub use models::ModelInfo;
 pub use passkeys::{AcceptedPasskeys, PasskeySummary, SignInWay, UnknownPasskey};
+pub use people::PersonInfo;
 pub use plans::PlanInfo;
 pub use projects::{GoneFolder, NewFolder, ProjectFolder};
 pub use providers::{ProviderInfo, hint};
@@ -173,6 +175,18 @@ methods! {
     "passkey/list" => PasskeyList {} -> [Passkeys],
     /// Removes a passkey, and ends the browser sessions it began.
     "passkey/remove" => PasskeyRemove { passkey: String } -> [Done],
+    /// The organization's people who signed in through its identity provider, with their
+    /// roles, in id order after `after` (someone listed before), at most `limit` (100 unless
+    /// said, at most 1,000). Only for its Admins and Owners.
+    "people/list" => PeopleList {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        after: Option<PrincipalId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<usize>,
+    } -> [People],
+    /// Gives a person who signed in a role. Only for the organization's Admins and Owners, and
+    /// only an Owner makes an Owner or changes one's role.
+    "role/set" => RoleSet { person: PrincipalId, role: OrgRole } -> [Person],
     /// The models this server can run: the default first.
     "model/list" => ModelList {} -> [Models],
     "thread/start" => ThreadStart {

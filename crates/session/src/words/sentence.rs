@@ -64,6 +64,13 @@ sentences! {
     ServerStopped = "server-stopped" "the server stopped",
     Cancelled = "cancelled" "cancelled",
 
+    // The organization's people.
+    AdminsOnly = "admins-only" "only your organization's admins can do this",
+    OwnersOnly = "owners-only"
+        "only an owner can make someone an owner, or change an owner's role",
+    NoSuchPerson { person: String } = "no-such-person"
+        "no one with the id { $person } has signed in here",
+
     // Threads and turns.
     NoThread { thread: String } = "no-thread" "no thread { $thread } in this project",
     TurnRunning { thread: String } = "turn-running"

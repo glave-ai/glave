@@ -233,6 +233,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) limits: TaskLimits,
     /// What each project's task ledger says, as far as this server has read it.
     pub(crate) ledgers: Mutex<Ledgers>,
+    /// What the organization's people ledger says, as far as this server has read it.
+    pub(crate) people: Mutex<crate::people::People>,
     /// Tasks running in this server.
     pub(crate) running: Mutex<Tasks>,
     pub(crate) hub: Arc<Hub>,
@@ -325,6 +327,7 @@ where
                 person,
                 limits: wiring.tasks,
                 ledgers: Mutex::new(Ledgers::new()),
+                people: Mutex::new(crate::people::People::default()),
                 running: Mutex::new(Tasks::new()),
                 org,
                 projects: wiring.projects,

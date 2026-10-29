@@ -85,7 +85,7 @@ d0803df2a14350ec 8 web/app/src/app/services/projects.service.spec.ts web/app/src
 e1d48ef27705b0c9 10 crates/event/src/payload/catalog.rs crates/session/src/protocol/models.rs
 e66140a31a471c6c 7 crates/ports/src/view.rs crates/session/src/protocol/reply.rs
 e666c1db0c11e33b 7 crates/session/tests/listing.rs crates/session/tests/standing.rs
-eb913c6c9b694494 7 crates/session/tests/list_watching.rs crates/session/tests/list_watching.rs
+c49404587da63c9f 8 crates/session/tests/list_watching.rs crates/session/tests/list_watching.rs
 eeb1d8f93c66e218 10 crates/session/src/rpc.rs crates/session/src/rpc.rs
 f14ba448c17548d3 6 crates/computer/src/worker/tests/reconnect.rs crates/computer/src/worker/tests/reconnect.rs
 f528a25a3824c4f8 8 crates/cli/src/credentials/renewing/tests.rs crates/cli/src/credentials/renewing/tests.rs
