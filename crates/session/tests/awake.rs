@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use glave_event::{Auth, AuthMethod, Outcome};
 use glave_ports::{BoxFuture, Caller, EventLog};
 use glave_session::protocol::{AwakeInfo, Reply, Request, code};
-use glave_session::{Answering, KeepAwake};
+use glave_session::{Answering, KeepAwake, Unawake};
 use tokio::sync::{Notify, watch};
 
 use crate::support::*;
@@ -38,7 +38,7 @@ impl KeepAwake for Computer {
         })
     }
 
-    fn cannot(&self) -> Option<String> {
+    fn cannot(&self) -> Option<Unawake> {
         None
     }
 }

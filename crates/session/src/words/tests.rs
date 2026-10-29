@@ -431,3 +431,21 @@ fn why_a_declined_call_asked_is_written_again_as_a_turn_streams() {
         "passed on as it came"
     );
 }
+
+#[test]
+fn why_this_computer_cannot_be_kept_awake_is_written_again() {
+    let mut awake: Result<Reply, ApiError> = Ok(Reply::Awake {
+        awake: AwakeInfo::Cannot {
+            reason: Sentence::AwakeWithNothing.into(),
+        },
+    });
+    assert!(says(&awake));
+    translate(&mut awake, Language::Accented);
+    let Ok(Reply::Awake {
+        awake: AwakeInfo::Cannot { reason },
+    }) = awake
+    else {
+        panic!("why it cannot")
+    };
+    assert!(reason.starts_with("[Ţĥîš çöɱþûţéŕ"), "{}", &*reason);
+}

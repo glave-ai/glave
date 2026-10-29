@@ -10,7 +10,7 @@ use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope, Standing};
 use jiff::Timestamp;
 
 use crate::approval::Approver;
-use crate::harness::{Harness, HarnessError, Thread};
+use crate::harness::{Harness, HarnessError, Invalid, Thread};
 use crate::removed::append_next;
 
 /// The event types that decide a thread's standing.
@@ -185,9 +185,7 @@ where
     ) -> Result<(), HarnessError> {
         let title = title.trim();
         if title.is_empty() || title.chars().count() > MAX_TITLE {
-            return Err(HarnessError::Invalid(format!(
-                "a title is 1 to {MAX_TITLE} characters, not only spaces"
-            )));
+            return Err(Invalid::Title(MAX_TITLE).into());
         }
         self.take_in(thread).await?;
         if thread.standing == Standing::Deleted {

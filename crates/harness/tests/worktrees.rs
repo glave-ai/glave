@@ -322,7 +322,7 @@ fn a_thread_on_a_computer_that_dialled_in_is_not_available_yet() {
         let Err(HarnessError::Invalid(why)) = refused else {
             panic!("refused, not {refused:?}")
         };
-        assert!(why.contains("not available yet"), "{why}");
+        assert!(why.to_string().contains("not available yet"), "{why}");
         let query = ThreadQuery {
             standing: Standing::Active,
             limit: 10,

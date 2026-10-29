@@ -62,7 +62,7 @@ mod words;
 
 pub use accounts::{AccountLedger, Accounts, AccountsError};
 pub use approvals::Answering;
-pub use awake::KeepAwake;
+pub use awake::{KeepAwake, Unawake};
 pub use connections::{Connections, Returned, Searching};
 pub use credentials::{GitHosts, NewCredential};
 pub use dispatch::Answered;

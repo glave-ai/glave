@@ -35,7 +35,7 @@ use crate::toolset::ToolSet;
 use crate::waits::Opened;
 use crate::worker::Workers;
 
-pub use error::HarnessError;
+pub use error::{HarnessError, Invalid};
 pub use settings::Settings;
 
 /// Everything the harness is wired to: the ports, the injected clock and randomness, and the
