@@ -6,13 +6,15 @@ use std::io::{BufRead as _, BufReader};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use glave_event::{Arguments, Part, ToolKind};
+use glave_event::ToolKind;
 use glave_mcp::{Limits, McpError, McpServer};
 use glave_ports::block_on;
 use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::testing::{AlreadyCancelled, FAKE_SECRET, Running};
 use glave_ports::{NeverCancelled, ToolOutput, ToolSource as _, conformance};
 use serde_json::json;
+
+use crate::server::{arguments, text};
 
 /// The test server serving HTTP, killed when this is dropped.
 pub(crate) struct Served {
@@ -66,20 +68,6 @@ fn launch(config: &ServerConfig) -> McpServer {
         Limits::default(),
         &glave_process::Processes::unrecorded(),
     )
-}
-
-fn arguments(value: serde_json::Value) -> Arguments {
-    match value {
-        serde_json::Value::Object(map) => Arguments::Json(map),
-        other => panic!("not an object: {other}"),
-    }
-}
-
-fn text(output: &ToolOutput) -> String {
-    match output.parts.as_slice() {
-        [Part::Text { text }] => text.clone(),
-        other => panic!("not one text part: {other:?}"),
-    }
 }
 
 fn start_error(outcome: Result<(), McpError>) -> String {

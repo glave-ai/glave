@@ -37,7 +37,6 @@
 65794a92795cf8f4 9 crates/aws/tests/anthropic.rs crates/cli/src/model.rs crates/google/src/adc/tests/gemini.rs
 66d6a8c6cb6d316f 15 crates/event/src/id.rs crates/event/src/id.rs crates/event/src/id.rs crates/event/src/id.rs
 6b61e6143887a11d 8 crates/cli/src/computer.rs crates/cli/src/gateway/serve.rs crates/cli/src/threads.rs crates/cli/src/worktrees.rs
-6d62123d0df40415 8 crates/mcp/tests/http.rs crates/mcp/tests/server.rs
 6e88cd02a8308b96 10 crates/computer/src/worktrees/tests.rs crates/computer/src/worktrees/tests.rs
 73cc0adea85cddf5 18 crates/computer/src/worker/docker/tests.rs crates/computer/src/worker/kubernetes/tests.rs
 74c6b4f9fdf42ef9 8 crates/cli/tests/support/binary.rs crates/cli/tests/support/http.rs

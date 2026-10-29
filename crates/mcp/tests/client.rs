@@ -6,11 +6,12 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
 
-use glave_event::{Arguments, Part};
 use glave_mcp::{Limits, McpServer};
 use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::{NeverCancelled, ToolOutput, ToolSource as _, block_on};
 use serde_json::json;
+
+use crate::server::{arguments, text};
 
 const SERVER: &str = env!("CARGO_BIN_EXE_glave-mcp-test-server");
 
@@ -39,20 +40,6 @@ async fn start(args: &[&str], project: bool, limits: Limits) -> McpServer {
     server.started().await.unwrap();
     server.tools().await.unwrap();
     server
-}
-
-fn arguments(value: serde_json::Value) -> Arguments {
-    match value {
-        serde_json::Value::Object(map) => Arguments::Json(map),
-        other => panic!("not an object: {other}"),
-    }
-}
-
-fn text(output: &ToolOutput) -> String {
-    match output.parts.as_slice() {
-        [Part::Text { text }] => text.clone(),
-        other => panic!("not one text part: {other:?}"),
-    }
 }
 
 async fn roots(server: &McpServer) -> ToolOutput {

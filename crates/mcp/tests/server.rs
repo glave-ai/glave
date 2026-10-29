@@ -51,14 +51,14 @@ async fn start(env: &[(&str, &str)]) -> McpServer {
     server
 }
 
-fn arguments(value: serde_json::Value) -> Arguments {
+pub(crate) fn arguments(value: serde_json::Value) -> Arguments {
     match value {
         serde_json::Value::Object(map) => Arguments::Json(map),
         other => panic!("not an object: {other}"),
     }
 }
 
-fn text(output: &ToolOutput) -> String {
+pub(crate) fn text(output: &ToolOutput) -> String {
     match output.parts.as_slice() {
         [Part::Text { text }] => text.clone(),
         other => panic!("not one text part: {other:?}"),
