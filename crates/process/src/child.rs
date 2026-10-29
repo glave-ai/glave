@@ -72,14 +72,6 @@ impl Child {
         Ok(status)
     }
 
-    /// Kills the leader and waits for it, as tokio's does: what it started is left to
-    /// [`Child::stop_left`], or dropping this. [`Child::stop`] stops it all.
-    pub async fn kill(&mut self) -> std::io::Result<()> {
-        self.inner.kill().await?;
-        self.reaped();
-        Ok(())
-    }
-
     /// Lets go of what it left running once it has exited itself, as an opener leaves the
     /// browser it starts: nothing of its group is stopped, recorded or tied to glave any more.
     pub(crate) fn let_go(mut self) {
@@ -97,27 +89,46 @@ impl Child {
 
     /// Stops it and everything it started: SIGTERM to its group, then SIGKILL to whatever is
     /// still there after a grace period. Returns once the group is empty, so a child that
-    /// outlives the leader, or ignores SIGTERM, is stopped too.
+    /// outlives the leader, or ignores SIGTERM, is stopped too; or after another grace, when
+    /// something SIGKILL cannot end yet (a process stuck in the kernel, on a hung network
+    /// mount) is still there, which is left behind: its ledger entry is kept, for the next
+    /// glave to start to settle.
     pub async fn stop(&mut self) {
+        let mut left = false;
         if let Some(group) = self.group {
             group::signal(group, Signal::TERM);
             if tokio::time::timeout(GRACE, self.gone(group)).await.is_err() {
                 group::signal(group, Signal::KILL);
-                // SIGKILL cannot be ignored; this waits only for the kernel to finish the job.
-                let _ = tokio::time::timeout(GRACE, self.gone(group)).await;
+                left = tokio::time::timeout(GRACE, self.gone(group)).await.is_err();
             }
         }
-        let _ = self.inner.kill().await;
-        self.entry = None;
-        self.tie = None;
+        if left {
+            // The leader may be what does not end: it is not waited for again.
+            let _ = self.inner.start_kill();
+        } else {
+            let _ = tokio::time::timeout(GRACE, self.inner.kill()).await;
+        }
+        self.settled(left);
     }
 
-    /// Stops what is left of its group once it has exited: what it left running.
+    /// Stops what is left of its group once it has exited: what it left running. Returns
+    /// within two graces, as [`Child::stop`] does, leaving behind what does not end.
     pub async fn stop_left(&mut self) {
-        if let Some(group) = self.group {
-            group::stop_all(&[group]).await;
+        let left = match self.group {
+            Some(group) => !group::stop_all(&[group]).await.is_empty(),
+            None => false,
+        };
+        self.settled(left);
+    }
+
+    /// Lets go of its entry and its tie once glave stopped it: the entry is kept when
+    /// something of its group was `left` behind.
+    fn settled(&mut self, left: bool) {
+        if let Some(entry) = self.entry.take()
+            && left
+        {
+            entry.left_behind();
         }
-        self.entry = None;
         self.tie = None;
     }
 

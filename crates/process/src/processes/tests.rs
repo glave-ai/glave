@@ -189,3 +189,64 @@ fn the_ledger_is_bounded_and_forgets_what_ended_to_make_room() {
     assert_eq!(entries(&ledger), 0);
     let _ = std::fs::remove_dir_all(run);
 }
+
+/// Joins the process group its one argument names, says `in` (or why it could not), and
+/// sleeps; its parent stops itself, so once killed it waits to be reaped, and nothing does.
+#[cfg(target_os = "linux")]
+const STUCK_IN_GROUP: &str = r#"
+my $group = shift;
+if (fork() == 0) {
+    $| = 1;
+    if (setpgrp(0, $group)) { print "in\n"; exec("sleep", "300"); }
+    print "out: $!\n";
+    exit 1;
+}
+kill("STOP", $$);
+"#;
+
+// Linux keeps a process that ended in its group until it is reaped; macOS takes it out at
+// once, so there nothing a test can make stands for a process SIGKILL cannot end.
+#[cfg(target_os = "linux")]
+#[test]
+fn what_sigkill_cannot_end_is_left_behind_recorded_and_glave_moves_on() {
+    use std::os::unix::process::CommandExt as _;
+
+    let run = folder("left-behind");
+    let processes = Processes::recorded(&run).owned_by(Owner::Workspace("w".into()));
+    let ledger = run.join("processes");
+    let mut program = Program::new("sleep");
+    program.arg("300").stdin(Stdio::null());
+    let (mut child, mut stuck) = glave_ports::block_on!(async {
+        let child = processes.spawn(&mut program).await.unwrap();
+        // A process in the child's group that SIGKILL ends but nothing reaps keeps the group
+        // from emptying, as a process stuck in the kernel (a hung network mount) would.
+        let group = child.id().unwrap().to_string();
+        let stuck = std::process::Command::new("perl")
+            .args(["-e", STUCK_IN_GROUP, &group])
+            .stdout(Stdio::piped())
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        (child, stuck)
+    });
+    let mut said = String::new();
+    BufReader::new(stuck.stdout.take().unwrap())
+        .read_line(&mut said)
+        .unwrap();
+    assert_eq!(said, "in\n");
+
+    let started = Instant::now();
+    glave_ports::block_on!(child.stop());
+    let took = started.elapsed();
+    assert!(
+        took < crate::group::GRACE * 3,
+        "a group that does not empty holds the stop for two graces at most"
+    );
+    drop(child);
+    assert_eq!(entries(&ledger), 1, "what was left behind stays recorded");
+
+    let parent = Pid::from_raw(i32::try_from(stuck.id()).unwrap()).unwrap();
+    let _ = rustix::process::kill_process_group(parent, rustix::process::Signal::KILL);
+    let _ = stuck.wait();
+    let _ = std::fs::remove_dir_all(run);
+}

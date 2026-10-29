@@ -114,7 +114,10 @@ pub(crate) fn stop(held: &Held) {
         .enable_time()
         .build();
     match runtime {
-        Ok(runtime) => runtime.block_on(group::stop_all(&leaders)),
+        // What outlives SIGKILL's wait is left to the next start, which the ledger tells.
+        Ok(runtime) => {
+            let _left_behind = runtime.block_on(group::stop_all(&leaders));
+        }
         // Without a timer there is no grace to give: they are stopped at once.
         Err(_) => {
             for leader in &leaders {
