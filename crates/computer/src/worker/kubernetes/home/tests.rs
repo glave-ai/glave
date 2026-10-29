@@ -21,11 +21,12 @@ use crate::{CancelSwitch, WorkerComputers, WorkerCredentials};
 /// each said as a fact so a failure shows which.
 const FENCED: &str = "echo kept > kept.txt; echo \"home=$HOME\"; echo \"user=$(id -u)\"; \
     touch /tmp/t && echo tmp=writable || echo tmp=read-only; \
-    touch /etc/glave-x 2>/dev/null && echo root=writable || echo root=read-only; \
-    timeout 5 bash -c \"</dev/tcp/$KUBERNETES_SERVICE_HOST/$KUBERNETES_SERVICE_PORT\" \
-    2>/dev/null && echo cluster=reached || echo cluster=refused; \
-    timeout 10 bash -c \"</dev/tcp/1.1.1.1/443\" 2>/dev/null && echo internet=reached \
-    || echo internet=refused";
+    touch /var/tmp/glave-x 2>/dev/null && echo root=writable || echo root=read-only; \
+    reach() { timeout 5 bash -c \"</dev/tcp/$1/$2\" 2>/dev/null && echo reached || echo refused; }; \
+    getent hosts kube-dns.kube-system.svc.cluster.local >/dev/null && echo dns=yes || echo dns=no; \
+    echo \"api=$(reach kubernetes.default.svc.cluster.local 443)\"; \
+    echo \"pods=$(reach kube-dns.kube-system.svc.cluster.local 9153)\"; \
+    echo \"internet=$(reach 1.1.1.1 443)\"";
 
 /// Runs `command` at the person's home on the computer `computers` woke, and what it printed,
 /// or why it could not: never a panic, so the test removes what it made before it asserts.
@@ -120,8 +121,8 @@ fn a_persons_computer_keeps_its_disk_while_it_sleeps() {
         eprintln!("a person's computer woke in {} ms", woke.as_millis());
         assert_eq!(
             wrote.unwrap().trim(),
-            "home=/home/glave\nuser=65532\ntmp=writable\nroot=read-only\ncluster=refused\n\
-             internet=reached",
+            "home=/home/glave\nuser=65532\ntmp=writable\nroot=read-only\ndns=yes\napi=refused\n\
+             pods=refused\ninternet=reached",
             "its own home, never root, nothing written outside it but /tmp, and the internet \
              but nothing in the cluster"
         );
