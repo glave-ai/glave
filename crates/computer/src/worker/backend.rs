@@ -6,7 +6,6 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::Duration;
 
 use glave_ports::BoxFuture;
@@ -62,11 +61,6 @@ pub(crate) type Stream = (
     Box<dyn AsyncWrite + Unpin + Send>,
 );
 
-/// Opens a bridge into a worker (on Kubernetes, an exec of `glave computer bridge` through the
-/// API server): a stream to glave's socket there, one connection of its own each time.
-pub(crate) type Bridge =
-    Arc<dyn Fn() -> BoxFuture<'static, Result<Stream, ComputerError>> + Send + Sync>;
-
 /// How the harness reaches a started worker.
 pub(crate) enum Link {
     /// Over TLS at `address`, trusting only the certificate with `fingerprint`. `forward`,
@@ -84,9 +78,10 @@ pub(crate) enum Link {
         write: Box<dyn AsyncWrite + Unpin + Send>,
         task: JoinHandle<()>,
     },
-    /// Through bridges into the worker, opened as often as a connection is needed, each signed
-    /// in with the token: on Kubernetes, where a port-forward does not reach a sandboxed Pod.
-    Bridged(Bridge),
+    /// Through bridges into the worker ([`Backend::bridge`]), opened as often as a connection
+    /// is needed, each signed in with the token: on Kubernetes, where a port-forward does not
+    /// reach a sandboxed Pod.
+    Bridged,
 }
 
 impl fmt::Debug for Link {
@@ -98,7 +93,7 @@ impl fmt::Debug for Link {
                 ..
             } => write!(f, "Tls({address}, {fingerprint:?})"),
             Self::Stream { .. } => f.write_str("Stream"),
-            Self::Bridged(_) => f.write_str("Bridged"),
+            Self::Bridged => f.write_str("Bridged"),
         }
     }
 }
@@ -137,6 +132,15 @@ pub(crate) trait Backend: Send + Sync {
         name: &'a str,
         token: &'a Token,
     ) -> BoxFuture<'a, Result<(), ComputerError>>;
+
+    /// A new bridge into the running worker `name`, for a worker started with
+    /// [`Link::Bridged`]: a stream to glave there, a connection of its own each time. Only
+    /// Kubernetes has them.
+    fn bridge<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<Stream, ComputerError>> {
+        Box::pin(std::future::ready(Err(ComputerError::Unsupported(
+            format!("glave reaches {name} without bridges"),
+        ))))
+    }
 
     /// Every worker here, with this backend's labels, whoever started it.
     fn list(&self) -> BoxFuture<'_, Result<Vec<Listed>, ComputerError>>;

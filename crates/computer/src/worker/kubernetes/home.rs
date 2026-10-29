@@ -14,10 +14,10 @@ use kube::Api;
 use kube::api::{DeleteParams, PostParams};
 use serde_json::json;
 
-use super::objects::{COMPUTER_LABEL, Home, IDLE_MINUTES};
+use super::objects::{self, COMPUTER_LABEL, Home, IDLE_MINUTES, Progress};
 use super::{Kubernetes, POLL, failed, not_found};
 use crate::token::Token;
-use crate::worker::backend::{Backend, Link, Listed, Spec, Started, saying};
+use crate::worker::backend::{Backend, Link, Listed, Spec, Started, Stream, saying};
 
 /// How long a removed Pod or claim has to go: the Pod's grace period (5 seconds) and its
 /// volumes let go of, so seconds.
@@ -26,7 +26,7 @@ const GONE_WAIT: Duration = Duration::from_mins(1);
 const KEY_LENGTH: usize = 40;
 
 /// One person's computer on a cluster: its key, and the size of its disk.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct PersonComputer {
     cluster: Kubernetes,
     key: String,
@@ -159,6 +159,20 @@ impl PersonComputer {
         removed(&self.cluster.policies(), &name, "computer's network policy").await
     }
 
+    /// Whether the computer is awake as the API server says: its Pod there, not being removed,
+    /// and its container running.
+    pub(crate) async fn running(&self) -> Result<bool, ComputerError> {
+        let name = self.name();
+        let pod = self.cluster.pods().get_opt(&name).await.map_err(|error| {
+            ComputerError::Unreachable(format!("Kubernetes could not read {name}: {error}"))
+        })?;
+        Ok(pod.is_some_and(|pod| {
+            pod.metadata.deletion_timestamp.is_none()
+                && objects::progress(&serde_json::to_value(&pod).unwrap_or_default())
+                    == Progress::Running
+        }))
+    }
+
     /// Removes the computer and its disk, with everything on it.
     #[cfg_attr(
         not(test),
@@ -251,6 +265,10 @@ impl Backend for PersonComputer {
         token: &'a Token,
     ) -> BoxFuture<'a, Result<(), ComputerError>> {
         self.cluster.renew(name, token)
+    }
+
+    fn bridge<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<Stream, ComputerError>> {
+        self.cluster.bridge(name)
     }
 
     fn list(&self) -> BoxFuture<'_, Result<Vec<Listed>, ComputerError>> {

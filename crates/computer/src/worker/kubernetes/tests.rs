@@ -192,7 +192,7 @@ async fn limited(cluster: &Kubernetes) {
     let said = printed(cluster, &name, 2).await;
     cluster.remove(&name).await.unwrap();
     assert!(
-        matches!(link, Ok(Link::Bridged(_))),
+        matches!(link, Ok(Link::Bridged)),
         "a worker is reached through bridges: {link:?}"
     );
     let container = &pod["spec"]["containers"][0];
@@ -231,13 +231,10 @@ async fn limited(cluster: &Kubernetes) {
     assert_eq!(left_behind(cluster).await, Vec::<String>::new());
 }
 
-/// What one bridge into the worker answers to `hello`: the stub says how it was started, then
-/// echoes.
-async fn through(link: &Link) -> Vec<String> {
-    let Link::Bridged(bridge) = link else {
-        panic!("a worker is reached through bridges: {link:?}");
-    };
-    let (read, mut write) = bridge().await.unwrap();
+/// What one bridge into the worker `name` answers to `hello`: the stub says how it was
+/// started, then echoes.
+async fn through(cluster: &Kubernetes, name: &str) -> Vec<String> {
+    let (read, mut write) = cluster.bridge(name).await.unwrap();
     let mut lines = BufReader::new(read).lines();
     write.write_all(b"hello\n").await.unwrap();
     write.flush().await.unwrap();
@@ -251,10 +248,11 @@ async fn through(link: &Link) -> Vec<String> {
 async fn bridged(cluster: &Kubernetes) {
     let name = name();
     let link = cluster.start_with(&name, &spec(false), STUB).await.unwrap();
+    assert!(matches!(link, Link::Bridged), "{link:?}");
     let policy: Value = object::<NetworkPolicy>(&cluster.policies(), &name).await;
     // Each connection is a bridge of its own, the worker going on between them.
-    let first = through(&link).await;
-    let second = through(&link).await;
+    let first = through(cluster, &name).await;
+    let second = through(cluster, &name).await;
     cluster.remove(&name).await.unwrap();
     let echoed = vec![
         "args: computer bridge /opt/glave/glave.sock".to_owned(),

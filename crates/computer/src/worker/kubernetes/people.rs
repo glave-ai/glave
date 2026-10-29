@@ -59,6 +59,8 @@ impl State {
 
 /// One person's computer, and the wake running for it, if one is.
 struct Person {
+    /// Its Pod and disk, asked directly whether it runs when its connection fails.
+    pod: PersonComputer,
     computers: Arc<WorkerComputers>,
     state: watch::Sender<State>,
     waking: Mutex<Option<JoinHandle<()>>>,
@@ -171,11 +173,12 @@ impl People {
         let computer = PersonComputer::new(self.cluster.clone(), key, self.disk_gb)?
             .idle_after(self.idle_minutes);
         let computers = WorkerComputers::on(
-            Box::new(computer),
+            Box::new(computer.clone()),
             self.limits.clone(),
             WorkerCredentials::None,
         );
         let person = Arc::new(Person {
+            pod: computer,
             computers: Arc::new(computers),
             state: watch::Sender::new(State::Asleep),
             waking: Mutex::new(None),
@@ -283,10 +286,13 @@ impl People {
 }
 
 /// Whether `person`'s computer, awake with `home`, has ended on its own; if so, what is left of
-/// it is removed and it counts asleep, so the next ask wakes it again.
+/// it is removed and it counts asleep, so the next ask wakes it again. One that cannot be
+/// reached but whose Pod still runs, or whose Pod cannot be read (the API server restarting),
+/// is kept: waking would replace it, and its next call tries a new bridge.
 async fn gone(person: &Person, home: &WorkspaceInfo) -> bool {
     match person.computers.status(home.computer).await {
         Ok(info) if info.state == ComputerState::Running => false,
+        _ if !matches!(person.pod.running().await, Ok(false)) => false,
         _ => {
             let _ = person.computers.destroy(home.computer).await;
             person.state.send_if_modified(|state| match state {

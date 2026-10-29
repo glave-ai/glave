@@ -2,8 +2,9 @@
 //! by a backend (Docker, or Kubernetes with the `kubernetes` feature), with glave inside
 //! serving the computer protocol. The harness drives each one through this adapter, which
 //! keeps every call on the right worker over TLS (or a stream, for a worker with no network)
-//! on Docker, or through bridges into its Pod on Kubernetes, within policy's limits. Work leaves a worker only as a pushed branch, a file handed back, or
-//! a store write; destroying it removes it. Each worker is labelled with the glave that started
+//! on Docker, or through bridges into its Pod on Kubernetes, within policy's limits. Work
+//! leaves a worker only as a pushed branch, a file handed back, or a store write; destroying
+//! it removes it. Each worker is labelled with the glave that started
 //! it, and a glave starting removes those whose glave is gone ([`WorkerComputers::reap`]).
 
 mod backend;
@@ -334,9 +335,10 @@ impl WorkerComputers {
                 }
                 (remote, Some(task), Door::None)
             }
-            Link::Bridged(bridge) => {
-                let remote = reconnect::bridged(&bridge, token.secret()).await?;
-                (remote, None, Door::Bridge(bridge))
+            Link::Bridged => {
+                let remote =
+                    reconnect::bridged(&*self.backend, &started.name, token.secret()).await?;
+                (remote, None, Door::Bridge)
             }
         };
         let inside = Environment {

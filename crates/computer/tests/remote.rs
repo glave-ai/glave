@@ -310,8 +310,10 @@ fn a_computer_through_bridges_to_its_socket_passes_the_suite_and_outlives_each_b
         )
         .unwrap();
         let socket = dir.join("glave.sock");
-        // A bridge opened before the computer serves waits for its socket.
+        // A bridge opened before the computer serves waits for its socket: it runs, finds
+        // none, and tries again.
         let (first, carried) = bridged(&socket);
+        tokio::task::yield_now().await;
         let listener = listen_socket(&socket).unwrap();
         let serving = tokio::spawn(serve_socket(local(&copies), listener, token.clone(), None));
         first.authenticate(token.secret()).await.unwrap();

@@ -22,12 +22,15 @@ use glave_ports::computer::{ComputerError, Isolation};
 use k8s_openapi::api::core::v1::Pod;
 use k8s_openapi::api::networking::v1::NetworkPolicy;
 use kube::api::{AttachParams, DeleteParams, ListParams, LogParams, PostParams};
+use kube::client::UpgradeConnectionError;
 use kube::config::{KubeConfigOptions, Kubeconfig};
 use kube::{Api, Client, Config};
 use serde_json::Value;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
-use super::backend::{Backend, COPIED_WITHIN, Link, Listed, STARTED_BY, Spec, Started, saying};
+use super::backend::{
+    Backend, COPIED_WITHIN, Link, Listed, STARTED_BY, Spec, Started, Stream, saying,
+};
 use super::docker::elf_machine;
 use crate::token::Token;
 use objects::{Home, Owner, Progress, Shape};
@@ -85,6 +88,24 @@ fn failed(what: &str, error: impl std::fmt::Display) -> ComputerError {
 /// Whether `error` is the API server saying the object is not there.
 fn not_found(error: &kube::Error) -> bool {
     matches!(error, kube::Error::Api(status) if status.is_not_found())
+}
+
+/// An exec in a Pod that failed with `error`, as a computer error: the API server's own refusal
+/// (the Pod is not there, or not running) is final, and no answer at all, as while it
+/// restarts, is unreachable, which a bridge tries again.
+fn exec_failed(what: &str, error: &kube::Error) -> ComputerError {
+    let refused = match error {
+        kube::Error::Api(status) => status.code < 500,
+        kube::Error::UpgradeConnection(UpgradeConnectionError::ProtocolSwitch(code)) => {
+            code.is_client_error()
+        }
+        _ => false,
+    };
+    if refused {
+        failed(what, error)
+    } else {
+        ComputerError::Unreachable(format!("Kubernetes {what}: {error}"))
+    }
 }
 
 impl Kubernetes {
@@ -222,7 +243,7 @@ impl Kubernetes {
             ComputerError::Failed(format!("{} is too long a name for tar", long.0))
         })?;
         self.copy_in(name, &files).await?;
-        Ok(Link::Bridged(link::bridges(pods, name)))
+        Ok(Link::Bridged)
     }
 
     /// Waits for the worker's container to run.
@@ -276,7 +297,7 @@ impl Kubernetes {
             .pods()
             .exec(name, ["tar", "-x", "-f", "-", "-C", "/"], &params)
             .await
-            .map_err(|error| failed("could not copy glave into the worker", error))?;
+            .map_err(|error| exec_failed("could not copy glave into the worker", &error))?;
         let (Some(mut input), Some(mut errors)) = (process.stdin(), process.stderr()) else {
             return Err(ComputerError::Failed(
                 "copying glave in gave no standard input".into(),
@@ -381,6 +402,10 @@ impl Backend for Kubernetes {
             let file = super::tar::token_file(objects::TOKEN, token)?;
             self.copy_in(name, &file).await
         })
+    }
+
+    fn bridge<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<Stream, ComputerError>> {
+        Box::pin(link::bridge(self.pods(), name))
     }
 
     fn list(&self) -> BoxFuture<'_, Result<Vec<Listed>, ComputerError>> {

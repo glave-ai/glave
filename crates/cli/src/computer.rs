@@ -53,27 +53,46 @@ Usage:
 Copies of repositories are kept in $GLAVE_HOME/workspaces. Commands get glave's environment
 without anything named like a key, token, secret or password.";
 
-/// What to do.
+/// What `glave computer` was asked to do.
+#[derive(Debug, PartialEq, Eq)]
+enum Asked {
+    /// Serve this machine as a computer.
+    Serve(Transport),
+    /// Carry one connection to the computer serving on the socket at the path.
+    Bridge(PathBuf),
+}
+
+/// How to serve.
 #[derive(Debug, PartialEq, Eq)]
 enum Transport {
     Stdio,
     Tcp(SocketAddr),
-    /// The address, the folder of the identity and token, and whether it ends when its
-    /// standard input does.
-    Tls(SocketAddr, PathBuf, bool),
+    /// The address, the folder of the identity and token, and until when it serves.
+    Tls(SocketAddr, PathBuf, Until),
     /// The socket's path, the folder of the token, and the minutes idle after which it ends.
     Socket(PathBuf, PathBuf, Option<u32>),
-    /// A bridge to the socket at the path.
-    Bridge(PathBuf),
+}
+
+/// Until when glave serving over TLS serves.
+#[derive(Debug, PartialEq, Eq)]
+enum Until {
+    /// Until accepting fails, or it is stopped.
+    Stopped,
+    /// Until its standard input ends, as a worker on Docker ends with the glave that started
+    /// it.
+    InputEnds,
 }
 
 /// What follows `--socket <path> <folder>`: nothing, or `--idle <minutes>`.
 fn idle(rest: &[String]) -> Result<Option<u32>, String> {
     match rest {
         [] => Ok(None),
-        [flag, minutes] if flag == "--idle" => match minutes.parse::<u32>() {
-            Ok(minutes) if minutes > 0 => Ok(Some(minutes)),
-            _ => Err(format!("--idle {minutes:?} is not a number of minutes")),
+        [flag] if flag == "--idle" => Err("--idle needs a number of minutes".into()),
+        [flag, minutes, more @ ..] if flag == "--idle" => match (minutes.parse::<u32>(), more) {
+            (Ok(minutes), []) if minutes > 0 => Ok(Some(minutes)),
+            (_, []) => Err(format!("--idle {minutes:?} is not a number of minutes")),
+            (_, [again, ..]) if again == "--idle" => Err("--idle is given more than once".into()),
+            (_, [other, ..]) => Err(format!("{other:?} is not an option of serve --socket")),
         },
         [other, ..] => Err(format!("{other:?} is not an option of serve --socket")),
     }
@@ -88,13 +107,14 @@ fn address(text: &str, flag: &str) -> Result<SocketAddr, String> {
     }
 }
 
-fn parse(arguments: &[String]) -> Result<Transport, String> {
+fn parse(arguments: &[String]) -> Result<Asked, String> {
+    let serving = |transport| Ok(Asked::Serve(transport));
     match arguments {
-        [serve, stdio] if serve == "serve" && stdio == "--stdio" => Ok(Transport::Stdio),
+        [serve, stdio] if serve == "serve" && stdio == "--stdio" => serving(Transport::Stdio),
         [serve, tcp, at] if serve == "serve" && tcp == "--tcp" => {
             let address = address(at, "--tcp")?;
             if address.ip().is_loopback() {
-                Ok(Transport::Tcp(address))
+                serving(Transport::Tcp(address))
             } else {
                 Err(format!(
                     "--tcp {address} is not on this machine; serving computers across machines \
@@ -102,25 +122,26 @@ fn parse(arguments: &[String]) -> Result<Transport, String> {
                 ))
             }
         }
-        [serve, tls, at, folder] if serve == "serve" && tls == "--tls" => Ok(Transport::Tls(
-            address(at, "--tls")?,
-            PathBuf::from(folder),
-            false,
-        )),
-        [serve, tls, at, folder, until] if serve == "serve" && tls == "--tls" => {
-            if until != "--until-input-ends" {
-                return Err(format!("{until:?} is not an option of serve --tls"));
-            }
-            Ok(Transport::Tls(
+        [serve, tls, at, folder, rest @ ..] if serve == "serve" && tls == "--tls" => {
+            let until = match rest {
+                [] => Until::Stopped,
+                [flag] if flag == "--until-input-ends" => Until::InputEnds,
+                [other, ..] => return Err(format!("{other:?} is not an option of serve --tls")),
+            };
+            serving(Transport::Tls(
                 address(at, "--tls")?,
                 PathBuf::from(folder),
-                true,
+                until,
             ))
         }
-        [serve, socket, path, folder, rest @ ..] if serve == "serve" && socket == "--socket" => Ok(
-            Transport::Socket(PathBuf::from(path), PathBuf::from(folder), idle(rest)?),
-        ),
-        [bridge, path] if bridge == "bridge" => Ok(Transport::Bridge(PathBuf::from(path))),
+        [serve, socket, path, folder, rest @ ..] if serve == "serve" && socket == "--socket" => {
+            serving(Transport::Socket(
+                PathBuf::from(path),
+                PathBuf::from(folder),
+                idle(rest)?,
+            ))
+        }
+        [bridge, path] if bridge == "bridge" => Ok(Asked::Bridge(PathBuf::from(path))),
         _ => Err(
             "expected: glave computer serve --stdio, --tcp <port>, --tls <host:port> <folder> \
              [--until-input-ends], or --socket <path> <folder> [--idle <minutes>]; or glave \
@@ -138,8 +159,8 @@ pub(crate) fn main(arguments: &[String]) -> ExitCode {
         println!("{USAGE}");
         return ExitCode::SUCCESS;
     }
-    let transport = match parse(arguments) {
-        Ok(transport) => transport,
+    let asked = match parse(arguments) {
+        Ok(asked) => asked,
         Err(message) => {
             eprintln!("glave: {message}\n\n{USAGE}");
             return ExitCode::from(2);
@@ -155,15 +176,15 @@ pub(crate) fn main(arguments: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let ran = match transport {
-        Transport::Bridge(path) => {
+    let ran = match asked {
+        Asked::Bridge(path) => {
             let carried = runtime.block_on(bridge(&path, tokio::io::stdin(), tokio::io::stdout()));
             // Standard input is read on a thread of its own, which a read still waiting would
             // otherwise hold the runtime open on.
             runtime.shutdown_background();
             carried.with_context(|| format!("bridging to {}", path.display()))
         }
-        transport => runtime.block_on(run(transport)),
+        Asked::Serve(transport) => runtime.block_on(run(transport)),
     };
     match ran {
         Ok(()) => ExitCode::SUCCESS,
@@ -216,7 +237,7 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
                 .await
                 .with_context(|| format!("serving on {address}"))
         }
-        Transport::Tls(address, folder, with_input) => {
+        Transport::Tls(address, folder, until) => {
             let tls = Identity::acceptor(
                 &read(&folder, "cert.pem").await?,
                 &read(&folder, "key.pem").await?,
@@ -226,7 +247,7 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
                 .await
                 .with_context(|| format!("could not listen on {address}"))?;
             let serving = serve_tls(computers, listener, tls, token);
-            if !with_input {
+            if until == Until::Stopped {
                 return serving
                     .await
                     .with_context(|| format!("serving TLS on {address}"));
@@ -251,7 +272,6 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
                 .await
                 .with_context(|| format!("serving on {}", path.display()))
         }
-        Transport::Bridge(path) => bail!("a bridge to {} serves nothing", path.display()),
     }
 }
 
@@ -283,29 +303,34 @@ mod tests {
 
     #[test]
     fn serve_takes_one_transport_and_only_tls_leaves_this_machine() {
-        assert_eq!(parse(&words("serve --stdio")), Ok(Transport::Stdio));
+        assert_eq!(
+            parse(&words("serve --stdio")),
+            Ok(Asked::Serve(Transport::Stdio))
+        );
         assert_eq!(
             parse(&words("serve --tcp 7070")),
-            Ok(Transport::Tcp("127.0.0.1:7070".parse().unwrap()))
+            Ok(Asked::Serve(Transport::Tcp(
+                "127.0.0.1:7070".parse().unwrap()
+            )))
         );
         assert!(parse(&words("serve --tcp 0.0.0.0:7070")).is_err());
         assert_eq!(
             parse(&words("serve --tls 0.0.0.0:7070 /opt/glave/tls")),
-            Ok(Transport::Tls(
+            Ok(Asked::Serve(Transport::Tls(
                 "0.0.0.0:7070".parse().unwrap(),
                 PathBuf::from("/opt/glave/tls"),
-                false
-            ))
+                Until::Stopped
+            )))
         );
         assert_eq!(
             parse(&words(
                 "serve --tls 0.0.0.0:7070 /opt/glave/tls --until-input-ends"
             )),
-            Ok(Transport::Tls(
+            Ok(Asked::Serve(Transport::Tls(
                 "0.0.0.0:7070".parse().unwrap(),
                 PathBuf::from("/opt/glave/tls"),
-                true
-            ))
+                Until::InputEnds
+            )))
         );
         assert!(parse(&words("serve --tls 0.0.0.0:7070 /opt/glave/tls --idle 15")).is_err());
         assert!(parse(&words("serve --tls 0.0.0.0:7070 /opt/glave/tls --other")).is_err());
@@ -323,13 +348,17 @@ mod tests {
             parse(&words(
                 "serve --socket /opt/glave/glave.sock /opt/glave/secret"
             )),
-            Ok(Transport::Socket(socket(), folder(), None))
+            Ok(Asked::Serve(Transport::Socket(socket(), folder(), None)))
         );
         assert_eq!(
             parse(&words(
                 "serve --socket /opt/glave/glave.sock /opt/glave/secret --idle 10"
             )),
-            Ok(Transport::Socket(socket(), folder(), Some(10)))
+            Ok(Asked::Serve(Transport::Socket(
+                socket(),
+                folder(),
+                Some(10)
+            )))
         );
         for wrong in ["--idle 0", "--idle", "--idle 1 --idle 2", "--other"] {
             let line = format!("serve --socket /opt/glave/glave.sock /opt/glave/secret {wrong}");
@@ -338,7 +367,7 @@ mod tests {
         assert!(parse(&words("serve --socket /opt/glave/glave.sock")).is_err());
         assert_eq!(
             parse(&words("bridge /opt/glave/glave.sock")),
-            Ok(Transport::Bridge(socket()))
+            Ok(Asked::Bridge(socket()))
         );
         assert!(parse(&words("bridge")).is_err());
         assert!(parse(&words("bridge a b")).is_err());

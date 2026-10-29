@@ -13,7 +13,7 @@ use glave_ports::testing::{ManualClock, TempDir};
 use tokio::io::BufReader;
 use tokio::net::TcpListener;
 
-use super::backend::{Bridge, Listed};
+use super::backend::Listed;
 use super::*;
 use crate::{CancelSwitch, LocalComputers, bridge, listen_socket, serve, serve_socket, serve_tls};
 
@@ -68,8 +68,8 @@ impl InProcess {
         }
     }
 
-    /// Serves `computers` as the worker `name` on a socket, its token in a file, and the
-    /// bridges into it, each a connection the test can cut.
+    /// Serves `computers` as the worker `name` on a socket, its token in a file, reached
+    /// through bridges ([`Self::bridged_into`]).
     fn on_socket(
         &self,
         name: &str,
@@ -78,27 +78,29 @@ impl InProcess {
     ) -> (Link, JoinHandle<()>) {
         std::fs::create_dir_all(&self.copies).unwrap();
         std::fs::write(self.token_file(name), spec.token.to_file()).unwrap();
-        let socket = self.copies.join(format!("{name}.sock"));
-        let listener = listen_socket(&socket).unwrap();
+        let listener = listen_socket(&self.socket(name)).unwrap();
         let tokens = crate::Tokens::file(self.token_file(name));
         let task = tokio::spawn(async move {
             let _ = serve_socket(computers, listener, tokens, None).await;
         });
-        let links = Arc::clone(&self.links);
-        let bridges: Bridge = Arc::new(move || {
-            let (socket, links) = (socket.clone(), Arc::clone(&links));
-            Box::pin(async move {
-                let (ours, theirs) = tokio::io::duplex(64 * 1024);
-                let (read, write) = tokio::io::split(theirs);
-                let carried = tokio::spawn(async move {
-                    let _ = bridge(&socket, read, write).await;
-                });
-                links.lock().unwrap().push(carried);
-                let (read, write) = tokio::io::split(ours);
-                Ok::<backend::Stream, ComputerError>((Box::new(read), Box::new(write)))
-            })
+        (Link::Bridged, task)
+    }
+
+    fn socket(&self, name: &str) -> PathBuf {
+        self.copies.join(format!("{name}.sock"))
+    }
+
+    /// A new bridge into the worker `name`, a connection the test can cut.
+    fn bridged_into(&self, name: &str) -> backend::Stream {
+        let (ours, theirs) = tokio::io::duplex(64 * 1024);
+        let (read, write) = tokio::io::split(theirs);
+        let socket = self.socket(name);
+        let carried = tokio::spawn(async move {
+            let _ = bridge(&socket, read, write).await;
         });
-        (Link::Bridged(bridges), task)
+        self.links.lock().unwrap().push(carried);
+        let (read, write) = tokio::io::split(ours);
+        (Box::new(read), Box::new(write))
     }
 
     fn token_file(&self, name: &str) -> PathBuf {
@@ -150,6 +152,13 @@ impl Backend for Shared {
         token: &'a Token,
     ) -> BoxFuture<'a, Result<(), ComputerError>> {
         self.0.renew(name, token)
+    }
+
+    fn bridge<'a>(
+        &'a self,
+        name: &'a str,
+    ) -> BoxFuture<'a, Result<backend::Stream, ComputerError>> {
+        self.0.bridge(name)
     }
 
     fn list(&self) -> BoxFuture<'_, Result<Vec<Listed>, ComputerError>> {
@@ -236,6 +245,13 @@ impl Backend for InProcess {
             std::fs::write(self.token_file(name), token.to_file()).unwrap();
             Ok(())
         })
+    }
+
+    fn bridge<'a>(
+        &'a self,
+        name: &'a str,
+    ) -> BoxFuture<'a, Result<backend::Stream, ComputerError>> {
+        Box::pin(std::future::ready(Ok(self.bridged_into(name))))
     }
 
     fn list(&self) -> BoxFuture<'_, Result<Vec<Listed>, ComputerError>> {

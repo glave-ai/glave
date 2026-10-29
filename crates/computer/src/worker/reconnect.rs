@@ -7,23 +7,31 @@
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use glave_ports::computer::ComputerError;
 use glave_ports::{Clock as _, SystemClock};
+use tokio::time::Instant;
 
 use super::TOKEN_LIFETIME;
-use super::backend::{Backend, Bridge};
+use super::backend::Backend;
 use crate::remote::RemoteComputers;
 use crate::tls::{Fingerprint, connect_tls};
 use crate::token::Token;
+
+/// How long a bridge is tried again while the cluster's API server does not answer, as while
+/// it restarts: seconds, at most a minute.
+const BRIDGE_AGAIN: Duration = Duration::from_mins(1);
+/// How often it is tried in that time.
+const BRIDGE_RETRY: Duration = Duration::from_secs(1);
 
 /// How a worker's connection is opened again.
 pub(crate) enum Door {
     /// Over TLS at the address it listens on, trusting only the certificate it shows.
     Tls(SocketAddr, Fingerprint),
-    /// Through a new bridge into it.
-    Bridge(Bridge),
+    /// Through a new bridge into it ([`Backend::bridge`]): tried again at each call, since a
+    /// bridge costs one exec and the worker goes on without one.
+    Bridge,
     /// Not at all: its standard input and output were its only door.
     None,
 }
@@ -32,16 +40,18 @@ pub(crate) enum Door {
 pub(crate) struct Connection {
     remote: Mutex<Arc<RemoteComputers>>,
     door: Door,
-    /// Why opening the connection again failed: then it is not tried again.
+    /// Why opening the connection again failed: then it is not tried again, but through a
+    /// bridge.
     failed: tokio::sync::Mutex<Option<String>>,
 }
 
-/// Connects to glave in a worker through a new `bridge` into it, signed in with `token`.
+/// Connects to glave in the worker `name` through a new bridge into it, signed in with `token`.
 pub(crate) async fn bridged(
-    bridge: &Bridge,
+    backend: &dyn Backend,
+    name: &str,
     token: &str,
 ) -> Result<RemoteComputers, ComputerError> {
-    let (read, write) = bridge().await?;
+    let (read, write) = backend.bridge(name).await?;
     let remote = RemoteComputers::connect(read, write);
     remote.authenticate(token).await?;
     remote.check_protocol().await?;
@@ -97,7 +107,9 @@ impl Connection {
             }
             Err(error) => {
                 let why = error.to_string();
-                *failed = Some(why.clone());
+                if !matches!(self.door, Door::Bridge) {
+                    *failed = Some(why.clone());
+                }
                 Err(ComputerError::Unreachable(format!(
                     "the connection to worker {name} died ({died}) and could not be opened \
                      again: {why}"
@@ -117,12 +129,33 @@ impl Connection {
                 let token = renewed(name, backend).await?;
                 connect_tls(*address, fingerprint, token.secret()).await
             }
-            Door::Bridge(bridge) => bridged(bridge, renewed(name, backend).await?.secret()).await,
+            Door::Bridge => bridged_again(name, backend).await,
             Door::None => Err(ComputerError::Unsupported(
                 "the worker has no network: glave reached it over its standard input and \
                  output, which cannot be opened again"
                     .into(),
             )),
+        }
+    }
+}
+
+/// A new bridge into the worker `name` with a fresh token, tried again for up to a minute while
+/// the API server does not answer; a worker that is not there, or not running, fails at once.
+async fn bridged_again(
+    name: &str,
+    backend: &dyn Backend,
+) -> Result<RemoteComputers, ComputerError> {
+    let until = Instant::now() + BRIDGE_AGAIN;
+    loop {
+        let tried = match renewed(name, backend).await {
+            Ok(token) => bridged(backend, name, token.secret()).await,
+            Err(error) => Err(error),
+        };
+        match tried {
+            Err(ComputerError::Unreachable(_)) if Instant::now() < until => {
+                tokio::time::sleep(BRIDGE_RETRY).await;
+            }
+            tried => return tried,
         }
     }
 }

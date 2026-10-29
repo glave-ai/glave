@@ -27,11 +27,20 @@ const SOCKET_WAIT: Duration = Duration::from_secs(30);
 /// How often a bridge tries the socket while it waits.
 const SOCKET_RETRY: Duration = Duration::from_millis(100);
 
-/// Listens on a Unix socket at `path`, open to this user alone. A socket left there before
-/// (by a glave that ended) is replaced; anything else at the path is refused.
+/// Listens on a Unix socket at `path`, open to this user alone. A socket left there by a glave
+/// that ended is replaced; one a computer still serves on, or anything else at the path, is
+/// refused.
 pub fn listen_socket(path: &Path) -> std::io::Result<UnixListener> {
     match std::fs::symlink_metadata(path) {
-        Ok(found) if found.file_type().is_socket() => std::fs::remove_file(path)?,
+        Ok(found) if found.file_type().is_socket() => {
+            if std::os::unix::net::UnixStream::connect(path).is_ok() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::AddrInUse,
+                    format!("a computer already serves on {}", path.display()),
+                ));
+            }
+            std::fs::remove_file(path)?;
+        }
         Ok(_) => {
             return Err(std::io::Error::other(format!(
                 "{} is there and is not a socket",
