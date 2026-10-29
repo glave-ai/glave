@@ -15,9 +15,13 @@ use super::tests::ran;
 use crate::worker::backend::Backend as _;
 use crate::{WorkerComputers, WorkerCredentials};
 
-/// Whether bubblewrap starts as glave's sandbox starts it (`local/sandbox/linux/bubblewrap.rs`'s
-/// probe), and what it says when it does not.
-const BUBBLEWRAP: &str = "bwrap --unshare-user --unshare-pid --unshare-ipc --unshare-net \
+/// Whether bubblewrap starts as glave's sandbox starts it for a command without the network
+/// (`local/sandbox/linux/bubblewrap.rs`'s probe), and what it says when it does not.
+const BUBBLEWRAP_OFFLINE: &str = "bwrap --unshare-user --unshare-pid --unshare-ipc --unshare-net \
+    --ro-bind / / --dev /dev --proc /proc -- true 2>&1 && echo starts || echo 'does not start'";
+
+/// The same for a command with the network, which shares the computer's.
+const BUBBLEWRAP_ONLINE: &str = "bwrap --unshare-user --unshare-pid --unshare-ipc \
     --ro-bind / / --dev /dev --proc /proc -- true 2>&1 && echo starts || echo 'does not start'";
 
 /// Python's library compiled from a copy in the home: many small files written, and CPU.
@@ -25,7 +29,8 @@ const COMPILE: &str = "rm -rf py && cp -r /usr/lib/python3.13 py && \
     python3 -m compileall -q -f -j 2 py >/dev/null && echo compiled";
 
 /// The stable Rust toolchain fetched into the home: the network and many files written.
-const TOOLCHAIN: &str = "rustup default stable --profile minimal >/dev/null 2>&1 && echo fetched";
+const TOOLCHAIN: &str = "rustup set profile minimal >/dev/null && \
+    rustup default stable 2>&1 | tail -n 2 && echo fetched";
 
 /// A small Rust program built.
 const BUILD: &str = "rm -rf hello && cargo new -q --vcs none hello && cd hello && \
@@ -85,7 +90,8 @@ fn a_persons_computer_measured_under_its_runtime() {
         let mut said = Vec::new();
         if let Ok(woke) = &woke {
             for (what, script) in [
-                ("bubblewrap", BUBBLEWRAP),
+                ("bubblewrap without the network", BUBBLEWRAP_OFFLINE),
+                ("bubblewrap with the network", BUBBLEWRAP_ONLINE),
                 ("compile Python's library", COMPILE),
                 ("fetch the Rust toolchain", TOOLCHAIN),
                 ("build a small Rust program", BUILD),
