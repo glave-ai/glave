@@ -18,6 +18,14 @@ const HOME: &str = "/opt/glave";
 const READY: &str = "opt/glave/ready";
 /// The label every worker object carries, so leftovers can be found.
 pub(crate) const LABEL: &str = "glave.worker";
+/// The label a person's computer's objects carry instead, its key as the value: never a
+/// worker's, so no glave reaps a person's computer as a worker it left.
+pub(crate) const COMPUTER_LABEL: &str = "glave.computer";
+/// Where a person's disk is mounted in their computer: their home.
+pub(crate) const PERSON_HOME: &str = "/home/glave";
+/// The most a person's computer may write outside its disk (its container's layer, `/tmp`),
+/// so one person can never fill a node's disk.
+const OUTSIDE_THE_DISK: &str = "10Gi";
 
 /// Waits (up to ten minutes) for the harness to copy glave in, then becomes it. Run by
 /// `/bin/sh -c`, with glave's command line as its arguments.
@@ -44,6 +52,13 @@ pub(crate) struct Owner {
     pub(crate) uid: String,
 }
 
+/// A person's computer: its key, and the claim that is its disk.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Home<'a> {
+    pub(crate) key: &'a str,
+    pub(crate) claim: &'a str,
+}
+
 /// What one worker's objects are made of.
 pub(crate) struct Shape<'a> {
     pub(crate) name: &'a str,
@@ -55,14 +70,25 @@ pub(crate) struct Shape<'a> {
     pub(crate) labels: &'a BTreeMap<String, String>,
     /// The Pod glave runs in, when it runs in one beside its workers.
     pub(crate) owner: Option<&'a Owner>,
+    /// The person whose computer this is, when it is one: their disk is its home.
+    pub(crate) home: Option<Home<'a>>,
 }
 
 impl Shape<'_> {
-    /// The worker's labels: the extra ones and its own name.
+    /// The worker's labels: the extra ones and its own name, or a person's computer's key.
     pub(crate) fn labels(&self) -> BTreeMap<String, String> {
         let mut labels = self.labels.clone();
-        labels.insert(LABEL.to_owned(), self.name.to_owned());
+        let (label, value) = self.own_label();
+        labels.insert(label.to_owned(), value.to_owned());
         labels
+    }
+
+    /// The label that is this object's own, and its value.
+    fn own_label(&self) -> (&'static str, &str) {
+        match self.home {
+            Some(home) => (COMPUTER_LABEL, home.key),
+            None => (LABEL, self.name),
+        }
     }
 
     /// The worker's annotations: the glave that started it, when known ([`STARTED_BY`]),
@@ -98,35 +124,26 @@ impl Shape<'_> {
     /// the worker gets what it is allowed; no service account token; no privilege; every
     /// capability dropped; the runtime's seccomp profile; and a runtime class when one is set.
     pub(crate) fn pod(&self) -> Value {
-        let serve = if self.spec.network {
-            json!([
-                format!("{HOME}/glave"),
-                "computer",
-                "serve",
-                "--tls",
-                format!("0.0.0.0:{PORT}"),
-                format!("{HOME}/tls")
-            ])
-        } else {
-            json!([format!("{HOME}/glave"), "computer", "serve", "--stdio"])
-        };
-        let mut command = vec![json!("/bin/sh"), json!("-c"), json!(WAIT), json!("wait")];
-        command.extend(serve.as_array().cloned().unwrap_or_default());
-        let env: Vec<Value> = self
+        let command = self.command();
+        let mut env: Vec<Value> = self
             .spec
             .env
             .iter()
+            .filter(|(name, _)| self.home.is_none() || name.as_str() != "HOME")
             .map(|(name, value)| json!({"name": name, "value": value}))
             .collect();
-        let mut amounts = serde_json::Map::new();
-        if let Some(cpus) = self.spec.cpus {
-            amounts.insert("cpu".into(), json!(cpus.to_string()));
-        }
-        if let Some(gb) = self.spec.memory_gb {
-            amounts.insert("memory".into(), json!(format!("{gb}Gi")));
-        }
+        let (amounts, mut limits) = self.amounts();
         let mut mounts = vec![json!({"name": "glave", "mountPath": HOME})];
         let mut volumes = vec![json!({"name": "glave", "emptyDir": {}})];
+        if let Some(home) = self.home {
+            env.push(json!({"name": "HOME", "value": PERSON_HOME}));
+            mounts.push(json!({"name": "home", "mountPath": PERSON_HOME}));
+            volumes.push(json!({
+                "name": "home",
+                "persistentVolumeClaim": {"claimName": home.claim}
+            }));
+            limits.insert("ephemeral-storage".into(), json!(OUTSIDE_THE_DISK));
+        }
         if self.spec.network {
             // The identity lives in memory, never on the node's disk.
             mounts.push(json!({"name": "tls", "mountPath": format!("{HOME}/tls")}));
@@ -153,7 +170,7 @@ impl Shape<'_> {
             "ports": ports,
             "stdin": !self.spec.network,
             "stdinOnce": !self.spec.network,
-            "resources": {"requests": amounts.clone(), "limits": amounts},
+            "resources": {"requests": amounts, "limits": limits},
             "volumeMounts": mounts,
             "securityContext": {
                 "allowPrivilegeEscalation": false,
@@ -181,6 +198,38 @@ impl Shape<'_> {
         })
     }
 
+    /// The container's command: the wait, then glave serving over TLS on [`PORT`], or on its
+    /// standard input and output without a network.
+    fn command(&self) -> Vec<Value> {
+        let serve = if self.spec.network {
+            json!([
+                format!("{HOME}/glave"),
+                "computer",
+                "serve",
+                "--tls",
+                format!("0.0.0.0:{PORT}"),
+                format!("{HOME}/tls")
+            ])
+        } else {
+            json!([format!("{HOME}/glave"), "computer", "serve", "--stdio"])
+        };
+        let mut command = vec![json!("/bin/sh"), json!("-c"), json!(WAIT), json!("wait")];
+        command.extend(serve.as_array().cloned().unwrap_or_default());
+        command
+    }
+
+    /// The CPU and memory the size asks for, as requests and as limits (the same).
+    fn amounts(&self) -> (serde_json::Map<String, Value>, serde_json::Map<String, Value>) {
+        let mut amounts = serde_json::Map::new();
+        if let Some(cpus) = self.spec.cpus {
+            amounts.insert("cpu".into(), json!(cpus.to_string()));
+        }
+        if let Some(gb) = self.spec.memory_gb {
+            amounts.insert("memory".into(), json!(format!("{gb}Gi")));
+        }
+        (amounts.clone(), amounts)
+    }
+
     /// The worker's NetworkPolicy: nothing comes in (the harness arrives through the API
     /// server's port-forward or attach, which no policy sees), and nothing goes out unless
     /// the worker has the network, which then reaches anywhere but where clouds serve their
@@ -204,12 +253,13 @@ impl Shape<'_> {
         } else {
             json!([])
         };
+        let (label, value) = self.own_label();
         json!({
             "apiVersion": "networking.k8s.io/v1",
             "kind": "NetworkPolicy",
             "metadata": self.metadata(),
             "spec": {
-                "podSelector": {"matchLabels": {LABEL: self.name}},
+                "podSelector": {"matchLabels": {label: value}},
                 "policyTypes": ["Ingress", "Egress"],
                 "ingress": [],
                 "egress": egress,
@@ -367,6 +417,7 @@ mod tests {
             arch: Some("arm64"),
             labels,
             owner: None,
+            home: None,
         }
     }
 
@@ -440,6 +491,60 @@ mod tests {
             parsed.metadata.owner_references.map(|owners| owners.len()),
             Some(1)
         );
+    }
+
+    #[test]
+    fn a_persons_computer_mounts_its_disk_as_home_and_is_never_a_worker() {
+        let labels = BTreeMap::from([("glave.test".to_owned(), "run".to_owned())]);
+        let mut spec = spec(true);
+        spec.starter = None;
+        spec.env.insert("HOME".into(), "/root".into());
+        let computer = Shape {
+            name: "glave-computer-k1",
+            home: Some(Home {
+                key: "k1",
+                claim: "glave-home-k1",
+            }),
+            owner: None,
+            ..shape(&spec, &labels)
+        };
+        let pod = computer.pod();
+        let container = &pod["spec"]["containers"][0];
+        assert_eq!(
+            pod["metadata"]["labels"],
+            json!({"glave.test": "run", "glave.computer": "k1"})
+        );
+        assert_eq!(pod["metadata"]["ownerReferences"], json!([]));
+        assert_eq!(
+            pod["spec"]["volumes"][1],
+            json!({"name": "home", "persistentVolumeClaim": {"claimName": "glave-home-k1"}})
+        );
+        assert_eq!(
+            container["volumeMounts"][1],
+            json!({"name": "home", "mountPath": "/home/glave"})
+        );
+        assert_eq!(
+            container["env"],
+            json!([
+                {"name": "GREETING", "value": "hi"},
+                {"name": "HOME", "value": "/home/glave"}
+            ])
+        );
+        assert_eq!(
+            container["resources"]["limits"],
+            json!({"cpu": "2", "memory": "4Gi", "ephemeral-storage": "10Gi"})
+        );
+        assert_eq!(
+            container["resources"]["requests"],
+            json!({"cpu": "2", "memory": "4Gi"})
+        );
+        let policy = computer.network_policy();
+        assert_eq!(
+            policy["spec"]["podSelector"]["matchLabels"],
+            json!({"glave.computer": "k1"})
+        );
+        let parsed: k8s_openapi::api::core::v1::Pod = serde_json::from_value(pod).unwrap();
+        assert!(parsed.spec.is_some());
     }
 
     #[test]

@@ -16,7 +16,7 @@ use glave_ports::computer::{
     Command, Computers, Ending, Environment, Image, Limits, Network, Sources,
 };
 use glave_ports::{Clock as _, SystemClock, block_on};
-use k8s_openapi::api::core::v1::{Pod, Secret};
+use k8s_openapi::api::core::v1::{PersistentVolumeClaim, Pod, Secret};
 use k8s_openapi::api::networking::v1::NetworkPolicy;
 use kube::Api;
 use kube::api::ListParams;
@@ -48,7 +48,7 @@ fn run_id() -> String {
 
 /// The cluster, when the test is asked for; `None` (and a note) otherwise. What it makes is
 /// labelled with the run and `case`, so tests running at once each find only their own.
-async fn cluster(runtime_class: Option<&str>, case: &str) -> Option<Kubernetes> {
+pub(super) async fn cluster(runtime_class: Option<&str>, case: &str) -> Option<Kubernetes> {
     if std::env::var("GLAVE_TEST_KUBE").as_deref() != Ok("1") {
         eprintln!(
             "skipped: set GLAVE_TEST_KUBE=1 with a cluster in the kubeconfig to test the Kubernetes backend"
@@ -108,9 +108,9 @@ fn mine(cluster: &Kubernetes) -> ListParams {
     ListParams::default().labels(&labels.join(","))
 }
 
-/// What this test left: Pods, network policies and Secrets with its label, waited for (a
+/// What this test left: Pods, network policies, disks and Secrets with its label, waited for (a
 /// removed Pod takes a moment to go).
-async fn left_behind(cluster: &Kubernetes) -> Vec<String> {
+pub(super) async fn left_behind(cluster: &Kubernetes) -> Vec<String> {
     let label = mine(cluster);
     let mut left = Vec::new();
     for _ in 0..120 {
@@ -127,6 +127,15 @@ async fn left_behind(cluster: &Kubernetes) -> Vec<String> {
                 .items
                 .iter()
                 .map(|p| format!("policy {:?}", p.metadata.name)),
+        );
+        let claims: Api<PersistentVolumeClaim> =
+            Api::namespaced(cluster.client.clone(), &cluster.namespace);
+        let claims = claims.list(&label).await.unwrap();
+        left.extend(
+            claims
+                .items
+                .iter()
+                .map(|c| format!("disk {:?}", c.metadata.name)),
         );
         let secrets: Api<Secret> = Api::namespaced(cluster.client.clone(), &cluster.namespace);
         let secrets = secrets.list(&label).await.unwrap();

@@ -388,7 +388,8 @@ jobs:
 
   # Workers on Kubernetes: a kind cluster on the runner, and the Kubernetes backend's tests
   # against it (a stub in glave's place, then the glave this job builds in real workers, over
-  # TLS through port-forward and over attach). Everything they make is labelled
+  # TLS through port-forward and over attach, and a person's computer that sleeps and wakes on
+  # its disk). Everything they make is labelled
   # glave.test=<run id>, and nothing labelled may be left.
   kubernetes:
     runs-on: ubuntu-latest
@@ -446,7 +447,7 @@ jobs:
       - name: Nothing the Kubernetes tests made is left behind
         if: always()
         run: |
-          left="$(kubectl get pods,networkpolicies,secrets -A -l "glave.test=${{ github.run_id }}" -o name)$(kubectl get pods -A -l glave.worker -o name)"
+          left="$(kubectl get pods,networkpolicies,persistentvolumeclaims,secrets -A -l "glave.test=${{ github.run_id }}" -o name)$(kubectl get pods -A -l glave.worker -o name)$(kubectl get pods,persistentvolumeclaims -A -l glave.computer -o name)"
           if [ -n "$left" ]; then
             echo "left behind: $left"
             exit 1

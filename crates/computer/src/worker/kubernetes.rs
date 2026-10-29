@@ -7,6 +7,14 @@
 //! in a Pod beside its workers, each worker names that Pod as its owner, so the cluster removes
 //! them when it is deleted.
 
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the session server gives each person their computer next (#221); until then only its tests do"
+    )
+)]
+mod home;
 mod link;
 mod objects;
 
@@ -27,7 +35,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use super::backend::{Backend, COPIED_WITHIN, Link, Listed, STARTED_BY, Spec, Started};
 use super::docker::elf_machine;
 use crate::token::Token;
-use objects::{Owner, Progress, Shape};
+use objects::{Home, Owner, Progress, Shape};
 
 /// How long a Pod has to start running: long enough to pull a large image.
 const START_WAIT: Duration = Duration::from_mins(5);
@@ -175,6 +183,18 @@ impl Kubernetes {
         spec: &Spec,
         glave: &[u8],
     ) -> Result<Link, ComputerError> {
+        self.start_on(name, spec, glave, None).await
+    }
+
+    /// Starts `name` from `spec` with `glave`: a worker, or with `home` a person's computer on
+    /// their disk, owned by no Pod, since a person's computer outlives any one glave.
+    async fn start_on(
+        &self,
+        name: &str,
+        spec: &Spec,
+        glave: &[u8],
+        home: Option<Home<'_>>,
+    ) -> Result<Link, ComputerError> {
         let arch = objects::arch(elf_machine(glave));
         let shape = Shape {
             name,
@@ -182,7 +202,12 @@ impl Kubernetes {
             runtime_class: self.runtime_class.as_deref(),
             arch,
             labels: &self.labels,
-            owner: self.owner.as_ref(),
+            owner: if home.is_some() {
+                None
+            } else {
+                self.owner.as_ref()
+            },
+            home,
         };
         // The policy first, so the Pod never runs without it.
         let policy: NetworkPolicy = serde_json::from_value(shape.network_policy())
