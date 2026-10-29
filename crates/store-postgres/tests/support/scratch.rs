@@ -1,5 +1,7 @@
 //! A schema of a test's own in the database `GLAVE_TEST_POSTGRES_URL` names, dropped at the
-//! end, so tests run in parallel and leave nothing behind.
+//! end, so tests run in parallel and leave nothing behind. Stores sign in as that URL's role,
+//! which row-level security binds; the test looks at every organization's rows through
+//! `GLAVE_TEST_POSTGRES_ADMIN_URL`, a superuser's sign-in to the same database.
 
 use std::sync::Arc;
 
@@ -28,24 +30,32 @@ pub(crate) struct Scratch {
 impl Scratch {
     /// A fresh, empty schema, or `None` when no database was given.
     pub(crate) async fn new(name: &str) -> Option<Self> {
-        let Ok(url) = std::env::var("GLAVE_TEST_POSTGRES_URL") else {
-            eprintln!("skipped: set GLAVE_TEST_POSTGRES_URL to run the Postgres tests");
+        let (Ok(url), Ok(admin_url)) = (
+            std::env::var("GLAVE_TEST_POSTGRES_URL"),
+            std::env::var("GLAVE_TEST_POSTGRES_ADMIN_URL"),
+        ) else {
+            eprintln!(
+                "skipped: set GLAVE_TEST_POSTGRES_URL and GLAVE_TEST_POSTGRES_ADMIN_URL to run \
+                 the Postgres tests"
+            );
             return None;
         };
-        let (admin, connection) = tokio_postgres::connect(&url, NoTls).await.unwrap();
+        let (admin, connection) = tokio_postgres::connect(&admin_url, NoTls).await.unwrap();
         let connection = tokio::spawn(async move {
             let _ = connection.await;
         });
         // Test processes run one test each, so the process id keeps parallel runs apart.
         let schema = format!("glave_test_{name}_{}", std::process::id());
+        let mut config: Config = url.parse().unwrap();
+        let role = config.get_user().unwrap().to_owned();
         admin
             .batch_execute(&format!(
-                "DROP SCHEMA IF EXISTS {schema} CASCADE; CREATE SCHEMA {schema};"
+                "DROP SCHEMA IF EXISTS {schema} CASCADE;
+                 CREATE SCHEMA {schema} AUTHORIZATION \"{role}\";"
             ))
             .await
             .unwrap();
         let clock = ManualClock::at_millis(1_791_000_000_000);
-        let mut config: Config = url.parse().unwrap();
         config.options(format!("-c search_path={schema}"));
         Some(Self {
             admin,

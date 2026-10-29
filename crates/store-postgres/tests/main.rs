@@ -6,4 +6,5 @@
 mod support;
 
 mod postgres;
+mod row_security;
 mod sealing;

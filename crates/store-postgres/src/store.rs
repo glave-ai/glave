@@ -102,6 +102,7 @@ impl Store {
             .get()
             .await
             .map_err(|e| StoreError::Connect(unavailable(&e)))?;
+        schema::refuse_bypassing(&client).await?;
         schema::prepare(&mut client).await?;
         drop(client);
         let clock = Arc::clone(&keys.clock);
@@ -149,7 +150,8 @@ impl Store {
         Arc::clone(&self.keys)
     }
 
-    /// The organization this database holds, made with the id `new` the first time.
+    /// The server's own organization, the local person's, made with the id `new` the first time
+    /// (`specs/storage.md`, "Many organizations in one store").
     pub async fn org(&self, new: Uuid) -> Result<OrgId, StoreError> {
         self.kept_once("org", new).await.map(OrgId::from_uuid)
     }
@@ -163,7 +165,7 @@ impl Store {
 
     /// The id kept under `key`, kept as `new` the first time.
     async fn kept_once(&self, key: &str, new: Uuid) -> Result<Uuid, StoreError> {
-        let client = connection(&self.pool).await?;
+        let client = unscoped(&self.pool).await?;
         let failed = |e: tokio_postgres::Error| StoreError::Storage(describe(&e));
         client
             .execute(
@@ -189,7 +191,7 @@ impl Store {
         &self,
         new: (PrincipalId, PrincipalId),
     ) -> Result<(PrincipalId, PrincipalId), StoreError> {
-        let client = connection(&self.pool).await?;
+        let client = unscoped(&self.pool).await?;
         let failed = |e: tokio_postgres::Error| StoreError::Storage(describe(&e));
         client
             .execute(
@@ -229,11 +231,50 @@ fn principal(text: &str) -> Result<PrincipalId, StoreError> {
         .ok_or_else(|| StoreError::Storage(format!("bad principal id {text:?}")))
 }
 
-/// Borrows a connection from the pool.
-pub(crate) async fn connection(pool: &Pool) -> Result<Object, StoreError> {
-    pool.get()
+/// Borrows a connection from the pool for work in `org`: row-level security then lets it read
+/// and write `org`'s rows and no other organization's (`specs/storage.md`, "Row-level
+/// security"). Every connection that reads or writes rows is taken here or in [`unscoped`],
+/// each setting `glave.org` before anything else, so a pooled connection never carries one
+/// organization's setting into another's work.
+pub(crate) async fn connection(pool: &Pool, org: OrgId) -> Result<Object, StoreError> {
+    borrowed(pool, &org.to_string()).await
+}
+
+/// Borrows a connection from the pool for what is no organization's: the schema, the store's
+/// own settings and the list of its organizations. It reads and writes no organization's rows.
+pub(crate) async fn unscoped(pool: &Pool) -> Result<Object, StoreError> {
+    borrowed(pool, "").await
+}
+
+async fn borrowed(pool: &Pool, org: &str) -> Result<Object, StoreError> {
+    let client = pool
+        .get()
         .await
-        .map_err(|e| StoreError::Storage(unavailable(&e)))
+        .map_err(|e| StoreError::Storage(unavailable(&e)))?;
+    let failed = |e: tokio_postgres::Error| StoreError::Storage(describe(&e));
+    let set = client
+        .prepare_cached("SELECT set_config('glave.org', $1, false)")
+        .await
+        .map_err(failed)?;
+    client.execute(&set, &[&org]).await.map_err(failed)?;
+    Ok(client)
+}
+
+/// The organizations the store holds: every one with an organization key, made the first time
+/// anything of it is sealed. Ids only, for work that runs once per organization.
+pub(crate) async fn organizations(pool: &Pool) -> Result<Vec<OrgId>, StoreError> {
+    let client = unscoped(pool).await?;
+    let rows = client
+        .query("SELECT org FROM glave_orgs ORDER BY org", &[])
+        .await
+        .map_err(|e| StoreError::Storage(describe(&e)))?;
+    rows.iter()
+        .map(|row| {
+            row.try_get::<_, Uuid>(0)
+                .map(OrgId::from_uuid)
+                .map_err(|e| StoreError::Storage(describe(&e)))
+        })
+        .collect()
 }
 
 /// Why the pool gave no connection, a limit that passed saying which and how long it was.

@@ -87,7 +87,7 @@ impl EventLog for PostgresLog {
                     first.thread.as_uuid(),
                 );
                 let columns = Columns::of(&keys, &scope, &events).await?;
-                let mut client = connection(&pool).await.map_err(storage)?;
+                let mut client = connection(&pool, scope.org()).await.map_err(storage)?;
                 let transaction = client.transaction().await.map_err(database)?;
                 let last: Option<i64> = transaction
                     .query_one(
@@ -174,7 +174,7 @@ impl EventLog for PostgresLog {
                 .collect::<Vec<_>>()
                 .join(" | ");
             let limit = i64::try_from(limit).unwrap_or(i64::MAX);
-            let client = connection(&pool).await.map_err(storage)?;
+            let client = connection(&pool, scope.org()).await.map_err(storage)?;
             let statement = client.prepare_cached(SEARCH).await.map_err(database)?;
             let rows = client
                 .query(
@@ -241,7 +241,7 @@ impl EventLog for PostgresLog {
         async move {
             let after = i64::try_from(after.map_or(0, Seq::get)).unwrap_or(i64::MAX);
             let limit = i64::try_from(limit).unwrap_or(i64::MAX);
-            let client = connection(&pool).await.map_err(storage)?;
+            let client = connection(&pool, scope.org()).await.map_err(storage)?;
             let statement = client
                 .prepare_cached(
                     "SELECT glave, id, thread, seq, at, type, v, data, key_id FROM events
@@ -282,7 +282,7 @@ impl EventLog for PostgresLog {
         let pool = self.pool.clone();
         let keys = Arc::clone(&self.keys);
         async move {
-            let client = connection(&pool).await.map_err(storage)?;
+            let client = connection(&pool, scope.org()).await.map_err(storage)?;
             let statement = client.prepare_cached(LATEST_OF).await.map_err(database)?;
             let row = client
                 .query_opt(
@@ -310,7 +310,7 @@ impl EventLog for PostgresLog {
     ) -> impl Future<Output = Result<Option<Located>, LogError>> + Send {
         let pool = self.pool.clone();
         async move {
-            let client = connection(&pool).await.map_err(storage)?;
+            let client = connection(&pool, org).await.map_err(storage)?;
             let statement = client
                 .prepare_cached(
                     "SELECT org, project FROM events WHERE thread = $1 AND org = $2

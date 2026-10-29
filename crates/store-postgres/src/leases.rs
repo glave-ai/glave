@@ -35,7 +35,7 @@ impl PostgresLeases {
         holder: Holder,
         ttl: Duration,
     ) -> Result<Option<Lease>, LeaseError> {
-        let client = connection(&self.pool).await.map_err(storage)?;
+        let client = connection(&self.pool, org).await.map_err(storage)?;
         let row = client
             .query_opt(
                 &sql,
@@ -99,7 +99,7 @@ impl Leases for PostgresLeases {
 
     fn release<'a>(&'a self, lease: &'a Lease) -> BoxFuture<'a, Result<(), LeaseError>> {
         Box::pin(async move {
-            let client = connection(&self.pool).await.map_err(storage)?;
+            let client = connection(&self.pool, lease.org).await.map_err(storage)?;
             client
                 .execute(
                     "DELETE FROM leases WHERE org = $1 AND key = $2 AND holder = $3",
