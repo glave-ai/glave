@@ -48,6 +48,8 @@ const LAYERS: &[(&str, Layer)] = &[
     ("glave-mcp", Adapter),
     // The memory port: glave's own MCP server over the event log.
     ("glave-memory", Adapter),
+    // The email plug over SMTP, through lettre.
+    ("glave-mail", Adapter),
     // web_fetch as a tool source, over reqwest.
     ("glave-web", Adapter),
     // Office files for `glave doc`: workbooks read with calamine and written with

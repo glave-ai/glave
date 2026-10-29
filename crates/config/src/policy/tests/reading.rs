@@ -568,3 +568,31 @@ fn a_cloud_provider_is_the_person_s_or_server_s_choice_and_typed() {
         assert!(refused.contains("config.toml"), "{wrong}: {refused}");
     }
 }
+
+#[test]
+fn the_mail_server_is_the_person_s_or_server_s_choice() {
+    let dir = scratch("email");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let mut locations = Locations::here(&home, &dir);
+    locations.policies = vec![];
+    let text = "[email]\nhost = \"smtp.example.com\"\nfrom = \"glave <glave@example.com>\"\n";
+    let project = files::config(text, &locations.project).unwrap();
+    let loaded = load_all(&locations, Some(project)).unwrap();
+    assert_eq!(loaded.choices.email, None, "a project's is ignored");
+    std::fs::write(home.join("config.toml"), text).unwrap();
+    let loaded = load_all(&locations, None).unwrap();
+    let chosen = loaded.choices.email.as_ref().unwrap();
+    assert_eq!(chosen.value.host, "smtp.example.com");
+    assert_eq!(chosen.value.port, None);
+    for refused in [
+        "[email]\nhost = \"smtp.example.com:25\"\nfrom = \"glave@example.com\"\n",
+        "[email]\nhost = \"smtp.example.com\"\nfrom = \"glave\"\n",
+        "[email]\nhost = \"smtp.example.com\"\nfrom = \"glave@example.com\"\npassword = \"x\"\n",
+    ] {
+        assert!(
+            files::config(refused, &locations.person).is_err(),
+            "{refused}"
+        );
+    }
+}

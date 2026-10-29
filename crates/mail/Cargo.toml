@@ -1,0 +1,23 @@
+[package]
+name = "glave-mail"
+description = "glave's email plug over SMTP: plain messages to one address, through the mail server the deployment names"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+glave-event.workspace = true
+glave-ports.workspace = true
+# SMTP with STARTTLS or TLS of its own, on the rustls, aws-lc-rs and platform verifier glave
+# already uses.
+lettre.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+glave-ports = { workspace = true, features = ["conformance"] }
+
+[lints]
+workspace = true

@@ -9,7 +9,7 @@ use glave_ports::host::PublicOrigin;
 use glave_ports::memories::ProjectMemory;
 use glave_ports::settings::Judge;
 
-use crate::policy::files::{ConfigFile, GithubFile, ModelEntry};
+use crate::policy::files::{ConfigFile, EmailFile, GithubFile, ModelEntry};
 use crate::policy::memory::ProjectChoice;
 use crate::policy::provider::ProviderFile;
 use crate::policy::web::WebFile;
@@ -99,6 +99,8 @@ pub struct Choices {
     pub provider: Option<Chosen<ProviderFile>>,
     /// The GitHub app people sign in to GitHub through in the browser, if one is set up.
     pub github: Option<Chosen<GithubFile>>,
+    /// The mail server glave sends through, if one is set up.
+    pub email: Option<Chosen<EmailFile>>,
 }
 
 /// One level choices come from.
@@ -171,6 +173,7 @@ pub(super) fn resolve(layers: &[Layer]) -> Choices {
         acme: nearest(layers, "serve", |file| file.serve.as_ref()?.directory()),
         provider: nearest(layers, "provider", |file| file.provider.clone()),
         github: nearest(layers, "github", |file| file.github.clone()),
+        email: nearest(layers, "email", |file| file.email.clone()),
         store: nearest(layers, "store", |file| {
             let url = file.store.as_ref()?.url.as_ref()?;
             Some(url.trim().to_owned())

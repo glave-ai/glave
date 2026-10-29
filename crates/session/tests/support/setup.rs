@@ -96,6 +96,8 @@ pub(crate) struct Setup {
     pub browsers: Option<Arc<Browsers>>,
     /// The glave accounts it keeps; with none, it keeps none.
     pub accounts: Option<Arc<glave_session::signin::Accounts>>,
+    /// Where its email goes; with none, it sends none.
+    pub mail: Option<Arc<dyn glave_ports::Mailer>>,
     /// Where people reach it from elsewhere; with none, only on its own computer.
     pub origin: Option<glave_ports::host::PublicOrigin>,
     /// What keeps its computer awake while work runs; with none, nothing does.
@@ -144,6 +146,7 @@ impl Setup {
             projects: None,
             browsers: None,
             accounts: None,
+            mail: None,
             origin: None,
             awake: None,
             release: None,
@@ -238,6 +241,7 @@ impl Setup {
             trust: self.trust,
             browsers: self.browsers,
             accounts: self.accounts,
+            mail: self.mail,
             origin: self.origin,
             leases: self.leases,
             tools: self.tools,

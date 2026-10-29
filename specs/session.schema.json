@@ -4061,6 +4061,13 @@
     "invite/create": {
       "params": {
         "properties": {
+          "email": {
+            "description": "Whom to email its link to, where the server sends email; else it is the caller's to\nshare. The address is not kept.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "role": {
             "$ref": "#/$defs/OrgRole"
           }

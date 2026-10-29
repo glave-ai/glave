@@ -51,7 +51,7 @@ async fn serve(dir: &Path, reached: bool, token: &LocalToken) -> Served {
 /// An invite giving `role`, made by the person on the server's computer: its code.
 async fn invite(served: &Served, token: &LocalToken, role: OrgRole) -> Secret {
     let mut here = Web::new(served, Some(token.reveal().to_owned()));
-    let invited = asked(&mut here, &Request::InviteCreate { role }).await;
+    let invited = asked(&mut here, &Request::InviteCreate { role, email: None }).await;
     Secret::new(invited["code"].as_str().unwrap())
 }
 
@@ -266,6 +266,7 @@ fn a_server_no_one_else_reaches_invites_no_one() {
             &mut here,
             &Request::InviteCreate {
                 role: OrgRole::Member,
+                email: None,
             },
         )
         .await;

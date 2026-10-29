@@ -18,11 +18,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context as _, bail};
-use glave_config::policy::Choices;
+use glave_config::policy::{Choices, EmailFile};
 use glave_event::PrincipalId;
 use glave_event::Secret;
+use glave_mail::{Smtp, SmtpSettings};
 use glave_ports::host::{PublicOrigin, is_loopback};
-use glave_ports::{Clock, SystemClock};
+use glave_ports::{Clock, Mailer, SystemClock};
 use glave_session::http::{Files, Listeners, Site};
 use glave_session::protocol::{Reply, Request, SignInWay};
 use glave_session::signin::{Accounts, Browsers, LOCAL_BYTES, LocalToken, SignIn, Trust};
@@ -252,6 +253,23 @@ pub(crate) async fn accounts(
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let accounts = Accounts::new(store.log(), store.directory(), server, origin, clock)?;
     Ok(Some(Arc::new(accounts)))
+}
+
+/// Where the server's email goes out: the mail server `[email]` names, signing in with
+/// `GLAVE_SMTP_PASSWORD` when that is set; none without one.
+pub(crate) fn mail(choices: &Choices) -> anyhow::Result<Option<Arc<dyn Mailer>>> {
+    let Some(email) = choices.email.as_ref().map(|chosen| &chosen.value) else {
+        return Ok(None);
+    };
+    let password = std::env::var("GLAVE_SMTP_PASSWORD").ok().map(Secret::new);
+    let settings = SmtpSettings {
+        host: email.host.trim().to_owned(),
+        port: email.port.unwrap_or(EmailFile::SUBMISSION),
+        from: email.from.clone(),
+        user: email.user.clone(),
+        password,
+    };
+    Ok(Some(Arc::new(Smtp::new(settings)?)))
 }
 
 /// The browsers of `person`, the local person, in `store`, signed in by the server whose id the

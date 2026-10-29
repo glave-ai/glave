@@ -10,13 +10,13 @@ use glave_event::{
     At, InviteAccepted, InviteCreated, InviteId, InviteRevoked, OrgRole, Principal, PrincipalId,
 };
 use glave_identity::signin::{kept, one_time_code, same_kept};
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
+use glave_ports::{BlobStore, Caller, EventLog, Mail, Mailer, ModelProvider};
 use jiff::{SignedDuration, Timestamp};
 
 use crate::people::{People, Permit, joined_of, no_such_person, permits};
 use crate::protocol::{ApiError, InviteInfo, Reply, code};
 use crate::server::Server;
-use crate::words::Sentence;
+use crate::words::{Language, Sentence, say};
 
 /// How long an invite works, opened or not: long enough to reach someone through a chat or an
 /// email and be opened after a weekend, short enough that one forgotten in a channel stops.
@@ -116,11 +116,16 @@ where
         &self,
         caller: &Caller,
         role: OrgRole,
+        email: Option<&str>,
     ) -> Result<Reply, ApiError> {
         // Someone else signs in through the company login, or with a glave account here.
         if !self.inner.identity_provider && self.inner.accounts.is_none() {
             return Err(ApiError::new(code::NOT_ALLOWED, Sentence::NoOrganization));
         }
+        let sending = match email {
+            Some(to) => Some(self.sender(to)?),
+            None => None,
+        };
         let theirs = permits(self.permitted(caller, Permit::Invites).await?);
         if role == OrgRole::Owner && !theirs.contains(&Permit::Owners) {
             return Err(ApiError::new(code::NOT_ALLOWED, Sentence::OwnersOnly));
@@ -155,10 +160,35 @@ where
             let waiting = &people.invites.waiting;
             waiting.get(&created.invite).map(Waiting::info)
         });
+        if let Some((mailer, origin, to)) = sending {
+            let link = format!("{origin}/#invite={}", code.expose());
+            let mail = Mail {
+                to: to.to_owned(),
+                subject: say(Language::English, &Sentence::InviteMailSubject),
+                text: say(Language::English, &Sentence::InviteMail { link }),
+            };
+            mailer.send(&mail).await.map_err(|error| {
+                tracing::warn!(%error, "an invite's email was not sent");
+                ApiError::new(code::NOT_AVAILABLE, Sentence::InviteNotSent)
+            })?;
+        }
         Ok(Reply::Invited {
             invite: invite.ok_or_else(gone)?,
             code,
         })
+    }
+
+    /// What sends an invite's link to `to`, and where the link leads: refused where this server
+    /// sends no email, or is reached from nowhere a link could lead to.
+    fn sender<'a>(&'a self, to: &'a str) -> Result<(&'a dyn Mailer, String, &'a str), ApiError> {
+        let (Some(mailer), Some(origin)) = (self.inner.mail.as_deref(), &self.inner.origin) else {
+            return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::NoEmail));
+        };
+        if !to.contains('@') || to.chars().any(char::is_whitespace) {
+            return Err(ApiError::new(code::INVALID_PARAMS, Sentence::NotAnEmail));
+        }
+        let origin = origin.to_string();
+        Ok((mailer, origin.trim_end_matches('/').to_owned(), to))
     }
 
     /// Answers `invite/list`: the invites waiting in the caller's organization, oldest first.

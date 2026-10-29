@@ -170,6 +170,7 @@ pub(crate) async fn wire(
         trust: Some(Arc::clone(&projects) as Arc<dyn ProjectTrust>),
         browsers: crate::serving::browsers(args, choices, &store, identity.person).await?,
         accounts: crate::serving::accounts(args, choices, &store).await?,
+        mail: crate::serving::mail(choices)?,
         origin: choices.origin.as_ref().map(|origin| origin.value.clone()),
         leases: Some(store.leases()),
         awake: crate::awake::for_server(args, choices, &processes),
