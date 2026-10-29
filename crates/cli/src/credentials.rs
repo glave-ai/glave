@@ -286,7 +286,7 @@ fn no_device() -> ApiError {
 
 #[cfg(test)]
 mod tests {
-    use glave_ports::testing::FAKE_SECRET;
+    use glave_ports::testing::any_secret;
 
     use super::*;
 
@@ -318,8 +318,9 @@ mod tests {
 
     #[test]
     fn a_token_is_one_line() {
-        let pasted = format!(" {FAKE_SECRET} \n");
-        assert_eq!(one_line(&pasted).as_deref(), Some(FAKE_SECRET));
+        let token = any_secret();
+        let pasted = format!(" {token} \n");
+        assert_eq!(one_line(&pasted), Some(token));
         assert_eq!(one_line("two words"), None);
         assert_eq!(one_line(""), None);
         assert_eq!(one_line(&"x".repeat(LONGEST + 1)), None);

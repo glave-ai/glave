@@ -12,6 +12,7 @@ use glave_computer::{
     serve_tls,
 };
 use glave_ports::computer::{ComputerError, ComputerId, Computers, Environment};
+use glave_ports::testing::any_secret;
 use glave_ports::{Clock as _, SystemClock, block_on, conformance};
 use tokio::io::{AsyncBufReadExt as _, BufReader};
 use tokio::net::{TcpListener, TcpStream};
@@ -87,7 +88,8 @@ fn a_computer_over_tcp_passes_the_suite_once_signed_in() {
     block_on!(async {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
-        let serving = tokio::spawn(serve_tcp(local(&copies), listener, "s3cret".into()));
+        let token = any_secret();
+        let serving = tokio::spawn(serve_tcp(local(&copies), listener, token.clone()));
 
         let (read, write) = TcpStream::connect(address).await.unwrap().into_split();
         let stranger = RemoteComputers::connect(read, write);
@@ -104,7 +106,7 @@ fn a_computer_over_tcp_passes_the_suite_once_signed_in() {
 
         let (read, write) = TcpStream::connect(address).await.unwrap().into_split();
         let remote = RemoteComputers::connect(read, write);
-        remote.authenticate("s3cret").await.unwrap();
+        remote.authenticate(&token).await.unwrap();
         remote.check_protocol().await.unwrap();
         let verdict =
             conformance::computers(&remote, &Environment::host(), &work.to_string_lossy()).await;
@@ -122,13 +124,14 @@ const SECRETS: [&str; 5] = [
     "my_passwd",
 ];
 
-/// This machine as a computer, given the secret variables and one ordinary setting.
-fn with_secrets(copies: &PathBuf) -> Arc<LocalComputers> {
+/// This machine as a computer, given the secret variables, each set to `secret`, and one
+/// ordinary setting.
+fn with_secrets(copies: &PathBuf, secret: &str) -> Arc<LocalComputers> {
     let mut environment: Vec<_> = std::env::vars_os()
         .filter(|(name, _)| name == "PATH" || name == "HOME")
         .collect();
     for name in SECRETS {
-        environment.push((name.into(), "hunter2".into()));
+        environment.push((name.into(), secret.into()));
     }
     environment.push(("HARMLESS_SETTING".into(), "visible".into()));
     Arc::new(LocalComputers::new(copies, environment))
@@ -173,13 +176,10 @@ async fn printed<C: Computers>(remote: &C, work: &std::path::Path, script: &str)
 }
 
 /// Runs `env` on `remote` in `work`: ordinary settings come through, secrets never do.
-async fn secrets_stay_out<C: Computers>(remote: &C, work: &std::path::Path) {
+async fn secrets_stay_out<C: Computers>(remote: &C, work: &std::path::Path, secret: &str) {
     let seen = printed(remote, work, "env").await;
     assert!(seen.contains("HARMLESS_SETTING=visible"), "{seen}");
-    assert!(
-        !seen.contains("hunter2"),
-        "a secret reached a command: {seen}"
-    );
+    assert!(!seen.contains(secret), "a secret reached a command: {seen}");
     for name in SECRETS {
         assert!(!seen.contains(name), "{name} reached a command");
     }
@@ -215,8 +215,9 @@ fn a_computer_across_a_pipe_puts_its_glave_first_on_its_commands_path() {
 fn a_computer_across_a_pipe_keeps_secret_variables_from_commands() {
     let (_dir, work, copies) = scratch("secrets-pipe");
     block_on!(async {
-        let (remote, serving) = across_a_pipe(with_secrets(&copies));
-        secrets_stay_out(&remote, &work).await;
+        let secret = any_secret();
+        let (remote, serving) = across_a_pipe(with_secrets(&copies, &secret));
+        secrets_stay_out(&remote, &work, &secret).await;
         drop(remote);
         serving.await.unwrap().unwrap();
     });
@@ -228,11 +229,13 @@ fn a_computer_over_tcp_keeps_secret_variables_from_commands() {
     block_on!(async {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
-        let serving = tokio::spawn(serve_tcp(with_secrets(&copies), listener, "s3cret".into()));
+        let (secret, token) = (any_secret(), any_secret());
+        let computers = with_secrets(&copies, &secret);
+        let serving = tokio::spawn(serve_tcp(computers, listener, token.clone()));
         let (read, write) = TcpStream::connect(address).await.unwrap().into_split();
         let remote = RemoteComputers::connect(read, write);
-        remote.authenticate("s3cret").await.unwrap();
-        secrets_stay_out(&remote, &work).await;
+        remote.authenticate(&token).await.unwrap();
+        secrets_stay_out(&remote, &work, &secret).await;
         serving.abort();
     });
 }
@@ -287,7 +290,7 @@ fn a_client_that_never_signs_in_is_told_so_and_let_go_in_seconds() {
         tokio::time::pause();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
-        let serving = tokio::spawn(serve_tcp(local(&copies), listener, "s3cret".into()));
+        let serving = tokio::spawn(serve_tcp(local(&copies), listener, any_secret()));
         let mut silent = BufReader::new(TcpStream::connect(address).await.unwrap());
         let started = tokio::time::Instant::now();
         let mut said = String::new();
@@ -321,7 +324,7 @@ fn a_computer_that_takes_the_connection_and_says_nothing_is_given_up_in_seconds(
         });
         let fingerprint = Fingerprint::parse(&"ab".repeat(32)).unwrap();
         let started = tokio::time::Instant::now();
-        let tried = connect_tls(address, &fingerprint, "s3cret").await;
+        let tried = connect_tls(address, &fingerprint, &any_secret()).await;
         // On a paused clock the limit on reaching the port may pass first; either says so.
         assert!(
             matches!(&tried, Err(ComputerError::Unreachable(m)) if m.ends_with("within 10 seconds")),

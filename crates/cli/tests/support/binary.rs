@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::Arc;
 
-use glave_ports::testing::{FAKE_SECRET, Running, TempDir};
+use glave_ports::testing::{Running, TempDir, any_secret};
 use glave_provider_openai::fake::FakeServer;
 use serde_json::Value;
 
@@ -14,6 +14,8 @@ use serde_json::Value;
 pub(crate) struct Place {
     pub project: PathBuf,
     pub home: PathBuf,
+    /// The model key every glave started for the place is given (`GLAVE_API_KEY`).
+    pub key: String,
     /// Handed to every glave started for the place, so each ends with the test.
     pub lifeline: Lifeline,
     /// The folder both are in, removed when the place drops; none for a place made of
@@ -30,6 +32,7 @@ pub(crate) fn place(name: &str) -> Place {
     Place {
         project,
         home: dir.join("home"),
+        key: any_secret(),
         lifeline: Lifeline::new(&dir),
         folder: Some(dir),
     }
@@ -188,7 +191,7 @@ pub(crate) fn start_with(
         .current_dir(&place.project)
         .env("GLAVE_BASE_URL", server.url())
         .env("GLAVE_HOME", &place.home)
-        .env("GLAVE_API_KEY", FAKE_SECRET)
+        .env("GLAVE_API_KEY", &place.key)
         .env("NO_COLOR", "1")
         .env_remove("GLAVE_MODEL")
         .env_remove("GLAVE_PROVIDER")
@@ -240,7 +243,7 @@ pub(crate) fn terminal_with(
         .current_dir(&place.project)
         .env("GLAVE_BASE_URL", server.url())
         .env("GLAVE_HOME", &place.home)
-        .env("GLAVE_API_KEY", FAKE_SECRET)
+        .env("GLAVE_API_KEY", &place.key)
         .env("NO_COLOR", "1")
         .env("SSH_CONNECTION", "test")
         .env(Lifeline::VARIABLE, &place.lifeline.path)

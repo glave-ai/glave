@@ -277,7 +277,7 @@ fn cause_of(error: reqwest::Error) -> String {
 
 #[cfg(test)]
 mod tests {
-    use glave_ports::testing::FAKE_SECRET;
+    use glave_ports::testing::any_secret;
 
     use super::*;
 
@@ -304,20 +304,22 @@ mod tests {
 
     #[test]
     fn a_password_in_the_url_never_shows() {
-        let config = Config::for_url("https://me:hunter2@models.example.com/v1", None).unwrap();
+        let url = format!("https://me:{}@models.example.com/v1", any_secret());
+        let config = Config::for_url(&url, None).unwrap();
         assert_eq!(config.host().as_deref(), Some("models.example.com"));
         assert_eq!(config.provider, "models.example.com");
     }
 
     #[test]
     fn a_key_that_cannot_be_a_header_is_refused_without_showing_it() {
-        let error = header_pair("api-key", "sk-\nsecret").unwrap_err();
-        assert!(!error.to_string().contains("secret"), "{error}");
+        let key = any_secret();
+        let error = header_pair("api-key", &format!("sk-\n{key}")).unwrap_err();
+        assert!(!error.to_string().contains(&key), "{error}");
         assert!(error.to_string().contains("api-key"), "{error}");
-        let (_, value) = header_pair("authorization", &format!("Bearer {FAKE_SECRET}")).unwrap();
+        let (_, value) = header_pair("authorization", &format!("Bearer {key}")).unwrap();
         assert!(value.is_sensitive());
-        let config = Config::for_url("https://api.openai.com/v1", Some("hunter2".into())).unwrap();
-        assert!(!format!("{:?}", config.auth).contains("hunter2"));
+        let config = Config::for_url("https://api.openai.com/v1", Some(key.clone())).unwrap();
+        assert!(!format!("{:?}", config.auth).contains(&key));
     }
 
     #[test]

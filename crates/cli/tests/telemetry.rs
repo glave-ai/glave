@@ -3,19 +3,18 @@
 //! a tool's arguments or output, a file, or the key. With the `otlp` feature, the same holds
 //! for what reaches an OpenTelemetry collector.
 
-use glave_ports::testing::FAKE_SECRET;
 use glave_provider_openai::fake::{FakeServer, Reply};
 use serde_json::json;
 
 use crate::support::*;
 
-/// Strings that are content, by what they are: none may reach a log or a collector.
-const CONTENT: [(&str, &str); 5] = [
+/// Strings that are content, by what they are: none may reach a log or a collector, and nor
+/// may the place's key.
+const CONTENT: [(&str, &str); 4] = [
     ("the prompt", "PROMPT-c0ffee"),
     ("a tool's arguments", "ARGUMENT-5eed"),
     ("a file", "FILE-CONTENT-b1ade"),
     ("the answer", "ANSWER-f00d"),
-    ("the key", FAKE_SECRET),
 ];
 
 /// The model's side of a turn that writes a file and reads it back with a command.
@@ -83,6 +82,7 @@ fn the_log_has_spans_and_metrics_and_never_content() {
     for (what, content) in CONTENT {
         assert!(!written.contains(content), "{what} in the log:\n{written}");
     }
+    assert!(!written.contains(&place.key), "the key in the log");
 }
 
 #[test]
@@ -153,6 +153,7 @@ fn a_collector_gets_spans_and_metrics_and_never_content() {
     for (what, content) in CONTENT {
         assert!(!bodies.contains(content), "{what} exported");
     }
+    assert!(!bodies.contains(&place.key), "the key exported");
 }
 
 #[cfg(feature = "otlp")]

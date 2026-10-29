@@ -229,14 +229,17 @@ mod tests {
 
     #[test]
     fn another_browser_gets_a_link_of_its_own() {
+        let code = glave_ports::testing::any_secret();
         let said = another_browser(
             "http://127.0.0.1:4180/p/x",
-            &glave_event::Secret::new("abc"),
+            &glave_event::Secret::new(code.clone()),
         );
         assert_eq!(
             said,
-            "glave: to sign in another browser on this computer, open \
-             http://127.0.0.1:4180/p/x#code=abc there (it works once, for five minutes)"
+            format!(
+                "glave: to sign in another browser on this computer, open \
+                 http://127.0.0.1:4180/p/x#code={code} there (it works once, for five minutes)"
+            )
         );
     }
 

@@ -4,16 +4,16 @@
 //! still there after a restart; settings that choose a model stay the default; and removing
 //! the account takes its models away.
 
-use glave_ports::testing::FAKE_SECRET;
+use glave_ports::testing::any_secret;
 use glave_provider_openai::fake::{FakeServer, Reply};
 use serde_json::{Value, json};
 
 use crate::served::*;
 use crate::support::*;
 
-/// The key the person pastes, which ends `wxyz`.
+/// The key the person pastes, which ends `wxyz`: new at each call.
 fn key() -> String {
-    format!("{FAKE_SECRET}-wxyz")
+    any_secret() + "-wxyz"
 }
 
 /// The fake server's model list: two models, the newer second.

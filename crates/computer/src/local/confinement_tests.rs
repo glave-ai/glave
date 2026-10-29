@@ -392,8 +392,9 @@ fn commands_never_see_secret_variables() {
         "SOME_KEY_FILE",
     ];
     let mut environment = plain_environment();
+    let secret = glave_ports::testing::any_secret();
     for name in hidden {
-        environment.push((name.into(), "hunter2".into()));
+        environment.push((name.into(), secret.clone().into()));
     }
     environment.push(("HARMLESS_SETTING".into(), "visible".into()));
     let (_dir, work, copies) = scratch("secrets");
@@ -410,7 +411,7 @@ fn commands_never_see_secret_variables() {
     });
     assert!(seen.contains("HARMLESS_SETTING=visible"), "{seen}");
     assert!(
-        !seen.contains("hunter2"),
+        !seen.contains(&secret),
         "a secret reached a command: {seen}"
     );
     for name in hidden {

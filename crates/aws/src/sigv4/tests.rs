@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use glave_ports::auth::Auth;
 use glave_ports::block_on;
-use glave_ports::testing::{FakeHttp, ManualClock};
+use glave_ports::testing::{FakeHttp, ManualClock, any_secret};
 
 use super::*;
 
@@ -296,10 +296,11 @@ fn pod_identity_fetches_keys_with_the_pod_s_token() {
 
 #[test]
 fn keys_in_the_environment_sign_without_asking_anyone() {
+    let secret = any_secret();
     let auth = signer(
         &[
             ("AWS_ACCESS_KEY_ID", "AKIDEXAMPLE".into()),
-            ("AWS_SECRET_ACCESS_KEY", "wJalrXUtnFEMI".into()),
+            ("AWS_SECRET_ACCESS_KEY", secret.clone()),
         ],
         ManualClock::at_second(0),
     );
@@ -313,5 +314,5 @@ fn keys_in_the_environment_sign_without_asking_anyone() {
         described.contains("AWS SigV4 for bedrock in us-east-1"),
         "{described}"
     );
-    assert!(!described.contains("wJalr"), "{described}");
+    assert!(!described.contains(&secret), "{described}");
 }

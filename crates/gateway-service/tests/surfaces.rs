@@ -6,13 +6,14 @@
 
 use glave_event::{Body, Currency, Money, StopReason};
 use glave_gateway::Budgets;
+use glave_ports::testing::any_secret;
 use glave_ports::{Delta, Failure, Message, ModelProvider, ModelRequest, ProviderError};
 use glave_provider_anthropic::Anthropic;
 use glave_provider_openai::fake::Reply;
 use glave_provider_openai::{Config, OpenAiCompatible};
 use serde_json::{Value, json};
 
-use crate::world::{KEY, World, block_on};
+use crate::world::{World, block_on};
 
 fn ask(model: &str, text: &str) -> ModelRequest {
     ModelRequest {
@@ -69,7 +70,7 @@ fn the_openai_surface_streams_an_answer_from_the_route_s_target() {
         assert_eq!(sent[0].body["model"], "big", "the main route's target");
         assert_eq!(
             sent[0].authorization.as_deref(),
-            Some(&*format!("Bearer {KEY}"))
+            Some(&*format!("Bearer {}", world.key))
         );
         let recorded = world.recorded("alice").await;
         let [Body::ModelResponded(responded)] = recorded.as_slice() else {
@@ -280,12 +281,13 @@ fn each_caller_has_their_own_budget_and_a_restart_does_not_reset_it() {
 #[test]
 fn the_gateway_s_key_never_reaches_a_caller_or_a_notice() {
     block_on!(async {
-        let echoing = format!(r#"{{"error": {{"message": "bad request with key {KEY}"}}}}"#);
+        let key = any_secret();
+        let echoing = format!(r#"{{"error": {{"message": "bad request with key {key}"}}}}"#);
         let replies = vec![
             Reply::Status(400, echoing),
-            Reply::Status(401, format!("key {KEY} refused")),
+            Reply::Status(401, format!("key {key} refused")),
         ];
-        let world = World::start(replies, Budgets::default(), false).await;
+        let world = World::with_key(key.clone(), replies, Budgets::default(), false).await;
         let client = openai(&world, &world.token("alice"));
         let first = client
             .complete(&ask("main", "hi"), &mut |_| {})
@@ -296,7 +298,7 @@ fn the_gateway_s_key_never_reaches_a_caller_or_a_notice() {
             .await
             .unwrap_err();
         for failed in [&first, &second] {
-            assert!(!failed.to_string().contains(KEY), "{failed}");
+            assert!(!failed.to_string().contains(&key), "{failed}");
         }
         assert!(first.to_string().contains("[redacted]"), "{first}");
         assert!(
@@ -304,6 +306,6 @@ fn the_gateway_s_key_never_reaches_a_caller_or_a_notice() {
             "the gateway's own key refused is not the caller's sign-in: {second:?}"
         );
         let notices = world.notices.lock().unwrap().join("\n");
-        assert!(!notices.contains(KEY), "{notices}");
+        assert!(!notices.contains(&key), "{notices}");
     });
 }

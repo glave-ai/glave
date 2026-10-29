@@ -114,6 +114,7 @@ fn two_homes_on_one_database_read_one_trust_record() {
     let second = Place {
         project: first.project.clone(),
         home: first.home.with_file_name("second-home"),
+        key: first.key.clone(),
         lifeline: first.lifeline.clone(),
         folder: None,
     };

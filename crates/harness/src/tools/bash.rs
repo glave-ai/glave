@@ -274,7 +274,7 @@ enum Ending {
 mod tests {
 
     use glave_ports::block_on;
-    use glave_ports::testing::FAKE_SECRET;
+    use glave_ports::testing::any_secret;
 
     use super::*;
 
@@ -284,7 +284,8 @@ mod tests {
         let mut environment: Vec<_> = std::env::vars_os()
             .filter(|(name, _)| name == "PATH")
             .collect();
-        environment.push(("GLAVE_API_KEY".into(), FAKE_SECRET.into()));
+        let key = any_secret();
+        environment.push(("GLAVE_API_KEY".into(), key.clone().into()));
         environment.push(("PLAIN_SETTING".into(), "visible".into()));
         let outcome = block_on!(async {
             let workspace = Workspace::open(&dir, environment).await.unwrap();
@@ -311,7 +312,7 @@ mod tests {
             "{}",
             outcome.text
         );
-        assert!(!outcome.text.contains(FAKE_SECRET), "{}", outcome.text);
+        assert!(!outcome.text.contains(&key), "{}", outcome.text);
         assert!(!outcome.text.contains("GLAVE_API_KEY"), "{}", outcome.text);
     }
 

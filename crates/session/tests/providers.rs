@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use glave_event::{ProviderId, ProviderKind, Secret};
 use glave_harness::Settings;
-use glave_ports::testing::FAKE_SECRET;
+use glave_ports::testing::any_secret;
 use glave_ports::{BoxFuture, Clock as _, Failure, SystemClock};
 use glave_session::protocol::{ApiError, ErrorData, ModelInfo, ProviderInfo, Request, code, hint};
 use glave_session::signin::{LocalToken, SignIn};
@@ -22,10 +22,8 @@ use crate::support::issuer::fixed_clock;
 use crate::support::web::{Web, serve_with};
 use crate::support::*;
 
-/// The key the fake service refuses.
+/// The key the fake service refuses; it takes any other.
 const BAD: &str = "a-key-it-refuses";
-/// A key it takes.
-const GOOD: &str = FAKE_SECRET;
 
 /// A host that keeps accounts in memory, as a service that offers two models, and a third
 /// once its catalog is refreshed; its daily refresh is due when `due` says.
@@ -132,8 +130,9 @@ async fn with_accounts(dir: &Path, accounts: Arc<Accounts>) -> Tested {
 
 #[test]
 fn a_key_never_shows_in_a_request_s_debug() {
-    let shown = format!("{:?}", connect(ProviderKind::Openai, GOOD));
-    assert!(!shown.contains(GOOD), "{shown}");
+    let good = any_secret();
+    let shown = format!("{:?}", connect(ProviderKind::Openai, &good));
+    assert!(!shown.contains(&good), "{shown}");
 }
 
 fn connect(kind: ProviderKind, key: &str) -> Request {
@@ -155,6 +154,7 @@ fn ids(models: &Value) -> Vec<String> {
 
 /// The whole first run, as the person on this computer.
 async fn first_run(client: &mut impl Client) {
+    let good = any_secret();
     let none = client.call(Request::ModelList {}).await.unwrap();
     assert!(ids(&none).is_empty(), "nothing is set up: {none}");
     let started = client
@@ -208,20 +208,20 @@ async fn first_run(client: &mut impl Client) {
     );
 
     let connected = client
-        .call(connect(ProviderKind::Openai, GOOD))
+        .call(connect(ProviderKind::Openai, &good))
         .await
         .unwrap();
     assert!(
-        !connected.to_string().contains(GOOD),
+        !connected.to_string().contains(&good),
         "never answered back: {connected}"
     );
     assert_eq!(connected["provider"]["kind"], "openai");
-    assert_eq!(connected["provider"]["hint"], hint(GOOD).unwrap());
+    assert_eq!(connected["provider"]["hint"], hint(&good).unwrap());
     let models = client.call(Request::ModelList {}).await.unwrap();
     assert_eq!(ids(&models), ["fake-big", "fake-small"]);
     assert_eq!(models["models"][0]["default"], true);
     let listed = client.call(Request::ProviderList {}).await.unwrap();
-    assert!(!listed.to_string().contains(GOOD), "{listed}");
+    assert!(!listed.to_string().contains(&good), "{listed}");
     let id: ProviderId = serde_json::from_value(listed["providers"][0]["id"].clone()).unwrap();
 
     client
@@ -260,7 +260,9 @@ fn the_person_here_connects_and_removes_a_model_account_over_each_local_transpor
         let dir = folder("providers-http-local");
         let served = serve_with(fresh(&dir).await, signin, None).await;
         let mut web = Web::new(&served, Some(token.reveal().to_owned()));
-        let answered = web.call(&connect(ProviderKind::Anthropic, GOOD)).await;
+        let answered = web
+            .call(&connect(ProviderKind::Anthropic, &any_secret()))
+            .await;
         assert_eq!(
             answered["result"]["provider"]["kind"], "anthropic",
             "{answered}"
@@ -277,7 +279,7 @@ fn a_caller_signed_in_elsewhere_may_not_connect_a_model_account() {
         let dir = folder("providers-oidc");
         let mut client = OverHttp::new(fresh(&dir).await).await;
         for request in [
-            connect(ProviderKind::Openai, GOOD),
+            connect(ProviderKind::Openai, &any_secret()),
             Request::ProviderList {},
         ] {
             let refused = client.call(request).await.unwrap_err();
@@ -295,7 +297,7 @@ fn a_server_whose_models_are_set_up_for_it_refuses_model_accounts() {
         let dir = folder("providers-none");
         let tested = server(&dir, Vec::new(), Answering::Clients).await;
         let refused = tested
-            .request(connect(ProviderKind::Openrouter, GOOD))
+            .request(connect(ProviderKind::Openrouter, &any_secret()))
             .await
             .unwrap_err();
         assert_eq!(refused.code, code::NOT_AVAILABLE);
@@ -310,7 +312,7 @@ fn the_person_refreshes_the_catalogs_and_the_models_follow() {
         let tested = fresh(&dir).await;
         let mut client = InProcess(tested.clone());
         client
-            .call(connect(ProviderKind::Openrouter, GOOD))
+            .call(connect(ProviderKind::Openrouter, &any_secret()))
             .await
             .unwrap();
         let listed = client.call(Request::ProviderRefresh {}).await.unwrap();
@@ -337,7 +339,7 @@ fn catalogs_due_their_daily_refresh_are_refreshed_without_anyone_waiting() {
         let tested = with_accounts(&dir, Arc::clone(&accounts)).await;
         let mut client = InProcess(tested.clone());
         client
-            .call(connect(ProviderKind::Openrouter, GOOD))
+            .call(connect(ProviderKind::Openrouter, &any_secret()))
             .await
             .unwrap();
         accounts.due.store(true, Ordering::SeqCst);

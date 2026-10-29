@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use glave_event::{CredentialId, Forge, Secret};
-use glave_ports::testing::FAKE_SECRET;
+use glave_ports::testing::any_secret;
 use glave_ports::{BoxFuture, Clock as _, SystemClock};
 use glave_session::protocol::{ApiError, CredentialInfo, DeviceCode, Request, code, hint};
 use glave_session::signin::{LocalToken, SignIn};
@@ -20,10 +20,8 @@ use crate::support::issuer::fixed_clock;
 use crate::support::web::{Web, serve_with};
 use crate::support::*;
 
-/// The token the fake host refuses.
+/// The token the fake host refuses; it takes any other.
 const BAD: &str = "a-token-it-refuses";
-/// A token it takes.
-const GOOD: &str = FAKE_SECRET;
 
 /// A host that keeps accounts in memory; its sign-in in the browser is approved on the
 /// second poll.
@@ -108,7 +106,7 @@ impl GitHosts for Hosts {
             Ok((*polls >= 2).then(|| {
                 self.keep(
                     "https://github.com".into(),
-                    FAKE_SECRET,
+                    &any_secret(),
                     Some("octocat".into()),
                 )
             }))
@@ -133,12 +131,14 @@ fn connect(url: &str, token: &str) -> Request {
 
 #[test]
 fn a_token_never_shows_in_a_request_s_debug() {
-    let shown = format!("{:?}", connect("https://github.com", GOOD));
-    assert!(!shown.contains(GOOD), "{shown}");
+    let good = any_secret();
+    let shown = format!("{:?}", connect("https://github.com", &good));
+    assert!(!shown.contains(&good), "{shown}");
 }
 
 /// Connecting, signing in in the browser and removing, as the person on this computer.
 async fn connect_and_remove(client: &mut impl Client) {
+    let good = any_secret();
     let listed = client.call(Request::CredentialList {}).await.unwrap();
     assert_eq!(listed["credentials"], Value::Array(Vec::new()));
     assert_eq!(listed["device"], true);
@@ -153,11 +153,11 @@ async fn connect_and_remove(client: &mut impl Client) {
         .unwrap_err();
     assert_eq!(bad.code, code::HOST);
     let connected = client
-        .call(connect("https://github.com", GOOD))
+        .call(connect("https://github.com", &good))
         .await
         .unwrap();
-    assert!(!connected.to_string().contains(GOOD), "{connected}");
-    assert_eq!(connected["credential"]["hint"], hint(GOOD).unwrap());
+    assert!(!connected.to_string().contains(&good), "{connected}");
+    assert_eq!(connected["credential"]["hint"], hint(&good).unwrap());
     assert_eq!(connected["credential"]["forge"], "github");
 
     let device = client
@@ -179,7 +179,7 @@ async fn connect_and_remove(client: &mut impl Client) {
     assert_eq!(refused.code, code::NO_CREDENTIAL);
 
     let listed = client.call(Request::CredentialList {}).await.unwrap();
-    assert!(!listed.to_string().contains(GOOD), "{listed}");
+    assert!(!listed.to_string().contains(&good), "{listed}");
     let id: CredentialId = serde_json::from_value(listed["credentials"][0]["id"].clone()).unwrap();
     client
         .call(Request::CredentialRemove { credential: id })
@@ -215,12 +215,15 @@ fn the_person_here_connects_and_removes_a_git_host_over_each_local_transport() {
         let dir = folder("hosts-http-local");
         let served = serve_with(fresh(&dir).await, signin, None).await;
         let mut web = Web::new(&served, Some(token.reveal().to_owned()));
-        let answered = web.call(&connect("https://gitlab.example.com", GOOD)).await;
+        let good = any_secret();
+        let answered = web
+            .call(&connect("https://gitlab.example.com", &good))
+            .await;
         assert_eq!(
             answered["result"]["credential"]["url"], "https://gitlab.example.com",
             "{answered}"
         );
-        assert!(!answered.to_string().contains(GOOD), "{answered}");
+        assert!(!answered.to_string().contains(&good), "{answered}");
         served.close().await;
     });
 }
@@ -231,7 +234,7 @@ fn a_caller_signed_in_elsewhere_may_not_connect_a_git_host() {
         let dir = folder("hosts-oidc");
         let mut client = OverHttp::new(fresh(&dir).await).await;
         for request in [
-            connect("https://github.com", GOOD),
+            connect("https://github.com", &any_secret()),
             Request::CredentialList {},
             Request::CredentialDeviceStart {},
         ] {
@@ -248,7 +251,7 @@ fn a_server_whose_accounts_are_set_up_for_it_refuses_git_hosts() {
         let dir = folder("hosts-none");
         let tested = server(&dir, Vec::new(), Answering::Clients).await;
         let refused = tested
-            .request(connect("https://github.com", GOOD))
+            .request(connect("https://github.com", &any_secret()))
             .await
             .unwrap_err();
         assert_eq!(refused.code, code::NOT_AVAILABLE);

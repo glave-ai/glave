@@ -5,7 +5,7 @@ use std::io::{BufRead as _, BufReader};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::{Receiver, channel};
 
-use glave_ports::testing::{FAKE_SECRET, Running};
+use glave_ports::testing::Running;
 use glave_provider_openai::fake::FakeServer;
 
 use crate::support::{Lifeline, Place, SEARCH_STAND_IN};
@@ -47,7 +47,7 @@ pub(crate) fn serve_http_with(
         .current_dir(&place.project)
         .env("GLAVE_BASE_URL", server.url())
         .env("GLAVE_HOME", &place.home)
-        .env("GLAVE_API_KEY", FAKE_SECRET)
+        .env("GLAVE_API_KEY", &place.key)
         .env_remove("GLAVE_MODEL")
         .env_remove("GLAVE_PROVIDER")
         .env_remove("GLAVE_JUDGE_MODEL")
