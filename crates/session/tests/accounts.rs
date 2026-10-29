@@ -256,6 +256,40 @@ fn the_person_on_the_computer_signs_in_with_their_passkey_once_others_have_accou
 }
 
 #[test]
+fn someone_removed_is_signed_in_to_nothing_here() {
+    block_on!(async {
+        let dir = folder("accounts-removed");
+        let token = LocalToken::new([15; 32]);
+        let served = serve(&dir, true, &token).await;
+        let mut phone = Authenticator::new(ORIGIN).unwrap();
+        let code = invite(&served, &token, OrgRole::Member).await;
+        let joined = join(&served, code, &mut phone).await;
+        let mut grace = elsewhere(&served, token_of(&joined));
+        assert!(
+            asked(&mut grace, &Request::PasskeyList {})
+                .await
+                .is_object()
+        );
+        let mut here = Web::new(&served, Some(token.reveal().to_owned()));
+        let listed = Request::PeopleList {
+            after: None,
+            limit: None,
+        };
+        let people = asked(&mut here, &listed).await;
+        let person = serde_json::from_value(people["people"][0]["id"].clone()).unwrap();
+        let removed = asked(&mut here, &Request::PersonRemove { person }).await;
+        assert_eq!(removed, json!({}));
+        let refused = asked(&mut grace, &Request::PasskeyList {}).await;
+        assert_eq!(refused, json!(code::NO_SIGN_IN));
+        // With no account left here, no passkey request is for hers.
+        let mut anyone = elsewhere(&served, None);
+        let options = asked(&mut anyone, &Request::PasskeyGetOptions {}).await;
+        assert!(!options.is_object(), "{options}");
+        served.close().await;
+    });
+}
+
+#[test]
 fn a_server_no_one_else_reaches_invites_no_one() {
     block_on!(async {
         let dir = folder("accounts-unreached");

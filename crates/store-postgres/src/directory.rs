@@ -84,6 +84,20 @@ impl Directory for PostgresDirectory {
         })
     }
 
+    fn leave(&self, person: PrincipalId, org: OrgId) -> BoxFuture<'_, Result<(), DirectoryError>> {
+        Box::pin(async move {
+            let client = unscoped(&self.pool).await.map_err(storage)?;
+            client
+                .execute(
+                    "DELETE FROM memberships WHERE person = $1 AND org = $2",
+                    &[&person.as_uuid(), &org.as_uuid()],
+                )
+                .await
+                .map(drop)
+                .map_err(database(DirectoryError::Storage))
+        })
+    }
+
     fn organizations(
         &self,
         person: PrincipalId,

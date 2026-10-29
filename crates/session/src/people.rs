@@ -5,7 +5,7 @@
 //! counting. The local person is the organization's owner, always, and never recorded. Every
 //! admin method is checked here, against the caller's role, before anything is read.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::PoisonError;
 
 use glave_event::{
@@ -17,7 +17,7 @@ use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, OrgId, Scope};
 
 use crate::invites::Invites;
 use crate::ledger::in_order;
-use crate::protocol::{ApiError, PersonInfo, Reply, code};
+use crate::protocol::{ApiError, PersonInfo, Reply, Request, code};
 use crate::server::Server;
 use crate::words::Sentence;
 
@@ -64,8 +64,19 @@ pub(crate) struct People {
     /// The `seq` the next event will take.
     next: u64,
     known: BTreeMap<PrincipalId, Kept>,
+    /// Those removed and not back by an invite since.
+    removed: BTreeSet<PrincipalId>,
     /// The invites made and not yet spent or revoked, expired ones included until dropped.
     pub(crate) invites: Invites,
+}
+
+/// What an admin method that changes someone knows of its caller: what their role permits,
+/// who they are, their organization, and whether no local person owns it.
+pub(crate) struct Acting {
+    pub(crate) theirs: &'static [Permit],
+    pub(crate) by: Principal,
+    pub(crate) org: OrgId,
+    pub(crate) alone: bool,
 }
 
 /// What each organization's people ledger says, as far as this server has read it. Past
@@ -74,6 +85,13 @@ pub(crate) struct People {
 pub(crate) struct Peoples(HashMap<OrgId, People>);
 
 impl Peoples {
+    /// Whether `person` was removed from `org`, as far as this server has read.
+    pub(crate) fn removed(&self, org: OrgId, person: PrincipalId) -> bool {
+        self.0
+            .get(&org)
+            .is_some_and(|people| people.removed(person))
+    }
+
     fn of(&mut self, org: OrgId) -> &mut People {
         if self.0.len() >= PEOPLES && !self.0.contains_key(&org) {
             self.0.clear();
@@ -95,6 +113,7 @@ impl People {
         match body {
             Body::PersonJoined(joined) => {
                 let person = joined.person;
+                self.removed.remove(&person);
                 if let Some(kept) = self.known.get_mut(&person) {
                     kept.joined = joined;
                 } else {
@@ -105,6 +124,10 @@ impl People {
                     };
                     self.known.insert(person, kept);
                 }
+            }
+            Body::PersonRemoved(gone) => {
+                self.known.remove(&gone.person);
+                self.removed.insert(gone.person);
             }
             Body::RoleSet(set) => {
                 if let Some(kept) = self.known.get_mut(&set.person) {
@@ -133,6 +156,27 @@ impl People {
     /// How many people the ledger has.
     pub(crate) fn count(&self) -> usize {
         self.known.len()
+    }
+
+    /// Whether `person` was removed, and has not come back by an invite since.
+    pub(crate) fn removed(&self, person: PrincipalId) -> bool {
+        self.removed.contains(&person)
+    }
+
+    /// Whether `person` is in the ledger now.
+    pub(crate) fn has(&self, person: PrincipalId) -> bool {
+        self.known.contains_key(&person)
+    }
+
+    /// Whether `person` is the organization's last Owner, where it has no owner but those the
+    /// ledger names (`alone`: no local person owns it).
+    pub(crate) fn last_owner(&self, person: PrincipalId, alone: bool) -> bool {
+        let owners = self
+            .known
+            .values()
+            .filter(|kept| kept.role == Some(OrgRole::Owner))
+            .count();
+        alone && self.role(person) == OrgRole::Owner && owners <= 1
     }
 
     /// Whether anyone in it joined with a glave account.
@@ -242,18 +286,34 @@ where
         }
     }
 
-    /// Records `caller` in the people ledger when they signed in through the identity provider
-    /// and it does not have them as they are now: the first time, or when their token says
-    /// something new of them.
-    pub(crate) async fn seen(&self, caller: &Caller) -> Result<(), ApiError> {
-        let Some(joined) = joined_of(caller) else {
+    /// Refuses `caller` everything in their organization once they were removed from it, but
+    /// opening an invite, which brings them back. Else records them in the people ledger when
+    /// they signed in through the company login and it does not have them as they are now:
+    /// the first time, or when their token says something new of them.
+    pub(crate) async fn seen(&self, caller: &Caller, request: &Request) -> Result<(), ApiError> {
+        let Some(person) = caller.person else {
             return Ok(());
         };
         let org = self.org_of(caller);
+        // Removed on another server on this store since this one last looked.
+        self.catch_up_people(org).await?;
+        if self.people(org, |people| people.removed(person)) {
+            return match request {
+                Request::InviteAccept { .. } => Ok(()),
+                _ => Err(ApiError::new(code::NOT_ALLOWED, Sentence::Removed)),
+            };
+        }
+        let Some(joined) = joined_of(caller) else {
+            return Ok(());
+        };
         if self.people(org, |people| people.knows(&joined)) {
             return Ok(());
         }
         self.record_person(org, |people| {
+            // Removed meanwhile, as this request was answered: still out.
+            if people.removed(person) {
+                return Err(ApiError::new(code::NOT_ALLOWED, Sentence::Removed));
+            }
             Ok((!people.knows(&joined)).then(|| joined.clone()))
         })
         .await
@@ -272,7 +332,7 @@ where
         let limit = limit.unwrap_or(LISTED).clamp(1, MOST_LISTED);
         let people = self.people(org, |held| {
             if let Some(after) = after
-                && !held.known.contains_key(&after)
+                && !held.has(after)
             {
                 return Err(no_such_person(after));
             }
@@ -287,6 +347,19 @@ where
         Ok(Reply::People { people })
     }
 
+    /// What an admin method that changes someone knows of `caller` before it acts, once their
+    /// role permits it.
+    pub(crate) async fn acting(&self, caller: &Caller) -> Result<Acting, ApiError> {
+        let theirs = permits(self.permitted(caller, Permit::People).await?);
+        let org = self.org_of(caller);
+        Ok(Acting {
+            theirs,
+            by: Principal::person(self.person_of(caller)?),
+            org,
+            alone: org != self.inner.own,
+        })
+    }
+
     /// Answers `role/set`: gives `person` `role`, when the caller may. Only an Owner makes an
     /// Owner or changes one's role.
     pub(crate) async fn set_role(
@@ -295,16 +368,22 @@ where
         person: PrincipalId,
         role: OrgRole,
     ) -> Result<Reply, ApiError> {
-        let theirs = permits(self.permitted(caller, Permit::People).await?);
-        let by = Principal::person(self.person_of(caller)?);
-        let org = self.org_of(caller);
+        let Acting {
+            theirs,
+            by,
+            org,
+            alone,
+        } = self.acting(caller).await?;
         self.record_person(org, |people| {
-            if !people.known.contains_key(&person) {
+            if !people.has(person) {
                 return Err(no_such_person(person));
             }
             let owners = role == OrgRole::Owner || people.role(person) == OrgRole::Owner;
             if owners && !theirs.contains(&Permit::Owners) {
                 return Err(ApiError::new(code::NOT_ALLOWED, Sentence::OwnersOnly));
+            }
+            if role != OrgRole::Owner && people.last_owner(person, alone) {
+                return Err(ApiError::new(code::NOT_ALLOWED, Sentence::LastOwner));
             }
             Ok(Some(RoleSet {
                 person,

@@ -45,7 +45,9 @@ impl Request {
     /// What a caller's role must permit for them to make it, when it is an admin method.
     pub(crate) fn needs(&self) -> Option<Permit> {
         match self {
-            Self::PeopleList { .. } | Self::RoleSet { .. } => Some(Permit::People),
+            Self::PeopleList { .. } | Self::RoleSet { .. } | Self::PersonRemove { .. } => {
+                Some(Permit::People)
+            }
             Self::InviteCreate { .. } | Self::InviteList {} | Self::InviteRevoke { .. } => {
                 Some(Permit::Invites)
             }

@@ -46,6 +46,7 @@ mod providers;
 mod questions;
 mod remembering;
 mod remote;
+mod removing;
 mod schedules;
 mod server;
 mod site;

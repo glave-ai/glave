@@ -234,6 +234,7 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
                 json!({"person": "@person", "role": "owner"}),
             ],
         ),
+        ("person/remove", vec![json!({"person": "@person"})]),
         // Only for the organization's admins, of its own invites; opened by anyone signed in.
         ("invite/create", vec![json!({"role": "member"})]),
         ("invite/list", vec![json!({})]),
