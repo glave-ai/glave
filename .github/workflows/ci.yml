@@ -457,11 +457,10 @@ jobs:
           curl -fsSL -o gvisor.tar.zstd "https://storage.googleapis.com/gvisor/releases/release/$GVISOR_RELEASE/x86_64/gvisor.tar.zstd"
           echo "$GVISOR_SHA512  gvisor.tar.zstd" | sha512sum -c -
           tar --zstd -xf gvisor.tar.zstd
-          for tool in runsc containerd-shim-runsc-v1; do
-            found="$(find . -type f -name "$tool" | head -n 1)"
-            docker cp "$found" "glave-control-plane:/usr/local/bin/$tool"
-            docker exec glave-control-plane chmod 0755 "/usr/local/bin/$tool"
-          done
+          # runsc with the sidecars it starts beside it (gvisor-bin/), and the shim.
+          docker cp "$(dirname "$(find . -type f -name runsc | head -n 1)")/." glave-control-plane:/usr/local/bin/
+          docker cp "$(find . -type f -name containerd-shim-runsc-v1 | head -n 1)" glave-control-plane:/usr/local/bin/
+          docker exec glave-control-plane sh -c 'chmod -R a+rX /usr/local/bin && chmod 0755 /usr/local/bin/runsc /usr/local/bin/containerd-shim-runsc-v1' 
           # The shim runs runsc with systemd's cgroups, as kind's containerd runs runc, under
           # the plugin name the node's containerd config version uses.
           docker exec glave-control-plane sh -c 'printf "[runsc_config]\n  systemd-cgroup = \"true\"\n" > /etc/containerd/runsc.toml'
