@@ -74,6 +74,12 @@ pub trait RequestSigner: Send + Sync {
     /// Where the credentials come from, to say what to fix, such as `Microsoft Entra
     /// workload identity`. Never a secret.
     fn describe(&self) -> String;
+
+    /// The server answered a request these credentials proved with `403 insufficient_scope`,
+    /// asking for `scope` (RFC 6750, section 3.1): they work, but grant too little for what was
+    /// asked. A sign-in the person can make again for more keeps it; credentials no one can
+    /// widen need do nothing.
+    fn insufficient(&self, _scope: &str) {}
 }
 
 /// How a provider proves who it is on each request.
@@ -135,6 +141,14 @@ impl Auth {
                 value: header.value(key),
             }]),
             Self::Changing(signer) => signer.authorize(request).await,
+        }
+    }
+
+    /// Tells changing credentials that the server asked for `scope`, which they lack
+    /// ([`RequestSigner::insufficient`]); a fixed key can't be widened.
+    pub fn insufficient(&self, scope: &str) {
+        if let Self::Changing(signer) = self {
+            signer.insufficient(scope);
         }
     }
 

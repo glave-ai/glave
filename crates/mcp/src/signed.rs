@@ -1,6 +1,7 @@
 //! How a remote server is reached: rmcp's own HTTP client, with what proves who is calling
-//! asked for on every request, so a token renewed meanwhile goes with the next one. The
-//! headers are marked sensitive, which keeps them out of what HTTP's own tools print.
+//! asked for on every request, so a token renewed meanwhile goes with the next one, and told
+//! when a server asks for more than it grants. The headers are marked sensitive, which keeps
+//! them out of what HTTP's own tools print.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -12,7 +13,7 @@ use rmcp::model::ClientJsonRpcMessage;
 use rmcp::transport::auth::AuthError;
 use rmcp::transport::common::client_side_sse::BoxedSseResponse;
 use rmcp::transport::streamable_http_client::{
-    StreamableHttpClient, StreamableHttpError, StreamableHttpPostResponse,
+    InsufficientScopeError, StreamableHttpClient, StreamableHttpError, StreamableHttpPostResponse,
 };
 
 type Failed = StreamableHttpError<reqwest::Error>;
@@ -74,6 +75,43 @@ impl Signed {
         }
         Ok(headers)
     }
+
+    /// `answered`, with the signer told what a server that answered `403 insufficient_scope`
+    /// asked for, so the person can sign in again for it.
+    fn heard<T>(&self, answered: Result<T, Failed>) -> Result<T, Failed> {
+        if let Err(Failed::InsufficientScope(asked)) = &answered
+            && let Some(scope) = challenged(asked)
+        {
+            self.auth.insufficient(&scope);
+        }
+        answered
+    }
+}
+
+/// The most scopes, and the longest scope, a challenge may name to be heard.
+const SCOPES: usize = 16;
+const SCOPE_LENGTH: usize = 128;
+
+/// The scopes a server's `403` asks for, when it is `insufficient_scope` naming scopes as
+/// OAuth writes them (RFC 6749, section 3.3), at most [`SCOPES`] of [`SCOPE_LENGTH`]: none
+/// for any other refusal, so what a server sends reaches the person's sign-in and the model
+/// only as plain scope names. rmcp reads every `403` with a challenge as this one.
+pub(crate) fn challenged(asked: &InsufficientScopeError) -> Option<String> {
+    let header = &asked.www_authenticate_header;
+    if !header.contains("error=\"insufficient_scope\"")
+        && !header.contains("error=insufficient_scope")
+    {
+        return None;
+    }
+    let scopes: Vec<&str> = asked.get_required_scope()?.split_whitespace().collect();
+    let plain = |scope: &&str| {
+        scope.len() <= SCOPE_LENGTH
+            && scope
+                .bytes()
+                .all(|b| b == 0x21 || (0x23..=0x5b).contains(&b) || (0x5d..=0x7e).contains(&b))
+    };
+    let fits = !scopes.is_empty() && scopes.len() <= SCOPES && scopes.iter().all(plain);
+    fits.then(|| scopes.join(" "))
 }
 
 impl StreamableHttpClient for Signed {
@@ -88,9 +126,11 @@ impl StreamableHttpClient for Signed {
         custom_headers: HashMap<HeaderName, HeaderValue>,
     ) -> Result<StreamableHttpPostResponse, Failed> {
         let headers = self.signed("POST", &uri, custom_headers).await?;
-        self.http
+        let answered = self
+            .http
             .post_message(uri, message, session_id, auth_header, headers)
-            .await
+            .await;
+        self.heard(answered)
     }
 
     async fn post_message_with_max_sse_event_size(
@@ -103,7 +143,8 @@ impl StreamableHttpClient for Signed {
         max_sse_event_size: usize,
     ) -> Result<StreamableHttpPostResponse, Failed> {
         let headers = self.signed("POST", &uri, custom_headers).await?;
-        self.http
+        let answered = self
+            .http
             .post_message_with_max_sse_event_size(
                 uri,
                 message,
@@ -112,7 +153,8 @@ impl StreamableHttpClient for Signed {
                 headers,
                 max_sse_event_size,
             )
-            .await
+            .await;
+        self.heard(answered)
     }
 
     async fn delete_session(
@@ -142,9 +184,11 @@ impl StreamableHttpClient for Signed {
         custom_headers: HashMap<HeaderName, HeaderValue>,
     ) -> Result<BoxedSseResponse, Failed> {
         let headers = self.signed("GET", &uri, custom_headers).await?;
-        self.http
+        let answered = self
+            .http
             .get_stream(uri, session_id, last_event_id, auth_header, headers)
-            .await
+            .await;
+        self.heard(answered)
     }
 
     async fn get_stream_with_max_sse_event_size(
@@ -157,7 +201,8 @@ impl StreamableHttpClient for Signed {
         max_sse_event_size: usize,
     ) -> Result<BoxedSseResponse, Failed> {
         let headers = self.signed("GET", &uri, custom_headers).await?;
-        self.http
+        let answered = self
+            .http
             .get_stream_with_max_sse_event_size(
                 uri,
                 session_id,
@@ -166,13 +211,34 @@ impl StreamableHttpClient for Signed {
                 headers,
                 max_sse_event_size,
             )
-            .await
+            .await;
+        self.heard(answered)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_an_insufficient_scope_naming_plain_scopes_is_heard() {
+        let asked = |header: &str, scope: &str| {
+            let asked = InsufficientScopeError::new(header.to_owned(), Some(scope.to_owned()));
+            challenged(&asked)
+        };
+        let challenge = r#"Bearer error="insufficient_scope", scope="files:write a""#;
+        assert_eq!(
+            asked(challenge, "files:write  a").as_deref(),
+            Some("files:write a")
+        );
+        let other = r#"Bearer error="invalid_token", scope="files:write""#;
+        assert_eq!(asked(other, "files:write"), None, "not asking for more");
+        for odd in ["say \"hi\"", "back\\slash", "", &"x".repeat(129)] {
+            assert_eq!(asked(challenge, odd), None, "{odd:?}");
+        }
+        let many = vec!["s"; 17].join(" ");
+        assert_eq!(asked(challenge, &many), None);
+    }
 
     #[test]
     fn a_server_that_never_answers_the_end_of_a_session_is_left_in_seconds() {

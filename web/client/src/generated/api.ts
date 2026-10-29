@@ -139,7 +139,7 @@ export type ConnectionInfo = {
 };
 
 /** Whether the person is signed in, and the sign-in still works. */
-export type ConnectionStatus = "signed_in" | "expired" | "signed_out";
+export type ConnectionStatus = "signed_in" | "asks_more" | "expired" | "signed_out";
 
 /**
  * How full a thread's context is: what its conversation last sent and got back, of the window

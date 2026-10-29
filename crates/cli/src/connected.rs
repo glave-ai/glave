@@ -13,7 +13,7 @@ mod tokens;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use glave_event::{ConnectionConnected, PrincipalId};
@@ -49,6 +49,47 @@ pub(crate) struct Connected {
     search: Option<WebSearch>,
     /// What changes their `mcp.json` when they turn it on or off.
     writer: Writer,
+    /// What their servers asked for that their sign-ins there do not grant.
+    more: MoreAsked,
+}
+
+/// The most scopes kept for what one server asked for.
+const MORE_ASKED: usize = 32;
+
+/// What each server, by its address, asked for with `403 insufficient_scope` since the
+/// person last signed in to it, as MCP's step-up authorization says: the scopes a sign-in
+/// there asks for next, beside those it grants. One entry for each of the person's remote
+/// servers at most.
+#[derive(Clone, Default)]
+pub(super) struct MoreAsked(Arc<Mutex<BTreeMap<String, Vec<String>>>>);
+
+impl MoreAsked {
+    fn lock(&self) -> std::sync::MutexGuard<'_, BTreeMap<String, Vec<String>>> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The server at `url` asked for `scope`, which the sign-in there lacks: added to what it
+    /// asked for before, `MORE_ASKED` scopes at most.
+    pub(super) fn ask(&self, url: &str, scope: &str) {
+        let mut asked = self.lock();
+        let scopes = asked.entry(url.to_owned()).or_default();
+        for scope in scope.split_whitespace() {
+            if scopes.len() < MORE_ASKED && !scopes.iter().any(|kept| kept == scope) {
+                scopes.push(scope.to_owned());
+            }
+        }
+    }
+
+    /// What the server at `url` asked for since the person last signed in to it.
+    pub(super) fn of(&self, url: &str) -> Option<Vec<String>> {
+        self.lock().get(url).cloned()
+    }
+
+    /// The person signed in to the server at `url` again, or removed their sign-in there: what
+    /// it asked for is asked for no more.
+    pub(super) fn forget(&self, url: &str) {
+        self.lock().remove(url);
+    }
 }
 
 impl Connected {
@@ -74,6 +115,7 @@ impl Connected {
             renewals: Renewals::default(),
             search,
             writer: Writer::default(),
+            more: MoreAsked::default(),
         })))
     }
 
@@ -151,11 +193,13 @@ struct Remote {
     keyed: bool,
 }
 
-/// `connection` as a client sees it, named as `remotes` say. A token that lapsed while it can
-/// be renewed still works: the next request renews it.
+/// `connection` as a client sees it, named as `remotes` say, its server having asked for
+/// more than it grants when `more`. A token that lapsed while it can be renewed still works:
+/// the next request renews it.
 fn described(
     connection: &ConnectionConnected,
     remotes: &BTreeMap<String, Remote>,
+    more: bool,
 ) -> ConnectionInfo {
     let now = SystemClock.now();
     let lapsed = connection
@@ -163,6 +207,8 @@ fn described(
         .is_some_and(|expires| expires.timestamp() <= now);
     let status = if lapsed && connection.refresh.is_none() {
         ConnectionStatus::Expired
+    } else if more {
+        ConnectionStatus::AsksMore
     } else {
         ConnectionStatus::SignedIn
     };
@@ -237,7 +283,10 @@ impl Connections for Connected {
                 remotes.remove(&url);
                 kept.retain(|kept| kept.url != url);
             }
-            let mut listed: Vec<_> = kept.iter().map(|kept| described(kept, &remotes)).collect();
+            let mut listed: Vec<_> = kept
+                .iter()
+                .map(|kept| described(kept, &remotes, self.more.of(&kept.url).is_some()))
+                .collect();
             let unkept = remotes
                 .into_iter()
                 .filter(|(url, _)| kept.iter().all(|kept| kept.url != *url));
@@ -257,6 +306,7 @@ impl Connections for Connected {
                     format!("nothing at {url} is signed in to here"),
                 ));
             }
+            self.more.forget(&url);
             // Read again, so its tokens are destroyed now, a renewal of it not kept too.
             self.kept().await?;
             Ok(())

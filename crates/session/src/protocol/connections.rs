@@ -28,6 +28,9 @@ pub struct ConnectionInfo {
 pub enum ConnectionStatus {
     /// Its token works, or renews before it expires.
     SignedIn,
+    /// Its token works, but its server asked for more than it grants (`403
+    /// insufficient_scope`): the person signs in again, for all of it.
+    AsksMore,
     /// Its token expired with nothing to renew it: the person signs in again.
     Expired,
     /// Not signed in: one of the person's remote servers, which asks them to sign in.

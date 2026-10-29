@@ -4,9 +4,12 @@
 //! in only a request signed in with one of its `--token`s, which the authorization server at
 //! `issuer` grants, and asks anyone else to sign in there, as MCP's authorization says: a 401
 //! that points at its protected resource metadata, which names it, or with `--resource-above`
-//! its origin, which a token is then granted for. With `--fake-sign-in` in its place, it asks
-//! for the sign-in at a fake authorization server of its own (`glave_ports::testing`'s), which
-//! grants its first `--token` at each sign-in, for the web app's end-to-end tests. With
+//! its origin, which a token is then granted for; with `--needs <scope>` too, a call of `whose`
+//! signed in with any token but the last is answered `403 insufficient_scope`, asking for
+//! `scope`, as a server whose operation needs more than the person granted. With
+//! `--fake-sign-in` in its place, it asks for the sign-in at a fake authorization server of its
+//! own (`glave_ports::testing`'s), which grants its first `--token` at each sign-in, for the web
+//! app's end-to-end tests. With
 //! `--ends-with-stdin` it ends once its standard input closes, as when what started it ends,
 //! however that ends. With `--results <text>` it stands in for a hosted web search, Exa's
 //! offering only its search: its one tool is `web_search_exa`, answering every query with
@@ -467,11 +470,12 @@ fn main() -> ExitCode {
     let issuer = fake.as_ref().map(|fake| fake.url.clone());
     let issuer = issuer.or_else(|| valued("--sign-in").into_iter().next());
     let above = flags.iter().any(|flag| flag == "--resource-above");
+    let needs = valued("--needs").into_iter().next();
     let ends = flags.iter().any(|flag| flag == "--ends-with-stdin");
     let http = flags.iter().any(|flag| flag == "--http");
     let outcome = runtime.block_on(async {
         if http {
-            serve_http(server, issuer, above, ends).await
+            serve_http(server, issuer, above, needs, ends).await
         } else {
             let running = server.serve(rmcp::transport::stdio()).await?;
             running.waiting().await?;
@@ -514,11 +518,13 @@ async fn stdin_closed(ends: bool) {
 }
 
 /// Serves until killed, or with `ends` until its standard input closes, after printing its
-/// URL; with an `issuer`, only to a request signed in with one of its tokens.
+/// URL; with an `issuer`, only to a request signed in with one of its tokens, and with `needs`,
+/// a call of `whose` only to one signed in with the last.
 async fn serve_http(
     server: TestServer,
     issuer: Option<String>,
     above: bool,
+    needs: Option<String>,
     ends: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let tokens = Arc::clone(&server.tokens);
@@ -542,6 +548,7 @@ async fn serve_http(
             base,
             issuer,
             tokens,
+            needs,
         })
     });
     let mut connections = tokio::task::JoinSet::new();
@@ -581,6 +588,8 @@ struct Gate {
     /// its origin, above it, which a token is then granted for.
     resource: String,
     tokens: Arc<Vec<String>>,
+    /// The scope a call of `whose` needs, which only the last token grants.
+    needs: Option<String>,
 }
 
 type Answer = http::Response<BoxBody<Bytes, std::convert::Infallible>>;
@@ -600,8 +609,22 @@ impl Gate {
             return answer(200, None, document.to_string());
         }
         let sent = bearer(request.headers());
-        if sent.is_some_and(|sent| self.tokens.iter().any(|token| token == sent)) {
-            return None;
+        if let Some(sent) = sent.filter(|sent| self.tokens.iter().any(|token| token == sent)) {
+            let calls_whose = request
+                .headers()
+                .get("mcp-name")
+                .is_some_and(|name| name == "whose");
+            let wide = self.tokens.last().is_some_and(|last| last == sent);
+            return match &self.needs {
+                Some(scope) if calls_whose && !wide => {
+                    let challenge = format!(
+                        "Bearer error=\"insufficient_scope\", scope=\"{scope}\", \
+                         resource_metadata=\"{metadata}\""
+                    );
+                    answer(403, Some(challenge), String::new())
+                }
+                _ => None,
+            };
         }
         let challenge = format!("Bearer resource_metadata=\"{metadata}\"");
         answer(401, Some(challenge), String::new())

@@ -71,7 +71,9 @@ pub(super) async fn list(server: &mut Reached) -> anyhow::Result<()> {
         let named = connection.name.as_ref().unwrap_or(&connection.url);
         match connection.status {
             ConnectionStatus::SignedIn => {}
-            ConnectionStatus::Expired => println!("  Sign in again with glave connect {named}"),
+            ConnectionStatus::AsksMore | ConnectionStatus::Expired => {
+                println!("  Sign in again with glave connect {named}");
+            }
             ConnectionStatus::SignedOut => println!("  Sign in with glave connect {named}"),
         }
     }
@@ -92,6 +94,7 @@ pub(super) async fn remove(server: &mut Reached, named: &str) -> anyhow::Result<
 fn shown(connection: &ConnectionInfo) -> String {
     let status = match connection.status {
         ConnectionStatus::SignedIn => "signed in",
+        ConnectionStatus::AsksMore => "signed in: it asks for more access",
         ConnectionStatus::Expired => "signed out: its sign-in expired",
         ConnectionStatus::SignedOut => "not signed in",
     };
