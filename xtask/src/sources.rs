@@ -80,7 +80,7 @@ mod tests {
         assert!(!non_test("crates/cli/tests/serve.rs"));
         assert!(!non_test("crates/computer/src/local/tests.rs"));
         assert!(!non_test("crates/computer/src/local/confinement_tests.rs"));
-        assert!(!non_test("crates/cli/benches/budgets.rs"));
+        assert!(!non_test("crates/session/benches/budgets.rs"));
         assert!(!non_test("crates/ports/src/testing/http.rs"));
         assert!(!non_test("web/app/main.ts"));
     }
