@@ -95,11 +95,7 @@ impl Accounts {
         &self,
         person: PrincipalId,
     ) -> Result<(Arc<Browsers>, Vec<OrgId>), BrowserError> {
-        let orgs = self
-            .directory
-            .organizations(person)
-            .await
-            .map_err(|e| BrowserError::Keep(e.to_string()))?;
+        let orgs = self.organizations(person).await?;
         if orgs.is_empty() {
             return Err(BrowserError::Ended);
         }
@@ -112,6 +108,14 @@ impl Accounts {
         let id = new_id(self.clock.now())?;
         let person = PrincipalId::try_from(id).map_err(|e| BrowserError::Keep(e.to_string()))?;
         Ok((person, self.browsers(person).await?))
+    }
+
+    /// The organizations `person` belongs to, the first joined first.
+    pub async fn organizations(&self, person: PrincipalId) -> Result<Vec<OrgId>, BrowserError> {
+        self.directory
+            .organizations(person)
+            .await
+            .map_err(|e| BrowserError::Keep(e.to_string()))
     }
 
     /// Records that `person` belongs to `org`, after the organizations they joined before.
