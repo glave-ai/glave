@@ -57,6 +57,7 @@ fn listing_makes_no_project_in_the_home_folder_or_a_new_one_and_a_turn_at_home_i
     let new = Place {
         project: home.project.join("new"),
         home: home.home.clone(),
+        key: home.key.clone(),
         lifeline: home.lifeline.clone(),
         folder: None,
     };

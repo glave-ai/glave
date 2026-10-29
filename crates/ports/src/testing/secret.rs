@@ -7,9 +7,23 @@ use crate::env::{Entropy, OsEntropy};
 /// for (`looks_like_credential` wants 30 after `ghp_`).
 const BODY: usize = 40;
 
-/// A secret for tests that need only *a* secret and no provider's shape: unmistakably fake, and
-/// matched by no scanner's rule.
-pub const FAKE_SECRET: &str = "fake-secret-for-tests";
+/// How many random lowercase letters follow `fake-secret-` in [`any_secret`].
+const PLAIN_BODY: usize = 16;
+
+/// A secret for tests that need only *a* secret and no provider's shape: `fake-secret-` and 16
+/// random lowercase letters, new at each call. Where a test needs the same one twice, it binds it
+/// once. No digits, so it reads as fake and matches no scanner's rule.
+pub fn any_secret() -> String {
+    // A source that fails ends the body early, as in `fake_secret`.
+    let body: String = std::iter::repeat_with(|| OsEntropy.bytes())
+        .map_while(Result::ok)
+        .flatten()
+        .map(lowercase_letter)
+        .take(PLAIN_BODY)
+        .collect();
+    // Joined with `+`, which CodeQL reads as no longer constant, as in `fake_secret`.
+    "fake-secret-".to_owned() + &body
+}
 
 /// A fake secret in a provider's shape: `prefix` (`sk-ant-`, `ghp_`, `AKIA`) and 40 random
 /// letters and digits, new at each call. Where a test needs the same one twice, it binds it once.
@@ -34,6 +48,11 @@ fn letter_or_digit(byte: u8) -> char {
         26..=51 => b'a' + (n - 26),
         _ => b'0' + (n - 52),
     })
+}
+
+/// One of the 26 lowercase letters, picked by `byte`; worked out, as in [`letter_or_digit`].
+fn lowercase_letter(byte: u8) -> char {
+    char::from(b'a' + byte % 26)
 }
 
 #[cfg(test)]
@@ -62,6 +81,15 @@ mod tests {
 
     #[test]
     fn the_plain_marker_looks_like_no_credential() {
-        assert_eq!(looks_like_credential(FAKE_SECRET), None);
+        assert_eq!(looks_like_credential(&any_secret()), None);
+    }
+
+    #[test]
+    fn a_plain_secret_is_new_each_time() {
+        let secret = any_secret();
+        let body = secret.strip_prefix("fake-secret-").unwrap();
+        assert_eq!(body.len(), PLAIN_BODY);
+        assert!(body.chars().all(|c| c.is_ascii_lowercase()));
+        assert_ne!(secret, any_secret());
     }
 }

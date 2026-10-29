@@ -520,7 +520,7 @@ fn folder_name(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use glave_ports::testing::FAKE_SECRET;
+    use glave_ports::testing::any_secret;
 
     use super::{folder_name, repository};
 
@@ -543,7 +543,7 @@ mod tests {
         ] {
             assert!(repository(good).is_ok(), "{good}");
         }
-        let signed_in = format!("https://ada:{FAKE_SECRET}@github.com/acme/app");
+        let signed_in = format!("https://ada:{}@github.com/acme/app", any_secret());
         for bad in [
             "git@github.com:acme/app.git",
             "http://github.com/acme/app",

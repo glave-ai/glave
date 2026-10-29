@@ -4,7 +4,6 @@
 use std::path::Path;
 use std::process::Command;
 
-use glave_ports::testing::FAKE_SECRET;
 use glave_provider_openai::fake::{FakeServer, Reply};
 use serde_json::{Value, json};
 
@@ -51,7 +50,7 @@ fn a_one_shot_question_gets_an_answer_and_a_receipt() {
     );
     assert_eq!(
         received[0].authorization.as_deref(),
-        Some(&*format!("Bearer {FAKE_SECRET}"))
+        Some(&*format!("Bearer {}", place.key))
     );
 }
 

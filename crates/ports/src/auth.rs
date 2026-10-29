@@ -336,7 +336,7 @@ impl From<AuthError> for ProviderError {
 mod tests {
     use super::*;
     use crate::block_on;
-    use crate::testing::FAKE_SECRET;
+    use crate::testing::any_secret;
 
     const REQUEST: Outgoing<'static> = Outgoing {
         method: "POST",
@@ -356,17 +356,18 @@ mod tests {
     #[test]
     fn a_fixed_key_goes_in_the_header_the_provider_wants() {
         let pair = |name: &str, value: &str| vec![(name.to_owned(), value.to_owned())];
+        let key = any_secret();
         assert_eq!(
-            headers(&Auth::bearer(Some(FAKE_SECRET.into()))),
-            pair("authorization", &format!("Bearer {FAKE_SECRET}"))
+            headers(&Auth::bearer(Some(key.clone()))),
+            pair("authorization", &format!("Bearer {key}"))
         );
         assert_eq!(
-            headers(&Auth::key(KeyHeader::ApiKey, "az-1")),
-            pair("api-key", "az-1")
+            headers(&Auth::key(KeyHeader::ApiKey, key.clone())),
+            pair("api-key", &key)
         );
         assert_eq!(
-            headers(&Auth::bearer(Some(FAKE_SECRET.into())).in_header(KeyHeader::XApiKey)),
-            pair("x-api-key", FAKE_SECRET)
+            headers(&Auth::bearer(Some(key.clone())).in_header(KeyHeader::XApiKey)),
+            pair("x-api-key", &key)
         );
         assert_eq!(headers(&Auth::bearer(None)), Vec::new());
     }
@@ -404,13 +405,14 @@ mod tests {
 
     #[test]
     fn secrets_never_show_in_debug() {
+        let key = any_secret();
         let shown = format!(
             "{:?} {:?} {:?}",
-            Auth::key(KeyHeader::ApiKey, "hunter2"),
-            Secret::new("hunter2"),
-            block_on!(Auth::bearer(Some("hunter2".into())).headers(&REQUEST)).unwrap(),
+            Auth::key(KeyHeader::ApiKey, key.clone()),
+            Secret::new(key.clone()),
+            block_on!(Auth::bearer(Some(key.clone())).headers(&REQUEST)).unwrap(),
         );
-        assert!(!shown.contains("hunter2"), "{shown}");
+        assert!(!shown.contains(&key), "glave's key was shown");
         assert!(shown.contains("[redacted]"), "{shown}");
         assert_eq!(
             format!("{:?}", Auth::Changing(Arc::new(Signer))),
@@ -420,8 +422,9 @@ mod tests {
 
     #[test]
     fn credentials_a_server_repeats_are_redacted() {
-        let sent = block_on!(Auth::bearer(Some(FAKE_SECRET.into())).headers(&REQUEST)).unwrap();
-        let said = format!("Incorrect API key provided: {FAKE_SECRET}. Bearer tokens only.");
+        let key = any_secret();
+        let sent = block_on!(Auth::bearer(Some(key.clone())).headers(&REQUEST)).unwrap();
+        let said = format!("Incorrect API key provided: {key}. Bearer tokens only.");
         assert_eq!(
             redact_credentials(&said, &sent),
             "Incorrect API key provided: [redacted]. Bearer tokens only."
@@ -470,8 +473,9 @@ mod tests {
             r#"{"padding":""#,
             "read no further than the most"
         );
-        let sent = block_on!(Auth::bearer(Some(FAKE_SECRET.into())).headers(&REQUEST)).unwrap();
-        let repeated = format!(r#"{{"error":{{"message":"Incorrect API key: {FAKE_SECRET}"}}}}"#);
+        let key = any_secret();
+        let sent = block_on!(Auth::bearer(Some(key.clone())).headers(&REQUEST)).unwrap();
+        let repeated = format!(r#"{{"error":{{"message":"Incorrect API key: {key}"}}}}"#);
         assert_eq!(
             ProviderError::from_response(401, repeated.as_bytes(), &sent),
             ProviderError::Http {

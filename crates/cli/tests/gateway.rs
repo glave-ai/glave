@@ -9,16 +9,13 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::SystemTime;
 
-use glave_ports::testing::{FAKE_SECRET, Running};
+use glave_ports::testing::{Running, any_secret};
 use glave_ports::{Clock as _, SystemClock};
 use glave_provider_openai::fake::{FakeServer, Reply};
 use serde_json::json;
 
 use crate::issuer::{AUDIENCE, Issuer, Signer};
 use crate::support::*;
-
-/// The key only the gateway holds.
-const KEY: &str = FAKE_SECRET;
 
 /// The fake identity provider, served from a thread of its own, and the key it signs with.
 struct Identity {
@@ -67,6 +64,8 @@ impl Identity {
 struct Gateway {
     _running: Running,
     url: String,
+    /// The model provider's key, which only the gateway holds.
+    key: String,
     /// What it has said on its standard error so far.
     said: Arc<Mutex<Vec<String>>>,
 }
@@ -86,6 +85,7 @@ fn serve(place: &Place, identity: &Identity, upstream: &FakeServer) -> Gateway {
     std::fs::write(home.join("mcp.json"), servers.to_string()).unwrap();
     let policy = home.join("policy.toml");
     std::fs::write(&policy, "version = 1\n[mcp]\ncatalog = [\"docs\"]\n").unwrap();
+    let key = any_secret();
     let child = Command::new(env!("CARGO_BIN_EXE_glave"))
         .args(["gateway", "serve", "--http", "127.0.0.1:0"])
         .args(["--issuer", &identity.url, "--audience", AUDIENCE])
@@ -94,7 +94,7 @@ fn serve(place: &Place, identity: &Identity, upstream: &FakeServer) -> Gateway {
         .env("GLAVE_HOME", &home)
         .env(Lifeline::VARIABLE, &place.lifeline.path)
         .env("GLAVE_BASE_URL", upstream.url())
-        .env("GLAVE_API_KEY", KEY)
+        .env("GLAVE_API_KEY", &key)
         .env("GLAVE_MODEL", "big")
         .env_remove("GLAVE_JUDGE_MODEL")
         .env_remove("GLAVE_PROVIDER")
@@ -123,6 +123,7 @@ fn serve(place: &Place, identity: &Identity, upstream: &FakeServer) -> Gateway {
     Gateway {
         _running: running,
         url,
+        key,
         said,
     }
 }
@@ -171,7 +172,7 @@ fn with_a_gateway_url_model_calls_and_the_catalog_come_through_the_gateway() {
     assert_eq!(first.body["model"], "big", "the gateway's main route");
     assert_eq!(
         first.authorization.as_deref(),
-        Some(&*format!("Bearer {KEY}")),
+        Some(&*format!("Bearer {}", gateway.key)),
         "the key is the gateway's own"
     );
     let offered: Vec<&str> = first.body["tools"]
@@ -189,9 +190,9 @@ fn with_a_gateway_url_model_calls_and_the_catalog_come_through_the_gateway() {
     );
     let results = said(&received[1].body, "tool");
     assert!(results[0].contains("via the catalog"), "{results:?}");
-    assert!(!shown.contains(KEY), "{shown}");
+    assert!(!shown.contains(&gateway.key), "{shown}");
     let logged = gateway.said.lock().unwrap().join("\n");
-    assert!(!logged.contains(KEY), "{logged}");
+    assert!(!logged.contains(&gateway.key), "{logged}");
 }
 
 #[test]
@@ -208,7 +209,7 @@ fn without_a_gateway_url_glave_reaches_the_model_directly_as_before() {
     assert_eq!(body["model"], "m");
     assert_eq!(
         received[0].authorization.as_deref(),
-        Some(&*format!("Bearer {FAKE_SECRET}"))
+        Some(&*format!("Bearer {}", place.key))
     );
     let offered: Vec<&str> = body["tools"]
         .as_array()

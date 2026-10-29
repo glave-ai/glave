@@ -113,9 +113,10 @@ mod tests {
 
     #[test]
     fn commands_get_everything_but_the_secrets() {
+        let key = crate::testing::any_secret();
         let vars = [
             ("PATH", "/bin"),
-            ("GLAVE_API_KEY", crate::testing::FAKE_SECRET),
+            ("GLAVE_API_KEY", key.as_str()),
             ("HOME", "/h"),
         ]
         .map(|(name, value)| (OsString::from(name), OsString::from(value)));

@@ -91,6 +91,7 @@ fn through_the_person_s_server_memory_is_the_folder_s_project_s() {
     let other = Place {
         project: place.project.join("other"),
         home: place.home.clone(),
+        key: place.key.clone(),
         lifeline: place.lifeline.clone(),
         folder: None,
     };

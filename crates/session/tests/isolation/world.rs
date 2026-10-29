@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use glave_event::{Auth, AuthMethod, PrincipalId, ThreadId};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules};
-use glave_ports::testing::{CountingEntropy, FAKE_SECRET, ManualClock, TempDir};
+use glave_ports::testing::{CountingEntropy, ManualClock, TempDir, any_secret};
 use glave_ports::{Caller, Eraser, EventLog, OrgId, ProjectId, Projects, Scope};
 use glave_session::protocol::{Notification, Reply, Request, TaskStatus, Update};
 use glave_session::signin::{Browsers, person};
@@ -219,10 +219,10 @@ async fn make<L: EventLog + 'static>(org: &Org<L>, person: &mut Person, local: b
         .clone();
     person.keep(Kind::Memory, personal);
     if org.server.request(Request::ProviderList {}).await.is_ok() {
-        let account = json!({"kind": "openai", "key": FAKE_SECRET});
+        let account = json!({"kind": "openai", "key": any_secret()});
         let provider = call("provider/connect", account).await["provider"]["id"].clone();
         person.keep(Kind::Provider, provider);
-        let host = json!({"url": "https://github.com", "token": FAKE_SECRET});
+        let host = json!({"url": "https://github.com", "token": any_secret()});
         let credential = call("credential/connect", host).await["credential"]["id"].clone();
         person.keep(Kind::Credential, credential);
         let flow = call("credential/device/start", json!({})).await["device"]["flow"].clone();

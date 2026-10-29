@@ -200,7 +200,7 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - Run tests with `cargo nextest`. Measure coverage; don't chase a percentage.
 - Fakes live in one place: `glave-ports` ships the test doubles for its ports (clock, entropy, cancellation, `block_on`, fake secrets, temp folders) behind the `conformance` feature. Never write a second copy in a crate.
 - Every test removes what it makes: its folders are `glave_ports::testing::TempDir`s (`outside_temp` for the sandbox's tests), removed with what they hold when dropped, and a server it starts in the background is stopped by a guard when it drops. What it starts is stopped and waited for before the folder it writes to goes: declared after the folder, or before it in a struct, whose fields drop in order.
-- No secret-shaped string in the source: a test that needs a provider's shape makes one at run time (`fake_secret("ghp_")`), any other uses `FAKE_SECRET`, and no assertion message or log line prints a secret.
+- No secret-shaped string in the source: a test that needs a provider's shape makes one at run time (`fake_secret("ghp_")`), any other uses `any_secret()`, and no assertion message or log line prints a secret.
 - A scenario is tested once: in the conformance suite when there is one, otherwise beside the code it tests.
 
 ## Performance

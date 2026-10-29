@@ -2,7 +2,7 @@
 //! a token read from standard input, never an argument, checked with its host, listed with
 //! what glave can do with it and never shown, and removed; GitHub signed in to in the browser.
 
-use glave_ports::testing::{FAKE_SECRET, FakeGitHost, FakeHttp, fake_secret};
+use glave_ports::testing::{FakeGitHost, FakeHttp, any_secret, fake_secret};
 use glave_provider_openai::fake::FakeServer;
 use serde_json::json;
 
@@ -96,11 +96,12 @@ fn what_a_gitlab_token_may_do_is_what_gitlab_says() {
     let model = FakeServer::start(Vec::new()).unwrap();
     let (_served, _) = serve_http(&place, &model, &[]);
     only_the_server_answers(&place);
+    let token = any_secret();
     let output = glave(
         &place,
         &model,
         &["connect", &gitlab.url],
-        &format!("{FAKE_SECRET}\n"),
+        &format!("{token}\n"),
     );
     let said = text(&output);
     assert!(output.status.success(), "{said}");
@@ -112,8 +113,7 @@ fn what_a_gitlab_token_may_do_is_what_gitlab_says() {
     let asked = gitlab.received();
     assert_eq!(asked[0].path, "/api/v4/user");
     assert_eq!(asked[1].path, "/api/v4/personal_access_tokens/self");
-    let token = Some(FAKE_SECRET.to_owned());
-    assert_eq!(asked[1].headers.get("private-token"), token.as_ref());
+    assert_eq!(asked[1].headers.get("private-token"), Some(&token));
 }
 
 #[test]

@@ -31,13 +31,13 @@ pub fn hint(key: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use glave_ports::testing::FAKE_SECRET;
+    use glave_ports::testing::any_secret;
 
     use super::*;
 
     #[test]
     fn a_hint_is_the_last_four_characters_of_a_long_key() {
-        let key = format!("{FAKE_SECRET}-a1b2");
+        let key = any_secret() + "-a1b2";
         assert_eq!(hint(&key).as_deref(), Some("a1b2"));
         assert_eq!(hint("short-key"), None);
         assert_eq!(hint(""), None);

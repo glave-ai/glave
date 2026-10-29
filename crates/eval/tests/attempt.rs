@@ -6,12 +6,10 @@ use std::sync::Arc;
 
 use glave_eval::{Plan, Setup, attempt, load};
 use glave_ports::block_on;
-use glave_ports::testing::{FAKE_SECRET, TempDir};
+use glave_ports::testing::{TempDir, any_secret};
 use glave_provider_openai::Config;
 use glave_provider_openai::fake::{FakeServer, Reply};
 use serde_json::json;
-
-const KEY: &str = FAKE_SECRET;
 
 fn folder(name: &str) -> TempDir {
     TempDir::new(&format!("eval-attempt-{name}")).unwrap()
@@ -41,10 +39,15 @@ fn task(dir: &Path, glave: &str, test: &str) -> glave_eval::Task {
 }
 
 fn setup(server: &FakeServer) -> Setup {
+    keyed(server, &any_secret())
+}
+
+/// [`setup`] with the model key `key`.
+fn keyed(server: &FakeServer, key: &str) -> Setup {
     let mut environment: Vec<_> = std::env::vars_os().collect();
-    environment.push(("GLAVE_API_KEY".into(), KEY.into()));
+    environment.push(("GLAVE_API_KEY".into(), key.into()));
     Setup {
-        endpoint: Config::for_url(server.url(), Some(KEY.to_owned())).unwrap(),
+        endpoint: Config::for_url(server.url(), Some(key.to_owned())).unwrap(),
         environment,
         plans: false,
         subagents: false,
@@ -80,7 +83,8 @@ fn a_task_done_right_passes_and_leaves_its_record() {
     );
     let server = FakeServer::start(writes_hello()).unwrap();
     let run = dir.join("run");
-    let attempt = block_on!(attempt(&setup(&server), &task, "fake-model", 1, &run)).unwrap();
+    let key = any_secret();
+    let attempt = block_on!(attempt(&keyed(&server, &key), &task, "fake-model", 1, &run)).unwrap();
     assert_eq!(attempt.failures, Vec::<String>::new());
     assert!(attempt.passed());
     assert_eq!((attempt.model_calls, attempt.tool_calls), (2, 1));
@@ -101,7 +105,7 @@ fn a_task_done_right_passes_and_leaves_its_record() {
     let sent = server.received();
     assert_eq!(
         sent.first().and_then(|r| r.authorization.as_deref()),
-        Some(format!("Bearer {KEY}").as_str())
+        Some(format!("Bearer {key}").as_str())
     );
 }
 

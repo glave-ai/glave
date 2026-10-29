@@ -88,9 +88,10 @@ mod tests {
 
     #[test]
     fn the_gateway_is_reached_at_its_v1_with_the_sign_in_as_the_key() {
+        let token = glave_ports::testing::any_secret();
         let remote = Remote {
             url: "https://gw.example.com".into(),
-            token: "t0k".into(),
+            token: token.clone(),
         };
         let endpoint = remote.endpoint(None).unwrap();
         assert_eq!(endpoint.provider.base_url, "https://gw.example.com/v1");
@@ -100,7 +101,7 @@ mod tests {
                 .auth
                 .fixed_key()
                 .map(glave_ports::auth::Secret::expose),
-            Some("t0k")
+            Some(token.as_str())
         );
         assert_eq!(endpoint.provider.provider, "gateway");
         assert_eq!(endpoint.model, "main", "the gateway's main route");

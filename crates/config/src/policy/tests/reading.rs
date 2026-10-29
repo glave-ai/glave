@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use glave_event::Permissions;
 use glave_ports::block_on;
-use glave_ports::testing::TempDir;
+use glave_ports::testing::{TempDir, any_secret};
 
 use super::*;
 
@@ -345,7 +345,8 @@ fn the_store_is_the_person_s_choice_and_its_password_never_shown() {
     std::fs::create_dir_all(&home).unwrap();
     let mut locations = Locations::here(&home, &dir);
     locations.policies = vec![];
-    let url = "postgres://glave:hunter2hunter2@db.example.com/glave";
+    let password = any_secret();
+    let url = format!("postgres://glave:{password}@db.example.com/glave");
     let text = format!("[store]\nurl = \"{url}\"\n");
     let project = files::config(&text, &locations.project).unwrap();
     let loaded = load_all(&locations, Some(project)).unwrap();
@@ -358,13 +359,13 @@ fn the_store_is_the_person_s_choice_and_its_password_never_shown() {
         shown.contains("postgres://glave:***@db.example.com/glave"),
         "{shown}"
     );
-    assert!(!shown.contains("hunter2"), "{shown}");
-    let wrong = "[store]\nurl = \"mysql://glave:hunter2hunter2@db\"\n";
-    let refused = files::config(wrong, &locations.person)
+    assert!(!shown.contains(&password), "{shown}");
+    let wrong = format!("[store]\nurl = \"mysql://glave:{password}@db\"\n");
+    let refused = files::config(&wrong, &locations.person)
         .unwrap_err()
         .to_string();
     assert!(
-        refused.contains("[store] url") && !refused.contains("hunter2"),
+        refused.contains("[store] url") && !refused.contains(&password),
         "{refused}"
     );
 }

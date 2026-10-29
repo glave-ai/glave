@@ -10,7 +10,7 @@ mod over_http {
     use glave_event::Part;
     use glave_ports::auth::{Auth, KeyHeader};
     use glave_ports::block_on;
-    use glave_ports::testing::{FAKE_SECRET, ManualClock};
+    use glave_ports::testing::{ManualClock, any_secret};
     use glave_ports::{Message, ModelProvider, ModelRequest, ToolChoice};
     use glave_provider_anthropic::fake::{FakeServer, Reply};
     use glave_provider_anthropic::{Anthropic, Config};
@@ -95,10 +95,11 @@ mod over_http {
     fn a_bedrock_api_key_goes_in_x_api_key() {
         let server = FakeServer::start(vec![Reply::text("hi")]).unwrap();
         let base = format!("{}/anthropic", server.url());
-        ask(&base, Auth::key(KeyHeader::XApiKey, FAKE_SECRET));
+        let key = any_secret();
+        ask(&base, Auth::key(KeyHeader::XApiKey, key.clone()));
         let received = server.received();
         assert_eq!(received[0].path, "/anthropic/v1/messages");
-        assert_eq!(received[0].api_key.as_deref(), Some(FAKE_SECRET));
+        assert_eq!(received[0].api_key.as_deref(), Some(key.as_str()));
         assert_eq!(received[0].authorization, None);
     }
 }

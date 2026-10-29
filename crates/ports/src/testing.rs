@@ -33,7 +33,7 @@ pub use oauth::{FAKE_CLIENT, FakeAuthServer, Grant};
 pub use output::Captured;
 pub use process::{HUNG, Running};
 pub use scripted::{ScriptedHttp, Written};
-pub use secret::{FAKE_SECRET, fake_secret};
+pub use secret::{any_secret, fake_secret};
 pub use temp::TempDir;
 
 /// Runs a future to its end on a fresh current-thread runtime with every driver enabled.

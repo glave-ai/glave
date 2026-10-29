@@ -14,7 +14,7 @@ use glave_mcp::{Limits, McpServer};
 use glave_ports::Caller;
 pub(crate) use glave_ports::block_on;
 use glave_ports::settings::mcp::ServerConfig;
-use glave_ports::testing::{CountingEntropy, FAKE_SECRET};
+use glave_ports::testing::{CountingEntropy, any_secret};
 use glave_ports::{EventLog, InMemoryLog, Located, LogError, OrgId, ProjectId, Purpose, Scope};
 use glave_provider_openai::fake::{FakeServer, Reply};
 use glave_provider_openai::{Config, OpenAiCompatible};
@@ -22,9 +22,6 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use super::issuer::{AUDIENCE, Issuer, Signer, fixed_clock};
-
-/// The key the gateway holds for its model provider.
-pub(crate) const KEY: &str = FAKE_SECRET;
 
 /// One log shared by every service a test starts, as a restart would find it.
 #[derive(Clone, Default)]
@@ -150,6 +147,8 @@ pub(crate) struct World {
     pub issuer: Issuer,
     pub signer: Signer,
     pub upstream: FakeServer,
+    /// The key the gateway holds for its model provider.
+    pub key: String,
     pub log: SharedLog,
     pub scope: Scope,
     pub notices: Arc<Mutex<Vec<String>>>,
@@ -160,6 +159,16 @@ pub(crate) struct World {
 impl World {
     /// A gateway over `replies`, with `budgets`, its catalog empty unless `with_catalog`.
     pub(crate) async fn start(replies: Vec<Reply>, budgets: Budgets, with_catalog: bool) -> Self {
+        Self::with_key(any_secret(), replies, budgets, with_catalog).await
+    }
+
+    /// [`World::start`] with `key` as the gateway's key for its model provider.
+    pub(crate) async fn with_key(
+        key: String,
+        replies: Vec<Reply>,
+        budgets: Budgets,
+        with_catalog: bool,
+    ) -> Self {
         let issuer = Issuer::start().await;
         let signer = Signer::es256("k1");
         issuer.publish(&signer);
@@ -170,6 +179,7 @@ impl World {
             issuer,
             signer,
             upstream,
+            key,
             log: SharedLog::default(),
             scope,
             notices: Arc::new(Mutex::new(Vec::new())),
@@ -183,7 +193,7 @@ impl World {
     /// Starts (or starts again, on the same log) the service.
     pub(crate) async fn serve(&mut self, budgets: Budgets, with_catalog: bool) {
         self.halt().await;
-        let config = Config::for_url(self.upstream.url(), Some(KEY.to_owned())).unwrap();
+        let config = Config::for_url(self.upstream.url(), Some(self.key.clone())).unwrap();
         let handle: Arc<dyn Model> = Arc::new(OpenAiCompatible::new(config).unwrap());
         // A dollar a million tokens, in and out, so a budget counts a token as a millionth.
         let price = Price {
@@ -213,7 +223,7 @@ impl World {
             clock: Box::new(fixed_clock()),
             entropy: Box::new(CountingEntropy::starting_at(1)),
             catalog: if with_catalog { catalog() } else { Vec::new() },
-            secrets: vec![KEY.to_owned()],
+            secrets: vec![self.key.clone()],
             notices: Arc::new(move |notice: &str| notices.lock().unwrap().push(notice.into())),
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

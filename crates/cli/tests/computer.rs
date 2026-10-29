@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime};
 
 use glave_computer::{Identity, RemoteComputers, Token};
 use glave_ports::computer::{Command, Computers, Ending, Environment, Output, Sources};
-use glave_ports::testing::{FAKE_SECRET, TempDir};
+use glave_ports::testing::{TempDir, any_secret};
 use glave_ports::{BoxFuture, Clock as _, NeverCancelled, SystemClock, block_on, conformance};
 
 #[derive(Default)]
@@ -26,11 +26,12 @@ fn the_binary_serves_a_computer_that_passes_the_suite() {
     let dir = TempDir::new("e2e-computer").unwrap();
     let work = dir.join("work");
     std::fs::create_dir_all(&work).unwrap();
+    let key = any_secret();
     block_on!(async {
         let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_glave"))
             .args(["computer", "serve", "--stdio"])
             .env("GLAVE_HOME", dir.join("home"))
-            .env("GLAVE_API_KEY", FAKE_SECRET)
+            .env("GLAVE_API_KEY", &key)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .kill_on_drop(true)
@@ -55,7 +56,7 @@ fn the_binary_serves_a_computer_that_passes_the_suite() {
         assert_eq!(finished.ending, Ending::Exited { code: 0 });
         let seen = seen.0.lock().unwrap().clone();
         assert!(seen.contains("PATH="), "{seen}");
-        assert!(!seen.contains(FAKE_SECRET), "glave's key reached a command");
+        assert!(!seen.contains(&key), "glave's key reached a command");
         remote.destroy(made.id).await.unwrap();
 
         let suite = dir.join("suite");

@@ -108,6 +108,8 @@ pub(crate) fn expiration(text: &str, from: &str) -> Result<Timestamp, AuthError>
 mod tests {
     use std::collections::HashMap;
 
+    use glave_ports::testing::any_secret;
+
     use super::*;
     use crate::Region;
 
@@ -124,9 +126,10 @@ mod tests {
     #[test]
     fn sources_are_found_in_aws_s_order() {
         assert_eq!(source(&[]), Ok(None));
+        let secret = any_secret();
         let keys = [
             ("AWS_ACCESS_KEY_ID", "AKIDEXAMPLE"),
-            ("AWS_SECRET_ACCESS_KEY", "wJalrXUtnFEMI"),
+            ("AWS_SECRET_ACCESS_KEY", secret.as_str()),
         ];
         let irsa = [
             ("AWS_WEB_IDENTITY_TOKEN_FILE", "/var/run/irsa/token"),
@@ -157,15 +160,16 @@ mod tests {
 
     #[test]
     fn keys_never_show_their_secrets() {
+        let (secret, token) = (any_secret(), any_secret());
         let keys = Keys {
             access_key_id: "AKIDEXAMPLE".into(),
-            secret_access_key: Secret::new("wJalrXUtnFEMI"),
-            session_token: Some(Secret::new("FwoGZXIvYXdz")),
+            secret_access_key: Secret::new(secret.clone()),
+            session_token: Some(Secret::new(token.clone())),
         };
         let shown = format!("{keys:?}");
         assert!(shown.contains("AKIDEXAMPLE"), "{shown}");
         assert!(
-            !shown.contains("wJalr") && !shown.contains("FwoG"),
+            !shown.contains(&secret) && !shown.contains(&token),
             "{shown}"
         );
     }

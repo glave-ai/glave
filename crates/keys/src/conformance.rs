@@ -7,7 +7,7 @@ use glave_event::{
     MemoryScope, Outcome, Principal, ProviderConnected, ProviderId, ProviderKind, RawEvent, Secret,
     Seq, ThreadId, TurnResult, encode,
 };
-use glave_ports::testing::FAKE_SECRET;
+use glave_ports::testing::any_secret;
 use glave_ports::{Erasable, Eraser, OrgId, ProjectId, Scope};
 use uuid::{Builder, Uuid};
 
@@ -147,11 +147,12 @@ async fn account_keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
             at: At::try_from("2026-10-12T09:00:00.000Z".to_owned()).map_err(text)?,
         })
     };
+    let secret = any_secret();
     let model = ProviderConnected {
         provider: ProviderId::try_from(uuid_v7(7_101)).map_err(text)?,
         kind: ProviderKind::Openai,
         url: None,
-        key: Secret::new(FAKE_SECRET),
+        key: Secret::new(secret.clone()),
         models: vec!["model".into()],
         by: Principal::glave(),
     };
@@ -160,7 +161,7 @@ async fn account_keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
         forge: Forge::Github,
         url: "https://github.com".into(),
         username: "octocat".into(),
-        token: Secret::new(FAKE_SECRET),
+        token: Secret::new(secret.clone()),
         login: None,
         scopes: None,
         renewal: None,
@@ -182,8 +183,8 @@ async fn account_keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
         ensure(
             !sealed
                 .bytes
-                .windows(FAKE_SECRET.len())
-                .any(|w| w == FAKE_SECRET.as_bytes()),
+                .windows(secret.len())
+                .any(|w| w == secret.as_bytes()),
             "the key or token is sealed, not stored as written",
         )?;
         Eraser::destroy(keys, here, Erasable::Account(uuid_v7(n)))

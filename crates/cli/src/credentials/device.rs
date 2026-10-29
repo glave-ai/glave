@@ -363,7 +363,7 @@ fn no_flow() -> ApiError {
 
 #[cfg(test)]
 mod tests {
-    use glave_ports::testing::{FAKE_SECRET, fake_secret};
+    use glave_ports::testing::{any_secret, fake_secret};
     use serde_json::json;
 
     use super::*;
@@ -377,11 +377,12 @@ mod tests {
 
     #[test]
     fn a_grant_that_expires_keeps_how_to_renew_it() {
-        let lasting = granted(&json!({"access_token": FAKE_SECRET, "token_type": "bearer"}));
+        let token = any_secret();
+        let lasting = granted(&json!({"access_token": token, "token_type": "bearer"}));
         assert!(lasting.unwrap().renewal.is_none());
         let refresh = fake_secret("ghr_");
         let expiring = granted(&json!({
-            "access_token": FAKE_SECRET, "expires_in": 28800,
+            "access_token": token, "expires_in": 28800,
             "refresh_token": refresh, "refresh_token_expires_in": 15_897_600
         }))
         .unwrap();
@@ -395,7 +396,7 @@ mod tests {
         assert!(granted(&json!({"error": "authorization_pending"})).is_none());
         for absurd in [-1, i64::MAX] {
             let grant = granted(&json!({
-                "access_token": FAKE_SECRET, "expires_in": absurd, "refresh_token": refresh
+                "access_token": token, "expires_in": absurd, "refresh_token": refresh
             }));
             assert!(grant.and_then(|grant| grant.renewal).is_some(), "{absurd}");
         }

@@ -68,7 +68,7 @@ pub(crate) fn check() -> Result<(), String> {
     } else {
         Err(format!(
             "{} secret-shaped literal(s); make a fake at run time with \
-             glave_ports::testing::fake_secret(\"<prefix>\"), or use FAKE_SECRET where any \
+             glave_ports::testing::fake_secret(\"<prefix>\"), or any_secret() where any \
              secret will do:\n  {}",
             problems.len(),
             problems.join("\n  ")

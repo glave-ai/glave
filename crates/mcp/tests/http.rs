@@ -10,7 +10,7 @@ use glave_event::ToolKind;
 use glave_mcp::{Limits, McpError, McpServer};
 use glave_ports::block_on;
 use glave_ports::settings::mcp::ServerConfig;
-use glave_ports::testing::{AlreadyCancelled, FAKE_SECRET, Running};
+use glave_ports::testing::{AlreadyCancelled, Running, any_secret};
 use glave_ports::{NeverCancelled, ToolOutput, ToolSource as _, conformance};
 use serde_json::json;
 
@@ -141,7 +141,7 @@ fn a_bad_header_is_named_and_its_value_never_shown() {
         let server = launch(&at("http://127.0.0.1:9/mcp", &[("bad header", "x")]));
         let why = start_error(server.started().await);
         assert_eq!(why, "\"bad header\" is not a header name");
-        let secret = format!("{FAKE_SECRET}\nvalue");
+        let secret = any_secret() + "\nvalue";
         let server = launch(&at("http://127.0.0.1:9/mcp", &[("Authorization", &secret)]));
         let why = start_error(server.started().await);
         assert_eq!(why, "the value of header Authorization is not valid");
