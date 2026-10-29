@@ -131,6 +131,24 @@ sentences! {
     TooManyWatches { most: usize } = "too-many-watches"
         "a connection watches at most { $most } threads and lists at once: unwatch one first",
 
+    // A model provider's failures: glave's own words, with what the provider said as it said it.
+    ProviderHttp { status: String, body: String } = "provider-http"
+        "the model provider returned HTTP { $status }: { $body }",
+    ProviderCredentials { reason: String } = "provider-credentials"
+        "could not get credentials for the model provider: { $reason }",
+    ProviderUnreachable { reason: String } = "provider-unreachable"
+        "could not reach the model provider: { $reason }",
+    ProviderMalformed { reason: String } = "provider-malformed"
+        "the model provider sent a malformed response: { $reason }",
+    ProviderNoOutput { reason: String } = "provider-no-output"
+        "the model provider ended the response in an error before any output: { $reason }",
+    ProviderBrokeOff = "provider-broke-off" "the model provider's answer broke off partway:{ \" \" }",
+    ProviderSilent { seconds: String } = "provider-silent"
+        "the model provider sent nothing for { $seconds } s",
+    NoModelServes { reason: String } = "no-model-serves" "no model could serve the request: { $reason }",
+    OverBudget { budget: String, detail: String } = "over-budget"
+        "the { $budget } budget would be exceeded: { $detail }",
+
     // Models and permissions.
     NoModelYet = "no-model-yet" "no model is set up here yet: connect a model account first",
     ModelIdLength { most: usize } = "model-id-length" "a model id is 1 to { $most } bytes, not only spaces",
