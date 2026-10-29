@@ -549,8 +549,8 @@ fn an_account_not_in_an_organization_joins_it_with_the_address_its_invite_went_t
         // Taken out of this organization, she works in one of her own.
         let removed = asked(&mut here, &Request::PersonRemove { person: grace_id }).await;
         assert_eq!(removed, json!({}));
-        let hers = OrgId::from_uuid(Uuid::from_u128(0x0192_f5c6_0000_7000_8000_0000_0000_0a12));
-        directory.join(grace_id, hers).await.unwrap();
+        let her_own = OrgId::from_uuid(Uuid::from_u128(0x0192_f5c6_0000_7000_8000_0000_0000_0a12));
+        directory.join(grace_id, her_own).await.unwrap();
         let session = sign_in(&served, &mut phone).await;
         let mut signed_in = elsewhere(&served, session.as_str().map(str::to_owned));
 
@@ -586,7 +586,7 @@ fn an_account_not_in_an_organization_joins_it_with_the_address_its_invite_went_t
             .unwrap();
         assert_eq!(rejoined["email"], json!("grace@example.com"), "{after}");
         let orgs = directory.organizations(grace_id).await.unwrap();
-        assert_eq!(orgs, [hers, scope().org()]);
+        assert_eq!(orgs, [her_own, scope().org()]);
         served.close().await;
     });
 }
