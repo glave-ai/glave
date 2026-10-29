@@ -186,6 +186,9 @@ pub struct Thread {
     pub(crate) opened: Option<Opened>,
     /// Where it works now that its project's folder moved, which its next turn records.
     pub(crate) rebound: Option<WorkspaceBound>,
+    /// Where it works on its person's own computer, when it does: opened there again at a
+    /// turn's start whenever that computer woke since (`homes.rs`).
+    pub(crate) home: Option<WorkspaceBound>,
 }
 
 impl Thread {
@@ -567,6 +570,7 @@ where
             commands: Arc::default(),
             opened: None,
             rebound: None,
+            home: crate::homes::at_home(bound.as_ref()),
         };
         let mut events = Vec::new();
         let mut origin = Origin::of(if parent.is_some() {

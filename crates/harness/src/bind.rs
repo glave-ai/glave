@@ -152,6 +152,15 @@ where
         let (home, kind) = self.home_of(scope, person).await?;
         let owner = owner_label(scope, id);
         let workspace = match opened {
+            Place::Folder(path) if kind == ComputerKind::Person => {
+                home.folder(&path).await.map_err(|error| match error {
+                    ComputerError::NotFound(_) => ComputerError::Unsupported(format!(
+                        "this project's folder, {path}, is on the server, not on your cloud \
+                         computer, and glave can't work on it there yet"
+                    )),
+                    error => error,
+                })?
+            }
             Place::Folder(path) => home.folder(&path).await?,
             Place::Worktree(path) => home.worktree(&path, &branch_for(id), Some(&owner)).await?,
             Place::Scratch => home.scratch(&id.to_string(), Some(&owner)).await?,
@@ -189,15 +198,15 @@ where
             )
             .into());
         }
+        // On the person's own computer, opened at its next turn ([`Harness::come_home`]), so
+        // reading a thread never waits for a computer to wake.
+        if latest.is_some_and(|bound| bound.computer.kind == ComputerKind::Person) {
+            return Ok((None, latest.cloned(), false));
+        }
         let owner = owner_label(scope, id);
         let elsewhere = |was: &str| moved.filter(|now| *now != was);
         let opened = latest.map(|bound| &bound.opened);
-        if matches!(opened, Some(Opened::Clone { .. }) | None) {
-            return Ok((None, latest.cloned(), false));
-        }
-        let (home, kind) = self
-            .home_of(scope, crate::resume::for_of(events).or(self.actors.person))
-            .await?;
+        let (home, kind) = (&self.workspace, ComputerKind::Local);
         let workspace = match opened {
             Some(Opened::Folder { path }) => match (home.folder(path).await, elsewhere(path)) {
                 (Err(ComputerError::NotFound(_)), Some(now)) => {
@@ -260,6 +269,10 @@ where
     /// thread being held (`specs/session.md`, "Commands in the background"); a later let-go
     /// closes it once its computer has nothing left there.
     pub async fn let_go(&self, thread: Thread) {
+        if thread.home.is_some() {
+            crate::homes::close_away(thread.workspace).await;
+            return;
+        }
         self.close_workspace(thread.workspace).await;
     }
 
