@@ -19,7 +19,7 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::support::issuer::fixed_clock;
-use crate::support::web::{ORIGIN, Served, asked, elsewhere, serve_with};
+use crate::support::web::{ORIGIN, Served, asked, elsewhere, make_passkey, serve_with};
 use crate::support::*;
 
 /// A server reached at [`ORIGIN`] keeping glave accounts, sending its email to `outbox`, and
@@ -72,22 +72,8 @@ fn emailed_code(outbox: &Outbox) -> Secret {
 }
 
 /// What making a passkey on `device` with the sign-up `code` is answered with.
-async fn make_passkey(served: &Served, code: Secret, device: &mut Authenticator) -> Value {
-    let mut anyone = elsewhere(served, None);
-    let create = Request::PasskeyCreateOptions {
-        code,
-        link: LinkKind::Signup,
-    };
-    let options = asked(&mut anyone, &create).await;
-    if !options.is_object() {
-        return options;
-    }
-    let made = Request::PasskeyCreate {
-        ceremony: options["ceremony"].as_str().unwrap().to_owned(),
-        credential: device.create(&options["options"]).unwrap(),
-        name: Some("Phone".into()),
-    };
-    asked(&mut anyone, &made).await
+async fn make(served: &Served, code: Secret, device: &mut Authenticator) -> Value {
+    make_passkey(served, code, LinkKind::Signup, device).await
 }
 
 #[test]
@@ -127,7 +113,7 @@ fn signing_up_makes_an_account_and_an_organization_of_ones_own() {
 
         let code = emailed_code(&outbox);
         let mut phone = Authenticator::new(ORIGIN).unwrap();
-        let made = make_passkey(&served, code.clone(), &mut phone).await;
+        let made = make(&served, code.clone(), &mut phone).await;
         let token = made["session"].as_str().map(str::to_owned);
         assert!(token.is_some(), "{made}");
         let mut ada = elsewhere(&served, token);
@@ -147,7 +133,7 @@ fn signing_up_makes_an_account_and_an_organization_of_ones_own() {
 
         // The link works once.
         let mut laptop = Authenticator::new(ORIGIN).unwrap();
-        let again = make_passkey(&served, code, &mut laptop).await;
+        let again = make(&served, code, &mut laptop).await;
         assert_eq!(again, json!(code::NO_INVITE));
         served.close().await;
     });
@@ -165,7 +151,7 @@ fn an_address_with_an_account_is_answered_alike_and_told_to_sign_in() {
         };
         asked(&mut anyone, &start("grace@example.com")).await;
         let mut phone = Authenticator::new(ORIGIN).unwrap();
-        let made = make_passkey(&served, emailed_code(&outbox), &mut phone).await;
+        let made = make(&served, emailed_code(&outbox), &mut phone).await;
         assert!(made["session"].is_string(), "{made}");
         // A name around it is no address.
         for written in ["Grace <grace@example.com>", "<grace@example.com>"] {
@@ -202,7 +188,7 @@ fn a_link_carries_its_address_and_no_one_can_change_it() {
         let forged = Secret::new(format!("{secret}.{}", hex_of("bea@example.com")));
         let mut phone = Authenticator::new(ORIGIN).unwrap();
         assert_eq!(
-            make_passkey(&served, forged, &mut phone).await,
+            make(&served, forged, &mut phone).await,
             json!(code::NO_INVITE)
         );
         served.close().await;
@@ -233,7 +219,7 @@ fn a_server_that_takes_no_sign_ups_says_so() {
         assert_eq!(asked(&mut anyone, &start).await, json!(code::NOT_AVAILABLE));
         let guessed = Secret::new("00".repeat(32));
         let mut phone = Authenticator::new(ORIGIN).unwrap();
-        let made = make_passkey(&served, guessed, &mut phone).await;
+        let made = make(&served, guessed, &mut phone).await;
         assert_eq!(made, json!(code::NO_INVITE));
         assert_eq!(outbox.sent(), Vec::new());
         served.close().await;
