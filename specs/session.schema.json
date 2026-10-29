@@ -872,6 +872,13 @@
           "$ref": "#/$defs/Principal",
           "description": "Who made it."
         },
+        "email": {
+          "description": "The address its link was emailed to, when it was.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "expires": {
           "$ref": "#/$defs/At",
           "description": "When it stops working, opened or not."
@@ -1357,8 +1364,19 @@
           "$ref": "#/$defs/PrincipalId"
         },
         "joined": {
-          "$ref": "#/$defs/At",
-          "description": "When they first signed in."
+          "anyOf": [
+            {
+              "$ref": "#/$defs/At"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "When they first signed in; none for the person on the server's computer, who never\njoins: they own its organization."
+        },
+        "local": {
+          "description": "Whether they are the person on the server's computer, its organization's owner always.",
+          "type": "boolean"
         },
         "name": {
           "description": "Their name, as the identity provider's token said it, when it did.",
@@ -1367,8 +1385,19 @@
             "null"
           ]
         },
+        "removable": {
+          "description": "Whether the caller may take them out of the organization.",
+          "type": "boolean"
+        },
         "role": {
           "$ref": "#/$defs/OrgRole"
+        },
+        "roles": {
+          "description": "The roles the caller may give them now, theirs among them; none when the caller may\nnot change their role.",
+          "items": {
+            "$ref": "#/$defs/OrgRole"
+          },
+          "type": "array"
         },
         "subject": {
           "description": "Who they are to the company login: its id for them; none with a glave account.",
@@ -1376,12 +1405,15 @@
             "string",
             "null"
           ]
+        },
+        "you": {
+          "description": "Whether they are the caller.",
+          "type": "boolean"
         }
       },
       "required": [
         "id",
-        "role",
-        "joined"
+        "role"
       ],
       "type": "object"
     },
@@ -1987,6 +2019,10 @@
     "ServerInfo": {
       "description": "What the server is.",
       "properties": {
+        "email": {
+          "description": "Whether it sends email (`[email]`) with links to its public origin, as an invite's: so\na client asks for an address only where one is used.",
+          "type": "boolean"
+        },
         "exists": {
           "$ref": "#/$defs/Exists",
           "description": "What it has beyond the one person a server works for on its own; absent where it has\nnone of it, as on a person's own computer or server."

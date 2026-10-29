@@ -309,8 +309,9 @@ fn where_no_one_else_reaches_the_server_there_is_no_one_to_invite_or_accept() {
     });
 }
 
-/// An invite named for an address is sent there, its link at the server's public origin; the
-/// address is not kept. Without a mail server, or with no address, nothing is sent.
+/// An invite named for an address is sent there, its link at the server's public origin, and
+/// the address is kept with it, as whom it waits for. Without a mail server, or with no
+/// address, nothing is sent.
 #[test]
 fn an_invite_is_emailed_where_the_server_sends_email() {
     let dir = folder("invites-emailed");
@@ -336,6 +337,11 @@ fn an_invite_is_emailed_where_the_server_sends_email() {
         assert!(sent[0].text.contains(&link), "{}", sent[0].text);
         server.request(create(None)).await.unwrap();
         assert_eq!(outbox.sent().len(), 1, "no address, no email");
+        let Ok(Reply::Invites { invites }) = server.request(Request::InviteList {}).await else {
+            panic!("invites");
+        };
+        let waiting: Vec<_> = invites.iter().map(|it| it.email.as_deref()).collect();
+        assert_eq!(waiting, [Some("ada@example.com"), None]);
         let refused = server
             .request(create(Some("not an address")))
             .await

@@ -24,8 +24,23 @@ pub struct PersonInfo {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub groups: Vec<String>,
     pub role: OrgRole,
-    /// When they first signed in.
-    pub joined: At,
+    /// When they first signed in; none for the person on the server's computer, who never
+    /// joins: they own its organization.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub joined: Option<At>,
+    /// Whether they are the person on the server's computer, its organization's owner always.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub local: bool,
+    /// Whether they are the caller.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub you: bool,
+    /// The roles the caller may give them now, theirs among them; none when the caller may
+    /// not change their role.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub roles: Vec<OrgRole>,
+    /// Whether the caller may take them out of the organization.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub removable: bool,
 }
 
 /// An invite waiting to be opened. Its code is never shown again after it is made.
@@ -39,6 +54,9 @@ pub struct InviteInfo {
     pub made: At,
     /// When it stops working, opened or not.
     pub expires: At,
+    /// The address its link was emailed to, when it was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
 }
 
 impl Request {
