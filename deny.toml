@@ -39,6 +39,9 @@ allow = [
     # Permissive data license (Linux Foundation) on Mozilla's root-certificate bundle, used
     # by rustls when the OS trust store is unavailable. No copyleft.
     "CDLA-Permissive-2.0",
+    # BSD with no clause at all, as permissive as a license gets: quoted_printable, under
+    # lettre's message builder. No copyleft, no attribution.
+    "0BSD",
 ]
 confidence-threshold = 0.9
 unused-allowed-license = "allow"
