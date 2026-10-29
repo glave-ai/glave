@@ -10,10 +10,10 @@ use glave_identity::signin::{BrowserError, SignInError};
 use glave_ports::computer::ComputerError;
 use glave_ports::memories::MemoryError;
 use glave_ports::stream::StreamError;
-use glave_ports::{EntropyError, LogError, ProjectError};
+use glave_ports::{EntropyError, LogError, ProjectError, ProviderError};
 
 use crate::accounts::AccountsError;
-use crate::protocol::{ApiError, ErrorData, code};
+use crate::protocol::{ApiError, ErrorData, Told, code};
 use crate::server::no_thread;
 use crate::words::Sentence;
 
@@ -137,13 +137,52 @@ impl From<BrowserError> for ApiError {
     }
 }
 
+/// A model provider's failure as glave says it: its own sentence, with what the provider said
+/// as it said it, untranslated.
+fn provider_said(failed: &ProviderError) -> Vec<Sentence> {
+    let said = match failed {
+        ProviderError::Http { status, body } => Sentence::ProviderHttp {
+            status: status.to_string(),
+            body: body.clone(),
+        },
+        ProviderError::Credentials(reason) => Sentence::ProviderCredentials {
+            reason: reason.clone(),
+        },
+        ProviderError::Transport(reason) => Sentence::ProviderUnreachable {
+            reason: reason.clone(),
+        },
+        ProviderError::Protocol(reason) => Sentence::ProviderMalformed {
+            reason: reason.clone(),
+        },
+        ProviderError::NoOutput(reason) => Sentence::ProviderNoOutput {
+            reason: reason.clone(),
+        },
+        ProviderError::AfterOutput(inner) => {
+            let mut said = vec![Sentence::ProviderBrokeOff];
+            said.extend(provider_said(inner));
+            return said;
+        }
+        ProviderError::Timeout { seconds } => Sentence::ProviderSilent {
+            seconds: seconds.to_string(),
+        },
+        ProviderError::Unserved { reason, .. } => Sentence::NoModelServes {
+            reason: reason.clone(),
+        },
+        ProviderError::OverBudget { budget, detail } => Sentence::OverBudget {
+            budget: budget.clone(),
+            detail: detail.clone(),
+        },
+    };
+    vec![said]
+}
+
 /// A harness failure as the API reports it.
 impl From<&HarnessError> for ApiError {
     fn from(error: &HarnessError) -> Self {
         match error {
             HarnessError::Provider(failed) => Self {
                 code: code::PROVIDER,
-                message: error.to_string().into(),
+                message: Told::joined(provider_said(failed)),
                 data: Some(ErrorData::Failed {
                     failure: failed.failure(),
                 }),
@@ -332,6 +371,46 @@ mod tests {
                 "{english} is not the server's own"
             );
         }
+    }
+
+    #[test]
+    fn a_providers_failure_reads_as_it_did_its_words_kept_as_they_came() {
+        use glave_ports::Failure;
+
+        let http = || ProviderError::Http {
+            status: 429,
+            body: "slow down".into(),
+        };
+        let failures = [
+            http(),
+            ProviderError::Credentials("no token file".into()),
+            ProviderError::Transport("connection reset".into()),
+            ProviderError::Protocol("no data line".into()),
+            ProviderError::NoOutput("overloaded".into()),
+            ProviderError::AfterOutput(Box::new(http())),
+            ProviderError::Timeout { seconds: 90 },
+            ProviderError::Unserved {
+                failure: Failure::Rejected,
+                reason: "the route has no targets".into(),
+            },
+            ProviderError::OverBudget {
+                budget: "person p".into(),
+                detail: "5 of 4 committed".into(),
+            },
+        ];
+        let told = failures
+            .map(|failed| {
+                let error = HarnessError::Provider(failed);
+                (error.to_string(), ApiError::from(&error))
+            })
+            .into();
+        written_again(told);
+        let broke_off = ApiError::from(&HarnessError::Provider(ProviderError::AfterOutput(
+            Box::new(http()),
+        )));
+        let mut written = broke_off.message.clone();
+        written.translate(crate::words::Language::Accented);
+        assert!(written.contains("slow down"), "{written}");
     }
 
     #[test]
