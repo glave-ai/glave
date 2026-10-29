@@ -37,6 +37,7 @@ mod lists;
 mod memory;
 mod models;
 mod never;
+mod organizations;
 mod people;
 mod plan;
 mod projects;

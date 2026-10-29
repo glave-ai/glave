@@ -107,6 +107,8 @@ pub(crate) struct Web {
     reaching: Option<String>,
     /// The languages its requests ask for (`Accept-Language`), if any.
     reading: Option<String>,
+    /// The organization its requests name (`Glave-Organization`), if any.
+    working_in: Option<String>,
     next_id: u64,
 }
 
@@ -127,6 +129,7 @@ impl Web {
             token,
             reaching: None,
             reading: None,
+            working_in: None,
             next_id: 0,
         }
     }
@@ -150,6 +153,13 @@ impl Web {
         self
     }
 
+    /// This client's requests name `organization` as the one they work in, as a client does
+    /// for someone in several.
+    pub(crate) fn working_in(mut self, organization: &str) -> Self {
+        self.working_in = Some(organization.to_owned());
+        self
+    }
+
     /// `request` as a JSON-RPC message with the next id, and that id.
     pub(crate) fn message(&mut self, request: &Request) -> (Value, u64) {
         self.next_id += 1;
@@ -167,6 +177,9 @@ impl Web {
         }
         if let Some(accepted) = &self.reading {
             post = post.header("accept-language", accepted);
+        }
+        if let Some(organization) = &self.working_in {
+            post = post.header("Glave-Organization", organization);
         }
         if let Some(origin) = &self.reaching {
             let host = origin
