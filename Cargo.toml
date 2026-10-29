@@ -74,6 +74,8 @@ bytes = "1"
 calamine = "0.37"
 chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
 deadpool-postgres = { version = "0.14", default-features = false, features = ["rt_tokio_1"] }
+# Gzip at build time, for the web app built into glave (already in the tree, under png and zip).
+flate2 = "1"
 # The session API's own sentences in the caller's language: Mozilla's Fluent, the message format
 # made for translators (plurals, genders, a language's own grammar), with no build step.
 fluent-bundle = "0.16"

@@ -25,7 +25,7 @@ bench = false
 # The web app built into glave (build.rs), so `glave` opens it with no folder to pass.
 # Release builds turn it on, after `npm run build` in web/: `--features web`. Off by default,
 # so building glave needs no Node; `--web <folder>` serves a build from a folder either way.
-web = []
+web = ["dep:flate2"]
 # Spans and metrics to an OpenTelemetry collector (`[telemetry] otlp`). Off by default to keep
 # the binary lean: it brings the OpenTelemetry SDK and protobuf encoding.
 otlp = [
@@ -35,6 +35,10 @@ otlp = [
     "dep:tracing-opentelemetry",
     "glave-session/otel",
 ]
+
+[build-dependencies]
+# Compresses the web app built in (`web`), which glave serves as it is stored.
+flate2 = { workspace = true, optional = true }
 
 [dependencies]
 anyhow.workspace = true

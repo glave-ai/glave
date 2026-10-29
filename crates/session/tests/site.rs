@@ -2,14 +2,14 @@
 //! the built app's files, a route of the app is its `index.html` with this load's nonce in
 //! place, every answer carries the Content Security Policy with that same nonce, nothing outside
 //! the app is reachable (by `..`, by encoded dots, or by a symbolic link), no page but
-//! `index.html` is served as HTML, hashed assets are cached for good, and `POST /` is still the
-//! API, signed in as ever.
+//! `index.html` is served as HTML, hashed assets are cached for good, a file built in gzipped
+//! is served as stored or refused, and `POST /` is still the API, signed in as ever.
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 use glave_session::Answering;
-use glave_session::http::{Files, Site};
+use glave_session::http::{Files, Site, Stored};
 use glave_session::signin::{LocalToken, SignIn};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpStream;
@@ -38,12 +38,15 @@ fn app(dir: &Path) -> PathBuf {
 
 /// The same app built into the program, stray page and all.
 static BUILT_IN: Files = &[
-    ("index.html", INDEX.as_bytes()),
-    ("main-ABCD1234.js", b"console.log(1)"),
-    ("favicon.svg", b"<svg/>"),
-    ("media/font.woff2", &[0, 1, 2]),
-    ("other.html", b"<p>not served</p>"),
+    ("index.html", Stored::Plain(INDEX.as_bytes())),
+    ("main-ABCD1234.js", Stored::Plain(b"console.log(1)")),
+    ("favicon.svg", Stored::Plain(b"<svg/>")),
+    ("media/font.woff2", Stored::Plain(&[0, 1, 2])),
+    ("other.html", Stored::Plain(b"<p>not served</p>")),
 ];
+
+/// The bytes of a gzipped file, as far as the site cares: its magic number.
+const GZIPPED: &[u8] = &[0x1f, 0x8b, 8, 0];
 
 /// The app in a folder made in `dir`, and the app built in.
 fn sites(dir: &Path) -> [Site; 2] {
@@ -66,17 +69,23 @@ async fn serve(dir: &Path, site: Site) -> Served {
 /// The status line's code for `GET <target>`, sent byte for byte as written: no client
 /// in between to tidy the path.
 async fn raw_status(address: SocketAddr, target: &str) -> u16 {
-    let mut stream = TcpStream::connect(address).await.unwrap();
-    let request = format!("GET {target} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n");
-    stream.write_all(request.as_bytes()).await.unwrap();
-    let mut answer = Vec::new();
-    stream.read_to_end(&mut answer).await.unwrap();
-    let answer = String::from_utf8_lossy(&answer);
+    let answer = raw_answer(address, target, "").await;
     answer
         .split(' ')
         .nth(1)
         .and_then(|code| code.parse().ok())
         .unwrap()
+}
+
+/// The whole answer to `GET <target>` with `headers` (each line ending in `\r\n`), as text.
+async fn raw_answer(address: SocketAddr, target: &str, headers: &str) -> String {
+    let mut stream = TcpStream::connect(address).await.unwrap();
+    let request =
+        format!("GET {target} HTTP/1.1\r\nHost: {address}\r\n{headers}Connection: close\r\n\r\n");
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut answer = Vec::new();
+    stream.read_to_end(&mut answer).await.unwrap();
+    String::from_utf8_lossy(&answer).to_lowercase()
 }
 
 /// The nonce a Content-Security-Policy admits styles with.
@@ -203,12 +212,49 @@ fn nothing_outside_the_app_or_but_the_index_page_is_served() {
     });
 }
 
+/// Built in gzipped, a file goes out as stored to a client that takes gzip, or names no
+/// coding, and is 406 to one that takes none; the page is never gzipped.
+#[test]
+fn a_file_built_in_gzipped_is_served_as_stored_or_not_at_all() {
+    static GZIP: Files = &[
+        ("index.html", Stored::Plain(INDEX.as_bytes())),
+        ("main-ABCD1234.js", Stored::Gzip(GZIPPED)),
+    ];
+    let dir = folder("http-site-gzip");
+    block_on!(async {
+        let served = serve(dir.path(), Site::built_in(GZIP).unwrap()).await;
+        let script = "/main-ABCD1234.js";
+        for headers in ["Accept-Encoding: gzip, deflate, br\r\n", ""] {
+            let answer = raw_answer(served.address, script, headers).await;
+            assert!(answer.starts_with("http/1.1 200"), "{answer}");
+            assert!(answer.contains("content-encoding: gzip\r\n"), "{answer}");
+            assert!(answer.contains("vary: accept-encoding\r\n"), "{answer}");
+            assert!(answer.contains("cache-control: public, max-age=31536000, immutable"));
+            assert!(answer.contains("content-security-policy: "), "{answer}");
+        }
+        let identity = "Accept-Encoding: identity\r\n";
+        let refused = raw_answer(served.address, script, identity).await;
+        assert!(refused.starts_with("http/1.1 406"), "{refused}");
+        assert!(refused.contains("vary: accept-encoding\r\n"), "{refused}");
+        let page = raw_answer(served.address, "/t/1", identity).await;
+        assert!(page.starts_with("http/1.1 200"), "{page}");
+        assert!(!page.contains("content-encoding"), "{page}");
+        served.close().await;
+    });
+    let gzipped_page: Files = &[("index.html", Stored::Gzip(GZIPPED))];
+    assert!(
+        Site::built_in(gzipped_page).is_err(),
+        "the page is built in as it is"
+    );
+}
+
 #[test]
 fn an_app_without_its_page_is_refused() {
     let dir = folder("http-site-empty");
     let refused = Site::folder(dir.path()).unwrap_err();
     assert!(refused.to_string().contains("npm run build"));
     assert!(Site::folder(dir.join("missing")).is_err());
-    let refused = Site::built_in(&[("main-ABCD1234.js", b"console.log(1)")]).unwrap_err();
+    let refused =
+        Site::built_in(&[("main-ABCD1234.js", Stored::Plain(b"console.log(1)"))]).unwrap_err();
     assert!(refused.to_string().contains("npm run build"));
 }

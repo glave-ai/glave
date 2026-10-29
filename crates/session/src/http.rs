@@ -20,7 +20,7 @@ mod site;
 
 pub(crate) use self::body::KEEP_ALIVE;
 pub use self::listen::Listeners;
-pub use self::site::{Files, NoSite, Site};
+pub use self::site::{Files, NoSite, Site, Stored};
 
 use std::convert::Infallible;
 use std::future::{Future, poll_fn};
@@ -147,7 +147,8 @@ where
                     }
                     let answered = match site.as_ref() {
                         Some(site) if is_read(request.method()) => {
-                            site.answer(request.uri().path()).await
+                            let accepted = request.headers().get(header::ACCEPT_ENCODING);
+                            site.answer(request.uri().path(), accepted).await
                         }
                         _ => answer(&server, &signin, door, request).await,
                     };

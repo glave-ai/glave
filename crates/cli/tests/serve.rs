@@ -124,7 +124,9 @@ mod web {
             main.headers()["cache-control"],
             "public, max-age=31536000, immutable"
         );
-        assert!(!main.bytes().await.unwrap().is_empty());
+        // Built in gzipped, served as stored to a client that names no coding (reqwest here).
+        assert_eq!(main.headers()["content-encoding"], "gzip");
+        assert!(main.bytes().await.unwrap().starts_with(&[0x1f, 0x8b]));
 
         let missing = reqwest::get(format!("{url}/main-ABCD1234.js"))
             .await
