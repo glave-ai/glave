@@ -13,7 +13,6 @@
 12fce2f8c183f2c6 36 crates/store-postgres/src/blobs.rs crates/store-sqlite/src/blobs.rs
 164d700574459588 9 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
 19c129e6a8a15b0f 15 crates/store-sqlite/src/log.rs crates/store-sqlite/src/log.rs
-1ac3c9675aa75ba5 7 crates/session/tests/gone.rs crates/session/tests/projects.rs
 1bc560fe8419ed5b 8 crates/identity/src/signin/browsers/passkeys/tests.rs crates/identity/src/signin/browsers/tests.rs
 1c3c0adb8bac6fcc 7 crates/session/tests/turn_streams.rs crates/session/tests/turn_streams.rs
 21324c4068197f18 7 crates/harness/src/resume.rs crates/harness/src/waits.rs

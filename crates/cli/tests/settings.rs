@@ -24,7 +24,7 @@ fn test_server() -> PathBuf {
 
 /// The person's `config.toml` choosing `model`.
 fn choosing(home: &Path, model: &str) {
-    let config = format!("model = \"{model}\"\nmemory = \"off\"\ntitles = false\n");
+    let config = format!("model = \"{model}\"\nproject_memory = \"off\"\ntitles = false\n");
     std::fs::write(home.join("config.toml"), config).unwrap();
 }
 
@@ -95,7 +95,7 @@ fn an_edited_config_changes_the_next_turn_s_model_and_mcp_json_is_reconciled() {
 
 /// The person's `config.toml` choosing `model`, with `more`.
 fn writing(home: &Path, model: &str, more: &str) {
-    let config = format!("model = \"{model}\"\nmemory = \"off\"\ntitles = false\n{more}");
+    let config = format!("model = \"{model}\"\nproject_memory = \"off\"\ntitles = false\n{more}");
     std::fs::write(home.join("config.toml"), config).unwrap();
 }
 

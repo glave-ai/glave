@@ -13,6 +13,7 @@ import type { Page, Route } from '@playwright/test';
 
 import { type Commands, SERVING, SERVING_HISTORY, background } from './fake-commands';
 import { type Awake, KEPT_AWAKE } from './fake-awake';
+import { KEPT_REMEMBERING, type Remembering } from './fake-remembering';
 import { changesOf } from './fake-changes';
 import { stepsOf } from './fake-steps';
 import { keptFile } from './fake-files';
@@ -589,6 +590,7 @@ interface Known {
   readonly gone: Gone | null;
   readonly awake: Awake;
   readonly grouped: Grouped;
+  readonly remembering: Remembering;
 }
 
 /** The calls the fake answers that are not turns, nor any other fake's. */
@@ -685,6 +687,7 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
     answerFrom(SIGN_IN, method, params, null) ??
     answerFrom(KEPT_AWAKE, method, params, known.awake) ??
     answerFrom(KEPT_GROUPING, method, params, known.grouped) ??
+    answerFrom(KEPT_REMEMBERING, method, params, known.remembering) ??
     {}
   );
 }
@@ -697,7 +700,8 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
  * plan, whose plan the page answers (`planServer`); with `panel`, a coding thread in the project
  * with something in every section of its panel; with `account`, a GitHub account connected; with
  * `gone`, playground, a project whose folder isn't there anymore. How the person's threads are
- * grouped is kept in `grouped`, which two pages share as one server.
+ * grouped is kept in `grouped`, which two pages share as one server, and whether glave
+ * remembers for them in `remembering`.
  */
 export async function fakeApi(
   page: Page,
@@ -710,6 +714,7 @@ export async function fakeApi(
     account = false,
     gone = false,
     grouped = { grouping: 'project' },
+    remembering = { on: true, never: null },
   }: {
     readonly trust?: boolean;
     readonly commands?: boolean;
@@ -719,6 +724,7 @@ export async function fakeApi(
     readonly account?: boolean;
     readonly gone?: boolean;
     readonly grouped?: Grouped;
+    readonly remembering?: Remembering;
   } = {},
 ): Promise<{ readonly calls: readonly string[]; readonly requests: readonly Request[] }> {
   const calls: string[] = [];
@@ -736,6 +742,7 @@ export async function fakeApi(
     gone: gone ? folderGone() : null,
     awake: { on: true },
     grouped,
+    remembering,
   };
   const lists = new FakeLists((method, params) => answer(method, params, known));
   await page.route('**/*', async (route: Route) => {

@@ -16,12 +16,14 @@ import {
 import { Brain } from 'lucide';
 
 import { MemoryService } from '../../services/memory.service';
+import { MemorySwitchComponent } from '../memory-switch/memory-switch.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 
 /** The memory page: each memory, with Edit and Forget. */
 @Component({
   selector: 'app-memory',
   imports: [
+    MemorySwitchComponent,
     PageHeaderComponent,
     ReactiveFormsModule,
     GlzBadgeComponent,
@@ -57,7 +59,6 @@ export class MemoryComponent {
     forgetChat: $localize`:@@memory.forgetChat:Also delete the chat it was saved in`,
     emptyHeading: $localize`:@@memory.emptyHeading:Nothing remembered yet`,
     emptyText: $localize`:@@memory.emptyText:When you ask glave to remember something, it shows up here.`,
-    offHeading: $localize`:@@memory.offHeading:Memory is off`,
     untrusted: $localize`:@@memory.untrusted:saved after reading untrusted content`,
   } as const;
   protected readonly icon = Brain;
@@ -98,7 +99,6 @@ export class MemoryComponent {
       ? null
       : $localize`:@@memory.failed:Something went wrong: ${error}:ERROR:`;
   });
-  protected readonly off = computed(() => this.service.state() === 'off');
   protected readonly ready = computed(() => this.service.state() === 'ready');
 
   constructor() {

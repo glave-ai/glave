@@ -234,7 +234,7 @@ fn on_a_running_server_a_rule_added_narrows_what_the_person_s_file_loosens() {
         ConfigFile::default(),
         vec![file(
             PERSON,
-            "permissions = \"full-access\"\njudge_model = \"off\"\nmemory = \"on\"\n",
+            "permissions = \"full-access\"\njudge_model = \"off\"\n",
         )],
     );
     let strict = [policy_at(
@@ -248,7 +248,7 @@ fn on_a_running_server_a_rule_added_narrows_what_the_person_s_file_loosens() {
     assert_eq!(choices.permissions.value, Permissions::Ask);
     assert_eq!(choices.judge.value, Judge::Main);
     assert!(!memory_settings(&choices, &loaded.constraints).unwrap().on);
-    assert_eq!(aside.len(), 3, "each said: {aside:?}");
+    assert_eq!(aside.len(), 2, "each said: {aside:?}");
     assert!(
         aside[0].contains(&format!("permissions full-access (from {PERSON})")),
         "{aside:?}"

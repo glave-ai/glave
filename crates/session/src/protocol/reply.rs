@@ -89,6 +89,17 @@ pub enum AwakeInfo {
     Cannot { reason: Told },
 }
 
+/// Whether glave remembers for the person (`specs/memory.md`, "Defaults and policy").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RememberingInfo {
+    /// Not the caller's to choose here, and `reason`, why: their organization turned memory
+    /// off, or only the person on this computer chooses.
+    Never { reason: Told },
+    /// The person's to turn on or off: on when `on`.
+    Chosen { on: bool },
+}
+
 /// A thread, as a list shows it: from the threads view, with what it is doing now.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ThreadSummary {
@@ -347,6 +358,9 @@ pub enum Reply {
     /// Whether the computer is kept awake while glave works.
     #[schemars(title = "Awake")]
     Awake { awake: AwakeInfo },
+    /// Whether glave remembers for the person.
+    #[schemars(title = "Remembering")]
+    Remembering { remembering: RememberingInfo },
     /// Whether the person's agent may search the web.
     #[schemars(title = "Search")]
     Search { search: SearchInfo },

@@ -402,6 +402,8 @@ where
             }
             Request::ProjectRemove { project } => self.remove_project(caller, project).await,
             Request::FolderList { path } => self.list_folders(caller, path).await,
+            Request::MemoryGet {} => self.remembering(caller).await,
+            Request::MemorySet { on } => self.set_remembering(caller, on).await,
             Request::MemoryList { scope, project } => {
                 self.remember(caller, project, Control::List { scope })
                     .await

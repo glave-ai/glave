@@ -7,6 +7,7 @@
 //! owns: asked after each save or edit, and by the host when it starts, it tidies each ledger
 //! that is due (a week since the last time, or past 90% of its budget).
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use glave_event::{Arguments, MemoryId, Principal};
@@ -41,6 +42,8 @@ pub struct GlaveMemory<L: EventLog + 'static> {
     server: Mutex<Option<JoinHandle<()>>>,
     /// Tidy-up, when a tidier was given: where to ask for a ledger, and the task that tidies.
     tidying: Mutex<Option<(mpsc::Sender<Scope>, JoinHandle<()>)>>,
+    /// Whether the person turned memory off for their threads ([`Memory::switch`]).
+    off: AtomicBool,
 }
 
 #[derive(Deserialize)]
@@ -72,6 +75,7 @@ impl<L: EventLog + 'static> GlaveMemory<L> {
             client,
             server: Mutex::new(Some(server)),
             tidying: Mutex::new(None),
+            off: AtomicBool::new(false),
         })
     }
 
@@ -286,7 +290,12 @@ fn change(tool: &str, structured: &serde_json::Value) -> Option<MemoryChange> {
 
 impl<L: EventLog + 'static> Memory for GlaveMemory<L> {
     fn active(&self, on: &MemoryContext) -> bool {
-        self.memories.rules().setting(on.scope.project()) != ProjectMemory::Off
+        !self.off.load(Ordering::Relaxed)
+            && self.memories.rules().setting(on.scope.project()) != ProjectMemory::Off
+    }
+
+    fn switch(&self, on: bool) {
+        self.off.store(!on, Ordering::Relaxed);
     }
 
     fn tools(&self) -> BoxFuture<'_, Result<Vec<ToolInfo>, ToolError>> {

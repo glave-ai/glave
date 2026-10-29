@@ -1647,6 +1647,45 @@
       ],
       "type": "object"
     },
+    "RememberingInfo": {
+      "description": "Whether glave remembers for the person (`specs/memory.md`, \"Defaults and policy\").",
+      "oneOf": [
+        {
+          "description": "Not the caller's to choose here, and `reason`, why: their organization turned memory\noff, or only the person on this computer chooses.",
+          "properties": {
+            "kind": {
+              "const": "never",
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The person's to turn on or off: on when `on`.",
+          "properties": {
+            "kind": {
+              "const": "chosen",
+              "type": "string"
+            },
+            "on": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "on"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "ReplySources": {
       "description": "The pages one reply drew on: each one its turn read with `web_fetch` before it, once, in the\norder first read. A page that failed to load is none, nor is a search's result the agent\ndid not read.",
       "properties": {
@@ -1937,6 +1976,11 @@
         {
           "const": "awake",
           "description": "Whether the computer is kept awake while glave works (`awake/get`).",
+          "type": "string"
+        },
+        {
+          "const": "memory",
+          "description": "Whether glave remembers for them (`memory/get`).",
           "type": "string"
         },
         {
@@ -4000,6 +4044,24 @@
       },
       "streams": false
     },
+    "memory/get": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "Whether glave remembers for the person.",
+        "properties": {
+          "remembering": {
+            "$ref": "#/$defs/RememberingInfo"
+          }
+        },
+        "required": [
+          "remembering"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
     "memory/list": {
       "params": {
         "properties": {
@@ -4167,6 +4229,32 @@
         },
         "required": [
           "memories"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "memory/set": {
+      "params": {
+        "properties": {
+          "on": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "on"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "Whether glave remembers for the person.",
+        "properties": {
+          "remembering": {
+            "$ref": "#/$defs/RememberingInfo"
+          }
+        },
+        "required": [
+          "remembering"
         ],
         "type": "object"
       },

@@ -42,7 +42,7 @@ fn offered(body: &serde_json::Value) -> Vec<String> {
 fn an_untrusted_projects_servers_stay_off_and_the_model_is_told() {
     let place = place("project-untrusted");
     std::fs::create_dir_all(&place.home).unwrap();
-    std::fs::write(place.home.join("config.toml"), "memory = \"off\"\n").unwrap();
+    std::fs::write(place.home.join("config.toml"), "project_memory = \"off\"\n").unwrap();
     bring_server(&place);
     let model = FakeServer::start(vec![Reply::text("Fine.")]).unwrap();
     let output = glave(&place, &model, &["--model", "m", "hello"], "");
@@ -96,7 +96,7 @@ fn a_trusted_projects_servers_start_and_nothing_is_said() {
 fn a_server_that_changed_since_it_was_trusted_is_off_again() {
     let place = place("project-changed");
     std::fs::create_dir_all(&place.home).unwrap();
-    std::fs::write(place.home.join("config.toml"), "memory = \"off\"\n").unwrap();
+    std::fs::write(place.home.join("config.toml"), "project_memory = \"off\"\n").unwrap();
     bring_server(&place);
     trust_project(&place, &[]);
     let other = json!({ "command": test_server(), "args": ["--different"] });
@@ -127,7 +127,7 @@ fn a_repository_with_nothing_that_runs_commands_never_mentions_trust() {
     // A project's model must be one glave offers: the person's own choices offer it, and
     // the project's is nearer than theirs, though a flag would be nearer still.
     std::fs::create_dir_all(&place.home).unwrap();
-    let offered = "model = \"m\"\nmemory = \"off\"\n[[models]]\nid = \"from-project\"\n";
+    let offered = "model = \"m\"\nproject_memory = \"off\"\n[[models]]\nid = \"from-project\"\n";
     std::fs::write(place.home.join("config.toml"), offered).unwrap();
     let model = FakeServer::start(vec![Reply::text("Hi.")]).unwrap();
     let output = glave(&place, &model, &["hello"], "");
@@ -156,7 +156,7 @@ fn a_project_s_model_glave_does_not_offer_is_set_aside_with_a_sentence() {
     )
     .unwrap();
     std::fs::create_dir_all(&place.home).unwrap();
-    let mine = "model = \"m\"\nmemory = \"off\"\n";
+    let mine = "model = \"m\"\nproject_memory = \"off\"\n";
     std::fs::write(place.home.join("config.toml"), mine).unwrap();
     let model = FakeServer::start(vec![Reply::text("Hi.")]).unwrap();
     let output = glave(&place, &model, &["hello"], "");

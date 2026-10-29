@@ -6,7 +6,7 @@ use std::sync::{Arc, PoisonError};
 
 use glave_event::ThreadId;
 use glave_harness::{Cancel, Commands, HarnessError, Inbox, Live, Thread};
-use glave_ports::{BlobStore, EventLog, ModelProvider, Standing};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Standing};
 use jiff::Timestamp;
 use tokio::sync::watch;
 
@@ -297,6 +297,15 @@ where
             && let Some(awake) = &self.inner.awake
         {
             self.read_choice(awake).await;
+        }
+        // And reads and writes memory as the person chose, which another server may have changed.
+        if purpose != Use::Manage
+            && let Some(memory) = self.inner.harness.memory()
+            && let Err(error) = self
+                .read_remembering(&Caller::default(), memory.as_ref())
+                .await
+        {
+            tracing::warn!(%error, "could not read whether the person wants memory");
         }
         // Nothing but changing whether it is shown runs where its project's folder was.
         let folder = match purpose {

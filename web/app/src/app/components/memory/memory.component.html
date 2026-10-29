@@ -4,11 +4,9 @@
     <h1>{{ copy.heading }}</h1>
   </div>
   <p class="intro">{{ copy.intro }}</p>
+  <app-memory-switch />
   @if (problem(); as problem) {
     <p class="error" role="alert">{{ problem }}</p>
-  }
-  @if (off()) {
-    <glz-empty-state [heading]="copy.offHeading" [icon]="icon" />
   }
   <div class="list">
     @for (row of rows(); track row.id) {

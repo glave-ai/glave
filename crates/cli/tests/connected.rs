@@ -165,7 +165,7 @@ impl World {
         std::fs::create_dir_all(&place.home).unwrap();
         let servers = json!({"mcpServers": {"docs": {"url": address}}});
         std::fs::write(place.home.join("mcp.json"), servers.to_string()).unwrap();
-        choose(&place, "memory", "\"off\"");
+        choose(&place, "project_memory", "\"off\"");
         choose(&place, "permissions", "\"full-access\"");
         let model = FakeServer::start(replies).unwrap();
         let (served, url, said) = serve_http_with(&place, &model, &["--model", "m"], &[]);

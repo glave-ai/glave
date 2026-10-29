@@ -46,7 +46,8 @@ pub use plans::PlanInfo;
 pub use projects::{GoneFolder, NewFolder, ProjectFolder};
 pub use providers::{ProviderInfo, hint};
 pub use reply::{
-    AwakeInfo, ContextUse, Exists, QueuedMessage, Reply, ServerInfo, Status, ThreadSummary,
+    AwakeInfo, ContextUse, Exists, QueuedMessage, RememberingInfo, Reply, ServerInfo, Status,
+    ThreadSummary,
 };
 pub use settings::Setting;
 pub use sources::ReplySources;
@@ -459,6 +460,12 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         path: Option<String>,
     } -> [Folders],
+    /// Whether glave remembers for the caller: theirs to turn on or off, unless their
+    /// organization turned memory off or it is not theirs to choose here.
+    "memory/get" => MemoryGet {} -> [Remembering],
+    /// Turns memory on or off for the caller from their threads' next turn: their own choice,
+    /// kept by the server. What they saved stays, theirs to see and change.
+    "memory/set" => MemorySet { on: bool } -> [Remembering],
     /// The memories here: the person's and the project's, or one `scope`.
     "memory/list" => MemoryList {
         #[serde(default, skip_serializing_if = "Option::is_none")]
