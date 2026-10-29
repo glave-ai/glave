@@ -309,6 +309,21 @@ export type Grouping = "project" | "status";
 /** A client's name for one attempt at a turn: 1 to 255 bytes of text. */
 export type IdempotencyKey = string;
 
+/** Identifies one invite to an organization (`specs/model.md`, "Invites"). */
+export type InviteId = string;
+
+/** An invite waiting to be opened. Its code is never shown again after it is made. */
+export type InviteInfo = {
+  /** Who made it. */
+  readonly by: Principal;
+  /** When it stops working, opened or not. */
+  readonly expires: At;
+  readonly id: InviteId;
+  readonly made: At;
+  /** The role it gives whoever opens it. */
+  readonly role: OrgRole;
+};
+
 /** Whether a line was kept, taken out or put in. */
 export type LineKind = "same" | "removed" | "added";
 
@@ -1331,6 +1346,38 @@ export type GroupingSetResult = {
   readonly grouping: Grouping;
 };
 
+export type InviteAcceptParams = {
+  readonly code: Secret;
+};
+
+/** A person, as they are now. */
+export type InviteAcceptResult = {
+  readonly person: PersonInfo;
+};
+
+export type InviteCreateParams = {
+  readonly role: OrgRole;
+};
+
+/** An invite just made, and its code, sent this once. */
+export type InviteCreateResult = {
+  readonly code: Secret;
+  readonly invite: InviteInfo;
+};
+
+export type InviteListParams = Readonly<Record<string, never>>;
+
+/** The invites waiting to be opened, oldest first. */
+export type InviteListResult = {
+  readonly invites: readonly (InviteInfo)[];
+};
+
+export type InviteRevokeParams = {
+  readonly invite: InviteId;
+};
+
+export type InviteRevokeResult = Readonly<Record<string, never>>;
+
 export type LanguageGetParams = Readonly<Record<string, never>>;
 
 /** The language the caller chose, as a BCP 47 tag; `null` while their client's counts. */
@@ -2106,6 +2153,10 @@ export interface Methods {
   readonly "goal/stop": { readonly params: GoalStopParams; readonly result: GoalStopResult };
   readonly "grouping/get": { readonly params: GroupingGetParams; readonly result: GroupingGetResult };
   readonly "grouping/set": { readonly params: GroupingSetParams; readonly result: GroupingSetResult };
+  readonly "invite/accept": { readonly params: InviteAcceptParams; readonly result: InviteAcceptResult };
+  readonly "invite/create": { readonly params: InviteCreateParams; readonly result: InviteCreateResult };
+  readonly "invite/list": { readonly params: InviteListParams; readonly result: InviteListResult };
+  readonly "invite/revoke": { readonly params: InviteRevokeParams; readonly result: InviteRevokeResult };
   readonly "language/get": { readonly params: LanguageGetParams; readonly result: LanguageGetResult };
   readonly "language/set": { readonly params: LanguageSetParams; readonly result: LanguageSetResult };
   readonly "memory/edit": { readonly params: MemoryEditParams; readonly result: MemoryEditResult };
@@ -2251,6 +2302,8 @@ export const ErrorCode = {
   NO_GOAL: -32007,
   /** The thread's model does not read images */
   NO_IMAGES: -32031,
+  /** No such invite waits here: it was used, revoked or has expired, or it is another organization's */
+  NO_INVITE: -32035,
   /** No such memory here */
   NO_MEMORY: -32017,
   /** No such method */

@@ -1,7 +1,7 @@
 //! The organization's people and their roles, as its admins list and change them
 //! (`specs/model.md`, "Roles").
 
-use glave_event::{At, OrgRole, PrincipalId};
+use glave_event::{At, InviteId, OrgRole, Principal, PrincipalId};
 use serde::{Deserialize, Serialize};
 
 use super::Request;
@@ -27,11 +27,27 @@ pub struct PersonInfo {
     pub joined: At,
 }
 
+/// An invite waiting to be opened. Its code is never shown again after it is made.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct InviteInfo {
+    pub id: InviteId,
+    /// The role it gives whoever opens it.
+    pub role: OrgRole,
+    /// Who made it.
+    pub by: Principal,
+    pub made: At,
+    /// When it stops working, opened or not.
+    pub expires: At,
+}
+
 impl Request {
     /// What a caller's role must permit for them to make it, when it is an admin method.
     pub(crate) fn needs(&self) -> Option<Permit> {
         match self {
             Self::PeopleList { .. } | Self::RoleSet { .. } => Some(Permit::People),
+            Self::InviteCreate { .. } | Self::InviteList {} | Self::InviteRevoke { .. } => {
+                Some(Permit::Invites)
+            }
             _ => None,
         }
     }

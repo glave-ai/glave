@@ -2,6 +2,7 @@
 //! notifications a turn sends, and errors. Every transport carries these same types; in-process
 //! they are passed as they are, elsewhere as JSON-RPC 2.0.
 
+mod acts_on;
 mod changes;
 pub mod code;
 mod connections;
@@ -24,8 +25,8 @@ mod told;
 mod trust;
 
 use glave_event::{
-    At, CallId, CredentialId, MemoryId, MemoryScope, OrgRole, PrincipalId, ProviderId, RawEvent,
-    ScheduleId, Secret, Seq, ThreadId, When,
+    At, CallId, CredentialId, InviteId, MemoryId, MemoryScope, OrgRole, PrincipalId, ProviderId,
+    RawEvent, ScheduleId, Secret, Seq, ThreadId, When,
 };
 use glave_ports::ProjectId;
 use glave_ports::computer::{CommandId, ComputerId};
@@ -43,7 +44,7 @@ pub use glave_event::{Grouping, Permissions, TurnResult};
 pub use live::Update;
 pub use models::ModelInfo;
 pub use passkeys::{AcceptedPasskeys, PasskeySummary, SignInWay, UnknownPasskey};
-pub use people::PersonInfo;
+pub use people::{InviteInfo, PersonInfo};
 pub use plans::PlanInfo;
 pub use projects::{GoneFolder, NewFolder, ProjectFolder};
 pub use providers::{ProviderInfo, hint};
@@ -187,6 +188,21 @@ methods! {
     /// Gives a person who signed in a role. Only for the organization's Admins and Owners, and
     /// only an Owner makes an Owner or changes one's role.
     "role/set" => RoleSet { person: PrincipalId, role: OrgRole } -> [Person],
+    /// Makes an invite to the organization giving `role`, good once and for 7 days: answered
+    /// with its code, this once, for a link (`<origin>/#invite=<code>`). Only for those whose
+    /// role permits inviting, and only an Owner invites an Owner.
+    "invite/create" => InviteCreate { role: OrgRole } -> [Invited],
+    /// The invites waiting to be opened, oldest first, never their codes.
+    "invite/list" => InviteList {} -> [Invites],
+    /// Revokes an invite waiting to be opened.
+    "invite/revoke" => InviteRevoke { invite: InviteId } -> [Done],
+    /// Opens an invite with its link's `code`, as the person signed in through the
+    /// organization's identity provider: their role is raised to the invite's, and the invite
+    /// is spent.
+    "invite/accept" => InviteAccept {
+        #[serde(serialize_with = "glave_event::serialize_exposed")]
+        code: Secret,
+    } -> [Person],
     /// The models this server can run: the default first.
     "model/list" => ModelList {} -> [Models],
     "thread/start" => ThreadStart {
@@ -620,56 +636,6 @@ where
     T: Deserialize<'de>,
 {
     T::deserialize(field).map(Some)
-}
-
-impl Request {
-    /// The thread a request acts on, when it names one: whose project decides whether the
-    /// caller may make it.
-    pub fn thread(&self) -> Option<ThreadId> {
-        match self {
-            Self::ThreadArchive { thread }
-            | Self::ThreadUnarchive { thread }
-            | Self::ThreadDelete { thread }
-            | Self::ThreadRename { thread, .. }
-            | Self::ThreadGet { thread }
-            | Self::ThreadEvents { thread, .. }
-            | Self::ThreadSources { thread }
-            | Self::ThreadChanges { thread }
-            | Self::ThreadSteps { thread }
-            | Self::ThreadPlan { thread }
-            | Self::PlanEdit { thread, .. }
-            | Self::PlanBuild { thread }
-            | Self::ThreadWatch { thread, .. }
-            | Self::ThreadUnwatch { thread }
-            | Self::TurnStart { thread, .. }
-            | Self::TurnCancel { thread }
-            | Self::ThreadCompact { thread }
-            | Self::ApprovalDecide { thread, .. }
-            | Self::QuestionAnswer { thread, .. }
-            | Self::TrustAnswer { thread, .. }
-            | Self::GoalStart { thread, .. }
-            | Self::GoalStop { thread }
-            | Self::GoalGet { thread }
-            | Self::TasksStop { thread }
-            | Self::CommandList { thread }
-            | Self::CommandStop { thread, .. } => Some(*thread),
-            _ => None,
-        }
-    }
-
-    /// For a request on a project's memory, the project it names; with none, it acts in the
-    /// caller's Chats.
-    pub(crate) fn memory_project(&self) -> Option<ProjectId> {
-        match self {
-            Self::MemoryList { project, .. }
-            | Self::MemorySave { project, .. }
-            | Self::MemoryEdit { project, .. }
-            | Self::MemoryMove { project, .. }
-            | Self::MemoryForget { project, .. }
-            | Self::MemoryRestore { project, .. } => *project,
-            _ => None,
-        }
-    }
 }
 
 /// What a request may carry besides its params, in `params._meta`.

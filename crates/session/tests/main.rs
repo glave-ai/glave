@@ -22,6 +22,7 @@ mod goals;
 mod gone;
 mod grouping;
 mod http;
+mod invites;
 mod isolation;
 mod languages;
 mod leases;

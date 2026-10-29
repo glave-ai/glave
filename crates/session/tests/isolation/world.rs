@@ -145,6 +145,7 @@ async fn serve<L: EventLog + Clone + 'static>(n: u128, parts: &Parts<L>, dir: &P
     setup.projects = Some(Arc::clone(&parts.projects));
     setup.memory = Some(Arc::new(GlaveMemory::start(memories).await.unwrap()));
     setup.browsers = Some(Arc::clone(&browsers));
+    setup.identity_provider = true;
     if n == 1 {
         setup.providers = Some(Arc::new(Accounts::default()));
         setup.hosts = Some(Arc::new(Hosts::default()));
@@ -209,6 +210,9 @@ async fn make<L: EventLog + 'static>(org: &Org<L>, person: &mut Person, local: b
     if !local {
         return;
     }
+    let invited = call("invite/create", json!({"role": "admin"})).await;
+    person.keep(Kind::Invite, invited["invite"]["id"].clone());
+    person.keep(Kind::InviteCode, invited["code"].clone());
     let saved = json!({"text": "short answers", "scope": "personal", "project": project});
     let saved = call("memory/save", saved).await;
     let personal = saved["memories"]

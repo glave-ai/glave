@@ -20,7 +20,8 @@ pub use codec::{Body, Event, KNOWN_VERSIONS, Payload, Unknown, decode, encode};
 pub use envelope::{At, Header, PayloadVersion, RawEvent, Seq, TypeName};
 pub use error::{DecodeError, EncodeError, InvalidValue};
 pub use id::{
-    CallId, CredentialId, EventId, MemoryId, PrincipalId, ProviderId, ScheduleId, ThreadId,
+    CallId, CredentialId, EventId, InviteId, MemoryId, PrincipalId, ProviderId, ScheduleId,
+    ThreadId,
 };
 pub use money::{Currency, Decimal, Money};
 pub use payload::{
@@ -49,7 +50,9 @@ pub use payload::{
     CredentialConnected, CredentialRemoved, Forge, ProjectFolderSet, ProjectRemoved,
     ProviderConnected, ProviderKind, ProviderRemoved, Renewal, sealed_under_account,
 };
-pub use payload::{OrgRole, PersonJoined, Profile, RoleSet};
+pub use payload::{
+    InviteAccepted, InviteCreated, InviteRevoked, OrgRole, PersonJoined, Profile, RoleSet,
+};
 pub use payload::{PasskeyAdded, PasskeyRemoved, PasskeyUsed};
 pub use payload::{PlanApproved, PlanStatus, PlanStep, PlanUpdated};
 pub use secret::{Secret, serialize_exposed};

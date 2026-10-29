@@ -70,6 +70,13 @@ sentences! {
         "only an owner can make someone an owner, or change an owner's role",
     NoSuchPerson { person: String } = "no-such-person"
         "no one with the id { $person } has signed in here",
+    NoOrganization = "no-organization" "this server has no organization to invite anyone to",
+    InviteGone = "invite-gone"
+        "that invite link was used already, revoked or has expired: ask whoever sent it for a new one",
+    NoSuchInvite { invite: String } = "no-such-invite" "no invite with the id { $invite } is waiting",
+    InviteSignIn = "invite-sign-in"
+        "sign in through your organization first, then open the invite link again",
+    TooManyInvites = "too-many-invites" "too many invites are waiting: revoke some first",
 
     // Threads and turns.
     NoThread { thread: String } = "no-thread" "no thread { $thread } in this project",
