@@ -26,6 +26,7 @@ mod grouping;
 mod held;
 pub mod http;
 mod hub;
+mod invites;
 mod keyed;
 mod language;
 mod leased;

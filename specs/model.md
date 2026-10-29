@@ -103,6 +103,23 @@ Decided 2026-10-29 (#645).
   4. *Glave Cloud, enterprise:* people sign in through the organization's identity provider. Gap: the same as 3; the person who signs the organization up is its first owner, and gives the rest roles from the admin screens.
   5. *Enterprise, self-hosted:* whoever runs the server is owner, from its computer, and gives the first Admins from there to people who have signed in. Groups come from the token now, and from SCIM with #642.
 
+### Invites
+
+Decided 2026-10-29 (#424).
+
+- **An invite is a one-time link that gives a role.** Someone whose role permits inviting (Admins and Owners) makes one with a role, Admin or Member; only an Owner invites an Owner. The server answers the invite and its code once; the link carries the code in the fragment, `<origin>/#invite=<code>`, as a sign-in link does (`session.md`, "Signing in"), so it reaches no server log. glave sends no email: the admin shares the link where they choose.
+- **Whoever opens it signs in, then accepts it.** Where the organization has an identity provider, they sign in through it as anyone does, and accepting the invite records them as joined with its role. A role is only ever raised by an invite, never lowered: an Owner who opens a Member's invite stays an Owner.
+- **The code is the same primitive as a sign-in link's** (#383): 32 random bytes, good once, kept only as its SHA-256 and compared in constant time. Invites live in the organization's people ledger, sealed with it (`invite.created`, `invite.accepted`, `invite.revoked`, `events.md`), so they are scoped to the organization by the store: another organization's code finds nothing here. Every server on one store sees the same invites, and two opening the same code at once let only one through.
+- **An invite expires after 7 days.** It goes to a person through a chat or an email, who may not open it the same day or until after a weekend; minutes, a sign-in link's lifetime, would expire most invites before they are opened. Longer leaves a link forgotten in a channel working for weeks. A used, revoked, expired, guessed or another organization's code is refused alike, with the same sentence.
+- **An invite gives no more than its maker may give when it is opened.** An Admin who is made a Member, or an Owner made an Admin, leaves their invites unable to give what they no longer could.
+- **Invites are listed and revoked** by anyone whose role permits inviting: the ones waiting, with their role, who made them and when they expire, never their code. At most 1,000 wait at once.
+- **The five deployments** (`deployments.md`):
+  1. *Laptop:* no organization, so nothing appears and an invite cannot be made.
+  2. *Own server:* the same. Gap: inviting someone onto a person's own server, who would sign in with a passkey of their own, needs that server to hold more than one person; not decided.
+  3. *Glave Cloud, personal:* an organization of one, as 2. Gap: signing up without an identity provider (email link or passkey, #424) is not built, and with it an invite becomes how a person joins.
+  4. *Glave Cloud, enterprise:* invites through the identity provider, as 5, once one server serves many organizations (#423).
+  5. *Enterprise, self-hosted:* invites through the identity provider. Anyone the provider lets in can still sign in as a Member without one; an invite is how someone arrives as an Admin, or before they have signed in once.
+
 ## The look
 
 - **glave is monochrome by default.**
@@ -119,7 +136,7 @@ What today's code doesn't do yet, so no one takes it as built.
 2. A company's server turns away people's own model accounts, and glave uses one cloud provider at a time. Using several, with glave picking the route for each model, comes with #289 and #290.
 3. The gateway, when it runs as a service of its own, takes its settings from its own environment rather than the server's files (`gateway.md`, "Surfaces"). It will become part of the server.
 4. Roles are kept and checked (#645), but nothing grants from groups yet: the identity provider's groups are recorded and give no models, connections or budget, so every Member gets the same access, and the only spending limit is each person's per day, kept by the gateway when it runs as a service of its own (`gateway.md`, "Budgets"); the monthly budget groups set waits for them (#645, #662).
-5. The admin methods are listing people and setting a role (`session.md`, "The organization's people"); there are no admin screens (#222) and no `glave admin`, so where people sign in through an identity provider, the first roles are given through the session API from the server's computer until one comes.
+5. The admin methods are listing people, setting a role and inviting (`session.md`, "The organization's people"); invites are not emailed and no screen opens a link yet; there are no admin screens (#222) and no `glave admin`, so where people sign in through an identity provider, the first roles are given through the session API from the server's computer until one comes.
 6. There is no theme yet: no organization name, logo or accent, and no choosing an accent or the assistant's name (#283, #287).
 7. On Glave Cloud there is no way yet to sign in without a company's identity provider, as from a phone. On a person's own server a passkey already works (`deployments.md`, "Sign-in").
 8. The web app works out what happened in a conversation by itself, and reads an approval's question out of a summary, so the reason glave asks can look like part of the command; the terminal words approvals its own way. The server will send these as separate facts (#311).

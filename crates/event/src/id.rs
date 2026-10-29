@@ -26,100 +26,71 @@ fn require_v7(what: &'static str, uuid: Uuid) -> Result<Uuid, InvalidValue> {
     }
 }
 
-/// Identifies one event, unique everywhere.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    schemars::JsonSchema,
-)]
-#[serde(try_from = "Uuid", into = "Uuid")]
-pub struct EventId(Uuid);
+/// A UUID v7 id type, `$what` in what its errors say: made from a time and caller-supplied
+/// randomness, read only from a version 7 UUID, and shown as the UUID.
+macro_rules! v7_id {
+    ($(#[$doc:meta])* $name:ident, $what:literal) => {
+        $(#[$doc])*
+        #[derive(
+            Debug,
+            Clone,
+            Copy,
+            PartialEq,
+            Eq,
+            PartialOrd,
+            Ord,
+            Hash,
+            Serialize,
+            Deserialize,
+            schemars::JsonSchema,
+        )]
+        #[serde(try_from = "Uuid", into = "Uuid")]
+        pub struct $name(Uuid);
 
-impl EventId {
-    pub fn new(at: Timestamp, random: [u8; 10]) -> Result<Self, InvalidValue> {
-        build_v7("event id", at, random).map(Self)
-    }
+        impl $name {
+            pub fn new(at: Timestamp, random: [u8; 10]) -> Result<Self, InvalidValue> {
+                build_v7($what, at, random).map(Self)
+            }
 
-    pub fn as_uuid(self) -> Uuid {
-        self.0
-    }
+            pub fn as_uuid(self) -> Uuid {
+                self.0
+            }
+        }
+
+        impl TryFrom<Uuid> for $name {
+            type Error = InvalidValue;
+
+            fn try_from(uuid: Uuid) -> Result<Self, Self::Error> {
+                require_v7($what, uuid).map(Self)
+            }
+        }
+
+        impl From<$name> for Uuid {
+            fn from(id: $name) -> Self {
+                id.0
+            }
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                self.0.fmt(f)
+            }
+        }
+    };
 }
 
-impl TryFrom<Uuid> for EventId {
-    type Error = InvalidValue;
+v7_id!(
+    /// Identifies one event, unique everywhere.
+    EventId,
+    "event id"
+);
 
-    fn try_from(uuid: Uuid) -> Result<Self, Self::Error> {
-        require_v7("event id", uuid).map(Self)
-    }
-}
-
-impl From<EventId> for Uuid {
-    fn from(id: EventId) -> Self {
-        id.0
-    }
-}
-
-impl fmt::Display for EventId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-/// Identifies a principal: a person, an agent profile or a group. People, agents and groups
-/// share one id space, unique everywhere and never tied to one deployment.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    schemars::JsonSchema,
-)]
-#[serde(try_from = "Uuid", into = "Uuid")]
-pub struct PrincipalId(Uuid);
-
-impl PrincipalId {
-    pub fn new(at: Timestamp, random: [u8; 10]) -> Result<Self, InvalidValue> {
-        build_v7("principal id", at, random).map(Self)
-    }
-
-    pub fn as_uuid(self) -> Uuid {
-        self.0
-    }
-}
-
-impl TryFrom<Uuid> for PrincipalId {
-    type Error = InvalidValue;
-
-    fn try_from(uuid: Uuid) -> Result<Self, Self::Error> {
-        require_v7("principal id", uuid).map(Self)
-    }
-}
-
-impl From<PrincipalId> for Uuid {
-    fn from(id: PrincipalId) -> Self {
-        id.0
-    }
-}
-
-impl fmt::Display for PrincipalId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
+v7_id!(
+    /// Identifies a principal: a person, an agent profile or a group. People, agents and groups
+    /// share one id space, unique everywhere and never tied to one deployment.
+    PrincipalId,
+    "principal id"
+);
 
 /// Identifies one thread: a conversation or task with its own ordered log.
 #[derive(
@@ -179,99 +150,23 @@ impl fmt::Display for ThreadId {
     }
 }
 
-/// Identifies one schedule: a prompt or goal that runs as a task at set times.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    schemars::JsonSchema,
-)]
-#[serde(try_from = "Uuid", into = "Uuid")]
-pub struct ScheduleId(Uuid);
+v7_id!(
+    /// Identifies one schedule: a prompt or goal that runs as a task at set times.
+    ScheduleId,
+    "schedule id"
+);
 
-impl ScheduleId {
-    pub fn new(at: Timestamp, random: [u8; 10]) -> Result<Self, InvalidValue> {
-        build_v7("schedule id", at, random).map(Self)
-    }
+v7_id!(
+    /// Identifies one invite to an organization (`specs/model.md`, "Invites").
+    InviteId,
+    "invite id"
+);
 
-    pub fn as_uuid(self) -> Uuid {
-        self.0
-    }
-}
-
-impl TryFrom<Uuid> for ScheduleId {
-    type Error = InvalidValue;
-
-    fn try_from(uuid: Uuid) -> Result<Self, Self::Error> {
-        require_v7("schedule id", uuid).map(Self)
-    }
-}
-
-impl From<ScheduleId> for Uuid {
-    fn from(id: ScheduleId) -> Self {
-        id.0
-    }
-}
-
-impl fmt::Display for ScheduleId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-/// Identifies one memory: a short statement kept for later threads (`specs/memory.md`).
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    schemars::JsonSchema,
-)]
-#[serde(try_from = "Uuid", into = "Uuid")]
-pub struct MemoryId(Uuid);
-
-impl MemoryId {
-    pub fn new(at: Timestamp, random: [u8; 10]) -> Result<Self, InvalidValue> {
-        build_v7("memory id", at, random).map(Self)
-    }
-
-    pub fn as_uuid(self) -> Uuid {
-        self.0
-    }
-}
-
-impl TryFrom<Uuid> for MemoryId {
-    type Error = InvalidValue;
-
-    fn try_from(uuid: Uuid) -> Result<Self, Self::Error> {
-        require_v7("memory id", uuid).map(Self)
-    }
-}
-
-impl From<MemoryId> for Uuid {
-    fn from(id: MemoryId) -> Self {
-        id.0
-    }
-}
-
-impl fmt::Display for MemoryId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
+v7_id!(
+    /// Identifies one memory: a short statement kept for later threads (`specs/memory.md`).
+    MemoryId,
+    "memory id"
+);
 
 impl std::str::FromStr for MemoryId {
     type Err = InvalidValue;
@@ -283,52 +178,11 @@ impl std::str::FromStr for MemoryId {
     }
 }
 
-/// Identifies one model account a person connected (`provider.connected`).
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    schemars::JsonSchema,
-)]
-#[serde(try_from = "Uuid", into = "Uuid")]
-pub struct ProviderId(Uuid);
-
-impl ProviderId {
-    pub fn new(at: Timestamp, random: [u8; 10]) -> Result<Self, InvalidValue> {
-        build_v7("provider id", at, random).map(Self)
-    }
-
-    pub fn as_uuid(self) -> Uuid {
-        self.0
-    }
-}
-
-impl TryFrom<Uuid> for ProviderId {
-    type Error = InvalidValue;
-
-    fn try_from(uuid: Uuid) -> Result<Self, Self::Error> {
-        require_v7("provider id", uuid).map(Self)
-    }
-}
-
-impl From<ProviderId> for Uuid {
-    fn from(id: ProviderId) -> Self {
-        id.0
-    }
-}
-
-impl fmt::Display for ProviderId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
+v7_id!(
+    /// Identifies one model account a person connected (`provider.connected`).
+    ProviderId,
+    "provider id"
+);
 
 impl std::str::FromStr for ProviderId {
     type Err = InvalidValue;
@@ -340,53 +194,12 @@ impl std::str::FromStr for ProviderId {
     }
 }
 
-/// Identifies one sign-in a person keeps, sealed under a key of its own: a git host
-/// (`credential.connected`) or a connection (`connection.connected`).
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    schemars::JsonSchema,
-)]
-#[serde(try_from = "Uuid", into = "Uuid")]
-pub struct CredentialId(Uuid);
-
-impl CredentialId {
-    pub fn new(at: Timestamp, random: [u8; 10]) -> Result<Self, InvalidValue> {
-        build_v7("credential id", at, random).map(Self)
-    }
-
-    pub fn as_uuid(self) -> Uuid {
-        self.0
-    }
-}
-
-impl TryFrom<Uuid> for CredentialId {
-    type Error = InvalidValue;
-
-    fn try_from(uuid: Uuid) -> Result<Self, Self::Error> {
-        require_v7("credential id", uuid).map(Self)
-    }
-}
-
-impl From<CredentialId> for Uuid {
-    fn from(id: CredentialId) -> Self {
-        id.0
-    }
-}
-
-impl fmt::Display for CredentialId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
+v7_id!(
+    /// Identifies one sign-in a person keeps, sealed under a key of its own: a git host
+    /// (`credential.connected`) or a connection (`connection.connected`).
+    CredentialId,
+    "credential id"
+);
 
 /// Links a tool call to its result: 1 to 128 printable ASCII characters.
 #[derive(

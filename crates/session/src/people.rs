@@ -15,6 +15,7 @@ use glave_event::{
 use glave_ports::stream::{Reserved, append_retrying, catch_up};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope};
 
+use crate::invites::Invites;
 use crate::ledger::in_order;
 use crate::protocol::{ApiError, PersonInfo, Reply, code};
 use crate::server::Server;
@@ -32,13 +33,15 @@ pub(crate) enum Permit {
     People,
     /// Make someone an Owner, or change an Owner's role.
     Owners,
+    /// Make invites to the organization, list them and revoke them.
+    Invites,
 }
 
 /// What each of the three roles permits.
-fn permits(role: OrgRole) -> &'static [Permit] {
+pub(crate) fn permits(role: OrgRole) -> &'static [Permit] {
     match role {
-        OrgRole::Owner => &[Permit::People, Permit::Owners],
-        OrgRole::Admin => &[Permit::People],
+        OrgRole::Owner => &[Permit::People, Permit::Owners, Permit::Invites],
+        OrgRole::Admin => &[Permit::People, Permit::Invites],
         OrgRole::Member => &[],
     }
 }
@@ -58,7 +61,9 @@ struct Kept {
 pub(crate) struct People {
     /// The `seq` the next event will take.
     next: u64,
-    people: BTreeMap<PrincipalId, Kept>,
+    known: BTreeMap<PrincipalId, Kept>,
+    /// The invites made and not yet spent or revoked, expired ones included until dropped.
+    pub(crate) invites: Invites,
 }
 
 impl People {
@@ -74,7 +79,7 @@ impl People {
         match body {
             Body::PersonJoined(joined) => {
                 let person = joined.person;
-                if let Some(kept) = self.people.get_mut(&person) {
+                if let Some(kept) = self.known.get_mut(&person) {
                     kept.joined = joined;
                 } else {
                     let kept = Kept {
@@ -82,12 +87,20 @@ impl People {
                         at,
                         role: None,
                     };
-                    self.people.insert(person, kept);
+                    self.known.insert(person, kept);
                 }
             }
             Body::RoleSet(set) => {
-                if let Some(kept) = self.people.get_mut(&set.person) {
+                if let Some(kept) = self.known.get_mut(&set.person) {
                     kept.role = Some(set.role);
+                }
+            }
+            Body::InviteCreated(created) => self.invites.made(created, at),
+            Body::InviteRevoked(revoked) => self.invites.spent(revoked.invite),
+            Body::InviteAccepted(accepted) => {
+                self.invites.spent(accepted.invite);
+                if let Some(kept) = self.known.get_mut(&accepted.person) {
+                    kept.role = Some(kept.role.unwrap_or_default().max(accepted.role));
                 }
             }
             _ => {}
@@ -96,21 +109,21 @@ impl People {
 
     /// Whether the ledger has `joined` as it is.
     fn knows(&self, joined: &PersonJoined) -> bool {
-        self.people
+        self.known
             .get(&joined.person)
             .is_some_and(|kept| kept.joined == *joined)
     }
 
     /// The role of `person`, who signed in from elsewhere: a Member until given another.
-    fn role(&self, person: PrincipalId) -> OrgRole {
-        self.people
+    pub(crate) fn role(&self, person: PrincipalId) -> OrgRole {
+        self.known
             .get(&person)
             .and_then(|kept| kept.role)
             .unwrap_or_default()
     }
 
-    fn info(&self, person: PrincipalId) -> Option<PersonInfo> {
-        self.people.get(&person).map(|kept| PersonInfo {
+    pub(crate) fn info(&self, person: PrincipalId) -> Option<PersonInfo> {
+        self.known.get(&person).map(|kept| PersonInfo {
             id: person,
             name: kept.joined.profile.name.clone(),
             email: kept.joined.profile.email.clone(),
@@ -123,7 +136,7 @@ impl People {
 }
 
 /// What the ledger keeps of `caller`, when they signed in through an identity provider.
-fn joined_of(caller: &Caller) -> Option<PersonJoined> {
+pub(crate) fn joined_of(caller: &Caller) -> Option<PersonJoined> {
     let auth = caller.auth.as_ref()?;
     if auth.method != AuthMethod::Oidc {
         return None;
@@ -140,7 +153,7 @@ fn admins_only() -> ApiError {
     ApiError::new(code::NOT_ALLOWED, Sentence::AdminsOnly)
 }
 
-fn no_such_person(person: PrincipalId) -> ApiError {
+pub(crate) fn no_such_person(person: PrincipalId) -> ApiError {
     ApiError::new(
         code::NO_PERSON,
         Sentence::NoSuchPerson {
@@ -177,7 +190,7 @@ where
             Ok(role)
         } else {
             Err(match needed {
-                Permit::People => admins_only(),
+                Permit::People | Permit::Invites => admins_only(),
                 Permit::Owners => ApiError::new(code::NOT_ALLOWED, Sentence::OwnersOnly),
             })
         }
@@ -208,12 +221,12 @@ where
         let limit = limit.unwrap_or(LISTED).clamp(1, MOST_LISTED);
         let held = self.people();
         if let Some(after) = after
-            && !held.people.contains_key(&after)
+            && !held.known.contains_key(&after)
         {
             return Err(no_such_person(after));
         }
         let people = held
-            .people
+            .known
             .keys()
             .filter(|person| after.is_none_or(|after| **person > after))
             .take(limit)
@@ -233,7 +246,7 @@ where
         let theirs = permits(self.permitted(caller, Permit::People).await?);
         let by = Principal::person(self.person_of(caller)?);
         self.record_person(|people| {
-            if !people.people.contains_key(&person) {
+            if !people.known.contains_key(&person) {
                 return Err(no_such_person(person));
             }
             let owners = role == OrgRole::Owner || people.role(person) == OrgRole::Owner;
@@ -255,7 +268,7 @@ where
     }
 
     /// Reads whatever was added to the people ledger since this server last looked.
-    async fn catch_up_people(&self) -> Result<(), ApiError> {
+    pub(crate) async fn catch_up_people(&self) -> Result<(), ApiError> {
         // Glave's own: the organization's people ledger, answered only as the methods here say.
         let scope = Scope::of_organization(self.inner.org);
         let after = Seq::new(self.people().next_seq().saturating_sub(1)).ok();
@@ -272,7 +285,7 @@ where
 
     /// Appends what `make` makes of the ledger as it is then, after anything others wrote
     /// meanwhile: nothing when it makes nothing.
-    async fn record_person<T: Payload>(
+    pub(crate) async fn record_person<T: Payload>(
         &self,
         make: impl Fn(&People) -> Result<Option<T>, ApiError>,
     ) -> Result<(), ApiError> {
@@ -307,7 +320,7 @@ where
         Ok(())
     }
 
-    fn people(&self) -> MutexGuard<'_, People> {
+    pub(crate) fn people(&self) -> MutexGuard<'_, People> {
         self.inner
             .people
             .lock()

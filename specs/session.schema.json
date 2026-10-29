@@ -855,6 +855,42 @@
       "description": "A client's name for one attempt at a turn: 1 to 255 bytes of text.",
       "type": "string"
     },
+    "InviteId": {
+      "description": "Identifies one invite to an organization (`specs/model.md`, \"Invites\").",
+      "format": "uuid",
+      "type": "string"
+    },
+    "InviteInfo": {
+      "description": "An invite waiting to be opened. Its code is never shown again after it is made.",
+      "properties": {
+        "by": {
+          "$ref": "#/$defs/Principal",
+          "description": "Who made it."
+        },
+        "expires": {
+          "$ref": "#/$defs/At",
+          "description": "When it stops working, opened or not."
+        },
+        "id": {
+          "$ref": "#/$defs/InviteId"
+        },
+        "made": {
+          "$ref": "#/$defs/At"
+        },
+        "role": {
+          "$ref": "#/$defs/OrgRole",
+          "description": "The role it gives whoever opens it."
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "by",
+        "made",
+        "expires"
+      ],
+      "type": "object"
+    },
     "LineKind": {
       "description": "Whether a line was kept, taken out or put in.",
       "enum": [
@@ -3276,6 +3312,10 @@
       "code": -32031,
       "message": "The thread's model does not read images"
     },
+    "NO_INVITE": {
+      "code": -32035,
+      "message": "No such invite waits here: it was used, revoked or has expired, or it is another organization's"
+    },
     "NO_MEMORY": {
       "code": -32017,
       "message": "No such memory here"
@@ -3981,6 +4021,100 @@
         "required": [
           "grouping"
         ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "invite/accept": {
+      "params": {
+        "properties": {
+          "code": {
+            "$ref": "#/$defs/Secret"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A person, as they are now.",
+        "properties": {
+          "person": {
+            "$ref": "#/$defs/PersonInfo"
+          }
+        },
+        "required": [
+          "person"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "invite/create": {
+      "params": {
+        "properties": {
+          "role": {
+            "$ref": "#/$defs/OrgRole"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "An invite just made, and its code, sent this once.",
+        "properties": {
+          "code": {
+            "$ref": "#/$defs/Secret"
+          },
+          "invite": {
+            "$ref": "#/$defs/InviteInfo"
+          }
+        },
+        "required": [
+          "invite",
+          "code"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "invite/list": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "The invites waiting to be opened, oldest first.",
+        "properties": {
+          "invites": {
+            "items": {
+              "$ref": "#/$defs/InviteInfo"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "invites"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "invite/revoke": {
+      "params": {
+        "properties": {
+          "invite": {
+            "$ref": "#/$defs/InviteId"
+          }
+        },
+        "required": [
+          "invite"
+        ],
+        "type": "object"
+      },
+      "result": {
         "type": "object"
       },
       "streams": false

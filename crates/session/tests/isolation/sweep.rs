@@ -52,7 +52,9 @@ fn ids_of_others<L: EventLog + 'static>(world: &World<L>, person: usize) -> BTre
             other
                 .ids
                 .iter()
-                .filter(move |(kind, _)| **kind != Kind::Person || Some(other.org) != org)
+                .filter(move |(kind, _)| {
+                    !matches!(kind, Kind::Person | Kind::Invite) || Some(other.org) != org
+                })
                 .flat_map(|(_, ids)| ids)
         })
         .filter_map(|id| id.as_str().map(str::to_owned))
@@ -167,12 +169,15 @@ pub(super) async fn sweep<L: EventLog + Clone + 'static>(world: &World<L>) -> Ve
         for victim in world.people.iter().filter(|v| v.name != attacker.name) {
             for (method, templates) in table() {
                 for template in &templates {
-                    let codes = placeholders(template)
-                        .iter()
-                        .any(|(_, kind)| matches!(kind, Kind::Code | Kind::Person));
-                    // A code is its holder's to sign in with, and a person is their
-                    // organization's admins' to see; only another organization's is someone
-                    // else's.
+                    let codes = placeholders(template).iter().any(|(_, kind)| {
+                        matches!(
+                            kind,
+                            Kind::Code | Kind::Person | Kind::Invite | Kind::InviteCode
+                        )
+                    });
+                    // A code is its holder's to sign in or join with, and a person or an
+                    // invite is their organization's admins' to see; only another
+                    // organization's is someone else's.
                     if codes && victim.org == attacker.org {
                         continue;
                     }
