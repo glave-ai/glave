@@ -37,6 +37,10 @@ pub enum LinkKind {
 
 impl LinkKind {
     /// Whether it is a setup link's, the one a request names by saying none.
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "serde's skip_serializing_if hands it a reference"
+    )]
     pub(crate) fn is_setup(&self) -> bool {
         *self == Self::Setup
     }

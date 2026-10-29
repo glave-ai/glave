@@ -211,7 +211,10 @@ fn a_link_carries_its_address_and_no_one_can_change_it() {
 
 /// `text` in lowercase hex, as a sign-up's code carries its address.
 fn hex_of(text: &str) -> String {
-    text.bytes().map(|byte| format!("{byte:02x}")).collect()
+    text.bytes()
+        .flat_map(|byte| [byte >> 4, byte & 0xf])
+        .filter_map(|nibble| char::from_digit(u32::from(nibble), 16))
+        .collect()
 }
 
 #[test]
@@ -232,7 +235,7 @@ fn a_server_that_takes_no_sign_ups_says_so() {
         let mut phone = Authenticator::new(ORIGIN).unwrap();
         let made = make_passkey(&served, guessed, &mut phone).await;
         assert_eq!(made, json!(code::NO_INVITE));
-        assert!(outbox.sent().is_empty());
+        assert_eq!(outbox.sent(), Vec::new());
         served.close().await;
     });
 }

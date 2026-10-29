@@ -310,8 +310,8 @@ where
         let make = &make;
         let appended = append_retrying(log, &scope, ledger, || async move {
             self.catch_up_signups().await?;
-            let made = self.signups(|held| make(held))?;
-            let Some(payload) = made else {
+            let chosen = self.signups(|held| make(held))?;
+            let Some(payload) = chosen else {
                 return Ok::<_, ApiError>(None);
             };
             let seq = self.signups(|held| held.next.max(1));
@@ -357,7 +357,11 @@ fn signup_gone() -> ApiError {
 
 /// `bytes` in lowercase hex.
 fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    bytes
+        .iter()
+        .flat_map(|byte| [byte >> 4, byte & 0xf])
+        .filter_map(|nibble| char::from_digit(u32::from(nibble), 16))
+        .collect()
 }
 
 /// The text `hex` wrote, if it is that.
