@@ -118,7 +118,7 @@ fn project_id() -> ProjectId {
 fn plain(ask: &TrustAsk) -> Vec<(&str, Option<&str>)> {
     ask.items
         .iter()
-        .map(|item| (item.text.as_str(), item.detail.as_deref()))
+        .map(|item| (&*item.text, item.detail.as_deref()))
         .collect()
 }
 

@@ -2,12 +2,14 @@
 //! project's protections, what the web tools may reach, and MCP servers as `.mcp.json` names
 //! them. They live here, below both, so reading a file never depends on what runs it.
 
+mod brings;
 mod hooks;
 mod judge;
 pub mod mcp;
 mod protections;
 mod web;
 
+pub use brings::Brings;
 pub use hooks::{HOOK_TIMEOUT_SECS, Hook, HookError, Hooks, point_name};
 pub use judge::Judge;
 pub use protections::Protections;

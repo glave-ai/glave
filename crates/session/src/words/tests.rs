@@ -325,8 +325,11 @@ fn every_word_of_another_crates_table_is_one_fluent_message_whose_english_is_wha
     let memories = glave_ports::memories::MemoryRefusal::every()
         .into_iter()
         .map(|it| Box::new(it) as Box<dyn Worded>);
+    let brings = glave_ports::settings::Brings::every()
+        .into_iter()
+        .map(|it| Box::new(it) as Box<dyn Worded>);
     let all = worded.chain(phrases).chain(refusals).chain(projects);
-    for words in all.chain(memories) {
+    for words in all.chain(memories).chain(brings) {
         assert!(ids.insert(words.id()), "{} is in a table twice", words.id());
         let said = word(Language::English, words.as_ref());
         assert_eq!(said, words.english(), "{}", words.id());
@@ -346,6 +349,7 @@ fn every_word_of_another_crates_table_is_one_fluent_message_whose_english_is_wha
             + Refusal::ALL.len()
             + glave_ports::ProjectRefusal::ALL.len()
             + glave_ports::memories::MemoryRefusal::ALL.len()
+            + glave_ports::settings::Brings::ALL.len()
     );
 }
 
@@ -495,4 +499,52 @@ fn why_this_computer_cannot_be_kept_awake_is_written_again() {
         panic!("why it cannot")
     };
     assert!(reason.starts_with("[Ţĥîš çöɱþûţéŕ"), "{}", &*reason);
+}
+
+#[test]
+fn what_a_project_brings_is_written_again_in_its_threads() {
+    use glave_ports::settings::Brings;
+
+    use crate::protocol::{ThreadSummary, TrustAsk, TrustItem};
+
+    let mut thread: ThreadSummary = serde_json::from_value(serde_json::json!({
+        "id": "0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c10",
+        "project": "0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c11",
+        "status": "waiting", "standing": "active", "permissions": "ask",
+        "origin": {"kind": "user"}, "turns": 0, "tokens": glave_event::TokenCounts::default(),
+        "created_at": "2026-10-29T00:00:00.000Z", "updated_at": "2026-10-29T00:00:00.000Z",
+    }))
+    .unwrap();
+    let plain: Result<Reply, ApiError> = Ok(Reply::Thread {
+        thread: thread.clone(),
+    });
+    assert!(!says(&plain));
+    thread.trust = Some(TrustAsk {
+        ask: "v1".into(),
+        items: vec![TrustItem {
+            text: Brings::RunsServer.into(),
+            detail: Some("npx @acme/mcp".into()),
+        }],
+    });
+    let mut listed: Result<Reply, ApiError> = Ok(Reply::Threads {
+        threads: vec![thread],
+        next: None,
+    });
+    assert!(says(&listed));
+    let Ok(Reply::Threads { threads, .. }) = &listed else {
+        panic!("threads")
+    };
+    let item = |threads: &[ThreadSummary]| threads[0].trust.clone().unwrap().items[0].clone();
+    assert_eq!(*item(threads).text, *"Runs a tool server");
+    translate(&mut listed, Language::Accented);
+    let Ok(Reply::Threads { threads, .. }) = &listed else {
+        panic!("threads")
+    };
+    let written = item(threads);
+    assert!(
+        written.text.starts_with("[Ŕûñš å ţööļ šéŕṽéŕ"),
+        "{}",
+        written.text
+    );
+    assert_eq!(written.detail.as_deref(), Some("npx @acme/mcp"));
 }

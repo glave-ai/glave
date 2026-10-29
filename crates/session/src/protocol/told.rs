@@ -7,6 +7,7 @@ use glave_event::{Caution, Worded};
 use glave_ports::ProjectRefusal;
 use glave_ports::computer::{Reason, Refusal};
 use glave_ports::memories::MemoryRefusal;
+use glave_ports::settings::Brings;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::words::{Language, Sentence, caution_in, say, word};
@@ -44,6 +45,8 @@ enum Theirs {
     Project(ProjectRefusal),
     /// Memory's refusal.
     Memory(MemoryRefusal),
+    /// What a project brings that waits for the person's trust.
+    Brings(Brings),
 }
 
 impl Theirs {
@@ -52,6 +55,7 @@ impl Theirs {
             Self::Computer(refusal) => refusal,
             Self::Project(refusal) => refusal,
             Self::Memory(refusal) => refusal,
+            Self::Brings(brings) => brings,
         }
     }
 }
@@ -116,6 +120,16 @@ impl From<&Reason> for Told {
             said: reason
                 .refusal()
                 .map(|refusal| Box::new(Said::Theirs(Theirs::Computer(refusal.clone())))),
+        }
+    }
+}
+
+/// What a project brings, written again in the caller's language.
+impl From<Brings> for Told {
+    fn from(brings: Brings) -> Self {
+        Self {
+            text: brings.english(),
+            said: Some(Box::new(Said::Theirs(Theirs::Brings(brings)))),
         }
     }
 }

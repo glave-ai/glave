@@ -458,7 +458,7 @@ impl ProjectTrust for ProjectFolders {
                 .plain()
                 .into_iter()
                 .map(|plain| TrustItem {
-                    text: plain.text.to_owned(),
+                    text: plain.says.clone().into(),
                     detail: plain.detail.clone(),
                 })
                 .collect();

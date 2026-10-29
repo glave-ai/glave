@@ -3,6 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::protocol::Told;
+
 /// What a thread's project brings that runs only once the person on this computer trusts it:
 /// its tool servers, its hooks and settings that loosen how its commands run
 /// (`specs/policy.md`, "Project trust").
@@ -19,7 +21,7 @@ pub struct TrustAsk {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TrustItem {
     /// What it does, in a sentence: `Runs a tool server`.
-    pub text: String,
+    pub text: Told,
     /// The thing itself, when there is one to show: the command it runs, the address, the
     /// model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
