@@ -1,8 +1,9 @@
 //! A person's computer on a real cluster, with `GLAVE_TEST_KUBE=1` and a real glave and image
 //! (`GLAVE_TEST_WORKER_GLAVE`, `GLAVE_TEST_WORKER_IMAGE`), as CI's `kind` job runs it: a file
 //! written before it sleeps is there after it wakes, it runs as no root and writes nowhere but
-//! its home and `/tmp`, it reaches the internet but nothing in the cluster, the wake is timed,
-//! and destroying it leaves nothing behind.
+//! its home and `/tmp`, it reaches the internet but nothing in the cluster, a bridge into it
+//! that drops ends only that bridge, the wake is timed, and destroying it leaves nothing
+//! behind.
 
 use std::time::{Duration, Instant};
 
@@ -58,11 +59,19 @@ pub(in crate::worker::kubernetes) async fn ran(
     }
 }
 
-/// Wakes the computer, runs `command` on it, and puts it to sleep again, whatever happened.
+/// Kills every bridge into the computer, the one carrying this command too, as an API server
+/// restarting drops its execs; the name is put together as it runs, so the command's own line
+/// does not match it.
+const DROP_BRIDGES: &str = "b=brid; b=\"${b}ge\"; for p in /proc/[0-9]*; do \
+    case \"$(tr '\\0' ' ' < \"$p/cmdline\" 2>/dev/null)\" in \
+    *\"computer $b \"*) kill \"${p#/proc/}\";; esac; done";
+
+/// Wakes the computer, runs `commands` on it one after another, and puts it to sleep again,
+/// whatever happened; what the last printed.
 async fn awake(
     computers: &WorkerComputers,
     environment: &Environment,
-    command: &str,
+    commands: &[&str],
 ) -> (Duration, Result<String, String>) {
     let waking = Instant::now();
     let woke = computers.create(environment).await;
@@ -74,7 +83,10 @@ async fn awake(
                 .map_err(|e| format!("wake: {e:?}")),
         );
     };
-    let said = ran(computers, woke.id, command).await;
+    let mut said = Err("no command".to_owned());
+    for command in commands {
+        said = ran(computers, woke.id, command).await;
+    }
     let slept = computers.destroy(woke.id).await;
     (took, slept.map_err(|e| format!("sleep: {e:?}")).and(said))
 }
@@ -110,9 +122,11 @@ fn a_persons_computer_keeps_its_disk_while_it_sleeps() {
             ..Environment::host()
         };
 
-        let (_, wrote) = awake(&computers, &environment, FENCED).await;
-        // Asleep in between: its Pod gone, its disk kept.
-        let (woke, read) = awake(&computers, &environment, "cat kept.txt").await;
+        let (_, wrote) = awake(&computers, &environment, &[FENCED]).await;
+        // Asleep in between: its Pod gone, its disk kept. Awake, its bridge drops (the call
+        // carried on it is lost) and the next call reaches it through a new one.
+        let after = [DROP_BRIDGES, "cat kept.txt"];
+        let (woke, read) = awake(&computers, &environment, &after).await;
         let destroyed = PersonComputer::new(cluster.clone(), &key, 1)
             .unwrap()
             .destroy()

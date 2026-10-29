@@ -1,6 +1,7 @@
 //! `glave computer serve --stdio`, the real binary, as a harness elsewhere would reach it: the
 //! computers suite runs against it across the protocol, and its commands never see glave's
-//! secrets. And `--tls` as a worker runs it, ending when its input does.
+//! secrets. And `--tls` as a worker runs it, ending when its input does, and `--socket` as a
+//! computer in a Pod runs it, reached through bridges that each end alone.
 
 use std::process::Stdio;
 use std::sync::Mutex;
@@ -10,6 +11,8 @@ use glave_computer::{Identity, RemoteComputers, Token};
 use glave_ports::computer::{Command, Computers, Ending, Environment, Output, Sources};
 use glave_ports::testing::{TempDir, any_secret};
 use glave_ports::{BoxFuture, Clock as _, NeverCancelled, SystemClock, block_on, conformance};
+
+use crate::support::Lifeline;
 
 #[derive(Default)]
 struct Collect(Mutex<String>);
@@ -99,5 +102,57 @@ fn a_worker_s_glave_serving_tls_ends_when_its_input_does() {
         let ended = tokio::time::timeout(Duration::from_secs(30), child.wait()).await;
         let status = ended.expect("it ends within seconds of its input").unwrap();
         assert!(status.success(), "{status}");
+    });
+}
+
+#[test]
+fn a_computer_on_a_socket_is_reached_through_bridges_that_each_end_alone() {
+    let dir = TempDir::new("e2e-computer-socket").unwrap();
+    let secret = dir.join("secret");
+    std::fs::create_dir_all(&secret).unwrap();
+    let now = SystemTime::from(SystemClock.now());
+    let token = Token::mint(now, Duration::from_mins(10)).unwrap();
+    std::fs::write(secret.join("token"), token.to_file()).unwrap();
+    let socket = dir.join("glave.sock");
+    // Each glave ends with the test, however it ends.
+    let lifeline = Lifeline::new(&dir);
+    let glave = || {
+        let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_glave"));
+        command.env(Lifeline::VARIABLE, &lifeline.path);
+        command
+    };
+    block_on!(async {
+        let mut server = glave()
+            .args(["computer", "serve", "--socket"])
+            .arg(&socket)
+            .arg(&secret)
+            .env("GLAVE_HOME", dir.join("home"))
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        for _ in 0..2 {
+            let mut bridge = glave()
+                .args(["computer", "bridge"])
+                .arg(&socket)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .kill_on_drop(true)
+                .spawn()
+                .unwrap();
+            let (input, output) = (bridge.stdout.take().unwrap(), bridge.stdin.take().unwrap());
+            let remote = RemoteComputers::connect(input, output);
+            remote.authenticate(token.secret()).await.unwrap();
+            remote.check_protocol().await.unwrap();
+            // Its input closed, as an exec that drops closes it: the bridge ends, and only it.
+            drop(remote);
+            let ended = tokio::time::timeout(Duration::from_secs(30), bridge.wait()).await;
+            let status = ended
+                .expect("a bridge ends within seconds of its input")
+                .unwrap();
+            assert!(status.success(), "{status}");
+        }
+        let running = server.try_wait().unwrap();
+        server.kill().await.unwrap();
+        assert!(running.is_none(), "the computer serves on: {running:?}");
     });
 }

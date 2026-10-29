@@ -1,7 +1,7 @@
 //! A person's computer on Kubernetes (`specs/computers.md`, "A person's computer in the
 //! cloud"): a PersistentVolumeClaim that is their disk and, while awake, one Pod mounting it as
 //! their home, with a NetworkPolicy beside it. Sleeping removes the Pod and its policy and
-//! keeps the claim; waking makes them again on the same claim, with glave and a fresh identity
+//! keeps the claim; waking makes them again on the same claim, with glave and a fresh token
 //! copied in. Nothing here is owned by the Pod glave runs in: a person's computer outlives any
 //! one glave, and is labelled `glave.computer`, never as a worker, so no glave reaps it.
 
@@ -17,7 +17,7 @@ use serde_json::json;
 use super::objects::{COMPUTER_LABEL, Home, IDLE_MINUTES};
 use super::{Kubernetes, POLL, failed, not_found};
 use crate::token::Token;
-use crate::worker::backend::{Backend, Link, Listed, Spec, Started};
+use crate::worker::backend::{Backend, Link, Listed, Spec, Started, Stream, saying};
 
 /// How long a removed Pod or claim has to go: the Pod's grace period (5 seconds) and its
 /// volumes let go of, so seconds.
@@ -26,7 +26,7 @@ const GONE_WAIT: Duration = Duration::from_mins(1);
 const KEY_LENGTH: usize = 40;
 
 /// One person's computer on a cluster: its key, and the size of its disk.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct PersonComputer {
     cluster: Kubernetes,
     key: String,
@@ -126,7 +126,7 @@ impl PersonComputer {
     }
 
     /// Wakes the computer from `spec`: its disk made if it is new, a Pod left from before
-    /// removed (its glave serves an identity no longer held), and a new one started on the disk.
+    /// removed (its glave takes a token no longer held), and a new one started on the disk.
     async fn wake(&self, spec: &Spec) -> Result<Link, ComputerError> {
         self.claim().await?;
         self.sleep().await?;
@@ -143,15 +143,7 @@ impl PersonComputer {
             Err(error) => {
                 let said = self.cluster.logs(&name).await;
                 let _ = self.sleep().await;
-                if said.trim().is_empty() {
-                    Err(error)
-                } else {
-                    Err(ComputerError::Failed(format!(
-                        "{}; it said: {}",
-                        error.message(),
-                        said.trim()
-                    )))
-                }
+                Err(saying(error, &said))
             }
         }
     }
@@ -165,6 +157,12 @@ impl PersonComputer {
         // it mounts again. Its policy goes after it, so it never runs unpoliced.
         removed(&self.cluster.pods(), &name, "computer").await?;
         removed(&self.cluster.policies(), &name, "computer's network policy").await
+    }
+
+    /// Whether the computer is awake as the API server says: its Pod there, not being removed,
+    /// and its container running.
+    pub(crate) async fn running(&self) -> Result<bool, ComputerError> {
+        super::running(&self.cluster.pods(), &self.name()).await
     }
 
     /// Removes the computer and its disk, with everything on it.
@@ -259,6 +257,10 @@ impl Backend for PersonComputer {
         token: &'a Token,
     ) -> BoxFuture<'a, Result<(), ComputerError>> {
         self.cluster.renew(name, token)
+    }
+
+    fn bridge<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<Stream, ComputerError>> {
+        self.cluster.bridge(name)
     }
 
     fn list(&self) -> BoxFuture<'_, Result<Vec<Listed>, ComputerError>> {

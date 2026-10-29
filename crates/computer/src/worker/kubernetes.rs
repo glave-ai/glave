@@ -1,11 +1,12 @@
 //! Workers on Kubernetes: a Pod per worker in one namespace, from the environment's pinned
 //! image, with CPU and memory requested and limited, a runtime class (gVisor or Kata) when one
 //! is set, no service account token, no privilege, and a NetworkPolicy of its own. glave and
-//! the worker's TLS identity are copied in through the API server once the Pod runs (an exec
-//! of `tar`), so the key and token are never stored there; the Pod waits for them, then
-//! becomes glave. The harness reaches it through the API server too (`link`). When glave runs
-//! in a Pod beside its workers, each worker names that Pod as its owner, so the cluster removes
-//! them when it is deleted.
+//! the worker's token are copied in through the API server once the Pod runs (an exec of
+//! `tar`), so the token is never stored there; the Pod waits for them, then becomes glave,
+//! serving on a Unix socket. The harness reaches it through the API server too, each
+//! connection an exec of a bridge to that socket (`link`). When glave runs in a Pod beside its
+//! workers, each worker names that Pod as its owner, so the cluster removes them when it is
+//! deleted.
 
 mod home;
 mod link;
@@ -21,12 +22,15 @@ use glave_ports::computer::{ComputerError, Isolation};
 use k8s_openapi::api::core::v1::Pod;
 use k8s_openapi::api::networking::v1::NetworkPolicy;
 use kube::api::{AttachParams, DeleteParams, ListParams, LogParams, PostParams};
+use kube::client::UpgradeConnectionError;
 use kube::config::{KubeConfigOptions, Kubeconfig};
 use kube::{Api, Client, Config};
 use serde_json::Value;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
-use super::backend::{Backend, COPIED_WITHIN, Link, Listed, STARTED_BY, Spec, Started};
+use super::backend::{
+    Backend, COPIED_WITHIN, Link, Listed, STARTED_BY, Spec, Started, Stream, saying,
+};
 use super::docker::elf_machine;
 use crate::token::Token;
 use objects::{Home, Owner, Progress, Shape};
@@ -84,6 +88,43 @@ fn failed(what: &str, error: impl std::fmt::Display) -> ComputerError {
 /// Whether `error` is the API server saying the object is not there.
 fn not_found(error: &kube::Error) -> bool {
     matches!(error, kube::Error::Api(status) if status.is_not_found())
+}
+
+/// An exec in the Pod `name` that failed with `error`, as a computer error: final when the API
+/// server refused it, or the Pod is not there or not running (an exec into a container that
+/// ended is answered as the API server's own error); unreachable, which a bridge tries again,
+/// when the Pod runs, or cannot be read, as while the API server restarts.
+async fn exec_failed(
+    pods: &Api<Pod>,
+    name: &str,
+    what: &str,
+    error: &kube::Error,
+) -> ComputerError {
+    let refused = match error {
+        kube::Error::Api(status) => status.code < 500,
+        kube::Error::UpgradeConnection(UpgradeConnectionError::ProtocolSwitch(code)) => {
+            code.is_client_error()
+        }
+        _ => false,
+    };
+    if refused || matches!(running(pods, name).await, Ok(false)) {
+        failed(what, error)
+    } else {
+        ComputerError::Unreachable(format!("Kubernetes {what}: {error}"))
+    }
+}
+
+/// Whether the Pod `name` runs, as the API server says: there, not being removed, its container
+/// running.
+async fn running(pods: &Api<Pod>, name: &str) -> Result<bool, ComputerError> {
+    let pod = pods.get_opt(name).await.map_err(|error| {
+        ComputerError::Unreachable(format!("Kubernetes could not read {name}: {error}"))
+    })?;
+    Ok(pod.is_some_and(|pod| {
+        pod.metadata.deletion_timestamp.is_none()
+            && objects::progress(&serde_json::to_value(&pod).unwrap_or_default())
+                == Progress::Running
+    }))
 }
 
 impl Kubernetes {
@@ -221,11 +262,7 @@ impl Kubernetes {
             ComputerError::Failed(format!("{} is too long a name for tar", long.0))
         })?;
         self.copy_in(name, &files).await?;
-        if spec.network {
-            link::forwarded(pods, name, spec.identity.fingerprint.clone()).await
-        } else {
-            link::attached(&pods, name).await
-        }
+        Ok(Link::Bridged)
     }
 
     /// Waits for the worker's container to run.
@@ -275,11 +312,17 @@ impl Kubernetes {
             .stdout(false)
             .stderr(true)
             .max_stdin_buf_size(CHUNK);
-        let mut process = self
-            .pods()
+        let pods = self.pods();
+        let mut process = match pods
             .exec(name, ["tar", "-x", "-f", "-", "-C", "/"], &params)
             .await
-            .map_err(|error| failed("could not copy glave into the worker", error))?;
+        {
+            Ok(process) => process,
+            Err(error) => {
+                let what = "could not copy glave into the worker";
+                return Err(exec_failed(&pods, name, what, &error).await);
+            }
+        };
         let (Some(mut input), Some(mut errors)) = (process.stdin(), process.stderr()) else {
             return Err(ComputerError::Failed(
                 "copying glave in gave no standard input".into(),
@@ -369,15 +412,7 @@ impl Backend for Kubernetes {
                 Err(error) => {
                     let said = self.logs(&name).await;
                     let _ = self.remove(&name).await;
-                    if said.trim().is_empty() {
-                        Err(error)
-                    } else {
-                        Err(ComputerError::Failed(format!(
-                            "{}; it said: {}",
-                            error.message(),
-                            said.trim()
-                        )))
-                    }
+                    Err(saying(error, &said))
                 }
             }
         })
@@ -388,7 +423,14 @@ impl Backend for Kubernetes {
         name: &'a str,
         token: &'a Token,
     ) -> BoxFuture<'a, Result<(), ComputerError>> {
-        Box::pin(async move { self.copy_in(name, &super::tar::token_file(token)?).await })
+        Box::pin(async move {
+            let file = super::tar::token_file(objects::TOKEN, token)?;
+            self.copy_in(name, &file).await
+        })
+    }
+
+    fn bridge<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<Stream, ComputerError>> {
+        Box::pin(link::bridge(self.pods(), name))
     }
 
     fn list(&self) -> BoxFuture<'_, Result<Vec<Listed>, ComputerError>> {

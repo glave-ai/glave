@@ -1,19 +1,28 @@
 //! The objects one worker is on Kubernetes, as the API server takes them: a Pod that waits for
-//! glave and then serves with it, and a NetworkPolicy that keeps the worker's network as
-//! policy decided. And the files the harness copies in, and how far a starting Pod has got.
+//! glave and then serves with it on a Unix socket, and a NetworkPolicy that keeps the worker's
+//! network as policy decided. And the files the harness copies in, and how far a starting Pod
+//! has got.
 
 use std::collections::BTreeMap;
 
 use glave_ports::host::{CLOUD_METADATA, INSIDE, Network};
 use serde_json::{Value, json};
 
-use super::super::backend::{PORT, STARTED_BY, Spec};
+use super::super::backend::{STARTED_BY, Spec};
 use super::super::tar::{Entry, TooLong, archive};
 
 /// The container that runs the work.
 pub(crate) const CONTAINER: &str = "worker";
 /// Where glave goes in the worker: an empty folder the harness copies into.
 const HOME: &str = "/opt/glave";
+/// glave in the worker.
+pub(crate) const GLAVE: &str = "/opt/glave/glave";
+/// The socket glave serves on in the worker, which each bridge connects to.
+pub(crate) const SOCKET: &str = "/opt/glave/glave.sock";
+/// The folder of the worker's token, in memory.
+const SECRET: &str = "/opt/glave/secret";
+/// The worker's token, from `/`: renewed in place.
+pub(crate) const TOKEN: &str = "opt/glave/secret/token";
 /// What the harness copies in last, so the worker knows everything else has arrived.
 const READY: &str = "opt/glave/ready";
 /// The label every worker object carries, so leftovers can be found.
@@ -129,10 +138,10 @@ impl Shape<'_> {
         })
     }
 
-    /// The Pod: the environment's image running the wait, then glave serving over TLS on
-    /// [`PORT`] or on its standard input and output (no network). Limits as requests too, so
-    /// the worker gets what it is allowed; no service account token; no privilege; every
-    /// capability dropped; the runtime's seccomp profile; and a runtime class when one is set.
+    /// The Pod: the environment's image running the wait, then glave serving on [`SOCKET`].
+    /// Limits as requests too, so the worker gets what it is allowed; no service account token;
+    /// no privilege; every capability dropped; the runtime's seccomp profile; and a runtime
+    /// class when one is set.
     pub(crate) fn pod(&self) -> Value {
         let command = self.command();
         let mut env: Vec<Value> = self
@@ -161,19 +170,12 @@ impl Shape<'_> {
             // the node for every computer awake.
             amounts.insert("ephemeral-storage".into(), json!(ON_THE_NODE));
         }
-        if self.spec.network {
-            // The identity lives in memory, never on the node's disk.
-            mounts.push(json!({"name": "tls", "mountPath": format!("{HOME}/tls")}));
-            volumes.push(json!({
-                "name": "tls",
-                "emptyDir": {"medium": "Memory", "sizeLimit": "1Mi"}
-            }));
-        }
-        let ports = if self.spec.network {
-            json!([{"name": "glave", "containerPort": PORT, "protocol": "TCP"}])
-        } else {
-            json!([])
-        };
+        // The token lives in memory, never on the node's disk.
+        mounts.push(json!({"name": "secret", "mountPath": SECRET}));
+        volumes.push(json!({
+            "name": "secret",
+            "emptyDir": {"medium": "Memory", "sizeLimit": "1Mi"}
+        }));
         let mut nodes = serde_json::Map::new();
         nodes.insert("kubernetes.io/os".into(), json!("linux"));
         if let Some(arch) = self.arch {
@@ -184,9 +186,6 @@ impl Shape<'_> {
             "image": self.spec.image,
             "command": command,
             "env": env,
-            "ports": ports,
-            "stdin": !self.spec.network,
-            "stdinOnce": !self.spec.network,
             "resources": {"requests": amounts, "limits": limits},
             "volumeMounts": mounts,
             "securityContext": self.container_security(),
@@ -247,28 +246,19 @@ impl Shape<'_> {
         }
     }
 
-    /// The container's command: the wait, then glave serving over TLS on [`PORT`], or on its
-    /// standard input and output without a network.
+    /// The container's command: the wait, then glave serving on [`SOCKET`] to the bridges
+    /// that come in through the API server, each signed in with the token in [`SECRET`].
     fn command(&self) -> Vec<Value> {
-        let serve = if self.spec.network {
-            let mut serve = json!([
-                format!("{HOME}/glave"),
-                "computer",
-                "serve",
-                "--tls",
-                format!("0.0.0.0:{PORT}"),
-                format!("{HOME}/tls")
-            ]);
-            // A person's computer sleeps on its own once idle, servers or not (#558).
-            if let (Some(home), Some(args)) = (&self.home, serve.as_array_mut()) {
-                args.extend([json!("--idle"), json!(home.idle_minutes.to_string())]);
-            }
-            serve
-        } else {
-            json!([format!("{HOME}/glave"), "computer", "serve", "--stdio"])
-        };
-        let mut command = vec![json!("/bin/sh"), json!("-c"), json!(WAIT), json!("wait")];
-        command.extend(serve.as_array().cloned().unwrap_or_default());
+        let mut command: Vec<Value> = [
+            "/bin/sh", "-c", WAIT, "wait", GLAVE, "computer", "serve", "--socket", SOCKET, SECRET,
+        ]
+        .into_iter()
+        .map(Value::from)
+        .collect();
+        // A person's computer sleeps on its own once idle, servers or not (#558).
+        if let Some(home) = &self.home {
+            command.extend([json!("--idle"), json!(home.idle_minutes.to_string())]);
+        }
         command
     }
 
@@ -289,8 +279,8 @@ impl Shape<'_> {
         (amounts.clone(), amounts)
     }
 
-    /// The worker's NetworkPolicy: nothing comes in (the harness arrives through the API
-    /// server's port-forward or attach, which no policy sees), and nothing goes out unless
+    /// The worker's NetworkPolicy: nothing comes in (the harness arrives through an exec
+    /// through the API server, which no policy sees), and nothing goes out unless
     /// the worker has the network, which then reaches anywhere but where clouds serve their
     /// machines' credentials ([`CLOUD_METADATA`]), and for a person's computer anything that is
     /// not the internet ([`INSIDE`]); DNS on port 53 is still allowed.
@@ -331,40 +321,27 @@ impl Shape<'_> {
     }
 }
 
-/// glave and, for a worker with a network, its identity, as a tar archive extracted at `/`;
-/// `ready` last, so the wait ends only once everything is in.
+/// glave and the worker's token, as a tar archive extracted at `/`; `ready` last, so the wait
+/// ends only once everything is in.
 pub(crate) fn files(glave: &[u8], spec: &Spec) -> Result<Vec<u8>, TooLong> {
     let token = spec.token.to_file();
-    let mut entries = vec![Entry::File {
-        name: "opt/glave/glave",
-        mode: 0o755,
-        content: glave,
-    }];
-    if spec.network {
-        entries.extend([
-            Entry::File {
-                name: "opt/glave/tls/cert.pem",
-                mode: 0o644,
-                content: spec.identity.certificate.as_bytes(),
-            },
-            Entry::File {
-                name: "opt/glave/tls/key.pem",
-                mode: 0o600,
-                content: spec.identity.key.as_bytes(),
-            },
-            Entry::File {
-                name: "opt/glave/tls/token",
-                mode: 0o600,
-                content: token.as_bytes(),
-            },
-        ]);
-    }
-    entries.push(Entry::File {
-        name: READY,
-        mode: 0o644,
-        content: b"",
-    });
-    archive(&entries)
+    archive(&[
+        Entry::File {
+            name: "opt/glave/glave",
+            mode: 0o755,
+            content: glave,
+        },
+        Entry::File {
+            name: TOKEN,
+            mode: 0o600,
+            content: token.as_bytes(),
+        },
+        Entry::File {
+            name: READY,
+            mode: 0o644,
+            content: b"",
+        },
+    ])
 }
 
 /// Kubernetes' name for the processor of an ELF machine number.

@@ -128,6 +128,13 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
          is connected, and one that does not is let go at its handshake's limit",
     ),
     (
+        "crates/computer/src/serve/socket.rs",
+        "connections.join_next().await;",
+        1,
+        "room for one more connection at the cap: one that signs in lasts while its bridge \
+         is open, and one that does not is let go at its handshake's limit",
+    ),
+    (
         "crates/computer/src/serve.rs",
         "running.join_next().await;",
         1,
