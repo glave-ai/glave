@@ -23,8 +23,8 @@ use glave_ports::{
 use glave_session::protocol::ModelInfo;
 use glave_session::signin::Browsers;
 use glave_session::{
-    Answering, Connections, GitHosts, KeepAwake, ProjectTrust, Providers, Server, TaskLimits,
-    Wiring, Worktrees,
+    Answering, Connections, GitHosts, KeepAwake, OnWorkers, ProjectTrust, Providers, Server,
+    TaskLimits, Wiring, Worktrees,
 };
 use glave_store_sqlite::Store;
 use tokio::sync::Notify;
@@ -110,6 +110,10 @@ pub(crate) struct Setup {
     pub tools: Vec<Arc<dyn ToolSource>>,
     /// Variables its computer gives in place of this process's, such as its `HOME`.
     pub variables: Vec<(String, PathBuf)>,
+    /// The workers threads of one project work on; with none, every thread works here.
+    pub workers: Option<OnWorkers>,
+    /// Whether people sign in through an identity provider; with none, it works for one person.
+    pub identity_provider: bool,
 }
 
 impl Setup {
@@ -143,6 +147,8 @@ impl Setup {
             model: None,
             tools: Vec::new(),
             variables: Vec::new(),
+            workers: None,
+            identity_provider: false,
         }
     }
 
@@ -230,6 +236,8 @@ impl Setup {
             tools: self.tools,
             awake: self.awake,
             worktrees: self.release,
+            workers: self.workers,
+            identity_provider: self.identity_provider,
             ..Wiring::new(provider, log, InMemoryBlobs::new(), workspace, projects)
         };
         let server = Server::new(wiring, self.settings, home.org(), self.answering);
