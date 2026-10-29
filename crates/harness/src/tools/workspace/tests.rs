@@ -90,17 +90,23 @@ fn changes_need_a_fresh_read() {
 }
 
 /// Moves `docs` aside, puts a link to each of `targets` in turn in its place, and moves it
-/// back, as a sandboxed command running beside the file tools could, until told to stop.
+/// back, as a sandboxed command running beside the file tools could, until told to stop,
+/// counting its swaps in `swaps`.
 #[cfg(unix)]
-fn swap_for_links(dir: &Path, targets: &[&str], stop: &std::sync::atomic::AtomicBool) -> usize {
+fn swap_for_links(
+    dir: &Path,
+    targets: &[&str],
+    stop: &std::sync::atomic::AtomicBool,
+    swaps: &std::sync::atomic::AtomicUsize,
+) {
     use std::sync::atomic::Ordering;
     let (folder, parked) = (dir.join("docs"), dir.join("docs.parked"));
-    let mut swaps = 0;
     while !stop.load(Ordering::Relaxed) {
         if std::fs::rename(&folder, &parked).is_ok() {
-            let target = targets.get(swaps % targets.len().max(1)).unwrap();
+            let swapped = swaps.load(Ordering::Relaxed);
+            let target = targets.get(swapped % targets.len().max(1)).unwrap();
             if std::os::unix::fs::symlink(target, &folder).is_ok() {
-                swaps += 1;
+                swaps.fetch_add(1, Ordering::Relaxed);
             }
             let _ = std::fs::remove_file(&folder);
             while std::fs::rename(&parked, &folder).is_err() {
@@ -108,17 +114,23 @@ fn swap_for_links(dir: &Path, targets: &[&str], stop: &std::sync::atomic::Atomic
             }
         }
     }
-    swaps
 }
+
+/// Writes the race test makes at least, enough that many meet a swap mid-way.
+#[cfg(unix)]
+const WRITES: usize = 500;
 
 /// The write tool in a sandbox, raced by a command swapping a folder for a link into
 /// `.git/hooks` or `.glave` between the tool's protected-path check and its write: nothing
 /// protected is ever written, and every refusal reads as the check's own sentence.
+/// It writes until the race has run and been met both ways (a write refused as protected,
+/// one landed, many swaps and writes), rather than for a fixed time, which a loaded machine
+/// can starve (#982).
 #[cfg(unix)]
 #[test]
 fn a_folder_swapped_for_a_link_between_check_and_write_writes_nothing_protected() {
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use glave_event::Arguments;
     use glave_ports::computer::SandboxLevel;
@@ -132,9 +144,10 @@ fn a_folder_swapped_for_a_link_between_check_and_write_writes_nothing_protected(
     std::fs::write(dir.join(".glave/settings.json"), "{}\n").unwrap();
     std::fs::create_dir_all(dir.join("docs")).unwrap();
     let stop = Arc::new(AtomicBool::new(false));
+    let swaps = Arc::new(AtomicUsize::new(0));
     let swapper = {
-        let (dir, stop) = (dir.to_path_buf(), Arc::clone(&stop));
-        std::thread::spawn(move || swap_for_links(&dir, &[".git/hooks", ".glave"], &stop))
+        let (dir, stop, swaps) = (dir.to_path_buf(), Arc::clone(&stop), Arc::clone(&swaps));
+        std::thread::spawn(move || swap_for_links(&dir, &[".git/hooks", ".glave"], &stop, &swaps))
     };
     let mut refusals = Vec::new();
     let mut landed = 0usize;
@@ -149,7 +162,20 @@ fn a_folder_swapped_for_a_link_between_check_and_write_writes_nothing_protected(
         });
         let started = std::time::Instant::now();
         let mut n = 0usize;
-        while started.elapsed().as_millis() < 3_000 {
+        let met = |refusals: &[String], landed, n| {
+            n >= WRITES
+                && swaps.load(Ordering::Relaxed) > 100
+                && landed > 0
+                && refusals.iter().any(|refusal| refusal.contains("protected"))
+        };
+        while !met(&refusals, landed, n) {
+            assert!(
+                started.elapsed() < glave_ports::testing::HUNG,
+                "the race was not met in {:?}: {} swaps, {landed} writes landed, {} refused",
+                glave_ports::testing::HUNG,
+                swaps.load(Ordering::Relaxed),
+                refusals.len()
+            );
             n += 1;
             let arguments = Arguments::Json(
                 serde_json::from_value(serde_json::json!({
@@ -170,12 +196,9 @@ fn a_folder_swapped_for_a_link_between_check_and_write_writes_nothing_protected(
         }
     });
     stop.store(true, Ordering::Relaxed);
-    let swaps = swapper.join().unwrap();
-    assert!(swaps > 100, "the race must really run: {swaps} swaps");
-    assert!(landed > 0, "writes into the real folder still land");
+    swapper.join().unwrap();
     // Others fail because the folder moved under them, which is fine: they wrote nothing.
     refusals.retain(|refusal| refusal.contains("protected"));
-    assert!(!refusals.is_empty(), "protected paths were reached");
     for refusal in &refusals {
         let path = refusal.split(' ').next().unwrap_or_default();
         assert!(
@@ -190,6 +213,12 @@ fn a_folder_swapped_for_a_link_between_check_and_write_writes_nothing_protected(
             ),
         );
     }
+    nothing_new_in_protected(&dir);
+}
+
+/// Nothing was written into `.git/hooks` or `.glave` under `dir`.
+#[cfg(unix)]
+fn nothing_new_in_protected(dir: &Path) {
     let hooks: Vec<_> = std::fs::read_dir(dir.join(".git/hooks"))
         .unwrap()
         .map(|entry| entry.unwrap().file_name())
