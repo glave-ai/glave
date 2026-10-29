@@ -58,6 +58,7 @@ fn run_in(project: &Path, sandbox: Option<&Sandbox>, command: &str) -> crate::to
             .run(
                 &arguments,
                 (&workspace, &crate::background::Commands::default()),
+                usize::MAX,
                 &Cancel::new(),
             )
             .await
@@ -151,6 +152,7 @@ fn a_command_allowed_outside_the_sandbox_runs_without_it_and_the_next_is_sandbox
             .run(
                 &outside,
                 (&workspace, &crate::background::Commands::default()),
+                usize::MAX,
                 &Cancel::new(),
             )
             .await;
@@ -158,6 +160,7 @@ fn a_command_allowed_outside_the_sandbox_runs_without_it_and_the_next_is_sandbox
             .run(
                 &again,
                 (&workspace, &crate::background::Commands::default()),
+                usize::MAX,
                 &Cancel::new(),
             )
             .await;
@@ -434,6 +437,7 @@ fn the_network_is_off_unless_allowed() {
             .run(
                 &with_network,
                 (&workspace, &crate::background::Commands::default()),
+                usize::MAX,
                 &Cancel::new(),
             )
             .await
@@ -527,6 +531,7 @@ fn the_file_tools_refuse_protected_paths_in_a_sandbox() {
                 .run(
                     &arguments,
                     (&workspace, &crate::background::Commands::default()),
+                    usize::MAX,
                     &Cancel::new(),
                 )
                 .await
@@ -613,6 +618,7 @@ fn the_file_tools_refuse_links_a_command_planted_into_protected_paths() {
             tool.run(
                 &arguments,
                 (&workspace, &crate::background::Commands::default()),
+                usize::MAX,
                 &Cancel::new(),
             )
             .await

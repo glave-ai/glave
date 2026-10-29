@@ -13,8 +13,10 @@ use crate::files::{MAX_FILE, sniffed};
 
 /// Most lines returned by one read.
 const MAX_LINES: usize = 2_000;
-/// Most bytes of text returned by one read.
+/// Most bytes of text returned by one read, however much room the model has.
 const MAX_BYTES: usize = 50 * 1024;
+/// Room kept for the line that says which lines were read and where to go on.
+const FOOTER_BYTES: usize = 64;
 /// Longest line returned before it is cut.
 const MAX_LINE_CHARS: usize = 2_000;
 /// Largest file read at all; bigger files are for `bash` with `sed -n` or `rg`.
@@ -31,7 +33,8 @@ pub(crate) struct ReadArgs {
     limit: Option<usize>,
 }
 
-pub(crate) async fn read(workspace: &Workspace, args: ReadArgs) -> ToolOutcome {
+/// Reads what `args` names, its text within `room` bytes.
+pub(crate) async fn read(workspace: &Workspace, args: ReadArgs, room: usize) -> ToolOutcome {
     let stat = match workspace.stat(&args.path).await {
         Ok(stat) => stat,
         Err(message) => return ToolOutcome::error(message),
@@ -59,7 +62,12 @@ pub(crate) async fn read(workspace: &Workspace, args: ReadArgs) -> ToolOutcome {
         return ToolOutcome::error(format!("{shown} is a binary file."));
     }
     workspace.remember(&shown, &bytes);
-    numbered(&String::from_utf8_lossy(&bytes), args.offset, args.limit)
+    numbered(
+        &String::from_utf8_lossy(&bytes),
+        args.offset,
+        args.limit,
+        room,
+    )
 }
 
 /// The image or PDF at `shown`, `bytes` of `media_type`, handed to the model after a line
@@ -95,7 +103,7 @@ fn handed(shown: &str, media_type: &str, bytes: Vec<u8>) -> ToolOutcome {
     }
 }
 
-fn numbered(text: &str, offset: Option<usize>, limit: Option<usize>) -> ToolOutcome {
+fn numbered(text: &str, offset: Option<usize>, limit: Option<usize>, room: usize) -> ToolOutcome {
     let total = text.lines().count();
     let first = offset.unwrap_or(1).max(1);
     if total == 0 {
@@ -107,6 +115,8 @@ fn numbered(text: &str, offset: Option<usize>, limit: Option<usize>) -> ToolOutc
         ));
     }
     let limit = limit.unwrap_or(MAX_LINES).clamp(1, MAX_LINES);
+    // The line after the page fits too.
+    let most = MAX_BYTES.min(room.saturating_sub(FOOTER_BYTES));
     let mut out = String::new();
     let mut last = first.saturating_sub(1);
     for (number, line) in text
@@ -116,11 +126,11 @@ fn numbered(text: &str, offset: Option<usize>, limit: Option<usize>) -> ToolOutc
         .take(limit)
     {
         let number = number.saturating_add(1);
-        let line = cut_line(line);
-        if out.len().saturating_add(line.len()) > MAX_BYTES && last >= first {
+        let entry = format!("{number}\t{}\n", cut_line(line));
+        if out.len().saturating_add(entry.len()) > most && last >= first {
             break;
         }
-        let _ = writeln!(out, "{number}\t{line}");
+        out.push_str(&entry);
         last = number;
     }
     if last < total {
@@ -188,7 +198,7 @@ mod tests {
 
     #[test]
     fn lines_are_numbered_with_a_footer() {
-        let out = numbered("alpha\nbeta\ngamma\n", None, None);
+        let out = numbered("alpha\nbeta\ngamma\n", None, None, usize::MAX);
         assert!(!out.is_error);
         assert_eq!(
             out.text,
@@ -198,21 +208,30 @@ mod tests {
 
     #[test]
     fn offset_and_limit_page_through() {
-        let out = numbered("a\nb\nc\nd\n", Some(2), Some(2));
+        let out = numbered("a\nb\nc\nd\n", Some(2), Some(2), usize::MAX);
         assert_eq!(
             out.text,
             "2\tb\n3\tc\n(lines 2-3 of 4; use offset=4 to continue)"
         );
-        let past = numbered("a\nb\n", Some(9), None);
+        let past = numbered("a\nb\n", Some(9), None, usize::MAX);
         assert!(past.is_error);
         assert!(past.text.contains("past the end"));
+    }
+
+    #[test]
+    fn a_small_room_reads_fewer_lines_and_says_where_to_go_on() {
+        let text = "a line\n".repeat(1_000);
+        let out = numbered(&text, None, None, 1_000);
+        assert!(out.text.len() <= 1_100, "{}", out.text.len());
+        assert!(out.text.starts_with("1\ta line\n2\t"), "{}", out.text);
+        assert!(out.text.contains(" of 1000; use offset="), "{}", out.text);
     }
 
     #[test]
     fn long_lines_are_cut() {
         let long = "x".repeat(MAX_LINE_CHARS + 10);
         assert!(
-            numbered(&long, None, None)
+            numbered(&long, None, None, usize::MAX)
                 .text
                 .contains("[line truncated]")
         );
@@ -234,7 +253,7 @@ mod tests {
             limit in 1_usize..80,
         ) {
             let text: String = lines.iter().map(|line| [line.as_str(), "\n"].concat()).collect();
-            let out = numbered(&text, Some(offset), Some(limit));
+            let out = numbered(&text, Some(offset), Some(limit), usize::MAX);
             if lines.is_empty() {
                 proptest::prop_assert_eq!(out.text, "(empty file)");
                 return Ok(());

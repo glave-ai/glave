@@ -33,6 +33,7 @@ impl Session {
         block_on!(tool.run(
             &arguments,
             (&self.workspace, &crate::background::Commands::default()),
+            usize::MAX,
             &Cancel::new()
         ))
     }
@@ -257,6 +258,7 @@ fn bad_arguments_are_explained_to_the_model() {
     let malformed = block_on!(Tool::Read.run(
         &Arguments::Malformed("{\"path\": ".into()),
         (&s.workspace, &crate::background::Commands::default()),
+        usize::MAX,
         &Cancel::new(),
     ));
     assert!(malformed.is_error && malformed.text.contains("not valid JSON"));

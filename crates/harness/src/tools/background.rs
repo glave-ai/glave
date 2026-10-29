@@ -60,6 +60,7 @@ pub(crate) fn named(arguments: &glave_event::Arguments) -> Option<u32> {
 pub(crate) async fn command_output(
     commands: &Commands,
     args: OutputArgs,
+    room: usize,
     cancel: &dyn Cancellation,
 ) -> ToolOutcome {
     let Some(number) = args.command else {
@@ -84,7 +85,7 @@ pub(crate) async fn command_output(
         }
     };
     match read {
-        Ok(printed) => shown(number, &printed),
+        Ok(printed) => shown(number, &printed, room),
         Err(ComputerError::NotFound(_)) => {
             let ended = commands.numbered(number).and_then(|entry| entry.ended);
             ToolOutcome::ok(format!(
@@ -101,6 +102,7 @@ pub(crate) async fn start(
     workspace: &Workspace,
     commands: &Commands,
     script: String,
+    room: usize,
     cancel: &dyn Cancellation,
 ) -> ToolOutcome {
     let id = match workspace.start(script.clone()).await {
@@ -121,7 +123,7 @@ pub(crate) async fn start(
     };
     match first {
         Some(Ok(printed)) if printed.ended.is_some() => {
-            let shown = shown(number, &printed);
+            let shown = shown(number, &printed, room);
             ToolOutcome {
                 text: format!(
                     "Command {number} started in the background and ended at once.\n{}",
@@ -152,8 +154,8 @@ pub(crate) fn moved(number: u32, after_secs: u64, output: &str) -> ToolOutcome {
 }
 
 /// What a read or a stop showed: what the command printed since the last look, and how it
-/// is now.
-fn shown(number: u32, printed: &Printed) -> ToolOutcome {
+/// is now, in `room` bytes.
+fn shown(number: u32, printed: &Printed, room: usize) -> ToolOutcome {
     let mut text = String::new();
     if printed.dropped > 0 {
         let _ = writeln!(
@@ -163,7 +165,7 @@ fn shown(number: u32, printed: &Printed) -> ToolOutcome {
             KEPT_OUTPUT / (1024 * 1024)
         );
     }
-    let captured = Captured::of(&printed.text).render();
+    let captured = Captured::of(&printed.text, room).render();
     text.push_str(&body(&captured, "(no new output)"));
     text.push('\n');
     let failed = printed.ended.is_some_and(|ended| {
