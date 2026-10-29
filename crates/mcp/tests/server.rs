@@ -51,14 +51,14 @@ async fn start(env: &[(&str, &str)]) -> McpServer {
     server
 }
 
-fn arguments(value: serde_json::Value) -> Arguments {
+pub(crate) fn arguments(value: serde_json::Value) -> Arguments {
     match value {
         serde_json::Value::Object(map) => Arguments::Json(map),
         other => panic!("not an object: {other}"),
     }
 }
 
-fn text(output: &ToolOutput) -> String {
+pub(crate) fn text(output: &ToolOutput) -> String {
     match output.parts.as_slice() {
         [Part::Text { text }] => text.clone(),
         other => panic!("not one text part: {other:?}"),
@@ -95,6 +95,8 @@ fn tools_are_named_for_their_server_and_marked_by_what_they_do() {
                 ("mcp__tests__listed", Effect::Runs, false),
                 ("mcp__tests__flood", Effect::Runs, false),
                 ("mcp__tests__whose", Effect::Runs, false),
+                ("mcp__tests__roots", Effect::Runs, false),
+                ("mcp__tests__progress", Effect::Runs, false),
                 ("mcp__tests__lookup", Effect::Reads, true),
             ]
         );
@@ -226,7 +228,7 @@ fn a_server_starts_in_the_background_and_its_first_listing_waits_for_it() {
     block_on!(async {
         let server = launch("tests", &stdio(SERVER, &[], &[]), Limits::default());
         let tools = server.tools().await.unwrap();
-        assert_eq!(tools.len(), 10);
+        assert_eq!(tools.len(), 12);
         server.close().await;
     });
 }

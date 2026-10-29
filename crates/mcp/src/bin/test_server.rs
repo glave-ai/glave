@@ -11,14 +11,21 @@
 //! however that ends. With `--results <text>` it stands in for a hosted web search, Exa's
 //! offering only its search: its one tool is `web_search_exa`, answering every query with
 //! `text`. Built with the `test-server` feature.
+
+#![expect(
+    deprecated,
+    reason = "MCP 2026-07-28 deprecates roots (SEP-2577), which glave still answers"
+)]
 //!
 //! Its tools: `echo` (read-only), `fail`, `slow` (waits until the call is cancelled), `env`
 //! (whether a variable reached it), `header` (what a request header was), `grow` (adds the
 //! tool `extra` and says the tools changed), `listed` (how often its tools were listed) and
 //! `flood` (more output than a model should be given), and `whose` (which `--token` the request
-//! came with). Its resources: `test://greeting`
-//! (text) and `test://logo` (binary). Its prompt: `review` (arguments `pr` and `focus`), whose
-//! text names both.
+//! came with), `roots` (the folders the client says it works for: asked of it on the older
+//! protocol, or inside the call on MCP 2026-07-28), and `progress` (says how it is going every
+//! `every` milliseconds, `times` times, then answers; or until cancelled, with `times` 0). Its
+//! resources: `test://greeting` (text) and `test://logo` (binary). Its prompt: `review`
+//! (arguments `pr` and `focus`), whose text names both.
 
 use std::io::Write as _;
 use std::process::ExitCode;
@@ -34,8 +41,9 @@ use hyper_util::rt::TokioIo;
 use hyper_util::service::TowerToHyperService;
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, DiscoverRequestMethod,
-    DiscoverResult, GetPromptRequestParams, GetPromptResponse, GetPromptResult, JsonObject,
-    ListPromptsResult, ListResourcesResult, ListToolsResult, PaginatedRequestParams, Prompt,
+    DiscoverResult, GetPromptRequestParams, GetPromptResponse, GetPromptResult, InputRequest,
+    InputRequests, InputRequiredResult, JsonObject, ListPromptsResult, ListResourcesResult,
+    ListRootsResult, ListToolsResult, PaginatedRequestParams, ProgressNotificationParam, Prompt,
     PromptArgument, PromptMessage, ReadResourceRequestParams, ReadResourceResponse,
     ReadResourceResult, Resource, ResourceContents, Role, ServerCapabilities, ServerConfig,
     SubscriptionFilter, Tool, ToolAnnotations,
@@ -88,6 +96,8 @@ impl TestServer {
         let text = json!({"type": "object", "properties": {"text": {"type": "string"}}});
         let name = json!({"type": "object", "properties": {"name": {"type": "string"}}});
         let none = json!({"type": "object"});
+        let ticks = json!({"type": "object", "properties": {
+            "every": {"type": "number"}, "times": {"type": "number"}}});
         let mut echo = Tool::new("echo", "Say the text back.", schema(&text));
         echo.annotations = Some(ToolAnnotations::new().read_only(true));
         // A web search, as MCP flags one: what it returns comes from an open world.
@@ -103,6 +113,12 @@ impl TestServer {
             Tool::new("listed", "How often the tools were listed.", schema(&none)),
             Tool::new("flood", "Far too much text.", schema(&none)),
             Tool::new("whose", "Which token signed the request in.", schema(&none)),
+            Tool::new("roots", "The client's roots.", schema(&none)),
+            Tool::new(
+                "progress",
+                "Says how it is going, then answers.",
+                schema(&ticks),
+            ),
             lookup,
         ];
         if self.grown.load(Ordering::SeqCst) {
@@ -326,6 +342,8 @@ impl ServerHandler for TestServer {
                 said("grown")
             }
             "listed" => said(self.listings.load(Ordering::SeqCst).to_string()),
+            "roots" => return self.roots(&request, &context).await,
+            "progress" => progress(&request, &context).await,
             "extra" if self.grown.load(Ordering::SeqCst) => said("extra here"),
             "flood" => said("x".repeat(250_000)),
             "whose" => {
@@ -347,6 +365,73 @@ impl ServerHandler for TestServer {
         };
         Ok(CallToolResponse::Complete(result))
     }
+}
+
+impl TestServer {
+    /// The client's roots, one URI to a line: asked of it on the older protocol; on MCP
+    /// 2026-07-28, asked for in an input round, then read from what the call came back with.
+    async fn roots(
+        &self,
+        request: &CallToolRequestParams,
+        context: &RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, ErrorData> {
+        let listed: ListRootsResult = if self.legacy {
+            context
+                .peer
+                .list_roots()
+                .await
+                .map_err(|err| ErrorData::internal_error(err.to_string(), None))?
+        } else {
+            let given = request
+                .input_responses
+                .as_ref()
+                .and_then(|responses| responses.get("roots"));
+            let Some(given) = given else {
+                let ask: InputRequest = serde_json::from_value(json!({"method": "roots/list"}))
+                    .map_err(|err| ErrorData::internal_error(err.to_string(), None))?;
+                let asked = InputRequests::from([("roots".to_owned(), ask)]);
+                return Ok(InputRequiredResult::new(Some(asked), None).into());
+            };
+            serde_json::from_value(given.clone())
+                .map_err(|err| ErrorData::invalid_params(err.to_string(), None))?
+        };
+        let uris: Vec<String> = listed.roots.into_iter().map(|root| root.uri).collect();
+        Ok(CallToolResponse::Complete(said(uris.join("\n"))))
+    }
+}
+
+/// Says how it is going every `every` milliseconds, `times` times (until cancelled, with 0),
+/// then answers.
+async fn progress(
+    request: &CallToolRequestParams,
+    context: &RequestContext<RoleServer>,
+) -> CallToolResult {
+    let number = |name: &str| {
+        request
+            .arguments
+            .as_ref()
+            .and_then(|arguments| arguments.get(name))
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or_default()
+    };
+    let (every, times) = (number("every"), number("times"));
+    let Some(token) = context.meta.get_progress_token() else {
+        return CallToolResult::error(vec![ContentBlock::text("no progress token was sent")]);
+    };
+    let mut told = 0_u64;
+    while times == 0 || told < times {
+        tokio::select! {
+            () = tokio::time::sleep(std::time::Duration::from_millis(every)) => {}
+            () = context.ct.cancelled() => {
+                return CallToolResult::error(vec![ContentBlock::text("cancelled")]);
+            }
+        }
+        told += 1;
+        #[expect(clippy::cast_precision_loss, reason = "a test's few ticks")]
+        let param = ProgressNotificationParam::new(token.clone(), told as f64);
+        let _ = context.peer.notify_progress(param).await;
+    }
+    said(format!("done after {told}"))
 }
 
 fn main() -> ExitCode {

@@ -3,6 +3,7 @@
 #![cfg(test)]
 
 mod changes;
+mod client;
 mod http;
 mod resources;
 mod server;

@@ -1,29 +1,29 @@
 //! A connection to one MCP server through rmcp: opened with the newest protocol the server
 //! knows, its tools listed for the model and kept until the server says they changed, and calls
-//! made with a time limit and cancelled when the turn is.
+//! made within their limits and cancelled when the turn is (`call.rs`).
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use glave_event::Arguments;
 use glave_ports::{
-    Cancellation, Effect, ToolError, ToolInfo, ToolOutput, ToolSpec, unless_cancelled,
+    Cancellation, Effect, NeverCancelled, ToolError, ToolInfo, ToolOutput, ToolSpec,
+    unless_cancelled,
 };
 use rmcp::model::{
     CallToolRequest, CallToolRequestParams, CallToolResult, ClientRequest, GetPromptRequestParams,
     GetPromptResult, JsonObject, MetaObject, Prompt, ProtocolVersion, ReadResourceRequestParams,
     RequestMetaObject, Resource, ResourceContents, ServerResult, Tool,
 };
-use rmcp::service::{
-    ClientLifecycleMode, ClientServiceExt as _, Peer, PeerRequestOptions, RoleClient,
-    RunningService, ServiceError,
-};
+use rmcp::service::{ClientLifecycleMode, ClientServiceExt as _, Peer, RoleClient, RunningService};
 use rmcp::transport::IntoTransport;
 use tokio::task::JoinHandle;
 
 use crate::McpError;
+use crate::call::{Unanswered, Waits, call, send};
 use crate::client::{Client, subscribe, watch_tools};
 use crate::names::{catalog, exposed};
 use crate::output::output;
@@ -32,14 +32,25 @@ use crate::reason::{failed, reason};
 /// What the model is told when the person cancels the turn mid-call.
 pub(crate) const CANCELLED: &str = "[stopped: the person cancelled the turn]";
 
+/// What glave tells a server as it connects.
+#[derive(Default)]
+pub(crate) struct Opening {
+    /// Whether the server is a gateway's catalog, whose tools carry their own server's name.
+    pub(crate) catalog: bool,
+    /// The project folder it works for, told when it asks (MCP's roots).
+    pub(crate) root: Option<PathBuf>,
+}
+
 /// An open connection.
 pub(crate) struct Connection {
     name: String,
     /// Whether the server is a gateway's catalog, whose tools carry their own server's name.
     catalog: bool,
     peer: Peer<RoleClient>,
+    /// glave's side, which answers what the server asks for inside a call.
+    client: Arc<Client>,
     /// The running connection, until it is closed.
-    service: Mutex<Option<RunningService<RoleClient, Client>>>,
+    service: Mutex<Option<RunningService<RoleClient, Arc<Client>>>>,
     /// The latest listing, kept until the server says its tools changed.
     listed: Mutex<Option<Vec<ToolInfo>>>,
     /// Set when the server says its tools changed.
@@ -53,12 +64,12 @@ pub(crate) struct Connection {
 
 impl Connection {
     /// Connects over `transport` within `limit`, speaking MCP 2026-07-28 without a handshake,
-    /// or the 2025-11-25 handshake with servers that predate it.
+    /// or the 2025-11-25 handshake with servers that predate it, as `opening` says.
     pub(crate) async fn open<T, E, A>(
         name: &str,
         transport: T,
         limit: Duration,
-        catalog: bool,
+        opening: Opening,
     ) -> Result<Self, McpError>
     where
         T: IntoTransport<RoleClient, E, A>,
@@ -69,9 +80,9 @@ impl Connection {
             legacy_version: Some(ProtocolVersion::V_2025_11_25),
         };
         let stale = Arc::new(AtomicBool::new(false));
-        let client = Client::new(Arc::clone(&stale));
-        let started =
-            tokio::time::timeout(limit, client.serve_with_lifecycle(transport, lifecycle));
+        let client = Arc::new(Client::new(Arc::clone(&stale), opening.root.as_deref()));
+        let serving = Arc::clone(&client).serve_with_lifecycle(transport, lifecycle);
+        let started = tokio::time::timeout(limit, serving);
         let service = match started.await {
             Ok(Ok(service)) => service,
             Ok(Err(err)) => return Err(McpError::start(name, reason(&err))),
@@ -106,8 +117,9 @@ impl Connection {
             .map(|subscription| tokio::spawn(watch_tools(subscription, Arc::clone(&stale))));
         Ok(Self {
             name: name.to_owned(),
-            catalog,
+            catalog: opening.catalog,
             peer,
+            client,
             service: Mutex::new(Some(service)),
             listed: Mutex::new(None),
             stale,
@@ -223,15 +235,14 @@ impl Connection {
             .map_err(|err| format!("{}: {err}", self.name))
     }
 
-    /// Calls `tool` with `arguments` for at most `limit`, giving back the server's own result,
-    /// for a gateway that serves its tools on. A call that is dropped leaves the server to
-    /// finish it.
+    /// Calls `tool` with `arguments` within `waits`, giving back the server's own result, for a
+    /// gateway that serves its tools on. A call that is dropped leaves the server to finish it.
     pub(crate) async fn forward(
         &self,
         tool: &str,
         arguments: Option<JsonObject>,
         meta: Option<JsonObject>,
-        limit: Duration,
+        waits: Waits,
     ) -> Result<CallToolResult, String> {
         let mut params = CallToolRequestParams::new(tool.to_owned());
         if let Some(arguments) = arguments {
@@ -239,17 +250,11 @@ impl Connection {
         }
         params.meta = meta.map(|meta| RequestMetaObject(MetaObject(meta)));
         let request = ClientRequest::CallToolRequest(CallToolRequest::new(params));
-        let sent = self
-            .peer
-            .send_cancellable_request(request, PeerRequestOptions::no_options())
-            .await
-            .map_err(|err| format!("{}: {err}", self.name))?;
-        match tokio::time::timeout(limit, sent.rx).await {
-            Ok(Ok(Ok(ServerResult::CallToolResult(result)))) => Ok(result),
-            Ok(Ok(Ok(_))) => Err(format!("{} answered something else.", self.name)),
-            Ok(Ok(Err(err))) => Err(format!("{}: {err}", self.name)),
-            Ok(Err(_)) => Err(format!("{} stopped answering.", self.name)),
-            Err(_) => Err(format!("{} did not answer within {limit:?}.", self.name)),
+        match send(&self.name, &self.peer, request, &NeverCancelled, waits).await {
+            Ok(ServerResult::CallToolResult(result)) => Ok(result),
+            Ok(_) => Err(format!("{} answered something else.", self.name)),
+            Err(Unanswered::Refused(why) | Unanswered::Failed(why)) => Err(why),
+            Err(Unanswered::Cancelled) => Err(CANCELLED.to_owned()),
         }
     }
 
@@ -341,15 +346,15 @@ impl Connection {
         }
     }
 
-    /// Calls the tool the model knows as `name`, for at most `limit`: `Ok` with what the
-    /// server answered, a result or an error in its own words, untrusted when the tool
-    /// reaches an open world; `Err` with glave's own words when it gave no answer.
+    /// Calls the tool the model knows as `name`, within `waits`: `Ok` with what the server
+    /// answered, a result or an error in its own words, untrusted when the tool reaches an
+    /// open world; `Err` with glave's own words when it gave no answer.
     pub(crate) async fn call(
         &self,
         name: &str,
         arguments: &Arguments,
         cancel: &dyn Cancellation,
-        limit: Duration,
+        waits: Waits,
     ) -> Result<ToolOutput, ToolOutput> {
         let Some((tool, open_world)) = self
             .named
@@ -363,58 +368,19 @@ impl Connection {
                 format!("There is no tool named {name:?}."),
             ));
         };
-        let mut output = self.send(tool, arguments, cancel, limit).await?;
-        output.untrusted |= open_world;
-        Ok(output)
-    }
-
-    /// Sends one call of the server's `tool`, for at most `limit`: `Ok` with the server's
-    /// answer, `Err` with glave's words when there is none.
-    async fn send(
-        &self,
-        tool: String,
-        arguments: &Arguments,
-        cancel: &dyn Cancellation,
-        limit: Duration,
-    ) -> Result<ToolOutput, ToolOutput> {
         let Arguments::Json(arguments) = arguments else {
             return Err(ToolOutput::text(true, "The arguments were not valid JSON."));
         };
         let params = CallToolRequestParams::new(tool).with_arguments(arguments.clone());
-        let request = ClientRequest::CallToolRequest(CallToolRequest::new(params));
-        let sent = self
-            .peer
-            .send_cancellable_request(request, PeerRequestOptions::no_options())
-            .await;
-        let mut handle = match sent {
-            Ok(handle) => handle,
-            Err(err) => return Err(ToolOutput::text(true, failed(&self.name, &err))),
+        let called = call(&self.name, &self.peer, &self.client, params, cancel, waits).await;
+        let mut output = match called {
+            Ok(result) => output(&result),
+            Err(Unanswered::Refused(why)) => ToolOutput::text(true, why),
+            Err(Unanswered::Failed(why)) => return Err(ToolOutput::text(true, why)),
+            Err(Unanswered::Cancelled) => return Err(ToolOutput::text(true, CANCELLED)),
         };
-        let waited = unless_cancelled(cancel, tokio::time::timeout(limit, &mut handle.rx)).await;
-        let glave = |text: String| Err(ToolOutput::text(true, text));
-        match waited {
-            Some(Ok(Ok(Ok(ServerResult::CallToolResult(result))))) => Ok(output(&result)),
-            Some(Ok(Ok(Ok(ServerResult::InputRequiredResult(_))))) => {
-                glave("The server asked for more input, which glave cannot give it yet.".to_owned())
-            }
-            Some(Ok(Ok(Ok(_)))) => glave("The server answered something else.".to_owned()),
-            // The server's error, its message in its own words.
-            Some(Ok(Ok(Err(err @ ServiceError::McpError(_))))) => {
-                Ok(ToolOutput::text(true, failed(&self.name, &err)))
-            }
-            Some(Ok(Ok(Err(err)))) => glave(failed(&self.name, &err)),
-            Some(Ok(Err(_))) => glave(format!("{} stopped answering.", self.name)),
-            Some(Err(_)) => {
-                let _ = handle.cancel(Some("timed out".to_owned())).await;
-                glave(format!("{} did not answer within {limit:?}.", self.name))
-            }
-            None => {
-                let _ = handle
-                    .cancel(Some("cancelled by the person".to_owned()))
-                    .await;
-                glave(CANCELLED.to_owned())
-            }
-        }
+        output.untrusted |= open_world;
+        Ok(output)
     }
 }
 
