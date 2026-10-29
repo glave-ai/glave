@@ -75,13 +75,32 @@ Everything that configures glave is a file, read where it lives, and glave holds
 
 ## Admin
 
-- **Roles** (#645): an Owner can do everything, billing and transferring ownership included; an Admin manages people, policy, the approved connections, models, the budget and audit; a Member uses glave within what is granted. Groups from the identity provider add grants on top (the Team row). A person on their own is silently the owner of their organization of one.
+- **Roles** (#645): an Owner can do everything, billing and transferring ownership included; an Admin manages people, policy, the approved connections, models, the budget and audit; a Member uses glave within what is granted. Groups from the identity provider add grants on top (the Team row). A person on their own is silently the owner of their organization of one. How roles are kept and checked is "Roles", below.
 - **The screens:** `/admin` in the same web app, reached from the person's menu and shown only when `server/discover` says the caller is an admin. They come later (#222), and they only edit the organization's files: its policy and its skills ("Configuration is files").
 - **The methods:** admin methods are part of the session API, checked against the caller's role on every call. The same methods serve `glave admin` and an admin MCP server.
 - **The log is the single place to see everything:** usage, spend, activity, every tool call and a thread's trace are views over it.
   - Admins see activity and cost, not content.
   - Reading content needs an organization policy that says so, and each read is recorded.
   - Still to decide: whether the person is told, and legal holds.
+
+### Roles
+
+Decided 2026-10-29 (#645).
+
+- **Kept in the data store, one ledger per organization:** the people ledger, a stream of glave's own in the organization's scope rather than any person's project, sealed like every event. It records each person who signs in through the identity provider (`person.joined`: issuer and subject, and the name, email and groups the token gives, recorded again when they change) and each role given (`role.set`: whom, which role, by whom). Folded in order, a person's latest `role.set` is their role; one with none is a Member. One stream keeps listing people one read, and every server process on one store reads the same roles. Roles are data, not a file, because they change from the admin screens at run time and name people by the identity provider's ids ("Configuration is files").
+- **The local person is the organization's owner, always,** and is never recorded, so no one can take it away and an organization is never without an owner. The local person is whoever holds the server's computer: its socket, or its local token from there (`session.md`, "Signing in"). They already hold the store's keys and the organization's files, so being owner gives them nothing they lack. On a laptop and a person's own server they are the only person, so they are silently owner and the word never appears. Where people sign in through an identity provider, the one who runs the server gives the first roles from there, to people who have signed in once (`glave admin`, below).
+  - *Why not the first person to sign in:* behind a broad issuer (Google, Microsoft's common tenant) the first to sign in could be anyone, and two servers starting at once race for it.
+  - *Why not a setting naming the owner:* the identity provider's subject is an opaque id no one knows before signing in, an email in a token is not always verified, and it would be a setting a laptop never needs.
+- **Who may give which role:** Owners and Admins give Admin and Member; only an Owner makes someone an Owner, or changes an Owner's role. An organization may have several Owners, and transferring ownership is making another Owner, then being made Admin by them.
+- **Groups:** the identity provider's `groups` claim, a list of names as Okta, Keycloak, Entra ID and Auth0 send it, is kept on the person's record at each sign-in where it changed; with SCIM (#642) the groups come from there instead. Nothing grants from it yet: the grants groups give (models, connections, the budget, "may add their own") come with SAML and SCIM, and `server/discover` says groups exist only then.
+- **Every admin method is checked on every call,** in the session's one check before anything is read or recorded (`session.md`, "Projects and who may do what"): the caller's role, read from the people ledger, must be Admin or Owner. Anyone else is refused with `-32012` and a plain sentence that only the organization's admins can do that, and nothing is recorded. The first methods are listing the people and setting a role; the screens (#222), `glave admin` and an admin MCP server all use them.
+- **What a client is told:** `server/discover`, asked by someone signed in on a server with an organization (`exists.organization`), says the caller's role, so the app shows `/admin` only to Admins and Owners. On a server without one it says no role, so a laptop's answer is unchanged.
+- **The five deployments** (`deployments.md`):
+  1. *Laptop:* one person, the local person, owner and never told so. Nothing is recorded.
+  2. *Own server:* the same. A passkey signs in the local person, so its browser is the owner too.
+  3. *Glave Cloud, personal:* an organization of one. Gap: its email and passkey sign-in, and serving many organizations from one server (#423), aren't built; when they are, the person who makes the organization is its owner, recorded as `role.set` by glave, the same rule as the local person who makes a server's.
+  4. *Glave Cloud, enterprise:* people sign in through the organization's identity provider. Gap: the same as 3; the person who signs the organization up is its first owner, and gives the rest roles from the admin screens.
+  5. *Enterprise, self-hosted:* whoever runs the server is owner, from its computer, and gives the first Admins from there to people who have signed in. Groups come from the token now, and from SCIM with #642.
 
 ## The look
 
