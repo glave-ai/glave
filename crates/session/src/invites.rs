@@ -117,7 +117,8 @@ where
             by: Principal::person(self.person_of(caller)?),
             expires: At::from(expires),
         };
-        self.record_person(|people| {
+        let org = self.org_of(caller);
+        self.record_person(org, |people| {
             let waiting = people.invites.waiting.values();
             if waiting
                 .filter(|it| now < it.created.expires.timestamp())
@@ -129,24 +130,26 @@ where
             Ok(Some(created.clone()))
         })
         .await?;
-        let mut people = self.people();
-        people.invites.drop_expired(now);
-        let invite = people
-            .invites
-            .waiting
-            .get(&created.invite)
-            .map(Waiting::info)
-            .ok_or_else(gone)?;
-        Ok(Reply::Invited { invite, code })
+        let invite = self.people(org, |people| {
+            people.invites.drop_expired(now);
+            let waiting = &people.invites.waiting;
+            waiting.get(&created.invite).map(Waiting::info)
+        });
+        Ok(Reply::Invited {
+            invite: invite.ok_or_else(gone)?,
+            code,
+        })
     }
 
-    /// Answers `invite/list`: the invites waiting, oldest first.
-    pub(crate) async fn list_invites(&self) -> Result<Reply, ApiError> {
-        self.catch_up_people().await?;
+    /// Answers `invite/list`: the invites waiting in the caller's organization, oldest first.
+    pub(crate) async fn list_invites(&self, caller: &Caller) -> Result<Reply, ApiError> {
+        let org = self.org_of(caller);
+        self.catch_up_people(org).await?;
         let now = self.inner.harness.clock().now();
-        let mut people = self.people();
-        people.invites.drop_expired(now);
-        let invites = people.invites.waiting.values().map(Waiting::info).collect();
+        let invites = self.people(org, |people| {
+            people.invites.drop_expired(now);
+            people.invites.waiting.values().map(Waiting::info).collect()
+        });
         Ok(Reply::Invites { invites })
     }
 
@@ -158,7 +161,7 @@ where
     ) -> Result<Reply, ApiError> {
         let by = Principal::person(self.person_of(caller)?);
         let now = self.inner.harness.clock().now();
-        self.record_person(|people| {
+        self.record_person(self.org_of(caller), |people| {
             let waits = people
                 .invites
                 .waiting
@@ -195,7 +198,8 @@ where
         let presented = kept(code);
         let now = self.inner.harness.clock().now();
         let local = self.inner.harness.person();
-        self.record_person(|people| {
+        let org = self.org_of(caller);
+        self.record_person(org, |people| {
             let found = people.invites.waiting.values().find(|it| {
                 same_kept(&it.created.hash, &presented)
                     && now < it.created.expires.timestamp()
@@ -212,8 +216,7 @@ where
         })
         .await?;
         let person = self
-            .people()
-            .info(person)
+            .people(org, |people| people.info(person))
             .ok_or_else(|| no_such_person(person))?;
         Ok(Reply::Person { person })
     }

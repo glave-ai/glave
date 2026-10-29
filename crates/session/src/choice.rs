@@ -8,7 +8,7 @@ use glave_event::{Body, Permissions, ThreadId};
 use glave_harness::{HarnessError, Settled, Thread};
 use glave_ports::computer::SandboxLevel;
 use glave_ports::settings::Protections;
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope};
+use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Scope};
 
 use crate::protocol::{ApiError, code};
 use crate::server::{Glave, Server};
@@ -143,8 +143,8 @@ where
 
     /// What the project of `project` chooses for its threads: for the person on this
     /// computer's threads.
-    pub(crate) async fn project_settled(&self, project: ProjectId) -> Settled {
-        match self.folder_here(project).await {
+    pub(crate) async fn project_settled(&self, at: Located) -> Settled {
+        match self.folder_here(at).await {
             Ok(Some(folder)) => {
                 let folder = std::path::Path::new(&folder);
                 self.inner.harness.settled(folder).await

@@ -29,7 +29,7 @@ where
         else {
             return;
         };
-        if let Err(error) = homes.wake(self.inner.org, person) {
+        if let Err(error) = homes.wake(self.org_of(caller), person) {
             tracing::warn!(error = error.message(), "could not start waking a computer");
         }
     }

@@ -5,15 +5,15 @@
 //! counting. The local person is the organization's owner, always, and never recorded. Every
 //! admin method is checked here, against the caller's role, before anything is read.
 
-use std::collections::BTreeMap;
-use std::sync::{MutexGuard, PoisonError};
+use std::collections::{BTreeMap, HashMap};
+use std::sync::PoisonError;
 
 use glave_event::{
     At, AuthMethod, Body, EventId, Header, OrgRole, Payload, PersonJoined, Principal, PrincipalId,
     RawEvent, RoleSet, Seq, encode,
 };
 use glave_ports::stream::{Reserved, append_retrying, catch_up};
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, OrgId, Scope};
 
 use crate::invites::Invites;
 use crate::ledger::in_order;
@@ -21,6 +21,8 @@ use crate::protocol::{ApiError, PersonInfo, Reply, code};
 use crate::server::Server;
 use crate::words::Sentence;
 
+/// Organizations whose people ledgers a server keeps in memory at once.
+const PEOPLES: usize = 256;
 /// People listed at once unless the caller says, and at most.
 const LISTED: usize = 100;
 const MOST_LISTED: usize = 1_000;
@@ -64,6 +66,20 @@ pub(crate) struct People {
     known: BTreeMap<PrincipalId, Kept>,
     /// The invites made and not yet spent or revoked, expired ones included until dropped.
     pub(crate) invites: Invites,
+}
+
+/// What each organization's people ledger says, as far as this server has read it. Past
+/// [`PEOPLES`] organizations, the others are forgotten and read again when next asked for.
+#[derive(Debug, Default)]
+pub(crate) struct Peoples(HashMap<OrgId, People>);
+
+impl Peoples {
+    fn of(&mut self, org: OrgId) -> &mut People {
+        if self.0.len() >= PEOPLES && !self.0.contains_key(&org) {
+            self.0.clear();
+        }
+        self.0.entry(org).or_default()
+    }
 }
 
 impl People {
@@ -174,8 +190,9 @@ where
         let Some(person) = caller.person else {
             return Ok(OrgRole::Owner);
         };
-        self.catch_up_people().await?;
-        Ok(self.people().role(person))
+        let org = self.org_of(caller);
+        self.catch_up_people(org).await?;
+        Ok(self.people(org, |people| people.role(person)))
     }
 
     /// Refuses `caller` what their role does not permit, before anything of it is read, and
@@ -203,35 +220,41 @@ where
         let Some(joined) = joined_of(caller) else {
             return Ok(());
         };
-        if self.people().knows(&joined) {
+        let org = self.org_of(caller);
+        if self.people(org, |people| people.knows(&joined)) {
             return Ok(());
         }
-        self.record_person(|people| Ok((!people.knows(&joined)).then(|| joined.clone())))
-            .await
+        self.record_person(org, |people| {
+            Ok((!people.knows(&joined)).then(|| joined.clone()))
+        })
+        .await
     }
 
     /// Answers `people/list`: the people after `after`, in id order, at most `limit`. An
     /// `after` naming no one here is refused, as a cursor from another list.
     pub(crate) async fn list_people(
         &self,
+        caller: &Caller,
         after: Option<PrincipalId>,
         limit: Option<usize>,
     ) -> Result<Reply, ApiError> {
-        self.catch_up_people().await?;
+        let org = self.org_of(caller);
+        self.catch_up_people(org).await?;
         let limit = limit.unwrap_or(LISTED).clamp(1, MOST_LISTED);
-        let held = self.people();
-        if let Some(after) = after
-            && !held.known.contains_key(&after)
-        {
-            return Err(no_such_person(after));
-        }
-        let people = held
-            .known
-            .keys()
-            .filter(|person| after.is_none_or(|after| **person > after))
-            .take(limit)
-            .filter_map(|person| held.info(*person))
-            .collect();
+        let people = self.people(org, |held| {
+            if let Some(after) = after
+                && !held.known.contains_key(&after)
+            {
+                return Err(no_such_person(after));
+            }
+            Ok(held
+                .known
+                .keys()
+                .filter(|person| after.is_none_or(|after| **person > after))
+                .take(limit)
+                .filter_map(|person| held.info(*person))
+                .collect())
+        })?;
         Ok(Reply::People { people })
     }
 
@@ -245,7 +268,8 @@ where
     ) -> Result<Reply, ApiError> {
         let theirs = permits(self.permitted(caller, Permit::People).await?);
         let by = Principal::person(self.person_of(caller)?);
-        self.record_person(|people| {
+        let org = self.org_of(caller);
+        self.record_person(org, |people| {
             if !people.known.contains_key(&person) {
                 return Err(no_such_person(person));
             }
@@ -261,23 +285,24 @@ where
         })
         .await?;
         let person = self
-            .people()
-            .info(person)
+            .people(org, |people| people.info(person))
             .ok_or_else(|| no_such_person(person))?;
         Ok(Reply::Person { person })
     }
 
-    /// Reads whatever was added to the people ledger since this server last looked.
-    pub(crate) async fn catch_up_people(&self) -> Result<(), ApiError> {
+    /// Reads whatever was added to `org`'s people ledger since this server last looked.
+    pub(crate) async fn catch_up_people(&self, org: OrgId) -> Result<(), ApiError> {
         // Glave's own: the organization's people ledger, answered only as the methods here say.
-        let scope = Scope::of_organization(self.inner.org);
-        let after = Seq::new(self.people().next_seq().saturating_sub(1)).ok();
+        let scope = Scope::of_organization(org);
+        let next = self.people(org, |people| people.next_seq());
+        let after = Seq::new(next.saturating_sub(1)).ok();
         let log = self.inner.harness.log();
         catch_up(log, &scope, Reserved::People.id(), after, |page| {
-            let mut held = self.people();
-            for raw in page {
-                held.apply(raw);
-            }
+            self.people(org, |held| {
+                for raw in page {
+                    held.apply(raw);
+                }
+            });
         })
         .await?;
         Ok(())
@@ -287,19 +312,19 @@ where
     /// meanwhile: nothing when it makes nothing.
     pub(crate) async fn record_person<T: Payload>(
         &self,
+        org: OrgId,
         make: impl Fn(&People) -> Result<Option<T>, ApiError>,
     ) -> Result<(), ApiError> {
         let ledger = Reserved::People.id();
         // Glave's own: the organization's people ledger.
-        let scope = Scope::of_organization(self.inner.org);
+        let scope = Scope::of_organization(org);
         let log = self.inner.harness.log();
         let make = &make;
         let appended = append_retrying(log, &scope, ledger, || async move {
-            self.catch_up_people().await?;
-            let (payload, next) = {
-                let held = self.people();
-                (make(&held)?, held.next_seq())
-            };
+            self.catch_up_people(org).await?;
+            let (payload, next) = self.people(org, |held| {
+                Ok::<_, ApiError>((make(held)?, held.next_seq()))
+            })?;
             let Some(payload) = payload else {
                 return Ok(None);
             };
@@ -313,17 +338,21 @@ where
             Ok::<_, ApiError>(Some((vec![encode(header, &payload)?], ())))
         })
         .await?;
-        let mut held = self.people();
-        for raw in appended.into_iter().flat_map(|(events, ())| events) {
-            held.apply(raw);
-        }
+        self.people(org, |held| {
+            for raw in appended.into_iter().flat_map(|(events, ())| events) {
+                held.apply(raw);
+            }
+        });
         Ok(())
     }
 
-    pub(crate) fn people(&self) -> MutexGuard<'_, People> {
-        self.inner
+    /// `look` at what this server has read of `org`'s people ledger.
+    pub(crate) fn people<R>(&self, org: OrgId, look: impl FnOnce(&mut People) -> R) -> R {
+        let mut held = self
+            .inner
             .people
             .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner);
+        look(held.of(org))
     }
 }

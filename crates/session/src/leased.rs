@@ -14,11 +14,12 @@ use std::time::Duration;
 use glave_event::ThreadId;
 use glave_harness::Cancel;
 use glave_ports::{
-    BlobStore, EventLog, Holder, Lease, Leased, Leases, ModelProvider, Scope, Standing,
+    BlobStore, EventLog, Holder, Lease, Leased, Leases, ModelProvider, OrgId, Scope, Standing,
     ThreadQuery, ThreadView,
 };
 
 use crate::held::Slot;
+use crate::ledger::own_scope;
 use crate::protocol::{ApiError, code};
 use crate::server::Server;
 use crate::words::Sentence;
@@ -70,12 +71,17 @@ where
         Ok(*self.inner.holder.get_or_init(|| made))
     }
 
-    /// Takes `thread`'s lease for this server: `None` while another server holds it.
-    pub(crate) async fn take(&self, thread: ThreadId) -> Result<Option<Lease>, ApiError> {
+    /// Takes the lease of `thread`, in `org`, for this server: `None` while another server holds
+    /// it.
+    pub(crate) async fn take(
+        &self,
+        org: OrgId,
+        thread: ThreadId,
+    ) -> Result<Option<Lease>, ApiError> {
         let on = Leased::Thread(thread);
         let leases = &self.inner.leases;
         leases
-            .acquire(self.inner.org, on, self.holder()?, LEASE)
+            .acquire(org, on, self.holder()?, LEASE)
             .await
             .map_err(|error| ApiError::internal(&error))
     }
@@ -83,7 +89,10 @@ where
     /// Takes `thread`'s lease for work on it, refused with `-32011` while another server holds
     /// it.
     pub(crate) async fn lease(&self, thread: ThreadId) -> Result<Lease, ApiError> {
-        self.take(thread).await?.ok_or_else(|| elsewhere(thread))
+        let org = self.scope_of(thread)?.org();
+        self.take(org, thread)
+            .await?
+            .ok_or_else(|| elsewhere(thread))
     }
 
     /// Lets go of `lease`; one that cannot be let go lapses on its own.
@@ -98,9 +107,9 @@ where
     /// another server's lease holds is left to it, or to this server once the lease lapses.
     pub async fn repair_left_open(&self) -> Result<Repaired, ApiError> {
         let mut repaired = Repaired::default();
-        for project in self.task_projects().await? {
+        for at in self.task_projects().await? {
             // Glave's own: recovery, which no one asks for.
-            let scope = Scope::glaves_own(self.inner.org, project);
+            let scope = own_scope(at);
             for view in self.open_turns(&scope).await? {
                 // A subagent's turn runs, and goes on, under its parent's lease.
                 let root = view.parent.unwrap_or(view.thread);
@@ -148,7 +157,7 @@ where
         if matches!(self.lock().get(&root), Some(Slot::Busy { .. })) {
             return Ok(());
         }
-        let Some(lease) = self.take(root).await? else {
+        let Some(lease) = self.take(scope.org(), root).await? else {
             repaired.held = repaired.held.saturating_add(1);
             return Ok(());
         };

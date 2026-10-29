@@ -118,6 +118,15 @@ impl Scope {
     pub fn project(self) -> ProjectId {
         self.project
     }
+
+    /// Where this scope is, without the check that made it: the key glave's own caches of a
+    /// project keep, which two organizations' projects of the same id never share.
+    pub fn located(self) -> Located {
+        Located {
+            org: self.org,
+            project: self.project,
+        }
+    }
 }
 
 impl fmt::Display for Scope {

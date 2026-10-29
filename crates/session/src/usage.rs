@@ -115,9 +115,10 @@ where
             .collect();
         let mut calls = BTreeMap::new();
         for project in self.projects_of(caller).await? {
-            let scope = match self.authorized(caller, project).await {
+            let scope = match self.authorized(caller, project.project).await {
                 Ok((_, scope)) => scope,
                 Err(error) => {
+                    let project = project.project;
                     tracing::warn!("calls in project {project} not counted: {}", error.message);
                     continue;
                 }

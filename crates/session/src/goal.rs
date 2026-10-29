@@ -111,7 +111,7 @@ where
 
     /// `thread`'s latest goal, read from the log.
     pub(crate) async fn goal(&self, thread: ThreadId) -> Result<Option<GoalProgress>, ApiError> {
-        let scope = self.scope_of(thread).await?;
+        let scope = self.scope_of(thread)?;
         self.inner
             .harness
             .goal(scope, thread)

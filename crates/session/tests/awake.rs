@@ -181,6 +181,7 @@ fn the_person_turns_it_off_and_on_and_no_one_else_does() {
             }),
             trace: None,
             profile: None,
+            org: None,
         };
         let refused = server
             .request_as(&elsewhere, Request::AwakeSet { on: true })
