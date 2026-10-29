@@ -24,7 +24,8 @@
 //! came with), `roots` (the folders the client says it works for: asked of it on the older
 //! protocol, or inside the call on MCP 2026-07-28), and `progress` (says how it is going every
 //! `every` milliseconds, `times` times, then answers; or until cancelled, with `times` 0). Its
-//! resources: `test://greeting` (text) and `test://logo` (binary).
+//! resources: `test://greeting` (text) and `test://logo` (binary). Its prompt: `review`
+//! (arguments `pr` and `focus`), whose text names both.
 
 use std::io::Write as _;
 use std::process::ExitCode;
@@ -40,11 +41,12 @@ use hyper_util::rt::TokioIo;
 use hyper_util::service::TowerToHyperService;
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, DiscoverRequestMethod,
-    DiscoverResult, InputRequest, InputRequests, InputRequiredResult, JsonObject,
-    ListResourcesResult, ListRootsResult, ListToolsResult, PaginatedRequestParams,
-    ProgressNotificationParam, ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult,
-    Resource, ResourceContents, ServerCapabilities, ServerConfig, SubscriptionFilter, Tool,
-    ToolAnnotations,
+    DiscoverResult, GetPromptRequestParams, GetPromptResponse, GetPromptResult, InputRequest,
+    InputRequests, InputRequiredResult, JsonObject, ListPromptsResult, ListResourcesResult,
+    ListRootsResult, ListToolsResult, PaginatedRequestParams, ProgressNotificationParam, Prompt,
+    PromptArgument, PromptMessage, ReadResourceRequestParams, ReadResourceResponse,
+    ReadResourceResult, Resource, ResourceContents, Role, ServerCapabilities, ServerConfig,
+    SubscriptionFilter, Tool, ToolAnnotations,
 };
 use rmcp::service::{RequestContext, RoleServer, SubscriptionContext, SubscriptionSink};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
@@ -164,6 +166,7 @@ impl ServerHandler for TestServer {
                 .enable_tools()
                 .enable_tool_list_changed()
                 .enable_resources()
+                .enable_prompts()
                 .build(),
         )
         .with_instructions(if self.results.is_some() {
@@ -220,6 +223,46 @@ impl ServerHandler for TestServer {
             tools: self.tools(),
             ..Default::default()
         }))
+    }
+
+    fn list_prompts(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<ListPromptsResult, ErrorData>> + Send + '_ {
+        let arguments = vec![PromptArgument::new("pr"), PromptArgument::new("focus")];
+        let review = Prompt::new("review", Some("Review a pull request."), Some(arguments));
+        std::future::ready(Ok(ListPromptsResult {
+            prompts: vec![review],
+            ..Default::default()
+        }))
+    }
+
+    fn get_prompt(
+        &self,
+        request: GetPromptRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<GetPromptResponse, ErrorData>> + Send + '_ {
+        let given = |name: &str| {
+            request
+                .arguments
+                .as_ref()
+                .and_then(|arguments| arguments.get(name))
+                .and_then(|value| value.as_str())
+                .unwrap_or("(none)")
+                .to_owned()
+        };
+        std::future::ready(match request.name.as_str() {
+            "review" => {
+                let text = format!("Review PR {}, looking at {}.", given("pr"), given("focus"));
+                let message = PromptMessage::new_text(Role::User, text);
+                Ok(GetPromptResult::new(vec![message]).into())
+            }
+            other => Err(ErrorData::invalid_params(
+                format!("no prompt {other}"),
+                None,
+            )),
+        })
     }
 
     fn list_resources(

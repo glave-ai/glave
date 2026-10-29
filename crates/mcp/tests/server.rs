@@ -324,3 +324,52 @@ fn closing_a_server_that_is_still_starting_stops_it() {
         assert_eq!(why, "it was closed");
     });
 }
+
+#[test]
+fn a_servers_prompt_is_the_text_its_command_sends_on_either_protocol() {
+    block_on!(async {
+        for args in [&[][..], &["--legacy"][..]] {
+            let server = launch("tests", &stdio(SERVER, args, &[]), Limits::default());
+            let sent = server
+                .prompt(
+                    "mcp__tests__review",
+                    " 12 the error paths ",
+                    &NeverCancelled,
+                )
+                .await;
+            assert_eq!(
+                sent,
+                Some(Ok("Review PR 12, looking at the error paths.".to_owned())),
+                "{args:?}"
+            );
+            // Another server's, or one it does not offer, is not its to answer.
+            for name in ["mcp__other__review", "mcp__tests__nothing"] {
+                assert_eq!(server.prompt(name, "", &NeverCancelled).await, None);
+            }
+            server.close().await;
+        }
+    });
+}
+
+#[test]
+fn a_prompt_that_cannot_be_had_says_why() {
+    block_on!(async {
+        let failing = launch("down", &stdio("false", &[], &[]), Limits::default());
+        let why = failing
+            .prompt("mcp__down__review", "", &NeverCancelled)
+            .await;
+        assert!(
+            matches!(&why, Some(Err(why)) if why.contains("down")),
+            "{why:?}"
+        );
+        let server = start(&[]).await;
+        let cancelled = server
+            .prompt("mcp__tests__review", "12", &AlreadyCancelled)
+            .await;
+        assert_eq!(
+            cancelled,
+            Some(Err("[stopped: the person cancelled the turn]".to_owned()))
+        );
+        server.close().await;
+    });
+}

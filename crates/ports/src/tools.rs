@@ -185,6 +185,19 @@ pub trait ToolSource: Send + Sync {
         ToolKind::Other
     }
 
+    /// The text the person sends by typing `/name` and `words`, when this source offers a
+    /// prompt by that name (an MCP server's, `mcp__<server>__<prompt>`): `None` when it offers
+    /// none, `Err` with why it could not be had.
+    fn prompt<'a>(
+        &'a self,
+        name: &'a str,
+        words: &'a str,
+        cancel: &'a dyn Cancellation,
+    ) -> BoxFuture<'a, Option<Result<String, String>>> {
+        let _ = (name, words, cancel);
+        Box::pin(std::future::ready(None))
+    }
+
     /// Runs one call. Failures are outputs the model can read, never errors.
     fn call<'a>(
         &'a self,

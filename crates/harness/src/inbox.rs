@@ -147,7 +147,17 @@ where
             && !cancel.is_cancelled()
             && let Some(queued) = waiting.pop_front()
         {
-            let text = self.expand(&queued.text).into_owned();
+            // A server's prompt that could not be had is given back with why, as a hook's stop is.
+            let text = match self.expand(thread, &queued.text, cancel).await {
+                Ok(text) => text,
+                Err(why) => {
+                    live(Live::Unread {
+                        id: queued.id,
+                        reason: Some(why),
+                    });
+                    continue;
+                }
+            };
             let blocked = if thread.delegated() {
                 Ok(None)
             } else {
@@ -249,10 +259,12 @@ where
                     total.absorb(&turn);
                     total.outcome = turn.outcome;
                 }
-                Err(HarnessError::PromptBlocked(reason)) => live(Live::Unread {
-                    id: next.id,
-                    reason: Some(reason),
-                }),
+                Err(HarnessError::PromptBlocked(reason) | HarnessError::PromptFailed(reason)) => {
+                    live(Live::Unread {
+                        id: next.id,
+                        reason: Some(reason),
+                    });
+                }
                 Err(error) => {
                     give_back(thread, live);
                     return Err(error);

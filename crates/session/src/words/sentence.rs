@@ -110,6 +110,8 @@ sentences! {
     NoApproval { approval: String } = "no-approval" "no approval { $approval } is pending",
     NoQuestion { question: String } = "no-question" "no question { $question } is waiting",
     PromptBlocked { reason: String } = "prompt-blocked" "a hook stopped this prompt: { $reason }",
+    PromptFailed { reason: String } = "prompt-failed"
+        "the command's text could not be had from its server: { $reason }",
     TitleLength { most: usize } = "title-length" "a title is 1 to { $most } characters, not only spaces",
     QueueFull { most: usize } = "queue-full"
         "{ $most } messages are already waiting for the model to read them: wait until it has, or stop it",

@@ -466,6 +466,37 @@ impl McpServer {
         connection.read(uri, meta, cancel, self.waits.quiet).await
     }
 
+    /// The text of the prompt the person typed as `/name`, with `words`, when the server offers
+    /// one by that name; `None` without asking a server whose name it is not.
+    async fn prompt_text(
+        &self,
+        name: &str,
+        words: &str,
+        cancel: &dyn Cancellation,
+    ) -> Option<Result<String, String>> {
+        if !name.starts_with(&crate::exposed(&self.name, "")) {
+            return None;
+        }
+        let connection = match unless_cancelled(cancel, self.connection()).await {
+            Some(Ok(connection)) => connection,
+            Some(Err(err)) => return Some(Err(err.to_string())),
+            None => return Some(Err(CANCELLED.to_owned())),
+        };
+        if !connection.has_prompts() {
+            return None;
+        }
+        let prompts = match connection.prompts(cancel, self.call_limit()).await {
+            Ok(prompts) => prompts,
+            Err(err) => return Some(Err(err)),
+        };
+        let prompt = prompts
+            .into_iter()
+            .find(|prompt| crate::exposed(&self.name, &prompt.name) == name)?;
+        let arguments = crate::prompts::arguments(&prompt, words);
+        let got = connection.prompt(&prompt.name, arguments, cancel, self.call_limit());
+        Some(got.await.map(|result| crate::prompts::text(&result)))
+    }
+
     async fn list(&self) -> Result<Vec<ToolInfo>, ToolError> {
         let connection = self.connection().await.map_err(|err| ToolError {
             source_name: self.name.clone(),
@@ -580,6 +611,15 @@ impl ToolSource for McpServer {
             Some(search) if search == name => ToolKind::Web,
             _ => ToolKind::Other,
         }
+    }
+
+    fn prompt<'a>(
+        &'a self,
+        name: &'a str,
+        words: &'a str,
+        cancel: &'a dyn Cancellation,
+    ) -> BoxFuture<'a, Option<Result<String, String>>> {
+        Box::pin(self.prompt_text(name, words, cancel))
     }
 
     fn call<'a>(

@@ -39,6 +39,10 @@ pub enum HarnessError {
     /// A `UserPromptSubmit` hook stopped the prompt; the model never saw it.
     #[error("a hook stopped this prompt: {0}")]
     PromptBlocked(String),
+    /// The prompt named a tool server's prompt, which could not be had; the model never saw
+    /// it.
+    #[error("the prompt's text could not be had: {0}")]
+    PromptFailed(String),
     /// What was asked for is not valid, such as an empty title.
     #[error(transparent)]
     Invalid(#[from] Invalid),

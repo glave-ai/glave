@@ -123,3 +123,28 @@ fn bad_settings_stop_glave_before_anything_runs() {
     assert!(shown.contains("comand"), "names the unknown field: {shown}");
     assert!(model.received().is_empty());
 }
+
+#[test]
+fn a_servers_prompt_is_sent_as_the_persons_message_when_they_type_its_command() {
+    let place = place("mcp-prompt");
+    std::fs::create_dir_all(&place.home).unwrap();
+    std::fs::write(place.home.join("config.toml"), "project_memory = \"off\"\n").unwrap();
+    settings(&place, &json!({ "tests": { "command": test_server() } }));
+    let model = FakeServer::start(vec![Reply::text("Reviewed.")]).unwrap();
+    let output = glave(
+        &place,
+        &model,
+        &["--model", "m", "/mcp__tests__review 12 the error paths"],
+        "",
+    );
+    let shown = text(&output);
+    assert!(output.status.success(), "{shown}");
+    let received = model.received();
+    let asked = said(&received[0].body, "user");
+    assert!(
+        asked
+            .iter()
+            .any(|text| text.contains("Review PR 12, looking at the error paths.")),
+        "{asked:?}"
+    );
+}

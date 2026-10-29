@@ -3,10 +3,18 @@
 //! `$ARGUMENTS` replaced by the words and `$1` to `$9` by each of them. A command is only text
 //! the person sends, so it runs nothing and needs no trust. Optional frontmatter may give a
 //! `description` and an `argument-hint`, for listings; other fields are ignored.
+//!
+//! A tool server's prompts are commands too, named as Claude Code names them:
+//! `/mcp__<server>__<prompt> words` sends the text the server gives for them.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use glave_ports::{BlobStore, EventLog, ModelProvider};
+
+use crate::approval::Approver;
+use crate::cancel::Cancel;
+use crate::harness::{Harness, Thread};
 use crate::skills::frontmatter::{self, Value};
 
 /// The folders in a project, and in the person's home, that hold commands: glave's own, then
@@ -88,6 +96,45 @@ pub(crate) fn invoked<'a>(
         .iter()
         .find(|command| command.name == name)
         .map(|command| (command, arguments))
+}
+
+impl<P, L, B, A> Harness<P, L, B, A>
+where
+    P: ModelProvider,
+    L: EventLog,
+    B: BlobStore,
+    A: Approver,
+{
+    /// What the person's `prompt` sends: a command's text when it names one, a tool server's
+    /// prompt when it names one of those, else itself; `Err` with why a server's prompt could
+    /// not be had.
+    pub(crate) async fn expand(
+        &self,
+        thread: &Thread,
+        prompt: &str,
+        cancel: &Cancel,
+    ) -> Result<String, String> {
+        if let Some((command, arguments)) = invoked(&self.settings.commands, prompt) {
+            return Ok(command.expand(arguments));
+        }
+        if let Some((name, words)) = served(prompt) {
+            for source in self.sources_for(thread) {
+                if let Some(text) = source.prompt(name, words, cancel).await {
+                    return text;
+                }
+            }
+        }
+        Ok(prompt.to_owned())
+    }
+}
+
+/// The tool server's prompt `prompt` invokes, with what follows its name, as Claude Code names
+/// them: `/mcp__docs__review 12` invokes `mcp__docs__review` with `12`. Which server offers it
+/// is for the servers to say.
+pub(crate) fn served(prompt: &str) -> Option<(&str, &str)> {
+    let rest = prompt.trim_start().strip_prefix('/')?;
+    let (name, arguments) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+    name.starts_with("mcp__").then_some((name, arguments))
 }
 
 /// The folders commands are looked for in, first found first: in each folder from `root` up
