@@ -5,7 +5,7 @@
 
 use std::fmt;
 
-use glave_event::{At, Principal};
+use glave_event::{At, Principal, Worded, worded};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -59,9 +59,9 @@ impl Project {
     /// Refuses a name no one could read: empty, or longer than [`MAX_NAME`] characters.
     pub fn check_name(name: &str) -> Result<(), ProjectError> {
         if name.trim().is_empty() || name.chars().count() > MAX_NAME {
-            return Err(ProjectError::Invalid(format!(
-                "a project's name is 1 to {MAX_NAME} characters, not only spaces"
-            )));
+            return Err(ProjectError::Invalid(ProjectRefusal::NameLength {
+                most: MAX_NAME.to_string(),
+            }));
         }
         Ok(())
     }
@@ -103,9 +103,9 @@ impl Project {
             .iter()
             .find(|(other, called)| *other != project && Self::same_name(name, called))
         {
-            Some((_, called)) => Err(ProjectError::Conflict(format!(
-                "there is a project called {called:?} already; choose another name"
-            ))),
+            Some((_, called)) => Err(ProjectError::Conflict(ProjectRefusal::NameTaken {
+                name: format!("{called:?}"),
+            })),
             None => Ok(()),
         }
     }
@@ -152,16 +152,34 @@ impl fmt::Display for FolderKey {
     }
 }
 
+worded! {
+    /// Why a project was refused, in glave's own words, which the session writes again in the
+    /// caller's language (`specs/session.md`, "Languages"); each store says it the same way.
+    ProjectRefusal {
+        NameLength { most } = "project-name-length"
+            "a project's name is 1 to { $most } characters, not only spaces",
+        NameTaken { name } = "project-name-taken"
+            "there is a project called { $name } already; choose another name",
+        NotPersonal = "project-not-personal" "a personal project must be personal",
+        Exists { project } = "project-exists" "project { $project } exists already",
+        HasPersonal = "project-has-personal" "this person has a personal project already",
+        PersonalOrId = "project-personal-or-id"
+            "this person has a personal project already, or the id is taken",
+        IdOrPersonal = "project-id-or-personal"
+            "the project's id is taken, or its owner has a personal project already",
+    }
+}
+
 /// Why a projects call failed.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ProjectError {
     #[error("no project {0} here")]
     NotFound(ProjectId),
     /// The project exists already, or the person already has a personal project.
-    #[error("{0}")]
-    Conflict(String),
-    #[error("{0}")]
-    Invalid(String),
+    #[error("{}", .0.english())]
+    Conflict(ProjectRefusal),
+    #[error("{}", .0.english())]
+    Invalid(ProjectRefusal),
     #[error("project storage failed: {0}")]
     Storage(String),
 }
@@ -235,4 +253,29 @@ pub trait Projects: Send + Sync {
         org: OrgId,
         keys: &'a [FolderKey],
     ) -> BoxFuture<'a, Result<Option<Project>, ProjectError>>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Each refusal's English, as the stores wrote it before it was typed: what the log reads
+    /// stays the same, byte for byte.
+    #[test]
+    fn each_refusal_reads_as_the_stores_wrote_it_before() {
+        let before = [
+            "a project's name is 1 to <most> characters, not only spaces",
+            "there is a project called <name> already; choose another name",
+            "a personal project must be personal",
+            "project <project> exists already",
+            "this person has a personal project already",
+            "this person has a personal project already, or the id is taken",
+            "the project's id is taken, or its owner has a personal project already",
+        ];
+        let every = ProjectRefusal::every();
+        assert_eq!(every.len(), before.len());
+        for (refusal, before) in every.iter().zip(before) {
+            assert_eq!(ProjectError::Invalid(refusal.clone()).to_string(), before);
+        }
+    }
 }

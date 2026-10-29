@@ -57,7 +57,8 @@ pub use model::{
 };
 pub use objects::{Listed, ObjectWriter, Objects, object_name_ok};
 pub use projects::{
-    FolderKey, MAX_NAME, Project, ProjectError, ProjectKind, Projects, origin_remote,
+    FolderKey, MAX_NAME, Project, ProjectError, ProjectKind, ProjectRefusal, Projects,
+    origin_remote,
 };
 pub use remove::remove_tree;
 pub use scope::{Located, OrgId, ProjectId, Scope};

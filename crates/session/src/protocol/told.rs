@@ -3,7 +3,8 @@
 use std::fmt;
 use std::ops::Deref;
 
-use glave_event::Caution;
+use glave_event::{Caution, Worded};
+use glave_ports::ProjectRefusal;
 use glave_ports::computer::{Reason, Refusal};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -29,8 +30,26 @@ enum Said {
     Sentences(Vec<Sentence>),
     /// Why a call needs the person, from the parts its `approval.requested` records.
     Caution(Caution),
-    /// A computer's refusal in glave's own words.
-    Refusal(Refusal),
+    /// Words of another crate's table.
+    Theirs(Theirs),
+}
+
+/// Words of another crate's table that the server passes on.
+#[derive(Debug, Clone)]
+enum Theirs {
+    /// A computer's refusal.
+    Computer(Refusal),
+    /// A project's refusal.
+    Project(ProjectRefusal),
+}
+
+impl Theirs {
+    fn words(&self) -> &dyn Worded {
+        match self {
+            Self::Computer(refusal) => refusal,
+            Self::Project(refusal) => refusal,
+        }
+    }
 }
 
 impl Told {
@@ -61,7 +80,7 @@ impl Told {
         let written = match self.said.as_deref() {
             Some(Said::Sentences(said)) => Some(said_in(language, said)),
             Some(Said::Caution(caution)) => caution_in(language, caution),
-            Some(Said::Refusal(refusal)) => Some(word(language, refusal)),
+            Some(Said::Theirs(theirs)) => Some(word(language, theirs.words())),
             None => None,
         };
         if let Some(written) = written {
@@ -92,7 +111,17 @@ impl From<&Reason> for Told {
             text: reason.to_string(),
             said: reason
                 .refusal()
-                .map(|refusal| Box::new(Said::Refusal(refusal.clone()))),
+                .map(|refusal| Box::new(Said::Theirs(Theirs::Computer(refusal.clone())))),
+        }
+    }
+}
+
+/// A project's refusal, written again in the caller's language.
+impl From<ProjectRefusal> for Told {
+    fn from(refusal: ProjectRefusal) -> Self {
+        Self {
+            text: refusal.english(),
+            said: Some(Box::new(Said::Theirs(Theirs::Project(refusal)))),
         }
     }
 }

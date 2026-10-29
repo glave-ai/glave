@@ -9,7 +9,7 @@ use glave_event::{At, Principal, PrincipalId};
 use super::{Verdict, ensure, uuid_v7};
 
 mod racing;
-use crate::projects::{FolderKey, Project, ProjectError, ProjectKind, Projects};
+use crate::projects::{FolderKey, Project, ProjectError, ProjectKind, ProjectRefusal, Projects};
 use crate::scope::{OrgId, ProjectId};
 
 fn person(n: u64) -> Result<Principal, String> {
@@ -73,7 +73,7 @@ pub async fn projects(store: &dyn Projects) -> Verdict {
     ensure(
         matches!(
             store.create(org, &nameless).await,
-            Err(ProjectError::Invalid(said)) if said.starts_with("a project's name")
+            Err(ProjectError::Invalid(ProjectRefusal::NameLength { .. }))
         ),
         "a name of only spaces must be refused, saying what a project's name may be",
     )?;

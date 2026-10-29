@@ -2,7 +2,8 @@
 
 use glave_event::{At, Principal};
 use glave_ports::{
-    BoxFuture, FolderKey, OrgId, Project, ProjectError, ProjectId, ProjectKind, Projects,
+    BoxFuture, FolderKey, OrgId, Project, ProjectError, ProjectId, ProjectKind, ProjectRefusal,
+    Projects,
 };
 use rusqlite::{
     Connection, ErrorCode, OptionalExtension as _, Transaction, TransactionBehavior, params,
@@ -179,9 +180,11 @@ fn insert(transaction: &Transaction<'_>, org: &str, project: &Project) -> Result
         {
             Err(Failure::Project(ProjectError::Conflict(
                 if project.kind == ProjectKind::Personal {
-                    "this person has a personal project already, or the id is taken".to_owned()
+                    ProjectRefusal::PersonalOrId
                 } else {
-                    format!("project {} exists already", project.id)
+                    ProjectRefusal::Exists {
+                        project: project.id.to_string(),
+                    }
                 },
             )))
         }
@@ -191,7 +194,7 @@ fn insert(transaction: &Transaction<'_>, org: &str, project: &Project) -> Result
 
 fn personal_now(connection: &mut Connection, org: &str, new: &Project) -> Result<Project, Failure> {
     if new.kind != ProjectKind::Personal {
-        return Err(ProjectError::Invalid("a personal project must be personal".into()).into());
+        return Err(ProjectError::Invalid(ProjectRefusal::NotPersonal).into());
     }
     let owner = principal_text(&new.owner)?;
     let transaction = writing(connection)?;

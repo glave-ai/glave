@@ -6,7 +6,7 @@ use std::sync::{Mutex, MutexGuard};
 
 use glave_event::{At, Principal};
 
-use crate::projects::{FolderKey, Project, ProjectError, ProjectKind, Projects};
+use crate::projects::{FolderKey, Project, ProjectError, ProjectKind, ProjectRefusal, Projects};
 use crate::scope::{OrgId, ProjectId};
 use crate::tools::BoxFuture;
 
@@ -85,9 +85,7 @@ impl InMemoryProjects {
 
     fn personal_now(&self, org: OrgId, new: &Project) -> Result<Project, ProjectError> {
         if new.kind != ProjectKind::Personal {
-            return Err(ProjectError::Invalid(
-                "a personal project must be personal".into(),
-            ));
+            return Err(ProjectError::Invalid(ProjectRefusal::NotPersonal));
         }
         let mut held = self.held()?;
         if let Some(found) = personal_of(&held, org, &new.owner) {
@@ -162,15 +160,12 @@ fn projects_of<'a>(
 /// Keeps `project`, a project under the next free name among its owner's; answers it as kept.
 fn insert(held: &mut Held, org: OrgId, project: &Project) -> Result<Project, ProjectError> {
     if held.projects.contains_key(&(org, project.id)) {
-        return Err(ProjectError::Conflict(format!(
-            "project {} exists already",
-            project.id
-        )));
+        return Err(ProjectError::Conflict(ProjectRefusal::Exists {
+            project: project.id.to_string(),
+        }));
     }
     if project.kind == ProjectKind::Personal && personal_of(held, org, &project.owner).is_some() {
-        return Err(ProjectError::Conflict(
-            "this person has a personal project already".into(),
-        ));
+        return Err(ProjectError::Conflict(ProjectRefusal::HasPersonal));
     }
     let mut kept = project.clone();
     if kept.kind == ProjectKind::Project {

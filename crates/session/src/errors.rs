@@ -86,8 +86,8 @@ impl From<ProjectError> for ApiError {
     fn from(error: ProjectError) -> Self {
         match error {
             ProjectError::NotFound(project) => crate::projects::no_project(project),
-            ProjectError::Conflict(_) | ProjectError::Invalid(_) => {
-                Self::new(code::INVALID_PARAMS, error.to_string())
+            ProjectError::Conflict(refusal) | ProjectError::Invalid(refusal) => {
+                Self::new(code::INVALID_PARAMS, refusal)
             }
             ProjectError::Storage(_) => Self::internal(&error),
         }
@@ -271,7 +271,7 @@ pub(crate) fn refused(error: &SignInError) -> Sentence {
 
 #[cfg(test)]
 mod tests {
-    use glave_ports::ProjectId;
+    use glave_ports::{ProjectId, ProjectRefusal};
 
     use crate::protocol::Told;
 
@@ -294,10 +294,15 @@ mod tests {
 
     #[test]
     fn what_the_person_can_fix_keeps_its_own_words() {
-        let invalid = ApiError::from(ProjectError::Invalid("the name is empty".into()));
+        let invalid = ApiError::from(ProjectError::Invalid(ProjectRefusal::NameLength {
+            most: "200".into(),
+        }));
         assert_eq!(
             (invalid.code, &*invalid.message),
-            (code::INVALID_PARAMS, "the name is empty")
+            (
+                code::INVALID_PARAMS,
+                "a project's name is 1 to 200 characters, not only spaces"
+            )
         );
         let project = ProjectId::from_uuid(uuid::Uuid::nil());
         assert_eq!(
@@ -344,6 +349,13 @@ mod tests {
         told.push((NotQueued::Full.to_string(), ApiError::from(NotQueued::Full)));
         let busy = StreamError::Busy { thread };
         told.push((busy.to_string(), ApiError::from(busy)));
+        let projects = ProjectRefusal::every().into_iter().flat_map(|refusal| {
+            [
+                ProjectError::Invalid(refusal.clone()),
+                ProjectError::Conflict(refusal),
+            ]
+        });
+        told.extend(projects.map(|error| (error.to_string(), ApiError::from(error))));
         for (english, error) in told {
             assert_eq!(&*error.message, english.as_str());
             let mut written = error.message.clone();
