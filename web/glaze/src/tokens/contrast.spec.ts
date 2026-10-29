@@ -116,6 +116,12 @@ const PAIRS: readonly Pair[] = [
     least: NOT_TEXT,
     what: 'the focus ring',
   },
+  {
+    color: '--glz-color-control-edge',
+    on: CONTROLS_ON,
+    least: NOT_TEXT,
+    what: 'the edge of a checkbox or radio',
+  },
   ...['--glz-accent', '--glz-color-danger'].map((color) => ({
     color,
     on: CONTROLS_ON,
