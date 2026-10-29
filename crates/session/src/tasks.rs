@@ -14,7 +14,7 @@ use glave_event::{
     TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
 };
 use glave_harness::Goal;
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope, title_from};
+use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Scope, title_from};
 
 use crate::choice::Choice;
 use crate::held::{Slot, busy};
@@ -48,7 +48,7 @@ pub(crate) enum Work {
 #[derive(Debug, Clone)]
 pub(crate) struct Running {
     /// The project whose ledger records it.
-    project: ProjectId,
+    project: Located,
     started: TaskStarted,
     at: At,
     goal: bool,
@@ -126,7 +126,7 @@ where
         budget: Option<u64>,
         schedule: Option<Fired>,
     ) -> Result<TaskInfo, ApiError> {
-        let project = self.may_start_task(caller, thread).await?.project();
+        let project = self.may_start_task(caller, thread).await?.located();
         let (title, goal) = match &work {
             Work::Turn(prompt, _) => (title_from(prompt).unwrap_or_default(), false),
             Work::Goal(Some(goal)) => (title_from(&goal.objective).unwrap_or_default(), true),
@@ -371,7 +371,7 @@ where
                 })
             };
             for thread in stale {
-                let Some(lease) = self.take(thread).await? else {
+                let Some(lease) = self.take(project.org, thread).await? else {
                     recovered.held = recovered.held.saturating_add(1);
                     continue;
                 };
@@ -387,7 +387,7 @@ where
 
     /// Records `thread`'s task in `project` interrupted, under its thread's lease, unless its
     /// ending was recorded meanwhile; says whether it recorded.
-    async fn interrupt(&self, project: ProjectId, thread: ThreadId) -> Result<bool, ApiError> {
+    async fn interrupt(&self, project: Located, thread: ThreadId) -> Result<bool, ApiError> {
         self.catch_up(project).await?;
         let open = self
             .ledgers()
@@ -444,7 +444,7 @@ where
     fn running_info(&self, task: &Running) -> TaskInfo {
         TaskInfo {
             thread: task.started.thread,
-            project: task.project,
+            project: task.project.project,
             kind: TaskKind::Agent,
             title: task.started.title.clone(),
             model: task.started.model.clone(),
@@ -460,11 +460,11 @@ where
     }
 
     /// `task` of `project`'s ledger, as lists show it.
-    fn recorded_info(&self, project: ProjectId, task: &Recorded, status: TaskStatus) -> TaskInfo {
+    fn recorded_info(&self, project: Located, task: &Recorded, status: TaskStatus) -> TaskInfo {
         let ended = task.ended.as_ref();
         TaskInfo {
             thread: task.started.thread,
-            project,
+            project: project.project,
             kind: TaskKind::Agent,
             title: task.started.title.clone(),
             model: task.started.model.clone(),

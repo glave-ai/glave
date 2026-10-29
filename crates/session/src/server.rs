@@ -3,7 +3,7 @@
 //! fresh server answers for every thread the log holds, in every project of its organization,
 //! to the callers who work in that project.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
 
@@ -182,8 +182,9 @@ pub struct OnWorkers {
     pub project: ProjectId,
 }
 
-/// A session server for the projects of one organization, its own first, whose threads work in
-/// their projects' folders on the computer its workspace is on. Clones share it.
+/// A session server for the projects of the organizations its callers work in, its own first,
+/// whose threads work in their projects' folders on the computer its workspace is on. Clones
+/// share it.
 pub struct Server<P, L, B> {
     pub(crate) inner: Arc<Inner<P, L, B>>,
 }
@@ -200,11 +201,13 @@ pub(crate) type Glave<P, L, B> = Harness<P, Observed<L>, B, Approvals>;
 
 pub(crate) struct Inner<P, L, B> {
     pub(crate) harness: Glave<P, L, B>,
-    /// The organization whose projects this server serves.
-    pub(crate) org: OrgId,
+    /// The server's own organization: the local person's, and that of everyone the transport
+    /// names no other for (`specs/storage.md`, "Many organizations in one store"). A request
+    /// works in its caller's ([`Server::org_of`]), never in this alone.
+    pub(crate) own: OrgId,
     pub(crate) projects: Arc<dyn Projects>,
     /// The projects of threads looked up.
-    pub(crate) places: Mutex<Places>,
+    pub(crate) places: Arc<Mutex<Places>>,
     /// Whether new threads in a project's folder get a worktree when `thread/start` does not
     /// say: the person's choice, which follows their settings.
     pub(crate) worktree: AtomicBool,
@@ -233,8 +236,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) limits: TaskLimits,
     /// What each project's task ledger says, as far as this server has read it.
     pub(crate) ledgers: Mutex<Ledgers>,
-    /// What the organization's people ledger says, as far as this server has read it.
-    pub(crate) people: Mutex<crate::people::People>,
+    /// What each organization's people ledger says, as far as this server has read it.
+    pub(crate) people: Mutex<crate::people::Peoples>,
     /// Tasks running in this server.
     pub(crate) running: Mutex<Tasks>,
     pub(crate) hub: Arc<Hub>,
@@ -259,8 +262,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) leases: Arc<dyn Leases>,
     /// Who holds this server's leases, made the first time it takes one.
     pub(crate) holder: OnceLock<Holder>,
-    /// The organization's scheduler lease, while this server holds it (`schedule.rs`).
-    pub(crate) scheduling: Mutex<Option<Lease>>,
+    /// The scheduler lease of each organization whose schedules this server fires (`schedule.rs`).
+    pub(crate) scheduling: Mutex<BTreeMap<OrgId, Lease>>,
     /// Where each waiting turn sends how it ends, for whoever follows it (`answers.rs`).
     pub(crate) followed: Followed,
     /// The computer held awake while work runs, where it is.
@@ -327,11 +330,11 @@ where
                 person,
                 limits: wiring.tasks,
                 ledgers: Mutex::new(Ledgers::new()),
-                people: Mutex::new(crate::people::People::default()),
+                people: Mutex::new(crate::people::Peoples::default()),
                 running: Mutex::new(Tasks::new()),
-                org,
+                own: org,
                 projects: wiring.projects,
-                places: Mutex::new(Places::default()),
+                places: Arc::new(Mutex::new(Places::default())),
                 worktree: AtomicBool::new(wiring.worktree),
                 hub,
                 approvals,
@@ -346,7 +349,7 @@ where
                 stopping: AtomicBool::new(false),
                 leases,
                 holder: OnceLock::new(),
-                scheduling: Mutex::new(None),
+                scheduling: Mutex::new(BTreeMap::new()),
                 followed: Followed::default(),
                 awake: wiring.awake.map(Awake::new),
                 worktrees: wiring.worktrees,
@@ -432,7 +435,7 @@ where
         }
         let project = scope.project();
         let own = self.inner.worktree.load(Ordering::Relaxed);
-        let folder = self.folder_found(project).await?;
+        let folder = self.folder_found(scope.located()).await?;
         // The project's own choice, for the person here, is nearer than the server's.
         let copies = match &folder {
             Some(folder) if self.is_theirs(caller) => self
@@ -541,7 +544,7 @@ where
             return Err(no_thread(thread));
         }
         self.ensure_not_deleted(thread).await?;
-        let scope = self.scope_of(thread).await?;
+        let scope = self.scope_of(thread)?;
         let events = self
             .inner
             .harness

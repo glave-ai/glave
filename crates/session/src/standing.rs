@@ -62,7 +62,7 @@ where
             }
             loaded => loaded?,
         }
-        let scope = self.scope_of(thread).await?;
+        let scope = self.scope_of(thread)?;
         self.opened(caller, scope, thread).await
     }
 
@@ -75,7 +75,7 @@ where
         thread: ThreadId,
     ) -> Result<Reply, ApiError> {
         let summary = self.summary(scope, thread).await?;
-        let ask = self.trust_in(caller, scope.project()).await;
+        let ask = self.trust_in(caller, scope.located()).await;
         Ok(Reply::Thread {
             thread: self.asking(summary, ask.as_ref(), true),
         })
@@ -121,7 +121,7 @@ where
         // Its place was found to change it, so it is known by now.
         if change != Change::Unarchive
             && let Some(worktrees) = &self.inner.worktrees
-            && let Ok(scope) = self.scope_of(thread).await
+            && let Ok(scope) = self.scope_of(thread)
         {
             worktrees.release(scope, thread).await;
         }
@@ -151,10 +151,10 @@ where
             .await
             .ok_or_else(|| ApiError::new(code::INTERNAL, Sentence::RenameStopped))?;
         ended.as_ref().as_ref().map_err(ApiError::from)?;
-        let scope = self.scope_of(thread).await?;
+        let scope = self.scope_of(thread)?;
         let summary = self.summary(scope, thread).await?;
         let ask = self
-            .trust_on_page(caller, scope.project(), std::iter::once(thread))
+            .trust_on_page(caller, scope.located(), std::iter::once(thread))
             .await;
         Ok(Reply::Thread {
             thread: self.asking(summary, ask.as_ref(), false),
@@ -204,9 +204,13 @@ where
                 Some(crate::cursor::write(project, standing, last.cursor()))
             })
             .flatten();
-        let protections = self.project_settled(project).await.protections;
+        let protections = self.project_settled(scope.located()).await.protections;
         let ask = self
-            .trust_on_page(caller, project, views.iter().map(|view| view.thread))
+            .trust_on_page(
+                caller,
+                scope.located(),
+                views.iter().map(|view| view.thread),
+            )
             .await;
         let mut threads = Vec::with_capacity(views.len());
         for view in views {
@@ -234,7 +238,7 @@ where
                 .await?
                 .ok_or_else(|| no_thread(thread))?,
         };
-        let protections = self.project_settled(scope.project()).await.protections;
+        let protections = self.project_settled(scope.located()).await.protections;
         self.summarize(scope, view, protections).await
     }
 
@@ -327,7 +331,7 @@ where
             Some(Slot::Busy { .. }) => return Ok(Standing::Active),
             None => {}
         }
-        let scope = self.scope_of(thread).await?;
+        let scope = self.scope_of(thread)?;
         standing_of(self.inner.harness.log(), &scope, thread)
             .await
             .map_err(|error| ApiError::from(&error))

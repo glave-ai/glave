@@ -45,6 +45,14 @@ async fn hear(
 }
 
 /// A time before anything the test servers record.
+/// Bea, whom a host embedding the server calls for.
+fn bea() -> Caller {
+    Caller {
+        person: Some(person("https://id.example.com", "bea").unwrap()),
+        ..Caller::default()
+    }
+}
+
 fn long_ago() -> At {
     At::try_from("2026-01-01T00:00:00.000Z".to_owned()).unwrap()
 }
@@ -225,12 +233,7 @@ fn nobody_hears_of_threads_in_another_person_s_projects() {
             let mut over = Over::new(kind, &server, &name).await;
             // The watcher is the person here; bea, whom a host embedding the server calls for, has
             // a project of her own.
-            let bea = Caller {
-                person: Some(person("https://id.example.com", "bea").unwrap()),
-                auth: None,
-                trace: None,
-                profile: None,
-            };
+            let bea = bea();
             let theirs = project_of(&server, &bea).await;
             let hidden = start_in(&server, &bea, theirs).await;
             let mut watcher = over.watcher().await;
@@ -271,12 +274,7 @@ fn a_person_hears_their_own_settings_change_and_nobody_else_s() {
             let dir = folder(&name);
             let server = server(&dir, Vec::new(), Answering::Clients).await;
             let mut over = Over::new(kind, &server, &name).await;
-            let bea = Caller {
-                person: Some(person("https://id.example.com", "bea").unwrap()),
-                auth: None,
-                trace: None,
-                profile: None,
-            };
+            let bea = bea();
             let mut watcher = over.watcher().await;
             // From long ago, so the thread is heard of whether the watch begins before it or
             // after it; heard, the watch follows from there.

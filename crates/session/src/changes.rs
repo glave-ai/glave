@@ -50,11 +50,13 @@ where
         call: &CallId,
         turn: Option<Seq>,
     ) -> Result<Vec<Made>, ApiError> {
-        let scope = self.scope_of(parent).await?;
+        let scope = self.scope_of(parent)?;
         let child = self.inner.harness.child_of(&scope, parent, call).await;
         let Some(child) = child.map_err(|error| ApiError::from(&error))? else {
             return Ok(Vec::new());
         };
+        // A subagent is in its parent's project.
+        self.place(child.thread, scope);
         let mut reading = Reading::default();
         self.read_all(child.thread, |event| reading.read(event))
             .await?;

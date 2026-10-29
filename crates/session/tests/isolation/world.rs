@@ -1,8 +1,10 @@
-//! The isolation suite's world: two organizations served from one store, each by its own
-//! server, with two people each: the person on that server's computer and one signed in with
-//! OIDC. Each person makes their own things as any client would (a project, threads, a
-//! schedule, a task, memories; the person on the computer also browser sessions, accounts and
-//! a turn waiting for them), and the world keeps the ids.
+//! The isolation suite's world: three organizations on one store, served by two servers. Each
+//! server's own organization has two people: the person on its computer and one signed in with
+//! OIDC. The third is served by the first server beside its own, with two people signed in,
+//! each request of theirs carrying it, so one server serves two organizations. Each person
+//! makes their own things as any client would (a project, threads, a schedule, a task,
+//! memories; the person on the computer also browser sessions, accounts and a turn waiting for
+//! them), and the world keeps the ids.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -39,10 +41,14 @@ pub(super) struct Org<L: EventLog + 'static> {
     pub browsers: Arc<Browsers>,
 }
 
-/// One person: their organization, how they call, and the ids of what they made.
+/// One person: their organization, the server they call, how they call, and the ids of what
+/// they made.
 pub(super) struct Person {
     pub name: &'static str,
+    /// Their organization: 0 and 1 are the servers' own, 2 the one the first serves beside.
     pub org: usize,
+    /// The server they call, in [`World::orgs`].
+    pub server: usize,
     pub caller: Caller,
     pub ids: BTreeMap<Kind, Vec<Value>>,
     /// Their browser's token, while they have one.
@@ -81,6 +87,19 @@ fn home(n: u128) -> (Scope, PrincipalId, Scope) {
     (scope, local, personal)
 }
 
+/// The organization the first server serves beside its own.
+fn third() -> OrgId {
+    OrgId::from_uuid(uuid::Uuid::from_u128(3))
+}
+
+/// `name`, signed in, working in the third organization.
+fn in_third(name: &str) -> Caller {
+    Caller {
+        org: Some(third()),
+        ..signed_in(name)
+    }
+}
+
 fn signed_in(name: &str) -> Caller {
     Caller {
         person: Some(person(ISSUER, name).unwrap()),
@@ -92,6 +111,7 @@ fn signed_in(name: &str) -> Caller {
         }),
         trace: None,
         profile: None,
+        org: None,
     }
 }
 
@@ -126,10 +146,11 @@ async fn serve<L: EventLog + Clone + 'static>(n: u128, parts: &Parts<L>, dir: &P
         Box::new(clock.clone()),
     );
     let browsers = Arc::new(browsers.await.unwrap());
-    // Two held turns in the first organization: one asks to run a command, one asks a question.
-    // A task for each person, then two held turns in the first organization: one asks to run
-    // a command, one asks a question.
-    let mut answers = vec![answer(Some("Done."), None), answer(Some("Done."), None)];
+    // A task for each person it serves (the first serves the third organization's two too),
+    // then two held turns in the first organization: one asks to run a command, one asks a
+    // question.
+    let tasks = if n == 1 { 4 } else { 2 };
+    let mut answers: Vec<_> = (0..tasks).map(|_| answer(Some("Done."), None)).collect();
     if n == 1 {
         answers.push(answer(
             None,
@@ -245,17 +266,19 @@ impl<L: EventLog + Clone + 'static> World<L> {
             folders.push(dir);
         }
         let mut people = vec![
-            Person::new("ada", 0, Caller::default()),
-            Person::new("alan", 0, signed_in("alan")),
-            Person::new("grace", 1, Caller::default()),
-            Person::new("linus", 1, signed_in("linus")),
+            Person::new("ada", 0, 0, Caller::default()),
+            Person::new("alan", 0, 0, signed_in("alan")),
+            Person::new("grace", 1, 1, Caller::default()),
+            Person::new("linus", 1, 1, signed_in("linus")),
+            Person::new("ken", 2, 0, in_third("ken")),
+            Person::new("barbara", 2, 0, in_third("barbara")),
         ];
         for person in &mut people {
             let n = u128::try_from(person.org).unwrap() + 1;
             let id = person.caller.person.unwrap_or(home(n).1);
             person.keep(Kind::Person, json!(id));
             let local = person.caller.auth.is_none();
-            make(&orgs[person.org], person, local).await;
+            make(&orgs[person.server], person, local).await;
         }
         let world = Self {
             orgs,
@@ -275,7 +298,7 @@ impl<L: EventLog + Clone + 'static> World<L> {
             if person.caller.auth.is_some() {
                 continue;
             }
-            let org = &self.orgs[person.org];
+            let org = &self.orgs[person.server];
             let Ok(Reply::Link { code }) = org.server.request(Request::SigninLink {}).await else {
                 panic!("a link");
             };
@@ -321,7 +344,7 @@ impl<L: EventLog + Clone + 'static> World<L> {
     /// Waits until no task anyone can see runs.
     async fn tasks_ended(&self) {
         for person in &self.people {
-            let org = &self.orgs[person.org];
+            let org = &self.orgs[person.server];
             for _ in 0..100_000 {
                 let listed = ask(org, &person.caller, Request::TasksList { limit: None }).await;
                 let tasks: Vec<glave_session::protocol::TaskInfo> =
@@ -336,10 +359,11 @@ impl<L: EventLog + Clone + 'static> World<L> {
 }
 
 impl Person {
-    fn new(name: &'static str, org: usize, caller: Caller) -> Self {
+    fn new(name: &'static str, org: usize, server: usize, caller: Caller) -> Self {
         Self {
             name,
             org,
+            server,
             caller,
             ids: BTreeMap::new(),
             token: None,

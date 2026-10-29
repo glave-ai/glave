@@ -349,9 +349,11 @@ where
 
     /// The scopes of the projects followed: the one named, or every one the caller owns.
     async fn followed(&mut self) -> Result<Vec<Scope>, ApiError> {
-        let projects = match self.only {
-            Some(only) => vec![only],
-            None => self.server.projects_of(&self.caller).await?,
+        let projects = if let Some(only) = self.only {
+            vec![only]
+        } else {
+            let owned = self.server.projects_of(&self.caller).await?;
+            owned.into_iter().map(|at| at.project).collect()
         };
         let mut scopes = Vec::new();
         for project in projects {
@@ -400,7 +402,7 @@ where
         };
         let ask = self
             .server
-            .trust_on_page(&self.caller, project, std::iter::once(thread))
+            .trust_on_page(&self.caller, scope.located(), std::iter::once(thread))
             .await;
         Ok(Some(self.server.asking(summary, ask.as_ref(), false)))
     }

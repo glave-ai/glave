@@ -11,7 +11,7 @@ use glave_event::{
     TaskStarted, ThreadId, decode, encode,
 };
 use glave_ports::stream::{Reserved, append_retrying, catch_up};
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope};
+use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Scope};
 
 use crate::protocol::ApiError;
 use crate::server::Server;
@@ -111,16 +111,23 @@ pub(crate) fn in_order(next: &mut u64, raw: RawEvent) -> Option<(At, Body)> {
     decode(raw).ok().map(|event| (at, event.body))
 }
 
-/// What each project's ledger says, as far as this server has read it.
-pub(crate) type Ledgers = HashMap<ProjectId, Ledger>;
+/// What each project's ledger says, as far as this server has read it, by where the project
+/// is: two organizations' projects never share one.
+pub(crate) type Ledgers = HashMap<Located, Ledger>;
 
-/// `project`'s ledger in `ledgers`, empty until it is read. Past [`LEDGERS`] projects, the others
-/// are forgotten and read again when next asked for.
-fn kept(ledgers: &mut Ledgers, project: ProjectId) -> &mut Ledger {
-    if ledgers.len() >= LEDGERS && !ledgers.contains_key(&project) {
+/// The ledger of the project `at` in `ledgers`, empty until it is read. Past [`LEDGERS`]
+/// projects, the others are forgotten and read again when next asked for.
+fn kept(ledgers: &mut Ledgers, at: Located) -> &mut Ledger {
+    if ledgers.len() >= LEDGERS && !ledgers.contains_key(&at) {
         ledgers.clear();
     }
-    ledgers.entry(project).or_default()
+    ledgers.entry(at).or_default()
+}
+
+/// The scope of the project `at` for glave's own work on its ledgers, which no person's
+/// ownership decides: what a caller asks of them was checked against the project first.
+pub(crate) fn own_scope(at: Located) -> Scope {
+    Scope::glaves_own(at.org, at.project)
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -129,16 +136,16 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Reads whatever was added to `project`'s ledger since this server last looked.
-    pub(crate) async fn catch_up(&self, project: ProjectId) -> Result<(), ApiError> {
+    /// Reads whatever was added to the ledger of the project `at` since this server last looked.
+    pub(crate) async fn catch_up(&self, at: Located) -> Result<(), ApiError> {
         // Glave's own: the project's task ledger.
-        let scope = Scope::glaves_own(self.inner.org, project);
-        let next = self.ledgers().get(&project).map_or(1, Ledger::next_seq);
+        let scope = own_scope(at);
+        let next = self.ledgers().get(&at).map_or(1, Ledger::next_seq);
         let after = Seq::new(next.saturating_sub(1)).ok();
         let log = self.inner.harness.log();
         catch_up(log, &scope, Reserved::Tasks.id(), after, |page| {
             let mut held = self.ledgers();
-            let read = kept(&mut held, project);
+            let read = kept(&mut held, at);
             for raw in page {
                 read.apply(raw);
             }
@@ -147,21 +154,22 @@ where
         Ok(())
     }
 
-    /// Appends `payload` to `project`'s ledger, after anything others wrote meanwhile.
+    /// Appends `payload` to the ledger of the project `at`, after anything others wrote
+    /// meanwhile.
     pub(crate) async fn record_in_ledger<T: Payload>(
         &self,
-        project: ProjectId,
+        at: Located,
         payload: &T,
     ) -> Result<(), ApiError> {
         let ledger = Reserved::Tasks.id();
         // Glave's own: the project's task ledger.
-        let scope = Scope::glaves_own(self.inner.org, project);
+        let scope = own_scope(at);
         let this = self;
         let log = self.inner.harness.log();
         let appended = append_retrying(log, &scope, ledger, move || async move {
-            this.catch_up(project).await?;
+            this.catch_up(at).await?;
             let now = this.inner.harness.clock().now();
-            let next = this.ledgers().get(&project).map_or(1, Ledger::next_seq);
+            let next = this.ledgers().get(&at).map_or(1, Ledger::next_seq);
             let header = Header {
                 id: EventId::new(now, this.inner.harness.entropy().bytes()?)?,
                 thread: ledger,
@@ -173,7 +181,7 @@ where
         })
         .await?;
         let mut held = self.ledgers();
-        let read = kept(&mut held, project);
+        let read = kept(&mut held, at);
         for raw in appended.into_iter().flat_map(|(events, ())| events) {
             read.apply(raw);
         }
@@ -182,12 +190,12 @@ where
 
     /// The projects whose tasks and schedules this server runs: every project its person works
     /// in, and any other whose ledger it has read for a caller.
-    pub(crate) async fn task_projects(&self) -> Result<Vec<ProjectId>, ApiError> {
+    pub(crate) async fn task_projects(&self) -> Result<Vec<Located>, ApiError> {
         let mut projects = match self.inner.harness.person() {
             Some(_) => self.projects_of(&Caller::default()).await?,
             None => Vec::new(),
         };
-        let known: Vec<ProjectId> = self.ledgers().keys().copied().collect();
+        let known: Vec<Located> = self.ledgers().keys().copied().collect();
         for project in known {
             if !projects.contains(&project) {
                 projects.push(project);
