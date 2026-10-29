@@ -10,7 +10,7 @@ use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use glave_event::{Body, Event, PrincipalId, RawEvent, Seq, ThreadId, decode};
-use glave_ports::{EventLog, Located, LogError, ProjectId, Scope};
+use glave_ports::{EventLog, Located, LogError, OrgId, ProjectId, Scope};
 use tokio::sync::{broadcast, watch};
 
 use crate::protocol::{Notification, Setting};
@@ -305,9 +305,10 @@ impl<L: EventLog> EventLog for Observed<L> {
 
     fn locate(
         &self,
+        org: OrgId,
         thread: ThreadId,
     ) -> impl Future<Output = Result<Option<Located>, LogError>> + Send {
-        self.inner.locate(thread)
+        self.inner.locate(org, thread)
     }
 
     fn thread_views(

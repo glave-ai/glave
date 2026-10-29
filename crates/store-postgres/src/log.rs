@@ -305,6 +305,7 @@ impl EventLog for PostgresLog {
 
     fn locate(
         &self,
+        org: OrgId,
         thread: ThreadId,
     ) -> impl Future<Output = Result<Option<Located>, LogError>> + Send {
         let pool = self.pool.clone();
@@ -312,13 +313,13 @@ impl EventLog for PostgresLog {
             let client = connection(&pool).await.map_err(storage)?;
             let statement = client
                 .prepare_cached(
-                    "SELECT org, project FROM events WHERE thread = $1
-                     ORDER BY org, project LIMIT 1",
+                    "SELECT org, project FROM events WHERE thread = $1 AND org = $2
+                     ORDER BY project LIMIT 1",
                 )
                 .await
                 .map_err(database)?;
             let row = client
-                .query_opt(&statement, &[&thread.as_uuid()])
+                .query_opt(&statement, &[&thread.as_uuid(), &org.as_uuid()])
                 .await
                 .map_err(database)?;
             row.map(|row| {

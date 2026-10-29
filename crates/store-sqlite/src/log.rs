@@ -276,16 +276,18 @@ impl EventLog for SqliteLog {
 
     fn locate(
         &self,
+        org: OrgId,
         thread: ThreadId,
     ) -> impl Future<Output = Result<Option<Located>, LogError>> + Send {
         let connection = Arc::clone(&self.connection);
         async move {
             let found = run(&connection, move |connection| {
                 let mut statement = connection.prepare_cached(
-                    "SELECT org, project FROM events WHERE thread = ?1 ORDER BY org, project LIMIT 1",
+                    "SELECT org, project FROM events WHERE thread = ?1 AND org = ?2
+                     ORDER BY project LIMIT 1",
                 )?;
                 statement
-                    .query_row(params![thread.to_string()], |row| {
+                    .query_row(params![thread.to_string(), org.to_string()], |row| {
                         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
                     })
                     .optional()

@@ -352,9 +352,10 @@ impl EventLog for Shared {
 
     fn locate(
         &self,
+        org: OrgId,
         thread: ThreadId,
     ) -> impl Future<Output = Result<Option<Located>, LogError>> + Send {
-        self.0.locate(thread)
+        self.0.locate(org, thread)
     }
 
     fn thread_views(

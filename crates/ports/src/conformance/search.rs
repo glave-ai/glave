@@ -22,7 +22,7 @@ fn header(thread: ThreadId, seq: u64) -> Result<Header, String> {
     })
 }
 
-fn said(thread: ThreadId, seq: u64, role: Role, text: &str) -> Result<RawEvent, String> {
+pub(super) fn said(thread: ThreadId, seq: u64, role: Role, text: &str) -> Result<RawEvent, String> {
     let message = MessageAdded {
         role,
         parts: vec![Part::Text { text: text.into() }],

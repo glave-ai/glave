@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use glave_event::{RawEvent, Seq, ThreadId};
 
 use crate::log::{EventLog, LogError, check_append};
-use crate::scope::{Located, Scope};
+use crate::scope::{Located, OrgId, Scope};
 use crate::search::{Found, indexed, query_terms};
 use crate::view::{ThreadQuery, ThreadView};
 
@@ -209,6 +209,7 @@ impl EventLog for InMemoryLog {
 
     fn locate(
         &self,
+        org: OrgId,
         thread: ThreadId,
     ) -> impl Future<Output = Result<Option<Located>, LogError>> + Send {
         let found = self
@@ -218,7 +219,7 @@ impl EventLog for InMemoryLog {
             .map(|threads| {
                 threads
                     .keys()
-                    .filter(|(_, id)| *id == thread)
+                    .filter(|(scope, id)| *id == thread && scope.org() == org)
                     .map(|(scope, _)| *scope)
                     .min()
                     .map(|scope| Located {
@@ -232,7 +233,11 @@ impl EventLog for InMemoryLog {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
+    use crate::in_memory::{InMemoryBlobs, InMemoryProjects};
+    use crate::testing::ManualClock;
     use crate::{block_on, conformance};
 
     #[test]
@@ -241,6 +246,17 @@ mod tests {
             block_on!(conformance::event_log(&InMemoryLog::new())),
             Ok(())
         );
+    }
+
+    #[test]
+    fn two_organizations_in_memory_are_kept_apart() {
+        let blobs = InMemoryBlobs::with_clock(Arc::new(ManualClock::at_millis(0)));
+        let verdict = block_on!(conformance::organizations(
+            &InMemoryLog::new(),
+            &blobs,
+            &InMemoryProjects::new()
+        ));
+        assert_eq!(verdict, Ok(()));
     }
 
     #[test]
