@@ -1,0 +1,11 @@
+[task]
+name = "glave/nested-rules"
+description = "Follows the rules in a package's own AGENTS.md, which glave sends when the work reaches the package; nothing else points to them."
+
+[agent]
+timeout_sec = 600
+
+[glave]
+tier = "fast"
+# Real work runs commands: nothing asks but secrets.
+permissions = "auto"

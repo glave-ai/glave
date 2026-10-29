@@ -85,7 +85,12 @@ where
                     "You made this exact call several times in a row. Change your approach.",
                 )
             } else {
-                self.call_tool(thread, first, step, cancel, live).await?
+                let output = self.call_tool(thread, first, step, cancel, live).await?;
+                if step.toolset.get(&first.tool).map(|(index, _)| index) == Some(BUILTINS) {
+                    self.with_nested_instructions(thread, first, output).await
+                } else {
+                    output
+                }
             };
             step.summary.tool_calls = step.summary.tool_calls.saturating_add(1);
             if let Some(path) = Tool::changes(&first.tool, &first.arguments)

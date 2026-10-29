@@ -2,15 +2,25 @@
 //! thread starts and sent as the first part of its first message, the way Codex and Claude Code
 //! send theirs. They ride in a user message, not the system prompt: they come from the
 //! repository, so they steer the model without outranking glave's own instructions, and
-//! approvals still gate every action.
+//! approvals still gate every action. A subfolder's follow the first tool result that reaches
+//! it (`nested`).
+
+mod nested;
 
 use std::path::{Path, PathBuf};
 
 /// The file agents look for.
 pub const AGENTS_MD: &str = "AGENTS.md";
 
-/// The most instruction text sent, as Codex caps it.
+/// The most instruction text sent, as Codex caps it: what a thread opens with and what its
+/// subfolders add (`nested`) together.
 const MAX_BYTES: usize = 32 * 1024;
+
+/// What follows instructions cut short at [`MAX_BYTES`].
+const CUT_SHORT: &str = "\n[cut short: instructions are limited to 32 KiB]";
+
+/// What starts a block of instructions, before the folder they are for.
+const HEADING: &str = "# AGENTS.md instructions for ";
 
 /// The instructions for a workspace, ready to send.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,11 +63,7 @@ pub async fn agents_md(
         }
         let (text, cut) = within(text.trim(), remaining);
         remaining = remaining.saturating_sub(text.len());
-        let note = if cut {
-            "\n[cut short: instructions are limited to 32 KiB]"
-        } else {
-            ""
-        };
+        let note = if cut { CUT_SHORT } else { "" };
         sections.push(format!("From {}:\n{text}{note}", path.display()));
         files.push(canonical);
     }
@@ -66,7 +72,7 @@ pub async fn agents_md(
     }
     Ok(Some(Instructions {
         text: format!(
-            "# AGENTS.md instructions for {}\n\n<INSTRUCTIONS>\n{}\n</INSTRUCTIONS>",
+            "{HEADING}{}\n\n<INSTRUCTIONS>\n{}\n</INSTRUCTIONS>",
             root.display(),
             sections.join("\n\n")
         ),

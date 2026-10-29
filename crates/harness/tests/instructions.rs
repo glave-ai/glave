@@ -194,3 +194,69 @@ fn a_thread_in_a_folder_opens_with_that_folder_s_instructions_and_keeps_them() {
         assert_eq!(opening.first(), Some(&told), "{opening:?}");
     });
 }
+
+/// The AGENTS.md blocks a tool result carries after its own output.
+fn nested(message: &Message) -> Vec<String> {
+    texts(message)
+        .into_iter()
+        .filter(|text| text.starts_with("# AGENTS.md instructions for "))
+        .collect()
+}
+
+#[test]
+fn a_subfolder_s_instructions_follow_the_first_result_that_reaches_it_once() {
+    let dir = folder("rules-nested");
+    let app = dir.join("packages/app");
+    std::fs::create_dir_all(app.join("src")).unwrap();
+    std::fs::write(app.join("AGENTS.md"), "Name tests after behaviour.\n").unwrap();
+    std::fs::write(app.join("src/main.rs"), "fn main() {}\n").unwrap();
+    std::fs::write(app.join("lib.rs"), "pub fn f() {}\n").unwrap();
+    std::fs::write(dir.join("top.rs"), "// top\n").unwrap();
+    block_on!(async {
+        let write = answer(
+            None,
+            vec![(
+                "write",
+                serde_json::json!({"path": "packages/app/new.rs", "content": "// new\n"}),
+            )],
+            StopReason::ToolUse,
+        );
+        let answers = vec![
+            reads("top.rs"),
+            reads("packages/app/src/main.rs"),
+            reads("packages/app/lib.rs"),
+            answer(Some("Read them."), vec![], StopReason::EndTurn),
+            write,
+            answer(Some("Wrote it."), vec![], StopReason::EndTurn),
+        ];
+        let (harness, seen) =
+            harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        turn(&harness, &mut thread, "read them").await;
+        let mut resumed = harness.resume_thread(scope(), thread.id).await.unwrap();
+        turn(&harness, &mut resumed, "write one").await;
+
+        let sent = requests(&seen);
+        let last = |request: &ModelRequest| request.messages.last().map(nested).unwrap();
+        assert_eq!(
+            last(&sent[1]),
+            Vec::<String>::new(),
+            "the root's are not repeated"
+        );
+        let reached = last(&sent[2]);
+        assert_eq!(
+            reached,
+            [
+                "# AGENTS.md instructions for packages/app\n\n<INSTRUCTIONS>\nFrom \
+              packages/app/AGENTS.md:\nName tests after behaviour.\n</INSTRUCTIONS>"
+            ],
+            "labelled with its folder"
+        );
+        assert_eq!(last(&sent[3]), Vec::<String>::new(), "sent once");
+        assert_eq!(
+            last(&sent[5]),
+            Vec::<String>::new(),
+            "a resumed thread knows what it was sent"
+        );
+    });
+}
