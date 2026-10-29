@@ -2,11 +2,15 @@
 //! (`[serve] signup`), keeps glave accounts at a public origin and sends email: someone gives
 //! their email and is sent a one-time link, good for 15 minutes; opening it makes their first
 //! passkey, and with it their account and a new organization, theirs, with them its Owner.
-//! The answer to an address is the same whether or not an account has it, so it says nothing
-//! of who is here. Waiting sign-ups are kept in the server's own organization's sign-ups
-//! ledger as the SHA-256 of their codes, so every server of a cell opens each link once.
+//! An address that has an account is sent a note to sign in instead, through the same steps,
+//! so the answer, and how long it takes, say nothing of who is here. The link's code carries
+//! the address after its secret; waiting sign-ups are kept in the server's own organization's
+//! sign-ups ledger as the SHA-256 of their codes and of their addresses alone, so every server
+//! of a cell opens each link once, counts each address's messages, and keeps no address of
+//! anyone who never finished.
 
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{MutexGuard, PoisonError};
 
 use glave_event::{
@@ -19,8 +23,8 @@ use glave_ports::{BlobStore, EventLog, Mail, ModelProvider, OrgId, Scope};
 use jiff::{SignedDuration, Timestamp};
 use uuid::Builder;
 
-use crate::invites::gone;
 use crate::ledger::in_order;
+use crate::mailing::just_now;
 use crate::protocol::{ApiError, Reply, code};
 use crate::server::Server;
 use crate::words::{Language, Sentence, say};
@@ -33,22 +37,31 @@ const LIFETIME: SignedDuration = SignedDuration::from_mins(15);
 /// passkey request expires on its own, as any does.
 const MOST: usize = 16;
 
+/// Sign-ups waiting at once, at most; past this, an address is answered as ever and sent
+/// nothing, until some expire.
+const MOST_WAITING: usize = 10_000;
+
+/// What parts a sign-up's code: its secret, then the address it was sent to, in hex.
+const TO: char = '.';
+
 /// The sign-ups waiting, as far as this server has read its own organization's ledger.
 #[derive(Debug, Default)]
 pub(crate) struct Signups {
     next: u64,
-    /// By their codes' hashes: where each link was sent, and when it stops working.
-    waiting: BTreeMap<String, SignupStarted>,
+    /// By their codes' hashes: when each began, and where its link went and when it stops
+    /// working, as hashes.
+    waiting: BTreeMap<String, (Timestamp, SignupStarted)>,
 }
 
 impl Signups {
     fn apply(&mut self, raw: RawEvent) {
-        let Some((_, body)) = in_order(&mut self.next, raw) else {
+        let Some((at, body)) = in_order(&mut self.next, raw) else {
             return;
         };
         match body {
             Body::SignupStarted(started) => {
-                self.waiting.insert(started.hash.clone(), started);
+                self.waiting
+                    .insert(started.hash.clone(), (at.timestamp(), started));
             }
             Body::SignupFinished(finished) => {
                 self.waiting.remove(&finished.hash);
@@ -57,11 +70,27 @@ impl Signups {
         }
     }
 
+    /// Forgets those expired at `now`: nothing can open them.
+    fn drop_expired(&mut self, now: Timestamp) {
+        self.waiting
+            .retain(|_, (_, started)| now < started.expires.timestamp());
+    }
+
     /// The sign-up whose code's hash is `hash`, while it works at `now`.
     fn opens(&self, hash: &str, now: Timestamp) -> Option<&SignupStarted> {
         self.waiting
             .get(hash)
+            .map(|(_, started)| started)
             .filter(|started| now < started.expires.timestamp())
+    }
+
+    /// Whether a message may go to the address whose hash is `to` at `now`, and room is left.
+    fn may_send(&self, to: &str, now: Timestamp) -> bool {
+        self.waiting.len() < MOST_WAITING
+            && !self
+                .waiting
+                .values()
+                .any(|(at, started)| started.to == to && just_now(*at, now))
     }
 }
 
@@ -92,37 +121,56 @@ where
             && self.inner.origin.is_some()
     }
 
-    /// Answers `signup/start`: a sign-up's link emailed to `email`, unless an account has that
-    /// email, or one went there a moment ago. The answer is the same either way.
+    /// Answers `signup/start`: a sign-up's link emailed to `email`, or, where an account has
+    /// it, a note to sign in; nothing when a message went there a moment ago. The answer is
+    /// the same either way, and both take the same steps.
     pub(crate) async fn start_signup(&self, email: &str) -> Result<Reply, ApiError> {
         if !self.takes_signups() {
             return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::NoSignups));
         }
         let accounts = self.accounts()?;
-        let (mailer, origin, to) = self.sender(email.trim())?;
-        if accounts.with_email(to).await?.is_some() || !self.may_mail(to).await? {
-            return Ok(Reply::Done {});
-        }
-        let code = one_time_code()?;
+        let (mailer, origin, to) = self.sender(email)?;
+        let has_account = accounts.with_email(&to).await?.is_some();
+        let secret = one_time_code()?;
+        let code = format!("{}{TO}{}", secret.expose(), hex(to.as_bytes()));
         let now = self.inner.harness.clock().now();
         let expires = now
             .checked_add(LIFETIME)
             .map_err(|e| ApiError::new(code::INTERNAL, e.to_string()))?;
         let started = SignupStarted {
-            hash: kept(code.expose()),
-            email: to.to_lowercase(),
+            hash: kept(&code),
+            to: kept(&to),
             expires: At::from(expires),
         };
-        self.record_signups(|_| Ok(Some(started.clone()))).await?;
-        let link = format!("{origin}/#signup={}", code.expose());
-        let mail = Mail {
-            to: to.to_owned(),
-            subject: say(Language::English, &Sentence::SignupMailSubject),
-            text: format!(
+        let sending = AtomicBool::new(false);
+        self.record_signups(|signups| {
+            let may = signups.may_send(&started.to, now);
+            sending.store(may, Ordering::Relaxed);
+            Ok(may.then(|| started.clone()))
+        })
+        .await?;
+        if !sending.load(Ordering::Relaxed) {
+            return Ok(Reply::Done {});
+        }
+        let (subject, text) = if has_account {
+            let note = say(Language::English, &Sentence::SignupHaveAccount);
+            (
+                Sentence::SignupHaveAccountSubject,
+                format!("{note}\n\n{origin}\n"),
+            )
+        } else {
+            let link = format!("{origin}/#signup={code}");
+            let text = format!(
                 "{}\n\n{link}\n\n{}\n",
                 say(Language::English, &Sentence::SignupMail),
                 say(Language::English, &Sentence::SignupMailIgnore),
-            ),
+            );
+            (Sentence::SignupMailSubject, text)
+        };
+        let mail = Mail {
+            to,
+            subject: say(Language::English, &subject),
+            text,
         };
         self.send(mailer, &mail).await?;
         Ok(Reply::Done {})
@@ -132,15 +180,19 @@ where
     /// of a new account, while the code opens a sign-up.
     pub(crate) async fn signup_options(&self, code: &Secret) -> Result<Reply, ApiError> {
         if !self.takes_signups() {
-            return Err(gone());
+            return Err(signup_gone());
         }
         let accounts = self.accounts()?;
         let hash = kept(code.expose());
         let now = self.inner.harness.clock().now();
         self.catch_up_signups().await?;
-        let email = self
-            .signups(|signups| signups.opens(&hash, now).map(|it| it.email.clone()))
-            .ok_or_else(gone)?;
+        // The address its link went to: the one the code carries, which its hash covers.
+        let email = code
+            .expose()
+            .split_once(TO)
+            .and_then(|(_, to)| unhex(to))
+            .filter(|_| self.signups(|signups| signups.opens(&hash, now).is_some()))
+            .ok_or_else(signup_gone)?;
         let (person, browsers) = accounts.made().await?;
         let ceremony = browsers.create_options(Proof::SignedIn)?;
         let mut signing = self.signings();
@@ -178,12 +230,16 @@ where
         let checked = browsers.checked(&signing.ceremony, credential, name)?;
         let now = self.inner.harness.clock().now();
         self.record_signups(|signups| {
-            signups.opens(&signing.hash, now).ok_or_else(gone)?;
+            signups.opens(&signing.hash, now).ok_or_else(signup_gone)?;
             Ok(Some(SignupFinished {
                 hash: signing.hash.clone(),
             }))
         })
         .await?;
+        // The address is this account's from now on, unless another took it meanwhile.
+        if accounts.claim_email(&signing.email, signing.person).await? != signing.person {
+            return Err(ApiError::new(code::NOT_ALLOWED, Sentence::SignupTaken));
+        }
         let session = browsers.keep(checked).await?;
         let millis = u64::try_from(now.as_millisecond()).unwrap_or_default();
         let random = self.inner.harness.entropy().bytes()?;
@@ -191,7 +247,6 @@ where
             OrgId::from_uuid(Builder::from_unix_timestamp_millis(millis, &random).into_uuid());
         self.found(org, signing.person, &signing.email).await?;
         accounts.join(signing.person, org).await?;
-        accounts.claim_email(&signing.email, signing.person).await?;
         Ok(self.signed_in(session, &browsers))
     }
 
@@ -237,6 +292,8 @@ where
             });
         })
         .await?;
+        let now = self.inner.harness.clock().now();
+        self.signups(|held| held.drop_expired(now));
         Ok(())
     }
 
@@ -291,4 +348,23 @@ where
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
     }
+}
+
+/// Every sign-up code that opens nothing, used, expired or guessed, is refused alike.
+fn signup_gone() -> ApiError {
+    ApiError::new(code::NO_INVITE, Sentence::SignupGone)
+}
+
+/// `bytes` in lowercase hex.
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// The text `hex` wrote, if it is that.
+fn unhex(text: &str) -> Option<String> {
+    let pairs = text.as_bytes().chunks(2);
+    let bytes: Option<Vec<u8>> = pairs
+        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok())
+        .collect();
+    String::from_utf8(bytes?).ok()
 }

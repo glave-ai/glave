@@ -103,6 +103,14 @@ where
         self.spend_joining(&joining).await?;
         let session = browsers.keep(checked).await?;
         accounts.join(joining.person, joining.org).await?;
+        // The address the invite went to, which they opened, is theirs for getting back in,
+        // unless another account has it.
+        let emailed = self.people(joining.org, |people| {
+            people.info(joining.person).and_then(|info| info.email)
+        });
+        if let Some(email) = emailed {
+            accounts.claim_email(&email, joining.person).await?;
+        }
         Ok(self.signed_in(session, &browsers))
     }
 

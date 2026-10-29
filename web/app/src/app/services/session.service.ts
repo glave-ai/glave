@@ -233,6 +233,11 @@ export class SessionService {
     this.here.set(discovered.here ?? null);
   }
 
+  /** Forgets the tab's sign-up link, once it opens nothing. */
+  clearSignup(): void {
+    this.signupLink.set(null);
+  }
+
   /** Puts the tab's invite aside: the person joined, or chose not to now. */
   clearInvite(): void {
     this.inviteLink.set(null);

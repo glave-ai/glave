@@ -8,32 +8,12 @@ import type { Authenticator } from '../../lib/passkeys';
 import { AUTHENTICATOR } from '../../services/passkeys.service';
 import { SessionService } from '../../services/session.service';
 import { FAKE_SERVER, FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { MADE_PASSKEY, PASSKEY_OPTIONS } from '../../testing/fixtures';
 import { SignUpComponent } from './sign-up.component';
 
-const OPTIONS = {
-  ceremony: 'c1',
-  options: {
-    publicKey: {
-      challenge: 'AQID',
-      rp: { id: 'glave.test', name: 'glave' },
-      user: { id: 'AQID', name: 'glave', displayName: 'glave' },
-      pubKeyCredParams: [],
-    },
-  },
-};
+const OPTIONS = PASSKEY_OPTIONS;
 
-/** What a device answers when it makes a passkey, shaped as the browser's answers are. */
-const MADE = {
-  id: 'BAU',
-  rawId: new Uint8Array([4, 5]).buffer,
-  type: 'public-key',
-  response: {
-    attestationObject: new Uint8Array([1]).buffer,
-    clientDataJSON: new Uint8Array([2]).buffer,
-    getTransports: () => ['internal'],
-  },
-  getClientExtensionResults: () => ({}),
-};
+const MADE = MADE_PASSKEY;
 
 const device: Authenticator = {
   create: () => Promise.resolve(MADE as unknown as Credential),
@@ -136,5 +116,21 @@ describe('SignUpComponent', () => {
     expect(root.querySelector('[data-testid="sign-up-problem"]')?.textContent).toContain(
       "that isn't an email address",
     );
+  });
+
+  it('back to the start when the emailed link no longer works', async () => {
+    const gone = new ApiError({
+      code: ErrorCode.NO_INVITE,
+      message: 'that sign-up link was used already or has expired: sign up again for a new one',
+    });
+    const fake = new FakeSession().answer('passkey/create_options', gone);
+    const { fixture, root } = await render(fake, '/#signup=spent');
+    root.querySelector<HTMLElement>('[data-testid="sign-up-make"]')?.click();
+    await settle(fixture);
+    expect(root.querySelector('[data-testid="sign-up-email"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="sign-up-problem"]')?.textContent).toContain(
+      'sign up again for a new one',
+    );
+    await expectAccessible(root);
   });
 });

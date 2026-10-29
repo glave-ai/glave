@@ -1,8 +1,10 @@
 //! The sign-ups ledger's records (`specs/model.md`, "Identity"): on a server that takes
-//! sign-ups, someone asked for a link to their email, kept as the SHA-256 of its code with the
-//! address and when it stops working (`signup.started`), and that link spent when it made the
-//! person's account and organization (`signup.finished`). One stream of the server's own
-//! organization, so every server of a cell opens the same links, and each once.
+//! sign-ups, someone asked for a link to their email, kept as the SHA-256 of its code and of
+//! the address, never either, with when it stops working (`signup.started`), and that link
+//! spent when it made the person's account and organization (`signup.finished`). The link
+//! carries the address; its code's hash, which covers it, proves it was sent there. One
+//! stream of the server's own organization, so every server of a cell opens the same links,
+//! and each once.
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
@@ -19,8 +21,9 @@ pub(crate) const FINISHED: &str = "signup.finished";
 pub struct SignupStarted {
     /// The SHA-256 of its code, in hex: never the code.
     pub hash: String,
-    /// Where its link was sent: the email of the account it makes.
-    pub email: String,
+    /// The SHA-256 of the address its link was sent to, in hex: what counts the messages sent
+    /// there, never the address.
+    pub to: String,
     pub expires: At,
 }
 

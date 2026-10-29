@@ -110,11 +110,14 @@ export class SignUpComponent {
       return;
     }
     this.busy.set(true);
-    const problem = await this.passkeys.signUp(code);
+    const outcome = await this.passkeys.signUp(code);
     this.busy.set(false);
-    this.problem.set(problem);
-    if (problem === null) {
+    this.problem.set(outcome.problem);
+    if (outcome.problem === null) {
       await this.router.navigateByUrl('/');
+    } else if (outcome.spent) {
+      // The link opens nothing any more: back to the start, for a new one.
+      this.session.clearSignup();
     }
   }
 

@@ -25,18 +25,14 @@ pub enum Leased {
     Thread(ThreadId),
     /// The organization's schedules: the one server that fires them.
     Scheduler,
-    /// What glave last emailed to an address, by the first 16 bytes of its SHA-256: one
-    /// message to it at a time, until the lease lapses, from any server on the store.
-    Mail(u128),
 }
 
 impl Leased {
-    /// The name stores keep it under: `thread:<id>`, `scheduler`, or `mail:<address's hash>`.
+    /// The name stores keep it under: `thread:<id>`, or `scheduler`.
     pub fn key(&self) -> String {
         match self {
             Self::Thread(thread) => format!("thread:{thread}"),
             Self::Scheduler => "scheduler".to_owned(),
-            Self::Mail(address) => format!("mail:{address:032x}"),
         }
     }
 }

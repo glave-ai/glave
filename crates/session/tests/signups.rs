@@ -25,6 +25,15 @@ use crate::support::*;
 /// A server reached at [`ORIGIN`] keeping glave accounts, sending its email to `outbox`, and
 /// taking sign-ups if `signup`.
 async fn serve(dir: &Path, signup: bool, outbox: &Arc<Outbox>) -> Served {
+    serve_timed(dir, signup, outbox).await.0
+}
+
+/// [`serve`], with the clock its server reads, to move on.
+async fn serve_timed(
+    dir: &Path,
+    signup: bool,
+    outbox: &Arc<Outbox>,
+) -> (Served, glave_ports::testing::ManualClock) {
     let store = sqlite(&dir.join("sign-ups.db")).await;
     let server = "0192f5c6-0000-7000-8000-0000000005e9".to_owned();
     let origin = PublicOrigin::parse(ORIGIN).unwrap();
@@ -45,9 +54,10 @@ async fn serve(dir: &Path, signup: bool, outbox: &Arc<Outbox>) -> Served {
     setup.accounts = Some(Arc::new(accounts.unwrap()));
     setup.origin = Some(origin);
     setup.signup = signup;
+    let ticks = setup.clock.clone();
     let (server, _) = setup.build(dir).await;
     let signin = SignIn::local(LocalToken::new([21; 32]), Box::new(fixed_clock()));
-    serve_with(server, signin, None).await
+    (serve_with(server, signin, None).await, ticks)
 }
 
 /// The code in the sign-up link `outbox` sent last.
@@ -102,7 +112,10 @@ fn signing_up_makes_an_account_and_an_organization_of_ones_own() {
         assert_eq!(asked(&mut anyone, &start).await, json!({}));
         let sent = outbox.sent();
         assert_eq!(sent.len(), 1);
-        assert_eq!(sent[0].to, "Ada@Example.com");
+        assert_eq!(
+            sent[0].to, "ada@example.com",
+            "the address as glave reads it"
+        );
         assert!(
             sent[0].text.contains(&format!("{ORIGIN}/#signup=")),
             "{}",
@@ -138,6 +151,67 @@ fn signing_up_makes_an_account_and_an_organization_of_ones_own() {
         assert_eq!(again, json!(code::NO_INVITE));
         served.close().await;
     });
+}
+
+#[test]
+fn an_address_with_an_account_is_answered_alike_and_told_to_sign_in() {
+    block_on!(async {
+        let dir = folder("signups-had");
+        let outbox = Arc::new(Outbox::default());
+        let (served, clock) = serve_timed(&dir, true, &outbox).await;
+        let mut anyone = elsewhere(&served, None);
+        let start = |email: &str| Request::SignupStart {
+            email: email.into(),
+        };
+        asked(&mut anyone, &start("grace@example.com")).await;
+        let mut phone = Authenticator::new(ORIGIN).unwrap();
+        let made = make_passkey(&served, emailed_code(&outbox), &mut phone).await;
+        assert!(made["session"].is_string(), "{made}");
+        // A name around it is no address.
+        for written in ["Grace <grace@example.com>", "<grace@example.com>"] {
+            let refused = asked(&mut anyone, &start(written)).await;
+            assert_eq!(refused, json!(code::INVALID_PARAMS));
+        }
+        // Asked again a minute later: the same answer, and a note to sign in, with no link.
+        clock.advance_seconds(61);
+        assert_eq!(
+            asked(&mut anyone, &start("GRACE@example.com")).await,
+            json!({})
+        );
+        let sent = outbox.sent();
+        assert_eq!(sent.len(), 2);
+        assert!(!sent[1].text.contains("#signup="), "{}", sent[1].text);
+        assert!(sent[1].subject.contains("already"), "{}", sent[1].subject);
+        served.close().await;
+    });
+}
+
+#[test]
+fn a_link_carries_its_address_and_no_one_can_change_it() {
+    block_on!(async {
+        let dir = folder("signups-forged");
+        let outbox = Arc::new(Outbox::default());
+        let served = serve(&dir, true, &outbox).await;
+        let mut anyone = elsewhere(&served, None);
+        let start = Request::SignupStart {
+            email: "ada@example.com".into(),
+        };
+        asked(&mut anyone, &start).await;
+        let code = emailed_code(&outbox);
+        let (secret, _) = code.expose().split_once('.').unwrap();
+        let forged = Secret::new(format!("{secret}.{}", hex_of("bea@example.com")));
+        let mut phone = Authenticator::new(ORIGIN).unwrap();
+        assert_eq!(
+            make_passkey(&served, forged, &mut phone).await,
+            json!(code::NO_INVITE)
+        );
+        served.close().await;
+    });
+}
+
+/// `text` in lowercase hex, as a sign-up's code carries its address.
+fn hex_of(text: &str) -> String {
+    text.bytes().map(|byte| format!("{byte:02x}")).collect()
 }
 
 #[test]
