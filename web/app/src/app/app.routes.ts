@@ -10,7 +10,9 @@ import {
 
 import { UnloadedComponent } from './components/unloaded/unloaded.component';
 import { WorkspaceComponent } from './components/workspace/workspace.component';
+import { adminGuard } from './guards/admin.guard';
 import { hasModelGuard } from './guards/has-model.guard';
+import { inviteGuard } from './guards/invite.guard';
 import { signedInGuard } from './guards/signed-in.guard';
 
 /** Where a page that could not open is said to have failed, in its own place. */
@@ -32,7 +34,7 @@ export const routes: Routes = [
   {
     path: '',
     component: WorkspaceComponent,
-    canActivate: [signedInGuard, hasModelGuard],
+    canActivate: [inviteGuard, signedInGuard, hasModelGuard],
     children: [
       {
         path: '',
@@ -73,11 +75,33 @@ export const routes: Routes = [
     ],
   },
   {
+    // Admin, a room of its own for the organization's Admins and Owners.
+    path: 'admin',
+    canActivate: [signedInGuard, adminGuard],
+    loadComponent: () => import('./components/admin/admin.component').then((m) => m.AdminComponent),
+    children: [
+      {
+        path: '',
+        pathMatch: 'full',
+        title: () => $localize`:@@routes.people:People · Admin · glave`,
+        loadComponent: () =>
+          import('./components/people/people.component').then((m) => m.PeopleComponent),
+      },
+    ],
+  },
+  {
     path: 'connect',
     title: () => $localize`:@@routes.connect:Add a model · glave`,
     canActivate: [signedInGuard],
     loadComponent: () =>
       import('./components/connect/connect.component').then((m) => m.ConnectComponent),
+  },
+  {
+    // The page an invite's link opens, signed in or not.
+    path: 'invite',
+    title: () => $localize`:@@routes.invite:Invite · glave`,
+    loadComponent: () =>
+      import('./components/invite/invite.component').then((m) => m.InviteComponent),
   },
   {
     path: 'sign-in',

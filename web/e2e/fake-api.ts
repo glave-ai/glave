@@ -50,6 +50,7 @@ import {
   call,
   done,
   event,
+  posted,
 } from './fake-records';
 import { SIGN_IN, discovered } from './fake-signin';
 import { PLANNED, PLANNING, PLANNING_HISTORY, type Planned } from './fake-plan';
@@ -746,16 +747,10 @@ export async function fakeApi(
   };
   const lists = new FakeLists((method, params) => answer(method, params, known));
   await page.route('**/*', async (route: Route) => {
-    const request = route.request();
-    if (request.method() !== 'POST') {
-      await route.fallback();
+    const message = await posted(route);
+    if (message === null) {
       return;
     }
-    const message = request.postDataJSON() as {
-      id: number;
-      method: string;
-      params: Record<string, unknown>;
-    };
     calls.push(message.method);
     requests.push({ method: message.method, params: message.params });
     // Nothing here changes a thread, so a watch is left waiting, as a quiet thread's is.

@@ -2,8 +2,10 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { expectAccessible } from '@glave/glaze/testing';
 
+import { ServerService } from '../../services/server.service';
 import { SessionService } from '../../services/session.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { SERVER } from '../../testing/fixtures';
 import { PersonComponent } from './person.component';
 
 describe('PersonComponent', () => {
@@ -36,5 +38,32 @@ describe('PersonComponent', () => {
     root.querySelector<HTMLButtonElement>('[data-testid="person-sign-out"]')?.click();
     await new Promise((resolve) => setTimeout(resolve));
     expect(session.signedIn()).toBe(false);
+  });
+
+  it('offers Admin only to an admin of an organization the server shows', async () => {
+    const shown = { ...SERVER, exists: { organization: true, workers: false } };
+    for (const [said, offered] of [
+      [{ ...shown, role: 'admin' }, true],
+      [{ ...shown, role: 'member' }, false],
+      [SERVER, false],
+    ] as const) {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [
+          provideRouter([{ path: '**', children: [] }]),
+          ...provideFakeSession(new FakeSession().answer('server/discover', said)),
+        ],
+      });
+      await TestBed.inject(ServerService).load();
+      const fixture = TestBed.createComponent(PersonComponent);
+      await fixture.whenStable();
+      const admin = (fixture.nativeElement as HTMLElement).querySelector(
+        '[data-testid="nav-admin"]',
+      );
+      expect(admin !== null).toBe(offered);
+      if (offered) {
+        expect(admin?.getAttribute('href')).toBe('/admin');
+      }
+    }
   });
 });

@@ -1,0 +1,59 @@
+<glz-dialog testId="invite" [heading]="copy.heading" [(open)]="open">
+  <form class="glz-stack glz-gap-4" (submit)="make($event)">
+    @if (emails()) {
+      <glz-form-field [label]="copy.email">
+        <input
+          glzInput
+          type="email"
+          autocomplete="off"
+          data-testid="invite-email"
+          [placeholder]="copy.placeholder"
+          [value]="email()"
+          (input)="typed($event)"
+        />
+      </glz-form-field>
+    }
+    <glz-form-field [label]="copy.role">
+      <glz-radio-group
+        data-testid="invite-role"
+        cards
+        [value]="role()"
+        (valueChange)="chose($event)"
+      >
+        <glz-radio value="member" [hint]="copy.memberHint">{{ copy.member }}</glz-radio>
+        <glz-radio value="admin" [hint]="copy.adminHint">{{ copy.admin }}</glz-radio>
+      </glz-radio-group>
+    </glz-form-field>
+    @if (problem(); as problem) {
+      <p class="error" role="alert" data-testid="invite-problem">{{ problem }}</p>
+    }
+  </form>
+  <div glzDialogActions class="glz-row glz-gap-2">
+    <button glzButton data-testid="invite-cancel" (click)="cancel()">{{ copy.cancel }}</button>
+    <button
+      glzButton
+      variant="primary"
+      data-testid="invite-make"
+      [attr.aria-disabled]="busy()"
+      (click)="make()"
+    >
+      {{ makeLabel() }}
+    </button>
+  </div>
+</glz-dialog>
+<glz-dialog testId="invite-ready" [heading]="copy.ready" [(open)]="showing">
+  <div class="glz-stack glz-gap-4">
+    <p data-testid="invite-told">{{ told() }}</p>
+    <div class="link">
+      <glz-form-field [label]="copy.link">
+        <input glzInput readonly data-testid="invite-link" [value]="link()" />
+      </glz-form-field>
+      <glz-copy-button testId="invite-copy" [label]="copy.copyLink" [text]="link()" />
+    </div>
+  </div>
+  <div glzDialogActions class="glz-row glz-gap-2">
+    <button glzButton variant="primary" data-testid="invite-done" (click)="done()">
+      {{ copy.done }}
+    </button>
+  </div>
+</glz-dialog>

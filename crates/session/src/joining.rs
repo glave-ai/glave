@@ -52,13 +52,15 @@ where
     /// of a new account, when the code opens an invite now.
     pub(crate) async fn join_options(&self, code: &Secret) -> Result<Reply, ApiError> {
         let accounts = self.accounts()?;
-        let org = self.inner.own;
+        let org = self.invited_to(code.expose());
         let presented = kept(code.expose());
         let now = self.inner.harness.clock().now();
-        self.catch_up_people(org).await?;
         let local = self.inner.harness.person();
+        // Read apart: a code names any organization, real or not, until it opens an invite.
         if self
-            .people(org, |people| people.opens(&presented, now, local))
+            .people_apart(org)
+            .await?
+            .opens(&presented, now, local)
             .is_none()
         {
             return Err(gone());
@@ -110,17 +112,21 @@ where
         let now = self.inner.harness.clock().now();
         let local = self.inner.harness.person();
         self.record_people(joining.org, |people, next| {
-            let (invite, role) = people.opens(&joining.code, now, local).ok_or_else(gone)?;
+            let opened = people.opens(&joining.code, now, local).ok_or_else(gone)?;
+            // The address the invite's link was emailed to, which they opened: theirs.
             let joined = PersonJoined {
                 person: joining.person,
                 issuer: None,
                 subject: None,
-                profile: Profile::default(),
+                profile: Profile {
+                    email: opened.email.clone(),
+                    ..Profile::default()
+                },
             };
             let accepted = InviteAccepted {
-                invite,
+                invite: opened.invite,
                 person: joining.person,
-                role,
+                role: opened.role,
             };
             let after = next.saturating_add(1);
             Ok(Some(vec![

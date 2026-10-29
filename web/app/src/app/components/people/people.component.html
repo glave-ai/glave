@@ -1,0 +1,76 @@
+<app-page-header />
+<div class="page">
+  <div class="heading">
+    <div class="glz-stack glz-gap-1">
+      <h1>{{ copy.heading }}</h1>
+      <p class="details" data-testid="people-count">{{ count() }}</p>
+    </div>
+    <button glzButton variant="primary" data-testid="people-invite" (click)="openInvite()">
+      {{ copy.invite }}
+    </button>
+  </div>
+  @if (problem(); as problem) {
+    <p class="error" role="alert" data-testid="people-problem">{{ problem }}</p>
+  }
+  <glz-card>
+    <section class="rows" [attr.aria-label]="copy.list">
+      @for (person of rows(); track person) {
+        <div class="row" data-testid="people-person">
+          <glz-avatar [name]="person.name" />
+          <div class="who">
+            <p class="title" data-testid="people-name">{{ person.name }}</p>
+            @if (person.detail; as detail) {
+              <p class="details">{{ detail }}</p>
+            }
+          </div>
+          <div class="acts glz-row glz-gap-2">
+            @if (person.changeable) {
+              <glz-menu-select
+                testId="people-role"
+                outlined
+                [label]="person.roleLabel"
+                [options]="person.roles"
+                [value]="person.current"
+                (valueChange)="setRole(person.id, $event)"
+              />
+            } @else {
+              <span class="details" data-testid="people-role-fixed">{{ person.role }}</span>
+            }
+            @if (person.removable) {
+              <button glzButton data-testid="people-remove" (click)="ask(person)">
+                {{ copy.remove }}
+              </button>
+            }
+          </div>
+        </div>
+      }
+    </section>
+  </glz-card>
+  @if (hasInvites()) {
+    <glz-card data-testid="people-invites">
+      <h2 glzCardHeader>{{ copy.waiting }}</h2>
+      @for (invite of invites(); track invite.id) {
+        <div class="row" data-testid="people-waiting">
+          <div class="who">
+            <p class="title">{{ invite.to }}</p>
+            <p class="details">{{ invite.detail }}</p>
+          </div>
+          <button glzButton data-testid="people-cancel-invite" (click)="revoke(invite.id)">
+            {{ copy.cancelInvite }}
+          </button>
+        </div>
+      }
+    </glz-card>
+  }
+</div>
+<app-invite-dialog [(open)]="inviting" />
+<glz-confirm-dialog
+  testId="people-remove-confirm"
+  danger
+  [heading]="removeHeading()"
+  [message]="copy.removeText"
+  [confirmLabel]="copy.remove"
+  [cancelLabel]="copy.keep"
+  [(open)]="confirming"
+  (decided)="decided($event)"
+/>

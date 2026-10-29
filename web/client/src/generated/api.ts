@@ -316,6 +316,8 @@ export type InviteId = string;
 export type InviteInfo = {
   /** Who made it. */
   readonly by: Principal;
+  /** The address its link was emailed to, when it was. */
+  readonly email?: string | null;
   /** When it stops working, opened or not. */
   readonly expires: At;
   readonly id: InviteId;
@@ -323,6 +325,9 @@ export type InviteInfo = {
   /** The role it gives whoever opens it. */
   readonly role: OrgRole;
 };
+
+/** How the one who holds an invite joins the organization it is to. */
+export type JoinWay = "passkey" | "company" | "accept" | "member";
 
 /** Whether a line was kept, taken out or put in. */
 export type LineKind = "same" | "removed" | "added";
@@ -477,13 +482,27 @@ export type PersonInfo = {
   /** The identity provider's groups they were in when they last signed in. */
   readonly groups?: readonly (string)[];
   readonly id: PrincipalId;
-  /** When they first signed in. */
-  readonly joined: At;
+  /**
+   * When they first signed in; none for the person on the server's computer, who never
+   * joins: they own its organization.
+   */
+  readonly joined?: At | null;
+  /** Whether they are the person on the server's computer, its organization's owner always. */
+  readonly local?: boolean;
   /** Their name, as the identity provider's token said it, when it did. */
   readonly name?: string | null;
+  /** Whether the caller may take them out of the organization. */
+  readonly removable?: boolean;
   readonly role: OrgRole;
+  /**
+   * The roles the caller may give them now, theirs among them; none when the caller may
+   * not change their role.
+   */
+  readonly roles?: readonly (OrgRole)[];
   /** Who they are to the company login: its id for them; none with a glave account. */
   readonly subject?: string | null;
+  /** Whether they are the caller. */
+  readonly you?: boolean;
 };
 
 /** A thread's plan: its latest `plan.updated`, by the model or the person. */
@@ -711,6 +730,11 @@ export type Seq = number;
 /** What the server is. */
 export type ServerInfo = {
   /**
+   * Whether it sends email (`[email]`) with links to its public origin, as an invite's: so
+   * a client asks for an address only where one is used.
+   */
+  readonly email?: boolean;
+  /**
    * What it has beyond the one person a server works for on its own; absent where it has
    * none of it, as on a person's own computer or server.
    */
@@ -765,6 +789,20 @@ export type Setting = "providers" | "credentials" | "connections" | "search" | "
 
 /** Which threads `thread/list` shows. */
 export type Show = "archived" | "active" | "deleted";
+
+/** What an invite's link opens, for whoever holds it: never its code, nor whom it was sent to. */
+export type ShownInvite = {
+  /**
+   * Who made it, by the name the organization knows them by, else their email; none for
+   * the person who runs this glave, who has neither here.
+   */
+  readonly by?: string | null;
+  readonly joining: JoinWay;
+  /** The organization it is to, for a client to work in once its person joins. */
+  readonly organization: string;
+  /** The role it gives. */
+  readonly role: OrgRole;
+};
 
 /**
  * Signing in to a remote server in the browser: the person opens `url`, its authorization server's
@@ -1382,6 +1420,15 @@ export type InviteRevokeParams = {
 };
 
 export type InviteRevokeResult = Readonly<Record<string, never>>;
+
+export type InviteShowParams = {
+  readonly code: Secret;
+};
+
+/** What an invite's link opens. */
+export type InviteShowResult = {
+  readonly shown: ShownInvite;
+};
 
 export type LanguageGetParams = Readonly<Record<string, never>>;
 
@@ -2170,6 +2217,7 @@ export interface Methods {
   readonly "invite/create": { readonly params: InviteCreateParams; readonly result: InviteCreateResult };
   readonly "invite/list": { readonly params: InviteListParams; readonly result: InviteListResult };
   readonly "invite/revoke": { readonly params: InviteRevokeParams; readonly result: InviteRevokeResult };
+  readonly "invite/show": { readonly params: InviteShowParams; readonly result: InviteShowResult };
   readonly "language/get": { readonly params: LanguageGetParams; readonly result: LanguageGetResult };
   readonly "language/set": { readonly params: LanguageSetParams; readonly result: LanguageSetResult };
   readonly "memory/edit": { readonly params: MemoryEditParams; readonly result: MemoryEditResult };

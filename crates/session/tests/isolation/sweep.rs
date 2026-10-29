@@ -172,16 +172,24 @@ pub(super) async fn sweep<L: EventLog + Clone + 'static>(world: &World<L>) -> Ve
                     let holes = placeholders(template);
                     let named = |kinds: &[Kind]| holes.iter().any(|(_, k)| kinds.contains(k));
                     // A link's code signs in the person on its server's computer, whoever
-                    // holds it there; only another server's is someone else's. An invite's
-                    // code is its holder's to join with, and a person or an invite is their
-                    // organization's admins' to see; only another organization's is someone
-                    // else's.
+                    // holds it there; only another server's is someone else's. A person or an
+                    // invite is their organization's admins' to see; only another
+                    // organization's is someone else's. An invite's code is its holder's to
+                    // join with: in any organization for someone with a glave account, who may
+                    // belong to several, and in their own for anyone a company login signs in.
+                    let joins = named(&[Kind::InviteCode])
+                        && method == "invite/accept"
+                        && with_account(&attacker.caller);
                     if (named(&[Kind::Code]) && victim.server == attacker.server)
                         || (named(&[Kind::Person, Kind::Invite, Kind::InviteCode])
                             && victim.org == attacker.org)
+                        || joins
                     {
                         continue;
                     }
+                    // What an invite's code opens is its holder's to see, so its answer differs
+                    // from a code's that opens nothing; it still names no one else's ids.
+                    let shown_to_holder = named(&[Kind::InviteCode]) && method == "invite/show";
                     for variant in variants(template, attacker, victim) {
                         let (theirs, caller) = split(method, variant.params, &attacker.caller);
                         let (nobodys, _) = split(method, variant.nobodys, &attacker.caller);
@@ -190,7 +198,7 @@ pub(super) async fn sweep<L: EventLog + Clone + 'static>(world: &World<L>) -> Ve
                         let shown = normalized(&theirs, &variant.filled, false);
                         let expected = normalized(&nobodys, &variant.filled, true);
                         let named = others.iter().find(|id| shown.contains(id.as_str()));
-                        if shown != expected || named.is_some() {
+                        if (shown != expected && !shown_to_holder) || named.is_some() {
                             found.push(format!(
                                 "{method} {template} by {} with {}'s ids {:?}:\n  \
                                  theirs: {shown}\n  nobody's: {expected}",
@@ -254,4 +262,12 @@ pub(super) async fn snapshot<L: EventLog + Clone + 'static>(world: &World<L>) ->
         seen.push(Value::Array(mine));
     }
     seen
+}
+
+/// Whether `caller` signed in with a glave account.
+fn with_account(caller: &Caller) -> bool {
+    caller
+        .auth
+        .as_ref()
+        .is_some_and(|auth| auth.method == AuthMethod::Account)
 }

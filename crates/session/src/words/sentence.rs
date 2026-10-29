@@ -76,6 +76,10 @@ sentences! {
         "your account belongs to no organization here: ask its admins for an invite",
     Removed = "removed"
         "you're no longer in this organization: ask its admins for an invite",
+    NotYourself = "not-yourself"
+        "you can't change your own role or take yourself out: ask another admin",
+    LocalOwner = "local-owner"
+        "the person who runs this glave always owns it, so their role stays as it is",
     NotInOrganization = "not-in-organization"
         "you aren't in that organization: switch to another, or ask its admins for an invite",
     LastOwner = "last-owner"

@@ -38,6 +38,18 @@ export class ServerService {
    */
   readonly exists = computed<Exists>(() => this.info()?.exists ?? NONE);
   /**
+   * Whether the person may open Admin: their organization is shown, and the server says they
+   * are one of its Admins or Owners.
+   */
+  readonly admin = computed(() => {
+    const role = this.info()?.role;
+    return this.exists().organization && (role === 'admin' || role === 'owner');
+  });
+  /** Whether this glave sends email, as an invite's link: where it doesn't, no one is asked for an address. */
+  readonly email = computed(() => this.info()?.email ?? false);
+  /** Where people reach this glave from elsewhere, if they do, for links to it. */
+  readonly origin = computed<string | null>(() => this.info()?.origin ?? null);
+  /**
    * Whether glave was updated since this page loaded: the server said another version than
    * the one the page's code is of, the last time it was asked (`recheck`).
    */
