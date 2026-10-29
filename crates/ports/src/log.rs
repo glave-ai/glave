@@ -5,7 +5,7 @@ use std::future::Future;
 use glave_event::{RawEvent, Seq, ThreadId};
 use thiserror::Error;
 
-use crate::scope::{Located, Scope};
+use crate::scope::{Located, OrgId, Scope};
 use crate::search::Found;
 use crate::view::{ThreadQuery, ThreadView};
 
@@ -44,12 +44,14 @@ pub trait EventLog: Send + Sync {
         limit: usize,
     ) -> impl Future<Output = Result<Vec<Found>, LogError>> + Send;
 
-    /// The scope `thread` is stored in, when any event of it is: the one lookup that takes a
-    /// bare thread id (`specs/storage.md`, "Scope"). It answers only "which scope"; every read
-    /// that follows is scoped as usual. The ledgers' reserved ids are in every project, so it is
-    /// asked only of threads.
+    /// Where `thread` is stored in `org`, the caller's organization, when any event of it is:
+    /// the one lookup that takes a bare thread id (`specs/storage.md`, "Scope"). Another
+    /// organization's thread is never found. It answers only "which project"; every read that
+    /// follows is scoped as usual. The ledgers' reserved ids are in every project, so it is asked
+    /// only of threads.
     fn locate(
         &self,
+        org: OrgId,
         thread: ThreadId,
     ) -> impl Future<Output = Result<Option<Located>, LogError>> + Send;
 

@@ -18,17 +18,21 @@ use crate::scope::Scope;
 use crate::view::{Standing, ThreadQuery, ThreadView};
 
 /// Builds a thread's events, numbering them and giving each its own second.
-struct Writer {
+pub(super) struct Writer {
     thread: ThreadId,
     seq: u64,
 }
 
 impl Writer {
-    fn new(thread: ThreadId) -> Self {
+    pub(super) fn new(thread: ThreadId) -> Self {
         Self { thread, seq: 0 }
     }
 
-    fn next<P: Payload>(&mut self, second: u64, payload: &P) -> Result<RawEvent, String> {
+    pub(super) fn next<P: Payload>(
+        &mut self,
+        second: u64,
+        payload: &P,
+    ) -> Result<RawEvent, String> {
         self.seq = self.seq.saturating_add(1);
         let header = Header {
             id: EventId::try_from(uuid_v7(10_000 + second * 100 + self.seq))
@@ -50,13 +54,13 @@ fn at(second: u64) -> Result<At, String> {
     .map_err(|e| e.to_string())
 }
 
-fn person() -> Result<Principal, String> {
+pub(super) fn person() -> Result<Principal, String> {
     PrincipalId::try_from(uuid_v7(9_000))
         .map(Principal::person)
         .map_err(|e| e.to_string())
 }
 
-fn started() -> Result<ThreadStarted, String> {
+pub(super) fn started() -> Result<ThreadStarted, String> {
     Ok(ThreadStarted {
         producer: Producer {
             name: "glave".into(),

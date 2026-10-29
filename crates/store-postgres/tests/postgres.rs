@@ -38,6 +38,23 @@ fn the_projects_pass_the_projects_conformance_suite() {
     });
 }
 
+/// Two organizations in one database never see each other's (`specs/storage.md`, "Many
+/// organizations in one store").
+#[test]
+fn two_organizations_in_one_database_are_kept_apart() {
+    block_on!(async {
+        let Some(scratch) = Scratch::new("organizations").await else {
+            return;
+        };
+        let store = scratch.store().await.unwrap();
+        let verdict =
+            conformance::organizations(&store.log(), &store.blobs(), &store.projects()).await;
+        drop(store);
+        scratch.drop_schema().await;
+        assert_eq!(verdict, Ok(()));
+    });
+}
+
 #[test]
 fn the_log_passes_the_event_log_conformance_suite() {
     block_on!(async {

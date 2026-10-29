@@ -162,9 +162,8 @@ where
             .inner
             .harness
             .log()
-            .locate(thread)
+            .locate(self.inner.org, thread)
             .await?
-            .filter(|located| located.org == self.inner.org)
             .ok_or_else(|| no_thread(thread))?;
         self.places().insert(thread, located.project);
         Ok(located.project)

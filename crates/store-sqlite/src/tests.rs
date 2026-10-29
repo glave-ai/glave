@@ -41,6 +41,19 @@ fn the_log_passes_the_event_log_conformance_suite() {
     assert_eq!(block_on!(conformance::event_log(&store.log())), Ok(()));
 }
 
+/// Two organizations in one file never see each other's (`specs/storage.md`, "Many
+/// organizations in one store").
+#[test]
+fn two_organizations_in_one_file_are_kept_apart() {
+    let store = Store::open_in_memory(keys()).unwrap();
+    let verdict = block_on!(conformance::organizations(
+        &store.log(),
+        &store.blobs(),
+        &store.projects()
+    ));
+    assert_eq!(verdict, Ok(()));
+}
+
 #[test]
 fn the_log_passes_the_search_conformance_suite() {
     let store = Store::open_in_memory(keys()).unwrap();

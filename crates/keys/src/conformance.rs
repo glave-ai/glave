@@ -221,6 +221,7 @@ fn text(error: impl std::fmt::Display) -> String {
 /// through erasure, and make erased content unreadable.
 pub async fn keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
     sealing(keys).await?;
+    organizations_apart(keys).await?;
     erasing_a_project(keys).await?;
     destroying_a_data_key(keys).await?;
     blobs(keys).await?;
@@ -288,6 +289,30 @@ async fn sealing<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
     ensure(
         crossed.is_err(),
         "a payload moved to another project must not open",
+    )
+}
+
+/// Each organization's content is sealed under keys of its own (`specs/storage.md`, "Many
+/// organizations in one store"), even where two use the same project id: one's content never
+/// opens as the other's, and erasing one's project leaves the other's readable.
+async fn organizations_apart<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
+    let ours = scope(10);
+    let theirs = Scope::glaves_own(OrgId::from_uuid(uuid_v7(9_001)), ours.project());
+    let event = event(1, 1, "2026-10")?;
+    let fields = EventFields::from(&event);
+    let mine = keys.seal_event(&ours, &event).await.map_err(text)?;
+    let yours = keys.seal_event(&theirs, &event).await.map_err(text)?;
+    let crossed = keys
+        .open_event(&theirs, &fields, &mine.key_id, &mine.bytes)
+        .await;
+    ensure(
+        crossed.is_err(),
+        "a payload must not open in another organization's project of the same id",
+    )?;
+    keys.erase_project(&ours).await.map_err(text)?;
+    ensure(
+        open(keys, &theirs, &event, &yours).await.is_ok(),
+        "erasing one organization's project must leave another's of the same id readable",
     )
 }
 

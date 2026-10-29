@@ -9,7 +9,7 @@ use tokio::sync::Notify;
 
 use crate::in_memory::InMemoryLog;
 use crate::log::{EventLog, LogError};
-use crate::scope::{Located, Scope};
+use crate::scope::{Located, OrgId, Scope};
 use crate::search::Found;
 use crate::view::{ThreadQuery, ThreadView};
 
@@ -181,9 +181,10 @@ impl EventLog for FaultyLog {
 
     fn locate(
         &self,
+        org: OrgId,
         thread: ThreadId,
     ) -> impl Future<Output = Result<Option<Located>, LogError>> + Send {
-        self.log.locate(thread)
+        self.log.locate(org, thread)
     }
 
     fn thread_views(

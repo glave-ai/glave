@@ -228,10 +228,10 @@ impl EventLog for DataLog {
         }
     }
 
-    async fn locate(&self, thread: ThreadId) -> Result<Option<Located>, LogError> {
+    async fn locate(&self, org: OrgId, thread: ThreadId) -> Result<Option<Located>, LogError> {
         match self {
-            Self::Sqlite(log) => log.locate(thread).await,
-            Self::Postgres(log) => log.locate(thread).await,
+            Self::Sqlite(log) => log.locate(org, thread).await,
+            Self::Postgres(log) => log.locate(org, thread).await,
         }
     }
 

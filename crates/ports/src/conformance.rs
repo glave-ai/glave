@@ -9,6 +9,7 @@ mod leases;
 mod memory;
 mod model;
 mod objects;
+mod organizations;
 mod projects;
 mod racing;
 mod search;
@@ -25,6 +26,7 @@ pub use leases::leases;
 pub use memory::{MemoryPlaces, memory_scopes};
 pub use model::{Listening, Script, model_provider};
 pub use objects::objects;
+pub use organizations::organizations;
 pub use projects::projects;
 pub use search::search;
 pub use threads::thread_views;
@@ -270,9 +272,10 @@ async fn latest_of_types<L: EventLog>(log: &L, here: Scope, t: ThreadId) -> Verd
     )
 }
 
-/// `locate` names the scope a thread is stored in, and nothing for a thread never written.
+/// `locate` names the scope a thread is stored in, and nothing for a thread never written or
+/// asked of another organization.
 async fn locating<L: EventLog>(log: &L, here: Scope, t: ThreadId) -> Verdict {
-    let located = log.locate(t).await.map_err(|e| e.to_string())?;
+    let located = log.locate(here.org(), t).await.map_err(|e| e.to_string())?;
     ensure(
         located
             == Some(Located {
@@ -281,10 +284,21 @@ async fn locating<L: EventLog>(log: &L, here: Scope, t: ThreadId) -> Verdict {
             }),
         "locate must name the scope a thread is stored in",
     )?;
-    let nowhere = log.locate(thread(9)?).await.map_err(|e| e.to_string())?;
+    let nowhere = log
+        .locate(here.org(), thread(9)?)
+        .await
+        .map_err(|e| e.to_string())?;
     ensure(
         nowhere.is_none(),
         "locate must find nothing for a thread never written",
+    )?;
+    let abroad = log
+        .locate(scope(3).org(), t)
+        .await
+        .map_err(|e| e.to_string())?;
+    ensure(
+        abroad.is_none(),
+        "locate must find nothing in another organization",
     )
 }
 

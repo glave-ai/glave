@@ -51,8 +51,8 @@ impl EventLog for SharedLog {
         self.0.search(scope, query, limit).await
     }
 
-    async fn locate(&self, thread: ThreadId) -> Result<Option<Located>, LogError> {
-        self.0.locate(thread).await
+    async fn locate(&self, org: OrgId, thread: ThreadId) -> Result<Option<Located>, LogError> {
+        self.0.locate(org, thread).await
     }
 
     async fn thread_views(
