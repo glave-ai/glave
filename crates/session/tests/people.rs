@@ -69,6 +69,19 @@ async fn people(server: &Tested<Shared>, caller: &Caller) -> Result<Vec<PersonIn
     }
 }
 
+/// Ada, Alan and Bea, each signed in to `server` once, so each is recorded.
+async fn three_signed_in(server: &Tested<Shared>) -> (Caller, Caller, Caller) {
+    let (ada, alan, bea) = (
+        signed_in("ada", &[]),
+        signed_in("alan", &[]),
+        signed_in("bea", &[]),
+    );
+    for caller in [&ada, &alan, &bea] {
+        role(server, caller).await;
+    }
+    (ada, alan, bea)
+}
+
 /// Those of `listed` the people ledger records: all but the person on the server's computer.
 fn recorded(listed: Vec<PersonInfo>) -> Vec<PersonInfo> {
     listed.into_iter().filter(|person| !person.local).collect()
@@ -161,14 +174,7 @@ fn only_an_owner_makes_an_owner_or_changes_one() {
     let dir = folder("people-owners");
     block_on!(async {
         let server = organization(&dir, &Shared::default(), 1).await;
-        let (ada, alan, bea) = (
-            signed_in("ada", &[]),
-            signed_in("alan", &[]),
-            signed_in("bea", &[]),
-        );
-        for caller in [&ada, &alan, &bea] {
-            role(&server, caller).await;
-        }
+        let (ada, alan, bea) = three_signed_in(&server).await;
         set(&server, &Caller::default(), "ada", OrgRole::Admin)
             .await
             .unwrap();
@@ -276,14 +282,7 @@ fn each_person_is_listed_with_what_the_caller_may_change_of_them() {
     let dir = folder("people-seen");
     block_on!(async {
         let server = organization(&dir, &Shared::default(), 1).await;
-        let (ada, alan, bea) = (
-            signed_in("ada", &[]),
-            signed_in("alan", &[]),
-            signed_in("bea", &[]),
-        );
-        for caller in [&ada, &alan, &bea] {
-            role(&server, caller).await;
-        }
+        let (ada, alan, bea) = three_signed_in(&server).await;
         let owner = Caller::default();
         set(&server, &owner, "ada", OrgRole::Admin).await.unwrap();
         set(&server, &owner, "bea", OrgRole::Owner).await.unwrap();
