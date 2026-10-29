@@ -15,6 +15,7 @@ glave-ports.workspace = true
 # already uses.
 lettre.workspace = true
 thiserror.workspace = true
+tokio = { workspace = true, features = ["time"] }
 
 [dev-dependencies]
 glave-ports = { workspace = true, features = ["conformance"] }

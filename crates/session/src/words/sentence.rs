@@ -85,7 +85,7 @@ sentences! {
     NoEmail = "no-email" "this glave sends no email: share the invite's link yourself",
     NotAnEmail = "not-an-email" "that isn't an email address: check it and try again",
     InviteNotSent = "invite-not-sent"
-        "the invite was made, but its email could not be sent: share its link yourself, or revoke it",
+        "the invite's email could not be sent, so it was not made: try again, or make it without an address and share its link",
     InviteMailSubject = "invite-mail-subject" "You're invited to glave",
     InviteMail = "invite-mail"
         "You've been invited to glave. Open this link within 7 days to join:",

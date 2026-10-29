@@ -11,7 +11,8 @@ use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport as _, Message, Tokio1Executor};
 use thiserror::Error;
 
-/// How long a message may take to hand to the mail server: a few round trips and TLS.
+/// How long a message may take to hand to the mail server, from its name looked up to the
+/// last reply: a few round trips and TLS.
 const SEND_WITHIN: Duration = Duration::from_secs(30);
 
 /// The port on which a mail server speaks TLS from the first byte (SMTPS); on any other,
@@ -38,6 +39,11 @@ pub enum SmtpError {
     From(String),
     #[error("could not set up sending through {host}: {reason}")]
     Server { host: String, reason: String },
+    #[error(
+        "[email] names a user to sign in as, but GLAVE_SMTP_PASSWORD is not set, or the other \
+         way round: set both, or neither"
+    )]
+    Credentials,
 }
 
 /// Sends through one SMTP server.
@@ -69,7 +75,8 @@ impl Smtp {
             (Some(user), Some(password)) => {
                 builder.credentials(Credentials::new(user, password.expose().to_owned()))
             }
-            _ => builder,
+            (None, None) => builder,
+            _ => return Err(SmtpError::Credentials),
         };
         Ok(Self {
             transport: builder.build(),
@@ -79,6 +86,10 @@ impl Smtp {
 }
 
 impl Mailer for Smtp {
+    fn reaches(&self, to: &str) -> bool {
+        to.parse::<Mailbox>().is_ok()
+    }
+
     fn send<'a>(&'a self, mail: &'a Mail) -> BoxFuture<'a, Result<(), MailError>> {
         Box::pin(async move {
             let to: Mailbox = mail
@@ -92,10 +103,15 @@ impl Mailer for Smtp {
                 .header(ContentType::TEXT_PLAIN)
                 .body(mail.text.clone())
                 .map_err(|error| MailError::Send(error.to_string()))?;
-            self.transport
-                .send(message)
-                .await
-                .map(drop)
+            // The transport's own limit is on connecting alone; this one is on all of it.
+            let sent = tokio::time::timeout(SEND_WITHIN, self.transport.send(message)).await;
+            let sent = sent.map_err(|_| {
+                MailError::Send(format!(
+                    "the mail server did not take the message within {}",
+                    glave_ports::spoken(SEND_WITHIN)
+                ))
+            })?;
+            sent.map(drop)
                 .map_err(|error| MailError::Send(said(&error)))
         })
     }
@@ -136,6 +152,9 @@ mod tests {
         ));
         assert!(Smtp::new(settings("glave <glave@example.com>", 587)).is_ok());
         assert!(Smtp::new(settings("glave@example.com", SMTPS)).is_ok());
+        let mut half = settings("glave@example.com", 587);
+        half.user = Some("glave".into());
+        assert!(matches!(Smtp::new(half), Err(SmtpError::Credentials)));
     }
 
     #[test]

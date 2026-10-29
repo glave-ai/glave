@@ -10,7 +10,7 @@ use glave_event::{
     At, InviteAccepted, InviteCreated, InviteId, InviteRevoked, OrgRole, Principal, PrincipalId,
 };
 use glave_identity::signin::{kept, one_time_code, same_kept};
-use glave_ports::{BlobStore, Caller, EventLog, Mail, Mailer, ModelProvider};
+use glave_ports::{BlobStore, Caller, EventLog, Mail, MailError, Mailer, ModelProvider};
 use jiff::{SignedDuration, Timestamp};
 
 use crate::people::{People, Permit, joined_of, no_such_person, permits};
@@ -122,14 +122,14 @@ where
         if !self.inner.identity_provider && self.inner.accounts.is_none() {
             return Err(ApiError::new(code::NOT_ALLOWED, Sentence::NoOrganization));
         }
-        let sending = match email {
-            Some(to) => Some(self.sender(to)?),
-            None => None,
-        };
         let theirs = permits(self.permitted(caller, Permit::Invites).await?);
         if role == OrgRole::Owner && !theirs.contains(&Permit::Owners) {
             return Err(ApiError::new(code::NOT_ALLOWED, Sentence::OwnersOnly));
         }
+        let sending = match email {
+            Some(to) => Some(self.sender(to)?),
+            None => None,
+        };
         let code = one_time_code()?;
         let now = self.inner.harness.clock().now();
         let expires = now
@@ -171,10 +171,15 @@ where
                     say(Language::English, &Sentence::InviteMailIgnore),
                 ),
             };
-            mailer.send(&mail).await.map_err(|error| {
-                tracing::warn!(%error, "an invite's email was not sent");
-                ApiError::new(code::NOT_AVAILABLE, Sentence::InviteNotSent)
-            })?;
+            if let Err(error) = mailer.send(&mail).await {
+                // What the mail server said, never the address.
+                if let MailError::Send(reason) = &error {
+                    tracing::warn!(%reason, "an invite's email was not sent");
+                }
+                // An invite whose link reached no one is not left waiting.
+                self.revoke_invite(caller, created.invite).await?;
+                return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::InviteNotSent));
+            }
         }
         Ok(Reply::Invited {
             invite: invite.ok_or_else(gone)?,
@@ -188,7 +193,7 @@ where
         let (Some(mailer), Some(origin)) = (self.inner.mail.as_deref(), &self.inner.origin) else {
             return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::NoEmail));
         };
-        if !to.contains('@') || to.chars().any(char::is_whitespace) {
+        if !mailer.reaches(to) {
             return Err(ApiError::new(code::INVALID_PARAMS, Sentence::NotAnEmail));
         }
         let origin = origin.to_string();

@@ -353,3 +353,26 @@ fn an_invite_is_emailed_where_the_server_sends_email() {
         assert_eq!(refused.code, code::NOT_AVAILABLE);
     });
 }
+
+/// An invite whose email the mail server refused is not left waiting: its link reached no one.
+#[test]
+fn an_invite_whose_email_was_refused_is_not_made() {
+    let dir = folder("invites-refused");
+    block_on!(async {
+        let mut setup = Setup::new(Vec::new());
+        setup.identity_provider = true;
+        setup.origin = glave_ports::host::PublicOrigin::parse("https://glave.test");
+        setup.mail = Some(Arc::new(glave_ports::testing::Outbox::refusing()));
+        let (server, _) = setup.build_on(&dir, Shared::default()).await;
+        let create = Request::InviteCreate {
+            role: OrgRole::Member,
+            email: Some("ada@example.com".into()),
+        };
+        let refused = server.request(create).await.unwrap_err();
+        assert_eq!(refused.code, code::NOT_AVAILABLE);
+        let Ok(Reply::Invites { invites }) = server.request(Request::InviteList {}).await else {
+            panic!("invites");
+        };
+        assert!(invites.is_empty(), "{invites:?}");
+    });
+}

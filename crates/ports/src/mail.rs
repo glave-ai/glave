@@ -27,6 +27,9 @@ pub enum MailError {
 
 /// Where glave's messages go out.
 pub trait Mailer: Send + Sync {
+    /// Whether a message can go to `to` at all, checked before anything else is done.
+    fn reaches(&self, to: &str) -> bool;
+
     /// Sends `mail`, answered once the mail server took it.
     fn send<'a>(&'a self, mail: &'a Mail) -> BoxFuture<'a, Result<(), MailError>>;
 }
