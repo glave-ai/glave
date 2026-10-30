@@ -473,10 +473,11 @@ where
         }
         let project = scope.project();
         let own = self.inner.worktree.load(Ordering::Relaxed);
-        let folder = self.folder_found(scope.located()).await?;
-        // The project's own choice, for the person here, is nearer than the server's.
-        let copies = match &folder {
-            Some(folder) if self.is_theirs(caller) => self
+        let found = self.folder_to_start_in(scope.located()).await?;
+        // The project's own choice, for the person here, is nearer than the server's; one on a
+        // person's own computer is not read on the server's disk.
+        let copies = match &found {
+            Some((folder, false)) if self.is_theirs(caller) => self
                 .inner
                 .harness
                 .settled(std::path::Path::new(folder))
@@ -485,6 +486,7 @@ where
                 .unwrap_or(own),
             _ => own,
         };
+        let folder = found.map(|(folder, _)| folder);
         let place = match (folder, worktree, &self.inner.worker) {
             (None, Some(true), _) => {
                 return Err(ApiError::new(
