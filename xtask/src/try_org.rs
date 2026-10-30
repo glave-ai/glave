@@ -3,7 +3,9 @@
 //! "Doors"). It builds the web app, then serves glave from a folder of its own in the
 //! temporary folder, at a port the system gives it, its origin this computer's `localhost` at
 //! that port, with a key file there and nothing of the person's own glave: not their
-//! `GLAVE_HOME`, `~/.glave`, the keychain, or any `GLAVE_` setting of theirs. glave prints the link to sign in with. On
+//! `GLAVE_HOME`, `~/.glave`, the keychain, or any `GLAVE_` setting of theirs. Its model is a
+//! stand-in on this computer (`model.rs`) that answers every chat and says what each answer
+//! cost. glave prints the link to sign in with. On
 //! Ctrl-C, a hang-up, the end of the program that started xtask or the server's own end, it
 //! stops the server and removes the folder. glave's lifeline stops the server if xtask is
 //! killed outright; a folder such a run left is removed by the next, which finds its lock free.
@@ -21,8 +23,7 @@ use tokio::signal::unix::{SignalKind, signal};
 /// The folder in the temporary folder that holds each run's own.
 const RUNS: &str = "glave-try-org";
 
-/// The model glave is told to use: enough for the app to open, though nothing answers a chat.
-const NO_MODEL: &str = "try-org";
+mod model;
 
 /// glave's settings: people who share this computer reach it at its `localhost`, at whichever
 /// port it serves.
@@ -74,6 +75,7 @@ fn serve(root: &Path, folder: &Path) -> Result<(), String> {
     let web = root.join("web/dist/app/browser");
     let failed = |err: &dyn std::fmt::Display| format!("could not run glave: {err}");
     crate::cmd::with_lifeline(|processes: Processes| async move {
+        let model = model::start()?;
         let mut command = Program::new("cargo");
         command
             .args([
@@ -95,7 +97,8 @@ fn serve(root: &Path, folder: &Path) -> Result<(), String> {
                     .filter(|(name, _)| !name.to_string_lossy().starts_with("GLAVE_")),
             )
             .env("GLAVE_HOME", &home)
-            .env("GLAVE_MODEL", NO_MODEL)
+            .env("GLAVE_BASE_URL", format!("{}/v1", model.url))
+            .env("GLAVE_MODEL", model::MODEL)
             .current_dir(root)
             .stdin(Stdio::null());
         let mut child = processes
@@ -107,6 +110,8 @@ fn serve(root: &Path, folder: &Path) -> Result<(), String> {
              xtask: you, its owner: open the sign-in link glave prints, at 127.0.0.1\n\
              xtask: someone you invite: a private window, opening the invite's link, at the \
              localhost address glave prints\n\
+             xtask: its model is a stand-in that answers every message the same, and says each \
+             answer cost $0.10\n\
              xtask: Ctrl-C stops it and removes it all",
             folder.display()
         );
@@ -123,6 +128,7 @@ fn serve(root: &Path, folder: &Path) -> Result<(), String> {
             () = orphaned() => {}
         }
         child.stop().await;
+        drop(model);
         Ok(())
     })
 }
