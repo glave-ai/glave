@@ -69,7 +69,7 @@ pub(crate) struct Lock {
 #[derive(Debug)]
 pub(crate) struct Claimed {
     pub lock: Lock,
-    pub listener: tokio::net::TcpListener,
+    pub listening: crate::serving::Listening,
 }
 
 impl Lock {
@@ -225,9 +225,9 @@ pub(crate) async fn claim(args: &mut crate::args::Args) -> anyhow::Result<Option
         );
     };
     let asked = *args.http.get_or_insert_with(loopback);
-    let listener = crate::serving::listen(asked).await?;
-    args.http = Some(listener.local_addr()?);
-    Ok(Some(Claimed { lock, listener }))
+    let listening = crate::serving::listen(asked).await?;
+    args.http = Some(listening.address()?);
+    Ok(Some(Claimed { lock, listening }))
 }
 
 #[cfg(test)]

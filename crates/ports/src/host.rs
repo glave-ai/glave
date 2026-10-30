@@ -104,6 +104,12 @@ impl PublicOrigin {
         port.parse().ok()
     }
 
+    /// Whether it is this computer's `localhost`, with a port or without: one people share this
+    /// computer by, served on loopback alone.
+    pub fn on_this_computer(&self) -> bool {
+        self.origin == "http://localhost" || self.here().is_some()
+    }
+
     /// The origin of a server serving at `port`: this computer's `http://localhost`, named
     /// without a port, at that one; any other as it is.
     #[must_use]
@@ -179,10 +185,12 @@ mod tests {
         // Named without one, it is at whichever port the server serves.
         let following = PublicOrigin::parse("http://localhost").unwrap();
         assert_eq!(following.here(), None);
+        assert!(following.on_this_computer() && here.on_this_computer());
         assert_eq!(following.serving_at(4181).as_str(), "http://localhost:4181");
         assert_eq!(following.serving_at(4181).here(), Some(4181));
         let elsewhere = PublicOrigin::parse("https://glave.example.com").unwrap();
         assert_eq!(elsewhere.serving_at(4181), elsewhere);
+        assert!(!elsewhere.on_this_computer());
     }
 
     #[test]

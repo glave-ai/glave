@@ -2,9 +2,8 @@
 //! this computer, its people sharing it each in a browser of their own (`specs/session.md`,
 //! "Doors"). It builds the web app, then serves glave from a folder of its own in the
 //! temporary folder, at a port the system gives it, its origin this computer's `localhost` at
-//! that port, with a key file
-//! there and nothing of the person's own glave: not their `GLAVE_HOME`, `~/.glave`, the
-//! keychain, or any `GLAVE_` setting of theirs. glave prints the link to sign in with. On
+//! that port, with a key file there and nothing of the person's own glave: not their
+//! `GLAVE_HOME`, `~/.glave`, the keychain, or any `GLAVE_` setting of theirs. glave prints the link to sign in with. On
 //! Ctrl-C, a hang-up, the end of the program that started xtask or the server's own end, it
 //! stops the server and removes the folder. glave's lifeline stops the server if xtask is
 //! killed outright; a folder such a run left is removed by the next, which finds its lock free.

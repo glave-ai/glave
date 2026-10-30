@@ -81,8 +81,8 @@ export const CONNECTIONS_WEBKIT: Site = {
   home: 'GLAVE_E2E_CONNECTIONS_WEBKIT_HOME',
 };
 /**
- * Glaves shared by the people of one computer, whose origin is set to its
- * `http://localhost:<port>`, one for each engine, since each fills it with people
+ * Glaves shared by the people of one computer, whose origin is set to its `http://localhost`,
+ * at the port each serves at, one for each engine, since each fills it with people
  * (shared.e2e.ts): the person on it signs in at its address, the others at `localhost`.
  */
 export const SHARED: Site = { address: 'GLAVE_E2E_SHARED_URL', home: 'GLAVE_E2E_SHARED_HOME' };

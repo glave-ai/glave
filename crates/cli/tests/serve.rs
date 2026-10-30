@@ -234,7 +234,7 @@ mod reached {
     use glave_ports::block_on;
     use glave_provider_openai::fake::FakeServer;
 
-    use crate::http::serve_http;
+    use crate::http::{serve_http, serve_http_with};
     use crate::support::*;
 
     const DISCOVER: &str = r#"{"jsonrpc":"2.0","id":1,"method":"server/discover"}"#;
@@ -285,12 +285,16 @@ mod reached {
         let model = FakeServer::start(vec![]).unwrap();
         choose(&place, "serve", "{ origin = \"http://localhost\" }");
         // At a port the system gives it, as no origin naming a port could be.
-        let (_served, url) = serve_http(&place, &model, &[]);
+        let (_served, url, said) = serve_http_with(&place, &model, &[], &[]);
         let (_, port) = url.rsplit_once(':').unwrap();
         let shared = format!("http://localhost:{port}");
+        let reach = format!("people who share this computer reach it at {shared},");
+        assert!(
+            said.start.iter().any(|line| line.contains(&reach)),
+            "{:?}",
+            said.start
+        );
         block_on!(async {
-            let host = format!("localhost:{port}");
-            assert_eq!(discovered(&url, &host, &shared).await, 200);
             let answer = reqwest::Client::new()
                 .post(format!("{url}/"))
                 .header("content-type", "application/json")

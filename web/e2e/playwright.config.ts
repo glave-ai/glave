@@ -104,8 +104,6 @@ const SITES: readonly {
   site: Site;
   web: string;
   env: Record<string, string>;
-  /** Where it listens: any free port unless said. */
-  http?: string;
 }[] = [
   {
     site: APP,
@@ -151,7 +149,6 @@ const SITES: readonly {
   ...[SHARED, SHARED_WEBKIT].map((site) => ({
     site,
     web: 'dist/app/browser',
-    http: '127.0.0.1:0',
     env: {
       ...tied,
       GLAVE_HOME: home(site, '[serve]\norigin = "http://localhost"\n'),
@@ -248,8 +245,8 @@ export default defineConfig({
   // whole line, to its end: Playwright matches what has come so far after each piece of output,
   // and glave's error output is written in pieces, so without the end a line read only to
   // `http://127.0.0.` would be taken for an address (127.0.0.0, port 80).
-  webServer: SITES.map(({ site, web, env, http = '0' }) => ({
-    command: `"${GLAVE_BIN}" serve --http ${http} --web ${web}`,
+  webServer: SITES.map(({ site, web, env }) => ({
+    command: `"${GLAVE_BIN}" serve --http 0 --web ${web}`,
     wait: {
       stderr: new RegExp(`serving the session API on (?<${site.address}>http://\\S+)\\n`, 'u'),
     },
