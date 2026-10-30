@@ -293,9 +293,13 @@ fn bash(
         .env("TERM", "dumb")
         .env("PAGER", "cat")
         .env("GIT_PAGER", "cat")
-        .stdin(if input { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
+    if input {
+        command.piped_input();
+    } else {
+        command.no_input();
+    }
     command
 }
 

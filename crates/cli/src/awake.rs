@@ -65,7 +65,7 @@ async fn start(processes: &Processes, holder: &Holder) -> Result<Child, ProcessE
     let mut program = Program::new(&holder.program);
     program
         .args(&holder.args)
-        .stdin(Stdio::null())
+        .no_input()
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     processes.spawn(&mut program).await

@@ -14,7 +14,6 @@ use std::fs::{File, TryLockError};
 use std::io::IsTerminal as _;
 use std::os::unix::process::parent_id;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::time::Duration;
 
 use glave_process::{Processes, Program};
@@ -100,7 +99,7 @@ fn serve(root: &Path, folder: &Path) -> Result<(), String> {
             .env("GLAVE_BASE_URL", format!("{}/v1", model.url))
             .env("GLAVE_MODEL", model::MODEL)
             .current_dir(root)
-            .stdin(Stdio::null());
+            .no_input();
         let mut child = processes
             .spawn(&mut command)
             .await

@@ -542,7 +542,7 @@ fn program(
         .args(args)
         .current_dir(dir)
         .env_clear()
-        .stdin(Stdio::piped())
+        .piped_input()
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
     for variable in PASSED_ON {

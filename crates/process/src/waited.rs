@@ -25,8 +25,7 @@ impl Processes {
         program: &mut Program,
         limit: Duration,
     ) -> Result<Output, ProcessError> {
-        program.command.stdout(Stdio::piped());
-        program.command.stderr(Stdio::piped());
+        program.stdout(Stdio::piped()).stderr(Stdio::piped());
         self.waited(program, None, limit).await
     }
 
@@ -49,7 +48,7 @@ impl Processes {
         input: &[u8],
         limit: Duration,
     ) -> Result<Output, ProcessError> {
-        program.command.stdin(Stdio::piped());
+        program.piped_input();
         self.waited(program, Some(input), limit).await
     }
 

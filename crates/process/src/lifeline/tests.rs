@@ -9,12 +9,18 @@ use super::*;
 use crate::testing::Orphan;
 use crate::{Processes, Program};
 
+/// How a stand-in for glave starts a program once glave says go (`start.rs`), first thing,
+/// as glave's own program does.
+const STARTS: &str = "#!/bin/sh\nif [ \"$1\" = --glave-start-1 ]; then input=$2; shift 2; \
+                      IFS= read -r said; [ \"$said\" = go ] || exit 125; \
+                      [ \"$input\" = none ] && exec \"$@\" </dev/null; exec \"$@\"; fi\n";
+
 /// A stand-in for glave as the helper: a script that says it is ready, then keeps what it
-/// reads in `told-<its pid>` beside itself.
+/// reads in `told-<its pid>` beside itself; and starts programs as glave's own program does.
 fn fake_helper(folder: &Path) -> PathBuf {
     let script = folder.join("helper");
     let ready = String::from_utf8(READY.to_vec()).unwrap();
-    let text = format!("#!/bin/sh\nprintf '{ready}'\nexec cat > \"${{0%/*}}/told-$$\"\n");
+    let text = format!("{STARTS}printf '{ready}'\nexec cat > \"${{0%/*}}/told-$$\"\n");
     std::fs::write(&script, text).unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     script
@@ -32,7 +38,7 @@ fn imposter(folder: &Path) {
 fn gated_helper(folder: &Path) {
     let ready = String::from_utf8(READY.to_vec()).unwrap();
     let text = format!(
-        "#!/bin/sh\nwhile [ ! -e \"${{0%/*}}/go\" ]; do sleep 0.01; done\nprintf '{ready}'\n\
+        "{STARTS}while [ ! -e \"${{0%/*}}/go\" ]; do sleep 0.01; done\nprintf '{ready}'\n\
          exec cat > \"${{0%/*}}/told-$$\"\n"
     );
     std::fs::write(folder.join("helper"), text).unwrap();
@@ -47,7 +53,7 @@ fn stopping_helper(folder: &Path) -> PathBuf {
     let script = folder.join("helper");
     let ready = String::from_utf8(READY.to_vec()).unwrap();
     let text = format!(
-        "#!/bin/sh\nmkdir \"${{0%/*}}/stopped\" 2>/dev/null && first=1\nprintf '{ready}'\n\
+        "{STARTS}mkdir \"${{0%/*}}/stopped\" 2>/dev/null && first=1\nprintf '{ready}'\n\
          [ -n \"$first\" ] && kill -STOP $$\nexec cat > \"${{0%/*}}/told-$$\"\n"
     );
     std::fs::write(&script, text).unwrap();
@@ -329,4 +335,89 @@ fn a_helper_that_reads_nothing_never_stalls_glave_and_is_replaced() {
         assert!(holds(&read), "{read}");
         drop((held, again));
     });
+}
+
+/// Names the folder of the window test to the glave it starts, which then plays its part.
+const WINDOW: &str = "GLAVE_PROCESS_TEST_WINDOW";
+
+/// The glave of [`a_program_whose_glave_is_killed_before_it_holds_it_never_runs`], which
+/// starts it as a process of its own to kill it: its helper goes, and the one started again is
+/// slow to say it is ready, so glave is still holding the next program's start when killed.
+#[test]
+#[ignore = "the glave the window test starts and kills; it runs it itself"]
+fn a_glave_killed_while_it_holds_a_start() {
+    let Some(folder) = std::env::var_os(WINDOW).map(PathBuf::from) else {
+        return;
+    };
+    glave_ports::block_on!(async {
+        let processes = Processes::unrecorded()
+            .with_lifeline(folder.join("helper"))
+            .await
+            .unwrap();
+        let lifeline = processes.lifeline().unwrap();
+        killed(lifeline, helper_pid(lifeline)).await;
+        std::fs::remove_file(folder.join("go")).unwrap();
+        let mut program = Program::new("sh");
+        program
+            .args(["-c", "touch ran; exec sleep 300"])
+            .current_dir(&folder);
+        // Never answered: glave is killed first.
+        let _started = processes.spawn(&mut program).await;
+    });
+}
+
+#[test]
+fn a_program_whose_glave_is_killed_before_it_holds_it_never_runs() {
+    let folder = TempDir::new("lifeline-window").unwrap();
+    // Started as a program's start, it says so and waits for glave's word; as a helper, it
+    // says so and waits for `go` before it says it is ready, a minute and a half at most, so
+    // none outlives a test that fails first.
+    let script = format!(
+        "#!/bin/sh\nif [ \"$1\" = --glave-start-1 ]; then shift 2; echo $$ > \"${{0%/*}}/starting\"; \
+         IFS= read -r said; [ \"$said\" = go ] && exec \"$@\"; exit 125; fi\n\
+         echo $$ >> \"${{0%/*}}/helpers\"\n\
+         waited=0; while [ ! -e \"${{0%/*}}/go\" ] && [ $waited -lt 9000 ]; do \
+         sleep 0.01; waited=$((waited + 1)); done\nprintf '{}'\nexec cat > /dev/null\n",
+        String::from_utf8(READY.to_vec()).unwrap()
+    );
+    let helper = folder.join("helper");
+    std::fs::write(&helper, script).unwrap();
+    std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::write(folder.join("go"), "").unwrap();
+    let pids = |name: &str| -> Vec<i32> {
+        let text = std::fs::read_to_string(folder.join(name)).unwrap_or_default();
+        text.lines().filter_map(|line| line.parse().ok()).collect()
+    };
+    let child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "lifeline::tests::a_glave_killed_while_it_holds_a_start",
+        ])
+        .args(["--ignored", "--nocapture"])
+        .env(WINDOW, folder.path())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut glave = glave_ports::testing::Running::new(child);
+    // The program's start waits for glave's word, and glave for its second helper.
+    let deadline = Instant::now() + HUNG;
+    while pids("starting").is_empty() || pids("helpers").len() < 2 {
+        assert!(Instant::now() < deadline, "glave never held a start");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    glave.kill().unwrap();
+    glave.wait().unwrap();
+    // Nor is its helper left to stop anything: the start alone decides.
+    for helper in pids("helpers") {
+        let _ = kill_process(Pid::from_raw(helper).unwrap(), Signal::KILL);
+    }
+    let start = Pid::from_raw(pids("starting")[0]).unwrap();
+    let deadline = Instant::now() + HUNG;
+    while test_kill_process(start).is_ok() {
+        assert!(Instant::now() < deadline, "the start outlived its glave");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(!folder.join("ran").exists(), "the program ran untied");
 }

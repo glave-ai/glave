@@ -180,7 +180,7 @@ pub(crate) async fn script(
                 .iter()
                 .filter(|(name, _)| !name.to_string_lossy().starts_with("GLAVE_")),
         )
-        .stdin(Stdio::null())
+        .no_input()
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     match processes.output(&mut script, SCRIPT_TIMEOUT).await {

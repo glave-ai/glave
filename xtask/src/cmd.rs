@@ -102,7 +102,7 @@ fn tied(
             .args(args)
             .envs(env.iter().map(|(name, value)| (*name, value)))
             .current_dir(dir)
-            .stdin(Stdio::null());
+            .no_input();
         if read {
             command.stdout(Stdio::piped());
         }

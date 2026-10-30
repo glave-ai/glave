@@ -18,14 +18,25 @@ use std::process::ExitCode;
 
 use rustix::process::{Signal, kill_process};
 
+use super::gate::{NOT_STARTED, START_ARG, start};
 use super::{HELPER_ARG, READY};
 use crate::group;
 
 /// Runs this process as the lifeline's helper when `args` (the whole command line) are the
 /// helper's: it returns, with the code to exit with, once glave has ended and what it left
-/// running is stopped. Returns `None` when they are not. A program that passes its own path
+/// running is stopped. Started by glave to become a program once glave holds it, it becomes
+/// that program, and returns only when it does not. Returns `None` when they are neither. A program that passes its own path
 /// to [`crate::Processes::with_lifeline`] calls this first thing in `main`.
 pub fn lifeline_helper(args: &[OsString]) -> Option<ExitCode> {
+    // Started by glave to become a program once glave holds it (`gate.rs`).
+    if args.get(1).is_some_and(|first| first == START_ARG) {
+        let rest = args.get(2..).unwrap_or_default();
+        return Some(if rest.is_empty() {
+            ExitCode::from(NOT_STARTED)
+        } else {
+            start(rest)
+        });
+    }
     if args.get(1).is_none_or(|first| first != HELPER_ARG) {
         return None;
     }

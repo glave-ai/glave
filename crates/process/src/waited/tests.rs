@@ -174,7 +174,7 @@ fn an_opener_is_done_when_it_ends_though_the_browser_it_started_keeps_its_stream
         processes.status(
             Program::new("sh")
                 .args(["-c", &script])
-                .stdin(Stdio::null())
+                .no_input()
                 .stdout(Stdio::null())
                 .stderr(Stdio::null()),
             AMPLE

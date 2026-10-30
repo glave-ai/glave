@@ -47,7 +47,7 @@ fn a_process_is_recorded_while_it_runs_and_its_group_goes_with_it() {
     let mut program = Program::new("sh");
     program
         .args(["-c", "sleep 300 & echo $!; wait"])
-        .stdin(Stdio::null())
+        .no_input()
         .stdout(Stdio::piped());
     let (child, left) = glave_ports::block_on!(async {
         let mut child = processes.spawn(&mut program).await.unwrap();
@@ -215,7 +215,7 @@ fn what_sigkill_cannot_end_is_left_behind_recorded_and_glave_moves_on() {
     let processes = Processes::recorded(&run).owned_by(Owner::Workspace("w".into()));
     let ledger = run.join("processes");
     let mut program = Program::new("sleep");
-    program.arg("300").stdin(Stdio::null());
+    program.arg("300").no_input();
     let (mut child, mut stuck) = glave_ports::block_on!(async {
         let child = processes.spawn(&mut program).await.unwrap();
         // A process in the child's group that SIGKILL ends but nothing reaps keeps the group

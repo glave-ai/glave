@@ -4,12 +4,18 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use tokio::io::AsyncWriteExt as _;
+
 use crate::child::Child;
 use crate::error::ProcessError;
 use crate::ledger::{self, Ledger};
 use crate::lifeline::Lifeline;
+use crate::lifeline::gate::GO;
 use crate::owner::Owner;
-use crate::program::Program;
+use crate::program::{Input, Program};
+
+/// Why a program could not be told it may run.
+const NO_GATE: &str = "glave could not hold it before it ran";
 
 /// Where processes are recorded, and for whom the next ones start.
 #[derive(Debug, Clone)]
@@ -75,27 +81,61 @@ impl Processes {
     /// Starts `program` to run on its own: in a process group of its own (unless it starts
     /// a session itself), tied to glave by the lifeline and recorded for this owner. Refused,
     /// and stopped, when it cannot be tied (the helper is gone and cannot start again) or
-    /// recorded: nothing runs without an entry while there is a ledger.
+    /// recorded: nothing runs without an entry while there is a ledger. With a lifeline it
+    /// runs only once both are done: until then glave's own program waits in its place to
+    /// become it, and a glave that ends meanwhile leaves nothing of it running (#996).
     pub async fn spawn(&self, program: &mut Program) -> Result<Child, ProcessError> {
-        if program.grouped {
-            program.command.process_group(0);
+        let grouped = program.grouped;
+        let Some(lifeline) = &self.lifeline else {
+            let command = program.direct();
+            if grouped {
+                command.process_group(0);
+            }
+            let child = Child::new(command.spawn().map_err(|error| program.failed(error))?);
+            return self.record(child, program).await;
+        };
+        // It becomes the program only once glave holds it (`lifeline/start.rs`), so one it
+        // cannot become is refused here, as starting it directly would refuse it.
+        program.found()?;
+        let mut command = program.gated(lifeline.starter());
+        if grouped {
+            command.process_group(0);
         }
         let inner = {
-            let _starting = self.lifeline.as_ref().map(|lifeline| lifeline.starting());
-            program.command.spawn()
+            let _starting = lifeline.starting();
+            command.spawn()
         }
         .map_err(|error| program.failed(error))?;
         let mut child = Child::new(inner);
-        let pid = child.id().and_then(|pid| i32::try_from(pid).ok());
-        if let (Some(lifeline), Some(pid)) = (&self.lifeline, pid) {
-            match lifeline.tie(pid).await {
-                Ok(tie) => child = child.tied(tie),
-                Err(error) => {
-                    child.stop().await;
-                    return Err(error);
-                }
+        let gate = child.stdin.take();
+        let Some(pid) = child.id().and_then(|pid| i32::try_from(pid).ok()) else {
+            child.stop().await;
+            return Err(program.failed(std::io::Error::other(NO_GATE)));
+        };
+        match lifeline.tie(pid).await {
+            Ok(tie) => child = child.tied(tie),
+            Err(error) => {
+                child.stop().await;
+                return Err(error);
             }
         }
+        let mut child = self.record(child, program).await?;
+        // Held by the helper and recorded: now it may run.
+        let mut gate = gate.ok_or_else(|| program.failed(std::io::Error::other(NO_GATE)))?;
+        if let Err(error) = gate.write_all(GO).await {
+            child.stop().await;
+            return Err(program.failed(error));
+        }
+        if program.input == Input::Piped {
+            child.stdin = Some(gate);
+        }
+        Ok(child)
+    }
+
+    /// `child`, which `program` started, recorded in the ledger for this owner, when there is
+    /// one; stopped, and refused, when it cannot be.
+    async fn record(&self, mut child: Child, program: &Program) -> Result<Child, ProcessError> {
+        let pid = child.id().and_then(|pid| i32::try_from(pid).ok());
         let (Some(ledger), Some(pid)) = (&self.ledger, pid) else {
             return Ok(child);
         };
