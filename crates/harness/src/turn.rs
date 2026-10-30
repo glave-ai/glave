@@ -688,6 +688,9 @@ where
         staged.recorded(thread);
         // Nothing is open any more, whatever was when the thread was read.
         thread.opened = None;
+        // On its person's own computer, read again after a turn that changed files there: what
+        // the next thread in its folder opens with.
+        self.refresh_at_home(thread).await;
         Ok(())
     }
 

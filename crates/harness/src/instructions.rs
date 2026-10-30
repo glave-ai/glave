@@ -10,7 +10,7 @@ mod nested;
 
 use std::path::{Path, PathBuf};
 
-use glave_event::Part;
+use glave_event::{InstructionsFile, Part};
 use glave_ports::Message;
 use glave_ports::computer::ComputerError;
 
@@ -87,13 +87,19 @@ pub(crate) fn opened_with(messages: &[Message]) -> Option<String> {
 /// What [`agents_md`] reads for a thread working at `root` on a computer reached through the
 /// port, read there through `home`, the person's home on it, which `root` is inside: their own
 /// instructions (`.glave/AGENTS.md` in the home), then every AGENTS.md from the repository's
-/// root down to `root`, never above the home. A file that cannot be read is left out.
-pub(crate) async fn agents_md_on(home: &Workspace, root: &Path) -> Option<Instructions> {
+/// root down to `root`, never above the home, file by file as they are sent ([`compose`]). A
+/// file that is not there, or that the computer refuses to read, is left out; any other
+/// failure (the computer or its home gone) fails the read, so nothing half read is taken for
+/// it.
+pub(crate) async fn agents_md_on(
+    home: &Workspace,
+    root: &Path,
+) -> Result<Vec<InstructionsFile>, ComputerError> {
     let base = home.root();
     let mut files = vec![base.join(PERSONAL)];
     files.extend(
         dirs_on(home, root)
-            .await
+            .await?
             .iter()
             .map(|dir| dir.join(AGENTS_MD)),
     );
@@ -111,23 +117,16 @@ pub(crate) async fn agents_md_on(home: &Workspace, root: &Path) -> Option<Instru
                 file.clone(),
                 &String::from_utf8_lossy(bytes.as_slice()),
             ),
-            Err(ComputerError::NotFound(_)) => {}
-            Err(error) => {
-                let file = file.display().to_string();
-                tracing::warn!(
-                    error = error.message(),
-                    file,
-                    "an AGENTS.md could not be read"
-                );
-            }
+            Err(ComputerError::NotFound(_) | ComputerError::Refused(_)) => {}
+            Err(error) => return Err(error),
         }
     }
-    read.done(root)
+    Ok(read.blocks)
 }
 
 /// The folders [`project_dirs`] looks in, found through `home`: from the repository's root
 /// down to `root`, or `root` alone, never above the home.
-async fn dirs_on(home: &Workspace, root: &Path) -> Vec<PathBuf> {
+async fn dirs_on(home: &Workspace, root: &Path) -> Result<Vec<PathBuf>, ComputerError> {
     let base = home.root();
     let mut dirs = Vec::new();
     for dir in root.ancestors().take_while(|dir| dir.starts_with(base)) {
@@ -135,12 +134,17 @@ async fn dirs_on(home: &Workspace, root: &Path) -> Vec<PathBuf> {
         let Some(git) = inside(base, &dir.join(".git")) else {
             continue;
         };
-        if home.stat(&git).await.is_ok_and(|stat| stat.kind.is_some()) {
-            dirs.reverse();
-            return dirs;
+        match home.computers().stat(home.info().id, &git).await {
+            Ok(stat) if stat.kind.is_some() => {
+                dirs.reverse();
+                return Ok(dirs);
+            }
+            // A path with nothing there is `Ok`, so not found here means the home is gone.
+            Ok(_) | Err(ComputerError::Refused(_)) => {}
+            Err(error) => return Err(error),
         }
     }
-    vec![root.to_path_buf()]
+    Ok(vec![root.to_path_buf()])
 }
 
 /// `path` as the home at `base` names it: relative to it.
@@ -153,7 +157,7 @@ fn inside(base: &Path, path: &Path) -> Option<String> {
 struct Sections {
     /// The files read, as each is known, so none is sent twice.
     files: Vec<PathBuf>,
-    blocks: Vec<String>,
+    blocks: Vec<InstructionsFile>,
     remaining: usize,
 }
 
@@ -182,25 +186,37 @@ impl Sections {
         let (text, cut) = within(text.trim(), self.remaining);
         self.remaining = self.remaining.saturating_sub(text.len());
         let note = if cut { CUT_SHORT } else { "" };
-        self.blocks
-            .push(format!("From {}:\n{text}{note}", path.display()));
+        self.blocks.push(InstructionsFile {
+            path: path.display().to_string(),
+            text: format!("{text}{note}"),
+        });
         self.files.push(file);
     }
 
     /// The instructions for a workspace at `root`, or `None` when nothing was read.
     fn done(self, root: &Path) -> Option<Instructions> {
-        if self.blocks.is_empty() {
-            return None;
-        }
         Some(Instructions {
-            text: format!(
-                "{HEADING}{}\n\n<INSTRUCTIONS>\n{}\n</INSTRUCTIONS>",
-                root.display(),
-                self.blocks.join("\n\n")
-            ),
+            text: compose(root, &self.blocks)?,
             files: self.files,
         })
     }
+}
+
+/// The instructions for a workspace at `root` made of `files`, as the model is sent them; `None`
+/// when there are none.
+pub(crate) fn compose(root: &Path, files: &[InstructionsFile]) -> Option<String> {
+    if files.is_empty() {
+        return None;
+    }
+    let blocks: Vec<String> = files
+        .iter()
+        .map(|file| format!("From {}:\n{}", file.path, file.text))
+        .collect();
+    Some(format!(
+        "{HEADING}{}\n\n<INSTRUCTIONS>\n{}\n</INSTRUCTIONS>",
+        root.display(),
+        blocks.join("\n\n")
+    ))
 }
 
 /// The folders to look in: from the repository's root down to `root`, or `root` alone.

@@ -51,16 +51,13 @@ where
         let (workspace, bound, moved) = self.reopen(scope, id, &events, folder).await?;
         let for_ = for_of(&events).or(self.actors.person);
         let messages = conversation(&events);
-        // On a person's own computer, reached again only at the next turn: what the thread
-        // opened with, kept in its log, until that turn reads them there again.
-        let instructions = match self
-            .instructions_for(scope, workspace.as_deref(), bound.as_ref(), for_)
-            .await
-        {
-            None if crate::homes::at_home(bound.as_ref()).is_some() => {
-                crate::instructions::opened_with(&messages)
-            }
-            read => read,
+        // On a person's own computer, reached again only at a turn: what the thread opened
+        // with, kept in its log, until a turn finds the computer awake and reads them there.
+        let instructions = if crate::homes::at_home(bound.as_ref()).is_some() {
+            crate::instructions::opened_with(&messages)
+        } else {
+            self.instructions_for(scope, workspace.as_deref(), bound.as_ref(), for_)
+                .await
         };
         let project = bound
             .as_ref()

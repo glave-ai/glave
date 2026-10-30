@@ -190,7 +190,7 @@ pub struct Thread {
     pub(crate) rebound: Option<WorkspaceBound>,
     /// Where it works on its person's own computer, when it does: opened there again at a
     /// turn's start whenever that computer woke since (`homes.rs`).
-    pub(crate) home: Option<WorkspaceBound>,
+    pub(crate) home: Option<crate::homes::AtHome>,
 }
 
 impl Thread {

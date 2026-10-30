@@ -152,15 +152,6 @@ where
         let (home, kind) = self.home_of(scope, person)?;
         let owner = owner_label(scope, id);
         let workspace = match opened {
-            Place::Folder(path) if kind == ComputerKind::Person => {
-                home.folder(&path).await.map_err(|error| match error {
-                    ComputerError::NotFound(_) => ComputerError::Unsupported(format!(
-                        "this project's folder, {path}, isn't on your cloud computer; make a \
-                         new project there to go on"
-                    )),
-                    error => error,
-                })?
-            }
             Place::Folder(path) => home.folder(&path).await?,
             Place::Worktree(path) => home.worktree(&path, &branch_for(id), Some(&owner)).await?,
             Place::Scratch => home.scratch(&id.to_string(), Some(&owner)).await?,
@@ -240,7 +231,8 @@ where
     }
 
     /// What a thread in `scope` for `person` working where `bound` says opens with: on their own
-    /// computer, what is read there for its folder ([`Harness::instructions_at_home`]); else
+    /// computer, what is read there for its folder, or kept from the last read while it sleeps
+    /// ([`Harness::instructions_at_home`]); else
     /// what the host reads for its folder (its project's, or none for a scratch folder), when
     /// the harness has a reader and the thread a folder of its own here; else the settings' own
     /// instructions.
@@ -252,9 +244,7 @@ where
         person: Option<PrincipalId>,
     ) -> Option<String> {
         if let Some(bound) = bound.filter(|bound| bound.computer.kind == ComputerKind::Person) {
-            return self
-                .instructions_at_home(scope, workspace?, &bound.opened, person)
-                .await;
+            return self.instructions_at_home(scope, bound, person).await;
         }
         let (Some(reader), Some(workspace), Some(bound)) =
             (&self.project_folders, workspace, bound)

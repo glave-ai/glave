@@ -80,6 +80,7 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::ConnectionRemoved(_)
         | Body::ProjectFolderSet(_)
         | Body::ProjectRemoved(_)
+        | Body::InstructionsRead(_)
         | Body::TrustDecided(_)
         | Body::BrowserSignedIn(_)
         | Body::BrowserUsed(_)

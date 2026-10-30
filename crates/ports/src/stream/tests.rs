@@ -51,7 +51,7 @@ fn each_ledger_has_its_own_reserved_id() {
     );
     assert_eq!(
         ids.last().map(String::as_str),
-        Some("00000000-0000-7000-8000-00000000000a")
+        Some("00000000-0000-7000-8000-00000000000b")
     );
     for ledger in Reserved::ALL {
         assert_eq!(Reserved::of(ledger.id()), Some(ledger));

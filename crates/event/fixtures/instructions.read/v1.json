@@ -1,0 +1,1 @@
+{"glave":1,"id":"0192f5c2-7000-7000-8000-0000000000b1","thread":"00000000-0000-7000-8000-00000000000b","seq":1,"at":"2026-10-30T09:00:00.000Z","type":"instructions.read","v":1,"data":{"root":"/home/glave/glave/app","files":[{"path":"/home/glave/.glave/AGENTS.md","text":"Be brief."},{"path":"/home/glave/glave/app/AGENTS.md","text":"Run make test."}]}}

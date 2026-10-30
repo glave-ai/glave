@@ -1,8 +1,9 @@
 //! Each person's own computer, where a deployment gives people one (`specs/computers.md`, "A
 //! person's computer in the cloud"): their threads work there, in a scratch folder on it,
-//! recorded as on their own computer; opening the app, starting a chat, reading it and a turn
-//! that only talks never wake it, and the first tool call that needs it does, once, while the
-//! turn holds it. A computer of this machine stands in for the cluster's.
+//! recorded as on their own computer; opening the app, starting a chat or a thread in a project
+//! there, reading it and a turn that only talks never wake it, and the first tool call that
+//! needs it does, once, while the turn holds it. A computer of this machine stands in for the
+//! cluster's.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -10,12 +11,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use glave_computer::{LocalComputers, Wake, Waking};
-use glave_event::{ComputerKind, PrincipalId, ThreadId};
+use glave_event::{ComputerKind, Part, PrincipalId, ThreadId};
 use glave_harness::Homes;
 use glave_ports::computer::{
     ComputerError, ComputerId, Computers, Home, Sources, WorkspaceId, WorkspaceInfo,
 };
-use glave_ports::{OrgId, ProjectId};
+use glave_ports::{Message, OrgId, ProjectId};
 use glave_session::Answering;
 use glave_session::protocol::{NewFolder, Reply, Request, Show, ThreadSummary};
 use serde_json::json;
@@ -84,10 +85,15 @@ impl Here {
         self.base.join(person.to_string()).join("projects")
     }
 
+    /// `person`'s home on their computer.
+    fn home_folder(&self, person: PrincipalId) -> PathBuf {
+        self.base.join(person.to_string()).join("home")
+    }
+
     /// `person`'s computer, planned: woken, the first time a call needs it, as a computer of
     /// this machine with its home in a folder of its own.
     fn plan(&self, person: PrincipalId) -> Home {
-        let folder = self.base.join(person.to_string()).join("home");
+        let folder = self.home_folder(person);
         std::fs::create_dir_all(&folder).unwrap();
         let (scratch, projects) = (self.scratch(person), self.projects(person));
         let (asked, woken, holds, held) = (
@@ -277,14 +283,18 @@ fn a_project_s_folder_is_made_on_its_person_s_own_computer_and_its_threads_work_
     let dir = folder("session-homes-project");
     block_on!(async {
         let homes = Arc::new(Here::new(&dir.join("people")));
-        let mut setup = Setup::asking(vec![answer(Some("Hello."), None)], Answering::NoOne);
+        let mut setup = Setup::asking(Vec::new(), Answering::NoOne);
         setup.homes = Some(Arc::clone(&homes) as Arc<dyn Homes>);
-        let (server, _) = setup.build_on(&dir, Shared::default()).await;
+        let log = Shared::default();
+        let (server, _) = setup.build_on(&dir, log.clone()).await;
         let person = server.person().unwrap();
         let create = |folder| Request::ProjectCreate {
             name: "Garden".into(),
             folder: Some(folder),
         };
+        let own = homes.home_folder(person).join(".glave");
+        std::fs::create_dir_all(&own).unwrap();
+        std::fs::write(own.join("AGENTS.md"), "Be brief.\n").unwrap();
 
         let made = server.request(create(NewFolder::Empty)).await.unwrap();
         let Reply::Project {
@@ -323,12 +333,7 @@ fn a_project_s_folder_is_made_on_its_person_s_own_computer_and_its_threads_work_
             "listing asks nothing of their computer"
         );
 
-        // A thread in it works in its folder there.
-        let thread = started(&server, Some(project.id)).await;
-        let workspace = thread.workspace.clone().unwrap();
-        assert_eq!(workspace.computer.kind, ComputerKind::Person);
-        assert_eq!(PathBuf::from(&workspace.root), root);
-        turn(&server, thread.id, "hi").await.unwrap();
+        started_later(&dir, log, &server, project.id, &root).await;
 
         // A folder picked by its path is only ever on the server's own computer.
         let picked = server
@@ -342,4 +347,44 @@ fn a_project_s_folder_is_made_on_its_person_s_own_computer_and_its_threads_work_
             "{refused}"
         );
     });
+}
+
+/// A server started later on the same store, which has not reached `server`'s person's computer
+/// since: a thread in `project` works in its folder at `root` there, opening with what was read
+/// there as the folder was made, and starting it and a turn that only talks ask nothing of the
+/// computer.
+async fn started_later(
+    dir: &Path,
+    log: Shared,
+    server: &Tested<Shared>,
+    project: ProjectId,
+    root: &Path,
+) {
+    let person = server.person().unwrap();
+    let mut next = Setup::asking(vec![answer(Some("Hello."), None)], Answering::NoOne);
+    next.seed = 2;
+    next.settings.person = Some(person);
+    next.projects = Some(Arc::clone(server.projects()));
+    let later = Arc::new(Here::new(&dir.join("people")));
+    next.homes = Some(Arc::clone(&later) as Arc<dyn Homes>);
+    let (again, seen) = next.build_on(dir, log).await;
+    let thread = started(&again, Some(project)).await;
+    let workspace = thread.workspace.clone().unwrap();
+    assert_eq!(workspace.computer.kind, ComputerKind::Person);
+    assert_eq!(PathBuf::from(&workspace.root), root);
+    turn(&again, thread.id, "hi").await.unwrap();
+    assert_eq!(later.asked(), 0, "nothing asked of their computer");
+    let opening = match seen
+        .lock()
+        .unwrap()
+        .first()
+        .and_then(|sent| sent.messages.first())
+    {
+        Some(Message::User { parts }) => parts.first().cloned(),
+        _ => None,
+    };
+    assert!(
+        matches!(&opening, Some(Part::Text { text }) if text.contains("Be brief.")),
+        "the person's own instructions, kept: {opening:?}"
+    );
 }

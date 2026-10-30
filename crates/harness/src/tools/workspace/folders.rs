@@ -39,7 +39,8 @@ pub struct Inside {
 impl Workspace {
     /// The folder at `path` on this workspace's computer: where it resolves, and its
     /// repository's `origin` remote when it is a repository's root. Not found when there is no
-    /// folder there.
+    /// folder there, on a computer that opens folders when asked; a person's own computer plans
+    /// them without looking (`Waking` in `glave-computer`), so it is not for that one.
     pub async fn look(&self, path: &str) -> Result<Looked, ComputerError> {
         let info = self.open_plain(path).await?;
         let config = self.computers.read(info.id, ".git/config").await;

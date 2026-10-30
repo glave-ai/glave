@@ -58,11 +58,14 @@ pub enum Reserved {
     /// `…000a`: the sign-ups a server that takes them is waiting on (`signup.started`,
     /// `signup.finished`), in its own organization's scope.
     Signups,
+    /// `…000b`: what was last read on its person's own computer for a project's folder
+    /// (`instructions.read`), which a thread there opens with without reaching that computer.
+    Instructions,
 }
 
 impl Reserved {
     /// Every ledger, by number.
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::Tasks,
         Self::Memory,
         Self::Accounts,
@@ -74,6 +77,7 @@ impl Reserved {
         Self::Settings,
         Self::People,
         Self::Signups,
+        Self::Instructions,
     ];
 
     /// The ledger's id, the same in every project.
@@ -90,6 +94,7 @@ impl Reserved {
             Self::Settings => 8,
             Self::People => 9,
             Self::Signups => 10,
+            Self::Instructions => 11,
         };
         ThreadId::reserved(number)
     }
