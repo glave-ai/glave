@@ -492,7 +492,7 @@ where
             untrusted: thread.untrusted,
             outside_sandbox: request.outside_sandbox.as_ref().map(|o| o.lifted),
         };
-        let asking = judge(&self.provider, &model, &case);
+        let asking = judge(&self.provider, &model, Some(thread.payer()), &case);
         let Some((ruling, answer)) = cancel.run(asking).await else {
             return Ok(Judged::Cancelled);
         };

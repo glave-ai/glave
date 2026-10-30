@@ -290,6 +290,7 @@ mod tests {
                 purpose: glave_ports::Purpose::Main,
                 files: Vec::new(),
                 effort: None,
+                payer: None,
             };
             let completion = tokio::runtime::Builder::new_current_thread()
                 .enable_all()

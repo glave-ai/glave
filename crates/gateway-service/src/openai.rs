@@ -91,6 +91,7 @@ pub(crate) fn parse(body: &[u8]) -> Result<Parsed, Refusal> {
             purpose: glave_ports::Purpose::Main,
             files: Vec::new(),
             effort: None,
+            payer: None,
         },
         model,
         stream,

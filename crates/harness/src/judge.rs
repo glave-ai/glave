@@ -9,7 +9,7 @@
 use std::fmt::Write as _;
 
 use glave_event::{Lifted, Part};
-use glave_ports::{Completion, Message, ModelProvider, ModelRequest, Purpose, ToolChoice};
+use glave_ports::{Completion, Message, ModelProvider, ModelRequest, Payer, Purpose, ToolChoice};
 use serde::Deserialize;
 
 use crate::untrusted::defuse;
@@ -69,11 +69,13 @@ pub enum Ruling {
     Ask { reason: String },
 }
 
-/// Asks `model` at `provider` to rule on `case`, as a `judge` call. Any failure is a ruling to
-/// ask. The answer comes back too, when there was one, so its usage can be recorded.
+/// Asks `model` at `provider` to rule on `case`, as a `judge` call for `payer`'s work, when it
+/// is anyone's. Any failure is a ruling to ask. The answer comes back too, when there was one,
+/// so its usage can be recorded.
 pub async fn judge<P: ModelProvider>(
     provider: &P,
     model: &str,
+    payer: Option<Payer>,
     case: &JudgeCase<'_>,
 ) -> (Ruling, Option<Completion>) {
     let request = ModelRequest {
@@ -88,6 +90,7 @@ pub async fn judge<P: ModelProvider>(
         purpose: Purpose::Judge,
         files: Vec::new(),
         effort: None,
+        payer,
     };
     match provider.complete(&request, &mut |_| {}).await {
         Ok(completion) => {

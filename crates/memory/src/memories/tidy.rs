@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use glave_event::{At, MemoryEdited, MemoryId, MemoryTidied, Principal};
 use glave_ports::memories::MemoryError;
-use glave_ports::{EventLog, ModelProvider, Scope};
+use glave_ports::{EventLog, ModelProvider, Payer, Scope};
 use jiff::SignedDuration;
 
 use self::merge::keeps_facts;
@@ -118,7 +118,12 @@ impl<L: EventLog + 'static> Memories<L> {
         let mut questions = Vec::new();
         if candidates.len() >= 2 {
             // An answer that cannot be read changes nothing; the run is still recorded.
-            let proposals = match ask(model, &candidates, near).await? {
+            // Glave's own work in the organization, no one person's.
+            let payer = Payer {
+                org: ledger.org(),
+                person: None,
+            };
+            let proposals = match ask(model, &candidates, near, payer).await? {
                 Ok(proposals) => proposals,
                 Err(why) => {
                     tidied.refused.push(why);

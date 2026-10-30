@@ -256,6 +256,7 @@ where
             purpose: Purpose::Summary,
             files: Vec::new(),
             effort: None,
+            payer: Some(thread.payer()),
         };
         let completion = self.summarize(request, cancel).await?;
         let summary: Vec<&str> = completion

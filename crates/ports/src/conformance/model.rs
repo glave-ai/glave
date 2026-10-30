@@ -252,6 +252,7 @@ fn request() -> ModelRequest {
         purpose: crate::model::Purpose::Main,
         files: Vec::new(),
         effort: None,
+        payer: None,
     }
 }
 

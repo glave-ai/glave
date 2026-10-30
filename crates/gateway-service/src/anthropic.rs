@@ -66,6 +66,7 @@ pub(crate) fn parse(body: &[u8]) -> Result<Parsed, Refusal> {
             purpose: Purpose::Main,
             files: Vec::new(),
             effort: None,
+            payer: None,
         },
         model,
         stream,

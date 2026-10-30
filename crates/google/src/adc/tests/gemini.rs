@@ -34,6 +34,7 @@ fn gemini_is_asked_with_the_workload_s_token() {
         purpose: glave_ports::Purpose::Main,
         files: Vec::new(),
         effort: None,
+        payer: None,
     };
     let completion = block_on!(provider.complete(&request, &mut |_| {})).unwrap();
     assert_eq!(

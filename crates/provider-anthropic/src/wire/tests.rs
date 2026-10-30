@@ -46,6 +46,7 @@ fn request(messages: Vec<Message>) -> ModelRequest {
         purpose: glave_ports::Purpose::Main,
         files: Vec::new(),
         effort: None,
+        payer: None,
     }
 }
 

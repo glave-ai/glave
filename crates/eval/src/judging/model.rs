@@ -72,6 +72,7 @@ pub(crate) async fn decide_all<P: ModelProvider + 'static>(
             let ruling = judge(
                 &*provider,
                 &model,
+                None,
                 &JudgeCase {
                     asked: &asked,
                     rules: None,
