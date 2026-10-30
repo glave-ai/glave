@@ -1,12 +1,14 @@
 //! The answer to a protocol probe rmcp gave up on, dropped. rmcp's automatic lifecycle asks a
 //! server `server/discover` first and, with no answer within 10 s, falls back to the older
 //! `initialize` handshake on the same transport; the probe's answer arriving after that fails
-//! the start ("conflict initialized response id"). So a server slow to answer its first
-//! request, such as one whose token is renewed first or a program still starting, never
-//! started. Once `initialize` follows a probe still unanswered, that probe's answer is dropped,
+//! the start ("conflict initialized response id", or "uncorrelated error response" for an
+//! error). So a server slow to answer its first request, such as one whose token is renewed
+//! first or a program still starting, never started. Once `initialize` follows a probe still unanswered, that probe's answer is dropped,
 //! and the server starts within glave's own limit ([`crate::Limits`]).
 
-use rmcp::model::{ClientRequest, JsonRpcMessage, RequestId};
+use std::borrow::Cow;
+
+use rmcp::model::{ClientRequest, JsonRpcMessage, NumberOrString, RequestId};
 use rmcp::service::{RoleClient, RxJsonRpcMessage, TxJsonRpcMessage};
 use rmcp::transport::Transport;
 
@@ -38,15 +40,23 @@ fn answered(message: &RxJsonRpcMessage<RoleClient>) -> Option<&RequestId> {
     }
 }
 
-/// Whether `id` is `of`, a number matching its digits sent back as a string too, as rmcp
-/// matches them.
+/// Whether `id` answers the request `of`, a number sent back as a string too, as rmcp matches
+/// them.
 fn is(id: Option<&RequestId>, of: Option<&RequestId>) -> bool {
-    id.zip(of)
-        .is_some_and(|(id, of)| id.to_string() == of.to_string())
+    id.zip(of).is_some_and(|(id, of)| {
+        id == of
+            || matches!((of, id), (NumberOrString::Number(of), NumberOrString::String(id))
+                if id.parse() == Ok(*of))
+    })
 }
 
+#[deny(clippy::missing_trait_methods)]
 impl<T: Transport<RoleClient>> Transport<RoleClient> for Probed<T> {
     type Error = T::Error;
+
+    fn name() -> Cow<'static, str> {
+        T::name()
+    }
 
     fn send(
         &mut self,
